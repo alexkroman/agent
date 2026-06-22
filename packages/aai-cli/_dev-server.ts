@@ -104,11 +104,14 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
     return path.join(path.dirname(pkgPath), "dist", "default-client");
   }
-  const agentServer = createServer({
-    runtime,
-    name: agentDef.name,
-    ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
-  });
+  function buildAgentServer(def: typeof agentDef, rt: typeof runtime): AgentServer {
+    return createServer({
+      runtime: rt,
+      name: def.name,
+      ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
+    });
+  }
+  const agentServer = buildAgentServer(agentDef, runtime);
   await agentServer.listen(backendPort);
 
   let viteServer: { close(): Promise<void> } | undefined;
@@ -151,11 +154,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       const newAgentDef = await loadAgentDef(cwd);
       currentEnv = await resolveAgentEnv(cwd);
       const newRuntime = createRuntime({ agent: newAgentDef, env: currentEnv });
-      const newServer = createServer({
-        runtime: newRuntime,
-        name: newAgentDef.name,
-        ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
-      });
+      const newServer = buildAgentServer(newAgentDef, newRuntime);
       await newServer.listen(backendPort);
       currentServer = newServer;
       log.success("Restarted");

@@ -11,7 +11,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import type { Kv } from "@alexkroman1/aai";
 import { errorMessage, MAX_VALUE_SIZE } from "@alexkroman1/aai";
-import type { Vector } from "@alexkroman1/aai/runtime";
+import type { Vector, VectorQueryOptions } from "@alexkroman1/aai/runtime";
 import { z } from "zod";
 import { debug } from "./_debug-log.ts";
 import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
@@ -149,10 +149,10 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
     });
     conn.onRequest("vector/query", async (raw: unknown) => {
       const p = VectorQueryParamsSchema.parse(raw);
-      return await vector.query(p.text, {
-        ...(p.topK !== undefined ? { topK: p.topK } : {}),
-        ...(p.filter !== undefined ? { filter: p.filter } : {}),
-      });
+      const opts: VectorQueryOptions = {};
+      if (p.topK !== undefined) opts.topK = p.topK;
+      if (p.filter !== undefined) opts.filter = p.filter;
+      return await vector.query(p.text, opts);
     });
     conn.onRequest("vector/delete", async (raw: unknown) => {
       const p = VectorDeleteParamsSchema.parse(raw);
