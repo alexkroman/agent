@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // S2S transport — wraps connectS2s and forwards typed callbacks into the SessionCore.
 
+import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger, S2SConfig } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import {
@@ -143,7 +144,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     }
     void resume(prevId).catch((err: unknown) => {
       reconnecting = false;
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       log.warn("S2S resume failed", { sid: opts.sid, error: msg });
       opts.callbacks.onError("connection", `S2S resume failed: ${msg}`);
     });

@@ -35,6 +35,7 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
 
 /** Internal: TtsSession with a test-only handle to the raw SDK socket. */
 export interface CartesiaSession extends TtsSession {
@@ -85,7 +86,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       } catch (cause) {
         throw makeTtsError(
           "tts_connect_failed",
-          `Cartesia TTS: connect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `Cartesia TTS: connect failed: ${errorMessage(cause)}`,
         );
       }
 

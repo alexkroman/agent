@@ -12,7 +12,7 @@ import {
   WS_OPEN,
 } from "../sdk/constants.ts";
 import { ClientMessageSchema, type ClientSink, lenientParse } from "../sdk/protocol.ts";
-import { errorDetail } from "../sdk/utils.ts";
+import { errorDetail, errorMessage } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -73,7 +73,7 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
       ws.send(data);
     } catch (err) {
       log.debug?.("safeSend: socket closed between readyState check and send", {
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
     }
   }

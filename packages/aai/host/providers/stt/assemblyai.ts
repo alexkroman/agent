@@ -10,6 +10,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
 
 export interface AssemblyAISession extends SttSession {
   /** @internal Test-only: exposes the underlying SDK transcriber for fixture replay. */
@@ -67,7 +68,7 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       } catch (cause) {
         throw makeSttError(
           "stt_connect_failed",
-          `AssemblyAI STT: connect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `AssemblyAI STT: connect failed: ${errorMessage(cause)}`,
         );
       }
 

@@ -10,6 +10,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
 
 // `@soniox/speech-to-text-web` is browser-only (MediaRecorder/getUserMedia),
 // so we speak the WebSocket protocol directly.
@@ -134,7 +135,7 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
       } catch (cause) {
         throw makeSttError(
           "stt_connect_failed",
-          `Soniox STT: connect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `Soniox STT: connect failed: ${errorMessage(cause)}`,
         );
       }
 

@@ -25,6 +25,7 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
 
 export interface RimeSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */
@@ -143,7 +144,7 @@ export function openRime(opts: RimeOptions): TtsOpener {
       } catch (cause) {
         throw makeTtsError(
           "tts_connect_failed",
-          `Rime TTS: failed to create WebSocket: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `Rime TTS: failed to create WebSocket: ${errorMessage(cause)}`,
         );
       }
 

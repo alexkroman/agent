@@ -16,6 +16,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
 
 type V1Socket = Awaited<ReturnType<InstanceType<typeof DeepgramClient>["listen"]["v1"]["connect"]>>;
 
@@ -29,10 +30,6 @@ type MessagePayload =
   | listen.ListenV1Metadata
   | listen.ListenV1UtteranceEnd
   | listen.ListenV1SpeechStarted;
-
-function errMsg(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
 
 function handleMessage(data: MessagePayload, closed: boolean, emitter: Emitter<SttEvents>): void {
   if (closed || data.type !== "Results") return;
@@ -99,7 +96,10 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
           Authorization: apiKey,
         });
       } catch (cause) {
-        throw makeSttError("stt_connect_failed", `Deepgram STT: connect failed: ${errMsg(cause)}`);
+        throw makeSttError(
+          "stt_connect_failed",
+          `Deepgram STT: connect failed: ${errorMessage(cause)}`,
+        );
       }
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
@@ -113,7 +113,7 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
       } catch (cause) {
         throw makeSttError(
           "stt_connect_failed",
-          `Deepgram STT: WebSocket open failed: ${errMsg(cause)}`,
+          `Deepgram STT: WebSocket open failed: ${errorMessage(cause)}`,
         );
       }
 

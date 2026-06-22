@@ -27,6 +27,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
 
 /** Map a numeric sample rate to the SDK's `AudioFormat` enum. */
 function audioFormatFor(sampleRate: number): AudioFormat {
@@ -78,7 +79,7 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
       } catch (cause) {
         throw makeSttError(
           "stt_connect_failed",
-          `ElevenLabs STT: connect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `ElevenLabs STT: connect failed: ${errorMessage(cause)}`,
         );
       }
 

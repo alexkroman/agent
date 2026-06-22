@@ -119,11 +119,8 @@ export function MessageList({ className }: { className?: string }) {
       tc = toolCalls[tci];
     }
   }
-  let tc = toolCalls[tci];
-  while (tc) {
+  for (const tc of toolCalls.slice(tci)) {
     items.push(<ToolCallBlock key={tc.callId} toolCall={tc} />);
-    tci++;
-    tc = toolCalls[tci];
   }
 
   const userTranscript = session.userTranscript;

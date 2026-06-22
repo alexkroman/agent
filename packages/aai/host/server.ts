@@ -18,7 +18,8 @@ import { WebSocketServer } from "ws";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import { VectorRequestSchema } from "../sdk/protocol.ts";
-import type { Vector } from "../sdk/vector.ts";
+import { errorMessage } from "../sdk/utils.ts";
+import type { Vector, VectorQueryOptions } from "../sdk/vector.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
 import type { Runtime } from "./runtime.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -108,12 +109,13 @@ async function handleVectorPost(
         await vector.upsert(op.id, op.text, op.metadata);
         result = "OK";
         break;
-      case "query":
-        result = await vector.query(op.text, {
-          ...(op.topK !== undefined ? { topK: op.topK } : {}),
-          ...(op.filter !== undefined ? { filter: op.filter } : {}),
-        });
+      case "query": {
+        const opts: VectorQueryOptions = {};
+        if (op.topK !== undefined) opts.topK = op.topK;
+        if (op.filter !== undefined) opts.filter = op.filter;
+        result = await vector.query(op.text, opts);
         break;
+      }
       case "delete":
         await vector.delete(op.ids);
         result = "OK";
@@ -125,7 +127,7 @@ async function handleVectorPost(
     }
     sendJson(res, 200, { result });
   } catch (err) {
-    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    sendJson(res, 500, { error: errorMessage(err) });
   }
 }
 

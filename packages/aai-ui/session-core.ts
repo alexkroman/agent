@@ -305,7 +305,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     conn.preInitAudio = [];
   }
 
-  function resetState(): void {
+  function resetState(extra?: Partial<SessionSnapshot>): void {
     updateState({
       messages: [],
       toolCalls: [],
@@ -313,6 +313,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       userTranscript: null,
       agentTranscript: null,
       error: null,
+      ...extra,
     });
   }
 
@@ -437,15 +438,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       case "reset": {
         handlerGeneration++;
         conn.voiceIO?.flush();
-        updateState({
-          messages: [],
-          toolCalls: [],
-          customEvents: [],
-          userTranscript: null,
-          agentTranscript: null,
-          error: null,
-          state: "listening",
-        });
+        resetState({ state: "listening" });
         break;
       }
       case "custom_event":
