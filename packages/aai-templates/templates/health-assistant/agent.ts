@@ -4,23 +4,22 @@ import systemPrompt from "./system-prompt.md";
 
 type RxCui = { name: string; rxcui: string };
 
-async function resolveRxCui(name: string): Promise<RxCui | null> {
-  let raw: { idGroup: { rxnormId?: string[] } } | null;
+async function getJson<T>(url: string): Promise<T | null> {
   try {
-    const resp = await fetch(
-      `https://rxnav.nlm.nih.gov/REST/rxcui.json?name=${encodeURIComponent(name)}`,
-    );
-    raw = resp.ok ? await resp.json() : null;
+    const resp = await fetch(url);
+    return resp.ok ? ((await resp.json()) as T) : null;
   } catch {
-    raw = null;
+    return null;
   }
+}
+
+async function resolveRxCui(name: string): Promise<RxCui | null> {
+  const raw = await getJson<{ idGroup: { rxnormId?: string[] } }>(
+    `https://rxnav.nlm.nih.gov/REST/rxcui.json?name=${encodeURIComponent(name)}`,
+  );
   if (!raw) return null;
   const id = raw.idGroup.rxnormId?.[0];
   return id ? { name, rxcui: id } : null;
-}
-
-function first(arr: string[] | undefined): string | undefined {
-  return arr?.[0];
 }
 
 export default agent({
@@ -53,24 +52,17 @@ export default agent({
         }
 
         const rxcuiList = resolved.map((r) => r.rxcui).join("+");
-        let raw: Record<string, unknown>;
-        try {
-          const resp = await fetch(
-            `https://rxnav.nlm.nih.gov/REST/interaction/list.json?rxcuis=${rxcuiList}`,
-          );
-          raw = resp.ok ? await resp.json() : { error: "Interaction lookup failed" };
-        } catch {
-          raw = { error: "Interaction lookup failed" };
-        }
-
-        if ("error" in raw) return raw;
 
         type InteractionPair = { description: string; severity: string };
         type InteractionType = { interactionPair?: InteractionPair[] };
         type InteractionGroup = { fullInteractionType?: InteractionType[] };
 
-        const groups: InteractionGroup[] =
-          (raw as { fullInteractionTypeGroup?: InteractionGroup[] }).fullInteractionTypeGroup ?? [];
+        const raw = await getJson<{ fullInteractionTypeGroup?: InteractionGroup[] }>(
+          `https://rxnav.nlm.nih.gov/REST/interaction/list.json?rxcuis=${rxcuiList}`,
+        );
+        if (!raw) return { error: "Interaction lookup failed" };
+
+        const groups: InteractionGroup[] = raw.fullInteractionTypeGroup ?? [];
 
         const interactions = groups
           .flatMap((g) => g.fullInteractionType ?? [])
@@ -95,40 +87,24 @@ export default agent({
       }),
       async execute(args) {
         const q = encodeURIComponent(args.name.toLowerCase());
-        let raw: Record<string, unknown> | null;
-        try {
-          const resp = await fetch(
-            `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${q}"+openfda.brand_name:"${q}"&limit=1`,
-          );
-          raw = resp.ok ? await resp.json() : null;
-        } catch {
-          raw = null;
-        }
+        const raw = await getJson<{ results?: Record<string, unknown>[] }>(
+          `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${q}"+openfda.brand_name:"${q}"&limit=1`,
+        );
 
-        if (
-          !(raw && Array.isArray((raw as { results?: unknown[] }).results)) ||
-          ((raw as { results?: unknown[] }).results?.length ?? 0) === 0
-        ) {
+        const drug = raw?.results?.[0];
+        if (!drug) {
           return { error: `No FDA data found for: ${args.name}` };
         }
 
-        const drug = (raw as { results: Record<string, unknown>[] }).results[0] as Record<
-          string,
-          unknown
-        >;
         const openfda = (drug.openfda ?? {}) as Record<string, string[]>;
+        const str = (field: unknown): string | undefined => (field as string[] | undefined)?.[0];
         return {
           name: openfda.generic_name?.[0] ?? args.name,
           brand_names: openfda.brand_name ?? [],
-          purpose:
-            first(drug.purpose as string[] | undefined) ??
-            first(drug.indications_and_usage as string[] | undefined) ??
-            "N/A",
-          warnings: first(drug.warnings as string[] | undefined)?.slice(0, 500) ?? "N/A",
-          dosage:
-            first(drug.dosage_and_administration as string[] | undefined)?.slice(0, 500) ?? "N/A",
-          side_effects:
-            first(drug.adverse_reactions as string[] | undefined)?.slice(0, 500) ?? "N/A",
+          purpose: str(drug.purpose) ?? str(drug.indications_and_usage) ?? "N/A",
+          warnings: str(drug.warnings)?.slice(0, 500) ?? "N/A",
+          dosage: str(drug.dosage_and_administration)?.slice(0, 500) ?? "N/A",
+          side_effects: str(drug.adverse_reactions)?.slice(0, 500) ?? "N/A",
           manufacturer: openfda.manufacturer_name?.[0] ?? "N/A",
         };
       },

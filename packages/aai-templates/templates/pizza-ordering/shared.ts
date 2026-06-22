@@ -28,18 +28,6 @@ export const MENU = {
   },
 } as const;
 
-export function calculateTotal(pizzas: Pizza[]): number {
-  return pizzas.reduce((total, pizza) => {
-    const base = MENU.sizes[pizza.size];
-    const crust = MENU.crusts[pizza.crust];
-    const toppingsPrice = pizza.toppings.reduce(
-      (sum, t) => sum + (MENU.toppings[t as keyof typeof MENU.toppings] ?? 1.0),
-      0,
-    );
-    return total + (base + crust + toppingsPrice) * pizza.quantity;
-  }, 0);
-}
-
 export function pizzaPrice(p: Pizza): number {
   const base = MENU.sizes[p.size];
   const crust = MENU.crusts[p.crust];
@@ -48,6 +36,10 @@ export function pizzaPrice(p: Pizza): number {
     0,
   );
   return (base + crust + toppings) * p.quantity;
+}
+
+export function calculateTotal(pizzas: Pizza[]): number {
+  return pizzas.reduce((total, p) => total + pizzaPrice(p), 0);
 }
 
 /** Tool result types for this agent, keyed by tool name. */

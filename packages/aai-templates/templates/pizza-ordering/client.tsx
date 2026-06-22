@@ -3,7 +3,7 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { client, useEvent, useTheme } from "@alexkroman1/aai-ui";
 import { useState } from "react";
-import { type Pizza, pizzaPrice } from "./shared.ts";
+import { calculateTotal, type Pizza, pizzaPrice } from "./shared.ts";
 
 interface OrderInfo {
   pizzas: Pizza[];
@@ -40,9 +40,9 @@ function OrderSidebar() {
 
   useEvent("order", (raw) => {
     const result = raw as Record<string, unknown>;
+    const orderTotal = result.orderTotal as string;
     if ("added" in result && result.added) {
       const added = result.added as Pizza;
-      const orderTotal = result.orderTotal as string;
       setOrder((prev) => ({
         ...prev,
         pizzas: [...prev.pizzas, added],
@@ -50,7 +50,6 @@ function OrderSidebar() {
       }));
     } else if ("removed" in result && result.removed) {
       const removed = result.removed as Pizza;
-      const orderTotal = result.orderTotal as string;
       setOrder((prev) => ({
         ...prev,
         pizzas: prev.pizzas.filter((p) => p.id !== removed.id),
@@ -58,7 +57,6 @@ function OrderSidebar() {
       }));
     } else if ("updated" in result && result.updated) {
       const updated = result.updated as Pizza;
-      const orderTotal = result.orderTotal as string;
       setOrder((prev) => ({
         ...prev,
         pizzas: prev.pizzas.map((p) => (p.id === updated.id ? updated : p)),
@@ -66,9 +64,7 @@ function OrderSidebar() {
       }));
     } else if ("pizzas" in result && Array.isArray(result.pizzas)) {
       const pizzas = result.pizzas as Pizza[];
-      const total =
-        (result.orderTotal as string) ||
-        `$${pizzas.reduce((s, p) => s + pizzaPrice(p), 0).toFixed(2)}`;
+      const total = orderTotal || `$${calculateTotal(pizzas).toFixed(2)}`;
       setOrder((prev) => ({ ...prev, total }));
     } else if ("orderNumber" in result && result.orderNumber) {
       setOrder((prev) => ({

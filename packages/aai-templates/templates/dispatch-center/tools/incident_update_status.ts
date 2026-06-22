@@ -28,10 +28,11 @@ export const incidentUpdateStatus = tool({
     const inc = state.incidents[args.incidentId];
     if (!inc) return { error: `Incident ${args.incidentId} not found` };
 
+    const ts = now();
     inc.status = args.status;
-    inc.updatedAt = now();
+    inc.updatedAt = ts;
     inc.timeline.push({
-      time: now(),
+      time: ts,
       event: `Status → ${args.status}${args.notes ? `: ${args.notes}` : ""}`,
     });
     if (args.notes) inc.notes.push(args.notes);
@@ -60,7 +61,7 @@ export const incidentUpdateStatus = tool({
         }
       }
       inc.timeline.push({
-        time: now(),
+        time: ts,
         event: "All resources released — incident closed",
       });
       await deleteIncidentSnapshot(ctx.kv, args.incidentId);

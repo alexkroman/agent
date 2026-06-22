@@ -1,7 +1,7 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { KV } from "../shared.ts";
-import { getGameState, saveGameState } from "../shared.ts";
+import { getGameState, RESULT_LABELS, saveGameState } from "../shared.ts";
 
 export const burnMomentum = tool({
   description:
@@ -12,29 +12,23 @@ export const burnMomentum = tool({
   }),
   async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
     const state = await getGameState(ctx.kv);
-    const mom = state.momentum;
-    if (mom <= 0) return { error: "Momentum is 0 or negative. Cannot burn." };
+    const previousMomentum = state.momentum;
+    if (previousMomentum <= 0) return { error: "Momentum is 0 or negative. Cannot burn." };
 
     let newResult: string;
-    if (mom > args.c1 && mom > args.c2) newResult = "STRONG_HIT";
-    else if (mom > args.c1 || mom > args.c2) newResult = "WEAK_HIT";
+    if (previousMomentum > args.c1 && previousMomentum > args.c2) newResult = "STRONG_HIT";
+    else if (previousMomentum > args.c1 || previousMomentum > args.c2) newResult = "WEAK_HIT";
     else return { error: "Momentum not high enough to improve the result." };
 
-    const previousMomentum = mom;
     state.momentum = 2; // Reset to starting value
     await saveGameState(ctx.kv, state);
     ctx.send("game_state", state);
-
-    const labels: Record<string, string> = {
-      STRONG_HIT: "Strong Hit",
-      WEAK_HIT: "Weak Hit",
-    };
 
     return {
       burned: true,
       previousMomentum,
       newMomentum: 2,
-      newResult: labels[newResult],
+      newResult: RESULT_LABELS[newResult],
       newResultCode: newResult,
       challengeDice: [args.c1, args.c2],
     };

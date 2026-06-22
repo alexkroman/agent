@@ -4,7 +4,7 @@ import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
 import { client, useEvent, useSession } from "@alexkroman1/aai-ui";
 import { useEffect, useMemo, useRef } from "react";
-import type { DispatchState, Incident, Severity } from "./shared.ts";
+import type { DispatchState, Incident, Severity, Status } from "./shared.ts";
 
 const CSS = `
 @keyframes dc-pulse {
@@ -33,14 +33,14 @@ const alertColors: Record<string, string> = {
   red: "#ef4444",
 };
 
-const severityColors: Record<string, string> = {
+const severityColors: Record<Severity, string> = {
   critical: "#ef4444",
   urgent: "#f97316",
   moderate: "#eab308",
   minor: "#22c55e",
 };
 
-const statusColors: Record<string, string> = {
+const statusColors: Record<Status, string> = {
   incoming: "#818cf8",
   triaged: "#a78bfa",
   dispatched: "#f59e0b",
@@ -55,20 +55,30 @@ interface DashboardState {
   alertLevel: string;
   incidents: Record<
     string,
-    { id: string; severity?: Severity; status?: string; location?: string }
+    { id: string; severity?: Severity; status?: Status; location?: string }
   >;
 }
 
+const stateColors: Record<string, string> = {
+  listening: "#22c55e",
+  thinking: "#eab308",
+  speaking: "#3b82f6",
+  ready: "#22c55e",
+};
+
+const stateLabels: Record<string, string> = {
+  listening: "LISTENING",
+  thinking: "PROCESSING",
+  speaking: "TRANSMITTING",
+};
+
+const stateAnimations: Record<string, string> = {
+  listening: "dc-pulse 1.5s ease-in-out infinite",
+  thinking: "dc-pulse 0.8s ease-in-out infinite",
+};
+
 function stateColor(state: string): string {
-  return state === "listening"
-    ? "#22c55e"
-    : state === "thinking"
-      ? "#eab308"
-      : state === "speaking"
-        ? "#3b82f6"
-        : state === "ready"
-          ? "#22c55e"
-          : "#6b7280";
+  return stateColors[state] ?? "#6b7280";
 }
 
 function Panel({ title, children }: { title: string; children: React.ReactNode }) {
@@ -165,23 +175,12 @@ function App() {
               className="w-2.5 h-2.5 rounded-full inline-block"
               style={{
                 background: stateColor(session.state),
-                animation:
-                  session.state === "listening"
-                    ? "dc-pulse 1.5s ease-in-out infinite"
-                    : session.state === "thinking"
-                      ? "dc-pulse 0.8s ease-in-out infinite"
-                      : "none",
+                animation: stateAnimations[session.state] ?? "none",
               }}
               title={session.state}
             />
             <span className="text-[11px] font-normal normal-case" style={{ color: "#64748b" }}>
-              {session.state === "listening"
-                ? "LISTENING"
-                : session.state === "thinking"
-                  ? "PROCESSING"
-                  : session.state === "speaking"
-                    ? "TRANSMITTING"
-                    : session.state.toUpperCase()}
+              {stateLabels[session.state] ?? session.state.toUpperCase()}
             </span>
           </div>
           <div className="flex gap-2 items-center">
@@ -327,48 +326,52 @@ function App() {
                   No active incidents
                 </div>
               ) : (
-                activeIncidents.map((inc) => (
-                  <div
-                    key={inc.id}
-                    className="rounded-md p-2.5 mb-2"
-                    style={{
-                      background: "#0f172a",
-                      animation: "dc-slide-in 0.3s ease-out",
-                      border: `1px solid ${severityColors[inc.severity ?? ""] || "#334155"}40`,
-                      borderLeft: `3px solid ${severityColors[inc.severity ?? ""] || "#334155"}`,
-                    }}
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-bold" style={{ color: "#f1f5f9" }}>
-                        {inc.id}
-                      </span>
-                      {inc.severity && (
-                        <span
-                          className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase"
-                          style={{
-                            background: `${severityColors[inc.severity ?? ""]}30`,
-                            color: severityColors[inc.severity ?? ""],
-                          }}
-                        >
-                          {inc.severity}
+                activeIncidents.map((inc) => {
+                  const sevColor = inc.severity ? severityColors[inc.severity] : undefined;
+                  const sevBorder = sevColor || "#334155";
+                  return (
+                    <div
+                      key={inc.id}
+                      className="rounded-md p-2.5 mb-2"
+                      style={{
+                        background: "#0f172a",
+                        animation: "dc-slide-in 0.3s ease-out",
+                        border: `1px solid ${sevBorder}40`,
+                        borderLeft: `3px solid ${sevBorder}`,
+                      }}
+                    >
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="text-xs font-bold" style={{ color: "#f1f5f9" }}>
+                          {inc.id}
                         </span>
+                        {inc.severity && (
+                          <span
+                            className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase"
+                            style={{
+                              background: `${sevColor}30`,
+                              color: sevColor,
+                            }}
+                          >
+                            {inc.severity}
+                          </span>
+                        )}
+                      </div>
+                      {inc.location && (
+                        <div className="text-[11px] mb-0.5" style={{ color: "#94a3b8" }}>
+                          {inc.location}
+                        </div>
+                      )}
+                      {inc.status && (
+                        <div
+                          className="text-[10px] uppercase tracking-wider"
+                          style={{ color: statusColors[inc.status] || "#6b7280" }}
+                        >
+                          {inc.status.replace("_", " ")}
+                        </div>
                       )}
                     </div>
-                    {inc.location && (
-                      <div className="text-[11px] mb-0.5" style={{ color: "#94a3b8" }}>
-                        {inc.location}
-                      </div>
-                    )}
-                    {inc.status && (
-                      <div
-                        className="text-[10px] uppercase tracking-wider"
-                        style={{ color: statusColors[inc.status] || "#6b7280" }}
-                      >
-                        {inc.status.replace("_", " ")}
-                      </div>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               )}
             </Panel>
 

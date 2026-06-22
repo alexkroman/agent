@@ -32,6 +32,7 @@ export const incidentCreate = tool({
     state.incidentCounter++;
     const id = `INC-${String(state.incidentCounter).padStart(4, "0")}`;
 
+    const createdAt = now();
     const recSeverity = recommendSeverity(args.description);
     const recType = recommendType(args.description);
     const triageScore = calculateTriageScore(
@@ -54,13 +55,13 @@ export const incidentCreate = tool({
       assignedResources: [],
       timeline: [
         {
-          time: now(),
+          time: createdAt,
           event: `Incident created: ${args.description}`,
         },
       ],
       notes: [],
-      createdAt: now(),
-      updatedAt: now(),
+      createdAt,
+      updatedAt: createdAt,
       escalationLevel: 0,
       protocolsActivated: [],
       casualties: {
@@ -73,8 +74,7 @@ export const incidentCreate = tool({
 
     state.incidents[id] = incident;
     recalculateAlertLevel(state);
-    await saveState(ctx.kv, state);
-    await saveIncidentSnapshot(ctx.kv, incident);
+    await Promise.all([saveState(ctx.kv, state), saveIncidentSnapshot(ctx.kv, incident)]);
 
     const protocols = getApplicableProtocols(recType, recSeverity);
     const recommended = recommendResources(recType, recSeverity, state);

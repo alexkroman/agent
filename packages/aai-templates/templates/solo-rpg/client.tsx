@@ -139,10 +139,9 @@ function ResourceBar({
   colorBright: string;
   icon: string;
 }) {
-  const pips = [];
-  for (let i = 0; i < max; i++) {
+  const pips = Array.from({ length: max }, (_, i) => {
     const filled = i < current;
-    pips.push(
+    return (
       <div
         key={i}
         style={{
@@ -156,9 +155,9 @@ function ResourceBar({
           boxShadow: filled ? `0 0 4px ${color}66` : "none",
           transition: "all 0.4s ease",
         }}
-      />,
+      />
     );
-  }
+  });
   return (
     <div style={{ marginBottom: "8px" }}>
       <div
@@ -184,8 +183,7 @@ function ResourceBar({
 }
 
 function MomentumTrack({ momentum, max }: { momentum: number; max: number }) {
-  const range: number[] = [];
-  for (let i = -6; i <= 10; i++) range.push(i);
+  const range = Array.from({ length: 17 }, (_, i) => i - 6);
   return (
     <div style={{ marginBottom: "8px" }}>
       <div
@@ -340,23 +338,20 @@ function ClockDisplay({ clock }: { clock: ClockData }) {
       : clock.clockType === "progress"
         ? C.progress
         : C.scheme;
-  const segments = [];
-  for (let i = 0; i < clock.segments; i++) {
-    segments.push(
-      <div
-        key={i}
-        style={{
-          width: "10px",
-          height: "10px",
-          borderRadius: "50%",
-          background: i < clock.filled ? typeColor : "rgba(255,255,255,0.04)",
-          border: `1px solid ${i < clock.filled ? typeColor : "rgba(255,255,255,0.08)"}`,
-          boxShadow: i < clock.filled ? `0 0 4px ${typeColor}66` : "none",
-          transition: "all 0.3s ease",
-        }}
-      />,
-    );
-  }
+  const segments = Array.from({ length: clock.segments }, (_, i) => (
+    <div
+      key={i}
+      style={{
+        width: "10px",
+        height: "10px",
+        borderRadius: "50%",
+        background: i < clock.filled ? typeColor : "rgba(255,255,255,0.04)",
+        border: `1px solid ${i < clock.filled ? typeColor : "rgba(255,255,255,0.08)"}`,
+        boxShadow: i < clock.filled ? `0 0 4px ${typeColor}66` : "none",
+        transition: "all 0.3s ease",
+      }}
+    />
+  ));
   const isFull = clock.filled >= clock.segments;
   return (
     <div
@@ -622,13 +617,7 @@ function Sidebar({ game }: { game: GameState }) {
                   fontFamily: "sans-serif",
                 }}
               >
-                {game.gameOver
-                  ? game.kidMode
-                    ? "In Trouble"
-                    : "Finale"
-                  : game.kidMode
-                    ? "In Trouble"
-                    : "Crisis"}
+                {game.kidMode ? "In Trouble" : game.gameOver ? "Finale" : "Crisis"}
               </div>
             </div>
           )}
@@ -823,13 +812,15 @@ function Sidebar({ game }: { game: GameState }) {
 
 // ── App ──────────────────────────────────────────────────────────────────────
 
-function SoloRPGApp() {
-  const [game, setGame] = useState<GameState>(structuredClone(INITIAL));
-
-  const mergeState = (result: Partial<GameState>, prev: GameState): GameState => ({
+function mergeState(result: Partial<GameState>, prev: GameState): GameState {
+  return {
     ...prev,
     ...Object.fromEntries(Object.entries(result).filter(([, v]) => v !== undefined)),
-  });
+  };
+}
+
+function SoloRPGApp() {
+  const [game, setGame] = useState<GameState>(() => structuredClone(INITIAL));
 
   useEvent<GameState>("game_state", (state) => {
     setGame((prev) => mergeState(state, prev));

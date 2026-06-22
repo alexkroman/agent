@@ -371,41 +371,40 @@ export const PROTOCOLS: Protocol[] = [
   },
 ];
 
+const SEVERITY_RANK: Record<Severity, number> = {
+  critical: 4,
+  urgent: 3,
+  moderate: 2,
+  minor: 1,
+};
+
 export function getApplicableProtocols(type: IncidentType, severity: Severity): Protocol[] {
-  const severityRank: Record<Severity, number> = {
-    critical: 4,
-    urgent: 3,
-    moderate: 2,
-    minor: 1,
-  };
   return PROTOCOLS.filter(
     (p) =>
       p.triggers.types.includes(type) &&
-      severityRank[severity] >= severityRank[p.triggers.minSeverity],
+      SEVERITY_RANK[severity] >= SEVERITY_RANK[p.triggers.minSeverity],
   );
 }
 
 // ─── Resource recommendation engine ──────────────────────────────────────────
+
+const BASE_RESOURCE_NEEDS: Record<IncidentType, Resource["type"][]> = {
+  medical: ["ambulance"],
+  fire: ["fire_engine", "ambulance"],
+  hazmat: ["hazmat_team", "fire_engine", "ambulance"],
+  traffic: ["police", "ambulance", "fire_engine"],
+  crime: ["police"],
+  natural_disaster: ["fire_engine", "ambulance", "police"],
+  utility: ["fire_engine"],
+  other: [],
+};
 
 export function recommendResources(
   type: IncidentType,
   severity: Severity,
   state: DispatchState,
 ): Resource[] {
-  const needed: Resource["type"][] = [];
-
-  const baseNeeds: Record<IncidentType, Resource["type"][]> = {
-    medical: ["ambulance"],
-    fire: ["fire_engine", "ambulance"],
-    hazmat: ["hazmat_team", "fire_engine", "ambulance"],
-    traffic: ["police", "ambulance", "fire_engine"],
-    crime: ["police"],
-    natural_disaster: ["fire_engine", "ambulance", "police"],
-    utility: ["fire_engine"],
-    other: [],
-  };
-
-  needed.push(...(baseNeeds[type] || []));
+  const needed: Resource["type"][] = [...BASE_RESOURCE_NEEDS[type]];
 
   if (severity === "critical") {
     if (!needed.includes("ambulance")) needed.push("ambulance");
@@ -435,9 +434,7 @@ export function recommendResources(
 // ─── System alert level calculation ──────────────────────────────────────────
 
 export function recalculateAlertLevel(state: DispatchState): void {
-  const activeIncidents = Object.values(state.incidents).filter(
-    (i) => !["resolved"].includes(i.status),
-  );
+  const activeIncidents = Object.values(state.incidents).filter((i) => i.status !== "resolved");
   const criticalCount = activeIncidents.filter((i) => i.severity === "critical").length;
   const totalActive = activeIncidents.length;
   const availableResources = state.resources.filter((r) => r.status === "available").length;

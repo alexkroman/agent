@@ -50,9 +50,7 @@ export const updateState = tool({
     // Location
     if (args.location !== undefined) {
       if (state.currentLocation && state.currentLocation !== args.location) {
-        state.locationHistory.push(state.currentLocation);
-        if (state.locationHistory.length > 5)
-          state.locationHistory = state.locationHistory.slice(-5);
+        state.locationHistory = [...state.locationHistory, state.currentLocation].slice(-5);
       }
       state.currentLocation = args.location;
     }

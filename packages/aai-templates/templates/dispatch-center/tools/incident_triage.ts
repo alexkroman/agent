@@ -57,9 +57,10 @@ export const incidentTriage = tool({
       inc.hazards.length,
     );
     inc.status = "triaged";
-    inc.updatedAt = now();
+    const ts = now();
+    inc.updatedAt = ts;
     inc.timeline.push({
-      time: now(),
+      time: ts,
       event: `Triaged: ${inc.severity} ${inc.type}, score ${inc.triageScore}`,
     });
 

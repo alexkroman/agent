@@ -26,12 +26,13 @@ export const incidentEscalate = tool({
     const inc = state.incidents[args.incidentId];
     if (!inc) return { error: `Incident ${args.incidentId} not found` };
 
+    const ts = now();
     inc.escalationLevel++;
     if (args.newSeverity) inc.severity = args.newSeverity;
     inc.status = "escalated";
-    inc.updatedAt = now();
+    inc.updatedAt = ts;
     inc.timeline.push({
-      time: now(),
+      time: ts,
       event: `ESCALATED (Level ${inc.escalationLevel}): ${args.reason}`,
     });
     inc.notes.push(`Escalation: ${args.reason}`);
@@ -39,12 +40,12 @@ export const incidentEscalate = tool({
     if (args.requestMutualAid) {
       state.mutualAidRequested = true;
       inc.timeline.push({
-        time: now(),
+        time: ts,
         event: "Mutual aid requested from neighboring jurisdictions",
       });
       state.resources.push(
         {
-          id: `MA-${Date.now()}-1`,
+          id: `MA-${ts}-1`,
           type: "ambulance",
           callsign: "Mutual-Aid-Medic",
           status: "available",
@@ -53,7 +54,7 @@ export const incidentEscalate = tool({
           capabilities: ["als"],
         },
         {
-          id: `MA-${Date.now()}-2`,
+          id: `MA-${ts}-2`,
           type: "fire_engine",
           callsign: "Mutual-Aid-Engine",
           status: "available",

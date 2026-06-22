@@ -386,45 +386,32 @@ export function applyConsequences(
   const clockEvents: { clock: string; trigger: string }[] = [];
   const target = targetNpcId ? game.npcs.find((n) => n.id === targetNpcId) : null;
 
+  // Subtract `amount` from a numeric resource, floor at 0, and record the
+  // actual drop as a consequence line.
+  const damage = (field: "health" | "spirit" | "supply", amount: number) => {
+    const old = game[field];
+    game[field] = Math.max(0, old - amount);
+    if (game[field] < old) consequences.push(`${field} -${old - game[field]}`);
+  };
+
   if (roll.result === "MISS") {
     if (roll.move === "endure_harm") {
-      const dmg = position === "desperate" ? 2 : 1;
-      const old = game.health;
-      game.health = Math.max(0, game.health - dmg);
-      if (game.health < old) consequences.push(`health -${old - game.health}`);
+      damage("health", position === "desperate" ? 2 : 1);
     } else if (roll.move === "endure_stress") {
-      const dmg = position === "desperate" ? 2 : 1;
-      const old = game.spirit;
-      game.spirit = Math.max(0, game.spirit - dmg);
-      if (game.spirit < old) consequences.push(`spirit -${old - game.spirit}`);
+      damage("spirit", position === "desperate" ? 2 : 1);
     } else if (COMBAT_MOVES.has(roll.move)) {
-      const dmg = position === "desperate" ? 3 : position === "controlled" ? 1 : 2;
-      const old = game.health;
-      game.health = Math.max(0, game.health - dmg);
-      if (game.health < old) consequences.push(`health -${old - game.health}`);
+      damage("health", position === "desperate" ? 3 : position === "controlled" ? 1 : 2);
     } else if (SOCIAL_MOVES.has(roll.move)) {
       if (target) {
         const oldBond = target.bond;
         target.bond = Math.max(0, target.bond - 1);
         if (target.bond < oldBond) consequences.push(`${target.name} bond -1`);
       }
-      const dmg = position === "desperate" ? 2 : 1;
-      const old = game.spirit;
-      game.spirit = Math.max(0, game.spirit - dmg);
-      if (game.spirit < old) consequences.push(`spirit -${old - game.spirit}`);
+      damage("spirit", position === "desperate" ? 2 : 1);
     } else {
-      const oldSupply = game.supply;
-      game.supply = Math.max(0, game.supply - 1);
-      if (game.supply < oldSupply) consequences.push(`supply -${oldSupply - game.supply}`);
-      if (position === "desperate") {
-        const oldH = game.health;
-        game.health = Math.max(0, game.health - 2);
-        if (game.health < oldH) consequences.push(`health -${oldH - game.health}`);
-      } else if (position !== "controlled") {
-        const oldH = game.health;
-        game.health = Math.max(0, game.health - 1);
-        if (game.health < oldH) consequences.push(`health -${oldH - game.health}`);
-      }
+      damage("supply", 1);
+      if (position === "desperate") damage("health", 2);
+      else if (position !== "controlled") damage("health", 1);
     }
 
     const momLoss = position === "desperate" ? 3 : 2;

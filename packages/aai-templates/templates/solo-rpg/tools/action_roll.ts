@@ -1,6 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { GameState, KV } from "../shared.ts";
+import type { KV } from "../shared.ts";
 import {
   applyConsequences,
   canBurnMomentum,
@@ -44,7 +44,7 @@ export const actionRoll = tool({
   }),
   async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
     const state = await getGameState(ctx.kv);
-    const statValue = state[args.stat as keyof GameState] as number;
+    const statValue = state[args.stat];
     const roll = rollAction(args.stat, statValue, args.move);
 
     // Apply consequences
@@ -83,11 +83,11 @@ export const actionRoll = tool({
       result: RESULT_LABELS[roll.result],
       resultCode: roll.result,
       match: roll.match,
-      matchNote: roll.match
-        ? roll.result === "STRONG_HIT" || roll.result === "WEAK_HIT"
-          ? "Fateful roll. Both challenge dice match. An unexpected advantage or twist."
-          : "Fateful roll. Both challenge dice match. A dire and dramatic escalation."
-        : undefined,
+      matchNote: !roll.match
+        ? undefined
+        : roll.result === "MISS"
+          ? "Fateful roll. Both challenge dice match. A dire and dramatic escalation."
+          : "Fateful roll. Both challenge dice match. An unexpected advantage or twist.",
       position: args.position,
       effect: args.effect,
       consequences,

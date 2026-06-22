@@ -3,7 +3,7 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
 import { client, useSession } from "@alexkroman1/aai-ui";
-import { useEffect, useRef } from "react";
+import { type ReactNode, useEffect, useRef } from "react";
 
 const CSS = `
 @keyframes ic-flicker {
@@ -55,103 +55,21 @@ const GREEN_DIM = "#00aa2a";
 const GREEN_DARK = "#003300";
 const CYAN = "#00ccff";
 
-function InfocomAdventure() {
-  const session = useSession();
-  const bottom = useRef<HTMLDivElement>(null);
+const STATE_LABELS: Record<string, string> = {
+  listening: "Listening",
+  speaking: "Narrating",
+  thinking: "Thinking",
+  connecting: "Connecting",
+  ready: "Ready",
+};
 
-  useEffect(() => {
-    bottom.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+const DOT_COLORS: Record<string, string> = {
+  listening: GREEN,
+  speaking: "#ffaa00",
+  thinking: CYAN,
+};
 
-  const stateLabel =
-    session.state === "listening"
-      ? "Listening"
-      : session.state === "speaking"
-        ? "Narrating"
-        : session.state === "thinking"
-          ? "Thinking"
-          : session.state === "connecting"
-            ? "Connecting"
-            : session.state === "ready"
-              ? "Ready"
-              : "Idle";
-
-  const msgCount = session.messages.filter((m: ChatMessage) => m.role === "user").length;
-
-  const dotColor =
-    session.state === "listening"
-      ? GREEN
-      : session.state === "speaking"
-        ? "#ffaa00"
-        : session.state === "thinking"
-          ? CYAN
-          : GREEN_DARK;
-
-  if (!session.started) {
-    return (
-      <>
-        <style>{CSS}</style>
-        <div
-          className="ic-crt fixed inset-0 overflow-hidden"
-          style={{
-            background: CRT_BG,
-            color: GREEN,
-            fontFamily: "monospace",
-            fontSize: "15px",
-            lineHeight: 1.6,
-            animation: "ic-flicker 4s infinite",
-          }}
-        >
-          <div
-            className="flex flex-col items-center justify-center h-full text-center p-10"
-            style={{ animation: "ic-boot 1.5s ease-out" }}
-          >
-            <div
-              className="text-[11px] whitespace-pre mb-8"
-              style={{ textShadow: "0 0 10px rgba(0,255,65,0.5)" }}
-            >
-              {ASCII_LOGO}
-            </div>
-            <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
-              INFOCOM INTERACTIVE FICTION
-            </div>
-            <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
-              Copyright (c) 1980 Infocom, Inc.
-            </div>
-            <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
-              All rights reserved.
-            </div>
-            <div className="text-[13px] mt-4" style={{ color: GREEN }}>
-              VOICE-ENABLED EDITION
-            </div>
-            <div className="text-[13px] mt-6" style={{ color: GREEN_DIM }}>
-              Release 88 / Serial No. 840726
-            </div>
-            <button
-              type="button"
-              className="mt-10 px-12 py-3.5 bg-transparent cursor-pointer uppercase tracking-[3px] font-mono text-base"
-              style={{
-                color: GREEN,
-                border: `1px solid ${GREEN}`,
-                animation: "ic-pulse 2s ease-in-out infinite",
-              }}
-              onClick={session.start}
-            >
-              Begin Adventure
-            </button>
-          </div>
-          <div
-            className="fixed inset-0 pointer-events-none z-12"
-            style={{
-              background:
-                "radial-gradient(ellipse at center, transparent 60%, rgba(0,0,0,0.4) 100%)",
-            }}
-          />
-        </div>
-      </>
-    );
-  }
-
+function CrtScreen({ children }: { children: ReactNode }) {
   return (
     <>
       <style>{CSS}</style>
@@ -166,94 +84,7 @@ function InfocomAdventure() {
           animation: "ic-flicker 4s infinite",
         }}
       >
-        <div className="flex flex-col h-full">
-          {/* Status bar */}
-          <div
-            className="flex items-center justify-between px-5 py-2 text-[13px] font-bold tracking-wider shrink-0"
-            style={{ background: GREEN, color: CRT_BG }}
-          >
-            <div className="flex gap-6">
-              <span>ZORK I</span>
-              <span>Moves: {msgCount}</span>
-            </div>
-            <span>Voice Adventure</span>
-          </div>
-
-          {session.error && (
-            <div className="px-5 py-2 text-xs" style={{ background: "#3a0000", color: "#ff4141" }}>
-              ERROR: {session.error.message}
-            </div>
-          )}
-
-          {/* Messages */}
-          <div
-            className="ic-messages flex-1 overflow-y-auto p-5"
-            style={{ scrollbarWidth: "thin", scrollbarColor: `${GREEN} #001a00` }}
-          >
-            {session.messages.map((msg: ChatMessage, i: number) => (
-              <div
-                key={i}
-                className={`mb-4 ${msg.role === "user" ? "ic-user-msg" : ""}`}
-                style={{
-                  textShadow:
-                    msg.role === "user"
-                      ? "0 0 5px rgba(0,204,255,0.3)"
-                      : "0 0 5px rgba(0,255,65,0.3)",
-                  color: msg.role === "user" ? CYAN : GREEN,
-                }}
-              >
-                {msg.content}
-              </div>
-            ))}
-            {session.userTranscript !== null && (
-              <div
-                className="ic-transcript italic"
-                style={{ color: "#007a1e", textShadow: "0 0 5px rgba(0,255,65,0.15)" }}
-              >
-                {session.userTranscript || "..."}
-              </div>
-            )}
-            <div ref={bottom} />
-          </div>
-
-          {/* Footer controls */}
-          <div
-            className="flex items-center justify-between px-5 py-2 shrink-0 gap-3"
-            style={{ borderTop: `1px solid ${GREEN_DARK}`, background: "#001100" }}
-          >
-            <div
-              className="flex items-center gap-2.5 text-xs uppercase tracking-wider"
-              style={{ color: GREEN_DIM }}
-            >
-              <div
-                className="w-2 h-2 rounded-full"
-                style={{
-                  background: dotColor,
-                  boxShadow: dotColor !== GREEN_DARK ? `0 0 6px ${dotColor}` : "none",
-                }}
-              />
-              <span>{stateLabel}</span>
-            </div>
-            <div className="flex gap-2">
-              <button
-                type="button"
-                className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
-                style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-                onClick={session.toggle}
-              >
-                {session.running ? "[P]ause" : "[R]esume"}
-              </button>
-              <button
-                type="button"
-                className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
-                style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-                onClick={session.reset}
-              >
-                [Q]uit
-              </button>
-            </div>
-          </div>
-        </div>
+        {children}
         <div
           className="fixed inset-0 pointer-events-none z-12"
           style={{
@@ -262,6 +93,159 @@ function InfocomAdventure() {
         />
       </div>
     </>
+  );
+}
+
+function InfocomAdventure() {
+  const session = useSession();
+  const bottom = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    bottom.current?.scrollIntoView({ behavior: "smooth" });
+  }, []);
+
+  const stateLabel = STATE_LABELS[session.state] ?? "Idle";
+
+  const msgCount = session.messages.filter((m: ChatMessage) => m.role === "user").length;
+
+  const dotColor = DOT_COLORS[session.state] ?? GREEN_DARK;
+
+  if (!session.started) {
+    return (
+      <CrtScreen>
+        <div
+          className="flex flex-col items-center justify-center h-full text-center p-10"
+          style={{ animation: "ic-boot 1.5s ease-out" }}
+        >
+          <div
+            className="text-[11px] whitespace-pre mb-8"
+            style={{ textShadow: "0 0 10px rgba(0,255,65,0.5)" }}
+          >
+            {ASCII_LOGO}
+          </div>
+          <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
+            INFOCOM INTERACTIVE FICTION
+          </div>
+          <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
+            Copyright (c) 1980 Infocom, Inc.
+          </div>
+          <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
+            All rights reserved.
+          </div>
+          <div className="text-[13px] mt-4" style={{ color: GREEN }}>
+            VOICE-ENABLED EDITION
+          </div>
+          <div className="text-[13px] mt-6" style={{ color: GREEN_DIM }}>
+            Release 88 / Serial No. 840726
+          </div>
+          <button
+            type="button"
+            className="mt-10 px-12 py-3.5 bg-transparent cursor-pointer uppercase tracking-[3px] font-mono text-base"
+            style={{
+              color: GREEN,
+              border: `1px solid ${GREEN}`,
+              animation: "ic-pulse 2s ease-in-out infinite",
+            }}
+            onClick={session.start}
+          >
+            Begin Adventure
+          </button>
+        </div>
+      </CrtScreen>
+    );
+  }
+
+  return (
+    <CrtScreen>
+      <div className="flex flex-col h-full">
+        {/* Status bar */}
+        <div
+          className="flex items-center justify-between px-5 py-2 text-[13px] font-bold tracking-wider shrink-0"
+          style={{ background: GREEN, color: CRT_BG }}
+        >
+          <div className="flex gap-6">
+            <span>ZORK I</span>
+            <span>Moves: {msgCount}</span>
+          </div>
+          <span>Voice Adventure</span>
+        </div>
+
+        {session.error && (
+          <div className="px-5 py-2 text-xs" style={{ background: "#3a0000", color: "#ff4141" }}>
+            ERROR: {session.error.message}
+          </div>
+        )}
+
+        {/* Messages */}
+        <div
+          className="ic-messages flex-1 overflow-y-auto p-5"
+          style={{ scrollbarWidth: "thin", scrollbarColor: `${GREEN} #001a00` }}
+        >
+          {session.messages.map((msg: ChatMessage, i: number) => (
+            <div
+              key={i}
+              className={`mb-4 ${msg.role === "user" ? "ic-user-msg" : ""}`}
+              style={{
+                textShadow:
+                  msg.role === "user"
+                    ? "0 0 5px rgba(0,204,255,0.3)"
+                    : "0 0 5px rgba(0,255,65,0.3)",
+                color: msg.role === "user" ? CYAN : GREEN,
+              }}
+            >
+              {msg.content}
+            </div>
+          ))}
+          {session.userTranscript !== null && (
+            <div
+              className="ic-transcript italic"
+              style={{ color: "#007a1e", textShadow: "0 0 5px rgba(0,255,65,0.15)" }}
+            >
+              {session.userTranscript || "..."}
+            </div>
+          )}
+          <div ref={bottom} />
+        </div>
+
+        {/* Footer controls */}
+        <div
+          className="flex items-center justify-between px-5 py-2 shrink-0 gap-3"
+          style={{ borderTop: `1px solid ${GREEN_DARK}`, background: "#001100" }}
+        >
+          <div
+            className="flex items-center gap-2.5 text-xs uppercase tracking-wider"
+            style={{ color: GREEN_DIM }}
+          >
+            <div
+              className="w-2 h-2 rounded-full"
+              style={{
+                background: dotColor,
+                boxShadow: dotColor !== GREEN_DARK ? `0 0 6px ${dotColor}` : "none",
+              }}
+            />
+            <span>{stateLabel}</span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
+              style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
+              onClick={session.toggle}
+            >
+              {session.running ? "[P]ause" : "[R]esume"}
+            </button>
+            <button
+              type="button"
+              className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
+              style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
+              onClick={session.reset}
+            >
+              [Q]uit
+            </button>
+          </div>
+        </div>
+      </div>
+    </CrtScreen>
   );
 }
 

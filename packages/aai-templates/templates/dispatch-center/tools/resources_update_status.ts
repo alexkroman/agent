@@ -33,11 +33,12 @@ export const resourcesUpdateStatus = tool({
     if (resource.assignedIncident) {
       const inc = state.incidents[resource.assignedIncident];
       if (inc) {
+        const ts = now();
         inc.timeline.push({
-          time: now(),
+          time: ts,
           event: `${args.callsign}: ${previousStatus} → ${args.status}${args.notes ? ` (${args.notes})` : ""}`,
         });
-        inc.updatedAt = now();
+        inc.updatedAt = ts;
       }
     }
 

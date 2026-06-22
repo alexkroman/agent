@@ -1,6 +1,5 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { IncidentType, Severity } from "../shared.ts";
 import { getApplicableProtocols } from "../shared.ts";
 
 export const opsProtocols = tool({
@@ -21,10 +20,7 @@ export const opsProtocols = tool({
     severity: z.enum(["critical", "urgent", "moderate", "minor"]).describe("Severity level"),
   }),
   async execute(args) {
-    const protocols = getApplicableProtocols(
-      args.incidentType as IncidentType,
-      args.severity as Severity,
-    );
+    const protocols = getApplicableProtocols(args.incidentType, args.severity);
     if (protocols.length === 0) {
       return {
         message: "No specific protocols for this combination. Use standard operating procedures.",

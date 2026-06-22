@@ -13,19 +13,10 @@ export const incidentGet = tool({
     const inc = state.incidents[args.incidentId];
     if (!inc) return { error: `Incident ${args.incidentId} not found` };
 
-    const assignedResourceDetails = inc.assignedResources
-      .map((rId) => {
-        const r = state.resources.find((r) => r.id === rId);
-        return r
-          ? {
-              callsign: r.callsign,
-              type: r.type,
-              status: r.status,
-              eta: r.eta,
-            }
-          : null;
-      })
-      .filter(Boolean);
+    const assignedResourceDetails = inc.assignedResources.flatMap((rId) => {
+      const r = state.resources.find((res) => res.id === rId);
+      return r ? [{ callsign: r.callsign, type: r.type, status: r.status, eta: r.eta }] : [];
+    });
 
     const ageMinutes = Math.round((now() - inc.createdAt) / 60_000);
 

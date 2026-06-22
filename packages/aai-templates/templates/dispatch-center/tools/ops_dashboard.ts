@@ -6,10 +6,11 @@ export const opsDashboard = tool({
   description:
     "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
   async execute(_args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
-    const state = await getState(ctx.kv);
-
     // Query KV for persisted incident snapshots via index
-    const incidentIndex = (await ctx.kv.get<string[]>(INCIDENT_INDEX_KEY)) ?? [];
+    const [state, incidentIndex] = await Promise.all([
+      getState(ctx.kv),
+      ctx.kv.get<string[]>(INCIDENT_INDEX_KEY).then((v) => v ?? []),
+    ]);
     const persistedSnapshots = (
       await Promise.all(
         incidentIndex.map(async (id) => {
@@ -19,13 +20,12 @@ export const opsDashboard = tool({
       )
     ).filter((s): s is { key: string; value: Incident } => s !== null);
 
-    const activeIncidents = Object.values(state.incidents)
+    const allIncidents = Object.values(state.incidents);
+    const activeIncidents = allIncidents
       .filter((i) => i.status !== "resolved")
       .sort((a, b) => b.triageScore - a.triageScore);
 
-    const resolvedCount = Object.values(state.incidents).filter(
-      (i) => i.status === "resolved",
-    ).length;
+    const resolvedCount = allIncidents.filter((i) => i.status === "resolved").length;
 
     const resourceSummary = {
       total: state.resources.length,

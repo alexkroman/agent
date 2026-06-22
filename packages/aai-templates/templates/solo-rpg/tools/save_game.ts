@@ -9,11 +9,12 @@ export const saveGame = tool({
     slot: z.string().describe("Save slot name, defaults to autosave").optional(),
   }),
   async execute(args, ctx: { kv: KV }) {
+    const slot = args.slot ?? "autosave";
     const state = await getGameState(ctx.kv);
-    await ctx.kv.set(`save:${args.slot ?? "autosave"}`, state);
+    await ctx.kv.set(`save:${slot}`, state);
     return {
       saved: true,
-      slot: args.slot ?? "autosave",
+      slot,
       name: state.playerName,
       scene: state.sceneCount,
     };

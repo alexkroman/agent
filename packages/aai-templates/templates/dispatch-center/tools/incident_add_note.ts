@@ -16,9 +16,10 @@ export const incidentAddNote = tool({
     if (!inc) return { error: `Incident ${args.incidentId} not found` };
 
     const entry = args.source ? `[${args.source}] ${args.note}` : args.note;
+    const ts = now();
     inc.notes.push(entry);
-    inc.timeline.push({ time: now(), event: entry });
-    inc.updatedAt = now();
+    inc.timeline.push({ time: ts, event: entry });
+    inc.updatedAt = ts;
     await saveState(ctx.kv, state);
 
     return {

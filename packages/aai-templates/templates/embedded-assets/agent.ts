@@ -28,12 +28,10 @@ export default agent({
       }),
       async execute(args) {
         const q = args.query.toLowerCase();
-        const match = faqs.find(
-          (f) =>
-            f.question.toLowerCase().includes(q) ||
-            q.includes(f.question.toLowerCase()) ||
-            f.answer.toLowerCase().includes(q),
-        );
+        const match = faqs.find((f) => {
+          const question = f.question.toLowerCase();
+          return question.includes(q) || q.includes(question) || f.answer.toLowerCase().includes(q);
+        });
         return match ?? { result: "No matching FAQ found." };
       },
     }),

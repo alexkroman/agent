@@ -15,15 +15,8 @@ export default agent({
       description: "Move to the next research phase (gather -> analyze -> respond)",
       async execute(_args, ctx) {
         const phase: string = (await ctx.kv.get("phase")) ?? "gather";
-        let nextPhase: string;
-
-        if (phase === "gather") {
-          nextPhase = "analyze";
-        } else if (phase === "analyze") {
-          nextPhase = "respond";
-        } else {
-          nextPhase = phase;
-        }
+        const next: Record<string, string> = { gather: "analyze", analyze: "respond" };
+        const nextPhase = next[phase] ?? phase;
 
         await ctx.kv.set("phase", nextPhase);
         return { phase: nextPhase };
@@ -36,8 +29,12 @@ export default agent({
         focus: z.string().describe("What aspect to focus the analysis on"),
       }),
       async execute(args, ctx) {
-        const sources: string[] = (await ctx.kv.get("sources")) ?? [];
-        const phase: string = (await ctx.kv.get("phase")) ?? "gather";
+        const [savedSources, savedPhase] = await Promise.all([
+          ctx.kv.get<string[]>("sources"),
+          ctx.kv.get<string>("phase"),
+        ]);
+        const sources: string[] = savedSources ?? [];
+        const phase: string = savedPhase ?? "gather";
 
         const userMessages = ctx.messages.filter((m) => m.role === "user");
         return {

@@ -24,25 +24,27 @@ export default agent({
         quantity: z.number().default(1),
       }),
       async execute(args, ctx) {
-        const pizzas: Pizza[] = (await ctx.kv.get("pizzas")) ?? [];
-        const nextId: number = (await ctx.kv.get("nextId")) ?? 1;
+        const [pizzas, nextId] = await Promise.all([
+          ctx.kv.get<Pizza[]>("pizzas").then((p) => p ?? []),
+          ctx.kv.get<number>("nextId").then((n) => n ?? 1),
+        ]);
 
         const pizza: Pizza = {
           id: nextId,
           size: args.size,
           crust: args.crust,
           toppings: args.toppings,
-          quantity: args.quantity ?? 1,
+          quantity: args.quantity,
         };
+        const updatedPizzas = [...pizzas, pizza];
 
-        await ctx.kv.set("pizzas", [...pizzas, pizza]);
-        await ctx.kv.set("nextId", nextId + 1);
+        await Promise.all([ctx.kv.set("pizzas", updatedPizzas), ctx.kv.set("nextId", nextId + 1)]);
 
-        const total = calculateTotal([...pizzas, pizza]);
+        const total = calculateTotal(updatedPizzas);
         const result = {
           added: pizza,
           orderTotal: `$${total.toFixed(2)}`,
-          itemCount: pizzas.length + 1,
+          itemCount: updatedPizzas.length,
         };
         ctx.send("order", result);
         return result;
