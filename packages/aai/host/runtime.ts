@@ -38,13 +38,11 @@ import { createMemoryVector } from "./memory-vector.ts";
 import { resolveApiKey, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
 import { resolveKv } from "./providers/resolve-kv.ts";
 import { resolveVector } from "./providers/resolve-vector.ts";
-import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
-import type { CreateS2sWebSocket } from "./s2s.ts";
+import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
 import {
-  type CreateOpenaiRealtimeWebSocket,
   createOpenaiRealtimeTransport,
   type OpenaiRealtimeToolSchema,
 } from "./transports/openai-realtime-transport.ts";
@@ -53,6 +51,13 @@ import { createS2sTransport } from "./transports/s2s-transport.ts";
 import type { Transport, TransportCallbacks } from "./transports/types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
+
+export type {
+  AgentRuntime,
+  Runtime,
+  RuntimeOptions,
+  SessionStartOptions,
+} from "./runtime-types.ts";
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
@@ -80,32 +85,6 @@ function resolveTtsApiKey(
   if (descriptorKind(tts) === RIME_KIND) return resolveApiKey("RIME_API_KEY", env);
   return resolveApiKey("CARTESIA_API_KEY", env);
 }
-
-// ─── Runtime adapter (formerly adapter.ts) ──────────────────────────────────
-
-/** Per-session options passed to {@link AgentRuntime.startSession}. */
-export type SessionStartOptions = {
-  skipGreeting?: boolean;
-  resumeFrom?: string;
-  logContext?: Record<string, string>;
-  onOpen?: () => void;
-  onClose?: () => void;
-  /** Called with session ID after session cleanup, for guest state cleanup. */
-  onSessionEnd?: (sessionId: string) => void;
-  /** Called with session ID and client sink after session setup. Used by sandbox to route custom events. */
-  onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
-};
-
-/**
- * Common interface for agent runtimes.
- *
- * Implemented by {@link createRuntime} and the platform sandbox.
- */
-export type AgentRuntime = {
-  startSession(ws: SessionWebSocket, opts?: SessionStartOptions): void;
-  shutdown(): Promise<void>;
-  readonly readyConfig: ReadyConfig;
-};
 
 // ─── Runtime implementation ──────────────────────────────────────────────────
 
@@ -143,111 +122,6 @@ function createLocalKv(): Kv {
 function createLocalVector(slug: string): Vector {
   return createMemoryVector({ namespace: slug });
 }
-
-/**
- * Configuration for {@link createRuntime}.
- *
- * Configures the agent, environment, KV store, logging, and S2S connection.
- *
- * @public
- */
-export type RuntimeOptions = {
-  // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
-  agent: AgentDef<any>;
-  env: Record<string, string>;
-  kv?: Kv | undefined;
-  /**
-   * Vector store. If omitted, an in-memory store is created. The
-   * runtime overrides this with `agent.vector` if set.
-   */
-  vector?: Vector | undefined;
-  /** Custom WebSocket factory for the S2S connection (useful for testing). */
-  createWebSocket?: CreateS2sWebSocket | undefined;
-  /** Custom WebSocket factory for the OpenAI Realtime connection (testing). */
-  createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
-  logger?: Logger | undefined;
-  s2sConfig?: S2SConfig | undefined;
-  /**
-   * Timeout in ms for `session.start()` (S2S connection setup).
-   * Defaults to 10 000 (10 s).
-   */
-  sessionStartTimeoutMs?: number | undefined;
-  /**
-   * Maximum time in milliseconds to wait for sessions to stop during
-   * {@link AgentRuntime.shutdown | shutdown()}. Defaults to `30_000` (30 s).
-   */
-  shutdownTimeoutMs?: number | undefined;
-  /**
-   * Override tool execution. When provided, `createRuntime` skips building
-   * in-process tool definitions and uses this function instead. Used by the
-   * platform sandbox to RPC tool calls to the isolate.
-   */
-  executeTool?: ExecuteTool | undefined;
-  /**
-   * Override tool schemas sent to the S2S API. Required when `executeTool`
-   * is provided (the host doesn't have the tool definitions to derive schemas).
-   */
-  toolSchemas?: ToolSchema[] | undefined;
-  /** System prompt guidance for builtin tools. Passed through in sandbox mode. */
-  toolGuidance?: string[] | undefined;
-  /**
-   * Pre-resolved builtin tool definitions. When provided alongside `executeTool`
-   * and `toolSchemas`, skips calling `resolveAllBuiltins` on the host.
-   */
-  builtinDefs?: Record<string, import("../sdk/types.ts").ToolDef> | undefined;
-  /**
-   * Override the fetch implementation used by built-in tools (web_search,
-   * visit_webpage, fetch_json). Defaults to `globalThis.fetch`.
-   *
-   * In platform mode, pass an SSRF-safe fetch to prevent requests to
-   * private/internal networks. In self-hosted mode, users may provide
-   * their own fetch wrapper.
-   */
-  fetch?: typeof globalThis.fetch | undefined;
-  /**
-   * STT provider. Accepts either a descriptor ({@link SttProvider},
-   * the normal production path) or a pre-resolved {@link SttOpener}
-   * (test escape hatch). Must be set together with `llm` and `tts` to
-   * route sessions through the pipeline path; leave all three unset for
-   * the default AssemblyAI Streaming Speech-to-Speech (S2S) path.
-   */
-  stt?: SttProvider | SttOpener | undefined;
-  /**
-   * LLM provider. Accepts either a descriptor ({@link LlmProvider},
-   * produced by factories like `anthropic(...)`) or a concrete Vercel AI
-   * SDK `LanguageModel` (self-hosted / test escape hatch).
-   */
-  llm?: LlmProvider | LanguageModel | undefined;
-  /**
-   * TTS provider. Accepts either a descriptor ({@link TtsProvider})
-   * or a pre-resolved {@link TtsOpener}.
-   */
-  tts?: TtsProvider | TtsOpener | undefined;
-};
-
-/**
- * The agent runtime returned by {@link createRuntime}.
- *
- * Satisfies {@link AgentRuntime} for use by transport code, and also exposes
- * lower-level helpers (`executeTool`, `hooks`, `toolSchemas`,
- * `createSession`) for testing and advanced usage.
- *
- * @public
- */
-export type Runtime = AgentRuntime & {
-  /** Execute a named tool with the given args, returning a JSON result string. */
-  executeTool: ExecuteTool;
-  /** Tool schemas registered with the S2S API (custom + built-in). */
-  toolSchemas: ToolSchema[];
-  /** Create a new voice session for a connected client (lower-level than startSession). */
-  createSession(opts: {
-    id: string;
-    agent: string;
-    client: ClientSink;
-    skipGreeting?: boolean;
-    resumeFrom?: string;
-  }): SessionCore;
-};
 
 /**
  * Create an agent runtime — the execution engine for a voice agent.

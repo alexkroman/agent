@@ -1,0 +1,7 @@
+{
+  "_comment": "Files allowed to exceed the line caps in check-file-length.mjs. The value is the file's grandfathered ceiling — a file may not grow past it, and the ceiling should only ever be lowered as files are split up. No SOURCE files are grandfathered; only a handful of large test files remain. Do not add new entries; refactor instead.",
+  "packages/aai-ui/session-core.test.ts": 772,
+  "packages/aai-server/sandbox-vm.test.ts": 770,
+  "packages/aai/host/runtime.test.ts": 728,
+  "packages/aai/host/ws-handler.test.ts": 717
+}

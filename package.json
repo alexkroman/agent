@@ -26,6 +26,8 @@
     "check": "bash scripts/check.sh",
     "check:local": "bash scripts/check.sh --local",
     "check:affected": "turbo run build typecheck lint test --affected --continue",
+    "check:hatches": "node scripts/check-escape-hatches.mjs",
+    "check:file-length": "node scripts/check-file-length.mjs",
     "check:knip": "knip",
     "check:publint": "turbo run check:publint",
     "check:publish-names": "node scripts/check-publish-names.mjs",

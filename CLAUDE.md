@@ -62,6 +62,32 @@ in one turbo call with `--continue` (shows all failures at once).
 `pnpm check:affected` uses turbo's `--affected` flag to only run tasks
 for packages changed since the default branch.
 
+### Quality ratchets
+
+Beyond lint/typecheck/test, `scripts/check.sh` runs two **ratchet gates**
+(both also runnable standalone) that hold the line on technical debt by
+comparing the branch against its merge-base with `origin/main`:
+
+- **`pnpm check:hatches`** (`scripts/check-escape-hatches.mjs`) — counts
+  static-analysis escape hatches (`@ts-expect-error`, `@ts-ignore`,
+  `@ts-nocheck`, `biome-ignore`, `eslint-disable`, `as any`) across
+  `packages/` and fails on any **net-new** total versus the merge base.
+  The baseline only ratchets down — removing a hatch lowers the bar for the
+  next branch, and you can't silently add one. Fix the underlying
+  type/lint error instead of suppressing it.
+- **`pnpm check:file-length`** (`scripts/check-file-length.mjs`) — caps
+  source files at 500 lines and test files at 700. Files that already
+  exceed the cap are grandfathered in `scripts/file-length-allowlist.json`,
+  which records each file's current ceiling; a grandfathered file may not
+  grow past its ceiling, and ceilings should only ever be lowered as files
+  are split up. New files must come in under the cap. Templates under
+  `packages/aai-templates/templates/` are exempt.
+
+These are pure git/fs checks (no build needed), so they run up front and
+fail fast. To tighten quality over time, lower the entries in the
+file-length allowlist and delete escape hatches — both baselines are
+designed to only move one direction.
+
 ## Architecture
 
 Five workspace packages under `packages/`:
