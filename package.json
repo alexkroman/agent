@@ -64,7 +64,7 @@
     "publint": "^0.3.20",
     "react": "^19.2.6",
     "sherif": "1.11.1",
-    "syncpack": "^14.3.1",
+    "syncpack": "^15.3.2",
     "toxiproxy-node-client": "^4.1.0",
     "turbo": "^2.9.12",
     "typescript": "^6.0.3",
