@@ -68,7 +68,7 @@
     "@ai-sdk/google": "^3.0.72",
     "@ai-sdk/groq": "^3.0.39",
     "@ai-sdk/mistral": "^3.0.36",
-    "@ai-sdk/openai": "^3.0.63",
+    "@ai-sdk/openai": "^4.0.5",
     "@ai-sdk/xai": "^3.0.89",
     "@cartesia/cartesia-js": "^3.0.0",
     "@deepgram/sdk": "^5.1.0",
