@@ -13,7 +13,7 @@
     "@alexkroman1/aai": "workspace:*",
     "@alexkroman1/aai-cli": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
-    "@types/react": "^19.2.14",
+    "@types/react": "^19.2.17",
     "zod": "^4.4.3"
   }
 }
