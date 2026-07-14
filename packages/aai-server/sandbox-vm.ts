@@ -214,6 +214,16 @@ function createConnection(child: ChildProcess): NdjsonConnection {
   if (!(child.stdout && child.stdin)) {
     throw new Error("Child process missing stdio");
   }
+  // A guest that dies mid-RPC (OOM-killed at the cgroup limit, crashed) leaves
+  // its stdio streams to emit EPIPE/ECONNRESET asynchronously. Without an
+  // `error` listener those become an uncaughtException that exits the whole
+  // multi-tenant host, so attach no-op handlers on both pipes.
+  child.stdin.on("error", () => {
+    /* guest died; RPC layer surfaces this via the readline close */
+  });
+  child.stdout.on("error", () => {
+    /* guest died; RPC layer surfaces this via the readline close */
+  });
   return createNdjsonConnection(child.stdout, child.stdin);
 }
 

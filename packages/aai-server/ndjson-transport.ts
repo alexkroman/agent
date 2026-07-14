@@ -103,7 +103,16 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
   const notificationHandlers = new Map<string, (params?: unknown) => void>();
 
   function send(msg: unknown): void {
-    writable.write(`${JSON.stringify(msg)}\n`);
+    // The peer (guest process) can die at any time — writing to its closed
+    // stdin would emit EPIPE/ERR_STREAM_DESTROYED. On a listener-less stream
+    // that becomes an uncaughtException and takes down the whole host, so
+    // never write to a dead stream and swallow any residual write error.
+    if (disposed || writable.destroyed || writable.writableEnded) return;
+    try {
+      writable.write(`${JSON.stringify(msg)}\n`);
+    } catch {
+      // Peer went away between the check and the write — nothing to do.
+    }
   }
 
   function rejectAllPending(reason: string): void {

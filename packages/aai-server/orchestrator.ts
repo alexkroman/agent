@@ -248,10 +248,28 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         return;
       }
 
+      // Release the slot exactly once. The raw socket's `close` fires in every
+      // outcome — client abort during the async resolve below (where
+      // handleUpgrade would otherwise destroy the socket without invoking its
+      // callback, leaking the slot forever), a failed upgrade, or a normal
+      // session end after upgrade — so it is the single reliable release point.
+      let released = false;
+      const releaseConn = () => {
+        if (released) return;
+        released = true;
+        connections.release();
+      };
+      // Node removes its own socket error listener before emitting `upgrade`;
+      // without one, a client RST during the async resolve becomes an
+      // unhandled `error` → uncaughtException → the whole host exits.
+      socket.on("error", () => {
+        /* handled via close/destroy below; presence prevents an uncaught throw */
+      });
+      socket.on("close", releaseConn);
+
       try {
         const result = await resolveUpgrade(req.url ?? "/");
         if (!result) {
-          connections.release();
           socket.destroy();
           return;
         }
@@ -263,7 +281,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
           touchSlot(opts.slots, slug);
           const startedAt = process.hrtime.bigint();
           ws.on("close", (code: number) => {
-            connections.release();
             const elapsedSec = Number(process.hrtime.bigint() - startedAt) / 1e9;
             metrics.sessionDuration.observe(elapsedSec);
             metrics.sessionsActive.dec({ slug });
@@ -281,7 +298,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
           );
         });
       } catch (err: unknown) {
-        connections.release();
         console.error("WebSocket open error:", err);
         socket.destroy();
       }

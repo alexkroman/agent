@@ -164,8 +164,11 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
         const params = raw as { sessionId: string; event: string; data: unknown };
         if (typeof params.sessionId !== "string" || typeof params.event !== "string") return;
         if (params.event.length > 256) return;
-        // Cap data payload at 64 KB to prevent memory abuse via WebSocket relay
-        if (JSON.stringify(params.data).length > 65_536) return;
+        // Cap data payload at 64 KB to prevent memory abuse via WebSocket relay.
+        // `data` may be undefined (event sent with no payload) — JSON.stringify
+        // returns undefined for it, so guard before reading `.length`.
+        const serializedData = JSON.stringify(params.data ?? null);
+        if (serializedData.length > 65_536) return;
         const sink = sessionSinks.get(params.sessionId);
         if (sink?.open) {
           sink.event({ type: "custom_event", event: params.event, data: params.data });

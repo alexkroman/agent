@@ -159,6 +159,23 @@ describe("createSandbox", () => {
     await sandbox.shutdown();
   });
 
+  it("client/send handler tolerates a notification with no data payload", async () => {
+    const sandbox = createSandbox(makeSandboxOptions());
+
+    await vi.waitFor(() => {
+      expect(mockConn.onNotification).toHaveBeenCalledWith("client/send", expect.any(Function));
+    });
+    const handler = mockConn.onNotification.mock.calls.find(
+      (c: unknown[]) => c[0] === "client/send",
+    )?.[1] as (raw: unknown) => void;
+
+    // `ctx.send("evt")` with no payload arrives with `data` omitted; the handler
+    // must not throw (JSON.stringify(undefined) is not a string) — a throw here
+    // would become an uncaughtException that exits the whole multi-tenant host.
+    expect(() => handler({ sessionId: "s1", event: "ping" })).not.toThrow();
+    await sandbox.shutdown();
+  });
+
   it("shutdown cleans up sandbox handle and agent runtime", async () => {
     const sandbox = createSandbox(makeSandboxOptions());
 
