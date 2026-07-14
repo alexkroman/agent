@@ -152,6 +152,10 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
     done() {
       if (!playNode) return Promise.resolve();
+      // The worklet reports completion from process(), which only runs while
+      // the context is rendering. If it's suspended/closed (e.g. a backgrounded
+      // tab), the 'stop' round-trip never happens — resolve now rather than hang.
+      if (ctx.state !== "running") return Promise.resolve();
       return new Promise<void>((resolve) => {
         onPlaybackStop = resolve;
         playNode?.port.postMessage({ event: "done" });
