@@ -424,7 +424,7 @@ defaults that affect agent behavior:
 
 | Default | Value | Where applied | Notes |
 | --- | --- | --- | --- |
-| `maxSteps` | 5 | `manifest.ts:58` | Max tool calls per reply. Prevents runaway tool loops. |
+| `maxSteps` | 5 (`DEFAULT_MAX_STEPS`) | `constants.ts` | Max tool calls per reply. Prevents runaway tool loops. |
 | `toolChoice` | `"auto"` | `manifest.ts:59` | LLM decides when to use tools vs respond directly. |
 | `idleTimeoutMs` | 300,000 (5 min) | `constants.ts:26` | `0` or non-finite disables the timer entirely. |
 | `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. |
