@@ -143,10 +143,7 @@ async function main(): Promise<void> {
     const results = await Promise.allSettled(stops);
     for (const r of results) {
       if (r.status === "rejected") {
-        const msg = errorMessage(r.reason);
-        if (!msg.includes("already disposed")) {
-          console.warn("Sandbox termination failed:", r.reason);
-        }
+        console.warn("Sandbox termination failed:", r.reason);
       }
     }
     nodeServer.close(() => process.exit(0));

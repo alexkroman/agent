@@ -30,23 +30,17 @@ export function getOutputMode(
 /**
  * Wrap a command function to handle output formatting.
  *
- * - `fn` does the work and returns a `CommandResult<T>`. It must not print.
- * - `humanRender` formats the result for human-readable TTY output.
+ * - `fn` does the work and returns a `CommandResult<T>`. Human-readable
+ *   output is printed inside `fn` itself.
  * - In JSON mode, writes exactly one JSON line to stdout.
  */
 export async function withOutput<T>(
   mode: OutputMode,
   fn: () => Promise<CommandResult<T>>,
-  humanRender: (result: CommandResult<T>) => void,
 ): Promise<void> {
   const result = await fn();
-  if (mode === "json") {
-    process.stdout.write(`${JSON.stringify(result)}\n`);
-    if (!result.ok) process.exit(1);
-  } else {
-    humanRender(result);
-    if (!result.ok) process.exit(1);
-  }
+  if (mode === "json") process.stdout.write(`${JSON.stringify(result)}\n`);
+  if (!result.ok) process.exit(1);
 }
 
 /** Create an ok result. */

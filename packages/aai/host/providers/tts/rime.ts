@@ -25,22 +25,12 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
+import { assertPcm16Rate, closeOnAbort, requireApiKey, waitForOpen } from "../_utils.ts";
 
 export interface RimeSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */
   readonly _ws: WebSocket;
-}
-
-const RIME_PCM16_RATES = [
-  8000, 16_000, 22_050, 24_000, 44_100, 48_000,
-] as const satisfies readonly number[];
-
-function assertSupportedSampleRate(rate: number): number {
-  if ((RIME_PCM16_RATES as readonly number[]).includes(rate)) return rate;
-  throw makeTtsError(
-    "tts_connect_failed",
-    `Rime TTS: unsupported sample rate ${rate}. Supported: ${RIME_PCM16_RATES.join(", ")}.`,
-  );
 }
 
 function base64ToPcm(data: string): Int16Array {
@@ -64,26 +54,6 @@ const QUIESCENCE_MS = 500;
 // so audio TTFB easily exceeds QUIESCENCE_MS. Wait longer for the FIRST
 // chunk; subsequent chunks revert to the shorter quiescence window.
 const FIRST_AUDIO_TIMEOUT_MS = 5000;
-
-function waitForOpen(ws: WebSocket): Promise<void> {
-  return new Promise<void>((resolve, reject) => {
-    const onOpen = () => {
-      ws.removeListener("error", onError);
-      resolve();
-    };
-    const onError = (err: Error) => {
-      ws.removeListener("open", onOpen);
-      reject(
-        makeTtsError(
-          "tts_connect_failed",
-          `Rime TTS: connect failed: ${err?.message ?? String(err)}`,
-        ),
-      );
-    };
-    ws.once("open", onOpen);
-    ws.once("error", onError);
-  });
-}
 
 // Extracted to a top-level function to keep `open()` under the cognitive
 // complexity limit; session state is threaded through via the ref callbacks.
@@ -122,15 +92,13 @@ export function openRime(opts: RimeOptions): TtsOpener {
   return {
     name: "rime",
     async open(openOpts: TtsOpenOptions): Promise<TtsSession> {
-      const apiKey = openOpts.apiKey || process.env.RIME_API_KEY;
-      if (!apiKey) {
-        throw makeTtsError(
-          "tts_auth_failed",
-          "Rime TTS: missing API key. Set RIME_API_KEY in the agent env.",
-        );
-      }
+      const apiKey = requireApiKey(openOpts.apiKey, "RIME_API_KEY", "Rime TTS", (msg) =>
+        makeTtsError("tts_auth_failed", msg),
+      );
 
-      const sampleRate = assertSupportedSampleRate(openOpts.sampleRate);
+      const sampleRate = assertPcm16Rate(openOpts.sampleRate, "Rime TTS", (msg) =>
+        makeTtsError("tts_connect_failed", msg),
+      );
       const model = opts.model ?? "mistv2";
       const lang = opts.language ?? "eng";
       const voice = opts.voice ?? RIME_DEFAULT_VOICE;
@@ -143,11 +111,18 @@ export function openRime(opts: RimeOptions): TtsOpener {
       } catch (cause) {
         throw makeTtsError(
           "tts_connect_failed",
-          `Rime TTS: failed to create WebSocket: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `Rime TTS: failed to create WebSocket: ${errorMessage(cause)}`,
         );
       }
 
-      await waitForOpen(ws);
+      try {
+        await waitForOpen(ws);
+      } catch (cause) {
+        throw makeTtsError(
+          "tts_connect_failed",
+          `Rime TTS: connect failed: ${errorMessage(cause)}`,
+        );
+      }
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
       let closed = false;
@@ -209,11 +184,7 @@ export function openRime(opts: RimeOptions): TtsOpener {
         }
       };
 
-      if (openOpts.signal.aborted) {
-        void close();
-      } else {
-        openOpts.signal.addEventListener("abort", () => void close(), { once: true });
-      }
+      closeOnAbort(openOpts.signal, close);
 
       const session: RimeSession = {
         sendText(text: string) {

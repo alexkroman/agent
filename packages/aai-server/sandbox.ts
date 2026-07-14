@@ -13,7 +13,7 @@
 
 import path from "node:path";
 import type { BuiltinTool, Kv, ToolChoice } from "@alexkroman1/aai";
-import { errorMessage, toolError } from "@alexkroman1/aai";
+import { DEFAULT_MAX_STEPS, errorMessage, toolError } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import {
   type AgentRuntime,
@@ -133,22 +133,12 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   };
 
   const builtins = resolveAllBuiltins(config.builtinTools ?? [], { fetch: safeFetch });
-  console.log(
-    `[diag] sandbox createRuntime ${JSON.stringify({
-      slug,
-      hasS2s: config.s2s !== undefined,
-      s2sKind: config.s2s?.kind,
-      mode: config.mode,
-      configKeys: Object.keys(config),
-      s2s: config.s2s,
-    })}`,
-  );
   const agentRuntime = createRuntime({
     agent: {
       name: config.name,
       systemPrompt: config.systemPrompt,
       greeting: config.greeting ?? "",
-      maxSteps: config.maxSteps ?? 5,
+      maxSteps: config.maxSteps ?? DEFAULT_MAX_STEPS,
       tools: {},
       ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
       ...(config.toolChoice ? { toolChoice: config.toolChoice satisfies ToolChoice } : {}),

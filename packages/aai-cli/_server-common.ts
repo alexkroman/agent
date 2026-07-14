@@ -5,16 +5,6 @@ import path from "node:path";
 import { parse as dotenvParse } from "dotenv";
 
 /**
- * Parse a `.env` file into a key→value record.
- *
- * Delegates to `dotenv.parse()` which handles quoted values, multiline
- * values, and comments.
- */
-export function parseEnvFile(content: string): Record<string, string> {
-  return dotenvParse(content);
-}
-
-/**
  * Build the `ctx.env` record that agent tools will see at runtime.
  *
  * Only variables explicitly declared in `.env` are included — matching

@@ -233,12 +233,18 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   // ─── Connection management ──────────────────────────────────────────────
 
-  function connect(opts?: { signal?: AbortSignal }): void {
-    updateState({ state: "connecting", error: null });
+  /** Abort the in-flight connection and release audio + WebSocket resources. */
+  function teardownConnection(): void {
     connectionController?.abort();
+    connectionController = null;
     cleanupAudio();
     conn.ws?.close();
     conn.ws = null;
+  }
+
+  function connect(opts?: { signal?: AbortSignal }): void {
+    updateState({ state: "connecting", error: null });
+    teardownConnection();
     conn.generation++;
     const controller = new AbortController();
     connectionController = controller;
@@ -327,11 +333,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   }
 
   function disconnect(): void {
-    connectionController?.abort();
-    connectionController = null;
-    cleanupAudio();
-    conn.ws?.close();
-    conn.ws = null;
+    teardownConnection();
     updateState({ state: "disconnected", running: false });
   }
 

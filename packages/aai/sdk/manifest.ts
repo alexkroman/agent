@@ -8,6 +8,7 @@
 
 import { z } from "zod";
 import { validateAllowedHostPattern } from "./allowed-hosts.ts";
+import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import {
   assertProviderTriple,
   type KvProvider,
@@ -156,7 +157,7 @@ export function parseManifest(input: unknown): Manifest {
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     greeting: parsed.greeting ?? DEFAULT_GREETING,
     builtinTools: parsed.builtinTools ?? [],
-    maxSteps: parsed.maxSteps ?? 5,
+    maxSteps: parsed.maxSteps ?? DEFAULT_MAX_STEPS,
     toolChoice: parsed.toolChoice ?? "auto",
     tools: parsed.tools ?? {},
     allowedHosts: parsed.allowedHosts ?? [],

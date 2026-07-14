@@ -151,6 +151,5 @@ export type Runtime = AgentRuntime & {
     agent: string;
     client: ClientSink;
     skipGreeting?: boolean;
-    resumeFrom?: string;
   }): SessionCore;
 };

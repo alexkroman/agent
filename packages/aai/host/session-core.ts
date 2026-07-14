@@ -6,6 +6,7 @@ import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
 import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
+import { errorMessage, toolError } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { Transport } from "./transports/types.ts";
@@ -225,9 +226,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
         });
         reply.pendingTools.push({
           callId,
-          result: JSON.stringify({
-            error: "Maximum tool steps reached. Please respond to the user now.",
-          }),
+          result: toolError("Maximum tool steps reached. Please respond to the user now."),
         });
         emit({ type: "tool_call_done", toolCallId: callId, result: "{}" });
         return;
@@ -238,8 +237,8 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
           reply.pendingTools.push({ callId, result });
           emit({ type: "tool_call_done", toolCallId: callId, result });
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          reply.pendingTools.push({ callId, result: JSON.stringify({ error: message }) });
+          const message = errorMessage(err);
+          reply.pendingTools.push({ callId, result: toolError(message) });
           emit({ type: "tool_call_done", toolCallId: callId, result: message });
         }
       })();

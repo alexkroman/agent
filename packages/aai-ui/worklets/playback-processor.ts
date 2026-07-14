@@ -5,22 +5,16 @@ const PlaybackProcessorWorklet = `
 class PlaybackProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    this.interrupted = false;
-    this.isDone = false;
-    this.playing = false;
     const rate = options.processorOptions?.sampleRate ?? 24000;
     // Wait for ~400ms of audio before starting.
     // If 'done' arrives first (short utterance), start immediately.
     this.jitterSamples = Math.floor(rate * 0.4);
-    // Carry-over byte for split samples across chunks
-    this.carry = null;
-    // Float32 sample buffer — 60s at the context sample rate
+    // Float32 sample buffer — 60s at the context sample rate. Allocated once
+    // for the node's lifetime; per-turn state resets via resetTurn().
     this.samples = new Float32Array(rate * 60);
-    this.writePos = 0;
-    this.readPos = 0;
     // Report playback position every ~50ms for word-level text sync
     this.progressInterval = Math.floor(rate * 0.05);
-    this.samplesSinceProgress = 0;
+    this.resetTurn();
 
     this.port.onmessage = (e) => {
       const d = e.data;
@@ -32,6 +26,27 @@ class PlaybackProcessor extends AudioWorkletProcessor {
         this.isDone = true;
       }
     };
+  }
+
+  // Reset per-turn state so the node is reusable across replies without
+  // reallocating the sample buffer or re-instantiating the worklet.
+  resetTurn() {
+    this.interrupted = false;
+    this.isDone = false;
+    this.playing = false;
+    // Carry-over byte for split samples across chunks
+    this.carry = null;
+    this.writePos = 0;
+    this.readPos = 0;
+    this.samplesSinceProgress = 0;
+  }
+
+  // End the current turn: notify the host and rearm for the next reply.
+  // Must NOT return false from process() — a processor that stops is dead
+  // for good, forcing a new node (and buffer) per reply.
+  stopTurn() {
+    this.port.postMessage({ event: 'stop' });
+    this.resetTurn();
   }
 
   ingestBytes(uint8) {
@@ -61,8 +76,9 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   process(inputs, outputs) {
     const out = outputs[0][0];
     if (this.interrupted) {
-      this.port.postMessage({ event: 'stop' });
-      return false;
+      out.fill(0);
+      this.stopTurn();
+      return true;
     }
 
     const avail = this.writePos - this.readPos;
@@ -90,11 +106,10 @@ class PlaybackProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // No data: output silence, stop only when done
+    // No data: output silence, end the turn only when done
     out.fill(0);
     if (this.isDone) {
-      this.port.postMessage({ event: 'stop' });
-      return false;
+      this.stopTurn();
     }
     return true;
   }

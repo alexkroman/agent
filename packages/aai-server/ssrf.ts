@@ -13,6 +13,9 @@ import pTimeout from "p-timeout";
 const BLOCKED_TLDS = [".internal", ".local", ".localhost"];
 const BLOCKED_HOSTS = new Set(["metadata.google.internal", "instance-data.ec2.internal"]);
 
+/** Thrown when a URL is rejected by SSRF policy (vs. an incidental failure). */
+class SsrfBlockedError extends Error {}
+
 export function isPrivateIp(ip: string): boolean {
   return bogon(ip);
 }
@@ -31,14 +34,14 @@ export async function resolveAndAssertPublic(url: string): Promise<string | null
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`Blocked request with disallowed protocol: ${parsed.protocol}`);
+    throw new SsrfBlockedError(`Blocked request with disallowed protocol: ${parsed.protocol}`);
   }
   if (BLOCKED_HOSTS.has(hostname) || BLOCKED_TLDS.some((tld) => hostname.endsWith(tld))) {
-    throw new Error(`Blocked request to reserved hostname: ${hostname}`);
+    throw new SsrfBlockedError(`Blocked request to reserved hostname: ${hostname}`);
   }
   if (isLiteralIp(hostname)) {
     if (isPrivateIp(hostname)) {
-      throw new Error(`Blocked request to private address: ${hostname}`);
+      throw new SsrfBlockedError(`Blocked request to private address: ${hostname}`);
     }
     return null;
   }
@@ -49,12 +52,16 @@ export async function resolveAndAssertPublic(url: string): Promise<string | null
       message: "DNS lookup timed out",
     });
     if (isPrivateIp(address)) {
-      throw new Error(`Blocked request: ${hostname} resolves to private address ${address}`);
+      throw new SsrfBlockedError(
+        `Blocked request: ${hostname} resolves to private address ${address}`,
+      );
     }
     return address;
   } catch (err) {
-    if (err instanceof Error && err.message.startsWith("Blocked request")) throw err;
-    throw new Error(`Blocked request: DNS resolution failed for ${hostname}`, { cause: err });
+    if (err instanceof SsrfBlockedError) throw err;
+    throw new SsrfBlockedError(`Blocked request: DNS resolution failed for ${hostname}`, {
+      cause: err,
+    });
   }
 }
 

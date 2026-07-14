@@ -101,9 +101,12 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
+  // Chunked to avoid one intermediate string per byte (bodies can be up to
+  // MAX_REQUEST_BODY_BYTES) while staying under the argument-count limit.
+  const CHUNK = 8192;
   let binary = "";
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i] as number);
+  for (let i = 0; i < bytes.byteLength; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
   }
   return btoa(binary);
 }

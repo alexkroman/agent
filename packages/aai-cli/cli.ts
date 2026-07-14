@@ -5,8 +5,15 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
 import { defineCommand, runMain } from "citty";
-import { CliError, type CommandResult, fail, getOutputMode, type OutputMode } from "./_output.ts";
-import { silenceOutput } from "./_ui.ts";
+import {
+  CliError,
+  type CommandResult,
+  fail,
+  getOutputMode,
+  type OutputMode,
+  withOutput,
+} from "./_output.ts";
+import { log, silenceOutput } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
 
 /** Shared arg definitions for citty commands. */
@@ -52,7 +59,6 @@ async function handleErrors(mode: OutputMode, fn: () => Promise<void>): Promise<
       process.stdout.write(`${JSON.stringify(result)}\n`);
       process.exit(1);
     }
-    const { log } = await import("./_ui.ts");
     log.error(errorMessage(err));
     process.exit(1);
   }
@@ -72,16 +78,7 @@ async function runCommand(
     silenceOutput();
     if (opts.setYes !== false) args.yes = true;
   }
-  const { withOutput } = await import("./_output.ts");
-  await handleErrors(mode, () =>
-    withOutput(
-      mode,
-      () => fn(mode),
-      () => {
-        /* human output handled inside each execute function */
-      },
-    ),
-  );
+  await handleErrors(mode, () => withOutput(mode, () => fn(mode)));
 }
 
 const init = defineCommand({

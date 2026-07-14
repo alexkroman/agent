@@ -32,23 +32,18 @@ describe("getOutputMode", () => {
 describe("withOutput", () => {
   it("writes JSON to stdout in json mode", async () => {
     const writeSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
-    const humanRender = vi.fn();
 
-    await withOutput("json", async () => ok({ slug: "test-abc" }), humanRender);
+    await withOutput("json", async () => ok({ slug: "test-abc" }));
 
     expect(writeSpy).toHaveBeenCalledWith('{"ok":true,"data":{"slug":"test-abc"}}\n');
-    expect(humanRender).not.toHaveBeenCalled();
     writeSpy.mockRestore();
   });
 
-  it("calls humanRender in human mode", async () => {
+  it("writes nothing in human mode", async () => {
     const writeSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
-    const humanRender = vi.fn();
-    const result = ok({ slug: "test-abc" });
 
-    await withOutput("human", async () => result, humanRender);
+    await withOutput("human", async () => ok({ slug: "test-abc" }));
 
-    expect(humanRender).toHaveBeenCalledWith(result);
     expect(writeSpy).not.toHaveBeenCalled();
     writeSpy.mockRestore();
   });
@@ -56,15 +51,23 @@ describe("withOutput", () => {
   it("writes JSON error and exits 1 in json mode on failure", async () => {
     const writeSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
-    const humanRender = vi.fn();
 
-    await withOutput("json", async () => fail("not_found", "Agent not found"), humanRender);
+    await withOutput("json", async () => fail("not_found", "Agent not found"));
 
     expect(writeSpy).toHaveBeenCalledWith(
       '{"ok":false,"error":"Agent not found","code":"not_found"}\n',
     );
     expect(exitSpy).toHaveBeenCalledWith(1);
     writeSpy.mockRestore();
+    exitSpy.mockRestore();
+  });
+
+  it("exits 1 in human mode on failure", async () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+
+    await withOutput("human", async () => fail("not_found", "Agent not found"));
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
     exitSpy.mockRestore();
   });
 });

@@ -7,7 +7,7 @@
  * evolve independently.
  */
 
-import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
+import { DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
 import {
   assertProviderTriple,
   ProviderDescriptorSchema,
@@ -51,7 +51,7 @@ export const IsolateConfigSchema = z
         fail("mode='pipeline' requires stt, llm, and tts to be set");
       }
     } catch (err) {
-      fail(err instanceof Error ? err.message : String(err));
+      fail(errorMessage(err));
     }
   });
 

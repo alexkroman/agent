@@ -27,28 +27,23 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
+import { assertPcm16Rate, closeOnAbort, type Pcm16Rate, requireApiKey } from "../_utils.ts";
 
 /** Map a numeric sample rate to the SDK's `AudioFormat` enum. */
+const AUDIO_FORMATS: Record<Pcm16Rate, AudioFormat> = {
+  8000: AudioFormat.PCM_8000,
+  16000: AudioFormat.PCM_16000,
+  22050: AudioFormat.PCM_22050,
+  24000: AudioFormat.PCM_24000,
+  44100: AudioFormat.PCM_44100,
+  48000: AudioFormat.PCM_48000,
+};
+
 function audioFormatFor(sampleRate: number): AudioFormat {
-  switch (sampleRate) {
-    case 8000:
-      return AudioFormat.PCM_8000;
-    case 16_000:
-      return AudioFormat.PCM_16000;
-    case 22_050:
-      return AudioFormat.PCM_22050;
-    case 24_000:
-      return AudioFormat.PCM_24000;
-    case 44_100:
-      return AudioFormat.PCM_44100;
-    case 48_000:
-      return AudioFormat.PCM_48000;
-    default:
-      throw makeSttError(
-        "stt_connect_failed",
-        `ElevenLabs STT: unsupported sample rate ${sampleRate}. Supported: 8000, 16000, 22050, 24000, 44100, 48000.`,
-      );
-  }
+  return AUDIO_FORMATS[
+    assertPcm16Rate(sampleRate, "ElevenLabs STT", (msg) => makeSttError("stt_connect_failed", msg))
+  ];
 }
 
 /** Build an {@link SttOpener} from resolved ElevenLabs descriptor options. */
@@ -56,13 +51,9 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
   return {
     name: "elevenlabs",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
-      const apiKey = openOpts.apiKey || process.env.ELEVENLABS_API_KEY;
-      if (!apiKey) {
-        throw makeSttError(
-          "stt_auth_failed",
-          "ElevenLabs STT: missing API key. Set ELEVENLABS_API_KEY in the agent env.",
-        );
-      }
+      const apiKey = requireApiKey(openOpts.apiKey, "ELEVENLABS_API_KEY", "ElevenLabs STT", (msg) =>
+        makeSttError("stt_auth_failed", msg),
+      );
 
       const client = new ElevenLabsClient({ apiKey });
 
@@ -78,7 +69,7 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
       } catch (cause) {
         throw makeSttError(
           "stt_connect_failed",
-          `ElevenLabs STT: connect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `ElevenLabs STT: connect failed: ${errorMessage(cause)}`,
         );
       }
 
@@ -122,11 +113,7 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
         }
       }
 
-      if (openOpts.signal.aborted) {
-        void close();
-      } else {
-        openOpts.signal.addEventListener("abort", () => void close(), { once: true });
-      }
+      closeOnAbort(openOpts.signal, close);
 
       return {
         sendAudio(pcm: Int16Array) {

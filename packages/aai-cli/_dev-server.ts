@@ -53,8 +53,7 @@ async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
  * Watch the agent directory for changes and call `onChange` when detected.
  * Debounces to avoid rapid restarts.
  */
-function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher[] {
-  const watchers: FSWatcher[] = [];
+function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher {
   const DEBOUNCE_MS = 300;
 
   const debouncedChange = pDebounce((filename: string | null) => {
@@ -68,9 +67,7 @@ function watchDirectory(dir: string, onChange: (filename: string | null) => void
     void debouncedChange(filename);
   }
 
-  watchers.push(watch(dir, { persistent: false }, (_event, filename) => handleChange(filename)));
-
-  return watchers;
+  return watch(dir, { persistent: false }, (_event, filename) => handleChange(filename));
 }
 
 // ─── Dev server ─────────────────────────────────────────────────────────────
@@ -132,8 +129,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   let restarting = false;
   let currentServer: AgentServer = agentServer;
   let currentVite = viteServer;
-  let currentEnv = env;
-  const watchers = watchDirectory(cwd, () => {
+  const watcher = watchDirectory(cwd, () => {
     if (restarting) return;
     restarting = true;
     void restart().finally(() => {
@@ -149,8 +145,8 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     }
     try {
       const newAgentDef = await loadAgentDef(cwd);
-      currentEnv = await resolveAgentEnv(cwd);
-      const newRuntime = createRuntime({ agent: newAgentDef, env: currentEnv });
+      const newEnv = await resolveAgentEnv(cwd);
+      const newRuntime = createRuntime({ agent: newAgentDef, env: newEnv });
       const newServer = createServer({
         runtime: newRuntime,
         name: newAgentDef.name,
@@ -165,7 +161,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   }
 
   return async () => {
-    for (const w of watchers) w.close();
+    watcher.close();
     if (currentVite) {
       await currentVite.close();
       currentVite = undefined;

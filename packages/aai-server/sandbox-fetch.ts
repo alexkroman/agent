@@ -7,7 +7,7 @@
  * an emit callback.
  */
 
-import { matchesAllowedHost } from "@alexkroman1/aai";
+import { errorMessage, matchesAllowedHost } from "@alexkroman1/aai";
 import { ssrfSafeFetch } from "./ssrf.ts";
 
 export const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -170,7 +170,7 @@ export function createFetchHandler(opts: FetchHandlerOptions) {
         emit({ type: "fetch/response-end", id });
       }
     } catch (err) {
-      emitError(id, err instanceof Error ? err.message : String(err), emit);
+      emitError(id, errorMessage(err), emit);
     } finally {
       activeCount--;
     }

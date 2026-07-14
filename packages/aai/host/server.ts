@@ -18,6 +18,7 @@ import { WebSocketServer } from "ws";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import { VectorRequestSchema } from "../sdk/protocol.ts";
+import { errorMessage } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
 import type { Runtime } from "./runtime.ts";
@@ -125,7 +126,7 @@ async function handleVectorPost(
     }
     sendJson(res, 200, { result });
   } catch (err) {
-    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    sendJson(res, 500, { error: errorMessage(err) });
   }
 }
 

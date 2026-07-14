@@ -202,9 +202,9 @@ export async function executeInit(
     skipDeploy?: boolean | undefined;
     server?: string | undefined;
   },
-  extra?: { quiet?: boolean | undefined; silent?: boolean | undefined },
+  extra?: { silent?: boolean | undefined },
 ): Promise<CommandResult<InitData>> {
-  const suppressUi = extra?.quiet ?? extra?.silent;
+  const suppressUi = extra?.silent;
   if (!suppressUi) {
     p.intro(colorize("cyanBright", "Create a new voice agent"));
   }
@@ -230,7 +230,7 @@ export async function executeInit(
 
   if (!installed) {
     log.warn("Skipping deploy because dependencies were not installed.");
-  } else if (!(opts.skipDeploy || extra?.quiet)) {
+  } else if (!opts.skipDeploy) {
     const deployInfo = await tryDeploy(cwd, opts.server, monorepoRoot);
     if (deployInfo) {
       deployed = true;

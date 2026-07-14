@@ -6,6 +6,7 @@
 
 import path from "node:path";
 import { DockerComposeEnvironment, Wait } from "testcontainers";
+import { deployAgent } from "./helpers.ts";
 
 export type LoadEnv = {
   serverUrl: string;
@@ -70,23 +71,10 @@ export async function deployTestAgent(
     maxSteps: 1,
     tools: {},
   };
-  const res = await fetch(`${serverUrl}/${slug}/deploy`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      env: { ASSEMBLYAI_API_KEY: "fake-key" },
-      worker: `export default ${JSON.stringify(agentConfig)};`,
-      clientFiles: {
-        "index.html": "<!DOCTYPE html><html><body>test</body></html>",
-      },
-      agentConfig,
-    }),
+  await deployAgent(serverUrl, slug, {
+    key,
+    worker: `export default ${JSON.stringify(agentConfig)};`,
+    agentConfig,
+    indexHtml: "<!DOCTYPE html><html><body>test</body></html>",
   });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Deploy failed (${res.status}): ${body}`);
-  }
 }

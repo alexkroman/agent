@@ -167,6 +167,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   let executeTool: ExecuteTool;
   let toolSchemas: ToolSchema[];
   let toolGuidance: string[] = [];
+  // Per-session tool state (self-hosted mode only); cleaned up on session end.
+  const stateMap = new Map<string, Record<string, unknown>>();
 
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
 
@@ -208,7 +210,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     toolSchemas = [...customSchemas, ...builtins.schemas];
     toolGuidance = builtins.guidance;
 
-    const stateMap = new Map<string, Record<string, unknown>>();
     const getState = (sid: string) => {
       if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
       return stateMap.get(sid) ?? {};
@@ -250,7 +251,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     agent: string;
     client: ClientSink;
     skipGreeting?: boolean;
-    resumeFrom?: string;
   };
 
   function buildPipelineTransport(args: {
@@ -270,7 +270,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       sessionConfig: {
         systemPrompt,
         greeting: agentConfig.greeting,
-        tools: toolSchemas,
       },
       toolSchemas,
       executeTool,
@@ -299,7 +298,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       sessionConfig: {
         systemPrompt,
         ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
-        tools: toolSchemas,
       },
       toolSchemas: toolSchemas as OpenaiRealtimeToolSchema[],
       toolChoice: agentConfig.toolChoice ?? "auto",
@@ -326,7 +324,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         tools: toolSchemas as import("./s2s.ts").S2sToolSchema[],
         ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
       },
-      toolSchemas: toolSchemas as import("./s2s.ts").S2sToolSchema[],
       callbacks,
       sid: sessionOpts.id,
       agent: sessionOpts.agent,
@@ -433,7 +430,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
           agent: agent.name,
           client,
           skipGreeting: startOpts?.skipGreeting ?? false,
-          ...(resumeFrom ? { resumeFrom } : {}),
         }),
       readyConfig,
       logger,
@@ -443,6 +439,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ...(startOpts?.onSinkCreated ? { onSinkCreated: startOpts.onSinkCreated } : {}),
       onSessionEnd: (sid) => {
         sinkMap.delete(sid);
+        stateMap.delete(sid);
         userOnSessionEnd?.(sid);
       },
       ...(sessionStartTimeoutMs !== undefined ? { sessionStartTimeoutMs } : {}),

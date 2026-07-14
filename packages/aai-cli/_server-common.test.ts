@@ -2,30 +2,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
-import { parseEnvFile, resolveServerEnv } from "./_server-common.ts";
+import { resolveServerEnv } from "./_server-common.ts";
 import { withTempDir } from "./_test-utils.ts";
-
-describe("parseEnvFile", () => {
-  test("parses KEY=VALUE lines into entries", () => {
-    expect(parseEnvFile("FOO=bar\nBAZ=qux")).toEqual({ FOO: "bar", BAZ: "qux" });
-  });
-
-  test("skips comments and blank lines", () => {
-    expect(parseEnvFile("# comment\n\nFOO=bar\n  # another")).toEqual({ FOO: "bar" });
-  });
-
-  test("handles empty values", () => {
-    expect(parseEnvFile("KEY=")).toEqual({ KEY: "" });
-  });
-
-  test("trims whitespace around keys and values", () => {
-    expect(parseEnvFile("  KEY  =  value  ")).toEqual({ KEY: "value" });
-  });
-
-  test("skips lines without =", () => {
-    expect(parseEnvFile("NOEQ\nFOO=bar")).toEqual({ FOO: "bar" });
-  });
-});
 
 describe("resolveServerEnv", () => {
   // Clean up env vars set directly by tests (e.g. shell-override test)

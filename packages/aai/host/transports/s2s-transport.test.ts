@@ -26,7 +26,6 @@ function makeTransportOptions(overrides: Partial<S2sTransportOptions> = {}): S2s
     apiKey: "k",
     s2sConfig: { wssUrl: "wss://fake", inputSampleRate: 16_000, outputSampleRate: 24_000 },
     sessionConfig: { systemPrompt: "test", tools: [] },
-    toolSchemas: [],
     callbacks: makeCallbacks(),
     sid: "sid-1",
     agent: "a",

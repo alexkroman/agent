@@ -10,6 +10,8 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
+import { closeOnAbort, requireApiKey } from "../_utils.ts";
 
 export interface AssemblyAISession extends SttSession {
   /** @internal Test-only: exposes the underlying SDK transcriber for fixture replay. */
@@ -25,13 +27,9 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
   return {
     name: "assemblyai",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
-      const apiKey = openOpts.apiKey || process.env.ASSEMBLYAI_API_KEY;
-      if (!apiKey) {
-        throw makeSttError(
-          "stt_auth_failed",
-          "AssemblyAI STT: missing API key. Set ASSEMBLYAI_API_KEY in the agent env.",
-        );
-      }
+      const apiKey = requireApiKey(openOpts.apiKey, "ASSEMBLYAI_API_KEY", "AssemblyAI STT", (msg) =>
+        makeSttError("stt_auth_failed", msg),
+      );
 
       const client = new AssemblyAI({ apiKey });
       const speechModel = resolveSpeechModel(opts.model ?? "u3pro-rt");
@@ -67,7 +65,7 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       } catch (cause) {
         throw makeSttError(
           "stt_connect_failed",
-          `AssemblyAI STT: connect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `AssemblyAI STT: connect failed: ${errorMessage(cause)}`,
         );
       }
 
@@ -81,11 +79,7 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
         }
       };
 
-      if (openOpts.signal.aborted) {
-        void close();
-      } else {
-        openOpts.signal.addEventListener("abort", () => void close(), { once: true });
-      }
+      closeOnAbort(openOpts.signal, close);
 
       const session: AssemblyAISession = {
         sendAudio(pcm: Int16Array) {

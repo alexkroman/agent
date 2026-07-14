@@ -56,7 +56,7 @@ import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { type SlotCache, touchSlot } from "./sandbox-slots.ts";
-import { DeployBodySchema, SecretUpdatesSchema } from "./schemas.ts";
+import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import type { BundleStore } from "./store-types.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
@@ -212,8 +212,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const connections = createConnectionTracker(MAX_CONNECTIONS);
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
-  // Enforced here (not just in middleware) because WebSocket upgrades bypass Hono routing.
-  const SLUG_WS_RE = /^\/([a-z0-9][a-z0-9_-]{0,62}[a-z0-9])\/websocket$/;
+  // Enforced here (not just in middleware) because WebSocket upgrades bypass
+  // Hono routing. Derived from VALID_SLUG_RE (anchors stripped) so the slug
+  // pattern has a single source of truth.
+  const SLUG_WS_RE = new RegExp(`^\\/(${VALID_SLUG_RE.source.slice(1, -1)})\\/websocket$`);
 
   async function resolveUpgrade(rawUrl: string) {
     const url = new URL(rawUrl, "http://localhost");
