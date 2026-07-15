@@ -1,9 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 /** Shared utility functions. */
 
+import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
+
 /** Extract an error message from an unknown thrown value. */
 export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const msg = (err as { message?: unknown }).message;
+    if (typeof msg === "string") return msg;
+  }
+  return String(err);
 }
 
 /** Extract a detailed error string (message + stack) for diagnostic logging. */
@@ -17,6 +24,15 @@ export function errorDetail(err: unknown): string {
 /** Return a JSON error string for the LLM: `'{"error":"<message>"}'`. */
 export function toolError(message: string): string {
   return JSON.stringify({ error: message });
+}
+
+/**
+ * Cap a tool result to the client wire limit. The wire schema rejects
+ * over-long `tool_call_done` results (silently dropping the whole frame), so
+ * every emitter must cap through here; the provider still gets the full value.
+ */
+export function capToolResult(result: string): string {
+  return result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
 }
 
 /** Text-based client asset extensions safe to carry as a UTF-8 string. */

@@ -34,7 +34,6 @@ export type TransportCallbacks = {
 export type TransportSessionConfig = {
   systemPrompt: string;
   greeting?: string;
-  tools?: unknown[];
   history?: Message[];
 };
 
@@ -53,8 +52,6 @@ export interface Transport {
   sendToolResult(callId: string, result: string): void;
   /** Cancel the currently in-flight reply (barge-in / client cancel). */
   cancelReply(): void;
-  /** Re-send session config (S2S only; pipeline is a no-op). */
-  updateSession?(config: TransportSessionConfig): void;
   /**
    * Seed prior conversation into the transport's own history on reconnect.
    * Pipeline mode owns the LLM message list, so client-resent history must

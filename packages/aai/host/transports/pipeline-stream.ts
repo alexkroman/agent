@@ -9,11 +9,11 @@
 // per-chunk mechanics.
 
 import type { ModelMessage } from "ai";
-import { MAX_TOOL_RESULT_CHARS, PIPELINE_FLUSH_TIMEOUT_MS } from "../../sdk/constants.ts";
+import { PIPELINE_FLUSH_TIMEOUT_MS } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
-import { errorMessage } from "../../sdk/utils.ts";
+import { capToolResult, errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
 
 /** Convert an internal conversation {@link Message} to a Vercel AI {@link ModelMessage}. */
@@ -66,20 +66,6 @@ export function flushTtsAndWait(args: {
     }, PIPELINE_FLUSH_TIMEOUT_MS);
     tts.flush();
   });
-}
-
-/**
- * View client audio bytes as PCM16 LE samples. Zero-copy when the view is
- * 2-byte aligned; otherwise copies, dropping a trailing odd byte.
- */
-export function bytesToPcm16(bytes: Uint8Array): Int16Array {
-  const { byteOffset: offset, byteLength: length } = bytes;
-  if (offset % 2 === 0 && length % 2 === 0) {
-    return new Int16Array(bytes.buffer, offset, length / 2);
-  }
-  const copy = new Uint8Array(length - (length % 2));
-  copy.set(bytes.subarray(0, copy.byteLength));
-  return new Int16Array(copy.buffer);
 }
 
 /** A single `fullStream` part from `streamText`. */
@@ -163,9 +149,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: Str
       (part as { result?: unknown }).result ??
       "";
     const str = typeof raw === "string" ? raw : JSON.stringify(raw);
-    const truncated =
-      str.length > MAX_TOOL_RESULT_CHARS ? str.slice(0, MAX_TOOL_RESULT_CHARS) : str;
-    onToolCallDone?.(callId, truncated);
+    onToolCallDone?.(callId, capToolResult(str));
   }
 
   return function handlePart(part: StreamPart): void {

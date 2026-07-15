@@ -76,7 +76,6 @@ exports[`protocol schema shapes > ClientEventSchema option shapes 1`] = `
   ],
   "user_transcript": [
     "text",
-    "turnOrder",
     "type",
   ],
 }
@@ -194,7 +193,6 @@ exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
   ],
   "user_transcript": [
     "text",
-    "turnOrder",
     "type",
   ],
 }

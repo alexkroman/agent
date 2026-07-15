@@ -3,24 +3,15 @@
 // and tool-step enforcement. Replaces session.ts + pipeline-session.ts.
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
-import {
-  DEFAULT_IDLE_TIMEOUT_MS,
-  DEFAULT_MAX_HISTORY,
-  MAX_TOOL_RESULT_CHARS,
-} from "../sdk/constants.ts";
+import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
 import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
-import { errorMessage, toolError } from "../sdk/utils.ts";
+import { capToolResult, errorMessage, toolError } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { Transport } from "./transports/types.ts";
 
 const REPLY_DONE_SLOW_THRESHOLD_MS = 50;
-
-/** Cap a tool result to the client wire limit (the provider still gets the full value). */
-function capResult(result: string): string {
-  return result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
-}
 
 type PendingTool = { callId: string; result: string };
 
@@ -105,19 +96,32 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   let history: Message[] = [];
   let turnPromise: Promise<void> | null = null;
   let idleTimer: NodeJS.Timeout | null = null;
+  let lastActivityMs = 0;
   let stopped = false;
 
   function emit(event: ClientEvent): void {
     opts.client.event(event);
   }
 
+  function onIdleDeadline(): void {
+    const remaining = lastActivityMs + idleMs - Date.now();
+    if (remaining > 0) {
+      // Activity arrived since the timer was armed — sleep out the remainder.
+      idleTimer = setTimeout(onIdleDeadline, remaining);
+      return;
+    }
+    idleTimer = null;
+    log.info("session idle timeout", { sid: opts.id });
+    emit({ type: "idle_timeout" });
+  }
+
+  // Called at audio-frame rate, so it must stay cheap: record the activity
+  // timestamp and keep one long-lived timer instead of re-arming a 5-minute
+  // timeout on every chunk.
   function resetIdle(): void {
     if (stopped || idleMs <= 0) return;
-    if (idleTimer) clearTimeout(idleTimer);
-    idleTimer = setTimeout(() => {
-      log.info("session idle timeout", { sid: opts.id });
-      emit({ type: "idle_timeout" });
-    }, idleMs);
+    lastActivityMs = Date.now();
+    if (idleTimer === null) idleTimer = setTimeout(onIdleDeadline, idleMs);
   }
 
   function pushMessages(...msgs: Message[]): void {
@@ -319,11 +323,11 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
           // truncate it or the client silently drops the whole message and the
           // UI tool-call block stays "pending" forever.
           activeReply.pendingTools.push({ callId, result });
-          emit({ type: "tool_call_done", toolCallId: callId, result: capResult(result) });
+          emit({ type: "tool_call_done", toolCallId: callId, result: capToolResult(result) });
         } catch (err) {
           const message = errorMessage(err);
           activeReply.pendingTools.push({ callId, result: toolError(message) });
-          emit({ type: "tool_call_done", toolCallId: callId, result: capResult(message) });
+          emit({ type: "tool_call_done", toolCallId: callId, result: capToolResult(message) });
         }
       })();
       turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);

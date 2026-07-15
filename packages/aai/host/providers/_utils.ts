@@ -65,15 +65,6 @@ export async function connectOrThrow<T>(
   }
 }
 
-export function messageOf(err: unknown): string {
-  if (err instanceof Error) return err.message;
-  if (typeof err === "object" && err !== null && "message" in err) {
-    const msg = (err as { message?: unknown }).message;
-    if (typeof msg === "string") return msg;
-  }
-  return String(err);
-}
-
 /** Scaffolding shared by every opener's session — see {@link createSessionShell}. */
 export interface SessionShell {
   /** True once `close()` has run (directly or via the abort signal). */
@@ -121,7 +112,7 @@ export function createSessionShell<E extends Error>(opts: {
     isClosed: () => closed,
     close,
     streamError,
-    onSocketError: (err) => streamError(messageOf(err)),
+    onSocketError: (err) => streamError(errorMessage(err)),
     onSocketClose: (code) => {
       // 1000 = normal closure.
       if (code !== undefined && code !== 1000) streamError(`socket closed ${code}`);

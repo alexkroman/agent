@@ -1,11 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
 // OpenAI Realtime API transport — implements Transport.
 
-import type { JSONSchema7 } from "json-schema";
-import WsWebSocket from "ws";
+import type { ToolSchema } from "../../sdk/_internal-types.ts";
 import { WS_OPEN } from "../../sdk/constants.ts";
 import type { OpenaiRealtimeOptions } from "../../sdk/providers/s2s/openai-realtime.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
+import {
+  type CreateHeaderWebSocket,
+  defaultCreateHeaderWebSocket,
+  type HeaderWebSocket,
+} from "../_ws.ts";
 import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
@@ -14,41 +18,17 @@ const DEFAULT_MODEL = "gpt-realtime-2";
 const DEFAULT_VOICE = "alloy";
 const DEFAULT_URL = "wss://api.openai.com/v1/realtime";
 
-export type OpenaiRealtimeWebSocket = {
-  readonly readyState: number;
-  send(data: string): void;
-  close(): void;
-  addEventListener(type: "open", fn: () => void): void;
-  addEventListener(type: "message", fn: (ev: { data: unknown }) => void): void;
-  addEventListener(type: "close", fn: (ev: { code?: number; reason?: string }) => void): void;
-  addEventListener(type: "error", fn: (ev: { message?: string }) => void): void;
-};
-
-export type CreateOpenaiRealtimeWebSocket = (
-  url: string,
-  opts: { headers: Record<string, string> },
-) => OpenaiRealtimeWebSocket;
-
-// Node's native WebSocket doesn't support custom headers; the `ws` package does.
-const defaultCreateOpenaiRealtimeWebSocket: CreateOpenaiRealtimeWebSocket = (url, opts) =>
-  new WsWebSocket(url, { headers: opts.headers }) as unknown as OpenaiRealtimeWebSocket;
-
-export type OpenaiRealtimeToolSchema = {
-  type: "function";
-  name: string;
-  description: string;
-  parameters: JSONSchema7;
-};
+export type OpenaiRealtimeWebSocket = HeaderWebSocket;
+export type CreateOpenaiRealtimeWebSocket = CreateHeaderWebSocket;
 
 type OpenaiRealtimeTransportOptions = {
   apiKey: string;
   options: OpenaiRealtimeOptions;
   sessionConfig: TransportSessionConfig;
-  toolSchemas: OpenaiRealtimeToolSchema[];
+  toolSchemas: ToolSchema[];
   toolChoice: "auto" | "required";
   callbacks: TransportCallbacks;
   sid: string;
-  agent: string;
   /** PCM sample rate (Hz) the client captures and sends — must match what we
    *  declare to OpenAI or input audio is interpreted at the wrong speed. */
   inputSampleRate: number;
@@ -62,7 +42,7 @@ type OpenaiRealtimeTransportOptions = {
 
 export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptions): Transport {
   const log = opts.logger ?? consoleLogger;
-  const createWs = opts.createWebSocket ?? defaultCreateOpenaiRealtimeWebSocket;
+  const createWs = opts.createWebSocket ?? defaultCreateHeaderWebSocket;
   const model = opts.options.model ?? DEFAULT_MODEL;
   const voice = opts.options.voice ?? DEFAULT_VOICE;
   const baseUrl = opts.options.url ?? DEFAULT_URL;

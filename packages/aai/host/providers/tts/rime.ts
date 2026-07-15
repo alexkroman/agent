@@ -30,6 +30,8 @@ import {
   type TtsSession,
 } from "../../../sdk/providers.ts";
 import { errorMessage } from "../../../sdk/utils.ts";
+import { base64ToUint8 } from "../../_base64.ts";
+import { bytesToPcm16 } from "../../_pcm.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
@@ -42,14 +44,6 @@ import {
 export interface RimeSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */
   readonly _ws: WebSocket;
-}
-
-function base64ToPcm(data: string): Int16Array {
-  const bytes = Buffer.from(data, "base64");
-  // Defensive: drop a trailing odd byte rather than throw on misalignment.
-  const evenLen = bytes.byteLength - (bytes.byteLength % 2);
-  if (evenLen === 0) return new Int16Array(0);
-  return new Int16Array(bytes.buffer, bytes.byteOffset, evenLen / 2);
 }
 
 interface RimeMessage {
@@ -82,7 +76,7 @@ function handleRimeMessage(
   }
 
   if (msg.type === "chunk" && typeof msg.data === "string") {
-    const pcm = base64ToPcm(msg.data);
+    const pcm = bytesToPcm16(base64ToUint8(msg.data));
     if (pcm.length > 0) {
       emitter.emit("audio", pcm);
       // Each chunk resets the quiescence window so `done` fires only after
@@ -168,9 +162,7 @@ export function openRime(opts: RimeOptions): TtsOpener {
         handleRimeMessage(raw, emitter, armQuiescence, () => quiescenceTimer !== null);
       });
 
-      ws.on("error", (err: Error) =>
-        shell.streamError(`Rime TTS stream error: ${err?.message ?? String(err)}`),
-      );
+      ws.on("error", (err: Error) => shell.onSocketError(err));
 
       ws.on("close", () => {
         if (shell.isClosed()) return;

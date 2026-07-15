@@ -231,20 +231,29 @@ type BuiltinToolOptions = {
 };
 
 type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
-type BuiltinEntry = [string, ToolDef & { guidance?: string }];
 
-function resolveBuiltin(name: string, opts?: BuiltinToolOptions): BuiltinEntry[] {
+/**
+ * Builtins that execute untrusted code and must ONLY run inside the guest
+ * sandbox (gVisor/Deno), never on the host. The runtime's sandbox-mode
+ * dispatcher consults this to delegate them over RPC like custom tools.
+ */
+export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string> = new Set(["run_code"]);
+
+function resolveBuiltin(
+  name: string,
+  opts?: BuiltinToolOptions,
+): (ToolDef & { guidance?: string }) | undefined {
   switch (name) {
     case "web_search":
-      return [["web_search", createWebSearch(opts?.fetch)]];
+      return createWebSearch(opts?.fetch);
     case "visit_webpage":
-      return [["visit_webpage", createVisitWebpage(opts?.fetch)]];
+      return createVisitWebpage(opts?.fetch);
     case "fetch_json":
-      return [["fetch_json", createFetchJson(opts?.fetch)]];
+      return createFetchJson(opts?.fetch);
     case "run_code":
-      return [["run_code", createRunCode()]];
+      return createRunCode();
     default:
-      return [];
+      return;
   }
 }
 
@@ -268,16 +277,16 @@ export function resolveAllBuiltins(
   const guidance: string[] = [];
 
   for (const name of names) {
-    for (const [toolName, def] of resolveBuiltin(name, opts)) {
-      defs[toolName] = def;
-      schemas.push({
-        type: "function",
-        name: toolName,
-        description: def.description,
-        parameters: toToolJsonSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
-      });
-      if (def.guidance) guidance.push(def.guidance);
-    }
+    const def = resolveBuiltin(name, opts);
+    if (!def) continue;
+    defs[name] = def;
+    schemas.push({
+      type: "function",
+      name,
+      description: def.description,
+      parameters: toToolJsonSchema(def.parameters ?? EMPTY_PARAMS) as ToolSchema["parameters"],
+    });
+    if (def.guidance) guidance.push(def.guidance);
   }
 
   return { defs, schemas, guidance };

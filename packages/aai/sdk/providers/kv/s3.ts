@@ -15,6 +15,10 @@ import type { KvProvider } from "../../providers.ts";
 
 export const S3_KV_KIND = "s3" as const;
 
+/** Agent env vars holding the S3 credentials the resolver reads at session start. */
+export const S3_KV_ACCESS_KEY_ID_ENV = "AWS_ACCESS_KEY_ID";
+export const S3_KV_SECRET_ACCESS_KEY_ENV = "AWS_SECRET_ACCESS_KEY";
+
 export interface S3KvOptions {
   bucket: string;
   /** Custom endpoint URL — required for non-AWS providers (Tigris, R2). */

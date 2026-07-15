@@ -19,7 +19,6 @@ import type { ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
 import {
   DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS,
   DEFAULT_RELAY_TOOL_TIMEOUT_MS,
-  WS_OPEN,
 } from "../sdk/constants.ts";
 import type { ClientEvent, HostConfig } from "../sdk/protocol.ts";
 import { HostConfigMessageSchema } from "../sdk/protocol.ts";
@@ -28,7 +27,7 @@ import { errorMessage, toolError } from "../sdk/utils.ts";
 import { createRuntime, type RuntimeOptions, type SessionStartOptions } from "./runtime.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
-import type { SessionWebSocket } from "./ws-handler.ts";
+import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 
 /**
  * Default `maxSteps` for a host agent. Host tasks (e.g. tau2 simulations) may
@@ -215,18 +214,13 @@ export type StartHostSessionOptions = {
   createRuntime?: (opts: RuntimeOptions) => ReturnType<typeof createRuntime>;
 };
 
-function sendEvent(ws: SessionWebSocket, event: ClientEvent): void {
-  if (ws.readyState !== WS_OPEN) return;
-  try {
-    ws.send(JSON.stringify(event));
-  } catch {
-    // Socket closed between the readyState check and send; nothing to do.
-  }
+function sendEvent(ws: SessionWebSocket, event: ClientEvent, log: Logger): void {
+  safeSend(ws, JSON.stringify(event), log);
 }
 
 function rejectHandshake(ws: SessionWebSocket, log: Logger, message: string): void {
   log.warn("host-mode handshake rejected", { message });
-  sendEvent(ws, { type: "error", code: "protocol", message });
+  sendEvent(ws, { type: "error", code: "protocol", message }, log);
   // Give the frame a tick to flush before closing.
   setTimeout(() => {
     try {
@@ -306,7 +300,7 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
 
     const { host } = result.data;
     const relay = createRelayExecuteTool({
-      send: (e) => sendEvent(ws, e),
+      send: (e) => sendEvent(ws, e, log),
       timeoutMs: opts.relayTimeoutMs,
     });
 

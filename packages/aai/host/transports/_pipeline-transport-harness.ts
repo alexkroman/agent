@@ -52,7 +52,6 @@ export function makeOpts(
 } {
   const opts: PipelineTransportOptions = {
     sid: "test-sid",
-    agent: "test-agent",
     stt,
     llm: createFakeLanguageModel({ script: [] }),
     tts,
