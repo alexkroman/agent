@@ -6,6 +6,20 @@ import { redisKv } from "../../sdk/providers/kv/redis.ts";
 import { s3Kv } from "../../sdk/providers/kv/s3.ts";
 import { resolveKv } from "./resolve-kv.ts";
 
+// Intercept only the redis driver package (an optional peer dep that is not
+// installed here); every other provider package loads for real.
+const redisDriverFactory = vi.hoisted(() => vi.fn());
+vi.mock("./resolve.ts", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("./resolve.ts")>();
+  return {
+    ...orig,
+    loadProviderPackage: (name: string, label: string) =>
+      name === "unstorage/drivers/redis"
+        ? redisDriverFactory
+        : orig.loadProviderPackage(name, label),
+  };
+});
+
 describe("resolveKv", () => {
   it("resolves memoryKv to a working in-memory KV", async () => {
     const kv = resolveKv(memoryKv(), {}, "p");
@@ -52,5 +66,38 @@ describe("resolveKv", () => {
 
   it("throws on unknown kind", () => {
     expect(() => resolveKv({ kind: "nope", options: {} }, {}, "p")).toThrow(/Unknown KV provider/);
+  });
+
+  it("defers loading the redis driver until first I/O, then reuses it", async () => {
+    const backing = new Map<string, unknown>();
+    redisDriverFactory.mockReset().mockReturnValue({
+      name: "fake-redis",
+      hasItem: async (key: string) => backing.has(key),
+      getItem: async (key: string) => backing.get(key) ?? null,
+      setItem: async (key: string, value: unknown) => {
+        backing.set(key, value);
+      },
+      removeItem: async (key: string) => {
+        backing.delete(key);
+      },
+      getKeys: async () => [...backing.keys()],
+    });
+
+    const kv = resolveKv(redisKv(), { REDIS_URL: "redis://localhost:6379" }, "p");
+    // Resolution alone must not touch the driver package — missing optional
+    // peer deps should only surface at use-time.
+    expect(redisDriverFactory).not.toHaveBeenCalled();
+
+    await kv.set("k", { n: 1 });
+    expect(redisDriverFactory).toHaveBeenCalledTimes(1);
+    expect(redisDriverFactory).toHaveBeenCalledWith(
+      expect.objectContaining({ url: "redis://localhost:6379" }),
+    );
+
+    expect(await kv.get("k")).toEqual({ n: 1 });
+    await kv.delete("k");
+    expect(await kv.get("k")).toBeNull();
+    // The resolved driver instance is cached across operations.
+    expect(redisDriverFactory).toHaveBeenCalledTimes(1);
   });
 });
