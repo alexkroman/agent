@@ -131,8 +131,7 @@ describe("prepareRootfs", () => {
   it("resets the cache on failure so a retry can succeed", async () => {
     mocks.existsSync.mockImplementation((p) => p === "/usr/local/bin/deno");
     mocks.copyFile.mockRejectedValueOnce(new Error("disk full"));
-    const { prepareRootfs, _resetRootfsCacheForTest } = await loadGvisor();
-    _resetRootfsCacheForTest();
+    const { prepareRootfs } = await loadGvisor();
     await expect(prepareRootfs("/srv/harness.mjs")).rejects.toThrow("disk full");
     // The failed promise must not be cached — the retry should succeed.
     await expect(prepareRootfs("/srv/harness.mjs")).resolves.toMatchObject({

@@ -24,7 +24,6 @@ const rpc = await import("./harness-rpc.ts");
 const {
   handleFetchNotification,
   handleHostResponse,
-  hostRequest,
   makeKvAdapter,
   makeVectorAdapter,
   pendingHostRequests,
@@ -105,9 +104,10 @@ describe("NDJSON writing", () => {
   });
 });
 
-describe("hostRequest / handleHostResponse", () => {
-  test("resolves with the host result", async () => {
-    const promise = hostRequest("kv/get", { key: "a" });
+describe("host RPC round-trip", () => {
+  // hostRequest is module-private; exercise it through the KV adapter.
+  test("writes a JSON-RPC request and resolves with the host result", async () => {
+    const promise = makeKvAdapter().get("a");
     const msg = lastMessage();
     expect(msg.method).toBe("kv/get");
     expect(msg.params).toEqual({ key: "a" });
@@ -116,7 +116,7 @@ describe("hostRequest / handleHostResponse", () => {
   });
 
   test("rejects when the host returns an error", async () => {
-    const promise = hostRequest("kv/get", { key: "a" });
+    const promise = makeKvAdapter().get("a");
     const { id } = lastMessage();
     handleHostResponse({ id: id as number, error: { code: 1, message: "kv down" } });
     await expect(promise).rejects.toThrow("kv down");
