@@ -14,6 +14,7 @@ const here = dirname(fileURLToPath(import.meta.url));
 interface FakeTranscriber {
   readonly params: Record<string, unknown>;
   readonly updateConfigurationCalls: Record<string, unknown>[];
+  readonly sentAudio: ArrayBufferLike[];
   on(ev: string, fn: (...args: unknown[]) => void): void;
   connect(): Promise<void>;
   close(): Promise<void>;
@@ -28,6 +29,7 @@ vi.mock("assemblyai", () => {
     return {
       params,
       updateConfigurationCalls: [],
+      sentAudio: [],
       on(ev, fn) {
         const arr = listeners.get(ev) ?? [];
         arr.push(fn);
@@ -39,8 +41,8 @@ vi.mock("assemblyai", () => {
       async close() {
         /* no-op */
       },
-      sendAudio(_data: ArrayBufferLike) {
-        /* no-op */
+      sendAudio(data: ArrayBufferLike) {
+        this.sentAudio.push(data);
       },
       updateConfiguration(config: Record<string, unknown>) {
         this.updateConfigurationCalls.push(config);
@@ -184,5 +186,54 @@ describe("assemblyAI STT adapter — voice focus", () => {
     expect(offFake.params.voiceFocus).toBeUndefined();
     expect("voiceFocus" in offFake.params).toBe(false);
     await off.close();
+  });
+});
+
+describe("assemblyAI STT adapter — frame coalescing (50–1000 ms)", () => {
+  // At 16 kHz mono PCM16: 20 ms = 320 samples, 50 ms = 800, 100 ms = 1600,
+  // 1000 ms = 16000. AssemblyAI streaming rejects frames outside [50, 1000] ms.
+  const SAMPLES_20MS = 320;
+  const SAMPLES_100MS = 1600;
+  const SAMPLES_1000MS = 16_000;
+
+  test("buffers sub-100 ms frames and forwards one ~100 ms frame once accumulated", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+
+    const frame20 = new Int16Array(SAMPLES_20MS); // reused: exercises the copy
+    for (let i = 0; i < 4; i++) session.sendAudio(frame20); // 80 ms — nothing yet
+    expect(fake.sentAudio.length).toBe(0);
+
+    session.sendAudio(frame20); // 5th frame → 100 ms accumulated → one flush
+    expect(fake.sentAudio.length).toBe(1);
+    expect(fake.sentAudio[0]?.byteLength).toBe(SAMPLES_100MS * 2);
+
+    await session.close();
+  });
+
+  test("splits an over-long chunk into frames capped at 1000 ms", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+
+    // 1000 ms + 70 ms in a single call: forwards one 1000 ms frame, carries 70 ms.
+    session.sendAudio(new Int16Array(SAMPLES_1000MS + 1120));
+    expect(fake.sentAudio.length).toBe(1);
+    expect(fake.sentAudio[0]?.byteLength).toBe(SAMPLES_1000MS * 2);
+
+    // close() flushes the ≥50 ms remainder.
+    await session.close();
+    expect(fake.sentAudio.length).toBe(2);
+    expect(fake.sentAudio[1]?.byteLength).toBe(1120 * 2);
+  });
+
+  test("drops a sub-50 ms tail on close (below AssemblyAI's floor)", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+
+    session.sendAudio(new Int16Array(SAMPLES_20MS)); // 20 ms, held below 100 ms
+    expect(fake.sentAudio.length).toBe(0);
+
+    await session.close(); // 20 ms < 50 ms floor → dropped, not forwarded
+    expect(fake.sentAudio.length).toBe(0);
   });
 });
