@@ -289,10 +289,17 @@ async function streamScript(
     }
   } finally {
     controller.enqueue({ type: "text-end", id: textId });
+    // A step that emits a tool call finishes with reason "tool-calls" (real
+    // providers do this); the SDK relies on it to accumulate the assistant
+    // tool-call message and its result into `response.messages` for the next
+    // step/turn. Reporting "stop" here silently drops tool context.
+    let finishReason = "stop";
+    if (signal?.aborted) finishReason = "other";
+    else if (script.some((p) => p.type === "tool-call")) finishReason = "tool-calls";
     controller.enqueue({
       type: "finish",
       usage: { inputTokens: 0, outputTokens: 0, totalTokens: 0 },
-      finishReason: signal?.aborted ? "other" : "stop",
+      finishReason,
     });
     controller.close();
   }

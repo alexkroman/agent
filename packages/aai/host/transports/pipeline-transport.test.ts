@@ -320,6 +320,42 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("persists tool calls and results across turns (LLM sees prior tool context)", async () => {
+      const { opts, stt, callbacks } = makeOpts({
+        // Turn 1: call a tool, then speak. Turn 2: a plain reply.
+        llm: createFakeLanguageModel({
+          steps: [
+            [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
+            [{ type: "text", text: "Found your account." }],
+            [{ type: "text", text: "Anything else?" }],
+          ],
+        }),
+        executeTool: vi.fn(async () => "USER_123"),
+        toolSchemas: [noopToolSchema],
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+
+      // Turn 1 — runs the tool and finishes speaking.
+      stt.last()?.fireFinal("look me up");
+      await vi.waitFor(() => {
+        expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Found your account.", false);
+      });
+      const callsAfterTurn1 = llm.calls.length;
+
+      // Turn 2 — its LLM request must carry turn 1's tool call AND its result,
+      // not just the spoken transcript.
+      stt.last()?.fireFinal("thanks");
+      await vi.waitFor(() => {
+        expect(llm.calls.length).toBeGreaterThan(callsAfterTurn1);
+      });
+      const turn2Prompt = JSON.stringify(llm.calls[callsAfterTurn1]?.prompt);
+      expect(turn2Prompt).toContain("lookup"); // the tool call
+      expect(turn2Prompt).toContain("USER_123"); // the tool result
+      await t.stop();
+    });
+
     test("full assistant reply is pushed via sttSession.updateAgentContext after the turn", async () => {
       const { opts, stt, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script: [{ type: "text", text: "Sure!" }] }),
