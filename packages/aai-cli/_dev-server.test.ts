@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { existsSync, type FSWatcher, watch } from "node:fs";
+import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
@@ -29,6 +29,30 @@ const {
 // Wire mockCreateServer to return the mock server object
 mockCreateServer.mockReturnValue({ listen: mockListen, close: mockClose });
 
+// Fake chokidar: captures the watched dir, the `ignored` matcher, and the
+// "all" event callback so tests can fire synthetic change events.
+const { chokidarState, mockChokidarWatch } = vi.hoisted(() => {
+  const chokidarState = {
+    allCallback: undefined as ((event: string, filePath: string) => void) | undefined,
+    ignored: undefined as ((filePath: string) => boolean) | undefined,
+    close: vi.fn().mockResolvedValue(undefined),
+    watchedDir: undefined as string | undefined,
+  };
+  const mockChokidarWatch = vi.fn(
+    (dir: string, opts: { ignored?: (filePath: string) => boolean }) => {
+      chokidarState.watchedDir = dir;
+      chokidarState.ignored = opts.ignored;
+      return {
+        on: (event: string, cb: (event: string, filePath: string) => void) => {
+          if (event === "all") chokidarState.allCallback = cb;
+        },
+        close: chokidarState.close,
+      };
+    },
+  );
+  return { chokidarState, mockChokidarWatch };
+});
+
 // ─── Module mocks ───────────────────────────────────────────────────────────
 
 vi.mock("node:fs", async (importOriginal) => {
@@ -36,7 +60,22 @@ vi.mock("node:fs", async (importOriginal) => {
   return {
     ...actual,
     existsSync: vi.fn().mockReturnValue(false),
-    watch: vi.fn().mockReturnValue({ close: vi.fn() }),
+  };
+});
+
+vi.mock("chokidar", () => ({
+  watch: mockChokidarWatch,
+}));
+
+// Deterministic port selection: always return the first candidate port.
+vi.mock("get-port", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("get-port")>();
+  return {
+    ...actual,
+    default: vi.fn(async (opts?: { port?: Iterable<number> }) => {
+      const first = opts?.port?.[Symbol.iterator]().next().value;
+      return first ?? 0;
+    }),
   };
 });
 
@@ -88,11 +127,20 @@ async function writeAgentTs(dir: string, name = "test-agent"): Promise<void> {
   );
 }
 
+/** Fire a synthetic chokidar change event for a path inside `dir`. */
+function fireChange(dir: string, relPath: string): void {
+  chokidarState.allCallback?.("change", path.join(dir, relPath));
+}
+
 // ─── Setup ──────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
   vi.mocked(existsSync).mockReturnValue(false);
-  vi.mocked(watch).mockReturnValue({ close: vi.fn() } as unknown as FSWatcher);
+  chokidarState.allCallback = undefined;
+  chokidarState.ignored = undefined;
+  chokidarState.watchedDir = undefined;
+  chokidarState.close = vi.fn().mockResolvedValue(undefined);
+  mockChokidarWatch.mockClear();
   mockCreateRuntime.mockReturnValue({ runtime: "mock" });
   mockCreateServer.mockReturnValue({ listen: mockListen, close: mockClose });
   mockListen.mockResolvedValue(undefined);
@@ -132,17 +180,12 @@ describe("startDevServer", () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
 
-      const mockWatcherClose = vi.fn();
-      vi.mocked(watch).mockReturnValue({
-        close: mockWatcherClose,
-      } as unknown as FSWatcher);
-
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
       expect(typeof cleanup).toBe("function");
 
       await cleanup();
 
-      expect(mockWatcherClose).toHaveBeenCalled();
+      expect(chokidarState.close).toHaveBeenCalled();
       expect(mockClose).toHaveBeenCalled();
     });
   });
@@ -227,7 +270,14 @@ describe("startDevServer", () => {
 
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 
-      expect(watch).toHaveBeenCalledWith(dir, { persistent: false }, expect.any(Function));
+      expect(mockChokidarWatch).toHaveBeenCalledWith(
+        dir,
+        expect.objectContaining({
+          ignoreInitial: true,
+          persistent: false,
+          ignored: expect.any(Function),
+        }),
+      );
 
       await cleanup();
     });
@@ -287,59 +337,18 @@ describe("startDevServer", () => {
 });
 
 describe("file watcher filtering", () => {
-  test("watcher ignores .aai directory changes", async () => {
+  test("chokidar ignored matcher filters .aai and node_modules paths", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
 
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op default for watcher callback
-      let watchCallback: (event: string, filename: string | null) => void = () => {};
-      vi.mocked(watch).mockImplementation(
-        // fs.watch has multiple overloads; cast to match the 3-arg variant used by _dev-server
-        ((_dir: string, _opts: unknown, cb: unknown) => {
-          watchCallback = cb as typeof watchCallback;
-          return { close: vi.fn() } as unknown as FSWatcher;
-        }) as typeof watch,
-      );
-
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 
-      mockClose.mockClear();
-      mockCreateRuntime.mockClear();
-
-      // Trigger with .aai path — should be ignored
-      watchCallback("change", ".aai/cache");
-
-      // Wait longer than the 300ms debounce
-      await new Promise((r) => setTimeout(r, 500));
-
-      expect(mockClose).not.toHaveBeenCalled();
-
-      await cleanup();
-    });
-  });
-
-  test("watcher ignores node_modules changes", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op default for watcher callback
-      let watchCallback: (event: string, filename: string | null) => void = () => {};
-      vi.mocked(watch).mockImplementation(
-        // fs.watch has multiple overloads; cast to match the 3-arg variant used by _dev-server
-        ((_dir: string, _opts: unknown, cb: unknown) => {
-          watchCallback = cb as typeof watchCallback;
-          return { close: vi.fn() } as unknown as FSWatcher;
-        }) as typeof watch,
-      );
-
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-      mockClose.mockClear();
-
-      watchCallback("change", "node_modules/pkg/index.js");
-
-      await new Promise((r) => setTimeout(r, 500));
-
-      expect(mockClose).not.toHaveBeenCalled();
+      const ignored = chokidarState.ignored;
+      expect(ignored).toBeDefined();
+      expect(ignored?.(path.join(dir, ".aai", "cache"))).toBe(true);
+      expect(ignored?.(path.join(dir, "node_modules", "pkg", "index.js"))).toBe(true);
+      expect(ignored?.(path.join(dir, "agent.ts"))).toBe(false);
+      expect(ignored?.(path.join(dir, "tools", "search.ts"))).toBe(false);
 
       await cleanup();
     });
@@ -349,16 +358,6 @@ describe("file watcher filtering", () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
 
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op default for watcher callback
-      let watchCallback: (event: string, filename: string | null) => void = () => {};
-      vi.mocked(watch).mockImplementation(
-        // fs.watch has multiple overloads; cast to match the 3-arg variant used by _dev-server
-        ((_dir: string, _opts: unknown, cb: unknown) => {
-          watchCallback = cb as typeof watchCallback;
-          return { close: vi.fn() } as unknown as FSWatcher;
-        }) as typeof watch,
-      );
-
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 
       mockClose.mockClear();
@@ -367,7 +366,7 @@ describe("file watcher filtering", () => {
       mockListen.mockClear();
 
       // Trigger with a regular file change
-      watchCallback("change", "agent.ts");
+      fireChange(dir, "agent.ts");
 
       // Wait for the 300ms debounce + full async restart sequence
       await vi.waitFor(
@@ -388,16 +387,6 @@ describe("file watcher filtering", () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
 
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: no-op default for watcher callback
-      let watchCallback: (event: string, filename: string | null) => void = () => {};
-      vi.mocked(watch).mockImplementation(
-        // fs.watch has multiple overloads; cast to match the 3-arg variant used by _dev-server
-        ((_dir: string, _opts: unknown, cb: unknown) => {
-          watchCallback = cb as typeof watchCallback;
-          return { close: vi.fn() } as unknown as FSWatcher;
-        }) as typeof watch,
-      );
-
       const cleanup = await startDevServer({ cwd: dir, port: 3000 });
 
       // After initial load, make validation throw on next reload
@@ -407,7 +396,7 @@ describe("file watcher filtering", () => {
 
       mockClose.mockClear();
 
-      watchCallback("change", "agent.ts");
+      fireChange(dir, "agent.ts");
 
       await vi.waitFor(
         () => {

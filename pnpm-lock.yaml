@@ -125,6 +125,9 @@ importers:
       nanoevents:
         specifier: ^9.1.0
         version: 9.1.0
+      p-event:
+        specifier: ^7.1.0
+        version: 7.1.0
       p-timeout:
         specifier: ^7.0.1
         version: 7.0.1
@@ -177,6 +180,9 @@ importers:
       '@clack/prompts':
         specifier: ^1.7.0
         version: 1.7.0
+      chokidar:
+        specifier: ^5.0.0
+        version: 5.0.0
       citty:
         specifier: ^0.2.2
         version: 0.2.2
@@ -189,6 +195,9 @@ importers:
       execa:
         specifier: ^9.6.1
         version: 9.6.1
+      get-port:
+        specifier: ^7.2.0
+        version: 7.2.0
       giget:
         specifier: ^3.3.0
         version: 3.3.0
@@ -205,9 +214,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      get-port:
-        specifier: ^7.2.0
-        version: 7.2.0
       playwright:
         specifier: ^1.61.1
         version: 1.61.1
@@ -4360,6 +4366,10 @@ packages:
 
   p-debounce@5.1.0:
     resolution: {integrity: sha512-3DNQmB7HPRMSuZ9P8JQFzEr7156s1S5Lqpi3mSrsZe5AHvl4ONfGrdB5azWqeOpNejQiemgQBkyU+IDKR5nwyg==}
+    engines: {node: '>=20'}
+
+  p-event@7.1.0:
+    resolution: {integrity: sha512-/lkPs5W1aC3cp6vqZefpdosOn65J571sWodyfOQiF0+tmDCpU+H8Atwpu0vQROCVUlZuToDN5eyTLsMLLc54mg==}
     engines: {node: '>=20'}
 
   p-filter@2.1.0:
@@ -9639,6 +9649,10 @@ snapshots:
   p-cancelable@2.1.1: {}
 
   p-debounce@5.1.0: {}
+
+  p-event@7.1.0:
+    dependencies:
+      p-timeout: 7.0.1
 
   p-filter@2.1.0:
     dependencies:

@@ -79,6 +79,7 @@
     "html-to-text": "^10.0.0",
     "mime-types": "^3.0.2",
     "nanoevents": "^9.1.0",
+    "p-event": "^7.1.0",
     "p-timeout": "^7.0.1",
     "unstorage": "^1.17.5",
     "ws": "^8.21.1",
