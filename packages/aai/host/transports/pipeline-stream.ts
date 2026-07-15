@@ -8,13 +8,23 @@
 // lifecycle/turn orchestration while this module owns the per-part and
 // per-chunk mechanics.
 
-import type { ModelMessage } from "ai";
+import {
+  type LanguageModel,
+  type ModelMessage,
+  stepCountIs,
+  streamText,
+  type Tool,
+  type ToolCallRepairFunction,
+  type ToolSet,
+} from "ai";
 import { PIPELINE_FLUSH_TIMEOUT_MS, PIPELINE_PLAYBACK_GRACE_MS } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
-import type { Message } from "../../sdk/types.ts";
+import type { Message, ToolChoice } from "../../sdk/types.ts";
 import { capToolResult, errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
+import { smoothTextStream } from "./pipeline-smooth.ts";
+import type { TransportCallbacks } from "./types.ts";
 
 /** Estimated client-side playback clock — see {@link createPlaybackClock}. */
 export type PlaybackClock = {
@@ -57,6 +67,11 @@ export function createPlaybackClock(sampleRateHz: number): PlaybackClock {
 export function toModelMessage(m: Message): ModelMessage {
   if (m.role === "user") return { role: "user", content: m.content };
   return { role: "assistant", content: m.content };
+}
+
+/** Count whitespace-delimited words in an interim transcript. */
+export function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
 }
 
 /**
@@ -227,4 +242,105 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: Str
         return;
     }
   };
+}
+
+/** Parameters for {@link consumeLlmStream}, threading session state explicitly. */
+export interface ConsumeLlmStreamParams {
+  /** LLM provider (Vercel AI SDK LanguageModel). */
+  llm: LanguageModel;
+  /** System prompt for the turn. */
+  systemPrompt: string;
+  /** Conversation history in Vercel AI SDK ModelMessage form. */
+  messages: ModelMessage[];
+  /** Tool set bound to the transport's executeTool. */
+  tools: Record<string, Tool>;
+  /** Tool selection policy passed to `streamText`. */
+  toolChoice: ToolChoice;
+  /** LLM sampling temperature; omitted entirely from streamText when unset. */
+  temperature: number | undefined;
+  /** Repairs malformed tool-call arguments by re-asking the model. */
+  repairToolCall: ToolCallRepairFunction<ToolSet>;
+  /** Max LLM tool-call steps for this turn. */
+  maxSteps: number;
+  /** Forwards text to the active TTS session (no-op if none). */
+  sendTtsText: (text: string) => void;
+  /** Tool-call/tool-result observability hooks, forwarded to SessionCore. */
+  callbacks: Pick<TransportCallbacks, "onToolCall" | "onToolCallDone">;
+  /** Report an LLM-stream error. */
+  emitError: (code: SessionErrorCode, message: string) => void;
+  log: Logger;
+  sid: string;
+  /** Aborts the LLM stream (turn cancellation / barge-in). */
+  ctl: AbortController;
+  /** Receives each assistant text delta (accumulated into the transcript). */
+  onDelta: (delta: string) => void;
+}
+
+/**
+ * Run one `streamText` turn against the LLM, fan its stream parts out via
+ * {@link createStreamPartHandler}, and return the accumulated response
+ * messages (for history) once the stream completes. Resolves `undefined` on
+ * abort or unrecoverable stream error.
+ */
+export async function consumeLlmStream(
+  params: ConsumeLlmStreamParams,
+): Promise<ModelMessage[] | undefined> {
+  const {
+    llm,
+    systemPrompt,
+    messages,
+    tools,
+    toolChoice,
+    temperature,
+    repairToolCall,
+    maxSteps,
+    sendTtsText,
+    callbacks,
+    emitError,
+    log,
+    sid,
+    ctl,
+    onDelta,
+  } = params;
+  try {
+    const result = streamText({
+      model: llm,
+      system: systemPrompt,
+      messages,
+      tools,
+      toolChoice,
+      // Temperature only when set — Claude 5 ignores it and warns.
+      ...(temperature !== undefined ? { temperature } : {}),
+      // Word-coalesce text for TTS, keeping thinking signatures (see pipeline-smooth.ts).
+      experimental_transform: smoothTextStream(),
+      experimental_repairToolCall: repairToolCall,
+      stopWhen: stepCountIs(maxSteps),
+      abortSignal: ctl.signal,
+    });
+    const handlePart = createStreamPartHandler({
+      onDelta,
+      sendTtsText,
+      onToolCall: callbacks.onToolCall,
+      onToolCallDone: callbacks.onToolCallDone,
+      emitError,
+      log,
+      sid,
+    });
+    for await (const part of result.fullStream) {
+      if (ctl.signal.aborted) break;
+      handlePart(part);
+    }
+    if (ctl.signal.aborted) return;
+    // Gather every step's response messages (assistant tool-call + `tool`
+    // result + text) so tool context carries into the next turn. Top-level
+    // `result.response.messages` is final-step only and drops the tool call.
+    const steps = await result.steps;
+    return steps.flatMap((step) => step.response.messages);
+  } catch (err: unknown) {
+    if (!ctl.signal.aborted) {
+      const msg = errorMessage(err);
+      log.error("LLM streamText failed", { error: msg, sid });
+      emitError("llm", msg);
+    }
+  }
 }

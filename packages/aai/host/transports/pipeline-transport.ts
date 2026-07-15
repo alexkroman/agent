@@ -7,7 +7,7 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
-import { type LanguageModel, type ModelMessage, stepCountIs, streamText } from "ai";
+import type { LanguageModel, ModelMessage } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
   DEFAULT_MAX_STEPS,
@@ -32,19 +32,14 @@ import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
-import { smoothTextStream } from "./pipeline-smooth.ts";
 import {
+  countWords,
   createPlaybackClock,
-  createStreamPartHandler,
   DEFAULT_HOLD_PHRASE,
   flushTtsAndWait,
+  consumeLlmStream as runLlmStream,
 } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
-
-/** Count whitespace-delimited words in an interim transcript. */
-function countWords(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
-}
 
 /** Configuration for {@link createPipelineTransport}. */
 export interface PipelineTransportOptions {
@@ -228,52 +223,27 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     terminate();
   }
 
-  async function consumeLlmStream(
+  const consumeLlmStream = (
     ctl: AbortController,
     onDelta: (delta: string) => void,
-  ): Promise<ModelMessage[] | undefined> {
-    try {
-      const result = streamText({
-        model: opts.llm,
-        system: systemPrompt,
-        messages: history.llm,
-        tools,
-        toolChoice,
-        // Temperature only when set — Claude 5 ignores it and warns.
-        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
-        // Word-coalesce text for TTS, keeping thinking signatures (see pipeline-smooth.ts).
-        experimental_transform: smoothTextStream(),
-        experimental_repairToolCall: repairToolCall,
-        stopWhen: stepCountIs(maxSteps),
-        abortSignal: ctl.signal,
-      });
-      const handlePart = createStreamPartHandler({
-        onDelta,
-        sendTtsText: (text) => ttsSession?.sendText(text),
-        onToolCall: callbacks.onToolCall,
-        onToolCallDone: callbacks.onToolCallDone,
-        emitError,
-        log,
-        sid: opts.sid,
-      });
-      for await (const part of result.fullStream) {
-        if (ctl.signal.aborted) break;
-        handlePart(part);
-      }
-      if (ctl.signal.aborted) return;
-      // Gather every step's response messages (assistant tool-call + `tool`
-      // result + text) so tool context carries into the next turn. Top-level
-      // `result.response.messages` is final-step only and drops the tool call.
-      const steps = await result.steps;
-      return steps.flatMap((step) => step.response.messages);
-    } catch (err: unknown) {
-      if (!ctl.signal.aborted) {
-        const msg = errorMessage(err);
-        log.error("LLM streamText failed", { error: msg, sid: opts.sid });
-        emitError("llm", msg);
-      }
-    }
-  }
+  ): Promise<ModelMessage[] | undefined> =>
+    runLlmStream({
+      llm: opts.llm,
+      systemPrompt,
+      messages: history.llm,
+      tools,
+      toolChoice,
+      temperature: opts.temperature,
+      repairToolCall,
+      maxSteps,
+      sendTtsText: (text) => ttsSession?.sendText(text),
+      callbacks,
+      emitError,
+      log,
+      sid: opts.sid,
+      ctl,
+      onDelta,
+    });
 
   /** Per-turn TTS drain — see flushTtsAndWait in pipeline-stream.ts. */
   function drainTts(signal: AbortSignal): Promise<void> {
