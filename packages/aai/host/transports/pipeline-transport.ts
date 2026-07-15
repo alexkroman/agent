@@ -14,7 +14,6 @@ import {
   DEFAULT_MAX_STEPS,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
-  PIPELINE_FLUSH_TIMEOUT_MS,
 } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type {
@@ -32,7 +31,7 @@ import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
-import { bytesToPcm16, createStreamPartHandler } from "./pipeline-stream.ts";
+import { bytesToPcm16, createStreamPartHandler, flushTtsAndWait } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 /** Configuration for {@link createPipelineTransport}. */
@@ -115,6 +114,15 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const sttSubs: Unsubscribe[] = [];
   const ttsSubs: Unsubscribe[] = [];
 
+  // Built once per session, not per turn: per-call aborts still track the
+  // owning turn because streamText forwards its own abortSignal into each
+  // execute's options, which takes precedence in toVercelTools.
+  const tools = toVercelTools(toolSchemas, {
+    executeTool,
+    sessionId: opts.sid,
+    messages: () => history.conversation,
+  });
+
   function chainTurn(p: Promise<void>): void {
     turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
   }
@@ -142,6 +150,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     abortInFlightTurn();
     callbacks.onCancelled();
     sessionAbort.abort();
+    // Close whatever was adopted before the failure (e.g. TTS went live and
+    // started the greeting, then STT's open failed) — it must not outlive
+    // the terminate. Providers also close on the abort signal; this covers
+    // openers wired after the signal check.
+    void sttSession?.close().catch(() => undefined);
+    void ttsSession?.close().catch(() => undefined);
   }
 
   function onSttPartial(_text: string): void {
@@ -231,41 +245,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     }
   }
 
-  // Resolves on TTS `done`, signal abort, or PIPELINE_FLUSH_TIMEOUT_MS elapsed.
-  // `done` is anonymous, so this wait leans on the TtsEvents contract that it
-  // never fires for a cancelled turn (see TtsEvents.done in sdk/providers.ts);
-  // a provider leaking a stale one would end the next turn's reply early.
-  function flushTtsAndWait(signal: AbortSignal): Promise<void> {
-    const tts = ttsSession;
-    if (!tts) return Promise.resolve();
-    if (signal.aborted) return Promise.resolve();
-    return new Promise<void>((resolve) => {
-      let off: Unsubscribe | null = null;
-      let timer: ReturnType<typeof setTimeout> | null = null;
-      const cleanup = () => {
-        if (off) {
-          off();
-          off = null;
-        }
-        if (timer) {
-          clearTimeout(timer);
-          timer = null;
-        }
-        signal.removeEventListener("abort", onAbort);
-      };
-      const finish = () => {
-        cleanup();
-        resolve();
-      };
-      const onAbort = () => finish();
-      signal.addEventListener("abort", onAbort, { once: true });
-      off = tts.on("done", finish);
-      timer = setTimeout(() => {
-        log.warn("TTS flush timeout", { sid: opts.sid, timeoutMs: PIPELINE_FLUSH_TIMEOUT_MS });
-        finish();
-      }, PIPELINE_FLUSH_TIMEOUT_MS);
-      tts.flush();
-    });
+  /** Per-turn TTS drain — see flushTtsAndWait in pipeline-stream.ts. */
+  function drainTts(signal: AbortSignal): Promise<void> {
+    return flushTtsAndWait({ tts: ttsSession, signal, log, sid: opts.sid });
   }
 
   async function runTurn(userText: string): Promise<void> {
@@ -276,13 +258,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     const ctl = new AbortController();
     turnController = ctl;
-
-    const tools = toVercelTools(toolSchemas, {
-      executeTool,
-      sessionId: opts.sid,
-      messages: () => history.conversation,
-      signal: ctl.signal,
-    });
 
     let accumulated = "";
     const responseMessages = await consumeLlmStream(ctl, history.llm, tools, (delta) => {
@@ -310,7 +285,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // tool-call-only turn sends no text to the TTS context, so the provider
       // never emits `done` and flushTtsAndWait would burn the full
       // PIPELINE_FLUSH_TIMEOUT_MS (~10s) on every silent turn.
-      await flushTtsAndWait(ctl.signal);
+      await drainTts(ctl.signal);
 
       if (ctl.signal.aborted) {
         finishTurn(ctl);
@@ -342,7 +317,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // support the mid-stream hook.
     sttSession?.updateAgentContext?.(text);
 
-    await flushTtsAndWait(ctl.signal);
+    await drainTts(ctl.signal);
 
     if (ctl.signal.aborted) {
       finishTurn(ctl);
@@ -391,37 +366,68 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     ttsSubs.push(session.on("error", onTtsError));
   }
 
+  /**
+   * Open one provider side and adopt it the moment it lands (closing it
+   * instead when the session aborted mid-open). `onAdopted` runs right after
+   * a live adoption — this is what lets the greeting start on TTS without
+   * waiting for STT.
+   */
+  async function openSide<S>(
+    which: "stt" | "tts",
+    open: () => Promise<S>,
+    adopt: (session: S, teardown: boolean) => Promise<void>,
+    onAdopted?: () => void,
+  ): Promise<"ok" | "failed"> {
+    let session: S;
+    try {
+      session = await open();
+    } catch (reason) {
+      reportOpenRejection(which, reason);
+      return "failed";
+    }
+    const aborted = sessionAbort.signal.aborted;
+    await adopt(session, aborted);
+    if (!aborted) onAdopted?.();
+    return "ok";
+  }
+
+  // STT and TTS open concurrently and each side goes live as soon as it
+  // lands, so first greeting audio isn't gated on the slower connect
+  // (usually STT). The trade: if the other side then fails, terminate()
+  // cuts a just-started greeting short instead of never starting it.
   async function openProviders(): Promise<void> {
-    const [sttResult, ttsResult] = await Promise.allSettled([
-      opts.stt.open({
-        sampleRate: sttSampleRate,
-        apiKey: opts.providerKeys.stt,
-        sttPrompt: opts.sttPrompt,
-        // Seed the agent's opening line as connect-time context (e.g.
-        // AssemblyAI `agent_context`) — providers that don't support it, or
-        // whose model doesn't qualify, ignore this field.
-        agentContext: sessionConfig.greeting,
-        signal: sessionAbort.signal,
-      }),
-      opts.tts.open({
-        sampleRate: ttsSampleRate,
-        apiKey: opts.providerKeys.tts,
-        signal: sessionAbort.signal,
-      }),
+    const [sttOutcome, ttsOutcome] = await Promise.all([
+      openSide(
+        "stt",
+        () =>
+          opts.stt.open({
+            sampleRate: sttSampleRate,
+            apiKey: opts.providerKeys.stt,
+            sttPrompt: opts.sttPrompt,
+            // Seed the agent's opening line as connect-time context (e.g.
+            // AssemblyAI `agent_context`) — providers that don't support it,
+            // or whose model doesn't qualify, ignore this field.
+            agentContext: sessionConfig.greeting,
+            signal: sessionAbort.signal,
+          }),
+        adoptStt,
+      ),
+      openSide(
+        "tts",
+        () =>
+          opts.tts.open({
+            sampleRate: ttsSampleRate,
+            apiKey: opts.providerKeys.tts,
+            signal: sessionAbort.signal,
+          }),
+        adoptTts,
+        onAudioReady,
+      ),
     ]);
 
-    if (sttResult.status === "rejected") reportOpenRejection("stt", sttResult.reason);
-    if (ttsResult.status === "rejected") reportOpenRejection("tts", ttsResult.reason);
-
-    const aborted = sessionAbort.signal.aborted;
-    const sttFailed = sttResult.status === "rejected";
-    const ttsFailed = ttsResult.status === "rejected";
-    const teardown = aborted || sttFailed || ttsFailed;
-
-    if (sttResult.status === "fulfilled") await adoptStt(sttResult.value, teardown);
-    if (ttsResult.status === "fulfilled") await adoptTts(ttsResult.value, teardown);
-
-    if (!aborted && (sttFailed || ttsFailed)) terminate();
+    if (!sessionAbort.signal.aborted && (sttOutcome === "failed" || ttsOutcome === "failed")) {
+      terminate();
+    }
   }
 
   function onAudioReady(): void {
@@ -457,12 +463,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       sttSubs.length = 0;
       ttsSubs.length = 0;
       if (turnPromise !== null) await turnPromise;
-      await sttSession?.close().catch(() => {
-        /* already closed */
-      });
-      await ttsSession?.close().catch(() => {
-        /* already closed */
-      });
+      // Close both provider sockets concurrently; allSettled swallows
+      // already-closed rejections.
+      await Promise.allSettled([sttSession?.close(), ttsSession?.close()]);
     },
 
     sendUserAudio(bytes: Uint8Array): void {

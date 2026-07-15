@@ -18,7 +18,9 @@ import type { Logger } from "./runtime-config.ts";
 
 export type { ExecuteTool } from "../sdk/_internal-types.ts";
 
-const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+// setImmediate rather than setTimeout(0): same yield-to-I/O semantics without
+// Node's ~1ms timer clamp — saves a couple of ms on every tool call.
+const yieldTick = (): Promise<void> => new Promise((r) => setImmediate(r));
 
 type ExecuteToolCallOptions = {
   tool: ToolDef;
