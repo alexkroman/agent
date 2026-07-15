@@ -179,13 +179,16 @@ describe("SDK integration: AgentDef → tool execution", () => {
 
     const exec = createRuntime({ agent, env: {} });
     expect(await exec.executeTool("custom", {}, "s1", [])).toBe("custom result");
+    // run_code is registered as a builtin, but in the self-hosted path (no
+    // sandbox) it must NOT execute on the host — it only runs inside the guest
+    // sandbox. Invoking it here returns the guard error, not code output.
     const codeResult = await exec.executeTool(
       "run_code",
       { code: 'console.log("from builtin")' },
       "s1",
       [],
     );
-    expect(codeResult).toBe("from builtin");
+    expect(codeResult).toContain("only available in the sandboxed runtime");
     const names = exec.toolSchemas.map((s) => s.name);
     expect(names).toContain("custom");
     expect(names).toContain("run_code");
