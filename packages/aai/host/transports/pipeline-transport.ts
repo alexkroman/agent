@@ -32,7 +32,11 @@ import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
 import { smoothTextStream } from "./pipeline-smooth.ts";
-import { createStreamPartHandler, flushTtsAndWait } from "./pipeline-stream.ts";
+import {
+  createPlaybackClock,
+  createStreamPartHandler,
+  flushTtsAndWait,
+} from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 /** Configuration for {@link createPipelineTransport}. */
@@ -110,6 +114,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // LLM sees, incl. tool calls/results). See pipeline-history.ts.
   const history = createPipelineHistory(sessionConfig.history);
   let turnPromise: Promise<void> | null = null;
+  // Tracks when the client is estimated to finish playing forwarded TTS audio,
+  // so barge-in keeps working after the server-side turn is done but buffered
+  // audio is still playing client-side (see createPlaybackClock).
+  const playbackClock = createPlaybackClock(ttsSampleRate);
   const sttSubs: Unsubscribe[] = [];
   const ttsSubs: Unsubscribe[] = [];
 
@@ -135,6 +143,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     turnController?.abort();
     turnController = null;
     ttsSession?.cancel();
+    // Every abort path ends with the client flushing its playback buffer
+    // (`cancelled` for barge-in/client cancel, `reset` for reset, teardown
+    // for terminate), so the estimated-playback clock restarts from zero.
+    playbackClock.reset();
   }
 
   /** Shared turn tail — clear the controller unless a newer turn replaced it. */
@@ -159,7 +171,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   function onSttPartial(_text: string): void {
     if (terminated) return;
-    if (turnController === null) return;
+    if (turnController === null && !playbackClock.pending()) return;
     log.info("Pipeline barge-in", { sid: opts.sid });
     abortInFlightTurn();
     callbacks.onCancelled();
@@ -169,7 +181,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (terminated) return;
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
-    if (turnController !== null) {
+    if (turnController !== null || playbackClock.pending()) {
       log.info("Pipeline replacing in-flight turn", { sid: opts.sid });
       abortInFlightTurn();
       callbacks.onCancelled();
@@ -336,6 +348,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     ttsSession = session;
     ttsSubs.push(
       session.on("audio", (pcm) => {
+        playbackClock.onChunk(pcm);
         callbacks.onAudioChunk(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
       }),
     );
