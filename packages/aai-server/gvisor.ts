@@ -9,17 +9,15 @@
  * Communication uses stdio pipes (stdin/stdout) with NDJSON transport.
  */
 
-import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { chmod, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
-import { promisify } from "node:util";
+import { execa } from "execa";
 import { nanoid } from "nanoid";
 import { metrics } from "./metrics.ts";
 import { buildOciSpec, type SandboxResourceLimits } from "./oci-spec.ts";
-
-const execFileAsync = promisify(execFile);
 
 // ---------------------------------------------------------------------------
 // Binary discovery (cached)
@@ -210,11 +208,8 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
   metrics.sandboxSpawnPhase.observe({ phase: "total" }, (tSpawn - t0) / 1000);
 
   async function tryRunsc(...args: string[]): Promise<void> {
-    try {
-      await execFileAsync(runsc, args);
-    } catch {
-      // Best-effort — container may already be gone
-    }
+    // Best-effort — container may already be gone
+    await execa(runsc, args, { reject: false });
   }
 
   function waitForExit(timeoutMs: number): Promise<boolean> {

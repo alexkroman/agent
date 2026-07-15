@@ -37,7 +37,7 @@ describe("runDeploy — additional coverage", () => {
     const mockFetch = vi.fn().mockResolvedValue(jsonResponse({ slug: "test-agent" }));
     await runDeploy(deployOpts(mockFetch));
     const [, init] = mockFetch.mock.calls[0] ?? [];
-    expect((init.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    expect(new Headers(init.headers).get("content-type")).toBe("application/json");
   });
 
   test("includes clientFiles from bundle in request body", async () => {
@@ -93,9 +93,12 @@ describe("runDeploy — additional coverage", () => {
   });
 
   test("throws on 500 server error", async () => {
+    // 5xx is retried, so each attempt needs a fresh (unconsumed) Response.
     const mockFetch = vi
       .fn()
-      .mockResolvedValue(new Response("internal server error", { status: 500 }));
+      .mockImplementation(() =>
+        Promise.resolve(new Response("internal server error", { status: 500 })),
+      );
     await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("deploy failed (HTTP 500)");
   });
 

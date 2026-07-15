@@ -2,23 +2,23 @@
 
 import * as p from "@clack/prompts";
 import { getServerInfo } from "./_agent.ts";
-import { apiRequestOrThrow } from "./_api-client.ts";
+import { type ApiRequestOptions, apiRequest } from "./_api-client.ts";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 
-async function secretRequest(
+async function secretRequest<T = unknown>(
   cwd: string,
   pathSuffix: string,
-  init?: RequestInit,
+  init?: Pick<ApiRequestOptions, "method" | "body">,
   server?: string,
-): Promise<{ resp: Response; slug: string }> {
+): Promise<{ data: T; slug: string }> {
   const { serverUrl, slug, apiKey } = await getServerInfo(cwd, server);
-  const resp = await apiRequestOrThrow(`${serverUrl}/${slug}/secret${pathSuffix}`, {
+  const data = await apiRequest<T>(`${serverUrl}/${slug}/secret${pathSuffix}`, {
     ...init,
     apiKey,
     action: "secret",
   });
-  return { resp, slug };
+  return { data, slug };
 }
 
 /** Read secret value from stdin (for non-TTY / piped input). */
@@ -57,7 +57,7 @@ export async function executeSecretPut(
   const { slug } = await secretRequest(
     cwd,
     "",
-    { method: "PUT", body: JSON.stringify({ [name]: secretValue }) },
+    { method: "PUT", body: { [name]: secretValue } },
     server,
   );
   log.success(`Set ${name} for ${slug}`);
@@ -78,8 +78,9 @@ export async function executeSecretList(
   cwd: string,
   server: string | undefined,
 ): Promise<CommandResult<SecretListData>> {
-  const { resp } = await secretRequest(cwd, "", undefined, server);
-  const { vars } = (await resp.json()) as { vars: string[] };
+  const {
+    data: { vars },
+  } = await secretRequest<{ vars: string[] }>(cwd, "", undefined, server);
   if (vars.length === 0) {
     log.info("No secrets set. Use `aai secret put <name>` to add one.");
   } else {

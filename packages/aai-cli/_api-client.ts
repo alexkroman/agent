@@ -1,55 +1,62 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 /**
- * Shared HTTP helpers for platform API calls (deploy, delete, secrets).
+ * Shared HTTP helper for platform API calls (deploy, delete, secrets).
+ *
+ * Built on ofetch: JSON bodies are serialized (with Content-Type set) and
+ * responses parsed automatically, and transient failures (network errors,
+ * 5xx/429) are retried before surfacing an error.
  */
+
+import { FetchError, ofetch } from "ofetch";
 
 export const HINT_INVALID_API_KEY =
   "Your API key may be invalid. Run `aai` to re-enter your AssemblyAI API key.";
 
+export type ApiRequestOptions = {
+  apiKey: string;
+  /** Verb used in error messages, e.g. "deploy". */
+  action: string;
+  method?: "GET" | "POST" | "PUT" | "DELETE";
+  /** JSON request body (plain object — serialized by ofetch). */
+  body?: unknown;
+  /** Extra error hints keyed by HTTP status. The 401 hint is built in. */
+  hints?: Record<number, string>;
+  /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
+  fetch?: typeof globalThis.fetch;
+};
+
 /**
- * Send an authenticated request to the platform API.
- *
- * Adds the `Authorization` header and, on network failure, throws with a
- * contextual hint (localhost → "is the dev server running?", remote →
- * "check your network connection").
+ * Send an authenticated request to the platform API and return the parsed
+ * JSON response. Throws a descriptive error with status-specific hints on
+ * failure (the 401 hint is always included; pass more via `hints`).
  */
-export async function apiRequest(
-  url: string,
-  init: RequestInit & { apiKey: string; action: string },
-  fetchFn: typeof globalThis.fetch = globalThis.fetch.bind(globalThis),
-): Promise<Response> {
-  const { apiKey, action, ...rest } = init;
-  const headers: Record<string, string> = {
-    Authorization: `Bearer ${apiKey}`,
-    ...(rest.body ? { "Content-Type": "application/json" } : {}),
-    ...(rest.headers as Record<string, string>),
-  };
+export async function apiRequest<T = unknown>(url: string, opts: ApiRequestOptions): Promise<T> {
+  // A custom fetch implementation must be wired at client-creation time —
+  // ofetch ignores a per-request `fetch` option.
+  const client = opts.fetch ? ofetch.create({}, { fetch: opts.fetch }) : ofetch;
   try {
-    return await fetchFn(url, { ...rest, headers });
-  } catch (err: unknown) {
-    const hint = "Check your network connection and verify the server URL is correct.";
-    throw new Error(`${action} failed: could not reach ${url}\n  ${hint}`, { cause: err });
+    return await client<T>(url, {
+      method: opts.method ?? "GET",
+      headers: { Authorization: `Bearer ${opts.apiKey}` },
+      ...(opts.body !== undefined ? { body: opts.body } : {}),
+      retry: 2,
+      retryDelay: 300,
+    });
+  } catch (err) {
+    throw toApiError(err, url, opts);
   }
 }
 
-/** Format a non-ok API response into a descriptive error. */
-export function apiError(action: string, status: number, body: string, hint?: string): Error {
-  return new Error(`${action} failed (HTTP ${status}): ${body}${hint ? `\n  ${hint}` : ""}`);
-}
-
-/**
- * Like `apiRequest`, but throws on non-ok responses with status-specific hints.
- * The 401 hint is always included. Pass additional hints via `opts.hints`.
- */
-export async function apiRequestOrThrow(
-  url: string,
-  init: RequestInit & { apiKey: string; action: string },
-  opts?: { hints?: Record<number, string>; fetch?: typeof globalThis.fetch | undefined },
-): Promise<Response> {
-  const resp = await apiRequest(url, init, opts?.fetch);
-  if (resp.ok) return resp;
-  const text = await resp.text();
-  const hint = resp.status === 401 ? HINT_INVALID_API_KEY : opts?.hints?.[resp.status];
-  throw apiError(init.action, resp.status, text, hint);
+/** Format an ofetch failure into a descriptive, action-centric error. */
+function toApiError(err: unknown, url: string, opts: ApiRequestOptions): Error {
+  if (err instanceof FetchError && err.statusCode !== undefined) {
+    const status = err.statusCode;
+    const body = typeof err.data === "string" ? err.data : JSON.stringify(err.data ?? "");
+    const hint = status === 401 ? HINT_INVALID_API_KEY : opts.hints?.[status];
+    return new Error(`${opts.action} failed (HTTP ${status}): ${body}${hint ? `\n  ${hint}` : ""}`);
+  }
+  const hint = "Check your network connection and verify the server URL is correct.";
+  const cause = err instanceof FetchError && err.cause !== undefined ? err.cause : err;
+  return new Error(`${opts.action} failed: could not reach ${url}\n  ${hint}`, { cause });
 }

@@ -186,9 +186,15 @@ importers:
       dotenv:
         specifier: ^17.4.2
         version: 17.4.2
+      execa:
+        specifier: ^9.6.1
+        version: 9.6.1
       giget:
         specifier: ^3.3.0
         version: 3.3.0
+      ofetch:
+        specifier: ^1.5.1
+        version: 1.5.1
       p-debounce:
         specifier: ^5.1.0
         version: 5.1.0
@@ -238,12 +244,18 @@ importers:
       bogon:
         specifier: ^1.3.0
         version: 1.3.0
+      execa:
+        specifier: ^9.6.1
+        version: 9.6.1
       hono:
         specifier: ^4.12.30
         version: 4.12.30
       human-id:
         specifier: ^4.2.0
         version: 4.2.0
+      is-network-error:
+        specifier: ^1.3.2
+        version: 1.3.2
       mime-types:
         specifier: ^3.0.2
         version: 3.0.2
@@ -253,12 +265,18 @@ importers:
       p-lock:
         specifier: ^4.0.1
         version: 4.0.1
+      p-retry:
+        specifier: ^8.0.0
+        version: 8.0.0
       p-timeout:
         specifier: ^7.0.1
         version: 7.0.1
       prom-client:
         specifier: ^15.1.3
         version: 15.1.3
+      quick-lru:
+        specifier: ^7.3.0
+        version: 7.3.0
       unstorage:
         specifier: ^1.17.5
         version: 1.17.5(@upstash/redis@1.37.0)(aws4fetch@1.0.20)
@@ -3568,6 +3586,10 @@ packages:
   is-hexadecimal@2.0.1:
     resolution: {integrity: sha512-DgZQp241c8oO6cA1SbTEWiXeoxV42vlcJxgH+B3hi1AiqqKruZR3ZGF8In3fj4+/y/7rHvlOZLZtgJ/4ttYGZg==}
 
+  is-network-error@1.3.2:
+    resolution: {integrity: sha512-PhBY86zaxNZUuWP6h13Vu5oFe0XY6/UlKzQnYFELzGVHygP3MxmvTfYSG7GN3aIab/iWudSMgjSnG9Dq+nHrgA==}
+    engines: {node: '>=16'}
+
   is-number@7.0.0:
     resolution: {integrity: sha512-41Cifkg6e8TylSpdtTpeLVMqvSBEVzTttHvERD741+pnZ8ANv0004MRL43QKPDlK9cGvNp6NZWZUBlbGXYxxng==}
     engines: {node: '>=0.12.0'}
@@ -4360,6 +4382,10 @@ packages:
     resolution: {integrity: sha512-y3b8Kpd8OAN444hxfBbFfj1FY/RjtTd8tzYwhUqNYXx0fXx2iX4maP4Qr6qhIKbQXI02wTLAda4fYUbDagTUFw==}
     engines: {node: '>=6'}
 
+  p-retry@8.0.0:
+    resolution: {integrity: sha512-kFVqH1HxOHp8LupNsOys7bSV09VYTRLxarH/mokO4Rqhk6wGi70E0jh4VzvVGXfEVNggHoHLAMWsQqHyU1Ey9A==}
+    engines: {node: '>=22'}
+
   p-timeout@7.0.1:
     resolution: {integrity: sha512-AxTM2wDGORHGEkPCt8yqxOTMgpfbEHqF51f/5fJCmwFC3C/zNcGT63SymH2ttOAaiIws2zVg4+izQCjrakcwHg==}
     engines: {node: '>=20'}
@@ -4594,6 +4620,10 @@ packages:
   quick-lru@5.1.1:
     resolution: {integrity: sha512-WuyALRjWPDGtt/wzJiadO5AXY+8hZ80hVpe6MyivgraREW751X3SbhRvG3eLKOYN+8VEvqLcf3wdnt44Z4S4SA==}
     engines: {node: '>=10'}
+
+  quick-lru@7.3.0:
+    resolution: {integrity: sha512-k9lSsjl36EJdK7I06v7APZCbyGT2vMTsYSRX1Q2nbYmnkBqgUhRkAuzH08Ciotteu/PLJmIF2+tti7o3C/ts2g==}
+    engines: {node: '>=18'}
 
   radix3@1.1.2:
     resolution: {integrity: sha512-b484I/7b8rDEdSDKckSSBA8knMpcdsXudlE/LNL639wFoHKwLbEkQFZHWEYwDC0wa0FKUcCY+GAF73Z7wxNVFA==}
@@ -8782,6 +8812,8 @@ snapshots:
 
   is-hexadecimal@2.0.1: {}
 
+  is-network-error@1.3.2: {}
+
   is-number@7.0.0: {}
 
   is-path-inside@4.0.0: {}
@@ -9624,6 +9656,10 @@ snapshots:
 
   p-map@2.1.0: {}
 
+  p-retry@8.0.0:
+    dependencies:
+      is-network-error: 1.3.2
+
   p-timeout@7.0.1: {}
 
   p-try@2.2.0: {}
@@ -9859,6 +9895,8 @@ snapshots:
   quick-format-unescaped@4.0.4: {}
 
   quick-lru@5.1.1: {}
+
+  quick-lru@7.3.0: {}
 
   radix3@1.1.2: {}
 

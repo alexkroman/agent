@@ -1,30 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { execFile } from "node:child_process";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { promisify } from "node:util";
 import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
+import { execa } from "execa";
 import { DEFAULT_DEV_SERVER, getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
-
-/**
- * Format an install error so the user sees what actually went wrong.
- * pnpm writes failures to stdout (not stderr), and Node's execFile error
- * message is only "Command failed: ..." — so we append both streams.
- */
-function formatInstallError(err: unknown): string {
-  if (!(err instanceof Error)) return String(err);
-  const parts = [err.message];
-  const stderr = (err as { stderr?: string }).stderr?.trim();
-  const stdout = (err as { stdout?: string }).stdout?.trim();
-  if (stderr) parts.push(stderr);
-  if (stdout) parts.push(stdout);
-  return parts.join("\n");
-}
 
 type InitData = {
   dir: string;
@@ -33,8 +17,6 @@ type InitData = {
   slug?: string;
   url?: string;
 };
-
-const execFileAsync = promisify(execFile);
 
 const DEFAULT_PROJECT_NAME = "my-voice-agent";
 
@@ -55,12 +37,9 @@ async function promptProjectName(yes?: boolean): Promise<string> {
 
 /** Enable corepack so pnpm is available (scaffold declares packageManager: pnpm). */
 async function ensurePnpm(): Promise<void> {
-  try {
-    await execFileAsync("corepack", ["enable"]);
-  } catch {
-    // corepack not available or already enabled — pnpm install will fail
-    // with a clear error if pnpm isn't available
-  }
+  // Failure is fine (corepack missing or already enabled) — pnpm install
+  // will fail with a clear error if pnpm isn't available.
+  await execa("corepack", ["enable"], { reject: false });
 }
 
 /** Check if the project has any dependencies to install. */
@@ -82,12 +61,8 @@ async function hasDeps(cwd: string): Promise<boolean> {
 
 /** Check whether the safe-chain binary is on PATH. */
 async function hasSafeChain(): Promise<boolean> {
-  try {
-    await execFileAsync("safe-chain", ["--version"]);
-    return true;
-  } catch {
-    return false;
-  }
+  const { failed } = await execa("safe-chain", ["--version"], { reject: false });
+  return !failed;
 }
 
 /** Build the command + args for running pnpm, routing through safe-chain when available. */
@@ -106,7 +81,9 @@ async function runPnpmInstall(cwd: string): Promise<void> {
   // In dev mode, allow workspace resolution so workspace deps link to local source.
   // In production, --ignore-workspace prevents pnpm from hoisting to a parent workspace.
   const pnpmArgs = isDevMode() ? ["install"] : ["install", "--ignore-workspace"];
-  await execFileAsync(cmd, [...args, ...pnpmArgs], { cwd });
+  // execa errors already include stderr + stdout in their message, so the
+  // user sees what actually went wrong (pnpm writes failures to stdout).
+  await execa(cmd, [...args, ...pnpmArgs], { cwd });
 }
 
 /** Install deps with pnpm. Returns true on success (or no deps to install). */
@@ -119,7 +96,7 @@ async function installDeps(cwd: string, silent?: boolean): Promise<boolean> {
       await runPnpmInstall(cwd);
       return true;
     } catch (err: unknown) {
-      log.warn(`pnpm install failed: ${formatInstallError(err)}`);
+      log.warn(`pnpm install failed: ${err instanceof Error ? err.message : String(err)}`);
       log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
       return false;
     }
@@ -133,7 +110,7 @@ async function installDeps(cwd: string, silent?: boolean): Promise<boolean> {
     return true;
   } catch (err: unknown) {
     s.stop("Dependency install failed");
-    log.warn(`pnpm install failed: ${formatInstallError(err)}`);
+    log.warn(`pnpm install failed: ${err instanceof Error ? err.message : String(err)}`);
     log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
     return false;
   }
