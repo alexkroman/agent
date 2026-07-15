@@ -450,5 +450,17 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // (client-initiated) calls client.cancelled() itself. Barge-in fires
       // onCancelled directly in onSttPartial where the cancel originates here.
     },
+
+    seedHistory(messages: readonly Message[]): void {
+      // Client-resent history on reconnect; the LLM loop reads
+      // conversationMessages, so restore it here or the resumed agent has no
+      // memory of the prior conversation.
+      if (messages.length > 0) pushMessages(...messages);
+    },
+
+    reset(): void {
+      abortInFlightTurn();
+      conversationMessages.length = 0;
+    },
   };
 }

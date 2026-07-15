@@ -49,6 +49,11 @@ export type OpenaiRealtimeTransportOptions = {
   callbacks: TransportCallbacks;
   sid: string;
   agent: string;
+  /** PCM sample rate (Hz) the client captures and sends — must match what we
+   *  declare to OpenAI or input audio is interpreted at the wrong speed. */
+  inputSampleRate: number;
+  /** PCM sample rate (Hz) for synthesized output audio. */
+  outputSampleRate: number;
   /** Skip the initial greeting (used for session resume). */
   skipGreeting?: boolean;
   createWebSocket?: CreateOpenaiRealtimeWebSocket;
@@ -100,12 +105,12 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         instructions: opts.sessionConfig.systemPrompt,
         audio: {
           input: {
-            format: { type: "audio/pcm", rate: 24_000 },
+            format: { type: "audio/pcm", rate: opts.inputSampleRate },
             turn_detection: { type: "server_vad" },
             transcription: { model: "whisper-1" },
           },
           output: {
-            format: { type: "audio/pcm", rate: 24_000 },
+            format: { type: "audio/pcm", rate: opts.outputSampleRate },
             voice,
           },
         },

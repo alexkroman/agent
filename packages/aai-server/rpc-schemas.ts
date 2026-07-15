@@ -29,6 +29,7 @@ export const IsolateConfigSchema = z
     greeting: z.string().optional(),
     sttPrompt: z.string().optional(),
     maxSteps: z.number().optional(),
+    idleTimeoutMs: z.number().int().nonnegative().optional(),
     toolChoice: z.enum(["auto", "required"]).optional(),
     builtinTools: z.array(z.string()).optional(),
     toolSchemas: z.array(ToolSchemaSchema).default([]),

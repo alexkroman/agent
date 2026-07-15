@@ -114,7 +114,9 @@ const ManifestSchema = z.object({
   builtinTools: z.array(BuiltinToolSchema).optional(),
   maxSteps: z.number().int().positive().optional(),
   toolChoice: z.enum(["auto", "required"]).optional(),
-  idleTimeoutMs: z.number().int().positive().optional(),
+  // 0 is the documented "disable the idle timer" value — allow it (the runtime
+  // and AgentConfigSchema both treat 0 as disabled), so use nonnegative().
+  idleTimeoutMs: z.number().int().nonnegative().optional(),
   theme: z.record(z.string(), z.string()).optional(),
   tools: z.record(z.string(), ToolManifestSchema).optional(),
   allowedHosts: z

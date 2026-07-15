@@ -165,9 +165,10 @@ describe("createSandbox", () => {
     await vi.waitFor(() => {
       expect(mockConn.onNotification).toHaveBeenCalledWith("client/send", expect.any(Function));
     });
-    const handler = mockConn.onNotification.mock.calls.find(
-      (c: unknown[]) => c[0] === "client/send",
-    )?.[1] as (raw: unknown) => void;
+    const onNotification = vi.mocked(mockConn.onNotification);
+    const handler = onNotification.mock.calls.find((c) => c[0] === "client/send")?.[1] as (
+      raw: unknown,
+    ) => void;
 
     // `ctx.send("evt")` with no payload arrives with `data` omitted; the handler
     // must not throw (JSON.stringify(undefined) is not a string) — a throw here

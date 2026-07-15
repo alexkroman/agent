@@ -19,11 +19,16 @@ import {
   OPENAI_REALTIME_KIND,
   type OpenaiRealtimeOptions,
 } from "../sdk/providers/s2s/openai-realtime.ts";
+import { ASSEMBLYAI_KIND } from "../sdk/providers/stt/assemblyai.ts";
 import { DEEPGRAM_KIND } from "../sdk/providers/stt/deepgram.ts";
+import { ELEVENLABS_KIND } from "../sdk/providers/stt/elevenlabs.ts";
+import { SONIOX_KIND } from "../sdk/providers/stt/soniox.ts";
+import { CARTESIA_KIND } from "../sdk/providers/tts/cartesia.ts";
 import { RIME_KIND } from "../sdk/providers/tts/rime.ts";
 import {
   assertProviderTriple,
   type LlmProvider,
+  type SessionMode,
   type SttOpener,
   type SttProvider,
   type TtsOpener,
@@ -70,20 +75,35 @@ function descriptorKind(value: object | undefined): string | undefined {
   return typeof kind === "string" ? kind : undefined;
 }
 
+/** Provider kind → the agent-env variable that holds its API key. */
+const STT_API_KEY_ENV: Record<string, string> = {
+  [ASSEMBLYAI_KIND]: "ASSEMBLYAI_API_KEY",
+  [DEEPGRAM_KIND]: "DEEPGRAM_API_KEY",
+  [ELEVENLABS_KIND]: "ELEVENLABS_API_KEY",
+  [SONIOX_KIND]: "SONIOX_API_KEY",
+};
+
+const TTS_API_KEY_ENV: Record<string, string> = {
+  [CARTESIA_KIND]: "CARTESIA_API_KEY",
+  [RIME_KIND]: "RIME_API_KEY",
+};
+
 function resolveSttApiKey(
   stt: SttProvider | SttOpener | undefined,
   env: Record<string, string>,
 ): string {
-  if (descriptorKind(stt) === DEEPGRAM_KIND) return resolveApiKey("DEEPGRAM_API_KEY", env);
-  return resolveApiKey("ASSEMBLYAI_API_KEY", env);
+  // Default to AssemblyAI for pre-resolved openers (test escape hatch) that
+  // carry no `kind`; every real descriptor maps to its own env var.
+  const envVar = STT_API_KEY_ENV[descriptorKind(stt) ?? ""] ?? "ASSEMBLYAI_API_KEY";
+  return resolveApiKey(envVar, env);
 }
 
 function resolveTtsApiKey(
   tts: TtsProvider | TtsOpener | undefined,
   env: Record<string, string>,
 ): string {
-  if (descriptorKind(tts) === RIME_KIND) return resolveApiKey("RIME_API_KEY", env);
-  return resolveApiKey("CARTESIA_API_KEY", env);
+  const envVar = TTS_API_KEY_ENV[descriptorKind(tts) ?? ""] ?? "CARTESIA_API_KEY";
+  return resolveApiKey(envVar, env);
 }
 
 // ─── Runtime implementation ──────────────────────────────────────────────────
@@ -111,6 +131,49 @@ function resolveLlmIfDescriptor(
   // `specificationVersion`; descriptors are plain `{ kind, options }` objects.
   if (typeof value === "string") return value;
   return "specificationVersion" in value ? value : resolveLlm(value, env);
+}
+
+/**
+ * Determine the effective STT/LLM/TTS providers and session mode. Providers
+ * come from RuntimeOptions (platform path) or fall back to the agent's own
+ * fields (the `aai dev` path passes no provider opts), so a declared pipeline
+ * agent isn't silently downgraded to S2S.
+ */
+function resolveEffectiveProviders(
+  opts: RuntimeOptions,
+  agent: AgentDef,
+): {
+  stt: SttProvider | SttOpener | undefined;
+  llm: LlmProvider | LanguageModel | undefined;
+  tts: TtsProvider | TtsOpener | undefined;
+  mode: SessionMode;
+} {
+  const stt = opts.stt ?? agent.stt;
+  const llm = opts.llm ?? agent.llm;
+  const tts = opts.tts ?? agent.tts;
+  return { stt, llm, tts, mode: assertProviderTriple(stt, llm, tts) };
+}
+
+/**
+ * Resolve the three pipeline provider instances once per runtime (reused
+ * across sessions). Returns null unless the mode is pipeline and all three
+ * providers are present.
+ */
+function resolvePipelineProviders(
+  p: {
+    mode: SessionMode;
+    stt: SttProvider | SttOpener | undefined;
+    llm: LlmProvider | LanguageModel | undefined;
+    tts: TtsProvider | TtsOpener | undefined;
+  },
+  env: Record<string, string>,
+): { stt: SttOpener; llm: LanguageModel; tts: TtsOpener } | null {
+  if (p.mode !== "pipeline" || !(p.stt && p.llm && p.tts)) return null;
+  return {
+    stt: resolveSttIfDescriptor(p.stt),
+    llm: resolveLlmIfDescriptor(p.llm, env),
+    tts: resolveTtsIfDescriptor(p.tts),
+  };
 }
 
 /** Create an in-memory KV store (default for self-hosted). */
@@ -148,7 +211,15 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     sessionStartTimeoutMs,
     shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
   } = opts;
-  const mode = assertProviderTriple(opts.stt, opts.llm, opts.tts);
+  // Providers may come from RuntimeOptions (platform path passes them
+  // explicitly) or from the agent's own `stt`/`llm`/`tts` fields (the `aai
+  // dev` path calls createRuntime({ agent, env }) with no provider opts).
+  const {
+    stt: sttProvider,
+    llm: llmProvider,
+    tts: ttsProvider,
+    mode,
+  } = resolveEffectiveProviders(opts, agent);
 
   // Resolve descriptors from manifest if present; otherwise use the
   // supplied (or default) instances.
@@ -237,14 +308,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Resolve pipeline providers once per runtime (not per session). Each
   // session reuses the same opener / LanguageModel — the opener's `open()`
   // mints the per-session stream inside.
-  let pipelineProviders: { stt: SttOpener; llm: LanguageModel; tts: TtsOpener } | null = null;
-  if (mode === "pipeline" && opts.stt && opts.llm && opts.tts) {
-    pipelineProviders = {
-      stt: resolveSttIfDescriptor(opts.stt),
-      llm: resolveLlmIfDescriptor(opts.llm, env),
-      tts: resolveTtsIfDescriptor(opts.tts),
-    };
-  }
+  const pipelineProviders = resolvePipelineProviders(
+    { mode, stt: sttProvider, llm: llmProvider, tts: ttsProvider },
+    env,
+  );
 
   type SessionOpts = {
     id: string;
@@ -274,13 +341,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       toolSchemas,
       executeTool,
       providerKeys: {
-        stt: resolveSttApiKey(opts.stt, env),
-        tts: resolveTtsApiKey(opts.tts, env),
+        stt: resolveSttApiKey(sttProvider, env),
+        tts: resolveTtsApiKey(ttsProvider, env),
       },
       sttSampleRate: s2sConfig.inputSampleRate,
       ttsSampleRate: s2sConfig.outputSampleRate,
       maxSteps: agentConfig.maxSteps,
       toolChoice: agentConfig.toolChoice,
+      ...(agentConfig.sttPrompt !== undefined ? { sttPrompt: agentConfig.sttPrompt } : {}),
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,
     });
@@ -304,6 +372,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       callbacks,
       sid: sessionOpts.id,
       agent: sessionOpts.agent,
+      inputSampleRate: s2sConfig.inputSampleRate,
+      outputSampleRate: s2sConfig.outputSampleRate,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       ...(createOpenaiRealtimeWebSocket ? { createWebSocket: createOpenaiRealtimeWebSocket } : {}),
       logger,

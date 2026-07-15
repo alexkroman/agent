@@ -65,6 +65,8 @@ function startedTransport() {
     callbacks: cbs,
     sid: "s",
     agent: "a",
+    inputSampleRate: 16_000,
+    outputSampleRate: 24_000,
     createWebSocket: () => fake,
     logger: silentLogger,
   });
@@ -97,6 +99,8 @@ describe("openai-realtime-transport: connect and session.update", () => {
       callbacks: noopCallbacks(),
       sid: "sid-1",
       agent: "test-agent",
+      inputSampleRate: 16_000,
+      outputSampleRate: 24_000,
       createWebSocket: createWs,
       logger: silentLogger,
     });
@@ -120,7 +124,7 @@ describe("openai-realtime-transport: connect and session.update", () => {
     expect(msg.session.type).toBe("realtime");
     expect(msg.session.output_modalities).toEqual(["audio"]);
     expect(msg.session.instructions).toBe("Be terse.");
-    expect(msg.session.audio.input.format).toEqual({ type: "audio/pcm", rate: 24_000 });
+    expect(msg.session.audio.input.format).toEqual({ type: "audio/pcm", rate: 16_000 });
     expect(msg.session.audio.input.turn_detection.type).toBe("server_vad");
     expect(msg.session.audio.input.transcription).toEqual({ model: "whisper-1" });
     expect(msg.session.audio.output.format).toEqual({ type: "audio/pcm", rate: 24_000 });
@@ -147,6 +151,8 @@ describe("greeting", () => {
       callbacks: noopCallbacks(),
       sid: "s",
       agent: "a",
+      inputSampleRate: 16_000,
+      outputSampleRate: 24_000,
       ...(args.skipGreeting !== undefined ? { skipGreeting: args.skipGreeting } : {}),
       createWebSocket: () => fake,
       logger: silentLogger,

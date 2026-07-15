@@ -67,6 +67,15 @@ describe("parseManifest", () => {
     expect(() => parseManifest({})).toThrow();
   });
 
+  test("accepts idleTimeoutMs: 0 (documented 'disable timer' value)", () => {
+    const result = parseManifest({ name: "test", idleTimeoutMs: 0 });
+    expect(result.idleTimeoutMs).toBe(0);
+  });
+
+  test("rejects negative idleTimeoutMs", () => {
+    expect(() => parseManifest({ name: "test", idleTimeoutMs: -1 })).toThrow();
+  });
+
   test("rejects unknown builtinTools", () => {
     expect(() => parseManifest({ name: "X", builtinTools: ["not_a_tool"] })).toThrow();
   });
