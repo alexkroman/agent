@@ -41,6 +41,7 @@ export type FakeSttSession = SttSession & {
   readonly opts: SttOpenOptions;
   readonly audioFrames: Int16Array[];
   readonly closed: { value: boolean };
+  readonly updateAgentContext: ReturnType<typeof vi.fn<(text: string) => void>>;
   firePartial(text: string): void;
   fireFinal(text: string): void;
   fireError(code: SttErrorCode, message: string): void;
@@ -69,6 +70,9 @@ export function createFakeSttProvider(): FakeSttProvider {
         closed,
         sendAudio: vi.fn((pcm: Int16Array) => {
           audioFrames.push(pcm);
+        }),
+        updateAgentContext: vi.fn((_text: string) => {
+          /* recorded via the mock's .mock.calls */
         }),
         on: emitter.on.bind(emitter) as SttSession["on"],
         close: vi.fn(async () => {

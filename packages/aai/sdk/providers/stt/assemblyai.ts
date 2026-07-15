@@ -18,10 +18,18 @@ export const ASSEMBLYAI_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 
 export interface AssemblyAIOptions {
   /**
-   * Streaming speech model. Defaults to `"u3pro-rt"` (Universal-3 Pro
-   * Real-Time). Arbitrary strings are forwarded to the SDK unchanged.
+   * Streaming speech model. Defaults to `"universal-3-5-pro"` (Universal-3.5
+   * Pro Real-Time). The legacy alias `"u3pro-rt"` is still accepted and maps to
+   * the SDK's `"u3-rt-pro"`. Arbitrary strings are forwarded to the SDK
+   * unchanged.
    */
-  model?: "u3pro-rt" | string;
+  model?: "universal-3-5-pro" | "u3pro-rt" | string;
+  /**
+   * Voice focus (voice isolation) mode, sent as the `voice_focus` connection
+   * parameter. Defaults to `"near-field"` to suppress background noise for
+   * close-mic / phone audio. Set to `""` (or `"off"`) to disable.
+   */
+  voiceFocus?: "near-field" | "far-field" | "off" | string;
 }
 
 export type AssemblyAIProvider = SttProvider & {

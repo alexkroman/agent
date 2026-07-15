@@ -120,12 +120,25 @@ export interface SttSession {
   sendAudio(pcm: Int16Array): void;
   on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
   close(): Promise<void>;
+  /**
+   * Push the agent's latest reply text mid-stream so the next user turn is
+   * transcribed with that context (e.g. AssemblyAI's `agent_context`, gated
+   * to models that support it). Optional: providers that have no equivalent
+   * simply omit it, and callers must use `?.()` to invoke it.
+   */
+  updateAgentContext?(text: string): void;
 }
 
 export interface SttOpenOptions {
   sampleRate: number;
   apiKey: string;
   sttPrompt?: string | undefined;
+  /**
+   * Initial agent-side context to seed at connect time (e.g. the opening
+   * greeting), for providers that support it. Providers that don't support
+   * it, or whose resolved model doesn't qualify, ignore this.
+   */
+  agentContext?: string | undefined;
   signal: AbortSignal;
 }
 
