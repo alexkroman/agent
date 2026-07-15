@@ -318,8 +318,8 @@ importers:
         specifier: ^2.1.1
         version: 2.1.1
       tailwindcss:
-        specifier: ^4.2.1
-        version: 4.3.0
+        specifier: ^4.3.2
+        version: 4.3.2
     devDependencies:
       '@tailwindcss/vite':
         specifier: ^4.3.2
@@ -5032,9 +5032,6 @@ packages:
     resolution: {integrity: sha512-RKYfXFQlrIWosTheNbyJg3xHNjTDrW2mOvwxAz3XGghrUDN4hDjhKPCTAQrUtGZw9hNeIr37qRO3/+EP927Vtg==}
     engines: {node: '>=14.17.0'}
     hasBin: true
-
-  tailwindcss@4.3.0:
-    resolution: {integrity: sha512-y6nxMGB1nMW9R6k96e5gdIFzcfL/gTJRNaqGes1YvkLnPVXzWgbqFF2yLC0T8G774n24cx3Pe8XrKoniCOAH+Q==}
 
   tailwindcss@4.3.2:
     resolution: {integrity: sha512-WtctNNSH8A9jlMIqxzuYumOHU5uGZyRv0Q5svQl+oEPy5w84YpBxdb7MdqyiSPQge5jTJ6zFQLq0PFygdccSBA==}
@@ -10334,8 +10331,6 @@ snapshots:
       syncpack-linux-x64-musl: 15.3.2
       syncpack-windows-arm64: 15.3.2
       syncpack-windows-x64: 15.3.2
-
-  tailwindcss@4.3.0: {}
 
   tailwindcss@4.3.2: {}
 
