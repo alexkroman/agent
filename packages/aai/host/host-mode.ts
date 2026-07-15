@@ -85,6 +85,8 @@ export function createRelayExecuteTool(opts: {
     resolve: (value: string) => void;
     reject: (reason: Error) => void;
     timer: ReturnType<typeof setTimeout>;
+    /** Remove the abort listener (no-op when the call carried no signal). */
+    unlisten: () => void;
   };
   const pending = new Map<string, Pending>();
 
@@ -92,6 +94,7 @@ export function createRelayExecuteTool(opts: {
     const entry = pending.get(toolCallId);
     if (!entry) return;
     clearTimeout(entry.timer);
+    entry.unlisten();
     pending.delete(toolCallId);
     return entry;
   }
@@ -103,14 +106,32 @@ export function createRelayExecuteTool(opts: {
       // to-vercel-tools). Without one the result can't be correlated.
       return Promise.resolve(toolError(`Relay tool "${name}" invoked without a toolCallId`));
     }
+    if (pending.has(toolCallId)) {
+      // A second in-flight call with the same id would clobber the first
+      // entry, and the first call's timer would then delete the new entry —
+      // dropping its genuine tool_result. Refuse instead of clobbering.
+      return Promise.resolve(
+        toolError(`Relay tool "${name}" duplicates in-flight toolCallId "${toolCallId}"`),
+      );
+    }
+    const signal = callOpts?.signal;
+    if (signal?.aborted) {
+      return Promise.resolve(toolError(`Relay tool "${name}" (${toolCallId}) was cancelled`));
+    }
     return new Promise<string>((resolve, reject) => {
       const timer = setTimeout(() => {
-        pending.delete(toolCallId);
+        clear(toolCallId);
         reject(new Error(`Relay tool "${name}" (${toolCallId}) timed out after ${timeoutMs}ms`));
       }, timeoutMs);
       // Never let a pending relay call keep the process alive on its own.
       timer.unref?.();
-      pending.set(toolCallId, { resolve, reject, timer });
+      const onAbort = () => {
+        clear(toolCallId);
+        reject(new Error(`Relay tool "${name}" (${toolCallId}) was cancelled`));
+      };
+      signal?.addEventListener("abort", onAbort, { once: true });
+      const unlisten = () => signal?.removeEventListener("abort", onAbort);
+      pending.set(toolCallId, { resolve, reject, timer, unlisten });
       opts.send({ type: "tool_call", toolCallId, toolName: name, args });
     });
   };
@@ -128,6 +149,7 @@ export function createRelayExecuteTool(opts: {
   function dispose(): void {
     for (const [, entry] of pending) {
       clearTimeout(entry.timer);
+      entry.unlisten();
       entry.reject(new Error("Relay disposed before tool result arrived"));
     }
     pending.clear();

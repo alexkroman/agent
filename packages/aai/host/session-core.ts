@@ -28,6 +28,17 @@ type ReplyState = {
   currentReplyId: string | null;
   pendingTools: PendingTool[];
   toolCallCount: number;
+  /** Aborts this reply's in-flight tool executions on barge-in/reset/stop. */
+  abort: AbortController;
+  /**
+   * True after a `reply.done` flushed this reply's tool results to the
+   * transport and the turn is waiting on the provider's continuation.
+   * Cleared by any sign of continuation progress (tool call, transcript,
+   * audio). While set, a `reply.done` with no new pending tools is a
+   * duplicate frame — flushing it would emit a premature client
+   * `reply_done`/`audio_done` mid-turn.
+   */
+  flushedAwaitingContinuation: boolean;
 };
 
 export type SessionCoreOptions = {
@@ -81,7 +92,13 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   const idleMs = rawIdleMs === 0 || !Number.isFinite(rawIdleMs) ? 0 : rawIdleMs;
 
   function emptyReply(): ReplyState {
-    return { currentReplyId: null, pendingTools: [], toolCallCount: 0 };
+    return {
+      currentReplyId: null,
+      pendingTools: [],
+      toolCallCount: 0,
+      abort: new AbortController(),
+      flushedAwaitingContinuation: false,
+    };
   }
 
   let reply: ReplyState = emptyReply();
@@ -111,11 +128,15 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   }
 
   function beginReply(replyId: string): void {
+    // Tools still in flight belong to the reply being replaced — they're
+    // orphaned either way, so cancel them instead of letting them run on.
+    reply.abort.abort();
     reply = { ...emptyReply(), currentReplyId: replyId };
     turnPromise = null;
   }
 
   function cancelReply(): void {
+    reply.abort.abort();
     reply = emptyReply();
   }
 
@@ -151,6 +172,10 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
         clearTimeout(idleTimer);
         idleTimer = null;
       }
+      // Cancel in-flight tools so the drain below settles promptly instead
+      // of holding the session (and provider sockets) open for up to the
+      // full tool timeout after a disconnect.
+      reply.abort.abort();
       if (turnPromise !== null) await turnPromise;
       await opts.transport.stop();
     },
@@ -215,6 +240,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
           for (const tool of doneReply.pendingTools)
             opts.transport.sendToolResult(tool.callId, tool.result);
           doneReply.pendingTools = [];
+          doneReply.flushedAwaitingContinuation = true;
+        } else if (doneReply.flushedAwaitingContinuation) {
+          // Tool results were already flushed and no continuation progress
+          // (tool call / transcript / audio) has arrived since — this
+          // reply.done is a duplicate frame, not the turn's real end.
+          log.debug("Dropping duplicate reply.done (awaiting tool continuation)");
         } else {
           flushReply(startMs, hadTurnPromise);
         }
@@ -229,6 +260,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
 
     onAudioChunk(bytes) {
+      reply.flushedAwaitingContinuation = false;
       opts.client.playAudioChunk(bytes);
     },
     onAudioDone() {
@@ -240,6 +272,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       pushMessages({ role: "user", content: text });
     },
     onAgentTranscript(text, interrupted) {
+      reply.flushedAwaitingContinuation = false;
       emit({ type: "agent_transcript", text });
       if (!interrupted) pushMessages({ role: "assistant", content: text });
     },
@@ -257,6 +290,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       // this (now orphaned) object instead of corrupting the new reply's
       // pendingTools (which would hang or mis-route the turn).
       const activeReply = reply;
+      activeReply.flushedAwaitingContinuation = false;
       activeReply.toolCallCount++;
       const maxSteps = opts.agentConfig.maxSteps;
       if (maxSteps !== undefined && activeReply.toolCallCount > maxSteps) {
@@ -273,8 +307,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       }
       const p = (async () => {
         try {
-          const result = await opts.executeTool(name, args, opts.id, history, {
+          // Snapshot history: the live array is push/spliced by transcript
+          // events while the tool runs (mirrors to-vercel-tools.ts). The
+          // reply's abort signal lets barge-in/reset/stop settle the call.
+          const result = await opts.executeTool(name, args, opts.id, history.slice(), {
             toolCallId: callId,
+            signal: activeReply.abort.signal,
           });
           // Full result goes to the provider; the client `tool_call_done`
           // event is capped by the wire schema (MAX_TOOL_RESULT_CHARS), so

@@ -32,7 +32,7 @@ import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
-import { createStreamPartHandler } from "./pipeline-stream.ts";
+import { bytesToPcm16, createStreamPartHandler } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 /** Configuration for {@link createPipelineTransport}. */
@@ -232,6 +232,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   }
 
   // Resolves on TTS `done`, signal abort, or PIPELINE_FLUSH_TIMEOUT_MS elapsed.
+  // `done` is anonymous, so this wait leans on the TtsEvents contract that it
+  // never fires for a cancelled turn (see TtsEvents.done in sdk/providers.ts);
+  // a provider leaking a stale one would end the next turn's reply early.
   function flushTtsAndWait(signal: AbortSignal): Promise<void> {
     const tts = ttsSession;
     if (!tts) return Promise.resolve();
@@ -444,6 +447,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     async stop(): Promise<void> {
       if (sessionAbort.signal.aborted) return;
+      // Gate late inbound work (sendUserAudio into a closing STT session)
+      // the same way a provider-error teardown does.
+      terminated = true;
       sessionAbort.abort();
       turnController?.abort();
       for (const off of sttSubs) off();
@@ -461,16 +467,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     sendUserAudio(bytes: Uint8Array): void {
       if (terminated || !audioReady) return;
-      const { byteOffset: offset, byteLength: length } = bytes;
-      let pcm: Int16Array;
-      if (offset % 2 === 0 && length % 2 === 0) {
-        pcm = new Int16Array(bytes.buffer, offset, length / 2);
-      } else {
-        const copy = new Uint8Array(length - (length % 2));
-        copy.set(bytes.subarray(0, copy.byteLength));
-        pcm = new Int16Array(copy.buffer);
-      }
-      sttSession?.sendAudio(pcm);
+      sttSession?.sendAudio(bytesToPcm16(bytes));
     },
 
     // Tool execution stays inside toVercelTools/streamText; results aren't

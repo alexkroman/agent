@@ -96,6 +96,13 @@ export type ToolContext<S = Record<string, unknown>> = {
   sessionId: string;
   /** Push a custom event to the connected browser client. Fire-and-forget. */
   send(event: string, data: unknown): void;
+  /**
+   * Cooperative cancellation signal. Aborts when the turn that issued this
+   * tool call is cancelled (barge-in, reset, or session stop). Long-running
+   * tools should pass it to `fetch` etc. so their work stops promptly;
+   * absent in execution contexts that don't support cancellation.
+   */
+  signal?: AbortSignal;
 };
 
 /**

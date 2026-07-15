@@ -89,9 +89,8 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         // Server reports session no longer exists (likely session_not_found
         // in response to our resume). Surface as fatal — nothing to resume.
         if (reconnecting) {
-          reconnecting = false;
           log.warn("S2S resume rejected: session expired", { sid: opts.sid });
-          opts.callbacks.onError("connection", "S2S resume failed: session expired");
+          failResume("S2S resume failed: session expired");
           return;
         }
         log.info("S2S session expired", { sid: opts.sid });
@@ -106,11 +105,26 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     return TRANSIENT_CLOSE_CODES.has(code) && providerSessionId !== null && !reconnecting;
   }
 
+  /**
+   * Report a failed resume exactly once. A failed resume attempt surfaces
+   * through up to two paths — the resume socket's `close` event and the
+   * rejected `connectS2s` promise — in either order depending on how the
+   * socket died; the `reconnecting` guard makes whichever lands first the
+   * only one that emits. Clearing `providerSessionId` retires the session
+   * (single resume attempt), so a trailing transient `close` can't loop
+   * back into `startResume`.
+   */
+  function failResume(detail: string): void {
+    if (!reconnecting) return;
+    reconnecting = false;
+    providerSessionId = null;
+    opts.callbacks.onError("connection", detail);
+  }
+
   function emitFatalClose(code: number, reason: string, wasReconnecting: boolean): void {
     if (wasReconnecting) {
       // Fresh resume socket closed before session.ready — resume failed.
-      reconnecting = false;
-      opts.callbacks.onError("connection", `S2S resume failed (code=${code})`);
+      failResume(`S2S resume failed (code=${code})`);
       return;
     }
     if (currentReplyId !== null) {
@@ -142,10 +156,9 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       opts.callbacks.onCancelled();
     }
     void resume(prevId).catch((err: unknown) => {
-      reconnecting = false;
       const msg = errorMessage(err);
       log.warn("S2S resume failed", { sid: opts.sid, error: msg });
-      opts.callbacks.onError("connection", `S2S resume failed: ${msg}`);
+      failResume(`S2S resume failed: ${msg}`);
     });
   }
 

@@ -162,7 +162,13 @@ export function makeTtsError(code: TtsError["code"], message: string): TtsError 
 export type TtsEvents = {
   /** One PCM16 audio chunk. Orchestrator forwards to the client. */
   audio: (pcm: Int16Array) => void;
-  /** Synthesis drained after flush() or cancel(). Emitted exactly once per turn. */
+  /**
+   * Synthesis drained after flush() or cancel(). Emitted exactly once per
+   * turn, and never after `cancel()` for the cancelled turn: `cancel()` must
+   * clear any pending done timers/frames so a stale `done` cannot leak into
+   * the next turn's flush-wait (the event carries no turn id, so the
+   * pipeline transport cannot filter it — see pipeline-transport.ts).
+   */
   done: () => void;
   /** Terminal error. The session is expected to end after this fires. */
   error: (err: TtsError) => void;
