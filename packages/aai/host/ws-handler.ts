@@ -165,6 +165,21 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     }
   }
 
+  /** Stop a session and run end-of-session cleanup exactly once. */
+  function endSession(s: SessionCore): void {
+    s.stop()
+      .catch((err: unknown) => {
+        log.error("Session stop failed", { ...ctx, sid, error: errorDetail(err) });
+      })
+      .finally(() => {
+        sessions.delete(sessionId);
+        opts.onSessionEnd?.(sessionId);
+      })
+      .catch(() => {
+        /* finally callback errors are not actionable */
+      });
+  }
+
   function onOpen(): void {
     opts.onOpen?.();
     log.info("Session connected", { ...ctx, sid });
@@ -200,9 +215,16 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       })
       .catch((err: unknown) => {
         log.error("Session start failed", { ...ctx, sid, error: errorDetail(err) });
-        sessions.delete(sessionId);
+        // pTimeout rejects but does NOT cancel the underlying start(), so the
+        // transport may still be establishing (or later finish) a provider
+        // connection. Tear it down and run end-of-session cleanup, otherwise
+        // the close handler below sees session === null and skips both,
+        // leaking the provider socket and the sink/state map entries.
+        const failed = session;
         session = null;
         messageBuffer = null;
+        if (failed) endSession(failed);
+        else sessions.delete(sessionId);
       });
   }
 
@@ -228,17 +250,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
   ws.addEventListener("close", () => {
     log.info("Session disconnected", { ...ctx, sid });
-    if (session) {
-      void session
-        .stop()
-        .catch((err: unknown) => {
-          log.error("Session stop failed", { ...ctx, sid, error: errorDetail(err) });
-        })
-        .finally(() => {
-          sessions.delete(sessionId);
-          opts.onSessionEnd?.(sessionId);
-        });
-    }
+    if (session) endSession(session);
     opts.onClose?.();
   });
 

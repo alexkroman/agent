@@ -250,6 +250,12 @@ export function createServer(options: ServerOptions): AgentServer {
         await runtime.shutdown();
       } finally {
         try {
+          // runtime.shutdown() closes the provider transports but not the
+          // client sockets, and wss.close() on a noServer WebSocketServer does
+          // not terminate existing connections. Without this, httpServer.close()
+          // waits forever for an upgraded client socket to end (dev/CLI shutdown
+          // hangs whenever a browser tab is still connected).
+          for (const client of wss.clients) client.terminate();
           wss.close();
         } finally {
           if (listenPort !== undefined) {

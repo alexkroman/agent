@@ -195,6 +195,37 @@ describe("createSessionCore — tool call pending results", () => {
     );
     expect(sink.events.some((e) => e.type === "tool_call_done")).toBe(true);
   });
+
+  test("a barged-in reply's late tool result is not forwarded to the next reply", async () => {
+    let resolveSlow: (v: string) => void = () => undefined;
+    const executeTool = vi.fn(
+      () =>
+        new Promise<string>((r) => {
+          resolveSlow = r;
+        }),
+    );
+    const { core, transport } = makeCore({ executeTool });
+    await core.start();
+
+    // Reply r1 issues a slow tool and completes its turn (done is queued
+    // behind the pending tool).
+    core.onReplyStarted("r1");
+    core.onToolCall("cid1", "slow", {});
+    core.onReplyDone();
+
+    // Barge-in cancels r1; a new reply r2 starts.
+    core.onCancelled();
+    core.onReplyStarted("r2");
+
+    // r1's tool finally resolves — its result belongs to the cancelled reply
+    // and must not be routed into r2.
+    resolveSlow("slow-output");
+    await flush();
+    core.onReplyDone();
+    await flush();
+
+    expect(transport.sendToolResult).not.toHaveBeenCalledWith("cid1", "slow-output");
+  });
 });
 
 describe("createSessionCore — idle timeout", () => {

@@ -180,23 +180,29 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
 
     onReplyDone() {
       const startMs = Date.now();
-      const doneReplyId = reply.currentReplyId;
+      // Capture the reply object, not just its id: barge-in/reset swap in a
+      // fresh reply object (beginReply/cancelReply), and sendPending runs later
+      // (after turnPromise). Comparing by identity keeps a stale reply.done
+      // from mutating the current reply.
+      const doneReply = reply;
       // Dedup duplicate reply.done events — once the reply is fully dispatched
       // (or was never started) currentReplyId is null.
-      if (doneReplyId === null) {
+      if (doneReply.currentReplyId === null) {
         log.debug("Dropping duplicate reply.done (no active reply)");
         return;
       }
       const hadTurnPromise = turnPromise !== null;
       const sendPending = () => {
-        if (reply.currentReplyId !== doneReplyId) {
-          reply.pendingTools = [];
+        // A newer reply replaced this one → it's stale. Drop its orphaned
+        // pending tools; never touch the current reply.
+        if (reply !== doneReply) {
+          doneReply.pendingTools = [];
           return;
         }
-        if (reply.pendingTools.length > 0) {
-          for (const tool of reply.pendingTools)
+        if (doneReply.pendingTools.length > 0) {
+          for (const tool of doneReply.pendingTools)
             opts.transport.sendToolResult(tool.callId, tool.result);
-          reply.pendingTools = [];
+          doneReply.pendingTools = [];
         } else {
           flushReply(startMs, hadTurnPromise);
         }
@@ -232,14 +238,19 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
         log.warn("tool_call with no active reply", { sid: opts.id, name });
         return;
       }
-      reply.toolCallCount++;
+      // Bind results to the reply that issued the call. If a barge-in/reset
+      // swaps in a new reply before this tool completes, the result lands in
+      // this (now orphaned) object instead of corrupting the new reply's
+      // pendingTools (which would hang or mis-route the turn).
+      const activeReply = reply;
+      activeReply.toolCallCount++;
       const maxSteps = opts.agentConfig.maxSteps;
-      if (maxSteps !== undefined && reply.toolCallCount > maxSteps) {
+      if (maxSteps !== undefined && activeReply.toolCallCount > maxSteps) {
         log.info("maxSteps exceeded; refusing tool call", {
-          toolCallCount: reply.toolCallCount,
+          toolCallCount: activeReply.toolCallCount,
           maxSteps,
         });
-        reply.pendingTools.push({
+        activeReply.pendingTools.push({
           callId,
           result: toolError("Maximum tool steps reached. Please respond to the user now."),
         });
@@ -253,11 +264,11 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
           // event is capped by the wire schema (MAX_TOOL_RESULT_CHARS), so
           // truncate it or the client silently drops the whole message and the
           // UI tool-call block stays "pending" forever.
-          reply.pendingTools.push({ callId, result });
+          activeReply.pendingTools.push({ callId, result });
           emit({ type: "tool_call_done", toolCallId: callId, result: capResult(result) });
         } catch (err) {
           const message = errorMessage(err);
-          reply.pendingTools.push({ callId, result: toolError(message) });
+          activeReply.pendingTools.push({ callId, result: toolError(message) });
           emit({ type: "tool_call_done", toolCallId: callId, result: capResult(message) });
         }
       })();

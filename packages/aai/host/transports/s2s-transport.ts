@@ -181,7 +181,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   async function start(): Promise<void> {
-    handle = await _internals.connectS2s({
+    const newHandle = await _internals.connectS2s({
       apiKey: opts.apiKey,
       config: opts.s2sConfig,
       createWebSocket: createWs,
@@ -189,6 +189,15 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       sid: opts.sid,
       callbacks: buildCallbacks(),
     });
+    // stop() may have run while the handshake was in flight (client
+    // disconnected during connect). At that point `handle` was still null, so
+    // stop()'s close() was a no-op — close the resolved socket now or it leaks
+    // a live (billed) provider session. Mirrors resume().
+    if (closing) {
+      newHandle.close();
+      return;
+    }
+    handle = newHandle;
     handle.updateSession(opts.sessionConfig);
   }
 
