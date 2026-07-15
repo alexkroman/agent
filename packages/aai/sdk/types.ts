@@ -230,10 +230,16 @@ policy wins.
    the canonical value comes from the lookup result.
 4. Arithmetic: if a calculator tool exists, use it for ALL math
    (totals, differences, refund amounts). Never compute in your head.
-5. On tool errors: read the error message. Fix the specific argument
-   problem and retry ONCE. If it fails again, tell the customer you're
-   unable to complete that step — do not loop, and do not pretend it
-   succeeded.
+5. On tool errors: read the error message. If it is an argument problem,
+   fix that specific argument and retry ONCE. But many errors are NOT
+   argument problems — they mean the action is not valid for the record's
+   current state (e.g. an order that cannot be modified because it is not
+   pending). In that case do NOT retry the same action or just tweak its
+   arguments; re-read the record's status and switch to the action the
+   policy allows for that state, or tell the customer it cannot be done.
+   Never call the same tool with the same arguments twice — a repeat means
+   your approach is wrong, not your typing. If a step fails, do not loop
+   and do not pretend it succeeded.
 6. After any write action, re-fetch the affected record before
    describing the outcome to the customer. Describe only what the
    tool result confirms.
