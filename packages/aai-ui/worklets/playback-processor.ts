@@ -9,9 +9,13 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // Wait for ~400ms of audio before starting.
     // If 'done' arrives first (short utterance), start immediately.
     this.jitterSamples = Math.floor(rate * 0.4);
-    // Float32 sample buffer — 60s at the context sample rate. Allocated once
-    // for the node's lifetime; per-turn state resets via resetTurn().
-    this.samples = new Float32Array(rate * 60);
+    // Float32 ring buffer — 60s at the context sample rate. Allocated once for
+    // the node's lifetime; per-turn state resets via resetTurn(). writePos and
+    // readPos are absolute (monotonic) sample counts; the buffer is indexed
+    // modulo capacity so a reply longer than 60s keeps playing instead of
+    // writing past the end and going silent.
+    this.capacity = rate * 60;
+    this.samples = new Float32Array(this.capacity);
     // Report playback position every ~50ms for word-level text sync
     this.progressInterval = Math.floor(rate * 0.05);
     this.resetTurn();
@@ -69,7 +73,13 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
     const numSamples = bytes.length / 2;
     for (let i = 0; i < numSamples; i++) {
-      this.samples[this.writePos++] = view.getInt16(i * 2, true) / 0x8000;
+      this.samples[this.writePos % this.capacity] = view.getInt16(i * 2, true) / 0x8000;
+      this.writePos++;
+    }
+    // If the producer outran the consumer by more than the buffer holds, drop
+    // the oldest unplayed audio rather than reading samples we've overwritten.
+    if (this.writePos - this.readPos > this.capacity) {
+      this.readPos = this.writePos - this.capacity;
     }
   }
 
@@ -95,7 +105,11 @@ class PlaybackProcessor extends AudioWorkletProcessor {
 
     if (avail > 0) {
       const n = Math.min(avail, out.length);
-      out.set(this.samples.subarray(this.readPos, this.readPos + n));
+      // Copy from the ring buffer, splitting across the wrap boundary.
+      const start = this.readPos % this.capacity;
+      const first = Math.min(n, this.capacity - start);
+      out.set(this.samples.subarray(start, start + first), 0);
+      if (n > first) out.set(this.samples.subarray(0, n - first), first);
       this.readPos += n;
       this.samplesSinceProgress += n;
       if (this.samplesSinceProgress >= this.progressInterval) {

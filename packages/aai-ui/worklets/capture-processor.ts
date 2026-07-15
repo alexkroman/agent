@@ -11,6 +11,14 @@ class CaptureProcessor extends AudioWorkletProcessor {
     this.toRate = opts.sttSampleRate || sampleRate;
     this.ratio = this.fromRate / this.toRate;
     this.needsResample = this.fromRate !== this.toRate;
+    // Streaming-resampler state carried across process() blocks so the output
+    // clock doesn't drift and there's no discontinuity at 128-sample block
+    // boundaries. \`prev\` is the previous block's last input sample (used to
+    // interpolate across the boundary); \`pos\` is the fractional read position,
+    // in input samples, relative to an extended [prev, ...input] frame. Start
+    // at 1 so the first output is input[0] (not the bogus initial prev).
+    this.prev = 0;
+    this.pos = 1;
     this.port.onmessage = (e) => {
       if (e.data.event === 'start') this.recording = true;
       else if (e.data.event === 'stop') this.recording = false;
@@ -19,17 +27,25 @@ class CaptureProcessor extends AudioWorkletProcessor {
 
   resample(input) {
     const ratio = this.ratio;
-    const outLen = Math.ceil(input.length / ratio);
-    const out = new Float32Array(outLen);
-    for (let i = 0; i < outLen; i++) {
-      const srcIdx = i * ratio;
-      const idx = srcIdx | 0;
-      const frac = srcIdx - idx;
-      const a = input[idx];
-      const b = idx + 1 < input.length ? input[idx + 1] : a;
-      out[i] = a + frac * (b - a);
+    const n = input.length;
+    if (n === 0) return new Float32Array(0);
+    // Extended frame: index 0 = prev (previous block's last sample),
+    // index k>=1 = input[k-1]. Interpolate at fractional positions stepping by
+    // ratio, carrying \`pos\` across calls to preserve the sample clock.
+    const out = [];
+    let pos = this.pos;
+    while (pos < n) {
+      const idx = pos | 0;
+      const frac = pos - idx;
+      const a = idx === 0 ? this.prev : input[idx - 1];
+      const b = input[idx];
+      out.push(a + frac * (b - a));
+      pos += ratio;
     }
-    return out;
+    // Shift the origin to this block's last sample for the next call.
+    this.prev = input[n - 1];
+    this.pos = pos - n;
+    return Float32Array.from(out);
   }
 
   process(inputs) {

@@ -236,6 +236,12 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
           console.warn("Audio playback done failed:", err);
         });
     } else {
+      // voiceIO isn't up yet (mic permission / worklet load still pending) and
+      // greeting chunks are buffering in preInitAudio. Record the done so
+      // initAudioCapture replays it after draining — otherwise a greeting
+      // shorter than the worklet's jitter buffer never starts playing. Still
+      // transition optimistically (no audio pipeline → nothing to wait for).
+      conn.preInitDone = true;
       updateState({ state: "listening" });
     }
   }

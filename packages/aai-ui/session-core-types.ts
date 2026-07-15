@@ -105,4 +105,8 @@ export type ConnState = {
    *  server starting greeting audio (immediately on S2S connect) and the
    *  client awaiting mic permission + worklet registration. */
   preInitAudio: Uint8Array[];
+  /** True if `audio_done` arrived before `voiceIO` was initialized. The done
+   *  signal must be replayed after draining preInitAudio, or a short greeting
+   *  buffered during mic-permission never finishes playing. */
+  preInitDone: boolean;
 };
