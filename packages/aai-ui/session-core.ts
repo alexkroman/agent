@@ -15,7 +15,7 @@
 
 import { errorMessage, WS_OPEN } from "@alexkroman1/aai";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
-import { createMessageHandlers } from "./session-core-messages.ts";
+import { CLEARED_SESSION_STATE, createMessageHandlers } from "./session-core-messages.ts";
 import type {
   ConnState,
   SessionCore,
@@ -151,13 +151,8 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   // ─── Internal state (replaces signals) ──────────────────────────────────
 
   let currentSnapshot: SessionSnapshot = {
+    ...CLEARED_SESSION_STATE,
     state: "disconnected",
-    messages: [],
-    toolCalls: [],
-    customEvents: [],
-    userTranscript: null,
-    agentTranscript: null,
-    error: null,
     started: false,
     running: false,
   };
@@ -206,14 +201,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   }
 
   function resetState(): void {
-    updateState({
-      messages: [],
-      toolCalls: [],
-      customEvents: [],
-      userTranscript: null,
-      agentTranscript: null,
-      error: null,
-    });
+    updateState(CLEARED_SESSION_STATE);
   }
 
   function sendJson(msg: ClientMessage): void {
@@ -286,16 +274,8 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           if (config.sid) options.onSessionId?.(config.sid);
           const isReconnect = hasConnected;
           hasConnected = true;
-          initAudioCapture(conn, config, audioDeps).catch((err) => {
-            audioDeps.updateState({
-              state: "error",
-              error: {
-                code: "audio",
-                message: `Audio capture failed: ${errorMessage(err)}`,
-              },
-              running: false,
-            });
-          });
+          // initAudioCapture handles its own failures (sets error state internally).
+          void initAudioCapture(conn, config, audioDeps);
 
           if (isReconnect && currentSnapshot.messages.length > 0) {
             sendJson({

@@ -5,6 +5,7 @@
 import clsx from "clsx";
 import type { CSSProperties, ReactNode } from "react";
 import { useTheme } from "../context.ts";
+import { SURFACE_RAISED, TEXT_SOFT } from "./_colors.ts";
 
 /**
  * Visual style of a {@link Button}.
@@ -76,14 +77,14 @@ export function Button({
     variantStyle = { background: theme.primary, color: "#fff", borderColor: "transparent" };
   } else if (variant === "secondary") {
     variantStyle = {
-      background: "rgba(255,255,255,0.059)",
-      color: "rgba(255,255,255,0.618)",
+      background: SURFACE_RAISED,
+      color: TEXT_SOFT,
       borderColor: theme.border,
     };
   } else {
     variantStyle = {
       background: "transparent",
-      color: "rgba(255,255,255,0.618)",
+      color: TEXT_SOFT,
       borderColor: theme.border,
     };
   }

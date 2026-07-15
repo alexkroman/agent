@@ -6,19 +6,22 @@ import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useSession, useTheme } from "../context.ts";
 import type { AgentState } from "../types.ts";
+import { TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";
 
+const ERROR_COLOR = "#e06c75";
+
 // State indicator dot color map
 const STATE_COLORS: Record<AgentState, string> = {
-  disconnected: "rgba(255,255,255,0.422)",
-  connecting: "rgba(255,255,255,0.422)",
+  disconnected: TEXT_MUTED,
+  connecting: TEXT_MUTED,
   ready: "#7fd88f",
   listening: "#56b6c2",
   thinking: "#f5a742",
-  speaking: "#e06c75",
-  error: "#e06c75",
+  speaking: ERROR_COLOR,
+  error: ERROR_COLOR,
 };
 
 /**
@@ -58,9 +61,9 @@ export function ChatView({
   title,
   className,
 }: {
-  icon?: ReactNode;
-  title?: string;
-  className?: string;
+  icon?: ReactNode | undefined;
+  title?: string | undefined;
+  className?: string | undefined;
 }): ReactNode {
   const session = useSession();
   const theme = useTheme();
@@ -87,7 +90,7 @@ export function ChatView({
         <div className="ml-auto">
           <div
             className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium leading-[130%] capitalize"
-            style={{ color: "rgba(255,255,255,0.284)" }}
+            style={{ color: TEXT_FAINT }}
             data-state={session.state}
           >
             <div
@@ -105,7 +108,7 @@ export function ChatView({
           style={{
             borderColor: "rgba(224,108,117,0.4)",
             background: "rgba(224,108,117,0.08)",
-            color: "#e06c75",
+            color: ERROR_COLOR,
           }}
         >
           {session.error.message}

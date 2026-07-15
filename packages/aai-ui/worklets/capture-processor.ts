@@ -19,6 +19,9 @@ class CaptureProcessor extends AudioWorkletProcessor {
     // at 1 so the first output is input[0] (not the bogus initial prev).
     this.prev = 0;
     this.pos = 1;
+    // Output buffer reused across process() calls -- the render quantum is a
+    // fixed size, so allocating per call would churn the realtime audio thread.
+    this.resampleBuf = null;
     this.port.onmessage = (e) => {
       if (e.data.event === 'start') this.recording = true;
       else if (e.data.event === 'stop') this.recording = false;
@@ -29,23 +32,29 @@ class CaptureProcessor extends AudioWorkletProcessor {
     const ratio = this.ratio;
     const n = input.length;
     if (n === 0) return new Float32Array(0);
+    // At most ceil(n / ratio) + 1 outputs per block (pos starts in [0, ratio)).
+    const maxLen = Math.ceil(n / ratio) + 1;
+    if (this.resampleBuf === null || this.resampleBuf.length < maxLen) {
+      this.resampleBuf = new Float32Array(maxLen);
+    }
+    const out = this.resampleBuf;
     // Extended frame: index 0 = prev (previous block's last sample),
     // index k>=1 = input[k-1]. Interpolate at fractional positions stepping by
     // ratio, carrying \`pos\` across calls to preserve the sample clock.
-    const out = [];
+    let count = 0;
     let pos = this.pos;
     while (pos < n) {
       const idx = pos | 0;
       const frac = pos - idx;
       const a = idx === 0 ? this.prev : input[idx - 1];
       const b = input[idx];
-      out.push(a + frac * (b - a));
+      out[count++] = a + frac * (b - a);
       pos += ratio;
     }
     // Shift the origin to this block's last sample for the next call.
     this.prev = input[n - 1];
     this.pos = pos - n;
-    return Float32Array.from(out);
+    return out.subarray(0, count);
   }
 
   process(inputs) {

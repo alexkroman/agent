@@ -16,8 +16,6 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // writing past the end and going silent.
     this.capacity = rate * 60;
     this.samples = new Float32Array(this.capacity);
-    // Report playback position every ~50ms for word-level text sync
-    this.progressInterval = Math.floor(rate * 0.05);
     this.resetTurn();
 
     this.port.onmessage = (e) => {
@@ -42,7 +40,6 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     this.carry = null;
     this.writePos = 0;
     this.readPos = 0;
-    this.samplesSinceProgress = 0;
   }
 
   // End the current turn: notify the host and rearm for the next reply.
@@ -111,11 +108,6 @@ class PlaybackProcessor extends AudioWorkletProcessor {
       out.set(this.samples.subarray(start, start + first), 0);
       if (n > first) out.set(this.samples.subarray(0, n - first), first);
       this.readPos += n;
-      this.samplesSinceProgress += n;
-      if (this.samplesSinceProgress >= this.progressInterval) {
-        this.port.postMessage({ event: 'progress', readPos: this.readPos });
-        this.samplesSinceProgress = 0;
-      }
       out.fill(0, n);
       return true;
     }
