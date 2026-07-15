@@ -115,19 +115,52 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
 
       closeOnAbort(openOpts.signal, shell.close);
 
+      // AssemblyAI streaming requires each audio frame to be 50–1000 ms, but
+      // telephony clients (e.g. the tau2 harness) stream standard 20 ms RTP
+      // frames. Coalesce inbound PCM into ~100 ms frames (capped at 1000 ms)
+      // before forwarding; a sub-100 ms remainder is carried to the next call.
+      const rate = openOpts.sampleRate;
+      const minFrameSamples = Math.max(1, Math.round(rate * 0.1)); // 100 ms
+      const maxFrameSamples = Math.max(minFrameSamples, Math.round(rate)); // 1000 ms
+      const minSendSamples = Math.max(1, Math.round(rate * 0.05)); // 50 ms floor
+      let carry = new Int16Array(0);
+      const flushTail = (): void => {
+        if (carry.length >= minSendSamples && !shell.isClosed()) {
+          const frame = carry.slice(0, Math.min(carry.length, maxFrameSamples));
+          try {
+            transcriber.sendAudio(frame.buffer);
+          } catch {
+            // socket already closing; nothing to flush
+          }
+        }
+        carry = new Int16Array(0);
+      };
+
       const session: AssemblyAISession = {
         sendAudio(pcm: Int16Array) {
           if (shell.isClosed()) return;
-          // Copy: caller may reuse `pcm`'s backing buffer for the next chunk.
-          const copy = new Uint8Array(
-            pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength),
-          );
-          transcriber.sendAudio(copy.buffer);
+          // Append to carry (copies `pcm`, whose backing buffer the caller may
+          // reuse), then forward as many 50–1000 ms frames as have accumulated.
+          const merged = new Int16Array(carry.length + pcm.length);
+          merged.set(carry, 0);
+          merged.set(pcm, carry.length);
+          carry = merged;
+          let offset = 0;
+          while (carry.length - offset >= minFrameSamples) {
+            const take = Math.min(carry.length - offset, maxFrameSamples);
+            const frame = carry.slice(offset, offset + take);
+            transcriber.sendAudio(frame.buffer);
+            offset += take;
+          }
+          if (offset > 0) carry = carry.slice(offset);
         },
         on(event, fn) {
           return emitter.on(event, fn);
         },
-        close: shell.close,
+        close: () => {
+          flushTail();
+          return shell.close();
+        },
         updateAgentContext(text: string) {
           if (!agentContextCapable || shell.isClosed()) return;
           const normalized = normalizeAgentContext(text);
