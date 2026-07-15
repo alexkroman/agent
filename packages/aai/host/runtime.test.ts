@@ -150,6 +150,33 @@ describe("createRuntime", () => {
     expect(JSON.parse(result)).toEqual(msgs);
   });
 
+  test("sandbox mode forwards callOpts (toolCallId) to the RPC executor", async () => {
+    // Regression: the RPC wrapper previously dropped the 5th `callOpts` arg, so
+    // relayed tool calls reached the client without a toolCallId and failed with
+    // "invoked without a toolCallId" in pipeline mode.
+    const rpcExecuteTool = vi.fn(async () => "ok");
+    const exec = createRuntime({
+      agent: makeAgent({ tools: {} }),
+      env: {},
+      executeTool: rpcExecuteTool,
+      toolSchemas: [
+        {
+          type: "function" as const,
+          name: "find_user",
+          description: "Find a user",
+          parameters: { type: "object" },
+        },
+      ],
+    });
+
+    const result = await exec.executeTool("find_user", {}, "s1", [], { toolCallId: "toolu_123" });
+
+    expect(result).toBe("ok");
+    expect(rpcExecuteTool).toHaveBeenCalledWith("find_user", {}, "s1", [], {
+      toolCallId: "toolu_123",
+    });
+  });
+
   test("env is frozen and passed to tools", async () => {
     const agent = makeAgent({
       tools: {
@@ -351,7 +378,8 @@ describe("createRuntime sandbox mode", () => {
     expect(runtime.toolSchemas).toBe(mockToolSchemas);
     const result = await runtime.executeTool("any_tool", {}, "s1", []);
     expect(result).toBe("mocked-result");
-    expect(mockExecuteTool).toHaveBeenCalledWith("any_tool", {}, "s1", []);
+    // The wrapper forwards a 5th `callOpts` arg (undefined when omitted).
+    expect(mockExecuteTool).toHaveBeenCalledWith("any_tool", {}, "s1", [], undefined);
   });
 });
 

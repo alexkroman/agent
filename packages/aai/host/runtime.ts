@@ -186,7 +186,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     const rpcExecuteTool = opts.executeTool;
     const frozenEnv = Object.freeze({ ...env });
 
-    executeTool = async (name, args, sessionId, messages) => {
+    executeTool = async (name, args, sessionId, messages, callOpts) => {
       // Handle builtins on the host (where SSRF-safe fetch lives) — EXCEPT
       // run_code, which executes untrusted JS and must run inside the guest
       // sandbox (gVisor/Deno), never on the host. It is delegated via RPC
@@ -203,8 +203,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
           logger,
         });
       }
-      // Delegate custom tools (and run_code) to the isolate via RPC
-      return rpcExecuteTool(name, args, sessionId, messages);
+      // Delegate custom tools (and run_code) to the isolate via RPC. Forward
+      // `callOpts` (which carries `toolCallId`) — the relay executor needs it to
+      // correlate the client's `tool_result`; dropping it makes every relayed
+      // tool call fail with "invoked without a toolCallId" in pipeline mode.
+      return rpcExecuteTool(name, args, sessionId, messages, callOpts);
     };
 
     toolSchemas = opts.toolSchemas;
