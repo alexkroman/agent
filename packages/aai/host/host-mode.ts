@@ -153,13 +153,22 @@ export function isHostAllowed(env: Record<string, string>): boolean {
  * the client rather than executed in-process, so the agent carries no real
  * `ToolDef`s — the tool schemas are supplied to the runtime separately via
  * {@link RuntimeOptions.toolSchemas}.
+ *
+ * When a `baseAgent` (the server's deployed agent) is provided, its provider
+ * config (`stt`/`llm`/`tts` and other pipeline settings) is inherited so the
+ * host session runs the SAME pipeline the operator configured — only the
+ * system prompt, greeting, and tools are overridden by the injected host
+ * block. Without a `baseAgent`, no providers are set and the runtime falls
+ * back to the default S2S path.
  */
-export function buildHostAgent(host: HostConfig): AgentDef {
+export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef {
   return {
-    name: "host",
+    ...(baseAgent ?? {}),
+    name: baseAgent?.name ?? "host",
     systemPrompt: host.systemPrompt,
     greeting: host.greeting ?? "",
     maxSteps: DEFAULT_HOST_MAX_STEPS,
+    // Injected tools are relayed to the client, not executed in-process.
     tools: {},
   };
 }
@@ -169,6 +178,13 @@ export type StartHostSessionOptions = {
   env: Record<string, string>;
   startOpts?: SessionStartOptions;
   logger?: Logger;
+  /**
+   * The server's deployed agent. Its `stt`/`llm`/`tts` provider config is
+   * inherited by the host session so it runs the operator's configured
+   * pipeline (rather than defaulting to S2S). Only prompt/greeting/tools are
+   * overridden by the client's host block.
+   */
+  baseAgent?: AgentDef;
   /** Handshake grace period (default {@link DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS}). */
   handshakeTimeoutMs?: number;
   /** Per-tool relay timeout (default {@link DEFAULT_RELAY_TOOL_TIMEOUT_MS}). */
@@ -275,7 +291,7 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     let runtime: ReturnType<typeof createRuntime>;
     try {
       runtime = makeRuntime({
-        agent: buildHostAgent(host),
+        agent: buildHostAgent(host, opts.baseAgent),
         env: opts.env,
         executeTool: relay.executeTool,
         toolSchemas: host.tools as ToolSchema[],

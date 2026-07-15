@@ -116,6 +116,8 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     // Enable host mode in the dev server (gated by AAI_ALLOW_HOST). Lets a
     // `?host=1` client (e.g. the tau2 harness) supply its own agent per session.
     env,
+    // Host sessions inherit this agent's stt/llm/tts pipeline config.
+    hostBaseAgent: agentDef,
     ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
   });
   await agentServer.listen(backendPort);
@@ -179,6 +181,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
         runtime: newRuntime,
         name: newAgentDef.name,
         env: newEnv,
+        hostBaseAgent: newAgentDef,
         ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
       });
       // The cleanup fn may have run while we were rebuilding — don't leave a
