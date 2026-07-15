@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import { sharedConfig } from "./vitest.shared.ts";
+import { sharedConfig, sharedCoverageExclude } from "./vitest.shared.ts";
 
 export default defineConfig({
   ...sharedConfig,
@@ -9,30 +9,19 @@ export default defineConfig({
       provider: "v8",
       include: ["packages/*/"],
       exclude: [
-        // Test infrastructure
-        "**/*.test.{ts,tsx}",
-        "**/*.test-d.ts",
-        "**/_test-utils.ts",
-        "**/dist/**",
-        "**/__snapshots__/**",
-        // Sandbox harness: runs inside V8 isolates on the platform, not vitest.
-        // Covered by integration tests (pnpm test:integration).
-        "packages/aai-server/sandbox*.ts",
-        "packages/aai-server/harness-runtime.ts",
-        "packages/aai-server/harness-runtime-v2.ts",
+        ...sharedCoverageExclude,
         // CLI entry point can't be unit tested.
         "packages/aai-cli/cli.ts",
       ],
-      // Global minimum. Per-package actuals are higher:
-      // aai ~93%, aai-ui ~85%, aai-cli ~75%, aai-server ~80%
-      // Actual combined coverage (all projects): lines ~71%, branches ~64%, functions ~69%, statements ~70%
-      // Note: aai-server tests currently fail due to missing nanoid dep, lowering overall numbers.
-      // Thresholds set to targets where actuals exceed them; statements set to 64 (~5% below actual 69.57).
+      // Ratchet: these floors only move UP. When a coverage run shows actuals
+      // comfortably above a floor, raise the floor to ~2-3 points below the
+      // actual so regressions fail fast but routine refactors don't flap.
+      // Actuals (2026-07): lines ~88%, branches ~74%, functions ~86%, statements ~86%.
       thresholds: {
-        lines: 70,
-        functions: 65,
-        branches: 55,
-        statements: 64,
+        lines: 85,
+        functions: 83,
+        branches: 72,
+        statements: 83,
       },
     },
     projects: [

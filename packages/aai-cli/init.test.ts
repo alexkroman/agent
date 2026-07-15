@@ -2,11 +2,11 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { patchPackageJsonForWorkspace } from "./_init.ts";
 import { fakeDownloadAndMerge, silenced, withTempDir } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
-import { resolvePnpmCommand } from "./init.ts";
+import { executeInit, resolvePnpmCommand } from "./init.ts";
 
 async function createFakeTemplates(dir: string): Promise<string> {
   const rootDir = path.join(dir, "fake-root");
@@ -33,6 +33,9 @@ vi.mock("./_templates.ts", () => ({
   downloadAndMergeTemplate: (template: string, targetDir: string) =>
     fakeDownloadAndMerge(fakeTemplatesDir, template, targetDir),
 }));
+
+const executeDeploy = vi.hoisted(() => vi.fn());
+vi.mock("./deploy.ts", () => ({ executeDeploy }));
 
 const { runInit } = await import("./_init.ts");
 
@@ -101,6 +104,117 @@ describe("scaffold client.tsx", () => {
         await runInit({ targetDir: target });
         const clientPath = path.join(target, "client.tsx");
         expect(await fileExists(clientPath)).toBe(false);
+      }),
+    );
+  });
+});
+
+describe("executeInit", () => {
+  beforeEach(() => {
+    executeDeploy.mockReset();
+  });
+
+  // The fake "simple" template has an empty package.json (no deps), so
+  // executeInit skips the pnpm install step entirely — tests stay hermetic.
+
+  test("scaffolds a project and skips deploy when requested", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        fakeTemplatesDir = await createFakeTemplates(dir);
+        const target = path.join(dir, "my-agent");
+
+        const result = await executeInit({ dir: target, skipDeploy: true }, { silent: true });
+
+        expect(result).toEqual({
+          ok: true,
+          data: { dir: target, template: "simple", deployed: false },
+        });
+        expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
+        expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
+        expect(executeDeploy).not.toHaveBeenCalled();
+      }),
+    );
+  });
+
+  test("refuses to overwrite an existing agent.ts without --force", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        fakeTemplatesDir = await createFakeTemplates(dir);
+        const target = path.join(dir, "existing");
+        await fs.mkdir(target, { recursive: true });
+        await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
+
+        await expect(
+          executeInit({ dir: target, skipDeploy: true }, { silent: true }),
+        ).rejects.toThrow("agent.ts already exists");
+      }),
+    );
+  });
+
+  test("--force overwrites an existing project", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        fakeTemplatesDir = await createFakeTemplates(dir);
+        const target = path.join(dir, "existing");
+        await fs.mkdir(target, { recursive: true });
+        await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
+
+        const result = await executeInit(
+          { dir: target, force: true, skipDeploy: true },
+          { silent: true },
+        );
+        expect(result.ok).toBe(true);
+        expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
+      }),
+    );
+  });
+
+  test("deploys after scaffolding and returns slug + url", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        fakeTemplatesDir = await createFakeTemplates(dir);
+        const target = path.join(dir, "deployed-agent");
+        executeDeploy.mockResolvedValue({
+          ok: true,
+          data: { slug: "deployed-agent", url: "https://agents.test/deployed-agent" },
+        });
+
+        const result = await executeInit(
+          { dir: target, server: "https://api.test" },
+          { silent: true },
+        );
+
+        expect(executeDeploy).toHaveBeenCalledWith({ cwd: target, server: "https://api.test" });
+        expect(result).toEqual({
+          ok: true,
+          data: {
+            dir: target,
+            template: "simple",
+            deployed: true,
+            slug: "deployed-agent",
+            url: "https://agents.test/deployed-agent",
+          },
+        });
+      }),
+    );
+  });
+
+  test("reports deployed: false when deploy fails", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        fakeTemplatesDir = await createFakeTemplates(dir);
+        const target = path.join(dir, "failed-deploy");
+        executeDeploy.mockResolvedValue({ ok: false, code: "deploy_failed", error: "boom" });
+
+        const result = await executeInit(
+          { dir: target, server: "https://api.test" },
+          { silent: true },
+        );
+
+        expect(result).toEqual({
+          ok: true,
+          data: { dir: target, template: "simple", deployed: false },
+        });
       }),
     );
   });

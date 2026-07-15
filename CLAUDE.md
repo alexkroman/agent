@@ -88,6 +88,18 @@ fail fast. To tighten quality over time, lower the entries in the
 file-length allowlist and delete escape hatches — both baselines are
 designed to only move one direction.
 
+A third ratchet lives in the vitest configs: **coverage thresholds**.
+Each package's `vitest.config.ts` declares per-package coverage floors
+(lines/functions/branches/statements) that CI enforces via
+`pnpm test:coverage` (the `test` job runs it per package), and the root
+`vitest.config.ts` holds combined floors for whole-repo runs. Like the
+other ratchets these only move up: when a coverage run shows actuals
+comfortably above a floor, raise the floor to ~2-3 points below the
+actual. Never lower a floor to make a PR pass — add tests instead.
+Coverage measures production source only; test infrastructure
+(`_test-utils.ts`, mocks, fixtures, setup files) is excluded via
+`sharedCoverageExclude` in `vitest.shared.ts`.
+
 ## Architecture
 
 Five workspace packages under `packages/`:
@@ -469,6 +481,10 @@ you only need to list one package.
 - **Package validation**: `publint` runs post-build to verify package.json
   exports resolve to real files. `attw` validates export types. Both run
   in the check pipeline.
+- **Coverage**: `pnpm test:coverage` (root or per package) runs vitest with
+  v8 coverage and enforces the per-package threshold ratchet (see
+  "Quality ratchets" above). CI runs it for every package in the test
+  matrix, so a PR that drops coverage below a package's floor fails.
 
 #### Vitest config differences per package
 
