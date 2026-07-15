@@ -41,15 +41,39 @@ function cap(arr: unknown[]): void {
 }
 
 /**
- * Drop `reasoning` parts from an assistant message. Reasoning is an ephemeral
- * per-turn trace, not conversation the model should re-read; replaying it also
- * makes the Anthropic provider warn ("unsupported reasoning metadata") because
- * the persisted parts carry no valid thinking signature. Returns `null` if the
- * message had nothing but reasoning (so the caller drops it entirely).
+ * A `reasoning` part is worth replaying only if it carries provider metadata
+ * that the originating provider needs to reconstruct the turn:
+ * - Anthropic thinking blocks (`anthropic.signature`) or redacted thinking
+ *   (`anthropic.redactedData`) replay as real `thinking`/`redacted_thinking`.
+ * - OpenAI Responses reasoning items (`openai.itemId`, e.g. `rs_...`) are
+ *   REQUIRED alongside the message/tool-call items they produced — dropping one
+ *   makes the API reject the whole request ("Item 'msg_...' of type 'message'
+ *   was provided without its required 'reasoning' item: 'rs_...'").
+ *
+ * A metadata-less reasoning part is an ephemeral trace with no valid signature;
+ * Anthropic warns ("unsupported reasoning metadata") and drops it on replay, so
+ * we strip those ourselves rather than re-send them every turn.
+ */
+function isReplayableReasoning(
+  providerOptions: Record<string, Record<string, unknown>> | undefined,
+): boolean {
+  if (!providerOptions) return false;
+  const { anthropic, openai } = providerOptions;
+  if (anthropic?.signature != null || anthropic?.redactedData != null) return true;
+  return openai?.itemId != null;
+}
+
+/**
+ * Drop non-replayable `reasoning` parts from an assistant message (see
+ * {@link isReplayableReasoning}). Reasoning that a provider still needs is kept
+ * so multi-turn tool calls survive on the OpenAI Responses API and Anthropic
+ * extended thinking. Returns `null` if the message had nothing left to keep.
  */
 function withoutReasoning(m: ModelMessage): ModelMessage | null {
   if (m.role !== "assistant" || typeof m.content === "string") return m;
-  const content = m.content.filter((part) => part.type !== "reasoning");
+  const content = m.content.filter(
+    (part) => part.type !== "reasoning" || isReplayableReasoning(part.providerOptions),
+  );
   if (content.length === 0) return null;
   return { ...m, content };
 }
