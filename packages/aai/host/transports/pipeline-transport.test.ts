@@ -430,6 +430,32 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("omits temperature when not set (avoids warnings on models that ignore it)", async () => {
+      const llm = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
+      const { opts, stt } = makeOpts({ llm });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("hi");
+      await vi.waitFor(() => {
+        expect(llm.calls.length).toBeGreaterThan(0);
+      });
+      expect(llm.calls[0]?.temperature).toBeUndefined();
+      await t.stop();
+    });
+
+    test("forwards an explicit temperature override to doStream", async () => {
+      const llm = createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] });
+      const { opts, stt } = makeOpts({ llm, temperature: 0.4 });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("hi");
+      await vi.waitFor(() => {
+        expect(llm.calls.length).toBeGreaterThan(0);
+      });
+      expect(llm.calls[0]?.temperature).toBe(0.4);
+      await t.stop();
+    });
+
     test("maxSteps caps the doStream loop", async () => {
       // Two scripted steps; maxSteps=1 must stop after the first (default would be 5).
       const llm = createFakeLanguageModel({
