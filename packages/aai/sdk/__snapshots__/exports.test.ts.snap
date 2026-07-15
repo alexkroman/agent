@@ -82,7 +82,6 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "createServer",
   "createSessionCore",
   "createUnstorageKv",
-  "executeInIsolate",
   "executeToolCall",
   "resolveAllBuiltins",
   "resolveKv",

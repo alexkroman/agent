@@ -12,9 +12,6 @@ import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema, toToolJsonSchema } from "../sdk/_internal-types.ts";
 import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
-import { createRunCode } from "./_run-code.ts";
-
-export { executeInIsolate } from "./_run-code.ts";
 
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
@@ -186,6 +183,41 @@ function createFetchJson(
       } catch {
         return { error: "Response was not valid JSON", url };
       }
+    },
+  };
+}
+
+// ─── run_code ────────────────────────────────────────────────────────────────
+
+const runCodeParams = z.object({
+  code: z.string().describe("JavaScript code to execute. Use console.log() for output."),
+});
+
+/**
+ * The run_code tool definition (schema + guidance only).
+ *
+ * run_code executes untrusted JavaScript and is ONLY ever run inside the guest
+ * sandbox (gVisor/Deno): in platform mode the runtime delegates it over RPC to
+ * `deno-harness`, which runs it there. This host-side `execute` is a guard for
+ * the self-hosted path (`aai dev`), which has no sandbox — it refuses rather
+ * than evaluating attacker-influenceable code in the host process. (The old
+ * `node:vm` host execution was removed: `node:vm` is not a security boundary
+ * and its `Function`-constructor escape leaked the host process.)
+ */
+function createRunCode(): ToolDef<typeof runCodeParams> & { guidance: string } {
+  return {
+    guidance:
+      "You MUST use the run_code tool for ANY question involving math, counting, calculations, " +
+      "data processing, or code. NEVER do mental math or recite code verbally. " +
+      "run_code executes JavaScript (not Python). Always write JavaScript.",
+    description:
+      "Execute JavaScript code in a sandbox and return the output. Use this for calculations, data transformations, string manipulation, or any task that benefits from running code. Output is captured from console.log(). No network or filesystem access.",
+    parameters: runCodeParams,
+    async execute() {
+      return {
+        error:
+          "run_code is only available in the sandboxed runtime and cannot run in this environment.",
+      };
     },
   };
 }

@@ -221,6 +221,62 @@ describe("executeTool", () => {
       state: {},
     });
   });
+
+  // ── run_code (executes in-guest; gVisor/Deno is the boundary) ────────────
+
+  test("run_code executes and captures console output", async () => {
+    const state = createSessionStateMap();
+    const result = await executeTool(
+      makeAgent({}),
+      makeReq("run_code", { code: 'console.log("hello", 2 + 2)' }),
+      state,
+    );
+    expect(result).toEqual({ result: "hello 4", state: {} });
+  });
+
+  test("run_code supports top-level await", async () => {
+    const state = createSessionStateMap();
+    const result = await executeTool(
+      makeAgent({}),
+      makeReq("run_code", {
+        code: "await Promise.resolve(); console.log('done')",
+      }),
+      state,
+    );
+    expect(result).toEqual({ result: "done", state: {} });
+  });
+
+  test("run_code returns no-output message for silent code", async () => {
+    const state = createSessionStateMap();
+    const result = await executeTool(
+      makeAgent({}),
+      makeReq("run_code", { code: "const x = 1 + 1;" }),
+      state,
+    );
+    expect(result).toEqual({ result: "Code ran successfully (no output)", state: {} });
+  });
+
+  test("run_code returns error object for runtime errors", async () => {
+    const state = createSessionStateMap();
+    const result = await executeTool(
+      makeAgent({}),
+      makeReq("run_code", { code: "throw new Error('boom')" }),
+      state,
+    );
+    expect(result).toEqual({ error: "boom" });
+  });
+
+  test("run_code works without the tool being in the agent bundle", async () => {
+    // run_code is a builtin, not a custom tool — it must run even though the
+    // agent declares no tools.
+    const state = createSessionStateMap();
+    const result = await executeTool(
+      makeAgent({}),
+      makeReq("run_code", { code: 'console.log("ok")' }),
+      state,
+    );
+    expect(result).toEqual({ result: "ok", state: {} });
+  });
 });
 
 // ── handleRequest ─────────────────────────────────────────────────────────

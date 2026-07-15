@@ -2,8 +2,13 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createMockToolContext } from "./_test-utils.ts";
-import { executeInIsolate, resolveAllBuiltins } from "./builtin-tools.ts";
+import { resolveAllBuiltins } from "./builtin-tools.ts";
 
+/**
+ * Invoke the host-side run_code def. run_code no longer executes on the host —
+ * real execution happens inside the guest sandbox (see deno-harness). This
+ * host-side def is a guard that refuses to evaluate code.
+ */
 function runCode(code: string): Promise<unknown> {
   const { defs } = resolveAllBuiltins(["run_code"]);
   return defs.run_code?.execute({ code }, createMockToolContext()) as Promise<unknown>;
@@ -49,216 +54,32 @@ describe("resolveAllBuiltins defs", () => {
     expect(Object.keys(defs)).toHaveLength(0);
   });
 
-  // ─── run_code ──────────────────────────────────────────────────────────
+  // ─── run_code (host-side guard) ─────────────────────────────────────────
+  // run_code executes untrusted JS and now runs ONLY inside the guest sandbox
+  // (gVisor/Deno) — see deno-harness.test.ts for execution coverage. The
+  // host-side def must never evaluate code; it returns an error instead.
 
-  test("run_code executes and returns stdout", async () => {
+  test("run_code is registered with schema and guidance", () => {
+    const { defs, schemas, guidance } = resolveAllBuiltins(["run_code"]);
+    expect(defs.run_code?.execute).toBeTypeOf("function");
+    expect(schemas.map((s) => s.name)).toContain("run_code");
+    expect(guidance.some((g) => g.includes("run_code"))).toBe(true);
+  });
+
+  test("run_code does not execute code on the host", async () => {
     const result = await runCode('console.log("hello")');
-    expect(result).toBe("hello");
+    expect(result).toEqual({
+      error:
+        "run_code is only available in the sandboxed runtime and cannot run in this environment.",
+    });
   });
 
-  test("run_code returns error for syntax errors", async () => {
-    const result = await runCode("%%%");
+  test("run_code refuses even benign code on the host (no evaluation)", async () => {
+    // A payload that WOULD have escaped the old node:vm sandbox must never be
+    // evaluated on the host — the guard returns before any execution.
+    const result = await runCode('console.log.constructor("return process")().env');
     expect(result).toHaveProperty("error");
-  });
-
-  test("run_code returns no-output message for silent code", async () => {
-    const result = await runCode("const x = 1 + 1;");
-    expect(result).toBe("Code ran successfully (no output)");
-  });
-
-  test("run_code captures console.warn and console.error", async () => {
-    const result = await runCode(
-      'console.warn("w"); console.error("e"); console.debug("d"); console.info("i")',
-    );
-    expect(result).toBe("w\ne\nd\ni");
-  });
-
-  // ─── run_code security: vm sandbox prevents host access ──────────────
-
-  test("run_code sandbox blocks network access", async () => {
-    const result = await runCode(`
-      try {
-        const res = await fetch("https://example.com");
-        console.log("ESCAPED:" + res.status);
-      } catch(e) {
-        console.log("BLOCKED:" + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).toMatch(/BLOCKED/);
-  });
-
-  test("run_code sandbox blocks filesystem writes", async () => {
-    const result = await runCode(`
-      try {
-        const fs = await import("node:fs");
-        fs.writeFileSync("/tmp/pwned.txt", "owned");
-        console.log("ESCAPED");
-      } catch(e) {
-        console.log("BLOCKED:" + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).toMatch(/BLOCKED/);
-  });
-
-  test("run_code sandbox blocks child process spawning", async () => {
-    const result = await runCode(`
-      try {
-        const cp = await import("node:child_process");
-        const out = cp.execSync("id").toString();
-        console.log("ESCAPED:" + out);
-      } catch(e) {
-        console.log("BLOCKED:" + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).toMatch(/BLOCKED/);
-  });
-
-  test("run_code sandbox blocks env var access", async () => {
-    const result = await runCode(`
-      try {
-        const keys = process.env ? Object.keys(process.env) : [];
-        const hasPath = keys.includes("PATH");
-        const hasHome = keys.includes("HOME");
-        console.log(hasPath || hasHome ? "LEAKED_ENV" : "SAFE:" + keys.length);
-      } catch(e) {
-        console.log("SAFE:" + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).not.toMatch(/LEAKED_ENV/);
-  });
-
-  test("run_code sandbox prevents constructor chain escape", async () => {
-    // This was the critical bypass in the old regex approach — the VM context
-    // doesn't expose `process` so host secrets can't be exfiltrated.
-    const result = await runCode(`
-      const c = "con" + "stru" + "ctor";
-      const F = ""[c][c];
-      try {
-        const p = F("return process")();
-        const keys = p && p.env ? Object.keys(p.env) : [];
-        const hasPath = keys.includes("PATH");
-        console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length);
-      } catch(e) {
-        console.log("SAFE:" + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).not.toMatch(/LEAKED_ENV/);
-  });
-
-  test("run_code allows normal .constructor property check", async () => {
-    const result = await runCode('console.log("hello".constructor.name)');
-    expect(result).toBe("String");
-  });
-
-  test("run_code sandbox blocks console.log.constructor code generation", async () => {
-    const result = await runCode(`
-      try {
-        const fn = console.log.constructor('return 1')();
-        console.log("ESCAPED:" + fn);
-      } catch(e) {
-        console.log("BLOCKED:" + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).toMatch(/BLOCKED/);
-    expect(result as string).not.toMatch(/ESCAPED/);
-  });
-
-  test("run_code sandbox blocks URL.constructor.constructor code generation", async () => {
-    const result = await runCode(`
-      try {
-        const fn = URL.constructor.constructor('return 1')();
-        console.log("ESCAPED:" + fn);
-      } catch(e) {
-        console.log("BLOCKED:" + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).toMatch(/BLOCKED/);
-    expect(result as string).not.toMatch(/ESCAPED/);
-  });
-
-  test("run_code sandbox blocks template literal constructor bypass", async () => {
-    const result = await runCode(`
-      const c = \`\${"con"}\${"stru"}\${"ctor"}\`;
-      const F = ""[c][c];
-      try {
-        const p = F("return process")();
-        const keys = p && p.env ? Object.keys(p.env) : [];
-        const hasPath = keys.includes("PATH");
-        console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
-      } catch(e) {
-        console.log("SAFE:" + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).not.toMatch(/LEAKED_ENV/);
-  });
-
-  test("run_code sandbox blocks Array.join constructor bypass", async () => {
-    const result = await runCode(`
-      const c = ["con","stru","ctor"].join("");
-      const F = ""[c][c];
-      try {
-        const p = F("return process")();
-        const keys = p && p.env ? Object.keys(p.env) : [];
-        const hasPath = keys.includes("PATH");
-        console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
-      } catch(e) {
-        console.log("SAFE:" + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).not.toMatch(/LEAKED_ENV/);
-  });
-
-  test("run_code sandbox blocks fromCharCode constructor bypass", async () => {
-    const result = await runCode(`
-      const s = String.fromCharCode(99,111,110,115,116,114,117,99,116,111,114);
-      const F = ""[s][s];
-      try {
-        const p = F("return process")();
-        const keys = p && p.env ? Object.keys(p.env) : [];
-        const hasPath = keys.includes("PATH");
-        console.log(hasPath ? "LEAKED_ENV" : "SAFE:" + keys.length + " keys");
-      } catch(e) {
-        console.log("SAFE:" + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).not.toMatch(/LEAKED_ENV/);
-  });
-
-  test("run_code sandbox blocks dynamic import of node:os", async () => {
-    const result = await runCode(`
-      try {
-        const m = await import("node:os");
-        console.log("ESCAPED: " + m.hostname());
-      } catch(e) {
-        console.log("BLOCKED: " + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).toMatch(/BLOCKED/);
-    expect(result as string).not.toMatch(/ESCAPED/);
-  });
-
-  test("run_code sandbox blocks fetch to cloud metadata endpoint", async () => {
-    const result = await runCode(`
-      try {
-        const res = await fetch("http://169.254.169.254/latest/meta-data/");
-        console.log("ESCAPED:" + res.status);
-      } catch(e) {
-        console.log("BLOCKED:" + e.message);
-      }
-    `);
-    expect(result).toBeTypeOf("string");
-    expect(result as string).toMatch(/BLOCKED/);
+    expect(result as { error: string }).not.toHaveProperty("env");
   });
 
   // ─── fetch_json ────────────────────────────────────────────────────────
@@ -473,207 +294,5 @@ describe("resolveAllBuiltins defs", () => {
     const result = await defs.visit_webpage?.execute({ url: "https://evil.com/redirect" }, ctx);
     expect(result).toHaveProperty("content");
     expect((result as { content: string }).content).toContain("leaked-iam-creds");
-  });
-});
-
-describe("executeInIsolate", () => {
-  test("arithmetic and output", async () => {
-    const result = await executeInIsolate("console.log(2 + 2)");
-    expect(result).toBe("4");
-  });
-
-  test("async code works", async () => {
-    const result = await executeInIsolate(`
-      const delay = (ms) => new Promise(r => setTimeout(r, ms));
-      await delay(50);
-      console.log("async done");
-    `);
-    expect(result).toBe("async done");
-  });
-
-  test("runtime errors return error object", async () => {
-    const result = await executeInIsolate("throw new Error('boom')");
-    expect(result).toHaveProperty("error");
-    expect((result as { error: string }).error).toContain("boom");
-  });
-
-  test("http module not available via require", async () => {
-    const result = await executeInIsolate(`
-      try {
-        const http = require("http");
-        console.log("ESCAPED");
-      } catch(e) {
-        console.log("BLOCKED:" + e.message);
-      }
-    `);
-    expect(result as string).toMatch(/BLOCKED/);
-  });
-
-  test("filesystem modules not available via require", async () => {
-    const result = await executeInIsolate(`
-      try {
-        const fs = require("fs");
-        fs.writeFileSync("/tmp/pwned.txt", "owned");
-        console.log("ESCAPED");
-      } catch(e) {
-        console.log("BLOCKED:" + e.message);
-      }
-    `);
-    expect(result as string).toMatch(/BLOCKED/);
-  });
-
-  test("child process modules not available via require", async () => {
-    const result = await executeInIsolate(`
-      try {
-        const cp = require("child_process");
-        cp.execSync("id");
-        console.log("ESCAPED");
-      } catch(e) {
-        console.log("BLOCKED:" + e.message);
-      }
-    `);
-    expect(result as string).toMatch(/BLOCKED/);
-  });
-
-  test("process.exit is not available", async () => {
-    const result = await executeInIsolate(`
-      try {
-        process.exit(1);
-        console.log("STILL_RUNNING");
-      } catch(e) {
-        console.log("BLOCKED:" + e.message);
-      }
-    `);
-    expect(result as string).toMatch(/BLOCKED/);
-  });
-
-  test("global state does not persist between invocations", async () => {
-    await executeInIsolate("globalThis.__secret = 'leaked';");
-    const result = await executeInIsolate(`
-      console.log(typeof globalThis.__secret === "undefined" ? "ISOLATED" : "LEAKED:" + globalThis.__secret);
-    `);
-    expect(result).toBe("ISOLATED");
-  });
-
-  test("variables do not leak between invocations", async () => {
-    await executeInIsolate("var crossLeak = 42;");
-    const result = await executeInIsolate(`
-      try {
-        console.log(typeof crossLeak === "undefined" ? "ISOLATED" : "LEAKED:" + crossLeak);
-      } catch(e) {
-        console.log("ISOLATED");
-      }
-    `);
-    expect(result).toBe("ISOLATED");
-  });
-
-  // ─── timer leak prevention ────────────────────────────────────────────
-
-  test("setInterval timers created in sandbox are cleaned up after execution", async () => {
-    // The sandbox wraps setInterval and clears all pending timers in the
-    // finally block. We verify this by having the interval callback mutate
-    // a variable captured in the host closure — if the interval fires after
-    // executeInIsolate returns, we'd see the count increment.
-    let hostCallbackCount = 0;
-
-    // Temporarily wrap the real setInterval so the callback can signal the host.
-    const origSetInterval = globalThis.setInterval;
-    const origClearInterval = globalThis.clearInterval;
-    const cancelIds: ReturnType<typeof setInterval>[] = [];
-
-    // Intercept: wrap the interval the sandbox creates so the fn also bumps our host counter.
-    globalThis.setInterval = ((fn: () => void, delay?: number) => {
-      const wrapped = () => {
-        hostCallbackCount++;
-        fn();
-      };
-      const id = origSetInterval(wrapped, delay);
-      cancelIds.push(id);
-      return id;
-    }) as typeof globalThis.setInterval;
-
-    try {
-      await executeInIsolate(`
-        setInterval(() => {}, 10);
-        console.log("started");
-      `);
-    } finally {
-      globalThis.setInterval = origSetInterval;
-      globalThis.clearInterval = origClearInterval;
-    }
-
-    const countAfterReturn = hostCallbackCount;
-
-    // Wait longer than the interval delay — if the timer leaked, the counter
-    // would increment here.
-    await new Promise<void>((r) => setTimeout(r, 80));
-
-    // Cleanup any ids that slipped through (shouldn't be needed if fix works)
-    for (const id of cancelIds) {
-      origClearInterval(id);
-    }
-
-    // Counter must not have increased after executeInIsolate returned
-    expect(hostCallbackCount).toBe(countAfterReturn);
-  });
-
-  test("setTimeout created in sandbox does not fire after execution completes", async () => {
-    // A setTimeout with a short delay should be cancelled by the finally block
-    // before it has a chance to run after executeInIsolate resolves.
-    let firedAfterReturn = false;
-    const origSetTimeout = globalThis.setTimeout;
-    const origClearTimeout = globalThis.clearTimeout;
-    const cancelIds: ReturnType<typeof setTimeout>[] = [];
-
-    globalThis.setTimeout = ((fn: () => void, delay?: number) => {
-      const wrapped = () => {
-        firedAfterReturn = true;
-        fn();
-      };
-      const id = origSetTimeout(wrapped, delay);
-      cancelIds.push(id);
-      return id;
-    }) as typeof globalThis.setTimeout;
-
-    try {
-      // The code schedules a timer with 20 ms delay then returns immediately.
-      await executeInIsolate(`
-        setTimeout(() => {}, 20);
-        console.log("scheduled");
-      `);
-    } finally {
-      globalThis.setTimeout = origSetTimeout;
-      globalThis.clearTimeout = origClearTimeout;
-    }
-
-    // Reset after the function returned — any fire from this point is a leak.
-    firedAfterReturn = false;
-
-    // Wait longer than the 20 ms delay to confirm no leak.
-    await new Promise<void>((r) => origSetTimeout(r, 80));
-
-    for (const id of cancelIds) {
-      origClearTimeout(id);
-    }
-
-    expect(firedAfterReturn).toBe(false);
-  });
-
-  test("setInterval cleanup does not prevent synchronous timer use during execution", async () => {
-    // Ensure wrapping timers doesn't break legitimate async usage
-    const result = await executeInIsolate(`
-      let ticks = 0;
-      await new Promise((resolve) => {
-        const id = setInterval(() => {
-          ticks++;
-          if (ticks >= 3) {
-            clearInterval(id);
-            resolve(undefined);
-          }
-        }, 10);
-      });
-      console.log("ticks:" + ticks);
-    `);
-    expect(result).toBe("ticks:3");
   });
 });
