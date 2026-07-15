@@ -285,13 +285,17 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // next user turn is transcribed with it in context (AssemblyAI
       // Universal-3.5 Pro only; other providers have no such hook).
       sttSession?.updateAgentContext?.(accumulated);
-    }
 
-    await flushTtsAndWait(ctl.signal);
+      // Only flush/await TTS when the turn actually produced speech. A
+      // tool-call-only turn sends no text to the TTS context, so the provider
+      // never emits `done` and flushTtsAndWait would burn the full
+      // PIPELINE_FLUSH_TIMEOUT_MS (~10s) on every silent turn.
+      await flushTtsAndWait(ctl.signal);
 
-    if (ctl.signal.aborted) {
-      finishTurn(ctl);
-      return;
+      if (ctl.signal.aborted) {
+        finishTurn(ctl);
+        return;
+      }
     }
 
     // Do NOT call callbacks.onAudioDone() here — session-core's flushReply
