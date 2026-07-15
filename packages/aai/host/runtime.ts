@@ -358,6 +358,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     sinkMap.set(sessionOpts.id, sessionOpts.client);
 
     const isPipeline = Boolean(pipelineProviders);
+    // Relay (host) mode: the relay `executeTool` emits the client-facing
+    // `tool_call` itself (mirrors session-core's `!opts.onToolResult` guard).
+    const isRelay = Boolean(opts.onToolResult);
     const hasTools = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
     const systemPrompt = buildSystemPrompt(agentConfig, {
       hasTools,
@@ -373,6 +376,24 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       return core;
     }
 
+    // onToolCall wiring, by transport + relay mode:
+    // - S2S: route through SessionCore, which executes and emits done itself.
+    // - Pipeline in-process: tools run inside streamText; forward to the client
+    //   sink for UI observability only (routing through SessionCore would
+    //   re-execute the tool and hang the turn on non-empty pendingTools).
+    // - Pipeline relay: the relay executeTool already emitted the tool_call to
+    //   the client (the executor); a second emit here would be a duplicate frame
+    //   the client runs twice — corrupting write state, doubling read latency.
+    let onToolCall: TransportCallbacks["onToolCall"];
+    if (!isPipeline) {
+      onToolCall = (id, name, args) => bindCore().onToolCall(id, name, args);
+    } else if (isRelay) {
+      onToolCall = () => undefined;
+    } else {
+      onToolCall = (id, name, args) =>
+        sessionOpts.client.event({ type: "tool_call", toolCallId: id, toolName: name, args });
+    }
+
     const callbacks: TransportCallbacks = {
       onReplyStarted: (replyId) => bindCore().onReplyStarted(replyId),
       onReplyDone: () => bindCore().onReplyDone(),
@@ -381,17 +402,13 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       onAudioDone: () => bindCore().onAudioDone(),
       onUserTranscript: (text) => bindCore().onUserTranscript(text),
       onAgentTranscript: (text, interrupted) => bindCore().onAgentTranscript(text, interrupted),
-      // Pipeline: tools execute inside streamText; forward the call to the
-      // client sink for UI observability only. Going through SessionCore.onToolCall
-      // would re-execute the tool and leave pendingTools non-empty, hanging the turn.
-      onToolCall: isPipeline
-        ? (id, name, args) =>
-            sessionOpts.client.event({ type: "tool_call", toolCallId: id, toolName: name, args })
-        : (id, name, args) => bindCore().onToolCall(id, name, args),
+      onToolCall,
       // Pipeline: emit `tool_call_done` when streamText surfaces the
       // `tool-result` part so the UI can flip status from pending → done.
       // S2S transports never set this; SessionCore.onToolCall emits done itself.
-      ...(isPipeline
+      // Suppressed in relay mode: the client owns the tool lifecycle there and a
+      // duplicate `tool_call_done` would only echo a result it already computed.
+      ...(isPipeline && !isRelay
         ? {
             onToolCallDone: (id: string, result: string) =>
               sessionOpts.client.event({ type: "tool_call_done", toolCallId: id, result }),
