@@ -41,5 +41,16 @@ export async function executeDev(opts: {
     );
   });
 
+  // Same rationale for synchronous throws that escape to the top of the event
+  // loop (e.g. a provider SDK callback that throws during a concurrent
+  // cold-start burst). Without this, one bad session's exception crashes the
+  // whole host and drops every other in-flight connection with it. Log the
+  // stack and keep serving so a single failure stays isolated to its session.
+  process.on("uncaughtException", (err) => {
+    log.error(
+      `Uncaught exception: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+    );
+  });
+
   return ok({ url });
 }
