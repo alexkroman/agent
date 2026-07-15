@@ -25,6 +25,32 @@ function resolveSpeechModel(model: string): string {
   return model === "u3pro-rt" ? "u3-rt-pro" : model;
 }
 
+/**
+ * `agent_context` is accepted only by the Universal-3.5 Pro streaming
+ * family — connection-time is rejected and mid-stream updates are stripped
+ * (with a server warning) on every other model. Names cover both the
+ * dot- and dash-spelled literals plus the SDK's rt-pro aliases.
+ */
+const UNIVERSAL_3_5_PRO_MODELS: ReadonlySet<string> = new Set([
+  "universal-3.5-pro",
+  "universal-3-5-pro",
+  "u3-rt-pro",
+  "u3-rt-pro-beta-1",
+]);
+
+function supportsAgentContext(resolvedSpeechModel: string): boolean {
+  return UNIVERSAL_3_5_PRO_MODELS.has(resolvedSpeechModel);
+}
+
+/** AssemblyAI's `agent_context` cap. Values longer than this are truncated. */
+const AGENT_CONTEXT_MAX_CHARS = 1750;
+
+/** Cap `text` at {@link AGENT_CONTEXT_MAX_CHARS}; `undefined` for empty/whitespace-only text. */
+function normalizeAgentContext(text: string): string | undefined {
+  if (text.trim().length === 0) return;
+  return text.length > AGENT_CONTEXT_MAX_CHARS ? text.slice(0, AGENT_CONTEXT_MAX_CHARS) : text;
+}
+
 export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
   return {
     name: "assemblyai",
@@ -38,11 +64,16 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
 
       const client = new AssemblyAI({ apiKey });
       const speechModel = resolveSpeechModel(opts.model ?? "universal-3.5-pro");
+      const agentContextCapable = supportsAgentContext(speechModel);
+      const initialAgentContext = agentContextCapable
+        ? normalizeAgentContext(openOpts.agentContext ?? "")
+        : undefined;
       const transcriber = client.streaming.transcriber({
         sampleRate: openOpts.sampleRate,
         // SDK types `speechModel` as a string-literal union; accept `string` here.
         speechModel: speechModel as never,
         ...(openOpts.sttPrompt ? { prompt: openOpts.sttPrompt } : {}),
+        ...(initialAgentContext !== undefined ? { agentContext: initialAgentContext } : {}),
       });
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
@@ -83,6 +114,14 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
           return emitter.on(event, fn);
         },
         close: shell.close,
+        updateAgentContext(text: string) {
+          if (!agentContextCapable || shell.isClosed()) return;
+          const normalized = normalizeAgentContext(text);
+          if (normalized === undefined) return;
+          // NOTE: the wire/update-message field is snake_case (`agent_context`),
+          // unlike the connect-time constructor param (`agentContext`).
+          transcriber.updateConfiguration({ agent_context: normalized });
+        },
         _transcriber: transcriber,
       };
 

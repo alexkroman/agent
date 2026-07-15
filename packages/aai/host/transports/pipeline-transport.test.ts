@@ -102,6 +102,16 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("seeds the greeting as the STT opener's connect-time agentContext", async () => {
+      const { opts, stt } = makeOpts({
+        sessionConfig: { systemPrompt: "s", greeting: "Hi there!" },
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      expect(stt.last()?.opts.agentContext).toBe("Hi there!");
+      await t.stop();
+    });
+
     test("fires onSessionReady with the sid", async () => {
       const { opts, callbacks } = makeOpts();
       const t = createPipelineTransport(opts);
@@ -126,6 +136,19 @@ describe("PipelineTransport", () => {
       expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Hi there!", false);
       // onAudioDone is owned by session-core's flushReply, not the transport.
       expect(callbacks.onAudioDone).not.toHaveBeenCalled();
+      await t.stop();
+    });
+
+    test("also pushes the greeting via sttSession.updateAgentContext", async () => {
+      const { opts, stt, callbacks } = makeOpts({
+        sessionConfig: { systemPrompt: "s", greeting: "Hi there!" },
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+      });
+      expect(stt.last()?.updateAgentContext).toHaveBeenCalledWith("Hi there!");
       await t.stop();
     });
 
@@ -269,6 +292,20 @@ describe("PipelineTransport", () => {
       expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Sure!", false);
       // onAudioDone is owned by session-core's flushReply, not the transport.
       expect(callbacks.onAudioDone).not.toHaveBeenCalled();
+      await t.stop();
+    });
+
+    test("full assistant reply is pushed via sttSession.updateAgentContext after the turn", async () => {
+      const { opts, stt, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script: [{ type: "text", text: "Sure!" }] }),
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("test question");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+      });
+      expect(stt.last()?.updateAgentContext).toHaveBeenCalledWith("Sure!");
       await t.stop();
     });
 

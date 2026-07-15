@@ -281,6 +281,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (accumulated.length > 0) {
       callbacks.onAgentTranscript(accumulated, false);
       pushMessages({ role: "assistant", content: accumulated });
+      // Seed the STT provider with the agent's side of the dialog so the
+      // next user turn is transcribed with it in context (AssemblyAI
+      // Universal-3.5 Pro only; other providers have no such hook).
+      sttSession?.updateAgentContext?.(accumulated);
     }
 
     await flushTtsAndWait(ctl.signal);
@@ -307,6 +311,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     callbacks.onAgentTranscript(text, false);
     pushMessages({ role: "assistant", content: text });
     ttsSession?.sendText(text);
+    // Also push the greeting mid-stream, even though it was already seeded
+    // as the initial agent context at STT connect time (openProviders) —
+    // keeps the two seeding paths symmetric and covers providers that only
+    // support the mid-stream hook.
+    sttSession?.updateAgentContext?.(text);
 
     await flushTtsAndWait(ctl.signal);
 
@@ -363,6 +372,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         sampleRate: sttSampleRate,
         apiKey: opts.providerKeys.stt,
         sttPrompt: opts.sttPrompt,
+        // Seed the agent's opening line as connect-time context (e.g.
+        // AssemblyAI `agent_context`) — providers that don't support it, or
+        // whose model doesn't qualify, ignore this field.
+        agentContext: sessionConfig.greeting,
         signal: sessionAbort.signal,
       }),
       opts.tts.open({

@@ -12,17 +12,22 @@ import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
 const here = dirname(fileURLToPath(import.meta.url));
 
 interface FakeTranscriber {
+  readonly params: Record<string, unknown>;
+  readonly updateConfigurationCalls: Record<string, unknown>[];
   on(ev: string, fn: (...args: unknown[]) => void): void;
   connect(): Promise<void>;
   close(): Promise<void>;
   sendAudio(_data: ArrayBufferLike): void;
+  updateConfiguration(config: Record<string, unknown>): void;
   _fire(ev: string, ...args: unknown[]): void;
 }
 
 vi.mock("assemblyai", () => {
-  function makeFakeTranscriber(): FakeTranscriber {
+  function makeFakeTranscriber(params: Record<string, unknown>): FakeTranscriber {
     const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
     return {
+      params,
+      updateConfigurationCalls: [],
       on(ev, fn) {
         const arr = listeners.get(ev) ?? [];
         arr.push(fn);
@@ -37,6 +42,9 @@ vi.mock("assemblyai", () => {
       sendAudio(_data: ArrayBufferLike) {
         /* no-op */
       },
+      updateConfiguration(config: Record<string, unknown>) {
+        this.updateConfigurationCalls.push(config);
+      },
       _fire(ev, ...args) {
         for (const fn of listeners.get(ev) ?? []) fn(...args);
       },
@@ -45,11 +53,26 @@ vi.mock("assemblyai", () => {
   return {
     AssemblyAI: class {
       streaming = {
-        transcriber: (_params: unknown): FakeTranscriber => makeFakeTranscriber(),
+        transcriber: (params: Record<string, unknown>): FakeTranscriber =>
+          makeFakeTranscriber(params),
       };
     },
   };
 });
+
+async function openSession(
+  providerOpts: Parameters<typeof openAssemblyAI>[0],
+  openOpts: Partial<Parameters<ReturnType<typeof openAssemblyAI>["open"]>[0]> = {},
+): Promise<AssemblyAISession> {
+  const provider = openAssemblyAI(providerOpts);
+  const controller = new AbortController();
+  return (await provider.open({
+    sampleRate: 16_000,
+    apiKey: "k",
+    signal: controller.signal,
+    ...openOpts,
+  })) as AssemblyAISession;
+}
 
 describe("assemblyAI STT adapter — fixture replay", () => {
   test("maps turn events onto partial/final SttEvents", async () => {
@@ -57,13 +80,7 @@ describe("assemblyAI STT adapter — fixture replay", () => {
       await readFile(join(here, "fixtures/assemblyai/basic-turn.json"), "utf8"),
     ) as Record<string, unknown>[];
 
-    const provider = openAssemblyAI({ model: "u3pro-rt" });
-    const controller = new AbortController();
-    const session = (await provider.open({
-      sampleRate: 16_000,
-      apiKey: "k",
-      signal: controller.signal,
-    })) as AssemblyAISession;
+    const session = await openSession({ model: "u3pro-rt" });
 
     const partials: string[] = [];
     const finals: string[] = [];
@@ -82,6 +99,68 @@ describe("assemblyAI STT adapter — fixture replay", () => {
     expect(partials).toEqual(["what", "what's the"]);
     expect(finals).toEqual(["what's the weather?"]);
     expect(errors).toEqual([]);
+
+    await session.close();
+  });
+});
+
+describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", () => {
+  test("universal-3.5-pro: passes agentContext at connect and updates it mid-stream", async () => {
+    const session = await openSession(
+      { model: "universal-3.5-pro" },
+      { agentContext: "Hi, how can I help you today?" },
+    );
+    const fake = session._transcriber as unknown as FakeTranscriber;
+
+    expect(fake.params.agentContext).toBe("Hi, how can I help you today?");
+
+    session.updateAgentContext?.("Sure, I can help with that.");
+    expect(fake.updateConfigurationCalls).toEqual([
+      { agent_context: "Sure, I can help with that." },
+    ]);
+
+    await session.close();
+  });
+
+  test("universal-3.5-pro (u3pro-rt alias): trims agentContext to 1750 chars, both at connect and mid-stream", async () => {
+    const long = "x".repeat(2000);
+    const trimmed = "x".repeat(1750);
+
+    const session = await openSession({ model: "u3pro-rt" }, { agentContext: long });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+
+    expect(fake.params.agentContext).toBe(trimmed);
+
+    session.updateAgentContext?.(long);
+    expect(fake.updateConfigurationCalls).toEqual([{ agent_context: trimmed }]);
+
+    await session.close();
+  });
+
+  test("universal-3.5-pro: skips empty/whitespace-only agentContext, both at connect and mid-stream", async () => {
+    const session = await openSession({ model: "universal-3.5-pro" }, { agentContext: "   " });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+
+    expect(fake.params.agentContext).toBeUndefined();
+
+    session.updateAgentContext?.("\n\t ");
+    expect(fake.updateConfigurationCalls).toEqual([]);
+
+    await session.close();
+  });
+
+  test("non-3.5-pro model: no agentContext at connect, and updateAgentContext is a no-op", async () => {
+    const session = await openSession(
+      { model: "universal-streaming-english" },
+      { agentContext: "Hi, how can I help you today?" },
+    );
+    const fake = session._transcriber as unknown as FakeTranscriber;
+
+    expect(fake.params.agentContext).toBeUndefined();
+    expect("agentContext" in fake.params).toBe(false);
+
+    session.updateAgentContext?.("Sure, I can help with that.");
+    expect(fake.updateConfigurationCalls).toEqual([]);
 
     await session.close();
   });
