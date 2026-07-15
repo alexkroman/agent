@@ -2,44 +2,35 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { describe, expect, test, vi } from "vitest";
-import { fakeDownloadAndMerge, silenced, withTempDir } from "./_test-utils.ts";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { patchPackageJsonForWorkspace, runInit } from "./_init.ts";
+import { silenced, withTempDir, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 
-let fakeTemplatesDir: string;
-
-vi.mock("./_templates.ts", () => ({
-  downloadAndMergeTemplate: (template: string, targetDir: string) =>
-    fakeDownloadAndMerge(fakeTemplatesDir, template, targetDir),
-}));
-
-const { runInit, patchPackageJsonForWorkspace } = await import("./_init.ts");
-
-/** Create a fake templates root with a simple template and scaffold. */
-async function createFakeTemplates(dir: string): Promise<string> {
-  const rootDir = path.join(dir, "fake-root");
-  const scaffold = path.join(rootDir, "scaffold");
-  await fs.mkdir(scaffold, { recursive: true });
-  await fs.writeFile(path.join(scaffold, ".env.example"), "ASSEMBLYAI_API_KEY=");
-  await fs.writeFile(
-    path.join(scaffold, "package.json"),
-    JSON.stringify({ name: "scaffold-pkg", dependencies: { "@alexkroman1/aai": "^1.0.0" } }),
-  );
-
-  const simple = path.join(rootDir, "templates", "simple");
-  await fs.mkdir(simple, { recursive: true });
-  await fs.writeFile(path.join(simple, "agent.ts"), 'export default { name: "test" };');
-
-  return rootDir;
+/** Create a fake templates root with a simple template and scaffold, and point runInit at it. */
+async function useFakeTemplates(dir: string): Promise<void> {
+  const rootDir = await writeFiles(path.join(dir, "fake-root"), {
+    "scaffold/.env.example": "ASSEMBLYAI_API_KEY=",
+    "scaffold/package.json": JSON.stringify({
+      name: "scaffold-pkg",
+      dependencies: { "@alexkroman1/aai": "^1.0.0" },
+    }),
+    "templates/simple/agent.ts": 'export default { name: "test" };',
+  });
+  vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
 }
+
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("runInit", () => {
   test("creates .env from .env.example", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "my-agent");
-        await runInit({ targetDir: target });
+        await runInit({ targetDir: target, template: "simple" });
         expect(await fileExists(path.join(target, ".env"))).toBe(true);
         const content = await fs.readFile(path.join(target, ".env"), "utf-8");
         expect(content).toBe("ASSEMBLYAI_API_KEY=");
@@ -50,9 +41,9 @@ describe("runInit", () => {
   test("creates README.md with project name", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "cool-agent");
-        await runInit({ targetDir: target });
+        await runInit({ targetDir: target, template: "simple" });
         expect(await fileExists(path.join(target, "README.md"))).toBe(true);
         const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
         expect(readme).toContain("# cool-agent");
@@ -63,25 +54,13 @@ describe("runInit", () => {
   test("does not overwrite existing README.md", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "my-agent");
         await fs.mkdir(target, { recursive: true });
         await fs.writeFile(path.join(target, "README.md"), "existing content");
-        await runInit({ targetDir: target });
+        await runInit({ targetDir: target, template: "simple" });
         const readme = await fs.readFile(path.join(target, "README.md"), "utf-8");
         expect(readme).toBe("existing content");
-      }),
-    );
-  });
-
-  test("uses 'simple' template by default when none specified", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
-        const target = path.join(dir, "output");
-        // No template option — should default to "simple"
-        await runInit({ targetDir: target });
-        expect(await fileExists(path.join(target, "agent.ts"))).toBe(true);
       }),
     );
   });
@@ -89,7 +68,7 @@ describe("runInit", () => {
   test("throws for unknown template", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "output");
         await expect(runInit({ targetDir: target, template: "nonexistent" })).rejects.toThrow(
           'Unknown template "nonexistent"',
@@ -98,30 +77,18 @@ describe("runInit", () => {
     );
   });
 
-  test("returns target directory path", async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
-        const target = path.join(dir, "output");
-        const result = await runInit({ targetDir: target });
-        expect(result).toBe(target);
-      }),
-    );
-  });
-
   test("handles missing .env.example gracefully", async () => {
     await withTempDir(
       silenced(async (dir) => {
         // Create templates without .env.example
-        const rootDir = path.join(dir, "fake-root");
-        const simple = path.join(rootDir, "templates", "simple");
-        await fs.mkdir(simple, { recursive: true });
-        await fs.writeFile(path.join(simple, "agent.ts"), "export default {};");
-        fakeTemplatesDir = rootDir;
+        const rootDir = await writeFiles(path.join(dir, "fake-root"), {
+          "templates/simple/agent.ts": "export default {};",
+        });
+        vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
 
         const target = path.join(dir, "output");
         // Should not throw even without .env.example
-        await runInit({ targetDir: target });
+        await runInit({ targetDir: target, template: "simple" });
         expect(await fileExists(path.join(target, ".env"))).toBe(false);
       }),
     );

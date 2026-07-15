@@ -2,50 +2,46 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { beforeEach, describe, expect, test, vi } from "vitest";
-import { patchPackageJsonForWorkspace } from "./_init.ts";
-import { fakeDownloadAndMerge, silenced, withTempDir } from "./_test-utils.ts";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { patchPackageJsonForWorkspace, runInit } from "./_init.ts";
+import { silenced, withTempDir, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 import { executeInit, resolvePnpmCommand } from "./init.ts";
 
-async function createFakeTemplates(dir: string): Promise<string> {
+/**
+ * Create a fake templates root (real scaffold files + test extras) and point
+ * template resolution at it via AAI_TEMPLATES_DIR.
+ */
+async function useFakeTemplates(dir: string): Promise<void> {
   const rootDir = path.join(dir, "fake-root");
-  const scaffold = path.join(rootDir, "scaffold");
-  await fs.mkdir(scaffold, { recursive: true });
   // Copy real scaffold files so tests validate actual scaffold content
   const realScaffold = path.resolve(import.meta.dirname, "../aai-templates/scaffold");
-  await fs.cp(realScaffold, scaffold, { recursive: true });
-  await fs.writeFile(path.join(scaffold, "shared.txt"), "from shared");
-  await fs.writeFile(path.join(scaffold, ".env.example"), "MY_KEY=");
-
-  const simple = path.join(rootDir, "templates", "simple");
-  await fs.mkdir(simple, { recursive: true });
-  await fs.writeFile(path.join(simple, "agent.json"), JSON.stringify({ name: "Default Name" }));
-  await fs.writeFile(path.join(simple, "readme.txt"), "hello");
-  await fs.writeFile(path.join(simple, "package.json"), "{}");
-
-  return rootDir;
+  await fs.cp(realScaffold, path.join(rootDir, "scaffold"), { recursive: true });
+  await writeFiles(rootDir, {
+    "scaffold/shared.txt": "from shared",
+    "scaffold/.env.example": "MY_KEY=",
+    "templates/simple/agent.json": JSON.stringify({ name: "Default Name" }),
+    "templates/simple/readme.txt": "hello",
+    // Empty package.json (no deps) so executeInit skips pnpm install — hermetic.
+    "templates/simple/package.json": "{}",
+  });
+  vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
 }
-
-let fakeTemplatesDir: string;
-
-vi.mock("./_templates.ts", () => ({
-  downloadAndMergeTemplate: (template: string, targetDir: string) =>
-    fakeDownloadAndMerge(fakeTemplatesDir, template, targetDir),
-}));
 
 const executeDeploy = vi.hoisted(() => vi.fn());
 vi.mock("./deploy.ts", () => ({ executeDeploy }));
 
-const { runInit } = await import("./_init.ts");
+afterEach(() => {
+  vi.unstubAllEnvs();
+});
 
 describe("runInit", () => {
   test("copies template and shared files to target", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "output");
-        await runInit({ targetDir: target });
+        await runInit({ targetDir: target, template: "simple" });
         expect(await fs.readFile(path.join(target, "agent.json"), "utf-8")).toContain(
           "Default Name",
         );
@@ -58,9 +54,9 @@ describe("runInit", () => {
   test("skips node_modules", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "output");
-        await runInit({ targetDir: target });
+        await runInit({ targetDir: target, template: "simple" });
         expect(await fileExists(path.join(target, "node_modules"))).toBe(false);
         expect(await fileExists(path.join(target, "package.json"))).toBe(true);
       }),
@@ -70,9 +66,9 @@ describe("runInit", () => {
   test("copies .env.example to .env from shared", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "output");
-        await runInit({ targetDir: target });
+        await runInit({ targetDir: target, template: "simple" });
         expect(await fileExists(path.join(target, ".env"))).toBe(true);
         expect(await fs.readFile(path.join(target, ".env"), "utf-8")).toBe("MY_KEY=");
       }),
@@ -99,9 +95,9 @@ describe("scaffold client.tsx", () => {
   test("scaffold does not include client.tsx (default UI served by dev server)", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "output");
-        await runInit({ targetDir: target });
+        await runInit({ targetDir: target, template: "simple" });
         const clientPath = path.join(target, "client.tsx");
         expect(await fileExists(clientPath)).toBe(false);
       }),
@@ -114,13 +110,10 @@ describe("executeInit", () => {
     executeDeploy.mockReset();
   });
 
-  // The fake "simple" template has an empty package.json (no deps), so
-  // executeInit skips the pnpm install step entirely — tests stay hermetic.
-
   test("scaffolds a project and skips deploy when requested", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "my-agent");
 
         const result = await executeInit({ dir: target, skipDeploy: true }, { silent: true });
@@ -139,7 +132,7 @@ describe("executeInit", () => {
   test("refuses to overwrite an existing agent.ts without --force", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "existing");
         await fs.mkdir(target, { recursive: true });
         await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
@@ -154,7 +147,7 @@ describe("executeInit", () => {
   test("--force overwrites an existing project", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "existing");
         await fs.mkdir(target, { recursive: true });
         await fs.writeFile(path.join(target, "agent.ts"), "// existing agent");
@@ -172,7 +165,7 @@ describe("executeInit", () => {
   test("deploys after scaffolding and returns slug + url", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "deployed-agent");
         executeDeploy.mockResolvedValue({
           ok: true,
@@ -202,7 +195,7 @@ describe("executeInit", () => {
   test("reports deployed: false when deploy fails", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
+        await useFakeTemplates(dir);
         const target = path.join(dir, "failed-deploy");
         executeDeploy.mockResolvedValue({ ok: false, code: "deploy_failed", error: "boom" });
 

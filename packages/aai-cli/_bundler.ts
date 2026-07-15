@@ -8,20 +8,8 @@ import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { build, type Rollup } from "vite";
 import { writeTempHtml } from "./_default-html.ts";
 import { type CommandResult, ok } from "./_output.ts";
+import { log } from "./_ui.ts";
 import { fileExists, validateAgentExport } from "./_utils.ts";
-
-/** Shared Vite build base config for agent bundles. */
-function agentViteBuildBase(entry: string) {
-  return {
-    logLevel: "silent" as const,
-    build: {
-      lib: { entry, formats: ["es" as const] },
-      target: "node20" as const,
-      minify: false,
-      rollupOptions: { output: { entryFileNames: "[name].js" } },
-    },
-  };
-}
 
 /** Output from the bundler: agentConfig + worker ESM + client files. */
 export type DirectoryBundleOutput = {
@@ -42,13 +30,13 @@ export type DirectoryBundleOutput = {
  *   second build pass.
  */
 export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutput> {
-  const { log } = await import("./_ui.ts");
-
-  // Single Vite build for the worker (all deps bundled in) + client in parallel
-  const [worker, clientFiles] = await Promise.all([buildWorker(cwd), buildClient(cwd)]);
-
-  // Extract AgentDef from the worker bundle by eval
-  const agentDef = await evalWorkerBundle(worker, cwd);
+  // Single Vite build for the worker (all deps bundled in) + client in
+  // parallel. The eval only depends on the worker, so chain it onto the
+  // worker build instead of making it wait for the client build too.
+  const [[worker, agentDef], clientFiles] = await Promise.all([
+    buildWorker(cwd).then(async (code) => [code, await evalWorkerBundle(code, cwd)] as const),
+    buildClient(cwd),
+  ]);
   log.step(`Bundling ${agentDef.name}`);
 
   const config = toAgentConfig(agentDef);
@@ -93,10 +81,9 @@ export async function evalWorkerBundle(code: string, cwd: string): Promise<Agent
  */
 export async function buildWorker(cwd: string): Promise<string> {
   const agentEntry = path.join(cwd, "agent.ts");
-  const base = agentViteBuildBase(agentEntry);
 
   const result = await build({
-    ...base,
+    logLevel: "silent",
     plugins: [
       // Transform .md imports into raw string exports so templates that do
       // `import systemPrompt from "./system-prompt.md"` bundle correctly.
@@ -110,8 +97,9 @@ export async function buildWorker(cwd: string): Promise<string> {
       },
     ],
     build: {
-      ...base.build,
-      lib: { ...base.build.lib, fileName: "worker" },
+      lib: { entry: agentEntry, formats: ["es"], fileName: "worker" },
+      target: "node20",
+      minify: false,
       write: false,
       rollupOptions: {
         output: { entryFileNames: "[name].js" },
@@ -154,23 +142,21 @@ async function buildClient(cwd: string): Promise<Record<string, string>> {
 
   // Read built files into memory for deploy payload
   const files: Record<string, string> = {};
-  async function walk(dir: string, prefix: string): Promise<void> {
-    for (const entry of await fs.readdir(dir, { withFileTypes: true })) {
-      const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        await walk(path.join(dir, entry.name), rel);
-      } else {
-        const abs = path.join(dir, entry.name);
+  const entries = await fs.readdir(clientDir, { recursive: true, withFileTypes: true });
+  await Promise.all(
+    entries
+      .filter((entry) => entry.isFile())
+      .map(async (entry) => {
+        const abs = path.join(entry.parentPath, entry.name);
+        const rel = path.relative(clientDir, abs).split(path.sep).join("/");
         // Text assets travel as UTF-8; binary assets (images, fonts, wasm)
         // would be corrupted by UTF-8 decode, so base64-encode them. The
         // server serve path decodes using the same isTextAssetPath heuristic.
         files[rel] = isTextAssetPath(rel)
           ? await fs.readFile(abs, "utf-8")
           : (await fs.readFile(abs)).toString("base64");
-      }
-    }
-  }
-  await walk(clientDir, "");
+      }),
+  );
   return files;
 }
 
@@ -180,7 +166,6 @@ type BuildData = {
 };
 
 export async function executeBuild(cwd: string): Promise<CommandResult<BuildData>> {
-  const { log } = await import("./_ui.ts");
   const bundle = await buildAgentBundle(cwd);
   log.success("Build complete");
 

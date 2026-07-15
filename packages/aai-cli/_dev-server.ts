@@ -11,16 +11,18 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { type AgentDef, errorMessage } from "@alexkroman1/aai";
+import type { AgentDef } from "@alexkroman1/aai";
 import type { AgentServer } from "@alexkroman1/aai/runtime";
 import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
 import pDebounce from "p-debounce";
+import type { ViteDevServer } from "vite";
 import { buildWorker, evalWorkerBundle } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
+import { errorMessage } from "./_utils.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
@@ -59,12 +61,12 @@ export function isIgnoredPath(dir: string, filePath: string): boolean {
  * Debounces to avoid rapid restarts. Uses chokidar for reliable recursive
  * watching across platforms (raw `fs.watch` misses events on Linux).
  */
-function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher {
+function watchDirectory(dir: string, onChange: () => void): FSWatcher {
   const DEBOUNCE_MS = 300;
 
-  const debouncedChange = pDebounce((filename: string | null) => {
+  const debouncedChange = pDebounce(() => {
     log.info("File change detected, restarting...");
-    onChange(filename);
+    onChange();
   }, DEBOUNCE_MS);
 
   const watcher = watch(dir, {
@@ -72,11 +74,18 @@ function watchDirectory(dir: string, onChange: (filename: string | null) => void
     ignoreInitial: true,
     persistent: false,
   });
-  watcher.on("all", (_event, filePath) => void debouncedChange(filePath));
+  watcher.on("all", () => void debouncedChange());
   return watcher;
 }
 
 // ─── Dev server ─────────────────────────────────────────────────────────────
+
+/** Locate the pre-built default aai-ui client (served when no custom client.tsx). */
+function resolveDefaultClientDir(): string {
+  const require = createRequire(import.meta.url);
+  const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
+  return path.join(path.dirname(pkgPath), "dist", "default-client");
+}
 
 export type DevServerOptions = {
   cwd: string;
@@ -104,12 +113,9 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const env = await resolveAgentEnv(cwd);
   const runtime = createRuntime({ agent: agentDef, env });
 
-  // When no custom client.tsx, serve the pre-built default aai-ui client
-  function resolveDefaultClientDir(): string {
-    const require = createRequire(import.meta.url);
-    const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
-    return path.join(path.dirname(pkgPath), "dist", "default-client");
-  }
+  // When no custom client.tsx, serve the pre-built default aai-ui client.
+  // Resolved once — the location can't change for the process lifetime.
+  const clientDirOpt = hasClient ? {} : { clientDir: resolveDefaultClientDir() };
   const agentServer = createServer({
     runtime,
     name: agentDef.name,
@@ -118,11 +124,11 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     env,
     // Host sessions inherit this agent's stt/llm/tts pipeline config.
     hostBaseAgent: agentDef,
-    ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
+    ...clientDirOpt,
   });
   await agentServer.listen(backendPort);
 
-  let viteServer: { close(): Promise<void> } | undefined;
+  let viteServer: ViteDevServer | undefined;
   if (hasClient) {
     const { createServer: createViteServer } = await import("vite");
     const target = `http://localhost:${backendPort}`;
@@ -137,14 +143,13 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
         },
       },
     });
-    await (viteServer as unknown as { listen(): Promise<void> }).listen();
+    await viteServer.listen();
   }
 
   let restarting = false;
   let pendingRestart = false;
   let closed = false;
   let currentServer: AgentServer = agentServer;
-  let currentVite = viteServer;
   const watcher = watchDirectory(cwd, () => {
     // A change during an in-flight restart must not be dropped: flag it so
     // restart() loops once more with the newest files. Otherwise the final
@@ -182,7 +187,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
         name: newAgentDef.name,
         env: newEnv,
         hostBaseAgent: newAgentDef,
-        ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
+        ...clientDirOpt,
       });
       // The cleanup fn may have run while we were rebuilding — don't leave a
       // freshly-listening server orphaned (leaked port / hung event loop).
@@ -201,10 +206,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   return async () => {
     closed = true;
     await watcher.close();
-    if (currentVite) {
-      await currentVite.close();
-      currentVite = undefined;
-    }
+    await viteServer?.close();
     await currentServer.close();
   };
 }

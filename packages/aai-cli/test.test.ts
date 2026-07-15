@@ -14,18 +14,18 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...orig, execFileSync };
 });
 
+let tempDir: string;
+
+beforeEach(async () => {
+  tempDir = await mkdtemp(path.join(tmpdir(), "aai-test-"));
+  execFileSync.mockReset();
+});
+
+afterEach(async () => {
+  await rm(tempDir, { recursive: true, force: true });
+});
+
 describe("aai test", () => {
-  let tempDir: string;
-
-  beforeEach(async () => {
-    tempDir = await mkdtemp(path.join(tmpdir(), "aai-test-"));
-    execFileSync.mockReset();
-  });
-
-  afterEach(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
-
   test("returns false when no test files exist", () => {
     const result = runVitest(tempDir);
     expect(result).toBe(false);
@@ -59,17 +59,6 @@ describe("aai test", () => {
 });
 
 describe("executeTest", () => {
-  let tempDir: string;
-
-  beforeEach(async () => {
-    tempDir = await mkdtemp(path.join(tmpdir(), "aai-test-"));
-    execFileSync.mockReset();
-  });
-
-  afterEach(async () => {
-    await rm(tempDir, { recursive: true, force: true });
-  });
-
   test("returns skipped result when no test file exists", async () => {
     const result = await silenced(() => executeTest(tempDir))(tempDir);
     expect(result).toEqual({ ok: true, data: { passed: true, skipped: true } });

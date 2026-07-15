@@ -1,34 +1,36 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { log as clackLog } from "@clack/prompts";
+import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
 
-type Log = typeof clackLog;
+type Log = typeof p.log;
 
 const noop = () => {
   /* no-op */
 };
-let _delegate: Log = clackLog;
+let silenced = false;
 
 const logHandler: ProxyHandler<Log> = {
-  get(_target, prop, receiver) {
-    return Reflect.get(_delegate, prop, receiver);
+  get(target, prop, receiver) {
+    return silenced ? noop : Reflect.get(target, prop, receiver);
   },
 };
 
 /** Log instance that delegates to clack (human mode) or no-ops (JSON mode). */
-export const log: Log = new Proxy(clackLog, logHandler);
+export const log: Log = new Proxy(p.log, logHandler);
 
 /** Replace all log methods with no-ops. Call once in JSON mode. */
 export function silenceOutput(): void {
-  _delegate = {
-    info: noop,
-    success: noop,
-    error: noop,
-    warn: noop,
-    step: noop,
-    message: noop,
-  } as unknown as Log;
+  silenced = true;
+}
+
+/** Unwrap a clack prompt result, exiting cleanly if the user cancelled. */
+export function unwrapCancel<T>(result: T | symbol): T {
+  if (p.isCancel(result)) {
+    p.cancel("Setup cancelled");
+    process.exit(0);
+  }
+  return result as T;
 }
 
 /** Format a URL for display. */

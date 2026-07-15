@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { resolveServerUrl } from "./_agent.ts";
+import { resolveDeployTarget } from "./_agent.ts";
 import { buildAgentBundle } from "./_bundler.ts";
-import { ensureApiKey, readProjectConfig, writeProjectConfig } from "./_config.ts";
+import { writeProjectConfig } from "./_config.ts";
 import { runDeploy } from "./_deploy.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { resolveServerEnv } from "./_server-common.ts";
@@ -15,12 +15,10 @@ export async function executeDeploy(opts: {
   server?: string;
 }): Promise<CommandResult<DeployData>> {
   const { cwd } = opts;
-  const projectConfig = await readProjectConfig(cwd);
-  const serverUrl = resolveServerUrl(opts.server, projectConfig?.serverUrl);
+  const { config: projectConfig, serverUrl, apiKey } = await resolveDeployTarget(cwd, opts.server);
   const bundle = await buildAgentBundle(cwd);
   const slug = projectConfig?.slug;
 
-  const apiKey = await ensureApiKey();
   const env = await resolveServerEnv(cwd);
 
   log.step(`Deploying${slug ? ` ${slug}` : ""}…`);

@@ -5,7 +5,9 @@ import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 
-vi.mock("@clack/prompts", () => ({
+// Keep the real module surface (`log` is needed by _ui.ts) and stub the prompts.
+vi.mock("@clack/prompts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("@clack/prompts")>()),
   password: vi.fn(),
   isCancel: vi.fn(),
   cancel: vi.fn(),

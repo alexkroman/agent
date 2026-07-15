@@ -15,15 +15,8 @@ vi.mock("./_agent.ts", () => ({
 }));
 
 // Mock _ui.ts to silence log output in tests.
-vi.mock("./_ui.ts", () => ({
-  log: {
-    info: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    step: vi.fn(),
-    message: vi.fn(),
-  },
+vi.mock("./_ui.ts", async () => ({
+  log: (await import("./_test-utils.ts")).makeMockLog(),
 }));
 
 // Mock apiRequest to return controlled parsed responses.
