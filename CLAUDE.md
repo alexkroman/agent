@@ -254,6 +254,11 @@ Reference providers shipped today:
   - `mistral({ model })` — `MISTRAL_API_KEY`
   - `xai({ model })` — `XAI_API_KEY`
   - `groq({ model })` — `GROQ_API_KEY`
+  - `assemblyAI({ model, region? })` — `ASSEMBLYAI_API_KEY`; routes through
+    the [AssemblyAI LLM Gateway](https://www.assemblyai.com/docs/llm-gateway)
+    (OpenAI-compatible chat-completions endpoint fronting 25+ models) via
+    `@ai-sdk/openai`'s `.chat()` client. `region: "eu"` selects the EU
+    endpoint. Same factory name as the STT provider — alias one on import.
 - **TTS**: `cartesia({ voice })` via `@cartesia/cartesia-js`
 
 The provider SDKs (`ai`, `assemblyai`, `@cartesia/cartesia-js`) are

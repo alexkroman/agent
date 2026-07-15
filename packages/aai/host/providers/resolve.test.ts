@@ -10,6 +10,7 @@
 
 import { describe, expect, it } from "vitest";
 import { ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
+import { ASSEMBLYAI_LLM_KIND } from "../../sdk/providers/llm/assemblyai.ts";
 import { GOOGLE_KIND } from "../../sdk/providers/llm/google.ts";
 import { GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
 import { MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
@@ -55,6 +56,11 @@ const cases: ProviderCase[] = [
     envVar: "GROQ_API_KEY",
     label: "Groq",
   },
+  {
+    provider: { kind: ASSEMBLYAI_LLM_KIND, options: { model: "claude-sonnet-4-6" } },
+    envVar: "ASSEMBLYAI_API_KEY",
+    label: "AssemblyAI",
+  },
 ];
 
 describe("resolveLlm", () => {
@@ -84,7 +90,29 @@ describe("resolveLlm", () => {
   it("throws a useful error for an unknown kind, listing supported kinds", () => {
     const bogus = { kind: "claude-direct", options: {} } as unknown as LlmProvider;
     expect(() => resolveLlm(bogus, {})).toThrow(/Unknown LLM provider kind: "claude-direct"/);
-    expect(() => resolveLlm(bogus, {})).toThrow(/anthropic.*openai.*google.*mistral.*xai.*groq/);
+    expect(() => resolveLlm(bogus, {})).toThrow(
+      /anthropic.*openai.*google.*mistral.*xai.*groq.*assemblyai/,
+    );
+  });
+
+  describe("AssemblyAI LLM Gateway", () => {
+    it("resolves to a chat-completions model, not the Responses API default", () => {
+      const model = resolveLlm(
+        { kind: ASSEMBLYAI_LLM_KIND, options: { model: "claude-sonnet-4-6" } },
+        { ASSEMBLYAI_API_KEY: "fake-key" },
+      );
+      // The gateway only implements /chat/completions; the `.chat` suffix in
+      // the provider id is the observable handle on that dispatch.
+      expect(model).toMatchObject({ provider: "assemblyai.chat", modelId: "claude-sonnet-4-6" });
+    });
+
+    it("accepts the eu region option", () => {
+      const model = resolveLlm(
+        { kind: ASSEMBLYAI_LLM_KIND, options: { model: "claude-sonnet-4-6", region: "eu" } },
+        { ASSEMBLYAI_API_KEY: "fake-key" },
+      );
+      expect(model).toHaveProperty("specificationVersion");
+    });
   });
 });
 

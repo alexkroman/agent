@@ -100,7 +100,8 @@ simplest path and what `agent({ name })` gives you.
 **Pipeline mode** is opt-in. The host runs the LLM loop locally (Vercel AI
 SDK) and you choose your own STT, LLM, and TTS providers. Use it when:
 
-- you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq)
+- you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq,
+  or 25+ models via the AssemblyAI LLM Gateway)
 - you want a specific STT model or TTS voice
 - you need to swap providers without changing agent code
 
@@ -151,9 +152,29 @@ All STT factories accept `{ model?: string, ... }`. Bare calls
 | `mistral`   | `@ai-sdk/mistral`     | `MISTRAL_API_KEY`                |
 | `xai`       | `@ai-sdk/xai`         | `XAI_API_KEY`                    |
 | `groq`      | `@ai-sdk/groq`        | `GROQ_API_KEY`                   |
+| `assemblyAI`| `@ai-sdk/openai`      | `ASSEMBLYAI_API_KEY`             |
 
 LLM factories require `{ model: string }`. Example:
 `anthropic({ model: "claude-haiku-4-5" })`.
+
+`assemblyAI` routes through the [AssemblyAI LLM
+Gateway](https://www.assemblyai.com/docs/llm-gateway) — an
+OpenAI-compatible endpoint fronting 25+ models (Claude, GPT, Gemini,
+etc.) with the same API key as AssemblyAI STT. It accepts an optional
+`region: "eu"` for EU data residency. It shares its name with the STT
+factory, so alias one when using both:
+
+```ts
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+
+export default agent({
+  name: "My Agent",
+  stt: assemblyAI({ model: "u3pro-rt" }),
+  llm: assemblyAILlm({ model: "claude-sonnet-4-6" }),
+  tts: cartesia(),
+});
+```
 
 ### TTS — `@alexkroman1/aai/tts`
 
