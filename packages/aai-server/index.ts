@@ -6,14 +6,13 @@
  * a Node.js HTTP server with WebSocket upgrade support via `ws`.
  */
 
-import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai";
 import { createMemoryVector, createPineconeVector, type Vector } from "@alexkroman1/aai/runtime";
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
 import { createBundleStore } from "./bundle-store.ts";
-import { DEFAULT_PORT } from "./constants.ts";
+import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
 import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
 import { initHostCapacityGauges, metrics } from "./metrics.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
@@ -35,10 +34,6 @@ function requireEnv<const K extends string>(
 
 function isLocalDev(env: NodeJS.ProcessEnv): boolean {
   return env.AAI_LOCAL_DEV === "1" || !env.BUCKET_NAME;
-}
-
-function resolveHarnessPath(env: NodeJS.ProcessEnv): string {
-  return env.GUEST_HARNESS_PATH ?? path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
 }
 
 function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {

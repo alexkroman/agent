@@ -11,7 +11,7 @@
     "types": ["vitest"],
     "resolveJsonModule": true,
     "jsx": "react-jsx",
-    "jsxImportSource": "preact",
+    "jsxImportSource": "react",
     "lib": ["ES2024", "DOM", "DOM.Iterable"]
   }
 }

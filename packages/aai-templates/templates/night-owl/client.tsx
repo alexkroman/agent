@@ -1,12 +1,10 @@
-/** @jsxImportSource react */
-
 import "@alexkroman1/aai-ui/styles.css";
 import { Button, client, useEvent, useTheme, useToolCallStart } from "@alexkroman1/aai-ui";
 import { useState } from "react";
+import { MOODS } from "./shared.ts";
 
 type Rec = { category: string; mood: string; picks: string[] };
 
-const MOODS = ["chill", "intense", "cozy", "spooky", "funny"] as const;
 const MOOD_EMOJI: Record<string, string> = {
   chill: "\u{1F60C}",
   intense: "\u{1F525}",

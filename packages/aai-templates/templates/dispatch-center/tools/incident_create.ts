@@ -1,11 +1,10 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { Incident, KV } from "../shared.ts";
 import {
   calculateTriageScore,
+  createIncident,
   getApplicableProtocols,
   getState,
-  now,
   recalculateAlertLevel,
   recommendResources,
   recommendSeverity,
@@ -27,10 +26,8 @@ export const incidentCreate = tool({
       .describe("Known hazards: fire, chemical, electrical, structural, weapons")
       .optional(),
   }),
-  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
+  async execute(args, ctx) {
     const state = await getState(ctx.kv);
-    state.incidentCounter++;
-    const id = `INC-${String(state.incidentCounter).padStart(4, "0")}`;
 
     const recSeverity = recommendSeverity(args.description);
     const recType = recommendType(args.description);
@@ -41,40 +38,31 @@ export const incidentCreate = tool({
       args.hazards?.length ?? 0,
     );
 
-    const incident: Incident = {
-      id,
+    const incident = createIncident(state, {
       type: recType,
       severity: recSeverity,
-      status: "incoming",
       location: args.location,
       description: args.description,
       callerName: args.callerName ?? "Unknown",
       callerPhone: args.callerPhone ?? "Unknown",
       triageScore,
-      assignedResources: [],
       timeline: [
         {
-          time: now(),
+          time: Date.now(),
           event: `Incident created: ${args.description}`,
         },
       ],
-      notes: [],
-      createdAt: now(),
-      updatedAt: now(),
-      escalationLevel: 0,
-      protocolsActivated: [],
       casualties: {
         confirmed: 0,
         estimated: args.estimatedCasualties ?? 0,
         treated: 0,
       },
       hazards: args.hazards ?? [],
-    };
+    });
+    const id = incident.id;
 
-    state.incidents[id] = incident;
     recalculateAlertLevel(state);
-    await saveState(ctx.kv, state);
-    await saveIncidentSnapshot(ctx.kv, incident);
+    await Promise.all([saveState(ctx.kv, state), saveIncidentSnapshot(ctx.kv, incident)]);
 
     const protocols = getApplicableProtocols(recType, recSeverity);
     const recommended = recommendResources(recType, recSeverity, state);

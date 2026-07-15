@@ -1,11 +1,10 @@
 import { tool } from "@alexkroman1/aai";
-import type { KV } from "../shared.ts";
 import { getGameState } from "../shared.ts";
 
 export const checkState = tool({
   description:
     "Returns the full current game state. This is AUTOMATICALLY forced as the first tool call every turn. Use these numbers as ground truth — never guess or remember stats from previous turns.",
-  async execute(_args, ctx: { kv: KV }) {
+  async execute(_args, ctx) {
     const s = await getGameState(ctx.kv);
     return {
       initialized: s.initialized,

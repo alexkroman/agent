@@ -7,8 +7,10 @@ import type { Storage } from "unstorage";
 import { z } from "zod";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
+import { agentObjectKey, agentPrefix } from "./constants.ts";
 import { metrics, observeDurationWithStatus } from "./metrics.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
+import { withLock } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 import { decryptEnv, encryptEnv, type MasterKey } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -19,7 +21,6 @@ const ManifestSchema = z.object({
   slug: z.string(),
   env: z.string(),
   credential_hashes: z.array(z.string()).optional(),
-  envEncrypted: z.boolean().optional(),
 });
 
 // Decrypting + Zod-parsing the manifest takes ~15-20ms per call, and the
@@ -32,10 +33,6 @@ const STORE_CACHE_TTL_MS = 60_000;
 // `Cache-Control: immutable`), so cache them like the manifest. LRU-capped
 // since individual assets can be large.
 const CLIENT_FILE_CACHE_MAX = 64;
-
-function objectKey(slug: string, file: string): string {
-  return `agents/${slug}/${file}`;
-}
 
 async function instrumentTigris<T>(op: string, fn: () => Promise<T>): Promise<T> {
   return observeDurationWithStatus(
@@ -60,7 +57,7 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
   function invalidate(slug: string): void {
     manifestCache.delete(slug);
     configCache.delete(slug);
-    clientFileCache.deletePrefix(`agents/${slug}/`);
+    clientFileCache.deletePrefix(`${agentPrefix(slug)}/`);
   }
 
   async function deleteByPrefix(prefix: string): Promise<void> {
@@ -86,7 +83,7 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
   }
 
   async function getRawManifest(slug: string): Promise<z.infer<typeof ManifestSchema> | null> {
-    const json = await readJson(objectKey(slug, "manifest.json"));
+    const json = await readJson(agentObjectKey(slug, "manifest.json"));
     return json == null ? null : ManifestSchema.parse(json);
   }
 
@@ -94,7 +91,7 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     const raw = await getRawManifest(slug);
     if (!raw) return null;
     const env = await decryptEnv(masterKey, { encrypted: raw.env, slug });
-    const parsed = AgentMetadataSchema.safeParse({ ...raw, env, envEncrypted: undefined });
+    const parsed = AgentMetadataSchema.safeParse({ ...raw, env });
     return parsed.success ? parsed.data : null;
   }
 
@@ -111,7 +108,9 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
       return instrumentTigris("putAgent", async () => {
         invalidate(bundle.slug);
         try {
-          await deleteByPrefix(`agents/${bundle.slug}`);
+          // Note: this sweep covers the whole agent prefix, including the
+          // agent's platform-default KV data (see constants.ts).
+          await deleteByPrefix(agentPrefix(bundle.slug));
         } catch (err) {
           console.warn(
             `Failed to delete old agent files for ${bundle.slug}, proceeding with overwrite: ${errorMessage(err)}`,
@@ -122,17 +121,18 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
           slug: bundle.slug,
           env: await encryptEnv(masterKey, { env: bundle.env, slug: bundle.slug }),
           credential_hashes: bundle.credential_hashes,
-          envEncrypted: true,
         };
-        await storage.setItem(objectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest));
-        await storage.setItem(objectKey(bundle.slug, "worker.js"), bundle.worker);
-
+        // All writes go to distinct keys with no ordering requirement
+        // (deleteByPrefix already cleared the prefix; the trailing
+        // invalidate handles cache races), so run them concurrently.
         await Promise.all([
+          storage.setItem(agentObjectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest)),
+          storage.setItem(agentObjectKey(bundle.slug, "worker.js"), bundle.worker),
           ...Object.entries(bundle.clientFiles).map(([filePath, content]) =>
-            storage.setItem(objectKey(bundle.slug, `client/${filePath}`), content),
+            storage.setItem(agentObjectKey(bundle.slug, `client/${filePath}`), content),
           ),
           storage.setItem(
-            objectKey(bundle.slug, "config.json"),
+            agentObjectKey(bundle.slug, "config.json"),
             JSON.stringify(bundle.agentConfig),
           ),
         ]);
@@ -147,12 +147,12 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     },
 
     getWorkerCode(slug) {
-      return instrumentTigris("getWorkerCode", () => readItem(objectKey(slug, "worker.js")));
+      return instrumentTigris("getWorkerCode", () => readItem(agentObjectKey(slug, "worker.js")));
     },
 
     getClientFile(slug, filePath) {
       return instrumentTigris("getClientFile", async () => {
-        const key = objectKey(slug, `client/${filePath}`);
+        const key = agentObjectKey(slug, `client/${filePath}`);
         const cached = clientFileCache.get(key);
         if (cached !== undefined) return cached;
         const value = await readItem(key);
@@ -164,7 +164,7 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     deleteAgent(slug) {
       return instrumentTigris("deleteAgent", async () => {
         invalidate(slug);
-        await deleteByPrefix(`agents/${slug}`);
+        await deleteByPrefix(agentPrefix(slug));
         invalidate(slug);
       });
     },
@@ -174,29 +174,25 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     },
 
     putEnv(slug, env) {
-      return instrumentTigris("putEnv", async () => {
-        const release = await manifestLock(slug);
-        try {
+      return instrumentTigris("putEnv", () =>
+        withLock(manifestLock, slug, async () => {
           const raw = await getRawManifest(slug);
           if (!raw) throw new Error(`Agent ${slug} not found`);
           const updated = {
             ...raw,
             env: await encryptEnv(masterKey, { env, slug }),
-            envEncrypted: true,
           };
-          await storage.setItem(objectKey(slug, "manifest.json"), JSON.stringify(updated));
+          await storage.setItem(agentObjectKey(slug, "manifest.json"), JSON.stringify(updated));
           manifestCache.delete(slug);
-        } finally {
-          release();
-        }
-      });
+        }),
+      );
     },
 
     getAgentConfig(slug) {
       return instrumentTigris("getAgentConfig", async () => {
         const cached = configCache.get(slug);
         if (cached !== undefined) return cached;
-        const json = await readJson(objectKey(slug, "config.json"));
+        const json = await readJson(agentObjectKey(slug, "config.json"));
         if (json == null) {
           configCache.set(slug, null);
           return null;

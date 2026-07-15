@@ -1,5 +1,3 @@
-/** @jsxImportSource react */
-
 import "@alexkroman1/aai-ui/styles.css";
 import { client, useEvent, useTheme } from "@alexkroman1/aai-ui";
 import { useState } from "react";

@@ -1,27 +1,16 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { KV } from "../shared.ts";
-import { getState } from "../shared.ts";
+import { getState, RESOURCE_TYPES } from "../shared.ts";
 
 export const resourcesGetAvailable = tool({
   description: "List available resources, optionally filtered by type.",
   parameters: z.object({
     type: z
-      .enum([
-        "ambulance",
-        "fire_engine",
-        "police",
-        "hazmat_team",
-        "helicopter",
-        "k9_unit",
-        "swat",
-        "ems_supervisor",
-        "all",
-      ])
+      .enum([...RESOURCE_TYPES, "all"])
       .describe("Filter by resource type, or 'all'")
       .optional(),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx) {
     const state = await getState(ctx.kv);
     let resources = state.resources;
     if (args.type && args.type !== "all") {

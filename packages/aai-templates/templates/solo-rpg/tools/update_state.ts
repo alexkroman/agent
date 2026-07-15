@@ -1,7 +1,18 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { Disposition, KV } from "../shared.ts";
-import { getGameState, MAX_SESSION_LOG, nextNpcId, saveGameState } from "../shared.ts";
+import {
+  clockSummary,
+  DISPOSITIONS,
+  getGameState,
+  MAX_RESOURCE,
+  MAX_SESSION_LOG,
+  MIN_MOMENTUM,
+  makeNpc,
+  nextNpcId,
+  npcSummary,
+  saveGameState,
+  updateCrisisFlags,
+} from "../shared.ts";
 
 export const updateState = tool({
   description:
@@ -16,15 +27,10 @@ export const updateState = tool({
     momentum: z.number().optional(),
     addNpcName: z.string().describe("New NPC name").optional(),
     addNpcDesc: z.string().describe("New NPC one-line description").optional(),
-    addNpcDisposition: z
-      .enum(["hostile", "distrustful", "neutral", "friendly", "loyal"])
-      .describe("New NPC disposition")
-      .optional(),
+    addNpcDisposition: z.enum(DISPOSITIONS).describe("New NPC disposition").optional(),
     addNpcAgenda: z.string().describe("New NPC agenda").optional(),
     updateNpcId: z.string().describe("NPC id to update").optional(),
-    updateNpcDisposition: z
-      .enum(["hostile", "distrustful", "neutral", "friendly", "loyal"])
-      .optional(),
+    updateNpcDisposition: z.enum(DISPOSITIONS).optional(),
     updateNpcBond: z.number().optional(),
     updateNpcStatus: z.enum(["active", "background", "deceased"]).optional(),
     addClockName: z.string().describe("New clock name").optional(),
@@ -37,15 +43,15 @@ export const updateState = tool({
     storyComplete: z.boolean().describe("Mark story as complete").optional(),
     logEntry: z.string().describe("Short log entry for this scene").optional(),
   }),
-  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
+  async execute(args, ctx) {
     const state = await getGameState(ctx.kv);
 
     // Resources
-    if (args.health !== undefined) state.health = Math.max(0, Math.min(5, args.health));
-    if (args.spirit !== undefined) state.spirit = Math.max(0, Math.min(5, args.spirit));
-    if (args.supply !== undefined) state.supply = Math.max(0, Math.min(5, args.supply));
+    if (args.health !== undefined) state.health = Math.max(0, Math.min(MAX_RESOURCE, args.health));
+    if (args.spirit !== undefined) state.spirit = Math.max(0, Math.min(MAX_RESOURCE, args.spirit));
+    if (args.supply !== undefined) state.supply = Math.max(0, Math.min(MAX_RESOURCE, args.supply));
     if (args.momentum !== undefined)
-      state.momentum = Math.max(-6, Math.min(state.maxMomentum, args.momentum));
+      state.momentum = Math.max(MIN_MOMENTUM, Math.min(state.maxMomentum, args.momentum));
 
     // Location
     if (args.location !== undefined) {
@@ -61,28 +67,23 @@ export const updateState = tool({
 
     // Add NPC
     if (args.addNpcName) {
-      const id = nextNpcId(state.npcs);
-      state.npcs.push({
-        id,
-        name: args.addNpcName,
-        description: args.addNpcDesc ?? "",
-        disposition: (args.addNpcDisposition ?? "neutral") as Disposition,
-        bond:
-          args.addNpcDisposition === "friendly" ? 1 : args.addNpcDisposition === "loyal" ? 2 : 0,
-        agenda: args.addNpcAgenda ?? "",
-        instinct: "",
-        status: "active",
-        aliases: [],
-        lastMentionScene: state.sceneCount,
-      });
+      state.npcs.push(
+        makeNpc({
+          id: nextNpcId(state.npcs),
+          name: args.addNpcName,
+          description: args.addNpcDesc,
+          disposition: args.addNpcDisposition,
+          agenda: args.addNpcAgenda,
+          lastMentionScene: state.sceneCount,
+        }),
+      );
     }
 
     // Update NPC
     if (args.updateNpcId) {
       const npc = state.npcs.find((n) => n.id === args.updateNpcId);
       if (npc) {
-        if (args.updateNpcDisposition !== undefined)
-          npc.disposition = args.updateNpcDisposition as Disposition;
+        if (args.updateNpcDisposition !== undefined) npc.disposition = args.updateNpcDisposition;
         if (args.updateNpcBond !== undefined) npc.bond = args.updateNpcBond;
         if (args.updateNpcStatus !== undefined) npc.status = args.updateNpcStatus;
         npc.lastMentionScene = state.sceneCount;
@@ -137,14 +138,7 @@ export const updateState = tool({
     }
 
     // Crisis check
-    if (state.health <= 0 && state.spirit <= 0) {
-      state.gameOver = true;
-      state.crisisMode = true;
-    } else if (state.health <= 0 || state.spirit <= 0) {
-      state.crisisMode = true;
-    } else {
-      state.crisisMode = false;
-    }
+    updateCrisisFlags(state);
 
     await saveGameState(ctx.kv, state);
     ctx.send("game_state", state);
@@ -176,23 +170,8 @@ export const updateState = tool({
       crisisMode: state.crisisMode,
       gameOver: state.gameOver,
       sceneCount: state.sceneCount,
-      npcs: state.npcs.map((n) => ({
-        id: n.id,
-        name: n.name,
-        disposition: n.disposition,
-        bond: n.bond,
-        agenda: n.agenda,
-        status: n.status,
-        description: n.description,
-      })),
-      clocks: state.clocks.map((c) => ({
-        id: c.id,
-        name: c.name,
-        clockType: c.clockType,
-        segments: c.segments,
-        filled: c.filled,
-        triggerDescription: c.triggerDescription,
-      })),
+      npcs: state.npcs.map(npcSummary),
+      clocks: state.clocks.map(clockSummary),
       storyBlueprint: state.storyBlueprint
         ? {
             structureType: state.storyBlueprint.structureType,

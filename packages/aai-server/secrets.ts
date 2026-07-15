@@ -2,10 +2,10 @@
 // Uses Web Crypto API for PBKDF2 credential hashing and AES-256-GCM + HKDF envelope encryption.
 
 import { timingSafeEqual } from "node:crypto";
-import { z } from "zod";
 import { TtlCache } from "./_ttl-cache.ts";
 import { fromBase64Url, toBase64Url } from "./base64url.ts";
 import { MAX_ENV_SIZE } from "./constants.ts";
+import { EnvSchema } from "./schemas.ts";
 import type { BundleStore } from "./store-types.ts";
 
 // ─── Hashing & Authentication ───────────────────────────────────────────────
@@ -84,7 +84,6 @@ export async function verifyApiKeyHash(apiKey: string, storedHash: string): Prom
     ),
   );
 
-  if (derived.byteLength !== expected.byteLength) return false;
   const result = timingSafeEqual(derived, expected);
   verifyCache.set(cacheKey, result);
   return result;
@@ -107,19 +106,23 @@ export async function verifySlugOwner(
     return { status: "unclaimed", keyHash };
   }
 
-  for (const stored of manifest.credential_hashes) {
-    if (await verifyApiKeyHash(apiKey, stored)) {
-      // Return the matched stored hash — avoids a redundant ~100ms PBKDF2 call.
-      return { status: "owned", keyHash: stored };
-    }
+  // Verify against all stored hashes concurrently — each cache miss costs
+  // ~100ms of PBKDF2, and deriveBits runs off the main thread.
+  const matches = await Promise.all(
+    manifest.credential_hashes.map(async (stored) =>
+      (await verifyApiKeyHash(apiKey, stored)) ? stored : null,
+    ),
+  );
+  const matched = matches.find((stored) => stored !== null);
+  if (matched !== undefined) {
+    // Return the matched stored hash — avoids a redundant ~100ms PBKDF2 call.
+    return { status: "owned", keyHash: matched };
   }
 
   return { status: "forbidden" };
 }
 
 // ─── Credential Encryption ───────────────────────────────────────────────────
-
-const EnvSchema = z.record(z.string(), z.string());
 
 const ENV_VERSION = 0x01;
 const ENV_SALT_BYTES = 16;

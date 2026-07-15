@@ -28,10 +28,10 @@ export function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Res
 }
 
 async function matchesAnyHash(apiKey: string, hashes: string[]): Promise<boolean> {
-  for (const h of hashes) {
-    if (await verifyApiKeyHash(apiKey, h)) return true;
-  }
-  return false;
+  // Verify concurrently — each cache miss costs ~100ms of PBKDF2, and
+  // deriveBits runs off the main thread.
+  const results = await Promise.all(hashes.map((h) => verifyApiKeyHash(apiKey, h)));
+  return results.some(Boolean);
 }
 
 async function handleDeployInner(

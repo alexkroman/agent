@@ -1,13 +1,14 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { KV } from "../shared.ts";
 import {
   calculateTriageScore,
+  findIncident,
   getApplicableProtocols,
   getState,
-  now,
+  INCIDENT_TYPES,
   recalculateAlertLevel,
   recommendResources,
+  SEVERITIES,
   saveState,
 } from "../shared.ts";
 
@@ -16,31 +17,16 @@ export const incidentTriage = tool({
     "Triage an incident — confirm or override severity, type, hazards, and casualty count.",
   parameters: z.object({
     incidentId: z.string().describe("The incident ID"),
-    severity: z
-      .enum(["critical", "urgent", "moderate", "minor"])
-      .describe("Confirmed severity after triage")
-      .optional(),
-    type: z
-      .enum([
-        "medical",
-        "fire",
-        "hazmat",
-        "traffic",
-        "crime",
-        "natural_disaster",
-        "utility",
-        "other",
-      ])
-      .describe("Confirmed incident type")
-      .optional(),
+    severity: z.enum(SEVERITIES).describe("Confirmed severity after triage").optional(),
+    type: z.enum(INCIDENT_TYPES).describe("Confirmed incident type").optional(),
     additionalHazards: z.array(z.string()).describe("Any additional hazards identified").optional(),
     casualtyUpdate: z.number().describe("Updated casualty count").optional(),
     notes: z.string().describe("Triage notes").optional(),
   }),
-  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
+  async execute(args, ctx) {
     const state = await getState(ctx.kv);
-    const inc = state.incidents[args.incidentId];
-    if (!inc) return { error: `Incident ${args.incidentId} not found` };
+    const inc = findIncident(state, args.incidentId);
+    if ("error" in inc) return inc;
 
     if (args.severity) inc.severity = args.severity;
     if (args.type) inc.type = args.type;
@@ -57,9 +43,9 @@ export const incidentTriage = tool({
       inc.hazards.length,
     );
     inc.status = "triaged";
-    inc.updatedAt = now();
+    inc.updatedAt = Date.now();
     inc.timeline.push({
-      time: now(),
+      time: Date.now(),
       event: `Triaged: ${inc.severity} ${inc.type}, score ${inc.triageScore}`,
     });
 

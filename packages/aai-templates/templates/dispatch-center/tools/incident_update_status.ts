@@ -1,10 +1,9 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { KV } from "../shared.ts";
 import {
   deleteIncidentSnapshot,
+  findIncident,
   getState,
-  now,
   recalculateAlertLevel,
   saveState,
 } from "../shared.ts";
@@ -23,15 +22,15 @@ export const incidentUpdateStatus = tool({
       .describe("Updated casualty numbers")
       .optional(),
   }),
-  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
+  async execute(args, ctx) {
     const state = await getState(ctx.kv);
-    const inc = state.incidents[args.incidentId];
-    if (!inc) return { error: `Incident ${args.incidentId} not found` };
+    const inc = findIncident(state, args.incidentId);
+    if ("error" in inc) return inc;
 
     inc.status = args.status;
-    inc.updatedAt = now();
+    inc.updatedAt = Date.now();
     inc.timeline.push({
-      time: now(),
+      time: Date.now(),
       event: `Status → ${args.status}${args.notes ? `: ${args.notes}` : ""}`,
     });
     if (args.notes) inc.notes.push(args.notes);
@@ -53,17 +52,12 @@ export const incidentUpdateStatus = tool({
           r.status = "returning";
           r.assignedIncident = null;
           r.eta = null;
-          // Auto-return to available after a delay (simulated)
-          setTimeout(() => {
-            r.status = "available";
-          }, 2000);
         }
       }
       inc.timeline.push({
-        time: now(),
+        time: Date.now(),
         event: "All resources released — incident closed",
       });
-      await deleteIncidentSnapshot(ctx.kv, args.incidentId);
     }
 
     // Update resource statuses for en_route/on_scene
@@ -75,7 +69,14 @@ export const incidentUpdateStatus = tool({
     }
 
     recalculateAlertLevel(state);
-    await saveState(ctx.kv, state);
+    if (args.status === "resolved") {
+      await Promise.all([
+        deleteIncidentSnapshot(ctx.kv, args.incidentId),
+        saveState(ctx.kv, state),
+      ]);
+    } else {
+      await saveState(ctx.kv, state);
+    }
 
     const result = {
       incidentId: args.incidentId,

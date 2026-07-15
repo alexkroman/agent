@@ -1,7 +1,13 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { KV, Resource } from "../shared.ts";
-import { getState, now, recalculateAlertLevel, recommendResources, saveState } from "../shared.ts";
+import type { Resource } from "../shared.ts";
+import {
+  findIncident,
+  getState,
+  recalculateAlertLevel,
+  recommendResources,
+  saveState,
+} from "../shared.ts";
 
 export const resourcesDispatch = tool({
   description:
@@ -21,10 +27,10 @@ export const resourcesDispatch = tool({
       .describe("Dispatch priority — affects simulated ETA")
       .optional(),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx) {
     const state = await getState(ctx.kv);
-    const inc = state.incidents[args.incidentId];
-    if (!inc) return { error: `Incident ${args.incidentId} not found` };
+    const inc = findIncident(state, args.incidentId);
+    if ("error" in inc) return inc;
 
     const dispatched: {
       callsign: string;
@@ -65,14 +71,14 @@ export const resourcesDispatch = tool({
       inc.assignedResources.push(r.id);
       dispatched.push({ callsign: r.callsign, type: r.type, eta });
       inc.timeline.push({
-        time: now(),
+        time: Date.now(),
         event: `Dispatched ${r.callsign} — ETA ${eta} min`,
       });
     }
 
     if (dispatched.length > 0) {
       inc.status = "dispatched";
-      inc.updatedAt = now();
+      inc.updatedAt = Date.now();
     }
 
     recalculateAlertLevel(state);

@@ -1,9 +1,7 @@
-/** @jsxImportSource react */
-
 import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
 import { client, useEvent, useSession } from "@alexkroman1/aai-ui";
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useRef } from "react";
 import type { DispatchState, Incident, Severity } from "./shared.ts";
 
 const CSS = `
@@ -132,7 +130,7 @@ function App() {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session.messages]);
 
-  const incidentList = useMemo(() => Object.values(dashRef.current.incidents).reverse(), []);
+  const incidentList = Object.values(dashRef.current.incidents).reverse();
   const activeIncidents = incidentList.filter((i) => i.status !== "resolved");
   const resolvedCount = incidentList.filter((i) => i.status === "resolved").length;
 

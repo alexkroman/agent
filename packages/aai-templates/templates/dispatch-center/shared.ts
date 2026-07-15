@@ -1,15 +1,22 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-export type Severity = "critical" | "urgent" | "moderate" | "minor";
-export type IncidentType =
-  | "medical"
-  | "fire"
-  | "hazmat"
-  | "traffic"
-  | "crime"
-  | "natural_disaster"
-  | "utility"
-  | "other";
+import type { Kv } from "@alexkroman1/aai";
+
+export const SEVERITIES = ["critical", "urgent", "moderate", "minor"] as const;
+export type Severity = (typeof SEVERITIES)[number];
+
+export const INCIDENT_TYPES = [
+  "medical",
+  "fire",
+  "hazmat",
+  "traffic",
+  "crime",
+  "natural_disaster",
+  "utility",
+  "other",
+] as const;
+export type IncidentType = (typeof INCIDENT_TYPES)[number];
+
 export type Status =
   | "incoming"
   | "triaged"
@@ -19,19 +26,30 @@ export type Status =
   | "resolved"
   | "escalated";
 
+export const RESOURCE_TYPES = [
+  "ambulance",
+  "fire_engine",
+  "police",
+  "hazmat_team",
+  "helicopter",
+  "k9_unit",
+  "swat",
+  "ems_supervisor",
+] as const;
+
+export const RESOURCE_STATUSES = [
+  "available",
+  "dispatched",
+  "en_route",
+  "on_scene",
+  "returning",
+] as const;
+
 export interface Resource {
   id: string;
-  type:
-    | "ambulance"
-    | "fire_engine"
-    | "police"
-    | "hazmat_team"
-    | "helicopter"
-    | "k9_unit"
-    | "swat"
-    | "ems_supervisor";
+  type: (typeof RESOURCE_TYPES)[number];
   callsign: string;
-  status: "available" | "dispatched" | "en_route" | "on_scene" | "returning";
+  status: (typeof RESOURCE_STATUSES)[number];
   assignedIncident: string | null;
   eta: number | null;
   capabilities: string[];
@@ -68,14 +86,12 @@ export interface DispatchState {
 
 // ─── KV helpers ──────────────────────────────────────────────────────────────
 
-export type KV = {
-  get: <T>(key: string) => Promise<T | null>;
-  set: (key: string, value: unknown) => Promise<void>;
-  delete: (key: string) => Promise<void>;
-};
-
 export const STATE_KEY = "dispatch:state";
 export const INCIDENT_INDEX_KEY = "incident-index";
+
+export function incidentKey(incidentId: string): string {
+  return `incident:${incidentId}`;
+}
 
 // ─── Resource generation ────────────────────────────────────────────────────
 
@@ -116,29 +132,72 @@ export function createDefaultState(): DispatchState {
   };
 }
 
-export async function getState(kv: KV): Promise<DispatchState> {
+export async function getState(kv: Kv): Promise<DispatchState> {
   const saved = await kv.get<DispatchState>(STATE_KEY);
   return saved ?? createDefaultState();
 }
 
-export async function saveState(kv: KV, state: DispatchState): Promise<void> {
+export async function saveState(kv: Kv, state: DispatchState): Promise<void> {
   await kv.set(STATE_KEY, state);
 }
 
-export async function saveIncidentSnapshot(kv: KV, incident: Incident): Promise<void> {
-  await kv.set(`incident:${incident.id}`, incident);
-  const index = (await kv.get<string[]>(INCIDENT_INDEX_KEY)) ?? [];
-  if (!index.includes(incident.id)) {
-    index.push(incident.id);
-    await kv.set(INCIDENT_INDEX_KEY, index);
+export async function saveIncidentSnapshot(kv: Kv, incident: Incident): Promise<void> {
+  const [, index] = await Promise.all([
+    kv.set(incidentKey(incident.id), incident),
+    kv.get<string[]>(INCIDENT_INDEX_KEY),
+  ]);
+  const ids = index ?? [];
+  if (!ids.includes(incident.id)) {
+    ids.push(incident.id);
+    await kv.set(INCIDENT_INDEX_KEY, ids);
   }
 }
 
-export async function deleteIncidentSnapshot(kv: KV, incidentId: string): Promise<void> {
-  await kv.delete(`incident:${incidentId}`);
-  const index = (await kv.get<string[]>(INCIDENT_INDEX_KEY)) ?? [];
-  const updated = index.filter((id) => id !== incidentId);
+export async function deleteIncidentSnapshot(kv: Kv, incidentId: string): Promise<void> {
+  const [, index] = await Promise.all([
+    kv.delete(incidentKey(incidentId)),
+    kv.get<string[]>(INCIDENT_INDEX_KEY),
+  ]);
+  const updated = (index ?? []).filter((id) => id !== incidentId);
   await kv.set(INCIDENT_INDEX_KEY, updated);
+}
+
+// ─── Incident helpers ────────────────────────────────────────────────────────
+
+export function createIncident(state: DispatchState, overrides: Partial<Incident>): Incident {
+  state.incidentCounter++;
+  const id = `INC-${String(state.incidentCounter).padStart(4, "0")}`;
+  const time = Date.now();
+  const incident: Incident = {
+    id,
+    type: "other",
+    severity: "moderate",
+    status: "incoming",
+    location: "Unknown",
+    description: "",
+    callerName: "Unknown",
+    callerPhone: "Unknown",
+    triageScore: 0,
+    assignedResources: [],
+    timeline: [],
+    notes: [],
+    createdAt: time,
+    updatedAt: time,
+    escalationLevel: 0,
+    protocolsActivated: [],
+    casualties: { confirmed: 0, estimated: 0, treated: 0 },
+    hazards: [],
+    ...overrides,
+  };
+  state.incidents[id] = incident;
+  return incident;
+}
+
+export function findIncident(
+  state: DispatchState,
+  incidentId: string,
+): Incident | { error: string } {
+  return state.incidents[incidentId] ?? { error: `Incident ${incidentId} not found` };
 }
 
 // ─── Triage & scoring ────────────────────────────────────────────────────────
@@ -371,21 +430,33 @@ export const PROTOCOLS: Protocol[] = [
   },
 ];
 
+const SEVERITY_RANK: Record<Severity, number> = {
+  critical: 4,
+  urgent: 3,
+  moderate: 2,
+  minor: 1,
+};
+
 export function getApplicableProtocols(type: IncidentType, severity: Severity): Protocol[] {
-  const severityRank: Record<Severity, number> = {
-    critical: 4,
-    urgent: 3,
-    moderate: 2,
-    minor: 1,
-  };
   return PROTOCOLS.filter(
     (p) =>
       p.triggers.types.includes(type) &&
-      severityRank[severity] >= severityRank[p.triggers.minSeverity],
+      SEVERITY_RANK[severity] >= SEVERITY_RANK[p.triggers.minSeverity],
   );
 }
 
 // ─── Resource recommendation engine ──────────────────────────────────────────
+
+const BASE_NEEDS: Record<IncidentType, Resource["type"][]> = {
+  medical: ["ambulance"],
+  fire: ["fire_engine", "ambulance"],
+  hazmat: ["hazmat_team", "fire_engine", "ambulance"],
+  traffic: ["police", "ambulance", "fire_engine"],
+  crime: ["police"],
+  natural_disaster: ["fire_engine", "ambulance", "police"],
+  utility: ["fire_engine"],
+  other: [],
+};
 
 export function recommendResources(
   type: IncidentType,
@@ -394,18 +465,7 @@ export function recommendResources(
 ): Resource[] {
   const needed: Resource["type"][] = [];
 
-  const baseNeeds: Record<IncidentType, Resource["type"][]> = {
-    medical: ["ambulance"],
-    fire: ["fire_engine", "ambulance"],
-    hazmat: ["hazmat_team", "fire_engine", "ambulance"],
-    traffic: ["police", "ambulance", "fire_engine"],
-    crime: ["police"],
-    natural_disaster: ["fire_engine", "ambulance", "police"],
-    utility: ["fire_engine"],
-    other: [],
-  };
-
-  needed.push(...(baseNeeds[type] || []));
+  needed.push(...(BASE_NEEDS[type] || []));
 
   if (severity === "critical") {
     if (!needed.includes("ambulance")) needed.push("ambulance");
@@ -435,9 +495,7 @@ export function recommendResources(
 // ─── System alert level calculation ──────────────────────────────────────────
 
 export function recalculateAlertLevel(state: DispatchState): void {
-  const activeIncidents = Object.values(state.incidents).filter(
-    (i) => !["resolved"].includes(i.status),
-  );
+  const activeIncidents = Object.values(state.incidents).filter((i) => i.status !== "resolved");
   const criticalCount = activeIncidents.filter((i) => i.severity === "critical").length;
   const totalActive = activeIncidents.length;
   const availableResources = state.resources.filter((r) => r.status === "available").length;
@@ -457,8 +515,4 @@ export function recalculateAlertLevel(state: DispatchState): void {
   if (state.alertLevel === "red" && !state.mutualAidRequested) {
     state.mutualAidRequested = true;
   }
-}
-
-export function now(): number {
-  return Date.now();
 }

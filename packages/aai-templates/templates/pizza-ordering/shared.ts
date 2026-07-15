@@ -1,7 +1,10 @@
+export const SIZES = ["small", "medium", "large"] as const;
+export const CRUSTS = ["thin", "regular", "thick", "stuffed"] as const;
+
 export interface Pizza {
   id: number;
-  size: "small" | "medium" | "large";
-  crust: "thin" | "regular" | "thick" | "stuffed";
+  size: (typeof SIZES)[number];
+  crust: (typeof CRUSTS)[number];
   toppings: string[];
   quantity: number;
 }
@@ -29,15 +32,7 @@ export const MENU = {
 } as const;
 
 export function calculateTotal(pizzas: Pizza[]): number {
-  return pizzas.reduce((total, pizza) => {
-    const base = MENU.sizes[pizza.size];
-    const crust = MENU.crusts[pizza.crust];
-    const toppingsPrice = pizza.toppings.reduce(
-      (sum, t) => sum + (MENU.toppings[t as keyof typeof MENU.toppings] ?? 1.0),
-      0,
-    );
-    return total + (base + crust + toppingsPrice) * pizza.quantity;
-  }, 0);
+  return pizzas.reduce((total, pizza) => total + pizzaPrice(pizza), 0);
 }
 
 export function pizzaPrice(p: Pizza): number {
@@ -49,19 +44,3 @@ export function pizzaPrice(p: Pizza): number {
   );
   return (base + crust + toppings) * p.quantity;
 }
-
-/** Tool result types for this agent, keyed by tool name. */
-export type PizzaToolResults = {
-  add_pizza: { added: Pizza; orderTotal: string; itemCount: number };
-  remove_pizza: { removed: Pizza; orderTotal: string; itemCount: number };
-  update_pizza: { updated: Pizza; orderTotal: string };
-  view_order: { pizzas: Pizza[]; orderTotal: string } | { message: string };
-  set_customer_name: { name: string };
-  place_order: {
-    orderNumber: number;
-    customerName: string;
-    pizzas: number;
-    total: string;
-    estimatedMinutes: number;
-  };
-};

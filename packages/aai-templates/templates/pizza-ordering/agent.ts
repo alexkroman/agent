@@ -1,10 +1,10 @@
 import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { calculateTotal, type Pizza } from "./shared.ts";
+import { CRUSTS, calculateTotal, type Pizza, SIZES } from "./shared.ts";
 import systemPrompt from "./system-prompt.md";
 
-const sizes = z.enum(["small", "medium", "large"]);
-const crusts = z.enum(["thin", "regular", "thick", "stuffed"]);
+const sizes = z.enum(SIZES);
+const crusts = z.enum(CRUSTS);
 
 export default agent({
   name: "Pizza Palace",
@@ -24,8 +24,12 @@ export default agent({
         quantity: z.number().default(1),
       }),
       async execute(args, ctx) {
-        const pizzas: Pizza[] = (await ctx.kv.get("pizzas")) ?? [];
-        const nextId: number = (await ctx.kv.get("nextId")) ?? 1;
+        const [storedPizzas, storedNextId] = await Promise.all([
+          ctx.kv.get<Pizza[]>("pizzas"),
+          ctx.kv.get<number>("nextId"),
+        ]);
+        const pizzas = storedPizzas ?? [];
+        const nextId = storedNextId ?? 1;
 
         const pizza: Pizza = {
           id: nextId,
@@ -34,15 +38,15 @@ export default agent({
           toppings: args.toppings,
           quantity: args.quantity ?? 1,
         };
+        const updated = [...pizzas, pizza];
 
-        await ctx.kv.set("pizzas", [...pizzas, pizza]);
-        await ctx.kv.set("nextId", nextId + 1);
+        await Promise.all([ctx.kv.set("pizzas", updated), ctx.kv.set("nextId", nextId + 1)]);
 
-        const total = calculateTotal([...pizzas, pizza]);
+        const total = calculateTotal(updated);
         const result = {
           added: pizza,
           orderTotal: `$${total.toFixed(2)}`,
-          itemCount: pizzas.length + 1,
+          itemCount: updated.length,
         };
         ctx.send("order", result);
         return result;
@@ -53,11 +57,15 @@ export default agent({
       description:
         "Place the final order. Use when the customer confirms they are done and ready to order.",
       async execute(_args, ctx) {
-        const pizzas: Pizza[] = (await ctx.kv.get("pizzas")) ?? [];
+        const [storedPizzas, storedName] = await Promise.all([
+          ctx.kv.get<Pizza[]>("pizzas"),
+          ctx.kv.get<string>("customerName"),
+        ]);
+        const pizzas = storedPizzas ?? [];
         if (pizzas.length === 0) return { error: "Cannot place an empty order." };
 
         await ctx.kv.set("orderPlaced", true);
-        const customerName: string = (await ctx.kv.get("customerName")) ?? "Guest";
+        const customerName = storedName ?? "Guest";
         const total = calculateTotal(pizzas);
         const orderNumber = Math.floor(1000 + Math.random() * 9000);
 

@@ -12,10 +12,31 @@ import type {
   JsonRpcMessage,
   JsonRpcNotification,
   KvAdapter,
-  KvInterface,
   VectorAdapter,
   VectorMatch,
 } from "./harness-types.ts";
+
+// ---- Shared helpers ----------------------------------------------------------
+
+/** Extract an error message from an unknown thrown value. */
+export function errMsg(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+/** Race a promise against a wall-clock timeout, clearing the timer in every outcome. */
+export async function withTimeout<T>(promise: Promise<T>, ms: number, label: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    return await Promise.race([
+      promise,
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
+      }),
+    ]);
+  } finally {
+    clearTimeout(timer);
+  }
+}
 
 // ---- NDJSON I/O -------------------------------------------------------------
 
@@ -56,24 +77,6 @@ function hostRequest(method: string, params: Record<string, unknown>): Promise<u
   });
 }
 
-const kv: KvInterface = {
-  async get(key: string): Promise<unknown> {
-    // The host's kv/get handler returns the stored value directly as the RPC
-    // result (see configureSandbox), not wrapped in { value } — return it as-is.
-    return (await hostRequest("kv/get", { key })) ?? null;
-  },
-  async set(key: string, value: unknown, opts?: { expireIn?: number }): Promise<void> {
-    await hostRequest("kv/set", {
-      key,
-      value,
-      ...(opts?.expireIn !== undefined ? { expireIn: opts.expireIn } : {}),
-    });
-  },
-  async del(key: string): Promise<void> {
-    await hostRequest("kv/del", { key });
-  },
-};
-
 // ---- Fetch proxy ---------------------------------------------------------------
 
 type PendingFetch = {
@@ -87,7 +90,9 @@ type PendingFetch = {
 
 const pendingFetches = new Map<string, PendingFetch>();
 
-const MAX_REQUEST_BODY_BYTES = 1024 * 1024; // 1 MB
+// 1 MB. Friendly early error only — the host enforces the same cap
+// authoritatively (see sandbox-fetch.ts).
+const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 
 function base64ToBytes(b64: string): Uint8Array {
   const binary = atob(b64);
@@ -190,39 +195,52 @@ export function sendToClient(sessionId: string, event: string, data: unknown): v
   } as JsonRpcNotification);
 }
 
-// Adapt KvInterface to the Kv shape expected by ToolContext
+// The adapters are stateless views over hostRequest, so a single module-level
+// instance serves every tool call.
+const kvAdapter: KvAdapter = {
+  // The host's kv/get handler returns the stored value directly as the RPC
+  // result (see configureSandbox), not wrapped in { value } — return it as-is.
+  get: async <T = unknown>(key: string) =>
+    ((await hostRequest("kv/get", { key })) ?? null) as T | null,
+  set: async (key: string, value: unknown, options?: { expireIn?: number }) => {
+    await hostRequest("kv/set", {
+      key,
+      value,
+      ...(options?.expireIn !== undefined ? { expireIn: options.expireIn } : {}),
+    });
+  },
+  delete: async (keys: string | string[]): Promise<void> => {
+    const keyArray = Array.isArray(keys) ? keys : [keys];
+    await Promise.all(keyArray.map((key) => hostRequest("kv/del", { key })));
+  },
+};
+
+const vectorAdapter: VectorAdapter = {
+  upsert: (id, text, metadata) =>
+    hostRequest("vector/upsert", {
+      id,
+      text,
+      ...(metadata !== undefined ? { metadata } : {}),
+    }) as Promise<void>,
+  query: async (text, opts) => {
+    const result = (await hostRequest("vector/query", {
+      text,
+      ...(opts?.topK !== undefined ? { topK: opts.topK } : {}),
+      ...(opts?.filter !== undefined ? { filter: opts.filter } : {}),
+    })) as VectorMatch[];
+    return result;
+  },
+  delete: (ids) => hostRequest("vector/delete", { ids }) as Promise<void>,
+};
+
+/** Kv adapter handed to tool contexts. */
 export function makeKvAdapter(): KvAdapter {
-  return {
-    get: <T = unknown>(key: string) => kv.get(key) as Promise<T | null>,
-    set: (key: string, value: unknown, options?: { expireIn?: number }) =>
-      kv.set(key, value, options),
-    delete: (key: string | string[]): Promise<void> => {
-      if (Array.isArray(key)) {
-        return Promise.all(key.map((k) => kv.del(k))).then(() => undefined);
-      }
-      return kv.del(key);
-    },
-  };
+  return kvAdapter;
 }
 
+/** Vector adapter handed to tool contexts. */
 export function makeVectorAdapter(): VectorAdapter {
-  return {
-    upsert: (id, text, metadata) =>
-      hostRequest("vector/upsert", {
-        id,
-        text,
-        ...(metadata !== undefined ? { metadata } : {}),
-      }) as Promise<void>,
-    query: async (text, opts) => {
-      const result = (await hostRequest("vector/query", {
-        text,
-        ...(opts?.topK !== undefined ? { topK: opts.topK } : {}),
-        ...(opts?.filter !== undefined ? { filter: opts.filter } : {}),
-      })) as VectorMatch[];
-      return result;
-    },
-    delete: (ids) => hostRequest("vector/delete", { ids }) as Promise<void>,
-  };
+  return vectorAdapter;
 }
 
 // ---- Host response dispatch -------------------------------------------------

@@ -20,15 +20,9 @@
  * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
  */
 
-import { type Kv, MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai";
+import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai";
 import { KvRequestSchema, VectorRequestSchema } from "@alexkroman1/aai/protocol";
-import {
-  createUnstorageKv,
-  resolveKv,
-  resolveVector,
-  type SessionWebSocket,
-  type Vector,
-} from "@alexkroman1/aai/runtime";
+import type { SessionWebSocket, Vector } from "@alexkroman1/aai/runtime";
 import { prometheus } from "@hono/prometheus";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
@@ -37,13 +31,14 @@ import { secureHeaders } from "hono/secure-headers";
 import type { Storage } from "unstorage";
 import { WebSocketServer } from "ws";
 import { createConnectionTracker } from "./connection-tracker.ts";
-import { agentKvPrefix, MAX_CONNECTIONS } from "./constants.ts";
+import { MAX_CONNECTIONS } from "./constants.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { handleKv } from "./kv-handler.ts";
 import {
+  hrtimeSeconds,
   metrics,
   registry,
   type SessionEndReason,
@@ -51,9 +46,9 @@ import {
   type SessionMode,
   serialize,
 } from "./metrics.ts";
-import { authMw, existingOwnerMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
+import { authMw, existingOwnerMw, ownerMw, slugMw } from "./middleware.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { resolveSandbox } from "./sandbox.ts";
+import { resolveAgentKv, resolveAgentVector, resolveSandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { acquireSlotSession, releaseSlotSession, type SlotCache } from "./sandbox-slots.ts";
 import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
@@ -82,18 +77,7 @@ async function loadAgentConfig(
     c.env.store.getAgentConfig(slug),
     c.env.store.getEnv(slug),
   ]);
-  return { agentConfig, env: (agentEnv ?? {}) as Record<string, string> };
-}
-
-function resolveAgentKv(
-  c: AppContext,
-  slug: string,
-  agentConfig: IsolateConfig | null,
-  env: Record<string, string>,
-): Kv {
-  return agentConfig?.kv
-    ? resolveKv(agentConfig.kv, env, agentKvPrefix(slug))
-    : createUnstorageKv({ storage: c.env.storage, prefix: agentKvPrefix(slug) });
+  return { agentConfig, env: agentEnv ?? {} };
 }
 
 // Build the prometheus middleware once at module load. `@hono/prometheus`
@@ -155,7 +139,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.post("/deploy", authMw, zValidator("json", DeployBodySchema), handleDeployNew);
 
   // Bare-slug redirect — registered before sub-router so it takes priority.
-  app.get("/:slug{[a-z0-9][a-z0-9_-]*[a-z0-9]}", (c) => {
+  // Pattern derived from VALID_SLUG_RE (anchors stripped) so the slug
+  // grammar has a single source of truth.
+  app.get(`/:slug{${VALID_SLUG_RE.source.slice(1, -1)}}`, (c) => {
     const url = new URL(c.req.url);
     url.pathname += "/";
     return c.redirect(url.toString(), 301);
@@ -174,24 +160,21 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.delete("/secret/:key", existingOwnerMw, handleSecretDelete);
   agents.post("/kv", existingOwnerMw, zValidator("json", KvRequestSchema), async (c) => {
     const { agentConfig, env } = await loadAgentConfig(c, c.var.slug);
-    return handleKv(c, resolveAgentKv(c, c.var.slug, agentConfig, env));
+    return handleKv(c, resolveAgentKv(c.env.storage, c.var.slug, agentConfig, env));
   });
   agents.get("/kv", existingOwnerMw, async (c) => {
     const key = c.req.query("key");
     if (!key) return c.json({ error: "Missing key query parameter" }, 400);
     const { agentConfig, env } = await loadAgentConfig(c, c.var.slug);
     if (!agentConfig) return c.json(null, 404);
-    const value = await resolveAgentKv(c, c.var.slug, agentConfig, env).get(key);
+    const value = await resolveAgentKv(c.env.storage, c.var.slug, agentConfig, env).get(key);
     if (value === null) return c.json(null, 404);
     return c.json(value);
   });
   agents.post("/vector", existingOwnerMw, zValidator("json", VectorRequestSchema), async (c) => {
     const slug = c.var.slug;
     const { agentConfig, env } = await loadAgentConfig(c, slug);
-    const vector: Vector = agentConfig?.vector
-      ? resolveVector(agentConfig.vector, env, slug)
-      : c.env.defaultVector(slug);
-    return handleVector(c, vector);
+    return handleVector(c, resolveAgentVector(slug, agentConfig, env, c.env.defaultVector));
   });
 
   agents.get("/health", handleAgentHealth);
@@ -207,6 +190,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     storage: opts.storage,
     defaultVector: opts.defaultVector,
   };
+  const sandboxOpts = { ...bindings, ...(opts.pool && { pool: opts.pool }) };
 
   const original = app.fetch.bind(app);
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
@@ -220,30 +204,22 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // pattern has a single source of truth.
   const SLUG_WS_RE = new RegExp(`^\\/(${VALID_SLUG_RE.source.slice(1, -1)})\\/websocket$`);
 
-  async function resolveUpgrade(rawUrl: string) {
-    const url = new URL(rawUrl, "http://localhost");
-    const match = url.pathname.match(SLUG_WS_RE);
-    if (!match) return null;
-    const slug = validateSlug(match[1] as string);
+  async function resolveUpgrade(slug: string) {
     const [sandbox, agentConfig] = await Promise.all([
-      resolveSandbox(slug, {
-        slots: opts.slots,
-        store: opts.store,
-        storage: opts.storage,
-        defaultVector: opts.defaultVector,
-        ...(opts.pool && { pool: opts.pool }),
-      }),
+      resolveSandbox(slug, sandboxOpts),
       opts.store.getAgentConfig(slug),
     ]);
     if (!sandbox) return null;
     const mode: SessionMode = agentConfig?.mode === "pipeline" ? "pipeline" : "s2s";
-    return { sandbox, url, slug, mode };
+    return { sandbox, mode };
   }
 
   const injectWebSocket = (server: import("node:http").Server) => {
     server.on("upgrade", async (req, socket, head) => {
       const pathOnly = req.url?.split("?")[0] ?? "";
-      if (!SLUG_WS_RE.test(pathOnly)) return;
+      const slugMatch = pathOnly.match(SLUG_WS_RE);
+      if (!slugMatch) return;
+      const slug = slugMatch[1] as string;
 
       if (!connections.tryAcquire()) {
         console.warn("WebSocket connection limit reached, rejecting upgrade");
@@ -271,27 +247,22 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       socket.on("close", releaseConn);
 
       try {
-        const result = await resolveUpgrade(req.url ?? "/");
+        const result = await resolveUpgrade(slug);
         if (!result) {
           socket.destroy();
           return;
         }
-        const { sandbox, slug, mode } = result;
+        const { sandbox, mode } = result;
         wss.handleUpgrade(req, socket, head, (ws) => {
           metrics.sessionsStarted.inc({ slug, mode });
           metrics.sessionsActive.inc({ slug });
           // Track the live session so idle eviction can't kill the sandbox
           // mid-call (a session can outlive IDLE_SANDBOX_MS).
           acquireSlotSession(opts.slots, slug);
-          let sessionReleased = false;
           const startedAt = process.hrtime.bigint();
           ws.on("close", (code: number) => {
-            if (!sessionReleased) {
-              sessionReleased = true;
-              releaseSlotSession(opts.slots, slug);
-            }
-            const elapsedSec = Number(process.hrtime.bigint() - startedAt) / 1e9;
-            metrics.sessionDuration.observe(elapsedSec);
+            releaseSlotSession(opts.slots, slug);
+            metrics.sessionDuration.observe(hrtimeSeconds(startedAt));
             metrics.sessionsActive.dec({ slug });
             const reason: SessionEndReason =
               code === 1000 || code === 1001 ? "client_close" : "server_close";

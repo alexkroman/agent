@@ -1,9 +1,10 @@
-import type { ToolResultMap } from "@alexkroman1/aai-cli/types";
+import type { Kv } from "@alexkroman1/aai";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
-export const MAX_ACTIVE_NPCS = 12;
 export const MAX_SESSION_LOG = 50;
-export const DIRECTOR_INTERVAL = 3;
+export const MOMENTUM_RESET = 2;
+export const MAX_RESOURCE = 5;
+export const MIN_MOMENTUM = -6;
 
 // ── Creativity Seeds ─────────────────────────────────────────────────────────
 const SEED_WORDS = [
@@ -176,9 +177,6 @@ export interface Clock {
   owner: string;
 }
 
-/** Alias used by client display components. */
-export type ClockData = Clock;
-
 // ── Story Blueprint ──────────────────────────────────────────────────────────
 export interface StoryAct {
   phase: string;
@@ -284,7 +282,7 @@ export const DEFAULT_STATE: GameState = {
   health: 5,
   spirit: 5,
   supply: 5,
-  momentum: 2,
+  momentum: MOMENTUM_RESET,
   maxMomentum: 10,
   sceneCount: 0,
   currentLocation: "",
@@ -306,20 +304,19 @@ export const DEFAULT_STATE: GameState = {
 };
 
 // ── KV helpers ───────────────────────────────────────────────────────────────
-export type KV = {
-  get: <T>(key: string) => Promise<T | null>;
-  set: (key: string, value: unknown) => Promise<void>;
-};
-
 export const GAME_STATE_KEY = "rpg:state";
 
-export async function getGameState(kv: KV): Promise<GameState> {
+export async function getGameState(kv: Kv): Promise<GameState> {
   const saved = await kv.get<GameState>(GAME_STATE_KEY);
   return saved ?? structuredClone(DEFAULT_STATE);
 }
 
-export async function saveGameState(kv: KV, state: GameState): Promise<void> {
+export async function saveGameState(kv: Kv, state: GameState): Promise<void> {
   await kv.set(GAME_STATE_KEY, state);
+}
+
+export function saveSlotKey(slot?: string): string {
+  return `save:${slot ?? "autosave"}`;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -338,6 +335,52 @@ export function nextNpcId(npcs: NPC[]): string {
     if (m) max = Math.max(max, Number.parseInt(m[1]!, 10));
   }
   return `npc_${max + 1}`;
+}
+
+export function makeNpc(opts: {
+  id: string;
+  name: string;
+  description?: string | undefined;
+  disposition?: Disposition | undefined;
+  agenda?: string | undefined;
+  lastMentionScene?: number | undefined;
+}): NPC {
+  const disposition = opts.disposition ?? "neutral";
+  return {
+    id: opts.id,
+    name: opts.name,
+    description: opts.description ?? "",
+    disposition,
+    bond: disposition === "friendly" ? 1 : disposition === "loyal" ? 2 : 0,
+    agenda: opts.agenda ?? "",
+    instinct: "",
+    status: "active",
+    aliases: [],
+    lastMentionScene: opts.lastMentionScene ?? 0,
+  };
+}
+
+export function npcSummary(n: NPC) {
+  return {
+    id: n.id,
+    name: n.name,
+    disposition: n.disposition,
+    bond: n.bond,
+    agenda: n.agenda,
+    status: n.status,
+    description: n.description,
+  };
+}
+
+export function clockSummary(c: Clock) {
+  return {
+    id: c.id,
+    name: c.name,
+    clockType: c.clockType,
+    segments: c.segments,
+    filled: c.filled,
+    triggerDescription: c.triggerDescription,
+  };
 }
 
 // ── Dice System ──────────────────────────────────────────────────────────────
@@ -375,6 +418,28 @@ export function checkChaosInterrupt(game: GameState): string | null {
 }
 
 // ── Consequences ─────────────────────────────────────────────────────────────
+function loseResource(
+  game: GameState,
+  resource: "health" | "spirit" | "supply",
+  dmg: number,
+  consequences: string[],
+): void {
+  const old = game[resource];
+  game[resource] = Math.max(0, game[resource] - dmg);
+  if (game[resource] < old) consequences.push(`${resource} -${old - game[resource]}`);
+}
+
+export function updateCrisisFlags(game: GameState): void {
+  if (game.health <= 0 && game.spirit <= 0) {
+    game.gameOver = true;
+    game.crisisMode = true;
+  } else if (game.health <= 0 || game.spirit <= 0) {
+    game.crisisMode = true;
+  } else {
+    game.crisisMode = false;
+  }
+}
+
 export function applyConsequences(
   game: GameState,
   roll: RollResult,
@@ -388,47 +453,30 @@ export function applyConsequences(
 
   if (roll.result === "MISS") {
     if (roll.move === "endure_harm") {
-      const dmg = position === "desperate" ? 2 : 1;
-      const old = game.health;
-      game.health = Math.max(0, game.health - dmg);
-      if (game.health < old) consequences.push(`health -${old - game.health}`);
+      loseResource(game, "health", position === "desperate" ? 2 : 1, consequences);
     } else if (roll.move === "endure_stress") {
-      const dmg = position === "desperate" ? 2 : 1;
-      const old = game.spirit;
-      game.spirit = Math.max(0, game.spirit - dmg);
-      if (game.spirit < old) consequences.push(`spirit -${old - game.spirit}`);
+      loseResource(game, "spirit", position === "desperate" ? 2 : 1, consequences);
     } else if (COMBAT_MOVES.has(roll.move)) {
       const dmg = position === "desperate" ? 3 : position === "controlled" ? 1 : 2;
-      const old = game.health;
-      game.health = Math.max(0, game.health - dmg);
-      if (game.health < old) consequences.push(`health -${old - game.health}`);
+      loseResource(game, "health", dmg, consequences);
     } else if (SOCIAL_MOVES.has(roll.move)) {
       if (target) {
         const oldBond = target.bond;
         target.bond = Math.max(0, target.bond - 1);
         if (target.bond < oldBond) consequences.push(`${target.name} bond -1`);
       }
-      const dmg = position === "desperate" ? 2 : 1;
-      const old = game.spirit;
-      game.spirit = Math.max(0, game.spirit - dmg);
-      if (game.spirit < old) consequences.push(`spirit -${old - game.spirit}`);
+      loseResource(game, "spirit", position === "desperate" ? 2 : 1, consequences);
     } else {
-      const oldSupply = game.supply;
-      game.supply = Math.max(0, game.supply - 1);
-      if (game.supply < oldSupply) consequences.push(`supply -${oldSupply - game.supply}`);
+      loseResource(game, "supply", 1, consequences);
       if (position === "desperate") {
-        const oldH = game.health;
-        game.health = Math.max(0, game.health - 2);
-        if (game.health < oldH) consequences.push(`health -${oldH - game.health}`);
+        loseResource(game, "health", 2, consequences);
       } else if (position !== "controlled") {
-        const oldH = game.health;
-        game.health = Math.max(0, game.health - 1);
-        if (game.health < oldH) consequences.push(`health -${oldH - game.health}`);
+        loseResource(game, "health", 1, consequences);
       }
     }
 
     const momLoss = position === "desperate" ? 3 : 2;
-    game.momentum = Math.max(-6, game.momentum - momLoss);
+    game.momentum = Math.max(MIN_MOMENTUM, game.momentum - momLoss);
     consequences.push(`momentum -${momLoss}`);
 
     for (const clock of game.clocks) {
@@ -462,14 +510,7 @@ export function applyConsequences(
     }
   }
 
-  if (game.health <= 0 && game.spirit <= 0) {
-    game.gameOver = true;
-    game.crisisMode = true;
-  } else if (game.health <= 0 || game.spirit <= 0) {
-    game.crisisMode = true;
-  } else {
-    game.crisisMode = false;
-  }
+  updateCrisisFlags(game);
 
   return { consequences, clockEvents };
 }
@@ -507,53 +548,3 @@ export const RESULT_LABELS: Record<string, string> = {
   WEAK_HIT: "Weak Hit",
   MISS: "Miss",
 };
-
-// ── Client-shared types ──────────────────────────────────────────────────────
-
-/** Tool result types for this agent, keyed by tool name. */
-export type SoloRpgToolResults = ToolResultMap<{
-  setup_character: { success: true } & GameState;
-  update_state: { success: true } & GameState;
-  action_roll: {
-    purpose: string;
-    move: string;
-    stat: string;
-    actionDice: [number, number];
-    challengeDice: [number, number];
-    actionScore: number;
-    result: string;
-    consequences: Record<string, number | string>;
-    clockEvents: Array<{ clockName: string; action: string; filled: number }>;
-    chaosInterrupt: string | null;
-    currentHealth: number;
-    currentSpirit: number;
-    currentSupply: number;
-    currentMomentum: number;
-    chaosFactor: number;
-    crisisMode: boolean;
-    gameOver: boolean;
-    sceneCount: number;
-    canBurnMomentum: boolean;
-  };
-  burn_momentum:
-    | {
-        burned: true;
-        previousMomentum: number;
-        newMomentum: number;
-        newResult: string;
-        challengeDice: [number, number];
-      }
-    | { error: string };
-  load_game:
-    | {
-        loaded: true;
-        playerName: string;
-        characterConcept: string;
-        settingGenre: string;
-        sceneCount: number;
-        currentLocation: string;
-        initialized: boolean;
-      }
-    | { error: string };
-  save_game: { saved: true; slot: string; name: string; scene: number };
-}>;

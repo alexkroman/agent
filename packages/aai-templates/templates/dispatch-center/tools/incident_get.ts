@@ -1,17 +1,16 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { KV } from "../shared.ts";
-import { getApplicableProtocols, getState, now } from "../shared.ts";
+import { findIncident, getApplicableProtocols, getState } from "../shared.ts";
 
 export const incidentGet = tool({
   description: "Get full details on a specific incident including timeline and assigned resources.",
   parameters: z.object({
     incidentId: z.string().describe("The incident ID"),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx) {
     const state = await getState(ctx.kv);
-    const inc = state.incidents[args.incidentId];
-    if (!inc) return { error: `Incident ${args.incidentId} not found` };
+    const inc = findIncident(state, args.incidentId);
+    if ("error" in inc) return inc;
 
     const assignedResourceDetails = inc.assignedResources
       .map((rId) => {
@@ -27,7 +26,7 @@ export const incidentGet = tool({
       })
       .filter(Boolean);
 
-    const ageMinutes = Math.round((now() - inc.createdAt) / 60_000);
+    const ageMinutes = Math.round((Date.now() - inc.createdAt) / 60_000);
 
     return {
       ...inc,

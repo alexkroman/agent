@@ -10,12 +10,17 @@
 import { type ChildProcess, spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import type { Kv } from "@alexkroman1/aai";
-import { errorMessage, MAX_VALUE_SIZE } from "@alexkroman1/aai";
+import { errorMessage } from "@alexkroman1/aai";
 import type { Vector } from "@alexkroman1/aai/runtime";
 import { z } from "zod";
 import { debug } from "./_debug-log.ts";
-import { createGvisorSandbox, isGvisorAvailable } from "./gvisor.ts";
-import { metrics, type SandboxInitFailReason, type SandboxInitPath } from "./metrics.ts";
+import { createGvisorSandbox, isGvisorAvailable, waitForChildExit } from "./gvisor.ts";
+import {
+  hrtimeSeconds,
+  metrics,
+  type SandboxInitFailReason,
+  type SandboxInitPath,
+} from "./metrics.ts";
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
 import type { SandboxResourceLimits } from "./oci-spec.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
@@ -40,12 +45,11 @@ const SafeKvKeySchema = z
 const KvGetParamsSchema = z.object({ key: SafeKvKeySchema });
 const KvSetParamsSchema = z.object({
   key: SafeKvKeySchema,
-  value: z
-    .unknown()
-    .refine(
-      (v) => JSON.stringify(v).length <= MAX_VALUE_SIZE,
-      `Value exceeds max size of ${MAX_VALUE_SIZE} bytes`,
-    ),
+  // No size refine here: every resolved Kv (platform default and BYO alike)
+  // goes through `createUnstorageKv`, whose `set` already enforces
+  // MAX_VALUE_SIZE — re-stringifying up to 64 KB per call just to measure it
+  // would duplicate that check.
+  value: z.unknown(),
   expireIn: z.number().int().positive().optional(),
 });
 const KvDelParamsSchema = z.object({ key: SafeKvKeySchema });
@@ -289,20 +293,9 @@ function spawnDevWarm(harnessPath: string): WarmHarness {
   });
   return warmFromChild(child, async () => {
     child.kill("SIGTERM");
-    await new Promise<void>((resolve) => {
-      if (child.exitCode !== null) {
-        resolve();
-        return;
-      }
-      const timer = setTimeout(() => {
-        child.kill("SIGKILL");
-        resolve();
-      }, 2000);
-      child.on("exit", () => {
-        clearTimeout(timer);
-        resolve();
-      });
-    });
+    if (!(await waitForChildExit(child, 2000))) {
+      child.kill("SIGKILL");
+    }
   });
 }
 
@@ -444,10 +437,6 @@ export async function createSandboxVm(
   }
 }
 
-function hrtimeSeconds(t0: bigint): number {
-  return Number(process.hrtime.bigint() - t0) / 1e9;
-}
-
 /** Classify a sandbox-init error into one of three coarse buckets. */
 function classifyInitFailure(err: unknown): SandboxInitFailReason {
   const msg = errorMessage(err);
@@ -461,17 +450,11 @@ async function createSandboxVmInner(
   pool: WarmHarnessSource | undefined,
   pathRef: { path: SandboxInitPath },
 ): Promise<SandboxHandle> {
-  const envLimits = parseSandboxLimitsFromEnv(process.env);
-  const mergedOpts: SandboxVmOptions = {
-    ...opts,
-    limits: { ...envLimits, ...opts.limits },
-  };
-
   if (pool) {
     const warm = await pool.acquire();
     if (warm) {
       pathRef.path = "warm";
-      return configureSandbox(warm, mergedOpts);
+      return configureSandbox(warm, opts);
     }
   }
 
@@ -480,10 +463,11 @@ async function createSandboxVmInner(
       "[sandbox] WARNING: gVisor not available. Running without sandbox isolation (dev mode only).",
     );
   }
+  // spawnWarmHarness owns the env-var limits merge — no need to pre-merge here.
   const warm = await spawnWarmHarness({
-    harnessPath: mergedOpts.harnessPath,
-    ...(mergedOpts.limits ? { limits: mergedOpts.limits } : {}),
-    slug: mergedOpts.slug,
+    harnessPath: opts.harnessPath,
+    ...(opts.limits ? { limits: opts.limits } : {}),
+    slug: opts.slug,
   });
-  return configureSandbox(warm, mergedOpts);
+  return configureSandbox(warm, opts);
 }

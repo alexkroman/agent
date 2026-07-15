@@ -12,7 +12,14 @@ import { ssrfSafeFetch } from "./ssrf.ts";
 
 const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT = 10;
-export const FETCH_TIMEOUT_MS = 30_000;
+/**
+ * Wall-clock cap for one guest-proxied fetch. Deliberately longer than the
+ * SDK's `FETCH_TIMEOUT_MS` (15s), which governs host-side builtin tools —
+ * don't confuse the two when tuning fetch timeouts.
+ */
+export const SANDBOX_FETCH_TIMEOUT_MS = 30_000;
+/** Max decoded request-body size accepted from the guest (1 MB). Keep in sync with guest/harness-rpc.ts. */
+const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 const CHUNK_SIZE = 64 * 1024;
 
 export type FetchRequest = {
@@ -111,7 +118,7 @@ async function performFetch(
   allowedHosts: string[],
 ): Promise<Response> {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), SANDBOX_FETCH_TIMEOUT_MS);
   const init: RequestInit = {
     method: req.method,
     headers: req.headers,
@@ -143,6 +150,15 @@ export function createFetchHandler(opts: FetchHandlerOptions) {
   return async function handleFetch(req: FetchRequest, id: string, emit: Emit): Promise<void> {
     if (activeCount >= maxConcurrent) {
       emitError(id, `Fetch concurrent limit of ${maxConcurrent} exceeded`, emit);
+      return;
+    }
+
+    // The guest's fetch wrapper checks this too, but the guest is untrusted —
+    // the host is the authoritative side of the boundary. Base64 decodes to
+    // at most 3/4 of its encoded length, so this bounds the decoded size
+    // without decoding.
+    if (req.body !== null && (req.body.length * 3) / 4 > MAX_REQUEST_BODY_BYTES) {
+      emitError(id, `Request body exceeds ${MAX_REQUEST_BODY_BYTES} byte limit`, emit);
       return;
     }
 
