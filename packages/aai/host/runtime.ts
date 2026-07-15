@@ -19,12 +19,6 @@ import {
   OPENAI_REALTIME_KIND,
   type OpenaiRealtimeOptions,
 } from "../sdk/providers/s2s/openai-realtime.ts";
-import { ASSEMBLYAI_KIND } from "../sdk/providers/stt/assemblyai.ts";
-import { DEEPGRAM_KIND } from "../sdk/providers/stt/deepgram.ts";
-import { ELEVENLABS_KIND } from "../sdk/providers/stt/elevenlabs.ts";
-import { SONIOX_KIND } from "../sdk/providers/stt/soniox.ts";
-import { CARTESIA_KIND } from "../sdk/providers/tts/cartesia.ts";
-import { RIME_KIND } from "../sdk/providers/tts/rime.ts";
 import {
   assertProviderTriple,
   type LlmProvider,
@@ -40,7 +34,15 @@ import { toolError } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import { createMemoryVector } from "./memory-vector.ts";
-import { resolveApiKey, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
+import {
+  descriptorKind,
+  resolveApiKey,
+  resolveLlmIfDescriptor,
+  resolveSttApiKey,
+  resolveSttIfDescriptor,
+  resolveTtsApiKey,
+  resolveTtsIfDescriptor,
+} from "./providers/resolve.ts";
 import { resolveKv } from "./providers/resolve-kv.ts";
 import { resolveVector } from "./providers/resolve-vector.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
@@ -64,74 +66,7 @@ export type {
   SessionStartOptions,
 } from "./runtime-types.ts";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Read the descriptor `kind` if present. Pre-resolved openers (test escape
- * hatch) have no `kind` field, so callers fall back to a default env var.
- */
-function descriptorKind(value: object | undefined): string | undefined {
-  const kind = (value as { kind?: unknown } | undefined)?.kind;
-  return typeof kind === "string" ? kind : undefined;
-}
-
-/** Provider kind → the agent-env variable that holds its API key. */
-const STT_API_KEY_ENV: Record<string, string> = {
-  [ASSEMBLYAI_KIND]: "ASSEMBLYAI_API_KEY",
-  [DEEPGRAM_KIND]: "DEEPGRAM_API_KEY",
-  [ELEVENLABS_KIND]: "ELEVENLABS_API_KEY",
-  [SONIOX_KIND]: "SONIOX_API_KEY",
-};
-
-const TTS_API_KEY_ENV: Record<string, string> = {
-  [CARTESIA_KIND]: "CARTESIA_API_KEY",
-  [RIME_KIND]: "RIME_API_KEY",
-};
-
-function resolveSttApiKey(
-  stt: SttProvider | SttOpener | undefined,
-  env: Record<string, string>,
-): string {
-  // Default to AssemblyAI for pre-resolved openers (test escape hatch) that
-  // carry no `kind`; every real descriptor maps to its own env var.
-  const envVar = STT_API_KEY_ENV[descriptorKind(stt) ?? ""] ?? "ASSEMBLYAI_API_KEY";
-  return resolveApiKey(envVar, env);
-}
-
-function resolveTtsApiKey(
-  tts: TtsProvider | TtsOpener | undefined,
-  env: Record<string, string>,
-): string {
-  const envVar = TTS_API_KEY_ENV[descriptorKind(tts) ?? ""] ?? "CARTESIA_API_KEY";
-  return resolveApiKey(envVar, env);
-}
-
 // ─── Runtime implementation ──────────────────────────────────────────────────
-
-/**
- * Distinguish a descriptor (`{ kind, options }`) from an already-resolved
- * opener / `LanguageModel`. The production path always passes descriptors;
- * openers are a test escape hatch (fakes in `_pipeline-test-fakes.ts`).
- * STT/TTS openers are identified by the `open` method, `LanguageModel` by
- * its `specificationVersion` field — both absent on descriptors.
- */
-function resolveSttIfDescriptor(value: SttProvider | SttOpener): SttOpener {
-  return "open" in value ? value : resolveStt(value);
-}
-
-function resolveTtsIfDescriptor(value: TtsProvider | TtsOpener): TtsOpener {
-  return "open" in value ? value : resolveTts(value);
-}
-
-function resolveLlmIfDescriptor(
-  value: LlmProvider | LanguageModel,
-  env: Record<string, string>,
-): LanguageModel {
-  // LanguageModel can be a string (model-id shortcut) or an object with
-  // `specificationVersion`; descriptors are plain `{ kind, options }` objects.
-  if (typeof value === "string") return value;
-  return "specificationVersion" in value ? value : resolveLlm(value, env);
-}
 
 /**
  * Determine the effective STT/LLM/TTS providers and session mode. Providers

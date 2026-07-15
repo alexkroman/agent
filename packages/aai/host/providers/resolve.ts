@@ -172,3 +172,67 @@ function requireKey(env: Record<string, string>, name: string, label: string): s
   }
   return key;
 }
+
+// ─── API-key routing + descriptor→instance helpers (used by runtime.ts) ──────
+
+/**
+ * Read the descriptor `kind` if present. Pre-resolved openers (test escape
+ * hatch) have no `kind` field, so callers fall back to a default env var.
+ */
+export function descriptorKind(value: object | undefined): string | undefined {
+  const kind = (value as { kind?: unknown } | undefined)?.kind;
+  return typeof kind === "string" ? kind : undefined;
+}
+
+/** Provider kind → the agent-env variable that holds its API key. */
+const STT_API_KEY_ENV: Record<string, string> = {
+  [ASSEMBLYAI_KIND]: "ASSEMBLYAI_API_KEY",
+  [DEEPGRAM_KIND]: "DEEPGRAM_API_KEY",
+  [ELEVENLABS_KIND]: "ELEVENLABS_API_KEY",
+  [SONIOX_KIND]: "SONIOX_API_KEY",
+};
+
+const TTS_API_KEY_ENV: Record<string, string> = {
+  [CARTESIA_KIND]: "CARTESIA_API_KEY",
+  [RIME_KIND]: "RIME_API_KEY",
+};
+
+/** Resolve the agent-env API key for an STT descriptor by its kind. */
+export function resolveSttApiKey(
+  stt: SttProvider | SttOpener | undefined,
+  env: Record<string, string>,
+): string {
+  // Default to AssemblyAI for pre-resolved openers (test escape hatch) that
+  // carry no `kind`; every real descriptor maps to its own env var.
+  return resolveApiKey(STT_API_KEY_ENV[descriptorKind(stt) ?? ""] ?? "ASSEMBLYAI_API_KEY", env);
+}
+
+/** Resolve the agent-env API key for a TTS descriptor by its kind. */
+export function resolveTtsApiKey(
+  tts: TtsProvider | TtsOpener | undefined,
+  env: Record<string, string>,
+): string {
+  return resolveApiKey(TTS_API_KEY_ENV[descriptorKind(tts) ?? ""] ?? "CARTESIA_API_KEY", env);
+}
+
+/**
+ * Resolve a provider value that may already be an instance (opener /
+ * LanguageModel — a test escape hatch) rather than a descriptor. STT/TTS
+ * openers are identified by the `open` method, `LanguageModel` by its
+ * `specificationVersion` field — both absent on descriptors.
+ */
+export function resolveSttIfDescriptor(value: SttProvider | SttOpener): SttOpener {
+  return "open" in value ? value : resolveStt(value);
+}
+
+export function resolveTtsIfDescriptor(value: TtsProvider | TtsOpener): TtsOpener {
+  return "open" in value ? value : resolveTts(value);
+}
+
+export function resolveLlmIfDescriptor(
+  value: LlmProvider | LanguageModel,
+  env: Record<string, string>,
+): LanguageModel {
+  if (typeof value === "string") return value;
+  return "specificationVersion" in value ? value : resolveLlm(value, env);
+}

@@ -39,11 +39,9 @@ async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
  * stay in Node's ESM registry, so edits to them are ignored on reload.
  * Bundling picks them up and matches the deploy path exactly.
  */
-// biome-ignore lint/suspicious/noExplicitAny: agent state type varies per agent
-async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
+async function loadAgentDef(cwd: string): Promise<AgentDef> {
   const code = await buildWorker(cwd);
-  // biome-ignore lint/suspicious/noExplicitAny: evalWorkerBundle returns AgentDef
-  return (await evalWorkerBundle(code, cwd)) as AgentDef<any>;
+  return evalWorkerBundle(code, cwd);
 }
 
 // ─── File watching ──────────────────────────────────────────────────────────
