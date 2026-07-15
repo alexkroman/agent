@@ -10,6 +10,7 @@
  * exclusively through the injected `getSnapshot`/`updateState` deps.
  */
 
+import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai";
 import {
   type ClientEvent,
   lenientParse,
@@ -21,17 +22,34 @@ import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
 /** Cap on `customEvents` retained in the session snapshot to avoid unbounded growth. */
 const MAX_CUSTOM_EVENTS = 200;
 
-/** Cap on `messages` retained in the session snapshot; mirrors host-side DEFAULT_MAX_HISTORY. */
-const MAX_MESSAGES = 200;
+/** Cap on `messages` retained in the session snapshot; matches the host-side history cap. */
+const MAX_MESSAGES = DEFAULT_MAX_HISTORY;
 
 /** Cap on pre-init audio chunks buffered while `voiceIO` is initializing. ~100 chunks at
  *  typical S2S chunk sizes is well over a second of audio — far longer than init takes
  *  in practice, but bounded against pathological cases (mic-permission stalls). */
 const MAX_PREINIT_AUDIO_CHUNKS = 100;
 
+/**
+ * Snapshot fields cleared when a session's conversation state is wiped —
+ * shared by the initial snapshot, `resetState()`, and the server `reset` event.
+ * The empty arrays are safe to share: snapshot collections are never mutated
+ * in place, only replaced.
+ */
+export const CLEARED_SESSION_STATE = {
+  messages: [],
+  toolCalls: [],
+  customEvents: [],
+  userTranscript: null,
+  agentTranscript: null,
+  error: null,
+} satisfies Partial<SessionSnapshot>;
+
 function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
-  const next = [...list, item];
-  return next.length > cap ? next.slice(-cap) : next;
+  if (list.length < cap) return [...list, item];
+  const next = list.slice(list.length - cap + 1);
+  next.push(item);
+  return next;
 }
 
 /** Config payload extracted from a `config` server message. */
@@ -173,15 +191,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       case "reset": {
         handlerGeneration++;
         conn.voiceIO?.flush();
-        updateState({
-          messages: [],
-          toolCalls: [],
-          customEvents: [],
-          userTranscript: null,
-          agentTranscript: null,
-          error: null,
-          state: "listening",
-        });
+        updateState({ ...CLEARED_SESSION_STATE, state: "listening" });
         break;
       }
       case "custom_event":

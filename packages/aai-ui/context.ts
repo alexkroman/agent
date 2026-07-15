@@ -50,7 +50,13 @@ export function useSession(): Session {
 
 const ThemeCtx = createContext<Required<ClientTheme>>(DEFAULT_THEME);
 
-export function ThemeProvider({ value, children }: { value?: ClientTheme; children?: ReactNode }) {
+export function ThemeProvider({
+  value,
+  children,
+}: {
+  value?: ClientTheme | undefined;
+  children?: ReactNode;
+}) {
   const merged = value ? { ...DEFAULT_THEME, ...value } : DEFAULT_THEME;
   return createElement(ThemeCtx.Provider, { value: merged }, children);
 }

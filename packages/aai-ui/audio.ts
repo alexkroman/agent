@@ -13,8 +13,6 @@ export type VoiceIOOptions = {
   playbackWorkletSrc: string;
   /** Callback invoked with buffered PCM16 microphone data to send to the server. */
   onMicData: (pcm16: ArrayBuffer) => void;
-  /** Callback invoked with the current playback position in samples. */
-  onPlaybackProgress?: (samplesPlayed: number) => void;
 };
 
 /**
@@ -57,9 +55,10 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     sampleRate: contextRate,
     latencyHint: "playback",
   });
-  await ctx.resume();
 
-  const stream = await navigator.mediaDevices.getUserMedia({
+  // Mic permission, context resume, and worklet registration are independent —
+  // run them concurrently so a slow permission prompt doesn't serialize setup.
+  const streamPromise = navigator.mediaDevices.getUserMedia({
     audio: {
       deviceId: { ideal: "default" },
       echoCancellation: true,
@@ -69,13 +68,27 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     } as MediaTrackConstraints,
   });
 
+  // A single Promise.all so the first rejection (typically getUserMedia
+  // permission denial) fails the whole init immediately instead of waiting
+  // for the remaining steps to settle.
+  let stream: MediaStream;
   try {
-    await Promise.all([
+    [stream] = await Promise.all([
+      streamPromise,
+      ctx.resume(),
       ctx.audioWorklet.addModule(captureWorkletSrc),
       ctx.audioWorklet.addModule(playbackWorkletSrc),
     ]);
   } catch (err: unknown) {
-    for (const t of stream.getTracks()) t.stop();
+    // If the mic was (or later gets) granted while another step failed,
+    // release it; if getUserMedia itself rejected, the catch is a no-op.
+    void streamPromise
+      .then((s) => {
+        for (const t of s.getTracks()) t.stop();
+      })
+      .catch(() => {
+        /* rejected with the same error */
+      });
     await ctx.close().catch((err) => {
       console.warn("AudioContext close failed:", err);
     });
@@ -92,10 +105,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
   // Worklet outputs PCM16 at the STT rate — just batch and send.
   const chunkSizeBytes = Math.floor(sttSampleRate * MIC_BUFFER_SECONDS) * 2;
-  const bufSize = chunkSizeBytes * 2;
-  const capBufA = new Uint8Array(bufSize);
-  const capBufB = new Uint8Array(bufSize);
-  let capBuf = capBufA;
+  const capBuf = new Uint8Array(chunkSizeBytes * 2);
   let capOffset = 0;
 
   capNode.port.postMessage({ event: "start" });
@@ -108,9 +118,8 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     capOffset += chunk.byteLength;
 
     if (capOffset >= chunkSizeBytes) {
+      // slice() copies, so capBuf is immediately safe to reuse.
       onMicData(capBuf.buffer.slice(0, capOffset));
-      // Swap to the other pre-allocated buffer to avoid GC pressure
-      capBuf = capBuf === capBufA ? capBufB : capBufA;
       capOffset = 0;
     }
   };
@@ -118,7 +127,6 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   let playNode: AudioWorkletNode | null = null;
   let onPlaybackStop: (() => void) | null = null;
   const lifecycle = new AbortController();
-  const { onPlaybackProgress } = opts;
 
   // One persistent node per session: the worklet's 60s Float32 buffer is
   // multi-MB, so tearing it down per reply would pay a fresh allocation and
@@ -134,8 +142,6 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       if (e.data.event === "stop") {
         onPlaybackStop?.();
         onPlaybackStop = null;
-      } else if (e.data.event === "progress") {
-        onPlaybackProgress?.(e.data.readPos);
       }
     };
     playNode = node;

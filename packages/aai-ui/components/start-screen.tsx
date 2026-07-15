@@ -5,6 +5,7 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useSession, useTheme } from "../context.ts";
+import { TEXT_FAINT } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Button } from "./button.tsx";
 
@@ -63,7 +64,7 @@ export function StartScreen({
           </h1>
         )}
         {subtitle && (
-          <p className="text-sm m-0" style={{ color: "rgba(255,255,255,0.284)" }}>
+          <p className="text-sm m-0" style={{ color: TEXT_FAINT }}>
             {subtitle}
           </p>
         )}

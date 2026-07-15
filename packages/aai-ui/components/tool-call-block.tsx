@@ -4,16 +4,15 @@
 
 import clsx from "clsx";
 import { type ReactNode, useMemo, useState } from "react";
+import { truncate, tryParseJSON } from "../_utils.ts";
 import { useTheme } from "../context.ts";
 import type { ToolCallInfo } from "../types.ts";
+import { SURFACE_TINT, TEXT_MUTED } from "./_colors.ts";
 import { useToolConfig } from "./tool-config-context.ts";
 
 function formatResult(result: string): string {
-  try {
-    return JSON.stringify(JSON.parse(result), null, 2);
-  } catch {
-    return result;
-  }
+  const parsed = tryParseJSON(result);
+  return parsed === result ? result : JSON.stringify(parsed, null, 2);
 }
 
 /**
@@ -60,15 +59,13 @@ export function ToolCallBlock({
   const subtitle = useMemo(() => {
     const args = toolCall.args;
     if (toolCall.name === "run_code" && args.code) {
-      const firstLine = String(args.code).split("\n")[0] ?? "";
-      return firstLine.length > 80 ? `${firstLine.slice(0, 80)}...` : firstLine;
+      return truncate(String(args.code).split("\n")[0] ?? "");
     }
     // For common tools, show a sensible field
     for (const key of ["query", "url", "question"]) {
       if (args[key]) return String(args[key]);
     }
-    const summary = JSON.stringify(args);
-    return summary.length > 80 ? `${summary.slice(0, 80)}...` : summary;
+    return truncate(JSON.stringify(args));
   }, [toolCall.name, toolCall.args]);
 
   return (
@@ -83,7 +80,7 @@ export function ToolCallBlock({
         )}
         style={{
           borderColor: theme.border,
-          background: "rgba(255,255,255,0.031)",
+          background: SURFACE_TINT,
         }}
         onClick={() => {
           if (canExpand) setIsOpen(!isOpen);
@@ -96,14 +93,11 @@ export function ToolCallBlock({
         >
           {title}
         </span>
-        <span
-          className="text-sm truncate flex-1 min-w-0"
-          style={{ color: "rgba(255,255,255,0.422)" }}
-        >
+        <span className="text-sm truncate flex-1 min-w-0" style={{ color: TEXT_MUTED }}>
           {subtitle}
         </span>
         {canExpand && (
-          <span className="text-xs shrink-0" style={{ color: "rgba(255,255,255,0.422)" }}>
+          <span className="text-xs shrink-0" style={{ color: TEXT_MUTED }}>
             {isOpen ? "\u25BE" : "\u25B8"}
           </span>
         )}
@@ -125,10 +119,7 @@ export function ToolCallBlock({
             </pre>
           )}
           {formatted && (
-            <pre
-              className="text-xs p-2 whitespace-pre-wrap"
-              style={{ color: "rgba(255,255,255,0.422)" }}
-            >
+            <pre className="text-xs p-2 whitespace-pre-wrap" style={{ color: TEXT_MUTED }}>
               {formatted}
             </pre>
           )}

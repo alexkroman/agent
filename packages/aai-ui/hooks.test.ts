@@ -2,66 +2,13 @@
 import { act, renderHook } from "@testing-library/react";
 import { createElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
+import { createMockSessionCore } from "./_react-test-utils.ts";
 import { SessionProvider } from "./context.ts";
 import { useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
-import type { CustomEvent, SessionCore } from "./session-core.ts";
 import type { ToolCallInfo } from "./types.ts";
 
-function createMockCore(toolCalls: ToolCallInfo[] = []): SessionCore & {
-  setToolCalls: (tc: ToolCallInfo[]) => void;
-  setCustomEvents: (ce: CustomEvent[]) => void;
-} {
-  let snapshot = {
-    state: "ready" as const,
-    messages: [],
-    toolCalls,
-    customEvents: [] as CustomEvent[],
-    userTranscript: null,
-    agentTranscript: null,
-    error: null,
-    started: true,
-    running: true,
-  };
-  const subs = new Set<() => void>();
-  return {
-    getSnapshot: () => snapshot,
-    subscribe: (cb) => {
-      subs.add(cb);
-      return () => subs.delete(cb);
-    },
-    setToolCalls: (tc) => {
-      snapshot = { ...snapshot, toolCalls: tc };
-      for (const cb of subs) cb();
-    },
-    setCustomEvents: (ce) => {
-      snapshot = { ...snapshot, customEvents: ce };
-      for (const cb of subs) cb();
-    },
-    connect: () => {
-      /* noop */
-    },
-    cancel: () => {
-      /* noop */
-    },
-    resetState: () => {
-      /* noop */
-    },
-    reset: () => {
-      /* noop */
-    },
-    disconnect: () => {
-      /* noop */
-    },
-    start: () => {
-      /* noop */
-    },
-    toggle: () => {
-      /* noop */
-    },
-    [Symbol.dispose]: () => {
-      /* noop */
-    },
-  };
+function createMockCore(toolCalls: ToolCallInfo[] = []) {
+  return createMockSessionCore({ state: "ready", toolCalls, started: true });
 }
 
 function makeToolCall(overrides: Partial<ToolCallInfo> = {}): ToolCallInfo {
@@ -104,7 +51,7 @@ describe("useToolResult", () => {
       createElement(SessionProvider, { value: core }, children);
     renderHook(() => useToolResult("test_tool", cb), { wrapper });
     expect(cb).toHaveBeenCalledOnce();
-    act(() => core.setToolCalls([tc]));
+    act(() => core.update({ toolCalls: [tc] }));
     expect(cb).toHaveBeenCalledOnce();
   });
 
@@ -158,7 +105,9 @@ describe("useToolCallStart", () => {
 describe("useEvent", () => {
   it("fires callback for matching custom_event", () => {
     const core = createMockCore();
-    act(() => core.setCustomEvents([{ id: 1, event: "score_update", data: { score: 42 } }]));
+    act(() =>
+      core.update({ customEvents: [{ id: 1, event: "score_update", data: { score: 42 } }] }),
+    );
     const cb = vi.fn();
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(SessionProvider, { value: core }, children);
@@ -169,7 +118,9 @@ describe("useEvent", () => {
 
   it("ignores non-matching events", () => {
     const core = createMockCore();
-    act(() => core.setCustomEvents([{ id: 1, event: "other_event", data: { foo: "bar" } }]));
+    act(() =>
+      core.update({ customEvents: [{ id: 1, event: "other_event", data: { foo: "bar" } }] }),
+    );
     const cb = vi.fn();
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(SessionProvider, { value: core }, children);
@@ -179,7 +130,9 @@ describe("useEvent", () => {
 
   it("does not re-fire for already-seen events", () => {
     const core = createMockCore();
-    act(() => core.setCustomEvents([{ id: 1, event: "score_update", data: { score: 1 } }]));
+    act(() =>
+      core.update({ customEvents: [{ id: 1, event: "score_update", data: { score: 1 } }] }),
+    );
     const cb = vi.fn();
     const wrapper = ({ children }: { children: ReactNode }) =>
       createElement(SessionProvider, { value: core }, children);
@@ -187,10 +140,12 @@ describe("useEvent", () => {
     expect(cb).toHaveBeenCalledOnce();
     // Add a second event — only the new one should fire
     act(() =>
-      core.setCustomEvents([
-        { id: 1, event: "score_update", data: { score: 1 } },
-        { id: 2, event: "score_update", data: { score: 2 } },
-      ]),
+      core.update({
+        customEvents: [
+          { id: 1, event: "score_update", data: { score: 1 } },
+          { id: 2, event: "score_update", data: { score: 2 } },
+        ],
+      }),
     );
     expect(cb).toHaveBeenCalledTimes(2);
     expect(cb.mock.calls[1]?.at(0)).toEqual({ score: 2 });

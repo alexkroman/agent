@@ -107,21 +107,23 @@ function DefaultShell({
   Sidebar,
   sidebarWidth,
 }: {
-  name?: string;
-  Sidebar?: ComponentType;
-  sidebarWidth?: string;
+  name?: string | undefined;
+  Sidebar?: ComponentType | undefined;
+  sidebarWidth?: string | undefined;
 }) {
-  const chat = <ChatView {...(name !== undefined ? { title: name } : {})} />;
+  const chat = <ChatView title={name} />;
 
-  const inner = Sidebar ? (
-    <SidebarLayout sidebar={<Sidebar />} {...(sidebarWidth !== undefined ? { sidebarWidth } : {})}>
-      {chat}
-    </SidebarLayout>
-  ) : (
-    chat
+  return (
+    <StartScreen title={name}>
+      {Sidebar ? (
+        <SidebarLayout sidebar={<Sidebar />} sidebarWidth={sidebarWidth}>
+          {chat}
+        </SidebarLayout>
+      ) : (
+        chat
+      )}
+    </StartScreen>
   );
-
-  return <StartScreen {...(name !== undefined ? { title: name } : {})}>{inner}</StartScreen>;
 }
 
 // ─── client ──────────────────────────────────────────────────────────────────
@@ -165,24 +167,18 @@ export function client(config: ClientConfig): ClientHandle {
     platformUrl,
     onSessionId: config.onSessionId,
     resumeSessionId: config.resumeSessionId,
-    ...(config.WebSocket ? { WebSocket: config.WebSocket } : {}),
+    WebSocket: config.WebSocket,
   });
 
-  let RootComponent: ComponentType;
-  if ("component" in config && config.component) {
-    RootComponent = config.component;
-  } else {
-    const cfg = config as ConfigTier;
-    const { name, sidebar: Sidebar, sidebarWidth } = cfg;
-    RootComponent = () =>
-      createElement(DefaultShell, {
-        ...(name !== undefined ? { name } : {}),
-        ...(Sidebar !== undefined ? { Sidebar } : {}),
-        ...(sidebarWidth !== undefined ? { sidebarWidth } : {}),
+  const rootNode = config.component
+    ? createElement(config.component)
+    : createElement(DefaultShell, {
+        name: config.name,
+        Sidebar: config.sidebar,
+        sidebarWidth: config.sidebarWidth,
       });
-  }
 
-  const toolConfig: ToolDisplayConfig = "tools" in config && config.tools ? config.tools : {};
+  const toolConfig: ToolDisplayConfig = config.tools ?? {};
 
   const root = createRoot(container);
   flushSync(() => {
@@ -192,8 +188,8 @@ export function client(config: ClientConfig): ClientHandle {
         { value: toolConfig },
         createElement(
           ThemeProvider,
-          config.theme !== undefined ? { value: config.theme } : {},
-          createElement(SessionProvider, { value: session }, createElement(RootComponent)),
+          { value: config.theme },
+          createElement(SessionProvider, { value: session }, rootNode),
         ),
       ),
     );
