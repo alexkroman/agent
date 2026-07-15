@@ -105,9 +105,9 @@ describe("assemblyAI STT adapter — fixture replay", () => {
 });
 
 describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", () => {
-  test("universal-3.5-pro: passes agentContext at connect and updates it mid-stream", async () => {
+  test("universal-3-5-pro: passes agentContext at connect and updates it mid-stream", async () => {
     const session = await openSession(
-      { model: "universal-3.5-pro" },
+      { model: "universal-3-5-pro" },
       { agentContext: "Hi, how can I help you today?" },
     );
     const fake = session._transcriber as unknown as FakeTranscriber;
@@ -122,7 +122,7 @@ describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", ()
     await session.close();
   });
 
-  test("universal-3.5-pro (u3pro-rt alias): trims agentContext to 1750 chars, both at connect and mid-stream", async () => {
+  test("universal-3-5-pro (u3pro-rt alias): trims agentContext to 1750 chars, both at connect and mid-stream", async () => {
     const long = "x".repeat(2000);
     const trimmed = "x".repeat(1750);
 
@@ -137,8 +137,8 @@ describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", ()
     await session.close();
   });
 
-  test("universal-3.5-pro: skips empty/whitespace-only agentContext, both at connect and mid-stream", async () => {
-    const session = await openSession({ model: "universal-3.5-pro" }, { agentContext: "   " });
+  test("universal-3-5-pro: skips empty/whitespace-only agentContext, both at connect and mid-stream", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" }, { agentContext: "   " });
     const fake = session._transcriber as unknown as FakeTranscriber;
 
     expect(fake.params.agentContext).toBeUndefined();
@@ -168,18 +168,18 @@ describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", ()
 
 describe("assemblyAI STT adapter — voice focus", () => {
   test("defaults voiceFocus to near-field at connect", async () => {
-    const session = await openSession({ model: "universal-3.5-pro" });
+    const session = await openSession({ model: "universal-3-5-pro" });
     const fake = session._transcriber as unknown as FakeTranscriber;
     expect(fake.params.voiceFocus).toBe("near-field");
     await session.close();
   });
 
   test("respects an explicit voiceFocus and disables on 'off'", async () => {
-    const far = await openSession({ model: "universal-3.5-pro", voiceFocus: "far-field" });
+    const far = await openSession({ model: "universal-3-5-pro", voiceFocus: "far-field" });
     expect((far._transcriber as unknown as FakeTranscriber).params.voiceFocus).toBe("far-field");
     await far.close();
 
-    const off = await openSession({ model: "universal-3.5-pro", voiceFocus: "off" });
+    const off = await openSession({ model: "universal-3-5-pro", voiceFocus: "off" });
     const offFake = off._transcriber as unknown as FakeTranscriber;
     expect(offFake.params.voiceFocus).toBeUndefined();
     expect("voiceFocus" in offFake.params).toBe(false);

@@ -21,8 +21,11 @@ export interface AssemblyAISession extends SttSession {
 }
 
 function resolveSpeechModel(model: string): string {
-  // Plan's public name is "u3pro-rt"; the SDK's enum uses "u3-rt-pro".
-  return model === "u3pro-rt" ? "u3-rt-pro" : model;
+  // Normalize friendly/legacy aliases to the AssemblyAI streaming enum values.
+  // The API rejects "universal-3.5-pro" (dot) and "u3pro-rt"; map both.
+  if (model === "u3pro-rt") return "u3-rt-pro";
+  if (model === "universal-3.5-pro") return "universal-3-5-pro";
+  return model;
 }
 
 /**
@@ -32,10 +35,10 @@ function resolveSpeechModel(model: string): string {
  * dot- and dash-spelled literals plus the SDK's rt-pro aliases.
  */
 const UNIVERSAL_3_5_PRO_MODELS: ReadonlySet<string> = new Set([
-  "universal-3.5-pro",
   "universal-3-5-pro",
   "u3-rt-pro",
   "u3-rt-pro-beta-1",
+  "u3-rt-agent",
 ]);
 
 function supportsAgentContext(resolvedSpeechModel: string): boolean {
@@ -63,7 +66,7 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       );
 
       const client = new AssemblyAI({ apiKey });
-      const speechModel = resolveSpeechModel(opts.model ?? "universal-3.5-pro");
+      const speechModel = resolveSpeechModel(opts.model ?? "universal-3-5-pro");
       const agentContextCapable = supportsAgentContext(speechModel);
       const initialAgentContext = agentContextCapable
         ? normalizeAgentContext(openOpts.agentContext ?? "")
