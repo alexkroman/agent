@@ -169,6 +169,55 @@ describe("createRelayExecuteTool", () => {
     relay.dispose();
     await settled;
   });
+
+  test("a duplicate in-flight toolCallId is refused without clobbering the first call", async () => {
+    const { send } = makeSend();
+    const relay = createRelayExecuteTool({ send });
+
+    const first = relay.executeTool("t", {}, undefined, undefined, { toolCallId: "dup" });
+    const second = await relay.executeTool("t", {}, undefined, undefined, { toolCallId: "dup" });
+    expect(JSON.parse(second)).toMatchObject({ error: expect.stringContaining("dup") });
+    // Only the first call emitted a frame.
+    expect(send).toHaveBeenCalledTimes(1);
+
+    // The first call still settles from its genuine result.
+    relay.onToolResult({ toolCallId: "dup", result: "first" });
+    await expect(first).resolves.toBe("first");
+    relay.dispose();
+  });
+
+  test("aborting the turn signal rejects the pending relay call; a late result is a no-op", async () => {
+    const { send } = makeSend();
+    const relay = createRelayExecuteTool({ send });
+    const controller = new AbortController();
+
+    const p = relay.executeTool("t", {}, undefined, undefined, {
+      toolCallId: "x",
+      signal: controller.signal,
+    });
+    const settled = expect(p).rejects.toThrow(/cancelled/);
+    controller.abort();
+    await settled;
+
+    // Entry was cleared: a stale client result after the abort is ignored.
+    expect(() => relay.onToolResult({ toolCallId: "x", result: "late" })).not.toThrow();
+    relay.dispose();
+  });
+
+  test("a pre-aborted signal returns a tool error without emitting a frame", async () => {
+    const { send } = makeSend();
+    const relay = createRelayExecuteTool({ send });
+    const controller = new AbortController();
+    controller.abort();
+
+    const result = await relay.executeTool("t", {}, undefined, undefined, {
+      toolCallId: "x",
+      signal: controller.signal,
+    });
+    expect(JSON.parse(result)).toMatchObject({ error: expect.stringContaining("cancelled") });
+    expect(send).not.toHaveBeenCalled();
+    relay.dispose();
+  });
 });
 
 describe("isHostAllowed", () => {

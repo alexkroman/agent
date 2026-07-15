@@ -212,6 +212,66 @@ describe("S2sTransport reconnect", () => {
     );
   });
 
+  test("a failed resume emits exactly one error when close fires before the rejection", async () => {
+    // Real connectS2s both fires callbacks.onClose AND rejects when the resume
+    // socket dies before `open` — the transport must report the failure once.
+    const callbacks = makeCallbacks();
+    const capturedCallbacks: S2sCallbacks[] = [];
+    let connects = 0;
+    const spy = vi
+      .spyOn(_internals, "connectS2s")
+      .mockImplementation(async (o: ConnectS2sOptions) => {
+        capturedCallbacks.push(o.callbacks);
+        connects++;
+        if (connects === 1) return makeMockHandle();
+        o.callbacks.onClose(1006, ""); // close-before-open on the resume socket…
+        throw new Error("WebSocket closed before open (code: 1006)"); // …then the rejection
+      });
+
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+    const cb1 = expectAt(capturedCallbacks, 0, "first callbacks");
+    cb1.onSessionReady("sess_abc");
+    cb1.onClose(1005, "");
+
+    await vi.waitFor(() => expect(callbacks.onError).toHaveBeenCalled());
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(callbacks.onError).toHaveBeenCalledTimes(1);
+    // No further resume attempt after the failure (the 1006 close is transient
+    // by code, but the retired session must not loop back into resume).
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
+  test("a failed resume emits exactly one error when the rejection fires before close", async () => {
+    const callbacks = makeCallbacks();
+    const capturedCallbacks: S2sCallbacks[] = [];
+    let connects = 0;
+    const spy = vi
+      .spyOn(_internals, "connectS2s")
+      .mockImplementation(async (o: ConnectS2sOptions) => {
+        capturedCallbacks.push(o.callbacks);
+        connects++;
+        if (connects === 1) return makeMockHandle();
+        throw new Error("connect ECONNREFUSED");
+      });
+
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+    const cb1 = expectAt(capturedCallbacks, 0, "first callbacks");
+    cb1.onSessionReady("sess_abc");
+    cb1.onClose(1005, "");
+
+    await vi.waitFor(() => expect(callbacks.onError).toHaveBeenCalledTimes(1));
+
+    // The dead resume socket's close event trails in with a transient code —
+    // it must neither re-emit the error nor kick off another resume loop.
+    const cb2 = expectAt(capturedCallbacks, 1, "resume callbacks");
+    cb2.onClose(1006, "");
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    expect(callbacks.onError).toHaveBeenCalledTimes(1);
+    expect(spy).toHaveBeenCalledTimes(2);
+  });
+
   test("after a successful resume, a later transient drop also resumes", async () => {
     const { callbacks, handles, capturedCallbacks } = setupSpiedTransport();
     const t = createS2sTransport(makeTransportOptions({ callbacks }));

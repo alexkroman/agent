@@ -212,6 +212,9 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
     startWithTimeout
       .then(() => {
+        // Socket closed while start() was in flight — the session is already
+        // stopped and the buffer discarded; don't mark it ready.
+        if (!session) return;
         log.info("Session ready", { ...ctx, sid });
         sessionReady = true;
         drainBuffer();
@@ -253,7 +256,13 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
   ws.addEventListener("close", () => {
     log.info("Session disconnected", { ...ctx, sid });
-    if (session) endSession(session);
+    // Null the session and buffer before stopping: if session.start() is
+    // still in flight, its .then() would otherwise mark the stopped session
+    // ready and drain buffered frames into it.
+    const closed = session;
+    session = null;
+    messageBuffer = null;
+    if (closed) endSession(closed);
     opts.onClose?.();
   });
 

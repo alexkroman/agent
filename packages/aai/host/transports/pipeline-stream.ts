@@ -1,14 +1,17 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Stream-part handling for the pipeline transport — interprets the Vercel AI
+// Streaming helpers for the pipeline transport — interprets the Vercel AI
 // SDK `streamText` `fullStream` parts (text deltas, tool calls/results,
-// errors) and fans them out to the transcript, TTS, and observability sinks.
+// errors) and fans them out to the transcript, TTS, and observability sinks,
+// plus the per-turn TTS flush-wait and audio byte conversion.
 //
 // Split out of `pipeline-transport.ts` so that transport owns provider
-// lifecycle/turn orchestration while this module owns per-part decoding.
+// lifecycle/turn orchestration while this module owns the per-part and
+// per-chunk mechanics.
 
 import type { ModelMessage } from "ai";
-import { MAX_TOOL_RESULT_CHARS } from "../../sdk/constants.ts";
+import { MAX_TOOL_RESULT_CHARS, PIPELINE_FLUSH_TIMEOUT_MS } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
+import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
@@ -17,6 +20,66 @@ import type { Logger } from "../runtime-config.ts";
 export function toModelMessage(m: Message): ModelMessage {
   if (m.role === "user") return { role: "user", content: m.content };
   return { role: "assistant", content: m.content };
+}
+
+/**
+ * Flush the TTS session and wait for its synthesis to drain. Resolves on TTS
+ * `done`, signal abort, or PIPELINE_FLUSH_TIMEOUT_MS elapsed.
+ *
+ * `done` is anonymous, so this wait leans on the TtsEvents contract that it
+ * never fires for a cancelled turn (see TtsEvents.done in sdk/providers.ts);
+ * a provider leaking a stale one would end the next turn's reply early.
+ */
+export function flushTtsAndWait(args: {
+  tts: TtsSession | null;
+  signal: AbortSignal;
+  log: Logger;
+  sid: string;
+}): Promise<void> {
+  const { tts, signal, log, sid } = args;
+  if (!tts) return Promise.resolve();
+  if (signal.aborted) return Promise.resolve();
+  return new Promise<void>((resolve) => {
+    let off: Unsubscribe | null = null;
+    let timer: ReturnType<typeof setTimeout> | null = null;
+    const cleanup = () => {
+      if (off) {
+        off();
+        off = null;
+      }
+      if (timer) {
+        clearTimeout(timer);
+        timer = null;
+      }
+      signal.removeEventListener("abort", onAbort);
+    };
+    const finish = () => {
+      cleanup();
+      resolve();
+    };
+    const onAbort = () => finish();
+    signal.addEventListener("abort", onAbort, { once: true });
+    off = tts.on("done", finish);
+    timer = setTimeout(() => {
+      log.warn("TTS flush timeout", { sid, timeoutMs: PIPELINE_FLUSH_TIMEOUT_MS });
+      finish();
+    }, PIPELINE_FLUSH_TIMEOUT_MS);
+    tts.flush();
+  });
+}
+
+/**
+ * View client audio bytes as PCM16 LE samples. Zero-copy when the view is
+ * 2-byte aligned; otherwise copies, dropping a trailing odd byte.
+ */
+export function bytesToPcm16(bytes: Uint8Array): Int16Array {
+  const { byteOffset: offset, byteLength: length } = bytes;
+  if (offset % 2 === 0 && length % 2 === 0) {
+    return new Int16Array(bytes.buffer, offset, length / 2);
+  }
+  const copy = new Uint8Array(length - (length % 2));
+  copy.set(bytes.subarray(0, copy.byteLength));
+  return new Int16Array(copy.buffer);
 }
 
 /** A single `fullStream` part from `streamText`. */

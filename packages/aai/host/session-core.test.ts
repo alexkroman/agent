@@ -1,7 +1,7 @@
 import { describe, expect, test, vi } from "vitest";
-import type { AgentConfig } from "../sdk/_internal-types.ts";
+import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
 import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
-import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
+import { DEFAULT_SYSTEM_PROMPT, type Message } from "../sdk/types.ts";
 import { flush } from "./_test-utils.ts";
 import type { SessionCore, SessionCoreOptions } from "./session-core.ts";
 import { createSessionCore } from "./session-core.ts";
@@ -225,6 +225,128 @@ describe("createSessionCore — tool call pending results", () => {
     await flush();
 
     expect(transport.sendToolResult).not.toHaveBeenCalledWith("cid1", "slow-output");
+  });
+});
+
+describe("createSessionCore — tool concurrency", () => {
+  /** ExecuteTool mock that resolves only when its abort signal fires. */
+  function abortSettledTool(): {
+    executeTool: ExecuteTool;
+    signals: AbortSignal[];
+  } {
+    const signals: AbortSignal[] = [];
+    const executeTool: ExecuteTool = (_name, _args, _sid, _messages, callOpts) => {
+      const signal = callOpts?.signal;
+      if (!signal) throw new Error("expected a signal");
+      signals.push(signal);
+      return new Promise<string>((resolve) => {
+        signal.addEventListener("abort", () => resolve('{"error":"cancelled"}'), { once: true });
+      });
+    };
+    return { executeTool, signals };
+  }
+
+  test("tools receive a history snapshot, not the live array", async () => {
+    let captured: readonly Message[] | undefined;
+    const executeTool: ExecuteTool = async (_name, _args, _sid, messages) => {
+      captured = messages;
+      return "ok";
+    };
+    const { core } = makeCore({ executeTool });
+    await core.start();
+    core.onUserTranscript("first");
+    core.onReplyStarted("r1");
+    core.onToolCall("cid", "t", {});
+    // Arrives while the tool is (conceptually) still running — must not
+    // appear in the view the tool captured.
+    core.onUserTranscript("second");
+    await flush();
+    expect(captured?.map((m) => m.content)).toEqual(["first"]);
+  });
+
+  test("barge-in (onCancelled) aborts the in-flight tool's signal", async () => {
+    const { executeTool, signals } = abortSettledTool();
+    const { core } = makeCore({ executeTool });
+    await core.start();
+    core.onReplyStarted("r1");
+    core.onToolCall("cid", "slow", {});
+    expect(signals[0]?.aborted).toBe(false);
+    core.onCancelled();
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  test("a new reply.started aborts the previous reply's in-flight tools", async () => {
+    const { executeTool, signals } = abortSettledTool();
+    const { core } = makeCore({ executeTool });
+    await core.start();
+    core.onReplyStarted("r1");
+    core.onToolCall("cid", "slow", {});
+    core.onReplyStarted("r2");
+    expect(signals[0]?.aborted).toBe(true);
+  });
+
+  test("stop() aborts in-flight tools so the drain settles promptly", async () => {
+    const { executeTool, signals } = abortSettledTool();
+    const { core, transport } = makeCore({ executeTool });
+    await core.start();
+    core.onReplyStarted("r1");
+    core.onToolCall("cid", "slow", {});
+    // Resolves only because stop() aborts the reply's signal — otherwise this
+    // await would hang on the never-resolving tool.
+    await core.stop();
+    expect(signals[0]?.aborted).toBe(true);
+    expect(transport.stops).toBe(1);
+  });
+});
+
+describe("createSessionCore — duplicate reply.done in multi-hop turns", () => {
+  test("duplicate reply.done after a tool-result flush does not end the turn early", async () => {
+    const executeTool = vi.fn(async () => "out");
+    const { core, sink, transport } = makeCore({ executeTool });
+    await core.start();
+    core.onReplyStarted("r1");
+    core.onToolCall("cid", "t", {});
+    await flush();
+    core.onReplyDone(); // flushes the tool result to the transport
+    await vi.waitFor(() => expect(transport.sendToolResult).toHaveBeenCalledWith("cid", "out"));
+
+    core.onReplyDone(); // duplicated frame from the service
+    await flush();
+    await flush();
+    await flush();
+    expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(0);
+
+    // The real continuation arrives and ends the turn exactly once.
+    core.onAgentTranscript("answer", false);
+    core.onReplyDone();
+    await vi.waitFor(() =>
+      expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(1),
+    );
+  });
+
+  test("multi-hop: each reply.done flushes that hop's results; the final one ends the turn", async () => {
+    const executeTool = vi.fn(async () => "out");
+    const { core, sink, transport } = makeCore({ executeTool });
+    await core.start();
+    core.onReplyStarted("r1");
+
+    core.onToolCall("c1", "t", {});
+    await flush();
+    core.onReplyDone();
+    await vi.waitFor(() => expect(transport.sendToolResult).toHaveBeenCalledWith("c1", "out"));
+    expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(0);
+
+    core.onToolCall("c2", "t", {}); // continuation hop
+    await flush();
+    core.onReplyDone();
+    await vi.waitFor(() => expect(transport.sendToolResult).toHaveBeenCalledWith("c2", "out"));
+    expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(0);
+
+    core.onAgentTranscript("final answer", false);
+    core.onReplyDone();
+    await vi.waitFor(() =>
+      expect(sink.events.filter((e) => e.type === "reply_done")).toHaveLength(1),
+    );
   });
 });
 

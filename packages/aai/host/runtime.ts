@@ -201,6 +201,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
           vector: resolvedVector,
           messages,
           logger,
+          signal: callOpts?.signal,
         });
       }
       // Delegate custom tools (and run_code) to the isolate via RPC. Forward
@@ -229,7 +230,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     };
     const frozenEnv = Object.freeze({ ...env });
 
-    executeTool = async (name, args, sessionId, messages) => {
+    executeTool = async (name, args, sessionId, messages, callOpts) => {
       const tool = allTools[name];
       if (!tool) return toolError(`Unknown tool: ${name}`);
       const sink = sinkMap.get(sessionId ?? "");
@@ -243,6 +244,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         messages,
         logger,
         send: sink ? (event, data) => sink.event({ type: "custom_event", event, data }) : undefined,
+        // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
+        signal: callOpts?.signal,
       });
     };
   }

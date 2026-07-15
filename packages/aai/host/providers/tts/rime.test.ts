@@ -216,6 +216,31 @@ describe("rime TTS adapter", () => {
     expect(doneEvents.length).toBe(1);
   });
 
+  test("cancel() clears pending timers so no stale done leaks into the next turn", async () => {
+    const { session } = await openSession();
+
+    const doneEvents: number[] = [];
+    session.on("done", () => doneEvents.push(doneEvents.length));
+
+    // Turn 1 flushes (arming the first-audio timer), then is barged in.
+    session.sendText("turn one");
+    session.flush();
+    session.cancel();
+    expect(doneEvents.length).toBe(1); // cancel's own synchronous done
+
+    // Turn 2 begins. Turn 1's timer must have been cleared by cancel() —
+    // if it survived, it would fire here and end turn 2's flush-wait early
+    // (TtsEvents contract: done never fires for a cancelled turn).
+    session.sendText("turn two");
+    vi.advanceTimersByTime(10_000);
+    expect(doneEvents.length).toBe(1);
+
+    // Turn 2's own flush still completes normally.
+    session.flush();
+    vi.advanceTimersByTime(5000);
+    expect(doneEvents.length).toBe(2);
+  });
+
   test("close() closes the WebSocket and is idempotent", async () => {
     const { session, ws } = await openSession();
 

@@ -132,3 +132,54 @@ describe("executeToolCall", () => {
     expect(await run("sender", {}, tool)).toBe("ok");
   });
 });
+
+describe("executeToolCall — cancellation", () => {
+  test("exposes the caller's signal as ctx.signal", async () => {
+    const controller = new AbortController();
+    let seen: AbortSignal | undefined;
+    const tool = makeTool({
+      execute: (_args, ctx) => {
+        seen = ctx.signal;
+        return "ok";
+      },
+    });
+    expect(await run("probe", {}, tool, { signal: controller.signal })).toBe("ok");
+    expect(seen).toBe(controller.signal);
+  });
+
+  test("ctx.signal is undefined when no signal is provided", async () => {
+    const tool = makeTool({ execute: (_args, ctx) => String(ctx.signal === undefined) });
+    expect(await run("probe", {}, tool)).toBe("true");
+  });
+
+  test("a pre-aborted signal short-circuits before the tool runs", async () => {
+    const controller = new AbortController();
+    controller.abort();
+    const execute = vi.fn(() => "should not run");
+    const result = await run("skip", {}, makeTool({ execute }), { signal: controller.signal });
+    expect(JSON.parse(result)).toMatchObject({
+      error: expect.stringContaining("cancelled before it ran"),
+    });
+    expect(execute).not.toHaveBeenCalled();
+  });
+
+  test("aborting mid-flight settles a hung tool with a tool error", async () => {
+    const controller = new AbortController();
+    let started = false;
+    const tool = makeTool({
+      execute: () => {
+        started = true;
+        return new Promise<never>(() => {
+          /* never resolves */
+        });
+      },
+    });
+    const promise = run("hang", {}, tool, { signal: controller.signal });
+    // Let the pre-execution tick pass so the tool is genuinely in flight.
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(started).toBe(true);
+    controller.abort();
+    const result = await promise;
+    expect(JSON.parse(result)).toMatchObject({ error: expect.stringMatching(/abort/i) });
+  });
+});

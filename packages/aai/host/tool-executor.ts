@@ -18,7 +18,9 @@ import type { Logger } from "./runtime-config.ts";
 
 export type { ExecuteTool } from "../sdk/_internal-types.ts";
 
-const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
+// setImmediate rather than setTimeout(0): same yield-to-I/O semantics without
+// Node's ~1ms timer clamp — saves a couple of ms on every tool call.
+const yieldTick = (): Promise<void> => new Promise((r) => setImmediate(r));
 
 type ExecuteToolCallOptions = {
   tool: ToolDef;
@@ -30,13 +32,17 @@ type ExecuteToolCallOptions = {
   messages?: readonly Message[] | undefined;
   logger?: Logger | undefined;
   send?: ((event: string, data: unknown) => void) | undefined;
+  /** Turn-scoped cancellation: unblocks the await (and is exposed to the tool
+   *  as `ctx.signal`) when the issuing turn is cancelled or the session stops. */
+  signal?: AbortSignal | undefined;
 };
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, kv, vector, messages, sessionId, send } = opts;
+  const { env, state, kv, vector, messages, sessionId, send, signal } = opts;
   return {
     env,
     state: state ?? {},
+    ...(signal !== undefined ? { signal } : {}),
     get kv(): Kv {
       if (!kv) throw new Error("KV not available");
       return kv;
@@ -79,9 +85,15 @@ export async function executeToolCall(
   try {
     const ctx = buildToolContext(options);
     await yieldTick();
+    if (options.signal?.aborted) {
+      return toolError(`Tool "${name}" was cancelled before it ran`);
+    }
+    // The signal makes the await settle promptly on barge-in/reset/stop; the
+    // underlying execute keeps running unless it observes ctx.signal itself.
     const result = await pTimeout(Promise.resolve(tool.execute(parsed.data, ctx)), {
       milliseconds: TOOL_EXECUTION_TIMEOUT_MS,
       message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
+      ...(options.signal !== undefined ? { signal: options.signal } : {}),
     });
     await yieldTick();
     return stringifyResult(result);
