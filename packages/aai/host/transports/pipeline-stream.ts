@@ -105,9 +105,19 @@ type StreamPartHandlerDeps = {
   onToolCallDone?: ((callId: string, result: string) => void) | undefined;
   /** Report an LLM-stream error. */
   emitError: (code: SessionErrorCode, message: string) => void;
+  /**
+   * Spoken when the model's first action in a turn is a tool call with no
+   * preceding text — guarantees the caller hears something instead of dead
+   * air while the tool runs, even if the model skips the prompt's preamble.
+   * Defaults to {@link DEFAULT_HOLD_PHRASE}; set `""` to disable.
+   */
+  holdPhrase?: string | undefined;
   log: Logger;
   sid: string;
 };
+
+/** Default filler spoken before a silent turn's first tool call. */
+export const DEFAULT_HOLD_PHRASE = "One moment.";
 
 /**
  * Stateful per-turn handler for `streamText` `fullStream` parts.
@@ -120,8 +130,14 @@ type StreamPartHandlerDeps = {
  */
 export function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart) => void {
   const { onDelta, sendTtsText, onToolCall, onToolCallDone, emitError, log, sid } = deps;
+  const holdPhrase = deps.holdPhrase ?? DEFAULT_HOLD_PHRASE;
   let pendingSeparator = false;
   let lastChar = "";
+  // Track whether the model has spoken any text this turn, and whether we've
+  // already injected the hold phrase — so it fires at most once, only when the
+  // turn opens with a tool call and no speech.
+  let spokeText = false;
+  let holdEmitted = false;
 
   function emitText(delta: string): void {
     if (delta.length === 0) return;
@@ -154,13 +170,24 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: Str
 
   return function handlePart(part: StreamPart): void {
     switch (part.type) {
-      case "text-delta":
-        emitText(part.text ?? "");
+      case "text-delta": {
+        const t = part.text ?? "";
+        if (t.length > 0) spokeText = true;
+        emitText(t);
         return;
+      }
       case "text-end":
         pendingSeparator = true;
         return;
       case "tool-call": {
+        // Guarantee the caller hears a hold phrase if the model jumps straight
+        // to a tool call without speaking. Fire once per turn; separate it from
+        // the model's later reply so they don't fuse.
+        if (!(spokeText || holdEmitted) && holdPhrase.length > 0) {
+          holdEmitted = true;
+          emitText(holdPhrase);
+          pendingSeparator = true;
+        }
         // Observability only — actual execution happens inline via toVercelTools.
         const input = (part.input ?? {}) as Record<string, unknown>;
         onToolCall(part.toolCallId ?? "", part.toolName ?? "", input);
