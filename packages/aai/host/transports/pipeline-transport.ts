@@ -11,6 +11,7 @@ import { type LanguageModel, type ModelMessage, stepCountIs, streamText } from "
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
   DEFAULT_MAX_STEPS,
+  DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
 } from "../../sdk/constants.ts";
@@ -38,6 +39,11 @@ import {
   flushTtsAndWait,
 } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
+
+/** Count whitespace-delimited words in an interim transcript. */
+function countWords(text: string): number {
+  return text.trim().split(/\s+/).filter(Boolean).length;
+}
 
 /** Configuration for {@link createPipelineTransport}. */
 export interface PipelineTransportOptions {
@@ -71,6 +77,12 @@ export interface PipelineTransportOptions {
   /** Max LLM tool-call steps per turn. Defaults to 5. */
   maxSteps?: number | undefined;
   /**
+   * Minimum interim-transcript words required to barge in on the agent while
+   * it is speaking. Defaults to DEFAULT_MIN_BARGE_IN_WORDS (1 = interrupt on
+   * any non-empty interim).
+   */
+  minBargeInWords?: number | undefined;
+  /**
    * LLM sampling temperature. Omitted when unset (provider default). Some models
    * (e.g. Claude 5) ignore it and warn; set only for temperature-capable models.
    */
@@ -89,6 +101,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const sttSampleRate = opts.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE;
   const ttsSampleRate = opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE;
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
+  const minBargeInWords = opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS;
   const toolChoice = opts.toolChoice ?? "auto";
   const repairToolCall = createToolCallRepair(opts.llm, log);
   const toolSchemas = opts.toolSchemas ?? [];
@@ -169,9 +182,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     void ttsSession?.close().catch(() => undefined);
   }
 
-  function onSttPartial(_text: string): void {
+  function onSttPartial(text: string): void {
     if (terminated) return;
     if (turnController === null && !playbackClock.pending()) return;
+    if (countWords(text) < minBargeInWords) return;
     log.info("Pipeline barge-in", { sid: opts.sid });
     abortInFlightTurn();
     callbacks.onCancelled();
