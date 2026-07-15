@@ -67,6 +67,7 @@ export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
     onCancel: vi.fn(),
     onReset: vi.fn(),
     onHistory: vi.fn(),
+    onToolResult: vi.fn(),
     onReplyStarted: vi.fn(),
     onReplyDone: vi.fn(),
     onCancelled: vi.fn(),

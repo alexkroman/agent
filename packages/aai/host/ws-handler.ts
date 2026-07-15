@@ -129,6 +129,9 @@ function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: 
     case "history":
       session.onHistory(result.data.messages);
       break;
+    case "tool_result":
+      session.onToolResult(result.data.toolCallId, result.data.result, result.data.error);
+      break;
     default:
       break;
   }

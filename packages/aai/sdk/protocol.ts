@@ -264,10 +264,18 @@ export type HostConfig = z.infer<typeof HostConfigSchema>;
 /**
  * The host-mode handshake frame: the first inbound message on a host-mode
  * WebSocket connection, carrying the {@link HostConfigSchema} payload.
+ *
+ * The tau2 client sends a single `config` frame that also carries the audio
+ * negotiation fields (`audioFormat`/`sampleRate`/`ttsSampleRate`) alongside
+ * `host`; they are captured here (optional) so the host-mode handshake can
+ * honor the client's requested sample rates instead of discarding them.
  */
 export const HostConfigMessageSchema = z.object({
   type: z.literal("config"),
   host: HostConfigSchema,
+  audioFormat: z.enum(["pcm16"]).optional(),
+  sampleRate: z.number().int().positive().optional(),
+  ttsSampleRate: z.number().int().positive().optional(),
 });
 
 /** The host-mode handshake frame. */
