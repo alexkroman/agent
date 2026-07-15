@@ -71,4 +71,24 @@ describe("createPipelineHistory", () => {
     expect(h.conversation[0]?.content).toBe("m50");
     expect(h.conversation.at(-1)?.content).toBe("m249");
   });
+
+  test("strips reasoning parts from assistant messages (avoids Anthropic replay warning)", () => {
+    const h = createPipelineHistory();
+    h.pushLlm({
+      role: "assistant",
+      content: [
+        { type: "reasoning", text: "let me think..." },
+        { type: "text", text: "Hello." },
+      ],
+    });
+    expect(h.llm).toHaveLength(1);
+    expect(JSON.stringify(h.llm)).not.toContain("reasoning");
+    expect(JSON.stringify(h.llm)).toContain("Hello.");
+  });
+
+  test("drops an assistant message that is only reasoning", () => {
+    const h = createPipelineHistory();
+    h.pushLlm({ role: "assistant", content: [{ type: "reasoning", text: "thinking..." }] });
+    expect(h.llm).toHaveLength(0);
+  });
 });

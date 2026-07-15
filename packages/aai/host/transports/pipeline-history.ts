@@ -40,6 +40,20 @@ function cap(arr: unknown[]): void {
   }
 }
 
+/**
+ * Drop `reasoning` parts from an assistant message. Reasoning is an ephemeral
+ * per-turn trace, not conversation the model should re-read; replaying it also
+ * makes the Anthropic provider warn ("unsupported reasoning metadata") because
+ * the persisted parts carry no valid thinking signature. Returns `null` if the
+ * message had nothing but reasoning (so the caller drops it entirely).
+ */
+function withoutReasoning(m: ModelMessage): ModelMessage | null {
+  if (m.role !== "assistant" || typeof m.content === "string") return m;
+  const content = m.content.filter((part) => part.type !== "reasoning");
+  if (content.length === 0) return null;
+  return { ...m, content };
+}
+
 /** Create a {@link PipelineHistory}, optionally seeded from prior text history. */
 export function createPipelineHistory(seed?: readonly Message[]): PipelineHistory {
   const conversation: Message[] = seed ? [...seed] : [];
@@ -53,7 +67,10 @@ export function createPipelineHistory(seed?: readonly Message[]): PipelineHistor
       cap(conversation);
     },
     pushLlm(...msgs: ModelMessage[]): void {
-      llm.push(...msgs);
+      for (const m of msgs) {
+        const cleaned = withoutReasoning(m);
+        if (cleaned) llm.push(cleaned);
+      }
       cap(llm);
     },
     seed(msgs: readonly Message[]): void {
