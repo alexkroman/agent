@@ -25,18 +25,34 @@ export function isDevMode(): boolean {
   return getMonorepoRoot() !== null;
 }
 
-export function resolveServerUrl(explicit?: string, configUrl?: string): string {
-  if (explicit) return explicit;
-  if (isDevMode()) return DEFAULT_DEV_SERVER;
-  return configUrl ?? DEFAULT_SERVER;
+// Callers join paths with `${serverUrl}/...` — strip trailing slashes once at
+// resolution time so a hand-typed `--server https://x.dev/` can't produce `//deploy`.
+function stripTrailingSlash(url: string): string {
+  return url.replace(/\/+$/, "");
 }
 
-export async function getServerInfo(cwd: string, explicitServer?: string, explicitApiKey?: string) {
+export function resolveServerUrl(explicit?: string, configUrl?: string): string {
+  if (explicit) return stripTrailingSlash(explicit);
+  if (isDevMode()) return DEFAULT_DEV_SERVER;
+  return stripTrailingSlash(configUrl ?? DEFAULT_SERVER);
+}
+
+/**
+ * Resolve everything needed to talk to the platform: project config (null if
+ * the project has never been deployed), server URL, and API key.
+ */
+export async function resolveDeployTarget(cwd: string, explicitServer?: string) {
   const config = await readProjectConfig(cwd);
+  const apiKey = await ensureApiKey();
+  const serverUrl = resolveServerUrl(explicitServer, config?.serverUrl);
+  return { config, serverUrl, apiKey };
+}
+
+/** Like resolveDeployTarget, but requires an existing deployment (project config). */
+export async function getServerInfo(cwd: string, explicitServer?: string) {
+  const { config, serverUrl, apiKey } = await resolveDeployTarget(cwd, explicitServer);
   if (!config) {
     throw new Error("No .aai/project.json found — run `aai deploy` first");
   }
-  const apiKey = explicitApiKey ?? (await ensureApiKey());
-  const serverUrl = resolveServerUrl(explicitServer, config.serverUrl);
   return { serverUrl, slug: config.slug, apiKey };
 }

@@ -12,9 +12,10 @@ import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vite
 import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { runDelete } from "./_delete.ts";
 import { runDeploy } from "./_deploy.ts";
+import { runInit } from "./_init.ts";
 import type { MockApi } from "./_mock-api.ts";
 import { startMockApi } from "./_mock-api.ts";
-import { fakeDownloadAndMerge, makeBundle, silenced, withTempDir } from "./_test-utils.ts";
+import { makeBundle, silenced, withTempDir, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
 import { executeSecretDelete, executeSecretList, executeSecretPut } from "./secret.ts";
 
@@ -49,18 +50,6 @@ async function withProjectDir(fn: (dir: string) => Promise<void>): Promise<void>
     await writeProjectConfig(dir, { slug: "my-agent", serverUrl: api.url });
     await fn(dir);
   });
-}
-
-async function withCapturedLogs<T>(fn: () => Promise<T>): Promise<T> {
-  const origLog = console.log;
-  console.log = () => {
-    /* suppress output */
-  };
-  try {
-    return await fn();
-  } finally {
-    console.log = origLog;
-  }
 }
 
 let api: MockApi;
@@ -215,11 +204,11 @@ describe("secrets against mock API", () => {
     api.secrets.SECRET_A = "a";
     api.secrets.SECRET_B = "b";
 
-    await withProjectDir(async (dir) => {
-      await withCapturedLogs(async () => {
+    await withProjectDir(
+      silenced(async (dir) => {
         await executeSecretList(dir, api.url);
-      });
-    });
+      }),
+    );
 
     const listReq = api.requests.find((r) => r.method === "GET" && r.path.includes("/secret"));
     expect(listReq).toBeDefined();
@@ -306,11 +295,11 @@ describe("secrets edge cases", () => {
     // Ensure no secrets in mock
     for (const key of Object.keys(api.secrets)) delete api.secrets[key];
 
-    await withCapturedLogs(async () => {
-      await withProjectDir(async (dir) => {
+    await withProjectDir(
+      silenced(async (dir) => {
         await executeSecretList(dir, api.url);
-      });
-    });
+      }),
+    );
 
     // The function should have made the GET request
     const listReq = api.requests.find((r) => r.method === "GET");
@@ -376,44 +365,31 @@ describe("missing project config", () => {
 
 // ── Init integration ─────────────────────────────────────────────────────────
 
-let fakeTemplatesDir: string;
-
-vi.mock("./_templates.ts", () => ({
-  downloadAndMergeTemplate: (template: string, targetDir: string) =>
-    fakeDownloadAndMerge(fakeTemplatesDir, template, targetDir),
-}));
-
-const { runInit } = await import("./_init.ts");
-
 describe("init creates working project", () => {
-  async function createFakeTemplates(dir: string): Promise<string> {
-    const rootDir = path.join(dir, "fake-templates");
-    const scaffold = path.join(rootDir, "scaffold");
-    await fs.mkdir(scaffold, { recursive: true });
-    await fs.writeFile(path.join(scaffold, "shared.txt"), "from shared");
-    await fs.writeFile(path.join(scaffold, ".env.example"), "MY_KEY=");
-    await fs.writeFile(path.join(scaffold, "package.json"), '{"name":"test"}');
-
-    const simple = path.join(rootDir, "templates", "simple");
-    await fs.mkdir(simple, { recursive: true });
-    await fs.writeFile(path.join(simple, "agent.json"), JSON.stringify({ name: "Default Name" }));
-    return rootDir;
-  }
-
   test("init creates all expected files from template + shared", async () => {
     await withTempDir(
       silenced(async (dir) => {
-        fakeTemplatesDir = await createFakeTemplates(dir);
-        const target = path.join(dir, "my-project");
-        await runInit({ targetDir: target });
+        const rootDir = await writeFiles(path.join(dir, "fake-templates"), {
+          "scaffold/shared.txt": "from shared",
+          "scaffold/.env.example": "MY_KEY=",
+          "scaffold/package.json": '{"name":"test"}',
+          "templates/simple/agent.json": JSON.stringify({ name: "Default Name" }),
+        });
+        vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
+        try {
+          const target = path.join(dir, "my-project");
+          await runInit({ targetDir: target, template: "simple" });
 
-        expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
-        const agentContent = await fs.readFile(path.join(target, "agent.json"), "utf-8");
-        expect(agentContent).toContain("Default Name");
-        expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
-        expect(await fileExists(path.join(target, ".env"))).toBe(true);
-        expect(await fs.readFile(path.join(target, ".env"), "utf-8")).toBe("MY_KEY=");
-        expect(await fileExists(path.join(target, "package.json"))).toBe(true);
+          expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
+          const agentContent = await fs.readFile(path.join(target, "agent.json"), "utf-8");
+          expect(agentContent).toContain("Default Name");
+          expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
+          expect(await fileExists(path.join(target, ".env"))).toBe(true);
+          expect(await fs.readFile(path.join(target, ".env"), "utf-8")).toBe("MY_KEY=");
+          expect(await fileExists(path.join(target, "package.json"))).toBe(true);
+        } finally {
+          vi.unstubAllEnvs();
+        }
       }),
     );
   });

@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
-import { runDeploy } from "./_deploy.ts";
+import { type DeployOpts, runDeploy } from "./_deploy.ts";
 import { makeBundle } from "./_test-utils.ts";
 
 function deployOk(slug = "cool-cats-jump"): Response {
@@ -10,24 +10,29 @@ function deployOk(slug = "cool-cats-jump"): Response {
   });
 }
 
-const deployOpts = (fetch: typeof globalThis.fetch, overrides?: Record<string, unknown>) => ({
-  url: "http://localhost:3000",
-  bundle: makeBundle(),
-  env: {},
-  slug: "cool-cats-jump",
-  apiKey: "test-key",
-  fetch,
-  ...overrides,
-});
+/** Build a DeployOpts object with a mock fetch. */
+function deployOpts(fetch: typeof globalThis.fetch, overrides?: Partial<DeployOpts>): DeployOpts {
+  return {
+    url: "http://localhost:3000",
+    bundle: makeBundle(),
+    env: {},
+    slug: "cool-cats-jump",
+    apiKey: "test-key",
+    fetch,
+    ...overrides,
+  };
+}
 
 describe("runDeploy", () => {
-  test("deploys bundle to server", async () => {
+  test("sends POST /deploy with auth and JSON content type", async () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
     const result = await runDeploy(deployOpts(mockFetch));
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0] ?? [];
     expect(String(url)).toBe("http://localhost:3000/deploy");
+    expect(init?.method).toBe("POST");
     expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-key");
+    expect(new Headers(init?.headers).get("content-type")).toBe("application/json");
     expect(result.slug).toBe("cool-cats-jump");
   });
 
@@ -40,6 +45,33 @@ describe("runDeploy", () => {
     expect(body.clientFiles).toEqual({});
     expect(body.agentConfig.name).toBe("test-agent");
     expect(body.agentConfig.toolSchemas).toEqual([]);
+  });
+
+  test("sends bundle clientFiles and agentConfig fields verbatim", async () => {
+    const bundle = makeBundle({
+      clientFiles: { "index.html": "<html></html>", "app.js": "console.log('hi')" },
+      agentConfig: {
+        name: "custom-agent",
+        systemPrompt: "You are helpful",
+        greeting: "Hello!",
+        maxSteps: 10,
+        toolChoice: "required",
+        builtinTools: ["run_code"],
+        toolSchemas: [{ name: "search", description: "Search", parameters: {} }],
+      },
+    });
+    const mockFetch = vi.fn().mockResolvedValue(deployOk());
+    await runDeploy(deployOpts(mockFetch, { bundle }));
+    const [, init] = mockFetch.mock.calls[0] ?? [];
+    const body = JSON.parse(init?.body as string);
+    expect(body.clientFiles).toEqual({
+      "index.html": "<html></html>",
+      "app.js": "console.log('hi')",
+    });
+    expect(body.agentConfig.name).toBe("custom-agent");
+    expect(body.agentConfig.greeting).toBe("Hello!");
+    expect(body.agentConfig.maxSteps).toBe(10);
+    expect(body.agentConfig.builtinTools).toEqual(["run_code"]);
   });
 
   test("sends env vars in body", async () => {
@@ -60,7 +92,8 @@ describe("runDeploy", () => {
 
   test("omits slug from body when not provided", async () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk("server-generated"));
-    const result = await runDeploy(deployOpts(mockFetch, { slug: undefined }));
+    const { slug: _slug, ...optsWithoutSlug } = deployOpts(mockFetch);
+    const result = await runDeploy(optsWithoutSlug);
     const [, init] = mockFetch.mock.calls[0] ?? [];
     const body = JSON.parse(init?.body as string);
     expect(body.slug).toBeUndefined();

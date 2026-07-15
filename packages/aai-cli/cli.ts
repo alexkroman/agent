@@ -3,7 +3,6 @@
 import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { errorMessage } from "@alexkroman1/aai";
 import { defineCommand, runMain } from "citty";
 import {
   CliError,
@@ -15,7 +14,7 @@ import {
   writeLine,
 } from "./_output.ts";
 import { log, silenceOutput } from "./_ui.ts";
-import { fileExists, resolveCwd } from "./_utils.ts";
+import { errorMessage, fileExists, resolveCwd } from "./_utils.ts";
 
 /** Shared arg definitions for citty commands. */
 const sharedArgs = {
@@ -67,19 +66,32 @@ async function handleErrors(mode: OutputMode, fn: () => Promise<void>): Promise<
 
 /**
  * Run a command body with standard error handling, output mode resolution, and withOutput wrapping.
- * `setYes` controls whether json mode sets `args.yes = true` (default true for most commands).
+ *
+ * - `setYes`: json mode sets `args.yes = true` (only meaningful for commands with a `yes` arg).
+ * - `apiKey`: prompt for / resolve the AssemblyAI API key before the command body runs
+ *   (default true — pass false for commands that never talk to the platform).
  */
 async function runCommand(
   args: { json?: boolean | undefined; yes?: boolean | undefined },
   fn: (mode: OutputMode) => Promise<CommandResult<unknown>>,
-  opts: { setYes?: boolean } = {},
+  opts: { setYes?: boolean; apiKey?: boolean } = {},
 ): Promise<void> {
   const mode = getOutputMode(args);
   if (mode === "json") {
     silenceOutput();
-    if (opts.setYes !== false) args.yes = true;
+    if (opts.setYes) args.yes = true;
   }
-  await handleErrors(mode, () => withOutput(mode, () => fn(mode)));
+  await handleErrors(mode, () =>
+    withOutput(mode, async () => {
+      if (opts.apiKey !== false) {
+        // Resolve the key up front so the prompt appears before any slow work
+        // (bundling, scaffolding). Lazy import keeps zod off the --help path.
+        const { ensureApiKey } = await import("./_config.ts");
+        await ensureApiKey();
+      }
+      return fn(mode);
+    }),
+  );
 }
 
 const init = defineCommand({
@@ -95,21 +107,24 @@ const init = defineCommand({
     skipDeploy: { type: "boolean", description: "Skip deploy after scaffolding" },
   },
   async run({ args }) {
-    await runCommand(args, async (mode) => {
-      const { executeInit } = await import("./init.ts");
-      return executeInit(
-        {
-          dir: args.dir,
-          force: args.force,
-          template: args.template,
-          yes: args.yes,
-          skipApi: args.skipApi,
-          skipDeploy: args.skipDeploy,
-          server: args.server,
-        },
-        mode === "json" ? { silent: true } : undefined,
-      );
-    });
+    await runCommand(
+      args,
+      async (mode) => {
+        const { executeInit } = await import("./init.ts");
+        return executeInit(
+          {
+            dir: args.dir,
+            force: args.force,
+            template: args.template,
+            yes: args.yes,
+            skipDeploy: args.skipDeploy,
+            server: args.server,
+          },
+          mode === "json" ? { silent: true } : undefined,
+        );
+      },
+      { setYes: true, apiKey: !args.skipApi },
+    );
   },
 });
 
@@ -141,7 +156,7 @@ const test = defineCommand({
         const { executeTest } = await import("./test.ts");
         return executeTest(cwd);
       },
-      { setYes: false },
+      { apiKey: false },
     );
   },
 });
@@ -153,15 +168,19 @@ const build = defineCommand({
     skipTests: { type: "boolean", description: "Skip running tests before build" },
   },
   async run({ args }) {
-    await runCommand(args, async () => {
-      const cwd = await setup({ agent: true });
-      if (!args.skipTests) {
-        const { runVitest } = await import("./test.ts");
-        runVitest(cwd);
-      }
-      const { executeBuild } = await import("./_bundler.ts");
-      return executeBuild(cwd);
-    });
+    await runCommand(
+      args,
+      async () => {
+        const cwd = await setup({ agent: true });
+        if (!args.skipTests) {
+          const { runVitest } = await import("./test.ts");
+          runVitest(cwd);
+        }
+        const { executeBuild } = await import("./_bundler.ts");
+        return executeBuild(cwd);
+      },
+      { apiKey: false },
+    );
   },
 });
 
@@ -187,15 +206,11 @@ const del = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    await runCommand(
-      args,
-      async () => {
-        const cwd = await setup();
-        const { executeDelete } = await import("./delete.ts");
-        return executeDelete({ cwd, ...(args.server ? { server: args.server } : {}) });
-      },
-      { setYes: false },
-    );
+    await runCommand(args, async () => {
+      const cwd = await setup();
+      const { executeDelete } = await import("./delete.ts");
+      return executeDelete({ cwd, ...(args.server ? { server: args.server } : {}) });
+    });
   },
 });
 
@@ -207,21 +222,15 @@ const secretPut = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    await runCommand(
-      args,
-      async (mode) => {
-        const cwd = await setup();
-        const { executeSecretPut, readStdin } = await import("./secret.ts");
-        const value = mode === "json" ? await readStdin() : undefined;
-        if (mode === "json" && !value) {
-          const result = fail("no_input", "No value provided", "Pipe secret value to stdin");
-          await writeLine(`${JSON.stringify(result)}\n`);
-          process.exit(1);
-        }
-        return executeSecretPut(cwd, args.name, value, args.server);
-      },
-      { setYes: false },
-    );
+    await runCommand(args, async (mode) => {
+      const cwd = await setup();
+      const { executeSecretPut, readStdin } = await import("./secret.ts");
+      const value = mode === "json" ? await readStdin() : undefined;
+      if (mode === "json" && !value) {
+        throw new CliError("no_input", "No value provided", "Pipe secret value to stdin");
+      }
+      return executeSecretPut(cwd, args.name, value, args.server);
+    });
   },
 });
 
@@ -233,15 +242,11 @@ const secretDelete = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    await runCommand(
-      args,
-      async () => {
-        const cwd = await setup();
-        const { executeSecretDelete } = await import("./secret.ts");
-        return executeSecretDelete(cwd, args.name, args.server);
-      },
-      { setYes: false },
-    );
+    await runCommand(args, async () => {
+      const cwd = await setup();
+      const { executeSecretDelete } = await import("./secret.ts");
+      return executeSecretDelete(cwd, args.name, args.server);
+    });
   },
 });
 
@@ -252,15 +257,11 @@ const secretList = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    await runCommand(
-      args,
-      async () => {
-        const cwd = await setup();
-        const { executeSecretList } = await import("./secret.ts");
-        return executeSecretList(cwd, args.server);
-      },
-      { setYes: false },
-    );
+    await runCommand(args, async () => {
+      const cwd = await setup();
+      const { executeSecretList } = await import("./secret.ts");
+      return executeSecretList(cwd, args.server);
+    });
   },
 });
 
@@ -292,19 +293,10 @@ if (process.env.VITEST !== "true") {
     process.argv.splice(2, 0, defaultCmd);
   }
 
-  // Prompt for API key before any command runs (skipped for help/version/test/build)
-  const cmd = process.argv[2];
-  const skipApiKey = helpFlags.has(cmd ?? "") || cmd === "test" || cmd === "build";
-  const boot = skipApiKey
-    ? Promise.resolve()
-    : import("./_config.ts").then((m) => m.ensureApiKey());
-  // ensureApiKey() can reject (unwritable config dir, non-TTY without a key).
-  // Without a catch that becomes an unhandledRejection with a raw stack trace,
-  // bypassing all error formatting — surface it cleanly and exit non-zero.
-  void boot
-    .then(() => runMain(mainCommand))
-    .catch((err: unknown) => {
-      log.error(errorMessage(err));
-      process.exitCode = 1;
-    });
+  // API key acquisition happens inside runCommand (per-command `apiKey` opt),
+  // after citty parses args — so --help/--version never prompt for a key.
+  void runMain(mainCommand).catch((err: unknown) => {
+    log.error(errorMessage(err));
+    process.exitCode = 1;
+  });
 }

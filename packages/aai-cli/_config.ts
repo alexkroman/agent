@@ -5,6 +5,7 @@ import path from "node:path";
 import * as p from "@clack/prompts";
 import { consola } from "consola";
 import { z } from "zod";
+import { unwrapCancel } from "./_ui.ts";
 
 const ProjectConfigSchema = z.object({
   slug: z.string(),
@@ -71,13 +72,7 @@ export async function ensureApiKey(configDir?: string): Promise<string> {
     return envKey;
   }
 
-  const result = await p.password({ message: "Enter your AssemblyAI API key" });
-  if (p.isCancel(result)) {
-    p.cancel("Setup cancelled");
-    process.exit(0);
-  }
-
-  const apiKey = result as string;
+  const apiKey = unwrapCancel(await p.password({ message: "Enter your AssemblyAI API key" }));
   await writeGlobalConfig(dir, { ...config, apiKey });
   return apiKey;
 }

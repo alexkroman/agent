@@ -56,7 +56,7 @@ describe("cli usage snapshots", () => {
     expect(normalize(usage)).toMatchSnapshot();
   });
 
-  // eslint-disable-next-line -- cast is safe, we control the command names
+  // Cast is safe — we control the command names.
   const sub = (name: string) =>
     (mainCommand.subCommands as Record<string, Parameters<typeof renderUsage>[0]>)[
       name

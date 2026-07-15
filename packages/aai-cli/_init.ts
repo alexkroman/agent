@@ -3,6 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { isDevMode } from "./_agent.ts";
 import { downloadAndMergeTemplate } from "./_templates.ts";
+import { isEexist } from "./_utils.ts";
 
 function readmeContent(slug: string): string {
   return `# ${slug}
@@ -41,7 +42,7 @@ aai secret delete MY_KEY # Remove a secret
 
 export type InitOptions = {
   targetDir: string;
-  template?: string;
+  template: string;
 };
 
 /**
@@ -89,9 +90,8 @@ export async function patchPackageJsonForWorkspace(targetDir: string): Promise<v
   await fs.writeFile(pkgPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
 }
 
-export async function runInit(opts: InitOptions): Promise<string> {
-  const { targetDir } = opts;
-  const template = opts.template ?? "simple";
+export async function runInit(opts: InitOptions): Promise<void> {
+  const { targetDir, template } = opts;
 
   await downloadAndMergeTemplate(template, targetDir);
 
@@ -122,8 +122,6 @@ export async function runInit(opts: InitOptions): Promise<string> {
   try {
     await fs.writeFile(readmePath, readmeContent(slug), { flag: "wx" });
   } catch (err: unknown) {
-    if (!(err instanceof Error && "code" in err && err.code === "EEXIST")) throw err;
+    if (!isEexist(err)) throw err;
   }
-
-  return targetDir;
 }

@@ -92,15 +92,8 @@ vi.mock("./_server-common.ts", () => ({
   resolveServerEnv: mockResolveServerEnv,
 }));
 
-vi.mock("./_ui.ts", () => ({
-  log: {
-    info: vi.fn(),
-    success: vi.fn(),
-    error: vi.fn(),
-    warn: vi.fn(),
-    step: vi.fn(),
-    message: vi.fn(),
-  },
+vi.mock("./_ui.ts", async () => ({
+  log: (await import("./_test-utils.ts")).makeMockLog(),
   fmtUrl: vi.fn((url: string) => url),
 }));
 
@@ -108,7 +101,8 @@ vi.mock("./_default-html.ts", () => ({
   fallbackHtmlPlugin: vi.fn().mockReturnValue({ name: "mock-plugin" }),
 }));
 
-vi.mock("./_utils.ts", () => ({
+vi.mock("./_utils.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("./_utils.ts")>()),
   validateAgentExport: mockValidateAgentExport,
 }));
 

@@ -5,10 +5,10 @@ import path from "node:path";
 import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
 import { execa } from "execa";
-import { DEFAULT_DEV_SERVER, getMonorepoRoot, isDevMode } from "./_agent.ts";
+import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { type CommandResult, ok } from "./_output.ts";
-import { log } from "./_ui.ts";
-import { fileExists, resolveCwd } from "./_utils.ts";
+import { log, unwrapCancel } from "./_ui.ts";
+import { errorMessage, fileExists, resolveCwd } from "./_utils.ts";
 
 type InitData = {
   dir: string;
@@ -23,15 +23,13 @@ const DEFAULT_PROJECT_NAME = "my-voice-agent";
 /** Prompt for project name or return default when --yes is set. */
 async function promptProjectName(yes?: boolean): Promise<string> {
   if (yes) return DEFAULT_PROJECT_NAME;
-  const result = await p.text({
-    message: "What is your project named?",
-    placeholder: DEFAULT_PROJECT_NAME,
-    defaultValue: DEFAULT_PROJECT_NAME,
-  });
-  if (p.isCancel(result)) {
-    p.cancel("Setup cancelled");
-    process.exit(0);
-  }
+  const result = unwrapCancel(
+    await p.text({
+      message: "What is your project named?",
+      placeholder: DEFAULT_PROJECT_NAME,
+      defaultValue: DEFAULT_PROJECT_NAME,
+    }),
+  );
   return result || DEFAULT_PROJECT_NAME;
 }
 
@@ -91,26 +89,15 @@ async function installDeps(cwd: string, silent?: boolean): Promise<boolean> {
   if (!(await hasDeps(cwd))) return true;
   await ensurePnpm();
 
-  if (silent) {
-    try {
-      await runPnpmInstall(cwd);
-      return true;
-    } catch (err: unknown) {
-      log.warn(`pnpm install failed: ${err instanceof Error ? err.message : String(err)}`);
-      log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
-      return false;
-    }
-  }
-
-  const s = p.spinner();
-  s.start("Installing dependencies with pnpm");
+  const s = silent ? undefined : p.spinner();
+  s?.start("Installing dependencies with pnpm");
   try {
     await runPnpmInstall(cwd);
-    s.stop("Dependencies installed");
+    s?.stop("Dependencies installed");
     return true;
   } catch (err: unknown) {
-    s.stop("Dependency install failed");
-    log.warn(`pnpm install failed: ${err instanceof Error ? err.message : String(err)}`);
+    s?.stop("Dependency install failed");
+    log.warn(`pnpm install failed: ${errorMessage(err)}`);
     log.warn("Run `corepack enable && pnpm install` manually in the project directory.");
     return false;
   }
@@ -121,26 +108,15 @@ function resolveTargetDir(dir: string): string {
   return path.resolve(resolveCwd(), dir);
 }
 
-/** Resolve the deploy server — in dev mode, default to localhost. */
-function resolveDeployServer(
-  explicit: string | undefined,
-  monorepoRoot: string | null,
-): string | undefined {
-  return explicit ?? (monorepoRoot ? DEFAULT_DEV_SERVER : undefined);
-}
-
 /** Run deploy after init and return deploy metadata if successful. */
 async function tryDeploy(
   cwd: string,
   server: string | undefined,
-  monorepoRoot: string | null,
 ): Promise<{ slug: string; url: string } | null> {
-  const resolvedServer = resolveDeployServer(server, monorepoRoot);
+  // Server defaulting (dev mode → localhost) is owned by resolveServerUrl
+  // inside executeDeploy — pass the explicit flag through untouched.
   const { executeDeploy } = await import("./deploy.ts");
-  const result = await executeDeploy({
-    cwd,
-    ...(resolvedServer ? { server: resolvedServer } : {}),
-  });
+  const result = await executeDeploy({ cwd, ...(server ? { server } : {}) });
   return result.ok ? { slug: result.data.slug, url: result.data.url } : null;
 }
 
@@ -175,7 +151,6 @@ export async function executeInit(
     force?: boolean | undefined;
     template?: string | undefined;
     yes?: boolean | undefined;
-    skipApi?: boolean | undefined;
     skipDeploy?: boolean | undefined;
     server?: string | undefined;
   },
@@ -208,7 +183,7 @@ export async function executeInit(
   if (!installed) {
     log.warn("Skipping deploy because dependencies were not installed.");
   } else if (!opts.skipDeploy) {
-    const deployInfo = await tryDeploy(cwd, opts.server, monorepoRoot);
+    const deployInfo = await tryDeploy(cwd, opts.server);
     if (deployInfo) {
       deployed = true;
       slug = deployInfo.slug;
