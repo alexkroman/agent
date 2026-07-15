@@ -71,14 +71,21 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       // Voice focus (noise suppression); defaults to near-field. "off"/"" disables.
       const requestedVoiceFocus = opts.voiceFocus ?? "near-field";
       const voiceFocus = requestedVoiceFocus === "off" ? "" : requestedVoiceFocus;
-      const transcriber = client.streaming.transcriber({
+      // Build params as a loose record and cast once: the SDK's param type is a
+      // strict string-literal union and, under exactOptionalPropertyTypes, does
+      // not accept our widened `string` option types via conditional spreads.
+      const transcriberParams: Record<string, unknown> = {
         sampleRate: openOpts.sampleRate,
-        // SDK types `speechModel` as a string-literal union; accept `string` here.
-        speechModel: speechModel as never,
-        ...(openOpts.sttPrompt ? { prompt: openOpts.sttPrompt } : {}),
-        ...(initialAgentContext !== undefined ? { agentContext: initialAgentContext } : {}),
-        ...(voiceFocus ? { voiceFocus } : {}),
-      });
+        speechModel,
+      };
+      if (openOpts.sttPrompt) transcriberParams.prompt = openOpts.sttPrompt;
+      if (initialAgentContext !== undefined) {
+        transcriberParams.agentContext = initialAgentContext;
+      }
+      if (voiceFocus) transcriberParams.voiceFocus = voiceFocus;
+      const transcriber = client.streaming.transcriber(
+        transcriberParams as Parameters<typeof client.streaming.transcriber>[0],
+      );
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
       const shell = createSessionShell({
