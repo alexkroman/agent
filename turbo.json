@@ -9,12 +9,12 @@
       "outputs": ["dist/**"]
     },
     "test": {
-      "dependsOn": [],
+      "dependsOn": ["^build"],
       "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"],
       "env": ["CI"]
     },
     "test:coverage": {
-      "dependsOn": [],
+      "dependsOn": ["^build"],
       "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"],
       "outputs": ["coverage/**"],
       "env": ["CI"]
