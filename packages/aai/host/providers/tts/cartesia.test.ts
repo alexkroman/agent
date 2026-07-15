@@ -31,12 +31,20 @@ interface FakeContext {
 interface FakeTTSWS {
   contexts: FakeContext[];
   context(opts: { contextId: string }): FakeContext;
+  connect(): Promise<FakeTTSWS>;
   on(event: string, fn: (...args: unknown[]) => void): FakeTTSWS;
   close(props?: { code: number; reason: string }): void;
   _fire(event: string, payload: unknown): void;
 }
 
-vi.mock("@cartesia/cartesia-js", () => {
+// `Cartesia` only needs to be constructable now: production builds the socket
+// via `new TTSWS(client)` (mocked below) rather than `client.tts.websocket()`,
+// so it can bind an `error` listener before connecting.
+vi.mock("@cartesia/cartesia-js", () => ({
+  Cartesia: class {},
+}));
+
+vi.mock("@cartesia/cartesia-js/resources/tts/ws", () => {
   function makeWs(): FakeTTSWS {
     const listeners = new Map<string, Array<(...args: unknown[]) => void>>();
     const ws: FakeTTSWS = {
@@ -61,6 +69,9 @@ vi.mock("@cartesia/cartesia-js", () => {
         ws.contexts.push(ctx);
         return ctx;
       },
+      async connect() {
+        return ws;
+      },
       on(event, fn) {
         const arr = listeners.get(event) ?? [];
         arr.push(fn);
@@ -77,10 +88,12 @@ vi.mock("@cartesia/cartesia-js", () => {
     return ws;
   }
   return {
-    Cartesia: class {
-      tts = {
-        websocket: async () => makeWs(),
-      };
+    // Production does `new TTSWS(client)`, so the mock presents the fake socket
+    // as the constructed instance.
+    TTSWS: class {
+      constructor() {
+        Object.assign(this, makeWs());
+      }
     },
   };
 });
