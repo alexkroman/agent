@@ -18,6 +18,7 @@ import { WebSocketServer } from "ws";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import { VectorRequestSchema } from "../sdk/protocol.ts";
+import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
@@ -48,6 +49,12 @@ type ServerOptions = {
    * mode entirely (any `?host=1` connection is then rejected).
    */
   env?: Record<string, string>;
+  /**
+   * The deployed agent. Host-mode sessions inherit its `stt`/`llm`/`tts`
+   * provider config so they run the operator's configured pipeline instead of
+   * the default S2S path. Only prompt/greeting/tools come from the client.
+   */
+  hostBaseAgent?: AgentDef;
 };
 
 /**
@@ -167,7 +174,16 @@ async function handleKvGet(
  * @internal Used by aai-cli dev server.
  */
 export function createServer(options: ServerOptions): AgentServer {
-  const { runtime, clientHtml, clientDir, logger = consoleLogger, kv, vector, env } = options;
+  const {
+    runtime,
+    clientHtml,
+    clientDir,
+    logger = consoleLogger,
+    kv,
+    vector,
+    env,
+    hostBaseAgent,
+  } = options;
   const name = options.name ?? "agent";
 
   if (clientHtml && clientDir) {
@@ -237,7 +253,12 @@ export function createServer(options: ServerOptions): AgentServer {
       // the per-connection agent. Requires `env` (for gating + secrets).
       if (wantsHost && env && isHostAllowed(env)) {
         logger.info(`WS upgrade ${url} (host mode)`);
-        startHostSession(session, { env, startOpts, logger });
+        startHostSession(session, {
+          env,
+          startOpts,
+          logger,
+          ...(hostBaseAgent ? { baseAgent: hostBaseAgent } : {}),
+        });
         return;
       }
       if (wantsHost) {
