@@ -31,7 +31,7 @@ import { debug } from "./_debug-log.ts";
 import { agentKvPrefix } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
-import { attachSandbox, setSlot } from "./sandbox-slots.ts";
+import { attachSandbox, setSlot, withSlugLock } from "./sandbox-slots.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -238,43 +238,50 @@ export async function resolveSandbox(
 ): Promise<Sandbox | null> {
   const { slots, store, storage, pool } = opts;
 
-  let slot = slots.get(slug);
+  // Fast path: a resident sandbox needs no locking.
+  const resident = slots.get(slug);
+  if (resident?.sandbox) return resident.sandbox as Sandbox;
 
-  if (!slot) {
-    const manifest = await store.getManifest(slug);
-    if (!manifest) return null;
-    slot = {
-      slug: manifest.slug,
-      keyHash: manifest.credential_hashes[0] ?? "",
-    };
-    setSlot(slots, slot);
-    debug("Lazy-discovered agent from store", { slug });
-  }
+  // Serialize per-slug so concurrent cold upgrades don't each spawn a
+  // sandbox (duplicate gVisor containers, one orphaned) and so a session
+  // never attaches a sandbox built from pre-deploy code while a deploy is
+  // mutating the same slot (deploy/delete/secret all take this lock too).
+  return withSlugLock(slug, async () => {
+    let slot = slots.get(slug);
+    if (slot?.sandbox) return slot.sandbox as Sandbox;
 
-  if (slot.sandbox) {
-    return slot.sandbox as Sandbox;
-  }
+    if (!slot) {
+      const manifest = await store.getManifest(slug);
+      if (!manifest) return null;
+      slot = {
+        slug: manifest.slug,
+        keyHash: manifest.credential_hashes[0] ?? "",
+      };
+      setSlot(slots, slot);
+      debug("Lazy-discovered agent from store", { slug });
+    }
 
-  const [workerCode, agentConfig, env] = await Promise.all([
-    store.getWorkerCode(slug),
-    store.getAgentConfig(slug),
-    store.getEnv(slug).then((e) => e ?? {}),
-  ]);
+    const [workerCode, agentConfig, env] = await Promise.all([
+      store.getWorkerCode(slug),
+      store.getAgentConfig(slug),
+      store.getEnv(slug).then((e) => e ?? {}),
+    ]);
 
-  if (!(workerCode && agentConfig)) {
-    return null;
-  }
+    if (!(workerCode && agentConfig)) {
+      return null;
+    }
 
-  const sandbox = createSandbox({
-    workerCode,
-    env,
-    storage,
-    slug,
-    agentConfig,
-    ...(pool && { pool }),
-    ...(opts.defaultVector && { defaultVector: opts.defaultVector }),
+    const sandbox = createSandbox({
+      workerCode,
+      env,
+      storage,
+      slug,
+      agentConfig,
+      ...(pool && { pool }),
+      ...(opts.defaultVector && { defaultVector: opts.defaultVector }),
+    });
+
+    attachSandbox(slots, slot, sandbox);
+    return sandbox;
   });
-
-  attachSandbox(slots, slot, sandbox);
-  return sandbox;
 }

@@ -185,10 +185,18 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
   // path, so we time it to distinguish guest cold-start latency (gVisor
   // boot + Deno V8 init) from host-side spawn overhead.
   const tBundle = performance.now();
-  await conn.sendRequest("bundle/load", {
-    code: opts.workerCode,
-    env: opts.env,
-  });
+  try {
+    await conn.sendRequest("bundle/load", {
+      code: opts.workerCode,
+      env: opts.env,
+    });
+  } catch (err) {
+    // bundle/load can now time out (a bundle whose top level never resolves).
+    // Tear down the harness process so it doesn't leak, then rethrow.
+    conn.dispose();
+    await warm.cleanup().catch(() => undefined);
+    throw err;
+  }
   debug("Sandbox bundle/load complete", {
     slug: opts.slug,
     bytes: opts.workerCode.length,

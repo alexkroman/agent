@@ -55,7 +55,7 @@ import { authMw, existingOwnerMw, ownerMw, slugMw, validateSlug } from "./middle
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
-import { type SlotCache, touchSlot } from "./sandbox-slots.ts";
+import { acquireSlotSession, releaseSlotSession, type SlotCache } from "./sandbox-slots.ts";
 import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -280,10 +280,16 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         wss.handleUpgrade(req, socket, head, (ws) => {
           metrics.sessionsStarted.inc({ slug, mode });
           metrics.sessionsActive.inc({ slug });
-          // Bump idle-eviction timer so an actively-used sandbox stays resident.
-          touchSlot(opts.slots, slug);
+          // Track the live session so idle eviction can't kill the sandbox
+          // mid-call (a session can outlive IDLE_SANDBOX_MS).
+          acquireSlotSession(opts.slots, slug);
+          let sessionReleased = false;
           const startedAt = process.hrtime.bigint();
           ws.on("close", (code: number) => {
+            if (!sessionReleased) {
+              sessionReleased = true;
+              releaseSlotSession(opts.slots, slug);
+            }
             const elapsedSec = Number(process.hrtime.bigint() - startedAt) / 1e9;
             metrics.sessionDuration.observe(elapsedSec);
             metrics.sessionsActive.dec({ slug });

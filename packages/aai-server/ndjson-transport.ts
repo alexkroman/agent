@@ -49,10 +49,19 @@ const JsonRpcNotificationSchema = z.object({
 type PendingRequest = {
   resolve: (value: unknown) => void;
   reject: (reason: unknown) => void;
+  timer?: NodeJS.Timeout;
 };
 
+/**
+ * Default timeout for a host→guest request. A wedged guest (e.g. a bundle
+ * whose top level never resolves) must not leave a pending request — and
+ * anything awaiting it, like shutdownSandbox holding the slug lock — hanging
+ * forever.
+ */
+const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
 export interface NdjsonConnection {
-  sendRequest<T = unknown>(method: string, params?: unknown): Promise<T>;
+  sendRequest<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T>;
   sendNotification(method: string, params?: unknown): void;
   onRequest<T = unknown>(method: string, handler: (params: T) => unknown | Promise<unknown>): void;
   onNotification(method: string, handler: (params?: unknown) => void): void;
@@ -119,13 +128,17 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
     if (disposed) return;
     disposed = true;
     const err = new Error(reason);
-    for (const pend of pending.values()) pend.reject(err);
+    for (const pend of pending.values()) {
+      if (pend.timer) clearTimeout(pend.timer);
+      pend.reject(err);
+    }
     pending.clear();
   }
 
   function handleResponse(response: JsonRpcResponse): void {
     const pend = pending.get(response.id);
     if (!pend) return;
+    if (pend.timer) clearTimeout(pend.timer);
     pending.delete(response.id);
 
     if (response.error) {
@@ -173,11 +186,23 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
   }
 
   return {
-    sendRequest<T = unknown>(method: string, params?: unknown): Promise<T> {
+    sendRequest<T = unknown>(
+      method: string,
+      params?: unknown,
+      timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
+    ): Promise<T> {
       if (disposed) return Promise.reject(new Error("Connection disposed"));
       const id = nextId++;
       const promise = new Promise<T>((resolve, reject) => {
-        pending.set(id, { resolve: resolve as (v: unknown) => void, reject });
+        const entry: PendingRequest = { resolve: resolve as (v: unknown) => void, reject };
+        if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
+          entry.timer = setTimeout(() => {
+            if (!pending.delete(id)) return;
+            reject(new Error(`RPC "${method}" timed out after ${timeoutMs}ms`));
+          }, timeoutMs);
+          entry.timer.unref?.();
+        }
+        pending.set(id, entry);
       });
       const msg: JsonRpcRequest = { jsonrpc: "2.0", id, method };
       if (params !== undefined) msg.params = params;
