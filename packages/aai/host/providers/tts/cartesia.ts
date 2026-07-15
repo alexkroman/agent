@@ -22,7 +22,8 @@
 
 import { randomUUID } from "node:crypto";
 import { Cartesia } from "@cartesia/cartesia-js";
-import type { TTSWS, TTSWSContext } from "@cartesia/cartesia-js/resources/tts/ws";
+import type { TTSWSContext } from "@cartesia/cartesia-js/resources/tts/ws";
+import { TTSWS } from "@cartesia/cartesia-js/resources/tts/ws";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import {
   CARTESIA_API_KEY_ENV,
@@ -71,10 +72,29 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       const voice = opts.voice ?? CARTESIA_DEFAULT_VOICE;
 
       const client = new Cartesia({ apiKey });
-      const ws = await connectOrThrow(
+
+      // Construct the socket directly rather than via `client.tts.websocket()`,
+      // which only hands back the instance *after* connect resolves. We need the
+      // reference *before* connecting so we can bind an `error` listener up
+      // front: cartesia-js's `TTSEmitter._onError` does a bare `Promise.reject`
+      // — a fatal unhandled rejection that can crash the whole host process —
+      // whenever the socket errors with no `error` listener bound. That is
+      // exactly what happens on a connect-time failure (e.g. Cartesia out of
+      // credits). Binding first routes the failure through the safe
+      // `_emit("error")` path instead of taking down the process.
+      const ws: TTSWS = new TTSWS(client, undefined);
+
+      // Real behavior is installed below, once `shell`/`context` exist. During
+      // the connect phase a failure is surfaced via the `connectOrThrow`
+      // rejection, so this listener only needs to *exist* — its handler can
+      // no-op until the session is fully wired up.
+      let handleSocketError: (err: unknown) => void = () => undefined;
+      ws.on("error", (err) => handleSocketError(err));
+
+      await connectOrThrow(
         "Cartesia TTS",
         (msg) => makeTtsError("tts_connect_failed", msg),
-        () => client.tts.websocket(),
+        () => ws.connect(),
       );
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
@@ -155,10 +175,10 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         }
       };
 
-      ws.on("error", (err) => {
+      handleSocketError = (err) => {
         if (isBenignContextError(err)) return;
         shell.onSocketError(err);
-      });
+      };
 
       closeOnAbort(openOpts.signal, shell.close);
 

@@ -31,5 +31,15 @@ export async function executeDev(opts: {
   process.on("SIGINT", onSignal);
   process.on("SIGTERM", onSignal);
 
+  // Defense-in-depth: a provider SDK can emit a stray unhandled rejection on a
+  // background socket (e.g. a connect-time WebSocket failure such as a TTS
+  // provider being out of credits). Log it and keep serving other sessions
+  // instead of letting one failed session crash the whole dev host.
+  process.on("unhandledRejection", (err) => {
+    log.error(
+      `Unhandled rejection: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
+    );
+  });
+
   return ok({ url });
 }
