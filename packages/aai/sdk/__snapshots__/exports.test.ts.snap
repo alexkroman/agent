@@ -53,6 +53,8 @@ exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
 [
   "ClientEventSchema",
   "ClientMessageSchema",
+  "HostConfigMessageSchema",
+  "HostConfigSchema",
   "KvDelSchema",
   "KvGetSchema",
   "KvRequestSchema",

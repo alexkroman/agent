@@ -7,6 +7,7 @@
 
 import { z } from "zod";
 
+import { ToolSchemaSchema } from "./_internal-types.ts";
 import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
 
 /**
@@ -228,10 +229,49 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
       .array(z.object({ role: z.enum(["user", "assistant"]), content: z.string().max(100_000) }))
       .max(200),
   }),
+  z.object({
+    type: z.literal("tool_result"),
+    toolCallId: z.string().min(1),
+    result: z.string().max(MAX_TOOL_RESULT_CHARS),
+    error: z.string().optional(),
+  }),
 ]);
 
 /** Client→server text messages (binary frames carry raw PCM16 audio). */
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
+
+// ─── Host mode ───────────────────────────────────────────────────────────────
+
+/**
+ * Host-provided agent configuration for a host-mode connection: the caller
+ * (e.g. a tau2 harness) supplies the system prompt, optional greeting, and
+ * tool schemas for a single session instead of using a deployed agent.
+ *
+ * Validated standalone rather than as a `ClientMessageSchema` member — the
+ * host-mode handshake consumes this message *before* `wireSessionSocket`
+ * attaches, so it must never reach `dispatchMessage`/`ClientMessageSchema`.
+ * See HOST_MODE_CONTRACT.md §§3-5.
+ */
+export const HostConfigSchema = z.object({
+  systemPrompt: z.string().min(1),
+  greeting: z.string().optional(),
+  tools: z.array(ToolSchemaSchema),
+});
+
+/** Host-provided agent configuration for a host-mode connection. */
+export type HostConfig = z.infer<typeof HostConfigSchema>;
+
+/**
+ * The host-mode handshake frame: the first inbound message on a host-mode
+ * WebSocket connection, carrying the {@link HostConfigSchema} payload.
+ */
+export const HostConfigMessageSchema = z.object({
+  type: z.literal("config"),
+  host: HostConfigSchema,
+});
+
+/** The host-mode handshake frame. */
+export type HostConfigMessage = z.infer<typeof HostConfigMessageSchema>;
 
 // ─── Ready config builder ───────────────────────────────────────────────────
 
