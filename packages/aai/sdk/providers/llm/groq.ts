@@ -14,6 +14,9 @@ import type { LlmProvider } from "../../providers.ts";
 
 export const GROQ_KIND = "groq" as const;
 
+/** Agent-env variable holding the Groq API key. */
+export const GROQ_API_KEY_ENV = "GROQ_API_KEY";
+
 export interface GroqOptions {
   /** Groq model id, e.g. `"llama-3.3-70b-versatile"`. */
   model: string;

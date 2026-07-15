@@ -2,7 +2,7 @@
 
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";
-import type { SonioxOptions } from "../../../sdk/providers/stt/soniox.ts";
+import { SONIOX_API_KEY_ENV, type SonioxOptions } from "../../../sdk/providers/stt/soniox.ts";
 import {
   makeSttError,
   type SttEvents,
@@ -10,8 +10,13 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
-import { errorMessage } from "../../../sdk/utils.ts";
-import { closeOnAbort, requireApiKey, waitForOpen } from "../_utils.ts";
+import {
+  closeOnAbort,
+  connectOrThrow,
+  createSessionShell,
+  requireApiKey,
+  waitForOpen,
+} from "../_utils.ts";
 
 // `@soniox/speech-to-text-web` is browser-only (MediaRecorder/getUserMedia),
 // so we speak the WebSocket protocol directly.
@@ -103,70 +108,56 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
   return {
     name: "soniox",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
-      const apiKey = requireApiKey(openOpts.apiKey, "SONIOX_API_KEY", "Soniox STT", (msg) =>
+      const apiKey = requireApiKey(openOpts.apiKey, SONIOX_API_KEY_ENV, "Soniox STT", (msg) =>
         makeSttError("stt_auth_failed", msg),
       );
 
       const ws = new WebSocket(SONIOX_WS_URL);
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
-      let closed = false;
       const finalBuf = { value: "" };
 
-      try {
-        await waitForOpen(ws);
-      } catch (cause) {
-        throw makeSttError(
-          "stt_connect_failed",
-          `Soniox STT: connect failed: ${errorMessage(cause)}`,
-        );
-      }
+      const shell = createSessionShell({
+        makeStreamError: (msg) => makeSttError("stt_stream_error", msg),
+        emitError: (err) => emitter.emit("error", err),
+        teardown: () => {
+          // Flush any batched finals so the last utterance isn't dropped.
+          if (finalBuf.value.length > 0) {
+            emitter.emit("final", finalBuf.value);
+            finalBuf.value = "";
+          }
+          ws.close();
+        },
+      });
+
+      await connectOrThrow(
+        "Soniox STT",
+        (msg) => makeSttError("stt_connect_failed", msg),
+        () => waitForOpen(ws),
+      );
 
       ws.send(JSON.stringify(buildConfigFrame(apiKey, opts, openOpts.sampleRate)));
 
       ws.on("message", (raw: WebSocket.RawData) => {
-        if (closed) return;
+        if (shell.isClosed()) return;
         const res = parseFrame(raw);
         if (res) handleResponse(res, emitter, finalBuf);
       });
 
-      ws.on("error", (err: Error) => {
-        if (closed) return;
-        emitter.emit("error", makeSttError("stt_stream_error", err.message ?? String(err)));
-      });
+      ws.on("error", (err: Error) => shell.onSocketError(err));
+      ws.on("close", (code: number) => shell.onSocketClose(code));
 
-      ws.on("close", (code: number) => {
-        if (closed) return;
-        if (code !== 1000) {
-          emitter.emit("error", makeSttError("stt_stream_error", `socket closed ${code}`));
-        }
-      });
-
-      const close = async (): Promise<void> => {
-        if (closed) return;
-        closed = true;
-        if (finalBuf.value.length > 0) {
-          emitter.emit("final", finalBuf.value);
-          finalBuf.value = "";
-        }
-        try {
-          ws.close();
-        } catch {
-          // Caller is tearing down; ws.close errors are not actionable.
-        }
-      };
-
-      closeOnAbort(openOpts.signal, close);
+      closeOnAbort(openOpts.signal, shell.close);
 
       return {
         sendAudio(pcm: Int16Array) {
-          if (closed || ws.readyState !== WebSocket.OPEN) return;
+          if (shell.isClosed() || ws.readyState !== WebSocket.OPEN) return;
           // Pass the underlying buffer to avoid a copy.
           ws.send(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength), { binary: true });
         },
         on(event, fn) {
           return emitter.on(event, fn);
         },
-        close,
+        close: shell.close,
       };
     },
   };

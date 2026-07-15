@@ -14,6 +14,9 @@ import type { SttProvider } from "../../providers.ts";
 /** Kind tag recognised by the host-side resolver. */
 export const SONIOX_KIND = "soniox" as const;
 
+/** Agent-env variable holding the Soniox API key. */
+export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
+
 export interface SonioxOptions {
   /**
    * Streaming model. Defaults to `"stt-rt-v3"`. Any string is forwarded

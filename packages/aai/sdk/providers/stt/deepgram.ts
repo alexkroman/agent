@@ -13,6 +13,9 @@ import type { SttProvider } from "../../providers.ts";
 /** Kind tag recognised by the host-side resolver. */
 export const DEEPGRAM_KIND = "deepgram" as const;
 
+/** Agent-env variable holding the Deepgram API key. */
+export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
+
 export interface DeepgramOptions {
   /**
    * Streaming speech model. Defaults to `"nova-3"`. Any string is forwarded

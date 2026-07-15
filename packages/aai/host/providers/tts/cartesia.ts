@@ -25,6 +25,7 @@ import { Cartesia } from "@cartesia/cartesia-js";
 import type { TTSWS, TTSWSContext } from "@cartesia/cartesia-js/resources/tts/ws";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import {
+  CARTESIA_API_KEY_ENV,
   CARTESIA_DEFAULT_VOICE,
   type CartesiaOptions,
 } from "../../../sdk/providers/tts/cartesia.ts";
@@ -35,8 +36,14 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../../../sdk/providers.ts";
-import { errorMessage } from "../../../sdk/utils.ts";
-import { assertPcm16Rate, closeOnAbort, type Pcm16Rate, requireApiKey } from "../_utils.ts";
+import {
+  assertPcm16Rate,
+  closeOnAbort,
+  connectOrThrow,
+  createSessionShell,
+  type Pcm16Rate,
+  requireApiKey,
+} from "../_utils.ts";
 
 /** Internal: TtsSession with a test-only handle to the raw SDK socket. */
 export interface CartesiaSession extends TtsSession {
@@ -51,7 +58,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
   return {
     name: "cartesia",
     async open(openOpts: TtsOpenOptions): Promise<TtsSession> {
-      const apiKey = requireApiKey(openOpts.apiKey, "CARTESIA_API_KEY", "Cartesia TTS", (msg) =>
+      const apiKey = requireApiKey(openOpts.apiKey, CARTESIA_API_KEY_ENV, "Cartesia TTS", (msg) =>
         makeTtsError("tts_auth_failed", msg),
       );
 
@@ -63,18 +70,18 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       const voice = opts.voice ?? CARTESIA_DEFAULT_VOICE;
 
       const client = new Cartesia({ apiKey });
-      let ws: TTSWS;
-      try {
-        ws = await client.tts.websocket();
-      } catch (cause) {
-        throw makeTtsError(
-          "tts_connect_failed",
-          `Cartesia TTS: connect failed: ${errorMessage(cause)}`,
-        );
-      }
+      const ws = await connectOrThrow(
+        "Cartesia TTS",
+        (msg) => makeTtsError("tts_connect_failed", msg),
+        () => client.tts.websocket(),
+      );
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
-      let closed = false;
+      const shell = createSessionShell({
+        makeStreamError: (msg) => makeTtsError("tts_stream_error", msg),
+        emitError: (err) => emitter.emit("error", err),
+        teardown: () => ws.close({ code: 1000, reason: "client close" }),
+      });
 
       const audioConfig = {
         model_id: model,
@@ -103,7 +110,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         rotatePending = false;
       };
       const emitDoneOnce = () => {
-        if (doneEmitted || closed) return;
+        if (doneEmitted || shell.isClosed()) return;
         doneEmitted = true;
         emitter.emit("done");
       };
@@ -111,7 +118,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       // TTSWS fires events globally across all contexts on the shared
       // socket; filter by the currently-active context_id.
       ws.on("chunk", (event) => {
-        if (closed || event.context_id !== context.contextId) return;
+        if (shell.isClosed() || event.context_id !== context.contextId) return;
         const buf = event.audio;
         if (!buf || buf.byteLength === 0) return;
         // Defensive: trim odd byte counts so `new Int16Array` never throws
@@ -123,26 +130,13 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       });
 
       ws.on("done", (event) => {
-        if (closed || event.context_id !== context.contextId) return;
+        if (shell.isClosed() || event.context_id !== context.contextId) return;
         emitDoneOnce();
       });
 
-      ws.on("error", (err) => {
-        if (closed) return;
-        emitter.emit("error", makeTtsError("tts_stream_error", err?.message ?? String(err)));
-      });
+      ws.on("error", (err) => shell.onSocketError(err));
 
-      const close = async (): Promise<void> => {
-        if (closed) return;
-        closed = true;
-        try {
-          ws.close({ code: 1000, reason: "client close" });
-        } catch {
-          // Caller has already decided to tear down.
-        }
-      };
-
-      closeOnAbort(openOpts.signal, close);
+      closeOnAbort(openOpts.signal, shell.close);
 
       const ignoreRejection = (_err: unknown): void => {
         /* no-op */
@@ -150,7 +144,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
 
       const session: CartesiaSession = {
         sendText(text: string) {
-          if (closed || text.length === 0) return;
+          if (shell.isClosed() || text.length === 0) return;
           // First sendText after flush/cancel starts a fresh context so we
           // don't append to one that's already been finalized.
           rotateIfPending();
@@ -159,7 +153,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
             .catch(ignoreRejection);
         },
         flush() {
-          if (closed || rotatePending) return;
+          if (shell.isClosed() || rotatePending) return;
           // Empty transcript + `continue: false` is the canonical end-of-turn
           // signal. Cartesia finishes synthesizing what's queued and emits
           // `done` tagged with the same context_id; rotation is deferred so
@@ -170,7 +164,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
           rotatePending = true;
         },
         cancel() {
-          if (closed) return;
+          if (shell.isClosed()) return;
           // Skip the wire cancel if the context is already final on
           // Cartesia's side: cancelling a retired context returns a 400
           // ("context ID does not exist") which surfaces as a fatal
@@ -187,7 +181,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         on(event, fn) {
           return emitter.on(event, fn);
         },
-        close,
+        close: shell.close,
         _ws: ws,
         _currentContextId: () => context.contextId,
       };

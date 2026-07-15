@@ -21,24 +21,45 @@ import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
-import { ANTHROPIC_KIND, type AnthropicOptions } from "../../sdk/providers/llm/anthropic.ts";
+import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import {
+  ASSEMBLYAI_LLM_API_KEY_ENV,
   ASSEMBLYAI_LLM_GATEWAY_EU_URL,
   ASSEMBLYAI_LLM_GATEWAY_URL,
   ASSEMBLYAI_LLM_KIND,
   type AssemblyAILlmOptions,
 } from "../../sdk/providers/llm/assemblyai.ts";
-import { GOOGLE_KIND, type GoogleOptions } from "../../sdk/providers/llm/google.ts";
-import { GROQ_KIND, type GroqOptions } from "../../sdk/providers/llm/groq.ts";
-import { MISTRAL_KIND, type MistralOptions } from "../../sdk/providers/llm/mistral.ts";
-import { OPENAI_KIND, type OpenAIOptions } from "../../sdk/providers/llm/openai.ts";
-import { XAI_KIND, type XaiOptions } from "../../sdk/providers/llm/xai.ts";
-import { ASSEMBLYAI_KIND, type AssemblyAIOptions } from "../../sdk/providers/stt/assemblyai.ts";
-import { DEEPGRAM_KIND, type DeepgramOptions } from "../../sdk/providers/stt/deepgram.ts";
-import { ELEVENLABS_KIND, type ElevenLabsOptions } from "../../sdk/providers/stt/elevenlabs.ts";
-import { SONIOX_KIND, type SonioxOptions } from "../../sdk/providers/stt/soniox.ts";
-import { CARTESIA_KIND, type CartesiaOptions } from "../../sdk/providers/tts/cartesia.ts";
-import { RIME_KIND, type RimeOptions } from "../../sdk/providers/tts/rime.ts";
+import { GOOGLE_API_KEY_ENV, GOOGLE_KIND } from "../../sdk/providers/llm/google.ts";
+import { GROQ_API_KEY_ENV, GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
+import { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
+import { OPENAI_API_KEY_ENV, OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
+import { XAI_API_KEY_ENV, XAI_KIND } from "../../sdk/providers/llm/xai.ts";
+import {
+  ASSEMBLYAI_API_KEY_ENV,
+  ASSEMBLYAI_KIND,
+  type AssemblyAIOptions,
+} from "../../sdk/providers/stt/assemblyai.ts";
+import {
+  DEEPGRAM_API_KEY_ENV,
+  DEEPGRAM_KIND,
+  type DeepgramOptions,
+} from "../../sdk/providers/stt/deepgram.ts";
+import {
+  ELEVENLABS_API_KEY_ENV,
+  ELEVENLABS_KIND,
+  type ElevenLabsOptions,
+} from "../../sdk/providers/stt/elevenlabs.ts";
+import {
+  SONIOX_API_KEY_ENV,
+  SONIOX_KIND,
+  type SonioxOptions,
+} from "../../sdk/providers/stt/soniox.ts";
+import {
+  CARTESIA_API_KEY_ENV,
+  CARTESIA_KIND,
+  type CartesiaOptions,
+} from "../../sdk/providers/tts/cartesia.ts";
+import { RIME_API_KEY_ENV, RIME_KIND, type RimeOptions } from "../../sdk/providers/tts/rime.ts";
 import type {
   LlmProvider,
   SttOpener,
@@ -99,6 +120,66 @@ export function resolveTts(descriptor: TtsProvider): TtsOpener {
   }
 }
 
+/** One registry entry per LLM provider kind — adding a provider is one entry here. */
+type LlmRegistryEntry = {
+  readonly envVar: string;
+  readonly label: string;
+  readonly create: (apiKey: string, descriptor: LlmProvider) => LanguageModel;
+};
+
+function model(descriptor: LlmProvider): string {
+  return options<{ model: string }>(descriptor).model;
+}
+
+const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
+  [ANTHROPIC_KIND]: {
+    envVar: ANTHROPIC_API_KEY_ENV,
+    label: "Anthropic",
+    // Pass baseURL explicitly so the SDK's loadOptionalSetting returns
+    // before reading process.env["ANTHROPIC_BASE_URL"]. Without this,
+    // the Deno platform server needs --allow-env to start a session.
+    create: (apiKey, d) =>
+      createAnthropic({ apiKey, baseURL: "https://api.anthropic.com/v1" })(model(d)),
+  },
+  [OPENAI_KIND]: {
+    envVar: OPENAI_API_KEY_ENV,
+    label: "OpenAI",
+    create: (apiKey, d) => createOpenAI({ apiKey })(model(d)),
+  },
+  [GOOGLE_KIND]: {
+    envVar: GOOGLE_API_KEY_ENV,
+    label: "Google",
+    create: (apiKey, d) => createGoogleGenerativeAI({ apiKey })(model(d)),
+  },
+  [MISTRAL_KIND]: {
+    envVar: MISTRAL_API_KEY_ENV,
+    label: "Mistral",
+    create: (apiKey, d) => createMistral({ apiKey })(model(d)),
+  },
+  [XAI_KIND]: {
+    envVar: XAI_API_KEY_ENV,
+    label: "xAI",
+    create: (apiKey, d) => createXai({ apiKey })(model(d)),
+  },
+  [GROQ_KIND]: {
+    envVar: GROQ_API_KEY_ENV,
+    label: "Groq",
+    create: (apiKey, d) => createGroq({ apiKey })(model(d)),
+  },
+  [ASSEMBLYAI_LLM_KIND]: {
+    envVar: ASSEMBLYAI_LLM_API_KEY_ENV,
+    label: "AssemblyAI",
+    create: (apiKey, d) => {
+      const opts = options<AssemblyAILlmOptions>(d);
+      const baseURL =
+        opts.region === "eu" ? ASSEMBLYAI_LLM_GATEWAY_EU_URL : ASSEMBLYAI_LLM_GATEWAY_URL;
+      // The gateway implements /chat/completions only, so use .chat() —
+      // the provider's default callable targets OpenAI's Responses API.
+      return createOpenAI({ apiKey, baseURL, name: "assemblyai" }).chat(opts.model);
+    },
+  },
+};
+
 /**
  * Resolve an {@link LlmProvider} descriptor into a Vercel AI SDK
  * {@link LanguageModel}.
@@ -108,51 +189,15 @@ export function resolveTts(descriptor: TtsProvider): TtsOpener {
  * `streamText` call otherwise, and the error is clearer at construction.
  */
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel {
-  switch (descriptor.kind) {
-    case ANTHROPIC_KIND: {
-      const apiKey = requireKey(env, "ANTHROPIC_API_KEY", "Anthropic");
-      // Pass baseURL explicitly so the SDK's loadOptionalSetting returns
-      // before reading process.env["ANTHROPIC_BASE_URL"]. Without this,
-      // the Deno platform server needs --allow-env to start a session.
-      return createAnthropic({ apiKey, baseURL: "https://api.anthropic.com/v1" })(
-        options<AnthropicOptions>(descriptor).model,
-      );
-    }
-    case OPENAI_KIND: {
-      const apiKey = requireKey(env, "OPENAI_API_KEY", "OpenAI");
-      return createOpenAI({ apiKey })(options<OpenAIOptions>(descriptor).model);
-    }
-    case GOOGLE_KIND: {
-      const apiKey = requireKey(env, "GOOGLE_GENERATIVE_AI_API_KEY", "Google");
-      return createGoogleGenerativeAI({ apiKey })(options<GoogleOptions>(descriptor).model);
-    }
-    case MISTRAL_KIND: {
-      const apiKey = requireKey(env, "MISTRAL_API_KEY", "Mistral");
-      return createMistral({ apiKey })(options<MistralOptions>(descriptor).model);
-    }
-    case XAI_KIND: {
-      const apiKey = requireKey(env, "XAI_API_KEY", "xAI");
-      return createXai({ apiKey })(options<XaiOptions>(descriptor).model);
-    }
-    case GROQ_KIND: {
-      const apiKey = requireKey(env, "GROQ_API_KEY", "Groq");
-      return createGroq({ apiKey })(options<GroqOptions>(descriptor).model);
-    }
-    case ASSEMBLYAI_LLM_KIND: {
-      const apiKey = requireKey(env, "ASSEMBLYAI_API_KEY", "AssemblyAI");
-      const opts = options<AssemblyAILlmOptions>(descriptor);
-      const baseURL =
-        opts.region === "eu" ? ASSEMBLYAI_LLM_GATEWAY_EU_URL : ASSEMBLYAI_LLM_GATEWAY_URL;
-      // The gateway implements /chat/completions only, so use .chat() —
-      // the provider's default callable targets OpenAI's Responses API.
-      return createOpenAI({ apiKey, baseURL, name: "assemblyai" }).chat(opts.model);
-    }
-    default:
-      throw new Error(
-        `Unknown LLM provider kind: "${descriptor.kind}". ` +
-          `Supported: ${ANTHROPIC_KIND}, ${OPENAI_KIND}, ${GOOGLE_KIND}, ${MISTRAL_KIND}, ${XAI_KIND}, ${GROQ_KIND}, ${ASSEMBLYAI_LLM_KIND}.`,
-      );
+  const entry = LLM_REGISTRY[descriptor.kind];
+  if (!entry) {
+    throw new Error(
+      `Unknown LLM provider kind: "${descriptor.kind}". ` +
+        `Supported: ${Object.keys(LLM_REGISTRY).join(", ")}.`,
+    );
   }
+  const apiKey = requireKey(env, entry.envVar, entry.label);
+  return entry.create(apiKey, descriptor);
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
@@ -199,17 +244,20 @@ export function descriptorKind(value: object | undefined): string | undefined {
   return typeof kind === "string" ? kind : undefined;
 }
 
-/** Provider kind → the agent-env variable that holds its API key. */
+/**
+ * Provider kind → the agent-env variable that holds its API key. The env-var
+ * names are defined once, next to each provider's `KIND` in `sdk/providers/`.
+ */
 const STT_API_KEY_ENV: Record<string, string> = {
-  [ASSEMBLYAI_KIND]: "ASSEMBLYAI_API_KEY",
-  [DEEPGRAM_KIND]: "DEEPGRAM_API_KEY",
-  [ELEVENLABS_KIND]: "ELEVENLABS_API_KEY",
-  [SONIOX_KIND]: "SONIOX_API_KEY",
+  [ASSEMBLYAI_KIND]: ASSEMBLYAI_API_KEY_ENV,
+  [DEEPGRAM_KIND]: DEEPGRAM_API_KEY_ENV,
+  [ELEVENLABS_KIND]: ELEVENLABS_API_KEY_ENV,
+  [SONIOX_KIND]: SONIOX_API_KEY_ENV,
 };
 
 const TTS_API_KEY_ENV: Record<string, string> = {
-  [CARTESIA_KIND]: "CARTESIA_API_KEY",
-  [RIME_KIND]: "RIME_API_KEY",
+  [CARTESIA_KIND]: CARTESIA_API_KEY_ENV,
+  [RIME_KIND]: RIME_API_KEY_ENV,
 };
 
 /** Resolve the agent-env API key for an STT descriptor by its kind. */
@@ -219,7 +267,7 @@ export function resolveSttApiKey(
 ): string {
   // Default to AssemblyAI for pre-resolved openers (test escape hatch) that
   // carry no `kind`; every real descriptor maps to its own env var.
-  return resolveApiKey(STT_API_KEY_ENV[descriptorKind(stt) ?? ""] ?? "ASSEMBLYAI_API_KEY", env);
+  return resolveApiKey(STT_API_KEY_ENV[descriptorKind(stt) ?? ""] ?? ASSEMBLYAI_API_KEY_ENV, env);
 }
 
 /** Resolve the agent-env API key for a TTS descriptor by its kind. */
@@ -227,7 +275,7 @@ export function resolveTtsApiKey(
   tts: TtsProvider | TtsOpener | undefined,
   env: Record<string, string>,
 ): string {
-  return resolveApiKey(TTS_API_KEY_ENV[descriptorKind(tts) ?? ""] ?? "CARTESIA_API_KEY", env);
+  return resolveApiKey(TTS_API_KEY_ENV[descriptorKind(tts) ?? ""] ?? CARTESIA_API_KEY_ENV, env);
 }
 
 /**

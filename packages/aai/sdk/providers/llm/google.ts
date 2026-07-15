@@ -15,6 +15,9 @@ import type { LlmProvider } from "../../providers.ts";
 
 export const GOOGLE_KIND = "google" as const;
 
+/** Agent-env variable holding the Google Generative AI API key. */
+export const GOOGLE_API_KEY_ENV = "GOOGLE_GENERATIVE_AI_API_KEY";
+
 export interface GoogleOptions {
   /** Google Gemini model id, e.g. `"gemini-2.0-flash"`. */
   model: string;
