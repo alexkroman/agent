@@ -14,6 +14,9 @@ import type { LlmProvider } from "../../providers.ts";
 
 export const XAI_KIND = "xai" as const;
 
+/** Agent-env variable holding the xAI API key. */
+export const XAI_API_KEY_ENV = "XAI_API_KEY";
+
 export interface XaiOptions {
   /** xAI Grok model id, e.g. `"grok-2-1212"`. */
   model: string;

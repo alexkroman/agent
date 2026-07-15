@@ -25,6 +25,9 @@ import type { LlmProvider } from "../../providers.ts";
 
 export const ASSEMBLYAI_LLM_KIND = "assemblyai" as const;
 
+/** Agent-env variable holding the AssemblyAI API key (same key as AssemblyAI STT). */
+export const ASSEMBLYAI_LLM_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+
 /** US (default) LLM Gateway endpoint. */
 export const ASSEMBLYAI_LLM_GATEWAY_URL = "https://llm-gateway.assemblyai.com/v1";
 

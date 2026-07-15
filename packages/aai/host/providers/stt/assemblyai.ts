@@ -2,7 +2,10 @@
 
 import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
-import type { AssemblyAIOptions } from "../../../sdk/providers/stt/assemblyai.ts";
+import {
+  ASSEMBLYAI_API_KEY_ENV,
+  type AssemblyAIOptions,
+} from "../../../sdk/providers/stt/assemblyai.ts";
 import {
   makeSttError,
   type SttEvents,
@@ -10,8 +13,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
-import { errorMessage } from "../../../sdk/utils.ts";
-import { closeOnAbort, requireApiKey } from "../_utils.ts";
+import { closeOnAbort, connectOrThrow, createSessionShell, requireApiKey } from "../_utils.ts";
 
 export interface AssemblyAISession extends SttSession {
   /** @internal Test-only: exposes the underlying SDK transcriber for fixture replay. */
@@ -27,8 +29,11 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
   return {
     name: "assemblyai",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
-      const apiKey = requireApiKey(openOpts.apiKey, "ASSEMBLYAI_API_KEY", "AssemblyAI STT", (msg) =>
-        makeSttError("stt_auth_failed", msg),
+      const apiKey = requireApiKey(
+        openOpts.apiKey,
+        ASSEMBLYAI_API_KEY_ENV,
+        "AssemblyAI STT",
+        (msg) => makeSttError("stt_auth_failed", msg),
       );
 
       const client = new AssemblyAI({ apiKey });
@@ -41,49 +46,33 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       });
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
-      let closed = false;
+      const shell = createSessionShell({
+        makeStreamError: (msg) => makeSttError("stt_stream_error", msg),
+        emitError: (err) => emitter.emit("error", err),
+        teardown: () => transcriber.close(),
+      });
 
       transcriber.on("turn", (event) => {
-        if (closed) return;
+        if (shell.isClosed()) return;
         const text = event.transcript ?? "";
         if (text.length === 0) return;
         emitter.emit(event.end_of_turn ? "final" : "partial", text);
       });
 
-      transcriber.on("error", (err) => {
-        if (closed) return;
-        emitter.emit("error", makeSttError("stt_stream_error", err?.message ?? String(err)));
-      });
+      transcriber.on("error", (err) => shell.onSocketError(err));
+      transcriber.on("close", (code) => shell.onSocketClose(code));
 
-      transcriber.on("close", (code) => {
-        if (closed || code === 1000) return;
-        emitter.emit("error", makeSttError("stt_stream_error", `socket closed ${code}`));
-      });
+      await connectOrThrow(
+        "AssemblyAI STT",
+        (msg) => makeSttError("stt_connect_failed", msg),
+        () => transcriber.connect(),
+      );
 
-      try {
-        await transcriber.connect();
-      } catch (cause) {
-        throw makeSttError(
-          "stt_connect_failed",
-          `AssemblyAI STT: connect failed: ${errorMessage(cause)}`,
-        );
-      }
-
-      const close = async (): Promise<void> => {
-        if (closed) return;
-        closed = true;
-        try {
-          await transcriber.close();
-        } catch {
-          // Caller is tearing down; nothing to do on close failure.
-        }
-      };
-
-      closeOnAbort(openOpts.signal, close);
+      closeOnAbort(openOpts.signal, shell.close);
 
       const session: AssemblyAISession = {
         sendAudio(pcm: Int16Array) {
-          if (closed) return;
+          if (shell.isClosed()) return;
           // Copy: caller may reuse `pcm`'s backing buffer for the next chunk.
           const copy = new Uint8Array(
             pcm.buffer.slice(pcm.byteOffset, pcm.byteOffset + pcm.byteLength),
@@ -93,7 +82,7 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
         on(event, fn) {
           return emitter.on(event, fn);
         },
-        close,
+        close: shell.close,
         _transcriber: transcriber,
       };
 

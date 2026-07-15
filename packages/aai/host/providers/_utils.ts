@@ -2,6 +2,7 @@
 /** Shared helpers for host-side STT/TTS provider openers. */
 
 import type WebSocket from "ws";
+import { errorMessage } from "../../sdk/utils.ts";
 
 /** PCM16 sample rates accepted by providers that stream raw PCM16 LE audio. */
 export const PCM16_RATES = [
@@ -58,4 +59,82 @@ export function closeOnAbort(signal: AbortSignal, close: () => Promise<void> | v
     return;
   }
   signal.addEventListener("abort", () => void close(), { once: true });
+}
+
+/** Run `connect`, wrapping any failure as `` `${label}: ${action}: <cause>` ``. */
+export async function connectOrThrow<T>(
+  label: string,
+  makeError: (msg: string) => Error,
+  connect: () => T | Promise<T>,
+  action = "connect failed",
+): Promise<T> {
+  try {
+    return await connect();
+  } catch (cause) {
+    throw makeError(`${label}: ${action}: ${errorMessage(cause)}`);
+  }
+}
+
+function messageOf(err: unknown): string {
+  if (err instanceof Error) return err.message;
+  if (typeof err === "object" && err !== null && "message" in err) {
+    const msg = (err as { message?: unknown }).message;
+    if (typeof msg === "string") return msg;
+  }
+  return String(err);
+}
+
+/** Scaffolding shared by every opener's session — see {@link createSessionShell}. */
+export interface SessionShell {
+  /** True once `close()` has run (directly or via the abort signal). */
+  isClosed(): boolean;
+  /** Idempotent close: marks the session closed, then runs teardown with errors swallowed. */
+  close(): Promise<void>;
+  /** Emit the provider's stream error unless the session is closed. */
+  streamError(message: string): void;
+  /** Standard socket `error` handler: surfaces the error's message as a stream error. */
+  onSocketError(err: unknown): void;
+  /** Standard socket `close` handler: non-1000 close codes surface as stream errors. */
+  onSocketClose(code?: number): void;
+}
+
+/**
+ * Create the session scaffolding every STT/TTS opener repeats: the `closed`
+ * latch, an idempotent `close()`, and the standard socket error/close →
+ * stream-error mapping. The opener keeps its own typed emitter and passes
+ * `emitError` so events stay strongly typed; wire the abort signal after the
+ * connection is established via `closeOnAbort(signal, shell.close)`.
+ */
+export function createSessionShell<E extends Error>(opts: {
+  /** Build the provider's stream-error variant (e.g. `stt_stream_error`). */
+  makeStreamError: (message: string) => E;
+  /** Deliver an error event on the session emitter. */
+  emitError: (err: E) => void;
+  /** Release the underlying connection. Runs at most once. */
+  teardown: () => Promise<void> | void;
+}): SessionShell {
+  let closed = false;
+  const close = async (): Promise<void> => {
+    if (closed) return;
+    closed = true;
+    try {
+      await opts.teardown();
+    } catch {
+      // Caller is tearing down; teardown failures are not actionable.
+    }
+  };
+  const streamError = (message: string): void => {
+    if (closed) return;
+    opts.emitError(opts.makeStreamError(message));
+  };
+  return {
+    isClosed: () => closed,
+    close,
+    streamError,
+    onSocketError: (err) => streamError(messageOf(err)),
+    onSocketClose: (code) => {
+      // 1000 = normal closure.
+      if (code !== undefined && code !== 1000) streamError(`socket closed ${code}`);
+    },
+  };
 }

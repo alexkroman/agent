@@ -13,6 +13,9 @@ import type { SttProvider } from "../../providers.ts";
 /** Kind tag recognised by the host-side resolver. */
 export const ELEVENLABS_KIND = "elevenlabs" as const;
 
+/** Agent-env variable holding the ElevenLabs API key. */
+export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
+
 export interface ElevenLabsOptions {
   /**
    * Streaming speech model. Defaults to `"scribe_v2_realtime"`. Any

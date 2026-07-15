@@ -12,6 +12,9 @@ import type { TtsProvider } from "../../providers.ts";
 
 export const CARTESIA_KIND = "cartesia" as const;
 
+/** Agent-env variable holding the Cartesia API key. */
+export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
+
 /**
  * Default voice used when callers invoke `cartesia()` with no `voice`. This
  * is the same voice the example templates ship with, so a bare `cartesia()`

@@ -16,6 +16,9 @@ import type { LlmProvider } from "../../providers.ts";
 
 export const ANTHROPIC_KIND = "anthropic" as const;
 
+/** Agent-env variable holding the Anthropic API key. */
+export const ANTHROPIC_API_KEY_ENV = "ANTHROPIC_API_KEY";
+
 export interface AnthropicOptions {
   /** Anthropic model id, e.g. `"claude-haiku-4-5"`. */
   model: string;

@@ -14,6 +14,9 @@ import type { LlmProvider } from "../../providers.ts";
 
 export const OPENAI_KIND = "openai" as const;
 
+/** Agent-env variable holding the OpenAI API key (shared with the OpenAI Realtime S2S provider). */
+export const OPENAI_API_KEY_ENV = "OPENAI_API_KEY";
+
 export interface OpenAIOptions {
   /** OpenAI model id, e.g. `"gpt-4o"`, `"gpt-4o-mini"`. */
   model: string;

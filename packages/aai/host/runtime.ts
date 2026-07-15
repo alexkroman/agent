@@ -15,6 +15,7 @@ import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
+import { OPENAI_API_KEY_ENV } from "../sdk/providers/llm/openai.ts";
 import {
   OPENAI_REALTIME_KIND,
   type OpenaiRealtimeOptions,
@@ -299,7 +300,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   }): Transport {
     const { sessionOpts, systemPrompt, callbacks } = args;
     return createOpenaiRealtimeTransport({
-      apiKey: resolveApiKey("OPENAI_API_KEY", env),
+      apiKey: resolveApiKey(OPENAI_API_KEY_ENV, env),
       options: (agent.s2s?.options ?? {}) as OpenaiRealtimeOptions,
       sessionConfig: {
         systemPrompt,

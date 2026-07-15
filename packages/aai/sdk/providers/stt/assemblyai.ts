@@ -13,6 +13,9 @@ import type { SttProvider } from "../../providers.ts";
 /** Kind tag recognised by the host-side resolver. */
 export const ASSEMBLYAI_KIND = "assemblyai" as const;
 
+/** Agent-env variable holding the AssemblyAI API key. */
+export const ASSEMBLYAI_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
+
 export interface AssemblyAIOptions {
   /**
    * Streaming speech model. Defaults to `"u3pro-rt"` (Universal-3 Pro

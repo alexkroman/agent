@@ -14,6 +14,9 @@ import type { LlmProvider } from "../../providers.ts";
 
 export const MISTRAL_KIND = "mistral" as const;
 
+/** Agent-env variable holding the Mistral API key. */
+export const MISTRAL_API_KEY_ENV = "MISTRAL_API_KEY";
+
 export interface MistralOptions {
   /** Mistral model id, e.g. `"mistral-large-latest"`. */
   model: string;

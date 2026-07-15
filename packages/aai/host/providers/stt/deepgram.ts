@@ -8,7 +8,7 @@
 
 import { DeepgramClient, type listen } from "@deepgram/sdk";
 import { createNanoEvents, type Emitter } from "nanoevents";
-import type { DeepgramOptions } from "../../../sdk/providers/stt/deepgram.ts";
+import { DEEPGRAM_API_KEY_ENV, type DeepgramOptions } from "../../../sdk/providers/stt/deepgram.ts";
 import {
   makeSttError,
   type SttEvents,
@@ -16,8 +16,13 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
-import { errorMessage } from "../../../sdk/utils.ts";
-import { closeOnAbort, requireApiKey } from "../_utils.ts";
+import {
+  closeOnAbort,
+  connectOrThrow,
+  createSessionShell,
+  requireApiKey,
+  type SessionShell,
+} from "../_utils.ts";
 
 type V1Socket = Awaited<ReturnType<InstanceType<typeof DeepgramClient>["listen"]["v1"]["connect"]>>;
 
@@ -42,35 +47,27 @@ function handleMessage(data: MessagePayload, closed: boolean, emitter: Emitter<S
 function wireSocketEvents(
   connection: V1Socket,
   emitter: Emitter<SttEvents>,
-  getIsClosed: () => boolean,
+  shell: SessionShell,
 ): void {
-  connection.on("message", (data: MessagePayload) => handleMessage(data, getIsClosed(), emitter));
-  connection.on("error", (err: Error) => {
-    if (getIsClosed()) return;
-    emitter.emit("error", makeSttError("stt_stream_error", err?.message ?? String(err)));
-  });
-  connection.on("close", (event: { code?: number }) => {
-    if (getIsClosed()) return;
-    const code = event?.code;
-    // 1000 = normal closure.
-    if (code !== undefined && code !== 1000) {
-      emitter.emit("error", makeSttError("stt_stream_error", `socket closed ${code}`));
-    }
-  });
+  connection.on("message", (data: MessagePayload) =>
+    handleMessage(data, shell.isClosed(), emitter),
+  );
+  connection.on("error", (err: Error) => shell.onSocketError(err));
+  connection.on("close", (event: { code?: number }) => shell.onSocketClose(event?.code));
 }
 
 export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
   return {
     name: "deepgram",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
-      const apiKey = requireApiKey(openOpts.apiKey, "DEEPGRAM_API_KEY", "Deepgram STT", (msg) =>
+      const apiKey = requireApiKey(openOpts.apiKey, DEEPGRAM_API_KEY_ENV, "Deepgram STT", (msg) =>
         makeSttError("stt_auth_failed", msg),
       );
+      const connectError = (msg: string) => makeSttError("stt_connect_failed", msg);
 
       const client = new DeepgramClient({ apiKey });
-      let connection: V1Socket;
-      try {
-        connection = await client.listen.v1.connect({
+      const connection = await connectOrThrow("Deepgram STT", connectError, () =>
+        client.listen.v1.connect({
           model: opts.model ?? "nova-3",
           language: opts.language ?? "en",
           encoding: "linear16",
@@ -83,50 +80,37 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
           // Pass the API key explicitly as the Authorization header so the
           // WebSocket connection authenticates even without env var fallback.
           Authorization: apiKey,
-        });
-      } catch (cause) {
-        throw makeSttError(
-          "stt_connect_failed",
-          `Deepgram STT: connect failed: ${errorMessage(cause)}`,
-        );
-      }
+        }),
+      );
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
-      let closed = false;
+      const shell = createSessionShell({
+        makeStreamError: (msg) => makeSttError("stt_stream_error", msg),
+        emitError: (err) => emitter.emit("error", err),
+        teardown: () => connection.close(),
+      });
 
-      wireSocketEvents(connection, emitter, () => closed);
+      wireSocketEvents(connection, emitter, shell);
 
       connection.connect();
-      try {
-        await connection.waitForOpen();
-      } catch (cause) {
-        throw makeSttError(
-          "stt_connect_failed",
-          `Deepgram STT: WebSocket open failed: ${errorMessage(cause)}`,
-        );
-      }
+      await connectOrThrow(
+        "Deepgram STT",
+        connectError,
+        () => connection.waitForOpen(),
+        "WebSocket open failed",
+      );
 
-      const close = async (): Promise<void> => {
-        if (closed) return;
-        closed = true;
-        try {
-          connection.close();
-        } catch {
-          // Caller already decided to tear down.
-        }
-      };
-
-      closeOnAbort(openOpts.signal, close);
+      closeOnAbort(openOpts.signal, shell.close);
 
       const session: DeepgramSession = {
         sendAudio(pcm: Int16Array) {
-          if (closed) return;
+          if (shell.isClosed()) return;
           connection.sendMedia(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
         },
         on(event, fn) {
           return emitter.on(event, fn);
         },
-        close,
+        close: shell.close,
         _connection: connection,
       };
 

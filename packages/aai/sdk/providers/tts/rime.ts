@@ -15,6 +15,9 @@ import type { TtsProvider } from "../../providers.ts";
 
 export const RIME_KIND = "rime" as const;
 
+/** Agent-env variable holding the Rime API key. */
+export const RIME_API_KEY_ENV = "RIME_API_KEY";
+
 /**
  * Default Rime speaker used when callers invoke `rime()` with no `voice`.
  * `cove` is a `mistv2` speaker, matching the default model below — so a

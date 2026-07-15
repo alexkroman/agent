@@ -147,12 +147,12 @@ boundary** — this split is critical for sandbox security:
 - **`host/`** — host-only modules that **require Node.js APIs** (`node:vm`,
   `node:crypto`, etc.). Only runs on the platform server and CLI, never
   inside a guest sandbox. Contains:
-  `server.ts`, `runtime.ts`, `runtime-config.ts`, `tool-executor.ts`,
-  `session.ts`, `session-ctx.ts`, `s2s.ts`, `ws-handler.ts`,
-  `pipeline-session.ts`, `pipeline-session-ctx.ts`, `to-vercel-tools.ts`,
-  `providers/` (pluggable STT/TTS adapters + barrels),
-  `builtin-tools.ts`, `_run-code.ts`, `unstorage-kv.ts`,
-  `testing.ts`, `matchers.ts`.
+  `server.ts`, `runtime.ts`, `runtime-config.ts`, `runtime-types.ts`,
+  `tool-executor.ts`, `session-core.ts`, `s2s.ts`, `ws-handler.ts`,
+  `transports/` (S2S / pipeline / OpenAI Realtime `Transport`
+  implementations), `to-vercel-tools.ts`,
+  `providers/` (STT/TTS openers + descriptor→instance resolvers),
+  `builtin-tools.ts`, `_run-code.ts`, `unstorage-kv.ts`.
 
 **Rule**: When adding new SDK code, place it in `sdk/` if it has no
 `node:` dependencies. Moving code from `sdk/` → `host/` is safe;
@@ -225,16 +225,16 @@ Each agent runs in one of two session modes, selected at parse time by
 `agent()` config:
 
 - **S2S mode** (default — no `stt`/`llm`/`tts` fields in `agent.ts`) uses
-  `createS2sSession()` in `packages/aai/host/session.ts`. The host opens a
-  single WebSocket to AssemblyAI's speech-to-speech service; STT, the LLM
-  loop, and TTS all run service-side and audio/events relay through that
-  one socket. This is the original architecture.
+  `createS2sTransport()` in `packages/aai/host/transports/s2s-transport.ts`.
+  The host opens a single WebSocket to AssemblyAI's speech-to-speech
+  service; STT, the LLM loop, and TTS all run service-side and audio/events
+  relay through that one socket. This is the original architecture.
 - **Pipeline mode** (triggered when all three of `stt`, `llm`, and `tts`
-  are set) uses `createPipelineSession()` in
-  `packages/aai/host/pipeline-session.ts`. Here the host drives the LLM
-  loop itself via the Vercel AI SDK's `streamText`, and STT and TTS are
-  pluggable providers imported from the `@alexkroman1/aai/stt` and
-  `@alexkroman1/aai/tts` subpath exports.
+  are set) uses `createPipelineTransport()` in
+  `packages/aai/host/transports/pipeline-transport.ts`. Here the host
+  drives the LLM loop itself via the Vercel AI SDK's `streamText`, and STT
+  and TTS are pluggable providers imported from the `@alexkroman1/aai/stt`
+  and `@alexkroman1/aai/tts` subpath exports.
 
 Partial provider configs are rejected at parse time — `parseManifest()`
 requires either zero or all three of `stt`/`llm`/`tts`.
@@ -246,8 +246,9 @@ Reference providers shipped today:
   - `deepgram({ model: "nova-3" })` — `DEEPGRAM_API_KEY`
   - `elevenlabs({ model: "scribe_v2_realtime" })` — `ELEVENLABS_API_KEY`
   - `soniox({ model: "stt-rt-v3" })` — `SONIOX_API_KEY`
-- **LLM**: one of the typed factories below — `@ai-sdk/*` packages are
-  loaded lazily via `createRequire` so you only install what you use:
+- **LLM**: one of the typed factories below — each returns a pure
+  descriptor; the `@ai-sdk/*` package is only imported by the host-side
+  resolver (`host/providers/resolve.ts`), never by the agent bundle:
   - `anthropic({ model })` — `ANTHROPIC_API_KEY`
   - `openai({ model })` — `OPENAI_API_KEY`
   - `google({ model })` — `GOOGLE_GENERATIVE_AI_API_KEY`
@@ -259,12 +260,22 @@ Reference providers shipped today:
     (OpenAI-compatible chat-completions endpoint fronting 25+ models) via
     `@ai-sdk/openai`'s `.chat()` client. `region: "eu"` selects the EU
     endpoint. Same factory name as the STT provider — alias one on import.
-- **TTS**: `cartesia({ voice })` via `@cartesia/cartesia-js`
+- **TTS**: one of
+  - `cartesia({ voice })` — `CARTESIA_API_KEY`
+  - `rime({ voice })` — `RIME_API_KEY`
 
-The provider SDKs (`ai`, `assemblyai`, `@cartesia/cartesia-js`) are
-declared as **optional peer dependencies** of `@alexkroman1/aai`, so
-users only install the SDKs for the providers they actually use. S2S-mode
-agents need none of them.
+The provider SDKs (`ai`, `assemblyai`, `@cartesia/cartesia-js`,
+`@ai-sdk/*`, …) are regular dependencies of `@alexkroman1/aai`, but they
+are only imported by the host-side openers/resolvers in
+`host/providers/` — the descriptor factories in `sdk/providers/` are pure
+data, so agent bundles never pull provider SDKs into the guest sandbox.
+
+Each provider defines its `KIND` tag and `<PROVIDER>_API_KEY_ENV`
+constant once in its `sdk/providers/{stt,tts,llm}/<name>.ts` module.
+Adding a provider means: descriptor factory there, an opener in
+`host/providers/{stt,tts}/` (built on the shared session shell in
+`host/providers/_utils.ts`), and one registry/switch entry in
+`host/providers/resolve.ts`.
 
 ### S2S voices
 
@@ -394,11 +405,9 @@ they are **not interchangeable**:
 
 | Type | Package | File | Purpose |
 | --- | --- | --- | --- |
-| `Session` | `aai` | `host/session.ts` | Server-side S2S voice session (manages one client's audio relay) |
-| `S2sSessionCtx` | `aai` | `host/session-ctx.ts` | Mutable context threaded through S2S-mode event handlers. A sibling `PipelineSessionCtx` exists for pipeline-mode sessions. |
-| `S2sSessionOptions` | `aai` | `host/session.ts` | Config for creating a server-side session |
-| `PipelineSessionCtx` | `aai` | `host/pipeline-session-ctx.ts` | Mutable context for pipeline mode — has stt/tts session slots instead of an s2s handle |
-| `PipelineSessionOptions` | `aai` | `host/pipeline-session.ts` | Config for creating a pipeline-mode session |
+| `SessionCore` | `aai` | `host/session-core.ts` | Server-side session — bridges a `Transport` (S2S, pipeline, or OpenAI Realtime) to the client protocol |
+| `SessionCoreOptions` | `aai` | `host/session-core.ts` | Config for creating the server-side session core |
+| `SttSession` / `TtsSession` | `aai` | `sdk/providers.ts` | Host-side handle to one open STT/TTS provider stream (pipeline mode) |
 | `SessionCore` | `aai-ui` | `session-core.ts` | Framework-agnostic browser session (WebSocket + audio + state) |
 | `SessionSnapshot` | `aai-ui` | `session-core.ts` | Immutable snapshot of browser session state (for `useSyncExternalStore`) |
 | `SessionError` | `aai-ui` | `types.ts` | Client-side error type with error code |
