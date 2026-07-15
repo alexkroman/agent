@@ -13,7 +13,7 @@
 
 import path from "node:path";
 import type { BuiltinTool, Kv, ToolChoice } from "@alexkroman1/aai";
-import { errorMessage, toolError } from "@alexkroman1/aai";
+import { DEFAULT_MAX_STEPS, errorMessage, toolError } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import {
   type AgentRuntime,
@@ -31,7 +31,7 @@ import { debug } from "./_debug-log.ts";
 import { agentKvPrefix } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
-import { attachSandbox, setSlot } from "./sandbox-slots.ts";
+import { attachSandbox, setSlot, withSlugLock } from "./sandbox-slots.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -133,24 +133,15 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   };
 
   const builtins = resolveAllBuiltins(config.builtinTools ?? [], { fetch: safeFetch });
-  console.log(
-    `[diag] sandbox createRuntime ${JSON.stringify({
-      slug,
-      hasS2s: config.s2s !== undefined,
-      s2sKind: config.s2s?.kind,
-      mode: config.mode,
-      configKeys: Object.keys(config),
-      s2s: config.s2s,
-    })}`,
-  );
   const agentRuntime = createRuntime({
     agent: {
       name: config.name,
       systemPrompt: config.systemPrompt,
       greeting: config.greeting ?? "",
-      maxSteps: config.maxSteps ?? 5,
+      maxSteps: config.maxSteps ?? DEFAULT_MAX_STEPS,
       tools: {},
       ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
+      ...(config.idleTimeoutMs !== undefined ? { idleTimeoutMs: config.idleTimeoutMs } : {}),
       ...(config.toolChoice ? { toolChoice: config.toolChoice satisfies ToolChoice } : {}),
       ...(config.builtinTools ? { builtinTools: config.builtinTools as BuiltinTool[] } : {}),
       ...(config.s2s ? { s2s: config.s2s } : {}),
@@ -174,8 +165,11 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
         const params = raw as { sessionId: string; event: string; data: unknown };
         if (typeof params.sessionId !== "string" || typeof params.event !== "string") return;
         if (params.event.length > 256) return;
-        // Cap data payload at 64 KB to prevent memory abuse via WebSocket relay
-        if (JSON.stringify(params.data).length > 65_536) return;
+        // Cap data payload at 64 KB to prevent memory abuse via WebSocket relay.
+        // `data` may be undefined (event sent with no payload) — JSON.stringify
+        // returns undefined for it, so guard before reading `.length`.
+        const serializedData = JSON.stringify(params.data ?? null);
+        if (serializedData.length > 65_536) return;
         const sink = sessionSinks.get(params.sessionId);
         if (sink?.open) {
           sink.event({ type: "custom_event", event: params.event, data: params.data });
@@ -244,43 +238,50 @@ export async function resolveSandbox(
 ): Promise<Sandbox | null> {
   const { slots, store, storage, pool } = opts;
 
-  let slot = slots.get(slug);
+  // Fast path: a resident sandbox needs no locking.
+  const resident = slots.get(slug);
+  if (resident?.sandbox) return resident.sandbox as Sandbox;
 
-  if (!slot) {
-    const manifest = await store.getManifest(slug);
-    if (!manifest) return null;
-    slot = {
-      slug: manifest.slug,
-      keyHash: manifest.credential_hashes[0] ?? "",
-    };
-    setSlot(slots, slot);
-    debug("Lazy-discovered agent from store", { slug });
-  }
+  // Serialize per-slug so concurrent cold upgrades don't each spawn a
+  // sandbox (duplicate gVisor containers, one orphaned) and so a session
+  // never attaches a sandbox built from pre-deploy code while a deploy is
+  // mutating the same slot (deploy/delete/secret all take this lock too).
+  return withSlugLock(slug, async () => {
+    let slot = slots.get(slug);
+    if (slot?.sandbox) return slot.sandbox as Sandbox;
 
-  if (slot.sandbox) {
-    return slot.sandbox as Sandbox;
-  }
+    if (!slot) {
+      const manifest = await store.getManifest(slug);
+      if (!manifest) return null;
+      slot = {
+        slug: manifest.slug,
+        keyHash: manifest.credential_hashes[0] ?? "",
+      };
+      setSlot(slots, slot);
+      debug("Lazy-discovered agent from store", { slug });
+    }
 
-  const [workerCode, agentConfig, env] = await Promise.all([
-    store.getWorkerCode(slug),
-    store.getAgentConfig(slug),
-    store.getEnv(slug).then((e) => e ?? {}),
-  ]);
+    const [workerCode, agentConfig, env] = await Promise.all([
+      store.getWorkerCode(slug),
+      store.getAgentConfig(slug),
+      store.getEnv(slug).then((e) => e ?? {}),
+    ]);
 
-  if (!(workerCode && agentConfig)) {
-    return null;
-  }
+    if (!(workerCode && agentConfig)) {
+      return null;
+    }
 
-  const sandbox = createSandbox({
-    workerCode,
-    env,
-    storage,
-    slug,
-    agentConfig,
-    ...(pool && { pool }),
-    ...(opts.defaultVector && { defaultVector: opts.defaultVector }),
+    const sandbox = createSandbox({
+      workerCode,
+      env,
+      storage,
+      slug,
+      agentConfig,
+      ...(pool && { pool }),
+      ...(opts.defaultVector && { defaultVector: opts.defaultVector }),
+    });
+
+    attachSandbox(slots, slot, sandbox);
+    return sandbox;
   });
-
-  attachSandbox(slots, slot, sandbox);
-  return sandbox;
 }

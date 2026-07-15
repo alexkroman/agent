@@ -21,6 +21,8 @@ export const MAX_PAGE_CHARS = 10_000;
 export const MAX_HTML_BYTES = 200_000;
 export const MAX_VALUE_SIZE = 65_536;
 export const DEFAULT_MAX_HISTORY = 200;
+/** Max tool calls per reply — prevents runaway tool loops. */
+export const DEFAULT_MAX_STEPS = 5;
 export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 

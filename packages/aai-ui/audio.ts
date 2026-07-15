@@ -120,6 +120,10 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   const lifecycle = new AbortController();
   const { onPlaybackProgress } = opts;
 
+  // One persistent node per session: the worklet's 60s Float32 buffer is
+  // multi-MB, so tearing it down per reply would pay a fresh allocation and
+  // worklet instantiation on every conversational turn. The processor resets
+  // its own per-turn state after each 'stop'.
   function ensurePlayNode(): AudioWorkletNode {
     if (playNode) return playNode;
     const node = new AudioWorkletNode(ctx, "playback-processor", {
@@ -128,8 +132,6 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     node.connect(ctx.destination);
     node.port.onmessage = (e: MessageEvent) => {
       if (e.data.event === "stop") {
-        node.disconnect();
-        if (playNode === node) playNode = null;
         onPlaybackStop?.();
         onPlaybackStop = null;
       } else if (e.data.event === "progress") {
@@ -150,6 +152,10 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
     done() {
       if (!playNode) return Promise.resolve();
+      // The worklet reports completion from process(), which only runs while
+      // the context is rendering. If it's suspended/closed (e.g. a backgrounded
+      // tab), the 'stop' round-trip never happens — resolve now rather than hang.
+      if (ctx.state !== "running") return Promise.resolve();
       return new Promise<void>((resolve) => {
         onPlaybackStop = resolve;
         playNode?.port.postMessage({ event: "done" });

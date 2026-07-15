@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
-import type { AgentDef } from "@alexkroman1/aai";
+import { type AgentDef, isTextAssetPath } from "@alexkroman1/aai";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { build, type Rollup } from "vite";
 import { writeTempHtml } from "./_default-html.ts";
@@ -91,7 +91,7 @@ export async function evalWorkerBundle(code: string, cwd: string): Promise<Agent
  * Zod is bundled in — zod 4's `Function()` usage is wrapped in try/catch
  * and gracefully degrades in restricted environments like Deno.
  */
-async function buildWorker(cwd: string): Promise<string> {
+export async function buildWorker(cwd: string): Promise<string> {
   const agentEntry = path.join(cwd, "agent.ts");
   const base = agentViteBuildBase(agentEntry);
 
@@ -160,7 +160,13 @@ async function buildClient(cwd: string): Promise<Record<string, string>> {
       if (entry.isDirectory()) {
         await walk(path.join(dir, entry.name), rel);
       } else {
-        files[rel] = await fs.readFile(path.join(dir, entry.name), "utf-8");
+        const abs = path.join(dir, entry.name);
+        // Text assets travel as UTF-8; binary assets (images, fonts, wasm)
+        // would be corrupted by UTF-8 decode, so base64-encode them. The
+        // server serve path decodes using the same isTextAssetPath heuristic.
+        files[rel] = isTextAssetPath(rel)
+          ? await fs.readFile(abs, "utf-8")
+          : (await fs.readFile(abs)).toString("base64");
       }
     }
   }

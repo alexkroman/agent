@@ -16,6 +16,8 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
+import { closeOnAbort, requireApiKey } from "../_utils.ts";
 
 type V1Socket = Awaited<ReturnType<InstanceType<typeof DeepgramClient>["listen"]["v1"]["connect"]>>;
 
@@ -29,10 +31,6 @@ type MessagePayload =
   | listen.ListenV1Metadata
   | listen.ListenV1UtteranceEnd
   | listen.ListenV1SpeechStarted;
-
-function errMsg(cause: unknown): string {
-  return cause instanceof Error ? cause.message : String(cause);
-}
 
 function handleMessage(data: MessagePayload, closed: boolean, emitter: Emitter<SttEvents>): void {
   if (closed || data.type !== "Results") return;
@@ -61,25 +59,13 @@ function wireSocketEvents(
   });
 }
 
-function wireAbortSignal(signal: AbortSignal, close: () => Promise<void>): void {
-  if (signal.aborted) {
-    void close();
-    return;
-  }
-  signal.addEventListener("abort", () => void close(), { once: true });
-}
-
 export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
   return {
     name: "deepgram",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
-      const apiKey = openOpts.apiKey || process.env.DEEPGRAM_API_KEY;
-      if (!apiKey) {
-        throw makeSttError(
-          "stt_auth_failed",
-          "Deepgram STT: missing API key. Set DEEPGRAM_API_KEY in the agent env.",
-        );
-      }
+      const apiKey = requireApiKey(openOpts.apiKey, "DEEPGRAM_API_KEY", "Deepgram STT", (msg) =>
+        makeSttError("stt_auth_failed", msg),
+      );
 
       const client = new DeepgramClient({ apiKey });
       let connection: V1Socket;
@@ -99,7 +85,10 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
           Authorization: apiKey,
         });
       } catch (cause) {
-        throw makeSttError("stt_connect_failed", `Deepgram STT: connect failed: ${errMsg(cause)}`);
+        throw makeSttError(
+          "stt_connect_failed",
+          `Deepgram STT: connect failed: ${errorMessage(cause)}`,
+        );
       }
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
@@ -113,7 +102,7 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
       } catch (cause) {
         throw makeSttError(
           "stt_connect_failed",
-          `Deepgram STT: WebSocket open failed: ${errMsg(cause)}`,
+          `Deepgram STT: WebSocket open failed: ${errorMessage(cause)}`,
         );
       }
 
@@ -127,7 +116,7 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
         }
       };
 
-      wireAbortSignal(openOpts.signal, close);
+      closeOnAbort(openOpts.signal, close);
 
       const session: DeepgramSession = {
         sendAudio(pcm: Int16Array) {

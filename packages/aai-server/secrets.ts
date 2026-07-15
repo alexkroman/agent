@@ -3,6 +3,7 @@
 
 import { timingSafeEqual } from "node:crypto";
 import { z } from "zod";
+import { TtlCache } from "./_ttl-cache.ts";
 import { fromBase64Url, toBase64Url } from "./base64url.ts";
 import { MAX_ENV_SIZE } from "./constants.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -24,29 +25,7 @@ const HASH_OUTPUT_BYTES = 32;
 const VERIFY_CACHE_MAX = 256;
 const VERIFY_CACHE_TTL_MS = 5 * 60 * 1000;
 
-type VerifyCacheEntry = { result: boolean; expires: number };
-const verifyCache = new Map<string, VerifyCacheEntry>();
-
-function verifyCacheGet(key: string): boolean | undefined {
-  const entry = verifyCache.get(key);
-  if (!entry) return;
-  if (entry.expires < Date.now()) {
-    verifyCache.delete(key);
-    return;
-  }
-  // Refresh LRU position
-  verifyCache.delete(key);
-  verifyCache.set(key, entry);
-  return entry.result;
-}
-
-function verifyCacheSet(key: string, result: boolean): void {
-  if (verifyCache.size >= VERIFY_CACHE_MAX) {
-    const oldest = verifyCache.keys().next().value;
-    if (oldest !== undefined) verifyCache.delete(oldest);
-  }
-  verifyCache.set(key, { result, expires: Date.now() + VERIFY_CACHE_TTL_MS });
-}
+const verifyCache = new TtlCache<boolean>(VERIFY_CACHE_TTL_MS, VERIFY_CACHE_MAX);
 
 /** Test-only: clear the PBKDF2 verification cache. */
 export function _clearVerifyCache(): void {
@@ -79,7 +58,7 @@ export async function verifyApiKeyHash(apiKey: string, storedHash: string): Prom
   // Length-prefix the apiKey so no (apiKey, storedHash) pair can collide
   // with another by concatenation.
   const cacheKey = `${apiKey.length}:${apiKey}:${storedHash}`;
-  const cached = verifyCacheGet(cacheKey);
+  const cached = verifyCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
   const parts = storedHash.split(":");
@@ -107,7 +86,7 @@ export async function verifyApiKeyHash(apiKey: string, storedHash: string): Prom
 
   if (derived.byteLength !== expected.byteLength) return false;
   const result = timingSafeEqual(derived, expected);
-  verifyCacheSet(cacheKey, result);
+  verifyCache.set(cacheKey, result);
   return result;
 }
 

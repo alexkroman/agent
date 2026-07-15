@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import WebSocket from "ws";
-import { checkHealth, openConnections, sampleMemory } from "../load/helpers.ts";
+import { checkHealth, deployAgent, openConnections, sampleMemory } from "../load/helpers.ts";
 import { DEPLOY_KEY } from "./setup.ts";
 
 export async function deployAdversarialAgent(
@@ -10,32 +10,14 @@ export async function deployAdversarialAgent(
   workerCode: string,
   key = DEPLOY_KEY,
 ): Promise<void> {
-  const res = await fetch(`${serverUrl}/${slug}/deploy`, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${key}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      env: { ASSEMBLYAI_API_KEY: "fake-key" },
-      worker: workerCode,
-      clientFiles: {
-        // biome-ignore lint/security/noSecrets: HTML template, not a secret
-        "index.html": "<!DOCTYPE html><html><body>adversarial</body></html>",
-      },
-      agentConfig: {
-        name: slug,
-        systemPrompt: "",
-        greeting: "",
-        maxSteps: 1,
-        tools: {},
-      },
-    }),
+  await deployAgent(serverUrl, slug, {
+    key,
+    worker: workerCode,
+    agentConfig: { name: slug, systemPrompt: "", greeting: "", maxSteps: 1, tools: {} },
+    // biome-ignore lint/security/noSecrets: HTML template, not a secret
+    indexHtml: "<!DOCTYPE html><html><body>adversarial</body></html>",
+    errorLabel: "Adversarial deploy",
   });
-  if (!res.ok) {
-    const body = await res.text();
-    throw new Error(`Adversarial deploy failed (${res.status}): ${body}`);
-  }
 }
 
 export async function deployGoodAgent(serverUrl: string, slug: string): Promise<void> {

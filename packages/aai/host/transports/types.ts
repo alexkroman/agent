@@ -55,4 +55,16 @@ export interface Transport {
   cancelReply(): void;
   /** Re-send session config (S2S only; pipeline is a no-op). */
   updateSession?(config: TransportSessionConfig): void;
+  /**
+   * Seed prior conversation into the transport's own history on reconnect.
+   * Pipeline mode owns the LLM message list, so client-resent history must
+   * reach it here or a resumed agent has no memory. S2S transports keep
+   * context service-side (via session.resume) and omit this.
+   */
+  seedHistory?(messages: readonly Message[]): void;
+  /**
+   * Clear the transport's conversation state (client `reset`). Pipeline mode
+   * clears its message list; S2S has no client-side history to drop.
+   */
+  reset?(): void;
 }

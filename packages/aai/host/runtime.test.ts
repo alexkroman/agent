@@ -480,19 +480,6 @@ describe("createRuntime createSession", () => {
     });
     expect(session).toBeDefined();
   });
-
-  test("createSession passes resumeFrom option", () => {
-    const agent = makeAgent();
-    const runtime = createRuntime({ agent, env: {} });
-    const client = makeClientSink();
-    const session = runtime.createSession({
-      id: "test-session",
-      agent: agent.name,
-      client,
-      resumeFrom: "prev-session-id",
-    });
-    expect(session).toBeDefined();
-  });
 });
 
 describe("createRuntime startSession", () => {

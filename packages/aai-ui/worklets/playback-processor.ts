@@ -5,22 +5,20 @@ const PlaybackProcessorWorklet = `
 class PlaybackProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    this.interrupted = false;
-    this.isDone = false;
-    this.playing = false;
     const rate = options.processorOptions?.sampleRate ?? 24000;
     // Wait for ~400ms of audio before starting.
     // If 'done' arrives first (short utterance), start immediately.
     this.jitterSamples = Math.floor(rate * 0.4);
-    // Carry-over byte for split samples across chunks
-    this.carry = null;
-    // Float32 sample buffer — 60s at the context sample rate
-    this.samples = new Float32Array(rate * 60);
-    this.writePos = 0;
-    this.readPos = 0;
+    // Float32 ring buffer — 60s at the context sample rate. Allocated once for
+    // the node's lifetime; per-turn state resets via resetTurn(). writePos and
+    // readPos are absolute (monotonic) sample counts; the buffer is indexed
+    // modulo capacity so a reply longer than 60s keeps playing instead of
+    // writing past the end and going silent.
+    this.capacity = rate * 60;
+    this.samples = new Float32Array(this.capacity);
     // Report playback position every ~50ms for word-level text sync
     this.progressInterval = Math.floor(rate * 0.05);
-    this.samplesSinceProgress = 0;
+    this.resetTurn();
 
     this.port.onmessage = (e) => {
       const d = e.data;
@@ -32,6 +30,27 @@ class PlaybackProcessor extends AudioWorkletProcessor {
         this.isDone = true;
       }
     };
+  }
+
+  // Reset per-turn state so the node is reusable across replies without
+  // reallocating the sample buffer or re-instantiating the worklet.
+  resetTurn() {
+    this.interrupted = false;
+    this.isDone = false;
+    this.playing = false;
+    // Carry-over byte for split samples across chunks
+    this.carry = null;
+    this.writePos = 0;
+    this.readPos = 0;
+    this.samplesSinceProgress = 0;
+  }
+
+  // End the current turn: notify the host and rearm for the next reply.
+  // Must NOT return false from process() — a processor that stops is dead
+  // for good, forcing a new node (and buffer) per reply.
+  stopTurn() {
+    this.port.postMessage({ event: 'stop' });
+    this.resetTurn();
   }
 
   ingestBytes(uint8) {
@@ -54,15 +73,22 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
     const numSamples = bytes.length / 2;
     for (let i = 0; i < numSamples; i++) {
-      this.samples[this.writePos++] = view.getInt16(i * 2, true) / 0x8000;
+      this.samples[this.writePos % this.capacity] = view.getInt16(i * 2, true) / 0x8000;
+      this.writePos++;
+    }
+    // If the producer outran the consumer by more than the buffer holds, drop
+    // the oldest unplayed audio rather than reading samples we've overwritten.
+    if (this.writePos - this.readPos > this.capacity) {
+      this.readPos = this.writePos - this.capacity;
     }
   }
 
   process(inputs, outputs) {
     const out = outputs[0][0];
     if (this.interrupted) {
-      this.port.postMessage({ event: 'stop' });
-      return false;
+      out.fill(0);
+      this.stopTurn();
+      return true;
     }
 
     const avail = this.writePos - this.readPos;
@@ -79,7 +105,11 @@ class PlaybackProcessor extends AudioWorkletProcessor {
 
     if (avail > 0) {
       const n = Math.min(avail, out.length);
-      out.set(this.samples.subarray(this.readPos, this.readPos + n));
+      // Copy from the ring buffer, splitting across the wrap boundary.
+      const start = this.readPos % this.capacity;
+      const first = Math.min(n, this.capacity - start);
+      out.set(this.samples.subarray(start, start + first), 0);
+      if (n > first) out.set(this.samples.subarray(0, n - first), first);
       this.readPos += n;
       this.samplesSinceProgress += n;
       if (this.samplesSinceProgress >= this.progressInterval) {
@@ -90,11 +120,10 @@ class PlaybackProcessor extends AudioWorkletProcessor {
       return true;
     }
 
-    // No data: output silence, stop only when done
+    // No data: output silence, end the turn only when done
     out.fill(0);
     if (this.isDone) {
-      this.port.postMessage({ event: 'stop' });
-      return false;
+      this.stopTurn();
     }
     return true;
   }

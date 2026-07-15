@@ -7,7 +7,7 @@
  * evolve independently.
  */
 
-import { DEFAULT_SYSTEM_PROMPT } from "@alexkroman1/aai";
+import { DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
 import {
   assertProviderTriple,
   ProviderDescriptorSchema,
@@ -29,6 +29,7 @@ export const IsolateConfigSchema = z
     greeting: z.string().optional(),
     sttPrompt: z.string().optional(),
     maxSteps: z.number().optional(),
+    idleTimeoutMs: z.number().int().nonnegative().optional(),
     toolChoice: z.enum(["auto", "required"]).optional(),
     builtinTools: z.array(z.string()).optional(),
     toolSchemas: z.array(ToolSchemaSchema).default([]),
@@ -51,7 +52,7 @@ export const IsolateConfigSchema = z
         fail("mode='pipeline' requires stt, llm, and tts to be set");
       }
     } catch (err) {
-      fail(err instanceof Error ? err.message : String(err));
+      fail(errorMessage(err));
     }
   });
 

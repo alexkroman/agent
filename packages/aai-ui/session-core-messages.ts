@@ -29,7 +29,7 @@ const MAX_MESSAGES = 200;
  *  in practice, but bounded against pathological cases (mic-permission stalls). */
 const MAX_PREINIT_AUDIO_CHUNKS = 100;
 
-export function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
+function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
   const next = [...list, item];
   return next.length > cap ? next.slice(-cap) : next;
 }
@@ -134,8 +134,8 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         break;
       case "tool_call":
         updateState({
-          toolCalls: [
-            ...getSnapshot().toolCalls,
+          toolCalls: appendCapped(
+            getSnapshot().toolCalls,
             {
               callId: e.toolCallId,
               name: e.toolName,
@@ -143,7 +143,8 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
               status: "pending",
               afterMessageIndex: getSnapshot().messages.length - 1,
             },
-          ],
+            MAX_MESSAGES,
+          ),
         });
         break;
       case "tool_call_done": {
@@ -235,6 +236,12 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
           console.warn("Audio playback done failed:", err);
         });
     } else {
+      // voiceIO isn't up yet (mic permission / worklet load still pending) and
+      // greeting chunks are buffering in preInitAudio. Record the done so
+      // initAudioCapture replays it after draining — otherwise a greeting
+      // shorter than the worklet's jitter buffer never starts playing. Still
+      // transition optimistically (no audio pipeline → nothing to wait for).
+      conn.preInitDone = true;
       updateState({ state: "listening" });
     }
   }

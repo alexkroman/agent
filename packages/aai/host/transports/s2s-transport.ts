@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // S2S transport — wraps connectS2s and forwards typed callbacks into the SessionCore.
 
+import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger, S2SConfig } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import {
@@ -21,7 +22,6 @@ export type S2sTransportOptions = {
   apiKey: string;
   s2sConfig: S2SConfig;
   sessionConfig: S2sSessionConfig;
-  toolSchemas: S2sToolSchema[];
   callbacks: TransportCallbacks;
   sid: string;
   agent: string;
@@ -143,7 +143,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     }
     void resume(prevId).catch((err: unknown) => {
       reconnecting = false;
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = errorMessage(err);
       log.warn("S2S resume failed", { sid: opts.sid, error: msg });
       opts.callbacks.onError("connection", `S2S resume failed: ${msg}`);
     });
@@ -181,7 +181,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   async function start(): Promise<void> {
-    handle = await _internals.connectS2s({
+    const newHandle = await _internals.connectS2s({
       apiKey: opts.apiKey,
       config: opts.s2sConfig,
       createWebSocket: createWs,
@@ -189,6 +189,15 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       sid: opts.sid,
       callbacks: buildCallbacks(),
     });
+    // stop() may have run while the handshake was in flight (client
+    // disconnected during connect). At that point `handle` was still null, so
+    // stop()'s close() was a no-op — close the resolved socket now or it leaks
+    // a live (billed) provider session. Mirrors resume().
+    if (closing) {
+      newHandle.close();
+      return;
+    }
+    handle = newHandle;
     handle.updateSession(opts.sessionConfig);
   }
 

@@ -18,6 +18,7 @@ import { WebSocketServer } from "ws";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import { VectorRequestSchema } from "../sdk/protocol.ts";
+import { errorMessage } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
 import type { Runtime } from "./runtime.ts";
@@ -125,7 +126,7 @@ async function handleVectorPost(
     }
     sendJson(res, 200, { result });
   } catch (err) {
-    sendJson(res, 500, { error: err instanceof Error ? err.message : String(err) });
+    sendJson(res, 500, { error: errorMessage(err) });
   }
 }
 
@@ -249,6 +250,12 @@ export function createServer(options: ServerOptions): AgentServer {
         await runtime.shutdown();
       } finally {
         try {
+          // runtime.shutdown() closes the provider transports but not the
+          // client sockets, and wss.close() on a noServer WebSocketServer does
+          // not terminate existing connections. Without this, httpServer.close()
+          // waits forever for an upgraded client socket to end (dev/CLI shutdown
+          // hangs whenever a browser tab is still connected).
+          for (const client of wss.clients) client.terminate();
           wss.close();
         } finally {
           if (listenPort !== undefined) {

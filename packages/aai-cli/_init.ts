@@ -106,9 +106,15 @@ export async function runInit(opts: InitOptions): Promise<string> {
   }
 
   try {
-    await fs.copyFile(path.join(targetDir, ".env.example"), path.join(targetDir, ".env"));
+    // COPYFILE_EXCL: never overwrite an existing .env — it may hold the user's
+    // real secrets (e.g. re-running `aai init --force` in an existing project).
+    await fs.copyFile(
+      path.join(targetDir, ".env.example"),
+      path.join(targetDir, ".env"),
+      fs.constants.COPYFILE_EXCL,
+    );
   } catch {
-    /* no .env.example in template */
+    /* no .env.example in template, or .env already exists — leave it */
   }
 
   const readmePath = path.join(targetDir, "README.md");

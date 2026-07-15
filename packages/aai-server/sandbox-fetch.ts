@@ -7,7 +7,7 @@
  * an emit callback.
  */
 
-import { matchesAllowedHost } from "@alexkroman1/aai";
+import { errorMessage, matchesAllowedHost } from "@alexkroman1/aai";
 import { ssrfSafeFetch } from "./ssrf.ts";
 
 export const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -108,6 +108,7 @@ async function performFetch(
   req: FetchRequest,
   fetchFn: typeof globalThis.fetch,
   skipSsrf: boolean,
+  allowedHosts: string[],
 ): Promise<Response> {
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
@@ -118,7 +119,13 @@ async function performFetch(
     ...(req.body !== null ? { body: Buffer.from(req.body, "base64") } : {}),
   };
   try {
-    return skipSsrf ? await fetchFn(req.url, init) : await ssrfSafeFetch(req.url, init, fetchFn);
+    // Enforce the egress allowlist on every redirect hop, not just the initial
+    // URL (ssrfSafeFetch also strips credentials on cross-origin redirects).
+    return skipSsrf
+      ? await fetchFn(req.url, init)
+      : await ssrfSafeFetch(req.url, init, fetchFn, {
+          isHostAllowed: (h) => matchesAllowedHost(h, allowedHosts),
+        });
   } finally {
     clearTimeout(timeout);
   }
@@ -158,7 +165,7 @@ export function createFetchHandler(opts: FetchHandlerOptions) {
 
     activeCount++;
     try {
-      const response = await performFetch(req, fetchFn, skipSsrf);
+      const response = await performFetch(req, fetchFn, skipSsrf, allowedHosts);
       emit({
         type: "fetch/response-start",
         id,
@@ -170,7 +177,7 @@ export function createFetchHandler(opts: FetchHandlerOptions) {
         emit({ type: "fetch/response-end", id });
       }
     } catch (err) {
-      emitError(id, err instanceof Error ? err.message : String(err), emit);
+      emitError(id, errorMessage(err), emit);
     } finally {
       activeCount--;
     }

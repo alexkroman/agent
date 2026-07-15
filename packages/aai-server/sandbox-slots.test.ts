@@ -5,10 +5,12 @@ import { IDLE_SANDBOX_MS } from "./constants.ts";
 import { registry } from "./metrics.ts";
 import {
   type AgentSlot,
+  acquireSlotSession,
   attachSandbox,
   createSlotCache,
   deleteSlot,
   registerSlotsForGauges,
+  releaseSlotSession,
   setSlot,
   terminateSlot,
   touchSlot,
@@ -141,6 +143,24 @@ describe("idle sandbox eviction", () => {
     expect(sandbox.shutdown).not.toHaveBeenCalled();
 
     await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS);
+    expect(sandbox.shutdown).toHaveBeenCalledOnce();
+  });
+
+  it("does not evict a sandbox with an active session, and evicts after release", async () => {
+    const cache = createSlotCache();
+    const slot = makeSlot("busy");
+    setSlot(cache, slot);
+    const sandbox = makeSandbox();
+    attachSandbox(cache, slot, sandbox);
+
+    // A live session pauses idle eviction indefinitely.
+    acquireSlotSession(cache, "busy");
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS * 3);
+    expect(sandbox.shutdown).not.toHaveBeenCalled();
+
+    // Releasing the last session rearms the timer.
+    releaseSlotSession(cache, "busy");
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
     expect(sandbox.shutdown).toHaveBeenCalledOnce();
   });
 

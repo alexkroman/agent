@@ -10,6 +10,8 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
+import { closeOnAbort, requireApiKey, waitForOpen } from "../_utils.ts";
 
 // `@soniox/speech-to-text-web` is browser-only (MediaRecorder/getUserMedia),
 // so we speak the WebSocket protocol directly.
@@ -39,21 +41,6 @@ function consumeTokens(tokens: SonioxToken[], appendFinal: (text: string) => voi
     }
   }
   return nonFinal;
-}
-
-function waitForOpen(ws: WebSocket): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const onOpen = (): void => {
-      ws.off("error", onErr);
-      resolve();
-    };
-    const onErr = (err: Error): void => {
-      ws.off("open", onOpen);
-      reject(err);
-    };
-    ws.once("open", onOpen);
-    ws.once("error", onErr);
-  });
 }
 
 function buildConfigFrame(
@@ -116,13 +103,9 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
   return {
     name: "soniox",
     async open(openOpts: SttOpenOptions): Promise<SttSession> {
-      const apiKey = openOpts.apiKey || process.env.SONIOX_API_KEY;
-      if (!apiKey) {
-        throw makeSttError(
-          "stt_auth_failed",
-          "Soniox STT: missing API key. Set SONIOX_API_KEY in the agent env.",
-        );
-      }
+      const apiKey = requireApiKey(openOpts.apiKey, "SONIOX_API_KEY", "Soniox STT", (msg) =>
+        makeSttError("stt_auth_failed", msg),
+      );
 
       const ws = new WebSocket(SONIOX_WS_URL);
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
@@ -134,7 +117,7 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
       } catch (cause) {
         throw makeSttError(
           "stt_connect_failed",
-          `Soniox STT: connect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `Soniox STT: connect failed: ${errorMessage(cause)}`,
         );
       }
 
@@ -172,11 +155,7 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
         }
       };
 
-      if (openOpts.signal.aborted) {
-        void close();
-      } else {
-        openOpts.signal.addEventListener("abort", () => void close(), { once: true });
-      }
+      closeOnAbort(openOpts.signal, close);
 
       return {
         sendAudio(pcm: Int16Array) {

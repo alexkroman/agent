@@ -26,7 +26,6 @@ function makeTransportOptions(overrides: Partial<S2sTransportOptions> = {}): S2s
     apiKey: "k",
     s2sConfig: { wssUrl: "wss://fake", inputSampleRate: 16_000, outputSampleRate: 24_000 },
     sessionConfig: { systemPrompt: "test", tools: [] },
-    toolSchemas: [],
     callbacks: makeCallbacks(),
     sid: "sid-1",
     agent: "a",
@@ -83,6 +82,33 @@ function expectAt<T>(arr: T[], index: number, label: string): T {
   if (!value) throw new Error(`expected ${label} at index ${index}`);
   return value;
 }
+
+describe("S2sTransport lifecycle races", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  test("stop() during an in-flight start() closes the resolved handle (no leak)", async () => {
+    const handle = makeMockHandle();
+    let resolveConnect: (h: S2sHandle) => void = () => undefined;
+    vi.spyOn(_internals, "connectS2s").mockImplementation(
+      () =>
+        new Promise<S2sHandle>((resolve) => {
+          resolveConnect = resolve;
+        }),
+    );
+
+    const t = createS2sTransport(makeTransportOptions());
+    const startP = t.start(); // handshake in flight
+    await t.stop(); // client disconnected before connect resolved
+    resolveConnect(handle); // handshake now completes
+    await startP;
+
+    // The resolved socket must be closed, and no session.update sent on it.
+    expect(handle.close).toHaveBeenCalled();
+    expect(handle.updateSession).not.toHaveBeenCalled();
+  });
+});
 
 describe("S2sTransport reconnect", () => {
   afterEach(() => {

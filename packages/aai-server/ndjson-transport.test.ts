@@ -81,6 +81,28 @@ describe("createNdjsonConnection", () => {
     await Promise.all([p1, p2]);
   });
 
+  it("rejects a request that gets no response within its timeout", async () => {
+    const conn = createNdjsonConnection(readable, writable);
+    conn.listen();
+
+    // Short timeout; no response is ever written back.
+    const resultPromise = conn.sendRequest("wedged", undefined, 20);
+
+    await expect(resultPromise).rejects.toThrow(/timed out after 20ms/);
+  });
+
+  it("does not time out when a response arrives in time", async () => {
+    const conn = createNdjsonConnection(readable, writable);
+    conn.listen();
+
+    const resultPromise = conn.sendRequest("ok", undefined, 1000);
+    await vi.waitFor(() => writtenLines.length > 0);
+    const sent = JSON.parse(writtenLines.at(0) ?? "");
+    writeMessage(readable, { jsonrpc: "2.0", id: sent.id, result: "done" });
+
+    await expect(resultPromise).resolves.toBe("done");
+  });
+
   // ── receive response error ───────────────────────────────────────────────
 
   it("rejects the request promise when a JSON-RPC error response arrives", async () => {

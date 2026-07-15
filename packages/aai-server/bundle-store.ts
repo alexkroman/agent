@@ -6,6 +6,7 @@ import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import { retryOnTransient } from "./_retry.ts";
+import { TtlCache } from "./_ttl-cache.ts";
 import { metrics, observeDurationWithStatus } from "./metrics.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
@@ -27,7 +28,10 @@ const ManifestSchema = z.object({
 // where another replica may have mutated the underlying storage.
 const STORE_CACHE_TTL_MS = 60_000;
 
-type CacheEntry<T> = { value: T; expires: number };
+// Client page/asset bytes are immutable per deploy (served with
+// `Cache-Control: immutable`), so cache them like the manifest. LRU-capped
+// since individual assets can be large.
+const CLIENT_FILE_CACHE_MAX = 64;
 
 function objectKey(slug: string, file: string): string {
   return `agents/${slug}/${file}`;
@@ -42,32 +46,21 @@ async function instrumentTigris<T>(op: string, fn: () => Promise<T>): Promise<T>
   );
 }
 
-function cacheGet<T>(cache: Map<string, CacheEntry<T>>, key: string): T | undefined {
-  const entry = cache.get(key);
-  if (!entry) return;
-  if (entry.expires < Date.now()) {
-    cache.delete(key);
-    return;
-  }
-  return entry.value;
-}
-
-function cacheSet<T>(cache: Map<string, CacheEntry<T>>, key: string, value: T): void {
-  cache.set(key, { value, expires: Date.now() + STORE_CACHE_TTL_MS });
-}
-
 export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey }): BundleStore {
   const { masterKey } = opts;
 
   const manifestLock = getLock();
 
   // `null` cache values mean "confirmed miss" — distinct from `undefined` (not cached).
-  const manifestCache = new Map<string, CacheEntry<AgentMetadata | null>>();
-  const configCache = new Map<string, CacheEntry<IsolateConfig | null>>();
+  const manifestCache = new TtlCache<AgentMetadata | null>(STORE_CACHE_TTL_MS);
+  const configCache = new TtlCache<IsolateConfig | null>(STORE_CACHE_TTL_MS);
+  // Keyed by full object key (`agents/<slug>/client/<path>`).
+  const clientFileCache = new TtlCache<string | null>(STORE_CACHE_TTL_MS, CLIENT_FILE_CACHE_MAX);
 
   function invalidate(slug: string): void {
     manifestCache.delete(slug);
     configCache.delete(slug);
+    clientFileCache.deletePrefix(`agents/${slug}/`);
   }
 
   async function deleteByPrefix(prefix: string): Promise<void> {
@@ -106,10 +99,10 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
   }
 
   async function getManifestCached(slug: string): Promise<AgentMetadata | null> {
-    const cached = cacheGet(manifestCache, slug);
+    const cached = manifestCache.get(slug);
     if (cached !== undefined) return cached;
     const value = await loadManifest(slug);
-    cacheSet(manifestCache, slug, value);
+    manifestCache.set(slug, value);
     return value;
   }
 
@@ -158,9 +151,14 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     },
 
     getClientFile(slug, filePath) {
-      return instrumentTigris("getClientFile", () =>
-        readItem(objectKey(slug, `client/${filePath}`)),
-      );
+      return instrumentTigris("getClientFile", async () => {
+        const key = objectKey(slug, `client/${filePath}`);
+        const cached = clientFileCache.get(key);
+        if (cached !== undefined) return cached;
+        const value = await readItem(key);
+        clientFileCache.set(key, value);
+        return value;
+      });
     },
 
     deleteAgent(slug) {
@@ -196,17 +194,17 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
 
     getAgentConfig(slug) {
       return instrumentTigris("getAgentConfig", async () => {
-        const cached = cacheGet(configCache, slug);
+        const cached = configCache.get(slug);
         if (cached !== undefined) return cached;
         const json = await readJson(objectKey(slug, "config.json"));
         if (json == null) {
-          cacheSet(configCache, slug, null);
+          configCache.set(slug, null);
           return null;
         }
         // Don't cache parse failures — transient corruption shouldn't stick.
         const parsed = IsolateConfigSchema.safeParse(json);
         if (!parsed.success) return null;
-        cacheSet(configCache, slug, parsed.data);
+        configCache.set(slug, parsed.data);
         return parsed.data;
       });
     },

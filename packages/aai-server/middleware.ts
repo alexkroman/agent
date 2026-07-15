@@ -27,12 +27,19 @@ export function validateSlug(slug: string): string {
 
 export async function requireOwner(
   req: Request,
-  opts: { slug: string; store: BundleStore },
+  opts: { slug: string; store: BundleStore; allowUnclaimed?: boolean },
 ): Promise<{ apiKey: string; keyHash: string }> {
   const apiKey = requireBearerToken(req);
   const result = await verifySlugOwner(apiKey, { slug: opts.slug, store: opts.store });
   if (result.status === "forbidden") {
     throw new HTTPException(403, { message: "Forbidden" });
+  }
+  // An `unclaimed` slug has no manifest — only the deploy path (which claims
+  // it) may proceed. Data routes (kv/vector/secret) must reject it, otherwise
+  // any authenticated caller could pre-seed state for a slug they don't own
+  // and have the eventual owner silently inherit it.
+  if (result.status === "unclaimed" && !opts.allowUnclaimed) {
+    throw new HTTPException(404, { message: `Agent ${opts.slug} not found` });
   }
   return { apiKey, keyHash: result.keyHash };
 }
@@ -50,7 +57,26 @@ export const slugMw = createMiddleware<HonoEnv>(async (c, next) => {
   await next();
 });
 
+/**
+ * Ownership for the deploy route: an unclaimed slug is allowed through so a
+ * first deploy can claim it.
+ */
 export const ownerMw = createMiddleware<HonoEnv>(async (c, next) => {
+  const { apiKey, keyHash } = await requireOwner(c.req.raw, {
+    slug: c.var.slug,
+    store: c.env.store,
+    allowUnclaimed: true,
+  });
+  c.set("apiKey", apiKey);
+  c.set("keyHash", keyHash);
+  await next();
+});
+
+/**
+ * Ownership for data/secret routes: requires the slug to already exist and be
+ * owned by the caller. Rejects unclaimed slugs (see requireOwner).
+ */
+export const existingOwnerMw = createMiddleware<HonoEnv>(async (c, next) => {
   const { apiKey, keyHash } = await requireOwner(c.req.raw, {
     slug: c.var.slug,
     store: c.env.store,

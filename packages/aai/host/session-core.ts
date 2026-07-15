@@ -3,14 +3,24 @@
 // and tool-step enforcement. Replaces session.ts + pipeline-session.ts.
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
-import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
+import {
+  DEFAULT_IDLE_TIMEOUT_MS,
+  DEFAULT_MAX_HISTORY,
+  MAX_TOOL_RESULT_CHARS,
+} from "../sdk/constants.ts";
 import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
+import { errorMessage, toolError } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { Transport } from "./transports/types.ts";
 
 const REPLY_DONE_SLOW_THRESHOLD_MS = 50;
+
+/** Cap a tool result to the client wire limit (the provider still gets the full value). */
+function capResult(result: string): string {
+  return result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
+}
 
 type PendingTool = { callId: string; result: string };
 
@@ -151,10 +161,16 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     onReset() {
       cancelReply();
       history = [];
+      // Clear conversation state the transport owns (pipeline LLM history);
+      // without this the "forgotten" dialogue keeps feeding the next turn.
+      opts.transport.reset?.();
       emit({ type: "reset" });
     },
     onHistory(messages) {
       pushMessages(...messages);
+      // Forward to the transport so pipeline mode's LLM sees the restored
+      // context on reconnect (S2S restores context service-side via resume).
+      opts.transport.seedHistory?.(messages);
     },
 
     // ─── Inbound from transport ───────────────────────────────────────────
@@ -164,23 +180,29 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
 
     onReplyDone() {
       const startMs = Date.now();
-      const doneReplyId = reply.currentReplyId;
+      // Capture the reply object, not just its id: barge-in/reset swap in a
+      // fresh reply object (beginReply/cancelReply), and sendPending runs later
+      // (after turnPromise). Comparing by identity keeps a stale reply.done
+      // from mutating the current reply.
+      const doneReply = reply;
       // Dedup duplicate reply.done events — once the reply is fully dispatched
       // (or was never started) currentReplyId is null.
-      if (doneReplyId === null) {
+      if (doneReply.currentReplyId === null) {
         log.debug("Dropping duplicate reply.done (no active reply)");
         return;
       }
       const hadTurnPromise = turnPromise !== null;
       const sendPending = () => {
-        if (reply.currentReplyId !== doneReplyId) {
-          reply.pendingTools = [];
+        // A newer reply replaced this one → it's stale. Drop its orphaned
+        // pending tools; never touch the current reply.
+        if (reply !== doneReply) {
+          doneReply.pendingTools = [];
           return;
         }
-        if (reply.pendingTools.length > 0) {
-          for (const tool of reply.pendingTools)
+        if (doneReply.pendingTools.length > 0) {
+          for (const tool of doneReply.pendingTools)
             opts.transport.sendToolResult(tool.callId, tool.result);
-          reply.pendingTools = [];
+          doneReply.pendingTools = [];
         } else {
           flushReply(startMs, hadTurnPromise);
         }
@@ -216,18 +238,21 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
         log.warn("tool_call with no active reply", { sid: opts.id, name });
         return;
       }
-      reply.toolCallCount++;
+      // Bind results to the reply that issued the call. If a barge-in/reset
+      // swaps in a new reply before this tool completes, the result lands in
+      // this (now orphaned) object instead of corrupting the new reply's
+      // pendingTools (which would hang or mis-route the turn).
+      const activeReply = reply;
+      activeReply.toolCallCount++;
       const maxSteps = opts.agentConfig.maxSteps;
-      if (maxSteps !== undefined && reply.toolCallCount > maxSteps) {
+      if (maxSteps !== undefined && activeReply.toolCallCount > maxSteps) {
         log.info("maxSteps exceeded; refusing tool call", {
-          toolCallCount: reply.toolCallCount,
+          toolCallCount: activeReply.toolCallCount,
           maxSteps,
         });
-        reply.pendingTools.push({
+        activeReply.pendingTools.push({
           callId,
-          result: JSON.stringify({
-            error: "Maximum tool steps reached. Please respond to the user now.",
-          }),
+          result: toolError("Maximum tool steps reached. Please respond to the user now."),
         });
         emit({ type: "tool_call_done", toolCallId: callId, result: "{}" });
         return;
@@ -235,12 +260,16 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       const p = (async () => {
         try {
           const result = await opts.executeTool(name, args, opts.id, history);
-          reply.pendingTools.push({ callId, result });
-          emit({ type: "tool_call_done", toolCallId: callId, result });
+          // Full result goes to the provider; the client `tool_call_done`
+          // event is capped by the wire schema (MAX_TOOL_RESULT_CHARS), so
+          // truncate it or the client silently drops the whole message and the
+          // UI tool-call block stays "pending" forever.
+          activeReply.pendingTools.push({ callId, result });
+          emit({ type: "tool_call_done", toolCallId: callId, result: capResult(result) });
         } catch (err) {
-          const message = err instanceof Error ? err.message : String(err);
-          reply.pendingTools.push({ callId, result: JSON.stringify({ error: message }) });
-          emit({ type: "tool_call_done", toolCallId: callId, result: message });
+          const message = errorMessage(err);
+          activeReply.pendingTools.push({ callId, result: toolError(message) });
+          emit({ type: "tool_call_done", toolCallId: callId, result: capResult(message) });
         }
       })();
       turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);

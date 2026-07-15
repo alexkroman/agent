@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { fsKv } from "../../sdk/providers/kv/fs.ts";
 import { memoryKv } from "../../sdk/providers/kv/memory.ts";
 import { redisKv } from "../../sdk/providers/kv/redis.ts";
@@ -30,7 +30,15 @@ describe("resolveKv", () => {
     ).not.toThrow();
   });
 
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
   it("throws when s3Kv has no AWS creds", () => {
+    // Hermetic: resolveApiKey falls back to process.env, so ambient AWS creds
+    // (common in CI/cloud containers) would otherwise defeat this test.
+    vi.stubEnv("AWS_ACCESS_KEY_ID", undefined);
+    vi.stubEnv("AWS_SECRET_ACCESS_KEY", undefined);
     expect(() => resolveKv(s3Kv({ bucket: "b" }), {}, "p")).toThrow(/AWS_ACCESS_KEY_ID/);
   });
 

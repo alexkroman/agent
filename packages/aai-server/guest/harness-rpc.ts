@@ -61,8 +61,9 @@ export const pendingKvRequests = pendingHostRequests;
 
 const kv: KvInterface = {
   async get(key: string): Promise<unknown> {
-    const resp = (await hostRequest("kv/get", { key })) as { value?: unknown };
-    return resp?.value ?? null;
+    // The host's kv/get handler returns the stored value directly as the RPC
+    // result (see configureSandbox), not wrapped in { value } — return it as-is.
+    return (await hostRequest("kv/get", { key })) ?? null;
   },
   async set(key: string, value: unknown, opts?: { expireIn?: number }): Promise<void> {
     await hostRequest("kv/set", {
@@ -101,9 +102,12 @@ function base64ToBytes(b64: string): Uint8Array {
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
+  // Chunked to avoid one intermediate string per byte (bodies can be up to
+  // MAX_REQUEST_BODY_BYTES) while staying under the argument-count limit.
+  const CHUNK = 8192;
   let binary = "";
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i] as number);
+  for (let i = 0; i < bytes.byteLength; i += CHUNK) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
   }
   return btoa(binary);
 }

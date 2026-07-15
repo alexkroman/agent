@@ -46,6 +46,10 @@ const { FakeWebSocket } = vi.hoisted(() => {
       );
     }
 
+    off(event: string, fn: WsListener) {
+      this.removeListener(event, fn);
+    }
+
     send(data: string) {
       this.sent.push(data);
     }

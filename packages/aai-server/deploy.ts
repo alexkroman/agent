@@ -40,28 +40,6 @@ async function handleDeployInner(
 ): Promise<Response> {
   const { apiKey, keyHash } = c.var;
   const body = c.req.valid("json");
-  // [diag] capture raw pre-validation body to distinguish "CLI didn't send"
-  // from "schema stripped" for the missing s2s field.
-  let rawAgentConfig: unknown = null;
-  try {
-    const cloned = c.req.raw.clone();
-    const text = await cloned.text();
-    const parsed = JSON.parse(text) as { agentConfig?: unknown };
-    rawAgentConfig = parsed.agentConfig ?? null;
-  } catch {
-    /* ignore */
-  }
-  console.log(
-    `[diag] deploy body ${JSON.stringify({
-      slug,
-      validatedKeys: Object.keys(body.agentConfig as object),
-      validatedHasS2s: (body.agentConfig as { s2s?: unknown }).s2s !== undefined,
-      validatedS2s: (body.agentConfig as { s2s?: unknown }).s2s,
-      rawHasS2s: rawAgentConfig != null && (rawAgentConfig as { s2s?: unknown }).s2s !== undefined,
-      rawS2s: rawAgentConfig != null ? (rawAgentConfig as { s2s?: unknown }).s2s : null,
-      rawKeys: rawAgentConfig != null ? Object.keys(rawAgentConfig as object) : null,
-    })}`,
-  );
 
   const storedEnv = (await c.env.store.getEnv(slug)) ?? {};
   const env = body.env ? { ...storedEnv, ...body.env } : storedEnv;

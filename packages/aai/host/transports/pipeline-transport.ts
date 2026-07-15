@@ -12,6 +12,7 @@ import { stepCountIs, streamText } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
   DEFAULT_MAX_HISTORY,
+  DEFAULT_MAX_STEPS,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
   PIPELINE_FLUSH_TIMEOUT_MS,
@@ -79,7 +80,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const log = opts.logger ?? consoleLogger;
   const sttSampleRate = opts.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE;
   const ttsSampleRate = opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE;
-  const maxSteps = opts.maxSteps ?? 5;
+  const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
   const toolChoice = opts.toolChoice ?? "auto";
   const toolSchemas = opts.toolSchemas ?? [];
   const executeTool: ExecuteTool =
@@ -120,15 +121,23 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     callbacks.onError(code, message);
   }
 
+  /** Abort the in-flight turn (if any) and cancel TTS playback. */
+  function abortInFlightTurn(): void {
+    turnController?.abort();
+    turnController = null;
+    ttsSession?.cancel();
+  }
+
+  /** Shared turn tail — clear the controller unless a newer turn replaced it. */
+  function finishTurn(ctl: AbortController): void {
+    if (turnController === ctl) turnController = null;
+  }
+
   // Idempotent teardown after an unrecoverable provider error.
   function terminate(): void {
     if (terminated) return;
     terminated = true;
-    if (turnController !== null) {
-      turnController.abort();
-      turnController = null;
-    }
-    ttsSession?.cancel();
+    abortInFlightTurn();
     callbacks.onCancelled();
     sessionAbort.abort();
   }
@@ -137,9 +146,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (terminated) return;
     if (turnController === null) return;
     log.info("Pipeline barge-in", { sid: opts.sid });
-    turnController.abort();
-    turnController = null;
-    ttsSession?.cancel();
+    abortInFlightTurn();
     callbacks.onCancelled();
   }
 
@@ -149,9 +156,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (trimmed.length === 0) return;
     if (turnController !== null) {
       log.info("Pipeline replacing in-flight turn", { sid: opts.sid });
-      turnController.abort();
-      turnController = null;
-      ttsSession?.cancel();
+      abortInFlightTurn();
       callbacks.onCancelled();
     }
     callbacks.onUserTranscript(text);
@@ -269,7 +274,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     });
 
     if (ctl.signal.aborted) {
-      if (turnController === ctl) turnController = null;
+      finishTurn(ctl);
       return;
     }
 
@@ -281,7 +286,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     await flushTtsAndWait(ctl.signal);
 
     if (ctl.signal.aborted) {
-      if (turnController === ctl) turnController = null;
+      finishTurn(ctl);
       return;
     }
 
@@ -289,7 +294,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // (triggered by onReplyDone) emits audioDone + replyDone together, matching
     // the S2S transport contract. Calling it here would double-fire audio_done.
     callbacks.onReplyDone();
-    if (turnController === ctl) turnController = null;
+    finishTurn(ctl);
   }
 
   async function runGreeting(text: string): Promise<void> {
@@ -306,14 +311,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     await flushTtsAndWait(ctl.signal);
 
     if (ctl.signal.aborted) {
-      if (turnController === ctl) turnController = null;
+      finishTurn(ctl);
       return;
     }
 
     // See runTurn: onReplyDone triggers session-core's flushReply which emits
     // audioDone + replyDone together; firing onAudioDone here would double-fire.
     callbacks.onReplyDone();
-    if (turnController === ctl) turnController = null;
+    finishTurn(ctl);
   }
 
   function reportOpenRejection(which: "stt" | "tts", reason: unknown): void {
@@ -440,12 +445,22 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     cancelReply(): void {
       if (terminated) return;
-      turnController?.abort();
-      turnController = null;
-      ttsSession?.cancel();
+      abortInFlightTurn();
       // Do NOT call callbacks.onCancelled() here — session-core.onCancel
       // (client-initiated) calls client.cancelled() itself. Barge-in fires
       // onCancelled directly in onSttPartial where the cancel originates here.
+    },
+
+    seedHistory(messages: readonly Message[]): void {
+      // Client-resent history on reconnect; the LLM loop reads
+      // conversationMessages, so restore it here or the resumed agent has no
+      // memory of the prior conversation.
+      if (messages.length > 0) pushMessages(...messages);
+    },
+
+    reset(): void {
+      abortInFlightTurn();
+      conversationMessages.length = 0;
     },
   };
 }

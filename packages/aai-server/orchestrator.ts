@@ -51,12 +51,12 @@ import {
   type SessionMode,
   serialize,
 } from "./metrics.ts";
-import { authMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
+import { authMw, existingOwnerMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
-import { type SlotCache, touchSlot } from "./sandbox-slots.ts";
-import { DeployBodySchema, SecretUpdatesSchema } from "./schemas.ts";
+import { acquireSlotSession, releaseSlotSession, type SlotCache } from "./sandbox-slots.ts";
+import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import type { BundleStore } from "./store-types.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
@@ -164,16 +164,19 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const agents = new Hono<HonoEnv>();
   agents.use("*", slugMw);
 
+  // Deploy claims a new slug, so it uses ownerMw (unclaimed allowed). Every
+  // other owner-scoped route operates on an existing agent's data/secrets and
+  // uses existingOwnerMw, which rejects unclaimed slugs.
   agents.post("/deploy", ownerMw, zValidator("json", DeployBodySchema), handleDeploy);
-  agents.delete("/", ownerMw, handleDelete);
-  agents.get("/secret", ownerMw, handleSecretList);
-  agents.put("/secret", ownerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);
-  agents.delete("/secret/:key", ownerMw, handleSecretDelete);
-  agents.post("/kv", ownerMw, zValidator("json", KvRequestSchema), async (c) => {
+  agents.delete("/", existingOwnerMw, handleDelete);
+  agents.get("/secret", existingOwnerMw, handleSecretList);
+  agents.put("/secret", existingOwnerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);
+  agents.delete("/secret/:key", existingOwnerMw, handleSecretDelete);
+  agents.post("/kv", existingOwnerMw, zValidator("json", KvRequestSchema), async (c) => {
     const { agentConfig, env } = await loadAgentConfig(c, c.var.slug);
     return handleKv(c, resolveAgentKv(c, c.var.slug, agentConfig, env));
   });
-  agents.get("/kv", ownerMw, async (c) => {
+  agents.get("/kv", existingOwnerMw, async (c) => {
     const key = c.req.query("key");
     if (!key) return c.json({ error: "Missing key query parameter" }, 400);
     const { agentConfig, env } = await loadAgentConfig(c, c.var.slug);
@@ -182,7 +185,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     if (value === null) return c.json(null, 404);
     return c.json(value);
   });
-  agents.post("/vector", ownerMw, zValidator("json", VectorRequestSchema), async (c) => {
+  agents.post("/vector", existingOwnerMw, zValidator("json", VectorRequestSchema), async (c) => {
     const slug = c.var.slug;
     const { agentConfig, env } = await loadAgentConfig(c, slug);
     const vector: Vector = agentConfig?.vector
@@ -212,8 +215,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const connections = createConnectionTracker(MAX_CONNECTIONS);
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
-  // Enforced here (not just in middleware) because WebSocket upgrades bypass Hono routing.
-  const SLUG_WS_RE = /^\/([a-z0-9][a-z0-9_-]{0,62}[a-z0-9])\/websocket$/;
+  // Enforced here (not just in middleware) because WebSocket upgrades bypass
+  // Hono routing. Derived from VALID_SLUG_RE (anchors stripped) so the slug
+  // pattern has a single source of truth.
+  const SLUG_WS_RE = new RegExp(`^\\/(${VALID_SLUG_RE.source.slice(1, -1)})\\/websocket$`);
 
   async function resolveUpgrade(rawUrl: string) {
     const url = new URL(rawUrl, "http://localhost");
@@ -246,10 +251,28 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         return;
       }
 
+      // Release the slot exactly once. The raw socket's `close` fires in every
+      // outcome — client abort during the async resolve below (where
+      // handleUpgrade would otherwise destroy the socket without invoking its
+      // callback, leaking the slot forever), a failed upgrade, or a normal
+      // session end after upgrade — so it is the single reliable release point.
+      let released = false;
+      const releaseConn = () => {
+        if (released) return;
+        released = true;
+        connections.release();
+      };
+      // Node removes its own socket error listener before emitting `upgrade`;
+      // without one, a client RST during the async resolve becomes an
+      // unhandled `error` → uncaughtException → the whole host exits.
+      socket.on("error", () => {
+        /* handled via close/destroy below; presence prevents an uncaught throw */
+      });
+      socket.on("close", releaseConn);
+
       try {
         const result = await resolveUpgrade(req.url ?? "/");
         if (!result) {
-          connections.release();
           socket.destroy();
           return;
         }
@@ -257,11 +280,16 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         wss.handleUpgrade(req, socket, head, (ws) => {
           metrics.sessionsStarted.inc({ slug, mode });
           metrics.sessionsActive.inc({ slug });
-          // Bump idle-eviction timer so an actively-used sandbox stays resident.
-          touchSlot(opts.slots, slug);
+          // Track the live session so idle eviction can't kill the sandbox
+          // mid-call (a session can outlive IDLE_SANDBOX_MS).
+          acquireSlotSession(opts.slots, slug);
+          let sessionReleased = false;
           const startedAt = process.hrtime.bigint();
           ws.on("close", (code: number) => {
-            connections.release();
+            if (!sessionReleased) {
+              sessionReleased = true;
+              releaseSlotSession(opts.slots, slug);
+            }
             const elapsedSec = Number(process.hrtime.bigint() - startedAt) / 1e9;
             metrics.sessionDuration.observe(elapsedSec);
             metrics.sessionsActive.dec({ slug });
@@ -279,7 +307,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
           );
         });
       } catch (err: unknown) {
-        connections.release();
         console.error("WebSocket open error:", err);
         socket.destroy();
       }

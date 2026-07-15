@@ -6,6 +6,37 @@
 import { execFileSync } from "node:child_process";
 import WebSocket from "ws";
 
+/** POST a deploy to `${serverUrl}/${slug}/deploy`, throwing on non-OK. */
+export async function deployAgent(
+  serverUrl: string,
+  slug: string,
+  opts: {
+    key: string;
+    worker: string;
+    agentConfig: Record<string, unknown>;
+    indexHtml: string;
+    errorLabel?: string;
+  },
+): Promise<void> {
+  const res = await fetch(`${serverUrl}/${slug}/deploy`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${opts.key}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      env: { ASSEMBLYAI_API_KEY: "fake-key" },
+      worker: opts.worker,
+      clientFiles: { "index.html": opts.indexHtml },
+      agentConfig: opts.agentConfig,
+    }),
+  });
+  if (!res.ok) {
+    const body = await res.text();
+    throw new Error(`${opts.errorLabel ?? "Deploy"} failed (${res.status}): ${body}`);
+  }
+}
+
 export type MemorySample = {
   timestampMs: number;
   usageBytes: number;

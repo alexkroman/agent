@@ -99,7 +99,21 @@ async function initAudioCapture(
       conn.preInitAudio = [];
     }
     deps.sendJson({ type: "audio_ready" });
-    deps.updateState({ state: "listening" });
+    // If audio_done arrived while we were initializing, replay it now so the
+    // buffered greeting plays to completion (and state flips to "listening"
+    // only when playback actually drains) instead of the done being lost.
+    if (conn.preInitDone) {
+      conn.preInitDone = false;
+      void io
+        .done()
+        .then(() => {
+          if (conn.generation !== gen) return;
+          deps.updateState({ state: "listening" });
+        })
+        .catch(() => deps.updateState({ state: "listening" }));
+    } else {
+      deps.updateState({ state: "listening" });
+    }
   } catch (err: unknown) {
     if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) return;
     deps.updateState({
@@ -187,6 +201,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     audioSetupInFlight: false,
     generation: 0,
     preInitAudio: [],
+    preInitDone: false,
   };
   let connectionController: AbortController | null = null;
   let hasConnected = false;
@@ -196,6 +211,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     void conn.voiceIO?.close();
     conn.voiceIO = null;
     conn.preInitAudio = [];
+    conn.preInitDone = false;
   }
 
   function resetState(): void {
@@ -233,12 +249,18 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   // ─── Connection management ──────────────────────────────────────────────
 
-  function connect(opts?: { signal?: AbortSignal }): void {
-    updateState({ state: "connecting", error: null });
+  /** Abort the in-flight connection and release audio + WebSocket resources. */
+  function teardownConnection(): void {
     connectionController?.abort();
+    connectionController = null;
     cleanupAudio();
     conn.ws?.close();
     conn.ws = null;
+  }
+
+  function connect(opts?: { signal?: AbortSignal }): void {
+    updateState({ state: "connecting", error: null });
+    teardownConnection();
     conn.generation++;
     const controller = new AbortController();
     connectionController = controller;
@@ -327,11 +349,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   }
 
   function disconnect(): void {
-    connectionController?.abort();
-    connectionController = null;
-    cleanupAudio();
-    conn.ws?.close();
-    conn.ws = null;
+    teardownConnection();
     updateState({ state: "disconnected", running: false });
   }
 

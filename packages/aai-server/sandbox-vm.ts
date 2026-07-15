@@ -46,6 +46,7 @@ const KvSetParamsSchema = z.object({
       (v) => JSON.stringify(v).length <= MAX_VALUE_SIZE,
       `Value exceeds max size of ${MAX_VALUE_SIZE} bytes`,
     ),
+  expireIn: z.number().int().positive().optional(),
 });
 const KvDelParamsSchema = z.object({ key: SafeKvKeySchema });
 
@@ -132,7 +133,11 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
     });
     conn.onRequest("kv/set", async (raw: unknown) => {
       const p = KvSetParamsSchema.parse(raw);
-      await kv.set(p.key, p.value);
+      if (p.expireIn !== undefined) {
+        await kv.set(p.key, p.value, { expireIn: p.expireIn });
+      } else {
+        await kv.set(p.key, p.value);
+      }
     });
     conn.onRequest("kv/del", async (raw: unknown) => {
       const p = KvDelParamsSchema.parse(raw);
@@ -180,10 +185,18 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
   // path, so we time it to distinguish guest cold-start latency (gVisor
   // boot + Deno V8 init) from host-side spawn overhead.
   const tBundle = performance.now();
-  await conn.sendRequest("bundle/load", {
-    code: opts.workerCode,
-    env: opts.env,
-  });
+  try {
+    await conn.sendRequest("bundle/load", {
+      code: opts.workerCode,
+      env: opts.env,
+    });
+  } catch (err) {
+    // bundle/load can now time out (a bundle whose top level never resolves).
+    // Tear down the harness process so it doesn't leak, then rethrow.
+    conn.dispose();
+    await warm.cleanup().catch(() => undefined);
+    throw err;
+  }
   debug("Sandbox bundle/load complete", {
     slug: opts.slug,
     bytes: opts.workerCode.length,
@@ -214,6 +227,16 @@ function createConnection(child: ChildProcess): NdjsonConnection {
   if (!(child.stdout && child.stdin)) {
     throw new Error("Child process missing stdio");
   }
+  // A guest that dies mid-RPC (OOM-killed at the cgroup limit, crashed) leaves
+  // its stdio streams to emit EPIPE/ECONNRESET asynchronously. Without an
+  // `error` listener those become an uncaughtException that exits the whole
+  // multi-tenant host, so attach no-op handlers on both pipes.
+  child.stdin.on("error", () => {
+    /* guest died; RPC layer surfaces this via the readline close */
+  });
+  child.stdout.on("error", () => {
+    /* guest died; RPC layer surfaces this via the readline close */
+  });
   return createNdjsonConnection(child.stdout, child.stdin);
 }
 
@@ -283,14 +306,6 @@ function spawnDevWarm(harnessPath: string): WarmHarness {
   });
 }
 
-/**
- * Creates a sandbox by spawning the Deno guest harness as a child process.
- * Communication uses stdio pipes with NDJSON transport.
- */
-export async function createDevSandbox(opts: SandboxVmOptions): Promise<SandboxHandle> {
-  return configureSandbox(spawnDevWarm(opts.harnessPath), opts);
-}
-
 // ── gVisor sandbox (Linux production) ────────────────────────────────────────
 
 /**
@@ -313,36 +328,32 @@ async function spawnGvisorWarm(
   return warmFromChild(gvisor.process, () => gvisor.cleanup());
 }
 
-/**
- * Creates a sandbox backed by a gVisor OCI container.
- */
-export async function createGvisorSandboxHandle(opts: SandboxVmOptions): Promise<SandboxHandle> {
-  const warm = await spawnGvisorWarm(opts.slug, opts.harnessPath, opts.limits);
-  return configureSandbox(warm, opts);
-}
-
-// ── Warm-harness spawning (for sandbox pool) ────────────────────────────────
+// ── Warm-harness spawning ────────────────────────────────────────────────────
 
 /**
- * Spawn a warm Deno harness using the best-available backend, suitable for
- * the sandbox pool. The returned WarmHarness has a running process and a
- * connected NDJSON channel, but no listeners are attached and no bundle
- * has been loaded.
+ * Spawn a warm Deno harness using the best-available backend. The returned
+ * WarmHarness has a running process and a connected NDJSON channel, but no
+ * listeners are attached and no bundle has been loaded.
  *
- * Honors the same gVisor / dev-mode policy as createSandboxVm:
+ * Single source of the backend policy, used by both the sandbox pool and
+ * on-demand sandbox creation:
  * - gVisor on Linux when runsc is on PATH
  * - Plain child process on macOS dev mode
  * - In production (NODE_ENV=production), gVisor is REQUIRED.
+ *
+ * `slug` only affects the gVisor container ID for logging (pool spawns
+ * default to "pool"); the security boundary is the OCI spec + rootfs.
  */
 export async function spawnWarmHarness(opts: {
   harnessPath: string;
   limits?: SandboxResourceLimits;
+  slug?: string;
 }): Promise<WarmHarness> {
   const envLimits = parseSandboxLimitsFromEnv(process.env);
   const mergedLimits: SandboxResourceLimits = { ...envLimits, ...opts.limits };
 
   if (isGvisorAvailable()) {
-    return spawnGvisorWarm("pool", opts.harnessPath, mergedLimits);
+    return spawnGvisorWarm(opts.slug ?? "pool", opts.harnessPath, mergedLimits);
   }
 
   if (process.env.NODE_ENV === "production") {
@@ -464,13 +475,15 @@ async function createSandboxVmInner(
     }
   }
 
-  if (isGvisorAvailable()) return createGvisorSandboxHandle(mergedOpts);
-
-  if (process.env.NODE_ENV === "production") {
-    throw gvisorRequiredError();
+  if (!isGvisorAvailable() && process.env.NODE_ENV !== "production") {
+    console.warn(
+      "[sandbox] WARNING: gVisor not available. Running without sandbox isolation (dev mode only).",
+    );
   }
-  console.warn(
-    "[sandbox] WARNING: gVisor not available. Running without sandbox isolation (dev mode only).",
-  );
-  return createDevSandbox(mergedOpts);
+  const warm = await spawnWarmHarness({
+    harnessPath: mergedOpts.harnessPath,
+    ...(mergedOpts.limits ? { limits: mergedOpts.limits } : {}),
+    slug: mergedOpts.slug,
+  });
+  return configureSandbox(warm, mergedOpts);
 }

@@ -78,6 +78,18 @@ test("deploy can redeploy same slug", async () => {
   expect(res.status).toBe(200);
 });
 
+test("kv write on an unclaimed (undeployed) slug is rejected", async () => {
+  const { fetch } = await createTestOrchestrator();
+  // No agent deployed at this slug → unclaimed. An authenticated caller must
+  // not be able to pre-seed KV state that the eventual owner would inherit.
+  const res = await fetch("/never-deployed/kv", {
+    method: "POST",
+    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    body: JSON.stringify({ op: "set", key: "k", value: "v" }),
+  });
+  expect(res.status).toBe(404);
+});
+
 test("agent health returns 404 for unknown agent", async () => {
   const { fetch } = await createTestOrchestrator();
   expect((await fetch("/missing-agent/health")).status).toBe(404);

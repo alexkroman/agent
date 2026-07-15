@@ -5,8 +5,16 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { errorMessage } from "@alexkroman1/aai";
 import { defineCommand, runMain } from "citty";
-import { CliError, type CommandResult, fail, getOutputMode, type OutputMode } from "./_output.ts";
-import { silenceOutput } from "./_ui.ts";
+import {
+  CliError,
+  type CommandResult,
+  fail,
+  getOutputMode,
+  type OutputMode,
+  withOutput,
+  writeLine,
+} from "./_output.ts";
+import { log, silenceOutput } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
 
 /** Shared arg definitions for citty commands. */
@@ -49,10 +57,9 @@ async function handleErrors(mode: OutputMode, fn: () => Promise<void>): Promise<
     const hint = err instanceof CliError ? err.hint : undefined;
     if (mode === "json") {
       const result = fail(code, errorMessage(err), hint);
-      process.stdout.write(`${JSON.stringify(result)}\n`);
+      await writeLine(`${JSON.stringify(result)}\n`);
       process.exit(1);
     }
-    const { log } = await import("./_ui.ts");
     log.error(errorMessage(err));
     process.exit(1);
   }
@@ -72,16 +79,7 @@ async function runCommand(
     silenceOutput();
     if (opts.setYes !== false) args.yes = true;
   }
-  const { withOutput } = await import("./_output.ts");
-  await handleErrors(mode, () =>
-    withOutput(
-      mode,
-      () => fn(mode),
-      () => {
-        /* human output handled inside each execute function */
-      },
-    ),
-  );
+  await handleErrors(mode, () => withOutput(mode, () => fn(mode)));
 }
 
 const init = defineCommand({
@@ -222,7 +220,7 @@ const secretPut = defineCommand({
         const value = mode === "json" ? await readStdin() : undefined;
         if (mode === "json" && !value) {
           const result = fail("no_input", "No value provided", "Pipe secret value to stdin");
-          process.stdout.write(`${JSON.stringify(result)}\n`);
+          await writeLine(`${JSON.stringify(result)}\n`);
           process.exit(1);
         }
         return executeSecretPut(cwd, args.name, value, args.server);
@@ -305,5 +303,13 @@ if (process.env.VITEST !== "true") {
   const boot = skipApiKey
     ? Promise.resolve()
     : import("./_config.ts").then((m) => m.ensureApiKey());
-  void boot.then(() => runMain(mainCommand));
+  // ensureApiKey() can reject (unwritable config dir, non-TTY without a key).
+  // Without a catch that becomes an unhandledRejection with a raw stack trace,
+  // bypassing all error formatting — surface it cleanly and exit non-zero.
+  void boot
+    .then(() => runMain(mainCommand))
+    .catch((err: unknown) => {
+      log.error(errorMessage(err));
+      process.exitCode = 1;
+    });
 }

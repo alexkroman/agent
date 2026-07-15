@@ -35,6 +35,8 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
+import { assertPcm16Rate, closeOnAbort, type Pcm16Rate, requireApiKey } from "../_utils.ts";
 
 /** Internal: TtsSession with a test-only handle to the raw SDK socket. */
 export interface CartesiaSession extends TtsSession {
@@ -44,36 +46,18 @@ export interface CartesiaSession extends TtsSession {
   readonly _currentContextId: () => string;
 }
 
-/** PCM16 sample rates supported by Cartesia's `raw` output format. */
-const CARTESIA_PCM16_RATES = [
-  8000, 16_000, 22_050, 24_000, 44_100, 48_000,
-] as const satisfies readonly number[];
-type CartesiaSampleRate = (typeof CARTESIA_PCM16_RATES)[number];
-
-function assertSupportedSampleRate(rate: number): CartesiaSampleRate {
-  if ((CARTESIA_PCM16_RATES as readonly number[]).includes(rate)) {
-    return rate as CartesiaSampleRate;
-  }
-  throw makeTtsError(
-    "tts_connect_failed",
-    `Cartesia TTS: unsupported sample rate ${rate}. Supported: ${CARTESIA_PCM16_RATES.join(", ")}.`,
-  );
-}
-
 /** Build a {@link TtsOpener} from resolved Cartesia descriptor options. */
 export function openCartesia(opts: CartesiaOptions): TtsOpener {
   return {
     name: "cartesia",
     async open(openOpts: TtsOpenOptions): Promise<TtsSession> {
-      const apiKey = openOpts.apiKey || process.env.CARTESIA_API_KEY;
-      if (!apiKey) {
-        throw makeTtsError(
-          "tts_auth_failed",
-          "Cartesia TTS: missing API key. Set CARTESIA_API_KEY in the agent env.",
-        );
-      }
+      const apiKey = requireApiKey(openOpts.apiKey, "CARTESIA_API_KEY", "Cartesia TTS", (msg) =>
+        makeTtsError("tts_auth_failed", msg),
+      );
 
-      const sampleRate = assertSupportedSampleRate(openOpts.sampleRate);
+      const sampleRate: Pcm16Rate = assertPcm16Rate(openOpts.sampleRate, "Cartesia TTS", (msg) =>
+        makeTtsError("tts_connect_failed", msg),
+      );
       const model = opts.model ?? "sonic-2";
       const language = opts.language ?? "en";
       const voice = opts.voice ?? CARTESIA_DEFAULT_VOICE;
@@ -85,7 +69,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       } catch (cause) {
         throw makeTtsError(
           "tts_connect_failed",
-          `Cartesia TTS: connect failed: ${cause instanceof Error ? cause.message : String(cause)}`,
+          `Cartesia TTS: connect failed: ${errorMessage(cause)}`,
         );
       }
 
@@ -158,11 +142,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         }
       };
 
-      if (openOpts.signal.aborted) {
-        void close();
-      } else {
-        openOpts.signal.addEventListener("abort", () => void close(), { once: true });
-      }
+      closeOnAbort(openOpts.signal, close);
 
       const ignoreRejection = (_err: unknown): void => {
         /* no-op */

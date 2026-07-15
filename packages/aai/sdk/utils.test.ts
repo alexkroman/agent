@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { errorDetail, errorMessage } from "./utils.ts";
+import { errorDetail, errorMessage, isTextAssetPath } from "./utils.ts";
 
 describe("errorMessage", () => {
   test("extracts message from Error instance", () => {
@@ -48,5 +48,34 @@ describe("errorDetail", () => {
 
   test("converts undefined to string", () => {
     expect(errorDetail(undefined)).toBe("undefined");
+  });
+});
+
+describe("isTextAssetPath", () => {
+  test.each([
+    "index.html",
+    "assets/app.js",
+    "styles.css",
+    "data.json",
+    "icon.svg",
+    "app.js.map",
+  ])("treats %s as text", (p) => {
+    expect(isTextAssetPath(p)).toBe(true);
+  });
+
+  test.each([
+    "logo.png",
+    "font.woff2",
+    "img.jpg",
+    "clip.mp3",
+    "module.wasm",
+    "noext",
+  ])("treats %s as binary", (p) => {
+    expect(isTextAssetPath(p)).toBe(false);
+  });
+
+  test("is case-insensitive on the extension", () => {
+    expect(isTextAssetPath("INDEX.HTML")).toBe(true);
+    expect(isTextAssetPath("LOGO.PNG")).toBe(false);
   });
 });

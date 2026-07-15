@@ -19,11 +19,10 @@ import {
   OPENAI_REALTIME_KIND,
   type OpenaiRealtimeOptions,
 } from "../sdk/providers/s2s/openai-realtime.ts";
-import { DEEPGRAM_KIND } from "../sdk/providers/stt/deepgram.ts";
-import { RIME_KIND } from "../sdk/providers/tts/rime.ts";
 import {
   assertProviderTriple,
   type LlmProvider,
+  type SessionMode,
   type SttOpener,
   type SttProvider,
   type TtsOpener,
@@ -35,7 +34,15 @@ import { toolError } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 import { createMemoryVector } from "./memory-vector.ts";
-import { resolveApiKey, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
+import {
+  descriptorKind,
+  resolveApiKey,
+  resolveLlmIfDescriptor,
+  resolveSttApiKey,
+  resolveSttIfDescriptor,
+  resolveTtsApiKey,
+  resolveTtsIfDescriptor,
+} from "./providers/resolve.ts";
 import { resolveKv } from "./providers/resolve-kv.ts";
 import { resolveVector } from "./providers/resolve-vector.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
@@ -59,58 +66,49 @@ export type {
   SessionStartOptions,
 } from "./runtime-types.ts";
 
-// ─── Helpers ─────────────────────────────────────────────────────────────────
-
-/**
- * Read the descriptor `kind` if present. Pre-resolved openers (test escape
- * hatch) have no `kind` field, so callers fall back to a default env var.
- */
-function descriptorKind(value: object | undefined): string | undefined {
-  const kind = (value as { kind?: unknown } | undefined)?.kind;
-  return typeof kind === "string" ? kind : undefined;
-}
-
-function resolveSttApiKey(
-  stt: SttProvider | SttOpener | undefined,
-  env: Record<string, string>,
-): string {
-  if (descriptorKind(stt) === DEEPGRAM_KIND) return resolveApiKey("DEEPGRAM_API_KEY", env);
-  return resolveApiKey("ASSEMBLYAI_API_KEY", env);
-}
-
-function resolveTtsApiKey(
-  tts: TtsProvider | TtsOpener | undefined,
-  env: Record<string, string>,
-): string {
-  if (descriptorKind(tts) === RIME_KIND) return resolveApiKey("RIME_API_KEY", env);
-  return resolveApiKey("CARTESIA_API_KEY", env);
-}
-
 // ─── Runtime implementation ──────────────────────────────────────────────────
 
 /**
- * Distinguish a descriptor (`{ kind, options }`) from an already-resolved
- * opener / `LanguageModel`. The production path always passes descriptors;
- * openers are a test escape hatch (fakes in `_pipeline-test-fakes.ts`).
- * STT/TTS openers are identified by the `open` method, `LanguageModel` by
- * its `specificationVersion` field — both absent on descriptors.
+ * Determine the effective STT/LLM/TTS providers and session mode. Providers
+ * come from RuntimeOptions (platform path) or fall back to the agent's own
+ * fields (the `aai dev` path passes no provider opts), so a declared pipeline
+ * agent isn't silently downgraded to S2S.
  */
-function resolveSttIfDescriptor(value: SttProvider | SttOpener): SttOpener {
-  return "open" in value ? value : resolveStt(value);
+function resolveEffectiveProviders(
+  opts: RuntimeOptions,
+  agent: AgentDef,
+): {
+  stt: SttProvider | SttOpener | undefined;
+  llm: LlmProvider | LanguageModel | undefined;
+  tts: TtsProvider | TtsOpener | undefined;
+  mode: SessionMode;
+} {
+  const stt = opts.stt ?? agent.stt;
+  const llm = opts.llm ?? agent.llm;
+  const tts = opts.tts ?? agent.tts;
+  return { stt, llm, tts, mode: assertProviderTriple(stt, llm, tts) };
 }
 
-function resolveTtsIfDescriptor(value: TtsProvider | TtsOpener): TtsOpener {
-  return "open" in value ? value : resolveTts(value);
-}
-
-function resolveLlmIfDescriptor(
-  value: LlmProvider | LanguageModel,
+/**
+ * Resolve the three pipeline provider instances once per runtime (reused
+ * across sessions). Returns null unless the mode is pipeline and all three
+ * providers are present.
+ */
+function resolvePipelineProviders(
+  p: {
+    mode: SessionMode;
+    stt: SttProvider | SttOpener | undefined;
+    llm: LlmProvider | LanguageModel | undefined;
+    tts: TtsProvider | TtsOpener | undefined;
+  },
   env: Record<string, string>,
-): LanguageModel {
-  // LanguageModel can be a string (model-id shortcut) or an object with
-  // `specificationVersion`; descriptors are plain `{ kind, options }` objects.
-  if (typeof value === "string") return value;
-  return "specificationVersion" in value ? value : resolveLlm(value, env);
+): { stt: SttOpener; llm: LanguageModel; tts: TtsOpener } | null {
+  if (p.mode !== "pipeline" || !(p.stt && p.llm && p.tts)) return null;
+  return {
+    stt: resolveSttIfDescriptor(p.stt),
+    llm: resolveLlmIfDescriptor(p.llm, env),
+    tts: resolveTtsIfDescriptor(p.tts),
+  };
 }
 
 /** Create an in-memory KV store (default for self-hosted). */
@@ -148,7 +146,15 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     sessionStartTimeoutMs,
     shutdownTimeoutMs = DEFAULT_SHUTDOWN_TIMEOUT_MS,
   } = opts;
-  const mode = assertProviderTriple(opts.stt, opts.llm, opts.tts);
+  // Providers may come from RuntimeOptions (platform path passes them
+  // explicitly) or from the agent's own `stt`/`llm`/`tts` fields (the `aai
+  // dev` path calls createRuntime({ agent, env }) with no provider opts).
+  const {
+    stt: sttProvider,
+    llm: llmProvider,
+    tts: ttsProvider,
+    mode,
+  } = resolveEffectiveProviders(opts, agent);
 
   // Resolve descriptors from manifest if present; otherwise use the
   // supplied (or default) instances.
@@ -167,6 +173,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   let executeTool: ExecuteTool;
   let toolSchemas: ToolSchema[];
   let toolGuidance: string[] = [];
+  // Per-session tool state (self-hosted mode only); cleaned up on session end.
+  const stateMap = new Map<string, Record<string, unknown>>();
 
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
 
@@ -208,7 +216,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     toolSchemas = [...customSchemas, ...builtins.schemas];
     toolGuidance = builtins.guidance;
 
-    const stateMap = new Map<string, Record<string, unknown>>();
     const getState = (sid: string) => {
       if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
       return stateMap.get(sid) ?? {};
@@ -236,21 +243,16 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Resolve pipeline providers once per runtime (not per session). Each
   // session reuses the same opener / LanguageModel — the opener's `open()`
   // mints the per-session stream inside.
-  let pipelineProviders: { stt: SttOpener; llm: LanguageModel; tts: TtsOpener } | null = null;
-  if (mode === "pipeline" && opts.stt && opts.llm && opts.tts) {
-    pipelineProviders = {
-      stt: resolveSttIfDescriptor(opts.stt),
-      llm: resolveLlmIfDescriptor(opts.llm, env),
-      tts: resolveTtsIfDescriptor(opts.tts),
-    };
-  }
+  const pipelineProviders = resolvePipelineProviders(
+    { mode, stt: sttProvider, llm: llmProvider, tts: ttsProvider },
+    env,
+  );
 
   type SessionOpts = {
     id: string;
     agent: string;
     client: ClientSink;
     skipGreeting?: boolean;
-    resumeFrom?: string;
   };
 
   function buildPipelineTransport(args: {
@@ -270,18 +272,18 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       sessionConfig: {
         systemPrompt,
         greeting: agentConfig.greeting,
-        tools: toolSchemas,
       },
       toolSchemas,
       executeTool,
       providerKeys: {
-        stt: resolveSttApiKey(opts.stt, env),
-        tts: resolveTtsApiKey(opts.tts, env),
+        stt: resolveSttApiKey(sttProvider, env),
+        tts: resolveTtsApiKey(ttsProvider, env),
       },
       sttSampleRate: s2sConfig.inputSampleRate,
       ttsSampleRate: s2sConfig.outputSampleRate,
       maxSteps: agentConfig.maxSteps,
       toolChoice: agentConfig.toolChoice,
+      ...(agentConfig.sttPrompt !== undefined ? { sttPrompt: agentConfig.sttPrompt } : {}),
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,
     });
@@ -299,13 +301,14 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       sessionConfig: {
         systemPrompt,
         ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
-        tools: toolSchemas,
       },
       toolSchemas: toolSchemas as OpenaiRealtimeToolSchema[],
       toolChoice: agentConfig.toolChoice ?? "auto",
       callbacks,
       sid: sessionOpts.id,
       agent: sessionOpts.agent,
+      inputSampleRate: s2sConfig.inputSampleRate,
+      outputSampleRate: s2sConfig.outputSampleRate,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       ...(createOpenaiRealtimeWebSocket ? { createWebSocket: createOpenaiRealtimeWebSocket } : {}),
       logger,
@@ -326,7 +329,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         tools: toolSchemas as import("./s2s.ts").S2sToolSchema[],
         ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
       },
-      toolSchemas: toolSchemas as import("./s2s.ts").S2sToolSchema[],
       callbacks,
       sid: sessionOpts.id,
       agent: sessionOpts.agent,
@@ -433,7 +435,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
           agent: agent.name,
           client,
           skipGreeting: startOpts?.skipGreeting ?? false,
-          ...(resumeFrom ? { resumeFrom } : {}),
         }),
       readyConfig,
       logger,
@@ -443,6 +444,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ...(startOpts?.onSinkCreated ? { onSinkCreated: startOpts.onSinkCreated } : {}),
       onSessionEnd: (sid) => {
         sinkMap.delete(sid);
+        stateMap.delete(sid);
         userOnSessionEnd?.(sid);
       },
       ...(sessionStartTimeoutMs !== undefined ? { sessionStartTimeoutMs } : {}),

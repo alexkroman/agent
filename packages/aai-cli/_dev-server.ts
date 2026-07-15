@@ -11,15 +11,14 @@
 import { existsSync, type FSWatcher, watch } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { pathToFileURL } from "node:url";
 import { type AgentDef, errorMessage } from "@alexkroman1/aai";
 import type { AgentServer } from "@alexkroman1/aai/runtime";
 import pDebounce from "p-debounce";
+import { buildWorker, evalWorkerBundle } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
-import { validateAgentExport } from "./_utils.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
@@ -34,17 +33,15 @@ async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
 // ─── Agent loading ──────────────────────────────────────────────────────────
 
 /**
- * Load agent definition from agent.ts directly.
- * Uses cache-busting query param for hot reload support.
+ * Load the agent definition by bundling agent.ts (and all its local imports)
+ * into a single ESM file, then importing that. A raw `import(agent.ts?t=...)`
+ * only cache-busts agent.ts itself — transitive imports (./tools.ts, etc.)
+ * stay in Node's ESM registry, so edits to them are ignored on reload.
+ * Bundling picks them up and matches the deploy path exactly.
  */
-// biome-ignore lint/suspicious/noExplicitAny: agent state type varies per agent
-async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
-  const agentPath = path.join(cwd, "agent.ts");
-  const agentUrl = `${pathToFileURL(agentPath).href}?t=${Date.now()}`;
-  const mod = await import(agentUrl);
-  const agentDef = mod.default;
-  validateAgentExport(agentDef);
-  return agentDef;
+async function loadAgentDef(cwd: string): Promise<AgentDef> {
+  const code = await buildWorker(cwd);
+  return evalWorkerBundle(code, cwd);
 }
 
 // ─── File watching ──────────────────────────────────────────────────────────
@@ -53,8 +50,7 @@ async function loadAgentDef(cwd: string): Promise<AgentDef<any>> {
  * Watch the agent directory for changes and call `onChange` when detected.
  * Debounces to avoid rapid restarts.
  */
-function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher[] {
-  const watchers: FSWatcher[] = [];
+function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher {
   const DEBOUNCE_MS = 300;
 
   const debouncedChange = pDebounce((filename: string | null) => {
@@ -68,9 +64,7 @@ function watchDirectory(dir: string, onChange: (filename: string | null) => void
     void debouncedChange(filename);
   }
 
-  watchers.push(watch(dir, { persistent: false }, (_event, filename) => handleChange(filename)));
-
-  return watchers;
+  return watch(dir, { persistent: false }, (_event, filename) => handleChange(filename));
 }
 
 // ─── Dev server ─────────────────────────────────────────────────────────────
@@ -130,11 +124,19 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   }
 
   let restarting = false;
+  let pendingRestart = false;
+  let closed = false;
   let currentServer: AgentServer = agentServer;
   let currentVite = viteServer;
-  let currentEnv = env;
-  const watchers = watchDirectory(cwd, () => {
-    if (restarting) return;
+  const watcher = watchDirectory(cwd, () => {
+    // A change during an in-flight restart must not be dropped: flag it so
+    // restart() loops once more with the newest files. Otherwise the final
+    // save is silently ignored (stale server), or — if the in-flight restart
+    // failed on a mid-edit syntax error — the server stays down entirely.
+    if (restarting) {
+      pendingRestart = true;
+      return;
+    }
     restarting = true;
     void restart().finally(() => {
       restarting = false;
@@ -142,6 +144,13 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   });
 
   async function restart(): Promise<void> {
+    do {
+      pendingRestart = false;
+      await restartOnce();
+    } while (pendingRestart && !closed);
+  }
+
+  async function restartOnce(): Promise<void> {
     try {
       await currentServer.close();
     } catch {
@@ -149,13 +158,19 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     }
     try {
       const newAgentDef = await loadAgentDef(cwd);
-      currentEnv = await resolveAgentEnv(cwd);
-      const newRuntime = createRuntime({ agent: newAgentDef, env: currentEnv });
+      const newEnv = await resolveAgentEnv(cwd);
+      const newRuntime = createRuntime({ agent: newAgentDef, env: newEnv });
       const newServer = createServer({
         runtime: newRuntime,
         name: newAgentDef.name,
         ...(hasClient ? {} : { clientDir: resolveDefaultClientDir() }),
       });
+      // The cleanup fn may have run while we were rebuilding — don't leave a
+      // freshly-listening server orphaned (leaked port / hung event loop).
+      if (closed) {
+        await newServer.close().catch(() => undefined);
+        return;
+      }
       await newServer.listen(backendPort);
       currentServer = newServer;
       log.success("Restarted");
@@ -165,7 +180,8 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   }
 
   return async () => {
-    for (const w of watchers) w.close();
+    closed = true;
+    watcher.close();
     if (currentVite) {
       await currentVite.close();
       currentVite = undefined;

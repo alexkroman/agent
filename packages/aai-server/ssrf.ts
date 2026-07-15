@@ -13,6 +13,9 @@ import pTimeout from "p-timeout";
 const BLOCKED_TLDS = [".internal", ".local", ".localhost"];
 const BLOCKED_HOSTS = new Set(["metadata.google.internal", "instance-data.ec2.internal"]);
 
+/** Thrown when a URL is rejected by SSRF policy (vs. an incidental failure). */
+class SsrfBlockedError extends Error {}
+
 export function isPrivateIp(ip: string): boolean {
   return bogon(ip);
 }
@@ -31,14 +34,14 @@ export async function resolveAndAssertPublic(url: string): Promise<string | null
   const hostname = parsed.hostname.replace(/^\[|\]$/g, "");
 
   if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-    throw new Error(`Blocked request with disallowed protocol: ${parsed.protocol}`);
+    throw new SsrfBlockedError(`Blocked request with disallowed protocol: ${parsed.protocol}`);
   }
   if (BLOCKED_HOSTS.has(hostname) || BLOCKED_TLDS.some((tld) => hostname.endsWith(tld))) {
-    throw new Error(`Blocked request to reserved hostname: ${hostname}`);
+    throw new SsrfBlockedError(`Blocked request to reserved hostname: ${hostname}`);
   }
   if (isLiteralIp(hostname)) {
     if (isPrivateIp(hostname)) {
-      throw new Error(`Blocked request to private address: ${hostname}`);
+      throw new SsrfBlockedError(`Blocked request to private address: ${hostname}`);
     }
     return null;
   }
@@ -49,12 +52,16 @@ export async function resolveAndAssertPublic(url: string): Promise<string | null
       message: "DNS lookup timed out",
     });
     if (isPrivateIp(address)) {
-      throw new Error(`Blocked request: ${hostname} resolves to private address ${address}`);
+      throw new SsrfBlockedError(
+        `Blocked request: ${hostname} resolves to private address ${address}`,
+      );
     }
     return address;
   } catch (err) {
-    if (err instanceof Error && err.message.startsWith("Blocked request")) throw err;
-    throw new Error(`Blocked request: DNS resolution failed for ${hostname}`, { cause: err });
+    if (err instanceof SsrfBlockedError) throw err;
+    throw new SsrfBlockedError(`Blocked request: DNS resolution failed for ${hostname}`, {
+      cause: err,
+    });
   }
 }
 
@@ -72,16 +79,44 @@ function pinResolvedIp(url: string, resolvedIp: string): { pinnedUrl: string; ho
   return { pinnedUrl: parsed.href, host };
 }
 
+/** Headers that must never be replayed to a different origin across a redirect. */
+const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"];
+
+export type SsrfFetchOptions = {
+  /**
+   * Called for the initial URL and every redirect target. Returning false
+   * blocks the request. Used to enforce the agent's `allowedHosts` egress
+   * allowlist on redirect targets, not just the initial URL.
+   */
+  isHostAllowed?: (hostname: string) => boolean;
+};
+
 export async function ssrfSafeFetch(
   url: string,
   init: RequestInit,
   fetchFn: typeof globalThis.fetch,
+  opts: SsrfFetchOptions = {},
 ): Promise<Response> {
+  const { isHostAllowed } = opts;
+  const originalOrigin = new URL(url).origin;
+  const checkAllowed = (target: string): void => {
+    if (isHostAllowed && !isHostAllowed(new URL(target).hostname)) {
+      throw new SsrfBlockedError(
+        `Blocked redirect to disallowed host: ${new URL(target).hostname}`,
+      );
+    }
+  };
+  checkAllowed(url);
   let resolvedIp = await resolveAndAssertPublic(url);
   let currentUrl = url;
   for (let i = 0; i < MAX_REDIRECTS; i++) {
     let fetchUrl = currentUrl;
     const headers = new Headers(init.headers);
+    // Drop credentials once the request has left its original origin so an
+    // open redirect on an allowed host can't exfiltrate the agent's token.
+    if (new URL(currentUrl).origin !== originalOrigin) {
+      for (const h of CREDENTIAL_HEADERS) headers.delete(h);
+    }
     if (resolvedIp) {
       const { pinnedUrl, host } = pinResolvedIp(currentUrl, resolvedIp);
       fetchUrl = pinnedUrl;
@@ -92,6 +127,7 @@ export async function ssrfSafeFetch(
     const location = resp.headers.get("location");
     if (!location) return resp;
     currentUrl = new URL(location, currentUrl).href;
+    checkAllowed(currentUrl);
     resolvedIp = await resolveAndAssertPublic(currentUrl);
   }
   throw new Error("Too many redirects");

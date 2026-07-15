@@ -8,6 +8,7 @@
 
 import { z } from "zod";
 import { validateAllowedHostPattern } from "./allowed-hosts.ts";
+import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import {
   assertProviderTriple,
   type KvProvider,
@@ -113,7 +114,9 @@ const ManifestSchema = z.object({
   builtinTools: z.array(BuiltinToolSchema).optional(),
   maxSteps: z.number().int().positive().optional(),
   toolChoice: z.enum(["auto", "required"]).optional(),
-  idleTimeoutMs: z.number().int().positive().optional(),
+  // 0 is the documented "disable the idle timer" value — allow it (the runtime
+  // and AgentConfigSchema both treat 0 as disabled), so use nonnegative().
+  idleTimeoutMs: z.number().int().nonnegative().optional(),
   theme: z.record(z.string(), z.string()).optional(),
   tools: z.record(z.string(), ToolManifestSchema).optional(),
   allowedHosts: z
@@ -156,7 +159,7 @@ export function parseManifest(input: unknown): Manifest {
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     greeting: parsed.greeting ?? DEFAULT_GREETING,
     builtinTools: parsed.builtinTools ?? [],
-    maxSteps: parsed.maxSteps ?? 5,
+    maxSteps: parsed.maxSteps ?? DEFAULT_MAX_STEPS,
     toolChoice: parsed.toolChoice ?? "auto",
     tools: parsed.tools ?? {},
     allowedHosts: parsed.allowedHosts ?? [],

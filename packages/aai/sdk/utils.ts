@@ -18,3 +18,30 @@ export function errorDetail(err: unknown): string {
 export function toolError(message: string): string {
   return JSON.stringify({ error: message });
 }
+
+/** Text-based client asset extensions safe to carry as a UTF-8 string. */
+const TEXT_ASSET_EXTENSIONS = new Set([
+  "html",
+  "htm",
+  "js",
+  "mjs",
+  "cjs",
+  "css",
+  "json",
+  "map",
+  "svg",
+  "txt",
+  "xml",
+  "webmanifest",
+]);
+
+/**
+ * Whether a client asset path holds UTF-8 text (vs. binary like png/woff2).
+ * Binary assets must be base64-encoded to survive a string transport, so the
+ * bundler and the server serve path both key off this shared heuristic.
+ */
+export function isTextAssetPath(assetPath: string): boolean {
+  const dot = assetPath.lastIndexOf(".");
+  if (dot === -1) return false;
+  return TEXT_ASSET_EXTENSIONS.has(assetPath.slice(dot + 1).toLowerCase());
+}
