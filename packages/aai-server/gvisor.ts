@@ -64,7 +64,7 @@ export type GvisorSandbox = {
   cleanup(): Promise<void>;
 };
 
-export type GvisorSandboxOptions = {
+type GvisorSandboxOptions = {
   slug: string;
   harnessPath: string;
   limits?: SandboxResourceLimits;
@@ -250,13 +250,4 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
     containerId,
     cleanup,
   };
-}
-
-// ---------------------------------------------------------------------------
-// Test-only internals
-// ---------------------------------------------------------------------------
-
-/** @internal Reset the cached rootfs promise — exposed for tests only. */
-export function _resetRootfsCacheForTest(): void {
-  rootfsReady = null;
 }

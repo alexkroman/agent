@@ -9,7 +9,7 @@ import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
 import type { ExecuteTool, ExecuteToolOptions, ToolSchema } from "../sdk/_internal-types.ts";
 import type { Message } from "../sdk/types.ts";
 
-export interface ToVercelToolsContext {
+interface ToVercelToolsContext {
   executeTool: ExecuteTool;
   sessionId: string;
   messages: () => readonly Message[];

@@ -12,20 +12,16 @@ import { useTheme } from "../context.ts";
  * - `"default"` — Primary filled button (accent background).
  * - `"secondary"` — Muted surface background with border.
  * - `"ghost"` — Transparent background with border.
- *
- * @public
  */
-export type ButtonVariant = "default" | "secondary" | "ghost";
+type ButtonVariant = "default" | "secondary" | "ghost";
 
 /**
  * Size preset for a {@link Button}.
  *
  * - `"default"` — Compact (height 2rem / 32 px).
  * - `"lg"` — Large with generous padding, suitable for primary CTAs.
- *
- * @public
  */
-export type ButtonSize = "default" | "lg";
+type ButtonSize = "default" | "lg";
 
 const LG_STYLE: CSSProperties = {
   display: "grid",

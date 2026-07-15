@@ -193,7 +193,7 @@ function createFetchJson(
 // ─── Public API ────────────────────────────────────────────────────────────
 
 /** Options for creating built-in tool definitions. */
-export type BuiltinToolOptions = {
+type BuiltinToolOptions = {
   /** Override fetch implementation (defaults to globalThis.fetch). For testing. */
   fetch?: typeof globalThis.fetch;
 };
@@ -217,7 +217,7 @@ function resolveBuiltin(name: string, opts?: BuiltinToolOptions): BuiltinEntry[]
 }
 
 /** Resolved builtins with defs, schemas, and guidance computed in a single pass. */
-export type ResolvedBuiltins = {
+type ResolvedBuiltins = {
   defs: ToolDefRecord;
   schemas: ToolSchema[];
   guidance: string[];

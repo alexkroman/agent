@@ -48,16 +48,13 @@ export const pendingHostRequests = new Map<
 >();
 
 /** Send an RPC request to the host and wait for its response. */
-export function hostRequest(method: string, params: Record<string, unknown>): Promise<unknown> {
+function hostRequest(method: string, params: Record<string, unknown>): Promise<unknown> {
   const id = hostRequestId++;
   return new Promise((resolve, reject) => {
     pendingHostRequests.set(id, { resolve, reject });
     writeMessage({ jsonrpc: "2.0", id, method, params });
   });
 }
-
-// Old name kept for backward-compat with existing tests
-export const pendingKvRequests = pendingHostRequests;
 
 const kv: KvInterface = {
   async get(key: string): Promise<unknown> {
@@ -245,6 +242,3 @@ export function handleHostResponse(resp: {
     pending.resolve(resp.result);
   }
 }
-
-// Old name kept for backward-compat with existing tests
-export const handleKvResponse = handleHostResponse;

@@ -84,7 +84,6 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "createUnstorageKv",
   "executeInIsolate",
   "executeToolCall",
-  "jsonLogger",
   "resolveAllBuiltins",
   "resolveKv",
   "resolveVector",

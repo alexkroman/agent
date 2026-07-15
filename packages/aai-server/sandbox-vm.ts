@@ -105,7 +105,7 @@ export type SandboxVmOptions = {
 };
 
 /** Minimal interface the pool exposes to createSandboxVm. */
-export type WarmHarnessSource = {
+type WarmHarnessSource = {
   acquire(): Promise<WarmHarness | null>;
 };
 

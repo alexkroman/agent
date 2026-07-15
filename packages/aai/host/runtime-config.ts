@@ -10,7 +10,7 @@
 import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "../sdk/constants.ts";
 
 /** Structured context attached to log messages. */
-export type LogContext = Record<string, unknown>;
+type LogContext = Record<string, unknown>;
 
 type LogLevel = "info" | "warn" | "error" | "debug";
 
@@ -43,31 +43,6 @@ export const consoleLogger: Logger = {
   warn: consoleLog(console.warn),
   error: consoleLog(console.error),
   debug: consoleLog(console.debug),
-};
-
-function jsonLog(level: LogLevel): LogFn {
-  const out = level === "error" || level === "warn" ? process.stderr : process.stdout;
-  return (msg, ctx) => {
-    const entry: Record<string, unknown> = {
-      timestamp: new Date().toISOString(),
-      level,
-      msg,
-      ...ctx,
-    };
-    out.write(`${JSON.stringify(entry)}\n`);
-  };
-}
-
-/**
- * Structured JSON logger for production diagnostics. Each log entry is a
- * single-line JSON object with `timestamp`, `level`, `msg`, and any
- * caller-provided context fields.
- */
-export const jsonLogger: Logger = {
-  info: jsonLog("info"),
-  warn: jsonLog("warn"),
-  error: jsonLog("error"),
-  debug: jsonLog("debug"),
 };
 
 /**

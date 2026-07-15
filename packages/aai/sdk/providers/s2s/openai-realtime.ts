@@ -5,7 +5,7 @@ import type { S2sProvider } from "../../providers.ts";
 
 export const OPENAI_REALTIME_KIND = "openai-realtime" as const;
 
-export type OpenaiRealtimeVoice =
+type OpenaiRealtimeVoice =
   | "alloy"
   | "ash"
   | "ballad"

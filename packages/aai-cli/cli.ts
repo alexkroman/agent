@@ -117,8 +117,6 @@ const dev = defineCommand({
   meta: { name: "dev", description: "Start a local development server" },
   args: {
     port: sharedArgs.port,
-    server: sharedArgs.server,
-    yes: sharedArgs.yes,
     json: sharedArgs.json,
   },
   async run({ args }) {
@@ -151,8 +149,6 @@ const test = defineCommand({
 const build = defineCommand({
   meta: { name: "build", description: "Bundle agent without deploying" },
   args: {
-    server: sharedArgs.server,
-    yes: sharedArgs.yes,
     json: sharedArgs.json,
     skipTests: { type: "boolean", description: "Skip running tests before build" },
   },
@@ -173,7 +169,6 @@ const deploy = defineCommand({
   meta: { name: "deploy", description: "Bundle and deploy to production" },
   args: {
     server: sharedArgs.server,
-    yes: sharedArgs.yes,
     json: sharedArgs.json,
   },
   async run({ args }) {

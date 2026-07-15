@@ -19,14 +19,14 @@ export type SandboxResourceLimits = {
   cpuTimeLimitSecs?: number;
 };
 
-export type BuildOciSpecOptions = {
+type BuildOciSpecOptions = {
   rootfsPath: string;
   denoPath: string;
   harnessPath: string;
   limits?: SandboxResourceLimits;
 };
 
-export type OciRuntimeSpec = {
+type OciRuntimeSpec = {
   ociVersion: string;
   process: OciProcess;
   root: { path: string; readonly: boolean };

@@ -39,9 +39,8 @@ const {
   createSessionStateMap,
   executeTool,
   handleRequest,
-  handleKvResponse,
+  handleHostResponse,
   handleNotification,
-  pendingKvRequests,
   pendingHostRequests,
 } = harness;
 
@@ -270,28 +269,28 @@ describe("handleRequest", () => {
   });
 });
 
-// ── handleKvResponse ──────────────────────────────────────────────────────
+// ── handleHostResponse ──────────────────────────────────────────────────────
 
-describe("handleKvResponse", () => {
+describe("handleHostResponse", () => {
   afterEach(() => {
-    pendingKvRequests.clear();
+    pendingHostRequests.clear();
   });
 
   test("resolves pending request on success", async () => {
     const { promise, resolve } = Promise.withResolvers<unknown>();
-    pendingKvRequests.set(10, { resolve, reject: vi.fn() });
-    handleKvResponse({ jsonrpc: "2.0", id: 10, result: { value: "data" } });
+    pendingHostRequests.set(10, { resolve, reject: vi.fn() });
+    handleHostResponse({ jsonrpc: "2.0", id: 10, result: { value: "data" } });
     expect(await promise).toEqual({ value: "data" });
-    expect(pendingKvRequests.size).toBe(0);
+    expect(pendingHostRequests.size).toBe(0);
   });
 
   test("rejects pending request on error", async () => {
     const { promise, resolve, reject } = Promise.withResolvers<unknown>();
-    pendingKvRequests.set(11, {
+    pendingHostRequests.set(11, {
       resolve,
       reject: (err: unknown) => reject(err),
     });
-    handleKvResponse({
+    handleHostResponse({
       jsonrpc: "2.0",
       id: 11,
       error: { code: -1, message: "not found" },
@@ -300,7 +299,7 @@ describe("handleKvResponse", () => {
   });
 
   test("ignores responses with no matching pending request", () => {
-    handleKvResponse({ jsonrpc: "2.0", id: 999, result: "orphan" });
+    handleHostResponse({ jsonrpc: "2.0", id: 999, result: "orphan" });
   });
 });
 

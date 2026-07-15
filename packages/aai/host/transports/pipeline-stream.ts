@@ -31,7 +31,7 @@ export type StreamPart = {
 };
 
 /** Dependencies the stream-part handler needs from the owning transport. */
-export type StreamPartHandlerDeps = {
+type StreamPartHandlerDeps = {
   /** Receives each assistant text delta (accumulated into the transcript). */
   onDelta: (delta: string) => void;
   /** Forwards text to the active TTS session (no-op if none). */

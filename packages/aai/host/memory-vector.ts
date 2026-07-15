@@ -3,7 +3,7 @@
 import { createHash } from "node:crypto";
 import type { Vector, VectorMatch, VectorQueryOptions } from "../sdk/vector.ts";
 
-export type MemoryVectorOptions = {
+type MemoryVectorOptions = {
   namespace: string;
 };
 

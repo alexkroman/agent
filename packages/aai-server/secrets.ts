@@ -90,7 +90,7 @@ export async function verifyApiKeyHash(apiKey: string, storedHash: string): Prom
   return result;
 }
 
-export type OwnerResult =
+type OwnerResult =
   | { status: "unclaimed"; keyHash: string }
   | { status: "owned"; keyHash: string }
   | { status: "forbidden" };

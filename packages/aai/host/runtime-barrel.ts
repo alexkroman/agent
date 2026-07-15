@@ -15,7 +15,7 @@
 
 export type { Vector, VectorMatch, VectorQueryOptions } from "../sdk/vector.ts";
 export * from "./builtin-tools.ts";
-export { createMemoryVector, type MemoryVectorOptions } from "./memory-vector.ts";
+export { createMemoryVector } from "./memory-vector.ts";
 export * from "./pinecone-vector.ts";
 export * from "./providers/resolve-kv.ts";
 export * from "./providers/resolve-vector.ts";

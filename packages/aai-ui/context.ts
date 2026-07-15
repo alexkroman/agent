@@ -58,5 +58,3 @@ export function ThemeProvider({ value, children }: { value?: ClientTheme; childr
 export function useTheme(): Required<ClientTheme> {
   return useContext(ThemeCtx);
 }
-
-export { DEFAULT_THEME };
