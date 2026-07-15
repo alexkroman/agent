@@ -7,8 +7,7 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
-import type { LanguageModel, ModelMessage } from "ai";
-import { smoothStream, stepCountIs, streamText } from "ai";
+import { type LanguageModel, type ModelMessage, stepCountIs, streamText } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
   DEFAULT_MAX_STEPS,
@@ -31,6 +30,7 @@ import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
+import { smoothTextStream } from "./pipeline-smooth.ts";
 import { bytesToPcm16, createStreamPartHandler, flushTtsAndWait } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
@@ -211,8 +211,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         toolChoice,
         // Temperature only when set — Claude 5 ignores it and warns.
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
-        // Coalesce text deltas into whole words for TTS; delayInMs:null = no latency.
-        experimental_transform: smoothStream({ delayInMs: null, chunking: "word" }),
+        // Word-coalesce text for TTS, keeping thinking signatures (see pipeline-smooth.ts).
+        experimental_transform: smoothTextStream(),
         experimental_repairToolCall: repairToolCall,
         stopWhen: stepCountIs(maxSteps),
         abortSignal: ctl.signal,
