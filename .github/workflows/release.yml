@@ -23,12 +23,33 @@ jobs:
       pull-requests: write
       id-token: write
     steps:
+      # RELEASE_TOKEN is a PAT and can expire. If it's dead, checkout
+      # fails with a useless "could not read Username" error, so probe
+      # it first and fall back to GITHUB_TOKEN with a clear warning.
+      - name: Validate RELEASE_TOKEN
+        id: release-token
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+        run: |
+          ok=false
+          if [ -n "$RELEASE_TOKEN" ]; then
+            status=$(curl -s -o /dev/null -w '%{http_code}' \
+              -H "Authorization: Bearer $RELEASE_TOKEN" \
+              "https://api.github.com/repos/${{ github.repository }}")
+            if [ "$status" = "200" ]; then
+              ok=true
+            else
+              echo "::warning title=RELEASE_TOKEN invalid::RELEASE_TOKEN was rejected by the GitHub API (HTTP $status) — it has likely expired. Falling back to GITHUB_TOKEN, so pushes from this workflow will NOT trigger the Check workflow. Rotate the RELEASE_TOKEN secret."
+            fi
+          fi
+          echo "ok=$ok" >> "$GITHUB_OUTPUT"
+
       - uses: actions/checkout@v6
         with:
           fetch-depth: 2
           # Use RELEASE_TOKEN so git push triggers the Check workflow.
           # The default GITHUB_TOKEN cannot trigger other workflows.
-          token: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          token: ${{ steps.release-token.outputs.ok == 'true' && secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
 
       - uses: pnpm/action-setup@v5
 
@@ -59,7 +80,7 @@ jobs:
           # Use RELEASE_TOKEN (PAT or GitHub App token) so the PR
           # push/update triggers the Check workflow normally.
           # GITHUB_TOKEN cannot trigger other workflows.
-          GITHUB_TOKEN: ${{ secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ steps.release-token.outputs.ok == 'true' && secrets.RELEASE_TOKEN || secrets.GITHUB_TOKEN }}
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: true
           # Skip lefthook pre-push hooks: the Check workflow already
