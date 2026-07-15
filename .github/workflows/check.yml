@@ -60,7 +60,8 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version: 24
-      - uses: actions/cache/restore@v5
+      - id: workspace-cache
+        uses: actions/cache/restore@v5
         with:
           path: |
             node_modules
@@ -69,6 +70,8 @@ jobs:
             .tsbuildinfo
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+      - if: steps.workspace-cache.outputs.cache-hit != 'true'
+        run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run lint typecheck
       - name: Check for changeset
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
@@ -101,7 +104,8 @@ jobs:
         if: matrix.package == 'aai-server'
         with:
           deno-version: v2.x
-      - uses: actions/cache/restore@v5
+      - id: workspace-cache
+        uses: actions/cache/restore@v5
         with:
           path: |
             node_modules
@@ -110,6 +114,8 @@ jobs:
             .tsbuildinfo
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+      - if: steps.workspace-cache.outputs.cache-hit != 'true'
+        run: pnpm install --frozen-lockfile
       - run: pnpm --filter "./packages/${{ matrix.package }}" test:coverage
 
   integration:
@@ -226,6 +232,7 @@ jobs:
         with:
           node-version: 24
       - if: steps.changes.outputs.run == 'true'
+        id: workspace-cache
         uses: actions/cache/restore@v5
         with:
           path: |
@@ -235,6 +242,8 @@ jobs:
             .tsbuildinfo
             .turbo
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
+      - if: steps.changes.outputs.run == 'true' && steps.workspace-cache.outputs.cache-hit != 'true'
+        run: pnpm install --frozen-lockfile
       - if: steps.changes.outputs.run == 'true'
         run: pnpm exec turbo run check:load check:adversarial
 
