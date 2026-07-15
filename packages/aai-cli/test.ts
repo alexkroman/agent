@@ -3,9 +3,9 @@
  * `aai test` — run agent tests via vitest.
  */
 
+import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import path from "node:path";
-import { execaSync } from "execa";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 
@@ -24,10 +24,10 @@ export function runVitest(cwd: string): boolean {
 
   if (!testFile) return false;
 
-  execaSync("npx", ["vitest", "run", "--root", ".", testFile], {
+  execFileSync("npx", ["vitest", "run", "--root", ".", testFile], {
     cwd,
     stdio: "inherit",
-    env: { NODE_OPTIONS: "--experimental-strip-types" },
+    env: { ...process.env, NODE_OPTIONS: "--experimental-strip-types" },
   });
 
   return true;

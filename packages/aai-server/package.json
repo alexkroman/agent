@@ -30,7 +30,6 @@
     "@hono/prometheus": "^1.0.3",
     "@hono/zod-validator": "^0.9.0",
     "bogon": "^1.3.0",
-    "execa": "^9.6.1",
     "hono": "^4.12.30",
     "human-id": "^4.2.0",
     "is-network-error": "^1.3.2",
