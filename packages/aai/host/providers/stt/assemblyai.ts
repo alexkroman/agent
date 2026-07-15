@@ -68,12 +68,16 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       const initialAgentContext = agentContextCapable
         ? normalizeAgentContext(openOpts.agentContext ?? "")
         : undefined;
+      // Voice focus (noise suppression); defaults to near-field. "off"/"" disables.
+      const requestedVoiceFocus = opts.voiceFocus ?? "near-field";
+      const voiceFocus = requestedVoiceFocus === "off" ? "" : requestedVoiceFocus;
       const transcriber = client.streaming.transcriber({
         sampleRate: openOpts.sampleRate,
         // SDK types `speechModel` as a string-literal union; accept `string` here.
         speechModel: speechModel as never,
         ...(openOpts.sttPrompt ? { prompt: openOpts.sttPrompt } : {}),
         ...(initialAgentContext !== undefined ? { agentContext: initialAgentContext } : {}),
+        ...(voiceFocus ? { voiceFocus } : {}),
       });
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();

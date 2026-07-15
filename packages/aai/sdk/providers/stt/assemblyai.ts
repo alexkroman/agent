@@ -24,6 +24,12 @@ export interface AssemblyAIOptions {
    * unchanged.
    */
   model?: "universal-3.5-pro" | "u3pro-rt" | string;
+  /**
+   * Voice focus (voice isolation) mode, sent as the `voice_focus` connection
+   * parameter. Defaults to `"near-field"` to suppress background noise for
+   * close-mic / phone audio. Set to `""` (or `"off"`) to disable.
+   */
+  voiceFocus?: "near-field" | "far-field" | "off" | string;
 }
 
 export type AssemblyAIProvider = SttProvider & {

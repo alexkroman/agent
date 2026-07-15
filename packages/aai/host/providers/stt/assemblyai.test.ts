@@ -165,3 +165,24 @@ describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", ()
     await session.close();
   });
 });
+
+describe("assemblyAI STT adapter — voice focus", () => {
+  test("defaults voiceFocus to near-field at connect", async () => {
+    const session = await openSession({ model: "universal-3.5-pro" });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+    expect(fake.params.voiceFocus).toBe("near-field");
+    await session.close();
+  });
+
+  test("respects an explicit voiceFocus and disables on 'off'", async () => {
+    const far = await openSession({ model: "universal-3.5-pro", voiceFocus: "far-field" });
+    expect((far._transcriber as unknown as FakeTranscriber).params.voiceFocus).toBe("far-field");
+    await far.close();
+
+    const off = await openSession({ model: "universal-3.5-pro", voiceFocus: "off" });
+    const offFake = off._transcriber as unknown as FakeTranscriber;
+    expect(offFake.params.voiceFocus).toBeUndefined();
+    expect("voiceFocus" in offFake.params).toBe(false);
+    await off.close();
+  });
+});
