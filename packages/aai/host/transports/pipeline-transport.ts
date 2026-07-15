@@ -36,6 +36,7 @@ import { smoothTextStream } from "./pipeline-smooth.ts";
 import {
   createPlaybackClock,
   createStreamPartHandler,
+  DEFAULT_HOLD_PHRASE,
   flushTtsAndWait,
 } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
@@ -143,8 +144,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     messages: () => history.conversation,
   });
 
-  function chainTurn(p: Promise<void>): void {
-    turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
+  function chainTurn(start: () => Promise<void>): void {
+    turnPromise = (turnPromise ?? Promise.resolve()).then(start);
   }
 
   function emitError(code: SessionErrorCode, message: string): void {
@@ -196,15 +197,21 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
     if (turnController !== null || playbackClock.pending()) {
+      if (countWords(trimmed) < minBargeInWords) {
+        // Below-threshold final while the agent speaks: treat as a backchannel
+        // and ignore it (don't interrupt, don't start a turn).
+        return;
+      }
       log.info("Pipeline replacing in-flight turn", { sid: opts.sid });
       abortInFlightTurn();
       callbacks.onCancelled();
     }
     callbacks.onUserTranscript(text);
-    const turn = runTurn(trimmed).catch((err: unknown) => {
-      log.error("Pipeline turn crashed", { error: errorMessage(err), sid: opts.sid });
-    });
-    chainTurn(turn);
+    chainTurn(() =>
+      runTurn(trimmed).catch((err: unknown) => {
+        log.error("Pipeline turn crashed", { error: errorMessage(err), sid: opts.sid });
+      }),
+    );
   }
 
   function onSttError(err: SttError): void {
@@ -315,12 +322,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         // LLM knows it was cut off. `accumulated` is the generated text (our
         // best proxy — there is no playback-position feedback). Marker goes to
         // history only; the client gets raw text + the interrupted flag.
-        if (accumulated.length > 0) {
-          callbacks.onAgentTranscript(accumulated, true);
-          const marked = `${accumulated} [interrupted]`;
+        const spoken = accumulated.trim();
+        if (spoken.length > 0 && spoken !== DEFAULT_HOLD_PHRASE) {
+          callbacks.onAgentTranscript(spoken, true);
+          const marked = `${spoken} [interrupted]`;
           history.pushConversation({ role: "assistant", content: marked });
           history.pushLlm({ role: "assistant", content: marked });
-          sttSession?.updateAgentContext?.(accumulated);
+          sttSession?.updateAgentContext?.(spoken);
         }
         return false;
       }
@@ -457,10 +465,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (opts.skipGreeting) return;
     const greeting = sessionConfig.greeting;
     if (!greeting) return;
-    const turn = runGreeting(greeting).catch((err: unknown) => {
-      log.error("Pipeline greeting failed", { error: errorMessage(err), sid: opts.sid });
-    });
-    chainTurn(turn);
+    chainTurn(() =>
+      runGreeting(greeting).catch((err: unknown) => {
+        log.error("Pipeline greeting failed", { error: errorMessage(err), sid: opts.sid });
+      }),
+    );
   }
 
   return {

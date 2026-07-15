@@ -354,4 +354,86 @@ describe("interrupted-speech persistence", () => {
     expect(JSON.stringify(llm.calls[callsAfterTurn1]?.prompt)).not.toContain("[interrupted]");
     await t.stop();
   });
+
+  test("final-replace path: interrupted text is persisted before the replacing user turn and visible to it", async () => {
+    const { opts, stt, tts } = makeOpts({
+      llm: createFakeLanguageModel({
+        steps: [
+          [
+            { type: "text", text: "Your balance " },
+            { type: "text", text: "is five " },
+            { type: "text", text: "hundred dollars." },
+          ],
+          [{ type: "text", text: "Okay." }],
+        ],
+        delayMs: 20,
+      }),
+      minBargeInWords: 3,
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+
+    // Turn 1 — start speaking.
+    stt.last()?.fireFinal("what is my balance");
+    await vi.waitFor(() => {
+      expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+    });
+    const callsAfterTurn1 = llm.calls.length;
+
+    // Replace via a >=3-word final (above threshold → interrupts).
+    stt.last()?.fireFinal("actually never mind please");
+    await vi.waitFor(() => {
+      expect(llm.calls.length).toBeGreaterThan(callsAfterTurn1);
+    });
+
+    // The replacing turn's prompt must contain the [interrupted] marker,
+    // ordered before the replacing user message.
+    const prompt = JSON.stringify(llm.calls[callsAfterTurn1]?.prompt);
+    expect(prompt).toContain("[interrupted]");
+    expect(prompt).toContain("Your balance");
+    const interruptedIdx = prompt.indexOf("[interrupted]");
+    const replacingUserIdx = prompt.indexOf("actually never mind please");
+    expect(interruptedIdx).toBeGreaterThanOrEqual(0);
+    expect(replacingUserIdx).toBeGreaterThan(interruptedIdx);
+    await t.stop();
+  });
+
+  test("barge-in during the hold phrase (no real text yet) persists nothing", async () => {
+    const { opts, stt, tts, callbacks } = makeOpts({
+      llm: createFakeLanguageModel({
+        steps: [
+          [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
+          [{ type: "text", text: "Done." }],
+        ],
+        delayMs: 20,
+      }),
+      executeTool: vi.fn(async () => {
+        await new Promise((r) => setTimeout(r, 100));
+        return "ok";
+      }),
+      toolSchemas: [noopToolSchema],
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    stt.last()?.fireFinal("look it up");
+    // Wait until the hold phrase has been emitted (accumulated === "One moment."),
+    // then barge in during the tool await, before any real model text.
+    await vi.waitFor(() => {
+      expect(tts.last()?.textChunks.join("")).toContain("One moment.");
+    });
+    stt.last()?.firePartial("stop");
+
+    await vi.waitFor(() => {
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+    });
+    // The turn's persist decision runs after the in-flight tool call settles
+    // (the abort doesn't cut the tool promise short) — await full teardown so
+    // the abort-path persist logic has actually had a chance to run before we
+    // assert on it, instead of racing it.
+    await t.stop();
+    // Only the hold phrase was accumulated → nothing persisted as interrupted.
+    expect(callbacks.onAgentTranscript).not.toHaveBeenCalledWith(expect.anything(), true);
+  });
 });
