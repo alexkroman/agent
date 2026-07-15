@@ -267,6 +267,11 @@ Reference providers shipped today:
   - `mistral({ model })` — `MISTRAL_API_KEY`
   - `xai({ model })` — `XAI_API_KEY`
   - `groq({ model })` — `GROQ_API_KEY`
+  - `gateway({ model })` — `AI_GATEWAY_API_KEY`; routes through the
+    [Vercel AI Gateway](https://vercel.com/docs/ai-gateway), one endpoint
+    fronting hundreds of models addressed as `"creator/model"` (e.g.
+    `gateway({ model: "zai/glm-4.6" })`). Resolved via `createGateway`
+    from the `ai` package — no extra `@ai-sdk/*` dependency.
   - `assemblyAI({ model, region? })` — `ASSEMBLYAI_API_KEY`; routes through
     the [AssemblyAI LLM Gateway](https://www.assemblyai.com/docs/llm-gateway)
     (OpenAI-compatible chat-completions endpoint fronting 25+ models) via
@@ -438,7 +443,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
 | `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
-| `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`) |
+| `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `gateway`) |
 | `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`) |
 | `@alexkroman1/aai/kv` | `sdk/providers/kv-barrel.ts` | KV provider factories + types (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |

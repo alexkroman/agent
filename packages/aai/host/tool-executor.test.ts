@@ -175,9 +175,9 @@ describe("executeToolCall — cancellation", () => {
       },
     });
     const promise = run("hang", {}, tool, { signal: controller.signal });
-    // Let the pre-execution tick pass so the tool is genuinely in flight.
-    await new Promise((resolve) => setTimeout(resolve, 0));
-    expect(started).toBe(true);
+    // Wait until the tool is genuinely in flight — a single-tick delay is
+    // racy under CI load.
+    await vi.waitFor(() => expect(started).toBe(true));
     controller.abort();
     const result = await promise;
     expect(JSON.parse(result)).toMatchObject({ error: expect.stringMatching(/abort/i) });

@@ -11,6 +11,7 @@
 import { describe, expect, it } from "vitest";
 import { ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import { ASSEMBLYAI_LLM_KIND } from "../../sdk/providers/llm/assemblyai.ts";
+import { GATEWAY_KIND } from "../../sdk/providers/llm/gateway.ts";
 import { GOOGLE_KIND } from "../../sdk/providers/llm/google.ts";
 import { GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
 import { MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
@@ -61,6 +62,11 @@ const cases: ProviderCase[] = [
     envVar: "ASSEMBLYAI_API_KEY",
     label: "AssemblyAI",
   },
+  {
+    provider: { kind: GATEWAY_KIND, options: { model: "zai/glm-4.6" } },
+    envVar: "AI_GATEWAY_API_KEY",
+    label: "Vercel AI Gateway",
+  },
 ];
 
 describe("resolveLlm", () => {
@@ -91,8 +97,20 @@ describe("resolveLlm", () => {
     const bogus = { kind: "claude-direct", options: {} } as unknown as LlmProvider;
     expect(() => resolveLlm(bogus, {})).toThrow(/Unknown LLM provider kind: "claude-direct"/);
     expect(() => resolveLlm(bogus, {})).toThrow(
-      /anthropic.*openai.*google.*mistral.*xai.*groq.*assemblyai/,
+      /anthropic.*openai.*google.*mistral.*xai.*groq.*gateway.*assemblyai/,
     );
+  });
+
+  describe("Vercel AI Gateway", () => {
+    it("resolves a creator/model id to a gateway LanguageModel", () => {
+      const model = resolveLlm(
+        { kind: GATEWAY_KIND, options: { model: "zai/glm-4.6" } },
+        { AI_GATEWAY_API_KEY: "fake-key" },
+      );
+      // The gateway keeps the full "creator/model" string as the model id
+      // and dispatches routing service-side.
+      expect(model).toMatchObject({ provider: "gateway", modelId: "zai/glm-4.6" });
+    });
   });
 
   describe("AssemblyAI LLM Gateway", () => {
