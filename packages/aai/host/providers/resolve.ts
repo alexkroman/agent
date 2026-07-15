@@ -22,6 +22,12 @@ import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
 import type { LanguageModel } from "ai";
 import { ANTHROPIC_KIND, type AnthropicOptions } from "../../sdk/providers/llm/anthropic.ts";
+import {
+  ASSEMBLYAI_LLM_GATEWAY_EU_URL,
+  ASSEMBLYAI_LLM_GATEWAY_URL,
+  ASSEMBLYAI_LLM_KIND,
+  type AssemblyAILlmOptions,
+} from "../../sdk/providers/llm/assemblyai.ts";
 import { GOOGLE_KIND, type GoogleOptions } from "../../sdk/providers/llm/google.ts";
 import { GROQ_KIND, type GroqOptions } from "../../sdk/providers/llm/groq.ts";
 import { MISTRAL_KIND, type MistralOptions } from "../../sdk/providers/llm/mistral.ts";
@@ -132,10 +138,19 @@ export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>)
       const apiKey = requireKey(env, "GROQ_API_KEY", "Groq");
       return createGroq({ apiKey })(options<GroqOptions>(descriptor).model);
     }
+    case ASSEMBLYAI_LLM_KIND: {
+      const apiKey = requireKey(env, "ASSEMBLYAI_API_KEY", "AssemblyAI");
+      const opts = options<AssemblyAILlmOptions>(descriptor);
+      const baseURL =
+        opts.region === "eu" ? ASSEMBLYAI_LLM_GATEWAY_EU_URL : ASSEMBLYAI_LLM_GATEWAY_URL;
+      // The gateway implements /chat/completions only, so use .chat() —
+      // the provider's default callable targets OpenAI's Responses API.
+      return createOpenAI({ apiKey, baseURL, name: "assemblyai" }).chat(opts.model);
+    }
     default:
       throw new Error(
         `Unknown LLM provider kind: "${descriptor.kind}". ` +
-          `Supported: ${ANTHROPIC_KIND}, ${OPENAI_KIND}, ${GOOGLE_KIND}, ${MISTRAL_KIND}, ${XAI_KIND}, ${GROQ_KIND}.`,
+          `Supported: ${ANTHROPIC_KIND}, ${OPENAI_KIND}, ${GOOGLE_KIND}, ${MISTRAL_KIND}, ${XAI_KIND}, ${GROQ_KIND}, ${ASSEMBLYAI_LLM_KIND}.`,
       );
   }
 }

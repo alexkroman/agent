@@ -10,6 +10,14 @@
 export type { LlmProvider } from "../providers.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./llm/anthropic.ts";
+export {
+  ASSEMBLYAI_LLM_GATEWAY_EU_URL,
+  ASSEMBLYAI_LLM_GATEWAY_URL,
+  ASSEMBLYAI_LLM_KIND,
+  type AssemblyAILlmOptions,
+  type AssemblyAILlmProvider,
+  assemblyAI,
+} from "./llm/assemblyai.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./llm/google.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel

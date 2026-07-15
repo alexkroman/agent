@@ -8,7 +8,14 @@
  */
 import { describe, expect, test } from "vitest";
 
-describe("export surface stability", () => {
+// Each test body is a cold import of an entire subpath barrel — the runtime
+// barrel alone pulls in the full host module graph plus the provider SDKs
+// (`ai`, `@ai-sdk/*`, `assemblyai`, ...). Under a fully parallel turbo run
+// that transform+load can exceed the 5s default timeout, so give these
+// tests import-sized headroom.
+const IMPORT_TIMEOUT_MS = 30_000;
+
+describe("export surface stability", { timeout: IMPORT_TIMEOUT_MS }, () => {
   test("@alexkroman1/aai main export", async () => {
     const mod = await import("@alexkroman1/aai");
     expect(Object.keys(mod).sort()).toMatchSnapshot();
