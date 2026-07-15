@@ -26,20 +26,19 @@ import type {
 } from "../../sdk/providers.ts";
 import type { Message, ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
+import { bytesToPcm16 } from "../_pcm.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
 import { smoothTextStream } from "./pipeline-smooth.ts";
-import { bytesToPcm16, createStreamPartHandler, flushTtsAndWait } from "./pipeline-stream.ts";
+import { createStreamPartHandler, flushTtsAndWait } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 /** Configuration for {@link createPipelineTransport}. */
 export interface PipelineTransportOptions {
   /** Unique session identifier. */
   sid: string;
-  /** Agent slug. */
-  agent: string;
   /** STT opener (resolved from an SttProvider descriptor). */
   stt: SttOpener;
   /** LLM provider (Vercel AI SDK LanguageModel). */
@@ -198,15 +197,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   async function consumeLlmStream(
     ctl: AbortController,
-    messages: ModelMessage[],
-    tools: ReturnType<typeof toVercelTools>,
     onDelta: (delta: string) => void,
   ): Promise<ModelMessage[] | undefined> {
     try {
       const result = streamText({
         model: opts.llm,
         system: systemPrompt,
-        messages,
+        messages: history.llm,
         tools,
         toolChoice,
         // Temperature only when set — Claude 5 ignores it and warns.
@@ -250,84 +247,73 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     return flushTtsAndWait({ tts: ttsSession, signal, log, sid: opts.sid });
   }
 
-  async function runTurn(userText: string): Promise<void> {
-    const replyId = `pipeline-${++nextReplyId}`;
-    callbacks.onReplyStarted(replyId);
-    history.pushConversation({ role: "user", content: userText });
-    history.pushLlm({ role: "user", content: userText });
+  /**
+   * Shared reply scaffold: mint the reply id and turn controller, run the
+   * turn body, then drain TTS (only when the body produced speech — a
+   * tool-call-only turn sends no text to the TTS context, so the provider
+   * never emits `done` and flushTtsAndWait would burn the full
+   * PIPELINE_FLUSH_TIMEOUT_MS (~10s) on every silent turn) and finish.
+   *
+   * Do NOT call callbacks.onAudioDone() here — session-core's flushReply
+   * (triggered by onReplyDone) emits audioDone + replyDone together, matching
+   * the S2S transport contract. Calling it here would double-fire audio_done.
+   */
+  async function runReply(
+    idPrefix: string,
+    body: (ctl: AbortController) => Promise<boolean /* spoke */>,
+  ): Promise<void> {
+    callbacks.onReplyStarted(`${idPrefix}-${++nextReplyId}`);
 
     const ctl = new AbortController();
     turnController = ctl;
 
-    let accumulated = "";
-    const responseMessages = await consumeLlmStream(ctl, history.llm, tools, (delta) => {
-      accumulated += delta;
-    });
+    const spoke = await body(ctl);
+    if (spoke && !ctl.signal.aborted) await drainTts(ctl.signal);
 
-    if (ctl.signal.aborted) {
-      finishTurn(ctl);
-      return;
-    }
+    if (!ctl.signal.aborted) callbacks.onReplyDone();
+    finishTurn(ctl);
+  }
 
-    // Persist the assistant tool-call message(s) and their `tool` results so
-    // the next turn retains tool context, not just the spoken transcript.
-    if (responseMessages && responseMessages.length > 0) history.pushLlm(...responseMessages);
+  function runTurn(userText: string): Promise<void> {
+    return runReply("pipeline", async (ctl) => {
+      history.pushConversation({ role: "user", content: userText });
+      history.pushLlm({ role: "user", content: userText });
 
-    if (accumulated.length > 0) {
+      let accumulated = "";
+      const responseMessages = await consumeLlmStream(ctl, (delta) => {
+        accumulated += delta;
+      });
+
+      if (ctl.signal.aborted) return false;
+
+      // Persist the assistant tool-call message(s) and their `tool` results so
+      // the next turn retains tool context, not just the spoken transcript.
+      if (responseMessages && responseMessages.length > 0) history.pushLlm(...responseMessages);
+
+      if (accumulated.length === 0) return false;
       callbacks.onAgentTranscript(accumulated, false);
       history.pushConversation({ role: "assistant", content: accumulated });
       // Seed the STT provider with the agent's side of the dialog so the
       // next user turn is transcribed with it in context (AssemblyAI
       // Universal-3.5 Pro only; other providers have no such hook).
       sttSession?.updateAgentContext?.(accumulated);
-
-      // Only flush/await TTS when the turn actually produced speech. A
-      // tool-call-only turn sends no text to the TTS context, so the provider
-      // never emits `done` and flushTtsAndWait would burn the full
-      // PIPELINE_FLUSH_TIMEOUT_MS (~10s) on every silent turn.
-      await drainTts(ctl.signal);
-
-      if (ctl.signal.aborted) {
-        finishTurn(ctl);
-        return;
-      }
-    }
-
-    // Do NOT call callbacks.onAudioDone() here — session-core's flushReply
-    // (triggered by onReplyDone) emits audioDone + replyDone together, matching
-    // the S2S transport contract. Calling it here would double-fire audio_done.
-    callbacks.onReplyDone();
-    finishTurn(ctl);
+      return true;
+    });
   }
 
-  async function runGreeting(text: string): Promise<void> {
-    const replyId = `pipeline-greeting-${++nextReplyId}`;
-    callbacks.onReplyStarted(replyId);
-
-    const ctl = new AbortController();
-    turnController = ctl;
-
-    callbacks.onAgentTranscript(text, false);
-    history.pushConversation({ role: "assistant", content: text });
-    history.pushLlm({ role: "assistant", content: text });
-    ttsSession?.sendText(text);
-    // Also push the greeting mid-stream, even though it was already seeded
-    // as the initial agent context at STT connect time (openProviders) —
-    // keeps the two seeding paths symmetric and covers providers that only
-    // support the mid-stream hook.
-    sttSession?.updateAgentContext?.(text);
-
-    await drainTts(ctl.signal);
-
-    if (ctl.signal.aborted) {
-      finishTurn(ctl);
-      return;
-    }
-
-    // See runTurn: onReplyDone triggers session-core's flushReply which emits
-    // audioDone + replyDone together; firing onAudioDone here would double-fire.
-    callbacks.onReplyDone();
-    finishTurn(ctl);
+  function runGreeting(text: string): Promise<void> {
+    return runReply("pipeline-greeting", async () => {
+      callbacks.onAgentTranscript(text, false);
+      history.pushConversation({ role: "assistant", content: text });
+      history.pushLlm({ role: "assistant", content: text });
+      ttsSession?.sendText(text);
+      // Also push the greeting mid-stream, even though it was already seeded
+      // as the initial agent context at STT connect time (openProviders) —
+      // keeps the two seeding paths symmetric and covers providers that only
+      // support the mid-stream hook.
+      sttSession?.updateAgentContext?.(text);
+      return true;
+    });
   }
 
   function reportOpenRejection(which: "stt" | "tts", reason: unknown): void {
@@ -339,22 +325,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     emitError(which, msg);
   }
 
-  async function adoptStt(session: SttSession, teardown: boolean): Promise<void> {
-    if (teardown) {
-      await session.close().catch(() => undefined);
-      return;
-    }
+  function adoptStt(session: SttSession): void {
     sttSession = session;
     sttSubs.push(session.on("partial", onSttPartial));
     sttSubs.push(session.on("final", onSttFinal));
     sttSubs.push(session.on("error", onSttError));
   }
 
-  async function adoptTts(session: TtsSession, teardown: boolean): Promise<void> {
-    if (teardown) {
-      await session.close().catch(() => undefined);
-      return;
-    }
+  function adoptTts(session: TtsSession): void {
     ttsSession = session;
     ttsSubs.push(
       session.on("audio", (pcm) => {
@@ -372,10 +350,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
    * a live adoption — this is what lets the greeting start on TTS without
    * waiting for STT.
    */
-  async function openSide<S>(
+  async function openSide<S extends { close(): Promise<void> }>(
     which: "stt" | "tts",
     open: () => Promise<S>,
-    adopt: (session: S, teardown: boolean) => Promise<void>,
+    adopt: (session: S) => void,
     onAdopted?: () => void,
   ): Promise<"ok" | "failed"> {
     let session: S;
@@ -385,9 +363,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       reportOpenRejection(which, reason);
       return "failed";
     }
-    const aborted = sessionAbort.signal.aborted;
-    await adopt(session, aborted);
-    if (!aborted) onAdopted?.();
+    if (sessionAbort.signal.aborted) {
+      await session.close().catch(() => undefined);
+      return "ok";
+    }
+    adopt(session);
+    onAdopted?.();
     return "ok";
   }
 

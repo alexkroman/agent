@@ -59,7 +59,6 @@ describe("PipelineTransport — provider-open latency", () => {
     const callbacks = makeCallbacks();
     const opts: PipelineTransportOptions = {
       sid: "sid-latency",
-      agent: "a",
       stt: gated.opener,
       llm: createFakeLanguageModel({ script: [] }),
       tts,
@@ -102,7 +101,6 @@ describe("PipelineTransport — provider-open latency", () => {
     const callbacks = makeCallbacks();
     const t = createPipelineTransport({
       sid: "sid-latency-2",
-      agent: "a",
       stt,
       llm: createFakeLanguageModel({ script: [] }),
       tts,

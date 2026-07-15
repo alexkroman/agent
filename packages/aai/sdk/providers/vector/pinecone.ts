@@ -12,6 +12,9 @@ import type { VectorProvider } from "../../providers.ts";
 
 export const PINECONE_VECTOR_KIND = "pinecone" as const;
 
+/** Agent env var holding the Pinecone API key the resolver reads at session start. */
+export const PINECONE_API_KEY_ENV = "PINECONE_API_KEY";
+
 export interface PineconeOptions {
   /** Pinecone index name. The index must be created with integrated-inference embed config. */
   index: string;

@@ -64,7 +64,6 @@ function startedTransport() {
     toolChoice: "auto",
     callbacks: cbs,
     sid: "s",
-    agent: "a",
     inputSampleRate: 16_000,
     outputSampleRate: 24_000,
     createWebSocket: () => fake,
@@ -85,7 +84,6 @@ describe("openai-realtime-transport: connect and session.update", () => {
       options: { model: "gpt-realtime", voice: "cedar" },
       sessionConfig: {
         systemPrompt: "Be terse.",
-        tools: [],
       },
       toolSchemas: [
         {
@@ -98,7 +96,6 @@ describe("openai-realtime-transport: connect and session.update", () => {
       toolChoice: "auto",
       callbacks: noopCallbacks(),
       sid: "sid-1",
-      agent: "test-agent",
       inputSampleRate: 16_000,
       outputSampleRate: 24_000,
       createWebSocket: createWs,
@@ -150,7 +147,6 @@ describe("greeting", () => {
       toolChoice: "auto",
       callbacks: noopCallbacks(),
       sid: "s",
-      agent: "a",
       inputSampleRate: 16_000,
       outputSampleRate: 24_000,
       ...(args.skipGreeting !== undefined ? { skipGreeting: args.skipGreeting } : {}),

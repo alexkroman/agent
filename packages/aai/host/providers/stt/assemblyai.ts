@@ -119,40 +119,49 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       // telephony clients (e.g. the tau2 harness) stream standard 20 ms RTP
       // frames. Coalesce inbound PCM into ~100 ms frames (capped at 1000 ms)
       // before forwarding; a sub-100 ms remainder is carried to the next call.
+      // A fixed accumulator (vs. reallocating a merged carry per chunk) keeps
+      // per-chunk cost to one `set` copy of the new samples.
       const rate = openOpts.sampleRate;
       const minFrameSamples = Math.max(1, Math.round(rate * 0.1)); // 100 ms
       const maxFrameSamples = Math.max(minFrameSamples, Math.round(rate)); // 1000 ms
       const minSendSamples = Math.max(1, Math.round(rate * 0.05)); // 50 ms floor
-      let carry = new Int16Array(0);
+      const acc = new Int16Array(maxFrameSamples);
+      let accLen = 0;
+      const sendFrame = (): void => {
+        // `slice` copies just the sent bytes; the accumulator is reused.
+        transcriber.sendAudio(acc.buffer.slice(0, accLen * 2));
+        accLen = 0;
+      };
       const flushTail = (): void => {
-        if (carry.length >= minSendSamples && !shell.isClosed()) {
-          const frame = carry.slice(0, Math.min(carry.length, maxFrameSamples));
+        if (accLen >= minSendSamples && !shell.isClosed()) {
           try {
-            transcriber.sendAudio(frame.buffer);
+            sendFrame();
           } catch {
             // socket already closing; nothing to flush
           }
         }
-        carry = new Int16Array(0);
+        accLen = 0;
       };
 
       const session: AssemblyAISession = {
         sendAudio(pcm: Int16Array) {
           if (shell.isClosed()) return;
-          // Append to carry (copies `pcm`, whose backing buffer the caller may
-          // reuse), then forward as many 50–1000 ms frames as have accumulated.
-          const merged = new Int16Array(carry.length + pcm.length);
-          merged.set(carry, 0);
-          merged.set(pcm, carry.length);
-          carry = merged;
+          // Copy into the accumulator (the caller may reuse `pcm`'s backing
+          // buffer), flushing a frame whenever it fills or once the whole
+          // chunk is buffered and ≥ the 100 ms minimum has accumulated.
           let offset = 0;
-          while (carry.length - offset >= minFrameSamples) {
-            const take = Math.min(carry.length - offset, maxFrameSamples);
-            const frame = carry.slice(offset, offset + take);
-            transcriber.sendAudio(frame.buffer);
+          while (offset < pcm.length) {
+            const take = Math.min(maxFrameSamples - accLen, pcm.length - offset);
+            acc.set(pcm.subarray(offset, offset + take), accLen);
+            accLen += take;
             offset += take;
+            if (
+              accLen === maxFrameSamples ||
+              (offset === pcm.length && accLen >= minFrameSamples)
+            ) {
+              sendFrame();
+            }
           }
-          if (offset > 0) carry = carry.slice(offset);
         },
         on(event, fn) {
           return emitter.on(event, fn);

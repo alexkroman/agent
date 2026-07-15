@@ -10,6 +10,9 @@ import type { KvProvider } from "../../providers.ts";
 
 export const REDIS_KV_KIND = "redis" as const;
 
+/** Agent env var holding the Redis connection URL the resolver reads at session start. */
+export const REDIS_KV_URL_ENV = "REDIS_URL";
+
 export interface RedisKvOptions {
   /** Force TLS. Defaults to inferring from `rediss://` URL scheme. */
   tls?: boolean;

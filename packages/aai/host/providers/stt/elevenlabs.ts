@@ -30,6 +30,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { uint8ToBase64 } from "../../_base64.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
@@ -120,10 +121,11 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
       return {
         sendAudio(pcm: Int16Array) {
           if (shell.isClosed()) return;
-          // The SDK expects base64-encoded audio. Avoid an intermediate
-          // copy: Buffer.from over the same backing buffer is enough.
-          const bytes = Buffer.from(pcm.buffer, pcm.byteOffset, pcm.byteLength);
-          connection.send({ audioBase64: bytes.toString("base64") });
+          // The SDK expects base64-encoded audio; uint8ToBase64 encodes a
+          // zero-copy view over the same backing buffer.
+          connection.send({
+            audioBase64: uint8ToBase64(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength)),
+          });
         },
         on(event, fn) {
           return emitter.on(event, fn);

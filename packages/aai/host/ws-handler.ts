@@ -60,6 +60,18 @@ const AUDIO_DONE_FRAME = JSON.stringify({
   type: "audio_done",
 } satisfies { type: "audio_done" });
 
+/** Send on a session socket, tolerating the close race between the readyState check and send. */
+export function safeSend(ws: SessionWebSocket, data: string | Uint8Array, log: Logger): void {
+  try {
+    if (ws.readyState !== WS_OPEN) return;
+    ws.send(data);
+  } catch (err) {
+    log.debug?.("safeSend: socket closed between readyState check and send", {
+      error: errorMessage(err),
+    });
+  }
+}
+
 /**
  * Creates a {@link ClientSink} backed by a plain WebSocket.
  *
@@ -67,28 +79,18 @@ const AUDIO_DONE_FRAME = JSON.stringify({
  * PCM16 binary frames.
  */
 function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
-  function safeSend(data: string | Uint8Array): void {
-    try {
-      if (ws.readyState !== WS_OPEN) return;
-      ws.send(data);
-    } catch (err) {
-      log.debug?.("safeSend: socket closed between readyState check and send", {
-        error: errorMessage(err),
-      });
-    }
-  }
   return {
     get open() {
       return ws.readyState === WS_OPEN;
     },
     event(e) {
-      safeSend(JSON.stringify(e));
+      safeSend(ws, JSON.stringify(e), log);
     },
     playAudioChunk(chunk) {
-      safeSend(chunk);
+      safeSend(ws, chunk, log);
     },
     playAudioDone() {
-      safeSend(AUDIO_DONE_FRAME);
+      safeSend(ws, AUDIO_DONE_FRAME, log);
     },
   };
 }

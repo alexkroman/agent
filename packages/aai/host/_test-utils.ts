@@ -89,7 +89,6 @@ export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
 export function makeMockHandle(): S2sHandle {
   return {
     sendAudio: vi.fn(),
-    sendAudioRaw: vi.fn(),
     sendToolResult: vi.fn(),
     updateSession: vi.fn(),
     resumeSession: vi.fn(),

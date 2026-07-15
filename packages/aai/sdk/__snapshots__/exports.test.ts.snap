@@ -28,6 +28,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "ToolChoiceSchema",
   "WS_OPEN",
   "agent",
+  "capToolResult",
   "errorDetail",
   "errorMessage",
   "isTextAssetPath",
@@ -76,6 +77,7 @@ exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
 exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
 [
   "DEFAULT_S2S_CONFIG",
+  "SANDBOX_ONLY_BUILTINS",
   "_internals",
   "buildHostAgent",
   "consoleLogger",
@@ -93,6 +95,7 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "resolveAllBuiltins",
   "resolveKv",
   "resolveVector",
+  "safeSend",
   "startHostSession",
   "wireSessionSocket",
 ]

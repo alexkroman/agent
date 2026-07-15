@@ -37,12 +37,13 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../../../sdk/providers.ts";
+import { errorMessage } from "../../../sdk/utils.ts";
+import { bytesToPcm16 } from "../../_pcm.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
   connectOrThrow,
   createSessionShell,
-  messageOf,
   type Pcm16Rate,
   requireApiKey,
 } from "../_utils.ts";
@@ -142,11 +143,10 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         if (shell.isClosed() || event.context_id !== context.contextId) return;
         const buf = event.audio;
         if (!buf || buf.byteLength === 0) return;
-        // Defensive: trim odd byte counts so `new Int16Array` never throws
-        // on a misaligned length.
-        const evenBytes = buf.byteLength - (buf.byteLength % 2);
-        if (evenBytes === 0) return;
-        const pcm = new Int16Array(buf.buffer.slice(buf.byteOffset, buf.byteOffset + evenBytes));
+        // Zero-copy view when aligned; drops a trailing odd byte instead of
+        // throwing on a misaligned length.
+        const pcm = bytesToPcm16(buf);
+        if (pcm.length === 0) return;
         emitter.emit("audio", pcm);
       });
 
@@ -163,7 +163,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       // any frame tagged with a non-active context_id). Genuine socket failures
       // carry no context_id and still propagate.
       const isBenignContextError = (err: unknown): boolean => {
-        const raw = messageOf(err);
+        const raw = errorMessage(err);
         if (/invalid context id|context id does not exist|already been cancelled/i.test(raw)) {
           return true;
         }

@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import type { z } from "zod";
+import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import type {
   KvProvider,
   LlmProvider,
@@ -116,7 +117,7 @@ export function agent(def: {
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
-    maxSteps: 5,
+    maxSteps: DEFAULT_MAX_STEPS,
     tools: {},
     ...def,
   };

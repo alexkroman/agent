@@ -11,9 +11,8 @@ import {
   type S2sCallbacks,
   type S2sHandle,
   type S2sSessionConfig,
-  type S2sToolSchema,
 } from "../s2s.ts";
-import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
+import type { Transport, TransportCallbacks } from "./types.ts";
 
 /** @internal Exposed for testing — allows spying on connectS2s in unit tests. */
 export const _internals = { connectS2s };
@@ -234,13 +233,6 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       // cancelled when the user speaks. Our `onCancel` from the client is
       // a best-effort signal.
       currentReplyId = null;
-    },
-    updateSession(config: TransportSessionConfig) {
-      handle?.updateSession({
-        systemPrompt: config.systemPrompt,
-        tools: (config.tools ?? []) as S2sToolSchema[],
-        ...(config.greeting !== undefined ? { greeting: config.greeting } : {}),
-      });
     },
   };
 }

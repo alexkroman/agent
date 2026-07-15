@@ -20,6 +20,7 @@ import {
   OPENAI_REALTIME_KIND,
   type OpenaiRealtimeOptions,
 } from "../sdk/providers/s2s/openai-realtime.ts";
+import { ASSEMBLYAI_API_KEY_ENV } from "../sdk/providers/stt/assemblyai.ts";
 import {
   assertProviderTriple,
   type LlmProvider,
@@ -33,7 +34,7 @@ import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
-import { resolveAllBuiltins } from "./builtin-tools.ts";
+import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createMemoryVector } from "./memory-vector.ts";
 import {
   descriptorKind,
@@ -50,10 +51,7 @@ import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
-import {
-  createOpenaiRealtimeTransport,
-  type OpenaiRealtimeToolSchema,
-} from "./transports/openai-realtime-transport.ts";
+import { createOpenaiRealtimeTransport } from "./transports/openai-realtime-transport.ts";
 import { createPipelineTransport } from "./transports/pipeline-transport.ts";
 import { createS2sTransport } from "./transports/s2s-transport.ts";
 import type { Transport, TransportCallbacks } from "./transports/types.ts";
@@ -150,12 +148,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Providers may come from RuntimeOptions (platform path passes them
   // explicitly) or from the agent's own `stt`/`llm`/`tts` fields (the `aai
   // dev` path calls createRuntime({ agent, env }) with no provider opts).
-  const {
-    stt: sttProvider,
-    llm: llmProvider,
-    tts: ttsProvider,
-    mode,
-  } = resolveEffectiveProviders(opts, agent);
+  const effectiveProviders = resolveEffectiveProviders(opts, agent);
 
   // Resolve descriptors from manifest if present; otherwise use the
   // supplied (or default) instances.
@@ -188,10 +181,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
 
     executeTool = async (name, args, sessionId, messages, callOpts) => {
       // Handle builtins on the host (where SSRF-safe fetch lives) — EXCEPT
-      // run_code, which executes untrusted JS and must run inside the guest
-      // sandbox (gVisor/Deno), never on the host. It is delegated via RPC
-      // like a custom tool; the guest harness runs it directly.
-      if (name !== "run_code" && builtinDefs[name]) {
+      // sandbox-only builtins (see SANDBOX_ONLY_BUILTINS), which execute
+      // untrusted JS and must run inside the guest sandbox (gVisor/Deno),
+      // never on the host. They are delegated via RPC like custom tools;
+      // the guest harness runs them directly.
+      if (builtinDefs[name] && !SANDBOX_ONLY_BUILTINS.has(name)) {
         const tool = builtinDefs[name];
         return executeToolCall(name, args, {
           tool,
@@ -253,10 +247,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Resolve pipeline providers once per runtime (not per session). Each
   // session reuses the same opener / LanguageModel — the opener's `open()`
   // mints the per-session stream inside.
-  const pipelineProviders = resolvePipelineProviders(
-    { mode, stt: sttProvider, llm: llmProvider, tts: ttsProvider },
-    env,
-  );
+  const pipelineProviders = resolvePipelineProviders(effectiveProviders, env);
 
   type SessionOpts = {
     id: string;
@@ -274,7 +265,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     const { sessionOpts, systemPrompt, callbacks, providers } = args;
     return createPipelineTransport({
       sid: sessionOpts.id,
-      agent: sessionOpts.agent,
       stt: providers.stt,
       llm: providers.llm,
       tts: providers.tts,
@@ -286,8 +276,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       toolSchemas,
       executeTool,
       providerKeys: {
-        stt: resolveSttApiKey(sttProvider, env),
-        tts: resolveTtsApiKey(ttsProvider, env),
+        stt: resolveSttApiKey(effectiveProviders.stt, env),
+        tts: resolveTtsApiKey(effectiveProviders.tts, env),
       },
       sttSampleRate: s2sConfig.inputSampleRate,
       ttsSampleRate: s2sConfig.outputSampleRate,
@@ -312,11 +302,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         systemPrompt,
         ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
       },
-      toolSchemas: toolSchemas as OpenaiRealtimeToolSchema[],
+      toolSchemas,
       toolChoice: agentConfig.toolChoice ?? "auto",
       callbacks,
       sid: sessionOpts.id,
-      agent: sessionOpts.agent,
       inputSampleRate: s2sConfig.inputSampleRate,
       outputSampleRate: s2sConfig.outputSampleRate,
       skipGreeting: sessionOpts.skipGreeting ?? false,
@@ -332,11 +321,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   }): Transport {
     const { sessionOpts, systemPrompt, callbacks } = args;
     return createS2sTransport({
-      apiKey: env.ASSEMBLYAI_API_KEY ?? "",
+      apiKey: env[ASSEMBLYAI_API_KEY_ENV] ?? "",
       s2sConfig,
       sessionConfig: {
         systemPrompt,
-        tools: toolSchemas as import("./s2s.ts").S2sToolSchema[],
+        tools: toolSchemas,
         ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
       },
       callbacks,

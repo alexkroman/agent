@@ -52,7 +52,6 @@ describe("server→client event wire format", () => {
     ["speech_started", { type: "speech_started" }],
     ["speech_stopped", { type: "speech_stopped" }],
     ["user_transcript", { type: "user_transcript", text: "hello" }],
-    ["user_transcript (with order)", { type: "user_transcript", text: "hello", turnOrder: 1 }],
     ["agent_transcript", { type: "agent_transcript", text: "response" }],
     [
       "tool_call",

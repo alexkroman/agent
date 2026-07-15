@@ -3,35 +3,21 @@
  * Speech-to-Speech WebSocket client for AssemblyAI's S2S API.
  */
 
-import type { JSONSchema7 } from "json-schema";
-import WsWebSocket from "ws";
 import { z } from "zod";
+import type { ToolSchema } from "../sdk/_internal-types.ts";
 import { WS_OPEN } from "../sdk/constants.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
+import {
+  type CreateHeaderWebSocket,
+  defaultCreateHeaderWebSocket,
+  type HeaderWebSocket,
+} from "./_ws.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 
-export type S2sWebSocket = {
-  readonly readyState: number;
-  send(data: string): void;
-  close(): void;
-  addEventListener(type: "open", listener: () => void): void;
-  addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
-  addEventListener(
-    type: "close",
-    listener: (event: { code?: number; reason?: string }) => void,
-  ): void;
-  addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
-};
-
-export type CreateS2sWebSocket = (
-  url: string,
-  opts: { headers: Record<string, string> },
-) => S2sWebSocket;
-
-// Node's native WebSocket doesn't support custom headers; the `ws` package does.
-export const defaultCreateS2sWebSocket: CreateS2sWebSocket = (url, opts) =>
-  new WsWebSocket(url, { headers: opts.headers }) as unknown as S2sWebSocket;
+export type S2sWebSocket = HeaderWebSocket;
+export type CreateS2sWebSocket = CreateHeaderWebSocket;
+export const defaultCreateS2sWebSocket: CreateS2sWebSocket = defaultCreateHeaderWebSocket;
 
 // ── Zod schemas for S2S server messages ─────────────────────────────────
 
@@ -175,12 +161,7 @@ export type S2sSessionConfig = {
   greeting?: string;
 };
 
-export type S2sToolSchema = {
-  type: "function";
-  name: string;
-  description: string;
-  parameters: JSONSchema7;
-};
+export type S2sToolSchema = ToolSchema;
 
 /** Callbacks fired into the owning session at construction time. */
 export type S2sCallbacks = {
@@ -201,11 +182,6 @@ export type S2sCallbacks = {
 
 export type S2sHandle = {
   sendAudio(audio: Uint8Array): void;
-  /**
-   * Send a pre-encoded audio wire frame. For perf-critical callers (load tests)
-   * that batch-encode up front. Skips logging; caller owns wire format.
-   */
-  sendAudioRaw(jsonFrame: string): void;
   sendToolResult(callId: string, result: string): void;
   updateSession(config: S2sSessionConfig): void;
   resumeSession(sessionId: string): void;
@@ -258,11 +234,6 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       sendAudio(audio: Uint8Array): void {
         if (ws.readyState !== WS_OPEN) return;
         ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
-      },
-
-      sendAudioRaw(jsonFrame: string): void {
-        if (ws.readyState !== WS_OPEN) return;
-        ws.send(jsonFrame);
       },
 
       sendToolResult(callId: string, result: string): void {

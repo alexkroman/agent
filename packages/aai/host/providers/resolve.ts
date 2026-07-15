@@ -67,6 +67,7 @@ import type {
   TtsOpener,
   TtsProvider,
 } from "../../sdk/providers.ts";
+import { requireApiKey } from "./_utils.ts";
 import { openAssemblyAI } from "./stt/assemblyai.ts";
 import { openDeepgram } from "./stt/deepgram.ts";
 import { openElevenLabs } from "./stt/elevenlabs.ts";
@@ -87,37 +88,68 @@ function options<T>(descriptor: { options: Record<string, unknown> }): T {
   return descriptor.options as unknown as T;
 }
 
+/**
+ * One registry entry per STT/TTS provider kind — the kind's env var and
+ * opener factory live together, so adding a provider is one entry here and
+ * an unmapped kind cannot silently resolve the wrong vendor's key.
+ */
+type OpenerRegistryEntry<Opener> = {
+  readonly envVar: string;
+  readonly open: (descriptor: { options: Record<string, unknown> }) => Opener;
+};
+
+const STT_REGISTRY: Record<string, OpenerRegistryEntry<SttOpener>> = {
+  [ASSEMBLYAI_KIND]: {
+    envVar: ASSEMBLYAI_API_KEY_ENV,
+    open: (d) => openAssemblyAI(options<AssemblyAIOptions>(d)),
+  },
+  [DEEPGRAM_KIND]: {
+    envVar: DEEPGRAM_API_KEY_ENV,
+    open: (d) => openDeepgram(options<DeepgramOptions>(d)),
+  },
+  [ELEVENLABS_KIND]: {
+    envVar: ELEVENLABS_API_KEY_ENV,
+    open: (d) => openElevenLabs(options<ElevenLabsOptions>(d)),
+  },
+  [SONIOX_KIND]: {
+    envVar: SONIOX_API_KEY_ENV,
+    open: (d) => openSoniox(options<SonioxOptions>(d)),
+  },
+};
+
+const TTS_REGISTRY: Record<string, OpenerRegistryEntry<TtsOpener>> = {
+  [CARTESIA_KIND]: {
+    envVar: CARTESIA_API_KEY_ENV,
+    open: (d) => openCartesia(options<CartesiaOptions>(d)),
+  },
+  [RIME_KIND]: {
+    envVar: RIME_API_KEY_ENV,
+    open: (d) => openRime(options<RimeOptions>(d)),
+  },
+};
+
 /** Resolve an {@link SttProvider} descriptor into a host-side opener. */
 export function resolveStt(descriptor: SttProvider): SttOpener {
-  switch (descriptor.kind) {
-    case ASSEMBLYAI_KIND:
-      return openAssemblyAI(options<AssemblyAIOptions>(descriptor));
-    case DEEPGRAM_KIND:
-      return openDeepgram(options<DeepgramOptions>(descriptor));
-    case ELEVENLABS_KIND:
-      return openElevenLabs(options<ElevenLabsOptions>(descriptor));
-    case SONIOX_KIND:
-      return openSoniox(options<SonioxOptions>(descriptor));
-    default:
-      throw new Error(
-        `Unknown STT provider kind: "${descriptor.kind}". ` +
-          `Supported: ${ASSEMBLYAI_KIND}, ${DEEPGRAM_KIND}, ${ELEVENLABS_KIND}, ${SONIOX_KIND}.`,
-      );
+  const entry = STT_REGISTRY[descriptor.kind];
+  if (!entry) {
+    throw new Error(
+      `Unknown STT provider kind: "${descriptor.kind}". ` +
+        `Supported: ${Object.keys(STT_REGISTRY).join(", ")}.`,
+    );
   }
+  return entry.open(descriptor);
 }
 
 /** Resolve a {@link TtsProvider} descriptor into a host-side opener. */
 export function resolveTts(descriptor: TtsProvider): TtsOpener {
-  switch (descriptor.kind) {
-    case CARTESIA_KIND:
-      return openCartesia(options<CartesiaOptions>(descriptor));
-    case RIME_KIND:
-      return openRime(options<RimeOptions>(descriptor));
-    default:
-      throw new Error(
-        `Unknown TTS provider kind: "${descriptor.kind}". Supported: ${CARTESIA_KIND}, ${RIME_KIND}.`,
-      );
+  const entry = TTS_REGISTRY[descriptor.kind];
+  if (!entry) {
+    throw new Error(
+      `Unknown TTS provider kind: "${descriptor.kind}". ` +
+        `Supported: ${Object.keys(TTS_REGISTRY).join(", ")}.`,
+    );
   }
+  return entry.open(descriptor);
 }
 
 /** One registry entry per LLM provider kind — adding a provider is one entry here. */
@@ -226,11 +258,9 @@ export function loadProviderPackage<T>(name: string, label: string): T {
 }
 
 function requireKey(env: Record<string, string>, name: string, label: string): string {
-  const key = resolveApiKey(name, env);
-  if (!key) {
-    throw new Error(`${label} LLM: missing API key. Set ${name} in the agent env.`);
-  }
-  return key;
+  // requireApiKey's process.env fallback mirrors resolveApiKey's, so passing
+  // the agent-env value keeps the same lookup order with one implementation.
+  return requireApiKey(env[name], name, `${label} LLM`, (msg) => new Error(msg));
 }
 
 // ─── API-key routing + descriptor→instance helpers (used by runtime.ts) ──────
@@ -244,30 +274,17 @@ export function descriptorKind(value: object | undefined): string | undefined {
   return typeof kind === "string" ? kind : undefined;
 }
 
-/**
- * Provider kind → the agent-env variable that holds its API key. The env-var
- * names are defined once, next to each provider's `KIND` in `sdk/providers/`.
- */
-const STT_API_KEY_ENV: Record<string, string> = {
-  [ASSEMBLYAI_KIND]: ASSEMBLYAI_API_KEY_ENV,
-  [DEEPGRAM_KIND]: DEEPGRAM_API_KEY_ENV,
-  [ELEVENLABS_KIND]: ELEVENLABS_API_KEY_ENV,
-  [SONIOX_KIND]: SONIOX_API_KEY_ENV,
-};
-
-const TTS_API_KEY_ENV: Record<string, string> = {
-  [CARTESIA_KIND]: CARTESIA_API_KEY_ENV,
-  [RIME_KIND]: RIME_API_KEY_ENV,
-};
-
 /** Resolve the agent-env API key for an STT descriptor by its kind. */
 export function resolveSttApiKey(
   stt: SttProvider | SttOpener | undefined,
   env: Record<string, string>,
 ): string {
   // Default to AssemblyAI for pre-resolved openers (test escape hatch) that
-  // carry no `kind`; every real descriptor maps to its own env var.
-  return resolveApiKey(STT_API_KEY_ENV[descriptorKind(stt) ?? ""] ?? ASSEMBLYAI_API_KEY_ENV, env);
+  // carry no `kind`; every real descriptor maps to its registry env var.
+  return resolveApiKey(
+    STT_REGISTRY[descriptorKind(stt) ?? ""]?.envVar ?? ASSEMBLYAI_API_KEY_ENV,
+    env,
+  );
 }
 
 /** Resolve the agent-env API key for a TTS descriptor by its kind. */
@@ -275,7 +292,10 @@ export function resolveTtsApiKey(
   tts: TtsProvider | TtsOpener | undefined,
   env: Record<string, string>,
 ): string {
-  return resolveApiKey(TTS_API_KEY_ENV[descriptorKind(tts) ?? ""] ?? CARTESIA_API_KEY_ENV, env);
+  return resolveApiKey(
+    TTS_REGISTRY[descriptorKind(tts) ?? ""]?.envVar ?? CARTESIA_API_KEY_ENV,
+    env,
+  );
 }
 
 /**

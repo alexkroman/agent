@@ -19,12 +19,15 @@ export function createUnstorageKv(options: UnstorageKvOptions): Kv {
     },
 
     async set(key: string, value: unknown, setOptions?: { expireIn?: number }): Promise<void> {
-      if (JSON.stringify(value).length > MAX_VALUE_SIZE) {
+      // Serialize once: the size check and the stored representation share the
+      // same JSON string (unstorage round-trips it back via destr on get).
+      const json = JSON.stringify(value);
+      if (json.length > MAX_VALUE_SIZE) {
         throw new Error(`Value exceeds max size of ${MAX_VALUE_SIZE} bytes`);
       }
       const expireIn = setOptions?.expireIn;
       const ttlOption = expireIn && expireIn > 0 ? { ttl: Math.ceil(expireIn / 1000) } : undefined;
-      await store.setItem(key, value as StorageValue, ttlOption);
+      await store.setItem(key, json as StorageValue, ttlOption);
     },
 
     async delete(keys: string | string[]): Promise<void> {

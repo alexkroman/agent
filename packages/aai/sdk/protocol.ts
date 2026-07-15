@@ -130,8 +130,6 @@ export type SessionErrorCode = z.infer<typeof SessionErrorCodeSchema>;
 /** Helper: simple event with only a type field. */
 const ev = <T extends string>(t: T) => z.object({ type: z.literal(t) });
 
-const turnOrder = z.number().int().nonnegative().optional();
-
 /** Zod schema for {@link ClientEvent}. */
 export const ClientEventSchema = z.discriminatedUnion("type", [
   ev("speech_started"),
@@ -139,7 +137,6 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("user_transcript"),
     text: z.string(),
-    turnOrder,
   }),
   z.object({
     type: z.literal("agent_transcript"),
