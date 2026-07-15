@@ -358,11 +358,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     sinkMap.set(sessionOpts.id, sessionOpts.client);
 
     const isPipeline = Boolean(pipelineProviders);
-    // Relay mode (host mode): the relay `executeTool` already emits the
-    // client-facing `tool_call` frame and the client is the tool executor, so
-    // the pipeline observability emits below must be suppressed to avoid
-    // delivering a second, identical `tool_call` frame that the client executes
-    // twice. Mirrors the same `!opts.onToolResult` guard in session-core.
+    // Relay (host) mode: the relay `executeTool` emits the client-facing
+    // `tool_call` itself (mirrors session-core's `!opts.onToolResult` guard).
     const isRelay = Boolean(opts.onToolResult);
     const hasTools = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
     const systemPrompt = buildSystemPrompt(agentConfig, {
@@ -381,14 +378,12 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
 
     // onToolCall wiring, by transport + relay mode:
     // - S2S: route through SessionCore, which executes and emits done itself.
-    // - Pipeline, in-process: tools execute inside streamText; forward the call
-    //   to the client sink for UI observability only. Routing through
-    //   SessionCore.onToolCall would re-execute the tool and leave pendingTools
-    //   non-empty, hanging the turn.
-    // - Pipeline, relay (host mode): the relay `executeTool` already emitted the
-    //   client-facing tool_call frame (the client is the executor), so emitting
-    //   here too would deliver a duplicate frame the client executes twice —
-    //   corrupting state on write tools and doubling latency on reads.
+    // - Pipeline in-process: tools run inside streamText; forward to the client
+    //   sink for UI observability only (routing through SessionCore would
+    //   re-execute the tool and hang the turn on non-empty pendingTools).
+    // - Pipeline relay: the relay executeTool already emitted the tool_call to
+    //   the client (the executor); a second emit here would be a duplicate frame
+    //   the client runs twice — corrupting write state, doubling read latency.
     let onToolCall: TransportCallbacks["onToolCall"];
     if (!isPipeline) {
       onToolCall = (id, name, args) => bindCore().onToolCall(id, name, args);
