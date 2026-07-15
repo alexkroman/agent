@@ -295,6 +295,31 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("tool-call-only turn (no speech) skips the TTS flush/await", async () => {
+      // Regression: a silent turn used to call tts.flush() on a context that
+      // received no text, so the provider never emitted `done` and the turn
+      // stalled for the full PIPELINE_FLUSH_TIMEOUT_MS.
+      const { opts, stt, tts, callbacks } = makeOpts({
+        // Step 1 emits only a tool call; the trailing empty step yields no
+        // text, so the turn produces no agent speech.
+        llm: createFakeLanguageModel({
+          steps: [[{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }]],
+        }),
+        executeTool: vi.fn(async () => "result"),
+        toolSchemas: [noopToolSchema],
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("look it up");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+      });
+      // Nothing was spoken, so the TTS session must not be flushed/awaited.
+      expect(tts.last()?.flush).not.toHaveBeenCalled();
+      expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
+      await t.stop();
+    });
+
     test("full assistant reply is pushed via sttSession.updateAgentContext after the turn", async () => {
       const { opts, stt, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script: [{ type: "text", text: "Sure!" }] }),
