@@ -44,6 +44,13 @@ export const MAX_VALUE_SIZE = 65_536;
 export const DEFAULT_MAX_HISTORY = 200;
 /** Max tool calls per reply — prevents runaway tool loops. */
 export const DEFAULT_MAX_STEPS = 5;
+/**
+ * Minimum number of words in an interim STT transcript before a barge-in
+ * aborts the agent's in-flight turn (pipeline mode). Default 1 = interrupt on
+ * any non-empty interim, preserving instant barge-in. Raise it to ignore
+ * one-word backchannels ("mm-hmm", "yeah") while the agent is speaking.
+ */
+export const DEFAULT_MIN_BARGE_IN_WORDS = 1;
 export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 

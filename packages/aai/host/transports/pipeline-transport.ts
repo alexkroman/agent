@@ -7,10 +7,11 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
-import { type LanguageModel, type ModelMessage, stepCountIs, streamText } from "ai";
+import type { LanguageModel, ModelMessage } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
   DEFAULT_MAX_STEPS,
+  DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
 } from "../../sdk/constants.ts";
@@ -31,11 +32,12 @@ import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
-import { smoothTextStream } from "./pipeline-smooth.ts";
 import {
+  countWords,
   createPlaybackClock,
-  createStreamPartHandler,
+  DEFAULT_HOLD_PHRASE,
   flushTtsAndWait,
+  consumeLlmStream as runLlmStream,
 } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
@@ -71,6 +73,12 @@ export interface PipelineTransportOptions {
   /** Max LLM tool-call steps per turn. Defaults to 5. */
   maxSteps?: number | undefined;
   /**
+   * Minimum interim-transcript words required to barge in on the agent while
+   * it is speaking. Defaults to DEFAULT_MIN_BARGE_IN_WORDS (1 = interrupt on
+   * any non-empty interim).
+   */
+  minBargeInWords?: number | undefined;
+  /**
    * LLM sampling temperature. Omitted when unset (provider default). Some models
    * (e.g. Claude 5) ignore it and warn; set only for temperature-capable models.
    */
@@ -89,6 +97,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const sttSampleRate = opts.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE;
   const ttsSampleRate = opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE;
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
+  const minBargeInWords = opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS;
   const toolChoice = opts.toolChoice ?? "auto";
   const repairToolCall = createToolCallRepair(opts.llm, log);
   const toolSchemas = opts.toolSchemas ?? [];
@@ -130,8 +139,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     messages: () => history.conversation,
   });
 
-  function chainTurn(p: Promise<void>): void {
-    turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
+  function chainTurn(start: () => Promise<void>): void {
+    turnPromise = (turnPromise ?? Promise.resolve()).then(start);
   }
 
   function emitError(code: SessionErrorCode, message: string): void {
@@ -169,9 +178,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     void ttsSession?.close().catch(() => undefined);
   }
 
-  function onSttPartial(_text: string): void {
+  function onSttPartial(text: string): void {
     if (terminated) return;
     if (turnController === null && !playbackClock.pending()) return;
+    if (countWords(text) < minBargeInWords) return;
     log.info("Pipeline barge-in", { sid: opts.sid });
     abortInFlightTurn();
     callbacks.onCancelled();
@@ -182,15 +192,21 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
     if (turnController !== null || playbackClock.pending()) {
+      if (countWords(trimmed) < minBargeInWords) {
+        // Below-threshold final while the agent speaks: treat as a backchannel
+        // and ignore it (don't interrupt, don't start a turn).
+        return;
+      }
       log.info("Pipeline replacing in-flight turn", { sid: opts.sid });
       abortInFlightTurn();
       callbacks.onCancelled();
     }
     callbacks.onUserTranscript(text);
-    const turn = runTurn(trimmed).catch((err: unknown) => {
-      log.error("Pipeline turn crashed", { error: errorMessage(err), sid: opts.sid });
-    });
-    chainTurn(turn);
+    chainTurn(() =>
+      runTurn(trimmed).catch((err: unknown) => {
+        log.error("Pipeline turn crashed", { error: errorMessage(err), sid: opts.sid });
+      }),
+    );
   }
 
   function onSttError(err: SttError): void {
@@ -207,52 +223,27 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     terminate();
   }
 
-  async function consumeLlmStream(
+  const consumeLlmStream = (
     ctl: AbortController,
     onDelta: (delta: string) => void,
-  ): Promise<ModelMessage[] | undefined> {
-    try {
-      const result = streamText({
-        model: opts.llm,
-        system: systemPrompt,
-        messages: history.llm,
-        tools,
-        toolChoice,
-        // Temperature only when set — Claude 5 ignores it and warns.
-        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
-        // Word-coalesce text for TTS, keeping thinking signatures (see pipeline-smooth.ts).
-        experimental_transform: smoothTextStream(),
-        experimental_repairToolCall: repairToolCall,
-        stopWhen: stepCountIs(maxSteps),
-        abortSignal: ctl.signal,
-      });
-      const handlePart = createStreamPartHandler({
-        onDelta,
-        sendTtsText: (text) => ttsSession?.sendText(text),
-        onToolCall: callbacks.onToolCall,
-        onToolCallDone: callbacks.onToolCallDone,
-        emitError,
-        log,
-        sid: opts.sid,
-      });
-      for await (const part of result.fullStream) {
-        if (ctl.signal.aborted) break;
-        handlePart(part);
-      }
-      if (ctl.signal.aborted) return;
-      // Gather every step's response messages (assistant tool-call + `tool`
-      // result + text) so tool context carries into the next turn. Top-level
-      // `result.response.messages` is final-step only and drops the tool call.
-      const steps = await result.steps;
-      return steps.flatMap((step) => step.response.messages);
-    } catch (err: unknown) {
-      if (!ctl.signal.aborted) {
-        const msg = errorMessage(err);
-        log.error("LLM streamText failed", { error: msg, sid: opts.sid });
-        emitError("llm", msg);
-      }
-    }
-  }
+  ): Promise<ModelMessage[] | undefined> =>
+    runLlmStream({
+      llm: opts.llm,
+      systemPrompt,
+      messages: history.llm,
+      tools,
+      toolChoice,
+      temperature: opts.temperature,
+      repairToolCall,
+      maxSteps,
+      sendTtsText: (text) => ttsSession?.sendText(text),
+      callbacks,
+      emitError,
+      log,
+      sid: opts.sid,
+      ctl,
+      onDelta,
+    });
 
   /** Per-turn TTS drain — see flushTtsAndWait in pipeline-stream.ts. */
   function drainTts(signal: AbortSignal): Promise<void> {
@@ -296,7 +287,21 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         accumulated += delta;
       });
 
-      if (ctl.signal.aborted) return false;
+      if (ctl.signal.aborted) {
+        // Barge-in mid-turn: persist the spoken-so-far text so the next turn's
+        // LLM knows it was cut off. `accumulated` is the generated text (our
+        // best proxy — there is no playback-position feedback). Marker goes to
+        // history only; the client gets raw text + the interrupted flag.
+        const spoken = accumulated.trim();
+        if (spoken.length > 0 && spoken !== DEFAULT_HOLD_PHRASE) {
+          callbacks.onAgentTranscript(spoken, true);
+          const marked = `${spoken} [interrupted]`;
+          history.pushConversation({ role: "assistant", content: marked });
+          history.pushLlm({ role: "assistant", content: marked });
+          sttSession?.updateAgentContext?.(spoken);
+        }
+        return false;
+      }
 
       // Persist the assistant tool-call message(s) and their `tool` results so
       // the next turn retains tool context, not just the spoken transcript.
@@ -430,10 +435,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (opts.skipGreeting) return;
     const greeting = sessionConfig.greeting;
     if (!greeting) return;
-    const turn = runGreeting(greeting).catch((err: unknown) => {
-      log.error("Pipeline greeting failed", { error: errorMessage(err), sid: opts.sid });
-    });
-    chainTurn(turn);
+    chainTurn(() =>
+      runGreeting(greeting).catch((err: unknown) => {
+        log.error("Pipeline greeting failed", { error: errorMessage(err), sid: opts.sid });
+      }),
+    );
   }
 
   return {

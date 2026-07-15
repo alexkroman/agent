@@ -287,6 +287,82 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("minBargeInWords gate: a one-word partial does NOT interrupt when threshold is 2", async () => {
+      const script: ScriptedPart[] = [
+        { type: "text", text: "Hello " },
+        { type: "text", text: "how can " },
+        { type: "text", text: "I help?" },
+      ];
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script, delayMs: 20 }),
+        minBargeInWords: 2,
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("hi there");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+
+      stt.last()?.firePartial("wait"); // one word — below threshold
+      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(tts.last()?.cancel).not.toHaveBeenCalled();
+      await t.stop();
+    });
+
+    test("minBargeInWords gate: a two-word partial interrupts when threshold is 2", async () => {
+      const script: ScriptedPart[] = [
+        { type: "text", text: "Hello " },
+        { type: "text", text: "how can " },
+        { type: "text", text: "I help?" },
+      ];
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script, delayMs: 20 }),
+        minBargeInWords: 2,
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("hi there");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+
+      stt.last()?.firePartial("wait now"); // two words — meets threshold
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(tts.last()?.cancel).toHaveBeenCalled();
+      await t.stop();
+    });
+
+    test("minBargeInWords gate: a one-word final does NOT interrupt while speaking when threshold is 2", async () => {
+      const script: ScriptedPart[] = [
+        { type: "text", text: "Hello " },
+        { type: "text", text: "how can " },
+        { type: "text", text: "I help?" },
+      ];
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script, delayMs: 20 }),
+        minBargeInWords: 2,
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("hi there");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+
+      // A one-word FINAL arrives while the agent is speaking — below threshold.
+      stt.last()?.fireFinal("yeah");
+      await new Promise((r) => setTimeout(r, 20));
+      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(tts.last()?.cancel).not.toHaveBeenCalled();
+      // The backchannel is ignored — no new user turn started for it.
+      expect(callbacks.onUserTranscript).not.toHaveBeenCalledWith("yeah");
+      await t.stop();
+    });
+
     test("cancelReply() aborts the turn and calls ttsSession.cancel()", async () => {
       const script: ScriptedPart[] = [
         { type: "text", text: "some " },

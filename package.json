@@ -34,7 +34,7 @@
     "check:sherif": "sherif",
     "check:syncpack": "syncpack lint",
     "check:ls-lint": "ls-lint",
-    "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude'",
+    "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude' '#.superpowers'",
     "docker:up": "docker compose up --build",
     "docker:down": "docker compose down -v",
     "test:load": "pnpm --filter aai-server test:load",
