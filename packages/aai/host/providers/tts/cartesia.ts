@@ -41,6 +41,7 @@ import {
   closeOnAbort,
   connectOrThrow,
   createSessionShell,
+  messageOf,
   type Pcm16Rate,
   requireApiKey,
 } from "../_utils.ts";
@@ -134,7 +135,30 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         emitDoneOnce();
       });
 
-      ws.on("error", (err) => shell.onSocketError(err));
+      // Cartesia streams per-context error frames over the shared socket. A
+      // benign cancel/flush/finish race yields a 400 "Invalid context ID" for a
+      // context we've already cancelled or retired (its `done` may cross our
+      // `cancel` on the wire). Surfacing that as a fatal `tts_stream_error`
+      // would kill the session mid-run, so drop the dead-context signature (and
+      // any frame tagged with a non-active context_id). Genuine socket failures
+      // carry no context_id and still propagate.
+      const isBenignContextError = (err: unknown): boolean => {
+        const raw = messageOf(err);
+        if (/invalid context id|context id does not exist|already been cancelled/i.test(raw)) {
+          return true;
+        }
+        try {
+          const parsed = JSON.parse(raw) as { context_id?: unknown };
+          return typeof parsed.context_id === "string" && parsed.context_id !== context.contextId;
+        } catch {
+          return false;
+        }
+      };
+
+      ws.on("error", (err) => {
+        if (isBenignContextError(err)) return;
+        shell.onSocketError(err);
+      });
 
       closeOnAbort(openOpts.signal, shell.close);
 

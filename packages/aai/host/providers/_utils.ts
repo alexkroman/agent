@@ -65,7 +65,7 @@ export async function connectOrThrow<T>(
   }
 }
 
-function messageOf(err: unknown): string {
+export function messageOf(err: unknown): string {
   if (err instanceof Error) return err.message;
   if (typeof err === "object" && err !== null && "message" in err) {
     const msg = (err as { message?: unknown }).message;

@@ -219,4 +219,55 @@ describe("cartesia TTS adapter", () => {
     controller.abort();
     await session.close();
   });
+
+  test("a dead-context error frame is dropped, not surfaced as a fatal error", async () => {
+    const { session, controller } = await openSession();
+    const turn1 = session._currentContextId();
+
+    const errors: string[] = [];
+    session.on("error", (e) => errors.push(e.code));
+
+    // Cartesia's per-context 400 for a cancelled/retired context (its `done`
+    // raced our `cancel` on the wire). Must not become a fatal tts_stream_error.
+    const ws = session._ws as unknown as { _fire(event: string, payload: unknown): void };
+    ws._fire(
+      "error",
+      new Error(
+        JSON.stringify({
+          context_id: turn1,
+          done: true,
+          message: "The requested context ID does not exist or may have already been cancelled.",
+          status_code: 400,
+          title: "Invalid context ID",
+          type: "error",
+        }),
+      ),
+    );
+    await flush();
+
+    expect(errors).toEqual([]);
+    // Session stays usable: a subsequent turn still sends.
+    session.sendText("still here");
+    await flush();
+    expect(sends.some((s) => s.transcript === "still here")).toBe(true);
+
+    controller.abort();
+    await session.close();
+  });
+
+  test("a genuine socket error (no context_id) still surfaces as tts_stream_error", async () => {
+    const { session, controller } = await openSession();
+
+    const errors: string[] = [];
+    session.on("error", (e) => errors.push(e.code));
+
+    const ws = session._ws as unknown as { _fire(event: string, payload: unknown): void };
+    ws._fire("error", new Error("connection reset by peer"));
+    await flush();
+
+    expect(errors).toEqual(["tts_stream_error"]);
+
+    controller.abort();
+    await session.close();
+  });
 });
