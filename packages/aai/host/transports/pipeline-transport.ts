@@ -8,7 +8,7 @@
 // already handled by streamText.
 
 import type { LanguageModel, ModelMessage } from "ai";
-import { stepCountIs, streamText } from "ai";
+import { smoothStream, stepCountIs, streamText } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
   DEFAULT_MAX_STEPS,
@@ -31,6 +31,7 @@ import { errorMessage } from "../../sdk/utils.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
+import { createToolCallRepair } from "./pipeline-repair.ts";
 import { createStreamPartHandler } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
@@ -87,6 +88,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const ttsSampleRate = opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE;
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
   const toolChoice = opts.toolChoice ?? "auto";
+  const repairToolCall = createToolCallRepair(opts.llm, log);
   const toolSchemas = opts.toolSchemas ?? [];
   const executeTool: ExecuteTool =
     opts.executeTool ??
@@ -193,10 +195,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         messages,
         tools,
         toolChoice,
-        // Only send temperature when explicitly configured. Some models (e.g.
-        // the Claude 5 family) don't support it and warn on every call; omitting
-        // it keeps those quiet while letting temperature-capable models opt in.
+        // Temperature only when set — Claude 5 ignores it and warns.
         ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
+        // Coalesce text deltas into whole words for TTS; delayInMs:null = no latency.
+        experimental_transform: smoothStream({ delayInMs: null, chunking: "word" }),
+        experimental_repairToolCall: repairToolCall,
         stopWhen: stepCountIs(maxSteps),
         abortSignal: ctl.signal,
       });
@@ -214,11 +217,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         handlePart(part);
       }
       if (ctl.signal.aborted) return;
-      // streamText runs the tool loop internally (stopWhen), so gather EVERY
-      // step's response messages — assistant tool-call message, its `tool`
-      // result, and the final text. (Top-level `result.response.messages` is
-      // the final step only and would drop the tool call/result.) Appending
-      // these to history is how tool context carries into the next turn.
+      // Gather every step's response messages (assistant tool-call + `tool`
+      // result + text) so tool context carries into the next turn. Top-level
+      // `result.response.messages` is final-step only and drops the tool call.
       const steps = await result.steps;
       return steps.flatMap((step) => step.response.messages);
     } catch (err: unknown) {
