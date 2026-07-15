@@ -8,11 +8,13 @@
  * client SPA HMR.
  */
 
-import { existsSync, type FSWatcher, watch } from "node:fs";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { type AgentDef, errorMessage } from "@alexkroman1/aai";
 import type { AgentServer } from "@alexkroman1/aai/runtime";
+import { type FSWatcher, watch } from "chokidar";
+import getPort, { portNumbers } from "get-port";
 import pDebounce from "p-debounce";
 import { buildWorker, evalWorkerBundle } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
@@ -46,9 +48,16 @@ async function loadAgentDef(cwd: string): Promise<AgentDef> {
 
 // ─── File watching ──────────────────────────────────────────────────────────
 
+/** True for paths inside `.aai/` or `node_modules/` (never restart-worthy). */
+export function isIgnoredPath(dir: string, filePath: string): boolean {
+  const rel = path.relative(dir, filePath);
+  return rel.startsWith(".aai") || rel.split(path.sep).includes("node_modules");
+}
+
 /**
  * Watch the agent directory for changes and call `onChange` when detected.
- * Debounces to avoid rapid restarts.
+ * Debounces to avoid rapid restarts. Uses chokidar for reliable recursive
+ * watching across platforms (raw `fs.watch` misses events on Linux).
  */
 function watchDirectory(dir: string, onChange: (filename: string | null) => void): FSWatcher {
   const DEBOUNCE_MS = 300;
@@ -58,13 +67,13 @@ function watchDirectory(dir: string, onChange: (filename: string | null) => void
     onChange(filename);
   }, DEBOUNCE_MS);
 
-  function handleChange(filename: string | null) {
-    if (filename && (filename.startsWith(".aai") || filename.includes("node_modules"))) return;
-
-    void debouncedChange(filename);
-  }
-
-  return watch(dir, { persistent: false }, (_event, filename) => handleChange(filename));
+  const watcher = watch(dir, {
+    ignored: (filePath: string) => isIgnoredPath(dir, filePath),
+    ignoreInitial: true,
+    persistent: false,
+  });
+  watcher.on("all", (_event, filePath) => void debouncedChange(filePath));
+  return watcher;
 }
 
 // ─── Dev server ─────────────────────────────────────────────────────────────
@@ -85,7 +94,10 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const { createRuntime, createServer } = await import("@alexkroman1/aai/runtime");
 
   const hasClient = existsSync(path.join(cwd, "client.tsx"));
-  const backendPort = hasClient ? port + 1 : port;
+  // With a client, Vite owns the user-requested port and proxies to the
+  // backend. Prefer port+1 for the backend but fall back to any nearby free
+  // port instead of failing with EADDRINUSE (the old `port + 1` was blind).
+  const backendPort = hasClient ? await getPort({ port: portNumbers(port + 1, port + 100) }) : port;
   const vitePort = port;
 
   const agentDef = await loadAgentDef(cwd);
@@ -181,7 +193,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   return async () => {
     closed = true;
-    watcher.close();
+    await watcher.close();
     if (currentVite) {
       await currentVite.close();
       currentVite = undefined;

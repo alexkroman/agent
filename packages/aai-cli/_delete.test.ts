@@ -22,10 +22,10 @@ describe("_delete", () => {
     test("sends DELETE to correct URL with auth header", async () => {
       const mockFetch = vi.fn().mockResolvedValue(new Response("OK", { status: 200 }));
       await runDelete(deleteOpts(mockFetch));
-      expect(mockFetch).toHaveBeenCalledWith("http://localhost:3000/cool-cats-jump", {
-        method: "DELETE",
-        headers: { Authorization: "Bearer test-key" },
-      });
+      const [url, init] = mockFetch.mock.calls[0] ?? [];
+      expect(String(url)).toBe("http://localhost:3000/cool-cats-jump");
+      expect(init?.method).toBe("DELETE");
+      expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-key");
     });
   });
 
@@ -87,13 +87,20 @@ describe("_delete", () => {
   });
 
   describe("error response handling", () => {
+    // 5xx is retried, so each attempt needs a fresh (unconsumed) Response.
     test("empty body error response includes status code", async () => {
-      const mockFetch = vi.fn().mockResolvedValue(new Response("", { status: 502 }));
+      const mockFetch = vi
+        .fn()
+        .mockImplementation(() => Promise.resolve(new Response("", { status: 502 })));
       await expect(runDelete(deleteOpts(mockFetch))).rejects.toThrow("delete failed (HTTP 502)");
     });
 
     test("error response with unexpected status includes body text", async () => {
-      const mockFetch = vi.fn().mockResolvedValue(new Response("gateway timeout", { status: 504 }));
+      const mockFetch = vi
+        .fn()
+        .mockImplementation(() =>
+          Promise.resolve(new Response("gateway timeout", { status: 504 })),
+        );
       await expect(runDelete(deleteOpts(mockFetch))).rejects.toThrow(
         "delete failed (HTTP 504): gateway timeout",
       );

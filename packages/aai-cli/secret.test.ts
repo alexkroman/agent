@@ -26,26 +26,21 @@ vi.mock("./_ui.ts", () => ({
   },
 }));
 
-// Mock apiRequestOrThrow to return controlled responses.
-const mockApiRequestOrThrow = vi.fn();
+// Mock apiRequest to return controlled parsed responses.
+const mockApiRequest = vi.fn();
 vi.mock("./_api-client.ts", () => ({
-  apiRequestOrThrow: (...args: unknown[]) => mockApiRequestOrThrow(...args),
+  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
 }));
 
 const { executeSecretList, executeSecretPut, executeSecretDelete } = await import("./secret.ts");
 
 afterEach(() => {
-  mockApiRequestOrThrow.mockReset();
+  mockApiRequest.mockReset();
 });
 
 describe("executeSecretList", () => {
   test("returns list of secret names", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ vars: ["API_KEY", "DB_URL", "SECRET_TOKEN"] }), {
-        status: 200,
-        headers: { "Content-Type": "application/json" },
-      }),
-    );
+    mockApiRequest.mockResolvedValue({ vars: ["API_KEY", "DB_URL", "SECRET_TOKEN"] });
 
     const result = await executeSecretList("/tmp", undefined);
     expect(result.ok).toBe(true);
@@ -55,21 +50,17 @@ describe("executeSecretList", () => {
   });
 
   test("calls correct URL with slug and /secret path", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ vars: [] }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ vars: [] });
 
     await executeSecretList("/tmp", undefined);
 
-    expect(mockApiRequestOrThrow).toHaveBeenCalledTimes(1);
-    const [url] = mockApiRequestOrThrow.mock.calls[0] ?? [];
+    expect(mockApiRequest).toHaveBeenCalledTimes(1);
+    const [url] = mockApiRequest.mock.calls[0] ?? [];
     expect(url).toBe("http://localhost:9999/test-agent/secret");
   });
 
   test("returns empty list when no secrets exist", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ vars: [] }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ vars: [] });
 
     const result = await executeSecretList("/tmp", undefined);
     expect(result.ok).toBe(true);
@@ -79,22 +70,18 @@ describe("executeSecretList", () => {
   });
 
   test("passes apiKey in request options", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ vars: [] }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ vars: [] });
 
     await executeSecretList("/tmp", undefined);
 
-    const [, init] = mockApiRequestOrThrow.mock.calls[0] ?? [];
+    const [, init] = mockApiRequest.mock.calls[0] ?? [];
     expect(init.apiKey).toBe("test-api-key");
   });
 });
 
 describe("executeSecretPut", () => {
   test("sends secret to server with PUT method", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ ok: true });
 
     const result = await executeSecretPut("/tmp", "MY_SECRET", "secret-value", undefined);
     expect(result.ok).toBe(true);
@@ -104,46 +91,37 @@ describe("executeSecretPut", () => {
   });
 
   test("sends secret name and value as JSON body", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ ok: true });
 
     await executeSecretPut("/tmp", "DB_PASS", "p@ssw0rd!", undefined);
 
-    const [, init] = mockApiRequestOrThrow.mock.calls[0] ?? [];
+    const [, init] = mockApiRequest.mock.calls[0] ?? [];
     expect(init.method).toBe("PUT");
-    const body = JSON.parse(init.body as string);
-    expect(body).toEqual({ DB_PASS: "p@ssw0rd!" });
+    expect(init.body).toEqual({ DB_PASS: "p@ssw0rd!" });
   });
 
   test("calls correct URL with slug and /secret path", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ ok: true });
 
     await executeSecretPut("/tmp", "KEY", "val", undefined);
 
-    const [url] = mockApiRequestOrThrow.mock.calls[0] ?? [];
+    const [url] = mockApiRequest.mock.calls[0] ?? [];
     expect(url).toBe("http://localhost:9999/test-agent/secret");
   });
 
   test("passes action: secret in request options", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ ok: true });
 
     await executeSecretPut("/tmp", "KEY", "val", undefined);
 
-    const [, init] = mockApiRequestOrThrow.mock.calls[0] ?? [];
+    const [, init] = mockApiRequest.mock.calls[0] ?? [];
     expect(init.action).toBe("secret");
   });
 });
 
 describe("executeSecretDelete", () => {
   test("sends delete request to server", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ ok: true });
 
     const result = await executeSecretDelete("/tmp", "OLD_KEY", undefined);
     expect(result.ok).toBe(true);
@@ -153,35 +131,29 @@ describe("executeSecretDelete", () => {
   });
 
   test("uses DELETE method", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ ok: true });
 
     await executeSecretDelete("/tmp", "OLD_KEY", undefined);
 
-    const [, init] = mockApiRequestOrThrow.mock.calls[0] ?? [];
+    const [, init] = mockApiRequest.mock.calls[0] ?? [];
     expect(init.method).toBe("DELETE");
   });
 
   test("includes secret name in URL path", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ ok: true });
 
     await executeSecretDelete("/tmp", "MY_SECRET", undefined);
 
-    const [url] = mockApiRequestOrThrow.mock.calls[0] ?? [];
+    const [url] = mockApiRequest.mock.calls[0] ?? [];
     expect(url).toBe("http://localhost:9999/test-agent/secret/MY_SECRET");
   });
 
   test("passes apiKey in request options", async () => {
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ ok: true }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ ok: true });
 
     await executeSecretDelete("/tmp", "KEY", undefined);
 
-    const [, init] = mockApiRequestOrThrow.mock.calls[0] ?? [];
+    const [, init] = mockApiRequest.mock.calls[0] ?? [];
     expect(init.apiKey).toBe("test-api-key");
   });
 });
@@ -189,9 +161,7 @@ describe("executeSecretDelete", () => {
 describe("secret commands with explicit server", () => {
   test("executeSecretList passes server to getServerInfo", async () => {
     const { getServerInfo } = await import("./_agent.ts");
-    mockApiRequestOrThrow.mockResolvedValue(
-      new Response(JSON.stringify({ vars: [] }), { status: 200 }),
-    );
+    mockApiRequest.mockResolvedValue({ vars: [] });
 
     await executeSecretList("/tmp", "https://custom-server.com");
 

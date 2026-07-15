@@ -27,7 +27,7 @@ describe("runDeploy", () => {
     expect(mockFetch).toHaveBeenCalledTimes(1);
     const [url, init] = mockFetch.mock.calls[0] ?? [];
     expect(String(url)).toBe("http://localhost:3000/deploy");
-    expect((init?.headers as Record<string, string>)?.Authorization).toBe("Bearer test-key");
+    expect(new Headers(init?.headers).get("authorization")).toBe("Bearer test-key");
     expect(result.slug).toBe("cool-cats-jump");
   });
 
@@ -67,9 +67,13 @@ describe("runDeploy", () => {
     expect(result.slug).toBe("server-generated");
   });
 
-  test("throws on non-ok error response", async () => {
-    const mockFetch = vi.fn().mockResolvedValue(new Response("server error", { status: 500 }));
+  test("throws on non-ok error response after retries", async () => {
+    // 5xx is retried, so each attempt needs a fresh (unconsumed) Response.
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(new Response("server error", { status: 500 })));
     await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow("deploy failed (HTTP 500)");
+    expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
   test("throws on network failure", async () => {

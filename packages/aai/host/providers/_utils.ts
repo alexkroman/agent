@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 /** Shared helpers for host-side STT/TTS provider openers. */
 
+import { pEvent } from "p-event";
 import type WebSocket from "ws";
 import { errorMessage } from "../../sdk/utils.ts";
 
@@ -37,19 +38,8 @@ export function requireApiKey(
 }
 
 /** Resolve once the socket opens; reject with the socket error if it fails first. */
-export function waitForOpen(ws: WebSocket): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const onOpen = (): void => {
-      ws.off("error", onErr);
-      resolve();
-    };
-    const onErr = (err: Error): void => {
-      ws.off("open", onOpen);
-      reject(err);
-    };
-    ws.once("open", onOpen);
-    ws.once("error", onErr);
-  });
+export async function waitForOpen(ws: WebSocket): Promise<void> {
+  await pEvent(ws, "open"); // rejects on "error" (p-event's default rejectionEvents)
 }
 
 /** Invoke `close` when `signal` aborts (immediately if already aborted). */
