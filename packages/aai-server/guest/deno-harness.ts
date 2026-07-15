@@ -45,11 +45,9 @@ import type {
 // importing it from `./deno-harness.ts`.
 export {
   handleHostResponse,
-  handleKvResponse,
   makeKvAdapter,
   makeVectorAdapter,
   pendingHostRequests,
-  pendingKvRequests,
   sendError,
   sendResponse,
   writeMessage,

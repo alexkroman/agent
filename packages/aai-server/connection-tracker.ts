@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-export type ConnectionTracker = {
+type ConnectionTracker = {
   /** Try to acquire a connection slot. Returns false if at capacity. */
   tryAcquire(): boolean;
   /** Release a connection slot. */

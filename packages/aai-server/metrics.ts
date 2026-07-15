@@ -208,11 +208,8 @@ export type SessionEndReason = "client_close" | "server_close" | "error" | "time
 export type SessionErrorKind = "upgrade" | "sandbox_resolve" | "provider" | "internal";
 export type SandboxInitPath = "warm" | "cold";
 export type SandboxInitFailReason = "bundle_missing" | "worker_spawn" | "host_init";
-export type SandboxSpawnPhase = "rootfs" | "bundle_dir" | "spawn" | "total";
 export type SandboxEvictReason = "idle" | "terminate";
 export type WarmPoolAcquireResult = "hit" | "miss";
-export type Upstream = "tigris";
-export type UpstreamStatus = "ok" | "error";
 
 // ── Helpers ──
 

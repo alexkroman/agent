@@ -33,7 +33,7 @@ export function isTransientNetworkError(err: unknown): boolean {
   return false;
 }
 
-export type RetryOptions = {
+type RetryOptions = {
   /** Total attempts including the first. Default 3. */
   attempts?: number;
   /** Base delay for exponential backoff, ms. Default 50. */

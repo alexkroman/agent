@@ -28,7 +28,7 @@ import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./ty
  * which uses Zod schemas for parameters — `agentToolsToSchemas()` in
  * `_internal-types.ts` converts ToolDef → ToolSchema (JSON Schema) for transport.
  */
-export type ToolManifest = {
+type ToolManifest = {
   description: string;
   parameters?: Record<string, unknown> | undefined;
 };

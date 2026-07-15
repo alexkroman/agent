@@ -20,7 +20,7 @@ export type { ExecuteTool } from "../sdk/_internal-types.ts";
 
 const yieldTick = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
 
-export type ExecuteToolCallOptions = {
+type ExecuteToolCallOptions = {
   tool: ToolDef;
   env: Readonly<Record<string, string>>;
   state?: Record<string, unknown>;

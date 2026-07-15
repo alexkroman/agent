@@ -8,7 +8,6 @@
 export {
   type AgentConfig,
   AgentConfigSchema,
-  type AgentConfigSource,
   agentToolsToSchemas,
   EMPTY_PARAMS,
   type ExecuteTool,

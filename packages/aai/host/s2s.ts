@@ -7,7 +7,6 @@ import type { JSONSchema7 } from "json-schema";
 import WsWebSocket from "ws";
 import { z } from "zod";
 import { WS_OPEN } from "../sdk/constants.ts";
-import type { ClientEvent } from "../sdk/protocol.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
@@ -83,13 +82,6 @@ function parseS2sMessage(obj: Record<string, unknown>): S2sServerMessage | undef
   const result = S2sMessageSchema.safeParse(obj);
   return result.success ? result.data : undefined;
 }
-
-/**
- * A ClientEvent extended with optional internal metadata for S2S-specific
- * fields that don't appear on the wire protocol (e.g. `interrupted` on
- * `agent_transcript`, which affects conversation history but not the client).
- */
-export type S2sEvent = ClientEvent & { _interrupted?: boolean };
 
 /**
  * Per-connection dispatch state. Used to dedup events that the upstream S2S

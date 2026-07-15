@@ -10,8 +10,8 @@ import { SidebarLayout } from "./components/sidebar-layout.tsx";
 import { StartScreen } from "./components/start-screen.tsx";
 import { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-config-context.ts";
 import { SessionProvider, ThemeProvider } from "./context.ts";
-import { createSessionCore, type SessionCore, type WebSocketConstructor } from "./session-core.ts";
-import type { ClientTheme } from "./types.ts";
+import { createSessionCore, type SessionCore } from "./session-core.ts";
+import type { ClientTheme, WebSocketConstructor } from "./types.ts";
 
 // ─── Config types ─────────────────────────────────────────────────────────────
 

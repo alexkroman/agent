@@ -30,15 +30,6 @@ export type {
   SessionCoreOptions,
   SessionSnapshot,
 } from "./session-core-types.ts";
-export type {
-  AgentState,
-  ChatMessage,
-  SessionError,
-  SessionErrorCode,
-  ToolCallInfo,
-  VoiceSessionOptions,
-  WebSocketConstructor,
-} from "./types.ts";
 
 // ─── Audio initialization ────────────────────────────────────────────────────
 

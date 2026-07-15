@@ -54,7 +54,7 @@ export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 
 // Covers both `AgentDef` (where `maxSteps` may be a function) and
 // `IsolateConfig` (where it is always a number).
-export interface AgentConfigSource {
+interface AgentConfigSource {
   name: string;
   systemPrompt: string;
   greeting: string;

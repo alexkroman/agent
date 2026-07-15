@@ -82,7 +82,7 @@ function pinResolvedIp(url: string, resolvedIp: string): { pinnedUrl: string; ho
 /** Headers that must never be replayed to a different origin across a redirect. */
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"];
 
-export type SsrfFetchOptions = {
+type SsrfFetchOptions = {
   /**
    * Called for the initial URL and every redirect target. Returning false
    * blocks the request. Used to enforce the agent's `allowedHosts` egress

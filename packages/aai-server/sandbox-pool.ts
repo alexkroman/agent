@@ -40,7 +40,7 @@ import type { WarmHarness } from "./sandbox-vm.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────
 
-export type SandboxPoolOptions = {
+type SandboxPoolOptions = {
   /** Target number of idle warm harnesses to keep ready. Must be >= 1. */
   targetSize: number;
   /**

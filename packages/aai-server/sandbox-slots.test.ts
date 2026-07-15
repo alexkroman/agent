@@ -13,7 +13,6 @@ import {
   releaseSlotSession,
   setSlot,
   terminateSlot,
-  touchSlot,
 } from "./sandbox-slots.ts";
 import { counterValue, gaugeValue } from "./test-utils.ts";
 
@@ -129,23 +128,6 @@ describe("idle sandbox eviction", () => {
     expect(counterValue("aai_sandbox_evicted_total", { reason: "idle" })).toBe(1);
   });
 
-  it("touchSlot resets the idle timer", async () => {
-    const cache = createSlotCache();
-    const slot = makeSlot("beta");
-    setSlot(cache, slot);
-    const sandbox = makeSandbox();
-    attachSandbox(cache, slot, sandbox);
-
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS - 1000);
-    touchSlot(cache, "beta");
-    // 1 s past where the original timer would have fired.
-    await vi.advanceTimersByTimeAsync(2000);
-    expect(sandbox.shutdown).not.toHaveBeenCalled();
-
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS);
-    expect(sandbox.shutdown).toHaveBeenCalledOnce();
-  });
-
   it("does not evict a sandbox with an active session, and evicts after release", async () => {
     const cache = createSlotCache();
     const slot = makeSlot("busy");
@@ -162,21 +144,6 @@ describe("idle sandbox eviction", () => {
     releaseSlotSession(cache, "busy");
     await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
     expect(sandbox.shutdown).toHaveBeenCalledOnce();
-  });
-
-  it("touchSlot is a no-op for unknown slugs", () => {
-    const cache = createSlotCache();
-    expect(() => touchSlot(cache, "nope")).not.toThrow();
-  });
-
-  it("touchSlot is a no-op when the slot has no resident sandbox", async () => {
-    const cache = createSlotCache();
-    const slot = makeSlot("gamma");
-    setSlot(cache, slot);
-    expect(() => touchSlot(cache, "gamma")).not.toThrow();
-    // No timer was scheduled — nothing should fire.
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-    expect(slot.idleTimer).toBeUndefined();
   });
 
   it("terminateSlot clears the idle timer to avoid leaks", async () => {

@@ -35,20 +35,20 @@ function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
 }
 
 /** Config payload extracted from a `config` server message. */
-export type SessionConfigMessage = {
+type SessionConfigMessage = {
   sampleRate: number;
   ttsSampleRate: number;
   sid?: string | undefined;
 };
 
 /** Dependencies the message handlers need from the owning session core. */
-export type MessageHandlerDeps = {
+type MessageHandlerDeps = {
   getSnapshot: () => SessionSnapshot;
   updateState: (partial: Partial<SessionSnapshot>) => void;
   conn: ConnState;
 };
 
-export type MessageHandlers = {
+type MessageHandlers = {
   /**
    * Dispatch an incoming WebSocket message.
    *

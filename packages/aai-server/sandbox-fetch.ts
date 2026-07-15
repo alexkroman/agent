@@ -10,10 +10,10 @@
 import { errorMessage, matchesAllowedHost } from "@alexkroman1/aai";
 import { ssrfSafeFetch } from "./ssrf.ts";
 
-export const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
-export const DEFAULT_MAX_CONCURRENT = 10;
+const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
+const DEFAULT_MAX_CONCURRENT = 10;
 export const FETCH_TIMEOUT_MS = 30_000;
-export const CHUNK_SIZE = 64 * 1024;
+const CHUNK_SIZE = 64 * 1024;
 
 export type FetchRequest = {
   url: string;
@@ -53,7 +53,7 @@ export type FetchResponseMessage =
   | FetchResponseEnd
   | FetchResponseError;
 
-export type FetchHandlerOptions = {
+type FetchHandlerOptions = {
   allowedHosts: string[];
   fetchFn?: typeof globalThis.fetch;
   skipSsrf?: boolean;

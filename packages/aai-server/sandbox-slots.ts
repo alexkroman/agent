@@ -101,13 +101,6 @@ export function attachSandbox(
   resetIdleTimer(slots, slot);
 }
 
-/** Bump idle eviction for `slug`. No-op if missing or no resident sandbox. */
-export function touchSlot(slots: SlotCache, slug: string): void {
-  const slot = slots.get(slug);
-  if (!slot?.sandbox) return;
-  resetIdleTimer(slots, slot);
-}
-
 /** Register a new active session on `slug`; pauses idle eviction. */
 export function acquireSlotSession(slots: SlotCache, slug: string): void {
   const slot = slots.get(slug);

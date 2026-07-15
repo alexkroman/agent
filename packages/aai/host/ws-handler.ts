@@ -31,7 +31,7 @@ export type SessionWebSocket = {
 };
 
 /** Options for wiring a WebSocket to a session. */
-export type WsSessionOptions = {
+type WsSessionOptions = {
   /** Map of active sessions (session is added on open, removed on close). */
   sessions: Map<string, SessionCore>;
   /** Factory function to create a session for a given ID and client sink. */

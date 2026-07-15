@@ -4,7 +4,7 @@ import { prefixStorage, type Storage, type StorageValue } from "unstorage";
 import { MAX_VALUE_SIZE } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 
-export type UnstorageKvOptions = {
+type UnstorageKvOptions = {
   storage: Storage;
   prefix?: string;
 };
