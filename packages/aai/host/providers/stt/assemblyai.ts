@@ -37,7 +37,7 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       );
 
       const client = new AssemblyAI({ apiKey });
-      const speechModel = resolveSpeechModel(opts.model ?? "u3pro-rt");
+      const speechModel = resolveSpeechModel(opts.model ?? "universal-3.5-pro");
       const transcriber = client.streaming.transcriber({
         sampleRate: openOpts.sampleRate,
         // SDK types `speechModel` as a string-literal union; accept `string` here.
