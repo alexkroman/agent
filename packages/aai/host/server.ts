@@ -21,6 +21,7 @@ import { VectorRequestSchema } from "../sdk/protocol.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
+import { isHostAllowed, startHostSession } from "./host-mode.ts";
 import type { Runtime } from "./runtime.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
@@ -40,6 +41,13 @@ type ServerOptions = {
   clientHtml?: string;
   clientDir?: string;
   logger?: Logger;
+  /**
+   * Environment for host-mode connections (a `?host=1` WebSocket whose first
+   * `config` frame supplies its own agent). Enables gating via `AAI_ALLOW_HOST`
+   * and provides secrets to the per-connection runtime. Omit to disable host
+   * mode entirely (any `?host=1` connection is then rejected).
+   */
+  env?: Record<string, string>;
 };
 
 /**
@@ -159,7 +167,7 @@ async function handleKvGet(
  * @internal Used by aai-cli dev server.
  */
 export function createServer(options: ServerOptions): AgentServer {
-  const { runtime, clientHtml, clientDir, logger = consoleLogger, kv, vector } = options;
+  const { runtime, clientHtml, clientDir, logger = consoleLogger, kv, vector, env } = options;
   const name = options.name ?? "agent";
 
   if (clientHtml && clientDir) {
@@ -218,12 +226,35 @@ export function createServer(options: ServerOptions): AgentServer {
     const url = req.url?.split("?")[0] ?? "";
     if (!url.startsWith("/websocket")) return;
 
+    const params = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
+    const wantsHost = params.has("host");
+
     wss.handleUpgrade(req, socket, head, (ws) => {
       const startOpts = parseWsUpgradeParams(req.url ?? "");
+      const session = ws as unknown as SessionWebSocket;
+
+      // Host mode: defer startSession until the first `config` frame supplies
+      // the per-connection agent. Requires `env` (for gating + secrets).
+      if (wantsHost && env && isHostAllowed(env)) {
+        logger.info(`WS upgrade ${url} (host mode)`);
+        startHostSession(session, { env, startOpts, logger });
+        return;
+      }
+      if (wantsHost) {
+        logger.warn(`WS upgrade ${url} rejected: host mode unavailable`);
+        session.send(
+          JSON.stringify({
+            type: "error",
+            code: "protocol",
+            message: "host mode is not enabled on this server",
+          }),
+        );
+        (ws as unknown as { close?: (code?: number) => void }).close?.(1008);
+        return;
+      }
 
       logger.info(`WS upgrade ${url}${startOpts.skipGreeting ? " (resume)" : ""}`);
-
-      runtime.startSession(ws as unknown as SessionWebSocket, startOpts);
+      runtime.startSession(session, startOpts);
     });
   });
 

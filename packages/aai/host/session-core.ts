@@ -39,6 +39,13 @@ export type SessionCoreOptions = {
   transport: Transport;
   logger?: Logger;
   maxHistory?: number;
+  /**
+   * Host/relay mode hook. When set, tool calls are relayed to the client for
+   * out-of-process execution: `onToolCall` skips its own `tool_call` emit (the
+   * relay `executeTool` emits it, keyed by `toolCallId`) and inbound
+   * `tool_result` frames are routed here to settle the pending call.
+   */
+  onToolResult?: (msg: { toolCallId: string; result: string; error?: string }) => void;
 };
 
 export type SessionCore = {
@@ -51,6 +58,8 @@ export type SessionCore = {
   onCancel(): void;
   onReset(): void;
   onHistory(messages: readonly Message[]): void;
+  /** Inbound relayed tool result (host mode): settles the pending relay call. */
+  onToolResult(toolCallId: string, result: string, error?: string): void;
   // Inbound from transport (spec §4.2)
   onReplyStarted(replyId: string): void;
   onReplyDone(): void;
@@ -172,6 +181,9 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       // context on reconnect (S2S restores context service-side via resume).
       opts.transport.seedHistory?.(messages);
     },
+    onToolResult(toolCallId, result, error) {
+      opts.onToolResult?.({ toolCallId, result, ...(error !== undefined ? { error } : {}) });
+    },
 
     // ─── Inbound from transport ───────────────────────────────────────────
     onReplyStarted(replyId) {
@@ -233,7 +245,9 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
 
     onToolCall(callId, name, args) {
-      emit({ type: "tool_call", toolCallId: callId, toolName: name, args });
+      // In relay/host mode the relay `executeTool` emits the `tool_call` frame
+      // itself (keyed by callId), so emitting here too would duplicate it.
+      if (!opts.onToolResult) emit({ type: "tool_call", toolCallId: callId, toolName: name, args });
       if (reply.currentReplyId === null) {
         log.warn("tool_call with no active reply", { sid: opts.id, name });
         return;
@@ -259,7 +273,9 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       }
       const p = (async () => {
         try {
-          const result = await opts.executeTool(name, args, opts.id, history);
+          const result = await opts.executeTool(name, args, opts.id, history, {
+            toolCallId: callId,
+          });
           // Full result goes to the provider; the client `tool_call_done`
           // event is capped by the wire schema (MAX_TOOL_RESULT_CHARS), so
           // truncate it or the client silently drops the whole message and the

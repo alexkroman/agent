@@ -97,6 +97,12 @@ exports[`protocol schema shapes > ClientMessageSchema option shapes 1`] = `
   "reset": [
     "type",
   ],
+  "tool_result": [
+    "error",
+    "result",
+    "toolCallId",
+    "type",
+  ],
 }
 `;
 

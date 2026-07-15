@@ -94,6 +94,15 @@ export type RuntimeOptions = {
    * is provided (the host doesn't have the tool definitions to derive schemas).
    */
   toolSchemas?: ToolSchema[] | undefined;
+  /**
+   * Host/relay mode hook. When set, inbound `tool_result` frames are routed to
+   * this handler (which settles the relay's pending call) and the session skips
+   * its own `tool_call` emit since the relay `executeTool` emits it. Paired with
+   * a relay `executeTool` + `toolSchemas`. See host-mode.ts.
+   */
+  onToolResult?:
+    | ((msg: { toolCallId: string; result: string; error?: string }) => void)
+    | undefined;
   /** System prompt guidance for builtin tools. Passed through in sandbox mode. */
   toolGuidance?: string[] | undefined;
   /**

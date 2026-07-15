@@ -421,6 +421,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       executeTool,
       transport,
       logger,
+      ...(opts.onToolResult ? { onToolResult: opts.onToolResult } : {}),
     });
 
     return core;
