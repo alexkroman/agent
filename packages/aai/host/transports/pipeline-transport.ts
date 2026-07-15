@@ -310,7 +310,20 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         accumulated += delta;
       });
 
-      if (ctl.signal.aborted) return false;
+      if (ctl.signal.aborted) {
+        // Barge-in mid-turn: persist the spoken-so-far text so the next turn's
+        // LLM knows it was cut off. `accumulated` is the generated text (our
+        // best proxy — there is no playback-position feedback). Marker goes to
+        // history only; the client gets raw text + the interrupted flag.
+        if (accumulated.length > 0) {
+          callbacks.onAgentTranscript(accumulated, true);
+          const marked = `${accumulated} [interrupted]`;
+          history.pushConversation({ role: "assistant", content: marked });
+          history.pushLlm({ role: "assistant", content: marked });
+          sttSession?.updateAgentContext?.(accumulated);
+        }
+        return false;
+      }
 
       // Persist the assistant tool-call message(s) and their `tool` results so
       // the next turn retains tool context, not just the spoken transcript.

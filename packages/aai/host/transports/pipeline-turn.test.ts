@@ -270,3 +270,88 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.stop();
   });
 });
+
+describe("interrupted-speech persistence", () => {
+  test("barge-in persists spoken-so-far text with an [interrupted] marker and flags the transcript", async () => {
+    const { opts, stt, tts, callbacks } = makeOpts({
+      llm: createFakeLanguageModel({
+        // Turn 1 streams slowly so we can barge in mid-stream; turn 2 is a plain reply.
+        steps: [
+          [
+            { type: "text", text: "Your balance " },
+            { type: "text", text: "is five " },
+            { type: "text", text: "hundred dollars." },
+          ],
+          [{ type: "text", text: "Sure." }],
+        ],
+        delayMs: 20,
+      }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+
+    // Turn 1 — wait until text has streamed to TTS (so `accumulated` is
+    // non-empty), then barge in (default threshold = 1 word).
+    stt.last()?.fireFinal("what is my balance");
+    await vi.waitFor(() => {
+      expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+    });
+    stt.last()?.firePartial("stop");
+
+    // The interrupted transcript is surfaced with interrupted=true.
+    await vi.waitFor(() => {
+      expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
+        expect.stringContaining("Your balance"),
+        true,
+      );
+    });
+    const callsAfterTurn1 = llm.calls.length;
+
+    // Turn 2 — its LLM prompt must contain the persisted interrupted assistant message.
+    stt.last()?.fireFinal("never mind");
+    await vi.waitFor(() => {
+      expect(llm.calls.length).toBeGreaterThan(callsAfterTurn1);
+    });
+    const turn2Prompt = JSON.stringify(llm.calls[callsAfterTurn1]?.prompt);
+    expect(turn2Prompt).toContain("[interrupted]");
+    expect(turn2Prompt).toContain("Your balance");
+    await t.stop();
+  });
+
+  test("barge-in before any text is generated persists nothing", async () => {
+    // `streamScript` awaits `delayMs` BEFORE the first delta, so a barge-in
+    // inside that window leaves `accumulated` empty — the guard's no-op case.
+    // (Note: a tool-first turn would NOT work here — the guaranteed hold
+    // phrase "One moment." feeds onDelta/accumulated, so it would persist.)
+    const { opts, stt, callbacks } = makeOpts({
+      llm: createFakeLanguageModel({
+        steps: [[{ type: "text", text: "Hello there." }], [{ type: "text", text: "Sure." }]],
+        delayMs: 50,
+      }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+
+    stt.last()?.fireFinal("hi");
+    // Barge in during the pre-first-delta delay (default threshold = 1 word).
+    await new Promise((r) => setTimeout(r, 10));
+    stt.last()?.firePartial("stop");
+
+    await vi.waitFor(() => {
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+    });
+    // No text accumulated → no interrupted transcript surfaced.
+    expect(callbacks.onAgentTranscript).not.toHaveBeenCalledWith(expect.anything(), true);
+
+    // …and nothing persisted: turn 2's prompt carries no [interrupted] marker.
+    const callsAfterTurn1 = llm.calls.length;
+    stt.last()?.fireFinal("never mind");
+    await vi.waitFor(() => {
+      expect(llm.calls.length).toBeGreaterThan(callsAfterTurn1);
+    });
+    expect(JSON.stringify(llm.calls[callsAfterTurn1]?.prompt)).not.toContain("[interrupted]");
+    await t.stop();
+  });
+});
