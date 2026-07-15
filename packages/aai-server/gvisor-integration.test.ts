@@ -133,9 +133,8 @@ describe.skipIf(!canRun)("gVisor integration (real runsc)", () => {
 
     // Register KV handlers on the host side
     const kvStore = new Map<string, unknown>();
-    conn.onRequest("kv/get", async (params: { key: string }) => ({
-      value: kvStore.get(params.key) ?? null,
-    }));
+    // Match the production kv/get contract: return the value directly.
+    conn.onRequest("kv/get", async (params: { key: string }) => kvStore.get(params.key) ?? null);
     conn.onRequest("kv/set", async (params: { key: string; value: unknown }) => {
       kvStore.set(params.key, params.value);
       return { ok: true };

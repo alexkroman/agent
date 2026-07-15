@@ -703,6 +703,38 @@ describe("kv/* handlers via injected Kv", () => {
     handle.conn.dispose();
   });
 
+  it("kv/set forwards expireIn (TTL) to the Kv instance", async () => {
+    const setSpy = vi.fn().mockResolvedValue(undefined);
+    const kv = {
+      get: vi.fn().mockResolvedValue(null),
+      set: setSpy,
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const opts = baseOpts({ kv });
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const detach = autorespondBundleLoad(hostWritable, hostReadable);
+
+    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
+    detach();
+
+    const reqId = 603;
+    hostReadable.push(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: reqId,
+        method: "kv/set",
+        params: { key: "ttlkey", value: "v", expireIn: 60_000 },
+      })}\n`,
+    );
+
+    await waitForResponseId(writtenLines, reqId);
+
+    expect(setSpy).toHaveBeenCalledWith("ttlkey", "v", { expireIn: 60_000 });
+
+    handle.conn.dispose();
+  });
+
   it("kv/del delegates to provided Kv instance", async () => {
     const deleteSpy = vi.fn().mockResolvedValue(undefined);
     const kv = {

@@ -46,6 +46,7 @@ const KvSetParamsSchema = z.object({
       (v) => JSON.stringify(v).length <= MAX_VALUE_SIZE,
       `Value exceeds max size of ${MAX_VALUE_SIZE} bytes`,
     ),
+  expireIn: z.number().int().positive().optional(),
 });
 const KvDelParamsSchema = z.object({ key: SafeKvKeySchema });
 
@@ -132,7 +133,11 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
     });
     conn.onRequest("kv/set", async (raw: unknown) => {
       const p = KvSetParamsSchema.parse(raw);
-      await kv.set(p.key, p.value);
+      if (p.expireIn !== undefined) {
+        await kv.set(p.key, p.value, { expireIn: p.expireIn });
+      } else {
+        await kv.set(p.key, p.value);
+      }
     });
     conn.onRequest("kv/del", async (raw: unknown) => {
       const p = KvDelParamsSchema.parse(raw);

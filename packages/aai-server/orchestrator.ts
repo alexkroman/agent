@@ -51,7 +51,7 @@ import {
   type SessionMode,
   serialize,
 } from "./metrics.ts";
-import { authMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
+import { authMw, existingOwnerMw, ownerMw, slugMw, validateSlug } from "./middleware.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
@@ -164,16 +164,19 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const agents = new Hono<HonoEnv>();
   agents.use("*", slugMw);
 
+  // Deploy claims a new slug, so it uses ownerMw (unclaimed allowed). Every
+  // other owner-scoped route operates on an existing agent's data/secrets and
+  // uses existingOwnerMw, which rejects unclaimed slugs.
   agents.post("/deploy", ownerMw, zValidator("json", DeployBodySchema), handleDeploy);
-  agents.delete("/", ownerMw, handleDelete);
-  agents.get("/secret", ownerMw, handleSecretList);
-  agents.put("/secret", ownerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);
-  agents.delete("/secret/:key", ownerMw, handleSecretDelete);
-  agents.post("/kv", ownerMw, zValidator("json", KvRequestSchema), async (c) => {
+  agents.delete("/", existingOwnerMw, handleDelete);
+  agents.get("/secret", existingOwnerMw, handleSecretList);
+  agents.put("/secret", existingOwnerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);
+  agents.delete("/secret/:key", existingOwnerMw, handleSecretDelete);
+  agents.post("/kv", existingOwnerMw, zValidator("json", KvRequestSchema), async (c) => {
     const { agentConfig, env } = await loadAgentConfig(c, c.var.slug);
     return handleKv(c, resolveAgentKv(c, c.var.slug, agentConfig, env));
   });
-  agents.get("/kv", ownerMw, async (c) => {
+  agents.get("/kv", existingOwnerMw, async (c) => {
     const key = c.req.query("key");
     if (!key) return c.json({ error: "Missing key query parameter" }, 400);
     const { agentConfig, env } = await loadAgentConfig(c, c.var.slug);
@@ -182,7 +185,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     if (value === null) return c.json(null, 404);
     return c.json(value);
   });
-  agents.post("/vector", ownerMw, zValidator("json", VectorRequestSchema), async (c) => {
+  agents.post("/vector", existingOwnerMw, zValidator("json", VectorRequestSchema), async (c) => {
     const slug = c.var.slug;
     const { agentConfig, env } = await loadAgentConfig(c, slug);
     const vector: Vector = agentConfig?.vector

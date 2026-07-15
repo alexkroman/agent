@@ -61,8 +61,9 @@ export const pendingKvRequests = pendingHostRequests;
 
 const kv: KvInterface = {
   async get(key: string): Promise<unknown> {
-    const resp = (await hostRequest("kv/get", { key })) as { value?: unknown };
-    return resp?.value ?? null;
+    // The host's kv/get handler returns the stored value directly as the RPC
+    // result (see configureSandbox), not wrapped in { value } — return it as-is.
+    return (await hostRequest("kv/get", { key })) ?? null;
   },
   async set(key: string, value: unknown, opts?: { expireIn?: number }): Promise<void> {
     await hostRequest("kv/set", {

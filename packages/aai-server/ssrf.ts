@@ -79,16 +79,44 @@ function pinResolvedIp(url: string, resolvedIp: string): { pinnedUrl: string; ho
   return { pinnedUrl: parsed.href, host };
 }
 
+/** Headers that must never be replayed to a different origin across a redirect. */
+const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"];
+
+export type SsrfFetchOptions = {
+  /**
+   * Called for the initial URL and every redirect target. Returning false
+   * blocks the request. Used to enforce the agent's `allowedHosts` egress
+   * allowlist on redirect targets, not just the initial URL.
+   */
+  isHostAllowed?: (hostname: string) => boolean;
+};
+
 export async function ssrfSafeFetch(
   url: string,
   init: RequestInit,
   fetchFn: typeof globalThis.fetch,
+  opts: SsrfFetchOptions = {},
 ): Promise<Response> {
+  const { isHostAllowed } = opts;
+  const originalOrigin = new URL(url).origin;
+  const checkAllowed = (target: string): void => {
+    if (isHostAllowed && !isHostAllowed(new URL(target).hostname)) {
+      throw new SsrfBlockedError(
+        `Blocked redirect to disallowed host: ${new URL(target).hostname}`,
+      );
+    }
+  };
+  checkAllowed(url);
   let resolvedIp = await resolveAndAssertPublic(url);
   let currentUrl = url;
   for (let i = 0; i < MAX_REDIRECTS; i++) {
     let fetchUrl = currentUrl;
     const headers = new Headers(init.headers);
+    // Drop credentials once the request has left its original origin so an
+    // open redirect on an allowed host can't exfiltrate the agent's token.
+    if (new URL(currentUrl).origin !== originalOrigin) {
+      for (const h of CREDENTIAL_HEADERS) headers.delete(h);
+    }
     if (resolvedIp) {
       const { pinnedUrl, host } = pinResolvedIp(currentUrl, resolvedIp);
       fetchUrl = pinnedUrl;
@@ -99,6 +127,7 @@ export async function ssrfSafeFetch(
     const location = resp.headers.get("location");
     if (!location) return resp;
     currentUrl = new URL(location, currentUrl).href;
+    checkAllowed(currentUrl);
     resolvedIp = await resolveAndAssertPublic(currentUrl);
   }
   throw new Error("Too many redirects");
