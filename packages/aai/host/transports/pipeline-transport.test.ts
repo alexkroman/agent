@@ -219,6 +219,74 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("partial STT after the turn finished but with client audio still playing triggers cancel", async () => {
+      // Synthesis outruns real-time playback: the server-side turn completes
+      // (turnController null) while the client still holds buffered audio.
+      // "Stop" arriving in that window must still cancel, or the buffered
+      // speech plays out in full.
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script: [{ type: "text", text: "20, 19, 18…" }] }),
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("count down from 20");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalled();
+      });
+
+      // 10 s of PCM16 at the default 24 kHz — client playback lags well behind.
+      tts.last()?.fireAudio(new Int16Array(240_000));
+
+      stt.last()?.firePartial("stop");
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(tts.last()?.cancel).toHaveBeenCalled();
+      await t.stop();
+    });
+
+    test("final STT with client audio still playing cancels stale audio before the new turn", async () => {
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] }),
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("count down from 20");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalled();
+      });
+
+      tts.last()?.fireAudio(new Int16Array(240_000));
+
+      stt.last()?.fireFinal("stop that");
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(tts.last()?.cancel).toHaveBeenCalled();
+      // The new turn still runs after the stale audio is cancelled.
+      await vi.waitFor(() => {
+        expect(callbacks.onUserTranscript).toHaveBeenCalledWith("stop that");
+      });
+      await t.stop();
+    });
+
+    test("partial STT when idle with no pending playback does not cancel", async () => {
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] }),
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("hi");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalled();
+      });
+
+      // No audio was forwarded, so nothing can be playing client-side.
+      stt.last()?.firePartial("hello again");
+      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(tts.last()?.cancel).not.toHaveBeenCalled();
+      await t.stop();
+    });
+
     test("cancelReply() aborts the turn and calls ttsSession.cancel()", async () => {
       const script: ScriptedPart[] = [
         { type: "text", text: "some " },

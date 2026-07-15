@@ -9,12 +9,49 @@
 // per-chunk mechanics.
 
 import type { ModelMessage } from "ai";
-import { PIPELINE_FLUSH_TIMEOUT_MS } from "../../sdk/constants.ts";
+import { PIPELINE_FLUSH_TIMEOUT_MS, PIPELINE_PLAYBACK_GRACE_MS } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { capToolResult, errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
+
+/** Estimated client-side playback clock — see {@link createPlaybackClock}. */
+export type PlaybackClock = {
+  /** Advance the clock by one forwarded PCM16 chunk's duration. */
+  onChunk(pcm: Int16Array): void;
+  /** Restart the clock (the client just flushed its playback buffer). */
+  reset(): void;
+  /** True while the client may still be playing already-forwarded audio. */
+  pending(): boolean;
+};
+
+/**
+ * Track when the client is estimated to finish playing forwarded TTS audio.
+ *
+ * Synthesis outruns real-time playback, so a turn can finish server-side
+ * while the client still holds many seconds of buffered audio; barge-in must
+ * keep working through that window or "stop" lets the buffered speech play
+ * out in full. Chunks queue client-side, so each forwarded chunk's duration
+ * (PCM16 mono: one sample per Int16) accumulates from wherever the previous
+ * chunk left off. `pending()` errs late by PIPELINE_PLAYBACK_GRACE_MS since
+ * real playback starts after network latency + the client jitter buffer.
+ */
+export function createPlaybackClock(sampleRateHz: number): PlaybackClock {
+  let endsAtMs = 0;
+  return {
+    onChunk(pcm) {
+      const chunkMs = (pcm.length / sampleRateHz) * 1000;
+      endsAtMs = Math.max(endsAtMs, Date.now()) + chunkMs;
+    },
+    reset() {
+      endsAtMs = 0;
+    },
+    pending() {
+      return Date.now() < endsAtMs + PIPELINE_PLAYBACK_GRACE_MS;
+    },
+  };
+}
 
 /** Convert an internal conversation {@link Message} to a Vercel AI {@link ModelMessage}. */
 export function toModelMessage(m: Message): ModelMessage {

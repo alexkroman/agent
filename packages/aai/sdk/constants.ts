@@ -27,6 +27,16 @@ export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
  */
 export const PIPELINE_FLUSH_TIMEOUT_MS = 10_000;
 
+/**
+ * Slack added to the pipeline transport's estimated client playback deadline
+ * when deciding whether user speech is a barge-in. The estimate assumes each
+ * forwarded TTS chunk starts playing the instant it is sent, so real playback
+ * always ends a little later (network latency + client jitter buffer); the
+ * grace keeps barge-in working through that tail. A spurious cancel inside
+ * the window is harmless — the client flushes an already-empty buffer.
+ */
+export const PIPELINE_PLAYBACK_GRACE_MS = 750;
+
 export const MAX_TOOL_RESULT_CHARS = 4000;
 export const MAX_PAGE_CHARS = 10_000;
 export const MAX_HTML_BYTES = 200_000;
