@@ -109,6 +109,56 @@ export function createSessionStateMap(initState?: () => Record<string, unknown>)
   };
 }
 
+// ---- run_code builtin -------------------------------------------------------
+
+/** Wall-clock cap for a single run_code execution (mirrors the SDK constant). */
+const RUN_CODE_TIMEOUT_MS = 5000;
+
+/**
+ * Execute agent-supplied JavaScript for the `run_code` builtin.
+ *
+ * `run_code` runs HERE, inside the Deno guest, not on the host. The gVisor
+ * sandbox plus Deno's permission model (`--no-prompt`, no net/fs/run) ARE the
+ * security boundary, so we deliberately do NOT attempt in-process `node:vm`
+ * isolation — that was never a real boundary and was escapable via the host
+ * `Function` constructor. Code here has the same authority as the rest of the
+ * sandboxed agent bundle and nothing more; an escape lands in a process that
+ * is already confined.
+ *
+ * Output is captured through an injected `console` argument rather than a
+ * global monkey-patch, so concurrent run_code calls never clobber each other.
+ */
+async function runCode(code: string): Promise<string | { error: string }> {
+  const output: string[] = [];
+  const push = (...args: unknown[]) => output.push(args.map(String).join(" "));
+  const sandboxConsole = { log: push, info: push, warn: push, error: push, debug: push };
+
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    // Async wrapper so user code can use top-level `await`.
+    const factory = new Function("console", `return (async () => {\n${code}\n})();`) as (
+      c: typeof sandboxConsole,
+    ) => Promise<unknown>;
+
+    await Promise.race([
+      factory(sandboxConsole),
+      new Promise<never>((_resolve, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`run_code timed out after ${RUN_CODE_TIMEOUT_MS}ms`)),
+          RUN_CODE_TIMEOUT_MS,
+        );
+      }),
+    ]);
+
+    const text = output.join("\n").trim();
+    return text || "Code ran successfully (no output)";
+  } catch (err) {
+    return { error: err instanceof Error ? err.message : String(err) };
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 // ---- Tool execution ---------------------------------------------------------
 
 const TOOL_TIMEOUT_MS = 30_000;
@@ -134,6 +184,17 @@ export async function executeTool(
   req: ToolCallRequest,
   sessionState: ReturnType<typeof createSessionStateMap>,
 ): Promise<ToolCallResponse | ToolCallErrorResponse> {
+  // The run_code builtin is not part of the agent bundle; execute it directly
+  // in this sandboxed guest (see runCode) rather than on the host.
+  if (req.name === "run_code") {
+    const code = typeof req.args?.code === "string" ? req.args.code : "";
+    const result = await runCode(code);
+    if (typeof result === "object" && result !== null && "error" in result) {
+      return { error: result.error };
+    }
+    return { result, state: sessionState.get(req.sessionId) };
+  }
+
   const tool = agent.tools[req.name];
   if (!tool) {
     return { error: `Unknown tool: ${req.name}` };

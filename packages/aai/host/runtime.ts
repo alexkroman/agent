@@ -186,8 +186,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     const frozenEnv = Object.freeze({ ...env });
 
     executeTool = async (name, args, sessionId, messages) => {
-      // Handle builtins on the host (where SSRF-safe fetch lives)
-      if (builtinDefs[name]) {
+      // Handle builtins on the host (where SSRF-safe fetch lives) — EXCEPT
+      // run_code, which executes untrusted JS and must run inside the guest
+      // sandbox (gVisor/Deno), never on the host. It is delegated via RPC
+      // like a custom tool; the guest harness runs it directly.
+      if (name !== "run_code" && builtinDefs[name]) {
         const tool = builtinDefs[name];
         return executeToolCall(name, args, {
           tool,
@@ -199,7 +202,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
           logger,
         });
       }
-      // Delegate custom tools to the isolate via RPC
+      // Delegate custom tools (and run_code) to the isolate via RPC
       return rpcExecuteTool(name, args, sessionId, messages);
     };
 
