@@ -67,6 +67,11 @@ export interface PipelineTransportOptions {
   sttPrompt?: string | undefined;
   /** Max LLM tool-call steps per turn. Defaults to 5. */
   maxSteps?: number | undefined;
+  /**
+   * LLM sampling temperature. Omitted when unset (provider default). Some models
+   * (e.g. Claude 5) ignore it and warn; set only for temperature-capable models.
+   */
+  temperature?: number | undefined;
   /** Tool selection policy passed to `streamText`. Defaults to `"auto"`. */
   toolChoice?: ToolChoice | undefined;
   /** Logger. Defaults to consoleLogger. */
@@ -188,6 +193,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         messages,
         tools,
         toolChoice,
+        // Only send temperature when explicitly configured. Some models (e.g.
+        // the Claude 5 family) don't support it and warn on every call; omitting
+        // it keeps those quiet while letting temperature-capable models opt in.
+        ...(opts.temperature !== undefined ? { temperature: opts.temperature } : {}),
         stopWhen: stepCountIs(maxSteps),
         abortSignal: ctl.signal,
       });
