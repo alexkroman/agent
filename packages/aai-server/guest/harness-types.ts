@@ -15,12 +15,6 @@ export type Message = {
   content: string;
 };
 
-export type KvInterface = {
-  get(key: string): Promise<unknown>;
-  set(key: string, value: unknown, opts?: { expireIn?: number }): Promise<void>;
-  del(key: string): Promise<void>;
-};
-
 // Minimal Kv-shaped adapter passed to tool contexts
 export type KvAdapter = {
   get<T = unknown>(key: string): Promise<T | null>;

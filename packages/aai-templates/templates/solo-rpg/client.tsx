@@ -1,50 +1,8 @@
-/** @jsxImportSource react */
-
 import "@alexkroman1/aai-ui/styles.css";
 import { ChatView, client, SidebarLayout, StartScreen, useEvent } from "@alexkroman1/aai-ui";
 import { useState } from "react";
-import type { ClockData, Disposition, GameState, NPC, StoryBlueprint } from "./shared.ts";
-
-const INITIAL: GameState = {
-  initialized: false,
-  phase: "genre",
-  settingGenre: "",
-  settingTone: "",
-  settingArchetype: "",
-  settingDescription: "",
-  playerName: "",
-  characterConcept: "",
-  backstory: "",
-  playerWishes: "",
-  contentLines: "",
-  edge: 1,
-  heart: 1,
-  iron: 1,
-  shadow: 1,
-  wits: 1,
-  health: 5,
-  spirit: 5,
-  supply: 5,
-  momentum: 2,
-  maxMomentum: 10,
-  currentLocation: "",
-  currentSceneContext: "",
-  timeOfDay: "",
-  locationHistory: [],
-  chaosFactor: 5,
-  crisisMode: false,
-  gameOver: false,
-  sceneCount: 0,
-  npcs: [],
-  clocks: [],
-  storyBlueprint: null,
-  chapterNumber: 1,
-  campaignHistory: [],
-  sessionLog: [],
-  narrationHistory: [],
-  directorGuidance: {},
-  kidMode: false,
-};
+import type { Clock, Disposition, GameState, NPC, StoryBlueprint } from "./shared.ts";
+import { DEFAULT_STATE, MAX_RESOURCE, MIN_MOMENTUM } from "./shared.ts";
 
 // ── Color Palette ────────────────────────────────────────────────────────────
 const C = {
@@ -185,7 +143,7 @@ function ResourceBar({
 
 function MomentumTrack({ momentum, max }: { momentum: number; max: number }) {
   const range: number[] = [];
-  for (let i = -6; i <= 10; i++) range.push(i);
+  for (let i = MIN_MOMENTUM; i <= 10; i++) range.push(i);
   return (
     <div style={{ marginBottom: "8px" }}>
       <div
@@ -333,7 +291,7 @@ function StatPip({ label, value }: { label: string; value: number }) {
   );
 }
 
-function ClockDisplay({ clock }: { clock: ClockData }) {
+function ClockDisplay({ clock }: { clock: Clock }) {
   const typeColor =
     clock.clockType === "threat"
       ? C.threat
@@ -622,13 +580,7 @@ function Sidebar({ game }: { game: GameState }) {
                   fontFamily: "sans-serif",
                 }}
               >
-                {game.gameOver
-                  ? game.kidMode
-                    ? "In Trouble"
-                    : "Finale"
-                  : game.kidMode
-                    ? "In Trouble"
-                    : "Crisis"}
+                {game.kidMode ? "In Trouble" : game.gameOver ? "Finale" : "Crisis"}
               </div>
             </div>
           )}
@@ -650,7 +602,7 @@ function Sidebar({ game }: { game: GameState }) {
             <ResourceBar
               label="Health"
               current={game.health}
-              max={5}
+              max={MAX_RESOURCE}
               color={C.health}
               colorBright={C.healthBright}
               icon="\u2665"
@@ -658,7 +610,7 @@ function Sidebar({ game }: { game: GameState }) {
             <ResourceBar
               label="Spirit"
               current={game.spirit}
-              max={5}
+              max={MAX_RESOURCE}
               color={C.spirit}
               colorBright={C.spiritBright}
               icon="\u25C6"
@@ -666,7 +618,7 @@ function Sidebar({ game }: { game: GameState }) {
             <ResourceBar
               label="Supply"
               current={game.supply}
-              max={5}
+              max={MAX_RESOURCE}
               color={C.supply}
               colorBright={C.supplyBright}
               icon="\u25A0"
@@ -824,7 +776,7 @@ function Sidebar({ game }: { game: GameState }) {
 // ── App ──────────────────────────────────────────────────────────────────────
 
 function SoloRPGApp() {
-  const [game, setGame] = useState<GameState>(structuredClone(INITIAL));
+  const [game, setGame] = useState<GameState>(structuredClone(DEFAULT_STATE));
 
   const mergeState = (result: Partial<GameState>, prev: GameState): GameState => ({
     ...prev,

@@ -50,6 +50,24 @@ function findDeno(): string | null {
  * Returns true if gVisor's `runsc` runtime is available on this system.
  * Always returns false on non-Linux platforms since gVisor only supports Linux.
  */
+/**
+ * Wait for a child process to exit, resolving `false` if it is still
+ * running after `timeoutMs`. Resolves immediately if it already exited.
+ */
+export function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
+  return new Promise<boolean>((resolve) => {
+    if (child.exitCode !== null) {
+      resolve(true);
+      return;
+    }
+    const timer = setTimeout(() => resolve(false), timeoutMs);
+    child.once("exit", () => {
+      clearTimeout(timer);
+      resolve(true);
+    });
+  });
+}
+
 export function isGvisorAvailable(): boolean {
   return findRunsc() !== null;
 }
@@ -217,20 +235,6 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
     }
   }
 
-  function waitForExit(timeoutMs: number): Promise<boolean> {
-    return new Promise<boolean>((resolve) => {
-      if (child.exitCode !== null) {
-        resolve(true);
-        return;
-      }
-      const timer = setTimeout(() => resolve(false), timeoutMs);
-      child.once("exit", () => {
-        clearTimeout(timer);
-        resolve(true);
-      });
-    });
-  }
-
   let cleaned = false;
 
   async function cleanup(): Promise<void> {
@@ -238,9 +242,9 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
     cleaned = true;
 
     await tryRunsc("kill", containerId, "SIGTERM");
-    if (!(await waitForExit(5000))) {
+    if (!(await waitForChildExit(child, 5000))) {
       await tryRunsc("kill", containerId, "SIGKILL");
-      await waitForExit(2000);
+      await waitForChildExit(child, 2000);
     }
     await tryRunsc("delete", "--force", containerId);
     await cleanupBundleDir(containerId);

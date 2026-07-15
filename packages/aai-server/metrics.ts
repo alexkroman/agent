@@ -204,14 +204,22 @@ export const metrics = {
 // Typos surface at compile time instead of as silent new time series.
 
 export type SessionMode = "s2s" | "pipeline";
-export type SessionEndReason = "client_close" | "server_close" | "error" | "timeout";
-export type SessionErrorKind = "upgrade" | "sandbox_resolve" | "provider" | "internal";
+// Only values actually emitted belong here — dashboards and alerts are
+// written against these unions, so a documented-but-never-emitted value
+// is a trap.
+export type SessionEndReason = "client_close" | "server_close";
+export type SessionErrorKind = "internal";
 export type SandboxInitPath = "warm" | "cold";
 export type SandboxInitFailReason = "bundle_missing" | "worker_spawn" | "host_init";
 export type SandboxEvictReason = "idle" | "terminate";
 export type WarmPoolAcquireResult = "hit" | "miss";
 
 // ── Helpers ──
+
+/** Seconds elapsed since a `process.hrtime.bigint()` start marker. */
+export function hrtimeSeconds(start: bigint): number {
+  return Number(process.hrtime.bigint() - start) / 1e9;
+}
 
 export function initHostCapacityGauges(): void {
   metrics.machineMemoryBytes.set(os.totalmem());
@@ -236,8 +244,7 @@ export async function observeDurationWithStatus<T, L extends Record<string, stri
     status = "error";
     throw err;
   } finally {
-    const elapsedSec = Number(process.hrtime.bigint() - t0) / 1e9;
-    hist.observe(labels, elapsedSec);
+    hist.observe(labels, hrtimeSeconds(t0));
     counter.inc({ ...labels, status });
   }
 }

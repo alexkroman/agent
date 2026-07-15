@@ -3,9 +3,10 @@
  * HTTP handlers for managing agent secrets (environment variables).
  *
  * Secrets are per-agent key/value pairs stored encrypted in the BundleStore.
- * They are forwarded to the guest sandbox as `AAI_ENV_*` environment variables.
+ * They are delivered to the guest sandbox via the `bundle/load` RPC params
+ * (see sandbox-vm.ts), never as host process environment variables.
  *
- * Related but distinct: `credential-store.ts` handles API key hashing and
+ * Related but distinct: `secrets.ts` handles API key hashing and
  * ownership verification for platform auth — not agent secrets.
  */
 

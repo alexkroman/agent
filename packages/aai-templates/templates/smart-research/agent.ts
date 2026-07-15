@@ -36,8 +36,12 @@ export default agent({
         focus: z.string().describe("What aspect to focus the analysis on"),
       }),
       async execute(args, ctx) {
-        const sources: string[] = (await ctx.kv.get("sources")) ?? [];
-        const phase: string = (await ctx.kv.get("phase")) ?? "gather";
+        const [storedSources, storedPhase] = await Promise.all([
+          ctx.kv.get<string[]>("sources"),
+          ctx.kv.get<string>("phase"),
+        ]);
+        const sources = storedSources ?? [];
+        const phase = storedPhase ?? "gather";
 
         const userMessages = ctx.messages.filter((m) => m.role === "user");
         return {

@@ -1,7 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { KV } from "../shared.ts";
-import { getState, now, saveState } from "../shared.ts";
+import { findIncident, getState, saveState } from "../shared.ts";
 
 export const incidentAddNote = tool({
   description: "Add a situational update note to an incident.",
@@ -10,15 +9,15 @@ export const incidentAddNote = tool({
     note: z.string().describe("The note to add"),
     source: z.string().describe("Who reported this — unit callsign or caller").optional(),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx) {
     const state = await getState(ctx.kv);
-    const inc = state.incidents[args.incidentId];
-    if (!inc) return { error: `Incident ${args.incidentId} not found` };
+    const inc = findIncident(state, args.incidentId);
+    if ("error" in inc) return inc;
 
     const entry = args.source ? `[${args.source}] ${args.note}` : args.note;
     inc.notes.push(entry);
-    inc.timeline.push({ time: now(), event: entry });
-    inc.updatedAt = now();
+    inc.timeline.push({ time: Date.now(), event: entry });
+    inc.updatedAt = Date.now();
     await saveState(ctx.kv, state);
 
     return {

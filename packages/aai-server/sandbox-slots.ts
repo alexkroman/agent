@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { errorMessage } from "@alexkroman1/aai";
 import { getLock } from "p-lock";
 import { debug } from "./_debug-log.ts";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
@@ -43,15 +44,23 @@ export function registerSlotsForGauges(slots: SlotCache): void {
 
 const apiLock = getLock();
 
-/** Serialize deploy/delete API calls for the same slug. */
-export const withSlugLock = <T>(slug: string, fn: () => Promise<T>): Promise<T> =>
-  apiLock(slug).then(async (release) => {
+/** Run `fn` while holding a keyed p-lock, releasing it in every outcome. */
+export const withLock = <T>(
+  lock: (key: string) => Promise<() => void>,
+  key: string,
+  fn: () => Promise<T>,
+): Promise<T> =>
+  lock(key).then(async (release) => {
     try {
       return await fn();
     } finally {
       release();
     }
   });
+
+/** Serialize deploy/delete API calls for the same slug. */
+export const withSlugLock = <T>(slug: string, fn: () => Promise<T>): Promise<T> =>
+  withLock(apiLock, slug, fn);
 
 function clearIdleTimer(slot: AgentSlot): void {
   if (slot.idleTimer) {
@@ -72,7 +81,7 @@ async function detachAndShutdown(
   try {
     await sb.shutdown();
   } catch (err: unknown) {
-    console.warn(errorLabel, { slug: slot.slug, error: String(err) });
+    console.warn(errorLabel, { slug: slot.slug, error: errorMessage(err) });
   }
 }
 

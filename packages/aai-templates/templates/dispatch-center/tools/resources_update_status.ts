@@ -1,18 +1,15 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { KV } from "../shared.ts";
-import { getState, now, recalculateAlertLevel, saveState } from "../shared.ts";
+import { getState, RESOURCE_STATUSES, recalculateAlertLevel, saveState } from "../shared.ts";
 
 export const resourcesUpdateStatus = tool({
   description: "Update a resource unit's status when it radios in.",
   parameters: z.object({
     callsign: z.string().describe("The resource callsign"),
-    status: z
-      .enum(["available", "dispatched", "en_route", "on_scene", "returning"])
-      .describe("New status"),
+    status: z.enum(RESOURCE_STATUSES).describe("New status"),
     notes: z.string().describe("Status notes").optional(),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx) {
     const state = await getState(ctx.kv);
     const resource = state.resources.find(
       (r) => r.callsign.toLowerCase() === args.callsign.toLowerCase(),
@@ -34,10 +31,10 @@ export const resourcesUpdateStatus = tool({
       const inc = state.incidents[resource.assignedIncident];
       if (inc) {
         inc.timeline.push({
-          time: now(),
+          time: Date.now(),
           event: `${args.callsign}: ${previousStatus} → ${args.status}${args.notes ? ` (${args.notes})` : ""}`,
         });
-        inc.updatedAt = now();
+        inc.updatedAt = Date.now();
       }
     }
 

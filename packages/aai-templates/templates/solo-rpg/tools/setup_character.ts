@@ -1,13 +1,17 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { Disposition, KV } from "../shared.ts";
 import {
   ARCHETYPES,
   chooseStoryStructure,
+  clockSummary,
   creativitySeed,
+  DISPOSITIONS,
   GENRES,
   getGameState,
+  makeNpc,
+  npcSummary,
   saveGameState,
+  TIME_PHASES,
   TONES,
 } from "../shared.ts";
 
@@ -23,24 +27,11 @@ export const setupCharacter = tool({
     settingDescription: z.string().describe("Two to three sentence setting description"),
     startingLocation: z.string().describe("Name of starting location"),
     locationDesc: z.string().describe("One sentence description of starting location"),
-    timeOfDay: z
-      .enum([
-        "early_morning",
-        "morning",
-        "midday",
-        "afternoon",
-        "evening",
-        "late_evening",
-        "night",
-        "deep_night",
-      ])
-      .describe("Starting time of day"),
+    timeOfDay: z.enum(TIME_PHASES).describe("Starting time of day"),
     openingSituation: z.string().describe("One sentence dramatic hook for the opening scene"),
     npc1Name: z.string().describe("First NPC name"),
     npc1Desc: z.string().describe("First NPC one-line description"),
-    npc1Disposition: z
-      .enum(["hostile", "distrustful", "neutral", "friendly", "loyal"])
-      .describe("First NPC disposition"),
+    npc1Disposition: z.enum(DISPOSITIONS).describe("First NPC disposition"),
     npc1Agenda: z.string().describe("First NPC agenda"),
     threatClockName: z.string().describe("Name of initial threat clock"),
     threatClockDesc: z.string().describe("What happens when the threat clock fills"),
@@ -50,7 +41,7 @@ export const setupCharacter = tool({
     contentLines: z.string().optional(),
     kidMode: z.boolean().optional(),
   }),
-  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
+  async execute(args, ctx) {
     const state = await getGameState(ctx.kv);
 
     // Store creation choices
@@ -99,18 +90,15 @@ export const setupCharacter = tool({
     state.timeOfDay = args.timeOfDay;
 
     // Add initial NPC
-    state.npcs.push({
-      id: "npc_1",
-      name: args.npc1Name,
-      description: args.npc1Desc,
-      disposition: args.npc1Disposition as Disposition,
-      bond: args.npc1Disposition === "friendly" ? 1 : args.npc1Disposition === "loyal" ? 2 : 0,
-      agenda: args.npc1Agenda,
-      instinct: "",
-      status: "active",
-      aliases: [],
-      lastMentionScene: 0,
-    });
+    state.npcs.push(
+      makeNpc({
+        id: "npc_1",
+        name: args.npc1Name,
+        description: args.npc1Desc,
+        disposition: args.npc1Disposition,
+        agenda: args.npc1Agenda,
+      }),
+    );
 
     // Add threat clock
     state.clocks.push({
@@ -223,23 +211,8 @@ export const setupCharacter = tool({
       currentSceneContext: state.currentSceneContext,
       timeOfDay: state.timeOfDay,
       chaosFactor: 5,
-      npcs: state.npcs.map((n) => ({
-        id: n.id,
-        name: n.name,
-        disposition: n.disposition,
-        bond: n.bond,
-        agenda: n.agenda,
-        status: n.status,
-        description: n.description,
-      })),
-      clocks: state.clocks.map((c) => ({
-        id: c.id,
-        name: c.name,
-        clockType: c.clockType,
-        segments: c.segments,
-        filled: c.filled,
-        triggerDescription: c.triggerDescription,
-      })),
+      npcs: state.npcs.map(npcSummary),
+      clocks: state.clocks.map(clockSummary),
       storyBlueprint: {
         structureType: state.storyBlueprint.structureType,
         currentAct: 1,

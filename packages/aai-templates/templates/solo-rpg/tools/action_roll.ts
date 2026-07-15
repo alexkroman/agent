@@ -1,12 +1,12 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { GameState, KV } from "../shared.ts";
 import {
   applyConsequences,
   canBurnMomentum,
   checkChaosInterrupt,
   getGameState,
   MOVE_LABELS,
+  MOVES,
   RESULT_LABELS,
   rollAction,
   saveGameState,
@@ -17,23 +17,7 @@ export const actionRoll = tool({
   description:
     "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action.",
   parameters: z.object({
-    move: z
-      .enum([
-        "face_danger",
-        "compel",
-        "gather_information",
-        "secure_advantage",
-        "clash",
-        "strike",
-        "endure_harm",
-        "endure_stress",
-        "make_connection",
-        "test_bond",
-        "resupply",
-        "world_shaping",
-        "dialog",
-      ])
-      .describe("Which move the player is making"),
+    move: z.enum(MOVES).describe("Which move the player is making"),
     stat: z.enum(["edge", "heart", "iron", "shadow", "wits"]).describe("Which stat to roll"),
     position: z
       .enum(["controlled", "risky", "desperate"])
@@ -42,9 +26,9 @@ export const actionRoll = tool({
     purpose: z.string().describe("What the character is attempting"),
     targetNpcId: z.string().describe("Target NPC id for social moves").optional(),
   }),
-  async execute(args, ctx: { kv: KV; send: (event: string, data: unknown) => void }) {
+  async execute(args, ctx) {
     const state = await getGameState(ctx.kv);
-    const statValue = state[args.stat as keyof GameState] as number;
+    const statValue = state[args.stat];
     const roll = rollAction(args.stat, statValue, args.move);
 
     // Apply consequences

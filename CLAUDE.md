@@ -692,8 +692,9 @@ Agent code runs in **per-agent gVisor sandboxes**. Key files:
   filesystem access.
 - **Network**: no network device in sandbox. All external calls proxy through host.
 - **Memory**: cgroup limits (64 MB per sandbox). Separate Sentry per sandbox.
-- **Env vars**: only `AAI_ENV_*` prefixed vars forwarded to guest. Platform
-  secrets stay host-side.
+- **Env vars**: agent env is delivered to the guest via the `bundle/load`
+  RPC params, never as process environment variables. Platform secrets
+  stay host-side.
 
 **Credential separation:**
 

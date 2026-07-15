@@ -1,10 +1,9 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import type { KV } from "../shared.ts";
 import {
   calculateTriageScore,
+  findIncident,
   getState,
-  now,
   recalculateAlertLevel,
   recommendResources,
   saveState,
@@ -21,17 +20,17 @@ export const incidentEscalate = tool({
       .optional(),
     newSeverity: z.enum(["critical", "urgent"]).describe("Escalated severity level").optional(),
   }),
-  async execute(args, ctx: { kv: KV }) {
+  async execute(args, ctx) {
     const state = await getState(ctx.kv);
-    const inc = state.incidents[args.incidentId];
-    if (!inc) return { error: `Incident ${args.incidentId} not found` };
+    const inc = findIncident(state, args.incidentId);
+    if ("error" in inc) return inc;
 
     inc.escalationLevel++;
     if (args.newSeverity) inc.severity = args.newSeverity;
     inc.status = "escalated";
-    inc.updatedAt = now();
+    inc.updatedAt = Date.now();
     inc.timeline.push({
-      time: now(),
+      time: Date.now(),
       event: `ESCALATED (Level ${inc.escalationLevel}): ${args.reason}`,
     });
     inc.notes.push(`Escalation: ${args.reason}`);
@@ -39,7 +38,7 @@ export const incidentEscalate = tool({
     if (args.requestMutualAid) {
       state.mutualAidRequested = true;
       inc.timeline.push({
-        time: now(),
+        time: Date.now(),
         event: "Mutual aid requested from neighboring jurisdictions",
       });
       state.resources.push(

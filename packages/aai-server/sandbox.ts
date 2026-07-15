@@ -11,7 +11,6 @@
  * mediated by the `SandboxHandle` from `sandbox-vm.ts`.
  */
 
-import path from "node:path";
 import type { BuiltinTool, Kv, ToolChoice } from "@alexkroman1/aai";
 import { DEFAULT_MAX_STEPS, errorMessage, toolError } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
@@ -28,7 +27,12 @@ import {
 } from "@alexkroman1/aai/runtime";
 import type { Storage } from "unstorage";
 import { debug } from "./_debug-log.ts";
-import { agentKvPrefix } from "./constants.ts";
+import {
+  agentKvPrefix,
+  MAX_CLIENT_EVENT_NAME_LENGTH,
+  MAX_CLIENT_EVENT_PAYLOAD_BYTES,
+  resolveHarnessPath,
+} from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { attachSandbox, setSlot, withSlugLock } from "./sandbox-slots.ts";
@@ -70,6 +74,37 @@ export type Sandbox = AgentRuntime;
 
 // ── Public API ──────────────────────────────────────────────────────────
 
+/**
+ * Resolve the KV store an agent gets: its declared `kv:` provider (BYO,
+ * resolved with the agent's env) or the platform default (unstorage,
+ * prefixed per slug). Single source of truth for the sandbox and the
+ * owner HTTP KV routes.
+ */
+export function resolveAgentKv(
+  storage: Storage,
+  slug: string,
+  config: Pick<IsolateConfig, "kv"> | null,
+  env: Record<string, string>,
+): Kv {
+  return config?.kv
+    ? resolveKv(config.kv, env, agentKvPrefix(slug))
+    : createUnstorageKv({ storage, prefix: agentKvPrefix(slug) });
+}
+
+/**
+ * Resolve the Vector store an agent gets: its declared `vector:` provider
+ * or the platform default factory (in-memory when none is supplied).
+ */
+export function resolveAgentVector(
+  slug: string,
+  config: Pick<IsolateConfig, "vector"> | null,
+  env: Record<string, string>,
+  defaultVector?: (slug: string) => Vector,
+): Vector {
+  if (config?.vector) return resolveVector(config.vector, env, slug);
+  return defaultVector ? defaultVector(slug) : createMemoryVector({ namespace: slug });
+}
+
 export function createSandbox(opts: SandboxOptions): Sandbox {
   const { workerCode, env, storage, slug } = opts;
 
@@ -83,18 +118,10 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   const config = opts.agentConfig;
 
-  const harnessPath =
-    process.env.GUEST_HARNESS_PATH ??
-    path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
+  const harnessPath = resolveHarnessPath();
 
-  const kv: Kv = config.kv
-    ? resolveKv(config.kv, env, agentKvPrefix(slug))
-    : createUnstorageKv({ storage, prefix: agentKvPrefix(slug) });
-
-  const defaultVectorFactory = opts.defaultVector ?? ((s) => createMemoryVector({ namespace: s }));
-  const vector: Vector = config.vector
-    ? resolveVector(config.vector, env, slug)
-    : defaultVectorFactory(slug);
+  const kv: Kv = resolveAgentKv(storage, slug, config, env);
+  const vector: Vector = resolveAgentVector(slug, config, env, opts.defaultVector);
 
   const vmReady = createSandboxVm(
     {
@@ -164,12 +191,11 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       handle.conn.onNotification("client/send", (raw: unknown) => {
         const params = raw as { sessionId: string; event: string; data: unknown };
         if (typeof params.sessionId !== "string" || typeof params.event !== "string") return;
-        if (params.event.length > 256) return;
-        // Cap data payload at 64 KB to prevent memory abuse via WebSocket relay.
+        if (params.event.length > MAX_CLIENT_EVENT_NAME_LENGTH) return;
         // `data` may be undefined (event sent with no payload) — JSON.stringify
         // returns undefined for it, so guard before reading `.length`.
         const serializedData = JSON.stringify(params.data ?? null);
-        if (serializedData.length > 65_536) return;
+        if (serializedData.length > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return;
         const sink = sessionSinks.get(params.sessionId);
         if (sink?.open) {
           sink.event({ type: "custom_event", event: params.event, data: params.data });

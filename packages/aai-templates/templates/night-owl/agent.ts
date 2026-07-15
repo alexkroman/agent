@@ -1,7 +1,8 @@
 import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
+import { CATEGORIES, type Category, MOODS, type Mood } from "./shared.ts";
 
-const PICKS: Record<string, Record<string, string[]>> = {
+const PICKS: Record<Category, Record<Mood, string[]>> = {
   movie: {
     chill: ["Lost in Translation", "The Grand Budapest Hotel", "Amelie"],
     intense: ["Inception", "Interstellar", "The Dark Knight"],
@@ -57,14 +58,14 @@ export default agent({
     recommend: tool({
       description: "Get recommendations for movies, music, or books based on mood.",
       parameters: z.object({
-        category: z.enum(["movie", "music", "book"]),
-        mood: z.enum(["chill", "intense", "cozy", "spooky", "funny"]),
+        category: z.enum(CATEGORIES),
+        mood: z.enum(MOODS),
       }),
       async execute(args, ctx) {
         const result = {
           category: args.category,
           mood: args.mood,
-          picks: PICKS[args.category]?.[args.mood] ?? [],
+          picks: PICKS[args.category][args.mood],
         };
         ctx.send("recommendations", result);
         return result;

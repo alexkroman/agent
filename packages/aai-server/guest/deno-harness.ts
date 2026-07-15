@@ -23,6 +23,7 @@
  */
 
 import {
+  errMsg,
   handleFetchNotification,
   handleHostResponse,
   makeKvAdapter,
@@ -30,6 +31,7 @@ import {
   sendError,
   sendResponse,
   sendToClient,
+  withTimeout,
 } from "./harness-rpc.ts";
 import type {
   AgentDef,
@@ -76,11 +78,6 @@ export class TextLineStream extends TransformStream<string, string> {
 // ---- Agent env --------------------------------------------------------------
 
 let _bundleEnv: Readonly<Record<string, string>> = Object.freeze({});
-
-/** Returns agent env vars from the bundle message. */
-function getAgentEnv(): Readonly<Record<string, string>> {
-  return _bundleEnv;
-}
 
 // ---- Session state ----------------------------------------------------------
 
@@ -133,29 +130,18 @@ async function runCode(code: string): Promise<string | { error: string }> {
   const push = (...args: unknown[]) => output.push(args.map(String).join(" "));
   const sandboxConsole = { log: push, info: push, warn: push, error: push, debug: push };
 
-  let timer: ReturnType<typeof setTimeout> | undefined;
   try {
     // Async wrapper so user code can use top-level `await`.
     const factory = new Function("console", `return (async () => {\n${code}\n})();`) as (
       c: typeof sandboxConsole,
     ) => Promise<unknown>;
 
-    await Promise.race([
-      factory(sandboxConsole),
-      new Promise<never>((_resolve, reject) => {
-        timer = setTimeout(
-          () => reject(new Error(`run_code timed out after ${RUN_CODE_TIMEOUT_MS}ms`)),
-          RUN_CODE_TIMEOUT_MS,
-        );
-      }),
-    ]);
+    await withTimeout(factory(sandboxConsole), RUN_CODE_TIMEOUT_MS, "run_code");
 
     const text = output.join("\n").trim();
     return text || "Code ran successfully (no output)";
   } catch (err) {
-    return { error: err instanceof Error ? err.message : String(err) };
-  } finally {
-    clearTimeout(timer);
+    return { error: errMsg(err) };
   }
 }
 
@@ -200,13 +186,11 @@ export async function executeTool(
     return { error: `Unknown tool: ${req.name}` };
   }
 
-  const kvAdapter = makeKvAdapter();
-  const vectorAdapter = makeVectorAdapter();
   const ctx: ToolContext = {
-    env: getAgentEnv(),
+    env: _bundleEnv,
     state: sessionState.get(req.sessionId),
-    kv: kvAdapter,
-    vector: vectorAdapter,
+    kv: makeKvAdapter(),
+    vector: makeVectorAdapter(),
     messages: req.messages,
     sessionId: req.sessionId,
     send: (event, data) => sendToClient(req.sessionId, event, data),
@@ -217,25 +201,18 @@ export async function executeTool(
       ? tool.parameters.parse(req.args)
       : req.args;
 
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
   try {
-    const result = await Promise.race([
-      tool.execute(parsed, ctx),
-      new Promise<never>((_, reject) => {
-        timeoutId = setTimeout(
-          () => reject(new Error(`Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`)),
-          TOOL_TIMEOUT_MS,
-        );
-      }),
-    ]);
+    const result = await withTimeout(
+      Promise.resolve(tool.execute(parsed, ctx)),
+      TOOL_TIMEOUT_MS,
+      `Tool "${req.name}"`,
+    );
     return {
       result: typeof result === "string" ? result : JSON.stringify(result),
       state: ctx.state as Record<string, unknown>,
     };
   } catch (err) {
-    return { error: err instanceof Error ? err.message : String(err) };
-  } finally {
-    clearTimeout(timeoutId);
+    return { error: errMsg(err) };
   }
 }
 
@@ -330,7 +307,7 @@ export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void 
   // Request -- handle concurrently so the loop reads the next line immediately
   const req = msg as JsonRpcRequest;
   void handleRequest(req, state).catch((err) => {
-    sendError(req.id, -32_603, err instanceof Error ? err.message : String(err));
+    sendError(req.id, -32_603, errMsg(err));
   });
 }
 
