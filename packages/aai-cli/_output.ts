@@ -39,8 +39,17 @@ export async function withOutput<T>(
   fn: () => Promise<CommandResult<T>>,
 ): Promise<void> {
   const result = await fn();
-  if (mode === "json") process.stdout.write(`${JSON.stringify(result)}\n`);
+  // Await the flush before exiting: on a pipe (the JSON-mode case) stdout is
+  // async, so process.exit() would truncate the JSON line just queued.
+  if (mode === "json") await writeLine(`${JSON.stringify(result)}\n`);
   if (!result.ok) process.exit(1);
+}
+
+/** Write a line to stdout, resolving only once it has been flushed. */
+export function writeLine(line: string): Promise<void> {
+  return new Promise((resolve) => {
+    process.stdout.write(line, () => resolve());
+  });
 }
 
 /** Create an ok result. */

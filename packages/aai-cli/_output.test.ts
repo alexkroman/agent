@@ -30,17 +30,29 @@ describe("getOutputMode", () => {
 });
 
 describe("withOutput", () => {
+  // withOutput awaits stdout's flush callback before exiting; the mock must
+  // invoke it or the promise never resolves.
+  function spyWrite() {
+    return vi.spyOn(process.stdout, "write").mockImplementation(((_line: unknown, cb?: unknown) => {
+      if (typeof cb === "function") (cb as () => void)();
+      return true;
+    }) as typeof process.stdout.write);
+  }
+
   it("writes JSON to stdout in json mode", async () => {
-    const writeSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const writeSpy = spyWrite();
 
     await withOutput("json", async () => ok({ slug: "test-abc" }));
 
-    expect(writeSpy).toHaveBeenCalledWith('{"ok":true,"data":{"slug":"test-abc"}}\n');
+    expect(writeSpy).toHaveBeenCalledWith(
+      '{"ok":true,"data":{"slug":"test-abc"}}\n',
+      expect.any(Function),
+    );
     writeSpy.mockRestore();
   });
 
   it("writes nothing in human mode", async () => {
-    const writeSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const writeSpy = spyWrite();
 
     await withOutput("human", async () => ok({ slug: "test-abc" }));
 
@@ -49,13 +61,14 @@ describe("withOutput", () => {
   });
 
   it("writes JSON error and exits 1 in json mode on failure", async () => {
-    const writeSpy = vi.spyOn(process.stdout, "write").mockReturnValue(true);
+    const writeSpy = spyWrite();
     const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
 
     await withOutput("json", async () => fail("not_found", "Agent not found"));
 
     expect(writeSpy).toHaveBeenCalledWith(
       '{"ok":false,"error":"Agent not found","code":"not_found"}\n',
+      expect.any(Function),
     );
     expect(exitSpy).toHaveBeenCalledWith(1);
     writeSpy.mockRestore();

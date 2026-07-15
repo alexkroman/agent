@@ -3,7 +3,7 @@
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { AGENT_CSP } from "@alexkroman1/aai";
+import { AGENT_CSP, isTextAssetPath } from "@alexkroman1/aai";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
 import type { AppContext } from "./context.ts";
@@ -70,12 +70,22 @@ export async function handleClientAsset(c: AppContext): Promise<Response> {
 
   const assetPath = parsed.data;
   const relPath = `assets/${assetPath}`;
-  const body =
-    (await c.env.store.getClientFile(slug, relPath)) ?? (await readDefaultClientFile(relPath));
-  if (!body) throw new HTTPException(404, { message: "Asset not found" });
-
-  return c.body(body, 200, {
+  const headers = {
     "Content-Type": mime.lookup(assetPath) || "application/octet-stream",
     "Cache-Control": "public, max-age=31536000, immutable",
-  });
+  };
+
+  // User-deployed assets: binary files are stored base64-encoded (the bundler
+  // uses the same isTextAssetPath heuristic); decode them back to bytes.
+  const stored = await c.env.store.getClientFile(slug, relPath);
+  if (stored !== null) {
+    const body = isTextAssetPath(assetPath) ? stored : Buffer.from(stored, "base64");
+    return c.body(body, 200, headers);
+  }
+
+  // Default client assets are read from disk as text (the shipped client is
+  // JS/CSS/HTML only).
+  const fallback = await readDefaultClientFile(relPath);
+  if (!fallback) throw new HTTPException(404, { message: "Asset not found" });
+  return c.body(fallback, 200, headers);
 }

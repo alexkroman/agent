@@ -12,6 +12,7 @@ import {
   getOutputMode,
   type OutputMode,
   withOutput,
+  writeLine,
 } from "./_output.ts";
 import { log, silenceOutput } from "./_ui.ts";
 import { fileExists, resolveCwd } from "./_utils.ts";
@@ -56,7 +57,7 @@ async function handleErrors(mode: OutputMode, fn: () => Promise<void>): Promise<
     const hint = err instanceof CliError ? err.hint : undefined;
     if (mode === "json") {
       const result = fail(code, errorMessage(err), hint);
-      process.stdout.write(`${JSON.stringify(result)}\n`);
+      await writeLine(`${JSON.stringify(result)}\n`);
       process.exit(1);
     }
     log.error(errorMessage(err));
@@ -219,7 +220,7 @@ const secretPut = defineCommand({
         const value = mode === "json" ? await readStdin() : undefined;
         if (mode === "json" && !value) {
           const result = fail("no_input", "No value provided", "Pipe secret value to stdin");
-          process.stdout.write(`${JSON.stringify(result)}\n`);
+          await writeLine(`${JSON.stringify(result)}\n`);
           process.exit(1);
         }
         return executeSecretPut(cwd, args.name, value, args.server);
@@ -302,5 +303,13 @@ if (process.env.VITEST !== "true") {
   const boot = skipApiKey
     ? Promise.resolve()
     : import("./_config.ts").then((m) => m.ensureApiKey());
-  void boot.then(() => runMain(mainCommand));
+  // ensureApiKey() can reject (unwritable config dir, non-TTY without a key).
+  // Without a catch that becomes an unhandledRejection with a raw stack trace,
+  // bypassing all error formatting — surface it cleanly and exit non-zero.
+  void boot
+    .then(() => runMain(mainCommand))
+    .catch((err: unknown) => {
+      log.error(errorMessage(err));
+      process.exitCode = 1;
+    });
 }
