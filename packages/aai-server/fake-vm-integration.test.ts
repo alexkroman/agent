@@ -560,9 +560,8 @@ describe.skipIf(!hasDeno)("Fake VM integration (no KVM)", () => {
   const COMPILED_HARNESS = path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
   const hasCompiledHarness = existsSync(COMPILED_HARNESS);
 
-  test.skipIf(!hasCompiledHarness)(
-    "compiled harness (dist/guest/deno-harness.mjs) injects bundle and executes tool",
-    async () => {
+  describe.skipIf(!hasCompiledHarness)("compiled harness (dist/guest/deno-harness.mjs)", () => {
+    test("injects bundle and executes tool", async () => {
       const socketPath = path.join(tmpDir, "test-compiled.sock");
 
       // Spawn a Node launcher that creates a Unix socket and pipes it to Deno
@@ -649,7 +648,6 @@ describe.skipIf(!hasDeno)("Fake VM integration (no KVM)", () => {
         conn.dispose();
         socket.destroy();
       }
-    },
-    15_000,
-  );
+    }, 15_000);
+  });
 });

@@ -25,7 +25,7 @@ export function toVercelTools(
     out[schema.name] = tool({
       description: schema.description,
       inputSchema: jsonSchema(schema.parameters),
-      execute: async (args: unknown, options: ToolExecutionOptions) => {
+      execute: async (args: unknown, options: ToolExecutionOptions<unknown>) => {
         const input = (args ?? {}) as Readonly<Record<string, unknown>>;
         // Per-call abortSignal from streamText takes precedence over bag-level
         // ctx.signal so individual invocations respect outer-turn aborts.

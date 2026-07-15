@@ -58,7 +58,7 @@ test("secret set merges new vars", async () => {
   expect(setRes.status).toBe(200);
   const setBody = (await setRes.json()) as Record<string, unknown>;
   expect(setBody.ok).toBe(true);
-  expect((setBody.keys as string[]).sort()).toEqual(["MY_KEY"]);
+  expect((setBody.keys as string[]).sort((a, b) => a.localeCompare(b))).toEqual(["MY_KEY"]);
 });
 
 test("secret set rejects non-object body", async () => {

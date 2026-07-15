@@ -101,7 +101,6 @@ describe("runDeploy", () => {
   test("deploy body conforms to server DeployBodySchema", async () => {
     // Import the real server schema to validate CLI deploy payload.
     // This cross-package import catches format mismatches between CLI and server.
-    // biome-ignore lint/style/noRestrictedImports: intentional cross-package contract test
     const { DeployBodySchema } = await import("../aai-server/schemas.ts");
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
     await runDeploy(deployOpts(mockFetch));

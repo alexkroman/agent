@@ -181,7 +181,7 @@ describe("cross-package smoke: SDK → server deploy", () => {
     expect(greetSchema?.description).toBe("Greet by name");
     expect(greetSchema?.parameters).toHaveProperty("properties");
     expect(
-      (greetSchema?.parameters as { properties: Record<string, unknown> }).properties,
+      ((greetSchema?.parameters ?? {}) as { properties: Record<string, unknown> }).properties,
     ).toHaveProperty("name");
 
     // noParams tool should still have a valid schema

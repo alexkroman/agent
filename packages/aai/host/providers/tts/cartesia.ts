@@ -22,7 +22,7 @@
 
 import { randomUUID } from "node:crypto";
 import { Cartesia } from "@cartesia/cartesia-js";
-import type { TTSWS, TTSWSContext } from "@cartesia/cartesia-js/resources/tts";
+import type { TTSWS, TTSWSContext } from "@cartesia/cartesia-js/resources/tts/ws";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import {
   CARTESIA_DEFAULT_VOICE,
