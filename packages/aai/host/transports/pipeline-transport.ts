@@ -11,7 +11,6 @@ import type { LanguageModel, ModelMessage } from "ai";
 import { stepCountIs, streamText } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
-  DEFAULT_MAX_HISTORY,
   DEFAULT_MAX_STEPS,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
@@ -31,7 +30,8 @@ import type { Message, ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
-import { createStreamPartHandler, toModelMessage } from "./pipeline-stream.ts";
+import { createPipelineHistory } from "./pipeline-history.ts";
+import { createStreamPartHandler } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 /** Configuration for {@link createPipelineTransport}. */
@@ -99,19 +99,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   let ttsSession: TtsSession | null = null;
   let turnController: AbortController | null = null;
   let nextReplyId = 0;
-  // Pipeline transport manages its own history; SessionCore does not own the
-  // conversation in pipeline mode (we need it to build LLM messages per turn).
-  const conversationMessages: Message[] = sessionConfig.history ? [...sessionConfig.history] : [];
+  // Pipeline transport owns its conversation memory; SessionCore does not own
+  // the conversation in pipeline mode (we build LLM messages per turn). Keeps a
+  // text view (client/resume/tool-context) and a ModelMessage view (what the
+  // LLM sees, incl. tool calls/results). See pipeline-history.ts.
+  const history = createPipelineHistory(sessionConfig.history);
   let turnPromise: Promise<void> | null = null;
   const sttSubs: Unsubscribe[] = [];
   const ttsSubs: Unsubscribe[] = [];
-
-  function pushMessages(...msgs: Message[]): void {
-    conversationMessages.push(...msgs);
-    if (conversationMessages.length > DEFAULT_MAX_HISTORY) {
-      conversationMessages.splice(0, conversationMessages.length - DEFAULT_MAX_HISTORY);
-    }
-  }
 
   function chainTurn(p: Promise<void>): void {
     turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
@@ -185,7 +180,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     messages: ModelMessage[],
     tools: ReturnType<typeof toVercelTools>,
     onDelta: (delta: string) => void,
-  ): Promise<void> {
+  ): Promise<ModelMessage[] | undefined> {
     try {
       const result = streamText({
         model: opts.llm,
@@ -209,6 +204,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
         if (ctl.signal.aborted) break;
         handlePart(part);
       }
+      if (ctl.signal.aborted) return;
+      // streamText runs the tool loop internally (stopWhen), so gather EVERY
+      // step's response messages — assistant tool-call message, its `tool`
+      // result, and the final text. (Top-level `result.response.messages` is
+      // the final step only and would drop the tool call/result.) Appending
+      // these to history is how tool context carries into the next turn.
+      const steps = await result.steps;
+      return steps.flatMap((step) => step.response.messages);
     } catch (err: unknown) {
       if (!ctl.signal.aborted) {
         const msg = errorMessage(err);
@@ -255,7 +258,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   async function runTurn(userText: string): Promise<void> {
     const replyId = `pipeline-${++nextReplyId}`;
     callbacks.onReplyStarted(replyId);
-    pushMessages({ role: "user", content: userText });
+    history.pushConversation({ role: "user", content: userText });
+    history.pushLlm({ role: "user", content: userText });
 
     const ctl = new AbortController();
     turnController = ctl;
@@ -263,13 +267,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     const tools = toVercelTools(toolSchemas, {
       executeTool,
       sessionId: opts.sid,
-      messages: () => conversationMessages,
+      messages: () => history.conversation,
       signal: ctl.signal,
     });
 
-    const messages: ModelMessage[] = conversationMessages.map(toModelMessage);
     let accumulated = "";
-    await consumeLlmStream(ctl, messages, tools, (delta) => {
+    const responseMessages = await consumeLlmStream(ctl, history.llm, tools, (delta) => {
       accumulated += delta;
     });
 
@@ -278,9 +281,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       return;
     }
 
+    // Persist the assistant tool-call message(s) and their `tool` results so
+    // the next turn retains tool context, not just the spoken transcript.
+    if (responseMessages && responseMessages.length > 0) history.pushLlm(...responseMessages);
+
     if (accumulated.length > 0) {
       callbacks.onAgentTranscript(accumulated, false);
-      pushMessages({ role: "assistant", content: accumulated });
+      history.pushConversation({ role: "assistant", content: accumulated });
       // Seed the STT provider with the agent's side of the dialog so the
       // next user turn is transcribed with it in context (AssemblyAI
       // Universal-3.5 Pro only; other providers have no such hook).
@@ -313,7 +320,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     turnController = ctl;
 
     callbacks.onAgentTranscript(text, false);
-    pushMessages({ role: "assistant", content: text });
+    history.pushConversation({ role: "assistant", content: text });
+    history.pushLlm({ role: "assistant", content: text });
     ttsSession?.sendText(text);
     // Also push the greeting mid-stream, even though it was already seeded
     // as the initial agent context at STT connect time (openProviders) —
@@ -469,15 +477,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     },
 
     seedHistory(messages: readonly Message[]): void {
-      // Client-resent history on reconnect; the LLM loop reads
-      // conversationMessages, so restore it here or the resumed agent has no
-      // memory of the prior conversation.
-      if (messages.length > 0) pushMessages(...messages);
+      // Client-resent history on reconnect; restore both views so the resumed
+      // agent keeps memory of the prior conversation.
+      history.seed(messages);
     },
 
     reset(): void {
       abortInFlightTurn();
-      conversationMessages.length = 0;
+      history.reset();
     },
   };
 }
