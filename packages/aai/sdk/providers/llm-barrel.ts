@@ -18,6 +18,13 @@ export {
   type AssemblyAILlmProvider,
   assemblyAI,
 } from "./llm/assemblyai.ts";
+export {
+  GATEWAY_API_KEY_ENV,
+  GATEWAY_KIND,
+  type GatewayOptions,
+  type GatewayProvider,
+  gateway,
+} from "./llm/gateway.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./llm/google.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel

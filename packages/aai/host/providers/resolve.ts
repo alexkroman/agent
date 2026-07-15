@@ -20,7 +20,7 @@ import { createGroq } from "@ai-sdk/groq";
 import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
-import type { LanguageModel } from "ai";
+import { createGateway, type LanguageModel } from "ai";
 import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import {
   ASSEMBLYAI_LLM_API_KEY_ENV,
@@ -29,6 +29,7 @@ import {
   ASSEMBLYAI_LLM_KIND,
   type AssemblyAILlmOptions,
 } from "../../sdk/providers/llm/assemblyai.ts";
+import { GATEWAY_API_KEY_ENV, GATEWAY_KIND } from "../../sdk/providers/llm/gateway.ts";
 import { GOOGLE_API_KEY_ENV, GOOGLE_KIND } from "../../sdk/providers/llm/google.ts";
 import { GROQ_API_KEY_ENV, GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
 import { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
@@ -197,6 +198,14 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
     envVar: GROQ_API_KEY_ENV,
     label: "Groq",
     create: (apiKey, d) => createGroq({ apiKey })(model(d)),
+  },
+  [GATEWAY_KIND]: {
+    envVar: GATEWAY_API_KEY_ENV,
+    label: "Vercel AI Gateway",
+    // `createGateway` ships inside the `ai` package (a regular dependency),
+    // so gateway models need no extra @ai-sdk/* install. Model ids are
+    // "creator/model" strings, e.g. "zai/glm-4.6".
+    create: (apiKey, d) => createGateway({ apiKey })(model(d)),
   },
   [ASSEMBLYAI_LLM_KIND]: {
     envVar: ASSEMBLYAI_LLM_API_KEY_ENV,

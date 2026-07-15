@@ -152,10 +152,17 @@ All STT factories accept `{ model?: string, ... }`. Bare calls
 | `mistral`   | `@ai-sdk/mistral`     | `MISTRAL_API_KEY`                |
 | `xai`       | `@ai-sdk/xai`         | `XAI_API_KEY`                    |
 | `groq`      | `@ai-sdk/groq`        | `GROQ_API_KEY`                   |
+| `gateway`   | `ai` (built in)       | `AI_GATEWAY_API_KEY`             |
 | `assemblyAI`| `@ai-sdk/openai`      | `ASSEMBLYAI_API_KEY`             |
 
 LLM factories require `{ model: string }`. Example:
 `anthropic({ model: "claude-haiku-4-5" })`.
+
+`gateway` routes through the [Vercel AI
+Gateway](https://vercel.com/docs/ai-gateway) — one endpoint fronting
+hundreds of models addressed as `"creator/model"`, e.g.
+`gateway({ model: "zai/glm-4.6" })`. It needs no extra SDK install
+(the gateway client ships inside the `ai` package).
 
 `assemblyAI` routes through the [AssemblyAI LLM
 Gateway](https://www.assemblyai.com/docs/llm-gateway) — an
