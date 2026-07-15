@@ -40,7 +40,7 @@ describe("apiRequest", () => {
 
     expect(fetch).toHaveBeenCalledOnce();
     const [, init] = fetch.mock.calls[0] ?? [];
-    expect((init?.headers as Record<string, string>).Authorization).toBe("Bearer my-key");
+    expect(((init?.headers ?? {}) as Record<string, string>).Authorization).toBe("Bearer my-key");
   });
 
   test("adds Content-Type header when body is present", async () => {
@@ -52,7 +52,9 @@ describe("apiRequest", () => {
     );
 
     const [, init] = fetch.mock.calls[0] ?? [];
-    expect((init?.headers as Record<string, string>)["Content-Type"]).toBe("application/json");
+    expect(((init?.headers ?? {}) as Record<string, string>)["Content-Type"]).toBe(
+      "application/json",
+    );
   });
 
   test("does not add Content-Type header when body is absent", async () => {
@@ -64,7 +66,7 @@ describe("apiRequest", () => {
     );
 
     const [, init] = fetch.mock.calls[0] ?? [];
-    expect((init?.headers as Record<string, string>)["Content-Type"]).toBeUndefined();
+    expect(((init?.headers ?? {}) as Record<string, string>)["Content-Type"]).toBeUndefined();
   });
 
   test("returns response on success without throwing", async () => {

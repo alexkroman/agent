@@ -21,10 +21,10 @@ const schemas: ToolSchema[] = [
 function runTool(
   tool: Tool | undefined,
   args: Readonly<Record<string, unknown>>,
-  options: ToolExecutionOptions,
+  options: Omit<ToolExecutionOptions<unknown>, "context">,
 ): Promise<unknown> {
   if (!tool?.execute) throw new Error("tool.execute missing");
-  return tool.execute(args, options);
+  return tool.execute(args, { ...options, context: undefined });
 }
 
 describe("toVercelTools", () => {
