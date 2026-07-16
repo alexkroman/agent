@@ -19,7 +19,7 @@ describe("parseManifest", () => {
       systemPrompt: expect.any(String),
       greeting: expect.any(String),
       sttPrompt: undefined,
-      maxSteps: 5,
+      maxSteps: 10,
       toolChoice: "auto",
       idleTimeoutMs: undefined,
       theme: undefined,

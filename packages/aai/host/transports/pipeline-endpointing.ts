@@ -11,9 +11,11 @@ import { countWords, utteranceLooksComplete } from "./pipeline-stream.ts";
 export interface EndpointSettler {
   /**
    * Buffer an STT final. A clearly-complete utterance (terminal punctuation,
-   * no trailing continuation cue) — or a settle window of 0 — commits
-   * immediately so clean requests pay no settle latency; a fragment (re)arms
-   * the settle timer to wait for continuation.
+   * no trailing continuation cue) (re)arms the short `completeSettleMs`
+   * window — hesitant speakers pause at sentence boundaries mid-request, so
+   * even a complete-looking final briefly waits for a continuation. A
+   * fragment (re)arms the full `settleMs` window. A settle window of 0
+   * commits immediately.
    */
   push(finalText: string): void;
   /**
@@ -33,8 +35,13 @@ export interface EndpointSettler {
  * once it commits (never empty text).
  */
 export function createEndpointSettler(opts: {
-  /** Settle window in ms; 0 (or negative) commits every final immediately. */
+  /** Settle window in ms for fragments; 0 (or negative) commits every final immediately. */
   settleMs: number;
+  /**
+   * Settle window in ms for clearly-complete finals; 0 (or negative) commits
+   * them immediately. Effective window is capped at `settleMs`.
+   */
+  completeSettleMs: number;
   onCommit: (text: string) => void;
 }): EndpointSettler {
   let pending = "";
@@ -48,9 +55,9 @@ export function createEndpointSettler(opts: {
     }
   }
 
-  function arm(): void {
+  function arm(ms: number = opts.settleMs): void {
     clearTimer();
-    timer = setTimeout(commit, opts.settleMs);
+    timer = setTimeout(commit, ms);
   }
 
   /** Commit the buffered utterance as a single turn. */
@@ -65,11 +72,21 @@ export function createEndpointSettler(opts: {
   return {
     push(finalText: string): void {
       pending = pending.length > 0 ? `${pending} ${finalText}` : finalText;
-      // Fast path: a clearly-complete utterance commits immediately so clean
-      // requests pay no settle latency (and multi-tool chains have more of the
-      // response window). A fragment waits the settle window for continuation.
-      if (opts.settleMs <= 0 || utteranceLooksComplete(pending)) {
+      if (opts.settleMs <= 0) {
         commit();
+        return;
+      }
+      // A clearly-complete utterance gets the short window — enough for an
+      // immediate continuation ("...my order. [pause] Oh, and also...") to
+      // arrive as a partial and extend, without the full fragment wait. A
+      // fragment waits the full settle window for its continuation.
+      if (utteranceLooksComplete(pending)) {
+        const completeMs = Math.min(opts.completeSettleMs, opts.settleMs);
+        if (completeMs <= 0) {
+          commit();
+          return;
+        }
+        arm(completeMs);
         return;
       }
       arm();
