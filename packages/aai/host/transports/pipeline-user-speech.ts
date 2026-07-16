@@ -14,6 +14,12 @@ export interface SpeechEdgeTracker {
   speechStarted(): void;
   /** The utterance resolved (commit / false-alarm) — close the edge (idempotent). */
   speechEnded(): void;
+  /**
+   * How long the current utterance has been running (ms since the edge
+   * opened), or 0 when the user is not speaking. Drives the
+   * `interruptionMinDurationMs` barge-in gate.
+   */
+  durationMs(): number;
   /** Forget the current edge without emitting (session reset). */
   reset(): void;
 }
@@ -24,16 +30,21 @@ export function createSpeechEdgeTracker(callbacks: {
   onSpeechStopped(): void;
 }): SpeechEdgeTracker {
   let speaking = false;
+  let startedAtMs = 0;
   return {
     speechStarted(): void {
       if (speaking) return;
       speaking = true;
+      startedAtMs = Date.now();
       callbacks.onSpeechStarted();
     },
     speechEnded(): void {
       if (!speaking) return;
       speaking = false;
       callbacks.onSpeechStopped();
+    },
+    durationMs(): number {
+      return speaking ? Date.now() - startedAtMs : 0;
     },
     reset(): void {
       speaking = false;

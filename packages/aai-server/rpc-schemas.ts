@@ -32,6 +32,7 @@ export const IsolateConfigSchema = z
     silenceTimeoutMs: z.number().positive().optional(),
     silencePrompt: z.string().optional(),
     minBargeInWords: z.number().int().min(1).optional(),
+    interruptionMinDurationMs: z.number().int().nonnegative().optional(),
     endpointSettleMs: z.number().int().nonnegative().optional(),
     completeSettleMs: z.number().int().nonnegative().optional(),
     holdPhrase: z.string().optional(),

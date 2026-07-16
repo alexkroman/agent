@@ -13,6 +13,10 @@ interface FakeSocket {
   _fire(ev: string, ...args: unknown[]): void;
 }
 
+const captured = vi.hoisted(() => ({
+  connectArgs: undefined as Record<string, unknown> | undefined,
+}));
+
 vi.mock("@deepgram/sdk", () => {
   const makeFakeSocket = (): FakeSocket => {
     // V1Socket replaces — not appends — the listener per event.
@@ -44,7 +48,10 @@ vi.mock("@deepgram/sdk", () => {
     DeepgramClient: class {
       listen = {
         v1: {
-          connect: (_args: unknown): Promise<FakeSocket> => Promise.resolve(makeFakeSocket()),
+          connect: (args: unknown): Promise<FakeSocket> => {
+            captured.connectArgs = args as Record<string, unknown>;
+            return Promise.resolve(makeFakeSocket());
+          },
         },
       };
     },
@@ -148,6 +155,18 @@ describe("Deepgram STT adapter", () => {
 
     await flush();
     expect(finals).toEqual([]);
+  });
+
+  test("default endpointing is 100 ms (transport settle windows own end-of-turn)", async () => {
+    const { session } = await openSession();
+    expect(captured.connectArgs?.endpointing).toBe(100);
+    await session.close();
+  });
+
+  test("endpointing option is forwarded to the connection", async () => {
+    const { session } = await openSession({ endpointing: 250 });
+    expect(captured.connectArgs?.endpointing).toBe(250);
+    await session.close();
   });
 
   test("sendAudio(Int16Array) forwards PCM bytes to the connection", async () => {

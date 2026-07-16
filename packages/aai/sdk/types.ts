@@ -408,6 +408,14 @@ export type AgentDef<S = Record<string, unknown>> = {
    */
   minBargeInWords?: number;
   /**
+   * Pipeline mode only. Minimum sustained speech (ms since the utterance's
+   * first interim transcript) before an interim-triggered barge-in aborts the
+   * agent's reply — a duration gate alongside `minBargeInWords`, mirroring
+   * LiveKit's `min_interruption_duration`. Committed turns (STT finals) are
+   * never gated. Default 0 (disabled).
+   */
+  interruptionMinDurationMs?: number;
+  /**
    * Pipeline mode only. Endpoint settle window (ms): after an STT final, how
    * long to wait for the speaker to continue before committing the turn, so
    * disfluent multi-final utterances aggregate into one turn. Defaults to
@@ -418,7 +426,7 @@ export type AgentDef<S = Record<string, unknown>> = {
    * Pipeline mode only. Settle window (ms) for clearly-complete finals
    * (terminal punctuation, no trailing continuation cue) — shorter than
    * `endpointSettleMs` (and capped by it) so finished requests pay little
-   * latency. Defaults to `DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS` (600).
+   * latency. Defaults to `DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS` (500).
    */
   completeSettleMs?: number;
   /**

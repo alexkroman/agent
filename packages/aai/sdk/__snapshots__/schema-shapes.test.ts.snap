@@ -9,6 +9,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "greeting",
   "holdPhrase",
   "idleTimeoutMs",
+  "interruptionMinDurationMs",
   "kv",
   "llm",
   "maxSteps",

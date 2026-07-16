@@ -126,6 +126,7 @@ export function assertSilencePolicy(
  */
 export type PipelineTuning = {
   minBargeInWords?: number | undefined;
+  interruptionMinDurationMs?: number | undefined;
   endpointSettleMs?: number | undefined;
   completeSettleMs?: number | undefined;
   holdPhrase?: string | undefined;
@@ -144,6 +145,7 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
   if (mode === "pipeline") return;
   const fields: Record<string, unknown> = {
     minBargeInWords: tuning.minBargeInWords,
+    interruptionMinDurationMs: tuning.interruptionMinDurationMs,
     endpointSettleMs: tuning.endpointSettleMs,
     completeSettleMs: tuning.completeSettleMs,
     holdPhrase: tuning.holdPhrase,

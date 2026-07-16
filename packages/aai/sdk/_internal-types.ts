@@ -46,6 +46,7 @@ export const AgentConfigSchema = z.object({
   silenceTimeoutMs: z.number().positive().optional(),
   silencePrompt: z.string().optional(),
   minBargeInWords: z.number().int().min(1).optional(),
+  interruptionMinDurationMs: z.number().int().nonnegative().optional(),
   endpointSettleMs: z.number().int().nonnegative().optional(),
   completeSettleMs: z.number().int().nonnegative().optional(),
   holdPhrase: z.string().optional(),
@@ -75,6 +76,7 @@ interface AgentConfigSource {
   silenceTimeoutMs?: number | undefined;
   silencePrompt?: string | undefined;
   minBargeInWords?: number | undefined;
+  interruptionMinDurationMs?: number | undefined;
   endpointSettleMs?: number | undefined;
   completeSettleMs?: number | undefined;
   holdPhrase?: string | undefined;
@@ -91,6 +93,9 @@ interface AgentConfigSource {
 function pipelineTuningConfig(src: AgentConfigSource): Partial<AgentConfig> {
   return {
     ...(src.minBargeInWords !== undefined ? { minBargeInWords: src.minBargeInWords } : {}),
+    ...(src.interruptionMinDurationMs !== undefined
+      ? { interruptionMinDurationMs: src.interruptionMinDurationMs }
+      : {}),
     ...(src.endpointSettleMs !== undefined ? { endpointSettleMs: src.endpointSettleMs } : {}),
     ...(src.completeSettleMs !== undefined ? { completeSettleMs: src.completeSettleMs } : {}),
     ...(src.holdPhrase !== undefined ? { holdPhrase: src.holdPhrase } : {}),

@@ -73,13 +73,18 @@ export type Manifest = {
    */
   minBargeInWords?: number | undefined;
   /**
+   * Pipeline mode only. Minimum sustained speech (ms) before an
+   * interim-triggered barge-in interrupts the reply. Default 0 (disabled).
+   */
+  interruptionMinDurationMs?: number | undefined;
+  /**
    * Pipeline mode only. Endpoint settle window (ms) after an STT final before
    * committing the user's turn. Default 1500; 0 commits every final at once.
    */
   endpointSettleMs?: number | undefined;
   /**
    * Pipeline mode only. Settle window (ms) for clearly-complete finals,
-   * capped by `endpointSettleMs`. Default 600.
+   * capped by `endpointSettleMs`. Default 500.
    */
   completeSettleMs?: number | undefined;
   /**
@@ -161,8 +166,10 @@ const ManifestSchema = z.object({
   silenceTimeoutMs: z.number().int().positive().optional(),
   silencePrompt: z.string().min(1).optional(),
   minBargeInWords: z.number().int().min(1).optional(),
-  // 0 is the documented "disable" value for the settle windows and the
-  // false-interruption recovery timer — allow it via nonnegative().
+  // 0 is the documented "disable" value for the duration gate, the settle
+  // windows, and the false-interruption recovery timer — allow it via
+  // nonnegative().
+  interruptionMinDurationMs: z.number().int().nonnegative().optional(),
   endpointSettleMs: z.number().int().nonnegative().optional(),
   completeSettleMs: z.number().int().nonnegative().optional(),
   // "" is the documented "disable the hold phrase" value — no min(1).

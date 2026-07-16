@@ -125,6 +125,7 @@ export function createTransportFactory(
       silenceTimeoutMs: agentConfig.silenceTimeoutMs,
       silencePrompt: agentConfig.silencePrompt,
       minBargeInWords: agentConfig.minBargeInWords,
+      interruptionMinDurationMs: agentConfig.interruptionMinDurationMs,
       endpointSettleMs: agentConfig.endpointSettleMs,
       completeSettleMs: agentConfig.completeSettleMs,
       holdPhrase: agentConfig.holdPhrase,

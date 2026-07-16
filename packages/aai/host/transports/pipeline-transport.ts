@@ -55,6 +55,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const ttsSampleRate = opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE;
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
   const minBargeInWords = opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS;
+  const interruptionMinDurationMs = opts.interruptionMinDurationMs ?? 0;
   const endpointSettleMs = opts.endpointSettleMs ?? DEFAULT_ENDPOINT_SETTLE_MS;
   const completeSettleMs = opts.completeSettleMs ?? DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS;
   const holdPhrase = opts.holdPhrase ?? DEFAULT_HOLD_PHRASE;
@@ -222,6 +223,16 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     void providers.close();
   }
 
+  /** Should this interim transcript interrupt the agent right now? */
+  function partialTriggersBargeIn(text: string): boolean {
+    if (turnController === null && !playbackClock.pending()) return false;
+    if (countWords(text) < minBargeInWords) return false;
+    // Duration gate (interim-only): require sustained speech since the
+    // utterance's first partial before cutting the agent off. A committed
+    // final barging in via onSttFinal is never duration-gated.
+    return !(interruptionMinDurationMs > 0 && speechEdges.durationMs() < interruptionMinDurationMs);
+  }
+
   function onSttPartial(text: string): void {
     if (terminated) return;
     // User speech proves presence: reset the nudge budget, restart the window.
@@ -236,8 +247,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // a pause: extend the settle window so the continuation aggregates into the
     // same turn instead of the pre-pause fragment committing on its own.
     if (settler.extendOnPartial(text)) return;
-    if (turnController === null && !playbackClock.pending()) return;
-    if (countWords(text) < minBargeInWords) return;
+    if (!partialTriggersBargeIn(text)) return;
     log.info("Pipeline barge-in", { sid: opts.sid });
     // Only an aborted in-flight turn can be resumed after a false alarm — its
     // spoken-so-far text lands in history marked `[interrupted]`. A turn that

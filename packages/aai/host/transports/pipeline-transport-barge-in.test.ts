@@ -182,6 +182,34 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("interruptionMinDurationMs gate: an early partial does NOT interrupt; sustained speech does", async () => {
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script: [{ type: "text", text: "20, 19, 18…" }] }),
+        interruptionMinDurationMs: 100,
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("count down from 20");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalled();
+      });
+      // 10 s of PCM16 at the default 24 kHz — barge-in stays live on the
+      // client playback tail for the whole test.
+      tts.last()?.fireAudio(new Int16Array(240_000));
+
+      // First partial opens the speaking edge — 0 ms of sustained speech.
+      stt.last()?.firePartial("wait stop");
+      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+
+      // The user keeps talking past the duration gate → the next partial interrupts.
+      await new Promise((r) => setTimeout(r, 120));
+      stt.last()?.firePartial("wait stop that");
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(tts.last()?.cancel).toHaveBeenCalled();
+      await t.stop();
+    });
+
     test("cancelReply() aborts the turn and calls ttsSession.cancel()", async () => {
       const script: ScriptedPart[] = [
         { type: "text", text: "some " },

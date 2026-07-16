@@ -48,6 +48,13 @@ export interface PipelineTransportOptions {
    */
   minBargeInWords?: number | undefined;
   /**
+   * Minimum sustained speech (ms since the utterance's first interim
+   * transcript) before an interim-triggered barge-in aborts the reply — a
+   * duration gate alongside `minBargeInWords`. Committed turns (STT finals)
+   * are never gated. 0 (default) disables the gate.
+   */
+  interruptionMinDurationMs?: number | undefined;
+  /**
    * Endpoint settle window (ms): how long to wait after an STT `final` for the
    * speaker to continue before committing the turn, aggregating follow-on
    * finals/partials into one utterance. Defaults to

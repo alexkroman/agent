@@ -132,9 +132,10 @@ export const DEFAULT_ENDPOINT_SETTLE_MS = 1500;
  * makes the agent talk over the continuation and act on half the request.
  * A short window lets an immediate continuation (an STT partial extends it)
  * aggregate into the same turn while keeping added latency small on genuinely
- * finished requests. Set to 0 to commit complete finals immediately.
+ * finished requests. 500 matches LiveKit's `min_endpointing_delay` default.
+ * Set to 0 to commit complete finals immediately.
  */
-export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 600;
+export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 500;
 
 /**
  * False-interruption recovery window (pipeline mode). A barge-in triggered by

@@ -105,6 +105,12 @@ export function agent(def: {
    */
   minBargeInWords?: number;
   /**
+   * Pipeline mode only. Minimum sustained speech (ms) before an
+   * interim-triggered barge-in interrupts the reply, alongside
+   * `minBargeInWords`. Defaults to 0 (disabled).
+   */
+  interruptionMinDurationMs?: number;
+  /**
    * Pipeline mode only. Endpoint settle window (ms) after an STT final
    * before committing the user's turn. Defaults to 1500; 0 commits every
    * final immediately.
@@ -112,7 +118,7 @@ export function agent(def: {
   endpointSettleMs?: number;
   /**
    * Pipeline mode only. Settle window (ms) for clearly-complete finals,
-   * capped by `endpointSettleMs`. Defaults to 600.
+   * capped by `endpointSettleMs`. Defaults to 500.
    */
   completeSettleMs?: number;
   /**

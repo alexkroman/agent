@@ -317,12 +317,14 @@ describe("parseManifest — pipeline voice tuning", () => {
       name: "x",
       ...pipelineFields,
       minBargeInWords: 3,
+      interruptionMinDurationMs: 500,
       endpointSettleMs: 800,
       completeSettleMs: 200,
       holdPhrase: "Just a sec.",
       falseInterruptionTimeoutMs: 1500,
     } as never);
     expect(m.minBargeInWords).toBe(3);
+    expect(m.interruptionMinDurationMs).toBe(500);
     expect(m.endpointSettleMs).toBe(800);
     expect(m.completeSettleMs).toBe(200);
     expect(m.holdPhrase).toBe("Just a sec.");
@@ -345,6 +347,7 @@ describe("parseManifest — pipeline voice tuning", () => {
 
   test.each([
     ["minBargeInWords", 2],
+    ["interruptionMinDurationMs", 500],
     ["endpointSettleMs", 800],
     ["completeSettleMs", 200],
     ["holdPhrase", "One sec."],
@@ -368,12 +371,14 @@ describe("parseManifest — pipeline voice tuning", () => {
       greeting: "g",
       ...pipelineFields,
       minBargeInWords: 1,
+      interruptionMinDurationMs: 400,
       endpointSettleMs: 900,
       completeSettleMs: 300,
       holdPhrase: "",
       falseInterruptionTimeoutMs: 2500,
     });
     expect(config.minBargeInWords).toBe(1);
+    expect(config.interruptionMinDurationMs).toBe(400);
     expect(config.endpointSettleMs).toBe(900);
     expect(config.completeSettleMs).toBe(300);
     expect(config.holdPhrase).toBe("");
