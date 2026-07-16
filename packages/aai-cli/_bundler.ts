@@ -21,6 +21,15 @@ export type DirectoryBundleOutput = {
   agentConfig: Record<string, unknown>;
 };
 
+/** Options for worker bundling. */
+export type BuildWorkerOptions = {
+  /**
+   * Minify the worker with esbuild. Deploy builds set this to shrink the
+   * upload payload; dev builds stay unminified for readable stack traces.
+   */
+  minify?: boolean;
+};
+
 /**
  * Bundle an agent directory: build agent.ts into worker ESM + extract config.
  *
@@ -29,12 +38,15 @@ export type DirectoryBundleOutput = {
  *   The AgentDef is extracted from that bundle via dynamic import, avoiding a
  *   second build pass.
  */
-export async function buildAgentBundle(cwd: string): Promise<DirectoryBundleOutput> {
+export async function buildAgentBundle(
+  cwd: string,
+  opts: BuildWorkerOptions = {},
+): Promise<DirectoryBundleOutput> {
   // Single Vite build for the worker (all deps bundled in) + client in
   // parallel. The eval only depends on the worker, so chain it onto the
   // worker build instead of making it wait for the client build too.
   const [[worker, agentDef], clientFiles] = await Promise.all([
-    buildWorker(cwd).then(async (code) => [code, await evalWorkerBundle(code, cwd)] as const),
+    buildWorker(cwd, opts).then(async (code) => [code, await evalWorkerBundle(code, cwd)] as const),
     buildClient(cwd),
   ]);
   log.step(`Bundling ${agentDef.name}`);
@@ -79,7 +91,7 @@ export async function evalWorkerBundle(code: string, cwd: string): Promise<Agent
  * Zod is bundled in — zod 4's `Function()` usage is wrapped in try/catch
  * and gracefully degrades in restricted environments like Deno.
  */
-export async function buildWorker(cwd: string): Promise<string> {
+export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): Promise<string> {
   const agentEntry = path.join(cwd, "agent.ts");
 
   const result = await build({
@@ -99,7 +111,7 @@ export async function buildWorker(cwd: string): Promise<string> {
     build: {
       lib: { entry: agentEntry, formats: ["es"], fileName: "worker" },
       target: "node20",
-      minify: false,
+      minify: opts.minify ? "esbuild" : false,
       write: false,
       rollupOptions: {
         output: { entryFileNames: "[name].js" },
@@ -166,7 +178,8 @@ type BuildData = {
 };
 
 export async function executeBuild(cwd: string): Promise<CommandResult<BuildData>> {
-  const bundle = await buildAgentBundle(cwd);
+  // `aai build` previews the deploy artifact, so build it exactly like deploy.
+  const bundle = await buildAgentBundle(cwd, { minify: true });
   log.success("Build complete");
 
   return ok({

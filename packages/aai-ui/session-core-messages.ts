@@ -95,6 +95,14 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   /** Monotonically increasing counter for custom events -- used by useEvent to deduplicate. */
   let customEventSeq = 0;
 
+  /** Monotonically increasing counter for chat messages -- stable render keys
+   *  and tool-call anchoring that survive the sliding message window. */
+  let messageSeq = 0;
+
+  /** Monotonically increasing counter for tool calls -- used by the tool-call
+   *  hooks to iterate only the unprocessed tail. */
+  let toolCallSeq = 0;
+
   function appendCustomEvent(name: string, data: unknown): void {
     updateState({
       customEvents: appendCapped(
@@ -111,7 +119,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       userTranscript: null,
       messages: appendCapped(
         getSnapshot().messages,
-        { role: "user" as const, content: text },
+        { id: ++messageSeq, role: "user" as const, content: text },
         MAX_MESSAGES,
       ),
       state: "thinking",
@@ -123,7 +131,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       agentTranscript: null,
       messages: appendCapped(
         getSnapshot().messages,
-        { role: "assistant" as const, content: text },
+        { id: ++messageSeq, role: "assistant" as const, content: text },
         MAX_MESSAGES,
       ),
     });
@@ -159,7 +167,8 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
               name: e.toolName,
               args: (e.args ?? {}) as Record<string, unknown>,
               status: "pending",
-              afterMessageIndex: getSnapshot().messages.length - 1,
+              seq: ++toolCallSeq,
+              afterMessageId: getSnapshot().messages.at(-1)?.id ?? -1,
             },
             MAX_MESSAGES,
           ),

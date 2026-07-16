@@ -35,6 +35,7 @@ import {
   assertPcm16Rate,
   closeOnAbort,
   connectOrThrow,
+  createPcmFrameAccumulator,
   createSessionShell,
   type Pcm16Rate,
   requireApiKey,
@@ -118,19 +119,36 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
 
       closeOnAbort(openOpts.signal, shell.close);
 
+      // Base64-encoding and JSON-wrapping every ~20 ms mic frame is ~50
+      // provider messages per second; coalesce to ~100 ms frames first (see
+      // createPcmFrameAccumulator). ElevenLabs has no frame floor, so the
+      // close-time flush forwards any remaining tail (minFlushMs: 0).
+      const frames = createPcmFrameAccumulator({
+        sampleRate: openOpts.sampleRate,
+        minFlushMs: 0,
+        // The SDK expects base64-encoded audio; uint8ToBase64 encodes a
+        // zero-copy view over the accumulator's backing buffer (the encode
+        // itself copies, so the view is not retained past the call).
+        send: (frame) =>
+          connection.send({
+            audioBase64: uint8ToBase64(
+              new Uint8Array(frame.buffer, frame.byteOffset, frame.byteLength),
+            ),
+          }),
+      });
+
       return {
         sendAudio(pcm: Int16Array) {
           if (shell.isClosed()) return;
-          // The SDK expects base64-encoded audio; uint8ToBase64 encodes a
-          // zero-copy view over the same backing buffer.
-          connection.send({
-            audioBase64: uint8ToBase64(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength)),
-          });
+          frames.push(pcm);
         },
         on(event, fn) {
           return emitter.on(event, fn);
         },
-        close: shell.close,
+        close: () => {
+          if (!shell.isClosed()) frames.flush();
+          return shell.close();
+        },
       };
     },
   };

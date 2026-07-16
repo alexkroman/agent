@@ -16,14 +16,13 @@ test("hashApiKey produces PBKDF2 format", async () => {
   expect(await verifyApiKeyHash("other", h)).toBe(false);
 });
 
-test("verifySlugOwner returns unclaimed for missing slug", async () => {
+test("verifySlugOwner returns unclaimed for missing slug without computing a hash", async () => {
   const store = createTestStore();
   const result = await verifySlugOwner("key1", { slug: "my-agent", store });
   expect(result.status).toBe("unclaimed");
-  expect("keyHash" in result).toBe(true);
-  if (result.status === "unclaimed") {
-    expect(result.keyHash).toMatch(/^pbkdf2:/);
-  }
+  // No keyHash on the unclaimed result — hashing is deferred to the
+  // deploy-claim path so nonexistent slugs don't burn PBKDF2 time.
+  expect("keyHash" in result).toBe(false);
 });
 
 test("verifySlugOwner returns owned for matching credential", async () => {

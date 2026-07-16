@@ -14,7 +14,7 @@ import {
   type HeaderWebSocket,
 } from "./_ws.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
-import { consoleLogger } from "./runtime-config.ts";
+import { consoleLogger, debugLoggingEnabled } from "./runtime-config.ts";
 
 export type S2sWebSocket = HeaderWebSocket;
 export type CreateS2sWebSocket = CreateHeaderWebSocket;
@@ -226,10 +226,12 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       return;
     }
     const json = JSON.stringify(msg);
+    // Per-outbound-message logging is a hot path (one line per wire
+    // message); debug-only so the default logger pays nothing.
     if (msg.type === "session.update") {
-      log.info(`S2S >> ${msg.type}`, { payload: json });
+      log.debug(`S2S >> ${msg.type}`, { payload: json });
     } else if (msg.type !== "input.audio") {
-      log.info(`S2S >> ${msg.type}`);
+      log.debug(`S2S >> ${msg.type}`);
     }
     ws.send(json);
   }
@@ -287,9 +289,10 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     // empty-args problems — the underlying LLM emitting a function call
     // without populating its required parameters. Without the full
     // payload we cannot tell apart "field-name mismatch" from
-    // "model emitted no args."
-    if (obj.type === "tool.call") {
-      log.info("S2S << tool.call payload", { payload: JSON.stringify(obj) });
+    // "model emitted no args." Guarded by the process-wide debug flag
+    // (AAI_DEBUG=1) so the stringify itself is skipped when debug is off.
+    if (debugLoggingEnabled && obj.type === "tool.call") {
+      log.debug("S2S << tool.call payload", { payload: JSON.stringify(obj) });
     }
     if (obj.type === "reply.audio" && typeof obj.data === "string") {
       callbacks.onAudio(base64ToUint8(obj.data));

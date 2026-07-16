@@ -10,6 +10,7 @@ interface FakeConnection {
   send(_: { audioBase64: string }): void;
   close(): void;
   _fire(ev: string, data: unknown): void;
+  sentAudio: string[];
 }
 
 const captured: { connections: FakeConnection[] } = { connections: [] };
@@ -21,11 +22,12 @@ vi.mock("@elevenlabs/elevenlabs-js", () => ({
         connect: async (_opts: unknown): Promise<FakeConnection> => {
           const listeners = new Map<string, (data: unknown) => void>();
           const conn: FakeConnection = {
+            sentAudio: [],
             on(ev, fn) {
               listeners.set(ev, fn);
             },
-            send() {
-              /* no-op */
+            send(msg) {
+              conn.sentAudio.push(msg.audioBase64);
             },
             close() {
               /* no-op */
@@ -184,5 +186,49 @@ describe("ElevenLabs Scribe STT adapter", () => {
     await expect(
       opener.open({ sampleRate: 12_345, apiKey: "test-key", signal: controller.signal }),
     ).rejects.toMatchObject({ code: "stt_connect_failed" });
+  });
+});
+
+describe("ElevenLabs Scribe STT adapter — frame coalescing (~100 ms)", () => {
+  // At 16 kHz mono PCM16: 20 ms = 320 samples, 100 ms = 1600, 1000 ms = 16000.
+  // base64 of N PCM16 samples = ceil(2N / 3) * 4 chars (2N bytes, no padding lost).
+  const SAMPLES_20MS = 320;
+  const SAMPLES_100MS = 1600;
+  const SAMPLES_1000MS = 16_000;
+  const base64Len = (samples: number) => Math.ceil((samples * 2) / 3) * 4;
+
+  test("buffers sub-100 ms mic frames and forwards one ~100 ms message once accumulated", async () => {
+    const { session, fake } = await openSession();
+
+    const frame20 = new Int16Array(SAMPLES_20MS); // reused: exercises the copy
+    for (let i = 0; i < 4; i++) session.sendAudio(frame20); // 80 ms — nothing yet
+    expect(fake.sentAudio.length).toBe(0);
+
+    session.sendAudio(frame20); // 5th frame → 100 ms accumulated → one send
+    expect(fake.sentAudio.length).toBe(1);
+    expect(fake.sentAudio[0]?.length).toBe(base64Len(SAMPLES_100MS));
+
+    await session.close();
+  });
+
+  test("splits an over-long chunk into frames capped at 1000 ms", async () => {
+    const { session, fake } = await openSession();
+
+    session.sendAudio(new Int16Array(SAMPLES_1000MS + 480)); // 1000 ms + 30 ms
+    expect(fake.sentAudio.length).toBe(1);
+    expect(fake.sentAudio[0]?.length).toBe(base64Len(SAMPLES_1000MS));
+
+    // close() flushes the tail — ElevenLabs has no frame floor, so even a
+    // sub-50 ms remainder is forwarded rather than dropped.
+    await session.close();
+    expect(fake.sentAudio.length).toBe(2);
+    expect(fake.sentAudio[1]?.length).toBe(base64Len(480));
+  });
+
+  test("no audio is sent after close()", async () => {
+    const { session, fake } = await openSession();
+    await session.close();
+    session.sendAudio(new Int16Array(SAMPLES_100MS));
+    expect(fake.sentAudio.length).toBe(0);
   });
 });

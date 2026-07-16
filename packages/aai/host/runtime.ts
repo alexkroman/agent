@@ -159,7 +159,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const {
     agent,
     env,
-    kv = createLocalKv(),
+    kv,
     vector,
     createWebSocket,
     createOpenaiRealtimeWebSocket,
@@ -176,7 +176,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Resolve descriptors from manifest if present; otherwise use the
   // supplied (or default) instances.
   const slug = agent.name ?? "local";
-  const resolvedKv = agent.kv ? resolveKv(agent.kv, env, "") : kv;
+  // Lazy default: only construct the local unstorage KV when neither the
+  // agent manifest nor the caller supplied one — a declared `kv:` descriptor
+  // would otherwise shadow (and waste) an eagerly-built instance.
+  const resolvedKv = agent.kv ? resolveKv(agent.kv, env, "") : (kv ?? createLocalKv());
   const resolvedVector = agent.vector
     ? resolveVector(agent.vector, env, slug)
     : (vector ?? createLocalVector(slug));

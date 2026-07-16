@@ -24,7 +24,7 @@
       "inputs": ["**/*.ts", "**/*.tsx", "!**/*.test.ts", "!**/*.test.tsx", "tsconfig*.json"]
     },
     "lint": {
-      "inputs": ["**/*.ts", "**/*.tsx", "biome.json"]
+      "inputs": ["**/*.ts", "**/*.tsx", "../../biome.json"]
     },
     "check:publint": {
       "dependsOn": ["build"],

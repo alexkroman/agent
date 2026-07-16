@@ -1,12 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { existsSync } from "node:fs";
-import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { silenced } from "./_test-utils.ts";
-import { executeTest, runVitest } from "./test.ts";
+import { executeTest, resolveVitestCommand, runVitest } from "./test.ts";
 
 const execFileSync = vi.hoisted(() => vi.fn());
 vi.mock("node:child_process", async (importOriginal) => {
@@ -40,15 +40,59 @@ describe("aai test", () => {
   test("runs vitest against agent.test.ts with type stripping enabled", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
     expect(runVitest(tempDir)).toBe(true);
-    const [cmd, args, opts] = execFileSync.mock.calls[0] as [
+    const [, args, opts] = execFileSync.mock.calls[0] as [
       string,
       string[],
       { cwd: string; env: Record<string, string> },
     ];
-    expect(cmd).toBe("npx");
-    expect(args).toEqual(["vitest", "run", "--root", ".", "agent.test.ts"]);
+    // Resolution mode (local bin vs npx) varies by environment; the vitest
+    // CLI arguments and env are the same either way.
+    expect(args.slice(-4)).toEqual(["run", "--root", ".", "agent.test.ts"]);
     expect(opts.cwd).toBe(tempDir);
     expect(opts.env.NODE_OPTIONS).toContain("--experimental-strip-types");
+  });
+
+  test("runs the project-local vitest bin directly when installed", async () => {
+    // Fake a local vitest install in the agent project.
+    const vitestDir = path.join(tempDir, "node_modules", "vitest");
+    await mkdir(vitestDir, { recursive: true });
+    await writeFile(
+      path.join(vitestDir, "package.json"),
+      JSON.stringify({ name: "vitest", version: "0.0.0", bin: { vitest: "vitest.mjs" } }),
+    );
+    await writeFile(path.join(vitestDir, "vitest.mjs"), "// fake bin");
+    await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
+
+    expect(runVitest(tempDir)).toBe(true);
+    const [cmd, args] = execFileSync.mock.calls[0] as [string, string[]];
+    // No npx: the local bin JS runs with the current Node executable.
+    expect(cmd).toBe(process.execPath);
+    expect(args[0]?.endsWith(path.join("node_modules", "vitest", "vitest.mjs"))).toBe(true);
+    expect(args.slice(1)).toEqual(["run", "--root", ".", "agent.test.ts"]);
+  });
+
+  test("resolveVitestCommand falls back to npx when vitest is not resolvable", () => {
+    const failingResolve = () => {
+      throw new Error("Cannot find module 'vitest/package.json'");
+    };
+    expect(resolveVitestCommand(tempDir, failingResolve)).toEqual({
+      cmd: "npx",
+      args: ["vitest"],
+    });
+  });
+
+  test("resolveVitestCommand runs the resolved bin with the current node", async () => {
+    const vitestDir = path.join(tempDir, "node_modules", "vitest");
+    await mkdir(vitestDir, { recursive: true });
+    await writeFile(
+      path.join(vitestDir, "package.json"),
+      JSON.stringify({ name: "vitest", bin: { vitest: "dist/cli.mjs" } }),
+    );
+    const resolve = () => path.join(vitestDir, "package.json");
+    expect(resolveVitestCommand(tempDir, resolve)).toEqual({
+      cmd: process.execPath,
+      args: [path.join(vitestDir, "dist", "cli.mjs")],
+    });
   });
 
   test("falls back to agent.test.js when no .ts test exists", async () => {

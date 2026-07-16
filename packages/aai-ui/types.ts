@@ -6,6 +6,14 @@ import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 export const MIC_BUFFER_SECONDS = 0.1;
 
 /**
+ * Backpressure threshold for outbound mic audio. When the WebSocket's
+ * `bufferedAmount` exceeds this many bytes (~2s of 16 kHz PCM16), mic frames
+ * are dropped instead of queued — for live voice, stale audio flushed into
+ * STT on recovery is worse than a gap.
+ */
+export const MIC_SEND_MAX_BUFFERED_BYTES = 64 * 1024;
+
+/**
  * Current state of the voice agent session.
  *
  * @public
@@ -25,6 +33,12 @@ export type AgentState =
  * @public
  */
 export type ChatMessage = {
+  /**
+   * Monotonically increasing, session-unique message id assigned at append
+   * time. Stable across snapshot updates and window slides — use it as a
+   * render key.
+   */
+  id: number;
   /** The sender of the message. */
   role: "user" | "assistant";
   /** The text content of the message. */
@@ -42,8 +56,18 @@ export type ToolCallInfo = {
   args: Record<string, unknown>;
   status: "pending" | "done";
   result?: string | undefined;
-  /** Index in the messages array where this tool call should appear. */
-  afterMessageIndex: number;
+  /**
+   * Monotonically increasing, session-unique insertion sequence number.
+   * Tool calls in a snapshot are always sorted ascending by `seq`.
+   */
+  seq: number;
+  /**
+   * `id` of the last {@link ChatMessage} present when this tool call was
+   * inserted (`-1` when there were none). The tool call renders immediately
+   * after that message; if the anchor message has slid out of the retained
+   * window, the tool call renders before all messages.
+   */
+  afterMessageId: number;
 };
 
 export type { SessionErrorCode } from "@alexkroman1/aai/protocol";

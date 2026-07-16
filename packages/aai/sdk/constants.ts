@@ -138,6 +138,38 @@ export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 600;
 export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 
+/**
+ * Cap on unsent bytes buffered in a client session WebSocket before the
+ * client is treated as stalled and the connection is closed. TTS synthesis
+ * outruns real-time playback, so a slow or wedged client link would otherwise
+ * accumulate unbounded audio in the socket buffer (and flush stale speech
+ * long after barge-in). 4 MiB ≈ 87 s of 24 kHz PCM16 — a voice client that
+ * far behind is unrecoverable; closing lets it reconnect/resume cleanly.
+ */
+export const MAX_CLIENT_WS_BUFFERED_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Pipeline mode: max characters of LLM text batched before a TTS provider
+ * send. The word-coalescing stream transform (pipeline-smooth.ts) emits
+ * one chunk per word; forwarding each word as its own provider message is
+ * ~1 wire frame per word. The TTS send path batches to clause/punctuation
+ * boundaries or this many characters — after the first chunk, which is
+ * always forwarded immediately to preserve time-to-first-byte.
+ */
+export const TTS_COALESCE_MAX_CHARS = 32;
+
+/**
+ * STT frame coalescing (host-side provider openers). Browser/telephony
+ * clients stream ~20 ms mic frames; forwarding each one is ~50 provider
+ * messages per second (and AssemblyAI rejects frames outside [50, 1000] ms).
+ * Openers accumulate inbound PCM to ~STT_FRAME_TARGET_MS frames, split
+ * over-long chunks at STT_FRAME_MAX_MS, and only flush a close-time tail
+ * of at least STT_FRAME_FLOOR_MS (providers with no floor pass 0).
+ */
+export const STT_FRAME_TARGET_MS = 100;
+export const STT_FRAME_MAX_MS = 1000;
+export const STT_FRAME_FLOOR_MS = 50;
+
 export const WS_OPEN = 1;
 
 /**

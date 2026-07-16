@@ -16,7 +16,9 @@ export async function executeDeploy(opts: {
 }): Promise<CommandResult<DeployData>> {
   const { cwd } = opts;
   const { config: projectConfig, serverUrl, apiKey } = await resolveDeployTarget(cwd, opts.server);
-  const bundle = await buildAgentBundle(cwd);
+  // Minify the worker for deploy — smaller upload and stored bundle. Dev
+  // builds (`aai dev`) stay unminified for readable stack traces.
+  const bundle = await buildAgentBundle(cwd, { minify: true });
   const slug = projectConfig?.slug;
 
   const env = await resolveServerEnv(cwd);

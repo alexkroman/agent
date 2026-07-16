@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { gzipSync } from "node:zlib";
 import { apiRequest } from "./_api-client.ts";
 import type { DirectoryBundleOutput } from "./_bundler.ts";
 
@@ -20,15 +21,22 @@ export type DeployResult = {
 };
 
 export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
-  const data = await apiRequest<{ slug: string }>(`${opts.url}/deploy`, {
-    method: "POST",
-    body: {
+  // Gzip the JSON payload — worker + client files compress ~4-5x, cutting
+  // upload time on slow links. Sent as a raw Buffer so ofetch passes it
+  // through untouched; the server inflates on Content-Encoding: gzip.
+  const body = gzipSync(
+    JSON.stringify({
       ...(opts.slug ? { slug: opts.slug } : {}),
       env: opts.env,
       worker: opts.bundle.worker,
       clientFiles: opts.bundle.clientFiles,
       agentConfig: opts.bundle.agentConfig,
-    },
+    }),
+  );
+  const data = await apiRequest<{ slug: string }>(`${opts.url}/deploy`, {
+    method: "POST",
+    body,
+    headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" },
     apiKey: opts.apiKey,
     action: "deploy",
     hints: {

@@ -1,12 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { anthropic } from "@alexkroman1/aai/llm";
+import type { ClientEvent, ClientSink } from "@alexkroman1/aai/protocol";
 import { assemblyAI } from "@alexkroman1/aai/stt";
 import { cartesia } from "@alexkroman1/aai/tts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { createSandbox, type SandboxOptions } from "./sandbox.ts";
+import { createClientSendHandler, createSandbox, type SandboxOptions } from "./sandbox.ts";
 import { createTestStorage } from "./test-utils.ts";
 
 // ── Mock sandbox-vm ──────────────────────────────────────────────────────────
@@ -379,6 +380,79 @@ describe("createSandbox", () => {
     expect(capturedRuntimeOpts.current?.tts).toBeUndefined();
 
     await sandbox.shutdown();
+  });
+
+  // ── client/send relay handler ─────────────────────────────────────────────
+
+  describe("createClientSendHandler", () => {
+    function makeSink(
+      open = true,
+    ): ClientSink & { event: ReturnType<typeof vi.fn<ClientSink["event"]>> } {
+      return {
+        open,
+        event: vi.fn<(e: ClientEvent) => void>(),
+        playAudioChunk: vi.fn<(chunk: Uint8Array) => void>(),
+        playAudioDone: vi.fn<() => void>(),
+      };
+    }
+
+    it("relays a valid event to the session's open sink", () => {
+      const sink = makeSink();
+      const handler = createClientSendHandler(new Map([["s1", sink]]));
+
+      handler({ sessionId: "s1", event: "status", data: { level: "info" } });
+
+      expect(sink.event).toHaveBeenCalledWith({
+        type: "custom_event",
+        event: "status",
+        data: { level: "info" },
+      });
+    });
+
+    it("drops payloads over the byte cap even when UTF-16 length is under it", () => {
+      const sink = makeSink();
+      const handler = createClientSendHandler(new Map([["s1", sink]]));
+
+      // "€" is 1 UTF-16 code unit but 3 UTF-8 bytes: 30,000 of them serialize
+      // to ~30 KB by `.length` but ~90 KB on the wire — over the 64 KB cap.
+      const data = "€".repeat(30_000);
+      expect(JSON.stringify(data).length).toBeLessThan(65_536);
+
+      handler({ sessionId: "s1", event: "big", data });
+
+      expect(sink.event).not.toHaveBeenCalled();
+    });
+
+    it("relays payloads just under the byte cap", () => {
+      const sink = makeSink();
+      const handler = createClientSendHandler(new Map([["s1", sink]]));
+
+      handler({ sessionId: "s1", event: "ok", data: "x".repeat(65_000) });
+
+      expect(sink.event).toHaveBeenCalledOnce();
+    });
+
+    it("ignores events for closed sinks and unknown sessions", () => {
+      const closed = makeSink(false);
+      const handler = createClientSendHandler(new Map([["s1", closed]]));
+
+      handler({ sessionId: "s1", event: "e", data: 1 });
+      handler({ sessionId: "missing", event: "e", data: 1 });
+
+      expect(closed.event).not.toHaveBeenCalled();
+    });
+
+    it("tolerates a notification with no data payload", () => {
+      const sink = makeSink();
+      const handler = createClientSendHandler(new Map([["s1", sink]]));
+
+      expect(() => handler({ sessionId: "s1", event: "ping" })).not.toThrow();
+      expect(sink.event).toHaveBeenCalledWith({
+        type: "custom_event",
+        event: "ping",
+        data: undefined,
+      });
+    });
   });
 
   it("forwards an optional pool to createSandboxVm", async () => {

@@ -60,6 +60,25 @@ const VectorDeleteParamsSchema = z.object({
   ids: z.union([z.string().min(1), z.array(z.string().min(1)).max(1000)]),
 });
 
+// ── Fetch param schema for guest → host validation ──────────────────────────
+
+/**
+ * The GUEST generates the fetch id and registers its pending-fetch entry
+ * before sending the RPC. Early host-side rejections (disallowed host, body
+ * too large, invalid URL, concurrency cap) emit `fetch/response-error`
+ * notifications synchronously — with a host-generated id those could reach
+ * the guest before the `{ id }` RPC response, be dropped, and stall the
+ * fetch until the tool timeout. Ids only need to be unique per sandbox
+ * connection, so any non-empty guest-chosen string is fine.
+ */
+const FetchRequestParamsSchema = z.object({
+  id: z.string().min(1),
+  url: z.string(),
+  method: z.string(),
+  headers: z.record(z.string(), z.string()),
+  body: z.string().nullable(),
+});
+
 // ── Handler registration ─────────────────────────────────────────────────────
 
 export type GuestRpcOptions = {
@@ -120,14 +139,15 @@ export function registerGuestRpcHandlers(conn: NdjsonConnection, opts: GuestRpcO
   // Host serves guest fetch requests (validated against allowedHosts + SSRF)
   if (opts.allowedHosts && opts.allowedHosts.length > 0) {
     const handleFetch = createFetchHandler({ allowedHosts: opts.allowedHosts });
-    let fetchId = 0;
     conn.onRequest("fetch/request", (raw: unknown) => {
-      const req = raw as FetchRequest;
-      const id = String(++fetchId);
-      // Emit response messages as notifications in the background
-      void handleFetch(req, id, (msg) => conn.sendNotification(msg.type, msg));
-      // Return id immediately so guest can start collecting notifications
-      return { id };
+      const p = FetchRequestParamsSchema.parse(raw);
+      const req: FetchRequest = { url: p.url, method: p.method, headers: p.headers, body: p.body };
+      // Emit response messages as notifications in the background. The guest
+      // already listens for this id (see FetchRequestParamsSchema), so even
+      // synchronous early rejections are never dropped.
+      void handleFetch(req, p.id, (msg) => conn.sendNotification(msg.type, msg));
+      // Ack the request with the same id.
+      return { id: p.id };
     });
   }
 }

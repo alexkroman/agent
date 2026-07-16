@@ -406,7 +406,7 @@ describe("interrupted-speech persistence", () => {
     // tool call that had already succeeded (and its result) vanished from LLM
     // history — the next turn would repeat the call or claim the lookup failed.
     const executeTool = vi.fn(async () => "result-payload-42");
-    const { opts, stt, tts, callbacks } = makeOpts({
+    const { opts, stt, callbacks } = makeOpts({
       minBargeInWords: 1,
       llm: createFakeLanguageModel({
         steps: [
@@ -430,9 +430,13 @@ describe("interrupted-speech persistence", () => {
     const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
 
     stt.last()?.fireFinal("look up my account");
-    // Wait until step 1 finished (tool ran) and step 2's text is streaming.
+    // Wait until step 1 finished (tool ran) and step 2's stream has started
+    // (its doStream call was made). TTS chunks are no longer a reliable
+    // mid-step signal: sends coalesce to clause boundaries, so step 2's text
+    // may only reach TTS at the end of the step.
     await vi.waitFor(() => {
-      expect(tts.last()?.textChunks.join("")).toContain("I found");
+      expect(executeTool).toHaveBeenCalled();
+      expect(llm.calls.length).toBeGreaterThanOrEqual(2);
     });
     stt.last()?.firePartial("stop");
     await vi.waitFor(() => {

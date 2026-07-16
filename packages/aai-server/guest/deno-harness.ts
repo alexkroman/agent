@@ -61,12 +61,27 @@ export {
 export class TextLineStream extends TransformStream<string, string> {
   constructor() {
     let buf = "";
+    // Index into `buf` where the next newline scan starts. Everything before
+    // it has already been scanned, so each incoming chunk is scanned exactly
+    // once — a naive `buf.split("\n")` rescans the whole buffer per chunk,
+    // which is quadratic on huge single-line payloads like the 10 MB
+    // bundle/load message.
+    let searchFrom = 0;
     super({
       transform(chunk, controller) {
         buf += chunk;
-        const lines = buf.split("\n");
-        buf = lines.pop() ?? "";
-        for (const line of lines) controller.enqueue(line);
+        let idx = buf.indexOf("\n", searchFrom);
+        if (idx !== -1) {
+          let start = 0;
+          do {
+            controller.enqueue(buf.slice(start, idx));
+            start = idx + 1;
+            idx = buf.indexOf("\n", start);
+          } while (idx !== -1);
+          buf = buf.slice(start);
+        }
+        // The remaining buffer holds no newline — resume scanning at its end.
+        searchFrom = buf.length;
       },
       flush(controller) {
         if (buf) controller.enqueue(buf);
@@ -155,9 +170,11 @@ type ToolCallRequest = {
   messages: Message[];
 };
 
+// No `state` field: the guest's own sessionState map is the source of truth
+// and the host only ever reads `result`, so shipping the full per-session
+// state back on every tool call was pure wire-format dead weight.
 type ToolCallResponse = {
   result: string;
-  state: Record<string, unknown>;
 };
 
 type ToolCallErrorResponse = {
@@ -177,7 +194,7 @@ export async function executeTool(
     if (typeof result === "object" && result !== null && "error" in result) {
       return { error: result.error };
     }
-    return { result, state: sessionState.get(req.sessionId) };
+    return { result };
   }
 
   const tool = agent.tools[req.name];
@@ -208,7 +225,6 @@ export async function executeTool(
     );
     return {
       result: typeof result === "string" ? result : JSON.stringify(result),
-      state: ctx.state as Record<string, unknown>,
     };
   } catch (err) {
     return { error: errMsg(err) };

@@ -9,6 +9,7 @@ import pTimeout from "p-timeout";
 import {
   DEFAULT_SESSION_START_TIMEOUT_MS,
   LOG_PREVIEW_CHARS,
+  MAX_CLIENT_WS_BUFFERED_BYTES,
   MAX_MESSAGE_BUFFER_SIZE,
   WS_OPEN,
 } from "../sdk/constants.ts";
@@ -25,7 +26,15 @@ import type { SessionCore } from "./session-core.ts";
  */
 export type SessionWebSocket = {
   readonly readyState: number;
+  /**
+   * Bytes queued by `send()` but not yet transmitted (standard WebSocket /
+   * `ws` property). Optional so minimal test doubles remain assignable; when
+   * absent, the audio backpressure guard is skipped.
+   */
+  readonly bufferedAmount?: number;
   send(data: string | ArrayBuffer | Uint8Array): void;
+  /** Close the connection (standard WebSocket / `ws` method). */
+  close?(code?: number, reason?: string): void;
   addEventListener(type: "close" | "open", listener: () => void): void;
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
@@ -73,13 +82,25 @@ export function safeSend(ws: SessionWebSocket, data: string | Uint8Array, log: L
   }
 }
 
+/** WebSocket close code sent when a stalled client is disconnected (policy violation). */
+const WS_CLOSE_POLICY_VIOLATION = 1008;
+
 /**
  * Creates a {@link ClientSink} backed by a plain WebSocket.
  *
  * Session events are sent as JSON text frames; audio chunks are sent as raw
  * PCM16 binary frames.
+ *
+ * Audio backpressure: TTS synthesis outruns real-time playback, so a slow or
+ * stalled client link accumulates unsent bytes in the socket buffer. Before
+ * each audio chunk the sink checks `bufferedAmount`; past
+ * {@link MAX_CLIENT_WS_BUFFERED_BYTES} (~87 s of 24 kHz PCM16) the client is
+ * unrecoverably behind — the sink logs once and closes the connection, which
+ * runs the normal session teardown. The client may reconnect and resume via
+ * its sessionId. Sockets without `bufferedAmount` skip the guard.
  */
 function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
+  let closedForBackpressure = false;
   return {
     get open() {
       return ws.readyState === WS_OPEN;
@@ -88,6 +109,22 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
       safeSend(ws, JSON.stringify(e), log);
     },
     playAudioChunk(chunk) {
+      const buffered = ws.bufferedAmount;
+      if (buffered !== undefined && buffered > MAX_CLIENT_WS_BUFFERED_BYTES) {
+        if (!closedForBackpressure) {
+          closedForBackpressure = true;
+          log.warn("ws: client audio backlog exceeded; closing stalled connection", {
+            bufferedBytes: buffered,
+            maxBufferedBytes: MAX_CLIENT_WS_BUFFERED_BYTES,
+          });
+          try {
+            ws.close?.(WS_CLOSE_POLICY_VIOLATION, "audio backlog exceeded");
+          } catch (err) {
+            log.debug("ws: close after audio backlog failed", { error: errorMessage(err) });
+          }
+        }
+        return;
+      }
       safeSend(ws, chunk, log);
     },
     playAudioDone() {

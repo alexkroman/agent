@@ -20,6 +20,8 @@ export class MockWebSocket {
   static readonly CLOSED = 3;
   readyState = 0;
   binaryType = "arraybuffer";
+  /** Mutable in tests to simulate socket send-queue backpressure. */
+  bufferedAmount = 0;
   send = vi.fn();
   close = vi.fn(() => {
     this.readyState = MockWebSocket.CLOSED;

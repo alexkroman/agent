@@ -5,7 +5,7 @@
 import clsx from "clsx";
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef } from "react";
 import { useSession, useTheme } from "../context.ts";
-import type { ChatMessage } from "../types.ts";
+import type { ChatMessage, ToolCallInfo } from "../types.ts";
 import { SURFACE_TINT, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
 import { ToolCallBlock } from "./tool-call-block.tsx";
 
@@ -55,13 +55,15 @@ function UserBubble({
   );
 }
 
+type RowTheme = { text: string; border: string };
+
 /** Renders a single chat message as a styled bubble. */
 function MessageBubble({
   message,
   theme,
 }: {
-  message: ChatMessage;
-  theme: { text: string; border: string };
+  message: Pick<ChatMessage, "role" | "content">;
+  theme: RowTheme;
 }): ReactNode {
   if (message.role === "user") {
     return (
@@ -80,14 +82,97 @@ function MessageBubble({
   );
 }
 
-/** Smooth-scroll to the anchor whenever the rendered content grows. */
-function useAutoScroll(contentSize: number) {
+/**
+ * Smooth-scroll to the anchor whenever the content version advances.
+ *
+ * The scroll runs inside `requestAnimationFrame` and is deduped per frame:
+ * several snapshot updates in one frame (transcript + message + tool call)
+ * trigger a single scroll after layout instead of one forced layout each.
+ */
+function useAutoScroll(contentVersion: number) {
   const ref = useRef<HTMLDivElement>(null);
+  const scheduledRef = useRef(false);
   useEffect(() => {
-    if (contentSize === 0) return;
-    ref.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [contentSize]);
+    if (contentVersion === 0 || scheduledRef.current) return;
+    scheduledRef.current = true;
+    requestAnimationFrame(() => {
+      scheduledRef.current = false;
+      ref.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+    });
+  }, [contentVersion]);
   return ref;
+}
+
+/**
+ * Interleave messages and tool calls into render items, ordered by insertion
+ * time. Each tool call renders immediately after its anchor message
+ * (`afterMessageId`); tool calls whose anchor slid out of the retained window
+ * (or that were inserted before any message existed) render first.
+ */
+function interleave(
+  messages: readonly ChatMessage[],
+  toolCalls: readonly ToolCallInfo[],
+  renderMessage: (msg: ChatMessage) => ReactNode,
+  renderToolCall: (tc: ToolCallInfo) => ReactNode,
+): ReactNode[] {
+  const items: ReactNode[] = [];
+  let tci = 0;
+  const pushToolCallsThrough = (maxAfterId: number): void => {
+    let tc = toolCalls[tci];
+    while (tc && tc.afterMessageId <= maxAfterId) {
+      items.push(renderToolCall(tc));
+      tci++;
+      tc = toolCalls[tci];
+    }
+  };
+  const firstMessage = messages[0];
+  if (firstMessage) pushToolCallsThrough(firstMessage.id - 1);
+  for (const msg of messages) {
+    items.push(renderMessage(msg));
+    pushToolCallsThrough(msg.id);
+  }
+  pushToolCallsThrough(Number.POSITIVE_INFINITY);
+  return items;
+}
+
+type RowCacheEntry = { data: object; theme: RowTheme; element: ReactNode };
+
+/**
+ * Build the interleaved row elements, reusing each row's element object across
+ * renders while its inputs are unchanged. Returning the identical element
+ * reference lets React bail out of re-rendering that row entirely — the same
+ * effect as wrapping the row components in `memo()` — so appending one message
+ * re-renders one row, not the whole capped list. Rows are keyed on stable ids
+ * (`ChatMessage.id`, `ToolCallInfo.callId`), which survive the sliding
+ * 200-message window; message and tool-call objects are referentially stable
+ * across snapshots, making the identity checks below sufficient.
+ */
+function useChatItems(
+  messages: readonly ChatMessage[],
+  toolCalls: readonly ToolCallInfo[],
+  theme: RowTheme,
+): ReactNode[] {
+  const cacheRef = useRef<Map<string, RowCacheEntry>>(new Map());
+  return useMemo(() => {
+    const prev = cacheRef.current;
+    const next = new Map<string, RowCacheEntry>();
+    const rowFor = (key: string, data: object, make: () => ReactNode): ReactNode => {
+      const hit = prev.get(key);
+      const element = hit && hit.data === data && hit.theme === theme ? hit.element : make();
+      next.set(key, { data, theme, element });
+      return element;
+    };
+    const items = interleave(
+      messages,
+      toolCalls,
+      (msg) =>
+        rowFor(`m${msg.id}`, msg, () => <MessageBubble key={msg.id} message={msg} theme={theme} />),
+      (tc) => rowFor(`t${tc.callId}`, tc, () => <ToolCallBlock key={tc.callId} toolCall={tc} />),
+    );
+    // Entries not re-added above belong to rows that slid out — dropped here.
+    cacheRef.current = next;
+    return items;
+  }, [messages, toolCalls, theme]);
 }
 
 /**
@@ -122,28 +207,9 @@ export function MessageList({ className }: { className?: string }) {
 
   const { messages, toolCalls, userTranscript, agentTranscript } = session;
 
-  const scrollRef = useAutoScroll(
-    messages.length +
-      toolCalls.length +
-      (userTranscript?.length ?? 0) +
-      (agentTranscript?.length ?? 0) +
-      (showThinking ? 1 : 0),
-  );
+  const scrollRef = useAutoScroll(session.contentVersion);
 
-  const items: ReactNode[] = [];
-  let tci = 0;
-  for (const [i, msg] of messages.entries()) {
-    items.push(<MessageBubble key={`msg-${i}`} message={msg} theme={theme} />);
-    let tc = toolCalls[tci];
-    while (tc && tc.afterMessageIndex <= i) {
-      items.push(<ToolCallBlock key={tc.callId} toolCall={tc} />);
-      tci++;
-      tc = toolCalls[tci];
-    }
-  }
-  for (const tc of toolCalls.slice(tci)) {
-    items.push(<ToolCallBlock key={tc.callId} toolCall={tc} />);
-  }
+  const items = useChatItems(messages, toolCalls, theme);
 
   return (
     <div

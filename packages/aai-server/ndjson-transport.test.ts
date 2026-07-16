@@ -240,6 +240,44 @@ describe("createNdjsonConnection", () => {
     expect(r3).toBe("three");
   });
 
+  // ── write backpressure ───────────────────────────────────────────────────
+
+  it("preserves message order when the writable stream reports backpressure", async () => {
+    // Tiny highWaterMark so write() returns false almost immediately.
+    const slowWritable = new PassThrough({ highWaterMark: 16 });
+    const slowLines = collectLines(slowWritable);
+    const conn = createNdjsonConnection(readable, slowWritable);
+    conn.listen();
+
+    const total = 200;
+    for (let i = 0; i < total; i++) {
+      conn.sendNotification("evt", { i, pad: "x".repeat(128) });
+    }
+
+    await vi.waitFor(() => {
+      expect(slowLines.length).toBe(total);
+    });
+    const order = slowLines.map((l) => (JSON.parse(l) as { params: { i: number } }).params.i);
+    expect(order).toEqual(Array.from({ length: total }, (_, i) => i));
+    slowWritable.destroy();
+  });
+
+  it("does not crash or hang when the stream dies while writes are queued", async () => {
+    const slowWritable = new PassThrough({ highWaterMark: 16 });
+    const conn = createNdjsonConnection(readable, slowWritable);
+    conn.listen();
+
+    for (let i = 0; i < 50; i++) {
+      conn.sendNotification("evt", { i, pad: "x".repeat(128) });
+    }
+    slowWritable.destroy();
+
+    // Queued writes must settle silently (no unhandled rejection) and later
+    // sends must be no-ops against the dead stream.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(() => conn.sendNotification("evt", { after: true })).not.toThrow();
+  });
+
   // ── dispose ──────────────────────────────────────────────────────────────
 
   it("dispose rejects all pending requests", async () => {

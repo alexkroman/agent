@@ -18,7 +18,11 @@ import {
   type ToolSet,
 } from "ai";
 import pTimeout from "p-timeout";
-import { PIPELINE_FLUSH_TIMEOUT_MS, PIPELINE_PLAYBACK_GRACE_MS } from "../../sdk/constants.ts";
+import {
+  PIPELINE_FLUSH_TIMEOUT_MS,
+  PIPELINE_PLAYBACK_GRACE_MS,
+  TTS_COALESCE_MAX_CHARS,
+} from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
 import type { Message, ToolChoice } from "../../sdk/types.ts";
@@ -168,6 +172,58 @@ export async function flushTtsAndWait(args: {
   } finally {
     off();
   }
+}
+
+/** Batches word-granularity text into fewer TTS sends — see {@link createTtsTextCoalescer}. */
+export type TtsTextCoalescer = {
+  /** Buffer a text delta, forwarding coalesced chunks as boundaries are hit. */
+  send(text: string): void;
+  /** Forward any buffered text. Call before the provider-level TTS flush. */
+  flush(): void;
+};
+
+/**
+ * Trailing clause boundary — punctuation (optionally inside closing
+ * quotes/brackets) at the end of the buffered text. Word-granularity chunks
+ * carry their trailing whitespace ("Sure, "), so allow it after the mark.
+ */
+const CLAUSE_BOUNDARY_RE = /[.,;:!?…]["')\]]*\s*$/;
+
+/**
+ * Coalesce word-granularity LLM text into fewer, larger TTS provider sends.
+ *
+ * The smooth-stream transform (pipeline-smooth.ts) chunks LLM text to whole
+ * words for pacing; forwarding each word to the TTS provider costs one wire
+ * message (plus per-send request overhead) per word. The transcript path is
+ * unaffected — this only batches what reaches `sendText`.
+ *
+ * The first chunk is forwarded immediately (preserves time-to-first-byte);
+ * subsequent text batches until a clause/punctuation boundary or
+ * {@link TTS_COALESCE_MAX_CHARS} characters accumulate. Callers must
+ * `flush()` when the stream ends so a trailing fragment is still spoken.
+ */
+export function createTtsTextCoalescer(sendRaw: (text: string) => void): TtsTextCoalescer {
+  let pending = "";
+  let firstSent = false;
+  const flush = (): void => {
+    if (pending.length === 0) return;
+    const out = pending;
+    pending = "";
+    sendRaw(out);
+  };
+  return {
+    send(text: string): void {
+      if (text.length === 0) return;
+      if (!firstSent) {
+        firstSent = true;
+        sendRaw(text);
+        return;
+      }
+      pending += text;
+      if (pending.length >= TTS_COALESCE_MAX_CHARS || CLAUSE_BOUNDARY_RE.test(pending)) flush();
+    },
+    flush,
+  };
 }
 
 /** A single `fullStream` part from `streamText`. */
@@ -366,6 +422,9 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   // Response messages of completed steps, collected incrementally so an
   // aborted turn still returns everything that finished before the abort.
   const collected: ModelMessage[] = [];
+  // Batch word-granularity deltas into fewer TTS provider sends; the
+  // transcript path (onDelta) keeps full delta granularity.
+  const ttsText = createTtsTextCoalescer(sendTtsText);
   try {
     const result = streamText({
       model: llm,
@@ -387,7 +446,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     });
     const handlePart = createStreamPartHandler({
       onDelta,
-      sendTtsText,
+      sendTtsText: ttsText.send,
       onToolCall: callbacks.onToolCall,
       onToolCallDone: callbacks.onToolCallDone,
       emitError,
@@ -398,7 +457,9 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       if (ctl.signal.aborted) break;
       handlePart(part);
     }
+    // Aborted turns skip the flush — TTS is being cancelled anyway.
     if (ctl.signal.aborted) return collected;
+    ttsText.flush();
     // Gather every step's response messages (assistant tool-call + `tool`
     // result + text) so tool context carries into the next turn. Top-level
     // `result.response.messages` is final-step only and drops the tool call.
@@ -408,6 +469,9 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     return steps.flatMap((step) => step.response.messages);
   } catch (err: unknown) {
     if (!ctl.signal.aborted) {
+      // Flush buffered TTS text so speech matches the transcript already
+      // accumulated via onDelta for the pre-error portion of the turn.
+      ttsText.flush();
       const msg = errorMessage(err);
       log.error("LLM streamText failed", { error: msg, sid });
       emitError("llm", msg);

@@ -5,11 +5,13 @@
  * (deploy, delete, secrets). Records all requests for assertion.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { gunzipSync } from "node:zlib";
 
 export interface RecordedRequest {
   method: string;
   path: string;
   headers: Record<string, string | string[] | undefined>;
+  /** Decoded body text (inflated first when sent with Content-Encoding: gzip). */
   body: string;
 }
 
@@ -43,11 +45,17 @@ export async function startMockApi(): Promise<MockApi> {
 
   function readBody(req: IncomingMessage): Promise<string> {
     return new Promise((resolve) => {
-      let data = "";
+      const chunks: Buffer[] = [];
       req.on("data", (chunk: Buffer) => {
-        data += chunk.toString();
+        chunks.push(chunk);
       });
-      req.on("end", () => resolve(data));
+      req.on("end", () => {
+        const raw = Buffer.concat(chunks);
+        // Mirror the platform server: transparently inflate gzipped uploads
+        // (the CLI compresses deploy bodies).
+        const inflated = req.headers["content-encoding"] === "gzip" ? gunzipSync(raw) : raw;
+        resolve(inflated.toString("utf-8"));
+      });
     });
   }
 

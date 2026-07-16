@@ -63,5 +63,9 @@ export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
 
 export const ToolCallResponseSchema = z.object({
   result: z.string(),
-  state: z.record(z.string(), z.unknown()),
+  // Older guest harnesses echoed the full per-session state on every tool
+  // response. The host never reads it (the guest's own session-state map is
+  // the source of truth), and current guests no longer send it — kept
+  // optional so old and new sides interoperate.
+  state: z.record(z.string(), z.unknown()).optional(),
 });

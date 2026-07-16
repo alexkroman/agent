@@ -89,8 +89,8 @@ export async function verifyApiKeyHash(apiKey: string, storedHash: string): Prom
   return result;
 }
 
-type OwnerResult =
-  | { status: "unclaimed"; keyHash: string }
+export type OwnerResult =
+  | { status: "unclaimed" }
   | { status: "owned"; keyHash: string }
   | { status: "forbidden" };
 
@@ -102,8 +102,11 @@ export async function verifySlugOwner(
   const manifest = await store.getManifest(slug);
 
   if (!manifest) {
-    const keyHash = await hashApiKey(apiKey);
-    return { status: "unclaimed", keyHash };
+    // No keyHash here: hashing burns ~100ms of PBKDF2 with a fresh salt
+    // (uncacheable), and most callers reject unclaimed slugs with a 404
+    // anyway. The deploy-claim path computes the hash lazily (see
+    // requireOwner in middleware.ts).
+    return { status: "unclaimed" };
   }
 
   // Verify against all stored hashes concurrently — each cache miss costs

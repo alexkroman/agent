@@ -99,29 +99,17 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   const capNode = new AudioWorkletNode(ctx, "capture-processor", {
     channelCount: 1,
     channelCountMode: "explicit",
-    processorOptions: { contextRate, sttSampleRate },
+    processorOptions: { contextRate, sttSampleRate, bufferSeconds: MIC_BUFFER_SECONDS },
   });
   mic.connect(capNode);
 
-  // Worklet outputs PCM16 at the STT rate — just batch and send.
-  const chunkSizeBytes = Math.floor(sttSampleRate * MIC_BUFFER_SECONDS) * 2;
-  const capBuf = new Uint8Array(chunkSizeBytes * 2);
-  let capOffset = 0;
-
   capNode.port.postMessage({ event: "start" });
 
+  // The worklet batches ~MIC_BUFFER_SECONDS of PCM16 at the STT rate and posts
+  // one transferred ArrayBuffer per flush — just forward it.
   capNode.port.onmessage = (e: MessageEvent) => {
     if (e.data.event !== "chunk") return;
-    const chunk = new Uint8Array(e.data.buffer as ArrayBufferLike);
-
-    capBuf.set(chunk, capOffset);
-    capOffset += chunk.byteLength;
-
-    if (capOffset >= chunkSizeBytes) {
-      // slice() copies, so capBuf is immediately safe to reuse.
-      onMicData(capBuf.buffer.slice(0, capOffset));
-      capOffset = 0;
-    }
+    onMicData(e.data.buffer as ArrayBuffer);
   };
 
   let playNode: AudioWorkletNode | null = null;
