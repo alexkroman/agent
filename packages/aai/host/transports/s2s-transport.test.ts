@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { S2S_MAX_RESUME_ATTEMPTS } from "../../sdk/constants.ts";
 import { makeMockHandle, silentLogger } from "../_test-utils.ts";
 import type { ConnectS2sOptions, S2sCallbacks, S2sHandle, S2sWebSocket } from "../s2s.ts";
 import { _internals, createS2sTransport, type S2sTransportOptions } from "./s2s-transport.ts";
@@ -289,5 +290,56 @@ describe("S2sTransport reconnect", () => {
     expect(expectAt(handles, 2, "second resume handle").resumeSession).toHaveBeenCalledWith(
       "sess_abc",
     );
+  });
+
+  test("gives up after the resume-attempt cap on a flapping server", async () => {
+    const { callbacks, handles, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    // Each resumed socket becomes ready then immediately drops, with NO reply
+    // in between — so the flapping-resume counter never resets.
+    const cb0 = expectAt(capturedCallbacks, 0, "cb0");
+    cb0.onSessionReady("sess");
+    cb0.onClose(1006, "");
+    for (let attempt = 1; attempt <= S2S_MAX_RESUME_ATTEMPTS; attempt++) {
+      await vi.waitFor(() => expect(handles.length).toBe(attempt + 1));
+      const cb = expectAt(capturedCallbacks, attempt, `cb${attempt}`);
+      cb.onSessionReady("sess");
+      cb.onClose(1006, "");
+    }
+
+    // The drop past the cap surfaces a fatal error and spawns no further resume.
+    await vi.waitFor(() => {
+      expect(callbacks.onError).toHaveBeenCalledWith(
+        "connection",
+        expect.stringContaining("abandoned"),
+      );
+    });
+    expect(handles.length).toBe(S2S_MAX_RESUME_ATTEMPTS + 1);
+  });
+
+  test("real progress (a reply) resets the resume budget", async () => {
+    const { callbacks, handles, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    // A reply on each resumed socket proves the session works, resetting the
+    // counter — so a session that keeps recovering resumes well past the cap.
+    const cycles = S2S_MAX_RESUME_ATTEMPTS + 2;
+    const cb0 = expectAt(capturedCallbacks, 0, "cb0");
+    cb0.onSessionReady("sess");
+    cb0.onReplyStarted("r0");
+    cb0.onClose(1006, "");
+    for (let i = 1; i <= cycles; i++) {
+      await vi.waitFor(() => expect(handles.length).toBe(i + 1));
+      const cb = expectAt(capturedCallbacks, i, `cb${i}`);
+      cb.onSessionReady("sess");
+      cb.onReplyStarted(`r${i}`);
+      if (i < cycles) cb.onClose(1006, "");
+    }
+
+    expect(callbacks.onError).not.toHaveBeenCalled();
+    expect(handles.length).toBe(cycles + 1);
   });
 });

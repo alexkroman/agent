@@ -24,19 +24,27 @@ import type { Logger } from "../runtime-config.ts";
 /**
  * Build a {@link ToolCallRepairFunction} bound to `model`. `null` return means
  * "not repairable" — the SDK then surfaces the original error.
+ *
+ * `getAbortSignal` supplies the in-flight turn's abort signal so the repair
+ * `generateObject` call is cancelled on barge-in / cancel / disconnect. Without
+ * it, a repair kicked off mid-turn keeps running (a billed background LLM call)
+ * after the turn that needed it has already been aborted.
  */
 export function createToolCallRepair(
   model: LanguageModel,
   log: Logger,
+  getAbortSignal?: () => AbortSignal | undefined,
 ): ToolCallRepairFunction<ToolSet> {
   return async ({ toolCall, error, inputSchema }) => {
     // An unknown tool can't be repaired by fixing arguments.
     if (NoSuchToolError.isInstance(error)) return null;
     try {
       const schema = await inputSchema({ toolName: toolCall.toolName });
+      const abortSignal = getAbortSignal?.();
       const { object } = await generateObject({
         model,
         schema: jsonSchema(schema),
+        ...(abortSignal ? { abortSignal } : {}),
         prompt:
           `The tool "${toolCall.toolName}" was called with arguments that failed schema ` +
           `validation:\n${error.message}\n\nInvalid arguments:\n${toolCall.input}\n\n` +

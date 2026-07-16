@@ -137,6 +137,9 @@ export function openRime(opts: RimeOptions): TtsOpener {
         teardown: () => {
           clearQuiescence();
           ws.close();
+          // Drop our handlers so their closures don't stay reachable via the
+          // socket if `ws` outlives this session.
+          ws.removeAllListeners();
         },
       });
 

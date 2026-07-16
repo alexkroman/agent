@@ -18,6 +18,14 @@ export const DEFAULT_RELAY_TOOL_TIMEOUT_MS = 120_000;
 export const DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS = 15_000;
 export const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
 export const FETCH_TIMEOUT_MS = 15_000;
+/**
+ * Max consecutive S2S `session.resume` attempts before giving up and surfacing
+ * a fatal connection error. The counter resets on real conversational progress
+ * (a reply starting on the resumed socket), so this only trips on a server that
+ * keeps accepting a resume and then immediately dropping it — a flapping loop
+ * that would otherwise reconnect forever with no backoff.
+ */
+export const S2S_MAX_RESUME_ATTEMPTS = 5;
 export const RUN_CODE_TIMEOUT_MS = 5000;
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
 

@@ -63,4 +63,21 @@ describe("createToolCallRepair", () => {
     expect(result).toBeNull();
     expect(log.warn).toHaveBeenCalled();
   });
+
+  test("threads the turn's abort signal into generateObject", async () => {
+    generateObjectMock.mockResolvedValue({ object: { x: 5 } });
+    const ctl = new AbortController();
+    const repair = createToolCallRepair(model, log, () => ctl.signal);
+    await repair(repairOptions());
+    const passed = generateObjectMock.mock.calls[0]?.[0] as { abortSignal?: AbortSignal };
+    expect(passed.abortSignal).toBe(ctl.signal);
+  });
+
+  test("omits abortSignal when the getter returns undefined", async () => {
+    generateObjectMock.mockResolvedValue({ object: { x: 5 } });
+    const repair = createToolCallRepair(model, log, () => undefined);
+    await repair(repairOptions());
+    const passed = generateObjectMock.mock.calls[0]?.[0] as { abortSignal?: AbortSignal };
+    expect(passed.abortSignal).toBeUndefined();
+  });
 });

@@ -336,6 +336,21 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ...(opts.onToolResult ? { onToolResult: opts.onToolResult } : {}),
     });
 
+    // Tie map cleanup to the session's own stop() so it happens on every
+    // teardown path — including a direct `runtime.createSession()` caller that
+    // never goes through startSession's onSessionEnd hook (which would
+    // otherwise leak the sinkMap/stateMap entry). Delete is idempotent, so the
+    // onSessionEnd path staying is harmless.
+    const stopCore = core.stop.bind(core);
+    core.stop = async () => {
+      try {
+        await stopCore();
+      } finally {
+        sinkMap.delete(sessionOpts.id);
+        stateMap.delete(sessionOpts.id);
+      }
+    };
+
     return core;
   }
 
