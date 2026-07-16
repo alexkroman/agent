@@ -39,7 +39,7 @@ export interface PipelineProviderOptions {
   /** Provider event handlers, implemented by the turn orchestrator. */
   handlers: {
     onSttPartial(text: string): void;
-    onSttFinal(text: string): void;
+    onSttFinal(text: string, endOfTurnConfidence?: number): void;
     onSttError(err: SttError): void;
     onTtsError(err: TtsError): void;
     onTtsAudio(pcm: Int16Array): void;
@@ -90,7 +90,11 @@ export function createPipelineProviderSessions(
   function adoptStt(session: SttSession): void {
     sttSession = session;
     sttSubs.push(session.on("partial", (text) => handlers.onSttPartial(text)));
-    sttSubs.push(session.on("final", (text) => handlers.onSttFinal(text)));
+    sttSubs.push(
+      session.on("final", (text, endOfTurnConfidence) =>
+        handlers.onSttFinal(text, endOfTurnConfidence),
+      ),
+    );
     sttSubs.push(session.on("error", (err) => handlers.onSttError(err)));
   }
 

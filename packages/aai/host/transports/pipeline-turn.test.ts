@@ -630,6 +630,36 @@ describe("PipelineTransport — endpoint settle window", () => {
     await t.stop();
   });
 
+  test("a high-confidence final takes the short window even without punctuation", async () => {
+    // The provider's end-of-turn score outranks the lexical heuristic: an
+    // unpunctuated final that would read as a fragment commits promptly.
+    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 10_000, completeSettleMs: 40 });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("track order BOB12", 0.95);
+    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(callbacks.onUserTranscript).toHaveBeenCalledWith("track order BOB12");
+    });
+    await t.stop();
+  });
+
+  test("a low-confidence final waits the full window despite terminal punctuation", async () => {
+    // completeSettleMs=0 would commit a complete-looking final instantly on
+    // the lexical path; a provider score below the threshold overrides it.
+    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 80, completeSettleMs: 0 });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("Track order BOB12.", 0.3);
+    // Well inside the full settle window: the punctuation did not short-cut.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
+    await vi.waitFor(() => {
+      expect(callbacks.onUserTranscript).toHaveBeenCalledWith("Track order BOB12.");
+    });
+    await t.stop();
+  });
+
   test("endpointSettleMs=0 commits every final immediately (feature disabled)", async () => {
     const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 0 });
     const t = createPipelineTransport(opts);

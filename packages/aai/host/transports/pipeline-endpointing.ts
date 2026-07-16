@@ -5,19 +5,25 @@
 // false starts) commit as a single turn instead of the first fragment firing
 // a turn and the continuation barging in on it.
 
+import { DEFAULT_COMPLETE_ENDPOINT_CONFIDENCE } from "../../sdk/constants.ts";
 import { countWords, utteranceLooksComplete } from "./pipeline-stream.ts";
 
 /** Buffered-utterance endpoint settler. See {@link createEndpointSettler}. */
 export interface EndpointSettler {
   /**
-   * Buffer an STT final. A clearly-complete utterance (terminal punctuation,
-   * no trailing continuation cue) (re)arms the short `completeSettleMs`
-   * window — hesitant speakers pause at sentence boundaries mid-request, so
-   * even a complete-looking final briefly waits for a continuation. A
-   * fragment (re)arms the full `settleMs` window. A settle window of 0
-   * commits immediately.
+   * Buffer an STT final. A clearly-complete utterance (re)arms the short
+   * `completeSettleMs` window — hesitant speakers pause at sentence
+   * boundaries mid-request, so even a complete-looking final briefly waits
+   * for a continuation. A fragment (re)arms the full `settleMs` window. A
+   * settle window of 0 commits immediately.
+   *
+   * Completeness of the boundary: when the STT provider scored it
+   * (`endOfTurnConfidence`, e.g. AssemblyAI's `end_of_turn_confidence`),
+   * that score decides — the provider's endpointing model reads the
+   * boundary better than punctuation. Without a score, the lexical
+   * heuristic (terminal punctuation, no trailing continuation cue) applies.
    */
-  push(finalText: string): void;
+  push(finalText: string, endOfTurnConfidence?: number): void;
   /**
    * Handle an STT partial while an utterance may be buffered. A partial with
    * a buffered utterance means the speaker resumed after a pause: the settle
@@ -70,7 +76,7 @@ export function createEndpointSettler(opts: {
   }
 
   return {
-    push(finalText: string): void {
+    push(finalText: string, endOfTurnConfidence?: number): void {
       pending = pending.length > 0 ? `${pending} ${finalText}` : finalText;
       if (opts.settleMs <= 0) {
         commit();
@@ -80,7 +86,11 @@ export function createEndpointSettler(opts: {
       // immediate continuation ("...my order. [pause] Oh, and also...") to
       // arrive as a partial and extend, without the full fragment wait. A
       // fragment waits the full settle window for its continuation.
-      if (utteranceLooksComplete(pending)) {
+      const complete =
+        endOfTurnConfidence !== undefined
+          ? endOfTurnConfidence >= DEFAULT_COMPLETE_ENDPOINT_CONFIDENCE
+          : utteranceLooksComplete(pending);
+      if (complete) {
         const completeMs = Math.min(opts.completeSettleMs, opts.settleMs);
         if (completeMs <= 0) {
           commit();

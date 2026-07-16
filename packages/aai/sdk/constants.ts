@@ -138,6 +138,19 @@ export const DEFAULT_ENDPOINT_SETTLE_MS = 1500;
 export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 500;
 
 /**
+ * Minimum provider-reported end-of-turn confidence (pipeline mode) for a
+ * final to count as clearly complete and take the short
+ * {@link DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS} window instead of the full
+ * {@link DEFAULT_ENDPOINT_SETTLE_MS} one. Applies only when the STT provider
+ * scores the boundary (e.g. AssemblyAI's `end_of_turn_confidence`); finals
+ * without a score fall back to the lexical completeness heuristic. Providers
+ * only mark `end_of_turn` once their own (lower) threshold is crossed, so
+ * scores on finals skew high — this separates "confidently done" from
+ * "barely crossed the provider's threshold".
+ */
+export const DEFAULT_COMPLETE_ENDPOINT_CONFIDENCE = 0.85;
+
+/**
  * False-interruption recovery window (pipeline mode). A barge-in triggered by
  * an interim STT transcript aborts the agent's in-flight reply — but if no
  * final transcript ever commits (STT noise, a hallucinated partial, a

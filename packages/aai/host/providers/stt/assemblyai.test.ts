@@ -86,9 +86,13 @@ describe("assemblyAI STT adapter — fixture replay", () => {
 
     const partials: string[] = [];
     const finals: string[] = [];
+    const confidences: (number | undefined)[] = [];
     const errors: string[] = [];
     session.on("partial", (t) => partials.push(t));
-    session.on("final", (t) => finals.push(t));
+    session.on("final", (t, endOfTurnConfidence) => {
+      finals.push(t);
+      confidences.push(endOfTurnConfidence);
+    });
     session.on("error", (e) => errors.push(e.message));
 
     const fake = session._transcriber as unknown as FakeTranscriber;
@@ -100,6 +104,8 @@ describe("assemblyAI STT adapter — fixture replay", () => {
 
     expect(partials).toEqual(["what", "what's the"]);
     expect(finals).toEqual(["what's the weather?"]);
+    // The endpointing model's boundary score rides along on finals.
+    expect(confidences).toEqual([0.95]);
     expect(errors).toEqual([]);
 
     await session.close();

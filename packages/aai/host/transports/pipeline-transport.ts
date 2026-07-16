@@ -259,7 +259,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (wasTurnInFlight) recovery.arm();
   }
 
-  function onSttFinal(text: string): void {
+  function onSttFinal(text: string, endOfTurnConfidence?: number): void {
     if (terminated) return;
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
@@ -281,7 +281,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       abortInFlightTurn();
       callbacks.onCancelled();
     }
-    settler.push(trimmed);
+    settler.push(trimmed, endOfTurnConfidence);
   }
 
   function onSttError(err: SttError): void {
