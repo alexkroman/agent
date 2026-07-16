@@ -89,6 +89,16 @@ export function agent(def: {
   sttPrompt?: string;
   idleTimeoutMs?: number;
   /**
+   * Pipeline mode only. When set, the assistant proactively takes a turn
+   * after this many ms of user silence. Unset disables the behavior.
+   */
+  silenceTimeoutMs?: number;
+  /**
+   * Instruction injected as a synthetic user turn when `silenceTimeoutMs`
+   * elapses. Defaults to `DEFAULT_SILENCE_PROMPT`. Requires `silenceTimeoutMs`.
+   */
+  silencePrompt?: string;
+  /**
    * Pluggable STT provider. Must be set together with `llm` and `tts` to
    * enable pipeline mode; leave all three unset for S2S mode.
    */

@@ -5,6 +5,7 @@ import { z } from "zod";
 import { ProviderDescriptorSchema } from "./manifest.ts";
 import {
   assertProviderTriple,
+  assertSilencePolicy,
   type KvProvider,
   type LlmProvider,
   type S2sProvider,
@@ -41,6 +42,8 @@ export const AgentConfigSchema = z.object({
   toolChoice: ToolChoiceSchema.optional(),
   builtinTools: z.array(BuiltinToolSchema).readonly().optional(),
   idleTimeoutMs: z.number().nonnegative().optional(),
+  silenceTimeoutMs: z.number().positive().optional(),
+  silencePrompt: z.string().optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
@@ -63,6 +66,8 @@ interface AgentConfigSource {
   toolChoice?: AgentConfig["toolChoice"] | undefined;
   builtinTools?: Readonly<AgentConfig["builtinTools"]> | undefined;
   idleTimeoutMs?: number | undefined;
+  silenceTimeoutMs?: number | undefined;
+  silencePrompt?: string | undefined;
   stt?: SttProvider | undefined;
   llm?: LlmProvider | undefined;
   tts?: TtsProvider | undefined;
@@ -75,6 +80,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   // `assertProviderTriple` enforces that stt/llm/tts are all-or-nothing so the
   // server can trust the resolved mode.
   const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s);
+  assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
 
   const config: AgentConfig = {
     name: src.name,
@@ -87,6 +93,8 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   if (src.toolChoice !== undefined) config.toolChoice = src.toolChoice;
   if (src.builtinTools) config.builtinTools = [...src.builtinTools];
   if (src.idleTimeoutMs !== undefined) config.idleTimeoutMs = src.idleTimeoutMs;
+  if (src.silenceTimeoutMs !== undefined) config.silenceTimeoutMs = src.silenceTimeoutMs;
+  if (src.silencePrompt !== undefined) config.silencePrompt = src.silencePrompt;
   if (mode === "pipeline") {
     config.stt = src.stt;
     config.llm = src.llm;

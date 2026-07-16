@@ -70,6 +70,8 @@ export default agent({
   maxSteps?: number;                         // default: 5 — max tool calls per turn
   toolChoice?: "auto" | "required";          // default: "auto"
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
+  silenceTimeoutMs?: number;                 // pipeline only — assistant speaks up after this much user silence (ms)
+  silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
 });
 ```
 
@@ -124,6 +126,13 @@ export default agent({
 
 Tools, KV, `ctx`, and the UI all behave identically across modes. Only
 the audio + LLM transport differs.
+
+**Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
+assistant proactively take a turn after that much user silence (e.g.
+"Are you still there?"). Customize the injected instruction with
+`silencePrompt`. The nudge never appears as a user transcript, and the
+assistant stops nudging after 3 consecutive unanswered nudges until the
+user speaks again.
 
 ## Providers
 

@@ -96,6 +96,29 @@ export function assertProviderTriple(
   return allSet ? "pipeline" : "s2s";
 }
 
+/**
+ * Enforce the silence-nudge config rules. `silenceTimeoutMs` makes the
+ * assistant proactively take a turn after that much user silence — only the
+ * pipeline transport implements it, so it's rejected in S2S mode rather than
+ * silently ignored. `silencePrompt` customizes the injected instruction and
+ * is meaningless without the timeout.
+ *
+ * Shared by `parseManifest`, `toAgentConfig`, and the server's
+ * `IsolateConfigSchema` — one source of truth for the validation.
+ */
+export function assertSilencePolicy(
+  mode: SessionMode,
+  silenceTimeoutMs: number | undefined,
+  silencePrompt: string | undefined,
+): void {
+  if (silenceTimeoutMs !== undefined && mode !== "pipeline") {
+    throw new Error("silenceTimeoutMs requires pipeline mode (stt, llm, and tts all set)");
+  }
+  if (silencePrompt !== undefined && silenceTimeoutMs === undefined) {
+    throw new Error("silencePrompt requires silenceTimeoutMs to be set");
+  }
+}
+
 // -------- STT openable (host-only) ------------------------------------------
 
 export interface SttError extends Error {

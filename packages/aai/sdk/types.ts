@@ -332,6 +332,19 @@ export type AgentDef<S = Record<string, unknown>> = {
   state?: () => S;
   idleTimeoutMs?: number;
   /**
+   * Pipeline mode only. When set, the assistant proactively takes a turn
+   * after this many ms of user silence (no speech since the last reply
+   * finished). Unset disables the behavior. Nudges are capped at
+   * `MAX_CONSECUTIVE_SILENCE_NUDGES` back-to-back until the user speaks again.
+   */
+  silenceTimeoutMs?: number;
+  /**
+   * Instruction injected as a synthetic user turn when `silenceTimeoutMs`
+   * elapses. Never shown as a user transcript. Defaults to
+   * `DEFAULT_SILENCE_PROMPT`. Requires `silenceTimeoutMs`.
+   */
+  silencePrompt?: string;
+  /**
    * Pluggable STT provider. Set together with `llm` and `tts` to enable
    * pipeline mode; all three unset means S2S mode.
    */

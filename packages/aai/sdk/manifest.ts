@@ -11,6 +11,7 @@ import { validateAllowedHostPattern } from "./allowed-hosts.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import {
   assertProviderTriple,
+  assertSilencePolicy,
   type KvProvider,
   type LlmProvider,
   type S2sProvider,
@@ -51,6 +52,16 @@ export type Manifest = {
   toolChoice: "auto" | "required";
   /** Idle timeout in ms before auto-closing the session. `undefined` = use default (5 min). */
   idleTimeoutMs?: number | undefined;
+  /**
+   * Pipeline mode only. When set, the assistant proactively takes a turn
+   * after this many ms of user silence. `undefined` disables the behavior.
+   */
+  silenceTimeoutMs?: number | undefined;
+  /**
+   * Instruction injected as a synthetic user turn when `silenceTimeoutMs`
+   * elapses. Defaults to `DEFAULT_SILENCE_PROMPT`. Requires `silenceTimeoutMs`.
+   */
+  silencePrompt?: string | undefined;
   /** CSS custom properties for agent UI theming. */
   theme?: Record<string, string> | undefined;
   /** Custom tool definitions keyed by tool name. */
@@ -117,6 +128,8 @@ const ManifestSchema = z.object({
   // 0 is the documented "disable the idle timer" value — allow it (the runtime
   // and AgentConfigSchema both treat 0 as disabled), so use nonnegative().
   idleTimeoutMs: z.number().int().nonnegative().optional(),
+  silenceTimeoutMs: z.number().int().positive().optional(),
+  silencePrompt: z.string().min(1).optional(),
   theme: z.record(z.string(), z.string()).optional(),
   tools: z.record(z.string(), ToolManifestSchema).optional(),
   allowedHosts: z
@@ -154,6 +167,7 @@ const ManifestSchema = z.object({
 export function parseManifest(input: unknown): Manifest {
   const parsed = ManifestSchema.parse(input);
   const mode = assertProviderTriple(parsed.stt, parsed.llm, parsed.tts, parsed.s2s);
+  assertSilencePolicy(mode, parsed.silenceTimeoutMs, parsed.silencePrompt);
   return {
     ...parsed,
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,

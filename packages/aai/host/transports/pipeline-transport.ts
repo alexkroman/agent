@@ -13,6 +13,7 @@ import {
   DEFAULT_ENDPOINT_SETTLE_MS,
   DEFAULT_MAX_STEPS,
   DEFAULT_MIN_BARGE_IN_WORDS,
+  DEFAULT_SILENCE_PROMPT,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
 } from "../../sdk/constants.ts";
@@ -27,6 +28,7 @@ import { createEndpointSettler } from "./pipeline-endpointing.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
+import { createSilenceNudger } from "./pipeline-silence.ts";
 import {
   countWords,
   createPlaybackClock,
@@ -92,6 +94,10 @@ export interface PipelineTransportOptions {
   logger?: Logger | undefined;
   /** Skip the initial greeting (used for session resume). */
   skipGreeting?: boolean | undefined;
+  /** Take an unprompted turn after this many ms of user silence. Unset/non-positive disables. */
+  silenceTimeoutMs?: number | undefined;
+  /** Instruction injected on silence timeout. Defaults to DEFAULT_SILENCE_PROMPT. */
+  silencePrompt?: string | undefined;
 }
 
 /** Create a pipeline-mode Transport (STT → LLM → TTS). */
@@ -153,6 +159,23 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // so barge-in keeps working after the server-side turn is done but buffered
   // audio is still playing client-side (see createPlaybackClock).
   const playbackClock = createPlaybackClock(ttsSampleRate);
+
+  // Silence nudge: `silencePrompt` becomes a synthetic user message (in LLM
+  // history, never a user transcript). Countdown/budget rules: pipeline-silence.ts.
+  const silencePrompt = opts.silencePrompt ?? DEFAULT_SILENCE_PROMPT;
+  const nudger = createSilenceNudger({
+    timeoutMs: opts.silenceTimeoutMs,
+    isActive: () => !(terminated || sessionAbort.signal.aborted),
+    isTurnInFlight: () => turnController !== null || playbackClock.pending(),
+    onNudge(consecutive) {
+      log.info("Pipeline silence nudge", { sid: opts.sid, consecutive });
+      chainTurn(() =>
+        runTurn(silencePrompt).catch((err: unknown) => {
+          log.error("Pipeline silence nudge crashed", { error: errorMessage(err), sid: opts.sid });
+        }),
+      );
+    },
+  });
 
   // Provider lifecycle (open/adopt/close of the STT+TTS pair) lives in
   // pipeline-providers.ts; the handlers below route provider events back
@@ -220,6 +243,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   function terminate(): void {
     if (terminated) return;
     terminated = true;
+    nudger.clear();
     settler.reset();
     abortInFlightTurn();
     callbacks.onCancelled();
@@ -233,6 +257,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   function onSttPartial(text: string): void {
     if (terminated) return;
+    // User speech proves presence: reset the nudge budget, restart the window.
+    nudger.onUserSpeech();
     // A partial while an utterance is buffered means the speaker resumed after
     // a pause: extend the settle window so the continuation aggregates into the
     // same turn instead of the pre-pause fragment committing on its own.
@@ -248,6 +274,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (terminated) return;
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
+    // The turn that follows (via the settler) re-arms the nudge on completion.
+    nudger.onUserTurn();
     // Interrupt the agent's in-flight reply only for a clearly-intentional
     // (>= threshold) utterance. A shorter one does NOT interrupt — it falls
     // through to be buffered and answered once the reply finishes (chainTurn
@@ -329,6 +357,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     if (!ctl.signal.aborted) callbacks.onReplyDone();
     finishTurn(ctl);
+    // Aborted turns skip the re-arm: onSttPartial / cancelReply handle those.
+    if (!ctl.signal.aborted) nudger.arm();
   }
 
   function runTurn(userText: string): Promise<void> {
@@ -410,6 +440,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // equivalent "ready" signal is providers having opened.
       callbacks.onSessionReady?.(opts.sid);
       onAudioReady();
+      // Covers the no-greeting case; a greeting in flight defers the nudge.
+      nudger.arm();
     },
 
     async stop(): Promise<void> {
@@ -417,6 +449,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // Gate late inbound work (sendUserAudio into a closing STT session)
       // the same way a provider-error teardown does.
       terminated = true;
+      nudger.clear();
       settler.reset();
       sessionAbort.abort();
       turnController?.abort();
@@ -442,6 +475,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     cancelReply(): void {
       if (terminated) return;
       abortInFlightTurn();
+      // Silence after a client-initiated cancel should still nudge.
+      nudger.arm();
       // Do NOT call callbacks.onCancelled() here — session-core.onCancel
       // (client-initiated) calls client.cancelled() itself. Barge-in fires
       // onCancelled directly in onSttPartial where the cancel originates here.
@@ -457,6 +492,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       settler.reset();
       abortInFlightTurn();
       history.reset();
+      // A reset is user activity: restore the budget, restart the window.
+      nudger.onUserSpeech();
     },
   };
 }
