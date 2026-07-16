@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import fs from "node:fs/promises";
 import path from "node:path";
 import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
@@ -8,7 +7,7 @@ import { execa } from "execa";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { log, unwrapCancel } from "./_ui.ts";
-import { errorMessage, fileExists, resolveCwd } from "./_utils.ts";
+import { errorMessage, fileExists, readJson, resolveCwd } from "./_utils.ts";
 
 type InitData = {
   dir: string;
@@ -43,15 +42,10 @@ async function ensurePnpm(): Promise<void> {
 /** Check if the project has any dependencies to install. */
 async function hasDeps(cwd: string): Promise<boolean> {
   if (await fileExists(path.join(cwd, "node_modules"))) return false;
-  let pkgJson: {
+  const pkgJson = ((await readJson(path.join(cwd, "package.json"))) ?? {}) as {
     dependencies?: Record<string, string>;
     devDependencies?: Record<string, string>;
   };
-  try {
-    pkgJson = JSON.parse(await fs.readFile(path.join(cwd, "package.json"), "utf-8"));
-  } catch {
-    pkgJson = {};
-  }
   const deps = Object.keys(pkgJson.dependencies ?? {});
   const devDeps = Object.keys(pkgJson.devDependencies ?? {});
   return deps.length > 0 || devDeps.length > 0;

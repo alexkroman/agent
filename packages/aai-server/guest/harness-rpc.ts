@@ -73,10 +73,10 @@ export const pendingHostRequests = new Map<
 /** Send an RPC request to the host and wait for its response. */
 function hostRequest(method: string, params: Record<string, unknown>): Promise<unknown> {
   const id = hostRequestId++;
-  return new Promise((resolve, reject) => {
-    pendingHostRequests.set(id, { resolve, reject });
-    writeMessage({ jsonrpc: "2.0", id, method, params });
-  });
+  const { promise, resolve, reject } = Promise.withResolvers<unknown>();
+  pendingHostRequests.set(id, { resolve, reject });
+  writeMessage({ jsonrpc: "2.0", id, method, params });
+  return promise;
 }
 
 // ---- Fetch proxy ---------------------------------------------------------------
@@ -172,9 +172,9 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit): Pr
   })) as { id: string };
 
   // Register a pending fetch and wait for response notifications
-  return new Promise<Response>((resolve, reject) => {
-    pendingFetches.set(rpcResponse.id, { resolve, reject, chunks: [] });
-  });
+  const { promise, resolve, reject } = Promise.withResolvers<Response>();
+  pendingFetches.set(rpcResponse.id, { resolve, reject, chunks: [] });
+  return promise;
 };
 
 // ---- Client send --------------------------------------------------------------

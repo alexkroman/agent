@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
+import path from "node:path";
 
 /** Resolve the working directory from INIT_CWD or process.cwd(). */
 export function resolveCwd(): string {
@@ -35,4 +36,19 @@ export async function fileExists(p: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+/** Read and parse a JSON file. Returns null if the file is missing or malformed. */
+export async function readJson(filePath: string): Promise<unknown> {
+  try {
+    return JSON.parse(await fs.readFile(filePath, "utf-8"));
+  } catch {
+    return null;
+  }
+}
+
+/** Write `data` as pretty-printed JSON (+ trailing newline), creating parent dirs. */
+export async function writeJson(filePath: string, data: unknown): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), { recursive: true });
+  await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`);
 }

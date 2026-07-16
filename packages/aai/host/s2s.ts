@@ -203,137 +203,142 @@ export type ConnectS2sOptions = {
   sid?: string;
 };
 
-export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
+export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   const { apiKey, config, createWebSocket, callbacks, logger: log = consoleLogger, sid } = opts;
 
-  return new Promise((resolve, reject) => {
-    log.info("S2S connecting", { url: config.wssUrl });
+  log.info("S2S connecting", { url: config.wssUrl });
 
-    const ws = createWebSocket(config.wssUrl, {
-      headers: { Authorization: `Bearer ${apiKey}` },
-    });
-
-    const dispatchState: DispatchState = { speechActive: false };
-    const dispatchCtx: DispatchContext = sid !== undefined ? { log, sid } : { log };
-    let opened = false;
-
-    function send(msg: { type: string; [key: string]: unknown }): void {
-      if (ws.readyState !== WS_OPEN) {
-        log.debug("S2S send dropped: socket not open", { type: msg.type });
-        return;
-      }
-      const json = JSON.stringify(msg);
-      if (msg.type === "session.update") {
-        log.info(`S2S >> ${msg.type}`, { payload: json });
-      } else if (msg.type !== "input.audio") {
-        log.info(`S2S >> ${msg.type}`);
-      }
-      ws.send(json);
-    }
-
-    const handle: S2sHandle = {
-      sendAudio(audio: Uint8Array): void {
-        if (ws.readyState !== WS_OPEN) return;
-        ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
-      },
-
-      sendToolResult(callId: string, result: string): void {
-        log.info("S2S >> tool.result", { call_id: callId, resultLength: result.length });
-        send({ type: "tool.result", call_id: callId, result });
-      },
-
-      updateSession(sessionConfig: S2sSessionConfig): void {
-        const { systemPrompt, ...rest } = sessionConfig;
-        send({ type: "session.update", session: { system_prompt: systemPrompt, ...rest } });
-      },
-
-      resumeSession(sessionId: string): void {
-        send({ type: "session.resume", session_id: sessionId });
-      },
-
-      close(): void {
-        log.info("S2S closing");
-        ws.close();
-      },
-    };
-
-    ws.addEventListener("open", () => {
-      opened = true;
-      log.info("S2S WebSocket open");
-      resolve(handle);
-    });
-
-    function logIncoming(type: unknown): void {
-      // reply.audio and input.audio are ~95% of traffic — skip logging.
-      // reply.done and session.error get richer logs inside dispatch;
-      // skip here to avoid a duplicate line.
-      if (
-        type === "reply.audio" ||
-        type === "input.audio" ||
-        type === "reply.done" ||
-        type === "session.error"
-      ) {
-        return;
-      }
-      log.info(`S2S << ${type}`);
-    }
-
-    function handleObject(obj: Record<string, unknown>, raw: unknown): void {
-      logIncoming(obj.type);
-      // Log the full tool.call payload so we can diagnose provider-side
-      // empty-args problems — the underlying LLM emitting a function call
-      // without populating its required parameters. Without the full
-      // payload we cannot tell apart "field-name mismatch" from
-      // "model emitted no args."
-      if (obj.type === "tool.call") {
-        log.info("S2S << tool.call payload", { payload: JSON.stringify(obj) });
-      }
-      if (obj.type === "reply.audio" && typeof obj.data === "string") {
-        callbacks.onAudio(base64ToUint8(obj.data));
-        return;
-      }
-      const parsed = parseS2sMessage(obj);
-      if (!parsed) {
-        log.warn(
-          `S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, LOG_PREVIEW_CHARS)}`,
-        );
-        return;
-      }
-      dispatchS2sMessage(callbacks, parsed, dispatchState, dispatchCtx);
-    }
-
-    ws.addEventListener("message", (ev) => {
-      const raw = safeJsonParse(String(ev.data));
-      if (raw === undefined) {
-        log.warn("S2S << invalid JSON", { data: String(ev.data).slice(0, LOG_PREVIEW_CHARS) });
-        return;
-      }
-      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-        log.warn("S2S << non-object JSON message", { type: typeof raw });
-        return;
-      }
-      handleObject(raw as Record<string, unknown>, raw);
-    });
-
-    ws.addEventListener("close", (ev) => {
-      const code = ev.code ?? 0;
-      const reason = ev.reason ?? "";
-      log.info("S2S WebSocket closed", { code, reason });
-      if (!opened) {
-        reject(new Error(`WebSocket closed before open (code: ${code})`));
-      }
-      callbacks.onClose(code, reason);
-    });
-
-    ws.addEventListener("error", (ev) => {
-      const message = typeof ev.message === "string" ? ev.message : "WebSocket error";
-      const errObj = new Error(message);
-      log.error("S2S WebSocket error", { error: errObj.message });
-      if (!opened) {
-        reject(errObj);
-      } else {
-        callbacks.onError(errObj);
-      }
-    });
+  const ws = createWebSocket(config.wssUrl, {
+    headers: { Authorization: `Bearer ${apiKey}` },
   });
+
+  const dispatchState: DispatchState = { speechActive: false };
+  const dispatchCtx: DispatchContext = sid !== undefined ? { log, sid } : { log };
+  // Settles once the socket opens (or fails first). Handlers below stay
+  // registered for the socket's whole life; `opened` routes later errors to
+  // the session callbacks instead of the (already settled) open race.
+  const opening = Promise.withResolvers<void>();
+  let opened = false;
+
+  function send(msg: { type: string; [key: string]: unknown }): void {
+    if (ws.readyState !== WS_OPEN) {
+      log.debug("S2S send dropped: socket not open", { type: msg.type });
+      return;
+    }
+    const json = JSON.stringify(msg);
+    if (msg.type === "session.update") {
+      log.info(`S2S >> ${msg.type}`, { payload: json });
+    } else if (msg.type !== "input.audio") {
+      log.info(`S2S >> ${msg.type}`);
+    }
+    ws.send(json);
+  }
+
+  const handle: S2sHandle = {
+    sendAudio(audio: Uint8Array): void {
+      if (ws.readyState !== WS_OPEN) return;
+      ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
+    },
+
+    sendToolResult(callId: string, result: string): void {
+      log.info("S2S >> tool.result", { call_id: callId, resultLength: result.length });
+      send({ type: "tool.result", call_id: callId, result });
+    },
+
+    updateSession(sessionConfig: S2sSessionConfig): void {
+      const { systemPrompt, ...rest } = sessionConfig;
+      send({ type: "session.update", session: { system_prompt: systemPrompt, ...rest } });
+    },
+
+    resumeSession(sessionId: string): void {
+      send({ type: "session.resume", session_id: sessionId });
+    },
+
+    close(): void {
+      log.info("S2S closing");
+      ws.close();
+    },
+  };
+
+  ws.addEventListener("open", () => {
+    opened = true;
+    log.info("S2S WebSocket open");
+    opening.resolve();
+  });
+
+  function logIncoming(type: unknown): void {
+    // reply.audio and input.audio are ~95% of traffic — skip logging.
+    // reply.done and session.error get richer logs inside dispatch;
+    // skip here to avoid a duplicate line.
+    if (
+      type === "reply.audio" ||
+      type === "input.audio" ||
+      type === "reply.done" ||
+      type === "session.error"
+    ) {
+      return;
+    }
+    log.info(`S2S << ${type}`);
+  }
+
+  function handleObject(obj: Record<string, unknown>, raw: unknown): void {
+    logIncoming(obj.type);
+    // Log the full tool.call payload so we can diagnose provider-side
+    // empty-args problems — the underlying LLM emitting a function call
+    // without populating its required parameters. Without the full
+    // payload we cannot tell apart "field-name mismatch" from
+    // "model emitted no args."
+    if (obj.type === "tool.call") {
+      log.info("S2S << tool.call payload", { payload: JSON.stringify(obj) });
+    }
+    if (obj.type === "reply.audio" && typeof obj.data === "string") {
+      callbacks.onAudio(base64ToUint8(obj.data));
+      return;
+    }
+    const parsed = parseS2sMessage(obj);
+    if (!parsed) {
+      log.warn(
+        `S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, LOG_PREVIEW_CHARS)}`,
+      );
+      return;
+    }
+    dispatchS2sMessage(callbacks, parsed, dispatchState, dispatchCtx);
+  }
+
+  ws.addEventListener("message", (ev) => {
+    const raw = safeJsonParse(String(ev.data));
+    if (raw === undefined) {
+      log.warn("S2S << invalid JSON", { data: String(ev.data).slice(0, LOG_PREVIEW_CHARS) });
+      return;
+    }
+    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+      log.warn("S2S << non-object JSON message", { type: typeof raw });
+      return;
+    }
+    handleObject(raw as Record<string, unknown>, raw);
+  });
+
+  ws.addEventListener("close", (ev) => {
+    const code = ev.code ?? 0;
+    const reason = ev.reason ?? "";
+    log.info("S2S WebSocket closed", { code, reason });
+    if (!opened) {
+      opening.reject(new Error(`WebSocket closed before open (code: ${code})`));
+    }
+    callbacks.onClose(code, reason);
+  });
+
+  ws.addEventListener("error", (ev) => {
+    const message = typeof ev.message === "string" ? ev.message : "WebSocket error";
+    const errObj = new Error(message);
+    log.error("S2S WebSocket error", { error: errObj.message });
+    if (!opened) {
+      opening.reject(errObj);
+    } else {
+      callbacks.onError(errObj);
+    }
+  });
+
+  await opening.promise;
+  return handle;
 }

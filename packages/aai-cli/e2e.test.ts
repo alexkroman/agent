@@ -147,6 +147,11 @@ async function setupEventInjector(browser: Browser, port: number) {
     const fixturePath = path.resolve(dir, "../aai-ui/fixtures", fixtureName);
     const messages = JSON.parse(fs.readFileSync(fixturePath, "utf-8")) as Record<string, unknown>[];
     for (const msg of messages) {
+      // Skip config frames: the test server already sent one on connect, and
+      // re-injecting a config re-runs initAudioCapture, whose async failure
+      // (headless Chromium has no microphone) races later fixture events and
+      // can overwrite state they set — e.g. the error-recovery banner.
+      if (msg.type === "config") continue;
       await inject(msg);
       await new Promise((r) => setTimeout(r, 50));
     }

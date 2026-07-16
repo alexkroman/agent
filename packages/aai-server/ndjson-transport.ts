@@ -193,17 +193,16 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
     ): Promise<T> {
       if (disposed) return Promise.reject(new Error("Connection disposed"));
       const id = nextId++;
-      const promise = new Promise<T>((resolve, reject) => {
-        const entry: PendingRequest = { resolve: resolve as (v: unknown) => void, reject };
-        if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
-          entry.timer = setTimeout(() => {
-            if (!pending.delete(id)) return;
-            reject(new Error(`RPC "${method}" timed out after ${timeoutMs}ms`));
-          }, timeoutMs);
-          entry.timer.unref?.();
-        }
-        pending.set(id, entry);
-      });
+      const { promise, resolve, reject } = Promise.withResolvers<T>();
+      const entry: PendingRequest = { resolve: resolve as (v: unknown) => void, reject };
+      if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
+        entry.timer = setTimeout(() => {
+          if (!pending.delete(id)) return;
+          reject(new Error(`RPC "${method}" timed out after ${timeoutMs}ms`));
+        }, timeoutMs);
+        entry.timer.unref?.();
+      }
+      pending.set(id, entry);
       const msg: JsonRpcRequest = { jsonrpc: "2.0", id, method };
       if (params !== undefined) msg.params = params;
       send(msg);

@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
-import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import * as p from "@clack/prompts";
 import { consola } from "consola";
 import { z } from "zod";
 import { unwrapCancel } from "./_ui.ts";
+import { readJson, writeJson } from "./_utils.ts";
 
 const ProjectConfigSchema = z.object({
   slug: z.string(),
@@ -23,23 +23,17 @@ export function getConfigDir(): string {
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
 export async function readProjectConfig(agentDir: string): Promise<ProjectConfig | null> {
-  try {
-    return ProjectConfigSchema.parse(
-      JSON.parse(await fs.readFile(path.join(agentDir, ".aai", "project.json"), "utf-8")),
-    );
-  } catch (error) {
-    consola.debug(
-      `Failed to read project config from ${path.join(agentDir, ".aai", "project.json")}:`,
-      error,
-    );
+  const file = path.join(agentDir, ".aai", "project.json");
+  const parsed = ProjectConfigSchema.safeParse(await readJson(file));
+  if (!parsed.success) {
+    consola.debug(`Failed to read project config from ${file}:`, parsed.error);
     return null;
   }
+  return parsed.data;
 }
 
 export async function writeProjectConfig(agentDir: string, data: ProjectConfig): Promise<void> {
-  const aaiDir = path.join(agentDir, ".aai");
-  await fs.mkdir(aaiDir, { recursive: true });
-  await fs.writeFile(path.join(aaiDir, "project.json"), `${JSON.stringify(data, null, 2)}\n`);
+  await writeJson(path.join(agentDir, ".aai", "project.json"), data);
 }
 
 export type GlobalConfig = {
@@ -48,16 +42,11 @@ export type GlobalConfig = {
 
 export async function readGlobalConfig(configDir?: string): Promise<GlobalConfig> {
   const dir = configDir ?? getConfigDir();
-  try {
-    return JSON.parse(await fs.readFile(path.join(dir, "config.json"), "utf-8")) as GlobalConfig;
-  } catch {
-    return {};
-  }
+  return ((await readJson(path.join(dir, "config.json"))) as GlobalConfig | null) ?? {};
 }
 
 export async function writeGlobalConfig(configDir: string, data: GlobalConfig): Promise<void> {
-  await fs.mkdir(configDir, { recursive: true });
-  await fs.writeFile(path.join(configDir, "config.json"), `${JSON.stringify(data, null, 2)}\n`);
+  await writeJson(path.join(configDir, "config.json"), data);
 }
 
 export async function ensureApiKey(configDir?: string): Promise<string> {

@@ -6,7 +6,6 @@ import os from "node:os";
 import path from "node:path";
 import { downloadTemplate } from "giget";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
-import { isEexist } from "./_utils.ts";
 
 const GIGET_SOURCE = "github:alexkroman/agent/packages/aai-templates";
 const GIGET_REF = process.env.AAI_TEMPLATES_REF ?? "main";
@@ -48,20 +47,6 @@ export async function downloadAndMergeTemplate(template: string, targetDir: stri
   // Layer scaffold files underneath (don't overwrite template files)
   const scaffoldDir = path.join(root, "scaffold");
   if (existsSync(scaffoldDir)) {
-    const entries = await fs.readdir(scaffoldDir, { recursive: true, withFileTypes: true });
-    await Promise.all(
-      entries
-        .filter((entry) => entry.isFile())
-        .map(async (entry) => {
-          const rel = path.relative(scaffoldDir, path.join(entry.parentPath, entry.name));
-          const destPath = path.join(targetDir, rel);
-          await fs.mkdir(path.dirname(destPath), { recursive: true });
-          try {
-            await fs.copyFile(path.join(scaffoldDir, rel), destPath, fs.constants.COPYFILE_EXCL);
-          } catch (err: unknown) {
-            if (!isEexist(err)) throw err;
-          }
-        }),
-    );
+    await fs.cp(scaffoldDir, targetDir, { recursive: true, force: false, errorOnExist: false });
   }
 }
