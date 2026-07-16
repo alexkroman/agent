@@ -23,6 +23,7 @@ import { errorMessage } from "../../sdk/utils.ts";
 import { bytesToPcm16 } from "../_pcm.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
+import { createEndpointSettler } from "./pipeline-endpointing.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
@@ -32,7 +33,6 @@ import {
   DEFAULT_HOLD_PHRASE,
   flushTtsAndWait,
   consumeLlmStream as runLlmStream,
-  utteranceLooksComplete,
 } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
@@ -119,11 +119,22 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   let terminated = false;
   let turnController: AbortController | null = null;
   let nextReplyId = 0;
-  // Endpoint settle state: STT finals buffer here until the settle window
-  // elapses (or a clearly-complete final arrives), so disfluent multi-final
-  // utterances commit as a single turn. See onSttFinal / onSttPartial.
-  let pendingUtterance = "";
-  let settleTimer: ReturnType<typeof setTimeout> | null = null;
+  // Endpoint settling: STT finals buffer in the settler until the settle
+  // window elapses (or a clearly-complete final arrives), so disfluent
+  // multi-final utterances commit as a single turn. See pipeline-endpointing.ts
+  // and onSttFinal / onSttPartial below.
+  const settler = createEndpointSettler({
+    settleMs: endpointSettleMs,
+    onCommit: (text) => {
+      if (terminated) return;
+      callbacks.onUserTranscript(text);
+      chainTurn(() =>
+        runTurn(text).catch((err: unknown) => {
+          log.error("Pipeline turn crashed", { error: errorMessage(err), sid: opts.sid });
+        }),
+      );
+    },
+  });
   // Pipeline transport owns its conversation memory; SessionCore does not own
   // the conversation in pipeline mode (we build LLM messages per turn). Keeps a
   // text view (client/resume/tool-context) and a ModelMessage view (what the
@@ -201,7 +212,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   function terminate(): void {
     if (terminated) return;
     terminated = true;
-    resetSettle();
+    settler.reset();
     abortInFlightTurn();
     callbacks.onCancelled();
     sessionAbort.abort();
@@ -212,44 +223,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     void providers.close();
   }
 
-  /** Cancel any pending settle timer without dropping the buffered text. */
-  function clearSettle(): void {
-    if (settleTimer !== null) {
-      clearTimeout(settleTimer);
-      settleTimer = null;
-    }
-  }
-
-  /** Drop any buffered utterance and cancel its settle timer. */
-  function resetSettle(): void {
-    clearSettle();
-    pendingUtterance = "";
-  }
-
-  /** Commit the buffered utterance as a single turn. */
-  function commitUtterance(): void {
-    clearSettle();
-    const text = pendingUtterance.trim();
-    pendingUtterance = "";
-    if (terminated || text.length === 0) return;
-    callbacks.onUserTranscript(text);
-    chainTurn(() =>
-      runTurn(text).catch((err: unknown) => {
-        log.error("Pipeline turn crashed", { error: errorMessage(err), sid: opts.sid });
-      }),
-    );
-  }
-
   function onSttPartial(text: string): void {
     if (terminated) return;
     // A partial while an utterance is buffered means the speaker resumed after
     // a pause: extend the settle window so the continuation aggregates into the
     // same turn instead of the pre-pause fragment committing on its own.
-    if (settleTimer !== null && pendingUtterance.length > 0 && countWords(text) >= 1) {
-      clearSettle();
-      settleTimer = setTimeout(commitUtterance, endpointSettleMs);
-      return;
-    }
+    if (settler.extendOnPartial(text)) return;
     if (turnController === null && !playbackClock.pending()) return;
     if (countWords(text) < minBargeInWords) return;
     log.info("Pipeline barge-in", { sid: opts.sid });
@@ -273,16 +252,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       abortInFlightTurn();
       callbacks.onCancelled();
     }
-    pendingUtterance = pendingUtterance.length > 0 ? `${pendingUtterance} ${trimmed}` : trimmed;
-    // Fast path: a clearly-complete utterance commits immediately so clean
-    // requests pay no settle latency (and multi-tool chains have more of the
-    // response window). A fragment waits the settle window for continuation.
-    if (endpointSettleMs <= 0 || utteranceLooksComplete(pendingUtterance)) {
-      commitUtterance();
-      return;
-    }
-    clearSettle();
-    settleTimer = setTimeout(commitUtterance, endpointSettleMs);
+    settler.push(trimmed);
   }
 
   function onSttError(err: SttError): void {
@@ -438,7 +408,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // Gate late inbound work (sendUserAudio into a closing STT session)
       // the same way a provider-error teardown does.
       terminated = true;
-      resetSettle();
+      settler.reset();
       sessionAbort.abort();
       turnController?.abort();
       providers.unsubscribe();
@@ -471,7 +441,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     },
 
     reset(): void {
-      resetSettle();
+      settler.reset();
       abortInFlightTurn();
       history.reset();
     },
