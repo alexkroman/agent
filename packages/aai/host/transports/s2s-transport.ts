@@ -201,24 +201,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     startResume(prevId, code, reason);
   }
 
-  async function resume(prevSessionId: string): Promise<void> {
-    const newHandle = await _internals.connectS2s({
-      apiKey: opts.apiKey,
-      config: opts.s2sConfig,
-      createWebSocket: createWs,
-      logger: log,
-      sid: opts.sid,
-      callbacks: buildCallbacks(),
-    });
-    if (closing) {
-      newHandle.close();
-      return;
-    }
-    handle = newHandle;
-    newHandle.resumeSession(prevSessionId);
-  }
-
-  async function start(): Promise<void> {
+  async function connect(onReady: (h: S2sHandle) => void): Promise<void> {
     const newHandle = await _internals.connectS2s({
       apiKey: opts.apiKey,
       config: opts.s2sConfig,
@@ -230,13 +213,21 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     // stop() may have run while the handshake was in flight (client
     // disconnected during connect). At that point `handle` was still null, so
     // stop()'s close() was a no-op — close the resolved socket now or it leaks
-    // a live (billed) provider session. Mirrors resume().
+    // a live (billed) provider session.
     if (closing) {
       newHandle.close();
       return;
     }
     handle = newHandle;
-    handle.updateSession(opts.sessionConfig);
+    onReady(newHandle);
+  }
+
+  function resume(prevSessionId: string): Promise<void> {
+    return connect((h) => h.resumeSession(prevSessionId));
+  }
+
+  function start(): Promise<void> {
+    return connect((h) => h.updateSession(opts.sessionConfig));
   }
 
   async function stop(): Promise<void> {

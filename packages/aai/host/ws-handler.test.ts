@@ -35,14 +35,6 @@ function parseFirstFrame(ws: MockWebSocket): Record<string, unknown> {
   return JSON.parse(ws.sent[0] as string);
 }
 
-function deferred<T = void>(): { promise: Promise<T>; resolve: (v: T) => void } {
-  let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
-
 describe("wireSessionSocket", () => {
   test("'Session ready' is not logged until session.start() resolves", async () => {
     const logs: string[] = [];
@@ -53,7 +45,7 @@ describe("wireSessionSocket", () => {
       debug: (msg: string) => logs.push(msg),
     };
 
-    const startGate = deferred();
+    const startGate = Promise.withResolvers<void>();
     const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
     const ws = openSocket();
 
@@ -319,7 +311,7 @@ describe("wireSessionSocket", () => {
   });
 
   test("frames before session is ready are buffered and replayed after start()", async () => {
-    const startGate = deferred();
+    const startGate = Promise.withResolvers<void>();
     const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
     const ws = openSocket();
     const logger = makeLogger();

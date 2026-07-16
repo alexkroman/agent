@@ -16,19 +16,9 @@ function openSocket(): MockWebSocket {
   return ws;
 }
 
-function deferred(): { promise: Promise<void>; resolve: () => void; reject: (e: Error) => void } {
-  let resolve!: () => void;
-  let reject!: (e: Error) => void;
-  const promise = new Promise<void>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
 describe("wireSessionSocket — close during start()", () => {
   test("buffered frames are not dispatched into the stopped session when start() later resolves", async () => {
-    const startGate = deferred();
+    const startGate = Promise.withResolvers<void>();
     const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
     const ws = openSocket();
     const sessions = new Map<string, SessionCore>();
@@ -56,7 +46,7 @@ describe("wireSessionSocket — close during start()", () => {
   });
 
   test("session cleanup runs exactly once when close precedes a start() failure", async () => {
-    const startGate = deferred();
+    const startGate = Promise.withResolvers<void>();
     const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
     const ws = openSocket();
     const onSessionEnd = vi.fn();

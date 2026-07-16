@@ -181,7 +181,6 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   const agentRuntime = createRuntime({
     agent: toRuntimeAgent(config),
     env,
-    fetch: safeFetch,
     executeTool,
     toolSchemas: [...config.toolSchemas, ...builtins.schemas],
     toolGuidance: builtins.guidance,

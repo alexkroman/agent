@@ -8,6 +8,7 @@
 // dispatch loop and tool execution. ZERO workspace imports — bundled into the
 // self-contained guest artifact.
 
+import { Buffer } from "node:buffer";
 import type {
   JsonRpcMessage,
   JsonRpcNotification,
@@ -15,6 +16,7 @@ import type {
   VectorAdapter,
   VectorMatch,
 } from "./harness-types.ts";
+import { MAX_REQUEST_BODY_BYTES } from "./limits.ts";
 
 // ---- Shared helpers ----------------------------------------------------------
 
@@ -90,28 +92,18 @@ type PendingFetch = {
 
 const pendingFetches = new Map<string, PendingFetch>();
 
-// 1 MB. Friendly early error only — the host enforces the same cap
-// authoritatively (see sandbox-fetch.ts).
-const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
+// The guest-side check is a friendly early error only — the host enforces
+// the same cap authoritatively (see sandbox-fetch.ts).
 
+// Native codecs via node:buffer (supported by Deno, no permission flags) —
+// the atob/btoa route costs a per-byte JS loop plus transient binary strings
+// on the guest's single event loop, where tool code also runs.
 function base64ToBytes(b64: string): Uint8Array {
-  const binary = atob(b64);
-  const bytes = new Uint8Array(binary.length);
-  for (let i = 0; i < binary.length; i++) {
-    bytes[i] = binary.charCodeAt(i);
-  }
-  return bytes;
+  return Buffer.from(b64, "base64");
 }
 
 function bytesToBase64(bytes: Uint8Array): string {
-  // Chunked to avoid one intermediate string per byte (bodies can be up to
-  // MAX_REQUEST_BODY_BYTES) while staying under the argument-count limit.
-  const CHUNK = 8192;
-  let binary = "";
-  for (let i = 0; i < bytes.byteLength; i += CHUNK) {
-    binary += String.fromCharCode(...bytes.subarray(i, i + CHUNK));
-  }
-  return btoa(binary);
+  return Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString("base64");
 }
 
 export function handleFetchNotification(method: string, params: unknown): void {
@@ -197,7 +189,8 @@ export function sendToClient(sessionId: string, event: string, data: unknown): v
 
 // The adapters are stateless views over hostRequest, so a single module-level
 // instance serves every tool call.
-const kvAdapter: KvAdapter = {
+/** Kv adapter handed to tool contexts. */
+export const kvAdapter: KvAdapter = {
   // The host's kv/get handler returns the stored value directly as the RPC
   // result (see configureSandbox), not wrapped in { value } — return it as-is.
   get: async <T = unknown>(key: string) =>
@@ -215,7 +208,8 @@ const kvAdapter: KvAdapter = {
   },
 };
 
-const vectorAdapter: VectorAdapter = {
+/** Vector adapter handed to tool contexts. */
+export const vectorAdapter: VectorAdapter = {
   upsert: (id, text, metadata) =>
     hostRequest("vector/upsert", {
       id,
@@ -232,16 +226,6 @@ const vectorAdapter: VectorAdapter = {
   },
   delete: (ids) => hostRequest("vector/delete", { ids }) as Promise<void>,
 };
-
-/** Kv adapter handed to tool contexts. */
-export function makeKvAdapter(): KvAdapter {
-  return kvAdapter;
-}
-
-/** Vector adapter handed to tool contexts. */
-export function makeVectorAdapter(): VectorAdapter {
-  return vectorAdapter;
-}
 
 // ---- Host response dispatch -------------------------------------------------
 
