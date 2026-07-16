@@ -401,6 +401,59 @@ describe("interrupted-speech persistence", () => {
     await t.stop();
   });
 
+  test("barge-in after a completed tool step persists the tool call and its result", async () => {
+    // Regression: an aborted turn used to drop ALL of its step messages, so a
+    // tool call that had already succeeded (and its result) vanished from LLM
+    // history — the next turn would repeat the call or claim the lookup failed.
+    const executeTool = vi.fn(async () => "result-payload-42");
+    const { opts, stt, tts, callbacks } = makeOpts({
+      minBargeInWords: 1,
+      llm: createFakeLanguageModel({
+        steps: [
+          // Step 1: tool call (completes, result recorded). Step 2: slow text
+          // we barge into. Step 3: the follow-up turn's plain reply.
+          [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
+          [
+            { type: "text", text: "I found " },
+            { type: "text", text: "your account " },
+            { type: "text", text: "just now." },
+          ],
+          [{ type: "text", text: "Okay." }],
+        ],
+        delayMs: 20,
+      }),
+      executeTool,
+      toolSchemas: [noopToolSchema],
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+
+    stt.last()?.fireFinal("look up my account");
+    // Wait until step 1 finished (tool ran) and step 2's text is streaming.
+    await vi.waitFor(() => {
+      expect(tts.last()?.textChunks.join("")).toContain("I found");
+    });
+    stt.last()?.firePartial("stop");
+    await vi.waitFor(() => {
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+    });
+
+    // The follow-up turn's LLM prompt must carry the completed tool step.
+    const callsBefore = llm.calls.length;
+    stt.last()?.fireFinal("did you find it");
+    await vi.waitFor(() => {
+      expect(llm.calls.length).toBeGreaterThan(callsBefore);
+    });
+    const prompt = JSON.stringify(llm.calls[callsBefore]?.prompt);
+    expect(prompt).toContain("result-payload-42");
+    expect(prompt).toContain("tc-1");
+    // The tool ran exactly once — the follow-up turn built on the persisted
+    // result instead of re-executing.
+    expect(executeTool).toHaveBeenCalledTimes(1);
+    await t.stop();
+  });
+
   test("barge-in during the hold phrase (no real text yet) persists nothing", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({
       minBargeInWords: 1, // pin so the one-word "stop" barge-in fires (default is now 2)
@@ -486,15 +539,45 @@ describe("PipelineTransport — below-threshold deferral", () => {
 });
 
 describe("PipelineTransport — endpoint settle window", () => {
-  test("a clearly-complete final commits immediately (no settle wait)", async () => {
-    // Large window: only the fast path can make this commit promptly.
-    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 10_000 });
+  test("a clearly-complete final commits after the short complete-settle window", async () => {
+    // Large fragment window: only the complete-final path can commit promptly.
+    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 10_000, completeSettleMs: 40 });
     const t = createPipelineTransport(opts);
     await t.start();
     stt.last()?.fireFinal("Track order BOB12.");
+    // Inside the complete-settle window: not committed yet.
+    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
     await vi.waitFor(() => {
       expect(callbacks.onUserTranscript).toHaveBeenCalledWith("Track order BOB12.");
     });
+    await t.stop();
+  });
+
+  test("completeSettleMs=0 commits a complete final immediately", async () => {
+    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 10_000, completeSettleMs: 0 });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("Track order BOB12.");
+    expect(callbacks.onUserTranscript).toHaveBeenCalledWith("Track order BOB12.");
+    await t.stop();
+  });
+
+  test("a continuation after a complete-looking final aggregates into one turn", async () => {
+    // Hesitant speakers pause at sentence boundaries mid-request; the
+    // complete-settle window lets the follow-on sentence join the same turn.
+    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 200, completeSettleMs: 80 });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    const s = stt.last();
+    s?.fireFinal("Track my order."); // complete-looking → short window
+    s?.firePartial("oh and"); // speaker resumed → extend
+    s?.fireFinal("Oh, and also search for winter jackets.");
+    await vi.waitFor(() => {
+      expect(callbacks.onUserTranscript).toHaveBeenCalledWith(
+        "Track my order. Oh, and also search for winter jackets.",
+      );
+    });
+    expect(callbacks.onUserTranscript).toHaveBeenCalledTimes(1);
     await t.stop();
   });
 

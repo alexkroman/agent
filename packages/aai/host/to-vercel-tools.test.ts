@@ -140,6 +140,42 @@ describe("toVercelTools", () => {
   });
 });
 
+describe("toVercelTools — argument type coercion", () => {
+  test("stringified scalars are coerced to the schema's declared types before executeTool", async () => {
+    const executeTool = vi.fn(async () => "ok");
+    const tools = toVercelTools(
+      [
+        {
+          type: "function",
+          name: "search_apartments",
+          description: "Search.",
+          parameters: {
+            type: "object",
+            properties: {
+              city: { type: "string" },
+              max_price: { type: "number" },
+              pets_allowed: { type: "boolean" },
+            },
+          },
+        },
+      ],
+      { executeTool, sessionId: "s", messages: () => [] },
+    );
+    await runTool(
+      tools.search_apartments,
+      { city: "Dallas", max_price: "1500", pets_allowed: "true" },
+      { toolCallId: "tc-1", messages: [] },
+    );
+    expect(executeTool).toHaveBeenCalledWith(
+      "search_apartments",
+      { city: "Dallas", max_price: 1500, pets_allowed: true },
+      "s",
+      [],
+      { toolCallId: "tc-1" },
+    );
+  });
+});
+
 describe("toVercelTools — message snapshot isolation", () => {
   test("tool execute sees a snapshot, not a live ref to messages array", async () => {
     const messagesBox = { messages: [{ role: "user" as const, content: "first" }] };

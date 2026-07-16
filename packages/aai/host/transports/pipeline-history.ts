@@ -78,6 +78,45 @@ function withoutReasoning(m: ModelMessage): ModelMessage | null {
   return { ...m, content };
 }
 
+/**
+ * Persist what an interrupted (barge-in / cancelled) turn produced.
+ *
+ * Two things must survive the abort: the response messages of every COMPLETED
+ * LLM step (assistant tool calls + their `tool` results — dropping them makes
+ * the next turn's LLM repeat calls it already made or deny results it already
+ * has), and the spoken-so-far text, marked `[interrupted]` so the model knows
+ * it was cut off. The LLM view only receives the text tail that is not
+ * already inside a persisted step message; the client transcript gets the
+ * full spoken text via `onTranscript`.
+ */
+export function persistInterruptedTurn(args: {
+  history: PipelineHistory;
+  /** Full text generated before the abort (best proxy for what was spoken). */
+  accumulated: string;
+  /** Length of `accumulated` already covered by persisted step messages. */
+  persistedLen: number;
+  /** Response messages of the turn's completed steps. */
+  stepMessages: readonly ModelMessage[];
+  /** Filler phrase that must not be persisted as real speech. */
+  holdPhrase: string;
+  /** Surface the interrupted transcript to the client. */
+  onTranscript: (text: string) => void;
+  /** Seed the STT provider with the agent's side of the dialog. */
+  updateAgentContext: (text: string) => void;
+}): void {
+  const { history, accumulated, persistedLen, stepMessages, holdPhrase } = args;
+  if (stepMessages.length > 0) history.pushLlm(...stepMessages);
+  const spoken = accumulated.trim();
+  if (spoken.length === 0 || spoken === holdPhrase) return;
+  args.onTranscript(spoken);
+  history.pushConversation({ role: "assistant", content: `${spoken} [interrupted]` });
+  const tail = accumulated.slice(persistedLen).trim();
+  if (tail.length > 0 && tail !== holdPhrase) {
+    history.pushLlm({ role: "assistant", content: `${tail} [interrupted]` });
+  }
+  args.updateAgentContext(spoken);
+}
+
 /** Create a {@link PipelineHistory}, optionally seeded from prior text history. */
 export function createPipelineHistory(seed?: readonly Message[]): PipelineHistory {
   const conversation: Message[] = seed ? [...seed] : [];

@@ -8,6 +8,7 @@
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";
 import type { ExecuteTool, ExecuteToolOptions, ToolSchema } from "../sdk/_internal-types.ts";
 import type { Message } from "../sdk/types.ts";
+import { coerceToolArgs } from "./tool-arg-coercion.ts";
 
 interface ToVercelToolsContext {
   executeTool: ExecuteTool;
@@ -26,7 +27,12 @@ export function toVercelTools(
       description: schema.description,
       inputSchema: jsonSchema(schema.parameters),
       execute: async (args: unknown, options: ToolExecutionOptions<unknown>) => {
-        const input = (args ?? {}) as Readonly<Record<string, unknown>>;
+        // Repair stringified scalars ("1500", "true") toward the schema's
+        // declared types before the tool (or a relay observer) sees them.
+        const input = coerceToolArgs(
+          (args ?? {}) as Readonly<Record<string, unknown>>,
+          schema.parameters,
+        );
         // Per-call abortSignal from streamText takes precedence over bag-level
         // ctx.signal so individual invocations respect outer-turn aborts.
         const signal = options.abortSignal ?? ctx.signal;

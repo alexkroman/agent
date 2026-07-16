@@ -69,8 +69,13 @@ export const MAX_PAGE_CHARS = 10_000;
 export const MAX_HTML_BYTES = 200_000;
 export const MAX_VALUE_SIZE = 65_536;
 export const DEFAULT_MAX_HISTORY = 200;
-/** Max tool calls per reply — prevents runaway tool loops. */
-export const DEFAULT_MAX_STEPS = 5;
+/**
+ * Max tool calls per reply — prevents runaway tool loops. Sized so a
+ * multi-part request (3–4 chained tools) still fits after a repaired
+ * argument retry or two; 5 proved too tight and truncated legitimate
+ * chains mid-request.
+ */
+export const DEFAULT_MAX_STEPS = 10;
 /**
  * Minimum number of words in an interim STT transcript before a barge-in
  * aborts the agent's in-flight turn (pipeline mode). Default 2 so a single
@@ -89,11 +94,22 @@ export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
  * window the transport starts a turn on the first fragment and acts on the
  * pre-correction request. Follow-on `final`s/`partial`s inside the window are
  * aggregated into a single turn. A clearly-complete final (terminal
- * punctuation, no trailing continuation cue) commits immediately, so clean
- * requests pay no added latency. Set to 0 to disable (commit every final at
- * once, preserving the pre-endpointing behavior).
+ * punctuation, no trailing continuation cue) uses the shorter
+ * {@link DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS} window instead. Set to 0 to
+ * disable settling entirely (commit every final at once).
  */
-export const DEFAULT_ENDPOINT_SETTLE_MS = 700;
+export const DEFAULT_ENDPOINT_SETTLE_MS = 1500;
+
+/**
+ * Settle window for a clearly-complete final (pipeline mode). Hesitant
+ * speakers pause at sentence boundaries mid-request ("Track my order. ...
+ * Oh, and also...") — committing the instant a complete-looking final lands
+ * makes the agent talk over the continuation and act on half the request.
+ * A short window lets an immediate continuation (an STT partial extends it)
+ * aggregate into the same turn while keeping added latency small on genuinely
+ * finished requests. Set to 0 to commit complete finals immediately.
+ */
+export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 600;
 export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 

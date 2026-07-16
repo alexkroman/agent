@@ -10,6 +10,7 @@
 import type { LanguageModel, ModelMessage } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
+  DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
   DEFAULT_ENDPOINT_SETTLE_MS,
   DEFAULT_MAX_STEPS,
   DEFAULT_MIN_BARGE_IN_WORDS,
@@ -25,7 +26,7 @@ import { bytesToPcm16 } from "../_pcm.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createEndpointSettler } from "./pipeline-endpointing.ts";
-import { createPipelineHistory } from "./pipeline-history.ts";
+import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
 import { createSilenceNudger } from "./pipeline-silence.ts";
@@ -78,11 +79,19 @@ export interface PipelineTransportOptions {
   /**
    * Endpoint settle window (ms): how long to wait after an STT `final` for the
    * speaker to continue before committing the turn, aggregating follow-on
-   * finals/partials into one utterance. A clearly-complete final commits
-   * immediately regardless. Defaults to {@link DEFAULT_ENDPOINT_SETTLE_MS}; set
-   * 0 to disable (commit every final at once).
+   * finals/partials into one utterance. Defaults to
+   * {@link DEFAULT_ENDPOINT_SETTLE_MS}; set 0 to disable (commit every final
+   * at once).
    */
   endpointSettleMs?: number | undefined;
+  /**
+   * Settle window (ms) for clearly-complete finals — shorter than
+   * `endpointSettleMs` (and capped by it) so finished requests pay little
+   * latency while sentence-boundary pauses mid-request still aggregate.
+   * Defaults to {@link DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS}; 0 commits
+   * complete finals immediately.
+   */
+  completeSettleMs?: number | undefined;
   /**
    * LLM sampling temperature. Omitted when unset (provider default). Some models
    * (e.g. Claude 5) ignore it and warn; set only for temperature-capable models.
@@ -108,6 +117,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
   const minBargeInWords = opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS;
   const endpointSettleMs = opts.endpointSettleMs ?? DEFAULT_ENDPOINT_SETTLE_MS;
+  const completeSettleMs = opts.completeSettleMs ?? DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS;
   const toolChoice = opts.toolChoice ?? "auto";
   const toolSchemas = opts.toolSchemas ?? [];
   const executeTool: ExecuteTool =
@@ -124,16 +134,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   let terminated = false;
   let turnController: AbortController | null = null;
   let nextReplyId = 0;
-  // Repair reuses the in-flight turn's abort signal so a tool-call repair
-  // `generateObject` call is cancelled on barge-in / cancel / disconnect
-  // instead of running on as an orphaned (billed) background LLM call.
+  // Repair reuses the in-flight turn's abort signal so a repair call is
+  // cancelled on barge-in/cancel/disconnect instead of running on orphaned.
   const repairToolCall = createToolCallRepair(opts.llm, log, () => turnController?.signal);
-  // Endpoint settling: STT finals buffer in the settler until the settle
-  // window elapses (or a clearly-complete final arrives), so disfluent
-  // multi-final utterances commit as a single turn. See pipeline-endpointing.ts
-  // and onSttFinal / onSttPartial below.
+  // Endpoint settling: STT finals buffer until a settle window elapses so
+  // disfluent multi-final utterances commit as one turn (pipeline-endpointing.ts).
   const settler = createEndpointSettler({
     settleMs: endpointSettleMs,
+    completeSettleMs,
     onCommit: (text) => {
       if (terminated) return;
       callbacks.onUserTranscript(text);
@@ -144,16 +152,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       );
     },
   });
-  // Pipeline transport owns its conversation memory; SessionCore does not own
-  // the conversation in pipeline mode (we build LLM messages per turn). Keeps a
-  // text view (client/resume/tool-context) and a ModelMessage view (what the
-  // LLM sees, incl. tool calls/results). See pipeline-history.ts.
+  // Pipeline transport owns its conversation memory (SessionCore does not in
+  // pipeline mode): a text view (client/resume/tool-context) and a
+  // ModelMessage view (what the LLM sees, incl. tool calls/results).
   const history = createPipelineHistory(sessionConfig.history);
   let turnPromise: Promise<void> | null = null;
   // The in-flight providers.open() from start(). stop() awaits it so a
   // disconnect mid-connect tears the just-opened provider sockets down
-  // deterministically (openSide self-closes on the session abort) instead of
-  // leaving fire-and-forget opens to pile up under connection churn.
+  // deterministically instead of leaving fire-and-forget opens to pile up.
   let startPromise: Promise<"ok" | "failed"> | null = null;
   // Tracks when the client is estimated to finish playing forwarded TTS audio,
   // so barge-in keeps working after the server-side turn is done but buffered
@@ -178,9 +184,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   });
 
   // Provider lifecycle (open/adopt/close of the STT+TTS pair) lives in
-  // pipeline-providers.ts; the handlers below route provider events back
-  // into this turn orchestrator. Handler functions are declarations, so
-  // they're hoisted past this initializer.
+  // pipeline-providers.ts; the (hoisted) handlers below route provider
+  // events back into this turn orchestrator.
   const providers = createPipelineProviderSessions({
     sid: opts.sid,
     stt: opts.stt,
@@ -243,10 +248,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     abortInFlightTurn();
     callbacks.onCancelled();
     sessionAbort.abort();
-    // Close whatever was adopted before the failure (e.g. TTS went live and
-    // started the greeting, then STT's open failed) — it must not outlive
-    // the terminate. Providers also close on the abort signal; this covers
-    // openers wired after the signal check.
+    // Close whatever was adopted before the failure (e.g. TTS went live,
+    // then STT's open failed) — it must not outlive the terminate.
     void providers.close();
   }
 
@@ -272,11 +275,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // The turn that follows (via the settler) re-arms the nudge on completion.
     nudger.onUserTurn();
     // Interrupt the agent's in-flight reply only for a clearly-intentional
-    // (>= threshold) utterance. A shorter one does NOT interrupt — it falls
-    // through to be buffered and answered once the reply finishes (chainTurn
-    // defers it). Previously a below-threshold final while speaking was dropped
-    // here, silently losing real short answers ("yes", a ZIP) spoken over the
-    // agent.
+    // (>= threshold) utterance. A shorter one does NOT interrupt — it is
+    // buffered and answered once the reply finishes (chainTurn defers it),
+    // so short answers ("yes", a ZIP) spoken over the agent aren't lost.
     const speaking = turnController !== null || playbackClock.pending();
     if (speaking && countWords(trimmed) >= minBargeInWords) {
       log.info("Pipeline replacing in-flight turn", { sid: opts.sid });
@@ -303,7 +304,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const consumeLlmStream = (
     ctl: AbortController,
     onDelta: (delta: string) => void,
-  ): Promise<ModelMessage[] | undefined> =>
+    onStepPersisted?: () => void,
+  ): Promise<ModelMessage[]> =>
     runLlmStream({
       llm: opts.llm,
       systemPrompt,
@@ -320,6 +322,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       sid: opts.sid,
       ctl,
       onDelta,
+      onStepPersisted,
     });
 
   /** Per-turn TTS drain — see flushTtsAndWait in pipeline-stream.ts. */
@@ -329,14 +332,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   /**
    * Shared reply scaffold: mint the reply id and turn controller, run the
-   * turn body, then drain TTS (only when the body produced speech — a
-   * tool-call-only turn sends no text to the TTS context, so the provider
-   * never emits `done` and flushTtsAndWait would burn the full
-   * PIPELINE_FLUSH_TIMEOUT_MS (~10s) on every silent turn) and finish.
-   *
-   * Do NOT call callbacks.onAudioDone() here — session-core's flushReply
-   * (triggered by onReplyDone) emits audioDone + replyDone together, matching
-   * the S2S transport contract. Calling it here would double-fire audio_done.
+   * turn body, then drain TTS — only when the body produced speech, since a
+   * tool-call-only turn never gets a TTS `done` and would burn the full
+   * flush timeout. Do NOT call callbacks.onAudioDone() here — session-core's
+   * flushReply emits audioDone + replyDone together; calling it here would
+   * double-fire audio_done.
    */
   async function runReply(
     idPrefix: string,
@@ -363,35 +363,38 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       history.pushLlm({ role: "user", content: userText });
 
       let accumulated = "";
-      const responseMessages = await consumeLlmStream(ctl, (delta) => {
+      // Portion of `accumulated` already inside persisted step messages.
+      let persistedLen = 0;
+      const onDelta = (delta: string): void => {
         accumulated += delta;
+      };
+      const responseMessages = await consumeLlmStream(ctl, onDelta, () => {
+        persistedLen = accumulated.length;
       });
 
       if (ctl.signal.aborted) {
-        // Barge-in mid-turn: persist the spoken-so-far text so the next turn's
-        // LLM knows it was cut off. `accumulated` is the generated text (our
-        // best proxy — there is no playback-position feedback). Marker goes to
-        // history only; the client gets raw text + the interrupted flag.
-        const spoken = accumulated.trim();
-        if (spoken.length > 0 && spoken !== DEFAULT_HOLD_PHRASE) {
-          callbacks.onAgentTranscript(spoken, true);
-          const marked = `${spoken} [interrupted]`;
-          history.pushConversation({ role: "assistant", content: marked });
-          history.pushLlm({ role: "assistant", content: marked });
-          providers.stt?.updateAgentContext?.(spoken);
-        }
+        // Barge-in mid-turn: keep the completed tool steps and the
+        // spoken-so-far text — see persistInterruptedTurn.
+        persistInterruptedTurn({
+          history,
+          accumulated,
+          persistedLen,
+          stepMessages: responseMessages,
+          holdPhrase: DEFAULT_HOLD_PHRASE,
+          onTranscript: (text) => callbacks.onAgentTranscript(text, true),
+          updateAgentContext: (text) => providers.stt?.updateAgentContext?.(text),
+        });
         return false;
       }
 
       // Persist the assistant tool-call message(s) and their `tool` results so
       // the next turn retains tool context, not just the spoken transcript.
-      if (responseMessages && responseMessages.length > 0) history.pushLlm(...responseMessages);
+      if (responseMessages.length > 0) history.pushLlm(...responseMessages);
 
       if (accumulated.length === 0) return false;
       callbacks.onAgentTranscript(accumulated, false);
       history.pushConversation({ role: "assistant", content: accumulated });
-      // Seed the STT provider with the agent's side of the dialog so the
-      // next user turn is transcribed with it in context (AssemblyAI
+      // Seed the STT provider with the agent's side of the dialog (AssemblyAI
       // Universal-3.5 Pro only; other providers have no such hook).
       providers.stt?.updateAgentContext?.(accumulated);
       return true;
@@ -404,10 +407,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       history.pushConversation({ role: "assistant", content: text });
       history.pushLlm({ role: "assistant", content: text });
       providers.tts?.sendText(text);
-      // Also push the greeting mid-stream, even though it was already seeded
-      // as the initial agent context at STT connect time (providers.open) —
-      // keeps the two seeding paths symmetric and covers providers that only
-      // support the mid-stream hook.
+      // Push the greeting mid-stream too (it was already seeded at STT connect
+      // time) — covers providers that only support the mid-stream hook.
       providers.stt?.updateAgentContext?.(text);
       return true;
     });

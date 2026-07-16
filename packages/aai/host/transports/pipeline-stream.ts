@@ -337,17 +337,27 @@ export interface ConsumeLlmStreamParams {
   ctl: AbortController;
   /** Receives each assistant text delta (accumulated into the transcript). */
   onDelta: (delta: string) => void;
+  /**
+   * Fires after each completed LLM step, once that step's response messages
+   * are safe in the collected history. The transport uses it to snapshot how
+   * much of the accumulated transcript is already persisted, so an aborted
+   * turn's `[interrupted]` marker carries only the unpersisted tail.
+   */
+  onStepPersisted?: (() => void) | undefined;
 }
 
 /**
  * Run one `streamText` turn against the LLM, fan its stream parts out via
  * {@link createStreamPartHandler}, and return the accumulated response
- * messages (for history) once the stream completes. Resolves `undefined` on
- * abort or unrecoverable stream error.
+ * messages (for history) once the stream completes.
+ *
+ * On abort or stream error, returns the response messages of every step that
+ * COMPLETED before the interruption (tool calls with their results) — never
+ * `undefined` — so barge-in does not erase work already done: the next turn's
+ * LLM still sees which tools ran and what they returned. An in-flight step is
+ * dropped whole (no dangling tool call without its result).
  */
-export async function consumeLlmStream(
-  params: ConsumeLlmStreamParams,
-): Promise<ModelMessage[] | undefined> {
+export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<ModelMessage[]> {
   const {
     llm,
     systemPrompt,
@@ -364,7 +374,11 @@ export async function consumeLlmStream(
     sid,
     ctl,
     onDelta,
+    onStepPersisted,
   } = params;
+  // Response messages of completed steps, collected incrementally so an
+  // aborted turn still returns everything that finished before the abort.
+  const collected: ModelMessage[] = [];
   try {
     const result = streamText({
       model: llm,
@@ -379,6 +393,10 @@ export async function consumeLlmStream(
       experimental_repairToolCall: repairToolCall,
       stopWhen: stepCountIs(maxSteps),
       abortSignal: ctl.signal,
+      onStepFinish: (step) => {
+        collected.push(...step.response.messages);
+        onStepPersisted?.();
+      },
     });
     const handlePart = createStreamPartHandler({
       onDelta,
@@ -393,10 +411,12 @@ export async function consumeLlmStream(
       if (ctl.signal.aborted) break;
       handlePart(part);
     }
-    if (ctl.signal.aborted) return;
+    if (ctl.signal.aborted) return collected;
     // Gather every step's response messages (assistant tool-call + `tool`
     // result + text) so tool context carries into the next turn. Top-level
     // `result.response.messages` is final-step only and drops the tool call.
+    // Preferred over `collected` on the happy path in case a final step
+    // resolves after the stream ends but before its onStepFinish fires.
     const steps = await result.steps;
     return steps.flatMap((step) => step.response.messages);
   } catch (err: unknown) {
@@ -405,5 +425,6 @@ export async function consumeLlmStream(
       log.error("LLM streamText failed", { error: msg, sid });
       emitError("llm", msg);
     }
+    return collected;
   }
 }

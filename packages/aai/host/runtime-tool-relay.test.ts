@@ -59,10 +59,13 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
 
     const core = exec.createSession({ id: "s1", agent: "test-agent", client, skipGreeting: true });
     await core.start();
-    stt.last()?.fireFinal("look it up");
-    await vi.waitFor(() => {
-      expect(client.event).toHaveBeenCalledWith(expect.objectContaining({ type: "reply_done" }));
-    });
+    stt.last()?.fireFinal("Look it up.");
+    await vi.waitFor(
+      () => {
+        expect(client.event).toHaveBeenCalledWith(expect.objectContaining({ type: "reply_done" }));
+      },
+      { timeout: 4000 },
+    );
     await core.stop();
 
     expect(toolCallEmits(client)).toHaveLength(0);
@@ -86,10 +89,13 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
 
     const core = exec.createSession({ id: "s1", agent: "test-agent", client, skipGreeting: true });
     await core.start();
-    stt.last()?.fireFinal("look it up");
-    await vi.waitFor(() => {
-      expect(client.event).toHaveBeenCalledWith(expect.objectContaining({ type: "reply_done" }));
-    });
+    stt.last()?.fireFinal("Look it up.");
+    await vi.waitFor(
+      () => {
+        expect(client.event).toHaveBeenCalledWith(expect.objectContaining({ type: "reply_done" }));
+      },
+      { timeout: 4000 },
+    );
     await core.stop();
 
     const emits = toolCallEmits(client);
