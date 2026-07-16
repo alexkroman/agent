@@ -49,7 +49,7 @@
     "@types/mime-types": "^3.0.1",
     "@types/ws": "^8.18.1",
     "testcontainers": "^12.0.4",
-    "tsdown": "^0.22.7",
+    "tsdown": "^0.22.8",
     "typescript": "^7.0.2",
     "vitest": "^4.1.10"
   },

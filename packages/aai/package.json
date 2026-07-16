@@ -101,7 +101,7 @@
     "@types/mime-types": "^3.0.1",
     "@types/node": "^26.1.1",
     "@types/ws": "^8.18.1",
-    "tsdown": "^0.22.7",
+    "tsdown": "^0.22.8",
     "vitest": "^4.1.10"
   },
   "engines": {
