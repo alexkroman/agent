@@ -17,21 +17,15 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
 } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
-import type {
-  SttError,
-  SttOpener,
-  SttSession,
-  TtsError,
-  TtsOpener,
-  TtsSession,
-  Unsubscribe,
-} from "../../sdk/providers.ts";
+import type { SttError, SttOpener, TtsError, TtsOpener } from "../../sdk/providers.ts";
 import type { Message, ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import { bytesToPcm16 } from "../_pcm.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
+import { createEndpointSettler } from "./pipeline-endpointing.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
+import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
 import {
   countWords,
@@ -39,7 +33,6 @@ import {
   DEFAULT_HOLD_PHRASE,
   flushTtsAndWait,
   consumeLlmStream as runLlmStream,
-  utteranceLooksComplete,
 } from "./pipeline-stream.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
@@ -124,15 +117,24 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const sessionAbort = new AbortController();
   let audioReady = false;
   let terminated = false;
-  let sttSession: SttSession | null = null;
-  let ttsSession: TtsSession | null = null;
   let turnController: AbortController | null = null;
   let nextReplyId = 0;
-  // Endpoint settle state: STT finals buffer here until the settle window
-  // elapses (or a clearly-complete final arrives), so disfluent multi-final
-  // utterances commit as a single turn. See onSttFinal / onSttPartial.
-  let pendingUtterance = "";
-  let settleTimer: ReturnType<typeof setTimeout> | null = null;
+  // Endpoint settling: STT finals buffer in the settler until the settle
+  // window elapses (or a clearly-complete final arrives), so disfluent
+  // multi-final utterances commit as a single turn. See pipeline-endpointing.ts
+  // and onSttFinal / onSttPartial below.
+  const settler = createEndpointSettler({
+    settleMs: endpointSettleMs,
+    onCommit: (text) => {
+      if (terminated) return;
+      callbacks.onUserTranscript(text);
+      chainTurn(() =>
+        runTurn(text).catch((err: unknown) => {
+          log.error("Pipeline turn crashed", { error: errorMessage(err), sid: opts.sid });
+        }),
+      );
+    },
+  });
   // Pipeline transport owns its conversation memory; SessionCore does not own
   // the conversation in pipeline mode (we build LLM messages per turn). Keeps a
   // text view (client/resume/tool-context) and a ModelMessage view (what the
@@ -143,8 +145,35 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // so barge-in keeps working after the server-side turn is done but buffered
   // audio is still playing client-side (see createPlaybackClock).
   const playbackClock = createPlaybackClock(ttsSampleRate);
-  const sttSubs: Unsubscribe[] = [];
-  const ttsSubs: Unsubscribe[] = [];
+
+  // Provider lifecycle (open/adopt/close of the STT+TTS pair) lives in
+  // pipeline-providers.ts; the handlers below route provider events back
+  // into this turn orchestrator. Handler functions are declarations, so
+  // they're hoisted past this initializer.
+  const providers = createPipelineProviderSessions({
+    sid: opts.sid,
+    stt: opts.stt,
+    tts: opts.tts,
+    providerKeys: opts.providerKeys,
+    sttSampleRate,
+    ttsSampleRate,
+    sttPrompt: opts.sttPrompt,
+    greeting: sessionConfig.greeting,
+    signal: sessionAbort.signal,
+    handlers: {
+      onSttPartial,
+      onSttFinal,
+      onSttError,
+      onTtsError,
+      onTtsAudio: (pcm) => {
+        playbackClock.onChunk(pcm);
+        callbacks.onAudioChunk(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+      },
+    },
+    onAudioReady,
+    emitError,
+    log,
+  });
 
   // Built once per session, not per turn: per-call aborts still track the
   // owning turn because streamText forwards its own abortSignal into each
@@ -167,7 +196,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   function abortInFlightTurn(): void {
     turnController?.abort();
     turnController = null;
-    ttsSession?.cancel();
+    providers.tts?.cancel();
     // Every abort path ends with the client flushing its playback buffer
     // (`cancelled` for barge-in/client cancel, `reset` for reset, teardown
     // for terminate), so the estimated-playback clock restarts from zero.
@@ -183,7 +212,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   function terminate(): void {
     if (terminated) return;
     terminated = true;
-    resetSettle();
+    settler.reset();
     abortInFlightTurn();
     callbacks.onCancelled();
     sessionAbort.abort();
@@ -191,36 +220,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // started the greeting, then STT's open failed) — it must not outlive
     // the terminate. Providers also close on the abort signal; this covers
     // openers wired after the signal check.
-    void sttSession?.close().catch(() => undefined);
-    void ttsSession?.close().catch(() => undefined);
-  }
-
-  /** Cancel any pending settle timer without dropping the buffered text. */
-  function clearSettle(): void {
-    if (settleTimer !== null) {
-      clearTimeout(settleTimer);
-      settleTimer = null;
-    }
-  }
-
-  /** Drop any buffered utterance and cancel its settle timer. */
-  function resetSettle(): void {
-    clearSettle();
-    pendingUtterance = "";
-  }
-
-  /** Commit the buffered utterance as a single turn. */
-  function commitUtterance(): void {
-    clearSettle();
-    const text = pendingUtterance.trim();
-    pendingUtterance = "";
-    if (terminated || text.length === 0) return;
-    callbacks.onUserTranscript(text);
-    chainTurn(() =>
-      runTurn(text).catch((err: unknown) => {
-        log.error("Pipeline turn crashed", { error: errorMessage(err), sid: opts.sid });
-      }),
-    );
+    void providers.close();
   }
 
   function onSttPartial(text: string): void {
@@ -228,11 +228,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // A partial while an utterance is buffered means the speaker resumed after
     // a pause: extend the settle window so the continuation aggregates into the
     // same turn instead of the pre-pause fragment committing on its own.
-    if (settleTimer !== null && pendingUtterance.length > 0 && countWords(text) >= 1) {
-      clearSettle();
-      settleTimer = setTimeout(commitUtterance, endpointSettleMs);
-      return;
-    }
+    if (settler.extendOnPartial(text)) return;
     if (turnController === null && !playbackClock.pending()) return;
     if (countWords(text) < minBargeInWords) return;
     log.info("Pipeline barge-in", { sid: opts.sid });
@@ -256,16 +252,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       abortInFlightTurn();
       callbacks.onCancelled();
     }
-    pendingUtterance = pendingUtterance.length > 0 ? `${pendingUtterance} ${trimmed}` : trimmed;
-    // Fast path: a clearly-complete utterance commits immediately so clean
-    // requests pay no settle latency (and multi-tool chains have more of the
-    // response window). A fragment waits the settle window for continuation.
-    if (endpointSettleMs <= 0 || utteranceLooksComplete(pendingUtterance)) {
-      commitUtterance();
-      return;
-    }
-    clearSettle();
-    settleTimer = setTimeout(commitUtterance, endpointSettleMs);
+    settler.push(trimmed);
   }
 
   function onSttError(err: SttError): void {
@@ -295,7 +282,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       temperature: opts.temperature,
       repairToolCall,
       maxSteps,
-      sendTtsText: (text) => ttsSession?.sendText(text),
+      sendTtsText: (text) => providers.tts?.sendText(text),
       callbacks,
       emitError,
       log,
@@ -306,7 +293,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   /** Per-turn TTS drain — see flushTtsAndWait in pipeline-stream.ts. */
   function drainTts(signal: AbortSignal): Promise<void> {
-    return flushTtsAndWait({ tts: ttsSession, signal, log, sid: opts.sid });
+    return flushTtsAndWait({ tts: providers.tts, signal, log, sid: opts.sid });
   }
 
   /**
@@ -357,7 +344,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
           const marked = `${spoken} [interrupted]`;
           history.pushConversation({ role: "assistant", content: marked });
           history.pushLlm({ role: "assistant", content: marked });
-          sttSession?.updateAgentContext?.(spoken);
+          providers.stt?.updateAgentContext?.(spoken);
         }
         return false;
       }
@@ -372,7 +359,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // Seed the STT provider with the agent's side of the dialog so the
       // next user turn is transcribed with it in context (AssemblyAI
       // Universal-3.5 Pro only; other providers have no such hook).
-      sttSession?.updateAgentContext?.(accumulated);
+      providers.stt?.updateAgentContext?.(accumulated);
       return true;
     });
   }
@@ -382,110 +369,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       callbacks.onAgentTranscript(text, false);
       history.pushConversation({ role: "assistant", content: text });
       history.pushLlm({ role: "assistant", content: text });
-      ttsSession?.sendText(text);
+      providers.tts?.sendText(text);
       // Also push the greeting mid-stream, even though it was already seeded
-      // as the initial agent context at STT connect time (openProviders) —
+      // as the initial agent context at STT connect time (providers.open) —
       // keeps the two seeding paths symmetric and covers providers that only
       // support the mid-stream hook.
-      sttSession?.updateAgentContext?.(text);
+      providers.stt?.updateAgentContext?.(text);
       return true;
     });
-  }
-
-  function reportOpenRejection(which: "stt" | "tts", reason: unknown): void {
-    const msg = errorMessage(reason);
-    log.error(`${which === "stt" ? "STT" : "TTS"} open failed`, {
-      error: msg,
-      sid: opts.sid,
-    });
-    emitError(which, msg);
-  }
-
-  function adoptStt(session: SttSession): void {
-    sttSession = session;
-    sttSubs.push(session.on("partial", onSttPartial));
-    sttSubs.push(session.on("final", onSttFinal));
-    sttSubs.push(session.on("error", onSttError));
-  }
-
-  function adoptTts(session: TtsSession): void {
-    ttsSession = session;
-    ttsSubs.push(
-      session.on("audio", (pcm) => {
-        playbackClock.onChunk(pcm);
-        callbacks.onAudioChunk(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
-      }),
-    );
-    // `done` is intentionally NOT subscribed persistently — flushTtsAndWait
-    // attaches a one-shot listener per-turn to avoid double-firing audio_done.
-    ttsSubs.push(session.on("error", onTtsError));
-  }
-
-  /**
-   * Open one provider side and adopt it the moment it lands (closing it
-   * instead when the session aborted mid-open). `onAdopted` runs right after
-   * a live adoption — this is what lets the greeting start on TTS without
-   * waiting for STT.
-   */
-  async function openSide<S extends { close(): Promise<void> }>(
-    which: "stt" | "tts",
-    open: () => Promise<S>,
-    adopt: (session: S) => void,
-    onAdopted?: () => void,
-  ): Promise<"ok" | "failed"> {
-    let session: S;
-    try {
-      session = await open();
-    } catch (reason) {
-      reportOpenRejection(which, reason);
-      return "failed";
-    }
-    if (sessionAbort.signal.aborted) {
-      await session.close().catch(() => undefined);
-      return "ok";
-    }
-    adopt(session);
-    onAdopted?.();
-    return "ok";
-  }
-
-  // STT and TTS open concurrently and each side goes live as soon as it
-  // lands, so first greeting audio isn't gated on the slower connect
-  // (usually STT). The trade: if the other side then fails, terminate()
-  // cuts a just-started greeting short instead of never starting it.
-  async function openProviders(): Promise<void> {
-    const [sttOutcome, ttsOutcome] = await Promise.all([
-      openSide(
-        "stt",
-        () =>
-          opts.stt.open({
-            sampleRate: sttSampleRate,
-            apiKey: opts.providerKeys.stt,
-            sttPrompt: opts.sttPrompt,
-            // Seed the agent's opening line as connect-time context (e.g.
-            // AssemblyAI `agent_context`) — providers that don't support it,
-            // or whose model doesn't qualify, ignore this field.
-            agentContext: sessionConfig.greeting,
-            signal: sessionAbort.signal,
-          }),
-        adoptStt,
-      ),
-      openSide(
-        "tts",
-        () =>
-          opts.tts.open({
-            sampleRate: ttsSampleRate,
-            apiKey: opts.providerKeys.tts,
-            signal: sessionAbort.signal,
-          }),
-        adoptTts,
-        onAudioReady,
-      ),
-    ]);
-
-    if (!sessionAbort.signal.aborted && (sttOutcome === "failed" || ttsOutcome === "failed")) {
-      terminate();
-    }
   }
 
   function onAudioReady(): void {
@@ -503,7 +394,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   return {
     async start(): Promise<void> {
-      await openProviders();
+      // STT and TTS open concurrently; a failed side (with the session still
+      // live) tears the whole transport down.
+      if ((await providers.open()) === "failed") terminate();
       // S2S fires onSessionReady when the provider acks; in pipeline mode the
       // equivalent "ready" signal is providers having opened.
       callbacks.onSessionReady?.(opts.sid);
@@ -515,22 +408,17 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // Gate late inbound work (sendUserAudio into a closing STT session)
       // the same way a provider-error teardown does.
       terminated = true;
-      resetSettle();
+      settler.reset();
       sessionAbort.abort();
       turnController?.abort();
-      for (const off of sttSubs) off();
-      for (const off of ttsSubs) off();
-      sttSubs.length = 0;
-      ttsSubs.length = 0;
+      providers.unsubscribe();
       if (turnPromise !== null) await turnPromise;
-      // Close both provider sockets concurrently; allSettled swallows
-      // already-closed rejections.
-      await Promise.allSettled([sttSession?.close(), ttsSession?.close()]);
+      await providers.close();
     },
 
     sendUserAudio(bytes: Uint8Array): void {
       if (terminated || !audioReady) return;
-      sttSession?.sendAudio(bytesToPcm16(bytes));
+      providers.stt?.sendAudio(bytesToPcm16(bytes));
     },
 
     // Tool execution stays inside toVercelTools/streamText; results aren't
@@ -553,7 +441,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     },
 
     reset(): void {
-      resetSettle();
+      settler.reset();
       abortInFlightTurn();
       history.reset();
     },

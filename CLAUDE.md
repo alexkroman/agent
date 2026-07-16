@@ -160,6 +160,7 @@ boundary** — this split is critical for sandbox security:
   `node:crypto`, etc.). Only runs on the platform server and CLI, never
   inside a guest sandbox. Contains:
   `server.ts`, `runtime.ts`, `runtime-config.ts`, `runtime-types.ts`,
+  `runtime-transport.ts` (transport selection/construction for the runtime),
   `tool-executor.ts`, `session-core.ts`, `s2s.ts`, `ws-handler.ts`,
   `transports/` (S2S / pipeline / OpenAI Realtime `Transport`
   implementations), `to-vercel-tools.ts`,
@@ -212,6 +213,7 @@ restrictions apply there.
 - `orchestrator.ts` — HTTP + WebSocket routing
 - `sandbox.ts` — gVisor sandbox management
 - `sandbox-vm.ts` — per-agent sandbox lifecycle (start, teardown)
+- `sandbox-guest-rpc.ts` — guest→host KV/Vector/fetch RPC schemas + handler registration
 - `sandbox-pool.ts` — pool of pre-warmed Deno harnesses for fast cold starts
 - `sandbox-network.ts` — network proxying for sandbox
 - `sandbox-slots.ts` — slot allocation for concurrent sessions

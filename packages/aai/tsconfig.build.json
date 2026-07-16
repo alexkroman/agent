@@ -16,6 +16,7 @@
     "**/*.test.ts",
     "**/*.test-d.ts",
     "**/_test-*.ts",
+    "**/*-test-utils.ts",
     "vitest*.config.ts"
   ]
 }

@@ -16,6 +16,8 @@
     "**/*.test.ts",
     "**/*.test.tsx",
     "**/_test-utils.ts",
+    "**/*-test-utils.ts",
+    "**/_react-test-utils.ts",
     "vitest*.config.ts"
   ]
 }

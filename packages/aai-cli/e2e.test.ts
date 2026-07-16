@@ -4,14 +4,29 @@
  *   1. Template builds: dev & user workflows for representative templates
  *   2. Browser tests (Playwright): UI render, WebSocket, conversation flow
  *
+ * Both suites share ONE beforeAll (CLI build + mock registry): the setup
+ * mutates shared state (packages/aai-cli/dist, workspace package.json
+ * versions during registry publish), so it must run exactly once per e2e
+ * run — never once per file (vitest runs files concurrently).
+ * Shared helpers live in _e2e-test-utils.ts.
+ *
  * Run via: pnpm test:e2e
  */
-import { type ChildProcess, execFileSync, spawn } from "node:child_process";
+import { type ChildProcess, spawn } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import type { Browser } from "playwright";
 import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
+import {
+  aai,
+  buildCli,
+  dir,
+  installDeps,
+  startRegistry,
+  waitForExit,
+  waitForHealth,
+} from "./_e2e-test-utils.ts";
 import type { MockRegistry } from "./_mock-registry.ts";
 
 const { chromium } = await import("playwright");
@@ -25,9 +40,6 @@ function hasPlaywrightBrowser(): boolean {
   }
 }
 
-const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
-const packagesDir = path.resolve(dir, "..");
-
 // Representative subset: minimal baseline, stateful + tools, external tools + custom UI.
 // Full template coverage is handled by the templates unit test tier (pnpm test:templates).
 const templates = ["simple", "web-researcher"];
@@ -36,138 +48,18 @@ let aaiBin: string;
 let tmpDir: string;
 let registry: MockRegistry;
 
-const pm = (process.env.AAI_TEST_PM ?? "pnpm") as "pnpm" | "npm" | "yarn";
-
-function aaiEnv(): NodeJS.ProcessEnv {
-  return {
-    ...process.env,
-    VITEST: undefined, // CLI skips main() when VITEST=true
-    INIT_CWD: undefined, // resolveCwd() prefers INIT_CWD over process.cwd()
-    NO_COLOR: "1",
-    FORCE_COLOR: "0",
-    AAI_NO_DEV: "1",
-    AAI_TEMPLATES_DIR: path.resolve(dir, "../aai-templates"),
-    ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY || "test",
-    npm_config_ignore_scripts: "true", // avoid postinstall hooks in linked pkgs
-  };
-}
-
-function aai(args: string[], cwd: string, timeoutMs = 120_000): void {
-  execFileSync(process.execPath, [aaiBin, ...args], {
-    cwd,
-    env: aaiEnv(),
-    stdio: "inherit",
-    timeout: timeoutMs,
-  });
-}
-
-/** Poll a health endpoint, capturing child stderr for diagnostics on timeout. */
-async function waitForHealth(url: string, child?: ChildProcess, timeoutMs = 30_000): Promise<void> {
-  let stderr = "";
-  child?.stderr?.on("data", (chunk: Buffer) => {
-    stderr += chunk.toString();
-  });
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) return;
-    } catch {
-      // server not ready yet
-    }
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  throw new Error(`Timed out waiting for ${url}${stderr ? `\nServer stderr:\n${stderr}` : ""}`);
-}
-
-/** Wait for a child process to exit (for clean teardown). */
-function waitForExit(child: ChildProcess, timeoutMs = 5000): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, timeoutMs);
-    child.on("exit", () => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
-}
-
 function initProject(template: string, projectDir: string): void {
-  aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
-  installDeps(projectDir);
-}
-
-/** Install dependencies using the mock registry. */
-function installDeps(projectDir: string): void {
-  const env = { ...aaiEnv(), ...registry.env };
-
-  // Rewrite workspace dep versions to match the unique testVersion
-  // published to the mock registry (avoids pnpm store cache collisions).
-  const pkgJsonPath = path.join(projectDir, "package.json");
-  const pkgJson = JSON.parse(fs.readFileSync(pkgJsonPath, "utf-8"));
-  for (const depField of ["dependencies", "devDependencies"] as const) {
-    if (!pkgJson[depField]) continue;
-    for (const dep of Object.keys(pkgJson[depField])) {
-      if (
-        dep === "@alexkroman1/aai" ||
-        dep === "@alexkroman1/aai-ui" ||
-        dep === "@alexkroman1/aai-cli"
-      ) {
-        pkgJson[depField][dep] = registry.testVersion;
-      }
-    }
-  }
-  // Remove packageManager to avoid corepack version mismatches in tests
-  delete pkgJson.packageManager;
-  fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
-
-  // Write .npmrc in the project directory so pnpm reliably uses the mock
-  // registry even when running under turbo (env-only config can be overridden
-  // by ancestor .npmrc files discovered during directory traversal).
-  const npmrcPath = path.join(projectDir, ".npmrc");
-  const registryHost = new URL(registry.registryUrl).host;
-  fs.writeFileSync(
-    npmrcPath,
-    `registry=${registry.registryUrl}\n//${registryHost}/:_authToken=test-token\n`,
-  );
-
-  // Corepack downloads pnpm 11.x for this scratch project (no packageManager
-  // field). pnpm 11 enabled `minimumReleaseAge` by default with a 1-day cutoff,
-  // which rejects any transitive dep published in the last 24h — flakes the
-  // suite against fresh upstream releases. Disable via env var (most reliable
-  // override; .npmrc is sometimes ignored when corepack-loaded).
-  const installEnv = { ...env, NPM_CONFIG_MINIMUM_RELEASE_AGE: "0" };
-
-  if (pm === "npm") {
-    execFileSync("npm", ["install"], { cwd: projectDir, stdio: "inherit", env });
-  } else if (pm === "yarn") {
-    execFileSync("yarn", ["install", "--no-lockfile"], { cwd: projectDir, stdio: "inherit", env });
-  } else {
-    execFileSync(
-      "pnpm",
-      [
-        "install",
-        "--no-frozen-lockfile",
-        "--no-strict-peer-dependencies",
-        "--config.minimumReleaseAge=0",
-      ],
-      { cwd: projectDir, stdio: "inherit", env: installEnv },
-    );
-  }
+  aai(aaiBin, ["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
+  installDeps(registry, projectDir);
 }
 
 beforeAll(async () => {
-  // Build CLI
-  execFileSync("npx", ["tsdown"], { cwd: dir, stdio: "inherit" });
-  const mjs = path.resolve(dir, "dist/cli.mjs");
-  const js = path.resolve(dir, "dist/cli.js");
-  aaiBin = fs.existsSync(mjs) ? mjs : js;
+  aaiBin = buildCli();
   tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "aai-e2e-test-"));
-
   // Start mock npm registry and publish workspace packages to it.
   // Packages are built + published inside startMockRegistry, so consumers
   // (npm/pnpm/yarn install) resolve them exactly as they would from the real registry.
-  const { startMockRegistry } = await import("./_mock-registry.ts");
-  registry = await startMockRegistry(packagesDir, ["aai", "aai-ui", "aai-cli"]);
+  registry = await startRegistry();
 });
 
 afterAll(async () => {
@@ -182,17 +74,17 @@ describe("pack + build: template workflows", () => {
     const projectDir = path.join(tmpDir, template);
 
     // Init + install from mock registry + test + build
-    aai(["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
+    aai(aaiBin, ["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
     try {
-      installDeps(projectDir);
+      installDeps(registry, projectDir);
     } catch {
       // Mock registry proxy to npmjs can fail in restricted environments
       // (e.g. turbo CI with egress proxies). Skip rather than fail.
       console.warn(`Skipping template ${template}: pnpm install failed (registry proxy issue)`);
       return;
     }
-    aai(["test"], projectDir);
-    aai(["build", "--skip-tests"], projectDir);
+    aai(aaiBin, ["test"], projectDir);
+    aai(aaiBin, ["build", "--skip-tests"], projectDir);
   });
 });
 
@@ -271,7 +163,7 @@ describe.skipIf(!hasPlaywrightBrowser())("browser: dev server", () => {
   beforeAll(async () => {
     const projectDir = path.join(tmpDir, "_browser-dev");
     initProject("pizza-ordering", projectDir);
-    aai(["build", "--skip-tests"], projectDir);
+    aai(aaiBin, ["build", "--skip-tests"], projectDir);
 
     // Serve the built client with a simple static server (faster than vite dev)
     const clientDir = path.join(projectDir, ".aai", "client");

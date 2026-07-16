@@ -20,7 +20,7 @@ if [ "$ARCH" != "x86_64" ]; then
   echo "ERROR: gVisor requires native x86_64. Current arch: $ARCH"
   echo "       On Apple Silicon, run these tests in CI (GitHub Actions)."
   echo "       Locally, use fake-vm integration tests instead:"
-  echo "       pnpm vitest run packages/aai-server/fake-vm-integration.test.ts"
+  echo "       pnpm --filter aai-server test:integration"
   exit 1
 fi
 
