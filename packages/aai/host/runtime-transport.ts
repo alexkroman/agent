@@ -122,6 +122,8 @@ export function createTransportFactory(
       maxSteps: agentConfig.maxSteps,
       toolChoice: agentConfig.toolChoice,
       ...(agentConfig.sttPrompt !== undefined ? { sttPrompt: agentConfig.sttPrompt } : {}),
+      silenceTimeoutMs: agentConfig.silenceTimeoutMs,
+      silencePrompt: agentConfig.silencePrompt,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,
     });

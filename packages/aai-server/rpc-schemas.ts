@@ -10,6 +10,7 @@
 import { DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
 import {
   assertProviderTriple,
+  assertSilencePolicy,
   ProviderDescriptorSchema,
   ToolSchemaSchema,
 } from "@alexkroman1/aai/manifest";
@@ -27,6 +28,8 @@ export const IsolateConfigSchema = z
     systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
     greeting: z.string().optional(),
     sttPrompt: z.string().optional(),
+    silenceTimeoutMs: z.number().positive().optional(),
+    silencePrompt: z.string().optional(),
     maxSteps: z.number().optional(),
     idleTimeoutMs: z.number().int().nonnegative().optional(),
     toolChoice: z.enum(["auto", "required"]).optional(),
@@ -50,6 +53,7 @@ export const IsolateConfigSchema = z
       if (cfg.mode === "pipeline" && mode !== "pipeline") {
         fail("mode='pipeline' requires stt, llm, and tts to be set");
       }
+      assertSilencePolicy(mode, cfg.silenceTimeoutMs, cfg.silencePrompt);
     } catch (err) {
       fail(errorMessage(err));
     }

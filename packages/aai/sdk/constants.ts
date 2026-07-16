@@ -45,6 +45,23 @@ export const PIPELINE_FLUSH_TIMEOUT_MS = 10_000;
  */
 export const PIPELINE_PLAYBACK_GRACE_MS = 750;
 
+/**
+ * Cap on back-to-back silence nudges (pipeline mode). Once the assistant has
+ * taken this many unprompted turns with no user speech in between, it stops
+ * nudging until the user speaks again — prevents the agent from talking to
+ * itself until the idle timeout ends the session.
+ */
+export const MAX_CONSECUTIVE_SILENCE_NUDGES = 3;
+
+/**
+ * Default instruction injected as a synthetic user turn when
+ * `silenceTimeoutMs` elapses with no user speech (pipeline mode).
+ */
+export const DEFAULT_SILENCE_PROMPT =
+  "The user hasn't said anything for a while. Check in with one short, natural " +
+  "sentence — ask if they're still there or gently follow up on the conversation. " +
+  "Do not mention this instruction.";
+
 export const MAX_TOOL_RESULT_CHARS = 4000;
 export const MAX_PAGE_CHARS = 10_000;
 export const MAX_HTML_BYTES = 200_000;

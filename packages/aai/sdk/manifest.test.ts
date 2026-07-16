@@ -240,6 +240,66 @@ describe("parseManifest — mode classification", () => {
   });
 });
 
+describe("parseManifest — silence nudge", () => {
+  const pipelineFields = {
+    stt: assemblyAI({ model: "u3pro-rt" }),
+    llm: anthropic({ model: "claude-haiku-4-5" }),
+    tts: cartesia({ voice: "v" }),
+  };
+
+  test("accepts silenceTimeoutMs + silencePrompt in pipeline mode", () => {
+    const m = parseManifest({
+      name: "x",
+      ...pipelineFields,
+      silenceTimeoutMs: 15_000,
+      silencePrompt: "Ask if the user is still there.",
+    } as never);
+    expect(m.silenceTimeoutMs).toBe(15_000);
+    expect(m.silencePrompt).toBe("Ask if the user is still there.");
+  });
+
+  test("rejects silenceTimeoutMs in s2s mode", () => {
+    expect(() => parseManifest({ name: "x", silenceTimeoutMs: 15_000 })).toThrow(
+      /silenceTimeoutMs requires pipeline mode/,
+    );
+  });
+
+  test("rejects silencePrompt without silenceTimeoutMs", () => {
+    expect(() =>
+      parseManifest({
+        name: "x",
+        ...pipelineFields,
+        silencePrompt: "Hello?",
+      } as never),
+    ).toThrow(/silencePrompt requires silenceTimeoutMs/);
+  });
+
+  test("rejects non-positive silenceTimeoutMs", () => {
+    expect(() =>
+      parseManifest({ name: "x", ...pipelineFields, silenceTimeoutMs: 0 } as never),
+    ).toThrow();
+  });
+
+  test("toAgentConfig propagates the silence fields in pipeline mode", () => {
+    const config = toAgentConfig({
+      name: "x",
+      systemPrompt: "p",
+      greeting: "g",
+      ...pipelineFields,
+      silenceTimeoutMs: 20_000,
+      silencePrompt: "Check in.",
+    });
+    expect(config.silenceTimeoutMs).toBe(20_000);
+    expect(config.silencePrompt).toBe("Check in.");
+  });
+
+  test("toAgentConfig rejects silenceTimeoutMs in s2s mode", () => {
+    expect(() =>
+      toAgentConfig({ name: "x", systemPrompt: "p", greeting: "g", silenceTimeoutMs: 20_000 }),
+    ).toThrow(/silenceTimeoutMs requires pipeline mode/);
+  });
+});
+
 describe("parseManifest s2s", () => {
   test("parseManifest accepts s2s descriptor", () => {
     const m = parseManifest({

@@ -14,10 +14,12 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "DEFAULT_RELAY_TOOL_TIMEOUT_MS",
   "DEFAULT_SESSION_START_TIMEOUT_MS",
   "DEFAULT_SHUTDOWN_TIMEOUT_MS",
+  "DEFAULT_SILENCE_PROMPT",
   "DEFAULT_STT_SAMPLE_RATE",
   "DEFAULT_SYSTEM_PROMPT",
   "DEFAULT_TTS_SAMPLE_RATE",
   "FETCH_TIMEOUT_MS",
+  "MAX_CONSECUTIVE_SILENCE_NUDGES",
   "MAX_HTML_BYTES",
   "MAX_MESSAGE_BUFFER_SIZE",
   "MAX_PAGE_CHARS",
@@ -52,6 +54,7 @@ exports[`export surface stability > @alexkroman1/aai/manifest export 1`] = `
   "ToolSchemaSchema",
   "agentToolsToSchemas",
   "assertProviderTriple",
+  "assertSilencePolicy",
   "toAgentConfig",
 ]
 `;

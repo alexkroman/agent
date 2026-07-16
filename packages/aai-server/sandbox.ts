@@ -72,6 +72,24 @@ export type SandboxOptions = {
 
 export type Sandbox = AgentRuntime;
 
+/** Map the deploy-time IsolateConfig onto the runtime's agent-definition shape. */
+function toRuntimeAgent(config: IsolateConfig): Parameters<typeof createRuntime>[0]["agent"] {
+  return {
+    name: config.name,
+    systemPrompt: config.systemPrompt,
+    greeting: config.greeting ?? "",
+    maxSteps: config.maxSteps ?? DEFAULT_MAX_STEPS,
+    tools: {},
+    ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
+    ...(config.idleTimeoutMs !== undefined ? { idleTimeoutMs: config.idleTimeoutMs } : {}),
+    ...(config.silenceTimeoutMs !== undefined ? { silenceTimeoutMs: config.silenceTimeoutMs } : {}),
+    ...(config.silencePrompt !== undefined ? { silencePrompt: config.silencePrompt } : {}),
+    ...(config.toolChoice ? { toolChoice: config.toolChoice satisfies ToolChoice } : {}),
+    ...(config.builtinTools ? { builtinTools: config.builtinTools as BuiltinTool[] } : {}),
+    ...(config.s2s ? { s2s: config.s2s } : {}),
+  };
+}
+
 // ── Public API ──────────────────────────────────────────────────────────
 
 /**
@@ -161,18 +179,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   const builtins = resolveAllBuiltins(config.builtinTools ?? [], { fetch: safeFetch });
   const agentRuntime = createRuntime({
-    agent: {
-      name: config.name,
-      systemPrompt: config.systemPrompt,
-      greeting: config.greeting ?? "",
-      maxSteps: config.maxSteps ?? DEFAULT_MAX_STEPS,
-      tools: {},
-      ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
-      ...(config.idleTimeoutMs !== undefined ? { idleTimeoutMs: config.idleTimeoutMs } : {}),
-      ...(config.toolChoice ? { toolChoice: config.toolChoice satisfies ToolChoice } : {}),
-      ...(config.builtinTools ? { builtinTools: config.builtinTools as BuiltinTool[] } : {}),
-      ...(config.s2s ? { s2s: config.s2s } : {}),
-    },
+    agent: toRuntimeAgent(config),
     env,
     fetch: safeFetch,
     executeTool,
