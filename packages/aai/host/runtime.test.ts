@@ -348,7 +348,7 @@ describe("executeToolCall", () => {
 });
 
 describe("createRuntime sandbox mode", () => {
-  test("uses provided executeTool and toolSchemas", async () => {
+  test("uses provided executeTool and merges default builtins into toolSchemas", async () => {
     const mockExecuteTool = vi.fn(async () => "mocked-result");
     const mockToolSchemas = [
       { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
@@ -361,11 +361,79 @@ describe("createRuntime sandbox mode", () => {
       toolSchemas: mockToolSchemas,
     });
 
-    expect(runtime.toolSchemas).toBe(mockToolSchemas);
+    // Relay/host-mode path: the agent has no explicit builtinTools, so the
+    // cognitive defaults are resolved here and appended to the relayed schemas.
+    expect(runtime.toolSchemas.map((s) => s.name)).toEqual([
+      "mock_tool",
+      "think",
+      "remember",
+      "recall",
+      "calculate",
+    ]);
     const result = await runtime.executeTool("any_tool", {}, "s1", []);
     expect(result).toBe("mocked-result");
     // The wrapper forwards a 5th `callOpts` arg (undefined when omitted).
     expect(mockExecuteTool).toHaveBeenCalledWith("any_tool", {}, "s1", [], undefined);
+  });
+
+  test("default builtins execute host-side, not via the relay", async () => {
+    const mockExecuteTool = vi.fn(async () => "relayed");
+    const runtime = createRuntime({
+      agent: makeAgent(),
+      env: {},
+      executeTool: mockExecuteTool,
+      toolSchemas: [],
+    });
+
+    const result = await runtime.executeTool("think", { thought: "check the policy" }, "s1", []);
+    expect(result).toBe("ok");
+    expect(mockExecuteTool).not.toHaveBeenCalled();
+  });
+
+  test("a relayed tool with a builtin's name wins — the builtin is dropped", async () => {
+    const mockExecuteTool = vi.fn(async () => "relayed");
+    const runtime = createRuntime({
+      agent: makeAgent(),
+      env: {},
+      executeTool: mockExecuteTool,
+      toolSchemas: [
+        { type: "function" as const, name: "think", description: "Client think", parameters: {} },
+      ],
+    });
+
+    expect(runtime.toolSchemas.filter((s) => s.name === "think")).toHaveLength(1);
+    expect(runtime.toolSchemas[0]?.description).toBe("Client think");
+    const result = await runtime.executeTool("think", { thought: "x" }, "s1", []);
+    expect(result).toBe("relayed");
+    expect(mockExecuteTool).toHaveBeenCalledOnce();
+  });
+
+  test("explicit builtinTools: [] disables the defaults", () => {
+    const mockToolSchemas = [
+      { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
+    ];
+    const runtime = createRuntime({
+      agent: makeAgent({ builtinTools: [] }),
+      env: {},
+      executeTool: vi.fn(async () => "ok"),
+      toolSchemas: mockToolSchemas,
+    });
+    expect(runtime.toolSchemas.map((s) => s.name)).toEqual(["mock_tool"]);
+  });
+
+  test("pre-resolved builtinDefs skip the merge (platform sandbox path)", () => {
+    const mockToolSchemas = [
+      { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
+    ];
+    const runtime = createRuntime({
+      agent: makeAgent(),
+      env: {},
+      executeTool: vi.fn(async () => "ok"),
+      toolSchemas: mockToolSchemas,
+      builtinDefs: {},
+    });
+    // The caller owns schema merging in this path; nothing is appended.
+    expect(runtime.toolSchemas).toBe(mockToolSchemas);
   });
 });
 

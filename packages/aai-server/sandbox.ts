@@ -177,7 +177,14 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     return "Tool execution failed: invalid response from sandbox";
   };
 
-  const builtins = resolveAllBuiltins(config.builtinTools ?? [], { fetch: safeFetch });
+  // A custom tool with the same name as a builtin wins: drop the builtin so
+  // the LLM never sees a duplicate schema name and dispatch stays with the
+  // sandboxed custom tool. Matters since builtins are on by default.
+  const customToolNames = new Set(config.toolSchemas.map((s) => s.name));
+  const builtins = resolveAllBuiltins(
+    (config.builtinTools ?? []).filter((name) => !customToolNames.has(name)),
+    { fetch: safeFetch },
+  );
   const agentRuntime = createRuntime({
     agent: toRuntimeAgent(config),
     env,

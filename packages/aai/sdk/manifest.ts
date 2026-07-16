@@ -8,7 +8,7 @@
 
 import { z } from "zod";
 import { validateAllowedHostPattern } from "./allowed-hosts.ts";
-import { DEFAULT_MAX_STEPS } from "./constants.ts";
+import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
 import {
   assertProviderTriple,
   assertSilencePolicy,
@@ -44,7 +44,11 @@ export type Manifest = {
   greeting: string;
   /** Optional prompt hint for the STT engine (improves transcription of domain terms). */
   sttPrompt?: string | undefined;
-  /** Enabled built-in tools: `web_search`, `visit_webpage`, `fetch_json`, `run_code`. */
+  /**
+   * Enabled built-in tools (`web_search`, `visit_webpage`, `fetch_json`,
+   * `run_code`, `think`, `remember`, `recall`, `calculate`). Defaults to
+   * {@link DEFAULT_BUILTIN_TOOLS} when unset; explicit `[]` disables all.
+   */
   builtinTools: string[];
   /** Max tool calls per LLM reply. Prevents runaway loops. Default: 5. */
   maxSteps: number;
@@ -162,7 +166,8 @@ const ManifestSchema = z.object({
  * Key defaults:
  * - `maxSteps`: 5 — prevents runaway tool-call loops in a single reply
  * - `toolChoice`: "auto" — LLM decides when to use tools vs respond directly
- * - `builtinTools`: [] — no built-in tools unless explicitly opted in
+ * - `builtinTools`: {@link DEFAULT_BUILTIN_TOOLS} (think, remember, recall,
+ *   calculate) — set explicitly (including `[]`) to override
  */
 export function parseManifest(input: unknown): Manifest {
   const parsed = ManifestSchema.parse(input);
@@ -172,7 +177,7 @@ export function parseManifest(input: unknown): Manifest {
     ...parsed,
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
     greeting: parsed.greeting ?? DEFAULT_GREETING,
-    builtinTools: parsed.builtinTools ?? [],
+    builtinTools: parsed.builtinTools ?? [...DEFAULT_BUILTIN_TOOLS],
     maxSteps: parsed.maxSteps ?? DEFAULT_MAX_STEPS,
     toolChoice: parsed.toolChoice ?? "auto",
     tools: parsed.tools ?? {},

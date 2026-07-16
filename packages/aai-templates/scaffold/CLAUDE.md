@@ -285,7 +285,9 @@ export default agent({
 
 ## Built-in tools
 
-Enable via `builtinTools` in `agent()`.
+Enable via `builtinTools` in `agent()`. When `builtinTools` is omitted, the
+cognitive defaults (`think`, `remember`, `recall`, `calculate`) are enabled;
+set `builtinTools` explicitly (including `[]`) to override.
 
 | Tool | Description | Params |
 | --- | --- | --- |
@@ -293,6 +295,10 @@ Enable via `builtinTools` in `agent()`.
 | `visit_webpage` | Fetch URL to plain text | `url` |
 | `fetch_json` | HTTP GET a JSON API | `url`, `headers?` |
 | `run_code` | Execute JS in sandbox (no net/fs, 5s timeout) | `code` |
+| `think` | Private reasoning scratchpad, no side effects (on by default) | `thought` |
+| `remember` | Save a confirmed fact to session notes (on by default) | `key`, `value` |
+| `recall` | Read session notes saved with `remember` (on by default) | `key?` |
+| `calculate` | Safe arithmetic evaluator, no code execution (on by default) | `expression` |
 
 ## KV API
 

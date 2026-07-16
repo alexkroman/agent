@@ -4,6 +4,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
 [
   "AGENT_CSP",
   "BuiltinToolSchema",
+  "DEFAULT_BUILTIN_TOOLS",
   "DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS",
   "DEFAULT_ENDPOINT_SETTLE_MS",
   "DEFAULT_GREETING",
@@ -32,6 +33,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "PIPELINE_PLAYBACK_GRACE_MS",
   "RUN_CODE_TIMEOUT_MS",
   "S2S_MAX_RESUME_ATTEMPTS",
+  "SESSION_NOTES_TTL_MS",
   "TOOL_EXECUTION_TIMEOUT_MS",
   "ToolChoiceSchema",
   "WS_OPEN",

@@ -10,8 +10,15 @@
 import { convert } from "html-to-text";
 import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema, toToolJsonSchema } from "../sdk/_internal-types.ts";
-import { FETCH_TIMEOUT_MS, MAX_HTML_BYTES, MAX_PAGE_CHARS } from "../sdk/constants.ts";
+import {
+  FETCH_TIMEOUT_MS,
+  MAX_HTML_BYTES,
+  MAX_PAGE_CHARS,
+  SESSION_NOTES_TTL_MS,
+} from "../sdk/constants.ts";
+import type { Kv } from "../sdk/kv.ts";
 import type { ToolDef } from "../sdk/types.ts";
+import { calculate } from "./_calculate.ts";
 
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
@@ -222,6 +229,126 @@ function createRunCode(): ToolDef<typeof runCodeParams> & { guidance: string } {
   };
 }
 
+// ─── think ───────────────────────────────────────────────────────────────
+//
+// A private no-op scratchpad, verbatim from the spec Anthropic published for
+// its tau-bench evaluation ("The 'think' tool", Mar 2025): the tool does
+// nothing — the value is the designated reasoning step the model takes
+// before acting. Tool-call-only steps emit no TTS in pipeline mode, so
+// thoughts are silent on a voice call.
+
+const thinkParams = z.object({
+  thought: z.string().describe("A thought to think about."),
+});
+
+function createThink(): ToolDef<typeof thinkParams> & { guidance: string } {
+  return {
+    guidance:
+      "Before any write action, and after any tool result that is unexpected or an error, " +
+      "use the think tool as a private scratchpad: list the specific policy rules that apply, " +
+      "check that you have every required argument, and verify the planned action complies. " +
+      "Thoughts are never shown or spoken to the customer.",
+    description:
+      "Use the tool to think about something. It will not obtain new information or change the " +
+      "database, but just append the thought to the log. Use it when complex reasoning or some " +
+      "cache memory is needed.",
+    parameters: thinkParams,
+    execute() {
+      return "ok";
+    },
+  };
+}
+
+// ─── remember / recall ──────────────────────────────────────────────────────
+//
+// Session-scoped notes, in the spirit of Letta/MemGPT's memory-block tools:
+// small labeled values the agent writes and re-reads via tool calls. On a
+// voice call the transcript is noisy (misheard IDs, self-corrections), so
+// persisting a value once confirmed — and recalling it instead of re-reading
+// the transcript — keeps later tool arguments exact.
+
+function notesKvKey(sessionId: string): string {
+  return `builtin:notes:${sessionId}`;
+}
+
+async function readNotes(ctx: { kv: Kv; sessionId: string }): Promise<Record<string, string>> {
+  return (await ctx.kv.get<Record<string, string>>(notesKvKey(ctx.sessionId))) ?? {};
+}
+
+const rememberParams = z.object({
+  key: z
+    .string()
+    .min(1)
+    .describe('Short snake_case label for the fact (e.g. "user_id", "reservation_code")'),
+  value: z.string().describe("The exact value to store, verbatim"),
+});
+
+function createRemember(): ToolDef<typeof rememberParams> & { guidance: string } {
+  return {
+    guidance:
+      "The moment a tool result or the customer confirms an important value (an ID, code, " +
+      "name, or date), save it with remember. Before using such a value in a later tool call, " +
+      "recall it instead of retyping it from the conversation.",
+    description:
+      "Save a confirmed fact to private session notes under a short key (e.g. user_id, " +
+      "order_id, reservation_code). Overwrites any previous value for that key and returns all " +
+      "notes. Use it right after a value is confirmed, so later steps can recall the exact " +
+      "value instead of re-reading a noisy transcript.",
+    parameters: rememberParams,
+    async execute(args, ctx) {
+      const notes = await readNotes(ctx);
+      notes[args.key] = args.value;
+      await ctx.kv.set(notesKvKey(ctx.sessionId), notes, { expireIn: SESSION_NOTES_TTL_MS });
+      return { saved: args.key, notes };
+    },
+  };
+}
+
+const recallParams = z.object({
+  key: z.string().min(1).describe("The note key to read. Omit to list all notes.").optional(),
+});
+
+function createRecall(): ToolDef<typeof recallParams> & { guidance: string } {
+  return {
+    description:
+      "Read private session notes saved with remember. Pass a key to get one value, or no key " +
+      "to list every saved note. Notes are per-session and never shown to the customer.",
+    guidance: "",
+    parameters: recallParams,
+    async execute(args, ctx) {
+      const notes = await readNotes(ctx);
+      if (args.key !== undefined) return { key: args.key, value: notes[args.key] ?? null };
+      return { notes };
+    },
+  };
+}
+
+// ─── calculate ──────────────────────────────────────────────────────────────
+
+const calculateParams = z.object({
+  expression: z
+    .string()
+    .describe('Arithmetic expression to evaluate, e.g. "(120.50 + 35) * 0.925"'),
+});
+
+function createCalculate(): ToolDef<typeof calculateParams> & { guidance: string } {
+  return {
+    guidance:
+      "Use calculate for ALL arithmetic — totals, differences, fees, percentages, refund " +
+      "amounts. Never compute numbers in your head.",
+    description:
+      "Evaluate an arithmetic expression and return the exact numeric result. Supports + - * " +
+      "/ % (remainder), ^ (power), parentheses, unary minus, and decimal numbers (currency " +
+      "symbols and commas are ignored). Use for ALL math: totals, differences, taxes, refunds.",
+    parameters: calculateParams,
+    execute(args) {
+      const result = calculate(args.expression);
+      if (!result.ok) return { error: result.error, expression: args.expression };
+      return { expression: args.expression, result: result.value };
+    },
+  };
+}
+
 // ─── Public API ────────────────────────────────────────────────────────────
 
 /** Options for creating built-in tool definitions. */
@@ -252,6 +379,14 @@ function resolveBuiltin(
       return createFetchJson(opts?.fetch);
     case "run_code":
       return createRunCode();
+    case "think":
+      return createThink();
+    case "remember":
+      return createRemember();
+    case "recall":
+      return createRecall();
+    case "calculate":
+      return createCalculate();
     default:
       return;
   }

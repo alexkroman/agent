@@ -23,7 +23,7 @@ describe("parseManifest", () => {
       toolChoice: "auto",
       idleTimeoutMs: undefined,
       theme: undefined,
-      builtinTools: [],
+      builtinTools: ["think", "remember", "recall", "calculate"],
       allowedHosts: [],
       tools: {},
       stt: undefined,
@@ -78,6 +78,11 @@ describe("parseManifest", () => {
 
   test("rejects unknown builtinTools", () => {
     expect(() => parseManifest({ name: "X", builtinTools: ["not_a_tool"] })).toThrow();
+  });
+
+  test("explicit builtinTools: [] overrides the cognitive defaults", () => {
+    const result = parseManifest({ name: "X", builtinTools: [] });
+    expect(result.builtinTools).toEqual([]);
   });
 
   test("allowedHosts defaults to empty array when omitted", () => {

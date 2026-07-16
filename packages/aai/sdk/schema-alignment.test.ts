@@ -107,6 +107,10 @@ describe("type ↔ schema alignment", () => {
         "visit_webpage",
         "fetch_json",
         "run_code",
+        "think",
+        "remember",
+        "recall",
+        "calculate",
       ]
     `);
   });
