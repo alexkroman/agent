@@ -216,9 +216,22 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
 
   const injectWebSocket = (server: import("node:http").Server) => {
     server.on("upgrade", async (req, socket, head) => {
+      // Node removes its own socket error listener before emitting `upgrade`;
+      // without one, a client RST during the async resolve becomes an
+      // unhandled `error` → uncaughtException → the whole host exits. Attach
+      // before ANY early return so unmatched upgrade sockets are covered too.
+      socket.on("error", () => {
+        /* handled via close/destroy below; presence prevents an uncaught throw */
+      });
+
       const pathOnly = req.url?.split("?")[0] ?? "";
       const slugMatch = pathOnly.match(SLUG_WS_RE);
-      if (!slugMatch) return;
+      if (!slugMatch) {
+        // No other upgrade consumer exists on this server: an unmatched
+        // upgrade socket would otherwise dangle forever.
+        socket.destroy();
+        return;
+      }
       const slug = slugMatch[1] as string;
 
       if (!connections.tryAcquire()) {
@@ -238,12 +251,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         released = true;
         connections.release();
       };
-      // Node removes its own socket error listener before emitting `upgrade`;
-      // without one, a client RST during the async resolve becomes an
-      // unhandled `error` → uncaughtException → the whole host exits.
-      socket.on("error", () => {
-        /* handled via close/destroy below; presence prevents an uncaught throw */
-      });
       socket.on("close", releaseConn);
 
       try {

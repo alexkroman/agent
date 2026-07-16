@@ -239,8 +239,20 @@ export function createServer(options: ServerOptions): AgentServer {
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
   httpServer.on("upgrade", (req, socket, head) => {
+    // Node removes its own socket error listener before emitting `upgrade`;
+    // without one, a client RST before ws attaches its handler becomes an
+    // unhandled `error` → uncaughtException that can take down the host.
+    socket.on("error", () => {
+      /* surfaced via close; presence prevents an uncaught throw */
+    });
+
     const url = req.url?.split("?")[0] ?? "";
-    if (!url.startsWith("/websocket")) return;
+    if (!url.startsWith("/websocket")) {
+      // No other upgrade consumer exists on this server: an unmatched upgrade
+      // socket would otherwise dangle forever with no error handling.
+      socket.destroy();
+      return;
+    }
 
     const params = new URLSearchParams((req.url ?? "").split("?")[1] ?? "");
     const wantsHost = params.has("host");
