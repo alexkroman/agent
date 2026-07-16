@@ -49,6 +49,14 @@ const server = net.createServer((conn) => {
     process.exit(code ?? 0);
   });
 
+  // A failed spawn (deno missing) emits `error` with no `exit` guaranteed to
+  // follow; exit cleanly instead of dying on an uncaughtException.
+  harness.on("error", (err) => {
+    console.error("Harness spawn error:", err);
+    conn.destroy();
+    process.exit(1);
+  });
+
   conn.on("error", (err) => {
     console.error("Socket error:", err);
     harness.kill();

@@ -150,7 +150,10 @@ function createConnection(child: ChildProcess): NdjsonConnection {
 function warmFromChild(child: ChildProcess, cleanup: () => Promise<void>): WarmHarness {
   const conn = createConnection(child);
   const exitListeners: (() => void)[] = [];
-  child.once("exit", () => {
+  let dead = false;
+  const notifyExit = (): void => {
+    if (dead) return;
+    dead = true;
     for (const cb of exitListeners) {
       try {
         cb();
@@ -158,11 +161,17 @@ function warmFromChild(child: ChildProcess, cleanup: () => Promise<void>): WarmH
         // Listener errors must not crash the host
       }
     }
-  });
+  };
+  child.once("exit", notifyExit);
+  // A failed spawn (deno/runsc missing, EAGAIN under fd pressure) emits
+  // `error` — with no listener that's an uncaughtException that exits the
+  // whole multi-tenant host, and `exit` is not guaranteed to follow. Treat it
+  // as harness death so the pool/fallback path replaces it.
+  child.on("error", notifyExit);
   return {
     conn,
     cleanup,
-    alive: () => child.exitCode === null && !child.killed,
+    alive: () => !dead && child.exitCode === null && !child.killed,
     onExit: (cb) => {
       exitListeners.push(cb);
     },

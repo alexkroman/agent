@@ -45,6 +45,42 @@ function supportsAgentContext(resolvedSpeechModel: string): boolean {
   return UNIVERSAL_3_5_PRO_MODELS.has(resolvedSpeechModel);
 }
 
+/**
+ * assemblyai@4.36.3 workaround: when a streaming connect attempt fails (e.g.
+ * the connect timeout fires), the SDK's `discardPendingSocket()` strips every
+ * listener off the half-open socket and then `close()`es it. If the socket is
+ * still CONNECTING, ws aborts the handshake and emits `"error"` ("WebSocket
+ * was closed before the connection was established") on the *next tick* — by
+ * which point no listener is attached, so it escapes as an uncaught exception
+ * and can take down the host process. The SDK's own try/catch around
+ * `close()` can't see it because the emit is asynchronous.
+ *
+ * Wrap the method so a one-shot no-op error listener is re-attached to the
+ * socket right after the SDK discards it; the async abort error lands there
+ * instead of on the process. If the SDK renames its internals the wrapper
+ * degrades to a pass-through.
+ *
+ * @internal Exported for the connect-timeout regression test only.
+ */
+export function suppressDiscardedSocketError(transcriber: StreamingTranscriber): void {
+  const internals = transcriber as unknown as {
+    socket?: { once?: (event: string, fn: () => void) => unknown };
+    discardPendingSocket?: (this: unknown) => void;
+  };
+  const original = internals.discardPendingSocket;
+  if (typeof original !== "function") return;
+  internals.discardPendingSocket = function (this: unknown): void {
+    // Grab the socket before the SDK nulls it out; attaching the listener
+    // after `close()` still wins the race because ws defers the error emit
+    // to process.nextTick.
+    const socket = internals.socket;
+    original.call(this);
+    socket?.once?.("error", () => {
+      /* swallow ws's async "closed before the connection was established" */
+    });
+  };
+}
+
 /** AssemblyAI's `agent_context` cap. Values longer than this are truncated. */
 const AGENT_CONTEXT_MAX_CHARS = 1750;
 
@@ -89,6 +125,7 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       const transcriber = client.streaming.transcriber(
         transcriberParams as Parameters<typeof client.streaming.transcriber>[0],
       );
+      suppressDiscardedSocketError(transcriber);
 
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
       const shell = createSessionShell({
