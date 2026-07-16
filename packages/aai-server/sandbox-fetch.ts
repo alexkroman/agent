@@ -116,25 +116,19 @@ async function performFetch(
   skipSsrf: boolean,
   allowedHosts: string[],
 ): Promise<Response> {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), SANDBOX_FETCH_TIMEOUT_MS);
   const init: RequestInit = {
     method: req.method,
     headers: req.headers,
-    signal: controller.signal,
+    signal: AbortSignal.timeout(SANDBOX_FETCH_TIMEOUT_MS),
     ...(req.body !== null ? { body: Buffer.from(req.body, "base64") } : {}),
   };
-  try {
-    // Enforce the egress allowlist on every redirect hop, not just the initial
-    // URL (ssrfSafeFetch also strips credentials on cross-origin redirects).
-    return skipSsrf
-      ? await fetchFn(req.url, init)
-      : await ssrfSafeFetch(req.url, init, fetchFn, {
-          isHostAllowed: (h) => matchesAllowedHost(h, allowedHosts),
-        });
-  } finally {
-    clearTimeout(timeout);
-  }
+  // Enforce the egress allowlist on every redirect hop, not just the initial
+  // URL (ssrfSafeFetch also strips credentials on cross-origin redirects).
+  return skipSsrf
+    ? await fetchFn(req.url, init)
+    : await ssrfSafeFetch(req.url, init, fetchFn, {
+        isHostAllowed: (h) => matchesAllowedHost(h, allowedHosts),
+      });
 }
 
 export function createFetchHandler(opts: FetchHandlerOptions) {

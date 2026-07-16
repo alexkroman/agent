@@ -83,7 +83,7 @@ let _bundleEnv: Readonly<Record<string, string>> = Object.freeze({});
 
 /**
  * Per-session state map. Lazily initialised from agent.state() factory per
- * session. Deep-cloned via JSON round-trip to ensure isolation.
+ * session. Deep-cloned via structuredClone to ensure isolation.
  */
 export function createSessionStateMap(initState?: () => Record<string, unknown>) {
   const map = new Map<string, Record<string, unknown>>();
@@ -91,8 +91,7 @@ export function createSessionStateMap(initState?: () => Record<string, unknown>)
     get(sessionId: string): Record<string, unknown> {
       if (!map.has(sessionId)) {
         const initial = initState ? initState() : {};
-        // JSON round-trip for a deep clone
-        map.set(sessionId, JSON.parse(JSON.stringify(initial)));
+        map.set(sessionId, structuredClone(initial));
       }
       // map.has() guarantees the key exists after the block above
       return map.get(sessionId) as Record<string, unknown>;

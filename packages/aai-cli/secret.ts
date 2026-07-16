@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { text } from "node:stream/consumers";
 import * as p from "@clack/prompts";
 import { getServerInfo } from "./_agent.ts";
 import { type ApiRequestOptions, apiRequest } from "./_api-client.ts";
@@ -23,11 +24,7 @@ async function secretRequest<T = unknown>(
 
 /** Read secret value from stdin (for non-TTY / piped input). */
 export async function readStdin(): Promise<string> {
-  const chunks: Buffer[] = [];
-  for await (const chunk of process.stdin) {
-    chunks.push(chunk as Buffer);
-  }
-  return Buffer.concat(chunks).toString("utf-8").trim();
+  return (await text(process.stdin)).trim();
 }
 
 type SecretPutData = { name: string };

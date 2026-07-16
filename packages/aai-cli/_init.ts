@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { isDevMode } from "./_agent.ts";
 import { downloadAndMergeTemplate } from "./_templates.ts";
-import { isEexist } from "./_utils.ts";
+import { isEexist, readJson, writeJson } from "./_utils.ts";
 
 function readmeContent(slug: string): string {
   return `# ${slug}
@@ -60,13 +60,13 @@ const WORKSPACE_PKG_DIRS: Record<string, string> = {
 /** Rewrite workspace deps to link: paths so pnpm links to local source. */
 export async function patchPackageJsonForWorkspace(targetDir: string): Promise<void> {
   const pkgPath = path.join(targetDir, "package.json");
-  let raw: string;
-  try {
-    raw = await fs.readFile(pkgPath, "utf-8");
-  } catch {
-    return; // no package.json to patch
-  }
-  const pkgJson = JSON.parse(raw);
+  const pkgJson = (await readJson(pkgPath)) as {
+    name?: string;
+    packageManager?: string;
+    dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
+  } | null;
+  if (!pkgJson) return; // no package.json to patch
 
   pkgJson.name = path.basename(targetDir);
   delete pkgJson.packageManager;
@@ -87,7 +87,7 @@ export async function patchPackageJsonForWorkspace(targetDir: string): Promise<v
     }
   }
 
-  await fs.writeFile(pkgPath, `${JSON.stringify(pkgJson, null, 2)}\n`);
+  await writeJson(pkgPath, pkgJson);
 }
 
 export async function runInit(opts: InitOptions): Promise<void> {

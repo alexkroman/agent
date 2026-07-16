@@ -117,22 +117,22 @@ export function createRelayExecuteTool(opts: {
     if (signal?.aborted) {
       return Promise.resolve(toolError(`Relay tool "${name}" (${toolCallId}) was cancelled`));
     }
-    return new Promise<string>((resolve, reject) => {
-      const timer = setTimeout(() => {
-        clear(toolCallId);
-        reject(new Error(`Relay tool "${name}" (${toolCallId}) timed out after ${timeoutMs}ms`));
-      }, timeoutMs);
-      // Never let a pending relay call keep the process alive on its own.
-      timer.unref?.();
-      const onAbort = () => {
-        clear(toolCallId);
-        reject(new Error(`Relay tool "${name}" (${toolCallId}) was cancelled`));
-      };
-      signal?.addEventListener("abort", onAbort, { once: true });
-      const unlisten = () => signal?.removeEventListener("abort", onAbort);
-      pending.set(toolCallId, { resolve, reject, timer, unlisten });
-      opts.send({ type: "tool_call", toolCallId, toolName: name, args });
-    });
+    const { promise, resolve, reject } = Promise.withResolvers<string>();
+    const timer = setTimeout(() => {
+      clear(toolCallId);
+      reject(new Error(`Relay tool "${name}" (${toolCallId}) timed out after ${timeoutMs}ms`));
+    }, timeoutMs);
+    // Never let a pending relay call keep the process alive on its own.
+    timer.unref?.();
+    const onAbort = () => {
+      clear(toolCallId);
+      reject(new Error(`Relay tool "${name}" (${toolCallId}) was cancelled`));
+    };
+    signal?.addEventListener("abort", onAbort, { once: true });
+    const unlisten = () => signal?.removeEventListener("abort", onAbort);
+    pending.set(toolCallId, { resolve, reject, timer, unlisten });
+    opts.send({ type: "tool_call", toolCallId, toolName: name, args });
+    return promise;
   };
 
   function onToolResult(msg: RelayToolResult): void {

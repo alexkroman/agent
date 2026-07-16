@@ -17,6 +17,7 @@ import {
   type ToolCallRepairFunction,
   type ToolSet,
 } from "ai";
+import pTimeout from "p-timeout";
 import { PIPELINE_FLUSH_TIMEOUT_MS, PIPELINE_PLAYBACK_GRACE_MS } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
@@ -145,42 +146,28 @@ export function utteranceLooksComplete(text: string): boolean {
  * never fires for a cancelled turn (see TtsEvents.done in sdk/providers.ts);
  * a provider leaking a stale one would end the next turn's reply early.
  */
-export function flushTtsAndWait(args: {
+export async function flushTtsAndWait(args: {
   tts: TtsSession | null;
   signal: AbortSignal;
   log: Logger;
   sid: string;
 }): Promise<void> {
   const { tts, signal, log, sid } = args;
-  if (!tts) return Promise.resolve();
-  if (signal.aborted) return Promise.resolve();
-  return new Promise<void>((resolve) => {
-    let off: Unsubscribe | null = null;
-    let timer: ReturnType<typeof setTimeout> | null = null;
-    const cleanup = () => {
-      if (off) {
-        off();
-        off = null;
-      }
-      if (timer) {
-        clearTimeout(timer);
-        timer = null;
-      }
-      signal.removeEventListener("abort", onAbort);
-    };
-    const finish = () => {
-      cleanup();
-      resolve();
-    };
-    const onAbort = () => finish();
-    signal.addEventListener("abort", onAbort, { once: true });
-    off = tts.on("done", finish);
-    timer = setTimeout(() => {
+  if (!tts) return;
+  if (signal.aborted) return;
+  const { promise, resolve } = Promise.withResolvers<void>();
+  const off: Unsubscribe = tts.on("done", () => resolve());
+  tts.flush();
+  try {
+    await pTimeout(promise, { milliseconds: PIPELINE_FLUSH_TIMEOUT_MS, signal });
+  } catch {
+    // Abort resolves silently (barge-in); only a real drain timeout warns.
+    if (!signal.aborted) {
       log.warn("TTS flush timeout", { sid, timeoutMs: PIPELINE_FLUSH_TIMEOUT_MS });
-      finish();
-    }, PIPELINE_FLUSH_TIMEOUT_MS);
-    tts.flush();
-  });
+    }
+  } finally {
+    off();
+  }
 }
 
 /** A single `fullStream` part from `streamText`. */

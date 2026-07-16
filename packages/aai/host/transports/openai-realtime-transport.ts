@@ -104,36 +104,39 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   async function start(): Promise<void> {
     const url = `${baseUrl}?model=${encodeURIComponent(model)}`;
     log.info("OpenAI Realtime connecting", { url });
-    return new Promise((resolve, reject) => {
-      const sock = createWs(url, {
-        headers: {
-          Authorization: `Bearer ${opts.apiKey}`,
-        },
-      });
-      ws = sock;
-      let opened = false;
-
-      sock.addEventListener("open", () => {
-        opened = true;
-        sendSessionUpdate();
-        sendGreeting();
-        resolve();
-      });
-      sock.addEventListener("message", (ev) => handleMessage(ev.data));
-      sock.addEventListener("close", (ev) => handleClose(ev.code ?? 0, ev.reason ?? ""));
-      sock.addEventListener("error", (ev) => {
-        const msg = typeof ev.message === "string" ? ev.message : "WebSocket error";
-        if (!opened) {
-          reject(new Error(msg));
-          return;
-        }
-        if (closing) {
-          log.info("OpenAI Realtime error during close", { error: msg });
-          return;
-        }
-        opts.callbacks.onError("internal", msg);
-      });
+    const sock = createWs(url, {
+      headers: {
+        Authorization: `Bearer ${opts.apiKey}`,
+      },
     });
+    ws = sock;
+    // Settles once the socket opens (or errors first). Handlers stay
+    // registered for the socket's life; `opened` routes later errors to the
+    // session callbacks instead of the (already settled) open race.
+    const opening = Promise.withResolvers<void>();
+    let opened = false;
+
+    sock.addEventListener("open", () => {
+      opened = true;
+      sendSessionUpdate();
+      sendGreeting();
+      opening.resolve();
+    });
+    sock.addEventListener("message", (ev) => handleMessage(ev.data));
+    sock.addEventListener("close", (ev) => handleClose(ev.code ?? 0, ev.reason ?? ""));
+    sock.addEventListener("error", (ev) => {
+      const msg = typeof ev.message === "string" ? ev.message : "WebSocket error";
+      if (!opened) {
+        opening.reject(new Error(msg));
+        return;
+      }
+      if (closing) {
+        log.info("OpenAI Realtime error during close", { error: msg });
+        return;
+      }
+      opts.callbacks.onError("internal", msg);
+    });
+    await opening.promise;
   }
 
   function asString(v: unknown): string {
