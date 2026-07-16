@@ -59,7 +59,7 @@ export default defineConfig({
           root: "packages/aai-cli",
           include: ["**/*.test.ts"],
           exclude: [
-            "e2e.test.ts",
+            "e2e*.test.ts",
             "node_modules",
             "dist",
           ],
@@ -74,7 +74,7 @@ export default defineConfig({
           include: ["**/*.test.ts"],
           exclude: [
             "docker-build.test.ts",
-            "fake-vm-integration.test.ts",
+            "fake-vm-integration*.test.ts",
             "sandbox-integration.test.ts",
             "sandbox-lifecycle.test.ts",
             "ws-integration.test.ts",

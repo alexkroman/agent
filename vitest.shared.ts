@@ -24,6 +24,7 @@ export const sharedCoverageExclude = [
   // for tests must not count toward (or against) production coverage.
   "**/_test-utils.ts",
   "**/test-utils.ts",
+  "**/*-test-utils.ts",
   "**/_react-test-utils.ts",
   "**/_jsdom-setup.ts",
   "**/_test-matchers.ts",

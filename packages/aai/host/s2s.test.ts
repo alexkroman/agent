@@ -1,95 +1,20 @@
-import { describe, expect, test, vi } from "vitest";
+// Copyright 2026 the AAI authors. MIT license.
+// connectS2s connection/handle API and error/close handling specs. Server
+// event dispatch specs live in s2s-events.test.ts; shared helpers in
+// _s2s-test-utils.ts.
+
+import { describe, expect, test } from "vitest";
+import {
+  createWebSocketStub,
+  emitMessage,
+  errorArg,
+  lastSent,
+  makeMockCallbacks,
+  s2sConfig,
+  setupHandle,
+} from "./_s2s-test-utils.ts";
 import { silentLogger } from "./_test-utils.ts";
-import type { S2sCallbacks, S2sWebSocket } from "./s2s.ts";
 import { connectS2s } from "./s2s.ts";
-
-function createWebSocketStub() {
-  const target = new EventTarget();
-  return Object.assign(target, {
-    readyState: 0,
-    send: vi.fn(),
-    close: vi.fn(),
-    addEventListener: target.addEventListener.bind(target) as S2sWebSocket["addEventListener"],
-    emit(event: string, ...args: unknown[]) {
-      const builders: Record<string, () => Event> = {
-        open: () => new Event("open"),
-        message: () => new MessageEvent("message", { data: args[0] }),
-        close: () => {
-          const ev = new Event("close");
-          if (typeof args[0] === "number") Object.assign(ev, { code: args[0] });
-          if (typeof args[1] === "string") Object.assign(ev, { reason: args[1] });
-          return ev;
-        },
-        error: () => {
-          const msg = args[0] instanceof Error ? args[0].message : String(args[0]);
-          const ev = new Event("error");
-          Object.defineProperty(ev, "message", { value: msg });
-          return ev;
-        },
-      };
-      const build = builders[event];
-      if (build) target.dispatchEvent(build());
-    },
-  });
-}
-
-const s2sConfig = { wssUrl: "wss://fake", inputSampleRate: 16_000, outputSampleRate: 16_000 };
-
-function makeMockCallbacks(): S2sCallbacks {
-  return {
-    onSessionReady: vi.fn(),
-    onReplyStarted: vi.fn(),
-    onReplyDone: vi.fn(),
-    onCancelled: vi.fn(),
-    onAudio: vi.fn(),
-    onUserTranscript: vi.fn(),
-    onAgentTranscript: vi.fn(),
-    onToolCall: vi.fn(),
-    onSpeechStarted: vi.fn(),
-    onSpeechStopped: vi.fn(),
-    onSessionExpired: vi.fn(),
-    onError: vi.fn(),
-    onClose: vi.fn(),
-  };
-}
-
-function createTestS2s() {
-  const raw = createWebSocketStub();
-  const createWebSocket = () => {
-    setTimeout(() => {
-      raw.readyState = 1;
-      raw.emit("open");
-    }, 0);
-    return raw;
-  };
-  return { raw, createWebSocket, logger: { ...silentLogger } };
-}
-
-async function setupHandle(callbacks?: S2sCallbacks) {
-  const { raw, createWebSocket, logger } = createTestS2s();
-  const handle = await connectS2s({
-    apiKey: "test-key",
-    config: s2sConfig,
-    createWebSocket,
-    callbacks: callbacks ?? makeMockCallbacks(),
-    logger,
-  });
-  return { raw, handle, logger };
-}
-
-type WebSocketStub = ReturnType<typeof createWebSocketStub>;
-
-function emitMessage(raw: WebSocketStub, payload: unknown): void {
-  raw.emit("message", Buffer.from(JSON.stringify(payload)));
-}
-
-function lastSent(raw: WebSocketStub): Record<string, unknown> {
-  return JSON.parse(raw.send.mock.calls[0]?.[0] as string);
-}
-
-function errorArg(callbacks: S2sCallbacks): Error {
-  return (callbacks.onError as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
-}
 
 describe("connectS2s", () => {
   test("resolves with handle after open", async () => {
@@ -193,161 +118,6 @@ describe("connectS2s", () => {
     expect(raw.send).not.toHaveBeenCalled();
   });
 
-  test("session.ready dispatches 'onSessionReady' callback", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, { type: "session.ready", session_id: "s123" });
-
-    expect(callbacks.onSessionReady).toHaveBeenCalledOnce();
-    expect(callbacks.onSessionReady).toHaveBeenCalledWith("s123");
-  });
-
-  test("input.speech.started dispatches 'onSpeechStarted' callback", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, { type: "input.speech.started" });
-
-    expect(callbacks.onSpeechStarted).toHaveBeenCalledOnce();
-  });
-
-  test("input.speech.stopped dispatches 'onSpeechStopped' callback", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    // speech_stopped is only forwarded after a speech_started primes VAD state.
-    emitMessage(raw, { type: "input.speech.started" });
-    emitMessage(raw, { type: "input.speech.stopped" });
-
-    expect(callbacks.onSpeechStarted).toHaveBeenCalledOnce();
-    expect(callbacks.onSpeechStopped).toHaveBeenCalledOnce();
-  });
-
-  test("duplicate input.speech.stopped is suppressed", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, { type: "input.speech.started" });
-    emitMessage(raw, { type: "input.speech.stopped" });
-    emitMessage(raw, { type: "input.speech.stopped" });
-
-    expect(callbacks.onSpeechStopped).toHaveBeenCalledOnce();
-  });
-
-  test("transcript.user dispatches 'onUserTranscript' callback", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, { type: "transcript.user", item_id: "item-1", text: "Hello world" });
-
-    expect(callbacks.onUserTranscript).toHaveBeenCalledOnce();
-    expect(callbacks.onUserTranscript).toHaveBeenCalledWith("Hello world");
-  });
-
-  test("reply.started dispatches 'onReplyStarted' callback", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
-
-    expect(callbacks.onReplyStarted).toHaveBeenCalledOnce();
-    expect(callbacks.onReplyStarted).toHaveBeenCalledWith("r1");
-  });
-
-  test("transcript.agent dispatches 'onAgentTranscript' callback", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, {
-      type: "transcript.agent",
-      text: "Full response",
-      reply_id: "r1",
-      item_id: "i1",
-      interrupted: false,
-    });
-
-    expect(callbacks.onAgentTranscript).toHaveBeenCalledOnce();
-    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Full response", false);
-  });
-
-  test("transcript.agent defaults interrupted to false when missing", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, { type: "transcript.agent", text: "response" });
-
-    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("response", false);
-  });
-
-  test("transcript.agent with interrupted:true passes interrupted:true", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, {
-      type: "transcript.agent",
-      text: "Interrupted response",
-      interrupted: true,
-    });
-
-    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Interrupted response", true);
-  });
-
-  test("tool.call dispatches 'onToolCall' callback", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, {
-      type: "tool.call",
-      call_id: "c1",
-      name: "web_search",
-      args: { query: "test" },
-    });
-
-    expect(callbacks.onToolCall).toHaveBeenCalledOnce();
-    expect(callbacks.onToolCall).toHaveBeenCalledWith("c1", "web_search", { query: "test" });
-  });
-
-  test("reply.done (non-interrupted) dispatches 'onReplyDone' callback", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, { type: "reply.done", status: "completed" });
-
-    expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
-    expect(callbacks.onCancelled).not.toHaveBeenCalled();
-  });
-
-  test("reply.done with status 'interrupted' dispatches 'onCancelled' callback", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    emitMessage(raw, { type: "reply.done", status: "interrupted" });
-
-    expect(callbacks.onCancelled).toHaveBeenCalledOnce();
-    expect(callbacks.onReplyDone).not.toHaveBeenCalled();
-  });
-
-  test("reply.done arrival is logged with sid and status", async () => {
-    const { raw, createWebSocket, logger } = createTestS2s();
-    const infoSpy = vi.fn();
-    logger.info = infoSpy;
-    await connectS2s({
-      apiKey: "test-key",
-      config: s2sConfig,
-      createWebSocket,
-      callbacks: makeMockCallbacks(),
-      logger,
-      sid: "sess-abc",
-    });
-
-    emitMessage(raw, { type: "reply.done", status: "completed" });
-
-    const arrivalCall = infoSpy.mock.calls.find((c) => c[0] === "S2S << reply.done");
-    expect(arrivalCall).toBeDefined();
-    expect(arrivalCall?.[1]).toEqual({ sid: "sess-abc", status: "completed" });
-  });
-
   test("session.error with session_not_found dispatches 'onSessionExpired' callback", async () => {
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
@@ -402,21 +172,6 @@ describe("connectS2s", () => {
     expect(err.message).toBe("Bad gateway");
   });
 
-  test("reply.audio dispatches 'onAudio' callback with decoded Uint8Array", async () => {
-    const callbacks = makeMockCallbacks();
-    const { raw } = await setupHandle(callbacks);
-
-    const audioBytes = new Uint8Array([10, 20, 30, 40]);
-    const base64 = Buffer.from(audioBytes).toString("base64");
-
-    emitMessage(raw, { type: "reply.audio", data: base64 });
-
-    expect(callbacks.onAudio).toHaveBeenCalledOnce();
-    const payload = (callbacks.onAudio as ReturnType<typeof vi.fn>).mock.calls[0]?.[0];
-    expect(payload).toBeInstanceOf(Uint8Array);
-    expect(Array.from(payload)).toEqual([10, 20, 30, 40]);
-  });
-
   test("invalid JSON message is logged and ignored", async () => {
     const { raw, logger } = await setupHandle();
 
@@ -431,12 +186,6 @@ describe("connectS2s", () => {
     emitMessage(raw, { type: "totally.unknown.type" });
 
     expect(logger.warn).toHaveBeenCalled();
-  });
-
-  test("reply.content_part events are silently ignored (no dispatch)", async () => {
-    const { raw } = await setupHandle();
-    emitMessage(raw, { type: "reply.content_part.started" });
-    emitMessage(raw, { type: "reply.content_part.done" });
   });
 
   test("session.updated without config.id is silently ignored (no dispatch)", async () => {

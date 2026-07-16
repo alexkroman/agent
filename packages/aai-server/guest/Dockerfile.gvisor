@@ -55,4 +55,4 @@ RUN runsc --version && which runsc && ls -la /usr/local/bin/runsc
 
 CMD ["pnpm", "vitest", "run", "-c", "vitest.slow.config.ts"]
 ENV VITEST_PROFILE=gvisor
-ENV VITEST_INCLUDE=packages/aai-server/gvisor-integration.test.ts
+ENV VITEST_INCLUDE=packages/aai-server/gvisor-integration*.test.ts
