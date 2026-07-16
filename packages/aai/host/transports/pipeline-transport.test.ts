@@ -213,7 +213,7 @@ describe("PipelineTransport", () => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
 
-      stt.last()?.firePartial("wait");
+      stt.last()?.firePartial("wait stop"); // ≥2 words → interrupts at the default threshold
       expect(callbacks.onCancelled).toHaveBeenCalled();
       expect(tts.last()?.cancel).toHaveBeenCalled();
       await t.stop();
@@ -238,7 +238,7 @@ describe("PipelineTransport", () => {
       // 10 s of PCM16 at the default 24 kHz — client playback lags well behind.
       tts.last()?.fireAudio(new Int16Array(240_000));
 
-      stt.last()?.firePartial("stop");
+      stt.last()?.firePartial("stop it"); // ≥2 words → interrupts at the default threshold
       expect(callbacks.onCancelled).toHaveBeenCalled();
       expect(tts.last()?.cancel).toHaveBeenCalled();
       await t.stop();
@@ -355,11 +355,15 @@ describe("PipelineTransport", () => {
 
       // A one-word FINAL arrives while the agent is speaking — below threshold.
       stt.last()?.fireFinal("yeah");
-      await new Promise((r) => setTimeout(r, 20));
+      await vi.waitFor(() => {
+        expect(callbacks.onUserTranscript).toHaveBeenCalledWith("yeah");
+      });
+      // Below threshold does NOT interrupt the in-flight reply...
       expect(callbacks.onCancelled).not.toHaveBeenCalled();
       expect(tts.last()?.cancel).not.toHaveBeenCalled();
-      // The backchannel is ignored — no new user turn started for it.
-      expect(callbacks.onUserTranscript).not.toHaveBeenCalledWith("yeah");
+      // ...but it is NOT dropped: it is still transcribed and answered as a
+      // deferred turn once the current reply finishes (chainTurn), rather than
+      // silently discarded.
       await t.stop();
     });
 

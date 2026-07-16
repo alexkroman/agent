@@ -48,6 +48,13 @@ describe("buildSystemPrompt", () => {
     expect(result).toContain("NEVER use markdown");
   });
 
+  test("voice rules tell the agent not to read spelled input back letter by letter", () => {
+    // Verbose letter-by-letter readbacks make replies long and invite the
+    // caller to interrupt mid-sentence (see tau2 turn-taking analysis).
+    const result = buildSystemPrompt(makeConfig(), { hasTools: false, voice: true });
+    expect(result).toContain("do NOT read the whole thing back letter by letter");
+  });
+
   test("omits voice rules when voice is false", () => {
     const result = buildSystemPrompt(makeConfig(), { hasTools: false, voice: false });
     expect(result).not.toContain("CRITICAL OUTPUT RULES");

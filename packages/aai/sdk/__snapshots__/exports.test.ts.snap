@@ -4,6 +4,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
 [
   "AGENT_CSP",
   "BuiltinToolSchema",
+  "DEFAULT_ENDPOINT_SETTLE_MS",
   "DEFAULT_GREETING",
   "DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS",
   "DEFAULT_IDLE_TIMEOUT_MS",

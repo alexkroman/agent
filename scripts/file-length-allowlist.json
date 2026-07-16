@@ -3,5 +3,6 @@
   "packages/aai-ui/session-core.test.ts": 772,
   "packages/aai-server/sandbox-vm.test.ts": 770,
   "packages/aai/host/runtime.test.ts": 743,
+  "packages/aai/host/transports/pipeline-transport.ts": 561,
   "packages/aai/host/ws-handler.test.ts": 717
 }

@@ -75,6 +75,69 @@ export function countWords(text: string): number {
 }
 
 /**
+ * Trailing tokens that signal the speaker is mid-thought and more speech is
+ * coming — fillers, dangling connectives, articles, and prepositions. A final
+ * ending in one of these is treated as incomplete even if it carries terminal
+ * punctuation, so the endpoint settle window aggregates the continuation.
+ */
+const CONTINUATION_CUES: ReadonlySet<string> = new Set([
+  "um",
+  "umm",
+  "uh",
+  "uhh",
+  "er",
+  "erm",
+  "hmm",
+  "mm",
+  "so",
+  "and",
+  "but",
+  "or",
+  "then",
+  "because",
+  "cause",
+  "actually",
+  "wait",
+  "no",
+  "well",
+  "like",
+  "the",
+  "a",
+  "an",
+  "to",
+  "for",
+  "with",
+  "of",
+  "my",
+  "at",
+  "in",
+  "on",
+  "i",
+  "i'm",
+  "let",
+  "let's",
+]);
+
+/**
+ * Heuristic: does an STT final read as a complete utterance (commit now) versus
+ * a fragment likely to be continued (wait for the settle window)?
+ *
+ * Complete = ends with terminal punctuation and its last word is not a
+ * continuation cue. STT emits punctuation on confident end-of-turn finals; a
+ * mid-utterance pause fragment ("find a two-bedroom in Austin") usually lacks
+ * it, and self-corrections trail off on a cue ("actually make it"). Errs toward
+ * waiting (the safe, aggregating side) when unsure.
+ */
+export function utteranceLooksComplete(text: string): boolean {
+  const trimmed = text.trim();
+  if (trimmed.length === 0) return false;
+  const words = trimmed.toLowerCase().match(/[a-z']+/g);
+  const lastWord = words?.at(-1) ?? "";
+  if (CONTINUATION_CUES.has(lastWord)) return false;
+  return /[.?!]["')\]]*$/.test(trimmed);
+}
+
+/**
  * Flush the TTS session and wait for its synthesis to drain. Resolves on TTS
  * `done`, signal abort, or PIPELINE_FLUSH_TIMEOUT_MS elapsed.
  *

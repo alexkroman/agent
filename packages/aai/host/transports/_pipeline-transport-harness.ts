@@ -59,6 +59,10 @@ export function makeOpts(
     sessionConfig: { systemPrompt: "s", greeting: "" },
     providerKeys: { stt: "stt-key", tts: "tts-key" },
     logger: silentLogger,
+    // Disable the endpoint settle window by default so specs that fire a single
+    // final commit the turn immediately (the pre-endpointing behavior most
+    // specs assume). Settle-window specs opt in via an explicit endpointSettleMs.
+    endpointSettleMs: 0,
     ...overrides,
   };
   return { opts, stt, tts, callbacks };

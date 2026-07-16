@@ -28,7 +28,11 @@ const VOICE_RULES =
   "If a tool returns no results, just answer naturally without explaining why.\n" +
   "- Write exactly as you would say it out loud to a friend\n" +
   '- Use short conversational sentences. To list things, say "First," "Next," "Finally,"\n' +
-  "- Keep responses concise — 1 to 3 sentences max";
+  "- Keep responses concise — 1 to 3 sentences max\n" +
+  "- When the caller spells something (a name, email, or ID) or reads out digits, do NOT " +
+  "read the whole thing back letter by letter — it is slow and invites interruptions. " +
+  'Confirm briefly and move on (e.g. "Thanks, got it" or "Okay, Yusuf Rossi, ZIP 1-9-1-2-2 — one moment"). ' +
+  "Only re-spell a specific character if you need to resolve a genuine ambiguity.";
 
 /**
  * Build the system prompt sent to the LLM from the agent configuration.

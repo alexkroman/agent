@@ -274,6 +274,7 @@ describe("PipelineTransport — STT → LLM turn", () => {
 describe("interrupted-speech persistence", () => {
   test("barge-in persists spoken-so-far text with an [interrupted] marker and flags the transcript", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({
+      minBargeInWords: 1, // pin so the one-word "stop" barge-in fires (default is now 2)
       llm: createFakeLanguageModel({
         // Turn 1 streams slowly so we can barge in mid-stream; turn 2 is a plain reply.
         steps: [
@@ -325,6 +326,7 @@ describe("interrupted-speech persistence", () => {
     // (Note: a tool-first turn would NOT work here — the guaranteed hold
     // phrase "One moment." feeds onDelta/accumulated, so it would persist.)
     const { opts, stt, callbacks } = makeOpts({
+      minBargeInWords: 1, // pin so the one-word "stop" barge-in fires (default is now 2)
       llm: createFakeLanguageModel({
         steps: [[{ type: "text", text: "Hello there." }], [{ type: "text", text: "Sure." }]],
         delayMs: 50,
@@ -401,6 +403,7 @@ describe("interrupted-speech persistence", () => {
 
   test("barge-in during the hold phrase (no real text yet) persists nothing", async () => {
     const { opts, stt, tts, callbacks } = makeOpts({
+      minBargeInWords: 1, // pin so the one-word "stop" barge-in fires (default is now 2)
       llm: createFakeLanguageModel({
         steps: [
           [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
@@ -435,5 +438,123 @@ describe("interrupted-speech persistence", () => {
     await t.stop();
     // Only the hold phrase was accumulated → nothing persisted as interrupted.
     expect(callbacks.onAgentTranscript).not.toHaveBeenCalledWith(expect.anything(), true);
+  });
+});
+
+describe("PipelineTransport — below-threshold deferral", () => {
+  test("a below-threshold final spoken over the agent is answered after the reply, not dropped", async () => {
+    // Regression: a sub-minBargeInWords final used to be discarded while the
+    // agent was speaking ("treat as backchannel, ignore"), silently losing real
+    // short answers (a "yes", a ZIP) the caller spoke over the reply. It must
+    // now be deferred — transcribed and answered once the current reply ends.
+    const { opts, stt, tts, callbacks } = makeOpts({
+      minBargeInWords: 2, // "sure" (1 word) is below threshold
+      llm: createFakeLanguageModel({
+        steps: [
+          [
+            { type: "text", text: "Let me " },
+            { type: "text", text: "check that." },
+          ],
+          [{ type: "text", text: "Confirmed." }],
+        ],
+        delayMs: 20,
+      }),
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
+
+    stt.last()?.fireFinal("update my order please"); // ≥2 words → starts turn 1
+    await vi.waitFor(() => {
+      expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+    });
+    const callsAfterTurn1 = llm.calls.length;
+
+    // One-word final spoken while the agent is still replying — below threshold.
+    stt.last()?.fireFinal("sure");
+
+    // It does NOT interrupt the in-flight reply...
+    expect(callbacks.onCancelled).not.toHaveBeenCalled();
+    // ...but it IS answered: a deferred turn runs after the reply, and its LLM
+    // prompt carries the buffered "sure" (proving it was not dropped).
+    await vi.waitFor(() => {
+      expect(llm.calls.length).toBeGreaterThan(callsAfterTurn1);
+    });
+    expect(JSON.stringify(llm.calls.at(-1)?.prompt)).toContain("sure");
+    await t.stop();
+  });
+});
+
+describe("PipelineTransport — endpoint settle window", () => {
+  test("a clearly-complete final commits immediately (no settle wait)", async () => {
+    // Large window: only the fast path can make this commit promptly.
+    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 10_000 });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("Track order BOB12.");
+    await vi.waitFor(() => {
+      expect(callbacks.onUserTranscript).toHaveBeenCalledWith("Track order BOB12.");
+    });
+    await t.stop();
+  });
+
+  test("an incomplete final waits the settle window before committing", async () => {
+    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 80 });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("track order BOB12"); // no punctuation → fragment
+    // Well inside the window: nothing committed yet.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
+    // After the window elapses it commits the buffered utterance.
+    await vi.waitFor(() => {
+      expect(callbacks.onUserTranscript).toHaveBeenCalledWith("track order BOB12");
+    });
+    await t.stop();
+  });
+
+  test("finals within the window aggregate into a single turn (self-correction)", async () => {
+    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 80 });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    const s = stt.last();
+    s?.fireFinal("find a two-bedroom in Austin"); // fragment → waits
+    s?.fireFinal("actually make it Dallas."); // correction completes the turn
+    await vi.waitFor(() => {
+      expect(callbacks.onUserTranscript).toHaveBeenCalledWith(
+        "find a two-bedroom in Austin actually make it Dallas.",
+      );
+    });
+    // One aggregated turn, not one per fragment.
+    expect(callbacks.onUserTranscript).toHaveBeenCalledTimes(1);
+    await t.stop();
+  });
+
+  test("a partial resumption keeps the utterance buffered (mid-utterance pause)", async () => {
+    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 80 });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    const s = stt.last();
+    s?.fireFinal("set the max price to"); // trails on a cue → waits
+    s?.firePartial("fifteen hundred"); // speaker resumed → extend the window
+    s?.fireFinal("fifteen hundred dollars."); // completes
+    await vi.waitFor(() => {
+      expect(callbacks.onUserTranscript).toHaveBeenCalledWith(
+        "set the max price to fifteen hundred dollars.",
+      );
+    });
+    expect(callbacks.onUserTranscript).toHaveBeenCalledTimes(1);
+    await t.stop();
+  });
+
+  test("endpointSettleMs=0 commits every final immediately (feature disabled)", async () => {
+    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 0 });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("track order BOB12"); // no punctuation, still immediate
+    await vi.waitFor(() => {
+      expect(callbacks.onUserTranscript).toHaveBeenCalledWith("track order BOB12");
+    });
+    await t.stop();
   });
 });

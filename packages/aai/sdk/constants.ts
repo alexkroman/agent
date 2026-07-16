@@ -46,11 +46,27 @@ export const DEFAULT_MAX_HISTORY = 200;
 export const DEFAULT_MAX_STEPS = 5;
 /**
  * Minimum number of words in an interim STT transcript before a barge-in
- * aborts the agent's in-flight turn (pipeline mode). Default 1 = interrupt on
- * any non-empty interim, preserving instant barge-in. Raise it to ignore
- * one-word backchannels ("mm-hmm", "yeah") while the agent is speaking.
+ * aborts the agent's in-flight turn (pipeline mode). Default 2 so a single
+ * word — a backchannel ("mm-hmm", "yeah"), a cough transcribed as one token,
+ * or the leading fragment of the user's own turn — does NOT cut the agent off
+ * mid-sentence. Sub-threshold utterances are not lost: they are still
+ * transcribed and answered once the current reply finishes (see onSttFinal).
+ * Set to 1 to restore interrupt-on-any-word.
  */
-export const DEFAULT_MIN_BARGE_IN_WORDS = 1;
+export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
+/**
+ * Endpoint settle window (pipeline mode): after an STT `final`, how long to
+ * wait for the speaker to continue before committing the turn. Disfluent,
+ * in-the-wild speech (mid-utterance pauses, self-corrections, false starts)
+ * makes STT emit several `final`s for one intended utterance; without a settle
+ * window the transport starts a turn on the first fragment and acts on the
+ * pre-correction request. Follow-on `final`s/`partial`s inside the window are
+ * aggregated into a single turn. A clearly-complete final (terminal
+ * punctuation, no trailing continuation cue) commits immediately, so clean
+ * requests pay no added latency. Set to 0 to disable (commit every final at
+ * once, preserving the pre-endpointing behavior).
+ */
+export const DEFAULT_ENDPOINT_SETTLE_MS = 700;
 export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 
