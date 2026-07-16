@@ -8,15 +8,15 @@
     "deploy": "aai deploy"
   },
   "dependencies": {
-    "@alexkroman1/aai": "^1.8.3",
-    "@alexkroman1/aai-ui": "^1.8.3",
+    "@alexkroman1/aai": "^1.9.0",
+    "@alexkroman1/aai-ui": "^1.9.0",
     "react": "^19.2.7",
     "react-dom": "^19.2.7",
     "tailwindcss": "^4.3.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@alexkroman1/aai-cli": "^1.8.3",
+    "@alexkroman1/aai-cli": "^1.9.0",
     "@tailwindcss/vite": "^4.3.2",
     "@types/node": "^26.1.1",
     "@vitejs/plugin-react": "^6.0.3",

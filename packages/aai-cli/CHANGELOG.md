@@ -1,5 +1,66 @@
 # @alexkroman1/aai-cli
 
+## 1.9.0
+
+### Minor Changes
+
+- 882e7d9: Host mode now inherits the deployed agent's `stt`/`llm`/`tts` provider config, so a `?host=1` session runs the operator's configured pipeline (e.g. AssemblyAI Universal-3.5 Pro STT + LLM + TTS, with agent_context/voice_focus) with only the client's system prompt, greeting, and tools injected — instead of falling back to the default S2S path. The dev server passes its loaded agent as `hostBaseAgent`.
+- e2ee4fd: Add voice-agent host mode: external clients can inject system prompt + tool schemas via config.host and receive tool calls to execute (tool_result), enabling harness-driven agents.
+
+### Patch Changes
+
+- 56e96b5: Simplify CLI internals: per-command API key gating (--help and aai test/build no longer prompt; --skip-api now effective), server URLs normalized against trailing slashes, deploy/getServerInfo share one resolution path, faster bundling (worker eval no longer waits on the client build; parallel file copies/reads), and remove duplicated template/deploy test scaffolding.
+- 38a2553: Replace hand-rolled HTTP, retry, cache, and child-process plumbing with ofetch, p-retry + is-network-error, quick-lru, and execa
+- 394867e: Fix a Cartesia TTS connect failure crashing the whole host process. `client.tts.websocket()` only returns the socket after connect resolves, so on a connect-time failure (e.g. the account is out of credits) the promise rejects before an `error` listener can be bound — and cartesia-js's `TTSEmitter._onError` does a bare `Promise.reject` (a fatal unhandled rejection) when the socket errors with no listener. The adapter now constructs `new TTSWS(client)` directly and binds the `error` listener before connecting, so the failure flows through the normal `tts_connect_failed` path and degrades only that session. As defense-in-depth, the `aai dev` host entry now installs a log-only `unhandledRejection` guard (mirroring aai-server).
+- 578a840: dev: add uncaughtException guard so one bad session can't crash the whole host
+- Updated dependencies [0235618]
+- Updated dependencies [4758dfc]
+- Updated dependencies [0f72bef]
+- Updated dependencies [bc62b75]
+- Updated dependencies [7e67c24]
+- Updated dependencies [8817f3f]
+- Updated dependencies [394867e]
+- Updated dependencies [8004ff8]
+- Updated dependencies [262f1e7]
+- Updated dependencies [0bdb115]
+- Updated dependencies [578a840]
+- Updated dependencies [c5a5351]
+- Updated dependencies [0235618]
+- Updated dependencies [0235618]
+- Updated dependencies [a413caf]
+- Updated dependencies [2898f21]
+- Updated dependencies [882e7d9]
+- Updated dependencies [e2ee4fd]
+- Updated dependencies [9750db7]
+- Updated dependencies [0d024e0]
+- Updated dependencies [cb2821c]
+- Updated dependencies [9aed108]
+- Updated dependencies [ab38293]
+- Updated dependencies [968c917]
+- Updated dependencies [860bb7d]
+- Updated dependencies [7240ce5]
+- Updated dependencies [f22b0f4]
+- Updated dependencies [0bb1a20]
+- Updated dependencies [7d4a193]
+- Updated dependencies [5bf4d41]
+- Updated dependencies [ad295be]
+- Updated dependencies [d22d9f8]
+- Updated dependencies [8f2093b]
+- Updated dependencies [296a874]
+- Updated dependencies [752af3d]
+- Updated dependencies [38f02fa]
+- Updated dependencies [2fd1078]
+- Updated dependencies [711edeb]
+- Updated dependencies [fd5a54e]
+- Updated dependencies [a413caf]
+- Updated dependencies [3db093f]
+- Updated dependencies [79e51cb]
+- Updated dependencies [0235618]
+- Updated dependencies [cf56703]
+- Updated dependencies [115a88e]
+  - @alexkroman1/aai@1.9.0
+  - @alexkroman1/aai-ui@1.9.0
+
 ## 1.8.3
 
 ### Patch Changes
