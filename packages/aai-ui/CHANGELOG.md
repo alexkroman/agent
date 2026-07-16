@@ -1,5 +1,56 @@
 # @alexkroman1/aai-ui
 
+## 1.9.0
+
+### Patch Changes
+
+- 968c917: Internal cleanup of aai-ui: shared tint constants and JSON/truncate helpers, consolidated tool-call hook scaffolding, single-buffer mic batching, parallel audio setup, reusable resample buffer, and removal of the unused playback-progress machinery
+- Updated dependencies [0235618]
+- Updated dependencies [4758dfc]
+- Updated dependencies [0f72bef]
+- Updated dependencies [bc62b75]
+- Updated dependencies [7e67c24]
+- Updated dependencies [8817f3f]
+- Updated dependencies [394867e]
+- Updated dependencies [8004ff8]
+- Updated dependencies [262f1e7]
+- Updated dependencies [0bdb115]
+- Updated dependencies [578a840]
+- Updated dependencies [c5a5351]
+- Updated dependencies [0235618]
+- Updated dependencies [0235618]
+- Updated dependencies [a413caf]
+- Updated dependencies [2898f21]
+- Updated dependencies [882e7d9]
+- Updated dependencies [e2ee4fd]
+- Updated dependencies [9750db7]
+- Updated dependencies [0d024e0]
+- Updated dependencies [cb2821c]
+- Updated dependencies [9aed108]
+- Updated dependencies [ab38293]
+- Updated dependencies [860bb7d]
+- Updated dependencies [7240ce5]
+- Updated dependencies [f22b0f4]
+- Updated dependencies [0bb1a20]
+- Updated dependencies [7d4a193]
+- Updated dependencies [5bf4d41]
+- Updated dependencies [ad295be]
+- Updated dependencies [d22d9f8]
+- Updated dependencies [8f2093b]
+- Updated dependencies [296a874]
+- Updated dependencies [752af3d]
+- Updated dependencies [38f02fa]
+- Updated dependencies [2fd1078]
+- Updated dependencies [711edeb]
+- Updated dependencies [fd5a54e]
+- Updated dependencies [a413caf]
+- Updated dependencies [3db093f]
+- Updated dependencies [79e51cb]
+- Updated dependencies [0235618]
+- Updated dependencies [cf56703]
+- Updated dependencies [115a88e]
+  - @alexkroman1/aai@1.9.0
+
 ## 1.8.3
 
 ### Patch Changes
