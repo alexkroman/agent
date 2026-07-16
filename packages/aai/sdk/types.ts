@@ -25,10 +25,26 @@ import type { Vector } from "./vector.ts";
  * - `"visit_webpage"` — Fetch a URL and return its content as clean text.
  * - `"fetch_json"` — Call a REST API endpoint and return the JSON response.
  * - `"run_code"` — Execute JavaScript in a sandbox for calculations and data processing.
+ * - `"think"` — Private no-op scratchpad for policy checks and planning (never spoken).
+ * - `"remember"` — Save a confirmed fact (ID, code, date) to private session notes.
+ * - `"recall"` — Read back facts saved with `remember`.
+ * - `"calculate"` — Safely evaluate an arithmetic expression (no code execution).
+ *
+ * When `builtinTools` is not set, the cognitive defaults
+ * (`DEFAULT_BUILTIN_TOOLS`: think, remember, recall, calculate) are enabled.
+ * Set `builtinTools` explicitly — including `[]` — to override.
  *
  * @public
  */
-export type BuiltinTool = "web_search" | "visit_webpage" | "fetch_json" | "run_code";
+export type BuiltinTool =
+  | "web_search"
+  | "visit_webpage"
+  | "fetch_json"
+  | "run_code"
+  | "think"
+  | "remember"
+  | "recall"
+  | "calculate";
 
 /**
  * How the LLM should select tools during a turn.
@@ -414,7 +430,16 @@ export type AgentDef<S = Record<string, unknown>> = {
 // ─── Zod schemas ────────────────────────────────────────────────────────────
 
 /** @internal Zod schema for {@link BuiltinTool}. Exported for reuse in internal schemas. */
-export const BuiltinToolSchema = z.enum(["web_search", "visit_webpage", "fetch_json", "run_code"]);
+export const BuiltinToolSchema = z.enum([
+  "web_search",
+  "visit_webpage",
+  "fetch_json",
+  "run_code",
+  "think",
+  "remember",
+  "recall",
+  "calculate",
+]);
 
 /** @internal Zod schema for {@link ToolChoice}. Exported for reuse in internal schemas. */
 export const ToolChoiceSchema = z.enum(["auto", "required"]);

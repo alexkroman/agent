@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
+import type { Kv } from "../sdk/kv.ts";
 import { createMockToolContext } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
 
@@ -276,6 +277,86 @@ describe("resolveAllBuiltins defs", () => {
     expect((result.content as string).length).toBeLessThanOrEqual(10_000);
     expect(result.truncated).toBe(true);
     expect(typeof result.totalChars).toBe("number");
+  });
+
+  // ─── think ─────────────────────────────────────────────────────────────
+
+  test("think is a no-op that returns ok and never touches kv or fetch", async () => {
+    const { defs, schemas, guidance } = resolveAllBuiltins(["think"]);
+    expect(schemas.map((s) => s.name)).toContain("think");
+    expect(guidance.some((g) => g.includes("think"))).toBe(true);
+    // kv/vector are throwing stubs in the mock context — a no-op must not touch them.
+    const result = await defs.think?.execute(
+      { thought: "check the policy first" },
+      createMockToolContext(),
+    );
+    expect(result).toBe("ok");
+  });
+
+  // ─── remember / recall ─────────────────────────────────────────────────
+
+  function memoryKv(): Kv {
+    const store = new Map<string, unknown>();
+    return {
+      get: async <T>(key: string) => (store.get(key) as T) ?? null,
+      set: async (key: string, val: unknown) => {
+        store.set(key, val);
+      },
+      delete: async (keys: string | string[]) => {
+        for (const k of Array.isArray(keys) ? keys : [keys]) store.delete(k);
+      },
+    };
+  }
+
+  test("remember stores notes per session and recall reads them back", async () => {
+    const kv = memoryKv();
+    const { defs } = resolveAllBuiltins(["remember", "recall"]);
+    const ctx = createMockToolContext({ kv, sessionId: "s1" });
+
+    await defs.remember?.execute({ key: "user_id", value: "usr_123" }, ctx);
+    const saved = await defs.remember?.execute({ key: "res_code", value: "BOB12" }, ctx);
+    expect(saved).toEqual({
+      saved: "res_code",
+      notes: { user_id: "usr_123", res_code: "BOB12" },
+    });
+
+    expect(await defs.recall?.execute({ key: "user_id" }, ctx)).toEqual({
+      key: "user_id",
+      value: "usr_123",
+    });
+    expect(await defs.recall?.execute({}, ctx)).toEqual({
+      notes: { user_id: "usr_123", res_code: "BOB12" },
+    });
+    expect(await defs.recall?.execute({ key: "missing" }, ctx)).toEqual({
+      key: "missing",
+      value: null,
+    });
+  });
+
+  test("remember overwrites a key and notes are isolated per session", async () => {
+    const kv = memoryKv();
+    const { defs } = resolveAllBuiltins(["remember", "recall"]);
+    const s1 = createMockToolContext({ kv, sessionId: "s1" });
+    const s2 = createMockToolContext({ kv, sessionId: "s2" });
+
+    await defs.remember?.execute({ key: "zip", value: "19122" }, s1);
+    await defs.remember?.execute({ key: "zip", value: "94103" }, s1);
+    expect(await defs.recall?.execute({ key: "zip" }, s1)).toEqual({ key: "zip", value: "94103" });
+    expect(await defs.recall?.execute({}, s2)).toEqual({ notes: {} });
+  });
+
+  // ─── calculate ─────────────────────────────────────────────────────────
+
+  test("calculate evaluates expressions and reports errors in-band", async () => {
+    const { defs, guidance } = resolveAllBuiltins(["calculate"]);
+    const ctx = createMockToolContext();
+    expect(guidance.some((g) => g.includes("calculate"))).toBe(true);
+    expect(await defs.calculate?.execute({ expression: "(75 + 120.40) * 1.0725" }, ctx)).toEqual({
+      expression: "(75 + 120.40) * 1.0725",
+      result: 209.5665,
+    });
+    const bad = (await defs.calculate?.execute({ expression: "1 +" }, ctx)) as { error: string };
+    expect(bad.error).toMatch(/Unexpected end/);
   });
 
   test("visit_webpage follows redirects without re-validating target", async () => {

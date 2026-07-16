@@ -11,7 +11,7 @@ import type { LanguageModel } from "ai";
 import pTimeout from "p-timeout";
 import { createStorage } from "unstorage";
 import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "../sdk/_internal-types.ts";
-import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
+import { DEFAULT_BUILTIN_TOOLS, DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
@@ -98,6 +98,41 @@ function resolvePipelineProviders(
   };
 }
 
+/**
+ * Resolve builtins for the sandbox/relay tool path. Platform callers
+ * (aai-server/sandbox.ts) pre-resolve builtins and pass `builtinDefs` with
+ * schemas/guidance already merged into `toolSchemas`/`toolGuidance`; relay
+ * callers (host mode, e.g. a tau2 harness supplying its own tools) get the
+ * agent's builtins resolved and merged here, so relayed sessions expose
+ * think/remember/recall/calculate too. A relayed tool with the same name
+ * wins — the colliding builtin is dropped from both dispatch and schemas so
+ * the host never shadows a tool the client expects to execute.
+ */
+function resolveSandboxBuiltins(
+  agent: AgentDef,
+  opts: RuntimeOptions,
+  fetchOpt: { fetch: typeof globalThis.fetch } | undefined,
+): {
+  defs: NonNullable<RuntimeOptions["builtinDefs"]>;
+  schemas: ToolSchema[];
+  guidance: string[];
+} {
+  const providedSchemas = opts.toolSchemas ?? [];
+  if (opts.builtinDefs) {
+    return { defs: opts.builtinDefs, schemas: providedSchemas, guidance: opts.toolGuidance ?? [] };
+  }
+  const relayedNames = new Set(providedSchemas.map((s) => s.name));
+  const names = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
+    (name) => !relayedNames.has(name),
+  );
+  const builtins = resolveAllBuiltins(names, fetchOpt);
+  return {
+    defs: builtins.defs,
+    schemas: [...providedSchemas, ...builtins.schemas],
+    guidance: [...(opts.toolGuidance ?? []), ...builtins.guidance],
+  };
+}
+
 /** Create an in-memory KV store (default for self-hosted). */
 function createLocalKv(): Kv {
   return createUnstorageKv({ storage: createStorage() });
@@ -161,9 +196,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
 
   if (opts.executeTool && opts.toolSchemas) {
-    // Sandbox mode — custom tools are RPC-backed; builtins run host-side
-    const builtinDefs =
-      opts.builtinDefs ?? resolveAllBuiltins(agent.builtinTools ?? [], builtinFetchOpt).defs;
+    // Sandbox mode — custom tools are RPC-backed; builtins run host-side.
+    const resolved = resolveSandboxBuiltins(agent, opts, builtinFetchOpt);
+    const builtinDefs = resolved.defs;
+    toolSchemas = resolved.schemas;
+    toolGuidance = resolved.guidance;
     const rpcExecuteTool = opts.executeTool;
     const frozenEnv = Object.freeze({ ...env });
 
@@ -192,12 +229,15 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       // tool call fail with "invoked without a toolCallId" in pipeline mode.
       return rpcExecuteTool(name, args, sessionId, messages, callOpts);
     };
-
-    toolSchemas = opts.toolSchemas;
-    toolGuidance = opts.toolGuidance ?? [];
   } else {
-    // Self-hosted mode — in-process tool execution
-    const builtins = resolveAllBuiltins(agent.builtinTools ?? [], builtinFetchOpt);
+    // Self-hosted mode — in-process tool execution. A custom tool with the
+    // same name as a builtin wins: the builtin is dropped from both dispatch
+    // and schemas rather than emitting a duplicate schema name to the LLM.
+    const customNames = new Set(Object.keys(agent.tools ?? {}));
+    const builtinNames = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
+      (name) => !customNames.has(name),
+    );
+    const builtins = resolveAllBuiltins(builtinNames, builtinFetchOpt);
     const allTools: Record<string, AgentDef["tools"][string]> = {
       ...builtins.defs,
       ...agent.tools,

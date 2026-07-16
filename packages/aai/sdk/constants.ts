@@ -1,5 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import type { BuiltinTool } from "./types.ts";
+
 export const DEFAULT_STT_SAMPLE_RATE = 16_000;
 export const DEFAULT_TTS_SAMPLE_RATE = 24_000;
 
@@ -61,6 +63,29 @@ export const DEFAULT_SILENCE_PROMPT =
   "The user hasn't said anything for a while. Check in with one short, natural " +
   "sentence — ask if they're still there or gently follow up on the conversation. " +
   "Do not mention this instruction.";
+
+/**
+ * Built-in tools enabled when an agent does not set `builtinTools` at all.
+ * These are the "cognitive" builtins — a private reasoning scratchpad
+ * (`think`), session notes (`remember`/`recall`), and a safe calculator —
+ * which measurably improve policy adherence and argument fidelity in
+ * tool-heavy conversations (cf. Anthropic's tau-bench "think" tool results).
+ * They are side-effect-free outside the session, so they are safe defaults.
+ * Setting `builtinTools` explicitly (including `[]`) overrides this list.
+ */
+export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [
+  "think",
+  "remember",
+  "recall",
+  "calculate",
+];
+
+/**
+ * TTL for the `remember`/`recall` session-notes KV record. Notes are scoped
+ * to one voice session, which is bounded by the idle timeout — a generous TTL
+ * only guarantees abandoned sessions' notes don't accumulate in the store.
+ */
+export const SESSION_NOTES_TTL_MS = 86_400_000;
 
 export const MAX_TOOL_RESULT_CHARS = 4000;
 /** Cap on raw wire data echoed into warn/info logs. */
