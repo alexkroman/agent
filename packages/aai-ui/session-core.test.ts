@@ -172,6 +172,25 @@ describe("createSessionCore", () => {
       expect(core.getSnapshot().state).toBe("ready");
     });
 
+    it("user_transcript_partial sets the live userTranscript without touching messages", () => {
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "user_transcript_partial", text: "hello wor" }),
+      );
+      const snap = core.getSnapshot();
+      expect(snap.userTranscript).toBe("hello wor");
+      expect(snap.messages).toEqual([]);
+    });
+
+    it("user_transcript after partials commits the message and clears the live transcript", () => {
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "user_transcript_partial", text: "hello wor" }),
+      );
+      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "Hello world" }));
+      const snap = core.getSnapshot();
+      expect(snap.messages).toEqual([{ role: "user", content: "Hello world" }]);
+      expect(snap.userTranscript).toBe(null);
+    });
+
     it("user_transcript appends user message and sets state to thinking", () => {
       lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "Hello world" }));
       const snap = core.getSnapshot();

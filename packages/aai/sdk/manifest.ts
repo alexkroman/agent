@@ -10,6 +10,7 @@ import { z } from "zod";
 import { validateAllowedHostPattern } from "./allowed-hosts.ts";
 import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
 import {
+  assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
   type KvProvider,
@@ -66,6 +67,31 @@ export type Manifest = {
    * elapses. Defaults to `DEFAULT_SILENCE_PROMPT`. Requires `silenceTimeoutMs`.
    */
   silencePrompt?: string | undefined;
+  /**
+   * Pipeline mode only. Minimum interim-transcript words before user speech
+   * barges in on the agent's in-flight reply. Default 2.
+   */
+  minBargeInWords?: number | undefined;
+  /**
+   * Pipeline mode only. Endpoint settle window (ms) after an STT final before
+   * committing the user's turn. Default 1500; 0 commits every final at once.
+   */
+  endpointSettleMs?: number | undefined;
+  /**
+   * Pipeline mode only. Settle window (ms) for clearly-complete finals,
+   * capped by `endpointSettleMs`. Default 600.
+   */
+  completeSettleMs?: number | undefined;
+  /**
+   * Pipeline mode only. Phrase spoken when a turn opens with a tool call and
+   * no speech. Default `"One moment."`; `""` disables.
+   */
+  holdPhrase?: string | undefined;
+  /**
+   * Pipeline mode only. False-interruption recovery window (ms). Default
+   * 2000; 0 disables recovery.
+   */
+  falseInterruptionTimeoutMs?: number | undefined;
   /** CSS custom properties for agent UI theming. */
   theme?: Record<string, string> | undefined;
   /** Custom tool definitions keyed by tool name. */
@@ -134,6 +160,14 @@ const ManifestSchema = z.object({
   idleTimeoutMs: z.number().int().nonnegative().optional(),
   silenceTimeoutMs: z.number().int().positive().optional(),
   silencePrompt: z.string().min(1).optional(),
+  minBargeInWords: z.number().int().min(1).optional(),
+  // 0 is the documented "disable" value for the settle windows and the
+  // false-interruption recovery timer — allow it via nonnegative().
+  endpointSettleMs: z.number().int().nonnegative().optional(),
+  completeSettleMs: z.number().int().nonnegative().optional(),
+  // "" is the documented "disable the hold phrase" value — no min(1).
+  holdPhrase: z.string().optional(),
+  falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
   theme: z.record(z.string(), z.string()).optional(),
   tools: z.record(z.string(), ToolManifestSchema).optional(),
   allowedHosts: z
@@ -173,6 +207,7 @@ export function parseManifest(input: unknown): Manifest {
   const parsed = ManifestSchema.parse(input);
   const mode = assertProviderTriple(parsed.stt, parsed.llm, parsed.tts, parsed.s2s);
   assertSilencePolicy(mode, parsed.silenceTimeoutMs, parsed.silencePrompt);
+  assertPipelineTuning(mode, parsed);
   return {
     ...parsed,
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,

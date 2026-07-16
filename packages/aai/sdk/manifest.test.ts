@@ -305,6 +305,88 @@ describe("parseManifest — silence nudge", () => {
   });
 });
 
+describe("parseManifest — pipeline voice tuning", () => {
+  const pipelineFields = {
+    stt: assemblyAI({ model: "u3pro-rt" }),
+    llm: anthropic({ model: "claude-haiku-4-5" }),
+    tts: cartesia({ voice: "v" }),
+  };
+
+  test("accepts all tuning fields in pipeline mode", () => {
+    const m = parseManifest({
+      name: "x",
+      ...pipelineFields,
+      minBargeInWords: 3,
+      endpointSettleMs: 800,
+      completeSettleMs: 200,
+      holdPhrase: "Just a sec.",
+      falseInterruptionTimeoutMs: 1500,
+    } as never);
+    expect(m.minBargeInWords).toBe(3);
+    expect(m.endpointSettleMs).toBe(800);
+    expect(m.completeSettleMs).toBe(200);
+    expect(m.holdPhrase).toBe("Just a sec.");
+    expect(m.falseInterruptionTimeoutMs).toBe(1500);
+  });
+
+  test("accepts the documented 'disable' values (0 windows, empty holdPhrase)", () => {
+    const m = parseManifest({
+      name: "x",
+      ...pipelineFields,
+      endpointSettleMs: 0,
+      completeSettleMs: 0,
+      holdPhrase: "",
+      falseInterruptionTimeoutMs: 0,
+    } as never);
+    expect(m.endpointSettleMs).toBe(0);
+    expect(m.holdPhrase).toBe("");
+    expect(m.falseInterruptionTimeoutMs).toBe(0);
+  });
+
+  test.each([
+    ["minBargeInWords", 2],
+    ["endpointSettleMs", 800],
+    ["completeSettleMs", 200],
+    ["holdPhrase", "One sec."],
+    ["falseInterruptionTimeoutMs", 1500],
+  ])("rejects %s in s2s mode", (field, value) => {
+    expect(() => parseManifest({ name: "x", [field]: value })).toThrow(
+      new RegExp(`${field} requires pipeline mode`),
+    );
+  });
+
+  test("rejects minBargeInWords below 1", () => {
+    expect(() =>
+      parseManifest({ name: "x", ...pipelineFields, minBargeInWords: 0 } as never),
+    ).toThrow();
+  });
+
+  test("toAgentConfig propagates the tuning fields in pipeline mode", () => {
+    const config = toAgentConfig({
+      name: "x",
+      systemPrompt: "p",
+      greeting: "g",
+      ...pipelineFields,
+      minBargeInWords: 1,
+      endpointSettleMs: 900,
+      completeSettleMs: 300,
+      holdPhrase: "",
+      falseInterruptionTimeoutMs: 2500,
+    });
+    expect(config.minBargeInWords).toBe(1);
+    expect(config.endpointSettleMs).toBe(900);
+    expect(config.completeSettleMs).toBe(300);
+    expect(config.holdPhrase).toBe("");
+    expect(config.falseInterruptionTimeoutMs).toBe(2500);
+  });
+
+  test("toAgentConfig rejects tuning fields in s2s mode", () => {
+    expect(() =>
+      toAgentConfig({ name: "x", systemPrompt: "p", greeting: "g", minBargeInWords: 3 }),
+    ).toThrow(/minBargeInWords requires pipeline mode/);
+  });
+});
+
 describe("parseManifest s2s", () => {
   test("parseManifest accepts s2s descriptor", () => {
     const m = parseManifest({

@@ -124,6 +124,11 @@ export function createTransportFactory(
       ...(agentConfig.sttPrompt !== undefined ? { sttPrompt: agentConfig.sttPrompt } : {}),
       silenceTimeoutMs: agentConfig.silenceTimeoutMs,
       silencePrompt: agentConfig.silencePrompt,
+      minBargeInWords: agentConfig.minBargeInWords,
+      endpointSettleMs: agentConfig.endpointSettleMs,
+      completeSettleMs: agentConfig.completeSettleMs,
+      holdPhrase: agentConfig.holdPhrase,
+      falseInterruptionTimeoutMs: agentConfig.falseInterruptionTimeoutMs,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,
     });

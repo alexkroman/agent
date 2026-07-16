@@ -3,11 +3,16 @@
 exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
 [
   "builtinTools",
+  "completeSettleMs",
+  "endpointSettleMs",
+  "falseInterruptionTimeoutMs",
   "greeting",
+  "holdPhrase",
   "idleTimeoutMs",
   "kv",
   "llm",
   "maxSteps",
+  "minBargeInWords",
   "mode",
   "name",
   "s2s",
@@ -77,6 +82,10 @@ exports[`protocol schema shapes > ClientEventSchema option shapes 1`] = `
     "type",
   ],
   "user_transcript": [
+    "text",
+    "type",
+  ],
+  "user_transcript_partial": [
     "text",
     "type",
   ],
@@ -194,6 +203,10 @@ exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
     "type",
   ],
   "user_transcript": [
+    "text",
+    "type",
+  ],
+  "user_transcript_partial": [
     "text",
     "type",
   ],

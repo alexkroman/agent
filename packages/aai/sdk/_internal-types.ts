@@ -4,6 +4,7 @@ import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
 import { ProviderDescriptorSchema } from "./manifest.ts";
 import {
+  assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
   type KvProvider,
@@ -44,6 +45,11 @@ export const AgentConfigSchema = z.object({
   idleTimeoutMs: z.number().nonnegative().optional(),
   silenceTimeoutMs: z.number().positive().optional(),
   silencePrompt: z.string().optional(),
+  minBargeInWords: z.number().int().min(1).optional(),
+  endpointSettleMs: z.number().int().nonnegative().optional(),
+  completeSettleMs: z.number().int().nonnegative().optional(),
+  holdPhrase: z.string().optional(),
+  falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
@@ -68,6 +74,11 @@ interface AgentConfigSource {
   idleTimeoutMs?: number | undefined;
   silenceTimeoutMs?: number | undefined;
   silencePrompt?: string | undefined;
+  minBargeInWords?: number | undefined;
+  endpointSettleMs?: number | undefined;
+  completeSettleMs?: number | undefined;
+  holdPhrase?: string | undefined;
+  falseInterruptionTimeoutMs?: number | undefined;
   stt?: SttProvider | undefined;
   llm?: LlmProvider | undefined;
   tts?: TtsProvider | undefined;
@@ -76,11 +87,25 @@ interface AgentConfigSource {
   vector?: VectorProvider | undefined;
 }
 
+/** Copy the defined pipeline voice-tuning fields into a config-shaped partial. */
+function pipelineTuningConfig(src: AgentConfigSource): Partial<AgentConfig> {
+  return {
+    ...(src.minBargeInWords !== undefined ? { minBargeInWords: src.minBargeInWords } : {}),
+    ...(src.endpointSettleMs !== undefined ? { endpointSettleMs: src.endpointSettleMs } : {}),
+    ...(src.completeSettleMs !== undefined ? { completeSettleMs: src.completeSettleMs } : {}),
+    ...(src.holdPhrase !== undefined ? { holdPhrase: src.holdPhrase } : {}),
+    ...(src.falseInterruptionTimeoutMs !== undefined
+      ? { falseInterruptionTimeoutMs: src.falseInterruptionTimeoutMs }
+      : {}),
+  };
+}
+
 export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   // `assertProviderTriple` enforces that stt/llm/tts are all-or-nothing so the
   // server can trust the resolved mode.
   const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s);
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
+  assertPipelineTuning(mode, src);
 
   const config: AgentConfig = {
     name: src.name,
@@ -95,6 +120,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   if (src.idleTimeoutMs !== undefined) config.idleTimeoutMs = src.idleTimeoutMs;
   if (src.silenceTimeoutMs !== undefined) config.silenceTimeoutMs = src.silenceTimeoutMs;
   if (src.silencePrompt !== undefined) config.silencePrompt = src.silencePrompt;
+  Object.assign(config, pipelineTuningConfig(src));
   if (mode === "pipeline") {
     config.stt = src.stt;
     config.llm = src.llm;

@@ -69,6 +69,8 @@ export type SessionCore = {
   onAudioChunk(bytes: Uint8Array): void;
   onAudioDone(): void;
   onUserTranscript(text: string): void;
+  /** Interim user transcript — forwarded to the client, never added to history. */
+  onUserTranscriptPartial(text: string): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
   onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
   onError(code: SessionErrorCode, message: string): void;
@@ -274,6 +276,9 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     onUserTranscript(text) {
       emit({ type: "user_transcript", text });
       pushMessages({ role: "user", content: text });
+    },
+    onUserTranscriptPartial(text) {
+      emit({ type: "user_transcript_partial", text });
     },
     onAgentTranscript(text, interrupted) {
       reply.flushedAwaitingContinuation = false;

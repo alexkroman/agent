@@ -15,6 +15,12 @@ export type TransportCallbacks = {
   onAudioChunk(bytes: Uint8Array): void;
   onAudioDone(): void;
   onUserTranscript(text: string): void;
+  /**
+   * Interim user transcript while speech is still in progress. Pipeline mode
+   * forwards STT partials so the client can render live captions; S2S
+   * transports never call it (their providers only surface committed turns).
+   */
+  onUserTranscriptPartial?(text: string): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
   onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
   /**

@@ -314,6 +314,8 @@ export interface ConsumeLlmStreamParams {
   maxSteps: number;
   /** Forwards text to the active TTS session (no-op if none). */
   sendTtsText: (text: string) => void;
+  /** Filler spoken before a silent turn's first tool call — see {@link StreamPartHandlerDeps}. */
+  holdPhrase?: string | undefined;
   /** Tool-call/tool-result observability hooks, forwarded to SessionCore. */
   callbacks: Pick<TransportCallbacks, "onToolCall" | "onToolCallDone">;
   /** Report an LLM-stream error. */
@@ -355,6 +357,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     repairToolCall,
     maxSteps,
     sendTtsText,
+    holdPhrase,
     callbacks,
     emitError,
     log,
@@ -388,6 +391,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     const handlePart = createStreamPartHandler({
       onDelta,
       sendTtsText,
+      holdPhrase,
       onToolCall: callbacks.onToolCall,
       onToolCallDone: callbacks.onToolCallDone,
       emitError,

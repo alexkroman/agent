@@ -135,6 +135,29 @@ export const DEFAULT_ENDPOINT_SETTLE_MS = 1500;
  * finished requests. Set to 0 to commit complete finals immediately.
  */
 export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 600;
+
+/**
+ * False-interruption recovery window (pipeline mode). A barge-in triggered by
+ * an interim STT transcript aborts the agent's in-flight reply — but if no
+ * final transcript ever commits (STT noise, a hallucinated partial, a
+ * trailing fragment the settler dropped), the interruption was a false alarm
+ * and the agent would otherwise fall silent mid-thought. After this many ms
+ * with no committed user turn, the transport injects
+ * {@link DEFAULT_FALSE_INTERRUPTION_PROMPT} as a synthetic user turn so the
+ * agent picks its reply back up. Set to 0 to disable recovery.
+ */
+export const DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS = 2000;
+
+/**
+ * Instruction injected as a synthetic user turn when a barge-in turns out to
+ * be a false interruption (see {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS}).
+ * The interrupted reply's spoken-so-far text is already in history, marked
+ * `[interrupted]`, so the model knows where it was cut off.
+ */
+export const DEFAULT_FALSE_INTERRUPTION_PROMPT =
+  "Your last reply was cut off by a false interruption — the user did not " +
+  "actually say anything. Continue your reply from where it was cut off, " +
+  "without repeating what you already said. Do not mention this instruction.";
 export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 
