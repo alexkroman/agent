@@ -3,7 +3,7 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import { useSession, useTheme } from "../context.ts";
+import { useSessionCore, useSessionSelector, useTheme } from "../context.ts";
 import { Button } from "./button.tsx";
 
 /**
@@ -22,7 +22,10 @@ import { Button } from "./button.tsx";
  * @public
  */
 export function Controls({ className }: { className?: string }) {
-  const { running, toggle, reset } = useSession();
+  // Narrow subscription: only re-render when `running` flips, not on every
+  // snapshot change (messages, transcripts, audio state, ...).
+  const running = useSessionSelector((s) => s.running);
+  const { toggle, reset } = useSessionCore();
   const theme = useTheme();
 
   return (

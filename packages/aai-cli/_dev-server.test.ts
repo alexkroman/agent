@@ -348,6 +348,32 @@ describe("file watcher filtering", () => {
     });
   });
 
+  test("ignored matcher filters dot-directories (.git etc.) but keeps .env watched", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+      const ignored = chokidarState.ignored;
+      expect(ignored).toBeDefined();
+      // .git activity (commits, index writes) must never restart the server.
+      expect(ignored?.(path.join(dir, ".git"))).toBe(true);
+      expect(ignored?.(path.join(dir, ".git", "index.lock"))).toBe(true);
+      expect(ignored?.(path.join(dir, ".git", "refs", "heads", "main"))).toBe(true);
+      // Other dot-directories (editor caches, VCS metadata) are ignored too.
+      expect(ignored?.(path.join(dir, ".vscode", "settings.json"))).toBe(true);
+      expect(ignored?.(path.join(dir, ".cache", "x", "y.ts"))).toBe(true);
+      expect(ignored?.(path.join(dir, "sub", ".hidden", "file.ts"))).toBe(true);
+      // .env files stay watched — env edits should restart with new values.
+      expect(ignored?.(path.join(dir, ".env"))).toBe(false);
+      expect(ignored?.(path.join(dir, ".env.local"))).toBe(false);
+      // The watch root itself is never ignored.
+      expect(ignored?.(dir)).toBe(false);
+
+      await cleanup();
+    });
+  });
+
   test("watcher triggers restart on agent file change", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
@@ -377,6 +403,37 @@ describe("file watcher filtering", () => {
     });
   });
 
+  test("builds the new server before closing the old one on restart", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+      mockClose.mockClear();
+      mockCreateServer.mockClear();
+      mockListen.mockClear();
+
+      fireChange(dir, "agent.ts");
+
+      await vi.waitFor(
+        () => {
+          expect(mockListen).toHaveBeenCalled();
+        },
+        { timeout: 2000 },
+      );
+
+      // Build (createServer) completes BEFORE the old server closes, so the
+      // down-window is only the close+listen swap — not the whole rebuild.
+      const createOrder = mockCreateServer.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY;
+      const closeOrder = mockClose.mock.invocationCallOrder[0] ?? Number.NEGATIVE_INFINITY;
+      const listenOrder = mockListen.mock.invocationCallOrder[0] ?? Number.NEGATIVE_INFINITY;
+      expect(createOrder).toBeLessThan(closeOrder);
+      expect(closeOrder).toBeLessThan(listenOrder);
+
+      await cleanup();
+    });
+  });
+
   test("restart logs error on failure instead of crashing", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
@@ -398,6 +455,9 @@ describe("file watcher filtering", () => {
         },
         { timeout: 2000 },
       );
+
+      // A failed build must leave the previous server running: no close.
+      expect(mockClose).not.toHaveBeenCalled();
 
       await cleanup();
     });

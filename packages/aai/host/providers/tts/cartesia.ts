@@ -105,7 +105,12 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         teardown: () => ws.close({ code: 1000, reason: "client close" }),
       });
 
-      const audioConfig = {
+      // The full generation config lives in the context options: the SDK's
+      // `TTSWSContext.send` merges its stored options into every outbound
+      // request itself, so each per-send payload below only needs the
+      // varying `transcript`/`continue` fields — no ~200 B base-request
+      // spread per word/chunk sent.
+      const contextOptions = {
         model_id: model,
         voice: { mode: "id" as const, id: voice },
         output_format: {
@@ -113,11 +118,11 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
           encoding: "pcm_s16le" as const,
           sample_rate: sampleRate,
         },
+        language,
       };
-      const baseRequest = { ...audioConfig, language };
 
       const mintContext = (): TTSWSContext =>
-        ws.context({ ...audioConfig, contextId: randomUUID() });
+        ws.context({ ...contextOptions, contextId: randomUUID() });
 
       let context = mintContext();
       let doneEmitted = false;
@@ -192,9 +197,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
           // First sendText after flush/cancel starts a fresh context so we
           // don't append to one that's already been finalized.
           rotateIfPending();
-          void context
-            .send({ ...baseRequest, transcript: text, continue: true })
-            .catch(ignoreRejection);
+          void context.send({ transcript: text, continue: true }).catch(ignoreRejection);
         },
         flush() {
           if (shell.isClosed() || rotatePending) return;
@@ -202,9 +205,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
           // signal. Cartesia finishes synthesizing what's queued and emits
           // `done` tagged with the same context_id; rotation is deferred so
           // in-flight audio chunks and the real `done` still pass the filter.
-          void context
-            .send({ ...baseRequest, transcript: "", continue: false })
-            .catch(ignoreRejection);
+          void context.send({ transcript: "", continue: false }).catch(ignoreRejection);
           rotatePending = true;
         },
         cancel() {

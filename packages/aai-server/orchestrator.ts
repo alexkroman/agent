@@ -36,6 +36,7 @@ import type { AppContext, HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
+import { gzipRequestMw } from "./gzip-request.ts";
 import { handleKv } from "./kv-handler.ts";
 import {
   hrtimeSeconds,
@@ -136,7 +137,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     return c.text(text, 200, { "Content-Type": "text/plain; version=0.0.4" });
   });
 
-  app.post("/deploy", authMw, zValidator("json", DeployBodySchema), handleDeployNew);
+  app.post("/deploy", authMw, gzipRequestMw, zValidator("json", DeployBodySchema), handleDeployNew);
 
   // Bare-slug redirect — registered before sub-router so it takes priority.
   // Pattern derived from VALID_SLUG_RE (anchors stripped) so the slug
@@ -153,7 +154,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // Deploy claims a new slug, so it uses ownerMw (unclaimed allowed). Every
   // other owner-scoped route operates on an existing agent's data/secrets and
   // uses existingOwnerMw, which rejects unclaimed slugs.
-  agents.post("/deploy", ownerMw, zValidator("json", DeployBodySchema), handleDeploy);
+  agents.post(
+    "/deploy",
+    ownerMw,
+    gzipRequestMw,
+    zValidator("json", DeployBodySchema),
+    handleDeploy,
+  );
   agents.delete("/", existingOwnerMw, handleDelete);
   agents.get("/secret", existingOwnerMw, handleSecretList);
   agents.put("/secret", existingOwnerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);

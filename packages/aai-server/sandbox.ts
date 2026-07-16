@@ -72,6 +72,34 @@ export type SandboxOptions = {
 
 export type Sandbox = AgentRuntime;
 
+/**
+ * Handler for guest→client `client/send` notifications: validates the
+ * envelope, enforces the payload byte cap, and relays to the session's sink.
+ *
+ * The payload cap is measured in UTF-8 bytes (`Buffer.byteLength`), matching
+ * what actually goes over the WebSocket — `.length` counts UTF-16 code units
+ * and undercounts multibyte text. The serialized string is only used for the
+ * size check: `ClientSink.event` takes the event object and owns the final
+ * envelope serialization, so we pass `data` through untouched.
+ *
+ * Exported for unit tests.
+ */
+export function createClientSendHandler(sessionSinks: Map<string, ClientSink>) {
+  return (raw: unknown): void => {
+    const params = raw as { sessionId: string; event: string; data: unknown };
+    if (typeof params.sessionId !== "string" || typeof params.event !== "string") return;
+    if (params.event.length > MAX_CLIENT_EVENT_NAME_LENGTH) return;
+    // `data` may be undefined (event sent with no payload) — JSON.stringify
+    // returns undefined for it, so guard before measuring.
+    const serializedData = JSON.stringify(params.data ?? null);
+    if (Buffer.byteLength(serializedData) > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return;
+    const sink = sessionSinks.get(params.sessionId);
+    if (sink?.open) {
+      sink.event({ type: "custom_event", event: params.event, data: params.data });
+    }
+  };
+}
+
 /** Map the deploy-time IsolateConfig onto the runtime's agent-definition shape. */
 function toRuntimeAgent(config: IsolateConfig): Parameters<typeof createRuntime>[0]["agent"] {
   return {
@@ -201,19 +229,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   vmReady
     .then((handle) => {
-      handle.conn.onNotification("client/send", (raw: unknown) => {
-        const params = raw as { sessionId: string; event: string; data: unknown };
-        if (typeof params.sessionId !== "string" || typeof params.event !== "string") return;
-        if (params.event.length > MAX_CLIENT_EVENT_NAME_LENGTH) return;
-        // `data` may be undefined (event sent with no payload) — JSON.stringify
-        // returns undefined for it, so guard before reading `.length`.
-        const serializedData = JSON.stringify(params.data ?? null);
-        if (serializedData.length > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return;
-        const sink = sessionSinks.get(params.sessionId);
-        if (sink?.open) {
-          sink.event({ type: "custom_event", event: params.event, data: params.data });
-        }
-      });
+      handle.conn.onNotification("client/send", createClientSendHandler(sessionSinks));
       debug("Sandbox ready", { slug, agent: config.name });
     })
     .catch((err: unknown) => {

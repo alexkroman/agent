@@ -60,10 +60,23 @@ async function loadAgentDef(cwd: string): Promise<AgentDef> {
 
 // ─── File watching ──────────────────────────────────────────────────────────
 
-/** True for paths inside `.aai/` or `node_modules/` (never restart-worthy). */
+/**
+ * True for paths that should never trigger a restart: anything inside
+ * `node_modules/` and any dot-entry (`.git/`, `.aai/`, `.DS_Store`, …).
+ * `.git/` especially matters — commits and status checks churn the index
+ * and would otherwise cause spurious full backend restarts.
+ *
+ * Exception: `.env` / `.env.*` files stay watched — env edits should
+ * restart the server with the new values.
+ */
 export function isIgnoredPath(dir: string, filePath: string): boolean {
   const rel = path.relative(dir, filePath);
-  return rel.startsWith(".aai") || rel.split(path.sep).includes("node_modules");
+  if (!rel || rel.startsWith("..")) return false;
+  return rel.split(path.sep).some((segment) => {
+    if (segment === "node_modules") return true;
+    if (segment === ".env" || segment.startsWith(".env.")) return false;
+    return segment.startsWith(".");
+  });
 }
 
 /**
@@ -188,24 +201,43 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   }
 
   async function restartOnce(): Promise<void> {
+    // Build the replacement server FIRST (the slow part — full bundle +
+    // runtime construction). The old server keeps serving live sessions the
+    // whole time, and a failed build (e.g. a mid-edit syntax error) leaves it
+    // running instead of leaving the port dead until the next save.
+    let newServer: AgentServer;
+    try {
+      newServer = await buildServer();
+    } catch (err) {
+      log.error(`Restart failed: ${errorMessage(err)} (previous server still running)`);
+      return;
+    }
+    // The cleanup fn may have run while we were rebuilding — don't leave a
+    // freshly-built server orphaned (leaked port / hung event loop).
+    if (closed) {
+      await newServer.close().catch(() => undefined);
+      return;
+    }
+    // The old server holds the port, so it must close before the new one
+    // listens — the down-window is now just this close+listen swap.
     try {
       await currentServer.close();
     } catch {
       /* ignore */
     }
     try {
-      const newServer = await buildServer();
-      // The cleanup fn may have run while we were rebuilding — don't leave a
-      // freshly-listening server orphaned (leaked port / hung event loop).
+      await newServer.listen(backendPort);
+      currentServer = newServer;
       if (closed) {
+        // Cleanup raced with the swap: it closed the old server, so shut the
+        // new one down too rather than leaving it listening forever.
         await newServer.close().catch(() => undefined);
         return;
       }
-      await newServer.listen(backendPort);
-      currentServer = newServer;
       log.success("Restarted");
     } catch (err) {
       log.error(`Restart failed: ${errorMessage(err)}`);
+      await newServer.close().catch(() => undefined);
     }
   }
 

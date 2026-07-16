@@ -14,6 +14,7 @@ import {
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
+import { MIC_SEND_MAX_BUFFERED_BYTES } from "./types.ts";
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
@@ -382,18 +383,76 @@ describe("createSessionCore", () => {
       expect(core.getSnapshot().messages).toHaveLength(2);
     });
 
-    it("tool call afterMessageIndex tracks insertion point", () => {
-      // Two user messages first
+    it("tool call afterMessageId anchors to the last message at insert time", () => {
+      // Three messages first (ids 1, 2, 3)
       lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "msg1" }));
       lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "reply1" }));
       lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "msg2" }));
       expect(core.getSnapshot().messages).toHaveLength(3);
 
-      // Tool call after 3 messages (index 2)
+      // Tool call after 3 messages anchors to the message with id 3
       lastSocket?.simulateMessage(
         JSON.stringify({ type: "tool_call", toolCallId: "tc-1", toolName: "calc", args: {} }),
       );
-      expect(core.getSnapshot().toolCalls[0]?.afterMessageIndex).toBe(2);
+      expect(core.getSnapshot().toolCalls[0]?.afterMessageId).toBe(3);
+    });
+
+    it("tool call inserted before any message anchors to -1", () => {
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "tool_call", toolCallId: "tc-1", toolName: "calc", args: {} }),
+      );
+      expect(core.getSnapshot().toolCalls[0]?.afterMessageId).toBe(-1);
+    });
+
+    it("tool call seq is monotonic across insertions", () => {
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "tool_call", toolCallId: "tc-1", toolName: "a", args: {} }),
+      );
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "tool_call", toolCallId: "tc-2", toolName: "b", args: {} }),
+      );
+      expect(core.getSnapshot().toolCalls.map((tc) => tc.seq)).toEqual([1, 2]);
+    });
+  });
+
+  // ─── Mic send backpressure ──────────────────────────────────────────────
+
+  describe("mic send backpressure", () => {
+    let audio: AudioMockContext & { restore: () => void };
+
+    beforeEach(() => {
+      audio = installAudioMocks();
+    });
+
+    afterEach(() => {
+      audio.restore();
+    });
+
+    it("drops mic frames while ws.bufferedAmount exceeds the threshold", async () => {
+      core.connect();
+      const socket = lastSocket;
+      socket?.simulateOpen();
+      socket?.simulateMessage(makeConfig());
+
+      // Wait for initAudioCapture to wire the capture worklet's onmessage.
+      await vi.waitFor(() => {
+        expect(audio.workletNodes().some((n) => n.name === "capture-processor")).toBe(true);
+        expect(
+          findWorkletNode(audio.workletNodes(), "capture-processor").port.onmessage,
+        ).not.toBeNull();
+      });
+      const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");
+      const binarySends = () =>
+        (socket?.send.mock.calls ?? []).filter((c) => typeof c[0] !== "string");
+
+      if (socket) socket.bufferedAmount = MIC_SEND_MAX_BUFFERED_BYTES + 1;
+      capNode.port.simulateMessage({ event: "chunk", buffer: new ArrayBuffer(320) });
+      expect(binarySends()).toHaveLength(0);
+
+      // Once the queue drains below the threshold, frames flow again.
+      if (socket) socket.bufferedAmount = 0;
+      capNode.port.simulateMessage({ event: "chunk", buffer: new ArrayBuffer(320) });
+      expect(binarySends()).toHaveLength(1);
     });
   });
 });

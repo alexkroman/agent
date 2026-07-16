@@ -18,7 +18,8 @@ describe("ToolCallInfo", () => {
     expectTypeOf<ToolCallInfo>().toHaveProperty("args");
     expectTypeOf<ToolCallInfo>().toHaveProperty("status");
     expectTypeOf<ToolCallInfo>().toHaveProperty("result");
-    expectTypeOf<ToolCallInfo>().toHaveProperty("afterMessageIndex");
+    expectTypeOf<ToolCallInfo>().toHaveProperty("seq");
+    expectTypeOf<ToolCallInfo>().toHaveProperty("afterMessageId");
   });
 
   it("does not have old field names", () => {
@@ -70,9 +71,17 @@ describe("SessionCore type contract", () => {
   });
 });
 
+describe("ChatMessage", () => {
+  it("carries a stable numeric id", () => {
+    expectTypeOf<ChatMessage>().toHaveProperty("id");
+    expectTypeOf<ChatMessage["id"]>().toEqualTypeOf<number>();
+  });
+});
+
 describe("SessionSnapshot type contract", () => {
   test("has expected field types", () => {
     expectTypeOf<SessionSnapshot["state"]>().toEqualTypeOf<AgentState>();
+    expectTypeOf<SessionSnapshot["contentVersion"]>().toEqualTypeOf<number>();
     expectTypeOf<SessionSnapshot["messages"]>().toEqualTypeOf<ChatMessage[]>();
     expectTypeOf<SessionSnapshot["error"]>().toEqualTypeOf<SessionError | null>();
     expectTypeOf<SessionSnapshot["started"]>().toEqualTypeOf<boolean>();

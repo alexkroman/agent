@@ -22,15 +22,23 @@ interface FakeGenerationRequest {
   model_id?: string;
 }
 
+interface FakeContextOptions {
+  contextId: string;
+  model_id?: string;
+  language?: string;
+  voice?: { mode: string; id: string };
+}
+
 interface FakeContext {
   contextId: string;
+  options: FakeContextOptions;
   send(req: FakeGenerationRequest): Promise<void>;
   cancel(): Promise<void>;
 }
 
 interface FakeTTSWS {
   contexts: FakeContext[];
-  context(opts: { contextId: string }): FakeContext;
+  context(opts: FakeContextOptions): FakeContext;
   connect(): Promise<FakeTTSWS>;
   on(event: string, fn: (...args: unknown[]) => void): FakeTTSWS;
   close(props?: { code: number; reason: string }): void;
@@ -52,6 +60,7 @@ vi.mock("@cartesia/cartesia-js/resources/tts/ws", () => {
       context(opts) {
         const ctx: FakeContext = {
           contextId: opts.contextId,
+          options: opts,
           async send(req) {
             sends.push({
               kind: "send",
@@ -98,14 +107,15 @@ vi.mock("@cartesia/cartesia-js/resources/tts/ws", () => {
   };
 });
 
+// Per-send payloads carry only the varying fields — the generation config
+// (model_id, voice, language, output_format) lives in the context options
+// and is merged into each request by the SDK's TTSWSContext.send itself.
 function expectedSend(contextId: string, transcript: string, cont: boolean): RecordedSend {
   return {
     kind: "send",
     contextId,
     transcript,
     continue: cont,
-    language: "en",
-    model_id: "sonic-2",
   };
 }
 
@@ -128,6 +138,25 @@ async function openSession(): Promise<{
 }
 
 describe("cartesia TTS adapter", () => {
+  test("generation config is set once on the context; per-send payloads carry only transcript/continue", async () => {
+    const { session, controller } = await openSession();
+
+    const ws = session._ws as unknown as FakeTTSWS;
+    expect(ws.contexts[0]?.options).toMatchObject({
+      model_id: "sonic-2",
+      language: "en",
+      voice: { mode: "id", id: "voice-id" },
+    });
+
+    session.sendText("hello");
+    await flush();
+    expect(sends[0]?.model_id).toBeUndefined();
+    expect(sends[0]?.language).toBeUndefined();
+
+    controller.abort();
+    await session.close();
+  });
+
   test("sendText deltas share one contextId; flush ends the turn; next turn uses a fresh contextId", async () => {
     const { session, controller } = await openSession();
     const turn1 = session._currentContextId();

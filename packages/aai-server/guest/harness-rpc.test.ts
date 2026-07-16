@@ -25,6 +25,7 @@ const {
   handleFetchNotification,
   handleHostResponse,
   kvAdapter,
+  pendingFetches,
   pendingHostRequests,
   sendError,
   sendResponse,
@@ -67,16 +68,23 @@ function respondToLastRequest(result: unknown): void {
 
 /**
  * Yield a macrotask so the async fetch proxy can progress: it serializes the
- * request body before writing the RPC, and registers its pending-fetch entry
- * only after the host responds.
+ * request body before registering its pending-fetch entry and writing the RPC.
  */
 function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
 }
 
+/** Read the guest-generated fetch id from the last written fetch/request. */
+function lastFetchId(): string {
+  const msg = lastMessage();
+  if (msg.method !== "fetch/request") throw new Error("last message is not a fetch/request");
+  return msg.params?.id as string;
+}
+
 beforeEach(() => {
   writtenBytes.length = 0;
   pendingHostRequests.clear();
+  pendingFetches.clear();
 });
 
 describe("NDJSON writing", () => {
@@ -101,6 +109,25 @@ describe("NDJSON writing", () => {
       method: "client/send",
       params: { sessionId: "sess-1", event: "status", data: { level: "info" } },
     });
+  });
+
+  test("writeMessage loops until all bytes are written when writeSync is partial", () => {
+    const deno = (globalThis as Record<string, unknown>).Deno as {
+      stdout: { writeSync(data: Uint8Array): number };
+    };
+    const original = deno.stdout.writeSync;
+    // Simulate a full pipe buffer: accept at most 5 bytes per call.
+    deno.stdout.writeSync = (data: Uint8Array) => {
+      const n = Math.min(5, data.byteLength);
+      writtenBytes.push(new Uint8Array(data.subarray(0, n)));
+      return n;
+    };
+    try {
+      sendResponse(9, { ok: "0123456789abcdef" });
+    } finally {
+      deno.stdout.writeSync = original;
+    }
+    expect(lastMessage()).toEqual({ jsonrpc: "2.0", id: 9, result: { ok: "0123456789abcdef" } });
   });
 });
 
@@ -128,7 +155,7 @@ describe("host RPC round-trip", () => {
 });
 
 describe("proxied fetch", () => {
-  test("sends fetch/request with method, headers, and base64 body", async () => {
+  test("sends fetch/request with guest-generated id, method, headers, and base64 body", async () => {
     const promise = fetch("https://api.test/things", {
       method: "POST",
       headers: { "content-type": "text/plain" },
@@ -144,34 +171,39 @@ describe("proxied fetch", () => {
       body: btoa("hello"),
     });
     expect(msg.params?.headers).toMatchObject({ "content-type": "text/plain" });
+    const id = lastFetchId();
+    expect(id).toMatch(/^f\d+$/);
+    // The pending entry is registered BEFORE the host responds, so early
+    // rejection notifications can never be dropped.
+    expect(pendingFetches.has(id)).toBe(true);
 
-    respondToLastRequest({ id: "f1" });
-    await flush();
+    respondToLastRequest({ id });
     handleFetchNotification("fetch/response-start", {
-      id: "f1",
+      id,
       status: 201,
       statusText: "Created",
       headers: { "x-served-by": "host" },
     });
-    handleFetchNotification("fetch/response-chunk", { id: "f1", data: btoa("hel") });
-    handleFetchNotification("fetch/response-chunk", { id: "f1", data: btoa("lo!") });
-    handleFetchNotification("fetch/response-end", { id: "f1" });
+    handleFetchNotification("fetch/response-chunk", { id, data: btoa("hel") });
+    handleFetchNotification("fetch/response-chunk", { id, data: btoa("lo!") });
+    handleFetchNotification("fetch/response-end", { id });
 
     const res = await promise;
     expect(res.status).toBe(201);
     expect(res.statusText).toBe("Created");
     expect(res.headers.get("x-served-by")).toBe("host");
     await expect(res.text()).resolves.toBe("hello!");
+    expect(pendingFetches.size).toBe(0);
   });
 
   test("GET request sends null body and resolves an empty response", async () => {
     const promise = fetch("https://api.test/empty");
     await flush();
     expect(lastMessage().params).toMatchObject({ method: "GET", body: null });
+    const id = lastFetchId();
 
-    respondToLastRequest({ id: "f2" });
-    await flush();
-    handleFetchNotification("fetch/response-end", { id: "f2" });
+    respondToLastRequest({ id });
+    handleFetchNotification("fetch/response-end", { id });
 
     const res = await promise;
     expect(res.status).toBe(200); // defaults when no response-start arrived
@@ -181,11 +213,47 @@ describe("proxied fetch", () => {
   test("rejects with TypeError on fetch/response-error", async () => {
     const promise = fetch("https://api.test/boom");
     await flush();
-    respondToLastRequest({ id: "f3" });
-    await flush();
-    handleFetchNotification("fetch/response-error", { id: "f3", message: "dns failure" });
+    const id = lastFetchId();
+    respondToLastRequest({ id });
+    handleFetchNotification("fetch/response-error", { id, message: "dns failure" });
     await expect(promise).rejects.toThrow(TypeError);
     await expect(promise).rejects.toThrow("fetch failed: dns failure");
+    expect(pendingFetches.size).toBe(0);
+  });
+
+  test("rejects promptly when the error notification races ahead of the RPC response", async () => {
+    // Regression: a disallowed-host fetch is rejected synchronously by the
+    // host, so fetch/response-error can arrive BEFORE the `{ id }` response.
+    // The guest must already be listening — the error used to be dropped and
+    // the fetch stalled until the 30s tool timeout, leaking the entry.
+    const promise = fetch("https://blocked.test/secret");
+    await flush();
+    const id = lastFetchId();
+
+    // Error notification first, RPC response second (the racy ordering).
+    handleFetchNotification("fetch/response-error", {
+      id,
+      message: 'Host "blocked.test" is not allowed.',
+    });
+    respondToLastRequest({ id });
+
+    await expect(promise).rejects.toThrow('fetch failed: Host "blocked.test" is not allowed.');
+    expect(pendingFetches.size).toBe(0);
+  });
+
+  test("cleans up the pending entry when the fetch/request RPC itself rejects", async () => {
+    const promise = fetch("https://api.test/no-handler");
+    await flush();
+    const { id: rpcId } = lastMessage();
+    if (rpcId === undefined) throw new Error("no fetch/request written");
+
+    handleHostResponse({
+      id: rpcId,
+      error: { code: -32_601, message: "Method not found: fetch/request" },
+    });
+
+    await expect(promise).rejects.toThrow("fetch failed: Method not found: fetch/request");
+    expect(pendingFetches.size).toBe(0);
   });
 
   test("rejects request bodies over the 1 MB limit before contacting the host", async () => {
@@ -204,11 +272,11 @@ describe("proxied fetch", () => {
     await flush();
     const sent = lastMessage().params?.body as string;
     expect(Uint8Array.from(atob(sent), (c) => c.charCodeAt(0))).toEqual(bytes);
+    const id = lastFetchId();
 
-    respondToLastRequest({ id: "f4" });
-    await flush();
-    handleFetchNotification("fetch/response-chunk", { id: "f4", data: sent });
-    handleFetchNotification("fetch/response-end", { id: "f4" });
+    respondToLastRequest({ id });
+    handleFetchNotification("fetch/response-chunk", { id, data: sent });
+    handleFetchNotification("fetch/response-end", { id });
     const res = await promise;
     expect(new Uint8Array(await res.arrayBuffer())).toEqual(bytes);
   });

@@ -217,6 +217,69 @@ describe("wireSessionSocket lifecycle", () => {
     expect(textFrames.find((m) => m.type === "audio_done")).toBeDefined();
   });
 
+  test("playAudioChunk closes a stalled client once the socket buffer exceeds the cap", async () => {
+    let capturedClient!: ClientSink;
+    const ws = openSocket();
+    const logger = makeLogger();
+    const sessions = new Map<string, SessionCore>();
+    const closeSpy = vi.spyOn(ws, "close");
+
+    wireSessionSocket(ws, {
+      sessions,
+      createSession: (_sid, client) => {
+        capturedClient = client;
+        return makeMockCore();
+      },
+      readyConfig: defaultConfig,
+      logger,
+    });
+
+    // Below the cap: audio flows.
+    ws.bufferedAmount = 1024;
+    capturedClient.playAudioChunk(new Uint8Array([1]));
+    expect((ws.sent as unknown[]).filter((d) => d instanceof Uint8Array)).toHaveLength(1);
+
+    // Past the cap: the client is stalled — warn once and close the socket.
+    ws.bufferedAmount = 5 * 1024 * 1024;
+    capturedClient.playAudioChunk(new Uint8Array([2]));
+    capturedClient.playAudioChunk(new Uint8Array([3]));
+
+    expect(closeSpy).toHaveBeenCalledOnce();
+    expect(closeSpy).toHaveBeenCalledWith(1008, "audio backlog exceeded");
+    expect(logger.warn).toHaveBeenCalledOnce();
+    expect(logger.warn).toHaveBeenCalledWith(
+      "ws: client audio backlog exceeded; closing stalled connection",
+      expect.objectContaining({ bufferedBytes: 5 * 1024 * 1024 }),
+    );
+    // No further audio was sent after the stall was detected.
+    expect((ws.sent as unknown[]).filter((d) => d instanceof Uint8Array)).toHaveLength(1);
+
+    // MockWebSocket.close dispatches `close`, so normal teardown runs.
+    await vi.waitFor(() => {
+      expect(sessions.size).toBe(0);
+    });
+  });
+
+  test("playAudioChunk skips the backpressure guard when bufferedAmount is unavailable", () => {
+    let capturedClient!: ClientSink;
+    const ws = openSocket();
+    // Simulate a socket abstraction without bufferedAmount.
+    (ws as { bufferedAmount: number | undefined }).bufferedAmount = undefined;
+
+    wireSessionSocket(ws, {
+      sessions: new Map(),
+      createSession: (_sid, client) => {
+        capturedClient = client;
+        return makeMockCore();
+      },
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+    });
+
+    capturedClient.playAudioChunk(new Uint8Array([1]));
+    expect((ws.sent as unknown[]).filter((d) => d instanceof Uint8Array)).toHaveLength(1);
+  });
+
   test("ClientSink tolerates ws.send throwing (closed socket)", () => {
     let capturedClient!: ClientSink;
     const ws = openSocket();

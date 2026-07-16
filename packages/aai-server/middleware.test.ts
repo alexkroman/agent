@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
+import { requireOwner } from "./middleware.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
@@ -81,6 +82,29 @@ describe("requireOwner", () => {
       body: JSON.stringify({ worker: "x", clientFiles: {} }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("requireOwner unclaimed-slug paths", () => {
+  const bearerReq = () =>
+    new Request("http://localhost/", { headers: { Authorization: "Bearer some-key" } });
+
+  test("throws 404 for a nonexistent slug on data routes (no allowUnclaimed)", async () => {
+    const store = createTestStore();
+    await expect(requireOwner(bearerReq(), { slug: "ghost-agent", store })).rejects.toMatchObject({
+      status: 404,
+    });
+  });
+
+  test("computes keyHash lazily on the allowUnclaimed (deploy-claim) path", async () => {
+    const store = createTestStore();
+    const { apiKey, keyHash } = await requireOwner(bearerReq(), {
+      slug: "ghost-agent",
+      store,
+      allowUnclaimed: true,
+    });
+    expect(apiKey).toBe("some-key");
+    expect(keyHash).toMatch(/^pbkdf2:/);
   });
 });
 

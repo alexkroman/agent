@@ -16,6 +16,10 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // writing past the end and going silent.
     this.capacity = rate * 60;
     this.samples = new Float32Array(this.capacity);
+    // Platform endianness probe: the wire format is PCM16 little-endian, so
+    // the Int16Array fast path in ingestBytes is only valid on LE hosts
+    // (every shipping browser target; the DataView path is the fallback).
+    this.littleEndian = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
     this.resetTurn();
 
     this.port.onmessage = (e) => {
@@ -67,12 +71,35 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     }
 
     if (bytes.length === 0) return;
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
     const numSamples = bytes.length / 2;
-    for (let i = 0; i < numSamples; i++) {
-      this.samples[this.writePos % this.capacity] = view.getInt16(i * 2, true) / 0x8000;
-      this.writePos++;
+    const cap = this.capacity;
+    const samples = this.samples;
+    if (this.littleEndian && (bytes.byteOffset & 1) === 0) {
+      // Fast path: 2-byte-aligned LE bytes wrap directly as an Int16Array;
+      // copy wrap-aware in at most two runs with no per-sample DataView call
+      // or modulo. This runs on the realtime audio thread.
+      const int16 = new Int16Array(bytes.buffer, bytes.byteOffset, numSamples);
+      let src = 0;
+      let dst = this.writePos % cap;
+      while (src < numSamples) {
+        const run = Math.min(numSamples - src, cap - dst);
+        for (let j = 0; j < run; j++) {
+          samples[dst + j] = int16[src + j] / 0x8000;
+        }
+        src += run;
+        dst = 0;
+      }
+    } else {
+      // Odd byte offset (or big-endian host): fall back to per-sample reads.
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
+      let dst = this.writePos % cap;
+      for (let i = 0; i < numSamples; i++) {
+        samples[dst] = view.getInt16(i * 2, true) / 0x8000;
+        dst++;
+        if (dst === cap) dst = 0;
+      }
     }
+    this.writePos += numSamples;
     // If the producer outran the consumer by more than the buffer holds, drop
     // the oldest unplayed audio rather than reading samples we've overwritten.
     if (this.writePos - this.readPos > this.capacity) {
@@ -123,6 +150,9 @@ class PlaybackProcessor extends AudioWorkletProcessor {
 
 registerProcessor('playback-processor', PlaybackProcessor);
 `;
+
+/** Raw worklet source — exported so tests can evaluate the processor directly. */
+export const playbackProcessorSource = PlaybackProcessorWorklet;
 
 const script = new Blob([PlaybackProcessorWorklet], {
   type: "application/javascript",

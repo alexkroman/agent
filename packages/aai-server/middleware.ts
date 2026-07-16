@@ -34,12 +34,18 @@ export async function requireOwner(
   if (result.status === "forbidden") {
     throw new HTTPException(403, { message: "Forbidden" });
   }
-  // An `unclaimed` slug has no manifest — only the deploy path (which claims
-  // it) may proceed. Data routes (kv/vector/secret) must reject it, otherwise
-  // any authenticated caller could pre-seed state for a slug they don't own
-  // and have the eventual owner silently inherit it.
-  if (result.status === "unclaimed" && !opts.allowUnclaimed) {
-    throw new HTTPException(404, { message: `Agent ${opts.slug} not found` });
+  if (result.status === "unclaimed") {
+    // An `unclaimed` slug has no manifest — only the deploy path (which
+    // claims it) may proceed. Data routes (kv/vector/secret) must reject it,
+    // otherwise any authenticated caller could pre-seed state for a slug they
+    // don't own and have the eventual owner silently inherit it.
+    if (!opts.allowUnclaimed) {
+      throw new HTTPException(404, { message: `Agent ${opts.slug} not found` });
+    }
+    // Deploy-claim path: compute the hash lazily, only once we know the
+    // caller may proceed — verifySlugOwner no longer burns ~100ms of
+    // fresh-salt PBKDF2 on every request for a nonexistent slug.
+    return { apiKey, keyHash: await hashApiKey(apiKey) };
   }
   return { apiKey, keyHash: result.keyHash };
 }

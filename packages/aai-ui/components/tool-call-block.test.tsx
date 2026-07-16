@@ -23,7 +23,8 @@ describe("ToolCallBlock", () => {
     name: "web_search",
     args: { query: "weather today" },
     status: "pending",
-    afterMessageIndex: 0,
+    seq: 1,
+    afterMessageId: -1,
   };
 
   const completedToolCall: ToolCallInfo = {
@@ -32,7 +33,8 @@ describe("ToolCallBlock", () => {
     args: { url: "https://api.example.com/data" },
     status: "done",
     result: '{"temperature": 72}',
-    afterMessageIndex: 0,
+    seq: 2,
+    afterMessageId: -1,
   };
 
   test("renders tool name", () => {

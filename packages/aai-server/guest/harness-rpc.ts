@@ -46,7 +46,13 @@ const encoder = new TextEncoder();
 
 export function writeMessage(msg: JsonRpcMessage): void {
   const line = `${JSON.stringify(msg)}\n`;
-  Deno.stdout.writeSync(encoder.encode(line));
+  const bytes = encoder.encode(line);
+  // writeSync may write fewer bytes than requested (pipe buffer full) —
+  // loop until the whole line is flushed so NDJSON framing never tears.
+  let written = 0;
+  while (written < bytes.byteLength) {
+    written += Deno.stdout.writeSync(bytes.subarray(written));
+  }
 }
 
 export function sendResponse(id: number | string, result: unknown): void {
@@ -90,7 +96,13 @@ type PendingFetch = {
   chunks: Uint8Array[];
 };
 
-const pendingFetches = new Map<string, PendingFetch>();
+/**
+ * Pending proxied fetches, keyed by guest-generated fetch id.
+ * Exported so tests can assert entries never leak.
+ */
+export const pendingFetches = new Map<string, PendingFetch>();
+
+let nextFetchId = 1;
 
 // The guest-side check is a friendly early error only — the host enforces
 // the same cap authoritatively (see sandbox-fetch.ts).
@@ -163,17 +175,28 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit): Pr
     bodyB64 = bytesToBase64(new Uint8Array(buf));
   }
 
-  // Send fetch/request RPC — host returns { id }
-  const rpcResponse = (await hostRequest("fetch/request", {
+  // The guest generates the id and registers the pending entry BEFORE
+  // sending the RPC. Host-side early rejections (disallowed host, oversized
+  // body, invalid URL) emit fetch/response-error notifications synchronously;
+  // with a host-generated id those could arrive ahead of the `{ id }`
+  // response, get dropped, and stall the fetch until the tool timeout.
+  const id = `f${nextFetchId++}`;
+  const { promise, resolve, reject } = Promise.withResolvers<Response>();
+  pendingFetches.set(id, { resolve, reject, chunks: [] });
+  hostRequest("fetch/request", {
+    id,
     url: req.url,
     method: req.method,
     headers: Object.fromEntries(req.headers),
     body: bodyB64,
-  })) as { id: string };
-
-  // Register a pending fetch and wait for response notifications
-  const { promise, resolve, reject } = Promise.withResolvers<Response>();
-  pendingFetches.set(rpcResponse.id, { resolve, reject, chunks: [] });
+  }).catch((err: unknown) => {
+    // The RPC itself failed (no fetch handler registered, host rejected the
+    // params, connection dropped) — clean up the pending entry so it never
+    // leaks, and reject promptly instead of hanging.
+    if (pendingFetches.delete(id)) {
+      reject(new TypeError(`fetch failed: ${errMsg(err)}`));
+    }
+  });
   return promise;
 };
 

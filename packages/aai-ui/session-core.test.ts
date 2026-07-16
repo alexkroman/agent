@@ -175,7 +175,7 @@ describe("createSessionCore", () => {
     it("user_transcript appends user message and sets state to thinking", () => {
       lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "Hello world" }));
       const snap = core.getSnapshot();
-      expect(snap.messages).toEqual([{ role: "user", content: "Hello world" }]);
+      expect(snap.messages).toEqual([{ id: 1, role: "user", content: "Hello world" }]);
       expect(snap.userTranscript).toBe(null);
       expect(snap.state).toBe("thinking");
     });
@@ -183,8 +183,15 @@ describe("createSessionCore", () => {
     it("agent_transcript appends assistant message", () => {
       lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "Hi there" }));
       const snap = core.getSnapshot();
-      expect(snap.messages).toEqual([{ role: "assistant", content: "Hi there" }]);
+      expect(snap.messages).toEqual([{ id: 1, role: "assistant", content: "Hi there" }]);
       expect(snap.agentTranscript).toBe(null);
+    });
+
+    it("assigns monotonic ids to messages across roles", () => {
+      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "one" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "two" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "three" }));
+      expect(core.getSnapshot().messages.map((m) => m.id)).toEqual([1, 2, 3]);
     });
 
     it("tool_call adds pending tool call", () => {
@@ -294,6 +301,38 @@ describe("createSessionCore", () => {
       const snap = core.getSnapshot();
       expect(snap.state).not.toBe("error");
       expect(snap.error).toBe(null);
+    });
+  });
+
+  // ─── contentVersion ───────────────────────────────────────────────────────
+
+  describe("contentVersion", () => {
+    beforeEach(() => {
+      core.connect();
+      lastSocket?.simulateOpen();
+    });
+
+    it("does not bump on state-only changes", () => {
+      const v0 = core.getSnapshot().contentVersion;
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
+      expect(core.getSnapshot().state).toBe("listening");
+      expect(core.getSnapshot().contentVersion).toBe(v0);
+    });
+
+    it("bumps when messages, tool calls, or transcripts change", () => {
+      const v0 = core.getSnapshot().contentVersion;
+      lastSocket?.simulateMessage(JSON.stringify({ type: "speech_started" }));
+      const v1 = core.getSnapshot().contentVersion;
+      expect(v1).toBeGreaterThan(v0);
+
+      lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "hi" }));
+      const v2 = core.getSnapshot().contentVersion;
+      expect(v2).toBeGreaterThan(v1);
+
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "tool_call", toolCallId: "tc-1", toolName: "t", args: {} }),
+      );
+      expect(core.getSnapshot().contentVersion).toBeGreaterThan(v2);
     });
   });
 
