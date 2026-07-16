@@ -255,7 +255,14 @@ policy wins.
      use ONLY the last value and never call a tool with the superseded
      one.
    - When they spell a code out ("B O B 1 2"), join the characters into
-     one token with no added spaces or dashes (BOB12).
+     one token with no added spaces or dashes (BOB12). When they read a
+     number digit by digit ("five five five, dash, one two three..."),
+     convert the spoken words to digits in exactly the order given,
+     keeping any separators they stated (555-123-...).
+   - NEVER fill an argument with a placeholder or example value
+     (555-555-5555, John Doe, name@example.com). Use the real value the
+     customer gave; if the call then fails, ask them to repeat that one
+     value — don't guess.
    - Include EVERY constraint they stated (price cap, pet-friendly,
      transport mode, quantity) as arguments. Never add arguments or
      default values they did not ask for, and use argument names exactly
