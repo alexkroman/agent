@@ -1,6 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { ChatView, client, SidebarLayout, StartScreen, useEvent } from "@alexkroman1/aai-ui";
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { Clock, Disposition, GameState, NPC, StoryBlueprint } from "./shared.ts";
 import { DEFAULT_STATE, MAX_RESOURCE, MIN_MOMENTUM } from "./shared.ts";
 
@@ -82,6 +82,23 @@ const PHASE_LABELS: Record<string, string> = {
 
 // ── Components ───────────────────────────────────────────────────────────────
 
+/** Section header row: dim label on the left, a value element on the right. */
+function SectionHeader({ label, right }: { label: string; right: ReactNode }) {
+  return (
+    <div
+      style={{
+        display: "flex",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: "3px",
+      }}
+    >
+      <span style={{ fontSize: "10px", color: C.textDim, letterSpacing: "0.05em" }}>{label}</span>
+      {right}
+    </div>
+  );
+}
+
 function ResourceBar({
   label,
   current,
@@ -119,23 +136,20 @@ function ResourceBar({
   }
   return (
     <div style={{ marginBottom: "8px" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "3px",
-        }}
-      >
-        <span style={{ fontSize: "10px", color: C.textDim, letterSpacing: "0.05em" }}>
-          {icon} {label}
-        </span>
-        <span
-          style={{ fontSize: "11px", fontWeight: 700, color: current > 0 ? colorBright : C.threat }}
-        >
-          {current}
-        </span>
-      </div>
+      <SectionHeader
+        label={`${icon} ${label}`}
+        right={
+          <span
+            style={{
+              fontSize: "11px",
+              fontWeight: 700,
+              color: current > 0 ? colorBright : C.threat,
+            }}
+          >
+            {current}
+          </span>
+        }
+      />
       <div style={{ display: "flex", gap: "2px" }}>{pips}</div>
     </div>
   );
@@ -146,28 +160,21 @@ function MomentumTrack({ momentum, max }: { momentum: number; max: number }) {
   for (let i = MIN_MOMENTUM; i <= 10; i++) range.push(i);
   return (
     <div style={{ marginBottom: "8px" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "3px",
-        }}
-      >
-        <span style={{ fontSize: "10px", color: C.textDim, letterSpacing: "0.05em" }}>
-          Momentum
-        </span>
-        <span
-          style={{
-            fontSize: "11px",
-            fontWeight: 700,
-            color: momentum > 0 ? C.spiritBright : momentum < 0 ? C.healthBright : C.textMuted,
-          }}
-        >
-          {momentum > 0 ? "+" : ""}
-          {momentum}
-        </span>
-      </div>
+      <SectionHeader
+        label="Momentum"
+        right={
+          <span
+            style={{
+              fontSize: "11px",
+              fontWeight: 700,
+              color: momentum > 0 ? C.spiritBright : momentum < 0 ? C.healthBright : C.textMuted,
+            }}
+          >
+            {momentum > 0 ? "+" : ""}
+            {momentum}
+          </span>
+        }
+      />
       <div style={{ display: "flex", gap: "1px" }}>
         {range.map((v) => (
           <div
@@ -219,27 +226,22 @@ function ChaosGauge({ chaos }: { chaos: number }) {
   const label = chaos <= 4 ? "Calm" : chaos <= 6 ? "Tense" : chaos <= 8 ? "Volatile" : "Critical";
   return (
     <div style={{ marginBottom: "8px" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "3px",
-        }}
-      >
-        <span style={{ fontSize: "10px", color: C.textDim, letterSpacing: "0.05em" }}>Chaos</span>
-        <span
-          style={{
-            fontSize: "9px",
-            fontWeight: 600,
-            color,
-            textTransform: "uppercase",
-            letterSpacing: "0.08em",
-          }}
-        >
-          {label} ({chaos})
-        </span>
-      </div>
+      <SectionHeader
+        label="Chaos"
+        right={
+          <span
+            style={{
+              fontSize: "9px",
+              fontWeight: 600,
+              color,
+              textTransform: "uppercase",
+              letterSpacing: "0.08em",
+            }}
+          >
+            {label} ({chaos})
+          </span>
+        }
+      />
       <div
         style={{
           height: "4px",
@@ -398,21 +400,14 @@ function StoryArc({ story }: { story: StoryBlueprint }) {
   const phaseLabel = PHASE_LABELS[currentPhase] || currentPhase;
   return (
     <div style={{ marginBottom: "8px" }}>
-      <div
-        style={{
-          display: "flex",
-          justifyContent: "space-between",
-          alignItems: "center",
-          marginBottom: "3px",
-        }}
-      >
-        <span style={{ fontSize: "10px", color: C.textDim, letterSpacing: "0.05em" }}>
-          Story Arc
-        </span>
-        <span style={{ fontSize: "9px", color: C.accent }}>
-          {phaseLabel} ({story.currentAct}/{totalActs})
-        </span>
-      </div>
+      <SectionHeader
+        label="Story Arc"
+        right={
+          <span style={{ fontSize: "9px", color: C.accent }}>
+            {phaseLabel} ({story.currentAct}/{totalActs})
+          </span>
+        }
+      />
       <div
         style={{
           height: "3px",

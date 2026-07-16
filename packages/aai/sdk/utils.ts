@@ -21,6 +21,18 @@ export function errorDetail(err: unknown): string {
   return String(err);
 }
 
+/**
+ * Parse JSON, returning `undefined` on malformed input. JSON cannot encode
+ * `undefined`, so the sentinel is unambiguous.
+ */
+export function safeJsonParse(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    // Malformed JSON — fall through to the implicit undefined return.
+  }
+}
+
 /** Return a JSON error string for the LLM: `'{"error":"<message>"}'`. */
 export function toolError(message: string): string {
   return JSON.stringify({ error: message });

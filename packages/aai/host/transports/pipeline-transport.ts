@@ -234,11 +234,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     playbackClock.reset();
   }
 
-  /** Shared turn tail — clear the controller unless a newer turn replaced it. */
-  function finishTurn(ctl: AbortController): void {
-    if (turnController === ctl) turnController = null;
-  }
-
   // Idempotent teardown after an unrecoverable provider error.
   function terminate(): void {
     if (terminated) return;
@@ -356,7 +351,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (spoke && !ctl.signal.aborted) await drainTts(ctl.signal);
 
     if (!ctl.signal.aborted) callbacks.onReplyDone();
-    finishTurn(ctl);
+    // Clear the controller unless a newer turn replaced it.
+    if (turnController === ctl) turnController = null;
     // Aborted turns skip the re-arm: onSttPartial / cancelReply handle those.
     if (!ctl.signal.aborted) nudger.arm();
   }

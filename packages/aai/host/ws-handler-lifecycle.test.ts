@@ -23,14 +23,6 @@ function parseFirstFrame(ws: MockWebSocket): Record<string, unknown> {
   return JSON.parse(ws.sent[0] as string);
 }
 
-function deferred<T = void>(): { promise: Promise<T>; resolve: (v: T) => void } {
-  let resolve!: (v: T) => void;
-  const promise = new Promise<T>((r) => {
-    resolve = r;
-  });
-  return { promise, resolve };
-}
-
 describe("wireSessionSocket lifecycle", () => {
   test("close handler calls session.stop", async () => {
     const core = makeMockCore();
@@ -248,7 +240,7 @@ describe("wireSessionSocket lifecycle", () => {
   });
 
   test("close during start() does not double-stop or throw", async () => {
-    const startGate = deferred();
+    const startGate = Promise.withResolvers<void>();
     const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
     const ws = openSocket();
     const sessions = new Map<string, SessionCore>();

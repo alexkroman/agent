@@ -10,7 +10,7 @@
  * exclusively through the injected `getSnapshot`/`updateState` deps.
  */
 
-import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai";
+import { DEFAULT_MAX_HISTORY, safeJsonParse } from "@alexkroman1/aai";
 import {
   type ClientEvent,
   lenientParse,
@@ -265,10 +265,8 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       console.warn("session-core: non-string, non-binary frame received; dropping");
       return;
     }
-    let raw: unknown;
-    try {
-      raw = JSON.parse(data);
-    } catch {
+    const raw = safeJsonParse(data);
+    if (raw === undefined) {
       console.warn("session-core: invalid JSON; dropping");
       return;
     }

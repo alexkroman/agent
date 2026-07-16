@@ -3,6 +3,7 @@
 // and s2s-events.test.ts): WebSocket stub, mock callbacks, and handle setup.
 
 import { vi } from "vitest";
+import { errorMessage } from "../sdk/utils.ts";
 import { silentLogger } from "./_test-utils.ts";
 import type { S2sCallbacks, S2sWebSocket } from "./s2s.ts";
 import { connectS2s } from "./s2s.ts";
@@ -25,7 +26,7 @@ export function createWebSocketStub() {
           return ev;
         },
         error: () => {
-          const msg = args[0] instanceof Error ? args[0].message : String(args[0]);
+          const msg = errorMessage(args[0]);
           const ev = new Event("error");
           Object.defineProperty(ev, "message", { value: msg });
           return ev;

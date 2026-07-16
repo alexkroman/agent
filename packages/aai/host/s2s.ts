@@ -5,7 +5,8 @@
 
 import { z } from "zod";
 import type { ToolSchema } from "../sdk/_internal-types.ts";
-import { WS_OPEN } from "../sdk/constants.ts";
+import { LOG_PREVIEW_CHARS, WS_OPEN } from "../sdk/constants.ts";
+import { safeJsonParse } from "../sdk/utils.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import {
   type CreateHeaderWebSocket,
@@ -294,7 +295,7 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       const parsed = parseS2sMessage(obj);
       if (!parsed) {
         log.warn(
-          `S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, 200)}`,
+          `S2S << unrecognised message type: ${obj.type ?? JSON.stringify(raw).slice(0, LOG_PREVIEW_CHARS)}`,
         );
         return;
       }
@@ -302,11 +303,9 @@ export function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     }
 
     ws.addEventListener("message", (ev) => {
-      let raw: unknown;
-      try {
-        raw = JSON.parse(String(ev.data));
-      } catch {
-        log.warn("S2S << invalid JSON", { data: String(ev.data).slice(0, 200) });
+      const raw = safeJsonParse(String(ev.data));
+      if (raw === undefined) {
+        log.warn("S2S << invalid JSON", { data: String(ev.data).slice(0, LOG_PREVIEW_CHARS) });
         return;
       }
       if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {

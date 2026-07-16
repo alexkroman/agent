@@ -92,17 +92,6 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
   };
 }
 
-/** Create a deferred promise that can be resolved/rejected externally. */
-function deferred<T>() {
-  let resolve!: (value: T) => void;
-  let reject!: (reason: unknown) => void;
-  const promise = new Promise<T>((res, rej) => {
-    resolve = res;
-    reject = rej;
-  });
-  return { promise, resolve, reject };
-}
-
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("createSandbox", () => {
@@ -268,7 +257,7 @@ describe("createSandbox", () => {
   // ── Lazy VM initialization tests ──────────────────────────────────────────
 
   it("returns sandbox immediately before VM is ready", () => {
-    const d = deferred<{ conn: NdjsonConnection; shutdown: () => Promise<void> }>();
+    const d = Promise.withResolvers<{ conn: NdjsonConnection; shutdown: () => Promise<void> }>();
     mockCreateSandboxVm.mockReturnValueOnce(d.promise);
 
     // createSandbox returns synchronously even though VM is still pending
@@ -285,7 +274,7 @@ describe("createSandbox", () => {
   });
 
   it("shutdown waits for VM before cleaning up", async () => {
-    const d = deferred<{ conn: NdjsonConnection; shutdown: () => Promise<void> }>();
+    const d = Promise.withResolvers<{ conn: NdjsonConnection; shutdown: () => Promise<void> }>();
     mockCreateSandboxVm.mockReturnValueOnce(d.promise);
 
     const sandbox = createSandbox(makeSandboxOptions());

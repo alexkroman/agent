@@ -8,6 +8,7 @@
  */
 
 import { errorMessage, matchesAllowedHost } from "@alexkroman1/aai";
+import { MAX_REQUEST_BODY_BYTES } from "./guest/limits.ts";
 import { ssrfSafeFetch } from "./ssrf.ts";
 
 const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
@@ -18,8 +19,6 @@ const DEFAULT_MAX_CONCURRENT = 10;
  * don't confuse the two when tuning fetch timeouts.
  */
 export const SANDBOX_FETCH_TIMEOUT_MS = 30_000;
-/** Max decoded request-body size accepted from the guest (1 MB). Keep in sync with guest/harness-rpc.ts. */
-const MAX_REQUEST_BODY_BYTES = 1024 * 1024;
 const CHUNK_SIZE = 64 * 1024;
 
 export type FetchRequest = {

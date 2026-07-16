@@ -169,7 +169,7 @@ describe("vector adapter", () => {
   });
 
   test("upsert sends vector/upsert request", async () => {
-    const adapter = harness.makeVectorAdapter();
+    const adapter = harness.vectorAdapter;
     const promise = adapter.upsert("doc-1", "hello", { tag: "x" });
 
     // The request should be pending
@@ -191,7 +191,7 @@ describe("vector adapter", () => {
   });
 
   test("query returns matches", async () => {
-    const adapter = harness.makeVectorAdapter();
+    const adapter = harness.vectorAdapter;
     const promise = adapter.query("hello");
 
     expect(pendingHostRequests.size).toBe(1);
@@ -208,7 +208,7 @@ describe("vector adapter", () => {
   });
 
   test("delete sends vector/delete with single id", async () => {
-    const adapter = harness.makeVectorAdapter();
+    const adapter = harness.vectorAdapter;
     const promise = adapter.delete("doc-1");
 
     expect(pendingHostRequests.size).toBe(1);

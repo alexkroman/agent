@@ -2,8 +2,9 @@
 // OpenAI Realtime API transport — implements Transport.
 
 import type { ToolSchema } from "../../sdk/_internal-types.ts";
-import { WS_OPEN } from "../../sdk/constants.ts";
+import { LOG_PREVIEW_CHARS, WS_OPEN } from "../../sdk/constants.ts";
 import type { OpenaiRealtimeOptions } from "../../sdk/providers/s2s/openai-realtime.ts";
+import { safeJsonParse } from "../../sdk/utils.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import {
   type CreateHeaderWebSocket,
@@ -240,10 +241,8 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   }
 
   function handleMessage(data: unknown): void {
-    let raw: unknown;
-    try {
-      raw = JSON.parse(String(data));
-    } catch {
+    const raw = safeJsonParse(String(data));
+    if (raw === undefined) {
       log.warn("OpenAI Realtime: invalid JSON");
       return;
     }
@@ -321,7 +320,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       log.info("OpenAI Realtime sendToolResult", {
         callId,
         resultLen: result.length,
-        preview: result.slice(0, 200),
+        preview: result.slice(0, LOG_PREVIEW_CHARS),
       });
       send({
         type: "conversation.item.create",

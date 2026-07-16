@@ -8,11 +8,12 @@
 import pTimeout from "p-timeout";
 import {
   DEFAULT_SESSION_START_TIMEOUT_MS,
+  LOG_PREVIEW_CHARS,
   MAX_MESSAGE_BUFFER_SIZE,
   WS_OPEN,
 } from "../sdk/constants.ts";
 import { ClientMessageSchema, type ClientSink, lenientParse } from "../sdk/protocol.ts";
-import { errorDetail, errorMessage } from "../sdk/utils.ts";
+import { errorDetail, errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -104,11 +105,9 @@ function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: 
     log.warn("ws: non-string, non-binary frame received; dropping", { sid });
     return;
   }
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(data);
-  } catch {
-    log.warn("ws: invalid JSON; dropping", { sid, data: data.slice(0, 200) });
+  const parsed = safeJsonParse(data);
+  if (parsed === undefined) {
+    log.warn("ws: invalid JSON; dropping", { sid, data: data.slice(0, LOG_PREVIEW_CHARS) });
     return;
   }
   const result = lenientParse(ClientMessageSchema, parsed);

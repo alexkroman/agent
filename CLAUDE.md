@@ -165,7 +165,7 @@ boundary** — this split is critical for sandbox security:
   `transports/` (S2S / pipeline / OpenAI Realtime `Transport`
   implementations), `to-vercel-tools.ts`,
   `providers/` (STT/TTS openers + descriptor→instance resolvers),
-  `builtin-tools.ts`, `_run-code.ts`, `unstorage-kv.ts`.
+  `builtin-tools.ts`, `unstorage-kv.ts`.
 
 **Rule**: When adding new SDK code, place it in `sdk/` if it has no
 `node:` dependencies. Moving code from `sdk/` → `host/` is safe;
@@ -729,12 +729,15 @@ stored env at sandbox creation time and kept host-side only.
 
 **`run_code` built-in tool (aai/builtin-tools.ts):**
 
-- Each invocation runs in a **fresh `node:vm` context** on the host — isolated
-  from other invocations. Note: `node:vm` is not a security sandbox; the
-  gVisor sandbox provides the actual security boundary.
+- Executes **only inside the guest sandbox** (gVisor/Deno): it is listed in
+  `SANDBOX_ONLY_BUILTINS`, so the platform runtime delegates it over RPC to
+  `deno-harness`, which runs it there. The old host-side `node:vm` execution
+  was removed — `node:vm` is not a security boundary.
+- The host-side `execute` is a guard for the self-hosted path (`aai dev`),
+  which has no sandbox — it refuses rather than evaluating
+  attacker-influenceable code in the host process.
 - No network, no filesystem access, no child processes, no env vars.
-- 5-second execution timeout.
-- Context is discarded after execution — no state leaks.
+- 5-second execution timeout (enforced in the guest).
 
 **SSRF protection (aai-server/ssrf.ts):**
 

@@ -26,9 +26,19 @@ import { errorMessage } from "./_utils.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
-async function resolveAgentEnv(root: string): Promise<Record<string, string>> {
+/**
+ * Whether this agent actually needs an AssemblyAI key: the default S2S mode
+ * (no `stt`/`s2s` declared) or an explicit AssemblyAI STT/LLM provider. Agents
+ * on other vendors shouldn't be prompted for an unrelated credential.
+ */
+function needsAssemblyAiKey(agentDef: AgentDef): boolean {
+  if (!(agentDef.stt || agentDef.s2s)) return true;
+  return agentDef.stt?.kind === "assemblyai" || agentDef.llm?.kind === "assemblyai";
+}
+
+async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record<string, string>> {
   const env = await resolveServerEnv(root);
-  if (!env.ASSEMBLYAI_API_KEY) {
+  if (!env.ASSEMBLYAI_API_KEY && needsAssemblyAiKey(agentDef)) {
     env.ASSEMBLYAI_API_KEY = await ensureApiKey();
   }
   return env;
@@ -109,23 +119,28 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   const backendPort = hasClient ? await getPort({ port: portNumbers(port + 1, port + 100) }) : port;
   const vitePort = port;
 
-  const agentDef = await loadAgentDef(cwd);
-  const env = await resolveAgentEnv(cwd);
-  const runtime = createRuntime({ agent: agentDef, env });
-
   // When no custom client.tsx, serve the pre-built default aai-ui client.
   // Resolved once — the location can't change for the process lifetime.
   const clientDirOpt = hasClient ? {} : { clientDir: resolveDefaultClientDir() };
-  const agentServer = createServer({
-    runtime,
-    name: agentDef.name,
-    // Enable host mode in the dev server (gated by AAI_ALLOW_HOST). Lets a
-    // `?host=1` client (e.g. the tau2 harness) supply its own agent per session.
-    env,
-    // Host sessions inherit this agent's stt/llm/tts pipeline config.
-    hostBaseAgent: agentDef,
-    ...clientDirOpt,
-  });
+
+  /** Full build sequence, shared by initial startup and every restart. */
+  async function buildServer(): Promise<AgentServer> {
+    const agentDef = await loadAgentDef(cwd);
+    const env = await resolveAgentEnv(cwd, agentDef);
+    const runtime = createRuntime({ agent: agentDef, env });
+    return createServer({
+      runtime,
+      name: agentDef.name,
+      // Enable host mode in the dev server (gated by AAI_ALLOW_HOST). Lets a
+      // `?host=1` client (e.g. the tau2 harness) supply its own agent per session.
+      env,
+      // Host sessions inherit this agent's stt/llm/tts pipeline config.
+      hostBaseAgent: agentDef,
+      ...clientDirOpt,
+    });
+  }
+
+  const agentServer = await buildServer();
   await agentServer.listen(backendPort);
 
   let viteServer: ViteDevServer | undefined;
@@ -179,16 +194,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       /* ignore */
     }
     try {
-      const newAgentDef = await loadAgentDef(cwd);
-      const newEnv = await resolveAgentEnv(cwd);
-      const newRuntime = createRuntime({ agent: newAgentDef, env: newEnv });
-      const newServer = createServer({
-        runtime: newRuntime,
-        name: newAgentDef.name,
-        env: newEnv,
-        hostBaseAgent: newAgentDef,
-        ...clientDirOpt,
-      });
+      const newServer = await buildServer();
       // The cleanup fn may have run while we were rebuilding — don't leave a
       // freshly-listening server orphaned (leaked port / hung event loop).
       if (closed) {

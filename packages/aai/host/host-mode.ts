@@ -23,7 +23,7 @@ import {
 import type { ClientEvent, HostConfig } from "../sdk/protocol.ts";
 import { HostConfigMessageSchema } from "../sdk/protocol.ts";
 import type { AgentDef } from "../sdk/types.ts";
-import { errorMessage, toolError } from "../sdk/utils.ts";
+import { errorMessage, safeJsonParse, toolError } from "../sdk/utils.ts";
 import { createRuntime, type RuntimeOptions, type SessionStartOptions } from "./runtime.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
@@ -279,10 +279,8 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     settled = true;
     clearTimeout(handshakeTimer);
 
-    let parsed: unknown;
-    try {
-      parsed = JSON.parse(data);
-    } catch {
+    const parsed = safeJsonParse(data);
+    if (parsed === undefined) {
       rejectHandshake(ws, log, "host-mode: first frame was not valid JSON");
       return;
     }

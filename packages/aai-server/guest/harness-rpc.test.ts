@@ -24,12 +24,12 @@ const rpc = await import("./harness-rpc.ts");
 const {
   handleFetchNotification,
   handleHostResponse,
-  makeKvAdapter,
-  makeVectorAdapter,
+  kvAdapter,
   pendingHostRequests,
   sendError,
   sendResponse,
   sendToClient,
+  vectorAdapter,
 } = rpc;
 
 type WrittenMessage = {
@@ -107,7 +107,7 @@ describe("NDJSON writing", () => {
 describe("host RPC round-trip", () => {
   // hostRequest is module-private; exercise it through the KV adapter.
   test("writes a JSON-RPC request and resolves with the host result", async () => {
-    const promise = makeKvAdapter().get("a");
+    const promise = kvAdapter.get("a");
     const msg = lastMessage();
     expect(msg.method).toBe("kv/get");
     expect(msg.params).toEqual({ key: "a" });
@@ -116,7 +116,7 @@ describe("host RPC round-trip", () => {
   });
 
   test("rejects when the host returns an error", async () => {
-    const promise = makeKvAdapter().get("a");
+    const promise = kvAdapter.get("a");
     const { id } = lastMessage();
     handleHostResponse({ id: id as number, error: { code: 1, message: "kv down" } });
     await expect(promise).rejects.toThrow("kv down");
@@ -221,9 +221,9 @@ describe("proxied fetch", () => {
   });
 });
 
-describe("makeKvAdapter", () => {
+describe("kvAdapter", () => {
   test("get resolves the host result and maps undefined to null", async () => {
-    const kv = makeKvAdapter();
+    const kv = kvAdapter;
     const p1 = kv.get("present");
     respondToLastRequest("stored");
     await expect(p1).resolves.toBe("stored");
@@ -234,7 +234,7 @@ describe("makeKvAdapter", () => {
   });
 
   test("set forwards expireIn only when provided", async () => {
-    const kv = makeKvAdapter();
+    const kv = kvAdapter;
     const p1 = kv.set("a", 1, { expireIn: 60 });
     expect(lastMessage().params).toEqual({ key: "a", value: 1, expireIn: 60 });
     respondToLastRequest(null);
@@ -247,7 +247,7 @@ describe("makeKvAdapter", () => {
   });
 
   test("delete accepts a single key or an array of keys", async () => {
-    const kv = makeKvAdapter();
+    const kv = kvAdapter;
     const p1 = kv.delete("solo");
     expect(lastMessage()).toMatchObject({ method: "kv/del", params: { key: "solo" } });
     respondToLastRequest(null);
@@ -263,9 +263,9 @@ describe("makeKvAdapter", () => {
   });
 });
 
-describe("makeVectorAdapter", () => {
+describe("vectorAdapter", () => {
   test("upsert omits metadata when not provided", async () => {
-    const vector = makeVectorAdapter();
+    const vector = vectorAdapter;
     const p = vector.upsert("id-1", "text");
     expect(lastMessage()).toMatchObject({
       method: "vector/upsert",
@@ -277,7 +277,7 @@ describe("makeVectorAdapter", () => {
   });
 
   test("query forwards topK and filter and returns matches", async () => {
-    const vector = makeVectorAdapter();
+    const vector = vectorAdapter;
     const matches = [{ id: "m1", score: 0.5, text: "hit" }];
     const p = vector.query("needle", { topK: 2, filter: { lang: "en" } });
     expect(lastMessage()).toMatchObject({
@@ -289,7 +289,7 @@ describe("makeVectorAdapter", () => {
   });
 
   test("delete forwards ids", async () => {
-    const vector = makeVectorAdapter();
+    const vector = vectorAdapter;
     const p = vector.delete(["a", "b"]);
     expect(lastMessage()).toMatchObject({ method: "vector/delete", params: { ids: ["a", "b"] } });
     respondToLastRequest(null);

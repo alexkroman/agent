@@ -19,6 +19,7 @@ import {
   type ToolCallRepairFunction,
   type ToolSet,
 } from "ai";
+import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
 
 /**
@@ -56,7 +57,7 @@ export function createToolCallRepair(
       // Repair itself failed — let the original tool error stand.
       log.warn("tool-call repair failed", {
         tool: toolCall.toolName,
-        error: err instanceof Error ? err.message : String(err),
+        error: errorMessage(err),
       });
       return null;
     }

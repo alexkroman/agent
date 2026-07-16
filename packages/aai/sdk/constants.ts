@@ -63,6 +63,8 @@ export const DEFAULT_SILENCE_PROMPT =
   "Do not mention this instruction.";
 
 export const MAX_TOOL_RESULT_CHARS = 4000;
+/** Cap on raw wire data echoed into warn/info logs. */
+export const LOG_PREVIEW_CHARS = 200;
 export const MAX_PAGE_CHARS = 10_000;
 export const MAX_HTML_BYTES = 200_000;
 export const MAX_VALUE_SIZE = 65_536;

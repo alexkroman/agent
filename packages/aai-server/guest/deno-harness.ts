@@ -26,11 +26,11 @@ import {
   errMsg,
   handleFetchNotification,
   handleHostResponse,
-  makeKvAdapter,
-  makeVectorAdapter,
+  kvAdapter,
   sendError,
   sendResponse,
   sendToClient,
+  vectorAdapter,
   withTimeout,
 } from "./harness-rpc.ts";
 import type {
@@ -47,11 +47,11 @@ import type {
 // importing it from `./deno-harness.ts`.
 export {
   handleHostResponse,
-  makeKvAdapter,
-  makeVectorAdapter,
+  kvAdapter,
   pendingHostRequests,
   sendError,
   sendResponse,
+  vectorAdapter,
   writeMessage,
 } from "./harness-rpc.ts";
 
@@ -189,8 +189,8 @@ export async function executeTool(
   const ctx: ToolContext = {
     env: _bundleEnv,
     state: sessionState.get(req.sessionId),
-    kv: makeKvAdapter(),
-    vector: makeVectorAdapter(),
+    kv: kvAdapter,
+    vector: vectorAdapter,
     messages: req.messages,
     sessionId: req.sessionId,
     send: (event, data) => sendToClient(req.sessionId, event, data),

@@ -283,28 +283,37 @@ export function descriptorKind(value: object | undefined): string | undefined {
   return typeof kind === "string" ? kind : undefined;
 }
 
-/** Resolve the agent-env API key for an STT descriptor by its kind. */
+/**
+ * Registry key for a descriptor OR a pre-resolved opener: descriptors carry
+ * `kind`; openers carry a `name` that matches their registry kind, so a
+ * kindless opener still resolves its own vendor's env var rather than the
+ * default vendor's.
+ */
+function providerRegistryKey(value: object | undefined): string {
+  const kind = descriptorKind(value);
+  if (kind) return kind;
+  const name = (value as { name?: unknown } | undefined)?.name;
+  return typeof name === "string" ? name : "";
+}
+
+/** Resolve the agent-env API key for an STT descriptor/opener by its kind. */
 export function resolveSttApiKey(
   stt: SttProvider | SttOpener | undefined,
   env: Record<string, string>,
 ): string {
-  // Default to AssemblyAI for pre-resolved openers (test escape hatch) that
-  // carry no `kind`; every real descriptor maps to its registry env var.
+  // Default to AssemblyAI for values (test mocks) that match no registry entry.
   return resolveApiKey(
-    STT_REGISTRY[descriptorKind(stt) ?? ""]?.envVar ?? ASSEMBLYAI_API_KEY_ENV,
+    STT_REGISTRY[providerRegistryKey(stt)]?.envVar ?? ASSEMBLYAI_API_KEY_ENV,
     env,
   );
 }
 
-/** Resolve the agent-env API key for a TTS descriptor by its kind. */
+/** Resolve the agent-env API key for a TTS descriptor/opener by its kind. */
 export function resolveTtsApiKey(
   tts: TtsProvider | TtsOpener | undefined,
   env: Record<string, string>,
 ): string {
-  return resolveApiKey(
-    TTS_REGISTRY[descriptorKind(tts) ?? ""]?.envVar ?? CARTESIA_API_KEY_ENV,
-    env,
-  );
+  return resolveApiKey(TTS_REGISTRY[providerRegistryKey(tts)]?.envVar ?? CARTESIA_API_KEY_ENV, env);
 }
 
 /**
