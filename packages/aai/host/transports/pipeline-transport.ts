@@ -7,11 +7,13 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
-import type { LanguageModel, ModelMessage } from "ai";
-import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
+import type { ModelMessage } from "ai";
+import type { ExecuteTool } from "../../sdk/_internal-types.ts";
 import {
   DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
   DEFAULT_ENDPOINT_SETTLE_MS,
+  DEFAULT_FALSE_INTERRUPTION_PROMPT,
+  DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
   DEFAULT_MAX_STEPS,
   DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_SILENCE_PROMPT,
@@ -19,11 +21,11 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
 } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
-import type { SttError, SttOpener, TtsError, TtsOpener } from "../../sdk/providers.ts";
-import type { Message, ToolChoice } from "../../sdk/types.ts";
+import type { SttError, TtsError } from "../../sdk/providers.ts";
+import type { Message } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import { bytesToPcm16 } from "../_pcm.ts";
-import { consoleLogger, type Logger } from "../runtime-config.ts";
+import { consoleLogger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createEndpointSettler } from "./pipeline-endpointing.ts";
 import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
@@ -37,77 +39,14 @@ import {
   flushTtsAndWait,
   consumeLlmStream as runLlmStream,
 } from "./pipeline-stream.ts";
-import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
+import type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
+import {
+  createFalseInterruptionRecovery,
+  createSpeechEdgeTracker,
+} from "./pipeline-user-speech.ts";
+import type { Transport } from "./types.ts";
 
-/** Configuration for {@link createPipelineTransport}. */
-export interface PipelineTransportOptions {
-  /** Unique session identifier. */
-  sid: string;
-  /** STT opener (resolved from an SttProvider descriptor). */
-  stt: SttOpener;
-  /** LLM provider (Vercel AI SDK LanguageModel). */
-  llm: LanguageModel;
-  /** TTS opener (resolved from a TtsProvider descriptor). */
-  tts: TtsOpener;
-  /** Transport-level callbacks into SessionCore. */
-  callbacks: TransportCallbacks;
-  /** Session config: systemPrompt, greeting, tools, history. */
-  sessionConfig: TransportSessionConfig;
-  /** Tool schemas (JSON Schema) for Vercel AI tool binding. */
-  toolSchemas?: readonly ToolSchema[];
-  /** Agent's tool-execution function. */
-  executeTool?: ExecuteTool;
-  /** Provider-specific API keys. */
-  providerKeys: {
-    stt: string;
-    tts: string;
-  };
-  /** STT audio input sample rate (PCM16, Hz). Defaults to DEFAULT_STT_SAMPLE_RATE. */
-  sttSampleRate?: number | undefined;
-  /** TTS audio output sample rate (PCM16, Hz). Defaults to DEFAULT_TTS_SAMPLE_RATE. */
-  ttsSampleRate?: number | undefined;
-  /** Optional STT prompt injected via SttOpenOptions.sttPrompt. */
-  sttPrompt?: string | undefined;
-  /** Max LLM tool-call steps per turn. Defaults to 5. */
-  maxSteps?: number | undefined;
-  /**
-   * Minimum interim-transcript words required to barge in on the agent while
-   * it is speaking. Defaults to DEFAULT_MIN_BARGE_IN_WORDS (1 = interrupt on
-   * any non-empty interim).
-   */
-  minBargeInWords?: number | undefined;
-  /**
-   * Endpoint settle window (ms): how long to wait after an STT `final` for the
-   * speaker to continue before committing the turn, aggregating follow-on
-   * finals/partials into one utterance. Defaults to
-   * {@link DEFAULT_ENDPOINT_SETTLE_MS}; set 0 to disable (commit every final
-   * at once).
-   */
-  endpointSettleMs?: number | undefined;
-  /**
-   * Settle window (ms) for clearly-complete finals — shorter than
-   * `endpointSettleMs` (and capped by it) so finished requests pay little
-   * latency while sentence-boundary pauses mid-request still aggregate.
-   * Defaults to {@link DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS}; 0 commits
-   * complete finals immediately.
-   */
-  completeSettleMs?: number | undefined;
-  /**
-   * LLM sampling temperature. Omitted when unset (provider default). Some models
-   * (e.g. Claude 5) ignore it and warn; set only for temperature-capable models.
-   */
-  temperature?: number | undefined;
-  /** Tool selection policy passed to `streamText`. Defaults to `"auto"`. */
-  toolChoice?: ToolChoice | undefined;
-  /** Logger. Defaults to consoleLogger. */
-  logger?: Logger | undefined;
-  /** Skip the initial greeting (used for session resume). */
-  skipGreeting?: boolean | undefined;
-  /** Take an unprompted turn after this many ms of user silence. Unset/non-positive disables. */
-  silenceTimeoutMs?: number | undefined;
-  /** Instruction injected on silence timeout. Defaults to DEFAULT_SILENCE_PROMPT. */
-  silencePrompt?: string | undefined;
-}
+export type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
 
 /** Create a pipeline-mode Transport (STT → LLM → TTS). */
 export function createPipelineTransport(opts: PipelineTransportOptions): Transport {
@@ -116,8 +55,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const ttsSampleRate = opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE;
   const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
   const minBargeInWords = opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS;
+  const interruptionMinDurationMs = opts.interruptionMinDurationMs ?? 0;
   const endpointSettleMs = opts.endpointSettleMs ?? DEFAULT_ENDPOINT_SETTLE_MS;
   const completeSettleMs = opts.completeSettleMs ?? DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS;
+  const holdPhrase = opts.holdPhrase ?? DEFAULT_HOLD_PHRASE;
+  const falseInterruptionTimeoutMs =
+    opts.falseInterruptionTimeoutMs ?? DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS;
   const toolChoice = opts.toolChoice ?? "auto";
   const toolSchemas = opts.toolSchemas ?? [];
   const executeTool: ExecuteTool =
@@ -144,6 +87,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     completeSettleMs,
     onCommit: (text) => {
       if (terminated) return;
+      speechEdges.speechEnded();
       callbacks.onUserTranscript(text);
       chainTurn(() =>
         runTurn(text).catch((err: unknown) => {
@@ -228,6 +172,31 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     callbacks.onError(code, message);
   }
 
+  // Pipeline mode has no VAD: speech_started/speech_stopped derive from the
+  // STT transcript stream (see pipeline-user-speech.ts).
+  const speechEdges = createSpeechEdgeTracker(callbacks);
+
+  // Resume a barged-in reply when the interruption never commits a user turn
+  // — its spoken-so-far text is already in history marked `[interrupted]`,
+  // so a synthetic continuation turn picks up where it was cut off.
+  const recovery = createFalseInterruptionRecovery({
+    timeoutMs: falseInterruptionTimeoutMs,
+    isActive: () => !terminated,
+    isBusy: () => turnController !== null || playbackClock.pending(),
+    onResume: () => {
+      log.info("Pipeline false-interruption resume", { sid: opts.sid });
+      speechEdges.speechEnded();
+      chainTurn(() =>
+        runTurn(DEFAULT_FALSE_INTERRUPTION_PROMPT).catch((err: unknown) => {
+          log.error("Pipeline false-interruption resume crashed", {
+            error: errorMessage(err),
+            sid: opts.sid,
+          });
+        }),
+      );
+    },
+  });
+
   /** Abort the in-flight turn (if any) and cancel TTS playback. */
   function abortInFlightTurn(): void {
     turnController?.abort();
@@ -244,6 +213,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (terminated) return;
     terminated = true;
     nudger.clear();
+    recovery.clear();
     settler.reset();
     abortInFlightTurn();
     callbacks.onCancelled();
@@ -253,25 +223,52 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     void providers.close();
   }
 
+  /** Should this interim transcript interrupt the agent right now? */
+  function partialTriggersBargeIn(text: string): boolean {
+    if (turnController === null && !playbackClock.pending()) return false;
+    if (countWords(text) < minBargeInWords) return false;
+    // Duration gate (interim-only): require sustained speech since the
+    // utterance's first partial before cutting the agent off. A committed
+    // final barging in via onSttFinal is never duration-gated.
+    return !(interruptionMinDurationMs > 0 && speechEdges.durationMs() < interruptionMinDurationMs);
+  }
+
   function onSttPartial(text: string): void {
     if (terminated) return;
     // User speech proves presence: reset the nudge budget, restart the window.
     nudger.onUserSpeech();
+    if (countWords(text) >= 1) {
+      speechEdges.speechStarted();
+      // Live captions: forward the interim transcript as-is. The committed
+      // turn still arrives via onUserTranscript once the settler fires.
+      callbacks.onUserTranscriptPartial?.(text);
+    }
     // A partial while an utterance is buffered means the speaker resumed after
     // a pause: extend the settle window so the continuation aggregates into the
     // same turn instead of the pre-pause fragment committing on its own.
     if (settler.extendOnPartial(text)) return;
-    if (turnController === null && !playbackClock.pending()) return;
-    if (countWords(text) < minBargeInWords) return;
+    if (!partialTriggersBargeIn(text)) return;
     log.info("Pipeline barge-in", { sid: opts.sid });
+    // Only an aborted in-flight turn can be resumed after a false alarm — its
+    // spoken-so-far text lands in history marked `[interrupted]`. A turn that
+    // already finished server-side (client playback tail) has no cut point to
+    // continue from, so no recovery timer is armed for it.
+    const wasTurnInFlight = turnController !== null;
     abortInFlightTurn();
     callbacks.onCancelled();
+    if (wasTurnInFlight) recovery.arm();
   }
 
   function onSttFinal(text: string): void {
     if (terminated) return;
     const trimmed = text.trim();
     if (trimmed.length === 0) return;
+    // Real speech reached a final — whatever barge-in preceded it was not a
+    // false interruption; the settler will commit a genuine turn.
+    recovery.clear();
+    // A final can arrive without any preceding partial (short utterances on
+    // some STT providers) — make sure the speaking edge still fires.
+    speechEdges.speechStarted();
     // The turn that follows (via the settler) re-arms the nudge on completion.
     nudger.onUserTurn();
     // Interrupt the agent's in-flight reply only for a clearly-intentional
@@ -315,6 +312,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       temperature: opts.temperature,
       repairToolCall,
       maxSteps,
+      holdPhrase,
       sendTtsText: (text) => providers.tts?.sendText(text),
       callbacks,
       emitError,
@@ -380,7 +378,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
           accumulated,
           persistedLen,
           stepMessages: responseMessages,
-          holdPhrase: DEFAULT_HOLD_PHRASE,
+          holdPhrase,
           onTranscript: (text) => callbacks.onAgentTranscript(text, true),
           updateAgentContext: (text) => providers.stt?.updateAgentContext?.(text),
         });
@@ -447,6 +445,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // the same way a provider-error teardown does.
       terminated = true;
       nudger.clear();
+      recovery.clear();
       settler.reset();
       sessionAbort.abort();
       turnController?.abort();
@@ -471,6 +470,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     cancelReply(): void {
       if (terminated) return;
+      // A client-initiated cancel is intentional — never resume from it.
+      recovery.clear();
       abortInFlightTurn();
       // Silence after a client-initiated cancel should still nudge.
       nudger.arm();
@@ -486,6 +487,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     },
 
     reset(): void {
+      recovery.clear();
+      speechEdges.reset();
       settler.reset();
       abortInFlightTurn();
       history.reset();

@@ -147,6 +147,11 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       case "user_transcript":
         handleUserTranscriptEvent(e.text);
         break;
+      case "user_transcript_partial":
+        // Live captions while the user is still speaking; the committed turn
+        // follows as `user_transcript`, which moves it into `messages`.
+        updateState({ userTranscript: e.text });
+        break;
       case "agent_transcript":
         handleAgentTranscriptEvent(e.text);
         break;

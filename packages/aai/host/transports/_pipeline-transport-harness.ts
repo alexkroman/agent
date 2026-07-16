@@ -28,6 +28,7 @@ export function makeCallbacks(): TransportCallbacks {
     onAudioChunk: vi.fn(),
     onAudioDone: vi.fn(),
     onUserTranscript: vi.fn(),
+    onUserTranscriptPartial: vi.fn(),
     onAgentTranscript: vi.fn(),
     onToolCall: vi.fn(),
     onError: vi.fn(),

@@ -99,6 +99,40 @@ export function agent(def: {
    */
   silencePrompt?: string;
   /**
+   * Pipeline mode only. Minimum interim-transcript words before user speech
+   * barges in on the agent's reply. Defaults to 2 so one-word backchannels
+   * don't cut the agent off; set 1 to interrupt on any word.
+   */
+  minBargeInWords?: number;
+  /**
+   * Pipeline mode only. Minimum sustained speech (ms) before an
+   * interim-triggered barge-in interrupts the reply, alongside
+   * `minBargeInWords`. Defaults to 0 (disabled).
+   */
+  interruptionMinDurationMs?: number;
+  /**
+   * Pipeline mode only. Endpoint settle window (ms) after an STT final
+   * before committing the user's turn. Defaults to 1500; 0 commits every
+   * final immediately.
+   */
+  endpointSettleMs?: number;
+  /**
+   * Pipeline mode only. Settle window (ms) for clearly-complete finals,
+   * capped by `endpointSettleMs`. Defaults to 500.
+   */
+  completeSettleMs?: number;
+  /**
+   * Pipeline mode only. Phrase spoken when a turn opens with a tool call and
+   * no speech. Defaults to `"One moment."`; set `""` to disable.
+   */
+  holdPhrase?: string;
+  /**
+   * Pipeline mode only. Resume the interrupted reply when a barge-in turns
+   * out to be false (no user turn commits within this many ms). Defaults to
+   * 2000; 0 disables recovery.
+   */
+  falseInterruptionTimeoutMs?: number;
+  /**
    * Pluggable STT provider. Must be set together with `llm` and `tts` to
    * enable pipeline mode; leave all three unset for S2S mode.
    */

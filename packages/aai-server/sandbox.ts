@@ -84,6 +84,16 @@ function toRuntimeAgent(config: IsolateConfig): Parameters<typeof createRuntime>
     ...(config.idleTimeoutMs !== undefined ? { idleTimeoutMs: config.idleTimeoutMs } : {}),
     ...(config.silenceTimeoutMs !== undefined ? { silenceTimeoutMs: config.silenceTimeoutMs } : {}),
     ...(config.silencePrompt !== undefined ? { silencePrompt: config.silencePrompt } : {}),
+    ...(config.minBargeInWords !== undefined ? { minBargeInWords: config.minBargeInWords } : {}),
+    ...(config.interruptionMinDurationMs !== undefined
+      ? { interruptionMinDurationMs: config.interruptionMinDurationMs }
+      : {}),
+    ...(config.endpointSettleMs !== undefined ? { endpointSettleMs: config.endpointSettleMs } : {}),
+    ...(config.completeSettleMs !== undefined ? { completeSettleMs: config.completeSettleMs } : {}),
+    ...(config.holdPhrase !== undefined ? { holdPhrase: config.holdPhrase } : {}),
+    ...(config.falseInterruptionTimeoutMs !== undefined
+      ? { falseInterruptionTimeoutMs: config.falseInterruptionTimeoutMs }
+      : {}),
     ...(config.toolChoice ? { toolChoice: config.toolChoice satisfies ToolChoice } : {}),
     ...(config.builtinTools ? { builtinTools: config.builtinTools as BuiltinTool[] } : {}),
     ...(config.s2s ? { s2s: config.s2s } : {}),

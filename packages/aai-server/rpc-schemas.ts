@@ -9,6 +9,7 @@
 
 import { DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
 import {
+  assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
   ProviderDescriptorSchema,
@@ -30,6 +31,12 @@ export const IsolateConfigSchema = z
     sttPrompt: z.string().optional(),
     silenceTimeoutMs: z.number().positive().optional(),
     silencePrompt: z.string().optional(),
+    minBargeInWords: z.number().int().min(1).optional(),
+    interruptionMinDurationMs: z.number().int().nonnegative().optional(),
+    endpointSettleMs: z.number().int().nonnegative().optional(),
+    completeSettleMs: z.number().int().nonnegative().optional(),
+    holdPhrase: z.string().optional(),
+    falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
     maxSteps: z.number().optional(),
     idleTimeoutMs: z.number().int().nonnegative().optional(),
     toolChoice: z.enum(["auto", "required"]).optional(),
@@ -54,6 +61,7 @@ export const IsolateConfigSchema = z
         fail("mode='pipeline' requires stt, llm, and tts to be set");
       }
       assertSilencePolicy(mode, cfg.silenceTimeoutMs, cfg.silencePrompt);
+      assertPipelineTuning(mode, cfg);
     } catch (err) {
       fail(errorMessage(err));
     }

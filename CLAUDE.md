@@ -346,12 +346,16 @@ Audio path depends on the session mode (see above):
   same socket → server forwards to browser → user can interrupt at any
   time (cancels the in-flight turn).
 - **Pipeline mode**: user speaks → browser captures PCM → WebSocket →
-  server forwards audio to the STT provider → transcript fires
+  server forwards audio to the STT provider → STT partials stream to the
+  client as `user_transcript_partial` (live captions) and drive
+  `speech_started`/`speech_stopped` edges → the committed transcript fires
   `onUserTranscript` → host runs the LLM loop locally via `streamText`
   (tool calls execute on the host just like S2S mode) → assistant text
   chunks stream into the TTS provider → synthesized audio returns over
   the client WebSocket → interrupts cancel the in-flight LLM stream and
-  TTS playback.
+  TTS playback. A barge-in that never commits a user turn is treated as a
+  false interruption and the reply resumes (see
+  `falseInterruptionTimeoutMs`).
 
 ## Conventions
 
@@ -461,6 +465,12 @@ defaults that affect agent behavior:
 | `toolChoice` | `"auto"` | `manifest.ts:59` | LLM decides when to use tools vs respond directly. |
 | `idleTimeoutMs` | 300,000 (5 min) | `constants.ts:26` | `0` or non-finite disables the timer entirely. |
 | `silenceTimeoutMs` | unset (disabled) | `pipeline-silence.ts` | Pipeline only: assistant proactively takes a turn after this much user silence. Capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back nudges until the user speaks again. `silencePrompt` customizes the injected instruction (default `DEFAULT_SILENCE_PROMPT`); it is kept in LLM history but never emitted as a user transcript. |
+| `minBargeInWords` | 2 (`DEFAULT_MIN_BARGE_IN_WORDS`) | `constants.ts` | Pipeline only: interim-transcript words before user speech interrupts the in-flight reply. 2 keeps one-word backchannels from cutting the agent off; sub-threshold finals are answered after the reply. |
+| `interruptionMinDurationMs` | 0 (disabled) | `pipeline-transport.ts` | Pipeline only: sustained speech (ms since the utterance's first partial) required before an interim-triggered barge-in fires — LiveKit's `min_interruption_duration` analog. Finals are never gated. |
+| Deepgram `endpointing` | 100 (`DEFAULT_DEEPGRAM_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Provider endpointing serializes with the transport settle windows, so it stays low; override via `deepgram({ endpointing })`. |
+| `endpointSettleMs` | 1500 (`DEFAULT_ENDPOINT_SETTLE_MS`) | `constants.ts` | Pipeline only: wait after an STT final before committing the turn, aggregating disfluent multi-final utterances. `completeSettleMs` (500) is the shorter window for clearly-complete finals. 0 disables. |
+| `holdPhrase` | `"One moment."` (`DEFAULT_HOLD_PHRASE`) | `pipeline-stream.ts` | Pipeline only: spoken when a turn opens with a tool call and no speech. `""` disables. |
+| `falseInterruptionTimeoutMs` | 2000 (`DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS`) | `constants.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn (`DEFAULT_FALSE_INTERRUPTION_PROMPT`) after this window. 0 disables. |
 | `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. |
 | `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (`think`, `remember`, `recall`, `calculate`) | `constants.ts` | Cognitive built-ins on by default: private reasoning scratchpad, session notes, safe calculator. Set `builtinTools` explicitly (including `[]`) to override. `web_search`/`visit_webpage`/`fetch_json`/`run_code` remain opt-in. A custom or relayed tool with the same name wins — the built-in is dropped. |
 

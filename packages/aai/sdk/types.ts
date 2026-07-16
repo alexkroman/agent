@@ -401,6 +401,49 @@ export type AgentDef<S = Record<string, unknown>> = {
    */
   silencePrompt?: string;
   /**
+   * Pipeline mode only. Minimum words in an interim transcript before user
+   * speech barges in on (aborts) the agent's in-flight reply. Defaults to
+   * `DEFAULT_MIN_BARGE_IN_WORDS` (2) so one-word backchannels ("yeah",
+   * "mm-hmm") don't cut the agent off; set 1 to interrupt on any word.
+   */
+  minBargeInWords?: number;
+  /**
+   * Pipeline mode only. Minimum sustained speech (ms since the utterance's
+   * first interim transcript) before an interim-triggered barge-in aborts the
+   * agent's reply — a duration gate alongside `minBargeInWords`, mirroring
+   * LiveKit's `min_interruption_duration`. Committed turns (STT finals) are
+   * never gated. Default 0 (disabled).
+   */
+  interruptionMinDurationMs?: number;
+  /**
+   * Pipeline mode only. Endpoint settle window (ms): after an STT final, how
+   * long to wait for the speaker to continue before committing the turn, so
+   * disfluent multi-final utterances aggregate into one turn. Defaults to
+   * `DEFAULT_ENDPOINT_SETTLE_MS` (1500); 0 commits every final immediately.
+   */
+  endpointSettleMs?: number;
+  /**
+   * Pipeline mode only. Settle window (ms) for clearly-complete finals
+   * (terminal punctuation, no trailing continuation cue) — shorter than
+   * `endpointSettleMs` (and capped by it) so finished requests pay little
+   * latency. Defaults to `DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS` (500).
+   */
+  completeSettleMs?: number;
+  /**
+   * Pipeline mode only. Phrase spoken when the model's first action in a
+   * turn is a tool call with no preceding speech, so the caller never hears
+   * dead air. Defaults to `"One moment."`; set `""` to disable.
+   */
+  holdPhrase?: string;
+  /**
+   * Pipeline mode only. False-interruption recovery window (ms): when a
+   * barge-in aborts the agent's reply but no user turn commits within this
+   * window (STT noise, hallucinated partial), the agent resumes the
+   * interrupted reply. Defaults to `DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS`
+   * (2000); 0 disables recovery.
+   */
+  falseInterruptionTimeoutMs?: number;
+  /**
    * Pluggable STT provider. Set together with `llm` and `tts` to enable
    * pipeline mode; all three unset means S2S mode.
    */

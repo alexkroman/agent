@@ -8,7 +8,11 @@
 
 import { DeepgramClient, type listen } from "@deepgram/sdk";
 import { createNanoEvents, type Emitter } from "nanoevents";
-import { DEEPGRAM_API_KEY_ENV, type DeepgramOptions } from "../../../sdk/providers/stt/deepgram.ts";
+import {
+  DEEPGRAM_API_KEY_ENV,
+  DEFAULT_DEEPGRAM_ENDPOINTING_MS,
+  type DeepgramOptions,
+} from "../../../sdk/providers/stt/deepgram.ts";
 import {
   makeSttError,
   type SttEvents,
@@ -75,7 +79,7 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
           channels: 1,
           interim_results: "true",
           smart_format: "true",
-          endpointing: 300,
+          endpointing: opts.endpointing ?? DEFAULT_DEEPGRAM_ENDPOINTING_MS,
           utterance_end_ms: "1000",
           // Pass the API key explicitly as the Authorization header so the
           // WebSocket connection authenticates even without env var fallback.

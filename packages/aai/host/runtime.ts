@@ -341,6 +341,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       onAudioChunk: (bytes) => bindCore().onAudioChunk(bytes),
       onAudioDone: () => bindCore().onAudioDone(),
       onUserTranscript: (text) => bindCore().onUserTranscript(text),
+      onUserTranscriptPartial: (text) => bindCore().onUserTranscriptPartial(text),
       onAgentTranscript: (text, interrupted) => bindCore().onAgentTranscript(text, interrupted),
       onToolCall,
       // Pipeline: emit `tool_call_done` when streamText surfaces the
