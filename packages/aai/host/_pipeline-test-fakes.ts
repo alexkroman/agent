@@ -43,7 +43,7 @@ export type FakeSttSession = SttSession & {
   readonly closed: { value: boolean };
   readonly updateAgentContext: ReturnType<typeof vi.fn<(text: string) => void>>;
   firePartial(text: string): void;
-  fireFinal(text: string): void;
+  fireFinal(text: string, endOfTurnConfidence?: number): void;
   fireError(code: SttErrorCode, message: string): void;
 };
 
@@ -81,8 +81,8 @@ export function createFakeSttProvider(): FakeSttProvider {
         firePartial(text) {
           emitter.emit("partial", text);
         },
-        fireFinal(text) {
-          emitter.emit("final", text);
+        fireFinal(text, endOfTurnConfidence) {
+          emitter.emit("final", text, endOfTurnConfidence);
         },
         fireError(code, message) {
           emitter.emit("error", makeCodedError(code, message) as Parameters<SttEvents["error"]>[0]);

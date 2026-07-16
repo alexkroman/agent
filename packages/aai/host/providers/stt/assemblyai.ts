@@ -138,7 +138,14 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
         if (shell.isClosed()) return;
         const text = event.transcript ?? "";
         if (text.length === 0) return;
-        emitter.emit(event.end_of_turn ? "final" : "partial", text);
+        if (event.end_of_turn) {
+          // Forward the endpointing model's boundary score so the pipeline
+          // settler can size its settle window from it (semantic endpointing)
+          // instead of falling back to lexical heuristics.
+          emitter.emit("final", text, event.end_of_turn_confidence);
+        } else {
+          emitter.emit("partial", text);
+        }
       });
 
       transcriber.on("error", (err) => shell.onSocketError(err));

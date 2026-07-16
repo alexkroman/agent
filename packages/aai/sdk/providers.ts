@@ -172,8 +172,14 @@ export function makeSttError(code: SttError["code"], message: string): SttError 
 export type SttEvents = {
   /** Interim transcript; drives barge-in detection. */
   partial: (text: string) => void;
-  /** End-of-turn final transcript; cue to run the LLM. */
-  final: (text: string) => void;
+  /**
+   * End-of-turn final transcript; cue to run the LLM. Providers whose
+   * endpointing model scores the boundary (e.g. AssemblyAI's
+   * `end_of_turn_confidence`) pass that score (0–1) as
+   * `endOfTurnConfidence`; consumers fall back to lexical completeness
+   * heuristics when it is omitted.
+   */
+  final: (text: string, endOfTurnConfidence?: number) => void;
   /** Terminal error. The session is expected to end after this fires. */
   error: (err: SttError) => void;
 };
