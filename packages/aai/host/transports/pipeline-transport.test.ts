@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
+import type { SttOpener, SttSession } from "../../sdk/providers.ts";
 import {
   createFailingSttProvider,
   createFailingTtsProvider,
@@ -214,6 +215,43 @@ describe("PipelineTransport", () => {
       await t.stop();
       await t.stop();
       expect(stt.last()?.closed.value).toBe(true);
+    });
+
+    test("stop() waits for an in-flight start() and tears down the mid-connect session", async () => {
+      // STT open hangs, simulating a client that disconnects while providers
+      // are still connecting. stop() must not resolve until the open settles,
+      // and the session that lands after the abort must be closed (not leaked).
+      const closeStt = vi.fn(async () => undefined);
+      let resolveOpen!: (s: SttSession) => void;
+      const slowStt: SttOpener = {
+        name: "slow-stt",
+        open: () =>
+          new Promise<SttSession>((res) => {
+            resolveOpen = res;
+          }),
+      };
+      const { opts } = makeOpts({ stt: slowStt });
+      const t = createPipelineTransport(opts);
+
+      void t.start();
+      let stopResolved = false;
+      const stopP = t.stop().then(() => {
+        stopResolved = true;
+      });
+
+      await new Promise((r) => setTimeout(r, 0));
+      expect(stopResolved).toBe(false); // blocked on the in-flight open
+
+      const landed: SttSession = {
+        sendAudio: vi.fn(),
+        on: (() => () => undefined) as SttSession["on"],
+        close: closeStt,
+      };
+      resolveOpen(landed);
+      await stopP;
+
+      expect(stopResolved).toBe(true);
+      expect(closeStt).toHaveBeenCalled();
     });
   });
 

@@ -13,6 +13,8 @@ interface FakeWSInstance {
   on(ev: string, fn: (...args: unknown[]) => void): void;
   off(ev: string, fn: (...args: unknown[]) => void): void;
   once(ev: string, fn: (...args: unknown[]) => void): void;
+  removeAllListeners(): void;
+  listenerCount(): number;
   _fire(ev: string, payload?: unknown): void;
 }
 
@@ -51,6 +53,14 @@ const { latest, FakeWS } = vi.hoisted(() => {
       if (!arr) return;
       const idx = arr.indexOf(fn);
       if (idx !== -1) arr.splice(idx, 1);
+    }
+    removeAllListeners(): void {
+      this.listeners.clear();
+    }
+    listenerCount(): number {
+      let n = 0;
+      for (const arr of this.listeners.values()) n += arr.length;
+      return n;
     }
     private emit(ev: string, ...args: unknown[]): void {
       const arr = this.listeners.get(ev)?.slice();
@@ -215,6 +225,13 @@ describe("Soniox real-time STT adapter", () => {
 
     await session.close();
     expect(finals).toEqual(["trailing"]);
+  });
+
+  test("close() removes the socket listeners so their closures can be freed", async () => {
+    const { session, ws } = await openSession();
+    expect(ws.listenerCount()).toBeGreaterThan(0);
+    await session.close();
+    expect(ws.listenerCount()).toBe(0);
   });
 
   test("error_code in a server frame fires an stt_stream_error", async () => {

@@ -103,7 +103,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const minBargeInWords = opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS;
   const endpointSettleMs = opts.endpointSettleMs ?? DEFAULT_ENDPOINT_SETTLE_MS;
   const toolChoice = opts.toolChoice ?? "auto";
-  const repairToolCall = createToolCallRepair(opts.llm, log);
   const toolSchemas = opts.toolSchemas ?? [];
   const executeTool: ExecuteTool =
     opts.executeTool ??
@@ -119,6 +118,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   let terminated = false;
   let turnController: AbortController | null = null;
   let nextReplyId = 0;
+  // Repair reuses the in-flight turn's abort signal so a tool-call repair
+  // `generateObject` call is cancelled on barge-in / cancel / disconnect
+  // instead of running on as an orphaned (billed) background LLM call.
+  const repairToolCall = createToolCallRepair(opts.llm, log, () => turnController?.signal);
   // Endpoint settling: STT finals buffer in the settler until the settle
   // window elapses (or a clearly-complete final arrives), so disfluent
   // multi-final utterances commit as a single turn. See pipeline-endpointing.ts
@@ -141,6 +144,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // LLM sees, incl. tool calls/results). See pipeline-history.ts.
   const history = createPipelineHistory(sessionConfig.history);
   let turnPromise: Promise<void> | null = null;
+  // The in-flight providers.open() from start(). stop() awaits it so a
+  // disconnect mid-connect tears the just-opened provider sockets down
+  // deterministically (openSide self-closes on the session abort) instead of
+  // leaving fire-and-forget opens to pile up under connection churn.
+  let startPromise: Promise<"ok" | "failed"> | null = null;
   // Tracks when the client is estimated to finish playing forwarded TTS audio,
   // so barge-in keeps working after the server-side turn is done but buffered
   // audio is still playing client-side (see createPlaybackClock).
@@ -396,7 +404,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     async start(): Promise<void> {
       // STT and TTS open concurrently; a failed side (with the session still
       // live) tears the whole transport down.
-      if ((await providers.open()) === "failed") terminate();
+      startPromise = providers.open();
+      if ((await startPromise) === "failed") terminate();
       // S2S fires onSessionReady when the provider acks; in pipeline mode the
       // equivalent "ready" signal is providers having opened.
       callbacks.onSessionReady?.(opts.sid);
@@ -412,6 +421,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       sessionAbort.abort();
       turnController?.abort();
       providers.unsubscribe();
+      // Let an in-flight start() settle after the abort so any provider that
+      // opened mid-connect is adopted-then-closed (openSide) before we close
+      // below — otherwise a slow socket lands after stop() and lingers.
+      if (startPromise !== null) await startPromise.catch(() => undefined);
       if (turnPromise !== null) await turnPromise;
       await providers.close();
     },

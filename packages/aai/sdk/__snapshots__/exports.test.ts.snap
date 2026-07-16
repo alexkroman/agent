@@ -27,6 +27,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "PIPELINE_FLUSH_TIMEOUT_MS",
   "PIPELINE_PLAYBACK_GRACE_MS",
   "RUN_CODE_TIMEOUT_MS",
+  "S2S_MAX_RESUME_ATTEMPTS",
   "TOOL_EXECUTION_TIMEOUT_MS",
   "ToolChoiceSchema",
   "WS_OPEN",

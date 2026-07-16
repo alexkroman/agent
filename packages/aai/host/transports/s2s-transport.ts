@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // S2S transport — wraps connectS2s and forwards typed callbacks into the SessionCore.
 
+import { S2S_MAX_RESUME_ATTEMPTS } from "../../sdk/constants.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger, S2SConfig } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
@@ -52,6 +53,10 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   // Distinguishes a resume failure (close before ready) from a normal close
   // and prevents back-to-back reconnect loops if the resumed socket also drops.
   let reconnecting = false;
+  // Consecutive resume attempts with no real progress in between. Reset when a
+  // resumed session actually does work (a reply starts); caps a server that
+  // keeps accepting a resume then immediately dropping it (flapping loop).
+  let resumeAttempts = 0;
 
   function buildCallbacks(): S2sCallbacks {
     return {
@@ -67,6 +72,9 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         opts.callbacks.onSessionReady?.(id);
       },
       onReplyStarted: (replyId) => {
+        // A reply on the (possibly resumed) socket is real progress — the
+        // session is healthy again, so clear the flapping-resume counter.
+        resumeAttempts = 0;
         currentReplyId = replyId;
         opts.callbacks.onReplyStarted(replyId);
       },
@@ -141,6 +149,24 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   }
 
   function startResume(prevId: string, code: number, reason: string): void {
+    // Bound a flapping server that keeps accepting a resume then dropping it.
+    // resumeAttempts resets on real progress (onReplyStarted), so a healthy
+    // session that drops once always gets a fresh budget.
+    if (resumeAttempts >= S2S_MAX_RESUME_ATTEMPTS) {
+      log.warn("S2S giving up on resume — attempt cap reached", {
+        sid: opts.sid,
+        agent: opts.agent,
+        attempts: resumeAttempts,
+        code,
+      });
+      providerSessionId = null;
+      opts.callbacks.onError(
+        "connection",
+        `S2S resume abandoned after ${resumeAttempts} attempts (code=${code})`,
+      );
+      return;
+    }
+    resumeAttempts++;
     reconnecting = true;
     log.warn("S2S unexpected close — attempting resume", {
       sid: opts.sid,

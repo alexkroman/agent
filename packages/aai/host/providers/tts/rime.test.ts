@@ -50,6 +50,16 @@ const { FakeWebSocket } = vi.hoisted(() => {
       this.removeListener(event, fn);
     }
 
+    removeAllListeners() {
+      this.listeners.clear();
+    }
+
+    listenerCount() {
+      let n = 0;
+      for (const arr of this.listeners.values()) n += arr.length;
+      return n;
+    }
+
     send(data: string) {
       this.sent.push(data);
     }
@@ -250,5 +260,12 @@ describe("rime TTS adapter", () => {
     expect(ws.readyState).toBe(FakeWebSocket.CLOSED);
 
     await expect(session.close()).resolves.toBeUndefined();
+  });
+
+  test("close() removes the socket listeners so their closures can be freed", async () => {
+    const { session, ws } = await openSession();
+    expect(ws.listenerCount()).toBeGreaterThan(0);
+    await session.close();
+    expect(ws.listenerCount()).toBe(0);
   });
 });

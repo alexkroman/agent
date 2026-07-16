@@ -126,6 +126,9 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
             finalBuf.value = "";
           }
           ws.close();
+          // Drop our handlers so their closures (emitter/finalBuf/shell) don't
+          // stay reachable via the socket if `ws` outlives this session.
+          ws.removeAllListeners();
         },
       });
 
