@@ -86,7 +86,7 @@
     "zod": "^4.4.3"
   },
   "peerDependencies": {
-    "@pinecone-database/pinecone": "^8.0.0"
+    "@pinecone-database/pinecone": "^8.1.0"
   },
   "peerDependenciesMeta": {
     "@pinecone-database/pinecone": {
@@ -94,14 +94,14 @@
     }
   },
   "devDependencies": {
-    "@pinecone-database/pinecone": "^8.0.0",
+    "@pinecone-database/pinecone": "^8.1.0",
     "@types/escape-html": "^1.0.4",
     "@types/html-to-text": "^9.0.4",
     "@types/json-schema": "^7.0.15",
     "@types/mime-types": "^3.0.1",
     "@types/node": "^26.1.1",
     "@types/ws": "^8.18.1",
-    "tsdown": "^0.22.7",
+    "tsdown": "^0.22.13",
     "vitest": "^4.1.10"
   },
   "engines": {
