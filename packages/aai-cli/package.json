@@ -41,7 +41,7 @@
     "giget": "^3.3.0",
     "ofetch": "^1.5.1",
     "p-debounce": "^5.1.0",
-    "vite": "^8.1.4",
+    "vite": "^8.1.5",
     "zod": "^4.4.3"
   },
   "devDependencies": {
