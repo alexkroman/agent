@@ -2,7 +2,13 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { ensureApiKey, readProjectConfig } from "./_config.ts";
+import {
+  approveServer,
+  ensureApiKey,
+  readGlobalConfig,
+  readProjectConfig,
+  serverOrigin,
+} from "./_config.ts";
 
 export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
 export const DEFAULT_DEV_SERVER = "http://localhost:8080";
@@ -31,10 +37,63 @@ function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-export function resolveServerUrl(explicit?: string, configUrl?: string): string {
+/** Hostnames that are always safe to target — the request never leaves the machine. */
+const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
+
+/**
+ * Whether `origin` may receive a credential without prior user approval:
+ * the shipped platform, or anything on this machine.
+ */
+function isImplicitlyTrusted(origin: string): boolean {
+  if (origin === serverOrigin(DEFAULT_SERVER)) return true;
+  try {
+    return LOOPBACK_HOSTNAMES.has(new URL(origin).hostname);
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Resolve which platform server to talk to.
+ *
+ * Precedence: an explicit `--server` flag, then dev mode, then the project
+ * config, then the shipped default.
+ *
+ * `configUrl` comes from `.aai/project.json` — a file in the working tree, so
+ * a cloned repo controls it. Because callers pair this URL with the user's API
+ * key (and, for `aai secret`, with secret values), a config-supplied origin is
+ * only honored when it is implicitly trusted or previously approved by the
+ * user via `--server`. Otherwise a repo could redirect a credentialed request
+ * to a host of its choosing simply by shipping a `project.json`, and
+ * `aai deploy` would hand over the developer's key on first run.
+ *
+ * @param approvedOrigins - Origins from the user-owned global config.
+ */
+export function resolveServerUrl(
+  explicit?: string,
+  configUrl?: string,
+  approvedOrigins: readonly string[] = [],
+): string {
+  // An explicit flag is a direct statement of user intent, not repo content.
   if (explicit) return stripTrailingSlash(explicit);
   if (isDevMode()) return DEFAULT_DEV_SERVER;
-  return stripTrailingSlash(configUrl ?? DEFAULT_SERVER);
+  if (!configUrl) return DEFAULT_SERVER;
+
+  const url = stripTrailingSlash(configUrl);
+  const origin = serverOrigin(url);
+  if (origin === null) {
+    throw new Error(
+      `Invalid serverUrl in .aai/project.json: ${configUrl}\n` +
+        "  Expected an absolute http(s) URL.",
+    );
+  }
+  if (isImplicitlyTrusted(origin) || approvedOrigins.includes(origin)) return url;
+  throw new Error(
+    `Refusing to send your API key to ${origin}.\n` +
+      `  It came from .aai/project.json, which is part of this project's files, ` +
+      "not from you.\n" +
+      `  If you do intend to use that server, re-run with --server ${origin} to approve it.`,
+  );
 }
 
 /**
@@ -43,8 +102,18 @@ export function resolveServerUrl(explicit?: string, configUrl?: string): string 
  */
 export async function resolveDeployTarget(cwd: string, explicitServer?: string) {
   const config = await readProjectConfig(cwd);
+  // Resolve (and trust-check) the target before ensureApiKey(), so an
+  // untrusted serverUrl is refused without first prompting for a key.
+  const globalConfig = await readGlobalConfig();
+  const serverUrl = resolveServerUrl(
+    explicitServer,
+    config?.serverUrl,
+    globalConfig.approvedServers ?? [],
+  );
+  // Passing --server is the user approving that origin; remember it so later
+  // commands in this project don't need the flag again.
+  if (explicitServer) await approveServer(serverUrl);
   const apiKey = await ensureApiKey();
-  const serverUrl = resolveServerUrl(explicitServer, config?.serverUrl);
   return { config, serverUrl, apiKey };
 }
 

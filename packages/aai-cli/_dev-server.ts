@@ -12,7 +12,11 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
-import { type AgentServer, requiredProviderEnvVars } from "@alexkroman1/aai/runtime";
+import {
+  type AgentServer,
+  requiredProviderEnvVars,
+  withHostCredentialFallback,
+} from "@alexkroman1/aai/runtime";
 import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
 import pDebounce from "p-debounce";
@@ -48,6 +52,27 @@ async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record
     );
   }
   return env;
+}
+
+/**
+ * The env handed to `createServer` for host-mode connections: provider
+ * credentials plus the `AAI_ALLOW_HOST` gate read straight from the shell
+ * (it is a control variable, not something an agent declares in `.env`).
+ */
+function hostModeEnv(providerEnv: Record<string, string>): Record<string, string> {
+  const gate = process.env.AAI_ALLOW_HOST;
+  return gate === undefined ? providerEnv : { ...providerEnv, AAI_ALLOW_HOST: gate };
+}
+
+/**
+ * Explicit bind host for the dev server, or `undefined` to take the
+ * loopback default. An empty `AAI_DEV_HOST` means "unset", not "every
+ * interface" — Node treats `listen(port, "")` as 0.0.0.0, which would quietly
+ * undo the loopback default this exists to guard.
+ */
+function devBindHost(): string | undefined {
+  const host = process.env.AAI_DEV_HOST?.trim();
+  return host ? host : undefined;
 }
 
 // ─── Agent loading ──────────────────────────────────────────────────────────
@@ -133,13 +158,26 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   async function buildServer(): Promise<AgentServer> {
     const agentDef = await loadAgentDef(cwd);
     const env = await resolveAgentEnv(cwd, agentDef);
-    const runtime = createRuntime({ agent: agentDef, env });
+    // Self-hosted only: let provider credentials exported in the shell reach
+    // the resolvers without entering `ctx.env`. Keeping them out of `ctx.env`
+    // preserves dev/prod parity — agent code sees the same keys it will see on
+    // the platform (only what `.env` / `aai secret put` declares) and so can't
+    // come to depend on a host-level variable that won't exist there.
+    const providerEnv = withHostCredentialFallback(env);
+    const runtime = createRuntime({ agent: agentDef, env, providerEnv });
     return createServer({
       runtime,
       name: agentDef.name,
-      // Enable host mode in the dev server (gated by AAI_ALLOW_HOST). Lets a
-      // `?host=1` client (e.g. the tau2 harness) supply its own agent per session.
-      env,
+      // Makes host mode *available* in the dev server — it stays off unless
+      // AAI_ALLOW_HOST is set, since a `?host=1` client supplies its own agent
+      // definition and would otherwise be able to spend the operator's
+      // provider credentials unauthenticated. Harnesses (e.g. tau2) opt in.
+      //
+      // `resolveServerEnv` only surfaces keys declared in `.env`, so the gate
+      // is read from the shell explicitly — otherwise host mode would be
+      // unreachable for anyone who exports it the usual way. Host sessions
+      // open their own provider connections, so they get `providerEnv`.
+      env: hostModeEnv(providerEnv),
       // Host sessions inherit this agent's stt/llm/tts pipeline config.
       hostBaseAgent: agentDef,
       ...clientDirOpt,
@@ -147,7 +185,10 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   }
 
   const agentServer = await buildServer();
-  await agentServer.listen(backendPort);
+  // Loopback by default (the dev server has no auth). AAI_DEV_HOST is the
+  // escape hatch for setups where loopback isn't reachable — e.g. running
+  // `aai dev` inside a container and connecting from the host.
+  await agentServer.listen(backendPort, devBindHost());
 
   let viteServer: ViteDevServer | undefined;
   if (hasClient) {
@@ -207,7 +248,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
         await newServer.close().catch(() => undefined);
         return;
       }
-      await newServer.listen(backendPort);
+      await newServer.listen(backendPort, devBindHost());
       currentServer = newServer;
       log.success("Restarted");
     } catch (err) {

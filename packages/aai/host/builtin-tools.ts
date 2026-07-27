@@ -4,7 +4,14 @@
  *
  * In self-hosted mode, these run in-process alongside custom tools.
  * In platform mode, they run on the host process outside the sandbox.
- * Network requests go through the host's fetch proxy (with SSRF protection).
+ *
+ * The network-capable builtins (`web_search`, `visit_webpage`, `fetch_json`)
+ * take a fully model-controlled URL, so they default to {@link safeFetch} —
+ * SSRF-protected by construction. Callers may inject a different `fetch` for
+ * tests, but omitting it can no longer silently yield an unprotected
+ * `globalThis.fetch`: that default previously left the self-hosted path
+ * (`aai dev`) able to reach loopback, RFC 1918, and cloud-metadata addresses
+ * with the response returned to whoever was driving the session.
  */
 
 import { convert } from "html-to-text";
@@ -19,8 +26,24 @@ import {
 import type { Kv } from "../sdk/kv.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { calculate } from "./_calculate.ts";
+import { ssrfSafeFetch } from "./ssrf.ts";
 
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
+
+/**
+ * `globalThis.fetch` wrapped in SSRF validation — the default for every
+ * network builtin. Private/reserved addresses, non-HTTP(S) protocols, and
+ * reserved hostnames are rejected, each redirect hop is re-validated, and
+ * credentials are stripped when a redirect leaves the original origin.
+ */
+function requestUrl(input: Parameters<typeof globalThis.fetch>[0]): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+export const safeFetch: typeof globalThis.fetch = (input, init) =>
+  ssrfSafeFetch(requestUrl(input), init ?? {}, globalThis.fetch);
 
 const htmlToText = (html: string): string => convert(html, { wordwrap: false });
 
@@ -48,7 +71,7 @@ const BraveSearchResponseSchema = z.object({
 });
 
 function createWebSearch(
-  fetchFn = globalThis.fetch,
+  fetchFn = safeFetch,
 ): ToolDef<typeof webSearchParams> & { guidance: string } {
   return {
     guidance:
@@ -96,7 +119,7 @@ const visitWebpageParams = z.object({
 });
 
 function createVisitWebpage(
-  fetchFn = globalThis.fetch,
+  fetchFn = safeFetch,
 ): ToolDef<typeof visitWebpageParams> & { guidance: string } {
   return {
     guidance:
@@ -168,7 +191,7 @@ function sanitizeHeaders(
 }
 
 function createFetchJson(
-  fetchFn = globalThis.fetch,
+  fetchFn = safeFetch,
 ): ToolDef<typeof fetchJsonParams> & { guidance: string } {
   return {
     guidance: "Use fetch_json to call REST APIs and retrieve structured JSON data.",
@@ -353,7 +376,10 @@ function createCalculate(): ToolDef<typeof calculateParams> & { guidance: string
 
 /** Options for creating built-in tool definitions. */
 type BuiltinToolOptions = {
-  /** Override fetch implementation (defaults to globalThis.fetch). For testing. */
+  /**
+   * Override the fetch implementation. Defaults to the SSRF-protected
+   * {@link safeFetch} — override only in tests.
+   */
   fetch?: typeof globalThis.fetch;
 };
 

@@ -244,7 +244,7 @@ describe("Runtime — session routing", () => {
 
     const runtime = createRuntime({
       agent: makeAgent(),
-      env: { [FAKE_STT_API_KEY_ENV]: "stt-key", [FAKE_TTS_API_KEY_ENV]: "tts-key" },
+      env: { ...fakes.env, [FAKE_STT_API_KEY_ENV]: "stt-key", [FAKE_TTS_API_KEY_ENV]: "tts-key" },
       logger: silentLogger,
       createWebSocket,
       stt: fakes.stt,

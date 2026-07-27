@@ -94,6 +94,39 @@ describe("createRuntime", () => {
     expect(await exec.executeTool("read_kv", {}, "s1", [])).toBe("value1");
   });
 
+  // providerEnv exists so a self-hosted caller can feed shell-exported
+  // credentials to the provider resolvers without agent code being able to
+  // read them — and without breaking dev/prod parity for ctx.env.
+  test("ctx.env exposes env only, never providerEnv", async () => {
+    const agent = makeAgent({
+      tools: {
+        dump_env: {
+          description: "Return the env keys visible to tool code",
+          execute: (_args, ctx) => Object.keys(ctx.env).sort().join(","),
+        },
+      },
+    });
+    const exec = createRuntime({
+      agent,
+      env: { APP_SETTING: "visible" },
+      providerEnv: { APP_SETTING: "visible", ANTHROPIC_API_KEY: "shell-only" },
+    });
+    expect(await exec.executeTool("dump_env", {}, "s1", [])).toBe("APP_SETTING");
+  });
+
+  test("ctx.env falls back to env when providerEnv is omitted", async () => {
+    const agent = makeAgent({
+      tools: {
+        dump_env: {
+          description: "Return the env keys visible to tool code",
+          execute: (_args, ctx) => Object.keys(ctx.env).sort().join(","),
+        },
+      },
+    });
+    const exec = createRuntime({ agent, env: { APP_SETTING: "visible" } });
+    expect(await exec.executeTool("dump_env", {}, "s1", [])).toBe("APP_SETTING");
+  });
+
   test("toolSchemas includes both custom and builtin tools", () => {
     const agent = makeAgent({
       builtinTools: ["run_code"],
