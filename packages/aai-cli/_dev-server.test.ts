@@ -12,6 +12,7 @@ const {
   mockListen,
   mockClose,
   mockCreateRuntime,
+  mockRequiredProviderEnvVars,
   mockCreateServer,
   mockEnsureApiKey,
   mockResolveServerEnv,
@@ -21,6 +22,11 @@ const {
   mockClose: vi.fn().mockResolvedValue(undefined),
   mockCreateRuntime: vi.fn().mockReturnValue({ runtime: "mock" }),
   mockCreateServer: vi.fn(),
+  // The runtime barrel is mocked to keep it out of these specs, so this stands
+  // in for the real registry-derived lookup. The default-S2S agent these tests
+  // write needs an AssemblyAI key; the real function has its own specs in the
+  // aai package (providers/resolve.test.ts).
+  mockRequiredProviderEnvVars: vi.fn().mockReturnValue(["ASSEMBLYAI_API_KEY"]),
   mockEnsureApiKey: vi.fn().mockResolvedValue("test-api-key"),
   mockResolveServerEnv: vi.fn().mockResolvedValue({ ASSEMBLYAI_API_KEY: "test-key" }),
   mockValidateAgentExport: vi.fn(),
@@ -82,6 +88,7 @@ vi.mock("get-port", async (importOriginal) => {
 vi.mock("@alexkroman1/aai/runtime", () => ({
   createRuntime: mockCreateRuntime,
   createServer: mockCreateServer,
+  requiredProviderEnvVars: mockRequiredProviderEnvVars,
 }));
 
 vi.mock("./_config.ts", () => ({

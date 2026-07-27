@@ -8,7 +8,7 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
-import { makeOpts, noopToolSchema } from "./_pipeline-transport-harness.ts";
+import { inFlightReplyScript, makeOpts, noopToolSchema } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 const flush = (): Promise<void> => new Promise((r) => setTimeout(r, 0));
@@ -81,11 +81,9 @@ describe("PipelineTransport", () => {
   });
 
   describe("false-interruption recovery", () => {
-    const script: ScriptedPart[] = [
-      { type: "text", text: "The order " },
-      { type: "text", text: "will arrive " },
-      { type: "text", text: "on Tuesday." },
-    ];
+    // Long enough that the reply is still in flight when each spec barges in —
+    // see inFlightReplyScript. Aborted by the barge-in, so it costs no time.
+    const script = inFlightReplyScript();
 
     test("a partial barge-in with no committed turn resumes the reply after the window", async () => {
       const { opts, stt, tts, callbacks } = makeOpts({
@@ -191,6 +189,69 @@ describe("PipelineTransport", () => {
 
       await new Promise((r) => setTimeout(r, 80));
       expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
+      await t.stop();
+    });
+
+    test("a user who keeps talking is not resumed over — partials re-arm the window", async () => {
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({
+          steps: [script, [{ type: "text", text: "As I was saying…" }]],
+          delayMs: 20,
+        }),
+        falseInterruptionTimeoutMs: 40,
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("where is my order");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+
+      // Barge in, then keep speaking well past the recovery window. Providers
+      // that only emit a final at end-of-turn (AssemblyAI) produce exactly this
+      // shape: a long run of partials with no final in sight.
+      stt.last()?.firePartial("wait actually");
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+      for (let i = 0; i < 5; i++) {
+        await new Promise((r) => setTimeout(r, 25));
+        stt.last()?.firePartial(`wait actually hold on ${i}`);
+      }
+
+      // ~125 ms > 40 ms window, but the agent must not have resumed over them.
+      expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
+
+      // The utterance finally commits as the real turn it always was.
+      stt.last()?.fireFinal("wait actually hold on, cancel it.");
+      await vi.waitFor(() => {
+        expect(callbacks.onUserTranscript).toHaveBeenCalledWith(
+          "wait actually hold on, cancel it.",
+        );
+      });
+      await t.stop();
+    });
+
+    test("a barge-in partial's caption survives the cancel that follows it", async () => {
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script, delayMs: 20 }),
+        falseInterruptionTimeoutMs: 0,
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("where is my order");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+
+      stt.last()?.firePartial("stop please");
+      // The client's `cancelled` handler clears userTranscript, so the interim
+      // must be emitted after onCancelled or the caption is blanked.
+      const partialCall = (callbacks.onUserTranscriptPartial as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[0];
+      const cancelledCall = (callbacks.onCancelled as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[0];
+      expect(partialCall).toBeGreaterThan(cancelledCall as number);
       await t.stop();
     });
 

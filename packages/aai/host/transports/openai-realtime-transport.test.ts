@@ -75,6 +75,38 @@ function startedTransport() {
 }
 
 describe("openai-realtime-transport: connect and session.update", () => {
+  test("a close before the open rejects start() instead of hanging", async () => {
+    // Regression guard: this transport used to reject the connect only on
+    // `error`. A socket that closed without erroring (an auth rejection that
+    // closes the connection) left start() awaiting a promise that could never
+    // settle. The shared createWsOpenRace owns that rule for both transports.
+    const fake = makeFakeWs();
+    const transport = createOpenaiRealtimeTransport({
+      apiKey: "sk",
+      options: {},
+      sessionConfig: { systemPrompt: "" },
+      toolSchemas: [],
+      toolChoice: "auto",
+      callbacks: noopCallbacks(),
+      sid: "s",
+      inputSampleRate: 16_000,
+      outputSampleRate: 24_000,
+      createWebSocket: () => fake,
+      logger: silentLogger,
+    });
+    const started = transport.start();
+    fake.fire("close", { code: 4001, reason: "unauthorized" });
+    await expect(started).rejects.toThrow(/closed before open \(code: 4001\)/);
+  });
+
+  test("a close after the open does not affect the settled connect", async () => {
+    const { ready, fake, cbs } = startedTransport();
+    await expect(ready).resolves.toBeUndefined();
+    fake.fire("close", { code: 1006, reason: "" });
+    // Routed to the session, not the (already settled) connect.
+    expect(cbs.onError).toHaveBeenCalled();
+  });
+
   test("opens WS with auth headers and sends session.update on open", async () => {
     const fake = makeFakeWs();
     const createWs = vi.fn(() => fake);

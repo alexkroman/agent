@@ -40,7 +40,6 @@ export type SessionCoreOptions = {
   executeTool: ExecuteTool;
   transport: Transport;
   logger?: Logger;
-  maxHistory?: number;
   /**
    * Host/relay mode hook. When set, tool calls are relayed to the client for
    * out-of-process execution: `onToolCall` skips its own `tool_call` emit (the
@@ -80,7 +79,6 @@ export type SessionCore = {
 
 export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   const log = opts.logger ?? consoleLogger;
-  const maxHistory = opts.maxHistory ?? DEFAULT_MAX_HISTORY;
   const rawIdleMs = opts.agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;
   const idleMs = rawIdleMs === 0 || !Number.isFinite(rawIdleMs) ? 0 : rawIdleMs;
 
@@ -128,8 +126,8 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
 
   function pushMessages(...msgs: Message[]): void {
     history.push(...msgs);
-    if (maxHistory > 0 && history.length > maxHistory) {
-      history.splice(0, history.length - maxHistory);
+    if (history.length > DEFAULT_MAX_HISTORY) {
+      history.splice(0, history.length - DEFAULT_MAX_HISTORY);
     }
   }
 
@@ -192,7 +190,12 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       opts.transport.sendUserAudio(bytes);
     },
     onAudioReady() {
-      // S2S greeting is automatic; pipeline transports may override via callbacks.
+      // Intentionally inert, and there is no override mechanism: greeting
+      // dispatch is the transport's own business. S2S greets automatically, and
+      // the pipeline transport has an internal `onAudioReady` fired by
+      // pipeline-providers.ts when the provider sockets open — unrelated to
+      // this client frame. The frame is accepted (clients send it) and ignored;
+      // `TransportCallbacks` deliberately has no member for it.
     },
     onCancel() {
       opts.transport.cancelReply();

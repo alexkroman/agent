@@ -4,6 +4,7 @@ import path from "node:path";
 import { colorize } from "consola/utils";
 import { type CommandResult, ok } from "./_output.ts";
 import { fmtUrl, log, parsePort } from "./_ui.ts";
+import { errorDetail } from "./_utils.ts";
 
 type DevData = { url: string };
 
@@ -36,9 +37,7 @@ export async function executeDev(opts: {
   // provider being out of credits). Log it and keep serving other sessions
   // instead of letting one failed session crash the whole dev host.
   process.on("unhandledRejection", (err) => {
-    log.error(
-      `Unhandled rejection: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
-    );
+    log.error(`Unhandled rejection: ${errorDetail(err)}`);
   });
 
   // Same rationale for synchronous throws that escape to the top of the event
@@ -47,9 +46,7 @@ export async function executeDev(opts: {
   // whole host and drops every other in-flight connection with it. Log the
   // stack and keep serving so a single failure stays isolated to its session.
   process.on("uncaughtException", (err) => {
-    log.error(
-      `Uncaught exception: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`,
-    );
+    log.error(`Uncaught exception: ${errorDetail(err)}`);
   });
 
   return ok({ url });

@@ -37,12 +37,27 @@ function consoleLog(fn: typeof console.log): LogFn {
   return (msg, ctx) => (ctx ? fn(msg, ctx) : fn(msg));
 }
 
+/**
+ * Level-gated debug: `console.debug` is an alias for `console.log` in Node, so
+ * an ungated debug sink writes to stdout on every call. Some debug sites sit on
+ * per-message realtime paths (e.g. the OpenAI Realtime transport logs every
+ * unhandled event type), where a synchronous write per inbound message is real
+ * cost. Matches `aai-server/_debug-log.ts`: set `LOG_LEVEL=DEBUG` to enable.
+ */
+function debugLog(): LogFn {
+  return (msg, ctx) => {
+    if (process.env.LOG_LEVEL !== "DEBUG") return;
+    if (ctx) console.debug(msg, ctx);
+    else console.debug(msg);
+  };
+}
+
 /** Default console-backed logger. */
 export const consoleLogger: Logger = {
   info: consoleLog(console.log),
   warn: consoleLog(console.warn),
   error: consoleLog(console.error),
-  debug: consoleLog(console.debug),
+  debug: debugLog(),
 };
 
 /**

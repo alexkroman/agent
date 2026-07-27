@@ -42,6 +42,7 @@ import type {
   Message,
   ToolContext,
 } from "./harness-types.ts";
+import { RUN_CODE_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./limits.ts";
 
 // Re-export the host-RPC surface so existing consumers/tests can keep
 // importing it from `./deno-harness.ts`.
@@ -107,9 +108,6 @@ export function createSessionStateMap(initState?: () => Record<string, unknown>)
 
 // ---- run_code builtin -------------------------------------------------------
 
-/** Wall-clock cap for a single run_code execution (mirrors the SDK constant). */
-const RUN_CODE_TIMEOUT_MS = 5000;
-
 /**
  * Execute agent-supplied JavaScript for the `run_code` builtin.
  *
@@ -145,8 +143,6 @@ async function runCode(code: string): Promise<string | { error: string }> {
 }
 
 // ---- Tool execution ---------------------------------------------------------
-
-const TOOL_TIMEOUT_MS = 30_000;
 
 type ToolCallRequest = {
   name: string;

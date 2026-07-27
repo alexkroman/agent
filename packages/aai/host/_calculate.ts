@@ -15,6 +15,8 @@
  * So `-2 ^ 2` is `-(2 ^ 2) = -4` and `2 ^ 3 ^ 2` is `2 ^ (3 ^ 2) = 512`.
  */
 
+import { errorMessage } from "../sdk/utils.ts";
+
 /** Longest expression accepted — bounds tokenizer work and parse recursion. */
 const MAX_EXPRESSION_LENGTH = 500;
 
@@ -151,6 +153,6 @@ export function calculate(expression: string): CalculateResult {
     }
     return { ok: true, value: Number(value.toPrecision(RESULT_PRECISION)) };
   } catch (err) {
-    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+    return { ok: false, error: errorMessage(err) };
   }
 }
