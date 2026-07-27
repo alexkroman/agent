@@ -233,8 +233,10 @@ describe("createRuntime with custom options", () => {
 describe("Runtime — session routing", () => {
   test("manifest with stt/llm/tts routes to PipelineSession (no S2S socket opened)", async () => {
     const createWebSocket = vi.fn();
-    const stt = createFakeSttProvider();
-    const tts = createFakeTtsProvider();
+    // Named after real registry kinds so the API-key assertions below exercise
+    // credential routing rather than a default-vendor fallback.
+    const stt = createFakeSttProvider({ name: "assemblyai" });
+    const tts = createFakeTtsProvider({ name: "cartesia" });
     const llm = createFakeLanguageModel({ script: [] });
 
     const runtime = createRuntime({

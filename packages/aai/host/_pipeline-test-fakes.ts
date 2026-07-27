@@ -53,10 +53,13 @@ export type FakeSttProvider = SttOpener & {
   readonly sessions: FakeSttSession[];
 };
 
-export function createFakeSttProvider(): FakeSttProvider {
+export function createFakeSttProvider(options: { name?: string } = {}): FakeSttProvider {
   const sessions: FakeSttSession[] = [];
   return {
-    name: "fake-stt",
+    // Defaults to a non-registry name. Pass a real kind (e.g. "assemblyai")
+    // when a spec asserts on the API key the opener receives — key routing is
+    // keyed off the registry, and an unmatched name resolves to no key.
+    name: options.name ?? "fake-stt",
     sessions,
     last: () => sessions.at(-1),
     async open(opts: SttOpenOptions): Promise<SttSession> {
@@ -122,12 +125,13 @@ export type FakeTtsProvider = TtsOpener & {
  * `{ autoDoneOnFlush: false }` to drive `done` manually.
  */
 export function createFakeTtsProvider(
-  options: { autoDoneOnFlush?: boolean } = {},
+  options: { autoDoneOnFlush?: boolean; name?: string } = {},
 ): FakeTtsProvider {
   const autoDoneOnFlush = options.autoDoneOnFlush ?? true;
   const sessions: FakeTtsSession[] = [];
   return {
-    name: "fake-tts",
+    // See createFakeSttProvider's note on `name` and API-key routing.
+    name: options.name ?? "fake-tts",
     sessions,
     last: () => sessions.at(-1),
     async open(opts: TtsOpenOptions): Promise<TtsSession> {

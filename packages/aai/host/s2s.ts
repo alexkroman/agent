@@ -158,11 +158,9 @@ function dispatchS2sMessage(
 
 export type S2sSessionConfig = {
   systemPrompt: string;
-  tools: S2sToolSchema[];
+  tools: ToolSchema[];
   greeting?: string;
 };
-
-export type S2sToolSchema = ToolSchema;
 
 /** Callbacks fired into the owning session at construction time. */
 export type S2sCallbacks = {

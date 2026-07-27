@@ -18,7 +18,7 @@ import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
-import { bytesToPcm16 } from "../_pcm.ts";
+import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createEndpointSettler } from "./pipeline-endpointing.ts";
 import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
@@ -185,7 +185,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       onTtsError: (err) => onProviderError("tts", err),
       onTtsAudio: (pcm) => {
         playbackClock.onChunk(pcm);
-        callbacks.onAudioChunk(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+        callbacks.onAudioChunk(pcm16ToBytes(pcm));
       },
     },
     onAudioReady,

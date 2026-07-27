@@ -53,7 +53,10 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   const agentTranscriptBuffers = new Map<string, string>();
   type ToolBuffer = { callId: string; name: string; argsBuffer: string };
   const toolBuffers = new Map<string, ToolBuffer>();
-  let currentResponseId: string | null = null;
+  // Only ever tested for presence — the response id itself is passed straight
+  // to onReplyStarted from the local `id`, never correlated later. (Contrast
+  // s2s-transport.ts, where currentReplyId's value IS read.)
+  let replyInFlight = false;
   let responseCreateQueued = false;
 
   function send(payload: Record<string, unknown>): void {
@@ -158,7 +161,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   function handleResponseCreated(obj: Record<string, unknown>): void {
     const resp = obj.response as { id?: unknown } | undefined;
     const id = asString(resp?.id);
-    currentResponseId = id;
+    replyInFlight = true;
     opts.callbacks.onReplyStarted(id);
   }
 
@@ -181,7 +184,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   }
 
   function handleResponseDone(): void {
-    currentResponseId = null;
+    replyInFlight = false;
     clearTurnBuffers();
     opts.callbacks.onReplyDone();
   }
@@ -220,13 +223,16 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
   function parseToolArgs(argsStr: string, name: string, callId: string): Record<string, unknown> {
     if (!argsStr) return {};
-    try {
-      const parsed = JSON.parse(argsStr);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
+    const parsed = safeJsonParse(argsStr);
+    // `undefined` is safeJsonParse's malformed-input sentinel (JSON cannot
+    // encode it), so this warns on exactly the inputs the old catch did —
+    // valid-but-non-object args still fall through to {} without a warning.
+    if (parsed === undefined) {
       log.warn("OpenAI Realtime: invalid tool args JSON", { name, callId });
+      return {};
+    }
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
     }
     return {};
   }
@@ -341,9 +347,9 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       }
     },
     cancelReply() {
-      if (currentResponseId === null) return;
+      if (!replyInFlight) return;
       send({ type: "response.cancel" });
-      currentResponseId = null;
+      replyInFlight = false;
       clearTurnBuffers();
       opts.callbacks.onCancelled();
     },

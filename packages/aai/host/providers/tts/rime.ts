@@ -29,7 +29,7 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../../../sdk/providers.ts";
-import { errorMessage } from "../../../sdk/utils.ts";
+import { errorMessage, safeJsonParse } from "../../../sdk/utils.ts";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import {
@@ -68,12 +68,10 @@ function handleRimeMessage(
   armQuiescence: () => void,
   isActiveTimer: () => boolean,
 ): void {
-  let msg: RimeMessage;
-  try {
-    msg = JSON.parse(typeof raw === "string" ? raw : raw.toString()) as RimeMessage;
-  } catch {
-    return;
-  }
+  const msg = safeJsonParse(typeof raw === "string" ? raw : raw.toString()) as
+    | RimeMessage
+    | undefined;
+  if (msg === undefined) return;
 
   if (msg.type === "chunk" && typeof msg.data === "string") {
     const pcm = bytesToPcm16(base64ToUint8(msg.data));

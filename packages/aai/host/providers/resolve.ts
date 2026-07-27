@@ -296,16 +296,22 @@ function providerRegistryKey(value: object | undefined): string {
   return typeof name === "string" ? name : "";
 }
 
-/** Resolve the agent-env API key for an STT descriptor/opener by its kind. */
+/**
+ * Resolve the agent-env API key for an STT descriptor/opener by its kind.
+ *
+ * An unmatched key yields "" rather than falling back to a default vendor's env
+ * var: a real descriptor's `kind` is always a registry entry, so only kindless
+ * pre-resolved openers (test fakes, which ignore the key) can miss. The old
+ * `?? ASSEMBLYAI_API_KEY_ENV` fallback meant a genuinely new provider whose
+ * `opener.name` didn't match its registry kind silently received AssemblyAI's
+ * key and failed with a confusing auth error instead of a missing-key one.
+ */
 export function resolveSttApiKey(
   stt: SttProvider | SttOpener | undefined,
   env: Record<string, string>,
 ): string {
-  // Default to AssemblyAI for values (test mocks) that match no registry entry.
-  return resolveApiKey(
-    STT_REGISTRY[providerRegistryKey(stt)]?.envVar ?? ASSEMBLYAI_API_KEY_ENV,
-    env,
-  );
+  const entry = STT_REGISTRY[providerRegistryKey(stt)];
+  return entry ? resolveApiKey(entry.envVar, env) : "";
 }
 
 /** Resolve the agent-env API key for a TTS descriptor/opener by its kind. */
@@ -313,7 +319,8 @@ export function resolveTtsApiKey(
   tts: TtsProvider | TtsOpener | undefined,
   env: Record<string, string>,
 ): string {
-  return resolveApiKey(TTS_REGISTRY[providerRegistryKey(tts)]?.envVar ?? CARTESIA_API_KEY_ENV, env);
+  const entry = TTS_REGISTRY[providerRegistryKey(tts)];
+  return entry ? resolveApiKey(entry.envVar, env) : "";
 }
 
 /**

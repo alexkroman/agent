@@ -217,7 +217,7 @@ type StreamPartHandlerDeps = {
  * the transcript or streamed to TTS. When a boundary is crossed and neither
  * side carries whitespace, a single space is injected into both streams.
  */
-export function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart) => void {
+function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart) => void {
   const { onDelta, sendTtsText, onToolCall, onToolCallDone, emitError, log, sid } = deps;
   const holdPhrase = deps.holdPhrase ?? DEFAULT_HOLD_PHRASE;
   let pendingSeparator = false;

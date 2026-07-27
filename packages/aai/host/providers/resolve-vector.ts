@@ -10,7 +10,7 @@ import type { VectorProvider } from "../../sdk/providers.ts";
 import type { Vector } from "../../sdk/vector.ts";
 import { createMemoryVector } from "../memory-vector.ts";
 import { createPineconeVector } from "../pinecone-vector.ts";
-import { resolveApiKey } from "./resolve.ts";
+import { requireApiKey } from "./_utils.ts";
 
 export function resolveVector(
   descriptor: VectorProvider,
@@ -21,12 +21,15 @@ export function resolveVector(
     case IN_MEMORY_VECTOR_KIND:
       return createMemoryVector({ namespace });
     case PINECONE_VECTOR_KIND: {
-      const apiKey = resolveApiKey(PINECONE_API_KEY_ENV, env);
-      if (!apiKey) {
-        throw new Error(
-          `Pinecone Vector: missing API key. Set ${PINECONE_API_KEY_ENV} in the agent env.`,
-        );
-      }
+      // requireApiKey's process.env fallback mirrors resolveApiKey's, so
+      // passing the agent-env value keeps the same lookup order and produces
+      // the same message from one implementation.
+      const apiKey = requireApiKey(
+        env[PINECONE_API_KEY_ENV],
+        PINECONE_API_KEY_ENV,
+        "Pinecone Vector",
+        (msg) => new Error(msg),
+      );
       const { index } = descriptor.options as unknown as PineconeOptions;
       return createPineconeVector({ apiKey, index, namespace });
     }

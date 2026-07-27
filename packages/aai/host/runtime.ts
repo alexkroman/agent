@@ -25,7 +25,7 @@ import {
   type TtsProvider,
 } from "../sdk/providers.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
-import type { AgentDef } from "../sdk/types.ts";
+import type { AgentDef, ToolDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
@@ -99,31 +99,26 @@ function resolvePipelineProviders(
 }
 
 /**
- * Resolve builtins for the sandbox/relay tool path. Platform callers
- * (aai-server/sandbox.ts) pre-resolve builtins and pass `builtinDefs` with
- * schemas/guidance already merged into `toolSchemas`/`toolGuidance`; relay
- * callers (host mode, e.g. a tau2 harness supplying its own tools) get the
- * agent's builtins resolved and merged here, so relayed sessions expose
- * think/remember/recall/calculate too. A relayed tool with the same name
- * wins — the colliding builtin is dropped from both dispatch and schemas so
- * the host never shadows a tool the client expects to execute.
+ * Resolve builtins for the sandbox/relay tool path — the single owner of that
+ * decision for every caller (platform sandbox, relay/host mode, self-hosted).
+ * Callers supply the tools they dispatch themselves via `toolSchemas`; a
+ * supplied tool with the same name as a builtin wins, and the colliding builtin
+ * is dropped from both dispatch and schemas so the host never shadows a tool
+ * the caller expects to execute and the LLM never sees a duplicate name.
  */
 function resolveSandboxBuiltins(
   agent: AgentDef,
   opts: RuntimeOptions,
   fetchOpt: { fetch: typeof globalThis.fetch } | undefined,
 ): {
-  defs: NonNullable<RuntimeOptions["builtinDefs"]>;
+  defs: Record<string, ToolDef>;
   schemas: ToolSchema[];
   guidance: string[];
 } {
   const providedSchemas = opts.toolSchemas ?? [];
-  if (opts.builtinDefs) {
-    return { defs: opts.builtinDefs, schemas: providedSchemas, guidance: opts.toolGuidance ?? [] };
-  }
-  const relayedNames = new Set(providedSchemas.map((s) => s.name));
+  const providedNames = new Set(providedSchemas.map((s) => s.name));
   const names = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
-    (name) => !relayedNames.has(name),
+    (name) => !providedNames.has(name),
   );
   const builtins = resolveAllBuiltins(names, fetchOpt);
   return {

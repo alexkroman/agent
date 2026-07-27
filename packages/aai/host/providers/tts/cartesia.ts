@@ -37,7 +37,7 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../../../sdk/providers.ts";
-import { errorMessage } from "../../../sdk/utils.ts";
+import { errorMessage, safeJsonParse } from "../../../sdk/utils.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import {
   assertPcm16Rate,
@@ -167,12 +167,8 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         if (/invalid context id|context id does not exist|already been cancelled/i.test(raw)) {
           return true;
         }
-        try {
-          const parsed = JSON.parse(raw) as { context_id?: unknown };
-          return typeof parsed.context_id === "string" && parsed.context_id !== context.contextId;
-        } catch {
-          return false;
-        }
+        const parsed = safeJsonParse(raw) as { context_id?: unknown } | undefined;
+        return typeof parsed?.context_id === "string" && parsed.context_id !== context.contextId;
       };
 
       handleSocketError = (err) => {

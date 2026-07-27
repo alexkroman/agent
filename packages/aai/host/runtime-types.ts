@@ -17,7 +17,7 @@ import type {
   TtsOpener,
   TtsProvider,
 } from "../sdk/providers.ts";
-import type { AgentDef, ToolDef } from "../sdk/types.ts";
+import type { AgentDef } from "../sdk/types.ts";
 import type { Vector } from "../sdk/vector.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
@@ -105,11 +105,6 @@ export type RuntimeOptions = {
     | undefined;
   /** System prompt guidance for builtin tools. Passed through in sandbox mode. */
   toolGuidance?: string[] | undefined;
-  /**
-   * Pre-resolved builtin tool definitions. When provided alongside `executeTool`
-   * and `toolSchemas`, skips calling `resolveAllBuiltins` on the host.
-   */
-  builtinDefs?: Record<string, ToolDef> | undefined;
   /**
    * Override the fetch implementation used by built-in tools (web_search,
    * visit_webpage, fetch_json). Defaults to `globalThis.fetch`.

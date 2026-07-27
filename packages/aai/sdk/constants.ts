@@ -28,7 +28,6 @@ export const FETCH_TIMEOUT_MS = 15_000;
  * that would otherwise reconnect forever with no backoff.
  */
 export const S2S_MAX_RESUME_ATTEMPTS = 5;
-export const RUN_CODE_TIMEOUT_MS = 5000;
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
 
 /**
