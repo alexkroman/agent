@@ -10,6 +10,8 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { safeJsonParse } from "../../../sdk/utils.ts";
+import { pcm16ToBytes } from "../../_pcm.ts";
 import {
   closeOnAbort,
   connectOrThrow,
@@ -67,11 +69,7 @@ function buildConfigFrame(
 }
 
 function parseFrame(raw: WebSocket.RawData): SonioxResponse | null {
-  try {
-    return JSON.parse(raw.toString()) as SonioxResponse;
-  } catch {
-    return null;
-  }
+  return (safeJsonParse(raw.toString()) as SonioxResponse | undefined) ?? null;
 }
 
 function handleResponse(
@@ -154,8 +152,7 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
       return {
         sendAudio(pcm: Int16Array) {
           if (shell.isClosed() || ws.readyState !== WebSocket.OPEN) return;
-          // Pass the underlying buffer to avoid a copy.
-          ws.send(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength), { binary: true });
+          ws.send(pcm16ToBytes(pcm), { binary: true });
         },
         on(event, fn) {
           return emitter.on(event, fn);

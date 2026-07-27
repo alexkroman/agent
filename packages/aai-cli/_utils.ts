@@ -16,6 +16,15 @@ export function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+/**
+ * Extract a stack (falling back to the message) from an unknown error. Local
+ * copy of `errorDetail` from `@alexkroman1/aai` for the same reason as
+ * {@link errorMessage} above.
+ */
+export function errorDetail(err: unknown): string {
+  return err instanceof Error ? (err.stack ?? err.message) : String(err);
+}
+
 /** True when `err` is a filesystem EEXIST error (target already exists). */
 export function isEexist(err: unknown): boolean {
   return err instanceof Error && "code" in err && err.code === "EEXIST";

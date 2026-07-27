@@ -8,6 +8,7 @@ import { safeJsonParse } from "../../sdk/utils.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import {
   type CreateHeaderWebSocket,
+  createWsOpenRace,
   defaultCreateHeaderWebSocket,
   type HeaderWebSocket,
 } from "../_ws.ts";
@@ -53,7 +54,10 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   const agentTranscriptBuffers = new Map<string, string>();
   type ToolBuffer = { callId: string; name: string; argsBuffer: string };
   const toolBuffers = new Map<string, ToolBuffer>();
-  let currentResponseId: string | null = null;
+  // Only ever tested for presence — the response id itself is passed straight
+  // to onReplyStarted from the local `id`, never correlated later. (Contrast
+  // s2s-transport.ts, where currentReplyId's value IS read.)
+  let replyInFlight = false;
   let responseCreateQueued = false;
 
   function send(payload: Record<string, unknown>): void {
@@ -110,24 +114,29 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       },
     });
     ws = sock;
-    // Settles once the socket opens (or errors first). Handlers stay
-    // registered for the socket's life; `opened` routes later errors to the
-    // session callbacks instead of the (already settled) open race.
-    const opening = Promise.withResolvers<void>();
-    let opened = false;
+    // Handlers stay registered for the socket's life; the race routes pre-open
+    // failures to the connect and later ones to the session callbacks.
+    const connect = createWsOpenRace();
 
     sock.addEventListener("open", () => {
-      opened = true;
+      connect.markOpen();
       sendSessionUpdate();
       sendGreeting();
-      opening.resolve();
     });
     sock.addEventListener("message", (ev) => handleMessage(ev.data));
-    sock.addEventListener("close", (ev) => handleClose(ev.code ?? 0, ev.reason ?? ""));
+    sock.addEventListener("close", (ev) => {
+      const code = ev.code ?? 0;
+      // A close before the open (e.g. an auth rejection that closes rather than
+      // errors) must fail the connect — otherwise start() awaits forever.
+      if (connect.isOpening()) {
+        connect.fail(new Error(`WebSocket closed before open (code: ${code})`));
+      }
+      handleClose(code, ev.reason ?? "");
+    });
     sock.addEventListener("error", (ev) => {
       const msg = typeof ev.message === "string" ? ev.message : "WebSocket error";
-      if (!opened) {
-        opening.reject(new Error(msg));
+      if (connect.isOpening()) {
+        connect.fail(new Error(msg));
         return;
       }
       if (closing) {
@@ -136,7 +145,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       }
       opts.callbacks.onError("internal", msg);
     });
-    await opening.promise;
+    await connect.promise;
   }
 
   function asString(v: unknown): string {
@@ -158,7 +167,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   function handleResponseCreated(obj: Record<string, unknown>): void {
     const resp = obj.response as { id?: unknown } | undefined;
     const id = asString(resp?.id);
-    currentResponseId = id;
+    replyInFlight = true;
     opts.callbacks.onReplyStarted(id);
   }
 
@@ -181,7 +190,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
   }
 
   function handleResponseDone(): void {
-    currentResponseId = null;
+    replyInFlight = false;
     clearTurnBuffers();
     opts.callbacks.onReplyDone();
   }
@@ -220,13 +229,16 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
   function parseToolArgs(argsStr: string, name: string, callId: string): Record<string, unknown> {
     if (!argsStr) return {};
-    try {
-      const parsed = JSON.parse(argsStr);
-      if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-        return parsed as Record<string, unknown>;
-      }
-    } catch {
+    const parsed = safeJsonParse(argsStr);
+    // `undefined` is safeJsonParse's malformed-input sentinel (JSON cannot
+    // encode it), so this warns on exactly the inputs the old catch did —
+    // valid-but-non-object args still fall through to {} without a warning.
+    if (parsed === undefined) {
       log.warn("OpenAI Realtime: invalid tool args JSON", { name, callId });
+      return {};
+    }
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      return parsed as Record<string, unknown>;
     }
     return {};
   }
@@ -341,9 +353,9 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       }
     },
     cancelReply() {
-      if (currentResponseId === null) return;
+      if (!replyInFlight) return;
       send({ type: "response.cancel" });
-      currentResponseId = null;
+      replyInFlight = false;
       clearTurnBuffers();
       opts.callbacks.onCancelled();
     },

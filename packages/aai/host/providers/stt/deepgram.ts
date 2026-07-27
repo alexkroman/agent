@@ -20,6 +20,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { pcm16ToBytes } from "../../_pcm.ts";
 import {
   closeOnAbort,
   connectOrThrow,
@@ -109,7 +110,7 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
       const session: DeepgramSession = {
         sendAudio(pcm: Int16Array) {
           if (shell.isClosed()) return;
-          connection.sendMedia(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+          connection.sendMedia(pcm16ToBytes(pcm));
         },
         on(event, fn) {
           return emitter.on(event, fn);

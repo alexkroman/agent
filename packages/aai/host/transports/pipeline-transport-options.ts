@@ -1,13 +1,25 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Configuration surface for `createPipelineTransport` — split out of
 // `pipeline-transport.ts` so the transport module stays focused on turn
-// orchestration. Runtime defaults are applied in the transport itself.
+// orchestration. This module also owns the defaulting (`resolvePipelineOptions`)
+// so each option's default lives next to its documentation rather than being
+// re-applied at the point of use.
 
 import type { LanguageModel } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
+import {
+  DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
+  DEFAULT_ENDPOINT_SETTLE_MS,
+  DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
+  DEFAULT_HOLD_PHRASE,
+  DEFAULT_MAX_STEPS,
+  DEFAULT_MIN_BARGE_IN_WORDS,
+  DEFAULT_STT_SAMPLE_RATE,
+  DEFAULT_TTS_SAMPLE_RATE,
+} from "../../sdk/constants.ts";
 import type { SttOpener, TtsOpener } from "../../sdk/providers.ts";
 import type { ToolChoice } from "../../sdk/types.ts";
-import type { Logger } from "../runtime-config.ts";
+import { consoleLogger, type Logger } from "../runtime-config.ts";
 import type { TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 /** Configuration for `createPipelineTransport`. */
@@ -43,8 +55,8 @@ export interface PipelineTransportOptions {
   maxSteps?: number | undefined;
   /**
    * Minimum interim-transcript words required to barge in on the agent while
-   * it is speaking. Defaults to DEFAULT_MIN_BARGE_IN_WORDS (1 = interrupt on
-   * any non-empty interim).
+   * it is speaking. Defaults to DEFAULT_MIN_BARGE_IN_WORDS (2), which keeps
+   * one-word backchannels ("mhm", "yeah") from cutting the agent off.
    */
   minBargeInWords?: number | undefined;
   /**
@@ -96,4 +108,50 @@ export interface PipelineTransportOptions {
   silenceTimeoutMs?: number | undefined;
   /** Instruction injected on silence timeout. Defaults to DEFAULT_SILENCE_PROMPT. */
   silencePrompt?: string | undefined;
+}
+
+/**
+ * The subset of {@link PipelineTransportOptions} that carries a default, with
+ * every default applied. Resolving these in one place keeps the transport from
+ * re-deriving `?? DEFAULT_X` at each point of use — the failure mode being a
+ * value that differs between two sites that both thought they owned it.
+ */
+export interface ResolvedPipelineOptions {
+  log: Logger;
+  sttSampleRate: number;
+  ttsSampleRate: number;
+  maxSteps: number;
+  minBargeInWords: number;
+  interruptionMinDurationMs: number;
+  endpointSettleMs: number;
+  completeSettleMs: number;
+  holdPhrase: string;
+  falseInterruptionTimeoutMs: number;
+  toolChoice: ToolChoice;
+  toolSchemas: readonly ToolSchema[];
+  executeTool: ExecuteTool;
+}
+
+/** Apply the documented default for every defaultable option. */
+export function resolvePipelineOptions(opts: PipelineTransportOptions): ResolvedPipelineOptions {
+  return {
+    log: opts.logger ?? consoleLogger,
+    sttSampleRate: opts.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE,
+    ttsSampleRate: opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE,
+    maxSteps: opts.maxSteps ?? DEFAULT_MAX_STEPS,
+    minBargeInWords: opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS,
+    interruptionMinDurationMs: opts.interruptionMinDurationMs ?? 0,
+    endpointSettleMs: opts.endpointSettleMs ?? DEFAULT_ENDPOINT_SETTLE_MS,
+    completeSettleMs: opts.completeSettleMs ?? DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
+    holdPhrase: opts.holdPhrase ?? DEFAULT_HOLD_PHRASE,
+    falseInterruptionTimeoutMs:
+      opts.falseInterruptionTimeoutMs ?? DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
+    toolChoice: opts.toolChoice ?? "auto",
+    toolSchemas: opts.toolSchemas ?? [],
+    executeTool:
+      opts.executeTool ??
+      (async () => {
+        throw new Error("No executeTool provided");
+      }),
+  };
 }

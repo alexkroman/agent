@@ -18,7 +18,7 @@ const DEFAULT_MAX_CONCURRENT = 10;
  * SDK's `FETCH_TIMEOUT_MS` (15s), which governs host-side builtin tools —
  * don't confuse the two when tuning fetch timeouts.
  */
-export const SANDBOX_FETCH_TIMEOUT_MS = 30_000;
+const SANDBOX_FETCH_TIMEOUT_MS = 30_000;
 const CHUNK_SIZE = 64 * 1024;
 
 export type FetchRequest = {
@@ -74,7 +74,11 @@ function emitError(id: string, message: string, emit: Emit): void {
 }
 
 function emitChunk(id: string, bytes: Uint8Array, emit: Emit): void {
-  emit({ type: "fetch/response-chunk", id, data: Buffer.from(bytes).toString("base64") });
+  // Buffer.from(uint8Array) copies; the 3-arg form is a zero-copy view over the
+  // same backing buffer (as in host/_base64.ts and guest/harness-rpc.ts). Saves
+  // a memcpy per chunk of every guest fetch response.
+  const view = Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  emit({ type: "fetch/response-chunk", id, data: view.toString("base64") });
 }
 
 async function streamResponseBody(

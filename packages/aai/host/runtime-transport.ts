@@ -17,13 +17,8 @@ import {
   type OpenaiRealtimeOptions,
 } from "../sdk/providers/s2s/openai-realtime.ts";
 import { ASSEMBLYAI_API_KEY_ENV } from "../sdk/providers/stt/assemblyai.ts";
-import type { SttOpener, SttProvider, TtsOpener, TtsProvider } from "../sdk/providers.ts";
-import {
-  descriptorKind,
-  resolveApiKey,
-  resolveSttApiKey,
-  resolveTtsApiKey,
-} from "./providers/resolve.ts";
+import type { SttOpener, TtsOpener } from "../sdk/providers.ts";
+import { descriptorKind, type ResolvedOpener, resolveApiKey } from "./providers/resolve.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import type { ExecuteTool } from "./tool-executor.ts";
@@ -47,11 +42,15 @@ export type BuildTransportArgs = {
   callbacks: TransportCallbacks;
 };
 
-/** The three pipeline provider instances, resolved once per runtime. */
+/**
+ * The three pipeline provider instances, resolved once per runtime. STT and TTS
+ * carry the env var their credential lives in, so the transport builder reads
+ * keys from here instead of being handed the raw descriptors a second time.
+ */
 export type ResolvedPipelineProviders = {
-  stt: SttOpener;
+  stt: ResolvedOpener<SttOpener>;
   llm: LanguageModel;
-  tts: TtsOpener;
+  tts: ResolvedOpener<TtsOpener>;
 };
 
 /** Runtime-scoped state the transport builders close over. */
@@ -62,11 +61,6 @@ export interface TransportFactoryDeps {
   executeTool: ExecuteTool;
   env: Record<string, string>;
   s2sConfig: S2SConfig;
-  /** Raw (unresolved) providers — API keys resolve per descriptor. */
-  effectiveProviders: {
-    stt: SttProvider | SttOpener | undefined;
-    tts: TtsProvider | TtsOpener | undefined;
-  };
   /** Non-null exactly when the session mode is pipeline. */
   pipelineProviders: ResolvedPipelineProviders | null;
   createWebSocket: RuntimeOptions["createWebSocket"];
@@ -89,7 +83,6 @@ export function createTransportFactory(
     executeTool,
     env,
     s2sConfig,
-    effectiveProviders,
     pipelineProviders,
     createWebSocket,
     createOpenaiRealtimeWebSocket,
@@ -103,9 +96,9 @@ export function createTransportFactory(
     const { sessionOpts, systemPrompt, callbacks } = args;
     return createPipelineTransport({
       sid: sessionOpts.id,
-      stt: providers.stt,
+      stt: providers.stt.opener,
       llm: providers.llm,
-      tts: providers.tts,
+      tts: providers.tts.opener,
       callbacks,
       sessionConfig: {
         systemPrompt,
@@ -114,8 +107,8 @@ export function createTransportFactory(
       toolSchemas,
       executeTool,
       providerKeys: {
-        stt: resolveSttApiKey(effectiveProviders.stt, env),
-        tts: resolveTtsApiKey(effectiveProviders.tts, env),
+        stt: resolveApiKey(providers.stt.envVar, env),
+        tts: resolveApiKey(providers.tts.envVar, env),
       },
       sttSampleRate: s2sConfig.inputSampleRate,
       ttsSampleRate: s2sConfig.outputSampleRate,

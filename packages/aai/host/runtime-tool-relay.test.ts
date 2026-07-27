@@ -10,6 +10,7 @@ import {
   createFakeLanguageModel,
   createFakeSttProvider,
   createFakeTtsProvider,
+  registerFakeProviders,
 } from "./_pipeline-test-fakes.ts";
 import { makeAgent, makeClientSink, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
@@ -36,13 +37,18 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
     // the agent retried into a `too_many_errors` failure. See tau2 aai_run_10.
     const stt = createFakeSttProvider();
     const tts = createFakeTtsProvider();
+    const fakes = registerFakeProviders({
+      stt,
+      tts,
+      llm: createFakeLanguageModel({ steps: toolCallStep }),
+    });
     const client = makeClientSink();
     const exec = createRuntime({
       agent: makeAgent(),
       env: {},
-      stt,
-      tts,
-      llm: createFakeLanguageModel({ steps: toolCallStep }),
+      stt: fakes.stt,
+      tts: fakes.tts,
+      llm: fakes.llm,
       // executeTool + toolSchemas + onToolResult ⇒ relay mode.
       executeTool: vi.fn(async () => "ok"),
       onToolResult: vi.fn(),
@@ -67,6 +73,7 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
       { timeout: 4000 },
     );
     await core.stop();
+    fakes.unregister();
 
     expect(toolCallEmits(client)).toHaveLength(0);
   });
@@ -77,13 +84,18 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
     // be preserved (exactly once).
     const stt = createFakeSttProvider();
     const tts = createFakeTtsProvider();
+    const fakes = registerFakeProviders({
+      stt,
+      tts,
+      llm: createFakeLanguageModel({ steps: toolCallStep }),
+    });
     const client = makeClientSink();
     const exec = createRuntime({
       agent: makeAgent({ tools: { lookup: { description: "Look up", execute: () => "ok" } } }),
       env: {},
-      stt,
-      tts,
-      llm: createFakeLanguageModel({ steps: toolCallStep }),
+      stt: fakes.stt,
+      tts: fakes.tts,
+      llm: fakes.llm,
       logger: silentLogger,
     });
 
@@ -97,6 +109,7 @@ describe("createRuntime — pipeline onToolCall wiring", () => {
       { timeout: 4000 },
     );
     await core.stop();
+    fakes.unregister();
 
     const emits = toolCallEmits(client);
     expect(emits).toHaveLength(1);

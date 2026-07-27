@@ -4,6 +4,7 @@
 // transport supplies the actual turn via `onNudge`.
 
 import { MAX_CONSECUTIVE_SILENCE_NUDGES } from "../../sdk/constants.ts";
+import { createRestartableTimer } from "../_timer.ts";
 
 export type SilenceNudger = {
   /**
@@ -37,25 +38,17 @@ export function createSilenceNudger(opts: {
 }): SilenceNudger {
   const raw = opts.timeoutMs ?? 0;
   const timeoutMs = Number.isFinite(raw) && raw > 0 ? raw : 0;
-  let timer: ReturnType<typeof setTimeout> | null = null;
   let consecutive = 0;
-
-  function clear(): void {
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
-  }
+  const countdown = createRestartableTimer(() => onElapsed());
 
   function arm(): void {
-    if (timeoutMs <= 0 || !opts.isActive()) return;
+    if (!opts.isActive()) return;
     if (consecutive >= MAX_CONSECUTIVE_SILENCE_NUDGES) return;
-    clear();
-    timer = setTimeout(onElapsed, timeoutMs);
+    // arm() no-ops on a non-positive window, which is how "disabled" is spelled.
+    countdown.arm(timeoutMs);
   }
 
   function onElapsed(): void {
-    timer = null;
     if (!opts.isActive()) return;
     // A turn is in flight (or buffered audio is still playing client-side):
     // defer without spending budget and check again after another window.
@@ -69,7 +62,7 @@ export function createSilenceNudger(opts: {
 
   return {
     arm,
-    clear,
+    clear: countdown.clear,
     onUserSpeech(): void {
       consecutive = 0;
       // If the utterance never reaches a final, the re-armed countdown
@@ -78,7 +71,7 @@ export function createSilenceNudger(opts: {
     },
     onUserTurn(): void {
       consecutive = 0;
-      clear();
+      countdown.clear();
     },
   };
 }

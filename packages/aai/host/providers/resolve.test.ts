@@ -17,8 +17,16 @@ import { GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
 import { MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
 import { OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
 import { XAI_KIND } from "../../sdk/providers/llm/xai.ts";
-import type { LlmProvider } from "../../sdk/providers.ts";
-import { resolveLlm } from "./resolve.ts";
+import type { LlmProvider, SttOpener } from "../../sdk/providers.ts";
+import {
+  registerLlmKind,
+  registerSttKind,
+  registerTtsKind,
+  requiredProviderEnvVars,
+  resolveLlm,
+  resolveStt,
+  resolveTts,
+} from "./resolve.ts";
 
 type ProviderCase = {
   provider: LlmProvider;
@@ -141,3 +149,99 @@ function stripEnv(name: string): () => void {
     if (prev !== undefined) process.env[name] = prev;
   };
 }
+
+describe("requiredProviderEnvVars", () => {
+  it("defaults to the AssemblyAI S2S key when no providers are declared", () => {
+    expect(requiredProviderEnvVars({})).toEqual(["ASSEMBLYAI_API_KEY"]);
+  });
+
+  it("covers all three pipeline providers, including tts", () => {
+    // The previous hardcoded check looked only at stt/llm and only for
+    // AssemblyAI, so a Deepgram+Anthropic+Rime agent was told nothing.
+    const vars = requiredProviderEnvVars({
+      stt: { kind: "deepgram" },
+      llm: { kind: "anthropic" },
+      tts: { kind: "rime" },
+    });
+    expect([...vars].sort((a, b) => a.localeCompare(b))).toEqual([
+      "ANTHROPIC_API_KEY",
+      "DEEPGRAM_API_KEY",
+      "RIME_API_KEY",
+    ]);
+  });
+
+  it("does not require an S2S key once all three pipeline providers are set", () => {
+    expect(
+      requiredProviderEnvVars({
+        stt: { kind: "deepgram" },
+        llm: { kind: "anthropic" },
+        tts: { kind: "rime" },
+      }),
+    ).not.toContain("ASSEMBLYAI_API_KEY");
+  });
+
+  it("selects the vendor key for an explicit S2S descriptor", () => {
+    expect(requiredProviderEnvVars({ s2s: { kind: "openai-realtime" } })).toEqual([
+      "OPENAI_API_KEY",
+    ]);
+  });
+
+  it("deduplicates when one vendor serves several roles", () => {
+    // AssemblyAI STT + AssemblyAI LLM gateway use different env vars; Cartesia
+    // TTS with an AssemblyAI-keyed S2S default must not repeat a var.
+    const vars = requiredProviderEnvVars({ stt: { kind: "assemblyai" } });
+    expect(vars).toEqual([...new Set(vars)]);
+    expect(vars).toContain("ASSEMBLYAI_API_KEY");
+  });
+
+  it("ignores a descriptor whose kind matches no registry entry", () => {
+    // No invented credential, and no default-vendor fallback.
+    expect(requiredProviderEnvVars({ stt: { kind: "not-a-provider" } })).toEqual([
+      "ASSEMBLYAI_API_KEY",
+    ]);
+  });
+});
+
+describe("registerSttKind / registerTtsKind / registerLlmKind", () => {
+  it("makes a fake resolvable through the normal descriptor path, env var included", () => {
+    const opener: SttOpener = { name: "spec", open: async () => ({}) as never };
+    const unregister = registerSttKind("spec-stt", { envVar: "SPEC_STT_KEY", open: () => opener });
+    try {
+      const resolved = resolveStt({ kind: "spec-stt", options: {} });
+      expect(resolved.opener).toBe(opener);
+      // The env var travels with the opener, so no caller has to re-derive it.
+      expect(resolved.envVar).toBe("SPEC_STT_KEY");
+      expect(requiredProviderEnvVars({ stt: { kind: "spec-stt" } })).toContain("SPEC_STT_KEY");
+    } finally {
+      unregister();
+    }
+  });
+
+  it("unregister restores the registry, so kinds do not leak between specs", () => {
+    const unregister = registerTtsKind("spec-tts", {
+      envVar: "SPEC_TTS_KEY",
+      open: () => ({ name: "spec", open: async () => ({}) as never }),
+    });
+    expect(() => resolveTts({ kind: "spec-tts", options: {} })).not.toThrow();
+    unregister();
+    expect(() => resolveTts({ kind: "spec-tts", options: {} })).toThrow(
+      /Unknown TTS provider kind: "spec-tts"/,
+    );
+  });
+
+  it("unregister restores a shadowed built-in kind rather than deleting it", () => {
+    const unregister = registerLlmKind(ANTHROPIC_KIND, {
+      envVar: "SHADOW_KEY",
+      label: "Shadow",
+      create: () => "shadow-model" as never,
+    });
+    expect(resolveLlm({ kind: ANTHROPIC_KIND, options: { model: "m" } }, { SHADOW_KEY: "k" })).toBe(
+      "shadow-model",
+    );
+    unregister();
+    // The real Anthropic entry is back, not deleted.
+    expect(requiredProviderEnvVars({ llm: { kind: ANTHROPIC_KIND } })).toContain(
+      "ANTHROPIC_API_KEY",
+    );
+  });
+});

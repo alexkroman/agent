@@ -20,7 +20,6 @@ import {
   createRuntime,
   createUnstorageKv,
   type ExecuteTool,
-  resolveAllBuiltins,
   resolveKv,
   resolveVector,
   type Vector,
@@ -187,21 +186,19 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     return "Tool execution failed: invalid response from sandbox";
   };
 
-  // A custom tool with the same name as a builtin wins: drop the builtin so
-  // the LLM never sees a duplicate schema name and dispatch stays with the
-  // sandboxed custom tool. Matters since builtins are on by default.
-  const customToolNames = new Set(config.toolSchemas.map((s) => s.name));
-  const builtins = resolveAllBuiltins(
-    (config.builtinTools ?? []).filter((name) => !customToolNames.has(name)),
-    { fetch: safeFetch },
-  );
+  // Builtin resolution (including "a custom tool of the same name wins") lives
+  // in createRuntime, so the platform and `aai dev` cannot disagree about which
+  // builtins an agent gets. This previously resolved them here off
+  // `config.builtinTools ?? []`, which silently dropped the default cognitive
+  // builtins for every deployed agent that didn't set `builtinTools`: the
+  // deploy path builds its config with `toAgentConfig`, not `parseManifest`,
+  // and only the latter fills in DEFAULT_BUILTIN_TOOLS.
   const agentRuntime = createRuntime({
     agent: toRuntimeAgent(config),
     env,
     executeTool,
-    toolSchemas: [...config.toolSchemas, ...builtins.schemas],
-    toolGuidance: builtins.guidance,
-    builtinDefs: builtins.defs,
+    toolSchemas: config.toolSchemas,
+    fetch: safeFetch,
     ...(config.mode === "pipeline" && config.stt && config.llm && config.tts
       ? { stt: config.stt, llm: config.llm, tts: config.tts }
       : {}),

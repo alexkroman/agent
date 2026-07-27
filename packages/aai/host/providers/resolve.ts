@@ -35,6 +35,7 @@ import { GROQ_API_KEY_ENV, GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
 import { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
 import { OPENAI_API_KEY_ENV, OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
 import { XAI_API_KEY_ENV, XAI_KIND } from "../../sdk/providers/llm/xai.ts";
+import { OPENAI_REALTIME_KIND } from "../../sdk/providers/s2s/openai-realtime.ts";
 import {
   ASSEMBLYAI_API_KEY_ENV,
   ASSEMBLYAI_KIND,
@@ -69,12 +70,6 @@ import type {
   TtsProvider,
 } from "../../sdk/providers.ts";
 import { requireApiKey } from "./_utils.ts";
-import { openAssemblyAI } from "./stt/assemblyai.ts";
-import { openDeepgram } from "./stt/deepgram.ts";
-import { openElevenLabs } from "./stt/elevenlabs.ts";
-import { openSoniox } from "./stt/soniox.ts";
-import { openCartesia } from "./tts/cartesia.ts";
-import { openRime } from "./tts/rime.ts";
 
 /**
  * Look up a provider API key: agent env first (set via `aai secret put` or
@@ -94,67 +89,164 @@ function options<T>(descriptor: { options: Record<string, unknown> }): T {
  * opener factory live together, so adding a provider is one entry here and
  * an unmapped kind cannot silently resolve the wrong vendor's key.
  */
-type OpenerRegistryEntry<Opener> = {
+export type OpenerRegistryEntry<Opener> = {
   readonly envVar: string;
   readonly open: (descriptor: { options: Record<string, unknown> }) => Opener;
 };
 
+/**
+ * Wrap a dynamically-imported opener so its vendor SDK loads on first `open()`
+ * instead of at module load.
+ *
+ * `resolve.ts` is reachable from `host/runtime.ts` → `runtime-barrel.ts`, so
+ * every server replica, sandbox host and `aai dev` start used to pay for all
+ * six vendor SDKs even though an agent uses at most one STT and one TTS.
+ * Measured on this repo: ~1.15s and ~100MB RSS for the four STT/TTS SDKs, of
+ * which `@elevenlabs/elevenlabs-js` alone is ~970ms.
+ *
+ * `name` is the registry kind, so the opener identifies itself without the
+ * vendor package being loaded.
+ */
+function lazyOpener<Opts, Session>(
+  kind: string,
+  load: () => Promise<{ open(opts: Opts): Promise<Session> }>,
+): { readonly name: string; open(opts: Opts): Promise<Session> } {
+  return {
+    name: kind,
+    async open(opts: Opts): Promise<Session> {
+      return (await load()).open(opts);
+    },
+  };
+}
+
 const STT_REGISTRY: Record<string, OpenerRegistryEntry<SttOpener>> = {
   [ASSEMBLYAI_KIND]: {
     envVar: ASSEMBLYAI_API_KEY_ENV,
-    open: (d) => openAssemblyAI(options<AssemblyAIOptions>(d)),
+    open: (d) =>
+      lazyOpener(ASSEMBLYAI_KIND, async () =>
+        (await import("./stt/assemblyai.ts")).openAssemblyAI(options<AssemblyAIOptions>(d)),
+      ),
   },
   [DEEPGRAM_KIND]: {
     envVar: DEEPGRAM_API_KEY_ENV,
-    open: (d) => openDeepgram(options<DeepgramOptions>(d)),
+    open: (d) =>
+      lazyOpener(DEEPGRAM_KIND, async () =>
+        (await import("./stt/deepgram.ts")).openDeepgram(options<DeepgramOptions>(d)),
+      ),
   },
   [ELEVENLABS_KIND]: {
     envVar: ELEVENLABS_API_KEY_ENV,
-    open: (d) => openElevenLabs(options<ElevenLabsOptions>(d)),
+    open: (d) =>
+      lazyOpener(ELEVENLABS_KIND, async () =>
+        (await import("./stt/elevenlabs.ts")).openElevenLabs(options<ElevenLabsOptions>(d)),
+      ),
   },
   [SONIOX_KIND]: {
     envVar: SONIOX_API_KEY_ENV,
-    open: (d) => openSoniox(options<SonioxOptions>(d)),
+    open: (d) =>
+      lazyOpener(SONIOX_KIND, async () =>
+        (await import("./stt/soniox.ts")).openSoniox(options<SonioxOptions>(d)),
+      ),
   },
 };
 
 const TTS_REGISTRY: Record<string, OpenerRegistryEntry<TtsOpener>> = {
   [CARTESIA_KIND]: {
     envVar: CARTESIA_API_KEY_ENV,
-    open: (d) => openCartesia(options<CartesiaOptions>(d)),
+    open: (d) =>
+      lazyOpener(CARTESIA_KIND, async () =>
+        (await import("./tts/cartesia.ts")).openCartesia(options<CartesiaOptions>(d)),
+      ),
   },
   [RIME_KIND]: {
     envVar: RIME_API_KEY_ENV,
-    open: (d) => openRime(options<RimeOptions>(d)),
+    open: (d) =>
+      lazyOpener(RIME_KIND, async () =>
+        (await import("./tts/rime.ts")).openRime(options<RimeOptions>(d)),
+      ),
   },
 };
 
-/** Resolve an {@link SttProvider} descriptor into a host-side opener. */
-export function resolveStt(descriptor: SttProvider): SttOpener {
-  const entry = STT_REGISTRY[descriptor.kind];
+/**
+ * Look up a registry entry by descriptor kind, or throw listing what is
+ * supported. The supported list is derived from the registry, so it cannot go
+ * stale when a provider is added.
+ */
+function lookupProvider<Entry>(
+  registry: Record<string, Entry>,
+  kind: string,
+  label: string,
+): Entry {
+  const entry = registry[kind];
   if (!entry) {
     throw new Error(
-      `Unknown STT provider kind: "${descriptor.kind}". ` +
-        `Supported: ${Object.keys(STT_REGISTRY).join(", ")}.`,
+      `Unknown ${label} provider kind: "${kind}". Supported: ${Object.keys(registry).join(", ")}.`,
     );
   }
-  return entry.open(descriptor);
+  return entry;
 }
 
-/** Resolve a {@link TtsProvider} descriptor into a host-side opener. */
-export function resolveTts(descriptor: TtsProvider): TtsOpener {
-  const entry = TTS_REGISTRY[descriptor.kind];
-  if (!entry) {
-    throw new Error(
-      `Unknown TTS provider kind: "${descriptor.kind}". ` +
-        `Supported: ${Object.keys(TTS_REGISTRY).join(", ")}.`,
-    );
-  }
-  return entry.open(descriptor);
+/** An opener plus the env var holding its credential. */
+export type ResolvedOpener<Opener> = {
+  readonly opener: Opener;
+  /** Env var this provider's key lives in — travels with the opener so no
+   *  caller has to re-derive it from a descriptor it no longer holds. */
+  readonly envVar: string;
+};
+
+/** Resolve an {@link SttProvider} descriptor into a host-side opener + env var. */
+export function resolveStt(descriptor: SttProvider): ResolvedOpener<SttOpener> {
+  const entry = lookupProvider(STT_REGISTRY, descriptor.kind, "STT");
+  return { opener: entry.open(descriptor), envVar: entry.envVar };
+}
+
+/** Resolve a {@link TtsProvider} descriptor into a host-side opener + env var. */
+export function resolveTts(descriptor: TtsProvider): ResolvedOpener<TtsOpener> {
+  const entry = lookupProvider(TTS_REGISTRY, descriptor.kind, "TTS");
+  return { opener: entry.open(descriptor), envVar: entry.envVar };
+}
+
+/**
+ * Register an extra provider kind at runtime, returning an unregister function.
+ *
+ * This is the seam tests use to inject fakes. It replaced a
+ * `SttProvider | SttOpener` union on `RuntimeOptions` that let callers hand in a
+ * pre-resolved opener: because such a value carries no `kind`, API-key routing
+ * had to sniff `opener.name` and guess, and a provider whose name didn't match
+ * its registry kind silently got another vendor's credential. Going through the
+ * registry means a fake resolves exactly like a real provider — including its
+ * env var — and production code only ever sees descriptors.
+ */
+function registerKind<Entry>(
+  registry: Record<string, Entry>,
+  kind: string,
+  entry: Entry,
+): () => void {
+  const previous = Object.hasOwn(registry, kind) ? registry[kind] : undefined;
+  registry[kind] = entry;
+  return () => {
+    if (previous === undefined) delete registry[kind];
+    else registry[kind] = previous;
+  };
+}
+
+/** Register an STT kind. See {@link registerKind}. */
+export function registerSttKind(kind: string, entry: OpenerRegistryEntry<SttOpener>): () => void {
+  return registerKind(STT_REGISTRY, kind, entry);
+}
+
+/** Register a TTS kind. See {@link registerKind}. */
+export function registerTtsKind(kind: string, entry: OpenerRegistryEntry<TtsOpener>): () => void {
+  return registerKind(TTS_REGISTRY, kind, entry);
+}
+
+/** Register an LLM kind. See {@link registerKind}. */
+export function registerLlmKind(kind: string, entry: LlmRegistryEntry): () => void {
+  return registerKind(LLM_REGISTRY, kind, entry);
 }
 
 /** One registry entry per LLM provider kind — adding a provider is one entry here. */
-type LlmRegistryEntry = {
+export type LlmRegistryEntry = {
   readonly envVar: string;
   readonly label: string;
   readonly create: (apiKey: string, descriptor: LlmProvider) => LanguageModel;
@@ -230,13 +322,7 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
  * `streamText` call otherwise, and the error is clearer at construction.
  */
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel {
-  const entry = LLM_REGISTRY[descriptor.kind];
-  if (!entry) {
-    throw new Error(
-      `Unknown LLM provider kind: "${descriptor.kind}". ` +
-        `Supported: ${Object.keys(LLM_REGISTRY).join(", ")}.`,
-    );
-  }
+  const entry = lookupProvider(LLM_REGISTRY, descriptor.kind, "LLM");
   const apiKey = requireKey(env, entry.envVar, entry.label);
   return entry.create(apiKey, descriptor);
 }
@@ -272,68 +358,53 @@ function requireKey(env: Record<string, string>, name: string, label: string): s
   return requireApiKey(env[name], name, `${label} LLM`, (msg) => new Error(msg));
 }
 
-// ─── API-key routing + descriptor→instance helpers (used by runtime.ts) ──────
+// ─── Descriptor helpers (used by runtime.ts) ─────────────────────────────────
 
-/**
- * Read the descriptor `kind` if present. Pre-resolved openers (test escape
- * hatch) have no `kind` field, so callers fall back to a default env var.
- */
+/** Read a descriptor's `kind`. */
 export function descriptorKind(value: object | undefined): string | undefined {
   const kind = (value as { kind?: unknown } | undefined)?.kind;
   return typeof kind === "string" ? kind : undefined;
 }
 
 /**
- * Registry key for a descriptor OR a pre-resolved opener: descriptors carry
- * `kind`; openers carry a `name` that matches their registry kind, so a
- * kindless opener still resolves its own vendor's env var rather than the
- * default vendor's.
+ * The provider credentials an agent actually needs, derived from the same
+ * registries that resolve them.
+ *
+ * Callers that want to check credentials up front (the CLI dev server) would
+ * otherwise hardcode `kind === "assemblyai"`-style checks, which go stale on
+ * every new provider and are easy to write incompletely — the previous version
+ * ignored `tts` and `s2s` entirely, so a Deepgram+Anthropic+Rime agent was
+ * never told which of its three keys was missing and failed at first session.
  */
-function providerRegistryKey(value: object | undefined): string {
-  const kind = descriptorKind(value);
-  if (kind) return kind;
-  const name = (value as { name?: unknown } | undefined)?.name;
-  return typeof name === "string" ? name : "";
-}
+export function requiredProviderEnvVars(agent: {
+  stt?: { kind: string } | object | undefined;
+  llm?: { kind: string } | object | undefined;
+  tts?: { kind: string } | object | undefined;
+  s2s?: { kind: string } | object | undefined;
+}): string[] {
+  const vars = new Set<string>();
+  const add = (envVar: string | undefined): void => {
+    if (envVar) vars.add(envVar);
+  };
 
-/** Resolve the agent-env API key for an STT descriptor/opener by its kind. */
-export function resolveSttApiKey(
-  stt: SttProvider | SttOpener | undefined,
-  env: Record<string, string>,
-): string {
-  // Default to AssemblyAI for values (test mocks) that match no registry entry.
-  return resolveApiKey(
-    STT_REGISTRY[providerRegistryKey(stt)]?.envVar ?? ASSEMBLYAI_API_KEY_ENV,
-    env,
-  );
-}
+  const envVarFor = <E extends { envVar: string }>(
+    registry: Record<string, E>,
+    descriptor: object | undefined,
+  ): string | undefined => registry[descriptorKind(descriptor) ?? ""]?.envVar;
 
-/** Resolve the agent-env API key for a TTS descriptor/opener by its kind. */
-export function resolveTtsApiKey(
-  tts: TtsProvider | TtsOpener | undefined,
-  env: Record<string, string>,
-): string {
-  return resolveApiKey(TTS_REGISTRY[providerRegistryKey(tts)]?.envVar ?? CARTESIA_API_KEY_ENV, env);
-}
+  add(envVarFor(STT_REGISTRY, agent.stt));
+  add(envVarFor(TTS_REGISTRY, agent.tts));
+  add(envVarFor(LLM_REGISTRY, agent.llm));
 
-/**
- * Resolve a provider value that may already be an instance (opener /
- * LanguageModel — a test escape hatch) rather than a descriptor. STT/TTS
- * openers are identified by the `open` method, `LanguageModel` by its
- * `specificationVersion` field — both absent on descriptors.
- */
-export function resolveSttIfDescriptor(value: SttProvider | SttOpener): SttOpener {
-  return "open" in value ? value : resolveStt(value);
-}
-
-export function resolveTtsIfDescriptor(value: TtsProvider | TtsOpener): TtsOpener {
-  return "open" in value ? value : resolveTts(value);
-}
-
-export function resolveLlmIfDescriptor(
-  value: LlmProvider | LanguageModel,
-  env: Record<string, string>,
-): LanguageModel {
-  if (typeof value === "string") return value;
-  return "specificationVersion" in value ? value : resolveLlm(value, env);
+  // S2S mode: an explicit descriptor selects its vendor, and its *absence*
+  // means the default AssemblyAI S2S path (see createTransportFactory).
+  const pipeline = agent.stt !== undefined && agent.llm !== undefined && agent.tts !== undefined;
+  if (!pipeline) {
+    add(
+      descriptorKind(agent.s2s) === OPENAI_REALTIME_KIND
+        ? OPENAI_API_KEY_ENV
+        : ASSEMBLYAI_API_KEY_ENV,
+    );
+  }
+  return [...vars];
 }
