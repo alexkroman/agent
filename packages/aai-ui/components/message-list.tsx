@@ -224,7 +224,7 @@ export function MessageList({ className }: { className?: string }) {
         )}
         {userTranscript !== null && (
           <UserBubble theme={theme} color={TEXT_FAINT}>
-            {userTranscript || <ThinkingDots />}
+            {userTranscript ? userTranscript : <ThinkingDots />}
           </UserBubble>
         )}
         {showThinking && <ThinkingDots />}

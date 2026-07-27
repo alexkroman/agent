@@ -314,58 +314,79 @@ describe("isPrivateIp: comprehensive private range coverage", () => {
     // 192.168.0.0/16
     ["192.168.0.0", true],
     ["192.168.255.255", true],
-  ] as const)("blocks all RFC 1918 private ranges: isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
-    expect(isPrivateIp(ip)).toBe(expected);
-  });
+  ] as const)(
+    "blocks all RFC 1918 private ranges: isPrivateIp(%s) === %s",
+    (ip: string, expected: boolean) => {
+      expect(isPrivateIp(ip)).toBe(expected);
+    },
+  );
 
   test.each([
     ["100.64.0.0", true],
     ["100.127.255.255", true],
     ["100.128.0.1", false], // 100.128.x.x is public
-  ] as const)("blocks carrier-grade NAT range (100.64.0.0/10): isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
-    expect(isPrivateIp(ip)).toBe(expected);
-  });
+  ] as const)(
+    "blocks carrier-grade NAT range (100.64.0.0/10): isPrivateIp(%s) === %s",
+    (ip: string, expected: boolean) => {
+      expect(isPrivateIp(ip)).toBe(expected);
+    },
+  );
 
   test.each([
     ["127.0.0.1", true],
     ["127.255.255.255", true],
     ["127.0.0.0", true],
-  ] as const)("blocks loopback range (127.0.0.0/8): isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
-    expect(isPrivateIp(ip)).toBe(expected);
-  });
+  ] as const)(
+    "blocks loopback range (127.0.0.0/8): isPrivateIp(%s) === %s",
+    (ip: string, expected: boolean) => {
+      expect(isPrivateIp(ip)).toBe(expected);
+    },
+  );
 
   test.each([
     ["169.254.0.0", true],
     ["169.254.169.254", true],
     ["169.254.255.255", true],
-  ] as const)("blocks link-local range (169.254.0.0/16): isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
-    expect(isPrivateIp(ip)).toBe(expected);
-  });
+  ] as const)(
+    "blocks link-local range (169.254.0.0/16): isPrivateIp(%s) === %s",
+    (ip: string, expected: boolean) => {
+      expect(isPrivateIp(ip)).toBe(expected);
+    },
+  );
 
   test.each([
     ["198.18.0.0", true],
     ["198.19.255.255", true],
     ["198.20.0.1", false], // 198.20.x.x is public
-  ] as const)("blocks benchmarking range (198.18.0.0/15): isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
-    expect(isPrivateIp(ip)).toBe(expected);
-  });
+  ] as const)(
+    "blocks benchmarking range (198.18.0.0/15): isPrivateIp(%s) === %s",
+    (ip: string, expected: boolean) => {
+      expect(isPrivateIp(ip)).toBe(expected);
+    },
+  );
 
   test.each([
     ["192.0.0.1", true],
     ["192.0.0.255", true],
     ["192.0.1.1", false], // 192.0.1.x is public
-  ] as const)("blocks IANA special-purpose (192.0.0.0/24): isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
-    expect(isPrivateIp(ip)).toBe(expected);
-  });
+  ] as const)(
+    "blocks IANA special-purpose (192.0.0.0/24): isPrivateIp(%s) === %s",
+    (ip: string, expected: boolean) => {
+      expect(isPrivateIp(ip)).toBe(expected);
+    },
+  );
 
   test.each([
     ["224.0.0.1", true], // 224.0.0.0/4 — multicast
     ["239.255.255.255", true],
     ["240.0.0.1", true], // 240.0.0.0/4 — reserved for future use
     ["255.255.255.254", true],
-  ] as const)("blocks multicast and reserved ranges: isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
-    expect(isPrivateIp(ip)).toBe(expected);
-  });
+  ] as const)(
+    "blocks multicast and reserved ranges: isPrivateIp(%s) === %s",
+    (ip: string, expected: boolean) => {
+      expect(isPrivateIp(ip)).toBe(expected);
+    },
+  );
 
   test.each([
     ["8.8.8.8", false], // Google DNS
@@ -373,9 +394,12 @@ describe("isPrivateIp: comprehensive private range coverage", () => {
     ["208.67.222.222", false], // OpenDNS
     ["93.184.216.34", false], // example.com
     ["151.101.1.140", false], // Reddit
-  ] as const)("correctly identifies public IPs: isPrivateIp(%s) === %s", (ip: string, expected: boolean) => {
-    expect(isPrivateIp(ip)).toBe(expected);
-  });
+  ] as const)(
+    "correctly identifies public IPs: isPrivateIp(%s) === %s",
+    (ip: string, expected: boolean) => {
+      expect(isPrivateIp(ip)).toBe(expected);
+    },
+  );
 });
 
 // ── Property-based tests ─────────────────────────────────────────────────

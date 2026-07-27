@@ -14,14 +14,12 @@ function expectInvalid(pattern: string, reasonPattern?: RegExp): void {
 
 describe("validateAllowedHostPattern", () => {
   describe("valid patterns", () => {
-    test.each([
-      ["api.weather.com"],
-      ["example.com"],
-      ["*.mycompany.com"],
-      ["*.api.mycompany.com"],
-    ])("accepts %s", (pattern) => {
-      expect(validateAllowedHostPattern(pattern)).toEqual({ valid: true });
-    });
+    test.each([["api.weather.com"], ["example.com"], ["*.mycompany.com"], ["*.api.mycompany.com"]])(
+      "accepts %s",
+      (pattern) => {
+        expect(validateAllowedHostPattern(pattern)).toEqual({ valid: true });
+      },
+    );
   });
 
   describe("rejects bare wildcards", () => {
@@ -65,12 +63,12 @@ describe("validateAllowedHostPattern", () => {
   });
 
   describe("rejects cloud metadata hostnames", () => {
-    test.each([
-      ["metadata.google.internal"],
-      ["instance-data.ec2.internal"],
-    ])("rejects %s", (pattern) => {
-      expectInvalid(pattern);
-    });
+    test.each([["metadata.google.internal"], ["instance-data.ec2.internal"]])(
+      "rejects %s",
+      (pattern) => {
+        expectInvalid(pattern);
+      },
+    );
   });
 
   describe("rejects empty and malformed patterns", () => {

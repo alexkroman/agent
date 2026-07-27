@@ -108,14 +108,15 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
 
   for (const { label, schema, messages, discriminant } of groups) {
     describe(`${label} backward compat`, () => {
-      test.each(
-        messages.map((m, i) => [`${m[discriminant] as string}#${i}`, m]),
-      )("%s parses against current schema", (_label, msg) => {
-        const result = schema.safeParse(msg);
-        if (!result.success) {
-          throw new Error(compatError(filename, label, msg, result.error.message));
-        }
-      });
+      test.each(messages.map((m, i) => [`${m[discriminant] as string}#${i}`, m]))(
+        "%s parses against current schema",
+        (_label, msg) => {
+          const result = schema.safeParse(msg);
+          if (!result.success) {
+            throw new Error(compatError(filename, label, msg, result.error.message));
+          }
+        },
+      );
     });
   }
 

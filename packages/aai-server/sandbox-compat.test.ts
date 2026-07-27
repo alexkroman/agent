@@ -51,24 +51,26 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename: string) => {
   const fixture = loadFixture(filename);
 
   describe("IsolateConfig backward compat", () => {
-    test.each(
-      fixture.IsolateConfig.map((m, i) => [`${(m as { name: string }).name}#${i}`, m]),
-    )("%s parses against current schema", (_label: string, msg: unknown) => {
-      const result = IsolateConfigSchema.safeParse(msg);
-      if (!result.success) {
-        throw new Error(compatError(filename, "IsolateConfig", msg, result.error.message));
-      }
-    });
+    test.each(fixture.IsolateConfig.map((m, i) => [`${(m as { name: string }).name}#${i}`, m]))(
+      "%s parses against current schema",
+      (_label: string, msg: unknown) => {
+        const result = IsolateConfigSchema.safeParse(msg);
+        if (!result.success) {
+          throw new Error(compatError(filename, "IsolateConfig", msg, result.error.message));
+        }
+      },
+    );
   });
 
   describe("ToolCallResponse backward compat", () => {
-    test.each(
-      fixture.ToolCallResponse.map((m, i) => [`#${i}`, m]),
-    )("%s parses against current schema", (_label: string, msg: unknown) => {
-      const result = ToolCallResponseSchema.safeParse(msg);
-      if (!result.success) {
-        throw new Error(compatError(filename, "ToolCallResponse", msg, result.error.message));
-      }
-    });
+    test.each(fixture.ToolCallResponse.map((m, i) => [`#${i}`, m]))(
+      "%s parses against current schema",
+      (_label: string, msg: unknown) => {
+        const result = ToolCallResponseSchema.safeParse(msg);
+        if (!result.success) {
+          throw new Error(compatError(filename, "ToolCallResponse", msg, result.error.message));
+        }
+      },
+    );
   });
 });
