@@ -289,6 +289,29 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     logger,
   });
 
+  // buildSystemPrompt's inputs (agentConfig, tool presence, guidance) are all
+  // fixed for the runtime's lifetime, but it stamps today's date via
+  // Intl.DateTimeFormat — the most expensive thing on the session-start path
+  // with no reason to be there. Cached per calendar day rather than hoisted
+  // outright, so a replica that lives across midnight doesn't keep serving
+  // yesterday's date.
+  const hasToolsForPrompt = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
+  let promptCache: { day: string; text: string } | null = null;
+  function systemPromptForToday(): string {
+    const day = new Date().toDateString();
+    if (promptCache?.day !== day) {
+      promptCache = {
+        day,
+        text: buildSystemPrompt(agentConfig, {
+          hasTools: hasToolsForPrompt,
+          voice: true,
+          toolGuidance,
+        }),
+      };
+    }
+    return promptCache.text;
+  }
+
   function createSession(sessionOpts: TransportSessionOpts): SessionCore {
     sinkMap.set(sessionOpts.id, sessionOpts.client);
 
@@ -296,12 +319,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // Relay (host) mode: the relay `executeTool` emits the client-facing
     // `tool_call` itself (mirrors session-core's `!opts.onToolResult` guard).
     const isRelay = Boolean(opts.onToolResult);
-    const hasTools = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
-    const systemPrompt = buildSystemPrompt(agentConfig, {
-      hasTools,
-      voice: true,
-      toolGuidance,
-    });
+    const systemPrompt = systemPromptForToday();
 
     // Late-bound reference: callbacks are constructed before SessionCore exists,
     // so we capture a reference and fill it in below.

@@ -18,6 +18,10 @@ export * from "./builtin-tools.ts";
 export * from "./host-mode.ts";
 export { createMemoryVector } from "./memory-vector.ts";
 export * from "./pinecone-vector.ts";
+// Narrow named export rather than `export *`: the rest of resolve.ts is
+// internal descriptor plumbing, and this is the one piece callers outside the
+// package need (the CLI dev server, to check credentials before starting).
+export { requiredProviderEnvVars } from "./providers/resolve.ts";
 export * from "./providers/resolve-kv.ts";
 export * from "./providers/resolve-vector.ts";
 export * from "./runtime.ts";

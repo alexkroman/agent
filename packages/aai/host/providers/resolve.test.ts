@@ -18,7 +18,7 @@ import { MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
 import { OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
 import { XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import type { LlmProvider } from "../../sdk/providers.ts";
-import { resolveLlm } from "./resolve.ts";
+import { requiredProviderEnvVars, resolveLlm } from "./resolve.ts";
 
 type ProviderCase = {
   provider: LlmProvider;
@@ -141,3 +141,53 @@ function stripEnv(name: string): () => void {
     if (prev !== undefined) process.env[name] = prev;
   };
 }
+
+describe("requiredProviderEnvVars", () => {
+  it("defaults to the AssemblyAI S2S key when no providers are declared", () => {
+    expect(requiredProviderEnvVars({})).toEqual(["ASSEMBLYAI_API_KEY"]);
+  });
+
+  it("covers all three pipeline providers, including tts", () => {
+    // The previous hardcoded check looked only at stt/llm and only for
+    // AssemblyAI, so a Deepgram+Anthropic+Rime agent was told nothing.
+    const vars = requiredProviderEnvVars({
+      stt: { kind: "deepgram" },
+      llm: { kind: "anthropic" },
+      tts: { kind: "rime" },
+    });
+    expect([...vars].sort((a, b) => a.localeCompare(b))).toEqual([
+      "ANTHROPIC_API_KEY",
+      "DEEPGRAM_API_KEY",
+      "RIME_API_KEY",
+    ]);
+  });
+
+  it("does not require an S2S key once all three pipeline providers are set", () => {
+    expect(
+      requiredProviderEnvVars({
+        stt: { kind: "deepgram" },
+        llm: { kind: "anthropic" },
+        tts: { kind: "rime" },
+      }),
+    ).not.toContain("ASSEMBLYAI_API_KEY");
+  });
+
+  it("selects the vendor key for an explicit S2S descriptor", () => {
+    expect(requiredProviderEnvVars({ s2s: { kind: "openai-realtime" } })).toEqual([
+      "OPENAI_API_KEY",
+    ]);
+  });
+
+  it("deduplicates when one vendor serves several roles", () => {
+    // AssemblyAI STT + AssemblyAI LLM gateway use different env vars; Cartesia
+    // TTS with an AssemblyAI-keyed S2S default must not repeat a var.
+    const vars = requiredProviderEnvVars({ stt: { kind: "assemblyai" } });
+    expect(vars).toEqual([...new Set(vars)]);
+    expect(vars).toContain("ASSEMBLYAI_API_KEY");
+  });
+
+  it("ignores kinds that match no registry entry", () => {
+    // A pre-resolved test opener has no `kind`; it must not invent a credential.
+    expect(requiredProviderEnvVars({ stt: { name: "fake-stt" } })).toEqual(["ASSEMBLYAI_API_KEY"]);
+  });
+});

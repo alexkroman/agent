@@ -109,6 +109,7 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "createUnstorageKv",
   "executeToolCall",
   "isHostAllowed",
+  "requiredProviderEnvVars",
   "resolveAllBuiltins",
   "resolveKv",
   "resolveVector",

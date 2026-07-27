@@ -35,6 +35,7 @@ import { GROQ_API_KEY_ENV, GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
 import { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
 import { OPENAI_API_KEY_ENV, OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
 import { XAI_API_KEY_ENV, XAI_KIND } from "../../sdk/providers/llm/xai.ts";
+import { OPENAI_REALTIME_KIND } from "../../sdk/providers/s2s/openai-realtime.ts";
 import {
   ASSEMBLYAI_API_KEY_ENV,
   ASSEMBLYAI_KIND,
@@ -386,4 +387,42 @@ export function resolveLlmIfDescriptor(
 ): LanguageModel {
   if (typeof value === "string") return value;
   return "specificationVersion" in value ? value : resolveLlm(value, env);
+}
+
+/**
+ * The provider credentials an agent actually needs, derived from the same
+ * registries that resolve them.
+ *
+ * Callers that want to check credentials up front (the CLI dev server) would
+ * otherwise hardcode `kind === "assemblyai"`-style checks, which go stale on
+ * every new provider and are easy to write incompletely — the previous version
+ * ignored `tts` and `s2s` entirely, so a Deepgram+Anthropic+Rime agent was
+ * never told which of its three keys was missing and failed at first session.
+ */
+export function requiredProviderEnvVars(agent: {
+  stt?: { kind: string } | object | undefined;
+  llm?: { kind: string } | object | undefined;
+  tts?: { kind: string } | object | undefined;
+  s2s?: { kind: string } | object | undefined;
+}): string[] {
+  const vars = new Set<string>();
+  const add = (envVar: string | undefined): void => {
+    if (envVar) vars.add(envVar);
+  };
+
+  add(STT_REGISTRY[providerRegistryKey(agent.stt)]?.envVar);
+  add(TTS_REGISTRY[providerRegistryKey(agent.tts)]?.envVar);
+  add(LLM_REGISTRY[providerRegistryKey(agent.llm)]?.envVar);
+
+  // S2S mode: an explicit descriptor selects its vendor, and its *absence*
+  // means the default AssemblyAI S2S path (see createTransportFactory).
+  const pipeline = agent.stt !== undefined && agent.llm !== undefined && agent.tts !== undefined;
+  if (!pipeline) {
+    add(
+      descriptorKind(agent.s2s) === OPENAI_REALTIME_KIND
+        ? OPENAI_API_KEY_ENV
+        : ASSEMBLYAI_API_KEY_ENV,
+    );
+  }
+  return [...vars];
 }
