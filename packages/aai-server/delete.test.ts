@@ -15,7 +15,7 @@ async function setup() {
     storage,
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
-  const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
+  const fetch = (input: string | Request, init?: RequestInit) => app.request(input, init);
   return { fetch, store, slots };
 }
 
