@@ -727,15 +727,25 @@ stored env at sandbox creation time and kept host-side only.
 - **KV store**: same model — platform default uses platform creds; agent
   descriptors (`redisKv`, `s3Kv`) read from agent env (`REDIS_URL`,
   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
-- **`resolveApiKey` reads the agent env only — never `process.env`.** The
-  platform host process holds its own credentials under exactly the names a
+- **Credential resolution reads the agent env only — never `process.env`.**
+  The platform host process holds its own credentials under exactly the names a
   tenant descriptor resolves (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for
   the shared Tigris bucket, `PINECONE_API_KEY`), so a fallback let an agent that
   declared `s3Kv`/`pinecone` with no credential of its own borrow the
-  platform's, aimed at a bucket/endpoint/index it chose. Do not reintroduce it.
-  Self-hosted runs opt into shell-exported keys explicitly via
-  `withHostCredentialFallback` (`aai/host/providers/host-env.ts`), which copies
-  only the names in `sdk/providers/credential-envs.ts`.
+  platform's, aimed at a bucket/endpoint/index it chose.
+
+  There are **two** such helpers and both must stay sealed — closing only one
+  leaves the leak open, since between them they cover every provider:
+  - `resolveApiKey` (`providers/resolve.ts`) — `s3Kv`, `redisKv`.
+  - `requireApiKey` (`providers/_utils.ts`) — every STT/TTS opener, every LLM
+    (via `resolve.ts`'s `requireKey`), and Pinecone.
+
+  Self-hosted runs opt into shell-exported keys via
+  `withHostCredentialFallback` (`providers/host-env.ts`), which copies only
+  `PROVIDER_CREDENTIAL_ENVS` (derived from the provider registries). It feeds
+  `RuntimeOptions.providerEnv`, **not** `env` — credentials must not land in
+  `ctx.env`, both so agent code can't read them and so dev keeps parity with
+  production in what `ctx.env` contains.
 
 **Cross-agent isolation:**
 
@@ -803,7 +813,10 @@ both are fail-closed:
   agent definition (`systemPrompt`, `greeting`, relayed tool schemas) while the
   session runs on the operator's credentials, so `isHostAllowed` requires an
   explicit `AAI_ALLOW_HOST` of `1`/`true`/`yes`/`on`. Unset means off.
-  Harnesses (e.g. tau2) set it themselves.
+  Harnesses (e.g. tau2) set it themselves. Note `resolveServerEnv` only
+  surfaces keys declared in `.env`, so `aai dev` passes the shell value through
+  explicitly (`hostModeEnv`) — otherwise exporting the variable the usual way
+  would have no effect.
 
 ### CLI credential destinations (`aai-cli/_agent.ts`)
 

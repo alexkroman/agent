@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
+import { requireApiKey } from "./_utils.ts";
 import { PROVIDER_CREDENTIAL_ENVS, withHostCredentialFallback } from "./host-env.ts";
 import { resolveApiKey } from "./resolve.ts";
 
@@ -24,6 +25,35 @@ describe("resolveApiKey", () => {
     } finally {
       delete process.env[key];
     }
+  });
+});
+
+// The second credential path: every STT/TTS opener, every LLM (via
+// resolve.ts's requireKey) and Pinecone resolve through this one, so a
+// process.env fallback here reopens the whole leak even with resolveApiKey
+// sealed.
+describe("requireApiKey", () => {
+  const fail = (msg: string) => new Error(msg);
+
+  test("returns the credential the runtime supplied", () => {
+    expect(requireApiKey("sk-agent", "ANTHROPIC_API_KEY", "Anthropic", fail)).toBe("sk-agent");
+  });
+
+  test("does not fall back to the host process environment", () => {
+    const key = "AAI_TEST_REQUIRE_KEY";
+    process.env[key] = "platform-secret";
+    try {
+      expect(() => requireApiKey("", key, "Test provider", fail)).toThrow(/missing API key/);
+      expect(() => requireApiKey(undefined, key, "Test provider", fail)).toThrow(/missing API key/);
+    } finally {
+      delete process.env[key];
+    }
+  });
+
+  test("names the env var to set", () => {
+    expect(() => requireApiKey("", "CARTESIA_API_KEY", "Cartesia TTS", fail)).toThrow(
+      /Set CARTESIA_API_KEY in the agent env/,
+    );
   });
 });
 

@@ -170,9 +170,12 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Resolve descriptors from manifest if present; otherwise use the
   // supplied (or default) instances.
   const slug = agent.name ?? "local";
-  const resolvedKv = agent.kv ? resolveKv(agent.kv, env, "") : kv;
+  // Credentials resolve from `providerEnv` (defaults to `env`); `env` alone is
+  // what agent tool code sees as `ctx.env`. See RuntimeOptions.providerEnv.
+  const providerEnv = opts.providerEnv ?? env;
+  const resolvedKv = agent.kv ? resolveKv(agent.kv, providerEnv, "") : kv;
   const resolvedVector = agent.vector
-    ? resolveVector(agent.vector, env, slug)
+    ? resolveVector(agent.vector, providerEnv, slug)
     : (vector ?? createLocalVector(slug));
 
   const agentConfig = toAgentConfig(agent);
@@ -279,7 +282,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     agentConfig,
     toolSchemas,
     executeTool,
-    env,
+    // Transports open STT/TTS/LLM/S2S connections, so they resolve credentials
+    // from providerEnv rather than the agent-visible env.
+    env: providerEnv,
     s2sConfig,
     pipelineProviders,
     createWebSocket,

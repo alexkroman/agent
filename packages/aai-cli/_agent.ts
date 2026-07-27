@@ -82,7 +82,10 @@ export function resolveServerUrl(
   const url = stripTrailingSlash(configUrl);
   const origin = serverOrigin(url);
   if (origin === null) {
-    throw new Error(`Invalid serverUrl in .aai/project.json: ${configUrl}`);
+    throw new Error(
+      `Invalid serverUrl in .aai/project.json: ${configUrl}\n` +
+        "  Expected an absolute http(s) URL.",
+    );
   }
   if (isImplicitlyTrusted(origin) || approvedOrigins.includes(origin)) return url;
   throw new Error(

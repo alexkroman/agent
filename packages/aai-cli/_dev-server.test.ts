@@ -3,7 +3,7 @@
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
 
 // ─── Hoisted mock fns (survive vi.mock hoisting) ───────────────────────────
@@ -168,6 +168,9 @@ describe("startDevServer", () => {
       expect(mockCreateRuntime).toHaveBeenCalledWith({
         agent: { name: "test-agent", tools: {} },
         env: { ASSEMBLYAI_API_KEY: "test-key" },
+        // Credentials resolve from providerEnv; ctx.env stays as `env` so dev
+        // matches production in what agent code can read.
+        providerEnv: { ASSEMBLYAI_API_KEY: "test-key" },
       });
       expect(mockCreateServer).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -416,6 +419,74 @@ describe("file watcher filtering", () => {
         { timeout: 2000 },
       );
 
+      await cleanup();
+    });
+  });
+});
+
+describe("dev server bind host", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  test("binds loopback by default (no host argument)", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      expect(mockListen).toHaveBeenCalledWith(3000, undefined);
+      await cleanup();
+    });
+  });
+
+  test("AAI_DEV_HOST exposes the server on the requested interface", async () => {
+    vi.stubEnv("AAI_DEV_HOST", "0.0.0.0");
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      expect(mockListen).toHaveBeenCalledWith(3000, "0.0.0.0");
+      await cleanup();
+    });
+  });
+
+  // Node treats listen(port, "") as 0.0.0.0, so an empty value must read as
+  // "unset" rather than silently undoing the loopback default.
+  test.each(["", "   "])("treats AAI_DEV_HOST=%o as unset", async (value: string) => {
+    vi.stubEnv("AAI_DEV_HOST", value);
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      expect(mockListen).toHaveBeenCalledWith(3000, undefined);
+      await cleanup();
+    });
+  });
+});
+
+describe("dev server host mode gate", () => {
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  // resolveServerEnv only surfaces keys declared in `.env`, so without an
+  // explicit pass-through the shell-exported gate would never reach
+  // isHostAllowed and host mode would be unreachable in `aai dev`.
+  test("passes AAI_ALLOW_HOST through from the shell", async () => {
+    vi.stubEnv("AAI_ALLOW_HOST", "1");
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      expect(mockCreateServer).toHaveBeenCalledWith(
+        expect.objectContaining({ env: expect.objectContaining({ AAI_ALLOW_HOST: "1" }) }),
+      );
+      await cleanup();
+    });
+  });
+
+  test("omits the gate entirely when unset", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      const opts = mockCreateServer.mock.calls.at(-1)?.[0] as { env: Record<string, string> };
+      expect(opts.env).not.toHaveProperty("AAI_ALLOW_HOST");
       await cleanup();
     });
   });

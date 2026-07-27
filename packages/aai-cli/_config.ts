@@ -9,21 +9,18 @@ import { readJson, writeJson } from "./_utils.ts";
 
 /**
  * `.aai/project.json` lives in the working tree, so everything in it is
- * untrusted input — a cloned repo can supply any value. `serverUrl` must at
- * minimum parse as an http(s) URL here; whether the CLI is willing to send a
- * credential there is decided separately (see `resolveServerUrl`).
+ * untrusted input — a cloned repo can supply any value.
+ *
+ * `serverUrl` is deliberately NOT validated here. A failed field makes
+ * `readProjectConfig` return null for the whole file, which discards the
+ * `slug` too — and a deploy with no slug generates a fresh one, silently
+ * creating a duplicate agent and overwriting the config. The URL is instead
+ * validated where it is used, by `resolveServerUrl`, which rejects anything
+ * that isn't an approved http(s) origin.
  */
 const ProjectConfigSchema = z.object({
   slug: z.string(),
-  serverUrl: z.string().refine((raw) => {
-    let parsed: URL;
-    try {
-      parsed = new URL(raw);
-    } catch {
-      return false;
-    }
-    return parsed.protocol === "http:" || parsed.protocol === "https:";
-  }, "serverUrl must be an absolute http(s) URL"),
+  serverUrl: z.string(),
   sessionId: z.string().optional(),
 });
 
@@ -62,13 +59,22 @@ export type GlobalConfig = {
   approvedServers?: string[];
 };
 
-/** Origin of `url`, or `null` when it is not a valid absolute URL. */
+/**
+ * Origin of `url`, or `null` when it is not an absolute http(s) URL.
+ *
+ * Non-HTTP schemes are rejected rather than returned: `new URL()` yields the
+ * opaque origin `"null"` for them, which would otherwise flow on as if it
+ * were a real origin.
+ */
 export function serverOrigin(url: string): string | null {
+  let parsed: URL;
   try {
-    return new URL(url).origin;
+    parsed = new URL(url);
   } catch {
     return null;
   }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  return parsed.origin;
 }
 
 /**
