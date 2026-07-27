@@ -15,17 +15,17 @@ jobs:
   setup:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - name: Cache TypeScript incremental build info
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .tsbuildinfo/
           key: tsbuildinfo-build-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json') }}-${{ hashFiles('pnpm-lock.yaml') }}
@@ -33,13 +33,13 @@ jobs:
             tsbuildinfo-build-${{ runner.os }}-${{ hashFiles('packages/*/tsconfig.json', 'tsconfig.json') }}-
             tsbuildinfo-build-${{ runner.os }}-
       - name: Cache Turborepo
-        uses: actions/cache@v5
+        uses: actions/cache@v6
         with:
           path: .turbo
           key: turbo-${{ runner.os }}-${{ github.sha }}
           restore-keys: turbo-${{ runner.os }}-
       - run: pnpm exec turbo run build
-      - uses: actions/cache/save@v5
+      - uses: actions/cache/save@v6
         with:
           path: |
             node_modules
@@ -53,15 +53,15 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - id: workspace-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: |
             node_modules
@@ -92,11 +92,11 @@ jobs:
       matrix:
         package: [aai, aai-ui, aai-cli, aai-server, aai-templates]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: 24
       - uses: denoland/setup-deno@v2
@@ -104,7 +104,7 @@ jobs:
         with:
           deno-version: v2.x
       - id: workspace-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: |
             node_modules
@@ -126,18 +126,18 @@ jobs:
         os: [ubuntu-latest, macos-latest]
         node: [24]
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
       - id: workspace-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: |
             node_modules
@@ -154,7 +154,7 @@ jobs:
     needs: setup
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - name: Build gVisor test image
         run: >-
           docker build
@@ -178,15 +178,15 @@ jobs:
     env:
       AAI_TEST_PM: ${{ matrix.pm }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
-      - uses: pnpm/action-setup@v5
-      - uses: actions/setup-node@v6
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
       - id: workspace-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: |
             node_modules
@@ -197,7 +197,7 @@ jobs:
           key: workspace-${{ runner.os }}-node${{ hashFiles('.node-version') }}-${{ github.sha }}
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run build
-      - uses: actions/cache@v5
+      - uses: actions/cache@v6
         with:
           path: ~/.cache/ms-playwright
           key: playwright-${{ runner.os }}-${{ hashFiles('packages/aai-cli/package.json') }}
@@ -209,7 +209,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request'
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
       - name: Check for relevant changes
@@ -222,14 +222,14 @@ jobs:
             echo "run=false" >> "$GITHUB_OUTPUT"
           fi
       - if: steps.changes.outputs.run == 'true'
-        uses: pnpm/action-setup@v5
+        uses: pnpm/action-setup@v6
       - if: steps.changes.outputs.run == 'true'
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: 24
       - if: steps.changes.outputs.run == 'true'
         id: workspace-cache
-        uses: actions/cache/restore@v5
+        uses: actions/cache/restore@v6
         with:
           path: |
             node_modules
