@@ -221,9 +221,14 @@ describe("createRelayExecuteTool", () => {
 });
 
 describe("isHostAllowed", () => {
-  test("defaults to enabled when unset or empty", () => {
-    expect(isHostAllowed({})).toBe(true);
-    expect(isHostAllowed({ AAI_ALLOW_HOST: "" })).toBe(true);
+  // Host mode lets an unauthenticated client replace the agent definition and
+  // spend the operator's provider credentials, so it must be opt-in: an unset
+  // or unrecognized value leaves it off.
+  test("defaults to disabled when unset or empty", () => {
+    expect(isHostAllowed({})).toBe(false);
+    expect(isHostAllowed({ AAI_ALLOW_HOST: "" })).toBe(false);
+    expect(isHostAllowed({ AAI_ALLOW_HOST: "   " })).toBe(false);
+    expect(isHostAllowed({ AAI_ALLOW_HOST: "maybe" })).toBe(false);
   });
 
   test("enabled for 1/true (case-insensitive)", () => {
@@ -266,7 +271,8 @@ describe("startHostSession (deferred host handshake)", () => {
     let startSession: ReturnType<typeof vi.fn> = vi.fn();
 
     startHostSession(ws as unknown as SessionWebSocket, {
-      env: {},
+      // Host mode is opt-in, so the happy path must enable it explicitly.
+      env: { AAI_ALLOW_HOST: "1" },
       logger: silentLogger,
       createRuntime: (o) => {
         captured = o;
@@ -314,7 +320,8 @@ describe("startHostSession (deferred host handshake)", () => {
     const createRuntime = vi.fn();
 
     startHostSession(ws as unknown as SessionWebSocket, {
-      env: {},
+      // Enabled, so the rejection below is attributable to the bad frame.
+      env: { AAI_ALLOW_HOST: "1" },
       logger: silentLogger,
       createRuntime,
     });

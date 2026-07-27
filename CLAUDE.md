@@ -228,7 +228,6 @@ restrictions apply there.
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
 - `kv-handler.ts` — KV store HTTP API
-- `ssrf.ts` — SSRF protection, URL validation
 - `metrics.ts` — Prometheus metrics registry and definitions; mounted at
   `/metrics` (internal-only). Dashboards live in `grafana/`.
 
@@ -728,6 +727,15 @@ stored env at sandbox creation time and kept host-side only.
 - **KV store**: same model — platform default uses platform creds; agent
   descriptors (`redisKv`, `s3Kv`) read from agent env (`REDIS_URL`,
   `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
+- **`resolveApiKey` reads the agent env only — never `process.env`.** The
+  platform host process holds its own credentials under exactly the names a
+  tenant descriptor resolves (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for
+  the shared Tigris bucket, `PINECONE_API_KEY`), so a fallback let an agent that
+  declared `s3Kv`/`pinecone` with no credential of its own borrow the
+  platform's, aimed at a bucket/endpoint/index it chose. Do not reintroduce it.
+  Self-hosted runs opt into shell-exported keys explicitly via
+  `withHostCredentialFallback` (`aai/host/providers/host-env.ts`), which copies
+  only the names in `sdk/providers/credential-envs.ts`.
 
 **Cross-agent isolation:**
 
@@ -749,11 +757,24 @@ stored env at sandbox creation time and kept host-side only.
 - No network, no filesystem access, no child processes, no env vars.
 - 5-second execution timeout (enforced in the guest).
 
-**SSRF protection (aai-server/ssrf.ts):**
+**SSRF protection (aai/host/ssrf.ts):**
 
-- `assertPublicUrl()` uses the `bogon` library for private IP ranges.
+- Lives in the SDK, not `aai-server`, so both the platform's guest-fetch proxy
+  and the SDK's own network builtins resolve one implementation.
+- `resolveAndAssertPublic()` uses the `bogon` library for private IP ranges.
 - Handles IPv4-mapped IPv6 bypass (`::ffff:127.0.0.1`).
-- Blocks `.internal`, `.local`, cloud metadata hostnames.
+- Blocks `.internal`, `.local`, cloud metadata hostnames, and non-HTTP(S)
+  protocols.
+- Re-validates every redirect hop and strips credential headers once a redirect
+  leaves the original origin.
+- Pins the validated IP with an undici dispatcher `lookup` rather than
+  rewriting the URL hostname. Rewriting broke TLS — SNI and cert verification
+  use the URL, not the `Host` header — so every `https://` request failed. Keep
+  the URL intact when touching this.
+- The network builtins (`web_search`, `visit_webpage`, `fetch_json`) take a
+  model-controlled URL and **default** to this via `safeFetch` in
+  `builtin-tools.ts`. Protection is not opt-in per caller; only tests override
+  the `fetch` option.
 
 **Auth:**
 
@@ -762,6 +783,37 @@ stored env at sandbox creation time and kept host-side only.
   against stored credential hashes.
 - Stored credentials (agent env vars / secrets) are AES-256-GCM
   encrypted with HKDF-derived keys.
+- Deploys check slug ownership whether the slug was requested or generated —
+  a `humanId()` collision returns 409 rather than overwriting an existing
+  agent and appending the caller's credential hash to it.
+
+### Self-hosted server defaults (`aai/host/server.ts`)
+
+`createServer` has no request authentication of its own — it is the `aai dev`
+backend, not the managed platform. Two defaults exist because of that, and
+both are fail-closed:
+
+- **Binds loopback.** `listen(port, host = DEFAULT_LISTEN_HOST)` defaults to
+  `127.0.0.1`. Pass `"0.0.0.0"` deliberately to expose it; binding every
+  interface by default put a developer's agent (and the provider credentials
+  behind it) in reach of anyone on the same network. `aai dev` exposes this as
+  `AAI_DEV_HOST` for setups where loopback isn't reachable (e.g. running in a
+  container and connecting from the host).
+- **Host mode is opt-in.** A `?host=1` WebSocket lets the *client* supply the
+  agent definition (`systemPrompt`, `greeting`, relayed tool schemas) while the
+  session runs on the operator's credentials, so `isHostAllowed` requires an
+  explicit `AAI_ALLOW_HOST` of `1`/`true`/`yes`/`on`. Unset means off.
+  Harnesses (e.g. tau2) set it themselves.
+
+### CLI credential destinations (`aai-cli/_agent.ts`)
+
+`.aai/project.json` is in the working tree, so a cloned repo controls its
+`serverUrl` — and `aai deploy` / `aai secret` pair that URL with the user's API
+key and secret values. `resolveServerUrl` therefore honors a config-supplied
+origin only when it is the shipped default, loopback, or already in
+`approvedServers` in the user-owned global config. Passing `--server` is what
+approves an origin (it is user intent, not repo content) and is remembered for
+later commands. Never widen this to trust `serverUrl` directly.
 
 ### Testing security boundaries
 

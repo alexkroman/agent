@@ -1,14 +1,21 @@
 // Copyright 2025 the AAI authors. MIT license.
+/// <reference path="../bogon.d.ts" />
 /**
- * SSRF protection for the platform server.
+ * SSRF protection.
  *
  * Validates URLs against private/reserved IP ranges and handles redirects
  * safely by re-validating each redirect target.
+ *
+ * Lives in the SDK (not `aai-server`) so both the platform's guest-fetch proxy
+ * and the SDK's own network builtins resolve the same implementation — the
+ * builtins default to it, rather than each caller having to remember to inject
+ * an SSRF-safe fetch.
  */
 
 import { lookup } from "node:dns/promises";
 import bogon from "bogon";
 import pTimeout from "p-timeout";
+import { Agent } from "undici";
 
 const BLOCKED_TLDS = [".internal", ".local", ".localhost"];
 const BLOCKED_HOSTS = new Set(["metadata.google.internal", "instance-data.ec2.internal"]);
@@ -68,15 +75,48 @@ export async function resolveAndAssertPublic(url: string): Promise<string | null
 const MAX_REDIRECTS = 5;
 
 /**
- * Replace the hostname in a URL with a resolved IP to pin DNS resolution
- * and prevent TOCTOU DNS rebinding attacks.
+ * The dispatcher type `fetch` accepts. `@types/node` declares
+ * `RequestInit.dispatcher` via its own bundled copy of `undici-types`, which is
+ * a different copy of the declarations from the `undici` package the Agent is
+ * constructed with — structurally the same object, nominally incompatible. The
+ * cast in {@link pinnedDispatcher} bridges exactly that mismatch.
  */
-function pinResolvedIp(url: string, resolvedIp: string): { pinnedUrl: string; host: string } {
-  const parsed = new URL(url);
-  const host = parsed.host;
-  const isIpv6 = resolvedIp.includes(":");
-  parsed.hostname = isIpv6 ? `[${resolvedIp}]` : resolvedIp;
-  return { pinnedUrl: parsed.href, host };
+type FetchDispatcher = NonNullable<RequestInit["dispatcher"]>;
+
+/**
+ * Pin the connection to an already-validated IP without rewriting the URL.
+ *
+ * Rewriting the URL's hostname to the resolved IP (the previous approach)
+ * pinned DNS but broke TLS: SNI and certificate verification use the URL
+ * hostname, so every `https://` request failed with
+ * "Hostname/IP does not match certificate's altnames". Overriding the
+ * `Host` header does not help — Node validates against the URL, not the
+ * header.
+ *
+ * Instead we keep the original URL (correct SNI + cert validation) and
+ * override DNS resolution for this request only, so the socket can only
+ * ever connect to the IP we already checked against the bogon list. That
+ * closes the TOCTOU DNS-rebinding window that pinning existed to close.
+ *
+ * Injected fetch implementations that aren't undici-backed (test doubles)
+ * simply ignore the dispatcher.
+ */
+function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
+  const family = resolvedIp.includes(":") ? 6 : 4;
+  const agent = new Agent({
+    connect: {
+      lookup: (_hostname, _options, callback) => {
+        callback(null, [{ address: resolvedIp, family }]);
+      },
+    },
+    // One Agent is created per request, so it must not hold sockets open
+    // after the response body is consumed. We deliberately do NOT call
+    // `close()` — the returned Response still owns its body stream — and
+    // instead let idle sockets lapse promptly and the Agent be collected.
+    keepAliveTimeout: 1000,
+    keepAliveMaxTimeout: 1000,
+  });
+  return agent as unknown as FetchDispatcher;
 }
 
 /** Headers that must never be replayed to a different origin across a redirect. */
@@ -110,22 +150,22 @@ export async function ssrfSafeFetch(
   let resolvedIp = await resolveAndAssertPublic(url);
   let currentUrl = url;
   for (let i = 0; i < MAX_REDIRECTS; i++) {
-    let fetchUrl = currentUrl;
     const headers = new Headers(init.headers);
     // Drop credentials once the request has left its original origin so an
     // open redirect on an allowed host can't exfiltrate the agent's token.
     if (new URL(currentUrl).origin !== originalOrigin) {
       for (const h of CREDENTIAL_HEADERS) headers.delete(h);
     }
-    if (resolvedIp) {
-      const { pinnedUrl, host } = pinResolvedIp(currentUrl, resolvedIp);
-      fetchUrl = pinnedUrl;
-      headers.set("Host", host);
-    }
-    const resp = await fetchFn(fetchUrl, { ...init, headers, redirect: "manual" });
+    const reqInit: RequestInit = { ...init, headers, redirect: "manual" };
+    // resolvedIp is null when the URL already names a literal IP — it was
+    // validated directly, so there is no DNS step to pin.
+    if (resolvedIp !== null) reqInit.dispatcher = pinnedDispatcher(resolvedIp);
+    const resp = await fetchFn(currentUrl, reqInit);
     if (resp.status < 300 || resp.status >= 400) return resp;
     const location = resp.headers.get("location");
     if (!location) return resp;
+    // Release the redirect response's socket before following the hop.
+    await resp.body?.cancel().catch(() => undefined);
     currentUrl = new URL(location, currentUrl).href;
     checkAllowed(currentUrl);
     resolvedIp = await resolveAndAssertPublic(currentUrl);

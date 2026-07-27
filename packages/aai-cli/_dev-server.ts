@@ -12,7 +12,11 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
-import { type AgentServer, requiredProviderEnvVars } from "@alexkroman1/aai/runtime";
+import {
+  type AgentServer,
+  requiredProviderEnvVars,
+  withHostCredentialFallback,
+} from "@alexkroman1/aai/runtime";
 import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
 import pDebounce from "p-debounce";
@@ -27,7 +31,12 @@ import { errorMessage } from "./_utils.ts";
 // ─── Env loading ────────────────────────────────────────────────────────────
 
 async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record<string, string>> {
-  const env = await resolveServerEnv(root);
+  // Self-hosted only: let provider credentials exported in the shell reach the
+  // agent without also being written into `.env`. The SDK resolvers read the
+  // agent env alone, so this opt-in is where that trust decision is made —
+  // the platform never applies it, keeping its own credentials out of reach of
+  // tenant-declared providers.
+  const env = withHostCredentialFallback(await resolveServerEnv(root));
   // Derived from the provider registries rather than matched against hardcoded
   // kinds, so a new provider needs no change here and nothing is missed. (The
   // previous check looked only at `stt`/`llm` and only for AssemblyAI.)
@@ -137,8 +146,10 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     return createServer({
       runtime,
       name: agentDef.name,
-      // Enable host mode in the dev server (gated by AAI_ALLOW_HOST). Lets a
-      // `?host=1` client (e.g. the tau2 harness) supply its own agent per session.
+      // Makes host mode *available* in the dev server — it stays off unless
+      // AAI_ALLOW_HOST is set, since a `?host=1` client supplies its own agent
+      // definition and would otherwise be able to spend the operator's
+      // provider credentials unauthenticated. Harnesses (e.g. tau2) opt in.
       env,
       // Host sessions inherit this agent's stt/llm/tts pipeline config.
       hostBaseAgent: agentDef,
@@ -147,7 +158,10 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   }
 
   const agentServer = await buildServer();
-  await agentServer.listen(backendPort);
+  // Loopback by default (the dev server has no auth). AAI_DEV_HOST is the
+  // escape hatch for setups where loopback isn't reachable — e.g. running
+  // `aai dev` inside a container and connecting from the host.
+  await agentServer.listen(backendPort, process.env.AAI_DEV_HOST);
 
   let viteServer: ViteDevServer | undefined;
   if (hasClient) {
@@ -207,7 +221,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
         await newServer.close().catch(() => undefined);
         return;
       }
-      await newServer.listen(backendPort);
+      await newServer.listen(backendPort, process.env.AAI_DEV_HOST);
       currentServer = newServer;
       log.success("Restarted");
     } catch (err) {

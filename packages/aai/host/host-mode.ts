@@ -158,15 +158,24 @@ export function createRelayExecuteTool(opts: {
 }
 
 /**
- * Whether host mode is permitted for this environment. Defaults to enabled;
- * only an explicit `AAI_ALLOW_HOST` of `0`/`false` (case-insensitive) disables it.
+ * Whether host mode is permitted for this environment.
+ *
+ * Opt-in: host mode is enabled only by an explicit `AAI_ALLOW_HOST` of
+ * `1`/`true`/`yes`/`on` (case-insensitive). Anything else — including the
+ * variable being unset — disables it.
+ *
+ * This used to default to enabled, which was fail-open for a feature that
+ * lets an unauthenticated client replace the agent definition: a `?host=1`
+ * connection supplies its own `systemPrompt`, `greeting`, and relayed tool
+ * schemas, and the resulting session runs on the operator's provider
+ * credentials. Since the self-hosted server has no request authentication of
+ * its own, anyone who could reach the port could drive an arbitrary agent on
+ * the operator's keys. Harnesses that need host mode (e.g. tau2) now set the
+ * variable explicitly.
  */
 export function isHostAllowed(env: Record<string, string>): boolean {
-  const raw = env.AAI_ALLOW_HOST;
-  if (raw === undefined) return true;
-  const normalized = raw.trim().toLowerCase();
-  if (normalized === "") return true;
-  return normalized !== "0" && normalized !== "false";
+  const normalized = env.AAI_ALLOW_HOST?.trim().toLowerCase();
+  return normalized === "1" || normalized === "true" || normalized === "yes" || normalized === "on";
 }
 
 /**

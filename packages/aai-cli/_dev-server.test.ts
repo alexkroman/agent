@@ -89,6 +89,10 @@ vi.mock("@alexkroman1/aai/runtime", () => ({
   createRuntime: mockCreateRuntime,
   createServer: mockCreateServer,
   requiredProviderEnvVars: mockRequiredProviderEnvVars,
+  // The dev server applies the self-hosted credential fallback when building
+  // `env`; identity here keeps these tests focused on wiring. The helper's own
+  // behavior is covered in aai/host/providers/host-env.test.ts.
+  withHostCredentialFallback: (env: Record<string, string>) => env,
 }));
 
 vi.mock("./_config.ts", () => ({
@@ -171,7 +175,9 @@ describe("startDevServer", () => {
           name: "test-agent",
         }),
       );
-      expect(mockListen).toHaveBeenCalledWith(3000);
+      // Second arg is the bind host: undefined here (AAI_DEV_HOST unset), so
+      // the server applies its loopback default.
+      expect(mockListen).toHaveBeenCalledWith(3000, undefined);
 
       await cleanup();
     });
@@ -197,7 +203,9 @@ describe("startDevServer", () => {
       vi.mocked(existsSync).mockReturnValue(false);
 
       const cleanup = await startDevServer({ cwd: dir, port: 4000 });
-      expect(mockListen).toHaveBeenCalledWith(4000);
+      // Second arg is the bind host: undefined here (AAI_DEV_HOST unset), so
+      // the server applies its loopback default.
+      expect(mockListen).toHaveBeenCalledWith(4000, undefined);
       await cleanup();
     });
   });
@@ -222,7 +230,9 @@ describe("startDevServer", () => {
       const { startDevServer: freshStart } = await import("./_dev-server.ts");
       const cleanup = await freshStart({ cwd: dir, port: 3000 });
 
-      expect(mockListen).toHaveBeenCalledWith(3001);
+      // Second arg is the bind host: undefined here (AAI_DEV_HOST unset), so
+      // the server applies its loopback default.
+      expect(mockListen).toHaveBeenCalledWith(3001, undefined);
 
       await cleanup();
       vi.doUnmock("vite");
