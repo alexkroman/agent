@@ -5,6 +5,7 @@
 // when the interruption never commits a turn), and the STT partial/final
 // handlers that drive both from the provider's transcript stream.
 
+import { createRestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
 import type { EndpointSettler } from "./pipeline-endpointing.ts";
 import type { SilenceNudger } from "./pipeline-silence.ts";
@@ -54,17 +55,10 @@ export function createSpeechEdgeTracker(
 ): SpeechEdgeTracker {
   let speaking = false;
   let startedAtMs = 0;
-  let idleTimer: ReturnType<typeof setTimeout> | null = null;
-
-  function clearIdle(): void {
-    if (idleTimer !== null) {
-      clearTimeout(idleTimer);
-      idleTimer = null;
-    }
-  }
+  const idleWatchdog = createRestartableTimer(() => endSpeech());
 
   function endSpeech(): void {
-    clearIdle();
+    idleWatchdog.clear();
     if (!speaking) return;
     speaking = false;
     callbacks.onSpeechStopped();
@@ -74,10 +68,7 @@ export function createSpeechEdgeTracker(
     speechStarted(): void {
       // Restart the watchdog on every partial, including ones that don't open
       // the edge — quiet, not "no longer the first partial", is what ends it.
-      if (opts.idleTimeoutMs > 0) {
-        clearIdle();
-        idleTimer = setTimeout(endSpeech, opts.idleTimeoutMs);
-      }
+      idleWatchdog.arm(opts.idleTimeoutMs);
       if (speaking) return;
       speaking = true;
       startedAtMs = Date.now();
@@ -88,7 +79,7 @@ export function createSpeechEdgeTracker(
       return speaking ? Date.now() - startedAtMs : 0;
     },
     reset(): void {
-      clearIdle();
+      idleWatchdog.clear();
       speaking = false;
     },
   };
@@ -136,28 +127,18 @@ export function createFalseInterruptionRecovery(opts: {
   /** Run the resume turn. Only called when active and not busy. */
   onResume: () => void;
 }): FalseInterruptionRecovery {
-  let timer: ReturnType<typeof setTimeout> | null = null;
   let consecutive = 0;
-
-  function clear(): void {
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
-  }
+  const window = createRestartableTimer(() => fire());
 
   function arm(): void {
-    if (opts.timeoutMs <= 0) return;
     // Budget spent: persistent cross-talk must not loop barge-in → resume →
     // barge-in indefinitely, each cycle costing a full LLM+TTS turn and
     // another copy of the continuation prompt in history.
     if (consecutive >= opts.maxConsecutive) return;
-    clear();
-    timer = setTimeout(fire, opts.timeoutMs);
+    window.arm(opts.timeoutMs);
   }
 
   function fire(): void {
-    timer = null;
     if (!opts.isActive()) return;
     if (opts.isBusy()) return;
     if (consecutive >= opts.maxConsecutive) return;
@@ -167,11 +148,11 @@ export function createFalseInterruptionRecovery(opts: {
 
   return {
     arm,
-    clear,
-    pending: () => timer !== null,
+    clear: window.clear,
+    pending: window.pending,
     onUserTurn(): void {
       consecutive = 0;
-      clear();
+      window.clear();
     },
   };
 }

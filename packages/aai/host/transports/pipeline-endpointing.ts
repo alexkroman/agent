@@ -5,6 +5,7 @@
 // false starts) commit as a single turn instead of the first fragment firing
 // a turn and the continuation barging in on it.
 
+import { createRestartableTimer } from "../_timer.ts";
 import { utteranceLooksComplete } from "./pipeline-stream.ts";
 
 /** Buffered-utterance endpoint settler. See {@link createEndpointSettler}. */
@@ -49,24 +50,15 @@ export function createEndpointSettler(opts: {
   onCommit: (text: string) => void;
 }): EndpointSettler {
   let pending = "";
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
-  /** Cancel any pending settle timer without dropping the buffered text. */
-  function clearTimer(): void {
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
-  }
+  const settleTimer = createRestartableTimer(() => commit());
 
   function arm(ms: number = opts.settleMs): void {
-    clearTimer();
-    timer = setTimeout(commit, ms);
+    settleTimer.arm(ms);
   }
 
   /** Commit the buffered utterance as a single turn. */
   function commit(): void {
-    clearTimer();
+    settleTimer.clear();
     const text = pending.trim();
     pending = "";
     if (text.length === 0) return;
@@ -96,14 +88,14 @@ export function createEndpointSettler(opts: {
       arm();
     },
     extendOnPartial(words: number): boolean {
-      if (timer !== null && pending.length > 0 && words >= 1) {
+      if (settleTimer.pending() && pending.length > 0 && words >= 1) {
         arm();
         return true;
       }
       return false;
     },
     reset(): void {
-      clearTimer();
+      settleTimer.clear();
       pending = "";
     },
   };

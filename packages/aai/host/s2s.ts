@@ -10,6 +10,7 @@ import { safeJsonParse } from "../sdk/utils.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import {
   type CreateHeaderWebSocket,
+  createWsOpenRace,
   defaultCreateHeaderWebSocket,
   type HeaderWebSocket,
 } from "./_ws.ts";
@@ -212,11 +213,9 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
   const dispatchState: DispatchState = { speechActive: false };
   const dispatchCtx: DispatchContext = sid !== undefined ? { log, sid } : { log };
-  // Settles once the socket opens (or fails first). Handlers below stay
-  // registered for the socket's whole life; `opened` routes later errors to
-  // the session callbacks instead of the (already settled) open race.
-  const opening = Promise.withResolvers<void>();
-  let opened = false;
+  // Handlers below stay registered for the socket's whole life; the race routes
+  // pre-open failures to the connect and later ones to the session callbacks.
+  const connect = createWsOpenRace();
 
   function send(msg: { type: string; [key: string]: unknown }): void {
     if (ws.readyState !== WS_OPEN) {
@@ -259,9 +258,8 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   };
 
   ws.addEventListener("open", () => {
-    opened = true;
     log.info("S2S WebSocket open");
-    opening.resolve();
+    connect.markOpen();
   });
 
   function logIncoming(type: unknown): void {
@@ -320,8 +318,8 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     const code = ev.code ?? 0;
     const reason = ev.reason ?? "";
     log.info("S2S WebSocket closed", { code, reason });
-    if (!opened) {
-      opening.reject(new Error(`WebSocket closed before open (code: ${code})`));
+    if (connect.isOpening()) {
+      connect.fail(new Error(`WebSocket closed before open (code: ${code})`));
     }
     callbacks.onClose(code, reason);
   });
@@ -330,13 +328,13 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     const message = typeof ev.message === "string" ? ev.message : "WebSocket error";
     const errObj = new Error(message);
     log.error("S2S WebSocket error", { error: errObj.message });
-    if (!opened) {
-      opening.reject(errObj);
+    if (connect.isOpening()) {
+      connect.fail(errObj);
     } else {
       callbacks.onError(errObj);
     }
   });
 
-  await opening.promise;
+  await connect.promise;
   return handle;
 }

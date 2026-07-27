@@ -69,12 +69,6 @@ import type {
   TtsProvider,
 } from "../../sdk/providers.ts";
 import { requireApiKey } from "./_utils.ts";
-import { openAssemblyAI } from "./stt/assemblyai.ts";
-import { openDeepgram } from "./stt/deepgram.ts";
-import { openElevenLabs } from "./stt/elevenlabs.ts";
-import { openSoniox } from "./stt/soniox.ts";
-import { openCartesia } from "./tts/cartesia.ts";
-import { openRime } from "./tts/rime.ts";
 
 /**
  * Look up a provider API key: agent env first (set via `aai secret put` or
@@ -99,58 +93,106 @@ type OpenerRegistryEntry<Opener> = {
   readonly open: (descriptor: { options: Record<string, unknown> }) => Opener;
 };
 
+/**
+ * Wrap a dynamically-imported opener so its vendor SDK loads on first `open()`
+ * instead of at module load.
+ *
+ * `resolve.ts` is reachable from `host/runtime.ts` → `runtime-barrel.ts`, so
+ * every server replica, sandbox host and `aai dev` start used to pay for all
+ * six vendor SDKs even though an agent uses at most one STT and one TTS.
+ * Measured on this repo: ~1.15s and ~100MB RSS for the four STT/TTS SDKs, of
+ * which `@elevenlabs/elevenlabs-js` alone is ~970ms.
+ *
+ * `name` is the registry kind, which is also what `providerRegistryKey` wants —
+ * so API-key routing keeps working without loading the vendor package.
+ */
+function lazyOpener<Opts, Session>(
+  kind: string,
+  load: () => Promise<{ open(opts: Opts): Promise<Session> }>,
+): { readonly name: string; open(opts: Opts): Promise<Session> } {
+  return {
+    name: kind,
+    async open(opts: Opts): Promise<Session> {
+      return (await load()).open(opts);
+    },
+  };
+}
+
 const STT_REGISTRY: Record<string, OpenerRegistryEntry<SttOpener>> = {
   [ASSEMBLYAI_KIND]: {
     envVar: ASSEMBLYAI_API_KEY_ENV,
-    open: (d) => openAssemblyAI(options<AssemblyAIOptions>(d)),
+    open: (d) =>
+      lazyOpener(ASSEMBLYAI_KIND, async () =>
+        (await import("./stt/assemblyai.ts")).openAssemblyAI(options<AssemblyAIOptions>(d)),
+      ),
   },
   [DEEPGRAM_KIND]: {
     envVar: DEEPGRAM_API_KEY_ENV,
-    open: (d) => openDeepgram(options<DeepgramOptions>(d)),
+    open: (d) =>
+      lazyOpener(DEEPGRAM_KIND, async () =>
+        (await import("./stt/deepgram.ts")).openDeepgram(options<DeepgramOptions>(d)),
+      ),
   },
   [ELEVENLABS_KIND]: {
     envVar: ELEVENLABS_API_KEY_ENV,
-    open: (d) => openElevenLabs(options<ElevenLabsOptions>(d)),
+    open: (d) =>
+      lazyOpener(ELEVENLABS_KIND, async () =>
+        (await import("./stt/elevenlabs.ts")).openElevenLabs(options<ElevenLabsOptions>(d)),
+      ),
   },
   [SONIOX_KIND]: {
     envVar: SONIOX_API_KEY_ENV,
-    open: (d) => openSoniox(options<SonioxOptions>(d)),
+    open: (d) =>
+      lazyOpener(SONIOX_KIND, async () =>
+        (await import("./stt/soniox.ts")).openSoniox(options<SonioxOptions>(d)),
+      ),
   },
 };
 
 const TTS_REGISTRY: Record<string, OpenerRegistryEntry<TtsOpener>> = {
   [CARTESIA_KIND]: {
     envVar: CARTESIA_API_KEY_ENV,
-    open: (d) => openCartesia(options<CartesiaOptions>(d)),
+    open: (d) =>
+      lazyOpener(CARTESIA_KIND, async () =>
+        (await import("./tts/cartesia.ts")).openCartesia(options<CartesiaOptions>(d)),
+      ),
   },
   [RIME_KIND]: {
     envVar: RIME_API_KEY_ENV,
-    open: (d) => openRime(options<RimeOptions>(d)),
+    open: (d) =>
+      lazyOpener(RIME_KIND, async () =>
+        (await import("./tts/rime.ts")).openRime(options<RimeOptions>(d)),
+      ),
   },
 };
 
-/** Resolve an {@link SttProvider} descriptor into a host-side opener. */
-export function resolveStt(descriptor: SttProvider): SttOpener {
-  const entry = STT_REGISTRY[descriptor.kind];
+/**
+ * Look up a registry entry by descriptor kind, or throw listing what is
+ * supported. The supported list is derived from the registry, so it cannot go
+ * stale when a provider is added.
+ */
+function lookupProvider<Entry>(
+  registry: Record<string, Entry>,
+  kind: string,
+  label: string,
+): Entry {
+  const entry = registry[kind];
   if (!entry) {
     throw new Error(
-      `Unknown STT provider kind: "${descriptor.kind}". ` +
-        `Supported: ${Object.keys(STT_REGISTRY).join(", ")}.`,
+      `Unknown ${label} provider kind: "${kind}". Supported: ${Object.keys(registry).join(", ")}.`,
     );
   }
-  return entry.open(descriptor);
+  return entry;
+}
+
+/** Resolve an {@link SttProvider} descriptor into a host-side opener. */
+export function resolveStt(descriptor: SttProvider): SttOpener {
+  return lookupProvider(STT_REGISTRY, descriptor.kind, "STT").open(descriptor);
 }
 
 /** Resolve a {@link TtsProvider} descriptor into a host-side opener. */
 export function resolveTts(descriptor: TtsProvider): TtsOpener {
-  const entry = TTS_REGISTRY[descriptor.kind];
-  if (!entry) {
-    throw new Error(
-      `Unknown TTS provider kind: "${descriptor.kind}". ` +
-        `Supported: ${Object.keys(TTS_REGISTRY).join(", ")}.`,
-    );
-  }
-  return entry.open(descriptor);
+  return lookupProvider(TTS_REGISTRY, descriptor.kind, "TTS").open(descriptor);
 }
 
 /** One registry entry per LLM provider kind — adding a provider is one entry here. */
@@ -230,13 +272,7 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
  * `streamText` call otherwise, and the error is clearer at construction.
  */
 export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>): LanguageModel {
-  const entry = LLM_REGISTRY[descriptor.kind];
-  if (!entry) {
-    throw new Error(
-      `Unknown LLM provider kind: "${descriptor.kind}". ` +
-        `Supported: ${Object.keys(LLM_REGISTRY).join(", ")}.`,
-    );
-  }
+  const entry = lookupProvider(LLM_REGISTRY, descriptor.kind, "LLM");
   const apiKey = requireKey(env, entry.envVar, entry.label);
   return entry.create(apiKey, descriptor);
 }
@@ -310,8 +346,7 @@ export function resolveSttApiKey(
   stt: SttProvider | SttOpener | undefined,
   env: Record<string, string>,
 ): string {
-  const entry = STT_REGISTRY[providerRegistryKey(stt)];
-  return entry ? resolveApiKey(entry.envVar, env) : "";
+  return registryApiKey(STT_REGISTRY, stt, env);
 }
 
 /** Resolve the agent-env API key for a TTS descriptor/opener by its kind. */
@@ -319,7 +354,15 @@ export function resolveTtsApiKey(
   tts: TtsProvider | TtsOpener | undefined,
   env: Record<string, string>,
 ): string {
-  const entry = TTS_REGISTRY[providerRegistryKey(tts)];
+  return registryApiKey(TTS_REGISTRY, tts, env);
+}
+
+function registryApiKey<Opener>(
+  registry: Record<string, OpenerRegistryEntry<Opener>>,
+  value: object | undefined,
+  env: Record<string, string>,
+): string {
+  const entry = registry[providerRegistryKey(value)];
   return entry ? resolveApiKey(entry.envVar, env) : "";
 }
 

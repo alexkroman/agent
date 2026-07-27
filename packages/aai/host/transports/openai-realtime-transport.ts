@@ -8,6 +8,7 @@ import { safeJsonParse } from "../../sdk/utils.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import {
   type CreateHeaderWebSocket,
+  createWsOpenRace,
   defaultCreateHeaderWebSocket,
   type HeaderWebSocket,
 } from "../_ws.ts";
@@ -113,24 +114,29 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       },
     });
     ws = sock;
-    // Settles once the socket opens (or errors first). Handlers stay
-    // registered for the socket's life; `opened` routes later errors to the
-    // session callbacks instead of the (already settled) open race.
-    const opening = Promise.withResolvers<void>();
-    let opened = false;
+    // Handlers stay registered for the socket's life; the race routes pre-open
+    // failures to the connect and later ones to the session callbacks.
+    const connect = createWsOpenRace();
 
     sock.addEventListener("open", () => {
-      opened = true;
+      connect.markOpen();
       sendSessionUpdate();
       sendGreeting();
-      opening.resolve();
     });
     sock.addEventListener("message", (ev) => handleMessage(ev.data));
-    sock.addEventListener("close", (ev) => handleClose(ev.code ?? 0, ev.reason ?? ""));
+    sock.addEventListener("close", (ev) => {
+      const code = ev.code ?? 0;
+      // A close before the open (e.g. an auth rejection that closes rather than
+      // errors) must fail the connect — otherwise start() awaits forever.
+      if (connect.isOpening()) {
+        connect.fail(new Error(`WebSocket closed before open (code: ${code})`));
+      }
+      handleClose(code, ev.reason ?? "");
+    });
     sock.addEventListener("error", (ev) => {
       const msg = typeof ev.message === "string" ? ev.message : "WebSocket error";
-      if (!opened) {
-        opening.reject(new Error(msg));
+      if (connect.isOpening()) {
+        connect.fail(new Error(msg));
         return;
       }
       if (closing) {
@@ -139,7 +145,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       }
       opts.callbacks.onError("internal", msg);
     });
-    await opening.promise;
+    await connect.promise;
   }
 
   function asString(v: unknown): string {
