@@ -119,6 +119,45 @@ export function assertSilencePolicy(
   }
 }
 
+/**
+ * Voice-UX tuning fields that only the pipeline transport implements.
+ * Shared by {@link assertPipelineTuning} and the config layers that carry
+ * these fields (AgentDef → manifest → AgentConfig → IsolateConfig).
+ */
+export type PipelineTuning = {
+  minBargeInWords?: number | undefined;
+  interruptionMinDurationMs?: number | undefined;
+  endpointSettleMs?: number | undefined;
+  completeSettleMs?: number | undefined;
+  holdPhrase?: string | undefined;
+  falseInterruptionTimeoutMs?: number | undefined;
+};
+
+/**
+ * Reject pipeline-only voice-UX tuning fields in S2S mode — the S2S provider
+ * owns endpointing/barge-in service-side, so these would be silently ignored.
+ *
+ * Shared by `parseManifest`, `toAgentConfig`, and the server's
+ * `IsolateConfigSchema` — one source of truth for the validation, mirroring
+ * {@link assertSilencePolicy}.
+ */
+export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void {
+  if (mode === "pipeline") return;
+  const fields: Record<string, unknown> = {
+    minBargeInWords: tuning.minBargeInWords,
+    interruptionMinDurationMs: tuning.interruptionMinDurationMs,
+    endpointSettleMs: tuning.endpointSettleMs,
+    completeSettleMs: tuning.completeSettleMs,
+    holdPhrase: tuning.holdPhrase,
+    falseInterruptionTimeoutMs: tuning.falseInterruptionTimeoutMs,
+  };
+  for (const [key, value] of Object.entries(fields)) {
+    if (value !== undefined) {
+      throw new Error(`${key} requires pipeline mode (stt, llm, and tts all set)`);
+    }
+  }
+}
+
 // -------- STT openable (host-only) ------------------------------------------
 
 export interface SttError extends Error {

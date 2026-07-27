@@ -138,6 +138,16 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
     type: z.literal("user_transcript"),
     text: z.string(),
   }),
+  /**
+   * Interim (in-progress) user transcript — live captions while the user is
+   * still speaking. Pipeline mode forwards STT partials here; the committed
+   * turn still arrives as `user_transcript`. Clients on older protocol
+   * versions drop the unknown type via `lenientParse`.
+   */
+  z.object({
+    type: z.literal("user_transcript_partial"),
+    text: z.string(),
+  }),
   z.object({
     type: z.literal("agent_transcript"),
     text: z.string(),

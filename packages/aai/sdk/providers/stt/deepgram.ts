@@ -27,7 +27,22 @@ export interface DeepgramOptions {
    * Examples: `"en"`, `"es"`, `"fr"`, `"de"`.
    */
   language?: string;
+  /**
+   * Deepgram endpointing window (ms of trailing silence before a `final` is
+   * emitted). Defaults to {@link DEFAULT_DEEPGRAM_ENDPOINTING_MS}. Kept low
+   * because the pipeline transport applies its own endpoint settling on top
+   * (`endpointSettleMs`/`completeSettleMs`) — the two delays serialize, so a
+   * large provider window just adds turn latency.
+   */
+  endpointing?: number;
 }
+
+/**
+ * Default Deepgram `endpointing` (ms). Low by design: end-of-turn is owned
+ * by the transport's settle windows, mirroring how LiveKit's Deepgram plugin
+ * (`endpointing_ms = 25`) defers to framework-level turn detection.
+ */
+export const DEFAULT_DEEPGRAM_ENDPOINTING_MS = 100;
 
 export type DeepgramProvider = SttProvider & {
   readonly kind: typeof DEEPGRAM_KIND;

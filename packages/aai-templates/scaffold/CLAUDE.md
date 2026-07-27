@@ -72,6 +72,12 @@ export default agent({
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
   silenceTimeoutMs?: number;                 // pipeline only — assistant speaks up after this much user silence (ms)
   silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
+  minBargeInWords?: number;                  // pipeline only — words before user speech interrupts the reply (default 2)
+  interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 0 = off)
+  endpointSettleMs?: number;                 // pipeline only — wait after an STT final before committing the turn (default 1500; 0 disables)
+  completeSettleMs?: number;                 // pipeline only — shorter wait for clearly-complete finals (default 500)
+  holdPhrase?: string;                       // pipeline only — spoken before a silent tool-call turn (default "One moment."; "" disables)
+  falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
 });
 ```
 
@@ -133,6 +139,17 @@ assistant proactively take a turn after that much user silence (e.g.
 `silencePrompt`. The nudge never appears as a user transcript, and the
 assistant stops nudging after 3 consecutive unanswered nudges until the
 user speaks again.
+
+**Voice-UX tuning (pipeline only):** `minBargeInWords` controls how many
+words of user speech interrupt the assistant mid-reply (default 2, so
+one-word backchannels like "yeah" don't cut it off);
+`interruptionMinDurationMs` adds an optional sustained-speech gate on top
+(interim transcripts only — committed turns always land). `endpointSettleMs` /
+`completeSettleMs` tune how long the transport waits after an STT final
+before committing the turn (aggregating disfluent multi-final utterances).
+`holdPhrase` is spoken when a turn opens with a tool call and no speech.
+`falseInterruptionTimeoutMs` resumes an interrupted reply when a barge-in
+turns out to be noise (no user turn commits within the window).
 
 ## Providers
 

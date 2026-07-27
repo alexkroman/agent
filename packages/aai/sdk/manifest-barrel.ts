@@ -16,4 +16,9 @@ export {
   toAgentConfig,
 } from "./_internal-types.ts";
 export { ProviderDescriptorSchema } from "./manifest.ts";
-export { assertProviderTriple, assertSilencePolicy, type SessionMode } from "./providers.ts";
+export {
+  assertPipelineTuning,
+  assertProviderTriple,
+  assertSilencePolicy,
+  type SessionMode,
+} from "./providers.ts";
