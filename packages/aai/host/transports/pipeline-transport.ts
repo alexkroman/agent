@@ -8,24 +8,17 @@
 // already handled by streamText.
 
 import type { ModelMessage } from "ai";
-import type { ExecuteTool } from "../../sdk/_internal-types.ts";
 import {
-  DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
-  DEFAULT_ENDPOINT_SETTLE_MS,
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
-  DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
-  DEFAULT_MAX_STEPS,
-  DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_SILENCE_PROMPT,
-  DEFAULT_STT_SAMPLE_RATE,
-  DEFAULT_TTS_SAMPLE_RATE,
+  DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
+  MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import { bytesToPcm16 } from "../_pcm.ts";
-import { consoleLogger } from "../runtime-config.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createEndpointSettler } from "./pipeline-endpointing.ts";
 import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
@@ -33,16 +26,18 @@ import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
 import { createSilenceNudger } from "./pipeline-silence.ts";
 import {
-  countWords,
   createPlaybackClock,
-  DEFAULT_HOLD_PHRASE,
   flushTtsAndWait,
   consumeLlmStream as runLlmStream,
 } from "./pipeline-stream.ts";
-import type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
+import {
+  type PipelineTransportOptions,
+  resolvePipelineOptions,
+} from "./pipeline-transport-options.ts";
 import {
   createFalseInterruptionRecovery,
   createSpeechEdgeTracker,
+  createSttEventHandlers,
 } from "./pipeline-user-speech.ts";
 import type { Transport } from "./types.ts";
 
@@ -50,24 +45,21 @@ export type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
 
 /** Create a pipeline-mode Transport (STT → LLM → TTS). */
 export function createPipelineTransport(opts: PipelineTransportOptions): Transport {
-  const log = opts.logger ?? consoleLogger;
-  const sttSampleRate = opts.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE;
-  const ttsSampleRate = opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE;
-  const maxSteps = opts.maxSteps ?? DEFAULT_MAX_STEPS;
-  const minBargeInWords = opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS;
-  const interruptionMinDurationMs = opts.interruptionMinDurationMs ?? 0;
-  const endpointSettleMs = opts.endpointSettleMs ?? DEFAULT_ENDPOINT_SETTLE_MS;
-  const completeSettleMs = opts.completeSettleMs ?? DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS;
-  const holdPhrase = opts.holdPhrase ?? DEFAULT_HOLD_PHRASE;
-  const falseInterruptionTimeoutMs =
-    opts.falseInterruptionTimeoutMs ?? DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS;
-  const toolChoice = opts.toolChoice ?? "auto";
-  const toolSchemas = opts.toolSchemas ?? [];
-  const executeTool: ExecuteTool =
-    opts.executeTool ??
-    (async () => {
-      throw new Error("No executeTool provided");
-    });
+  const {
+    log,
+    sttSampleRate,
+    ttsSampleRate,
+    maxSteps,
+    minBargeInWords,
+    interruptionMinDurationMs,
+    endpointSettleMs,
+    completeSettleMs,
+    holdPhrase,
+    falseInterruptionTimeoutMs,
+    toolChoice,
+    toolSchemas,
+    executeTool,
+  } = resolvePipelineOptions(opts);
 
   const { callbacks, sessionConfig } = opts;
   const systemPrompt = sessionConfig.systemPrompt;
@@ -127,6 +119,52 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     },
   });
 
+  // Pipeline mode has no VAD: speech_started/speech_stopped derive from the
+  // STT transcript stream (see pipeline-user-speech.ts).
+  const speechEdges = createSpeechEdgeTracker(callbacks, {
+    idleTimeoutMs: DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
+  });
+
+  // Resume a barged-in reply when the interruption never commits a user turn
+  // — its spoken-so-far text is already in history marked `[interrupted]`,
+  // so a synthetic continuation turn picks up where it was cut off.
+  const recovery = createFalseInterruptionRecovery({
+    timeoutMs: falseInterruptionTimeoutMs,
+    maxConsecutive: MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
+    isActive: () => !terminated,
+    isBusy: () => turnController !== null || playbackClock.pending(),
+    onResume: () => {
+      log.info("Pipeline false-interruption resume", { sid: opts.sid });
+      speechEdges.speechEnded();
+      chainTurn(() =>
+        runTurn(DEFAULT_FALSE_INTERRUPTION_PROMPT).catch((err: unknown) => {
+          log.error("Pipeline false-interruption resume crashed", {
+            error: errorMessage(err),
+            sid: opts.sid,
+          });
+        }),
+      );
+    },
+  });
+
+  // Interpret the STT transcript stream: speaking edges, live captions,
+  // barge-in policy and settled turns (pipeline-user-speech.ts).
+  const sttEvents = createSttEventHandlers({
+    isTerminated: () => terminated,
+    isTurnInFlight: () => turnController !== null,
+    isPlaybackPending: () => playbackClock.pending(),
+    abortInFlightTurn: () => abortInFlightTurn(),
+    speechEdges,
+    recovery,
+    settler,
+    nudger,
+    callbacks,
+    minBargeInWords,
+    interruptionMinDurationMs,
+    log,
+    sid: opts.sid,
+  });
+
   // Provider lifecycle (open/adopt/close of the STT+TTS pair) lives in
   // pipeline-providers.ts; the (hoisted) handlers below route provider
   // events back into this turn orchestrator.
@@ -141,10 +179,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     greeting: sessionConfig.greeting,
     signal: sessionAbort.signal,
     handlers: {
-      onSttPartial,
-      onSttFinal,
-      onSttError,
-      onTtsError,
+      onSttPartial: sttEvents.onSttPartial,
+      onSttFinal: sttEvents.onSttFinal,
+      onSttError: (err) => onProviderError("stt", err),
+      onTtsError: (err) => onProviderError("tts", err),
       onTtsAudio: (pcm) => {
         playbackClock.onChunk(pcm);
         callbacks.onAudioChunk(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
@@ -172,31 +210,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     callbacks.onError(code, message);
   }
 
-  // Pipeline mode has no VAD: speech_started/speech_stopped derive from the
-  // STT transcript stream (see pipeline-user-speech.ts).
-  const speechEdges = createSpeechEdgeTracker(callbacks);
-
-  // Resume a barged-in reply when the interruption never commits a user turn
-  // — its spoken-so-far text is already in history marked `[interrupted]`,
-  // so a synthetic continuation turn picks up where it was cut off.
-  const recovery = createFalseInterruptionRecovery({
-    timeoutMs: falseInterruptionTimeoutMs,
-    isActive: () => !terminated,
-    isBusy: () => turnController !== null || playbackClock.pending(),
-    onResume: () => {
-      log.info("Pipeline false-interruption resume", { sid: opts.sid });
-      speechEdges.speechEnded();
-      chainTurn(() =>
-        runTurn(DEFAULT_FALSE_INTERRUPTION_PROMPT).catch((err: unknown) => {
-          log.error("Pipeline false-interruption resume crashed", {
-            error: errorMessage(err),
-            sid: opts.sid,
-          });
-        }),
-      );
-    },
-  });
-
   /** Abort the in-flight turn (if any) and cancel TTS playback. */
   function abortInFlightTurn(): void {
     turnController?.abort();
@@ -214,6 +227,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     terminated = true;
     nudger.clear();
     recovery.clear();
+    speechEdges.reset();
     settler.reset();
     abortInFlightTurn();
     callbacks.onCancelled();
@@ -223,78 +237,15 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     void providers.close();
   }
 
-  /** Should this interim transcript interrupt the agent right now? */
-  function partialTriggersBargeIn(text: string): boolean {
-    if (turnController === null && !playbackClock.pending()) return false;
-    if (countWords(text) < minBargeInWords) return false;
-    // Duration gate (interim-only): require sustained speech since the
-    // utterance's first partial before cutting the agent off. A committed
-    // final barging in via onSttFinal is never duration-gated.
-    return !(interruptionMinDurationMs > 0 && speechEdges.durationMs() < interruptionMinDurationMs);
-  }
-
-  function onSttPartial(text: string): void {
+  /** Either provider failing is unrecoverable: surface it and tear the session down. */
+  function onProviderError(kind: "stt" | "tts", err: SttError | TtsError): void {
     if (terminated) return;
-    // User speech proves presence: reset the nudge budget, restart the window.
-    nudger.onUserSpeech();
-    if (countWords(text) >= 1) {
-      speechEdges.speechStarted();
-      // Live captions: forward the interim transcript as-is. The committed
-      // turn still arrives via onUserTranscript once the settler fires.
-      callbacks.onUserTranscriptPartial?.(text);
-    }
-    // A partial while an utterance is buffered means the speaker resumed after
-    // a pause: extend the settle window so the continuation aggregates into the
-    // same turn instead of the pre-pause fragment committing on its own.
-    if (settler.extendOnPartial(text)) return;
-    if (!partialTriggersBargeIn(text)) return;
-    log.info("Pipeline barge-in", { sid: opts.sid });
-    // Only an aborted in-flight turn can be resumed after a false alarm — its
-    // spoken-so-far text lands in history marked `[interrupted]`. A turn that
-    // already finished server-side (client playback tail) has no cut point to
-    // continue from, so no recovery timer is armed for it.
-    const wasTurnInFlight = turnController !== null;
-    abortInFlightTurn();
-    callbacks.onCancelled();
-    if (wasTurnInFlight) recovery.arm();
-  }
-
-  function onSttFinal(text: string): void {
-    if (terminated) return;
-    const trimmed = text.trim();
-    if (trimmed.length === 0) return;
-    // Real speech reached a final — whatever barge-in preceded it was not a
-    // false interruption; the settler will commit a genuine turn.
-    recovery.clear();
-    // A final can arrive without any preceding partial (short utterances on
-    // some STT providers) — make sure the speaking edge still fires.
-    speechEdges.speechStarted();
-    // The turn that follows (via the settler) re-arms the nudge on completion.
-    nudger.onUserTurn();
-    // Interrupt the agent's in-flight reply only for a clearly-intentional
-    // (>= threshold) utterance. A shorter one does NOT interrupt — it is
-    // buffered and answered once the reply finishes (chainTurn defers it),
-    // so short answers ("yes", a ZIP) spoken over the agent aren't lost.
-    const speaking = turnController !== null || playbackClock.pending();
-    if (speaking && countWords(trimmed) >= minBargeInWords) {
-      log.info("Pipeline replacing in-flight turn", { sid: opts.sid });
-      abortInFlightTurn();
-      callbacks.onCancelled();
-    }
-    settler.push(trimmed);
-  }
-
-  function onSttError(err: SttError): void {
-    if (terminated) return;
-    log.error("STT error", { code: err.code, message: err.message, sid: opts.sid });
-    emitError("stt", err.message);
-    terminate();
-  }
-
-  function onTtsError(err: TtsError): void {
-    if (terminated) return;
-    log.error("TTS error", { code: err.code, message: err.message, sid: opts.sid });
-    emitError("tts", err.message);
+    log.error(`${kind.toUpperCase()} error`, {
+      code: err.code,
+      message: err.message,
+      sid: opts.sid,
+    });
+    emitError(kind, err.message);
     terminate();
   }
 
@@ -446,6 +397,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       terminated = true;
       nudger.clear();
       recovery.clear();
+      speechEdges.reset();
       settler.reset();
       sessionAbort.abort();
       turnController?.abort();
@@ -487,7 +439,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     },
 
     reset(): void {
-      recovery.clear();
+      // A reset is user activity: restore the resume budget as well.
+      recovery.onUserTurn();
       speechEdges.reset();
       settler.reset();
       abortInFlightTurn();

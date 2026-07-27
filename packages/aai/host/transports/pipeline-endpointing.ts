@@ -5,7 +5,7 @@
 // false starts) commit as a single turn instead of the first fragment firing
 // a turn and the continuation barging in on it.
 
-import { countWords, utteranceLooksComplete } from "./pipeline-stream.ts";
+import { utteranceLooksComplete } from "./pipeline-stream.ts";
 
 /** Buffered-utterance endpoint settler. See {@link createEndpointSettler}. */
 export interface EndpointSettler {
@@ -24,8 +24,12 @@ export interface EndpointSettler {
    * window extends so the continuation aggregates into the same turn instead
    * of the pre-pause fragment committing on its own. Returns true when the
    * partial was consumed this way (the caller should skip barge-in handling).
+   *
+   * Takes the partial's word count rather than its text: the caller already
+   * counts words to drive the speaking edge and the barge-in threshold, and
+   * the count is O(transcript length) to compute.
    */
-  extendOnPartial(partialText: string): boolean;
+  extendOnPartial(words: number): boolean;
   /** Drop any buffered utterance and cancel its settle timer. */
   reset(): void;
 }
@@ -91,8 +95,8 @@ export function createEndpointSettler(opts: {
       }
       arm();
     },
-    extendOnPartial(partialText: string): boolean {
-      if (timer !== null && pending.length > 0 && countWords(partialText) >= 1) {
+    extendOnPartial(words: number): boolean {
+      if (timer !== null && pending.length > 0 && words >= 1) {
         arm();
         return true;
       }

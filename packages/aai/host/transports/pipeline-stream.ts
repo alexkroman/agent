@@ -18,7 +18,11 @@ import {
   type ToolSet,
 } from "ai";
 import pTimeout from "p-timeout";
-import { PIPELINE_FLUSH_TIMEOUT_MS, PIPELINE_PLAYBACK_GRACE_MS } from "../../sdk/constants.ts";
+import {
+  DEFAULT_HOLD_PHRASE,
+  PIPELINE_FLUSH_TIMEOUT_MS,
+  PIPELINE_PLAYBACK_GRACE_MS,
+} from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
 import type { Message, ToolChoice } from "../../sdk/types.ts";
@@ -203,9 +207,6 @@ type StreamPartHandlerDeps = {
   log: Logger;
   sid: string;
 };
-
-/** Default filler spoken before a silent turn's first tool call. */
-export const DEFAULT_HOLD_PHRASE = "One moment.";
 
 /**
  * Stateful per-turn handler for `streamText` `fullStream` parts.
