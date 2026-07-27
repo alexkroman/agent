@@ -113,6 +113,18 @@ export type TtsTextCoalescer = {
   send(text: string): void;
   /** Forward any buffered text. Call before the provider-level TTS flush. */
   flush(): void;
+  /**
+   * A speech segment ended (`text-end` / a tool call is about to run). Forwards
+   * whatever is buffered and re-arms the immediate-first-chunk allowance.
+   *
+   * Batching may only defer text that more text is still coming for. Holding a
+   * sub-threshold fragment ("let me") across a tool call would strand it for the
+   * whole execution window — the caller hears the words before it, then dead
+   * air, and `holdPhrase` is suppressed from covering that gap because the model
+   * did speak. Re-arming also keeps the post-tool reply's first words immediate,
+   * since that gap is exactly when time-to-first-audio matters again.
+   */
+  boundary(): void;
 };
 
 /**
@@ -156,6 +168,10 @@ export function createTtsTextCoalescer(sendRaw: (text: string) => void): TtsText
       if (pending.length >= TTS_COALESCE_MAX_CHARS || CLAUSE_BOUNDARY_RE.test(pending)) flush();
     },
     flush,
+    boundary(): void {
+      flush();
+      firstSent = false;
+    },
   };
 }
 
@@ -176,6 +192,11 @@ type StreamPartHandlerDeps = {
   onDelta: (delta: string) => void;
   /** Forwards text to the active TTS session (no-op if none). */
   sendTtsText: (text: string) => void;
+  /**
+   * A speech segment ended — see {@link TtsTextCoalescer.boundary}. Omitted when
+   * `sendTtsText` does no batching, in which case there is nothing to release.
+   */
+  onTtsBoundary?: (() => void) | undefined;
   /** Observability-only tool-call notification. */
   onToolCall: (callId: string, name: string, args: Record<string, unknown>) => void;
   /** Tool-result completion, so the client UI can flip pending → done. */
@@ -205,6 +226,7 @@ type StreamPartHandlerDeps = {
 function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart) => void {
   const { onDelta, sendTtsText, onToolCall, onToolCallDone, emitError, log, sid } = deps;
   const holdPhrase = deps.holdPhrase ?? DEFAULT_HOLD_PHRASE;
+  const ttsBoundary = deps.onTtsBoundary ?? ((): void => undefined);
   let pendingSeparator = false;
   let lastChar = "";
   // Track whether the model has spoken any text this turn, and whether we've
@@ -250,6 +272,10 @@ function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart
       }
       case "text-end":
         pendingSeparator = true;
+        // This segment is finished, so nothing more will arrive to batch with
+        // what is buffered — release it now rather than across the gap that
+        // usually follows (a tool call).
+        ttsBoundary();
         return;
       case "tool-call": {
         // Guarantee the caller hears a hold phrase if the model jumps straight
@@ -260,6 +286,10 @@ function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart
           emitText(holdPhrase);
           pendingSeparator = true;
         }
+        // Belt-and-braces for a tool call not preceded by `text-end`: the
+        // execution window must never start with speech still buffered. Also
+        // releases the hold phrase just emitted above.
+        ttsBoundary();
         // Observability only — actual execution happens inline via toVercelTools.
         const input = (part.input ?? {}) as Record<string, unknown>;
         onToolCall(part.toolCallId ?? "", part.toolName ?? "", input);
@@ -380,6 +410,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     const handlePart = createStreamPartHandler({
       onDelta,
       sendTtsText: ttsText.send,
+      onTtsBoundary: ttsText.boundary,
       holdPhrase,
       onToolCall: callbacks.onToolCall,
       onToolCallDone: callbacks.onToolCallDone,

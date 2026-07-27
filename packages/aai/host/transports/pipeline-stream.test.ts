@@ -19,6 +19,43 @@ describe("createTtsTextCoalescer", () => {
     expect(sent).toEqual(["Hello "]);
   });
 
+  test("boundary() releases a sub-threshold fragment instead of stranding it", () => {
+    const { sent, send } = collect();
+    const c = createTtsTextCoalescer(send);
+    // A turn that opens with speech, then calls a tool: "let me" is short and
+    // unpunctuated, so batching would hold it for the whole tool-execution
+    // window — the caller hears "Sure," then dead air.
+    c.send("Sure, ");
+    c.send("let me");
+    expect(sent).toEqual(["Sure, "]);
+    c.boundary();
+    expect(sent).toEqual(["Sure, ", "let me"]);
+  });
+
+  test("boundary() re-arms the immediate first chunk for the post-tool reply", () => {
+    const { sent, send } = collect();
+    const c = createTtsTextCoalescer(send);
+    c.send("Checking. ");
+    c.boundary();
+    // Time-to-first-audio matters again after the tool gap, so the next
+    // segment's opening words must not wait on a clause boundary.
+    c.send("I ");
+    expect(sent).toEqual(["Checking. ", "I "]);
+    // ...and batching resumes from there.
+    c.send("found ");
+    c.send("three ");
+    expect(sent).toEqual(["Checking. ", "I "]);
+    c.flush();
+    expect(sent).toEqual(["Checking. ", "I ", "found three "]);
+  });
+
+  test("boundary() on an empty buffer emits nothing", () => {
+    const { sent, send } = collect();
+    const c = createTtsTextCoalescer(send);
+    c.boundary();
+    expect(sent).toEqual([]);
+  });
+
   test("batches subsequent words to a clause/punctuation boundary", () => {
     const { sent, send } = collect();
     const c = createTtsTextCoalescer(send);
