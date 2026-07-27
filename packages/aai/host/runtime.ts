@@ -7,7 +7,6 @@
  * lifecycle hooks, and session management.
  */
 
-import type { LanguageModel } from "ai";
 import pTimeout from "p-timeout";
 import { createStorage } from "unstorage";
 import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "../sdk/_internal-types.ts";
@@ -19,9 +18,7 @@ import {
   assertProviderTriple,
   type LlmProvider,
   type SessionMode,
-  type SttOpener,
   type SttProvider,
-  type TtsOpener,
   type TtsProvider,
 } from "../sdk/providers.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
@@ -30,15 +27,15 @@ import { toolError } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createMemoryVector } from "./memory-vector.ts";
-import {
-  resolveLlmIfDescriptor,
-  resolveSttIfDescriptor,
-  resolveTtsIfDescriptor,
-} from "./providers/resolve.ts";
+import { resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
 import { resolveKv } from "./providers/resolve-kv.ts";
 import { resolveVector } from "./providers/resolve-vector.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
-import { createTransportFactory, type TransportSessionOpts } from "./runtime-transport.ts";
+import {
+  createTransportFactory,
+  type ResolvedPipelineProviders,
+  type TransportSessionOpts,
+} from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
@@ -65,9 +62,9 @@ function resolveEffectiveProviders(
   opts: RuntimeOptions,
   agent: AgentDef,
 ): {
-  stt: SttProvider | SttOpener | undefined;
-  llm: LlmProvider | LanguageModel | undefined;
-  tts: TtsProvider | TtsOpener | undefined;
+  stt: SttProvider | undefined;
+  llm: LlmProvider | undefined;
+  tts: TtsProvider | undefined;
   mode: SessionMode;
 } {
   const stt = opts.stt ?? agent.stt;
@@ -84,17 +81,19 @@ function resolveEffectiveProviders(
 function resolvePipelineProviders(
   p: {
     mode: SessionMode;
-    stt: SttProvider | SttOpener | undefined;
-    llm: LlmProvider | LanguageModel | undefined;
-    tts: TtsProvider | TtsOpener | undefined;
+    stt: SttProvider | undefined;
+    llm: LlmProvider | undefined;
+    tts: TtsProvider | undefined;
   },
   env: Record<string, string>,
-): { stt: SttOpener; llm: LanguageModel; tts: TtsOpener } | null {
+): ResolvedPipelineProviders | null {
   if (p.mode !== "pipeline" || !(p.stt && p.llm && p.tts)) return null;
+  // The STT/TTS env vars travel with their openers, so nothing downstream has
+  // to keep the raw descriptors around just to re-derive a credential.
   return {
-    stt: resolveSttIfDescriptor(p.stt),
-    llm: resolveLlmIfDescriptor(p.llm, env),
-    tts: resolveTtsIfDescriptor(p.tts),
+    stt: resolveStt(p.stt),
+    llm: resolveLlm(p.llm, env),
+    tts: resolveTts(p.tts),
   };
 }
 
@@ -282,7 +281,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     executeTool,
     env,
     s2sConfig,
-    effectiveProviders: { stt: effectiveProviders.stt, tts: effectiveProviders.tts },
     pipelineProviders,
     createWebSocket,
     createOpenaiRealtimeWebSocket,

@@ -10,6 +10,9 @@ import {
   createFakeLanguageModel,
   createFakeSttProvider,
   createFakeTtsProvider,
+  FAKE_STT_API_KEY_ENV,
+  FAKE_TTS_API_KEY_ENV,
+  registerFakeProviders,
 } from "./_pipeline-test-fakes.ts";
 import { flush, makeAgent, makeClientSink, makeMockHandle, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
@@ -233,20 +236,20 @@ describe("createRuntime with custom options", () => {
 describe("Runtime — session routing", () => {
   test("manifest with stt/llm/tts routes to PipelineSession (no S2S socket opened)", async () => {
     const createWebSocket = vi.fn();
-    // Named after real registry kinds so the API-key assertions below exercise
-    // credential routing rather than a default-vendor fallback.
-    const stt = createFakeSttProvider({ name: "assemblyai" });
-    const tts = createFakeTtsProvider({ name: "cartesia" });
-    const llm = createFakeLanguageModel({ script: [] });
+    const stt = createFakeSttProvider();
+    const tts = createFakeTtsProvider();
+    // Registered as provider kinds, so resolution — including which env var each
+    // credential comes from — runs exactly as it does for a real provider.
+    const fakes = registerFakeProviders({ stt, tts, llm: createFakeLanguageModel({ script: [] }) });
 
     const runtime = createRuntime({
       agent: makeAgent(),
-      env: { ASSEMBLYAI_API_KEY: "stt-key", CARTESIA_API_KEY: "tts-key" },
+      env: { [FAKE_STT_API_KEY_ENV]: "stt-key", [FAKE_TTS_API_KEY_ENV]: "tts-key" },
       logger: silentLogger,
       createWebSocket,
-      stt,
-      llm,
-      tts,
+      stt: fakes.stt,
+      llm: fakes.llm,
+      tts: fakes.tts,
     });
 
     const client = makeClientSink();
@@ -271,6 +274,7 @@ describe("Runtime — session routing", () => {
     expect(tts.last()?.opts.apiKey).toBe("tts-key");
 
     await session.stop();
+    fakes.unregister();
   });
 
   test("manifest without stt/llm/tts routes to S2sSession (createWebSocket IS called)", async () => {
