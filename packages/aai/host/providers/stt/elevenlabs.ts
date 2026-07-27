@@ -31,6 +31,7 @@ import {
   type SttSession,
 } from "../../../sdk/providers.ts";
 import { uint8ToBase64 } from "../../_base64.ts";
+import { pcm16ToBytes } from "../../_pcm.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
@@ -126,15 +127,10 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
       const frames = createPcmFrameAccumulator({
         sampleRate: openOpts.sampleRate,
         minFlushMs: 0,
-        // The SDK expects base64-encoded audio; uint8ToBase64 encodes a
-        // zero-copy view over the accumulator's backing buffer (the encode
-        // itself copies, so the view is not retained past the call).
-        send: (frame) =>
-          connection.send({
-            audioBase64: uint8ToBase64(
-              new Uint8Array(frame.buffer, frame.byteOffset, frame.byteLength),
-            ),
-          }),
+        // The SDK expects base64-encoded audio; pcm16ToBytes views the
+        // accumulator's own backing buffer and the encode copies out of it, so
+        // nothing retains the view past the call.
+        send: (frame) => connection.send({ audioBase64: uint8ToBase64(pcm16ToBytes(frame)) }),
       });
 
       return {

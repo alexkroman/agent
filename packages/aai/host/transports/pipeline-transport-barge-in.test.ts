@@ -5,18 +5,14 @@
 // shared helpers in _pipeline-transport-harness.ts.
 
 import { describe, expect, test, vi } from "vitest";
-import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
-import { makeOpts } from "./_pipeline-transport-harness.ts";
+import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
+import { inFlightReplyScript, makeOpts } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 describe("PipelineTransport", () => {
   describe("barge-in", () => {
     test("partial STT event during an in-flight turn triggers cancel and onCancelled", async () => {
-      const script: ScriptedPart[] = [
-        { type: "text", text: "Hello " },
-        { type: "text", text: "how can " },
-        { type: "text", text: "I help?" },
-      ];
+      const script = inFlightReplyScript();
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script, delayMs: 20 }),
       });
@@ -103,11 +99,7 @@ describe("PipelineTransport", () => {
     });
 
     test("minBargeInWords gate: a one-word partial does NOT interrupt when threshold is 2", async () => {
-      const script: ScriptedPart[] = [
-        { type: "text", text: "Hello " },
-        { type: "text", text: "how can " },
-        { type: "text", text: "I help?" },
-      ];
+      const script = inFlightReplyScript();
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script, delayMs: 20 }),
         minBargeInWords: 2,
@@ -127,11 +119,7 @@ describe("PipelineTransport", () => {
     });
 
     test("minBargeInWords gate: a two-word partial interrupts when threshold is 2", async () => {
-      const script: ScriptedPart[] = [
-        { type: "text", text: "Hello " },
-        { type: "text", text: "how can " },
-        { type: "text", text: "I help?" },
-      ];
+      const script = inFlightReplyScript();
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script, delayMs: 20 }),
         minBargeInWords: 2,
@@ -151,11 +139,7 @@ describe("PipelineTransport", () => {
     });
 
     test("minBargeInWords gate: a one-word final does NOT interrupt while speaking when threshold is 2", async () => {
-      const script: ScriptedPart[] = [
-        { type: "text", text: "Hello " },
-        { type: "text", text: "how can " },
-        { type: "text", text: "I help?" },
-      ];
+      const script = inFlightReplyScript();
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script, delayMs: 20 }),
         minBargeInWords: 2,
@@ -211,10 +195,7 @@ describe("PipelineTransport", () => {
     });
 
     test("cancelReply() aborts the turn and calls ttsSession.cancel()", async () => {
-      const script: ScriptedPart[] = [
-        { type: "text", text: "some " },
-        { type: "text", text: "reply" },
-      ];
+      const script = inFlightReplyScript();
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script, delayMs: 20 }),
       });

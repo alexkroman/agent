@@ -7,6 +7,7 @@ import { createStorage } from "unstorage";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
+import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent } from "./_test-utils.ts";
@@ -421,7 +422,13 @@ describe("createRuntime sandbox mode", () => {
     expect(runtime.toolSchemas.map((s) => s.name)).toEqual(["mock_tool"]);
   });
 
-  test("pre-resolved builtinDefs skip the merge (platform sandbox path)", () => {
+  test("sandbox path gets the default builtins merged alongside the agent's tools", () => {
+    // Regression guard: the platform used to resolve builtins itself off
+    // `IsolateConfig.builtinTools ?? []` and pass them in pre-resolved. Since
+    // the deploy path builds its config with `toAgentConfig` (which does not
+    // default `builtinTools`) rather than `parseManifest` (which does), every
+    // deployed agent that didn't set `builtinTools` silently lost the default
+    // cognitive builtins. Resolution now lives here for every caller.
     const mockToolSchemas = [
       { type: "function" as const, name: "mock_tool", description: "A mock tool", parameters: {} },
     ];
@@ -430,10 +437,10 @@ describe("createRuntime sandbox mode", () => {
       env: {},
       executeTool: vi.fn(async () => "ok"),
       toolSchemas: mockToolSchemas,
-      builtinDefs: {},
     });
-    // The caller owns schema merging in this path; nothing is appended.
-    expect(runtime.toolSchemas).toBe(mockToolSchemas);
+    const names = runtime.toolSchemas.map((s) => s.name);
+    expect(names).toContain("mock_tool");
+    expect(names).toEqual(expect.arrayContaining([...DEFAULT_BUILTIN_TOOLS]));
   });
 });
 

@@ -16,11 +16,7 @@ import escapeHtml from "escape-html";
 import { lookup as mimeLookup } from "mime-types";
 import { WebSocketServer } from "ws";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
-import type { Kv } from "../sdk/kv.ts";
-import { VectorRequestSchema } from "../sdk/protocol.ts";
 import type { AgentDef } from "../sdk/types.ts";
-import { errorMessage } from "../sdk/utils.ts";
-import type { Vector } from "../sdk/vector.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
 import { isHostAllowed, startHostSession } from "./host-mode.ts";
 import type { Runtime } from "./runtime.ts";
@@ -37,9 +33,6 @@ export { createRuntime, type Runtime, type RuntimeOptions } from "./runtime.ts";
 type ServerOptions = {
   runtime: Runtime;
   name?: string;
-  kv?: Kv;
-  vector?: Vector;
-  clientHtml?: string;
   clientDir?: string;
   logger?: Logger;
   /**
@@ -100,99 +93,16 @@ async function serveStatic(
   }
 }
 
-async function readBody(req: http.IncomingMessage): Promise<string> {
-  let body = "";
-  for await (const chunk of req) body += chunk;
-  return body;
-}
-
-async function handleVectorPost(
-  vector: Vector,
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-): Promise<void> {
-  try {
-    const parsed = VectorRequestSchema.safeParse(JSON.parse(await readBody(req)));
-    if (!parsed.success) {
-      sendJson(res, 400, { error: parsed.error.message });
-      return;
-    }
-    const op = parsed.data;
-    let result: unknown;
-    switch (op.op) {
-      case "upsert":
-        await vector.upsert(op.id, op.text, op.metadata);
-        result = "OK";
-        break;
-      case "query":
-        result = await vector.query(op.text, {
-          ...(op.topK !== undefined ? { topK: op.topK } : {}),
-          ...(op.filter !== undefined ? { filter: op.filter } : {}),
-        });
-        break;
-      case "delete":
-        await vector.delete(op.ids);
-        result = "OK";
-        break;
-      default: {
-        const _exhaustive: never = op;
-        return _exhaustive;
-      }
-    }
-    sendJson(res, 200, { result });
-  } catch (err) {
-    sendJson(res, 500, { error: errorMessage(err) });
-  }
-}
-
-async function handleKvGet(
-  kv: Kv,
-  req: http.IncomingMessage,
-  res: http.ServerResponse,
-): Promise<void> {
-  const key = new URL(req.url ?? "/", "http://localhost").searchParams.get("key");
-  if (!key) {
-    sendJson(res, 400, { error: "Missing key query parameter" });
-    return;
-  }
-  try {
-    const value = await kv.get(key);
-    if (value === null) {
-      res.writeHead(404, JSON_HEADERS);
-      res.end("null");
-      return;
-    }
-    sendJson(res, 200, value);
-  } catch {
-    sendJson(res, 500, { error: "KV error" });
-  }
-}
-
 /**
  * Create an HTTP + WebSocket server for an agent.
  *
  * @internal Used by aai-cli dev server.
  */
 export function createServer(options: ServerOptions): AgentServer {
-  const {
-    runtime,
-    clientHtml,
-    clientDir,
-    logger = consoleLogger,
-    kv,
-    vector,
-    env,
-    hostBaseAgent,
-  } = options;
+  const { runtime, clientDir, logger = consoleLogger, env, hostBaseAgent } = options;
   const name = options.name ?? "agent";
 
-  if (clientHtml && clientDir) {
-    throw new Error("clientHtml and clientDir are mutually exclusive");
-  }
-
-  const defaultHtml =
-    clientHtml ??
-    `<!DOCTYPE html><html><body><h1>${escapeHtml(name)}</h1><p>Agent server running.</p></body></html>`;
+  const defaultHtml = `<!DOCTYPE html><html><body><h1>${escapeHtml(name)}</h1><p>Agent server running.</p></body></html>`;
 
   async function handleRequest(
     req: http.IncomingMessage,
@@ -224,15 +134,6 @@ export function createServer(options: ServerOptions): AgentServer {
       sendJson(res, 200, { status: "ok", name });
       return;
     }
-    if (kv && method === "GET" && url === "/kv") {
-      void handleKvGet(kv, req, res);
-      return;
-    }
-    if (vector && method === "POST" && url === "/vector") {
-      void handleVectorPost(vector, req, res);
-      return;
-    }
-
     void handleRequest(req, res, url, method);
   });
 

@@ -366,30 +366,37 @@ type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
  */
 export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string> = new Set(["run_code"]);
 
+/**
+ * Builtins whose definition depends on the injected `fetch` (the platform
+ * supplies an SSRF-safe one), so they must be built per resolve.
+ */
+const FETCH_BUILTINS: Record<
+  string,
+  (fetchImpl?: typeof globalThis.fetch) => ToolDef & { guidance?: string }
+> = {
+  web_search: createWebSearch,
+  visit_webpage: createVisitWebpage,
+  fetch_json: createFetchJson,
+};
+
+/**
+ * Builtins with no injected dependencies. These were zero-argument factories
+ * returning the same literal on every call — i.e. constants — so they are built
+ * once at module load and the lookup replaces the dispatch switch.
+ */
+const STATIC_BUILTINS: Record<string, ToolDef & { guidance?: string }> = {
+  run_code: createRunCode(),
+  think: createThink(),
+  remember: createRemember(),
+  recall: createRecall(),
+  calculate: createCalculate(),
+};
+
 function resolveBuiltin(
   name: string,
   opts?: BuiltinToolOptions,
 ): (ToolDef & { guidance?: string }) | undefined {
-  switch (name) {
-    case "web_search":
-      return createWebSearch(opts?.fetch);
-    case "visit_webpage":
-      return createVisitWebpage(opts?.fetch);
-    case "fetch_json":
-      return createFetchJson(opts?.fetch);
-    case "run_code":
-      return createRunCode();
-    case "think":
-      return createThink();
-    case "remember":
-      return createRemember();
-    case "recall":
-      return createRecall();
-    case "calculate":
-      return createCalculate();
-    default:
-      return;
-  }
+  return FETCH_BUILTINS[name]?.(opts?.fetch) ?? STATIC_BUILTINS[name];
 }
 
 /** Resolved builtins with defs, schemas, and guidance computed in a single pass. */

@@ -6,18 +6,11 @@
  * `createRuntime` implementation. All imports here are type-only.
  */
 
-import type { LanguageModel } from "ai";
 import type { ToolSchema } from "../sdk/_internal-types.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink, ReadyConfig } from "../sdk/protocol.ts";
-import type {
-  LlmProvider,
-  SttOpener,
-  SttProvider,
-  TtsOpener,
-  TtsProvider,
-} from "../sdk/providers.ts";
-import type { AgentDef, ToolDef } from "../sdk/types.ts";
+import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
+import type { AgentDef } from "../sdk/types.ts";
 import type { Vector } from "../sdk/vector.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
@@ -106,11 +99,6 @@ export type RuntimeOptions = {
   /** System prompt guidance for builtin tools. Passed through in sandbox mode. */
   toolGuidance?: string[] | undefined;
   /**
-   * Pre-resolved builtin tool definitions. When provided alongside `executeTool`
-   * and `toolSchemas`, skips calling `resolveAllBuiltins` on the host.
-   */
-  builtinDefs?: Record<string, ToolDef> | undefined;
-  /**
    * Override the fetch implementation used by built-in tools (web_search,
    * visit_webpage, fetch_json). Defaults to `globalThis.fetch`.
    *
@@ -120,24 +108,21 @@ export type RuntimeOptions = {
    */
   fetch?: typeof globalThis.fetch | undefined;
   /**
-   * STT provider. Accepts either a descriptor ({@link SttProvider},
-   * the normal production path) or a pre-resolved {@link SttOpener}
-   * (test escape hatch). Must be set together with `llm` and `tts` to
-   * route sessions through the pipeline path; leave all three unset for
-   * the default AssemblyAI Streaming Speech-to-Speech (S2S) path.
+   * STT provider descriptor ({@link SttProvider}). Must be set together with
+   * `llm` and `tts` to route sessions through the pipeline path; leave all
+   * three unset for the default AssemblyAI Streaming Speech-to-Speech (S2S)
+   * path.
+   *
+   * Descriptors only — these fields used to also accept a pre-resolved opener
+   * as a test escape hatch, which forced API-key routing to sniff `opener.name`
+   * and guess. Tests now register a kind via `registerSttKind` and pass a
+   * descriptor like everything else.
    */
-  stt?: SttProvider | SttOpener | undefined;
-  /**
-   * LLM provider. Accepts either a descriptor ({@link LlmProvider},
-   * produced by factories like `anthropic(...)`) or a concrete Vercel AI
-   * SDK `LanguageModel` (self-hosted / test escape hatch).
-   */
-  llm?: LlmProvider | LanguageModel | undefined;
-  /**
-   * TTS provider. Accepts either a descriptor ({@link TtsProvider})
-   * or a pre-resolved {@link TtsOpener}.
-   */
-  tts?: TtsProvider | TtsOpener | undefined;
+  stt?: SttProvider | undefined;
+  /** LLM provider descriptor, from a factory like `anthropic(...)`. */
+  llm?: LlmProvider | undefined;
+  /** TTS provider descriptor ({@link TtsProvider}). */
+  tts?: TtsProvider | undefined;
 };
 
 /**

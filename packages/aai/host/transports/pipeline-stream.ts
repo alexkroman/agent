@@ -19,6 +19,7 @@ import {
 } from "ai";
 import pTimeout from "p-timeout";
 import {
+  DEFAULT_HOLD_PHRASE,
   PIPELINE_FLUSH_TIMEOUT_MS,
   PIPELINE_PLAYBACK_GRACE_MS,
   TTS_COALESCE_MAX_CHARS,
@@ -192,9 +193,6 @@ type StreamPartHandlerDeps = {
   sid: string;
 };
 
-/** Default filler spoken before a silent turn's first tool call. */
-export const DEFAULT_HOLD_PHRASE = "One moment.";
-
 /**
  * Stateful per-turn handler for `streamText` `fullStream` parts.
  *
@@ -204,7 +202,7 @@ export const DEFAULT_HOLD_PHRASE = "One moment.";
  * the transcript or streamed to TTS. When a boundary is crossed and neither
  * side carries whitespace, a single space is injected into both streams.
  */
-export function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart) => void {
+function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart) => void {
   const { onDelta, sendTtsText, onToolCall, onToolCallDone, emitError, log, sid } = deps;
   const holdPhrase = deps.holdPhrase ?? DEFAULT_HOLD_PHRASE;
   let pendingSeparator = false;

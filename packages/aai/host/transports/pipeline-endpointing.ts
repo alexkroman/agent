@@ -5,7 +5,8 @@
 // false starts) commit as a single turn instead of the first fragment firing
 // a turn and the continuation barging in on it.
 
-import { hasSpeech, utteranceLooksComplete } from "./pipeline-text.ts";
+import { createRestartableTimer } from "../_timer.ts";
+import { utteranceLooksComplete } from "./pipeline-text.ts";
 
 /** Buffered-utterance endpoint settler. See {@link createEndpointSettler}. */
 export interface EndpointSettler {
@@ -24,8 +25,12 @@ export interface EndpointSettler {
    * window extends so the continuation aggregates into the same turn instead
    * of the pre-pause fragment committing on its own. Returns true when the
    * partial was consumed this way (the caller should skip barge-in handling).
+   *
+   * Takes the partial's word count rather than its text: the caller already
+   * counts words to drive the speaking edge and the barge-in threshold, and
+   * the count is O(transcript length) to compute.
    */
-  extendOnPartial(partialText: string): boolean;
+  extendOnPartial(words: number): boolean;
   /** Drop any buffered utterance and cancel its settle timer. */
   reset(): void;
 }
@@ -45,24 +50,15 @@ export function createEndpointSettler(opts: {
   onCommit: (text: string) => void;
 }): EndpointSettler {
   let pending = "";
-  let timer: ReturnType<typeof setTimeout> | null = null;
-
-  /** Cancel any pending settle timer without dropping the buffered text. */
-  function clearTimer(): void {
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
-  }
+  const settleTimer = createRestartableTimer(() => commit());
 
   function arm(ms: number = opts.settleMs): void {
-    clearTimer();
-    timer = setTimeout(commit, ms);
+    settleTimer.arm(ms);
   }
 
   /** Commit the buffered utterance as a single turn. */
   function commit(): void {
-    clearTimer();
+    settleTimer.clear();
     const text = pending.trim();
     pending = "";
     if (text.length === 0) return;
@@ -91,15 +87,15 @@ export function createEndpointSettler(opts: {
       }
       arm();
     },
-    extendOnPartial(partialText: string): boolean {
-      if (timer !== null && pending.length > 0 && hasSpeech(partialText)) {
+    extendOnPartial(words: number): boolean {
+      if (settleTimer.pending() && pending.length > 0 && words >= 1) {
         arm();
         return true;
       }
       return false;
     },
     reset(): void {
-      clearTimer();
+      settleTimer.clear();
       pending = "";
     },
   };

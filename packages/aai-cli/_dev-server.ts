@@ -12,7 +12,7 @@ import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import type { AgentDef } from "@alexkroman1/aai";
-import type { AgentServer } from "@alexkroman1/aai/runtime";
+import { type AgentServer, requiredProviderEnvVars } from "@alexkroman1/aai/runtime";
 import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
 import pDebounce from "p-debounce";
@@ -26,20 +26,26 @@ import { errorMessage } from "./_utils.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
-/**
- * Whether this agent actually needs an AssemblyAI key: the default S2S mode
- * (no `stt`/`s2s` declared) or an explicit AssemblyAI STT/LLM provider. Agents
- * on other vendors shouldn't be prompted for an unrelated credential.
- */
-function needsAssemblyAiKey(agentDef: AgentDef): boolean {
-  if (!(agentDef.stt || agentDef.s2s)) return true;
-  return agentDef.stt?.kind === "assemblyai" || agentDef.llm?.kind === "assemblyai";
-}
-
 async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record<string, string>> {
   const env = await resolveServerEnv(root);
-  if (!env.ASSEMBLYAI_API_KEY && needsAssemblyAiKey(agentDef)) {
+  // Derived from the provider registries rather than matched against hardcoded
+  // kinds, so a new provider needs no change here and nothing is missed. (The
+  // previous check looked only at `stt`/`llm` and only for AssemblyAI.)
+  const required = requiredProviderEnvVars(agentDef);
+
+  // Only AssemblyAI's key has an interactive setup flow (it doubles as the
+  // platform credential), so that one is prompted for.
+  if (required.includes("ASSEMBLYAI_API_KEY") && !env.ASSEMBLYAI_API_KEY) {
     env.ASSEMBLYAI_API_KEY = await ensureApiKey();
+  }
+
+  // The rest would otherwise surface as an auth failure on the first session.
+  const missing = required.filter((name) => !(env[name] || process.env[name]));
+  if (missing.length > 0) {
+    log.warn(
+      `Missing provider credential${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}. ` +
+        `Set ${missing.length > 1 ? "them" : "it"} in .env or the environment.`,
+    );
   }
   return env;
 }

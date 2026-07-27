@@ -7,6 +7,7 @@ import {
   createFakeLanguageModel,
   createFakeSttProvider,
   createFakeTtsProvider,
+  type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
 import type { Logger } from "../runtime-config.ts";
 import type { PipelineTransportOptions } from "./pipeline-transport.ts";
@@ -67,6 +68,24 @@ export function makeOpts(
     ...overrides,
   };
   return { opts, stt, tts, callbacks };
+}
+
+/**
+ * A scripted reply that cannot finish on its own while a spec asserts on
+ * in-flight state (barge-in, `cancelReply()`, the `minBargeInWords` gates).
+ *
+ * Those specs `vi.waitFor` the *first* TTS chunk and then assert that the turn
+ * is still interruptible. A short script (3 parts × 20 ms ≈ 60 ms) can run to
+ * completion in the gap between those two lines when the machine is loaded —
+ * e.g. under `pnpm test`, where 8 turbo tasks compete for CPU — leaving no
+ * in-flight turn to cancel and failing the assertion. Padding the script to
+ * ~2 s of stream removes the race without slowing the specs down: every one of
+ * them aborts the stream (barge-in, `cancelReply()`, or `stop()`), and
+ * `streamScript` checks its abort signal between parts, so the untold parts are
+ * never waited on.
+ */
+export function inFlightReplyScript(): ScriptedPart[] {
+  return Array.from({ length: 100 }, (_, i) => ({ type: "text", text: `chunk${i} ` }));
 }
 
 export function firstCallArg<T>(fn: unknown): T {

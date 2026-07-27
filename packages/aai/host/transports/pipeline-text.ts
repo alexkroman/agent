@@ -55,11 +55,6 @@ export function hasMinWords(text: string, min: number): boolean {
   return scanWords(text, min) >= min;
 }
 
-/** True when `text` holds at least one non-whitespace character. */
-export function hasSpeech(text: string): boolean {
-  return hasMinWords(text, 1);
-}
-
 /**
  * Trailing tokens that signal the speaker is mid-thought and more speech is
  * coming — fillers, dangling connectives, articles, and prepositions. A final

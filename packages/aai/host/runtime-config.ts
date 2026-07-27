@@ -43,14 +43,16 @@ export function isDebugEnv(value: string | undefined): boolean {
 }
 
 /**
- * Whether debug logging is enabled for this process (`AAI_DEBUG=1`).
+ * Whether debug logging is enabled for this process: `AAI_DEBUG=1` or the
+ * `LOG_LEVEL=DEBUG` convention `aai-server/_debug-log.ts` already uses.
  *
  * Read once at module load — it gates per-message hot paths (audio frames,
  * stream deltas), so callers must not pay a `process.env` lookup per call.
  * Hot-path call sites also use this flag to skip building expensive log
  * payloads (e.g. `JSON.stringify` of full wire messages) entirely.
  */
-export const debugLoggingEnabled: boolean = isDebugEnv(process.env.AAI_DEBUG);
+export const debugLoggingEnabled: boolean =
+  isDebugEnv(process.env.AAI_DEBUG) || process.env.LOG_LEVEL === "DEBUG";
 
 const noopLog: LogFn = () => undefined;
 

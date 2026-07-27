@@ -6,7 +6,12 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
-import { firstCallArg, makeOpts, noopToolSchema } from "./_pipeline-transport-harness.ts";
+import {
+  firstCallArg,
+  inFlightReplyScript,
+  makeOpts,
+  noopToolSchema,
+} from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 describe("PipelineTransport — STT → LLM turn", () => {
@@ -410,14 +415,12 @@ describe("interrupted-speech persistence", () => {
       minBargeInWords: 1,
       llm: createFakeLanguageModel({
         steps: [
-          // Step 1: tool call (completes, result recorded). Step 2: slow text
-          // we barge into. Step 3: the follow-up turn's plain reply.
+          // Step 1: tool call (completes, result recorded). Step 2: text long
+          // enough that it is still streaming when we barge in — see
+          // inFlightReplyScript for why a short step flakes under load. Step 3:
+          // the follow-up turn's plain reply.
           [{ type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" }],
-          [
-            { type: "text", text: "I found " },
-            { type: "text", text: "your account " },
-            { type: "text", text: "just now." },
-          ],
+          [{ type: "text", text: "I found " }, ...inFlightReplyScript()],
           [{ type: "text", text: "Okay." }],
         ],
         delayMs: 20,

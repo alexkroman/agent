@@ -29,9 +29,10 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../../../sdk/providers.ts";
-import { errorMessage } from "../../../sdk/utils.ts";
+import { errorMessage, safeJsonParse } from "../../../sdk/utils.ts";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
+import { createRestartableTimer } from "../../_timer.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
@@ -68,12 +69,10 @@ function handleRimeMessage(
   armQuiescence: () => void,
   isActiveTimer: () => boolean,
 ): void {
-  let msg: RimeMessage;
-  try {
-    msg = JSON.parse(typeof raw === "string" ? raw : raw.toString()) as RimeMessage;
-  } catch {
-    return;
-  }
+  const msg = safeJsonParse(typeof raw === "string" ? raw : raw.toString()) as
+    | RimeMessage
+    | undefined;
+  if (msg === undefined) return;
 
   if (msg.type === "chunk" && typeof msg.data === "string") {
     const pcm = bytesToPcm16(base64ToUint8(msg.data));
@@ -122,20 +121,16 @@ export function openRime(opts: RimeOptions): TtsOpener {
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
       let doneEmitted = false;
-      let quiescenceTimer: ReturnType<typeof setTimeout> | null = null;
-
-      const clearQuiescence = () => {
-        if (quiescenceTimer !== null) {
-          clearTimeout(quiescenceTimer);
-          quiescenceTimer = null;
-        }
-      };
+      // One timer serving both windows: whichever was armed last wins, which is
+      // the intent — the first-audio deadline is replaced by the quiescence
+      // deadline as soon as audio starts flowing.
+      const quiescence = createRestartableTimer(() => emitDoneOnce());
 
       const shell = createSessionShell({
         makeStreamError: (msg) => makeTtsError("tts_stream_error", msg),
         emitError: (err) => emitter.emit("error", err),
         teardown: () => {
-          clearQuiescence();
+          quiescence.clear();
           ws.close();
           // Drop our handlers so their closures don't stay reachable via the
           // socket if `ws` outlives this session.
@@ -144,25 +139,18 @@ export function openRime(opts: RimeOptions): TtsOpener {
       });
 
       const emitDoneOnce = () => {
-        clearQuiescence();
+        quiescence.clear();
         if (doneEmitted || shell.isClosed()) return;
         doneEmitted = true;
         emitter.emit("done");
       };
 
-      const armQuiescence = () => {
-        clearQuiescence();
-        quiescenceTimer = setTimeout(emitDoneOnce, QUIESCENCE_MS);
-      };
-
-      const armFirstAudioTimer = () => {
-        clearQuiescence();
-        quiescenceTimer = setTimeout(emitDoneOnce, FIRST_AUDIO_TIMEOUT_MS);
-      };
+      const armQuiescence = () => quiescence.arm(QUIESCENCE_MS);
+      const armFirstAudioTimer = () => quiescence.arm(FIRST_AUDIO_TIMEOUT_MS);
 
       ws.on("message", (raw: WebSocket.Data) => {
         if (shell.isClosed()) return;
-        handleRimeMessage(raw, emitter, armQuiescence, () => quiescenceTimer !== null);
+        handleRimeMessage(raw, emitter, armQuiescence, quiescence.pending);
       });
 
       ws.on("error", (err: Error) => shell.onSocketError(err));

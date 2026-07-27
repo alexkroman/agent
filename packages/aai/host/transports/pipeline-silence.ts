@@ -4,6 +4,7 @@
 // transport supplies the actual turn via `onNudge`.
 
 import { MAX_CONSECUTIVE_SILENCE_NUDGES } from "../../sdk/constants.ts";
+import { createCoalescingTimer } from "../_timer.ts";
 
 export type SilenceNudger = {
   /**
@@ -37,38 +38,20 @@ export function createSilenceNudger(opts: {
 }): SilenceNudger {
   const raw = opts.timeoutMs ?? 0;
   const timeoutMs = Number.isFinite(raw) && raw > 0 ? raw : 0;
-  let timer: ReturnType<typeof setTimeout> | null = null;
   let consecutive = 0;
-  // When the countdown last (re)started. arm() is called per STT partial
-  // (~5-10/s while the user speaks), so it must stay cheap: record the
-  // timestamp and keep ONE long-lived timer that, on expiry, sleeps out any
-  // remainder instead of clearTimeout+setTimeout on every call (mirrors
-  // session-core's resetIdle).
-  let armedAtMs = 0;
-
-  function clear(): void {
-    if (timer !== null) {
-      clearTimeout(timer);
-      timer = null;
-    }
-  }
+  // Coalescing, not restartable: arm() runs per STT partial, so it records the
+  // deadline and keeps one long-lived timer instead of a clear+set pair per call.
+  const countdown = createCoalescingTimer(() => onElapsed());
 
   function arm(): void {
-    if (timeoutMs <= 0 || !opts.isActive()) return;
+    if (!opts.isActive()) return;
     if (consecutive >= MAX_CONSECUTIVE_SILENCE_NUDGES) return;
-    armedAtMs = Date.now();
-    if (timer === null) timer = setTimeout(onDeadline, timeoutMs);
+    // arm() no-ops on a non-positive window, which is how "disabled" is spelled.
+    countdown.arm(timeoutMs);
   }
 
-  function onDeadline(): void {
-    timer = null;
+  function onElapsed(): void {
     if (!opts.isActive()) return;
-    const remaining = armedAtMs + timeoutMs - Date.now();
-    if (remaining > 0) {
-      // Re-armed since the timer was set — sleep out the remainder.
-      timer = setTimeout(onDeadline, remaining);
-      return;
-    }
     // A turn is in flight (or buffered audio is still playing client-side):
     // defer without spending budget and check again after another window.
     if (opts.isTurnInFlight()) {
@@ -81,7 +64,7 @@ export function createSilenceNudger(opts: {
 
   return {
     arm,
-    clear,
+    clear: countdown.clear,
     onUserSpeech(): void {
       consecutive = 0;
       // If the utterance never reaches a final, the re-armed countdown
@@ -90,7 +73,7 @@ export function createSilenceNudger(opts: {
     },
     onUserTurn(): void {
       consecutive = 0;
-      clear();
+      countdown.clear();
     },
   };
 }

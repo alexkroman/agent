@@ -7,7 +7,6 @@
  * lifecycle hooks, and session management.
  */
 
-import type { LanguageModel } from "ai";
 import pTimeout from "p-timeout";
 import { createStorage } from "unstorage";
 import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "../sdk/_internal-types.ts";
@@ -19,26 +18,24 @@ import {
   assertProviderTriple,
   type LlmProvider,
   type SessionMode,
-  type SttOpener,
   type SttProvider,
-  type TtsOpener,
   type TtsProvider,
 } from "../sdk/providers.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
-import type { AgentDef } from "../sdk/types.ts";
+import type { AgentDef, ToolDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createMemoryVector } from "./memory-vector.ts";
-import {
-  resolveLlmIfDescriptor,
-  resolveSttIfDescriptor,
-  resolveTtsIfDescriptor,
-} from "./providers/resolve.ts";
+import { resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
 import { resolveKv } from "./providers/resolve-kv.ts";
 import { resolveVector } from "./providers/resolve-vector.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
-import { createTransportFactory, type TransportSessionOpts } from "./runtime-transport.ts";
+import {
+  createTransportFactory,
+  type ResolvedPipelineProviders,
+  type TransportSessionOpts,
+} from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
@@ -65,9 +62,9 @@ function resolveEffectiveProviders(
   opts: RuntimeOptions,
   agent: AgentDef,
 ): {
-  stt: SttProvider | SttOpener | undefined;
-  llm: LlmProvider | LanguageModel | undefined;
-  tts: TtsProvider | TtsOpener | undefined;
+  stt: SttProvider | undefined;
+  llm: LlmProvider | undefined;
+  tts: TtsProvider | undefined;
   mode: SessionMode;
 } {
   const stt = opts.stt ?? agent.stt;
@@ -84,46 +81,43 @@ function resolveEffectiveProviders(
 function resolvePipelineProviders(
   p: {
     mode: SessionMode;
-    stt: SttProvider | SttOpener | undefined;
-    llm: LlmProvider | LanguageModel | undefined;
-    tts: TtsProvider | TtsOpener | undefined;
+    stt: SttProvider | undefined;
+    llm: LlmProvider | undefined;
+    tts: TtsProvider | undefined;
   },
   env: Record<string, string>,
-): { stt: SttOpener; llm: LanguageModel; tts: TtsOpener } | null {
+): ResolvedPipelineProviders | null {
   if (p.mode !== "pipeline" || !(p.stt && p.llm && p.tts)) return null;
+  // The STT/TTS env vars travel with their openers, so nothing downstream has
+  // to keep the raw descriptors around just to re-derive a credential.
   return {
-    stt: resolveSttIfDescriptor(p.stt),
-    llm: resolveLlmIfDescriptor(p.llm, env),
-    tts: resolveTtsIfDescriptor(p.tts),
+    stt: resolveStt(p.stt),
+    llm: resolveLlm(p.llm, env),
+    tts: resolveTts(p.tts),
   };
 }
 
 /**
- * Resolve builtins for the sandbox/relay tool path. Platform callers
- * (aai-server/sandbox.ts) pre-resolve builtins and pass `builtinDefs` with
- * schemas/guidance already merged into `toolSchemas`/`toolGuidance`; relay
- * callers (host mode, e.g. a tau2 harness supplying its own tools) get the
- * agent's builtins resolved and merged here, so relayed sessions expose
- * think/remember/recall/calculate too. A relayed tool with the same name
- * wins — the colliding builtin is dropped from both dispatch and schemas so
- * the host never shadows a tool the client expects to execute.
+ * Resolve builtins for the sandbox/relay tool path — the single owner of that
+ * decision for every caller (platform sandbox, relay/host mode, self-hosted).
+ * Callers supply the tools they dispatch themselves via `toolSchemas`; a
+ * supplied tool with the same name as a builtin wins, and the colliding builtin
+ * is dropped from both dispatch and schemas so the host never shadows a tool
+ * the caller expects to execute and the LLM never sees a duplicate name.
  */
 function resolveSandboxBuiltins(
   agent: AgentDef,
   opts: RuntimeOptions,
   fetchOpt: { fetch: typeof globalThis.fetch } | undefined,
 ): {
-  defs: NonNullable<RuntimeOptions["builtinDefs"]>;
+  defs: Record<string, ToolDef>;
   schemas: ToolSchema[];
   guidance: string[];
 } {
   const providedSchemas = opts.toolSchemas ?? [];
-  if (opts.builtinDefs) {
-    return { defs: opts.builtinDefs, schemas: providedSchemas, guidance: opts.toolGuidance ?? [] };
-  }
-  const relayedNames = new Set(providedSchemas.map((s) => s.name));
+  const providedNames = new Set(providedSchemas.map((s) => s.name));
   const names = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
-    (name) => !relayedNames.has(name),
+    (name) => !providedNames.has(name),
   );
   const builtins = resolveAllBuiltins(names, fetchOpt);
   return {
@@ -290,12 +284,34 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     executeTool,
     env,
     s2sConfig,
-    effectiveProviders: { stt: effectiveProviders.stt, tts: effectiveProviders.tts },
     pipelineProviders,
     createWebSocket,
     createOpenaiRealtimeWebSocket,
     logger,
   });
+
+  // buildSystemPrompt's inputs (agentConfig, tool presence, guidance) are all
+  // fixed for the runtime's lifetime, but it stamps today's date via
+  // Intl.DateTimeFormat — the most expensive thing on the session-start path
+  // with no reason to be there. Cached per calendar day rather than hoisted
+  // outright, so a replica that lives across midnight doesn't keep serving
+  // yesterday's date.
+  const hasToolsForPrompt = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
+  let promptCache: { day: string; text: string } | null = null;
+  function systemPromptForToday(): string {
+    const day = new Date().toDateString();
+    if (promptCache?.day !== day) {
+      promptCache = {
+        day,
+        text: buildSystemPrompt(agentConfig, {
+          hasTools: hasToolsForPrompt,
+          voice: true,
+          toolGuidance,
+        }),
+      };
+    }
+    return promptCache.text;
+  }
 
   function createSession(sessionOpts: TransportSessionOpts): SessionCore {
     sinkMap.set(sessionOpts.id, sessionOpts.client);
@@ -304,12 +320,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // Relay (host) mode: the relay `executeTool` emits the client-facing
     // `tool_call` itself (mirrors session-core's `!opts.onToolResult` guard).
     const isRelay = Boolean(opts.onToolResult);
-    const hasTools = toolSchemas.length > 0 || (agentConfig.builtinTools?.length ?? 0) > 0;
-    const systemPrompt = buildSystemPrompt(agentConfig, {
-      hasTools,
-      voice: true,
-      toolGuidance,
-    });
+    const systemPrompt = systemPromptForToday();
 
     // Late-bound reference: callbacks are constructed before SessionCore exists,
     // so we capture a reference and fill it in below.

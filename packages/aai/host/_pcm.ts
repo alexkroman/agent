@@ -14,3 +14,12 @@ export function bytesToPcm16(bytes: Uint8Array): Int16Array {
   copy.set(bytes.subarray(0, copy.byteLength));
   return new Int16Array(copy.buffer);
 }
+
+/**
+ * View PCM16 samples as audio bytes. Always zero-copy — the returned array
+ * aliases the samples' backing buffer, so callers must not retain it past the
+ * point where the samples may be reused.
+ */
+export function pcm16ToBytes(pcm: Int16Array): Uint8Array {
+  return new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+}

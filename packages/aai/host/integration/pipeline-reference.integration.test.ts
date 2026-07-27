@@ -22,11 +22,11 @@
 import { readFile, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { openai } from "@ai-sdk/openai";
 import { describe, expect, test } from "vitest";
 import type { ClientSink } from "../../sdk/protocol.ts";
-import { openAssemblyAI } from "../providers/stt/assemblyai.ts";
-import { openCartesia } from "../providers/tts/cartesia.ts";
+import { openai } from "../../sdk/providers/llm/openai.ts";
+import { assemblyAI } from "../../sdk/providers/stt/assemblyai.ts";
+import { cartesia } from "../../sdk/providers/tts/cartesia.ts";
 import { createRuntime } from "../runtime.ts";
 import { consoleLogger } from "../runtime-config.ts";
 
@@ -84,9 +84,11 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
         // biome-ignore lint/style/noNonNullAssertion: envReady guard ensures presence
         CARTESIA_API_KEY: CARTESIA_API_KEY!,
       },
-      stt: openAssemblyAI({ model: "u3pro-rt" }),
-      llm: openai("gpt-4o-mini"),
-      tts: openCartesia({ voice: "694f9389-aac1-45b6-b726-9d9369183238" }),
+      // Descriptors, not pre-resolved openers — so this exercises the same
+      // resolution path (and API-key routing) a deployed agent takes.
+      stt: assemblyAI({ model: "u3pro-rt" }),
+      llm: openai({ model: "gpt-4o-mini" }),
+      tts: cartesia({ voice: "694f9389-aac1-45b6-b726-9d9369183238" }),
       logger: consoleLogger,
     });
 

@@ -7,7 +7,7 @@ import { STT_FRAME_MAX_MS, STT_FRAME_TARGET_MS } from "../../sdk/constants.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 
 /** PCM16 sample rates accepted by providers that stream raw PCM16 LE audio. */
-export const PCM16_RATES = [
+const PCM16_RATES = [
   8000, 16_000, 22_050, 24_000, 44_100, 48_000,
 ] as const satisfies readonly number[];
 export type Pcm16Rate = (typeof PCM16_RATES)[number];

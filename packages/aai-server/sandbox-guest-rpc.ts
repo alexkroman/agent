@@ -10,6 +10,11 @@
  */
 
 import type { Kv } from "@alexkroman1/aai";
+import {
+  VectorDeleteSchema,
+  VectorQuerySchema,
+  VectorUpsertSchema,
+} from "@alexkroman1/aai/protocol";
 import type { Vector } from "@alexkroman1/aai/runtime";
 import { z } from "zod";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
@@ -46,19 +51,12 @@ const KvDelParamsSchema = z.object({ key: SafeKvKeySchema });
 
 // ── Vector param schemas for guest → host validation ────────────────────────
 
-const VectorUpsertParamsSchema = z.object({
-  id: z.string().min(1),
-  text: z.string().min(1),
-  metadata: z.record(z.string(), z.unknown()).optional(),
-});
-const VectorQueryParamsSchema = z.object({
-  text: z.string().min(1),
-  topK: z.number().int().positive().max(100).optional(),
-  filter: z.record(z.string(), z.unknown()).optional(),
-});
-const VectorDeleteParamsSchema = z.object({
-  ids: z.union([z.string().min(1), z.array(z.string().min(1)).max(1000)]),
-});
+// Derived from the wire schemas rather than restated: the RPC params are those
+// shapes minus the `op` discriminator (the method name carries it here). Keeps
+// the `topK` and `ids` caps in exactly one place.
+const VectorUpsertParamsSchema = VectorUpsertSchema.omit({ op: true });
+const VectorQueryParamsSchema = VectorQuerySchema.omit({ op: true });
+const VectorDeleteParamsSchema = VectorDeleteSchema.omit({ op: true });
 
 // ── Fetch param schema for guest → host validation ──────────────────────────
 

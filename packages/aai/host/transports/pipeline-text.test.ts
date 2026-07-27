@@ -3,7 +3,7 @@
 // behavior (settle window, aggregation) lives in pipeline-turn.test.ts.
 
 import { describe, expect, test } from "vitest";
-import { countWords, hasMinWords, hasSpeech, utteranceLooksComplete } from "./pipeline-text.ts";
+import { countWords, hasMinWords, utteranceLooksComplete } from "./pipeline-text.ts";
 
 /** The `split`-based implementation these helpers replaced, as an oracle. */
 const splitCount = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
@@ -48,14 +48,6 @@ describe("hasMinWords", () => {
   test("a non-positive threshold is always satisfied", () => {
     expect(hasMinWords("", 0)).toBe(true);
     expect(hasMinWords("", -1)).toBe(true);
-  });
-});
-
-describe("hasSpeech", () => {
-  test("true only when a non-whitespace character is present", () => {
-    for (const text of SAMPLES) {
-      expect(hasSpeech(text), JSON.stringify(text)).toBe(text.trim().length > 0);
-    }
   });
 });
 

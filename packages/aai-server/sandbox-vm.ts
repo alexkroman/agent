@@ -58,7 +58,6 @@ export type SandboxVmOptions = {
   kv?: Kv;
   /** Resolved Vector instance (enables vector/* RPC handlers when set). */
   vector?: Vector;
-  limits?: SandboxResourceLimits;
   allowedHosts?: string[];
 };
 
@@ -250,14 +249,14 @@ async function spawnGvisorWarm(
  */
 export async function spawnWarmHarness(opts: {
   harnessPath: string;
-  limits?: SandboxResourceLimits;
   slug?: string;
 }): Promise<WarmHarness> {
-  const envLimits = parseSandboxLimitsFromEnv(process.env);
-  const mergedLimits: SandboxResourceLimits = { ...envLimits, ...opts.limits };
-
   if (isGvisorAvailable()) {
-    return spawnGvisorWarm(opts.slug ?? "pool", opts.harnessPath, mergedLimits);
+    return spawnGvisorWarm(
+      opts.slug ?? "pool",
+      opts.harnessPath,
+      parseSandboxLimitsFromEnv(process.env),
+    );
   }
 
   if (process.env.NODE_ENV === "production") {
@@ -273,6 +272,25 @@ function clamp(value: number, min: number, max: number): number {
 }
 
 /**
+ * One row per operator-overridable limit: env var, target field, clamp bounds,
+ * and the multiplier converting the env var's unit to the field's. Keeping the
+ * bounds next to the field they clamp is the point — in the previous
+ * copy-pasted blocks a mismatched pair was invisible.
+ */
+const LIMIT_SPECS = [
+  ["SANDBOX_MEMORY_LIMIT_MB", "memoryLimitBytes", 16, 512, 1024 * 1024],
+  ["SANDBOX_PID_LIMIT", "pidLimit", 8, 256, 1],
+  ["SANDBOX_TMPFS_LIMIT_MB", "tmpfsSizeBytes", 1, 100, 1024 * 1024],
+  ["SANDBOX_CPU_TIME_LIMIT_SECS", "cpuTimeLimitSecs", 10, 300, 1],
+] as const satisfies readonly (readonly [
+  string,
+  keyof SandboxResourceLimits,
+  number,
+  number,
+  number,
+])[];
+
+/**
  * Parses sandbox resource limits from environment variables.
  * Unset or non-numeric vars are ignored (use built-in defaults).
  */
@@ -280,25 +298,9 @@ export function parseSandboxLimitsFromEnv(
   env: Record<string, string | undefined>,
 ): SandboxResourceLimits {
   const limits: SandboxResourceLimits = {};
-
-  const memMb = Number(env.SANDBOX_MEMORY_LIMIT_MB);
-  if (Number.isFinite(memMb)) {
-    limits.memoryLimitBytes = clamp(memMb, 16, 512) * 1024 * 1024;
-  }
-
-  const pids = Number(env.SANDBOX_PID_LIMIT);
-  if (Number.isFinite(pids)) {
-    limits.pidLimit = clamp(pids, 8, 256);
-  }
-
-  const tmpfsMb = Number(env.SANDBOX_TMPFS_LIMIT_MB);
-  if (Number.isFinite(tmpfsMb)) {
-    limits.tmpfsSizeBytes = clamp(tmpfsMb, 1, 100) * 1024 * 1024;
-  }
-
-  const cpuSecs = Number(env.SANDBOX_CPU_TIME_LIMIT_SECS);
-  if (Number.isFinite(cpuSecs)) {
-    limits.cpuTimeLimitSecs = clamp(cpuSecs, 10, 300);
+  for (const [envVar, field, min, max, scale] of LIMIT_SPECS) {
+    const raw = Number(env[envVar]);
+    if (Number.isFinite(raw)) limits[field] = clamp(raw, min, max) * scale;
   }
 
   return limits;
@@ -334,15 +336,13 @@ export async function createSandboxVm(
   pool?: WarmHarnessSource,
 ): Promise<SandboxHandle> {
   const t0 = process.hrtime.bigint();
-  // Default to "cold". `createSandboxVmInner` flips this to "warm" if the
-  // pool returns a ready harness — that's the only fast path.
-  const pathRef = { path: "cold" as SandboxInitPath };
   try {
-    const result = await createSandboxVmInner(opts, pool, pathRef);
-    metrics.sandboxInit.observe({ path: pathRef.path }, hrtimeSeconds(t0));
-    return result;
+    const { handle, path } = await createSandboxVmInner(opts, pool);
+    metrics.sandboxInit.observe({ path }, hrtimeSeconds(t0));
+    return handle;
   } catch (err) {
-    metrics.sandboxInit.observe({ path: pathRef.path }, hrtimeSeconds(t0));
+    // A throw means the warm path was never taken, so the label is "cold".
+    metrics.sandboxInit.observe({ path: "cold" }, hrtimeSeconds(t0));
     metrics.sandboxInitFailed.inc({ reason: classifyInitFailure(err) });
     throw err;
   }
@@ -359,14 +359,11 @@ function classifyInitFailure(err: unknown): SandboxInitFailReason {
 async function createSandboxVmInner(
   opts: SandboxVmOptions,
   pool: WarmHarnessSource | undefined,
-  pathRef: { path: SandboxInitPath },
-): Promise<SandboxHandle> {
+): Promise<{ handle: SandboxHandle; path: SandboxInitPath }> {
   if (pool) {
     const warm = await pool.acquire();
-    if (warm) {
-      pathRef.path = "warm";
-      return configureSandbox(warm, opts);
-    }
+    // A ready pooled harness is the only fast path.
+    if (warm) return { handle: await configureSandbox(warm, opts), path: "warm" };
   }
 
   if (!isGvisorAvailable() && process.env.NODE_ENV !== "production") {
@@ -374,11 +371,10 @@ async function createSandboxVmInner(
       "[sandbox] WARNING: gVisor not available. Running without sandbox isolation (dev mode only).",
     );
   }
-  // spawnWarmHarness owns the env-var limits merge — no need to pre-merge here.
+  // spawnWarmHarness reads the env-var limits itself.
   const warm = await spawnWarmHarness({
     harnessPath: opts.harnessPath,
-    ...(opts.limits ? { limits: opts.limits } : {}),
     slug: opts.slug,
   });
-  return configureSandbox(warm, opts);
+  return { handle: await configureSandbox(warm, opts), path: "cold" };
 }

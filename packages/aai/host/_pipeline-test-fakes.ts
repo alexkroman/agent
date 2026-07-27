@@ -18,15 +18,19 @@ import type { LanguageModel } from "ai";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import { vi } from "vitest";
 import type {
+  LlmProvider,
   SttEvents,
   SttOpener,
   SttOpenOptions,
+  SttProvider,
   SttSession,
   TtsEvents,
   TtsOpener,
   TtsOpenOptions,
+  TtsProvider,
   TtsSession,
 } from "../sdk/providers.ts";
+import { registerLlmKind, registerSttKind, registerTtsKind } from "./providers/resolve.ts";
 
 function makeCodedError<C extends string>(code: C, message: string): Error & { code: C } {
   return Object.assign(new Error(message), { code });
@@ -356,4 +360,89 @@ export function createFakeLanguageModel(
     },
   };
   return model as unknown as LanguageModel & { readonly calls: readonly Record<string, unknown>[] };
+}
+
+// ─── Registering fakes as provider kinds ─────────────────────────────────────
+
+/** Env var the fake STT kind's credential is read from. */
+export const FAKE_STT_API_KEY_ENV = "FAKE_STT_API_KEY";
+/** Env var the fake TTS kind's credential is read from. */
+export const FAKE_TTS_API_KEY_ENV = "FAKE_TTS_API_KEY";
+/** Env var the fake LLM kind's credential is read from. */
+export const FAKE_LLM_API_KEY_ENV = "FAKE_LLM_API_KEY";
+
+const FAKE_STT_KIND = "fake-stt";
+const FAKE_TTS_KIND = "fake-tts";
+const FAKE_LLM_KIND = "fake-llm";
+
+/**
+ * Register fakes as real provider kinds and hand back the descriptors that
+ * resolve to them, so a test can drive `createRuntime` through exactly the
+ * descriptor path production uses.
+ *
+ * `RuntimeOptions.stt/llm/tts` used to accept a pre-resolved opener as a test
+ * escape hatch. That union was why API-key routing had to sniff `opener.name`
+ * and guess a registry entry — a kindless value carries no kind — which in turn
+ * needed a wrong-vendor fallback. Registering a kind removes the need for any of
+ * that: a fake resolves with its own env var like any other provider.
+ *
+ * Always release the registration (the registry is module-level):
+ *
+ * ```ts
+ * const fakes = registerFakeProviders({ stt, tts, llm });
+ * try { ... } finally { fakes.unregister(); }
+ * ```
+ */
+export function registerFakeProviders(fakes: {
+  stt?: FakeSttProvider;
+  tts?: FakeTtsProvider;
+  llm?: LanguageModel;
+}): {
+  /** Descriptors to pass to `createRuntime`. Only the supplied fakes appear. */
+  readonly stt: SttProvider | undefined;
+  readonly tts: TtsProvider | undefined;
+  readonly llm: LlmProvider | undefined;
+  /** Restore the registries. Call in a `finally` / cleanup hook. */
+  unregister(): void;
+} {
+  const undo: (() => void)[] = [];
+
+  // Seed the fake credentials in process.env (resolveApiKey's fallback), so a
+  // spec can keep passing `env: {}`. resolveLlm throws on a missing key, and the
+  // openers receive theirs through providerKeys.
+  for (const name of [FAKE_STT_API_KEY_ENV, FAKE_TTS_API_KEY_ENV, FAKE_LLM_API_KEY_ENV]) {
+    if (process.env[name] !== undefined) continue;
+    process.env[name] = `${name}-value`;
+    undo.push(() => {
+      delete process.env[name];
+    });
+  }
+
+  if (fakes.stt) {
+    const stt = fakes.stt;
+    undo.push(registerSttKind(FAKE_STT_KIND, { envVar: FAKE_STT_API_KEY_ENV, open: () => stt }));
+  }
+  if (fakes.tts) {
+    const tts = fakes.tts;
+    undo.push(registerTtsKind(FAKE_TTS_KIND, { envVar: FAKE_TTS_API_KEY_ENV, open: () => tts }));
+  }
+  if (fakes.llm) {
+    const llm = fakes.llm;
+    undo.push(
+      registerLlmKind(FAKE_LLM_KIND, {
+        envVar: FAKE_LLM_API_KEY_ENV,
+        label: "Fake",
+        create: () => llm,
+      }),
+    );
+  }
+
+  return {
+    stt: fakes.stt ? { kind: FAKE_STT_KIND, options: {} } : undefined,
+    tts: fakes.tts ? { kind: FAKE_TTS_KIND, options: {} } : undefined,
+    llm: fakes.llm ? { kind: FAKE_LLM_KIND, options: {} } : undefined,
+    unregister(): void {
+      for (const fn of undo.reverse()) fn();
+    },
+  };
 }

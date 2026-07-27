@@ -28,7 +28,6 @@ export const FETCH_TIMEOUT_MS = 15_000;
  * that would otherwise reconnect forever with no backoff.
  */
 export const S2S_MAX_RESUME_ATTEMPTS = 5;
-export const RUN_CODE_TIMEOUT_MS = 5000;
 export const DEFAULT_SHUTDOWN_TIMEOUT_MS = 30_000;
 
 /**
@@ -150,6 +149,13 @@ export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 500;
 export const DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS = 2000;
 
 /**
+ * Default filler spoken when a pipeline turn's first action is a tool call with
+ * no preceding text — guarantees the caller hears something instead of dead air
+ * while the tool runs. `""` disables it.
+ */
+export const DEFAULT_HOLD_PHRASE = "One moment.";
+
+/**
  * Instruction injected as a synthetic user turn when a barge-in turns out to
  * be a false interruption (see {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS}).
  * The interrupted reply's spoken-so-far text is already in history, marked
@@ -159,6 +165,24 @@ export const DEFAULT_FALSE_INTERRUPTION_PROMPT =
   "Your last reply was cut off by a false interruption — the user did not " +
   "actually say anything. Continue your reply from where it was cut off, " +
   "without repeating what you already said. Do not mention this instruction.";
+
+/**
+ * Cap on back-to-back false-interruption resumes (pipeline mode) before the
+ * user must speak again, mirroring {@link MAX_CONSECUTIVE_SILENCE_NUDGES}.
+ * Without it, persistent cross-talk loops barge-in → resume → barge-in every
+ * {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS}, each cycle burning a full
+ * LLM+TTS turn. A committed user turn restores the budget.
+ */
+export const MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES = 3;
+
+/**
+ * Watchdog for the pipeline speaking edge: how long after the last STT partial
+ * to force `speech_stopped` when no non-empty final ever arrives. Genuine
+ * utterances close the edge when the settler commits them, well inside this
+ * window ({@link DEFAULT_ENDPOINT_SETTLE_MS} plus provider final latency);
+ * this only bounds the leak for noise partials that never commit.
+ */
+export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 5000;
 export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 
