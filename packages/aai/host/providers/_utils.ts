@@ -24,18 +24,26 @@ export function assertPcm16Rate(
   );
 }
 
-/** Resolve the session API key: explicit value first, then the provider's env var. */
+/**
+ * Resolve the session API key from the value the runtime supplied (the agent's
+ * own env).
+ *
+ * This deliberately does NOT fall back to the host's `process.env`. On the
+ * managed platform the host process holds the platform's own credentials under
+ * exactly the names a tenant descriptor resolves, so a fallback let an agent
+ * that declared a provider and supplied no credential of its own silently
+ * borrow the platform's. Self-hosted runs opt shell-exported keys in via
+ * `withHostCredentialFallback`, which feeds `RuntimeOptions.providerEnv`.
+ */
 export function requireApiKey(
   explicit: string | undefined,
   envVar: string,
   label: string,
   makeError: (msg: string) => Error,
 ): string {
-  // Falsy check on purpose: the runtime passes "" when the agent env has no
-  // key, and that must fall through to the host process env.
-  const key = explicit ? explicit : process.env[envVar];
-  if (!key) throw makeError(`${label}: missing API key. Set ${envVar} in the agent env.`);
-  return key;
+  // Falsy check on purpose: the runtime passes "" when the agent env has no key.
+  if (!explicit) throw makeError(`${label}: missing API key. Set ${envVar} in the agent env.`);
+  return explicit;
 }
 
 /** Resolve once the socket opens; reject with the socket error if it fails first. */

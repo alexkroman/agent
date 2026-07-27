@@ -22,6 +22,7 @@ import {
   type ExecuteTool,
   resolveKv,
   resolveVector,
+  safeFetch,
   type Vector,
 } from "@alexkroman1/aai/runtime";
 import type { Storage } from "unstorage";
@@ -36,7 +37,6 @@ import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { attachSandbox, setSlot, withSlugLock } from "./sandbox-slots.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
-import { ssrfSafeFetch } from "./ssrf.ts";
 import type { BundleStore } from "./store-types.ts";
 
 // ── Re-exports consumed by orchestrator / handlers / tests ──────────────
@@ -163,14 +163,6 @@ export function resolveAgentVector(
 export function createSandbox(opts: SandboxOptions): Sandbox {
   const { workerCode, env, storage, slug } = opts;
 
-  const safeFetch: typeof globalThis.fetch = (input, init?) => {
-    let url: string;
-    if (typeof input === "string") url = input;
-    else if (input instanceof URL) url = input.href;
-    else url = input.url;
-    return ssrfSafeFetch(url, init ?? {}, globalThis.fetch);
-  };
-
   const config = opts.agentConfig;
 
   const harnessPath = resolveHarnessPath();
@@ -226,6 +218,9 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     env,
     executeTool,
     toolSchemas: config.toolSchemas,
+    // The SDK's SSRF-protected fetch (also the default inside
+    // resolveAllBuiltins) — passed explicitly so the platform's egress policy
+    // is visible here rather than only implied by a default.
     fetch: safeFetch,
     ...(config.mode === "pipeline" && config.stt && config.llm && config.tts
       ? { stt: config.stt, llm: config.llm, tts: config.tts }

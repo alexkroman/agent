@@ -98,7 +98,9 @@ exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
 
 exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
 [
+  "DEFAULT_LISTEN_HOST",
   "DEFAULT_S2S_CONFIG",
+  "PROVIDER_CREDENTIAL_ENVS",
   "SANDBOX_ONLY_BUILTINS",
   "_internals",
   "buildHostAgent",
@@ -117,13 +119,18 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "executeToolCall",
   "isDebugEnv",
   "isHostAllowed",
+  "isPrivateIp",
   "requiredProviderEnvVars",
   "resolveAllBuiltins",
+  "resolveAndAssertPublic",
   "resolveKv",
   "resolveVector",
+  "safeFetch",
   "safeSend",
+  "ssrfSafeFetch",
   "startHostSession",
   "wireSessionSocket",
+  "withHostCredentialFallback",
 ]
 `;
 

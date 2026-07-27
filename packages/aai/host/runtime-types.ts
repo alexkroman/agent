@@ -54,6 +54,17 @@ export type RuntimeOptions = {
   // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
   agent: AgentDef<any>;
   env: Record<string, string>;
+  /**
+   * Environment used to resolve provider credentials (STT/TTS/LLM/KV/Vector).
+   * Defaults to {@link RuntimeOptions.env}.
+   *
+   * Exists so a self-hosted caller can let shell-exported credentials reach
+   * the provider resolvers without also placing them in `ctx.env`, where agent
+   * tool code could read them and come to depend on host-level variables that
+   * do not exist in production. The platform passes neither — it resolves
+   * everything from the agent's own stored env.
+   */
+  providerEnv?: Record<string, string> | undefined;
   kv?: Kv | undefined;
   /**
    * Vector store. If omitted, an in-memory store is created. The

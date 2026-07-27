@@ -17,11 +17,19 @@ export function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Res
   const body = c.req.valid("json");
   const slug = body.slug ?? humanId({ separator: "-", capitalize: false });
   return withSlugLock(slug, async () => {
-    if (body.slug) {
-      const existing = await c.env.store.getManifest(slug);
-      if (existing && !(await matchesAnyHash(c.var.apiKey, existing.credential_hashes))) {
-        return c.json({ error: "Forbidden: slug already owned by another user" }, 403);
-      }
+    // Ownership is checked whether the slug was requested or generated. A
+    // generated slug used to skip this entirely, so a `humanId()` collision
+    // with an existing agent would overwrite that agent's bundle and append
+    // the caller's credential hash to it — silently granting a stranger
+    // co-ownership. Collisions aren't attacker-targetable, but they are
+    // possible, and the check costs one manifest read either way.
+    const existing = await c.env.store.getManifest(slug);
+    if (existing && !(await matchesAnyHash(c.var.apiKey, existing.credential_hashes))) {
+      return body.slug
+        ? c.json({ error: "Forbidden: slug already owned by another user" }, 403)
+        : // The caller never chose this slug, so "forbidden" would be
+          // confusing — tell them to retry and get a fresh one.
+          c.json({ error: "Slug collision on generated name — retry the deploy" }, 409);
     }
     return handleDeployInner(c, slug);
   });

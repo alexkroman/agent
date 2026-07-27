@@ -72,12 +72,22 @@ import type {
 import { requireApiKey } from "./_utils.ts";
 
 /**
- * Look up a provider API key: agent env first (set via `aai secret put` or
- * `.env`), then the host's `process.env` as a fallback for self-hosted mode.
- * Returns `""` if neither has it — the caller decides whether that's fatal.
+ * Look up a provider credential in the agent's own env (set via
+ * `aai secret put`, or `.env` in self-hosted mode). Returns `""` when absent —
+ * the caller decides whether that's fatal.
+ *
+ * This deliberately does NOT fall back to the host's `process.env`. On the
+ * managed platform the host process holds the platform's own credentials
+ * (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for the shared Tigris bucket,
+ * `PINECONE_API_KEY`, …) under exactly the names a tenant descriptor resolves.
+ * With a fallback, an agent that declared `kv: s3Kv({ bucket, endpoint })` or
+ * `vector: pinecone({ index })` and supplied no credential of its own silently
+ * borrowed the platform's — aimed at a bucket, endpoint, or index the tenant
+ * chose. Whoever builds `env` now decides what a provider can authenticate
+ * with; see `withHostCredentialFallback` for the self-hosted opt-in.
  */
 export function resolveApiKey(envVar: string, env: Record<string, string>): string {
-  return env[envVar] ?? process.env[envVar] ?? "";
+  return env[envVar] ?? "";
 }
 
 function options<T>(descriptor: { options: Record<string, unknown> }): T {
@@ -408,3 +418,23 @@ export function requiredProviderEnvVars(agent: {
   }
   return [...vars];
 }
+
+/**
+ * Every STT/TTS/LLM/S2S credential name any provider can resolve, derived from
+ * the same registries — so adding a provider needs no change here.
+ *
+ * Unlike {@link requiredProviderEnvVars} (what one agent needs), this is the
+ * whole vocabulary. It bounds `withHostCredentialFallback`: only these names
+ * may be copied from a host environment, so no unrelated host variable can
+ * reach `ctx.env`.
+ */
+export const ALL_PROVIDER_ENV_VARS: readonly string[] = [
+  ...new Set([
+    ...Object.values(STT_REGISTRY).map((e) => e.envVar),
+    ...Object.values(TTS_REGISTRY).map((e) => e.envVar),
+    ...Object.values(LLM_REGISTRY).map((e) => e.envVar),
+    // S2S: the default AssemblyAI path and the OpenAI Realtime alternative.
+    ASSEMBLYAI_API_KEY_ENV,
+    OPENAI_API_KEY_ENV,
+  ]),
+];

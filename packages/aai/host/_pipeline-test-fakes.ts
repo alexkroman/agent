@@ -402,21 +402,24 @@ export function registerFakeProviders(fakes: {
   readonly stt: SttProvider | undefined;
   readonly tts: TtsProvider | undefined;
   readonly llm: LlmProvider | undefined;
+  /** Credentials for the registered fakes — pass as `createRuntime({ env })`. */
+  readonly env: Record<string, string>;
   /** Restore the registries. Call in a `finally` / cleanup hook. */
   unregister(): void;
 } {
   const undo: (() => void)[] = [];
 
-  // Seed the fake credentials in process.env (resolveApiKey's fallback), so a
-  // spec can keep passing `env: {}`. resolveLlm throws on a missing key, and the
-  // openers receive theirs through providerKeys.
-  for (const name of [FAKE_STT_API_KEY_ENV, FAKE_TTS_API_KEY_ENV, FAKE_LLM_API_KEY_ENV]) {
-    if (process.env[name] !== undefined) continue;
-    process.env[name] = `${name}-value`;
-    undo.push(() => {
-      delete process.env[name];
-    });
-  }
+  // Fake credentials are handed back as `env` for the spec to pass to
+  // createRuntime, NOT seeded into process.env: credential resolution reads the
+  // agent env only (see requireApiKey), so a process.env seed would both fail
+  // to work and quietly re-assert the fallback this codebase deliberately
+  // removed.
+  const env: Record<string, string> = Object.fromEntries(
+    [FAKE_STT_API_KEY_ENV, FAKE_TTS_API_KEY_ENV, FAKE_LLM_API_KEY_ENV].map((name) => [
+      name,
+      `${name}-value`,
+    ]),
+  );
 
   if (fakes.stt) {
     const stt = fakes.stt;
@@ -438,6 +441,7 @@ export function registerFakeProviders(fakes: {
   }
 
   return {
+    env,
     stt: fakes.stt ? { kind: FAKE_STT_KIND, options: {} } : undefined,
     tts: fakes.tts ? { kind: FAKE_TTS_KIND, options: {} } : undefined,
     llm: fakes.llm ? { kind: FAKE_LLM_KIND, options: {} } : undefined,

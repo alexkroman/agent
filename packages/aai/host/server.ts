@@ -37,9 +37,12 @@ type ServerOptions = {
   logger?: Logger;
   /**
    * Environment for host-mode connections (a `?host=1` WebSocket whose first
-   * `config` frame supplies its own agent). Enables gating via `AAI_ALLOW_HOST`
-   * and provides secrets to the per-connection runtime. Omit to disable host
-   * mode entirely (any `?host=1` connection is then rejected).
+   * `config` frame supplies its own agent) and the source of secrets for the
+   * per-connection runtime.
+   *
+   * Supplying `env` does not by itself enable host mode: it is opt-in via
+   * `AAI_ALLOW_HOST` (see `isHostAllowed`). Omitting `env` disables host mode
+   * unconditionally — any `?host=1` connection is rejected.
    */
   env?: Record<string, string>;
   /**
@@ -55,10 +58,23 @@ type ServerOptions = {
  * @internal
  */
 export type AgentServer = {
-  listen(port?: number): Promise<void>;
+  /**
+   * Start listening. `host` defaults to {@link DEFAULT_LISTEN_HOST} (loopback)
+   * — pass `"0.0.0.0"` to deliberately expose the server on other interfaces.
+   */
+  listen(port?: number, host?: string): Promise<void>;
   close(): Promise<void>;
   port: number | undefined;
 };
+
+/**
+ * Default bind address. Loopback, not every interface: this server has no
+ * request authentication of its own, so binding `0.0.0.0` by default put a
+ * developer's agent — and the provider credentials backing it — in reach of
+ * anyone on the same network (a shared office or cafe LAN). Exposing it is now
+ * an explicit choice by the caller.
+ */
+export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
@@ -199,10 +215,10 @@ export function createServer(options: ServerOptions): AgentServer {
       return listenPort;
     },
 
-    async listen(port = 3000) {
+    async listen(port = 3000, host = DEFAULT_LISTEN_HOST) {
       await new Promise<void>((resolve, reject) => {
         httpServer.on("error", reject);
-        httpServer.listen(port, () => {
+        httpServer.listen(port, host, () => {
           const addr = httpServer.address();
           listenPort = typeof addr === "object" && addr ? addr.port : port;
           resolve();

@@ -18,6 +18,7 @@ export * from "./builtin-tools.ts";
 export * from "./host-mode.ts";
 export { createMemoryVector } from "./memory-vector.ts";
 export * from "./pinecone-vector.ts";
+export * from "./providers/host-env.ts";
 // Narrow named export rather than `export *`: the rest of resolve.ts is
 // internal descriptor plumbing, and this is the one piece callers outside the
 // package need (the CLI dev server, to check credentials before starting).
@@ -28,6 +29,7 @@ export * from "./runtime.ts";
 export * from "./runtime-config.ts";
 export * from "./server.ts";
 export * from "./session-core.ts";
+export * from "./ssrf.ts";
 export * from "./tool-executor.ts";
 export * from "./transports/pipeline-transport.ts";
 export * from "./transports/s2s-transport.ts";

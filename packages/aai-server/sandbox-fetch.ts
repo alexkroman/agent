@@ -8,8 +8,8 @@
  */
 
 import { errorMessage, matchesAllowedHost } from "@alexkroman1/aai";
+import { ssrfSafeFetch } from "@alexkroman1/aai/runtime";
 import { MAX_REQUEST_BODY_BYTES } from "./guest/limits.ts";
-import { ssrfSafeFetch } from "./ssrf.ts";
 
 const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
 const DEFAULT_MAX_CONCURRENT = 10;

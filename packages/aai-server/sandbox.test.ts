@@ -61,15 +61,6 @@ vi.mock("@alexkroman1/aai/runtime", async (importOriginal) => {
   };
 });
 
-// ── Mock ssrf to avoid real URL validation ───────────────────────────────────
-
-vi.mock("./ssrf.ts", () => ({
-  ssrfSafeFetch: vi.fn(
-    async (url: string, init: RequestInit, underlyingFetch: typeof globalThis.fetch) =>
-      underlyingFetch(url, init),
-  ),
-}));
-
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 const TEST_AGENT_CONFIG: IsolateConfig = {

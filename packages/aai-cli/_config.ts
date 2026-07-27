@@ -7,6 +7,17 @@ import { z } from "zod";
 import { unwrapCancel } from "./_ui.ts";
 import { readJson, writeJson } from "./_utils.ts";
 
+/**
+ * `.aai/project.json` lives in the working tree, so everything in it is
+ * untrusted input — a cloned repo can supply any value.
+ *
+ * `serverUrl` is deliberately NOT validated here. A failed field makes
+ * `readProjectConfig` return null for the whole file, which discards the
+ * `slug` too — and a deploy with no slug generates a fresh one, silently
+ * creating a duplicate agent and overwriting the config. The URL is instead
+ * validated where it is used, by `resolveServerUrl`, which rejects anything
+ * that isn't an approved http(s) origin.
+ */
 const ProjectConfigSchema = z.object({
   slug: z.string(),
   serverUrl: z.string(),
@@ -38,7 +49,47 @@ export async function writeProjectConfig(agentDir: string, data: ProjectConfig):
 
 export type GlobalConfig = {
   apiKey?: string;
+  /**
+   * Origins the user has explicitly pointed the CLI at with `--server`.
+   *
+   * Lives in the user-owned global config, never in the repo: it is what makes
+   * a `serverUrl` from `.aai/project.json` trustworthy enough to receive an
+   * API key. See `resolveServerUrl`.
+   */
+  approvedServers?: string[];
 };
+
+/**
+ * Origin of `url`, or `null` when it is not an absolute http(s) URL.
+ *
+ * Non-HTTP schemes are rejected rather than returned: `new URL()` yields the
+ * opaque origin `"null"` for them, which would otherwise flow on as if it
+ * were a real origin.
+ */
+export function serverOrigin(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return null;
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") return null;
+  return parsed.origin;
+}
+
+/**
+ * Record `url`'s origin as user-approved, so later commands in this project
+ * may send credentials there without re-passing `--server`.
+ */
+export async function approveServer(url: string, configDir?: string): Promise<void> {
+  const origin = serverOrigin(url);
+  if (!origin) return;
+  const dir = configDir ?? getConfigDir();
+  const config = await readGlobalConfig(dir);
+  const approved = config.approvedServers ?? [];
+  if (approved.includes(origin)) return;
+  await writeGlobalConfig(dir, { ...config, approvedServers: [...approved, origin] });
+}
 
 export async function readGlobalConfig(configDir?: string): Promise<GlobalConfig> {
   const dir = configDir ?? getConfigDir();
