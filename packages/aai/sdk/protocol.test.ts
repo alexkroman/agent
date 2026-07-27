@@ -51,15 +51,13 @@ describe("KvRequestSchema", () => {
   });
 
   // The Kv interface accepts `value: unknown` — ensure the schema matches.
-  test.each([
-    { nested: true },
-    [1, 2, 3],
-    null,
-    42,
-  ])("set accepts non-string value: %j", (value) => {
-    const result = KvRequestSchema.safeParse({ op: "set", key: "k", value });
-    expect(result.success).toBe(true);
-  });
+  test.each([{ nested: true }, [1, 2, 3], null, 42])(
+    "set accepts non-string value: %j",
+    (value) => {
+      const result = KvRequestSchema.safeParse({ op: "set", key: "k", value });
+      expect(result.success).toBe(true);
+    },
+  );
 
   test("rejects empty key on get", () => {
     const result = KvRequestSchema.safeParse({

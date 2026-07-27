@@ -52,27 +52,19 @@ describe("errorDetail", () => {
 });
 
 describe("isTextAssetPath", () => {
-  test.each([
-    "index.html",
-    "assets/app.js",
-    "styles.css",
-    "data.json",
-    "icon.svg",
-    "app.js.map",
-  ])("treats %s as text", (p) => {
-    expect(isTextAssetPath(p)).toBe(true);
-  });
+  test.each(["index.html", "assets/app.js", "styles.css", "data.json", "icon.svg", "app.js.map"])(
+    "treats %s as text",
+    (p) => {
+      expect(isTextAssetPath(p)).toBe(true);
+    },
+  );
 
-  test.each([
-    "logo.png",
-    "font.woff2",
-    "img.jpg",
-    "clip.mp3",
-    "module.wasm",
-    "noext",
-  ])("treats %s as binary", (p) => {
-    expect(isTextAssetPath(p)).toBe(false);
-  });
+  test.each(["logo.png", "font.woff2", "img.jpg", "clip.mp3", "module.wasm", "noext"])(
+    "treats %s as binary",
+    (p) => {
+      expect(isTextAssetPath(p)).toBe(false);
+    },
+  );
 
   test("is case-insensitive on the extension", () => {
     expect(isTextAssetPath("INDEX.HTML")).toBe(true);
