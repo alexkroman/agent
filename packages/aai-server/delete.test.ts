@@ -3,7 +3,13 @@ import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { expect, test, vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createTestStorage, createTestStore, deployAgent, makeSlot } from "./test-utils.ts";
+import {
+  createTestStorage,
+  createTestStore,
+  deployAgent,
+  makeSlot,
+  type TestFetch,
+} from "./test-utils.ts";
 
 async function setup() {
   const store = createTestStore();
@@ -15,7 +21,7 @@ async function setup() {
     storage,
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
-  const fetch = (input: string | Request, init?: RequestInit) => app.request(input, init);
+  const fetch: TestFetch = async (input, init) => app.request(input, init);
   return { fetch, store, slots };
 }
 
@@ -37,10 +43,11 @@ test("delete removes agent from store", async () => {
   const { fetch, store } = await setup();
   await deployAgent(fetch);
 
-  await fetch("/my-agent", {
+  const resp = await fetch("/my-agent", {
     method: "DELETE",
     headers: { Authorization: "Bearer key1" },
   });
+  expect(resp.status).toBe(200);
 
   const manifest = await store.getManifest("my-agent");
   expect(manifest).toBeNull();
