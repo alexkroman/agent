@@ -33,10 +33,11 @@ import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
 import { createSilenceNudger } from "./pipeline-silence.ts";
 import {
-  countWords,
   createPlaybackClock,
   DEFAULT_HOLD_PHRASE,
   flushTtsAndWait,
+  hasMinWords,
+  hasSpeech,
   consumeLlmStream as runLlmStream,
 } from "./pipeline-stream.ts";
 import type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
@@ -226,7 +227,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   /** Should this interim transcript interrupt the agent right now? */
   function partialTriggersBargeIn(text: string): boolean {
     if (turnController === null && !playbackClock.pending()) return false;
-    if (countWords(text) < minBargeInWords) return false;
+    if (!hasMinWords(text, minBargeInWords)) return false;
     // Duration gate (interim-only): require sustained speech since the
     // utterance's first partial before cutting the agent off. A committed
     // final barging in via onSttFinal is never duration-gated.
@@ -237,7 +238,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (terminated) return;
     // User speech proves presence: reset the nudge budget, restart the window.
     nudger.onUserSpeech();
-    if (countWords(text) >= 1) {
+    if (hasSpeech(text)) {
       speechEdges.speechStarted();
       // Live captions: forward the interim transcript as-is. The committed
       // turn still arrives via onUserTranscript once the settler fires.
@@ -276,7 +277,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // buffered and answered once the reply finishes (chainTurn defers it),
     // so short answers ("yes", a ZIP) spoken over the agent aren't lost.
     const speaking = turnController !== null || playbackClock.pending();
-    if (speaking && countWords(trimmed) >= minBargeInWords) {
+    if (speaking && hasMinWords(trimmed, minBargeInWords)) {
       log.info("Pipeline replacing in-flight turn", { sid: opts.sid });
       abortInFlightTurn();
       callbacks.onCancelled();

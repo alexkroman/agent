@@ -83,6 +83,54 @@ describe("createVoiceIO", () => {
     await io.close();
   });
 
+  test("passes the mic chunk size to the capture worklet", async () => {
+    const io = await createVoiceIO(voiceOpts({ sttSampleRate: 16_000, ttsSampleRate: 16_000 }));
+    const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");
+    const opts = capNode.options as { processorOptions?: Record<string, unknown> };
+    // MIC_BUFFER_SECONDS (0.1) worth of samples at the STT rate.
+    expect(opts.processorOptions?.chunkSamples).toBe(1600);
+    await io.close();
+  });
+
+  test("forwards a full-size worklet chunk without copying it", async () => {
+    const onMicData = vi.fn((_buf: ArrayBuffer) => {
+      /* noop */
+    });
+    const io = await createVoiceIO(
+      voiceOpts({ sttSampleRate: 16_000, ttsSampleRate: 16_000, onMicData }),
+    );
+    const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");
+
+    const buf = new ArrayBuffer(3200);
+    new Int16Array(buf).fill(1234);
+    capNode.port.simulateMessage({ event: "chunk", buffer: buf });
+
+    expect(onMicData).toHaveBeenCalledTimes(1);
+    // Same ArrayBuffer identity — the worklet transferred ownership, so the
+    // main thread must not re-copy it.
+    expect(onMicData.mock.calls[0]?.[0]).toBe(buf);
+    await io.close();
+  });
+
+  test("flushes carried bytes before a chunk that would overflow the accumulator", async () => {
+    const onMicData = vi.fn((_buf: ArrayBuffer) => {
+      /* noop */
+    });
+    const io = await createVoiceIO(
+      voiceOpts({ sttSampleRate: 16_000, ttsSampleRate: 16_000, onMicData }),
+    );
+    const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");
+
+    // A short flush (below the 3200-byte target) is carried, then a full chunk
+    // arrives: both must be delivered, oldest first, and nothing dropped.
+    capNode.port.simulateMessage({ event: "chunk", buffer: new ArrayBuffer(400) });
+    expect(onMicData).not.toHaveBeenCalled();
+    capNode.port.simulateMessage({ event: "chunk", buffer: new ArrayBuffer(6400) });
+
+    expect(onMicData.mock.calls.map((c) => (c[0] as ArrayBuffer).byteLength)).toEqual([400, 6400]);
+    await io.close();
+  });
+
   test("enqueue posts write event to playback worklet", async () => {
     const io = await createVoiceIO(voiceOpts());
 

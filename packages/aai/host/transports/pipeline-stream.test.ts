@@ -3,7 +3,22 @@
 // behavior (settle window, aggregation) lives in pipeline-turn.test.ts.
 
 import { describe, expect, test } from "vitest";
-import { countWords, utteranceLooksComplete } from "./pipeline-stream.ts";
+import { countWords, hasMinWords, hasSpeech, utteranceLooksComplete } from "./pipeline-stream.ts";
+
+/** The `split`-based implementation these helpers replaced, as an oracle. */
+const splitCount = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
+
+const SAMPLES = [
+  "",
+  "   ",
+  "hello",
+  "  hello   world  ",
+  "\t\n\r one two \f",
+  "a b",
+  "one two　three",
+  "yes.",
+  "actually, make it two — no, three",
+];
 
 describe("countWords", () => {
   test("counts whitespace-delimited words, ignoring extra whitespace", () => {
@@ -11,6 +26,36 @@ describe("countWords", () => {
     expect(countWords("   ")).toBe(0);
     expect(countWords("hello")).toBe(1);
     expect(countWords("  hello   world  ")).toBe(2);
+  });
+
+  test("matches split(/\\s+/) across ASCII and Unicode separators", () => {
+    for (const text of SAMPLES) {
+      expect(countWords(text), JSON.stringify(text)).toBe(splitCount(text));
+    }
+  });
+});
+
+describe("hasMinWords", () => {
+  test("agrees with countWords at every threshold", () => {
+    for (const text of SAMPLES) {
+      const total = splitCount(text);
+      for (let min = 0; min <= total + 2; min++) {
+        expect(hasMinWords(text, min), `${JSON.stringify(text)} >= ${min}`).toBe(total >= min);
+      }
+    }
+  });
+
+  test("a non-positive threshold is always satisfied", () => {
+    expect(hasMinWords("", 0)).toBe(true);
+    expect(hasMinWords("", -1)).toBe(true);
+  });
+});
+
+describe("hasSpeech", () => {
+  test("true only when a non-whitespace character is present", () => {
+    for (const text of SAMPLES) {
+      expect(hasSpeech(text), JSON.stringify(text)).toBe(text.trim().length > 0);
+    }
   });
 });
 

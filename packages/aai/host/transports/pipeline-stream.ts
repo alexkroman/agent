@@ -70,9 +70,57 @@ export function toModelMessage(m: Message): ModelMessage {
   return { role: "assistant", content: m.content };
 }
 
+const NON_SPACE = /\S/;
+
+/** Whether `text[i]` is whitespace, matching `/\s/` exactly. */
+function isSpaceAt(text: string, i: number): boolean {
+  const code = text.charCodeAt(i);
+  // ASCII covers every separator STT actually emits; above it, defer to the
+  // regex so exotic Unicode spaces classify the same way `/\s+/` would.
+  if (code < 0x80) return code === 32 || (code >= 9 && code <= 13);
+  return !NON_SPACE.test(text[i] as string);
+}
+
+/**
+ * Count whitespace-delimited words in an interim transcript, stopping early
+ * once `min` is reached (`Infinity` counts them all).
+ *
+ * Scans instead of `split()`: STT partials arrive several times a second and
+ * grow with the utterance, so allocating a word array per partial is pure
+ * garbage on a latency-sensitive path.
+ */
+function scanWords(text: string, min: number): number {
+  let count = 0;
+  let inWord = false;
+  for (let i = 0; i < text.length; i++) {
+    if (isSpaceAt(text, i)) {
+      inWord = false;
+    } else if (!inWord) {
+      inWord = true;
+      if (++count >= min) return count;
+    }
+  }
+  return count;
+}
+
 /** Count whitespace-delimited words in an interim transcript. */
 export function countWords(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
+  return scanWords(text, Number.POSITIVE_INFINITY);
+}
+
+/**
+ * True when `text` holds at least `min` whitespace-delimited words. Cheaper
+ * than {@link countWords} on the barge-in path: `minBargeInWords` is small, so
+ * the scan stops after a couple of words instead of walking a long partial.
+ */
+export function hasMinWords(text: string, min: number): boolean {
+  if (min <= 0) return true;
+  return scanWords(text, min) >= min;
+}
+
+/** True when `text` holds at least one non-whitespace character. */
+export function hasSpeech(text: string): boolean {
+  return hasMinWords(text, 1);
 }
 
 /**

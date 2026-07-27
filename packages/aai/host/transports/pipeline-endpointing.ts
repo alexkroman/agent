@@ -5,7 +5,7 @@
 // false starts) commit as a single turn instead of the first fragment firing
 // a turn and the continuation barging in on it.
 
-import { countWords, utteranceLooksComplete } from "./pipeline-stream.ts";
+import { hasSpeech, utteranceLooksComplete } from "./pipeline-stream.ts";
 
 /** Buffered-utterance endpoint settler. See {@link createEndpointSettler}. */
 export interface EndpointSettler {
@@ -92,7 +92,7 @@ export function createEndpointSettler(opts: {
       arm();
     },
     extendOnPartial(partialText: string): boolean {
-      if (timer !== null && pending.length > 0 && countWords(partialText) >= 1) {
+      if (timer !== null && pending.length > 0 && hasSpeech(partialText)) {
         arm();
         return true;
       }

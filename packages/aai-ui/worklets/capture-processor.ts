@@ -2,6 +2,11 @@
 // needed, converts to Int16 PCM, and sends chunks to the main thread.
 
 const CaptureProcessorWorklet = `
+// PCM16 is little-endian on the wire. Int16Array writes use platform byte
+// order, so on a (hypothetical) big-endian host the bytes are swapped once per
+// posted chunk instead of being written one sample at a time via DataView.
+const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+
 class CaptureProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
@@ -22,9 +27,22 @@ class CaptureProcessor extends AudioWorkletProcessor {
     // Output buffer reused across process() calls -- the render quantum is a
     // fixed size, so allocating per call would churn the realtime audio thread.
     this.resampleBuf = null;
+    // Outbound batching. A render quantum is 128 samples (~3-6 ms), so posting
+    // per quantum meant a fresh ArrayBuffer plus a cross-thread message every
+    // few milliseconds on the realtime audio thread. Samples accumulate into
+    // this fixed Int16 buffer and post once it fills: one allocation and one
+    // postMessage per chunk instead of ~20. The main thread batches to the same
+    // size, so the network send cadence (and latency) is unchanged.
+    this.chunkSamples = Math.max(1, Math.round(opts.chunkSamples || this.toRate * 0.1));
+    this.chunk = new Int16Array(this.chunkSamples);
+    this.chunkLen = 0;
     this.port.onmessage = (e) => {
-      if (e.data.event === 'start') this.recording = true;
-      else if (e.data.event === 'stop') this.recording = false;
+      if (e.data.event === 'start') {
+        this.recording = true;
+      } else if (e.data.event === 'stop') {
+        this.recording = false;
+        this.flush();
+      }
     };
   }
 
@@ -57,6 +75,26 @@ class CaptureProcessor extends AudioWorkletProcessor {
     return out.subarray(0, count);
   }
 
+  // Hand the buffered PCM16 to the main thread and reset the accumulator. The
+  // copy is transferred, so the post itself costs no serialization.
+  flush() {
+    const len = this.chunkLen;
+    if (len === 0) return;
+    this.chunkLen = 0;
+    const out = new Int16Array(len);
+    out.set(this.chunk.subarray(0, len));
+    const buffer = out.buffer;
+    if (!LITTLE_ENDIAN) {
+      const bytes = new Uint8Array(buffer);
+      for (let i = 0; i < bytes.length; i += 2) {
+        const lo = bytes[i];
+        bytes[i] = bytes[i + 1];
+        bytes[i + 1] = lo;
+      }
+    }
+    this.port.postMessage({ event: 'chunk', buffer }, [buffer]);
+  }
+
   process(inputs) {
     const input = inputs[0];
     if (!input || !input[0] || !this.recording) return true;
@@ -64,15 +102,18 @@ class CaptureProcessor extends AudioWorkletProcessor {
     const raw = input[0];
     const samples = this.needsResample ? this.resample(raw) : raw;
 
-    // Convert Float32 -> Int16
-    const buffer = new ArrayBuffer(samples.length * 2);
-    const view = new DataView(buffer);
+    // Convert Float32 -> Int16 straight into the accumulator. Int16Array
+    // assignment applies the same truncate-and-wrap conversion as
+    // DataView.setInt16 without a call per sample.
+    const chunk = this.chunk;
+    const cap = this.chunkSamples;
     for (let i = 0; i < samples.length; i++) {
-      const s = Math.max(-1, Math.min(1, samples[i]));
-      view.setInt16(i * 2, s < 0 ? s * 0x8000 : s * 0x7fff, true);
+      const s = samples[i];
+      const clamped = s < -1 ? -1 : s > 1 ? 1 : s;
+      chunk[this.chunkLen++] = clamped < 0 ? clamped * 0x8000 : clamped * 0x7fff;
+      if (this.chunkLen === cap) this.flush();
     }
 
-    this.port.postMessage({ event: 'chunk', buffer }, [buffer]);
     return true;
   }
 }

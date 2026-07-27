@@ -2,6 +2,11 @@
 // converts to float32, and plays with a small jitter buffer.
 
 const PlaybackProcessorWorklet = `
+// Incoming PCM16 is little-endian. On a little-endian host (every Web Audio
+// platform in practice) an aligned Int16Array view decodes it directly; the
+// DataView path below covers misaligned views and big-endian hosts.
+const LITTLE_ENDIAN = new Uint8Array(new Uint16Array([1]).buffer)[0] === 1;
+
 class PlaybackProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
@@ -67,12 +72,27 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     }
 
     if (bytes.length === 0) return;
-    const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
     const numSamples = bytes.length / 2;
-    for (let i = 0; i < numSamples; i++) {
-      this.samples[this.writePos % this.capacity] = view.getInt16(i * 2, true) / 0x8000;
-      this.writePos++;
+    const samples = this.samples;
+    const cap = this.capacity;
+    // Hoist the ring index out of the loop: an increment-and-wrap is far
+    // cheaper than a modulo per sample, and this runs at the full audio sample
+    // rate (24k+ samples/second) on the realtime thread.
+    let w = this.writePos % cap;
+    if (LITTLE_ENDIAN && bytes.byteOffset % 2 === 0) {
+      const src = new Int16Array(bytes.buffer, bytes.byteOffset, numSamples);
+      for (let i = 0; i < numSamples; i++) {
+        samples[w] = src[i] / 0x8000;
+        if (++w === cap) w = 0;
+      }
+    } else {
+      const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.length);
+      for (let i = 0; i < numSamples; i++) {
+        samples[w] = view.getInt16(i * 2, true) / 0x8000;
+        if (++w === cap) w = 0;
+      }
     }
+    this.writePos += numSamples;
     // If the producer outran the consumer by more than the buffer holds, drop
     // the oldest unplayed audio rather than reading samples we've overwritten.
     if (this.writePos - this.readPos > this.capacity) {

@@ -96,15 +96,17 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   }
 
   const mic = ctx.createMediaStreamSource(stream);
+  // Worklet outputs PCM16 at the STT rate, batched to the same chunk size this
+  // side sends, so the common case is one message per network frame.
+  const chunkSamples = Math.floor(sttSampleRate * MIC_BUFFER_SECONDS);
+  const chunkSizeBytes = chunkSamples * 2;
   const capNode = new AudioWorkletNode(ctx, "capture-processor", {
     channelCount: 1,
     channelCountMode: "explicit",
-    processorOptions: { contextRate, sttSampleRate },
+    processorOptions: { contextRate, sttSampleRate, chunkSamples },
   });
   mic.connect(capNode);
 
-  // Worklet outputs PCM16 at the STT rate — just batch and send.
-  const chunkSizeBytes = Math.floor(sttSampleRate * MIC_BUFFER_SECONDS) * 2;
   const capBuf = new Uint8Array(chunkSizeBytes * 2);
   let capOffset = 0;
 
@@ -112,7 +114,24 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
   capNode.port.onmessage = (e: MessageEvent) => {
     if (e.data.event !== "chunk") return;
-    const chunk = new Uint8Array(e.data.buffer as ArrayBufferLike);
+    const buffer = e.data.buffer as ArrayBuffer;
+
+    // The worklet transferred ownership of a full-size chunk, so with nothing
+    // carried over it goes straight out — no copy on the common path.
+    if (capOffset === 0 && buffer.byteLength >= chunkSizeBytes) {
+      onMicData(buffer);
+      return;
+    }
+
+    const chunk = new Uint8Array(buffer);
+    // Guard the accumulator: a short final flush plus a full chunk must not
+    // write past the end.
+    if (capOffset + chunk.byteLength > capBuf.byteLength) {
+      onMicData(capBuf.buffer.slice(0, capOffset));
+      capOffset = 0;
+      onMicData(buffer);
+      return;
+    }
 
     capBuf.set(chunk, capOffset);
     capOffset += chunk.byteLength;
