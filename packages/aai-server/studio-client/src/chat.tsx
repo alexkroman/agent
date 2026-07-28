@@ -38,7 +38,7 @@ const STARTERS: { label: string; prompt: string }[] = [
     prompt:
       "Build a pipeline-mode agent that uses AssemblyAI for all three stages: " +
       'stt: assemblyAI({ model: "u3pro-rt" }) from "@alexkroman1/aai/stt", ' +
-      'llm: the AssemblyAI LLM Gateway with model "claude-haiku-4-5-20251001" ' +
+      'llm: the AssemblyAI LLM Gateway with model "gemini-2.5-flash-lite" ' +
       'from "@alexkroman1/aai/llm", and tts: assemblyAI({ voice: "vera" }) from ' +
       '"@alexkroman1/aai/tts". The factory is called assemblyAI in all three ' +
       "subpaths, so alias two of them on import. Make it a friendly " +

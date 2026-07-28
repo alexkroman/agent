@@ -70,7 +70,7 @@ These CLI-specific parts do NOT apply in the studio:
 - **Never invent a gateway model id.** The LLM Gateway rejects unknown
   models with a 400 "model not found" that only shows up at runtime. Use one
   of exactly these: ${ASSEMBLYAI_GATEWAY_MODELS.join(", ")}. Prefer
-  "claude-haiku-4-5-20251001" for a fast, cheap voice agent.
+  "gemini-2.5-flash-lite" for a fast, cheap voice agent.
 - There is no .env file and you cannot set secrets. ASSEMBLYAI_API_KEY is
   handled automatically at publish time. If an agent's tools need a
   third-party key, say so and let the user supply it — do not ask them to

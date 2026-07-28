@@ -37,8 +37,11 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("Default to AssemblyAI for every provider");
     // Real gateway ids are interpolated so the agent can't invent one
     // (a made-up id only fails at runtime, with a 400 "model not found").
-    expect(prompt).toContain("claude-haiku-4-5-20251001");
+    // gpt-5.2 appears nowhere in the preamble literal, so it can only be here
+    // if the ASSEMBLYAI_GATEWAY_MODELS interpolation ran.
     expect(prompt).toContain("gpt-5.2");
+    // The pipeline default the quickstart also asks for.
+    expect(prompt).toContain('"gemini-2.5-flash-lite" for a fast, cheap voice agent');
     // Publishing is the user's call, so the agent must be told it cannot.
     expect(prompt).toContain("You cannot publish");
     expect(prompt).not.toContain("deploy_agent");

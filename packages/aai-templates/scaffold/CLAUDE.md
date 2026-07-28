@@ -244,7 +244,7 @@ import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
 export default agent({
   name: "My Agent",
   stt: assemblyAI({ model: "u3pro-rt" }),
-  llm: assemblyAILlm({ model: "claude-haiku-4-5-20251001" }),
+  llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
   tts: assemblyAITts({ voice: "vera" }),
 });
 ```
