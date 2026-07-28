@@ -32,6 +32,13 @@ describe("studioSystemPrompt", () => {
     // Studio preamble (workflow + environment overrides).
     expect(prompt).toContain("AAI Studio coding agent");
     expect(prompt).toContain("test_agent");
+    // Any non-AssemblyAI provider needs a key the user must supply, so a
+    // generated agent should default to the one key publishing guarantees.
+    expect(prompt).toContain("Default to AssemblyAI for every provider");
+    // Real gateway ids are interpolated so the agent can't invent one
+    // (a made-up id only fails at runtime, with a 400 "model not found").
+    expect(prompt).toContain("claude-haiku-4-5-20251001");
+    expect(prompt).toContain("gpt-5.2");
     // Publishing is the user's call, so the agent must be told it cannot.
     expect(prompt).toContain("You cannot publish");
     expect(prompt).not.toContain("deploy_agent");

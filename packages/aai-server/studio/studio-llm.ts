@@ -64,7 +64,7 @@ type StudioLlmEntry = {
  * their id-less `tool_calls` deltas are repaired (`_openai-stream-repair.ts`
  * in the SDK), so they are a step off the supported path.
  */
-const ASSEMBLYAI_GATEWAY_MODELS = [
+export const ASSEMBLYAI_GATEWAY_MODELS = [
   "gpt-5.2",
   // Leads the EU list — the OpenAI models above are US-only.
   "claude-sonnet-4-6",

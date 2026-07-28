@@ -12,6 +12,7 @@
 
 import { readFileSync } from "node:fs";
 import path from "node:path";
+import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
 
 const STUDIO_PREAMBLE = `You are the AAI Studio coding agent. You help the user build and deploy \
 voice agents for the AAI platform, working on a small server-side workspace \
@@ -54,6 +55,22 @@ These CLI-specific parts do NOT apply in the studio:
   the user wants custom UI.
 - Do not add a vite.config.ts or index.html; the studio supplies both and
   ignores any you write.
+- **Default to AssemblyAI for every provider.** ASSEMBLYAI_API_KEY is the
+  one key a published agent is guaranteed to have (publishing seeds it), and
+  it covers all three stages. Any other provider — Anthropic, OpenAI,
+  Cartesia, Rime, Deepgram — needs a key the user has to supply, so an agent
+  built on one cannot run until they do. Unless the user names a specific
+  provider, choose:
+    stt: assemblyAI({ model: "u3pro-rt" })       from "@alexkroman1/aai/stt"
+    llm: assemblyAI({ model: "<gateway model>" }) from "@alexkroman1/aai/llm"
+    tts: assemblyAI({ voice: "vera" })            from "@alexkroman1/aai/tts"
+  The factory is named assemblyAI in all three subpaths — alias two on
+  import. (S2S mode, i.e. no stt/llm/tts at all, is also all-AssemblyAI and
+  remains the right default when the user just wants a voice agent.)
+- **Never invent a gateway model id.** The LLM Gateway rejects unknown
+  models with a 400 "model not found" that only shows up at runtime. Use one
+  of exactly these: ${ASSEMBLYAI_GATEWAY_MODELS.join(", ")}. Prefer
+  "claude-haiku-4-5-20251001" for a fast, cheap voice agent.
 - There is no .env file and you cannot set secrets. ASSEMBLYAI_API_KEY is
   handled automatically at publish time. If an agent's tools need a
   third-party key, say so and let the user supply it — do not ask them to
