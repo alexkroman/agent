@@ -73,6 +73,13 @@
   --color-warm-300: #b6b0a4;
   --color-err: #b3261e;
 
+  /* Type scale — one step above Tailwind's defaults (12/14px). The studio is
+     a working surface people read for long stretches, so the base is 15px. */
+  --text-xs: 13px;
+  --text-xs--line-height: 18px;
+  --text-sm: 15px;
+  --text-sm--line-height: 22px;
+
   --font-sans: "Monument Grotesk", "ABC Monument Grotesk", system-ui, sans-serif;
   --font-serif: "Source Serif 4", "Source Serif Pro", Charter, "Iowan Old Style", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -110,7 +117,7 @@
 @layer components {
   /* Tertiary button (CHANGE KEY, project switcher) — ALL-CAPS label */
   .btn {
-    @apply h-[34px] cursor-pointer rounded-sm border border-line bg-panel px-3.5 text-[11px] font-medium tracking-[1.4px] text-fg uppercase hover:border-line-strong disabled:cursor-not-allowed;
+    @apply h-[34px] cursor-pointer rounded-sm border border-line bg-panel px-3.5 text-[12px] font-medium tracking-[1.4px] text-fg uppercase hover:border-line-strong disabled:cursor-not-allowed;
   }
   /* Primary indigo button; disabled = warm-100 face per handoff */
   .btn-primary {
@@ -118,15 +125,15 @@
   }
   /* Input */
   .field {
-    @apply rounded-md border border-line bg-panel px-3.5 text-[13px] text-fg placeholder:text-subtle focus:outline-none;
+    @apply rounded-md border border-line bg-panel px-3.5 text-[15px] text-fg placeholder:text-subtle focus:outline-none;
   }
   /* Eyebrow pill — tiny outlined rectangle, ALL CAPS */
   .eyebrow {
-    @apply inline-block self-start rounded-sm border border-line-strong px-2 py-1 text-[10px] leading-none font-medium tracking-[1.2px] text-fg uppercase;
+    @apply inline-block self-start rounded-sm border border-line-strong px-2 py-1 text-[11px] leading-none font-medium tracking-[1.2px] text-fg uppercase;
   }
   /* Segmented control label */
   .seg {
-    @apply h-8 cursor-pointer border-none px-4 text-[10.5px] font-medium tracking-[1.2px] uppercase;
+    @apply h-8 cursor-pointer border-none px-4 text-[11.5px] font-medium tracking-[1.2px] uppercase;
   }
   /* Outlined stencil serif numeral */
   .stat-numeral {
@@ -139,6 +146,6 @@
   }
   /* Starter prompt button (1b) */
   .starter {
-    @apply cursor-pointer rounded-md border border-line bg-panel px-3.5 py-2.5 text-left text-[13px] text-fg hover:border-indigo-300 hover:text-indigo;
+    @apply cursor-pointer rounded-md border border-line bg-panel px-3.5 py-2.5 text-left text-[15px] text-fg hover:border-indigo-300 hover:text-indigo;
   }
 }

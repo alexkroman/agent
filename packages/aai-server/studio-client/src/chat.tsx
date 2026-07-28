@@ -57,12 +57,12 @@ function ToolRow({ part }: { part: Record<string, unknown> & { type: string } })
       {open && (
         <div className="mt-1 text-subtle">
           {part.input != null && (
-            <code className="block overflow-x-auto font-mono text-[11px] break-all whitespace-pre-wrap">
+            <code className="block overflow-x-auto font-mono text-[12px] break-all whitespace-pre-wrap">
               {JSON.stringify(part.input).slice(0, 300)}
             </code>
           )}
           {done && output != null && (
-            <pre className="m-0 mt-1 block overflow-x-auto font-mono text-[11px] break-all whitespace-pre-wrap">
+            <pre className="m-0 mt-1 block overflow-x-auto font-mono text-[12px] break-all whitespace-pre-wrap">
               {(typeof output === "string" ? output : JSON.stringify(output)).slice(0, 600)}
             </pre>
           )}
@@ -109,14 +109,14 @@ function MessageView({ message }: { message: UIMessage }) {
       .trim();
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-lg border border-line bg-cream px-3.5 py-2 text-[13px] leading-5 break-words whitespace-pre-wrap">
+        <div className="max-w-[85%] rounded-lg border border-line bg-cream px-3.5 py-2 text-[15px] leading-5 break-words whitespace-pre-wrap">
           {text}
         </div>
       </div>
     );
   }
   return (
-    <div className="text-[13px] leading-5 break-words whitespace-pre-wrap">
+    <div className="text-[15px] leading-5 break-words whitespace-pre-wrap">
       {toBlocks(message).map((block) =>
         block.kind === "text" ? (
           <p className="my-1" key={block.key}>
@@ -190,7 +190,7 @@ function EmptyStateBody({ llm, onPick }: { llm: boolean; onPick: (prompt: string
   return (
     <>
       <div className="rounded-lg border border-line bg-cream px-[18px] py-4">
-        <p className="m-0 text-[13px] leading-5">
+        <p className="m-0 text-[15px] leading-5">
           Welcome to AAI Studio. Tell me what your voice agent should do and I'll build the first
           version.
         </p>
@@ -269,8 +269,8 @@ function ProjectChat({
         {messages.map((message) => (
           <MessageView key={message.id} message={message} />
         ))}
-        {error && <div className="text-[13px] text-err">{error.message}</div>}
-        {busy && <div className="text-[13px] text-subtle italic">Working…</div>}
+        {error && <div className="text-[15px] text-err">{error.message}</div>}
+        {busy && <div className="text-[15px] text-subtle italic">Working…</div>}
       </div>
       <Composer
         disabled={busy || !llmStatus.llm}

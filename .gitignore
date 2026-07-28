@@ -3,6 +3,8 @@ dist/
 .aai/
 # Scratch dirs where the studio materializes a workspace for its client build
 .studio-build/
+# Playwright MCP scratch output (screenshots, console logs)
+.playwright-mcp/
 .env
 .env.*
 !.env.example

@@ -18,11 +18,11 @@ function StepCard({ numeral, title, caption, active }: StepCardProps) {
         active ? "border-indigo-200" : "border-line"
       }`}
     >
-      <span className={`stat-numeral text-[52px] ${active ? "text-indigo" : "text-warm-300"}`}>
+      <span className={`stat-numeral text-[57px] ${active ? "text-indigo" : "text-warm-300"}`}>
         {numeral}
       </span>
-      <span className="font-serif text-[19px]">{title}</span>
-      <p className="m-0 text-xs leading-[17px] text-muted">{caption}</p>
+      <span className="font-serif text-[21px]">{title}</span>
+      <p className="m-0 text-xs leading-[20px] text-muted">{caption}</p>
     </div>
   );
 }
@@ -53,7 +53,7 @@ export function PreviewPane({ hasProject, deployedSlug, nonce, onNewProject }: P
     <div className="flex flex-1 flex-col items-center justify-center gap-11 bg-cream p-10">
       <div className="flex flex-col items-center gap-2.5">
         <span className="eyebrow self-center">Get started</span>
-        <h2 className="m-0 text-center font-serif text-[30px] leading-[1.15] font-normal text-balance">
+        <h2 className="m-0 text-center font-serif text-[33px] leading-[1.15] font-normal text-balance">
           Three steps to a live voice agent
         </h2>
       </div>
