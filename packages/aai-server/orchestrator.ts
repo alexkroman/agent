@@ -123,7 +123,11 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       crossOriginEmbedderPolicy: "credentialless",
       crossOriginResourcePolicy: "same-origin",
       xContentTypeOptions: "nosniff",
-      xFrameOptions: "DENY",
+      // SAMEORIGIN (not DENY) so the studio's live preview can iframe agent
+      // pages. Cross-origin framing (real clickjacking) stays blocked;
+      // same-origin tenants can already script against each other's public
+      // pages, so this does not widen the tenant boundary.
+      xFrameOptions: "SAMEORIGIN",
     }),
   );
 

@@ -16,10 +16,14 @@ import mime from "mime-types";
 import type { AppContext } from "../context.ts";
 import { SafePathSchema } from "../schemas.ts";
 
-/** All assets are same-origin; scripts are external files (no inline JS). */
+/**
+ * All assets are same-origin; scripts are external files (no inline JS).
+ * `frame-src 'self'` lets the studio preview deployed agents in an iframe.
+ */
 export const STUDIO_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-  "connect-src 'self'; img-src 'self' data:; base-uri 'none'; form-action 'none'";
+  "connect-src 'self'; img-src 'self' data:; frame-src 'self'; " +
+  "base-uri 'none'; form-action 'none'";
 
 const FALLBACK_HTML = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>AAI Studio</title></head>

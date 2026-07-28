@@ -1,5 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Chat panel — `useChat` over the server's UI message stream (SSE).
+// Chat pane — `useChat` over the server's UI message stream (SSE).
+// Lovable-style: user bubbles, agent prose, tool work as compact rows,
+// suggestion chips when the conversation is empty.
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
@@ -9,9 +11,15 @@ type ChatPanelProps = {
   apiKey: string;
   project: string;
   llmStatus: { llm: boolean; provider?: string; model?: string };
-  /** Called after each finished assistant turn so the editor can refresh. */
+  /** Called after each finished assistant turn so the workspace refreshes. */
   onWorkspaceChanged: () => void;
 };
+
+const SUGGESTIONS = [
+  "Build a pizza ordering agent",
+  "Add a tool that rolls dice",
+  "Test the agent, then publish it",
+];
 
 function toolPartName(part: { type: string; toolName?: string }): string {
   if (part.type === "dynamic-tool") return part.toolName ?? "tool";
@@ -22,25 +30,35 @@ function isToolPart(part: { type: string }): boolean {
   return part.type.startsWith("tool-") || part.type === "dynamic-tool";
 }
 
-function ToolPart({ part }: { part: Record<string, unknown> & { type: string } }) {
+function ToolRow({ part }: { part: Record<string, unknown> & { type: string } }) {
+  const [open, setOpen] = useState(false);
   const name = toolPartName(part as { type: string; toolName?: string });
-  const state = part.state as string | undefined;
+  const done = part.state === "output-available";
   const output = part.output;
-  const input = part.input;
   return (
-    <div className="my-1 border-l-2 border-line pl-2 text-xs text-dim">
-      <span className="font-mono">
-        {state === "output-available" ? "✓" : "…"} {name}
-      </span>
-      {input != null && (
-        <code className="mt-0.5 block overflow-x-auto font-mono text-[11px] break-all whitespace-pre-wrap">
-          {JSON.stringify(input).slice(0, 200)}
-        </code>
-      )}
-      {state === "output-available" && output != null && (
-        <pre className="mt-0.5 block overflow-x-auto font-mono text-[11px] break-all whitespace-pre-wrap">
-          {(typeof output === "string" ? output : JSON.stringify(output)).slice(0, 400)}
-        </pre>
+    <div className="my-1 rounded-lg border border-line bg-ink px-2.5 py-1.5 text-xs">
+      <button
+        type="button"
+        className="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent p-0 text-left font-mono text-xs text-dim"
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className={done ? "text-accent" : ""}>{done ? "✓" : "⏳"}</span>
+        {name}
+        <span className="ml-auto">{open ? "▾" : "▸"}</span>
+      </button>
+      {open && (
+        <div className="mt-1 text-dim">
+          {part.input != null && (
+            <code className="block overflow-x-auto font-mono text-[11px] break-all whitespace-pre-wrap">
+              {JSON.stringify(part.input).slice(0, 300)}
+            </code>
+          )}
+          {done && output != null && (
+            <pre className="m-0 mt-1 block overflow-x-auto font-mono text-[11px] break-all whitespace-pre-wrap">
+              {(typeof output === "string" ? output : JSON.stringify(output)).slice(0, 600)}
+            </pre>
+          )}
+        </div>
       )}
     </div>
   );
@@ -76,19 +94,28 @@ function toBlocks(message: UIMessage): MessageBlock[] {
 }
 
 function MessageView({ message }: { message: UIMessage }) {
-  const isUser = message.role === "user";
+  if (message.role === "user") {
+    const text = message.parts
+      .map((part) => (part.type === "text" ? part.text : ""))
+      .join("")
+      .trim();
+    return (
+      <div className="flex justify-end">
+        <div className="max-w-[85%] rounded-2xl bg-ink px-3.5 py-2 break-words whitespace-pre-wrap">
+          {text}
+        </div>
+      </div>
+    );
+  }
   return (
     <div className="break-words whitespace-pre-wrap">
-      <span className={`block font-mono text-[11px] ${isUser ? "text-accent" : "text-dim"}`}>
-        {isUser ? "you" : "agent"}
-      </span>
       {toBlocks(message).map((block) =>
         block.kind === "text" ? (
-          <p className="my-0.5" key={block.key}>
+          <p className="my-1" key={block.key}>
             {block.text}
           </p>
         ) : (
-          <ToolPart key={block.key} part={block.part} />
+          <ToolRow key={block.key} part={block.part} />
         ),
       )}
     </div>
@@ -113,57 +140,66 @@ export function ChatPanel({ apiKey, project, llmStatus, onWorkspaceChanged }: Ch
 
   const busy = status === "submitted" || status === "streaming";
 
-  const submit = () => {
-    const text = input.trim();
-    if (!text || busy || !llmStatus.llm) return;
+  const send = (text: string) => {
+    if (!text.trim() || busy || !llmStatus.llm) return;
     setInput("");
-    void sendMessage({ text });
+    void sendMessage({ text: text.trim() });
     requestAnimationFrame(() => logRef.current?.scrollTo({ top: logRef.current.scrollHeight }));
   };
 
   return (
-    <div className="flex min-w-0 flex-1 flex-col gap-2 p-2.5">
-      <h2 className="pane-title flex items-baseline gap-2">
-        Coding agent
-        {llmStatus.llm && llmStatus.model && (
-          <span className="font-mono normal-case tracking-normal">
-            {llmStatus.provider}/{llmStatus.model}
-          </span>
+    <div className="flex w-[400px] shrink-0 flex-col border-r border-line">
+      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4" ref={logRef}>
+        {messages.length === 0 && (
+          <div className="mt-6 flex flex-col items-start gap-2">
+            <p className="m-0 text-[15px] font-medium">What should your voice agent do?</p>
+            <p className="m-0 mb-2 text-[13px] text-dim">
+              Describe it and the coding agent will write, test, and publish it.
+            </p>
+            {llmStatus.llm &&
+              SUGGESTIONS.map((suggestion) => (
+                <button
+                  type="button"
+                  key={suggestion}
+                  className="chip"
+                  onClick={() => send(suggestion)}
+                >
+                  {suggestion}
+                </button>
+              ))}
+          </div>
         )}
-      </h2>
-      <div
-        className="flex flex-1 flex-col gap-2.5 overflow-y-auto rounded-md border border-line bg-panel p-2.5"
-        ref={logRef}
-      >
         {messages.map((message) => (
           <MessageView key={message.id} message={message} />
         ))}
         {error && <div className="text-err">{error.message}</div>}
-        {busy && <div className="text-dim italic">thinking…</div>}
+        {busy && <div className="text-dim italic">Working…</div>}
       </div>
-      <div className="flex items-center gap-1.5">
-        <input
-          className="field min-w-0 flex-1"
-          value={input}
-          onChange={(e) => setInput(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") submit();
-          }}
-          disabled={!llmStatus.llm}
-          placeholder={
-            llmStatus.llm
-              ? "Describe the voice agent you want to build…"
-              : "Chat disabled: server has no LLM key (ASSEMBLYAI_API_KEY or ANTHROPIC_API_KEY)"
-          }
-        />
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={submit}
-          disabled={busy || !llmStatus.llm}
-        >
-          Send
-        </button>
+      <div className="border-t border-line p-3">
+        <div className="flex items-center gap-1.5">
+          <input
+            className="field min-w-0 flex-1"
+            value={input}
+            onChange={(e) => setInput(e.target.value)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter") send(input);
+            }}
+            disabled={!llmStatus.llm}
+            placeholder={
+              llmStatus.llm
+                ? `Ask Studio… (${llmStatus.model ?? ""})`
+                : "Chat disabled: server has no LLM key (ASSEMBLYAI_API_KEY or ANTHROPIC_API_KEY)"
+            }
+          />
+          <button
+            type="button"
+            className="btn btn-primary"
+            onClick={() => send(input)}
+            disabled={busy || !llmStatus.llm}
+          >
+            ↑
+          </button>
+        </div>
       </div>
     </div>
   );

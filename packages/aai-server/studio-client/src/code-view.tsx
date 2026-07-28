@@ -1,29 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
-// File editor pane — CodeMirror with TypeScript highlighting, plus the
-// deploy panel. Server refreshes (agent edits) update the buffer unless the
-// user has unsaved changes.
+// Code view — file list on the left, CodeMirror editor on the right.
+// Server refreshes (agent edits) update the buffer unless the user has
+// unsaved changes.
 
 import { javascript } from "@codemirror/lang-javascript";
-import { oneDark } from "@codemirror/theme-one-dark";
 import CodeMirror from "@uiw/react-codemirror";
 import { useState } from "react";
 
 const extensions = [javascript({ typescript: true })];
-
-type EditorPaneProps = {
-  files: Record<string, string>;
-  currentFile: string | null;
-  onSelectFile: (path: string) => void;
-  onSave: (path: string, content: string) => Promise<void>;
-  deploy: {
-    busy: boolean;
-    error?: string;
-    deployedSlug?: string;
-    secrets: string;
-    onSecretsChange: (value: string) => void;
-    onDeploy: () => void;
-  };
-};
 
 type FileBufferProps = {
   path: string | null;
@@ -61,15 +45,14 @@ function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
   };
 
   return (
-    <>
-      <div className="min-h-0 flex-1 overflow-auto rounded-md border border-line">
+    <div className="flex min-w-0 flex-1 flex-col">
+      <div className="min-h-0 flex-1 overflow-auto">
         <CodeMirror
           value={draft}
           onChange={(value) => {
             setDraft(value);
             setDirty(true);
           }}
-          theme={oneDark}
           extensions={extensions}
           editable={path != null}
           height="100%"
@@ -82,31 +65,42 @@ function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
           }}
         />
       </div>
-      <div className="flex items-center gap-2">
+      <div className="flex items-center gap-2 border-t border-line px-3 py-1.5">
         <button type="button" className="btn" onClick={() => void save()} disabled={!path}>
           Save
         </button>
-        <span className="text-xs text-dim">
+        <span className="font-mono text-xs text-dim">
           {path ?? ""}
           {dirty ? " •" : ""}
         </span>
         <span className="text-xs text-dim">{saveState}</span>
       </div>
-    </>
+    </div>
   );
 }
 
-export function EditorPane({ files, currentFile, onSelectFile, onSave, deploy }: EditorPaneProps) {
+type CodeViewProps = {
+  files: Record<string, string>;
+  currentFile: string | null;
+  onSelectFile: (path: string) => void;
+  onSave: (path: string, content: string) => Promise<void>;
+};
+
+export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewProps) {
   return (
-    <div className="flex min-w-0 flex-[1.3] flex-col gap-2 border-r border-line p-2">
-      <div className="flex flex-wrap gap-1">
+    <div className="flex min-h-0 flex-1">
+      <div className="flex w-48 flex-col gap-0.5 overflow-y-auto border-r border-line bg-ink p-2">
         {Object.keys(files)
           .sort()
           .map((path) => (
             <button
               type="button"
               key={path}
-              className={`btn font-mono text-xs ${path === currentFile ? "border-accent" : ""}`}
+              className={`cursor-pointer rounded-md border-none px-2 py-1 text-left font-mono text-xs ${
+                path === currentFile
+                  ? "bg-accent/10 text-accent"
+                  : "bg-transparent text-fg hover:bg-line/50"
+              }`}
               onClick={() => onSelectFile(path)}
             >
               {path}
@@ -119,42 +113,6 @@ export function EditorPane({ files, currentFile, onSelectFile, onSave, deploy }:
         serverContent={currentFile ? (files[currentFile] ?? "") : ""}
         onSave={onSave}
       />
-      <div className="flex flex-col gap-1.5 rounded-md border border-line p-2.5">
-        <h2 className="pane-title">Deploy</h2>
-        <textarea
-          className="field h-14 resize-none font-mono text-xs"
-          value={deploy.secrets}
-          onChange={(e) => deploy.onSecretsChange(e.target.value)}
-          placeholder="Secrets, one per line: ASSEMBLYAI_API_KEY=..."
-          spellCheck={false}
-        />
-        <div className="flex items-center gap-1.5">
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={deploy.onDeploy}
-            disabled={deploy.busy}
-          >
-            {deploy.busy ? "Deploying…" : "Build & Deploy"}
-          </button>
-          <span className="text-[13px]">
-            {deploy.error ? (
-              <span className="text-err">{deploy.error}</span>
-            ) : (
-              deploy.deployedSlug && (
-                <a
-                  className="text-accent"
-                  href={`/${deploy.deployedSlug}/`}
-                  target="_blank"
-                  rel="noreferrer"
-                >
-                  Live: /{deploy.deployedSlug}/
-                </a>
-              )
-            )}
-          </span>
-        </div>
-      </div>
     </div>
   );
 }

@@ -17,7 +17,7 @@ function Gate({ onEnter }: { onEnter: (key: string) => void }) {
     if (key) onEnter(key);
   };
   return (
-    <div className="flex h-full items-center justify-center">
+    <div className="flex h-full items-center justify-center bg-ink">
       <div className="flex w-96 flex-col gap-2.5 rounded-xl border border-line bg-panel p-7">
         <h1 className="m-0 mb-1 text-lg font-semibold">
           <span className="text-accent">AAI</span> Studio

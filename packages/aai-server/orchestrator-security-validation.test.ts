@@ -94,7 +94,9 @@ describe("security headers on all response types", () => {
     const res = await app.fetch(new Request("http://localhost/health"));
 
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+    // SAMEORIGIN (not DENY): the studio previews agent pages in a same-origin
+    // iframe; cross-origin framing (clickjacking) stays blocked.
+    expect(res.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
     expect(res.headers.get("Cross-Origin-Resource-Policy")).toBe("same-origin");
   });
 
@@ -128,7 +130,9 @@ describe("security headers on all response types", () => {
 
     const res = await fetch("/my-agent/health");
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
-    expect(res.headers.get("X-Frame-Options")).toBe("DENY");
+    // SAMEORIGIN (not DENY): the studio previews agent pages in a same-origin
+    // iframe; cross-origin framing (clickjacking) stays blocked.
+    expect(res.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
   });
 
   test("CORS headers restrict allowed origins when configured", async () => {
