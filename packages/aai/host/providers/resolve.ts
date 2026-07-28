@@ -74,7 +74,7 @@ import type {
   TtsOpener,
   TtsProvider,
 } from "../../sdk/providers.ts";
-import { repairOpenAiToolCallStream } from "./_openai-stream-repair.ts";
+import { repairOpenAiStream } from "./_openai-stream-repair.ts";
 import { requireApiKey } from "./_utils.ts";
 
 /**
@@ -337,7 +337,7 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
         apiKey,
         baseURL,
         name: "assemblyai",
-        fetch: repairOpenAiToolCallStream(),
+        fetch: repairOpenAiStream(),
       }).chat(opts.model);
     },
   },

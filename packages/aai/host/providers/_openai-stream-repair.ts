@@ -1,7 +1,13 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Repairs non-conformant `tool_calls` deltas in an OpenAI-compatible SSE
- * stream, as a `fetch` wrapper.
+ * Repairs non-conformant frames in an OpenAI-compatible SSE stream, as a
+ * `fetch` wrapper. Two defects, both from Claude models on the AssemblyAI LLM
+ * Gateway, both fatal to a turn:
+ *
+ * 1. `tool_calls` deltas that omit `id` and `type` (detailed below).
+ * 2. A usage-only final chunk carrying `"choices": null` where the AI SDK's
+ *    schema requires an array — the turn dies with "Type validation failed"
+ *    *after* the reply has streamed, so it reads as a random late failure.
  *
  * **Why this exists.** The AssemblyAI LLM Gateway documents streamed
  * responses for OpenAI models only, but it will happily stream a Claude
@@ -24,10 +30,11 @@
  * response, so continuation deltas keep matching their opening delta) and
  * `type: "function"`. An id the upstream *does* send is never overwritten.
  *
- * Scope is deliberately narrow — only `text/event-stream` response bodies
- * are rewritten, and only the `id`/`type` fields of `tool_calls` entries.
- * Everything else (text deltas, `[DONE]`, non-JSON lines, error responses,
- * status, headers) passes through byte-for-byte.
+ * Scope is deliberately narrow — only `text/event-stream` response bodies are
+ * rewritten, and only the `id`/`type` fields of `tool_calls` entries plus an
+ * explicitly-null `choices`. Everything else (text deltas, `[DONE]`, non-JSON
+ * lines, error responses, status, headers) passes through byte-for-byte.
+ * Remove each repair once the gateway emits conformant frames.
  */
 
 /** Structural `fetch`, kept loose so it satisfies the AI SDK's option type. */
@@ -118,14 +125,31 @@ function repairChoice(
 }
 
 /**
- * Fill in missing `id`/`type` across a whole chunk. `ids` carries the
- * per-response slot→id mapping. Returns true when the payload was modified
- * (so unmodified lines can be re-emitted verbatim).
+ * Normalize `"choices": null` to `[]`.
+ *
+ * Claude models on the gateway close a stream with a usage-only chunk whose
+ * `choices` is an explicit `null`. The AI SDK's chunk schema requires an
+ * array, so the union fails to parse and the turn dies with "Type validation
+ * failed" — *after* the reply has already streamed, which makes it look like
+ * a random late failure rather than a malformed final frame. An absent
+ * `choices` key is left absent; only an explicit null is rewritten.
+ */
+function repairNullChoices(payload: unknown): boolean {
+  const wire = asWire(payload);
+  if (!(wire && "choices" in wire) || wire.choices !== null) return false;
+  wire.choices = [];
+  return true;
+}
+
+/**
+ * Fill in missing `id`/`type` across a whole chunk, and normalize a null
+ * `choices`. `ids` carries the per-response slot→id mapping. Returns true when
+ * the payload was modified (so unmodified lines can be re-emitted verbatim).
  */
 function repairChunk(payload: unknown, ids: Map<string, string>, newId: () => string): boolean {
+  let changed = repairNullChoices(payload);
   const choices = asWire(payload)?.choices;
-  if (!Array.isArray(choices)) return false;
-  let changed = false;
+  if (!Array.isArray(choices)) return changed;
   for (const [position, choice] of choices.entries()) {
     changed = repairChoice(choice, position, ids, newId) || changed;
   }
@@ -188,7 +212,7 @@ function createRepairTransform(newId: () => string): TransformStream<Uint8Array,
  * deltas repaired on the way through. Defaults to the ambient `fetch`,
  * resolved per call so tests can stub the global.
  */
-export function repairOpenAiToolCallStream(
+export function repairOpenAiStream(
   baseFetch?: FetchLike,
   options: StreamRepairOptions = {},
 ): FetchLike {

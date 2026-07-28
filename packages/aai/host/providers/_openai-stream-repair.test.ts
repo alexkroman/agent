@@ -12,7 +12,7 @@
 import { streamText } from "ai";
 import { describe, expect, it, vi } from "vitest";
 import { ASSEMBLYAI_LLM_KIND } from "../../sdk/providers/llm/assemblyai.ts";
-import { repairOpenAiToolCallStream } from "./_openai-stream-repair.ts";
+import { repairOpenAiStream } from "./_openai-stream-repair.ts";
 import { resolveLlm } from "./resolve.ts";
 
 /** Build an SSE response body from already-serialized `data:` payloads. */
@@ -65,11 +65,37 @@ function seqIds(): () => string {
 }
 
 async function repaired(body: string, slices = 1): Promise<string[]> {
-  const wrapped = repairOpenAiToolCallStream(sseFetch(body, slices), { generateId: seqIds() });
+  const wrapped = repairOpenAiStream(sseFetch(body, slices), { generateId: seqIds() });
   return readPayloads(await wrapped("https://example.test/v1/chat/completions"));
 }
 
-describe("repairOpenAiToolCallStream", () => {
+describe("repairOpenAiStream", () => {
+  it("rewrites a null choices array to empty on the gateway's final usage chunk", async () => {
+    // Claude models on the gateway end the stream with a usage-only chunk
+    // carrying `"choices": null`. The AI SDK's chunk schema requires an array,
+    // so the whole turn dies with "Type validation failed" *after* the text
+    // has already streamed.
+    const usageOnly = JSON.stringify({
+      id: "msg_bdrk_01",
+      object: "chat.completion.chunk",
+      created: 1,
+      model: "claude-haiku-4-5-20251001",
+      choices: null,
+      usage: { prompt_tokens: 4566, completion_tokens: 31, total_tokens: 4597 },
+    });
+    const payloads = await repaired(sse(usageOnly));
+    const parsed = JSON.parse(payloads[0] ?? "{}") as { choices: unknown; usage: unknown };
+    expect(parsed.choices).toEqual([]);
+    // The usage numbers are why the chunk exists — they must survive.
+    expect(parsed.usage).toMatchObject({ total_tokens: 4597 });
+  });
+
+  it("leaves a missing choices key alone", async () => {
+    // Only an explicit null is repaired; absent stays absent.
+    const payloads = await repaired(sse(JSON.stringify({ id: "x", usage: { total_tokens: 1 } })));
+    expect(JSON.parse(payloads[0] ?? "{}")).not.toHaveProperty("choices");
+  });
+
   it("injects a synthetic id and type into an opening tool_call delta", async () => {
     const payloads = await repaired(
       sse(chunk({ tool_calls: [{ index: 0, function: { name: "list_files", arguments: "" } }] })),
@@ -126,14 +152,14 @@ describe("repairOpenAiToolCallStream", () => {
 
   it("leaves text-only deltas and the [DONE] sentinel untouched", async () => {
     const body = sse(chunk({ role: "assistant", content: "hi" }), chunk({}, "stop"));
-    const wrapped = repairOpenAiToolCallStream(sseFetch(body), { generateId: seqIds() });
+    const wrapped = repairOpenAiStream(sseFetch(body), { generateId: seqIds() });
     const out = await (await wrapped("https://example.test/v1/chat/completions")).text();
     expect(out).toBe(body);
   });
 
   it("passes non-JSON data lines through unchanged", async () => {
     const body = "data: not json\n\ndata: [DONE]\n\n";
-    const wrapped = repairOpenAiToolCallStream(sseFetch(body), { generateId: seqIds() });
+    const wrapped = repairOpenAiStream(sseFetch(body), { generateId: seqIds() });
     const out = await (await wrapped("https://example.test/v1/chat/completions")).text();
     expect(out).toBe(body);
   });
@@ -153,7 +179,7 @@ describe("repairOpenAiToolCallStream", () => {
       async () =>
         new Response(json, { status: 200, headers: { "content-type": "application/json" } }),
     ) as unknown as typeof globalThis.fetch;
-    const wrapped = repairOpenAiToolCallStream(base, { generateId: seqIds() });
+    const wrapped = repairOpenAiStream(base, { generateId: seqIds() });
     const response = await wrapped("https://example.test/v1/chat/completions");
     expect(await response.text()).toBe(json);
   });
@@ -162,7 +188,7 @@ describe("repairOpenAiToolCallStream", () => {
     const base = vi.fn(
       async () => new Response("nope", { status: 429, headers: { "retry-after": "3" } }),
     ) as unknown as typeof globalThis.fetch;
-    const wrapped = repairOpenAiToolCallStream(base);
+    const wrapped = repairOpenAiStream(base);
     const response = await wrapped("https://example.test/v1/chat/completions");
     expect(response.status).toBe(429);
     expect(response.headers.get("retry-after")).toBe("3");

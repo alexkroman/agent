@@ -453,15 +453,18 @@ Reference providers shipped today:
     `@ai-sdk/openai`'s `.chat()` client. `region: "eu"` selects the EU
     endpoint. Same factory name as the STT provider — alias one on import.
     The client is built with a `fetch` wrapper,
-    `repairOpenAiToolCallStream` (`host/providers/_openai-stream-repair.ts`):
-    the gateway documents streamed responses for OpenAI models only and its
-    Claude streams emit `tool_calls` deltas with no `id`/`type`, which makes
-    `StreamingToolCallTracker` in `@ai-sdk/provider-utils` throw
-    `Expected 'id' to be a string` and kill any turn that calls a tool. The
-    wrapper fills in a synthetic id (stable per tool-call index within one
-    response) and `type: "function"`, leaving real ids and every other byte
-    of the stream alone. Remove it only once the gateway emits conformant
-    tool-call deltas.
+    `repairOpenAiStream` (`host/providers/_openai-stream-repair.ts`): the
+    gateway documents streamed responses for OpenAI models only, and its
+    Claude streams break two AI SDK expectations. (1) `tool_calls` deltas
+    arrive with no `id`/`type`, which makes `StreamingToolCallTracker` in
+    `@ai-sdk/provider-utils` throw `Expected 'id' to be a string` and kill any
+    turn that calls a tool — the wrapper fills in a synthetic id (stable per
+    tool-call index within one response) and `type: "function"`, leaving real
+    ids alone. (2) The final usage-only chunk carries `"choices": null` where
+    the schema requires an array, so the turn dies with "Type validation
+    failed" *after* the reply has streamed — the wrapper rewrites that null to
+    `[]` (an absent `choices` stays absent). Every other byte passes through.
+    Remove each repair once the gateway emits conformant frames.
 - **TTS**: one of
   - `cartesia({ voice })` — `CARTESIA_API_KEY`
   - `rime({ voice })` — `RIME_API_KEY`
