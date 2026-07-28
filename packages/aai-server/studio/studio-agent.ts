@@ -19,12 +19,14 @@ import {
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
-import { bundleWorkspace, StudioBuildError } from "./studio-bundle.ts";
+import { bundleWorkspaceWorker } from "./studio-bundle.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
+import { StudioBuildError } from "./studio-errors.ts";
 import { studioModel } from "./studio-llm.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
 import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
+import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 
 const MAX_CHAT_STEPS = 16;
 
@@ -63,7 +65,7 @@ async function runTrial(
   if (!workspace) return `Error: project ${deps.project} not found`;
   let worker: string;
   try {
-    worker = await bundleWorkspace(workspace.files);
+    worker = await withWorkspaceDir(workspace.files, bundleWorkspaceWorker);
   } catch (err) {
     if (err instanceof StudioBuildError) return err.message;
     throw err;

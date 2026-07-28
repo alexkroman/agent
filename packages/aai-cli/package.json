@@ -18,6 +18,10 @@
     "./client-bundler": {
       "@dev/source": "./client-bundler.ts",
       "import": "./dist/client-bundler.mjs"
+    },
+    "./worker-bundler": {
+      "@dev/source": "./worker-bundler.ts",
+      "import": "./dist/worker-bundler.mjs"
     }
   },
   "files": [

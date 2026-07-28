@@ -2,6 +2,7 @@
 
 import { describe, expect, test } from "vitest";
 import { buildWorkspaceClient } from "./studio-client-build.ts";
+import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 
 const CLIENT_TSX = `import "@alexkroman1/aai-ui/styles.css";
 import { client } from "@alexkroman1/aai-ui";
@@ -9,13 +10,17 @@ import { client } from "@alexkroman1/aai-ui";
 export default client(() => <div className="grid gap-4 p-8 text-xl">Hello</div>);
 `;
 
+/** Materialize a workspace and run the real client build over it. */
+const buildFiles = (files: Record<string, string>): Promise<Record<string, string>> =>
+  withWorkspaceDir(files, buildWorkspaceClient);
+
 describe("buildWorkspaceClient", () => {
   test("returns no files when the workspace has no client.tsx", async () => {
-    expect(await buildWorkspaceClient({ "agent.ts": "export default {}" })).toEqual({});
+    expect(await buildFiles({ "agent.ts": "export default {}" })).toEqual({});
   });
 
   test("builds client.tsx into index.html plus hashed assets", async () => {
-    const files = await buildWorkspaceClient({
+    const files = await buildFiles({
       "agent.ts": "export default {}",
       "client.tsx": CLIENT_TSX,
     });
@@ -26,7 +31,7 @@ describe("buildWorkspaceClient", () => {
   }, 60_000);
 
   test("compiles Tailwind utilities used by the workspace client", async () => {
-    const files = await buildWorkspaceClient({
+    const files = await buildFiles({
       "agent.ts": "export default {}",
       "client.tsx": CLIENT_TSX,
     });
@@ -39,7 +44,7 @@ describe("buildWorkspaceClient", () => {
 
   test("ignores a vite.config.ts smuggled into the workspace", async () => {
     // Workspace files are untrusted and a Vite config is executable code.
-    const files = await buildWorkspaceClient({
+    const files = await buildFiles({
       "agent.ts": "export default {}",
       "client.tsx": CLIENT_TSX,
       "vite.config.ts": `throw new Error("workspace config executed");`,

@@ -13,9 +13,11 @@ import { type DeployDeps, deployAgentBundle } from "../deploy.ts";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import { describeBundle } from "../sandbox-vm.ts";
 import { hashApiKey } from "../secrets.ts";
-import { bundleWorkspace, StudioBuildError } from "./studio-bundle.ts";
+import { bundleWorkspaceWorker } from "./studio-bundle.ts";
 import { buildWorkspaceClient } from "./studio-client-build.ts";
+import { StudioBuildError } from "./studio-errors.ts";
 import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
+import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 
 export type StudioDeployResult =
   | { ok: true; slug: string; url: string }
@@ -23,12 +25,12 @@ export type StudioDeployResult =
 
 export type StudioDeployDeps = DeployDeps & {
   storage: Storage;
-  /** Injectable for tests — defaults to the real esbuild bundler. */
-  bundle?: (files: Record<string, string>) => Promise<string>;
+  /** Injectable for tests — defaults to the CLI's Vite worker build. */
+  bundle?: (dir: string) => Promise<string>;
   /** Injectable for tests — defaults to sandboxed `describeBundle`. */
   inspect?: (workerCode: string) => Promise<unknown>;
   /** Injectable for tests — defaults to the CLI's Vite client build. */
-  buildClient?: (files: Record<string, string>) => Promise<Record<string, string>>;
+  buildClient?: (dir: string) => Promise<Record<string, string>>;
 };
 
 export type StudioDeployParams = {
@@ -46,17 +48,17 @@ export async function deployStudioProject(
   const workspace = await getWorkspace(deps.storage, params.scope, params.project);
   if (!workspace) return { ok: false, error: `Project not found: ${params.project}` };
 
-  const bundle = deps.bundle ?? bundleWorkspace;
+  const bundle = deps.bundle ?? bundleWorkspaceWorker;
   const buildClient = deps.buildClient ?? buildWorkspaceClient;
-  // Worker and client are independent builds; a failure in either is a
-  // message the coding agent can act on, not an exception.
+  // One materialize feeds both builds — they read the same scratch dir and
+  // are otherwise independent. A failure in either is a message the coding
+  // agent can act on, not an exception.
   let worker: string;
   let clientFiles: Record<string, string>;
   try {
-    [worker, clientFiles] = await Promise.all([
-      bundle(workspace.files),
-      buildClient(workspace.files),
-    ]);
+    [worker, clientFiles] = await withWorkspaceDir(workspace.files, (dir) =>
+      Promise.all([bundle(dir), buildClient(dir)]),
+    );
   } catch (err) {
     if (err instanceof StudioBuildError) return { ok: false, error: err.message };
     throw err;

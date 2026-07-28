@@ -3,10 +3,16 @@
 // exercising it directly keeps the import policy honest.
 
 import { describe, expect, test } from "vitest";
-import { bundleWorkspace, StudioBuildError } from "./studio-bundle.ts";
+import { bundleWorkspaceWorker } from "./studio-bundle.ts";
+import { StudioBuildError } from "./studio-errors.ts";
 import { starterFiles } from "./studio-template.ts";
+import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 
-describe("bundleWorkspace", () => {
+/** Materialize a workspace and run the real worker build over it. */
+const bundleWorkspace = (files: Record<string, string>): Promise<string> =>
+  withWorkspaceDir(files, bundleWorkspaceWorker);
+
+describe("bundleWorkspaceWorker", () => {
   test("bundles the starter workspace with a self-describing config export", async () => {
     const code = await bundleWorkspace(starterFiles());
     expect(code).toContain("__aaiConfig");
@@ -43,7 +49,27 @@ export default agent({ name: config.name });`,
         "agent.ts": `import { x } from "../outside.ts";
 export default { name: String(x) };`,
       }),
-    ).rejects.toThrow(/File not found in workspace: \.\.\/outside\.ts/);
+    ).rejects.toThrow(/escapes the workspace/);
+  }, 30_000);
+
+  test("cannot reach real server source by traversing out of the scratch dir", async () => {
+    // The scratch dir is a real directory inside the server package, so "not
+    // found" is no longer what stops a `../` climb — the resolver must.
+    await expect(
+      bundleWorkspace({
+        "agent.ts": `import { createSandbox } from "../../sandbox.ts";
+export default { name: String(typeof createSandbox) };`,
+      }),
+    ).rejects.toThrow(/escapes the workspace/);
+  }, 30_000);
+
+  test("rejects absolute-path imports", async () => {
+    await expect(
+      bundleWorkspace({
+        "agent.ts": `import "/etc/passwd";
+export default {};`,
+      }),
+    ).rejects.toThrow(/escapes the workspace/);
   }, 30_000);
 
   test("imports .md files as raw strings", async () => {
@@ -83,7 +109,17 @@ export default { name: String(typeof readFileSync) };`,
   test("reports missing workspace files with their import path", async () => {
     await expect(
       bundleWorkspace({ "agent.ts": `import "./missing.ts"; export default {};` }),
-    ).rejects.toThrow(/File not found in workspace: \.\/missing\.ts/);
+    ).rejects.toThrow(/Could not resolve '\.\/missing\.ts'/);
+  }, 30_000);
+
+  test("scrubs the scratch-dir path out of diagnostics", async () => {
+    // The coding agent only knows workspace-relative paths; a leaked
+    // .studio-build/<uuid>/ prefix is noise it might try to "fix".
+    const err = await bundleWorkspace({
+      "agent.ts": `import "./missing.ts"; export default {};`,
+    }).catch((e: Error) => e);
+    expect((err as Error).message).not.toMatch(/\.studio-build/);
+    expect((err as Error).message).toContain("agent.ts");
   }, 30_000);
 
   test("surfaces TypeScript syntax errors as StudioBuildError", async () => {

@@ -114,11 +114,11 @@ Five workspace packages under `packages/`:
 
 **Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` all depend on
 `@alexkroman1/aai` (via `workspace:*`). The one edge between them is
-`aai-server` → `aai-cli`, and only for the single public subpath
-`@alexkroman1/aai-cli/client-bundler`: the studio builds a workspace's
-`client.tsx` through the CLI's own Vite pipeline rather than carrying a
-second client bundler. Do not widen it — nothing else in the server may
-import from the CLI, and the CLI must never import from the server.
+`aai-server` → `aai-cli`, and only for its two public bundler subpaths
+(`/worker-bundler`, `/client-bundler`): the studio builds workspaces
+through the CLI's own Vite pipeline rather than carrying a second
+bundler. Do not widen it — nothing else in the server may import from
+the CLI, and the CLI must never import from the server.
 
 **Publishable packages must use the `@alexkroman1/` scope.** The unscoped
 names `aai`, `aai-ui`, `aai-cli` are taken on npm by other publishers —
@@ -244,12 +244,13 @@ restrictions apply there.
   `studio-routes.ts` (HTTP surface), `studio-agent.ts` (coding-agent LLM
   loop + tools), `studio-llm.ts` (provider/model selection + the picker's
   option list), `studio-sandbox.ts` (per-chat-session sandbox),
-  `studio-bundle.ts` (in-memory esbuild for the worker),
-  `studio-client-build.ts` (client.tsx via the CLI's Vite bundler),
-  `studio-deploy.ts` (build → sandbox inspect → deploy),
-  `studio-workspace.ts` (project file store), `studio-prompt.ts` (system
-  prompt from the scaffold CLAUDE.md), `studio-static.ts` (serves the
-  built client)
+  `studio-workspace-dir.ts` (materializes a workspace to a scratch dir),
+  `studio-bundle.ts` (worker build + import allowlist),
+  `studio-client-build.ts` (client.tsx build), `studio-errors.ts`
+  (`StudioBuildError`), `studio-deploy.ts` (build → sandbox inspect →
+  deploy), `studio-workspace.ts` (project file store), `studio-prompt.ts`
+  (system prompt from the scaffold CLAUDE.md), `studio-static.ts` (serves
+  the built client)
 - `studio-client/` — the studio's React front-end (Vite + Tailwind v4 +
   `useChat` + TanStack Query + CodeMirror), built into
   `dist/studio-client` by `pnpm --filter aai-server build`. Panes:
@@ -311,27 +312,43 @@ voice agents without the CLI:
   uses a throwaway one (`describeBundle` in `sandbox-vm.ts`). The LLM
   orchestration itself stays host-side — the guest has no network device
   by design.
-- **Worker build** (`studio-bundle.ts`) bundles the workspace in memory
-  with esbuild. Imports are allowlisted: workspace files, `@alexkroman1/aai`
-  (any subpath), and `zod`; `node:` builtins stay external (CLI parity).
-  The entry is wrapped so the bundle itself exports `__aaiConfig`
-  (extracted with the dependency-free `@alexkroman1/aai/manifest`
-  helpers) — **user code is never evaluated on the host**; the host only
-  validates the sandbox-returned config (`IsolateConfigSchema`) and hands
-  it to the shared deploy core (`deployAgentBundle` in `deploy.ts` —
-  single source of slug-ownership semantics for HTTP and studio deploys).
+- **Builds run through the CLI's bundlers, not copies of them.**
+  `withWorkspaceDir` (`studio-workspace-dir.ts`) materializes the
+  workspace to one scratch dir and both builds read it. The scratch dir
+  lives under the server package, not `os.tmpdir()`, so Node resolves
+  `@alexkroman1/aai`, `zod`, `react`, and `@alexkroman1/aai-ui` by
+  walking up to the workspace `node_modules`. Workspace keys are
+  re-validated with `SafePathSchema` at the point they become real paths.
+- **Worker build** (`studio-bundle.ts`) calls `buildWorker` from
+  `@alexkroman1/aai-cli/worker-bundler` — the same Vite/Rollup pass
+  `aai deploy` runs. The studio supplies the policy on top:
+  - A generated entry (`__aai-entry.ts`) re-exports the agent *and* its
+    config as `__aaiConfig` (via the dependency-free
+    `@alexkroman1/aai/manifest` helpers) so the guest reports the config
+    back from `bundle/load`. **User code is never evaluated on the host** —
+    which is why only `buildWorker` is reused and *not* the CLI's
+    `buildAgentBundle`, whose `evalWorkerBundle` dynamic-imports the built
+    worker.
+  - `allowlistPlugin` enforces the import policy: workspace files,
+    `@alexkroman1/aai` (any subpath), and `zod`; `node:` builtins stay
+    external (CLI parity). It also **rejects any relative or absolute
+    import resolving outside the scratch dir** — that dir is a real
+    directory inside the server package, so a `../` climb would otherwise
+    pull server source into the guest bundle. The in-memory esbuild
+    version got this for free ("file not found"); on a real filesystem it
+    has to be an explicit check.
+  - `configFile: false` — a `vite.config.ts` is executable host code and
+    workspace files are untrusted, so any the agent writes is inert.
+  - Diagnostics are scrubbed (`scrub`) of the scratch-dir prefix and ANSI
+    codes; the coding agent only knows workspace-relative paths.
 - **Client build** (`studio-client-build.ts`) handles a workspace
-  `client.tsx`. It does *not* reimplement the CLI: the workspace is
-  materialized to a scratch dir and built by `buildClient` from
-  `@alexkroman1/aai-cli/client-bundler`, the same Vite pass `aai deploy`
-  runs, so browser-published UIs are byte-identical to CLI-deployed ones.
-  The studio injects `@vitejs/plugin-react` + `@tailwindcss/vite` (a
-  workspace has no `vite.config.ts`) and passes `configFile: false` —
-  a Vite config is executable host code and workspace files are untrusted,
-  so any `vite.config.ts` the coding agent writes is inert. The scratch
-  dir lives under the server package, not `os.tmpdir()`, so Node resolves
-  `react`/`react-dom`/`@alexkroman1/aai-ui` by walking up to the workspace
-  `node_modules`. No `client.tsx` → `{}` → the agent gets the default UI.
+  `client.tsx`, built by `buildClient` from
+  `@alexkroman1/aai-cli/client-bundler` — the same Vite pass
+  `aai deploy` runs, so browser-published UIs match
+  CLI-deployed ones. The studio injects `@vitejs/plugin-react` +
+  `@tailwindcss/vite` (a workspace has no `vite.config.ts`) and passes
+  `configFile: false`. No `client.tsx` → `{}` → the agent gets the
+  default UI.
 - **Deployed-agent credentials.** The studio has no secrets UI, so a
   published agent would otherwise start with an empty env — its S2S
   connect sends an empty bearer token (`runtime-transport.ts`:

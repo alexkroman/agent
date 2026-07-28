@@ -5,11 +5,16 @@ import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
-import { build, type Rollup } from "vite";
 import { type CommandResult, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 import { validateAgentExport } from "./_utils.ts";
 import { buildClient } from "./client-bundler.ts";
+import { type BuildWorkerOptions, buildWorker } from "./worker-bundler.ts";
+
+export type { BuildWorkerOptions } from "./worker-bundler.ts";
+// Re-exported so existing internal importers (_dev-server) keep one entry
+// point for bundling; the implementations live in the public *-bundler modules.
+export { buildWorker } from "./worker-bundler.ts";
 
 /** Output from the bundler: agentConfig + worker ESM + client files. */
 export type DirectoryBundleOutput = {
@@ -19,15 +24,6 @@ export type DirectoryBundleOutput = {
   clientFiles: Record<string, string>;
   /** Serializable agent config — sent as agentConfig to the server. */
   agentConfig: Record<string, unknown>;
-};
-
-/** Options for worker bundling. */
-export type BuildWorkerOptions = {
-  /**
-   * Minify the worker with esbuild. Deploy builds set this to shrink the
-   * upload payload; dev builds stay unminified for readable stack traces.
-   */
-  minify?: boolean;
 };
 
 /**
@@ -83,47 +79,6 @@ export async function evalWorkerBundle(code: string, cwd: string): Promise<Agent
       /* best-effort cleanup */
     });
   }
-}
-
-/**
- * Bundle agent.ts into a single ESM string for the sandbox worker.
- *
- * Zod is bundled in — zod 4's `Function()` usage is wrapped in try/catch
- * and gracefully degrades in restricted environments like Deno.
- */
-export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): Promise<string> {
-  const agentEntry = path.join(cwd, "agent.ts");
-
-  const result = await build({
-    logLevel: "silent",
-    plugins: [
-      // Transform .md imports into raw string exports so templates that do
-      // `import systemPrompt from "./system-prompt.md"` bundle correctly.
-      {
-        name: "raw-md",
-        transform(code, id) {
-          if (id.endsWith(".md")) {
-            return `export default ${JSON.stringify(code)}`;
-          }
-        },
-      },
-    ],
-    build: {
-      lib: { entry: agentEntry, formats: ["es"], fileName: "worker" },
-      target: "node20",
-      minify: opts.minify ? "esbuild" : false,
-      write: false,
-      rollupOptions: {
-        output: { entryFileNames: "[name].js" },
-      },
-    },
-  });
-
-  const output = Array.isArray(result) ? result[0] : (result as Rollup.RollupOutput);
-  if (!output) throw new Error("Vite produced no output for agent.ts");
-  const chunk = output.output.find((o): o is Rollup.OutputChunk => o.type === "chunk" && o.isEntry);
-  if (!chunk) throw new Error("Vite produced no entry chunk for agent.ts");
-  return chunk.code;
 }
 
 type BuildData = {

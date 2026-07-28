@@ -1,41 +1,42 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * In-memory bundling of a studio workspace into a deployable worker ESM.
+ * Bundle a studio workspace into the deployable worker ESM.
  *
- * Mirrors the CLI bundler (`aai-cli/_bundler.ts`) but sources files from the
- * workspace record instead of disk, and — critically — never evaluates the
- * agent's code on the host. Instead the bundle is wrapped in an entry that
- * extracts the agent config *inside the bundle* (via the dependency-free
- * `@alexkroman1/aai/manifest` helpers) and exports it as `__aaiConfig`; the
- * guest sandbox returns it from `bundle/load` (see `describeBundle`).
+ * This does **not** reimplement the CLI's worker build — it calls `buildWorker`
+ * from `@alexkroman1/aai-cli/worker-bundler`, the same Vite/Rollup pass
+ * `aai deploy` runs, so a worker published from the browser matches one built
+ * on a laptop. What the studio adds on top is policy:
  *
- * Import policy: workspace code may import its own files, `@alexkroman1/aai`
- * (any subpath), and `zod`. `node:` builtins stay external (same as the CLI
- * build) — they resolve inside the Deno guest but are permission-gated there.
+ * - **The config wrapper.** The entry re-exports the agent *and* its config as
+ *   `__aaiConfig` (extracted with the dependency-free
+ *   `@alexkroman1/aai/manifest` helpers), so the guest sandbox can report the
+ *   config back from `bundle/load`. The host never evaluates agent code — the
+ *   CLI's own `buildAgentBundle` does (`evalWorkerBundle`), which is exactly
+ *   why only `buildWorker` is reused here and not the whole bundle step.
+ * - **The import allowlist** (`allowlistPlugin`). Vite resolves from the
+ *   server's own `node_modules`, so without this a workspace could pull any
+ *   server dependency into the guest bundle. Workspace code may import its own
+ *   files, `@alexkroman1/aai` (any subpath), and `zod`; `node:` builtins stay
+ *   external (CLI parity — they resolve inside the Deno guest but are
+ *   permission-gated there).
  */
 
+import fs from "node:fs/promises";
 import path from "node:path";
-import {
-  build,
-  type OnResolveArgs,
-  type OnResolveResult,
-  type Plugin,
-  type PluginBuild,
-} from "esbuild";
+import { buildWorker } from "@alexkroman1/aai-cli/worker-bundler";
+import type { PluginOption } from "vite";
 import { MAX_WORKER_SIZE } from "../constants.ts";
+import { StudioBuildError } from "./studio-errors.ts";
 
-const ENTRY_NS = "aai-studio-entry";
-const WORKSPACE_NS = "aai-studio-ws";
-/** Virtual specifier the wrapper uses to import the workspace's agent.ts. */
-const AGENT_SPECIFIER = "@aai-studio/agent";
+export { StudioBuildError } from "./studio-errors.ts";
 
 /** Bare import prefixes workspace code may use. */
 const ALLOWED_PACKAGES = ["@alexkroman1/aai", "zod"];
 
-/** Directory whose node_modules resolves the allowlisted packages. */
-const RESOLVE_DIR = path.resolve(import.meta.dirname, "..");
+/** Generated entry filename, written into the scratch dir alongside agent.ts. */
+export const WRAPPER_ENTRY_FILE = "__aai-entry.ts";
 
-const WRAPPER_ENTRY = `import def from ${JSON.stringify(AGENT_SPECIFIER)};
+export const WRAPPER_ENTRY = `import def from "./agent.ts";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 export default def;
 export const __aaiConfig = {
@@ -44,152 +45,130 @@ export const __aaiConfig = {
 };
 `;
 
-/** Build failure with esbuild diagnostics formatted for the chat/UI. */
-export class StudioBuildError extends Error {}
+async function fileExists(p: string): Promise<boolean> {
+  return await fs
+    .access(p)
+    .then(() => true)
+    .catch(() => false);
+}
 
 function isAllowedPackage(spec: string): boolean {
   return ALLOWED_PACKAGES.some((pkg) => spec === pkg || spec.startsWith(`${pkg}/`));
 }
 
-function loaderFor(filePath: string): "ts" | "tsx" | "js" | "json" | "text" {
-  if (filePath.endsWith(".tsx")) return "tsx";
-  if (filePath.endsWith(".json")) return "json";
-  if (filePath.endsWith(".js") || filePath.endsWith(".mjs")) return "js";
-  if (filePath.endsWith(".ts")) return "ts";
-  // .md and anything else imports as a raw string (CLI raw-md parity).
-  return "text";
-}
+/**
+ * Enforce the import policy for modules imported *by workspace code*.
+ *
+ * Only imports whose importer lives inside the scratch dir are policed —
+ * `@alexkroman1/aai`'s own dependencies resolve from `node_modules` and must
+ * pass through untouched.
+ */
+export function allowlistPlugin(dir: string): PluginOption {
+  const prefix = `${dir}${path.sep}`;
+  const inWorkspace = (id: string | undefined): id is string =>
+    id !== undefined && id.startsWith(prefix) && !id.includes(`${path.sep}node_modules${path.sep}`);
 
-/** Resolve a workspace-relative import, trying TS/JS extensions. */
-function resolveWorkspacePath(
-  files: Record<string, string>,
-  importer: string,
-  spec: string,
-): string | null {
-  const base = path.posix.normalize(path.posix.join(path.posix.dirname(importer), spec));
-  if (base.startsWith("..")) return null;
-  for (const candidate of [base, `${base}.ts`, `${base}.tsx`, `${base}.js`]) {
-    if (candidate in files) return candidate;
-  }
-  return null;
-}
+  /**
+   * The scratch dir is a real directory inside the server package, so a `../`
+   * climb would reach server source (or anything else on disk) and bundle it
+   * into the guest worker. "File not found" is no longer what stops that —
+   * this is. Absolute paths never resolve either.
+   */
+  const assertInsideWorkspace = (source: string, importer: string): void => {
+    const target = path.isAbsolute(source) ? source : path.resolve(path.dirname(importer), source);
+    if (target !== dir && !target.startsWith(prefix)) {
+      throw new StudioBuildError(`Import "${source}" escapes the workspace`);
+    }
+  };
 
-function resolveError(text: string): OnResolveResult {
-  return { errors: [{ text }] };
-}
-
-/** Resolve one import written by workspace code (see module doc for policy). */
-function resolveFromWorkspace(
-  b: PluginBuild,
-  files: Record<string, string>,
-  args: OnResolveArgs,
-): OnResolveResult | Promise<OnResolveResult> | undefined {
-  if (args.path.startsWith("./") || args.path.startsWith("../")) {
-    const resolved = resolveWorkspacePath(files, args.importer, args.path);
-    if (!resolved) return resolveError(`File not found in workspace: ${args.path}`);
-    return { path: resolved, namespace: WORKSPACE_NS };
-  }
-  if (args.path.startsWith("node:")) return { path: args.path, external: true };
-  if (!isAllowedPackage(args.path)) {
-    return resolveError(
-      `Cannot import "${args.path}": studio agents may only import ` +
-        `workspace files, ${ALLOWED_PACKAGES.join(", ")}`,
-    );
-  }
-  // Hand the allowlisted package to esbuild's own resolver, anchored at
-  // this server package so its node_modules is in scope. `pluginData`
-  // breaks the re-entry into this same hook.
-  if (args.pluginData?.aaiStudioResolved) return;
-  return b.resolve(args.path, {
-    resolveDir: RESOLVE_DIR,
-    kind: args.kind === "entry-point" ? "import-statement" : args.kind,
-    pluginData: { aaiStudioResolved: true },
-  });
-}
-
-function studioPlugin(files: Record<string, string>): Plugin {
   return {
-    name: "aai-studio",
-    setup(b) {
-      // The wrapper's virtual import of the workspace agent entry.
-      b.onResolve({ filter: /^@aai-studio\/agent$/ }, () => ({
-        path: "agent.ts",
-        namespace: WORKSPACE_NS,
-      }));
-
-      // Imports written by workspace code.
-      b.onResolve({ filter: /.*/, namespace: WORKSPACE_NS }, (args) =>
-        resolveFromWorkspace(b, files, args),
+    name: "aai-studio-allowlist",
+    enforce: "pre",
+    resolveId(source: string, importer: string | undefined) {
+      if (!inWorkspace(importer)) return null;
+      if (source.startsWith(".") || path.isAbsolute(source)) {
+        assertInsideWorkspace(source, importer);
+        return null; // inside the workspace — let Vite resolve it
+      }
+      if (source.startsWith("node:")) return { id: source, external: true };
+      if (isAllowedPackage(source)) return null;
+      throw new StudioBuildError(
+        `Cannot import "${source}": studio agents may only import ` +
+          `workspace files, ${ALLOWED_PACKAGES.join(", ")}`,
       );
-
-      b.onLoad({ filter: /.*/, namespace: WORKSPACE_NS }, (args) => {
-        const contents = files[args.path];
-        if (contents === undefined) {
-          return { errors: [{ text: `File not found in workspace: ${args.path}` }] };
-        }
-        return { contents, loader: loaderFor(args.path) };
-      });
-
-      // The synthetic wrapper entry itself.
-      b.onResolve({ filter: /^aai-studio:entry$/ }, () => ({
-        path: "entry.ts",
-        namespace: ENTRY_NS,
-      }));
-      b.onLoad({ filter: /.*/, namespace: ENTRY_NS }, () => ({
-        contents: WRAPPER_ENTRY,
-        loader: "ts",
-        resolveDir: RESOLVE_DIR,
-      }));
     },
   };
 }
 
 /**
- * Bundle workspace files into a single worker ESM string.
+ * Bundle a materialized workspace directory into a single worker ESM string.
  *
- * @throws {StudioBuildError} with esbuild diagnostics on compile errors.
+ * @throws {StudioBuildError} with Vite diagnostics on compile errors.
  */
-export async function bundleWorkspace(files: Record<string, string>): Promise<string> {
-  if (!files["agent.ts"]) {
+export async function bundleWorkspaceWorker(dir: string): Promise<string> {
+  if (!(await fileExists(path.join(dir, "agent.ts")))) {
     throw new StudioBuildError("Workspace has no agent.ts — create one first");
   }
-  let result: Awaited<ReturnType<typeof build>>;
+  // The wrapper is generated, not user content, so it is written here rather
+  // than materialized with the workspace.
+  await fs.writeFile(path.join(dir, WRAPPER_ENTRY_FILE), WRAPPER_ENTRY, "utf-8");
+
+  let code: string;
   try {
-    result = await build({
-      entryPoints: ["aai-studio:entry"],
-      bundle: true,
-      write: false,
-      format: "esm",
-      platform: "node",
-      target: "node20",
-      logLevel: "silent",
-      // Prefer workspace TypeScript source over dist so a source checkout
-      // works without a prior `pnpm build` (same trick as the repo-wide
-      // `@dev/source` export condition).
-      conditions: ["@dev/source"],
-      plugins: [studioPlugin(files)],
+    code = await buildWorker(dir, {
+      entry: WRAPPER_ENTRY_FILE,
+      // A vite.config.ts in the workspace is executable host code and
+      // workspace files are untrusted, so any config written there is inert.
+      configFile: false,
+      plugins: [allowlistPlugin(dir)],
+      minify: true,
     });
   } catch (err) {
-    throw new StudioBuildError(formatEsbuildError(err), { cause: err });
+    throw new StudioBuildError(formatBuildError(err, dir), { cause: err });
   }
-  const code = result.outputFiles?.[0]?.text;
-  if (!code) throw new StudioBuildError("Build produced no output");
   if (code.length > MAX_WORKER_SIZE) {
     throw new StudioBuildError(`Bundle too large (${code.length} bytes, max ${MAX_WORKER_SIZE})`);
   }
   return code;
 }
 
-function formatEsbuildError(err: unknown): string {
-  const errors = (
-    err as { errors?: { text: string; location?: { file?: string; line?: number } }[] }
-  )?.errors;
-  if (!Array.isArray(errors) || errors.length === 0) {
-    return err instanceof Error ? err.message : String(err);
+/**
+ * Format a Vite/Rollup build failure for the chat and the UI.
+ *
+ * Diagnostics are scrubbed of the scratch-dir prefix and terminal colour
+ * codes: the coding agent (and the user reading the chat) only knows the
+ * workspace, so a path like `.studio-build/<uuid>/agent.ts` is noise it might
+ * try to "fix".
+ */
+function formatBuildError(err: unknown, dir: string): string {
+  // Allowlist rejections are already the message we want to show.
+  const cause = (err as { cause?: unknown })?.cause;
+  if (err instanceof StudioBuildError) return err.message;
+  if (cause instanceof StudioBuildError) return cause.message;
+
+  const e = err as { message?: string; id?: string; loc?: { file?: string; line?: number } };
+  const file = e?.loc?.file ?? e?.id;
+  const where = file ? `${path.basename(file)}${e.loc?.line ? `:${e.loc.line}` : ""}: ` : "";
+  return scrub(`Build failed:\n${where}${e?.message ?? String(err)}`, dir);
+}
+
+/**
+ * ANSI SGR sequences. Built from a char code rather than written as a literal
+ * escape so the pattern carries no control character.
+ */
+const ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
+
+/**
+ * Strip scratch-dir paths and ANSI colour codes from a diagnostic.
+ *
+ * Rollup reports paths relative to `process.cwd()` while Vite's own errors
+ * carry absolute ones, so both spellings of the scratch dir are removed.
+ */
+export function scrub(message: string, dir: string): string {
+  const forms = [dir, path.relative(process.cwd(), dir)].filter(Boolean);
+  let out = message.replace(ANSI_SGR, "");
+  for (const form of forms) {
+    out = out.split(`${form}${path.sep}`).join("").split(form).join(".");
   }
-  const lines = errors.map((e) => {
-    const loc = e.location?.file ? `${e.location.file}:${e.location.line ?? 0}: ` : "";
-    return `${loc}${e.text}`;
-  });
-  return `Build failed:\n${lines.join("\n")}`;
+  return out;
 }
