@@ -238,6 +238,9 @@ importers:
 
   packages/aai-server:
     dependencies:
+      '@ai-sdk/anthropic':
+        specifier: ^4.0.18
+        version: 4.0.21(zod@4.4.3)
       '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
@@ -253,6 +256,12 @@ importers:
       '@hono/zod-validator':
         specifier: ^0.9.0
         version: 0.9.0(hono@4.12.32)(zod@4.4.3)
+      ai:
+        specifier: ^7.0.35
+        version: 7.0.37(zod@4.4.3)
+      esbuild:
+        specifier: ^0.28.1
+        version: 0.28.1
       hono:
         specifier: ^4.12.31
         version: 4.12.32

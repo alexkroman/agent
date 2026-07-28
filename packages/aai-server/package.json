@@ -24,11 +24,14 @@
     "push-dashboards": "node --conditions=@dev/source grafana/push-dashboards.ts"
   },
   "dependencies": {
+    "@ai-sdk/anthropic": "^4.0.18",
     "@alexkroman1/aai": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@hono/node-server": "^2.0.11",
     "@hono/prometheus": "^1.0.3",
     "@hono/zod-validator": "^0.9.0",
+    "ai": "^7.0.35",
+    "esbuild": "^0.28.1",
     "hono": "^4.12.31",
     "human-id": "^4.2.0",
     "is-network-error": "^1.3.2",

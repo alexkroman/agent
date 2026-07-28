@@ -3,7 +3,9 @@
  * HTTP + WebSocket routing for the managed platform server.
  *
  * Route structure:
+ * - `GET  /`                      — browser studio (coding agent UI)
  * - `GET  /health`                — platform health check
+ * - `/studio/*`                   — studio API (see studio/studio-routes.ts)
  * - `POST /deploy`                — top-level deploy (server-generated slug)
  * - `GET  /:slug`                 — redirect to /:slug/
  * - `GET  /:slug/`               — agent UI page
@@ -55,6 +57,8 @@ import { acquireSlotSession, releaseSlotSession, type SlotCache } from "./sandbo
 import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import type { BundleStore } from "./store-types.ts";
+import { STUDIO_CSP, studioPage } from "./studio/studio-page.ts";
+import { createStudioRoutes } from "./studio/studio-routes.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
 
@@ -136,6 +140,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     const text = await serialize();
     return c.text(text, 200, { "Content-Type": "text/plain; version=0.0.4" });
   });
+
+  // Browser studio: loading the server root gives a coding agent that can
+  // build and deploy voice agents from the browser. `/studio` is a reserved
+  // slug (RESERVED_SLUGS) so no agent route can shadow the API namespace.
+  app.get("/", (c) => c.html(studioPage(), 200, { "Content-Security-Policy": STUDIO_CSP }));
+  app.route("/studio", createStudioRoutes());
+  app.get("/studio/", (c) => c.redirect("/", 302));
 
   app.post("/deploy", authMw, gzipRequestMw, zValidator("json", DeployBodySchema), handleDeployNew);
 

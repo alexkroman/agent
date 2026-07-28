@@ -230,6 +230,46 @@ restrictions apply there.
 - `kv-handler.ts` — KV store HTTP API
 - `metrics.ts` — Prometheus metrics registry and definitions; mounted at
   `/metrics` (internal-only). Dashboards live in `grafana/`.
+- `studio/` — the browser studio (see "Browser studio" below):
+  `studio-routes.ts` (HTTP surface), `studio-agent.ts` (coding-agent LLM
+  loop), `studio-bundle.ts` (in-memory esbuild), `studio-deploy.ts`
+  (build → sandbox inspect → deploy), `studio-workspace.ts` (project file
+  store), `studio-page*.ts` (self-contained UI page)
+
+### Browser studio (aai-server)
+
+Loading the platform server root (`GET /`) serves the **studio** — a
+browser-based coding agent (TypeScript agent loop on the Vercel AI SDK,
+the same `streamText` stack pipeline mode uses) that builds and deploys
+voice agents without the CLI:
+
+- **Workspaces** are small server-side file trees stored one JSON doc per
+  project under `studio/{scope}/{project}` in the platform `Storage`.
+  `scope` is a *deterministic* SHA-256 of the caller's API key
+  (`studioScope`) — unlike the salted PBKDF2 ownership hashes, it must be
+  stable so a browser session can find its projects again.
+- **Chat** (`POST /studio/chat`) runs one agent turn with file tools
+  (list/read/write/delete) plus a `deploy_agent` tool, streamed to the
+  browser as NDJSON. The LLM key is **platform-owned host config**
+  (`ANTHROPIC_API_KEY`, model override `STUDIO_LLM_MODEL`); chat returns
+  503 when unset — the editor and deploy button still work without it.
+- **Build** (`studio-bundle.ts`) bundles the workspace in memory with
+  esbuild. Imports are allowlisted: workspace files, `@alexkroman1/aai`
+  (any subpath), and `zod`; `node:` builtins stay external (CLI parity).
+  The entry is wrapped so the bundle itself exports `__aaiConfig`
+  (extracted with the dependency-free `@alexkroman1/aai/manifest`
+  helpers).
+- **Config extraction never runs user code on the host**: the deploy flow
+  loads the bundle in a throwaway sandbox (`describeBundle` in
+  `sandbox-vm.ts`); the guest harness returns the bundle's `__aaiConfig`
+  from `bundle/load`. The host only validates it (`IsolateConfigSchema`)
+  and hands it to the shared deploy core (`deployAgentBundle` in
+  `deploy.ts` — single source of slug-ownership semantics for HTTP and
+  studio deploys).
+- **Reserved slugs** (`RESERVED_SLUGS` in `schemas.ts`): `studio` can
+  never be claimed as an agent slug — it would shadow the studio API
+  namespace. Enforced in `validateSlug`, `DeployBodySchema`, and the
+  deploy core.
 
 ### Session modes
 

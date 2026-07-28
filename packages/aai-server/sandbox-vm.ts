@@ -265,6 +265,44 @@ export async function spawnWarmHarness(opts: {
   return spawnDevWarm(opts.harnessPath);
 }
 
+// ── Bundle inspection ────────────────────────────────────────────────────────
+
+/** Response shape of `bundle/load` when the bundle self-describes its config. */
+type BundleLoadResult = { ok: boolean; config?: unknown };
+
+/**
+ * Load a worker bundle in a throwaway sandbox and return the agent config the
+ * bundle extracted about itself (its `__aaiConfig` export — see the guest
+ * harness). The bundle is *evaluated in the sandbox*, never on the host, so
+ * this is safe to run on untrusted studio-authored code. The sandbox is torn
+ * down before returning.
+ *
+ * Returns `undefined` when the bundle does not self-describe (e.g. a plain
+ * CLI-built worker, which ships its config separately).
+ */
+export async function describeBundle(
+  opts: { harnessPath: string; workerCode: string },
+  spawn: typeof spawnWarmHarness = spawnWarmHarness,
+): Promise<unknown> {
+  const warm = await spawn({ harnessPath: opts.harnessPath, slug: "studio-inspect" });
+  try {
+    // Register the standard guest-RPC handlers (with no KV/Vector bound) so a
+    // bundle whose top level issues a guest→host request gets an error reply
+    // instead of wedging the load until the RPC timeout.
+    registerGuestRpcHandlers(warm.conn, {});
+    warm.conn.listen();
+    const result = await warm.conn.sendRequest<BundleLoadResult>("bundle/load", {
+      code: opts.workerCode,
+      env: {},
+    });
+    return result?.config;
+  } finally {
+    void warm.conn.sendNotification("shutdown");
+    warm.conn.dispose();
+    await warm.cleanup().catch(() => undefined);
+  }
+}
+
 // ── Operator resource limit overrides ────────────────────────────────────────
 
 function clamp(value: number, min: number, max: number): number {

@@ -101,6 +101,43 @@ describe("handleRequest", () => {
       },
     ]);
   });
+
+  test("bundle/load responds with plain ok for a bundle without __aaiConfig", async () => {
+    writtenBytes.length = 0;
+    const state = { agent: null, sessionState: null };
+    await handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 4,
+        method: "bundle/load",
+        params: { code: 'export default { name: "plain", tools: {} };', env: {} },
+      },
+      state,
+    );
+    expect(getWrittenLines()).toEqual([{ jsonrpc: "2.0", id: 4, result: { ok: true } }]);
+  });
+
+  test("bundle/load returns the bundle's self-described __aaiConfig", async () => {
+    writtenBytes.length = 0;
+    const state = { agent: null, sessionState: null };
+    const code =
+      'export default { name: "studio-agent", tools: {} };\n' +
+      'export const __aaiConfig = { name: "studio-agent", systemPrompt: "s", toolSchemas: [] };';
+    await handleRequest(
+      { jsonrpc: "2.0", id: 5, method: "bundle/load", params: { code, env: {} } },
+      state,
+    );
+    expect(getWrittenLines()).toEqual([
+      {
+        jsonrpc: "2.0",
+        id: 5,
+        result: {
+          ok: true,
+          config: { name: "studio-agent", systemPrompt: "s", toolSchemas: [] },
+        },
+      },
+    ]);
+  });
 });
 
 // ── handleHostResponse ──────────────────────────────────────────────────────
