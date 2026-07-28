@@ -42,6 +42,20 @@ describe("buildWorkspaceClient", () => {
     expect(css).toMatch(/\.text-xl/);
   }, 60_000);
 
+  test("leaves process.env.NODE_ENV alone", async () => {
+    // See the matching worker-build test: Vite sets NODE_ENV=production when
+    // unset, which in a dev server process makes the sandbox demand gVisor.
+    const saved = process.env.NODE_ENV;
+    delete process.env.NODE_ENV;
+    try {
+      await buildFiles({ "agent.ts": "export default {}", "client.tsx": CLIENT_TSX });
+      expect(process.env.NODE_ENV).toBeUndefined();
+    } finally {
+      if (saved === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = saved;
+    }
+  }, 60_000);
+
   test("ignores a vite.config.ts smuggled into the workspace", async () => {
     // Workspace files are untrusted and a Vite config is executable code.
     const files = await buildFiles({

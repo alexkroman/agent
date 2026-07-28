@@ -112,6 +112,23 @@ export default { name: String(typeof readFileSync) };`,
     ).rejects.toThrow(/Could not resolve '\.\/missing\.ts'/);
   }, 30_000);
 
+  test("leaves process.env.NODE_ENV alone", async () => {
+    // Vite's build() sets NODE_ENV=production when it is unset. In a
+    // `pnpm dev:aai-server` process that is exactly the case, so the first
+    // studio build used to flip the whole server to "production" for the rest
+    // of its life — after which describeBundle refuses to run without gVisor
+    // ("gVisor (runsc) is required in production but not found on PATH").
+    const saved = process.env.NODE_ENV;
+    delete process.env.NODE_ENV;
+    try {
+      await bundleWorkspace(starterFiles());
+      expect(process.env.NODE_ENV).toBeUndefined();
+    } finally {
+      if (saved === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = saved;
+    }
+  }, 30_000);
+
   test("scrubs the scratch-dir path out of diagnostics", async () => {
     // The coding agent only knows workspace-relative paths; a leaked
     // .studio-build/<uuid>/ prefix is noise it might try to "fix".

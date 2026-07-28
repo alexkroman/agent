@@ -21,6 +21,7 @@ import { isTextAssetPath } from "@alexkroman1/aai";
 import { build, type PluginOption } from "vite";
 import { writeTempHtml } from "./_default-html.ts";
 import { fileExists } from "./_utils.ts";
+import { withPreservedNodeEnv } from "./_vite-env.ts";
 
 export type BuildClientOptions = {
   /**
@@ -57,17 +58,19 @@ export async function buildClient(
   const clientDir = path.join(cwd, outDir);
   const cleanupHtml = writeTempHtml(cwd);
   try {
-    await build({
-      root: cwd,
-      base: "./",
-      logLevel: "silent",
-      ...(opts.configFile === false && { configFile: false }),
-      ...(opts.plugins && { plugins: opts.plugins }),
-      build: {
-        outDir,
-        emptyOutDir: true,
-      },
-    });
+    await withPreservedNodeEnv(() =>
+      build({
+        root: cwd,
+        base: "./",
+        logLevel: "silent",
+        ...(opts.configFile === false && { configFile: false }),
+        ...(opts.plugins && { plugins: opts.plugins }),
+        build: {
+          outDir,
+          emptyOutDir: true,
+        },
+      }),
+    );
   } finally {
     cleanupHtml();
   }

@@ -22,6 +22,7 @@
 
 import path from "node:path";
 import { build, type PluginOption, type Rollup } from "vite";
+import { withPreservedNodeEnv } from "./_vite-env.ts";
 
 /** Options for worker bundling. */
 export type BuildWorkerOptions = {
@@ -61,21 +62,23 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
   const entry = opts.entry ?? "agent.ts";
   const agentEntry = path.isAbsolute(entry) ? entry : path.join(cwd, entry);
 
-  const result = await build({
-    root: cwd,
-    logLevel: "silent",
-    ...(opts.configFile === false && { configFile: false }),
-    plugins: [rawMdPlugin, ...(opts.plugins ?? [])],
-    build: {
-      lib: { entry: agentEntry, formats: ["es"], fileName: "worker" },
-      target: "node20",
-      minify: opts.minify ? "esbuild" : false,
-      write: false,
-      rollupOptions: {
-        output: { entryFileNames: "[name].js" },
+  const result = await withPreservedNodeEnv(() =>
+    build({
+      root: cwd,
+      logLevel: "silent",
+      ...(opts.configFile === false && { configFile: false }),
+      plugins: [rawMdPlugin, ...(opts.plugins ?? [])],
+      build: {
+        lib: { entry: agentEntry, formats: ["es"], fileName: "worker" },
+        target: "node20",
+        minify: opts.minify ? "esbuild" : false,
+        write: false,
+        rollupOptions: {
+          output: { entryFileNames: "[name].js" },
+        },
       },
-    },
-  });
+    }),
+  );
 
   const output = Array.isArray(result) ? result[0] : (result as Rollup.RollupOutput);
   if (!output) throw new Error("Vite produced no output for agent.ts");

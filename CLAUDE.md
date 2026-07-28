@@ -341,6 +341,15 @@ voice agents without the CLI:
     workspace files are untrusted, so any the agent writes is inert.
   - Diagnostics are scrubbed (`scrub`) of the scratch-dir prefix and ANSI
     codes; the coding agent only knows workspace-relative paths.
+- **Vite must not be allowed to mutate `process.env`.** Vite's `build()`
+  sets `NODE_ENV=production` when it is unset — a permanent, global side
+  effect on the calling process. Both CLI bundlers therefore wrap the
+  build in `withPreservedNodeEnv` (`aai-cli/_vite-env.ts`), which
+  snapshots and restores it. Without that, the first studio build in a
+  `pnpm dev:aai-server` process flips the server to "production" and
+  every later deploy dies with *"gVisor (runsc) is required in production
+  but not found on PATH"*; `aai dev`, which rebuilds on every file change,
+  has the same problem. Keep any new Vite invocation inside that wrapper.
 - **Client build** (`studio-client-build.ts`) handles a workspace
   `client.tsx`, built by `buildClient` from
   `@alexkroman1/aai-cli/client-bundler` — the same Vite pass
