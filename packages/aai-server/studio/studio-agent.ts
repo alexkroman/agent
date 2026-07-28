@@ -2,37 +2,12 @@
 /**
  * The studio's coding agent — a TypeScript agent loop (Vercel AI SDK
  * `streamText`, the same stack pipeline mode uses) with workspace file tools
- * and a deploy tool, streamed to the browser as NDJSON events.
+ * and a deploy tool, streamed to the browser as the AI SDK UI message stream.
  *
- * The LLM is selected from platform-owned host configuration (never tenant
- * env) via the SDK's own provider descriptors + `resolveLlm`, so the studio
- * can run on any pipeline-mode LLM provider — by default the AssemblyAI LLM
- * Gateway (`ASSEMBLYAI_API_KEY`), falling back to Anthropic direct
- * (`ANTHROPIC_API_KEY`). Override with `STUDIO_LLM_PROVIDER` /
- * `STUDIO_LLM_MODEL` (and `STUDIO_LLM_REGION=eu` for the gateway's EU
- * endpoint).
+ * LLM selection lives in `studio-llm.ts` — platform-owned host config, with
+ * an optional per-request override the browser picks from `studioLlmOptions`.
  */
 
-import type { LlmProvider } from "@alexkroman1/aai/llm";
-import {
-  ANTHROPIC_API_KEY_ENV,
-  ASSEMBLYAI_LLM_API_KEY_ENV,
-  anthropic,
-  assemblyAI,
-  GATEWAY_API_KEY_ENV,
-  GOOGLE_API_KEY_ENV,
-  GROQ_API_KEY_ENV,
-  gateway,
-  google,
-  groq,
-  MISTRAL_API_KEY_ENV,
-  mistral,
-  OPENAI_API_KEY_ENV,
-  openai,
-  XAI_API_KEY_ENV,
-  xai,
-} from "@alexkroman1/aai/llm";
-import { resolveLlm } from "@alexkroman1/aai/runtime";
 import {
   convertToModelMessages,
   type LanguageModel,
@@ -46,124 +21,12 @@ import { z } from "zod";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import { bundleWorkspace, StudioBuildError } from "./studio-bundle.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
+import { studioModel } from "./studio-llm.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
 import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
 
 const MAX_CHAT_STEPS = 16;
-
-type StudioLlmEntry = {
-  envVar: string;
-  /** Model used when STUDIO_LLM_MODEL is unset; absent = model required. */
-  defaultModel?: string;
-  make: (model: string, env: NodeJS.ProcessEnv) => LlmProvider;
-};
-
-/**
- * Providers the studio chat can run on. All pipeline-mode LLM providers are
- * wired; only the two the platform is expected to hold keys for get default
- * models — the rest require an explicit `STUDIO_LLM_MODEL`.
- */
-const STUDIO_LLM_PROVIDERS: Record<string, StudioLlmEntry> = {
-  assemblyai: {
-    envVar: ASSEMBLYAI_LLM_API_KEY_ENV,
-    defaultModel: "claude-sonnet-4-6",
-    make: (model, env) =>
-      assemblyAI({ model, ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}) }),
-  },
-  anthropic: {
-    envVar: ANTHROPIC_API_KEY_ENV,
-    defaultModel: "claude-sonnet-4-5",
-    make: (model) => anthropic({ model }),
-  },
-  openai: { envVar: OPENAI_API_KEY_ENV, make: (model) => openai({ model }) },
-  google: { envVar: GOOGLE_API_KEY_ENV, make: (model) => google({ model }) },
-  mistral: { envVar: MISTRAL_API_KEY_ENV, make: (model) => mistral({ model }) },
-  xai: { envVar: XAI_API_KEY_ENV, make: (model) => xai({ model }) },
-  groq: { envVar: GROQ_API_KEY_ENV, make: (model) => groq({ model }) },
-  gateway: { envVar: GATEWAY_API_KEY_ENV, make: (model) => gateway({ model }) },
-};
-
-/** Providers auto-selected (in order) when STUDIO_LLM_PROVIDER is unset. */
-const AUTO_PROVIDER_ORDER = ["assemblyai", "anthropic"] as const;
-
-export type StudioLlmSelection = {
-  provider: string;
-  model: string;
-  descriptor: LlmProvider;
-  envVar: string;
-};
-
-/**
- * Pick the studio chat LLM from host env. Explicit `STUDIO_LLM_PROVIDER`
- * wins; otherwise the AssemblyAI LLM Gateway when its key is present, then
- * Anthropic. Returns null when nothing is configured. Throws on a
- * misconfiguration worth surfacing (unknown provider, missing model).
- */
-export function selectStudioLlm(env: NodeJS.ProcessEnv = process.env): StudioLlmSelection | null {
-  const explicit = env.STUDIO_LLM_PROVIDER?.toLowerCase();
-  let provider: string | undefined;
-  if (explicit) {
-    if (!(explicit in STUDIO_LLM_PROVIDERS)) {
-      throw new Error(
-        `Unknown STUDIO_LLM_PROVIDER "${explicit}" — one of: ${Object.keys(STUDIO_LLM_PROVIDERS).join(", ")}`,
-      );
-    }
-    provider = explicit;
-  } else {
-    provider = AUTO_PROVIDER_ORDER.find((name) => {
-      const candidate = STUDIO_LLM_PROVIDERS[name];
-      return candidate !== undefined && Boolean(env[candidate.envVar]);
-    });
-  }
-  if (!provider) return null;
-  // Guarded above for the explicit path; AUTO_PROVIDER_ORDER names are keys.
-  const entry = STUDIO_LLM_PROVIDERS[provider] as StudioLlmEntry;
-  // `||` not `??`: an empty-string env var means "unset".
-  const model = env.STUDIO_LLM_MODEL || entry.defaultModel;
-  if (!model) {
-    throw new Error(`STUDIO_LLM_MODEL is required for STUDIO_LLM_PROVIDER "${provider}"`);
-  }
-  return { provider, model, descriptor: entry.make(model, env), envVar: entry.envVar };
-}
-
-/** True when the platform host is configured to run the studio LLM. */
-export function isStudioLlmConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  try {
-    const selection = selectStudioLlm(env);
-    return selection !== null && Boolean(env[selection.envVar]);
-  } catch {
-    return false;
-  }
-}
-
-/** Provider/model info for the status endpoint; null when unconfigured. */
-export function studioLlmInfo(
-  env: NodeJS.ProcessEnv = process.env,
-): { provider: string; model: string } | null {
-  if (!isStudioLlmConfigured(env)) return null;
-  // isStudioLlmConfigured just proved this select succeeds and is non-null.
-  const selection = selectStudioLlm(env) as StudioLlmSelection;
-  return { provider: selection.provider, model: selection.model };
-}
-
-/** Resolve the studio chat model from host env. Throws when unconfigured. */
-export function studioModel(env: NodeJS.ProcessEnv = process.env): LanguageModel {
-  const selection = selectStudioLlm(env);
-  if (!selection) {
-    throw new Error(
-      "Studio LLM not configured: set ASSEMBLYAI_API_KEY (LLM Gateway) or " +
-        "ANTHROPIC_API_KEY, or choose a provider with STUDIO_LLM_PROVIDER",
-    );
-  }
-  const key = env[selection.envVar];
-  if (!key) {
-    throw new Error(`Studio LLM misconfigured: ${selection.envVar} is not set`);
-  }
-  // resolveLlm reads the key from the env record it is given — pass exactly
-  // the one variable it needs (host env never flows anywhere else).
-  return resolveLlm(selection.descriptor, { [selection.envVar]: key });
-}
 
 export type StudioChatDeps = {
   storage: Storage;
@@ -179,6 +42,11 @@ export type StudioChatDeps = {
   sandbox: () => Promise<StudioSandbox>;
   /** Tears down the session sandbox if one was provisioned. Idempotent. */
   disposeSandbox?: () => Promise<void>;
+  /**
+   * Browser-picked provider/model for this turn. Already validated against
+   * `studioLlmOptions` by the route; omitted means the host-env default.
+   */
+  llm?: { provider?: string | undefined; model?: string | undefined };
   /** Injectable for tests — defaults to the host-env selected provider. */
   model?: LanguageModel;
 };
@@ -344,7 +212,7 @@ export async function runStudioChat(
   };
   try {
     const result = streamText({
-      model: deps.model ?? studioModel(),
+      model: deps.model ?? studioModel(deps.llm ?? {}),
       system: studioSystemPrompt(),
       messages: await convertToModelMessages(messages, { ignoreIncompleteToolCalls: true }),
       tools: createStudioTools(deps),

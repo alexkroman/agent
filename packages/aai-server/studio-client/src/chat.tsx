@@ -6,6 +6,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { useRef, useState } from "react";
+import { ModelPicker, useModelChoice } from "./model-picker.tsx";
 
 type ChatPanelProps = {
   apiKey: string;
@@ -125,12 +126,18 @@ function MessageView({ message }: { message: UIMessage }) {
 export function ChatPanel({ apiKey, project, llmStatus, onWorkspaceChanged }: ChatPanelProps) {
   const [input, setInput] = useState("");
   const logRef = useRef<HTMLDivElement>(null);
+  const model = useModelChoice(apiKey);
+
+  // `body` is read per request but the transport may outlive a render, so go
+  // through a ref to be sure each turn sends the currently-selected model.
+  const choiceRef = useRef(model.choice);
+  choiceRef.current = model.choice;
 
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
       api: "/studio/chat",
       headers: { Authorization: `Bearer ${apiKey}` },
-      body: () => ({ project }),
+      body: () => ({ project, ...choiceRef.current }),
     }),
     onFinish: onWorkspaceChanged,
     onData: () => {
@@ -176,6 +183,11 @@ export function ChatPanel({ apiKey, project, llmStatus, onWorkspaceChanged }: Ch
         {busy && <div className="text-dim italic">Working…</div>}
       </div>
       <div className="border-t border-line p-3">
+        {llmStatus.llm && (
+          <div className="mb-1.5 flex items-center">
+            <ModelPicker {...model} disabled={busy} />
+          </div>
+        )}
         <div className="flex items-center gap-1.5">
           <input
             className="field min-w-0 flex-1"
@@ -187,7 +199,7 @@ export function ChatPanel({ apiKey, project, llmStatus, onWorkspaceChanged }: Ch
             disabled={!llmStatus.llm}
             placeholder={
               llmStatus.llm
-                ? `Ask Studio… (${llmStatus.model ?? ""})`
+                ? "Ask Studio…"
                 : "Chat disabled: server has no LLM key (ASSEMBLYAI_API_KEY or ANTHROPIC_API_KEY)"
             }
           />

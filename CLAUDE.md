@@ -232,14 +232,18 @@ restrictions apply there.
   `/metrics` (internal-only). Dashboards live in `grafana/`.
 - `studio/` — the browser studio server side (see "Browser studio"):
   `studio-routes.ts` (HTTP surface), `studio-agent.ts` (coding-agent LLM
-  loop + tools), `studio-sandbox.ts` (per-chat-session sandbox),
+  loop + tools), `studio-llm.ts` (provider/model selection + the picker's
+  option list), `studio-sandbox.ts` (per-chat-session sandbox),
   `studio-bundle.ts` (in-memory esbuild), `studio-deploy.ts`
   (build → sandbox inspect → deploy), `studio-workspace.ts` (project file
   store), `studio-prompt.ts` (system prompt from the scaffold CLAUDE.md),
   `studio-static.ts` (serves the built client)
 - `studio-client/` — the studio's React front-end (Vite + Tailwind v4 +
   `useChat` + TanStack Query + CodeMirror), built into
-  `dist/studio-client` by `pnpm --filter aai-server build`
+  `dist/studio-client` by `pnpm --filter aai-server build`. Panes:
+  `chat.tsx` (chat + composer), `code-view.tsx` / `preview.tsx` (the
+  Code/Preview pane), `model-picker.tsx` (the model select box —
+  `useModelChoice` + `ModelPicker`, pick persisted in `localStorage`).
 
 ### Browser studio (aai-server)
 
@@ -259,14 +263,31 @@ voice agents without the CLI:
   consumes directly. The system prompt embeds the same
   `aai-templates/scaffold/CLAUDE.md` the CLI ships to user projects
   (`studio-prompt.ts`) plus studio-specific overrides.
-- **LLM selection** (`selectStudioLlm`) uses the SDK's own provider
+- **LLM selection** (`studio-llm.ts`) uses the SDK's own provider
   descriptors + `resolveLlm` (exported from `@alexkroman1/aai/runtime`).
   Keys are **platform-owned host config**, never tenant env. Default: the
-  AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set (model
-  `claude-sonnet-4-6`, `STUDIO_LLM_REGION=eu` for EU), else Anthropic via
-  `ANTHROPIC_API_KEY`; `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL` override
-  (any pipeline-mode LLM provider). Chat returns 503 when unconfigured —
-  the editor and deploy button still work without it.
+  AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set (model `gpt-5.2` —
+  OpenAI models are the only ones the gateway documents streamed responses
+  for), else Anthropic via `ANTHROPIC_API_KEY`;
+  `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL` override (any pipeline-mode LLM
+  provider). Chat returns 503 when unconfigured — the editor and deploy
+  button still work without it.
+- **Gateway regions.** `STUDIO_LLM_REGION=eu` selects the EU endpoint,
+  which serves only Claude and most Gemini models. The gateway model list
+  is therefore region-filtered (`GATEWAY_US_ONLY_MODELS`) and the EU
+  default falls to `claude-sonnet-4-6`. Ordering the one
+  `ASSEMBLYAI_GATEWAY_MODELS` array is what sets both defaults: the first
+  entry surviving the region filter wins.
+- **Model picker.** `GET /studio/models` (auth required — the list reveals
+  which provider keys the host holds) returns `studioLlmOptions()`: the
+  host default plus every provider whose key is present, with the models
+  curated for it. `POST /studio/chat` takes an optional `provider`/`model`
+  pair; the route validates it with `resolveStudioSelection` and answers
+  400 rather than letting `studioModel` throw mid-stream. **A client can
+  never name an arbitrary provider/model and never supplies a key.**
+  Only `assemblyai` (the full gateway model list) and `anthropic` carry
+  curated models; the other providers stay env-only and appear in the
+  picker only while `STUDIO_LLM_PROVIDER` selects them.
 - **Session sandboxes run the agent's code work on production infra**:
   each chat request lazily provisions one sandbox (`studio-sandbox.ts`)
   through the same warm-pool/`spawnWarmHarness` path deployed agents use
@@ -343,6 +364,16 @@ Reference providers shipped today:
     (OpenAI-compatible chat-completions endpoint fronting 25+ models) via
     `@ai-sdk/openai`'s `.chat()` client. `region: "eu"` selects the EU
     endpoint. Same factory name as the STT provider — alias one on import.
+    The client is built with a `fetch` wrapper,
+    `repairOpenAiToolCallStream` (`host/providers/_openai-stream-repair.ts`):
+    the gateway documents streamed responses for OpenAI models only and its
+    Claude streams emit `tool_calls` deltas with no `id`/`type`, which makes
+    `StreamingToolCallTracker` in `@ai-sdk/provider-utils` throw
+    `Expected 'id' to be a string` and kill any turn that calls a tool. The
+    wrapper fills in a synthetic id (stable per tool-call index within one
+    response) and `type: "function"`, leaving real ids and every other byte
+    of the stream alone. Remove it only once the gateway emits conformant
+    tool-call deltas.
 - **TTS**: one of
   - `cartesia({ voice })` — `CARTESIA_API_KEY`
   - `rime({ voice })` — `RIME_API_KEY`

@@ -69,6 +69,7 @@ import type {
   TtsOpener,
   TtsProvider,
 } from "../../sdk/providers.ts";
+import { repairOpenAiToolCallStream } from "./_openai-stream-repair.ts";
 import { requireApiKey } from "./_utils.ts";
 
 /**
@@ -318,7 +319,14 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
         opts.region === "eu" ? ASSEMBLYAI_LLM_GATEWAY_EU_URL : ASSEMBLYAI_LLM_GATEWAY_URL;
       // The gateway implements /chat/completions only, so use .chat() —
       // the provider's default callable targets OpenAI's Responses API.
-      return createOpenAI({ apiKey, baseURL, name: "assemblyai" }).chat(opts.model);
+      // `fetch` repairs the gateway's id-less streaming tool_call deltas,
+      // which the SDK's streaming tracker would otherwise reject.
+      return createOpenAI({
+        apiKey,
+        baseURL,
+        name: "assemblyai",
+        fetch: repairOpenAiToolCallStream(),
+      }).chat(opts.model);
     },
   },
 };

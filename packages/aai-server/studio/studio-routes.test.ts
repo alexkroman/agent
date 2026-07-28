@@ -85,7 +85,7 @@ describe("studio page + routing", () => {
     expect(await (await fetch("/studio/status")).json()).toEqual({
       llm: true,
       provider: "assemblyai",
-      model: "claude-sonnet-4-6",
+      model: "gpt-5.2",
     });
   });
 
@@ -282,5 +282,57 @@ describe("deploy + chat endpoints", () => {
     expect(typeof deps.sandbox).toBe("function");
     expect(typeof deps.disposeSandbox).toBe("function");
     expect(messages).toHaveLength(1);
+  });
+
+  test("chat forwards an offered provider/model override to the agent", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
+    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
+    vi.stubEnv("STUDIO_LLM_MODEL", "");
+    await createProject(fetch);
+    const res = await authFetch(fetch, "/studio/chat", {
+      body: { ...chatBody(), provider: "anthropic", model: "claude-opus-5" },
+    });
+    expect(res.status).toBe(200);
+    const [deps] = chatMock.mock.calls[0] as unknown[] as [
+      { llm?: { provider?: string; model?: string } },
+    ];
+    expect(deps.llm).toEqual({ provider: "anthropic", model: "claude-opus-5" });
+  });
+
+  test("chat rejects a provider/model the host does not offer", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
+    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
+    vi.stubEnv("STUDIO_LLM_MODEL", "");
+    await createProject(fetch);
+    // A real gateway model, but the host holds no ASSEMBLYAI_API_KEY.
+    const res = await authFetch(fetch, "/studio/chat", {
+      body: { ...chatBody(), provider: "assemblyai", model: "gpt-4.1" },
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("not available");
+    expect(chatMock).not.toHaveBeenCalled();
+  });
+});
+
+describe("studio model options", () => {
+  test("GET /studio/models requires a bearer key", async () => {
+    const { fetch } = await createTestOrchestrator();
+    expect((await fetch("/studio/models")).status).toBe(401);
+  });
+
+  test("lists only providers whose key the host holds", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
+    vi.stubEnv("STUDIO_LLM_MODEL", "");
+    const { fetch } = await createTestOrchestrator();
+    const body = (await (await authFetch(fetch, "/studio/models", { method: "GET" })).json()) as {
+      default: { provider: string; model: string };
+      providers: { provider: string; models: string[] }[];
+    };
+    expect(body.default).toEqual({ provider: "anthropic", model: "claude-sonnet-5" });
+    expect(body.providers.map((p) => p.provider)).toEqual(["anthropic"]);
   });
 });

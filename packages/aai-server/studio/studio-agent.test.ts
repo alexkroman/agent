@@ -3,15 +3,7 @@
 import type { LanguageModel, UIMessage } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { createTestStorage } from "../test-utils.ts";
-import {
-  createStudioTools,
-  isStudioLlmConfigured,
-  runStudioChat,
-  type StudioChatDeps,
-  selectStudioLlm,
-  studioLlmInfo,
-  studioModel,
-} from "./studio-agent.ts";
+import { createStudioTools, runStudioChat, type StudioChatDeps } from "./studio-agent.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
 import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
 
@@ -107,77 +99,6 @@ async function readSseEvents(res: Response): Promise<Record<string, unknown>[]> 
     .filter((line) => line.startsWith("data: ") && !line.includes("[DONE]"))
     .map((line) => JSON.parse(line.slice(6)));
 }
-
-describe("LLM provider selection", () => {
-  const noEnv = {} as NodeJS.ProcessEnv;
-
-  test("nothing configured → null / unconfigured", () => {
-    expect(selectStudioLlm(noEnv)).toBeNull();
-    expect(isStudioLlmConfigured(noEnv)).toBe(false);
-    expect(studioLlmInfo(noEnv)).toBeNull();
-    expect(() => studioModel(noEnv)).toThrow(/not configured/);
-  });
-
-  test("prefers the AssemblyAI LLM Gateway when its key is present", () => {
-    const env = { ASSEMBLYAI_API_KEY: "k", ANTHROPIC_API_KEY: "k2" } as NodeJS.ProcessEnv;
-    expect(selectStudioLlm(env)).toMatchObject({
-      provider: "assemblyai",
-      model: "claude-sonnet-4-6",
-    });
-    expect(studioLlmInfo(env)).toEqual({ provider: "assemblyai", model: "claude-sonnet-4-6" });
-    const model = studioModel(env) as { modelId: string };
-    expect(model.modelId).toBe("claude-sonnet-4-6");
-  });
-
-  test("falls back to Anthropic when only its key is present", () => {
-    const env = { ANTHROPIC_API_KEY: "k" } as NodeJS.ProcessEnv;
-    expect(selectStudioLlm(env)).toMatchObject({
-      provider: "anthropic",
-      model: "claude-sonnet-4-5",
-    });
-    expect(isStudioLlmConfigured(env)).toBe(true);
-  });
-
-  test("explicit STUDIO_LLM_PROVIDER + STUDIO_LLM_MODEL win", () => {
-    const env = {
-      STUDIO_LLM_PROVIDER: "openai",
-      STUDIO_LLM_MODEL: "gpt-4.1",
-      OPENAI_API_KEY: "k",
-      ASSEMBLYAI_API_KEY: "ignored",
-    } as NodeJS.ProcessEnv;
-    expect(selectStudioLlm(env)).toMatchObject({ provider: "openai", model: "gpt-4.1" });
-    expect((studioModel(env) as { modelId: string }).modelId).toBe("gpt-4.1");
-  });
-
-  test("gateway EU region flows into the descriptor", () => {
-    const env = {
-      ASSEMBLYAI_API_KEY: "k",
-      STUDIO_LLM_REGION: "eu",
-    } as NodeJS.ProcessEnv;
-    const selection = selectStudioLlm(env);
-    expect(selection?.descriptor).toMatchObject({
-      kind: "assemblyai",
-      options: { model: "claude-sonnet-4-6", region: "eu" },
-    });
-  });
-
-  test("unknown provider and missing model are loud errors", () => {
-    expect(() => selectStudioLlm({ STUDIO_LLM_PROVIDER: "nope" } as NodeJS.ProcessEnv)).toThrow(
-      /Unknown STUDIO_LLM_PROVIDER/,
-    );
-    expect(() =>
-      selectStudioLlm({ STUDIO_LLM_PROVIDER: "openai", OPENAI_API_KEY: "k" } as NodeJS.ProcessEnv),
-    ).toThrow(/STUDIO_LLM_MODEL is required/);
-    // isStudioLlmConfigured never throws — it reports unconfigured instead.
-    expect(isStudioLlmConfigured({ STUDIO_LLM_PROVIDER: "nope" } as NodeJS.ProcessEnv)).toBe(false);
-  });
-
-  test("selected provider without its key is unconfigured", () => {
-    const env = { STUDIO_LLM_PROVIDER: "anthropic" } as NodeJS.ProcessEnv;
-    expect(isStudioLlmConfigured(env)).toBe(false);
-    expect(() => studioModel(env)).toThrow(/ANTHROPIC_API_KEY is not set/);
-  });
-});
 
 describe("createStudioTools", () => {
   test("list_files lists workspace paths", async () => {
