@@ -57,6 +57,45 @@ describe("deployStudioProject", () => {
     expect(await deps.store.getEnv("p1")).toEqual({ ASSEMBLYAI_API_KEY: "aai-secret" });
   });
 
+  test("seeds the caller's API key as the agent's ASSEMBLYAI_API_KEY", async () => {
+    // Studio has no secrets UI: without this, a published agent's env is empty
+    // and its S2S connect sends `Bearer ` — AssemblyAI answers `unauthorized`.
+    const deps = makeDeps();
+    await seedProject(deps, "p1");
+    const result = await deployStudioProject(deps, {
+      apiKey: "caller-key",
+      scope: SCOPE,
+      project: "p1",
+    });
+    expect(result.ok).toBe(true);
+    expect(await deps.store.getEnv("p1")).toEqual({ ASSEMBLYAI_API_KEY: "caller-key" });
+  });
+
+  test("an explicit deploy-time key overrides the caller's key", async () => {
+    const deps = makeDeps();
+    await seedProject(deps, "p1");
+    await deployStudioProject(deps, {
+      apiKey: "caller-key",
+      scope: SCOPE,
+      project: "p1",
+      env: { ASSEMBLYAI_API_KEY: "explicit" },
+    });
+    expect(await deps.store.getEnv("p1")).toEqual({ ASSEMBLYAI_API_KEY: "explicit" });
+  });
+
+  test("a key already stored on the agent survives a redeploy", async () => {
+    const deps = makeDeps();
+    await seedProject(deps, "p1");
+    await deployStudioProject(deps, {
+      apiKey: "caller-key",
+      scope: SCOPE,
+      project: "p1",
+      env: { ASSEMBLYAI_API_KEY: "set-via-secret-put" },
+    });
+    await deployStudioProject(deps, { apiKey: "caller-key", scope: SCOPE, project: "p1" });
+    expect(await deps.store.getEnv("p1")).toEqual({ ASSEMBLYAI_API_KEY: "set-via-secret-put" });
+  });
+
   test("redeploys reuse the recorded slug", async () => {
     const deps = makeDeps();
     await seedProject(deps, "p1", "older-slug");

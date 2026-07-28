@@ -24,6 +24,12 @@ export type DeployParams = {
   worker: string;
   clientFiles: Record<string, string>;
   env?: Record<string, string> | undefined;
+  /**
+   * Env floor: applied only where neither the agent's stored env nor `env`
+   * already supplies the key. Lets a caller seed a credential without ever
+   * clobbering one the user set deliberately (`aai secret put`).
+   */
+  defaultEnv?: Record<string, string> | undefined;
   agentConfig: IsolateConfig;
 };
 
@@ -80,7 +86,7 @@ async function deployLocked(
   const { apiKey, keyHash } = params;
 
   const storedEnv = (await deps.store.getEnv(slug)) ?? {};
-  const env = params.env ? { ...storedEnv, ...params.env } : storedEnv;
+  const env = { ...params.defaultEnv, ...storedEnv, ...params.env };
 
   const envParsed = EnvSchema.safeParse(env);
   if (!envParsed.success) {

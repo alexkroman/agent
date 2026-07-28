@@ -308,6 +308,18 @@ voice agents without the CLI:
   validates the sandbox-returned config (`IsolateConfigSchema`) and hands
   it to the shared deploy core (`deployAgentBundle` in `deploy.ts` —
   single source of slug-ownership semantics for HTTP and studio deploys).
+- **Deployed-agent credentials.** The studio has no secrets UI, so a
+  published agent would otherwise start with an empty env — its S2S
+  connect sends an empty bearer token (`runtime-transport.ts`:
+  `env[ASSEMBLYAI_API_KEY_ENV] ?? ""`) and AssemblyAI answers
+  `unauthorized`. The bearer token a studio caller
+  authenticates with *is* their AssemblyAI key (see `aai-cli/_config.ts`),
+  so `studio-deploy.ts` seeds it as the agent's `ASSEMBLYAI_API_KEY` via
+  `DeployParams.defaultEnv`. `defaultEnv` is an env **floor**, not an
+  override: `deployLocked` merges it as `{...defaultEnv, ...storedEnv, ...env}`,
+  so a key the user set deliberately (deploy-time `env`, or `aai secret put`
+  afterwards) always wins. This stays inside the credential-separation
+  rule — it forwards *the caller's own* key, never a platform-owned one.
 - **Client**: `studio-client/` is a Vite-built React app served from
   `dist/studio-client` (`studio-static.ts`) at `/` with hashed assets
   under `/studio-assets/`. When it hasn't been built, `GET /` serves a

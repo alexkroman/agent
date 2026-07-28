@@ -6,6 +6,7 @@
  * the coding agent (and the UI) can show — and fix — them.
  */
 
+import { ASSEMBLYAI_API_KEY_ENV } from "@alexkroman1/aai/stt";
 import type { Storage } from "unstorage";
 import { resolveHarnessPath } from "../constants.ts";
 import { type DeployDeps, deployAgentBundle } from "../deploy.ts";
@@ -79,6 +80,13 @@ export async function deployStudioProject(
       worker,
       clientFiles: {},
       env: params.env,
+      // The studio has no secrets UI, so a published agent would otherwise
+      // start with an empty env and its S2S connect would send `Bearer ` —
+      // AssemblyAI answers `unauthorized`. The bearer token the caller
+      // authenticated with *is* their AssemblyAI key (see `aai-cli/_config.ts`),
+      // so seed it as the agent's key. A floor, not an override: a key the
+      // user set explicitly (here or via `aai secret put`) always wins.
+      defaultEnv: { [ASSEMBLYAI_API_KEY_ENV]: params.apiKey },
       agentConfig: parsed.data,
     },
   );
