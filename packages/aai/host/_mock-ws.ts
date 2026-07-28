@@ -8,6 +8,7 @@ export class MockWebSocket extends EventTarget {
 
   readyState = MockWebSocket.CONNECTING;
   binaryType = "arraybuffer";
+  bufferedAmount = 0;
   sent: (string | ArrayBuffer | Uint8Array)[] = [];
   url: string;
 

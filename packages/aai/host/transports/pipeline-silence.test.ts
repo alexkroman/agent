@@ -3,9 +3,10 @@
 // injects `silencePrompt` as a synthetic user turn (never a user transcript),
 // capped at MAX_CONSECUTIVE_SILENCE_NUDGES back-to-back nudges.
 
-import { describe, expect, test, vi } from "vitest";
+import { afterEach, describe, expect, test, vi } from "vitest";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
 import { makeOpts } from "./_pipeline-transport-harness.ts";
+import { createSilenceNudger } from "./pipeline-silence.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 describe("silence nudge", () => {
@@ -123,5 +124,74 @@ describe("silence nudge", () => {
     await t.stop();
     await new Promise((r) => setTimeout(r, 60));
     expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
+  });
+});
+
+describe("createSilenceNudger timer bookkeeping", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function makeNudger(timeoutMs = 1000) {
+    const onNudge = vi.fn();
+    const nudger = createSilenceNudger({
+      timeoutMs,
+      isActive: () => true,
+      isTurnInFlight: () => false,
+      onNudge,
+    });
+    return { nudger, onNudge };
+  }
+
+  test("per-partial onUserSpeech reuses one long-lived timer instead of re-arming", () => {
+    vi.useFakeTimers();
+    const setTimeoutSpy = vi.spyOn(globalThis, "setTimeout");
+    const clearTimeoutSpy = vi.spyOn(globalThis, "clearTimeout");
+    const { nudger } = makeNudger(1000);
+
+    nudger.arm();
+    // A burst of STT partials (~5-10/s while the user speaks) must not
+    // clearTimeout+setTimeout per call — only record a timestamp. Stay
+    // inside the first window so the single pending timer never fires.
+    for (let i = 0; i < 20; i++) {
+      vi.advanceTimersByTime(20);
+      nudger.onUserSpeech();
+    }
+    expect(setTimeoutSpy).toHaveBeenCalledTimes(1);
+    expect(clearTimeoutSpy).not.toHaveBeenCalled();
+    nudger.clear();
+  });
+
+  test("the deadline sleeps out the remainder and nudges only after a full quiet window", () => {
+    vi.useFakeTimers();
+    const { nudger, onNudge } = makeNudger(1000);
+
+    nudger.arm();
+    vi.advanceTimersByTime(600);
+    nudger.onUserSpeech(); // re-arms via timestamp — timer fires at t=1000
+    vi.advanceTimersByTime(400); // t=1000: only 400 ms since speech → re-sleep
+    expect(onNudge).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(599); // t=1599: still 1 ms short
+    expect(onNudge).not.toHaveBeenCalled();
+    vi.advanceTimersByTime(1); // t=1600: full window since last speech
+    expect(onNudge).toHaveBeenCalledTimes(1);
+    expect(onNudge).toHaveBeenCalledWith(1);
+    nudger.clear();
+  });
+
+  test("onUserTurn stops the countdown until re-armed", () => {
+    vi.useFakeTimers();
+    const { nudger, onNudge } = makeNudger(1000);
+
+    nudger.arm();
+    vi.advanceTimersByTime(500);
+    nudger.onUserTurn();
+    vi.advanceTimersByTime(5000);
+    expect(onNudge).not.toHaveBeenCalled();
+
+    nudger.arm();
+    vi.advanceTimersByTime(1000);
+    expect(onNudge).toHaveBeenCalledTimes(1);
+    nudger.clear();
   });
 });

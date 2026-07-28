@@ -73,6 +73,23 @@ describe("TextLineStream", () => {
     const lines = await collectLines(["", "a\n", "", "b\n"]);
     expect(lines).toEqual(["a", "b"]);
   });
+
+  test("handles one huge line delivered across many chunks", async () => {
+    // Guards the incremental-scan rewrite: a single line spanning many
+    // chunks (the bundle/load shape) must come out intact, and lines after
+    // it must still split correctly.
+    const chunkCount = 64;
+    const chunk = "x".repeat(1024);
+    const chunks = Array.from({ length: chunkCount }, () => chunk);
+    chunks.push("tail\nnext\nlast");
+    const lines = await collectLines(chunks);
+    expect(lines).toEqual([`${chunk.repeat(chunkCount)}tail`, "next", "last"]);
+  });
+
+  test("handles chunks containing multiple newlines mid-stream", async () => {
+    const lines = await collectLines(["a\nb\nc", "d\n\ne\n", "f"]);
+    expect(lines).toEqual(["a", "b", "cd", "", "e", "f"]);
+  });
 });
 
 // ── createSessionStateMap ─────────────────────────────────────────────────
@@ -138,7 +155,7 @@ describe("executeTool", () => {
     });
     const state = createSessionStateMap();
     const result = await executeTool(agent, makeReq("greet"), state);
-    expect(result).toEqual({ result: "hello", state: {} });
+    expect(result).toEqual({ result: "hello" });
   });
 
   test("stringifies non-string results", async () => {
@@ -147,7 +164,7 @@ describe("executeTool", () => {
     });
     const state = createSessionStateMap();
     const result = await executeTool(agent, makeReq("count"), state);
-    expect(result).toEqual({ result: '{"n":42}', state: {} });
+    expect(result).toEqual({ result: '{"n":42}' });
   });
 
   test("returns error for unknown tool", async () => {
@@ -202,10 +219,7 @@ describe("executeTool", () => {
     });
     const state = createSessionStateMap();
     const result = await executeTool(agent, makeReq("echo", { x: 1 }), state);
-    expect(result).toEqual({
-      result: '{"parsed":true,"x":1}',
-      state: {},
-    });
+    expect(result).toEqual({ result: '{"parsed":true,"x":1}' });
   });
 
   // ── run_code (executes in-guest; gVisor/Deno is the boundary) ────────────
@@ -217,7 +231,7 @@ describe("executeTool", () => {
       makeReq("run_code", { code: 'console.log("hello", 2 + 2)' }),
       state,
     );
-    expect(result).toEqual({ result: "hello 4", state: {} });
+    expect(result).toEqual({ result: "hello 4" });
   });
 
   test("run_code supports top-level await", async () => {
@@ -229,7 +243,7 @@ describe("executeTool", () => {
       }),
       state,
     );
-    expect(result).toEqual({ result: "done", state: {} });
+    expect(result).toEqual({ result: "done" });
   });
 
   test("run_code returns no-output message for silent code", async () => {
@@ -239,7 +253,7 @@ describe("executeTool", () => {
       makeReq("run_code", { code: "const x = 1 + 1;" }),
       state,
     );
-    expect(result).toEqual({ result: "Code ran successfully (no output)", state: {} });
+    expect(result).toEqual({ result: "Code ran successfully (no output)" });
   });
 
   test("run_code returns error object for runtime errors", async () => {
@@ -261,6 +275,6 @@ describe("executeTool", () => {
       makeReq("run_code", { code: 'console.log("ok")' }),
       state,
     );
-    expect(result).toEqual({ result: "ok", state: {} });
+    expect(result).toEqual({ result: "ok" });
   });
 });

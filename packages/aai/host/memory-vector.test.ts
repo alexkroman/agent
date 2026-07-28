@@ -39,6 +39,25 @@ describe("createMemoryVector", () => {
     expect(await v.query("text", { topK: 3 })).toHaveLength(3);
   });
 
+  it("returns matches sorted by score descending with topK < record count", async () => {
+    const v = createMemoryVector({ namespace: "ns1" });
+    await v.upsert("exact", "alpha beta gamma");
+    for (let i = 0; i < 20; i++) {
+      await v.upsert(`other-${i}`, `unrelated document number ${i}`);
+    }
+    const matches = await v.query("alpha beta gamma", { topK: 5 });
+    expect(matches).toHaveLength(5);
+    expect(matches[0]?.id).toBe("exact");
+    const scores = matches.map((m) => m.score);
+    expect([...scores].sort((a, b) => b - a)).toEqual(scores);
+  });
+
+  it("topK of 0 returns an empty array", async () => {
+    const v = createMemoryVector({ namespace: "ns1" });
+    await v.upsert("a", "one");
+    expect(await v.query("one", { topK: 0 })).toEqual([]);
+  });
+
   it("idempotent: same id overwrites text and metadata", async () => {
     const v = createMemoryVector({ namespace: "ns1" });
     await v.upsert("doc", "v1", { tag: "old" });

@@ -2,6 +2,7 @@
 
 import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
+import { STT_FRAME_FLOOR_MS } from "../../../sdk/constants.ts";
 import {
   ASSEMBLYAI_API_KEY_ENV,
   type AssemblyAIOptions,
@@ -13,7 +14,13 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
-import { closeOnAbort, connectOrThrow, createSessionShell, requireApiKey } from "../_utils.ts";
+import {
+  closeOnAbort,
+  connectOrThrow,
+  createPcmFrameAccumulator,
+  createSessionShell,
+  requireApiKey,
+} from "../_utils.ts";
 
 export interface AssemblyAISession extends SttSession {
   /** @internal Test-only: exposes the underlying SDK transcriber for fixture replay. */
@@ -154,57 +161,29 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
 
       // AssemblyAI streaming requires each audio frame to be 50–1000 ms, but
       // telephony clients (e.g. the tau2 harness) stream standard 20 ms RTP
-      // frames. Coalesce inbound PCM into ~100 ms frames (capped at 1000 ms)
-      // before forwarding; a sub-100 ms remainder is carried to the next call.
-      // A fixed accumulator (vs. reallocating a merged carry per chunk) keeps
-      // per-chunk cost to one `set` copy of the new samples.
-      const rate = openOpts.sampleRate;
-      const minFrameSamples = Math.max(1, Math.round(rate * 0.1)); // 100 ms
-      const maxFrameSamples = Math.max(minFrameSamples, Math.round(rate)); // 1000 ms
-      const minSendSamples = Math.max(1, Math.round(rate * 0.05)); // 50 ms floor
-      const acc = new Int16Array(maxFrameSamples);
-      let accLen = 0;
-      const sendFrame = (): void => {
+      // frames. Coalesce inbound PCM before forwarding — see
+      // createPcmFrameAccumulator; a sub-50 ms close-time tail is dropped
+      // (below AssemblyAI's frame floor).
+      const frames = createPcmFrameAccumulator({
+        sampleRate: openOpts.sampleRate,
+        minFlushMs: STT_FRAME_FLOOR_MS,
         // `slice` copies just the sent bytes; the accumulator is reused.
-        transcriber.sendAudio(acc.buffer.slice(0, accLen * 2));
-        accLen = 0;
-      };
-      const flushTail = (): void => {
-        if (accLen >= minSendSamples && !shell.isClosed()) {
-          try {
-            sendFrame();
-          } catch {
-            // socket already closing; nothing to flush
-          }
-        }
-        accLen = 0;
-      };
+        send: (frame) =>
+          transcriber.sendAudio(
+            frame.buffer.slice(frame.byteOffset, frame.byteOffset + frame.byteLength),
+          ),
+      });
 
       const session: AssemblyAISession = {
         sendAudio(pcm: Int16Array) {
           if (shell.isClosed()) return;
-          // Copy into the accumulator (the caller may reuse `pcm`'s backing
-          // buffer), flushing a frame whenever it fills or once the whole
-          // chunk is buffered and ≥ the 100 ms minimum has accumulated.
-          let offset = 0;
-          while (offset < pcm.length) {
-            const take = Math.min(maxFrameSamples - accLen, pcm.length - offset);
-            acc.set(pcm.subarray(offset, offset + take), accLen);
-            accLen += take;
-            offset += take;
-            if (
-              accLen === maxFrameSamples ||
-              (offset === pcm.length && accLen >= minFrameSamples)
-            ) {
-              sendFrame();
-            }
-          }
+          frames.push(pcm);
         },
         on(event, fn) {
           return emitter.on(event, fn);
         },
         close: () => {
-          flushTail();
+          if (!shell.isClosed()) frames.flush();
           return shell.close();
         },
         updateAgentContext(text: string) {

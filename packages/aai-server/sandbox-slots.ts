@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { errorMessage } from "@alexkroman1/aai";
-import { getLock } from "p-lock";
 import { debug } from "./_debug-log.ts";
+import { createKeyedLock } from "./_keyed-lock.ts";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
 import { metrics, type SandboxEvictReason } from "./metrics.ts";
 
@@ -42,9 +42,11 @@ export function registerSlotsForGauges(slots: SlotCache): void {
   _slotsForGauges = slots;
 }
 
-const apiLock = getLock();
+// Internal keyed lock (not p-lock): entries are deleted when released, so the
+// pre-auth WS-upgrade path can't grow the map one entry per distinct slug.
+const apiLock = createKeyedLock();
 
-/** Run `fn` while holding a keyed p-lock, releasing it in every outcome. */
+/** Run `fn` while holding a keyed lock, releasing it in every outcome. */
 export const withLock = <T>(
   lock: (key: string) => Promise<() => void>,
   key: string,

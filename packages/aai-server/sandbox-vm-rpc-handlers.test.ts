@@ -177,6 +177,104 @@ describe("vector RPC handlers", () => {
   });
 });
 
+// ── fetch/request handler tests ──────────────────────────────────────────────
+
+describe("fetch/request handler", () => {
+  let hostReadable: PassThrough;
+  let hostWritable: PassThrough;
+  let writtenLines: string[];
+  let conn: NdjsonConnection;
+
+  beforeEach(() => {
+    const result = createTestConn();
+    hostReadable = result.hostReadable;
+    hostWritable = result.hostWritable;
+    writtenLines = result.writtenLines;
+    conn = result.conn;
+  });
+
+  afterEach(() => {
+    hostReadable.destroy();
+    hostWritable.destroy();
+  });
+
+  function parsedLines(): Record<string, unknown>[] {
+    return writtenLines.map((l) => JSON.parse(l) as Record<string, unknown>);
+  }
+
+  it("uses the guest-supplied id for the ack and for early-rejection notifications", async () => {
+    const opts = baseOpts({ allowedHosts: ["api.allowed.test"] });
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const detach = autorespondBundleLoad(hostWritable, hostReadable);
+
+    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
+    detach();
+
+    const reqId = 701;
+    hostReadable.push(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: reqId,
+        method: "fetch/request",
+        params: {
+          id: "guest-fetch-1",
+          url: "https://evil.test/steal",
+          method: "GET",
+          headers: {},
+          body: null,
+        },
+      })}\n`,
+    );
+
+    await waitForResponseId(writtenLines, reqId);
+
+    // Ack echoes the guest id.
+    const response = findResponseById(writtenLines, reqId);
+    expect(response?.error).toBeUndefined();
+    expect(response?.result).toEqual({ id: "guest-fetch-1" });
+
+    // The disallowed-host rejection notification carries the guest id, so
+    // the guest's already-registered pendingFetches entry catches it even
+    // when it is written before the ack.
+    await vi.waitFor(() => {
+      const errNotif = parsedLines().find((m) => m.method === "fetch/response-error");
+      expect(errNotif).toBeDefined();
+      expect((errNotif as { params: { id: string; message: string } }).params).toMatchObject({
+        id: "guest-fetch-1",
+        message: expect.stringContaining("not allowed"),
+      });
+    });
+
+    handle.conn.dispose();
+  });
+
+  it("rejects a fetch/request without a guest id", async () => {
+    const opts = baseOpts({ allowedHosts: ["api.allowed.test"] });
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const detach = autorespondBundleLoad(hostWritable, hostReadable);
+
+    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
+    detach();
+
+    const reqId = 702;
+    hostReadable.push(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: reqId,
+        method: "fetch/request",
+        params: { url: "https://api.allowed.test/", method: "GET", headers: {}, body: null },
+      })}\n`,
+    );
+
+    await waitForResponseId(writtenLines, reqId);
+
+    const response = findResponseById(writtenLines, reqId);
+    expect(response?.error).toBeDefined();
+
+    handle.conn.dispose();
+  });
+});
+
 // ── kv/* delegation through resolved Kv tests ────────────────────────────────
 
 describe("kv/* handlers via injected Kv", () => {

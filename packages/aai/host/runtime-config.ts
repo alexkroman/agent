@@ -37,28 +37,41 @@ function consoleLog(fn: typeof console.log): LogFn {
   return (msg, ctx) => (ctx ? fn(msg, ctx) : fn(msg));
 }
 
+/** Parse a debug-flag env value (`AAI_DEBUG`): `"1"` / `"true"` enable it. */
+export function isDebugEnv(value: string | undefined): boolean {
+  return value === "1" || value === "true";
+}
+
 /**
- * Level-gated debug: `console.debug` is an alias for `console.log` in Node, so
- * an ungated debug sink writes to stdout on every call. Some debug sites sit on
- * per-message realtime paths (e.g. the OpenAI Realtime transport logs every
- * unhandled event type), where a synchronous write per inbound message is real
- * cost. Matches `aai-server/_debug-log.ts`: set `LOG_LEVEL=DEBUG` to enable.
+ * Whether debug logging is enabled for this process: `AAI_DEBUG=1` or the
+ * `LOG_LEVEL=DEBUG` convention `aai-server/_debug-log.ts` already uses.
+ *
+ * Read once at module load — it gates per-message hot paths (audio frames,
+ * stream deltas), so callers must not pay a `process.env` lookup per call.
+ * Hot-path call sites also use this flag to skip building expensive log
+ * payloads (e.g. `JSON.stringify` of full wire messages) entirely.
  */
-function debugLog(): LogFn {
-  return (msg, ctx) => {
-    if (process.env.LOG_LEVEL !== "DEBUG") return;
-    if (ctx) console.debug(msg, ctx);
-    else console.debug(msg);
+export const debugLoggingEnabled: boolean =
+  isDebugEnv(process.env.AAI_DEBUG) || process.env.LOG_LEVEL === "DEBUG";
+
+const noopLog: LogFn = () => undefined;
+
+/**
+ * Build a console-backed {@link Logger}. `debug` is a live `console.debug`
+ * only when debug logging is enabled (see {@link debugLoggingEnabled});
+ * otherwise it is a no-op so per-message hot-path logs cost nothing.
+ */
+export function createConsoleLogger(debug: boolean = debugLoggingEnabled): Logger {
+  return {
+    info: consoleLog(console.log),
+    warn: consoleLog(console.warn),
+    error: consoleLog(console.error),
+    debug: debug ? consoleLog(console.debug) : noopLog,
   };
 }
 
-/** Default console-backed logger. */
-export const consoleLogger: Logger = {
-  info: consoleLog(console.log),
-  warn: consoleLog(console.warn),
-  error: consoleLog(console.error),
-  debug: debugLog(),
-};
+/** Default console-backed logger. Debug output requires `AAI_DEBUG=1`. */
+export const consoleLogger: Logger = createConsoleLogger();
 
 /**
  * Speech-to-Speech (S2S) endpoint configuration.

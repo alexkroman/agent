@@ -83,6 +83,45 @@ describe("PipelineTransport — STT → LLM turn", () => {
     await t.stop();
   });
 
+  test("speaks a sub-threshold pre-tool fragment before the tool runs", async () => {
+    // Regression: TTS text is coalesced, and "let me" is short and unpunctuated,
+    // so it used to sit in the batch buffer for the whole tool-execution window
+    // — the caller heard "Sure," then dead air (holdPhrase is suppressed once
+    // the model has spoken). The segment boundary must release it.
+    const toolStarted = Promise.withResolvers<void>();
+    const { opts, stt, tts, callbacks } = makeOpts({
+      llm: createFakeLanguageModel({
+        steps: [
+          [
+            { type: "text", text: "Sure, " },
+            { type: "text", text: "let me" },
+            { type: "tool-call", toolCallId: "tc-1", toolName: "lookup", input: "{}" },
+          ],
+          [{ type: "text", text: "found it." }],
+        ],
+      }),
+      executeTool: vi.fn(async () => {
+        toolStarted.resolve();
+        return "result";
+      }),
+      toolSchemas: [noopToolSchema],
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    stt.last()?.fireFinal("look it up");
+
+    await toolStarted.promise;
+    // Everything spoken before the tool call has reached TTS by the time the
+    // tool starts — nothing is still buffered.
+    expect(tts.last()?.textChunks.join("")).toBe("Sure, let me");
+
+    await vi.waitFor(() => {
+      expect(callbacks.onAgentTranscript).toHaveBeenCalled();
+    });
+    expect(tts.last()?.textChunks.join("")).toBe("Sure, let me found it.");
+    await t.stop();
+  });
+
   test("does not double-space when a segment boundary already carries whitespace", async () => {
     const { opts, stt, callbacks } = makeOpts({
       llm: createFakeLanguageModel({
@@ -411,7 +450,7 @@ describe("interrupted-speech persistence", () => {
     // tool call that had already succeeded (and its result) vanished from LLM
     // history — the next turn would repeat the call or claim the lookup failed.
     const executeTool = vi.fn(async () => "result-payload-42");
-    const { opts, stt, tts, callbacks } = makeOpts({
+    const { opts, stt, callbacks } = makeOpts({
       minBargeInWords: 1,
       llm: createFakeLanguageModel({
         steps: [
@@ -433,9 +472,13 @@ describe("interrupted-speech persistence", () => {
     const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
 
     stt.last()?.fireFinal("look up my account");
-    // Wait until step 1 finished (tool ran) and step 2's text is streaming.
+    // Wait until step 1 finished (tool ran) and step 2's stream has started
+    // (its doStream call was made). TTS chunks are no longer a reliable
+    // mid-step signal: sends coalesce to clause boundaries, so step 2's text
+    // may only reach TTS at the end of the step.
     await vi.waitFor(() => {
-      expect(tts.last()?.textChunks.join("")).toContain("I found");
+      expect(executeTool).toHaveBeenCalled();
+      expect(llm.calls.length).toBeGreaterThanOrEqual(2);
     });
     stt.last()?.firePartial("stop");
     await vi.waitFor(() => {

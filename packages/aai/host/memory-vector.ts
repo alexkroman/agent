@@ -14,6 +14,11 @@ type StoredRecord = {
 };
 
 const DIM = 64;
+// Module scope on purpose: the dev server rebuilds the runtime (and the
+// platform can recreate a sandbox) within one process, and agents expect
+// their dev-mode vector data to survive those recreations. Instances made
+// with the same namespace share one store; data lives until process exit
+// (or _resetMemoryVectorForTests). Dev/test only — see pseudoEmbed.
 const stores = new Map<string, Map<string, StoredRecord>>();
 
 function getStore(ns: string): Map<string, StoredRecord> {
@@ -65,6 +70,20 @@ function matches(
   return true;
 }
 
+type ScoredRecord = { id: string; rec: StoredRecord; score: number };
+
+/** Insert into a score-descending bounded list, evicting the tail past `topK`. */
+function insertTopK(top: ScoredRecord[], entry: ScoredRecord, topK: number): void {
+  let at = top.length;
+  while (at > 0) {
+    const prev = top[at - 1];
+    if (prev === undefined || prev.score >= entry.score) break;
+    at--;
+  }
+  top.splice(at, 0, entry);
+  if (top.length > topK) top.pop();
+}
+
 export function createMemoryVector(opts: MemoryVectorOptions): Vector {
   const ns = opts.namespace;
 
@@ -76,19 +95,23 @@ export function createMemoryVector(opts: MemoryVectorOptions): Vector {
       const topK = queryOpts?.topK ?? 5;
       const filter = queryOpts?.filter;
       const probe = pseudoEmbed(text);
-      const scored: VectorMatch[] = [];
+      if (topK <= 0) return [];
+      // Score-first with a bounded top-K (descending insertion, k ≪ n):
+      // avoids building a VectorMatch per record and sorting the full scan —
+      // only the winners materialize into match objects below.
+      const top: ScoredRecord[] = [];
       for (const [id, rec] of getStore(ns)) {
         if (filter && !matches(rec.metadata, filter)) continue;
-        const match: VectorMatch = {
-          id,
-          score: cosine(probe, rec.vec),
-          text: rec.text,
-        };
-        if (rec.metadata !== undefined) match.metadata = rec.metadata;
-        scored.push(match);
+        const score = cosine(probe, rec.vec);
+        const last = top.at(-1);
+        if (top.length === topK && last !== undefined && score <= last.score) continue;
+        insertTopK(top, { id, rec, score }, topK);
       }
-      scored.sort((a, b) => b.score - a.score);
-      return scored.slice(0, topK);
+      return top.map(({ id, rec, score }) => {
+        const match: VectorMatch = { id, score, text: rec.text };
+        if (rec.metadata !== undefined) match.metadata = rec.metadata;
+        return match;
+      });
     },
     async delete(ids) {
       const store = getStore(ns);

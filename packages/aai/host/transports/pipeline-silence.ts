@@ -4,7 +4,7 @@
 // transport supplies the actual turn via `onNudge`.
 
 import { MAX_CONSECUTIVE_SILENCE_NUDGES } from "../../sdk/constants.ts";
-import { createRestartableTimer } from "../_timer.ts";
+import { createCoalescingTimer } from "../_timer.ts";
 
 export type SilenceNudger = {
   /**
@@ -39,7 +39,9 @@ export function createSilenceNudger(opts: {
   const raw = opts.timeoutMs ?? 0;
   const timeoutMs = Number.isFinite(raw) && raw > 0 ? raw : 0;
   let consecutive = 0;
-  const countdown = createRestartableTimer(() => onElapsed());
+  // Coalescing, not restartable: arm() runs per STT partial, so it records the
+  // deadline and keeps one long-lived timer instead of a clear+set pair per call.
+  const countdown = createCoalescingTimer(() => onElapsed());
 
   function arm(): void {
     if (!opts.isActive()) return;

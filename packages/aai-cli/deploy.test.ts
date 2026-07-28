@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { gunzipSync } from "node:zlib";
 import { describe, expect, test, vi } from "vitest";
 import { type DeployOpts, runDeploy } from "./_deploy.ts";
 import { makeBundle } from "./_test-utils.ts";
@@ -8,6 +9,24 @@ function deployOk(slug = "cool-cats-jump"): Response {
     status: 200,
     headers: { "Content-Type": "application/json" },
   });
+}
+
+/** Shape of the (decoded) deploy request body, for test assertions. */
+type DecodedDeployBody = {
+  slug?: string;
+  env?: Record<string, string>;
+  worker?: string;
+  clientFiles?: Record<string, string>;
+  agentConfig: Record<string, unknown>;
+};
+
+/** Inflate + parse the gzipped JSON body the CLI sends. */
+function decodeBody(init: RequestInit | undefined): DecodedDeployBody {
+  const body = init?.body;
+  if (!(body instanceof Uint8Array)) {
+    throw new Error(`expected gzipped binary body, got ${typeof body}`);
+  }
+  return JSON.parse(gunzipSync(body).toString("utf8"));
 }
 
 /** Build a DeployOpts object with a mock fetch. */
@@ -36,11 +55,26 @@ describe("runDeploy", () => {
     expect(result.slug).toBe("cool-cats-jump");
   });
 
+  test("sends a gzip-compressed body with Content-Encoding header", async () => {
+    const mockFetch = vi.fn().mockResolvedValue(deployOk());
+    await runDeploy(deployOpts(mockFetch));
+    const [, init] = mockFetch.mock.calls[0] ?? [];
+    expect(new Headers(init?.headers).get("content-encoding")).toBe("gzip");
+    // Raw bytes, not a re-JSON-encoded string — and actually gzip
+    // (magic bytes 0x1f 0x8b) that inflates back to the JSON payload.
+    const body = init?.body;
+    expect(body).toBeInstanceOf(Uint8Array);
+    const bytes = body as Uint8Array;
+    expect(bytes[0]).toBe(0x1f);
+    expect(bytes[1]).toBe(0x8b);
+    expect(decodeBody(init).agentConfig.name).toBe("test-agent");
+  });
+
   test("sends worker, clientFiles, and agentConfig in body", async () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
     await runDeploy(deployOpts(mockFetch));
     const [, init] = mockFetch.mock.calls[0] ?? [];
-    const body = JSON.parse(init?.body as string);
+    const body = decodeBody(init);
     expect(body.worker).toBeTruthy();
     expect(body.clientFiles).toEqual({});
     expect(body.agentConfig.name).toBe("test-agent");
@@ -63,7 +97,7 @@ describe("runDeploy", () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
     await runDeploy(deployOpts(mockFetch, { bundle }));
     const [, init] = mockFetch.mock.calls[0] ?? [];
-    const body = JSON.parse(init?.body as string);
+    const body = decodeBody(init);
     expect(body.clientFiles).toEqual({
       "index.html": "<html></html>",
       "app.js": "console.log('hi')",
@@ -78,7 +112,7 @@ describe("runDeploy", () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
     await runDeploy(deployOpts(mockFetch, { env: { MY_KEY: "secret" } }));
     const [, init] = mockFetch.mock.calls[0] ?? [];
-    const body = JSON.parse(init?.body as string);
+    const body = decodeBody(init);
     expect(body.env).toEqual({ MY_KEY: "secret" });
   });
 
@@ -86,7 +120,7 @@ describe("runDeploy", () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk("my-slug"));
     await runDeploy(deployOpts(mockFetch, { slug: "my-slug" }));
     const [, init] = mockFetch.mock.calls[0] ?? [];
-    const body = JSON.parse(init?.body as string);
+    const body = decodeBody(init);
     expect(body.slug).toBe("my-slug");
   });
 
@@ -95,7 +129,7 @@ describe("runDeploy", () => {
     const { slug: _slug, ...optsWithoutSlug } = deployOpts(mockFetch);
     const result = await runDeploy(optsWithoutSlug);
     const [, init] = mockFetch.mock.calls[0] ?? [];
-    const body = JSON.parse(init?.body as string);
+    const body = decodeBody(init);
     expect(body.slug).toBeUndefined();
     expect(result.slug).toBe("server-generated");
   });
@@ -142,7 +176,7 @@ describe("runDeploy", () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
     await runDeploy(deployOpts(mockFetch));
     const [, init] = mockFetch.mock.calls[0] ?? [];
-    const body = JSON.parse(init?.body as string);
+    const body = decodeBody(init);
     const result = DeployBodySchema.safeParse(body);
     expect(
       result.success,

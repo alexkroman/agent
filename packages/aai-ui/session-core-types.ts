@@ -39,6 +39,13 @@ export type CustomEvent = {
  */
 export type SessionSnapshot = {
   readonly state: AgentState;
+  /**
+   * Monotonically increasing counter bumped whenever rendered conversation
+   * content changes (`messages`, `toolCalls`, or either live transcript).
+   * Cheap dependency for scroll-to-bottom effects — unlike summed lengths it
+   * never collides when the capped arrays slide.
+   */
+  readonly contentVersion: number;
   readonly messages: ChatMessage[];
   readonly toolCalls: ToolCallInfo[];
   readonly customEvents: CustomEvent[];

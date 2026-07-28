@@ -22,6 +22,19 @@ cd "$ROOT"
 
 MODE="${1:-full}"
 
+# Turbo defaults to 10 concurrent tasks, but each task spawns its own worker
+# pool (vitest forks/threads), so on a small machine that oversubscribes the
+# CPUs several times over. The visible symptom was flaky failures rather than
+# slowness: aai-server's credential tests run PBKDF2 at 600k iterations, which
+# stretches from ~300ms to ~750ms per hash under contention and pushed whole
+# tests past their timeout. Leave room for each task's internal parallelism.
+# An explicit TURBO_CONCURRENCY still wins.
+if [ -z "${TURBO_CONCURRENCY:-}" ]; then
+  CORES="$( (nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null) || echo 4)"
+  TURBO_CONCURRENCY="$(( CORES / 2 > 2 ? CORES / 2 : 2 ))"
+  export TURBO_CONCURRENCY
+fi
+
 GREEN='\033[0;32m'
 RED='\033[0;31m'
 YELLOW='\033[1;33m'

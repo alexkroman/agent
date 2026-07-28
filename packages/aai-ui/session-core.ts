@@ -22,7 +22,7 @@ import type {
   SessionCoreOptions,
   SessionSnapshot,
 } from "./session-core-types.ts";
-import type { WebSocketConstructor } from "./types.ts";
+import { MIC_SEND_MAX_BUFFERED_BYTES, type WebSocketConstructor } from "./types.ts";
 
 export type {
   CustomEvent,
@@ -153,6 +153,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   let currentSnapshot: SessionSnapshot = {
     ...CLEARED_SESSION_STATE,
     state: "disconnected",
+    contentVersion: 0,
     started: false,
     running: false,
   };
@@ -163,8 +164,16 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     for (const sub of subscribers) sub();
   }
 
+  /** Snapshot fields whose changes bump `contentVersion` (rendered conversation content). */
+  const contentKeys = ["messages", "toolCalls", "userTranscript", "agentTranscript"] as const;
+
   function updateState(partial: Partial<SessionSnapshot>): void {
-    currentSnapshot = { ...currentSnapshot, ...partial };
+    const contentChanged = contentKeys.some(
+      (key) => key in partial && partial[key] !== currentSnapshot[key],
+    );
+    currentSnapshot = contentChanged
+      ? { ...currentSnapshot, ...partial, contentVersion: currentSnapshot.contentVersion + 1 }
+      : { ...currentSnapshot, ...partial };
     notify();
   }
 
@@ -211,9 +220,12 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   }
 
   function sendAudio(bytes: Uint8Array): void {
-    if (conn.ws && conn.ws.readyState === WS_OPEN) {
-      conn.ws.send(bytes as unknown as ArrayBuffer);
-    }
+    if (!conn.ws || conn.ws.readyState !== WS_OPEN) return;
+    // Backpressure: if the socket's send queue is backed up (slow network),
+    // drop this frame instead of queueing. Queued mic audio only adds latency
+    // and flushes stale speech into STT once the connection recovers.
+    if (conn.ws.bufferedAmount > MIC_SEND_MAX_BUFFERED_BYTES) return;
+    conn.ws.send(bytes as unknown as ArrayBuffer);
   }
 
   const audioDeps = {

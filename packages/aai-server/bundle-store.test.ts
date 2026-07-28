@@ -301,6 +301,54 @@ describe("bundle store (unstorage)", () => {
     expect(after).toEqual({ A: "2" });
   });
 
+  test("getWorkerCode caches result — second call does not hit storage", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: {},
+      worker: "console.log('cached');",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+
+    // Prime cache
+    await store.getWorkerCode("test-agent");
+
+    let reads = 0;
+    const originalGetItem = storage.getItem.bind(storage);
+    storage.getItem = (async (key: string) => {
+      reads++;
+      return originalGetItem(key);
+    }) as typeof storage.getItem;
+
+    const code = await store.getWorkerCode("test-agent");
+    expect(code).toBe("console.log('cached');");
+    expect(reads).toBe(0);
+  });
+
+  test("putAgent invalidates the worker-code cache", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    const bundle = {
+      slug: "test-agent",
+      env: {},
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    };
+    await store.putAgent({ ...bundle, worker: "v1" });
+    expect(await store.getWorkerCode("test-agent")).toBe("v1");
+
+    await store.putAgent({ ...bundle, worker: "v2" });
+    expect(await store.getWorkerCode("test-agent")).toBe("v2");
+  });
+
   test("getAgentConfig caches result", async () => {
     const storage = createStorage();
     const masterKey = await importMasterKey("test-secret");

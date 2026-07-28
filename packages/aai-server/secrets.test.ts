@@ -81,17 +81,16 @@ describe("verifyApiKeyHash", () => {
 });
 
 describe("verifySlugOwner", () => {
-  test("returns 'unclaimed' when slug has no manifest", async () => {
+  test("returns 'unclaimed' without a keyHash when slug has no manifest", async () => {
     const store = createTestStore();
     const result = await verifySlugOwner("my-api-key", {
       slug: "nonexistent",
       store,
     });
     expect(result.status).toBe("unclaimed");
-    expect(result).toHaveProperty("keyHash");
-    if (result.status === "unclaimed") {
-      expect(result.keyHash).toMatch(/^pbkdf2:/);
-    }
+    // Hashing is deferred to the deploy-claim path (middleware.ts) so
+    // requests for nonexistent slugs don't burn ~100ms of PBKDF2.
+    expect(result).not.toHaveProperty("keyHash");
   });
 
   test("returns 'owned' when API key matches stored hash", async () => {

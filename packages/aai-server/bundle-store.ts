@@ -2,9 +2,9 @@
 // Bundle store backed by unstorage (S3-compatible storage via Tigris, R2, etc.).
 
 import { errorMessage } from "@alexkroman1/aai";
-import { getLock } from "p-lock";
 import type { Storage } from "unstorage";
 import { z } from "zod";
+import { createKeyedLock } from "./_keyed-lock.ts";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import { agentObjectKey, agentPrefix } from "./constants.ts";
@@ -34,6 +34,11 @@ const STORE_CACHE_TTL_MS = 60_000;
 // since individual assets can be large.
 const CLIENT_FILE_CACHE_MAX = 64;
 
+// Worker bundles can be up to MAX_WORKER_SIZE (10 MB), so cap the entry
+// count low. Note quick-lru's dual-generation eviction can briefly hold up
+// to 2× maxSize entries, so worst case is ~160 MB, not ~80 MB.
+const WORKER_CODE_CACHE_MAX = 8;
+
 async function instrumentTigris<T>(op: string, fn: () => Promise<T>): Promise<T> {
   return observeDurationWithStatus(
     metrics.upstreamCallSeconds,
@@ -46,17 +51,19 @@ async function instrumentTigris<T>(op: string, fn: () => Promise<T>): Promise<T>
 export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey }): BundleStore {
   const { masterKey } = opts;
 
-  const manifestLock = getLock();
+  const manifestLock = createKeyedLock();
 
   // `null` cache values mean "confirmed miss" — distinct from `undefined` (not cached).
   const manifestCache = new TtlCache<AgentMetadata | null>(STORE_CACHE_TTL_MS);
   const configCache = new TtlCache<IsolateConfig | null>(STORE_CACHE_TTL_MS);
   // Keyed by full object key (`agents/<slug>/client/<path>`).
   const clientFileCache = new TtlCache<string | null>(STORE_CACHE_TTL_MS, CLIENT_FILE_CACHE_MAX);
+  const workerCodeCache = new TtlCache<string | null>(STORE_CACHE_TTL_MS, WORKER_CODE_CACHE_MAX);
 
   function invalidate(slug: string): void {
     manifestCache.delete(slug);
     configCache.delete(slug);
+    workerCodeCache.delete(slug);
     clientFileCache.deletePrefix(`${agentPrefix(slug)}/`);
   }
 
@@ -147,7 +154,13 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     },
 
     getWorkerCode(slug) {
-      return instrumentTigris("getWorkerCode", () => readItem(agentObjectKey(slug, "worker.js")));
+      return instrumentTigris("getWorkerCode", async () => {
+        const cached = workerCodeCache.get(slug);
+        if (cached !== undefined) return cached;
+        const value = await readItem(agentObjectKey(slug, "worker.js"));
+        workerCodeCache.set(slug, value);
+        return value;
+      });
     },
 
     getClientFile(slug, filePath) {

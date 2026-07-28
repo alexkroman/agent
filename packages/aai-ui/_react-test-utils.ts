@@ -29,6 +29,7 @@ export function createMockSessionCore(
 ): SessionCore & { update(partial: Partial<SessionSnapshot>): void } {
   let snapshot: SessionSnapshot = {
     state: overrides?.state ?? "disconnected",
+    contentVersion: 0,
     messages: overrides?.messages ?? [],
     toolCalls: overrides?.toolCalls ?? [],
     customEvents: [],
@@ -79,7 +80,8 @@ export function createMockSessionCore(
       notify();
     },
     update(partial: Partial<SessionSnapshot>) {
-      snapshot = { ...snapshot, ...partial };
+      // Mirror the real core: content changes bump contentVersion.
+      snapshot = { ...snapshot, ...partial, contentVersion: snapshot.contentVersion + 1 };
       notify();
     },
     [Symbol.dispose]() {

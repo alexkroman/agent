@@ -22,6 +22,7 @@ import {
   DEFAULT_HOLD_PHRASE,
   PIPELINE_FLUSH_TIMEOUT_MS,
   PIPELINE_PLAYBACK_GRACE_MS,
+  TTS_COALESCE_MAX_CHARS,
 } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
@@ -74,74 +75,6 @@ export function toModelMessage(m: Message): ModelMessage {
   return { role: "assistant", content: m.content };
 }
 
-/** Count whitespace-delimited words in an interim transcript. */
-export function countWords(text: string): number {
-  return text.trim().split(/\s+/).filter(Boolean).length;
-}
-
-/**
- * Trailing tokens that signal the speaker is mid-thought and more speech is
- * coming — fillers, dangling connectives, articles, and prepositions. A final
- * ending in one of these is treated as incomplete even if it carries terminal
- * punctuation, so the endpoint settle window aggregates the continuation.
- */
-const CONTINUATION_CUES: ReadonlySet<string> = new Set([
-  "um",
-  "umm",
-  "uh",
-  "uhh",
-  "er",
-  "erm",
-  "hmm",
-  "mm",
-  "so",
-  "and",
-  "but",
-  "or",
-  "then",
-  "because",
-  "cause",
-  "actually",
-  "wait",
-  "no",
-  "well",
-  "like",
-  "the",
-  "a",
-  "an",
-  "to",
-  "for",
-  "with",
-  "of",
-  "my",
-  "at",
-  "in",
-  "on",
-  "i",
-  "i'm",
-  "let",
-  "let's",
-]);
-
-/**
- * Heuristic: does an STT final read as a complete utterance (commit now) versus
- * a fragment likely to be continued (wait for the settle window)?
- *
- * Complete = ends with terminal punctuation and its last word is not a
- * continuation cue. STT emits punctuation on confident end-of-turn finals; a
- * mid-utterance pause fragment ("find a two-bedroom in Austin") usually lacks
- * it, and self-corrections trail off on a cue ("actually make it"). Errs toward
- * waiting (the safe, aggregating side) when unsure.
- */
-export function utteranceLooksComplete(text: string): boolean {
-  const trimmed = text.trim();
-  if (trimmed.length === 0) return false;
-  const words = trimmed.toLowerCase().match(/[a-z']+/g);
-  const lastWord = words?.at(-1) ?? "";
-  if (CONTINUATION_CUES.has(lastWord)) return false;
-  return /[.?!]["')\]]*$/.test(trimmed);
-}
-
 /**
  * Flush the TTS session and wait for its synthesis to drain. Resolves on TTS
  * `done`, signal abort, or PIPELINE_FLUSH_TIMEOUT_MS elapsed.
@@ -174,6 +107,74 @@ export async function flushTtsAndWait(args: {
   }
 }
 
+/** Batches word-granularity text into fewer TTS sends — see {@link createTtsTextCoalescer}. */
+export type TtsTextCoalescer = {
+  /** Buffer a text delta, forwarding coalesced chunks as boundaries are hit. */
+  send(text: string): void;
+  /** Forward any buffered text. Call before the provider-level TTS flush. */
+  flush(): void;
+  /**
+   * A speech segment ended (`text-end` / a tool call is about to run). Forwards
+   * whatever is buffered and re-arms the immediate-first-chunk allowance.
+   *
+   * Batching may only defer text that more text is still coming for. Holding a
+   * sub-threshold fragment ("let me") across a tool call would strand it for the
+   * whole execution window — the caller hears the words before it, then dead
+   * air, and `holdPhrase` is suppressed from covering that gap because the model
+   * did speak. Re-arming also keeps the post-tool reply's first words immediate,
+   * since that gap is exactly when time-to-first-audio matters again.
+   */
+  boundary(): void;
+};
+
+/**
+ * Trailing clause boundary — punctuation (optionally inside closing
+ * quotes/brackets) at the end of the buffered text. Word-granularity chunks
+ * carry their trailing whitespace ("Sure, "), so allow it after the mark.
+ */
+const CLAUSE_BOUNDARY_RE = /[.,;:!?…]["')\]]*\s*$/;
+
+/**
+ * Coalesce word-granularity LLM text into fewer, larger TTS provider sends.
+ *
+ * The smooth-stream transform (pipeline-smooth.ts) chunks LLM text to whole
+ * words for pacing; forwarding each word to the TTS provider costs one wire
+ * message (plus per-send request overhead) per word. The transcript path is
+ * unaffected — this only batches what reaches `sendText`.
+ *
+ * The first chunk is forwarded immediately (preserves time-to-first-byte);
+ * subsequent text batches until a clause/punctuation boundary or
+ * {@link TTS_COALESCE_MAX_CHARS} characters accumulate. Callers must
+ * `flush()` when the stream ends so a trailing fragment is still spoken.
+ */
+export function createTtsTextCoalescer(sendRaw: (text: string) => void): TtsTextCoalescer {
+  let pending = "";
+  let firstSent = false;
+  const flush = (): void => {
+    if (pending.length === 0) return;
+    const out = pending;
+    pending = "";
+    sendRaw(out);
+  };
+  return {
+    send(text: string): void {
+      if (text.length === 0) return;
+      if (!firstSent) {
+        firstSent = true;
+        sendRaw(text);
+        return;
+      }
+      pending += text;
+      if (pending.length >= TTS_COALESCE_MAX_CHARS || CLAUSE_BOUNDARY_RE.test(pending)) flush();
+    },
+    flush,
+    boundary(): void {
+      flush();
+      firstSent = false;
+    },
+  };
+}
+
 /** A single `fullStream` part from `streamText`. */
 export type StreamPart = {
   readonly type: string;
@@ -191,6 +192,11 @@ type StreamPartHandlerDeps = {
   onDelta: (delta: string) => void;
   /** Forwards text to the active TTS session (no-op if none). */
   sendTtsText: (text: string) => void;
+  /**
+   * A speech segment ended — see {@link TtsTextCoalescer.boundary}. Omitted when
+   * `sendTtsText` does no batching, in which case there is nothing to release.
+   */
+  onTtsBoundary?: (() => void) | undefined;
   /** Observability-only tool-call notification. */
   onToolCall: (callId: string, name: string, args: Record<string, unknown>) => void;
   /** Tool-result completion, so the client UI can flip pending → done. */
@@ -220,6 +226,7 @@ type StreamPartHandlerDeps = {
 function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart) => void {
   const { onDelta, sendTtsText, onToolCall, onToolCallDone, emitError, log, sid } = deps;
   const holdPhrase = deps.holdPhrase ?? DEFAULT_HOLD_PHRASE;
+  const ttsBoundary = deps.onTtsBoundary ?? ((): void => undefined);
   let pendingSeparator = false;
   let lastChar = "";
   // Track whether the model has spoken any text this turn, and whether we've
@@ -265,6 +272,10 @@ function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart
       }
       case "text-end":
         pendingSeparator = true;
+        // This segment is finished, so nothing more will arrive to batch with
+        // what is buffered — release it now rather than across the gap that
+        // usually follows (a tool call).
+        ttsBoundary();
         return;
       case "tool-call": {
         // Guarantee the caller hears a hold phrase if the model jumps straight
@@ -275,6 +286,10 @@ function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart
           emitText(holdPhrase);
           pendingSeparator = true;
         }
+        // Belt-and-braces for a tool call not preceded by `text-end`: the
+        // execution window must never start with speech still buffered. Also
+        // releases the hold phrase just emitted above.
+        ttsBoundary();
         // Observability only — actual execution happens inline via toVercelTools.
         const input = (part.input ?? {}) as Record<string, unknown>;
         onToolCall(part.toolCallId ?? "", part.toolName ?? "", input);
@@ -370,6 +385,9 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   // Response messages of completed steps, collected incrementally so an
   // aborted turn still returns everything that finished before the abort.
   const collected: ModelMessage[] = [];
+  // Batch word-granularity deltas into fewer TTS provider sends; the
+  // transcript path (onDelta) keeps full delta granularity.
+  const ttsText = createTtsTextCoalescer(sendTtsText);
   try {
     const result = streamText({
       model: llm,
@@ -391,7 +409,8 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     });
     const handlePart = createStreamPartHandler({
       onDelta,
-      sendTtsText,
+      sendTtsText: ttsText.send,
+      onTtsBoundary: ttsText.boundary,
       holdPhrase,
       onToolCall: callbacks.onToolCall,
       onToolCallDone: callbacks.onToolCallDone,
@@ -403,7 +422,9 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       if (ctl.signal.aborted) break;
       handlePart(part);
     }
+    // Aborted turns skip the flush — TTS is being cancelled anyway.
     if (ctl.signal.aborted) return collected;
+    ttsText.flush();
     // Gather every step's response messages (assistant tool-call + `tool`
     // result + text) so tool context carries into the next turn. Top-level
     // `result.response.messages` is final-step only and drops the tool call.
@@ -413,6 +434,9 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     return steps.flatMap((step) => step.response.messages);
   } catch (err: unknown) {
     if (!ctl.signal.aborted) {
+      // Flush buffered TTS text so speech matches the transcript already
+      // accumulated via onDelta for the pre-error portion of the turn.
+      ttsText.flush();
       const msg = errorMessage(err);
       log.error("LLM streamText failed", { error: msg, sid });
       emitError("llm", msg);

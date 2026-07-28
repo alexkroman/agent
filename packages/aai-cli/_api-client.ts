@@ -18,8 +18,14 @@ export type ApiRequestOptions = {
   /** Verb used in error messages, e.g. "deploy". */
   action: string;
   method?: "GET" | "POST" | "PUT" | "DELETE";
-  /** JSON request body (plain object — serialized by ofetch). */
+  /**
+   * Request body. Plain objects are JSON-serialized by ofetch (with
+   * Content-Type set); binary bodies (e.g. a pre-gzipped Buffer) pass
+   * through untouched — set Content-Type/Content-Encoding via `headers`.
+   */
   body?: unknown;
+  /** Extra request headers, merged with the built-in Authorization header. */
+  headers?: Record<string, string>;
   /** Extra error hints keyed by HTTP status. The 401 hint is built in. */
   hints?: Record<number, string>;
   /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
@@ -38,7 +44,7 @@ export async function apiRequest<T = unknown>(url: string, opts: ApiRequestOptio
   try {
     return await client<T>(url, {
       method: opts.method ?? "GET",
-      headers: { Authorization: `Bearer ${opts.apiKey}` },
+      headers: { Authorization: `Bearer ${opts.apiKey}`, ...opts.headers },
       ...(opts.body !== undefined ? { body: opts.body } : {}),
       retry: 2,
       retryDelay: 300,

@@ -153,7 +153,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const {
     agent,
     env,
-    kv = createLocalKv(),
+    kv,
     vector,
     createWebSocket,
     createOpenaiRealtimeWebSocket,
@@ -173,7 +173,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Credentials resolve from `providerEnv` (defaults to `env`); `env` alone is
   // what agent tool code sees as `ctx.env`. See RuntimeOptions.providerEnv.
   const providerEnv = opts.providerEnv ?? env;
-  const resolvedKv = agent.kv ? resolveKv(agent.kv, providerEnv, "") : kv;
+  // Lazy default: only construct the local unstorage KV when neither the
+  // agent manifest nor the caller supplied one — a declared `kv:` descriptor
+  // would otherwise shadow (and waste) an eagerly-built instance.
+  const resolvedKv = agent.kv ? resolveKv(agent.kv, providerEnv, "") : (kv ?? createLocalKv());
   const resolvedVector = agent.vector
     ? resolveVector(agent.vector, providerEnv, slug)
     : (vector ?? createLocalVector(slug));

@@ -111,17 +111,58 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
   const requestHandlers = new Map<string, (params: unknown) => unknown | Promise<unknown>>();
   const notificationHandlers = new Map<string, (params?: unknown) => void>();
 
-  function send(msg: unknown): void {
+  // Write queue for backpressure: while a previous write is waiting for
+  // 'drain', later sends chain behind it so ordering is preserved and the
+  // stream's internal buffer stops growing unboundedly. `null` when idle —
+  // the common no-backpressure case writes synchronously, exactly like the
+  // pre-queue behavior. Links never reject, so nothing can unhandled-reject.
+  let writeChain: Promise<void> | null = null;
+
+  function waitForDrain(): Promise<void> {
+    return new Promise((resolve) => {
+      const settle = (): void => {
+        writable.off("drain", settle);
+        writable.off("error", settle);
+        writable.off("close", settle);
+        resolve();
+      };
+      writable.once("drain", settle);
+      // A dead peer never emits 'drain' — settle on error/close so queued
+      // writes fall through to the dead-stream guard instead of hanging.
+      writable.once("error", settle);
+      writable.once("close", settle);
+    });
+  }
+
+  /**
+   * Write one line, returning a drain promise when the stream reported
+   * backpressure, or undefined when the write was accepted outright.
+   */
+  function writeLine(line: string): Promise<void> | undefined {
     // The peer (guest process) can die at any time — writing to its closed
     // stdin would emit EPIPE/ERR_STREAM_DESTROYED. On a listener-less stream
     // that becomes an uncaughtException and takes down the whole host, so
     // never write to a dead stream and swallow any residual write error.
     if (disposed || writable.destroyed || writable.writableEnded) return;
     try {
-      writable.write(`${JSON.stringify(msg)}\n`);
+      if (writable.write(line)) return;
     } catch {
       // Peer went away between the check and the write — nothing to do.
+      return;
     }
+    return waitForDrain();
+  }
+
+  function send(msg: unknown): void {
+    if (disposed || writable.destroyed || writable.writableEnded) return;
+    const line = `${JSON.stringify(msg)}\n`;
+    const wait = writeChain === null ? writeLine(line) : writeChain.then(() => writeLine(line));
+    if (wait === undefined) return;
+    const chained: Promise<void> = wait.then(() => {
+      // Last link in the chain: return to the synchronous fast path.
+      if (writeChain === chained) writeChain = null;
+    });
+    writeChain = chained;
   }
 
   function rejectAllPending(reason: string): void {

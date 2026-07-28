@@ -4,7 +4,7 @@
 
 import clsx from "clsx";
 import type { ReactNode } from "react";
-import { useSession, useTheme } from "../context.ts";
+import { useSessionCore, useSessionSelector, useTheme } from "../context.ts";
 import { TEXT_FAINT } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Button } from "./button.tsx";
@@ -41,7 +41,10 @@ export function StartScreen({
   buttonText?: string | undefined;
   className?: string | undefined;
 }) {
-  const { started, start } = useSession();
+  // Narrow subscription: only re-render when `started` flips, not on every
+  // snapshot change.
+  const started = useSessionSelector((s) => s.started);
+  const { start } = useSessionCore();
   const theme = useTheme();
 
   if (started) {

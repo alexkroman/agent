@@ -118,8 +118,8 @@ describe("MessageList: messages + tool calls interleaved", () => {
       started: true,
       state: "listening",
       messages: [
-        { role: "user", content: "What's the weather?" },
-        { role: "assistant", content: "It's sunny and 72\u00B0F." },
+        { id: 1, role: "user", content: "What's the weather?" },
+        { id: 2, role: "assistant", content: "It's sunny and 72\u00B0F." },
       ],
       toolCalls: [
         {
@@ -128,7 +128,8 @@ describe("MessageList: messages + tool calls interleaved", () => {
           args: { query: "weather" },
           status: "done",
           result: '{"temp": 72}',
-          afterMessageIndex: 0,
+          seq: 1,
+          afterMessageId: 1,
         },
       ],
     });
@@ -148,11 +149,73 @@ describe("MessageList: messages + tool calls interleaved", () => {
     ).toBeTruthy();
   });
 
+  test("renders tool calls whose anchor message slid out of the window first", () => {
+    const core = createMockSessionCore({
+      started: true,
+      state: "listening",
+      // Window slid: messages with ids 1-4 were dropped; the tool call is
+      // anchored to a message (id 2) that no longer exists.
+      messages: [
+        { id: 5, role: "user", content: "newer question" },
+        { id: 6, role: "assistant", content: "newer answer" },
+      ],
+      toolCalls: [
+        {
+          callId: "tc-old",
+          name: "web_search",
+          args: { query: "old" },
+          status: "done",
+          result: "{}",
+          seq: 1,
+          afterMessageId: 2,
+        },
+      ],
+    });
+
+    renderWithProvider(<MessageList />, core);
+
+    const toolCall = screen.getByText("web_search");
+    const firstMsg = screen.getByText("newer question");
+    // The orphaned tool call renders before all retained messages.
+    expect(
+      toolCall.compareDocumentPosition(firstMsg) & Node.DOCUMENT_POSITION_FOLLOWING,
+    ).toBeTruthy();
+  });
+
+  test("message rows keep stable keys when the window slides (no remount churn)", () => {
+    const core = createMockSessionCore({
+      started: true,
+      state: "listening",
+      messages: [
+        { id: 1, role: "user", content: "first" },
+        { id: 2, role: "assistant", content: "second" },
+      ],
+    });
+
+    const { container } = renderWithProvider(<MessageList />, core);
+    const secondBubbleBefore = screen.getByText("second");
+
+    // Simulate the capped window sliding: drop id 1, append id 3. The
+    // surviving row (id 2) must be the same DOM element — stable ids as keys
+    // let the reconciler and memo() reuse it.
+    act(() =>
+      core.update({
+        messages: [
+          { id: 2, role: "assistant", content: "second" },
+          { id: 3, role: "user", content: "third" },
+        ],
+      }),
+    );
+    expect(screen.getByText("second")).toBe(secondBubbleBefore);
+    expect(container.textContent).not.toContain("first");
+    expect(screen.getByText("third")).toBeDefined();
+  });
+
   test("shows thinking indicator when state is thinking and no pending tool", () => {
     const core = createMockSessionCore({
       started: true,
       state: "thinking",
-      messages: [{ role: "user", content: "Tell me a joke" }],
+      messages: [{ id: 1, role: "user", content: "Tell me a joke" }],
     });
 
     const { container } = renderWithProvider(<MessageList />, core);
@@ -165,14 +228,15 @@ describe("MessageList: messages + tool calls interleaved", () => {
     const core = createMockSessionCore({
       started: true,
       state: "thinking",
-      messages: [{ role: "user", content: "Search for AI news" }],
+      messages: [{ id: 1, role: "user", content: "Search for AI news" }],
       toolCalls: [
         {
           callId: "tc1",
           name: "web_search",
           args: {},
           status: "pending",
-          afterMessageIndex: 0,
+          seq: 1,
+          afterMessageId: 1,
         },
       ],
     });
@@ -187,14 +251,15 @@ describe("MessageList: messages + tool calls interleaved", () => {
     const core = createMockSessionCore({
       started: true,
       state: "thinking",
-      messages: [{ role: "user", content: "Search" }],
+      messages: [{ id: 1, role: "user", content: "Search" }],
       toolCalls: [
         {
           callId: "tc1",
           name: "web_search",
           args: { query: "test" },
           status: "pending",
-          afterMessageIndex: 0,
+          seq: 1,
+          afterMessageId: 1,
         },
       ],
     });
@@ -258,7 +323,7 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     // 3. User message
     act(() =>
       core.update({
-        messages: [{ role: "user", content: "What time is it?" }],
+        messages: [{ id: 1, role: "user", content: "What time is it?" }],
         state: "thinking",
       }),
     );
@@ -269,8 +334,8 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     act(() =>
       core.update({
         messages: [
-          { role: "user", content: "What time is it?" },
-          { role: "assistant", content: "It's 3pm." },
+          { id: 1, role: "user", content: "What time is it?" },
+          { id: 2, role: "assistant", content: "It's 3pm." },
         ],
         state: "listening",
       }),

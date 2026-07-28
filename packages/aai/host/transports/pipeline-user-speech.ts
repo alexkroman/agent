@@ -9,7 +9,7 @@ import { createRestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
 import type { EndpointSettler } from "./pipeline-endpointing.ts";
 import type { SilenceNudger } from "./pipeline-silence.ts";
-import { countWords } from "./pipeline-stream.ts";
+import { countWords, hasMinWords } from "./pipeline-text.ts";
 
 /**
  * Edge-detect "user is speaking" from the STT transcript stream: the first
@@ -275,7 +275,7 @@ export function createSttEventHandlers(deps: {
       // (>= threshold) utterance. A shorter one does NOT interrupt — it is
       // buffered and answered once the reply finishes (chainTurn defers it),
       // so short answers ("yes", a ZIP) spoken over the agent aren't lost.
-      if (agentHasFloor() && countWords(trimmed) >= deps.minBargeInWords) {
+      if (agentHasFloor() && hasMinWords(trimmed, deps.minBargeInWords)) {
         log.info("Pipeline replacing in-flight turn", { sid: deps.sid });
         deps.abortInFlightTurn();
         callbacks.onCancelled();

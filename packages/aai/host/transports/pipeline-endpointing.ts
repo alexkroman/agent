@@ -6,7 +6,7 @@
 // a turn and the continuation barging in on it.
 
 import { createRestartableTimer } from "../_timer.ts";
-import { utteranceLooksComplete } from "./pipeline-stream.ts";
+import { utteranceLooksComplete } from "./pipeline-text.ts";
 
 /** Buffered-utterance endpoint settler. See {@link createEndpointSettler}. */
 export interface EndpointSettler {

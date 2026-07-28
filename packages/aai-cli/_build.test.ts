@@ -76,6 +76,25 @@ export default {
     );
   });
 
+  test("minify option produces a smaller worker that still evaluates", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await writeFile(
+          path.join(dir, "agent.ts"),
+          `const longDescriptiveVariableName = "Test prompt";
+export default { name: "minify-test-agent", systemPrompt: longDescriptiveVariableName, greeting: "Hello", maxSteps: 5, tools: {} };`,
+        );
+        const plain = await buildAgentBundle(dir);
+        const minified = await buildAgentBundle(dir, { minify: true });
+        // Minified bundle still evaluates to the same agent config.
+        expect(minified.agentConfig.name).toBe("minify-test-agent");
+        expect(minified.agentConfig.systemPrompt).toBe("Test prompt");
+        // And it is no larger than the unminified build.
+        expect(minified.worker.length).toBeLessThanOrEqual(plain.worker.length);
+      }),
+    );
+  });
+
   test("Vite-bundled worker is valid ESM with default export", async () => {
     await withTempDir(
       silenced(async (dir) => {

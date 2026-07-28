@@ -25,6 +25,11 @@
  *   stay fast.
  * - If a warm harness's child process dies before it's acquired, it is
  *   evicted and replenishment kicks off.
+ * - Spawn failures put replenishment into a cooldown (exponential backoff
+ *   on consecutive failures) instead of disabling the pool permanently —
+ *   a transient failure (fd pressure, slow disk) must not turn every
+ *   future session into a cold start. A successful spawn resets the
+ *   backoff fully.
  * - On `shutdown()`, the pool stops replenishing and tears down all idle
  *   warm harnesses.
  *
@@ -48,7 +53,8 @@ type SandboxPoolOptions = {
    *
    * The returned promise must resolve once the child process is running
    * and its NDJSON channel is wired (no bundle/load yet). Rejections are
-   * logged and stop replenishment to avoid tight fail loops.
+   * logged and suppress replenishment for a cooldown period to avoid
+   * tight fail loops.
    */
   spawn: () => Promise<WarmHarness>;
 };
@@ -73,12 +79,20 @@ export type SandboxPool = {
 
 const POOL_SIZE_MAX = 16;
 
+/** Base cooldown after a spawn failure before replenishment resumes. */
+export const SPAWN_FAILURE_COOLDOWN_MS = 30_000;
+/** Cap on the exponential backoff for consecutive spawn failures. */
+export const SPAWN_FAILURE_COOLDOWN_MAX_MS = 5 * 60_000;
+
 export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   const targetSize = Math.max(1, Math.min(POOL_SIZE_MAX, Math.floor(opts.targetSize)));
   const ready: WarmHarness[] = [];
   const pending = new Set<Promise<void>>();
   let shutdown = false;
-  let stoppedDueToFailure = false;
+  // Spawn-failure backoff: replenishment is suppressed until `cooldownUntil`,
+  // doubling per consecutive failure. Fully reset by a successful spawn.
+  let consecutiveSpawnFailures = 0;
+  let cooldownUntil = 0;
 
   // prom-client invokes `collect` whenever the metric is serialized.
   // Each new pool overwrites these — fine, since there's only ever one
@@ -89,9 +103,21 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   (metrics.warmPoolPending as any).collect = () => metrics.warmPoolPending.set(pending.size);
 
   function recordSpawnFailure(err: unknown): void {
-    stoppedDueToFailure = true;
+    consecutiveSpawnFailures++;
+    const backoffMs = Math.min(
+      SPAWN_FAILURE_COOLDOWN_MAX_MS,
+      SPAWN_FAILURE_COOLDOWN_MS * 2 ** (consecutiveSpawnFailures - 1),
+    );
+    cooldownUntil = Date.now() + backoffMs;
     metrics.warmPoolSpawnFailed.inc();
-    console.warn("Sandbox pool: warm spawn failed", { error: errorMessage(err) });
+    console.warn("Sandbox pool: warm spawn failed", {
+      error: errorMessage(err),
+      cooldownMs: backoffMs,
+    });
+  }
+
+  function inCooldown(): boolean {
+    return Date.now() < cooldownUntil;
   }
 
   function evictDead(handle: WarmHarness): void {
@@ -104,7 +130,7 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   }
 
   function spawnOne(): void {
-    if (shutdown || stoppedDueToFailure) return;
+    if (shutdown || inCooldown()) return;
     let p: Promise<WarmHarness>;
     try {
       p = opts.spawn();
@@ -120,6 +146,9 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
         recordSpawnFailure(err);
         return;
       }
+      // A successful spawn proves the backend is healthy again.
+      consecutiveSpawnFailures = 0;
+      cooldownUntil = 0;
       if (shutdown) {
         await warm.cleanup().catch(() => undefined);
         return;
@@ -133,7 +162,7 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   }
 
   function replenish(): void {
-    while (!(shutdown || stoppedDueToFailure) && ready.length + pending.size < targetSize) {
+    while (!(shutdown || inCooldown()) && ready.length + pending.size < targetSize) {
       spawnOne();
     }
   }

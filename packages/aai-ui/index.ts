@@ -11,7 +11,13 @@ export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 export { ToolConfigContext } from "./components/tool-config-context.ts";
 export type { Session } from "./context.ts";
 // Context & hooks
-export { SessionProvider, ThemeProvider, useSession, useTheme } from "./context.ts";
+export {
+  SessionProvider,
+  ThemeProvider,
+  useSession,
+  useSessionSelector,
+  useTheme,
+} from "./context.ts";
 export type {
   ClientConfig,
   ClientHandle,

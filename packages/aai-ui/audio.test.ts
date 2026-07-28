@@ -56,7 +56,7 @@ describe("createVoiceIO", () => {
     await io.close();
   });
 
-  test("capture calls onMicData when worklet sends chunks", async () => {
+  test("capture forwards each batched worklet chunk to onMicData", async () => {
     const onMicData = vi.fn((_buf: ArrayBuffer) => {
       /* noop */
     });
@@ -69,17 +69,25 @@ describe("createVoiceIO", () => {
     );
     const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");
 
-    for (let i = 0; i < 13; i++) {
-      const buf = new ArrayBuffer(256);
-      const view = new Int16Array(buf);
-      view.fill(16_384);
-      capNode.port.simulateMessage({ event: "chunk", buffer: buf });
-    }
+    // The worklet batches ~MIC_BUFFER_SECONDS itself, so each chunk message
+    // maps 1:1 to an onMicData call — no main-thread accumulation.
+    const buf = new ArrayBuffer(3200);
+    new Int16Array(buf).fill(16_384);
+    capNode.port.simulateMessage({ event: "chunk", buffer: buf });
+    capNode.port.simulateMessage({ event: "other", buffer: new ArrayBuffer(2) });
 
-    expect(onMicData).toHaveBeenCalled();
+    expect(onMicData).toHaveBeenCalledTimes(1);
     const firstCall = onMicData.mock.calls[0] as [ArrayBuffer];
-    const pcm16 = new Int16Array(firstCall[0]);
-    expect(pcm16[0]).toBe(16_384);
+    expect(firstCall[0].byteLength).toBe(3200);
+    expect(new Int16Array(firstCall[0])[0]).toBe(16_384);
+    await io.close();
+  });
+
+  test("capture worklet receives bufferSeconds in processorOptions", async () => {
+    const io = await createVoiceIO(voiceOpts());
+    const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");
+    const opts = capNode.options as { processorOptions?: Record<string, unknown> };
+    expect(opts.processorOptions?.bufferSeconds).toBe(0.1);
     await io.close();
   });
 

@@ -2,7 +2,7 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { registry } from "./metrics.ts";
-import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
+import { createSandboxPool, type SandboxPool, SPAWN_FAILURE_COOLDOWN_MS } from "./sandbox-pool.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import { counterValue, gaugeValue } from "./test-utils.ts";
 
@@ -257,7 +257,7 @@ describe("createSandboxPool", () => {
     expect(spawn).not.toHaveBeenCalled();
   });
 
-  it("logs and stops replenishing when spawn synchronously throws", () => {
+  it("logs and enters cooldown when spawn synchronously throws", () => {
     const warnSpy = vi.spyOn(console, "warn");
     const spawn = vi.fn(() => {
       throw new Error("deno not found");
@@ -266,7 +266,7 @@ describe("createSandboxPool", () => {
     const pool = createSandboxPool({ targetSize: 3, spawn });
 
     // First failed spawn breaks the replenish loop — does not call spawn
-    // again to fill.
+    // again to fill while the cooldown is active.
     expect(spawn).toHaveBeenCalledTimes(1);
     expect(pool.readySize()).toBe(0);
     expect(warnSpy).toHaveBeenCalledWith(
@@ -275,7 +275,7 @@ describe("createSandboxPool", () => {
     );
   });
 
-  it("logs and stops replenishing when spawn rejects asynchronously", async () => {
+  it("logs and enters cooldown when spawn rejects asynchronously", async () => {
     const warnSpy = vi.spyOn(console, "warn");
     const spawn = vi.fn(async () => {
       throw new Error("rootfs prep failed");
@@ -291,9 +291,84 @@ describe("createSandboxPool", () => {
         expect.objectContaining({ error: expect.stringContaining("rootfs prep failed") }),
       );
     });
-    // Pool state ends up empty and won't replenish further.
+    // Pool state ends up empty and won't replenish while cooling down.
     expect(pool.readySize()).toBe(0);
     expect(pool.pendingSize()).toBe(0);
+
+    spawn.mockClear();
+    await pool.acquire();
+    expect(spawn).not.toHaveBeenCalled();
+  });
+
+  it("resumes replenishment after the cooldown elapses", async () => {
+    const t0 = 1_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockReturnValue(t0);
+    let fail = true;
+    const spawn = vi.fn(async (): Promise<WarmHarness> => {
+      if (fail) throw new Error("transient spawn failure");
+      return makeFakeWarm();
+    });
+
+    const pool = createSandboxPool({ targetSize: 1, spawn });
+    await vi.waitFor(() => expect(pool.pendingSize()).toBe(0));
+    expect(spawn).toHaveBeenCalledTimes(1);
+
+    // Still cooling down: acquire must not spawn.
+    nowSpy.mockReturnValue(t0 + SPAWN_FAILURE_COOLDOWN_MS - 1);
+    await pool.acquire();
+    expect(spawn).toHaveBeenCalledTimes(1);
+
+    // Cooldown over: acquire replenishes and the spawn succeeds.
+    fail = false;
+    nowSpy.mockReturnValue(t0 + SPAWN_FAILURE_COOLDOWN_MS + 1);
+    await pool.acquire();
+    expect(spawn).toHaveBeenCalledTimes(2);
+    await waitForReady(pool, 1);
+  });
+
+  it("backs off exponentially on consecutive failures and resets on success", async () => {
+    let now = 1_000_000;
+    const nowSpy = vi.spyOn(Date, "now").mockImplementation(() => now);
+    let fail = true;
+    const spawn = vi.fn(async (): Promise<WarmHarness> => {
+      if (fail) throw new Error("still failing");
+      return makeFakeWarm();
+    });
+
+    // Failure #1 → cooldown = base.
+    const pool = createSandboxPool({ targetSize: 1, spawn });
+    await vi.waitFor(() => expect(pool.pendingSize()).toBe(0));
+    expect(spawn).toHaveBeenCalledTimes(1);
+
+    // After base cooldown, failure #2 → cooldown doubles.
+    now += SPAWN_FAILURE_COOLDOWN_MS + 1;
+    await pool.acquire();
+    expect(spawn).toHaveBeenCalledTimes(2);
+    await vi.waitFor(() => expect(pool.pendingSize()).toBe(0));
+
+    // One base period later we are still inside the doubled cooldown.
+    now += SPAWN_FAILURE_COOLDOWN_MS + 1;
+    await pool.acquire();
+    expect(spawn).toHaveBeenCalledTimes(2);
+
+    // Another base period later the doubled cooldown has elapsed; the spawn
+    // succeeds and fully resets the backoff.
+    now += SPAWN_FAILURE_COOLDOWN_MS;
+    fail = false;
+    await pool.acquire();
+    expect(spawn).toHaveBeenCalledTimes(3);
+    await waitForReady(pool, 1);
+
+    // Next failure starts again at the base cooldown, not the doubled one.
+    fail = true;
+    await (await pool.acquire())?.cleanup();
+    await vi.waitFor(() => expect(pool.pendingSize()).toBe(0));
+    expect(spawn).toHaveBeenCalledTimes(4);
+    now += SPAWN_FAILURE_COOLDOWN_MS + 1;
+    fail = false;
+    await pool.acquire();
+    expect(spawn).toHaveBeenCalledTimes(5);
+    nowSpy.mockRestore();
   });
 
   it("killing an acquired harness does not affect the pool's ready list", async () => {
