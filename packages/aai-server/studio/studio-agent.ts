@@ -176,8 +176,9 @@ export function createStudioTools(deps: StudioChatDeps) {
     deploy_agent: tool({
       description:
         "Build the workspace and deploy it to the platform. Returns the live " +
-        "URL path on success, or a build/config error to fix. Optionally set " +
-        "env secrets (e.g. ASSEMBLYAI_API_KEY) to store with the agent.",
+        "URL path on success, or a build/config error to fix. ASSEMBLYAI_API_KEY " +
+        "is seeded automatically — only pass env for third-party secrets the " +
+        "agent's tools need (e.g. STRIPE_API_KEY), and only if the user gives you one.",
       inputSchema: z.object({
         env: z.record(z.string(), z.string()).optional().describe("Secrets to store, KEY→value"),
       }),
