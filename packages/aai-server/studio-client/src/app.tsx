@@ -20,6 +20,15 @@ function generatedProjectName(): string {
   return `voice-agent-${Math.random().toString(36).slice(2, 6)}`;
 }
 
+/**
+ * Absolute URL of a deployed agent. The href works either way, but the *text*
+ * is what people copy out or paste to a colleague, so it carries the origin
+ * rather than a bare "/slug/".
+ */
+function agentUrl(slug: string): string {
+  return new URL(`/${slug}/`, window.location.origin).toString();
+}
+
 type PublishMenuProps = {
   open: boolean;
   busy: boolean;
@@ -63,12 +72,12 @@ function PublishMenu(props: PublishMenuProps) {
       {props.error && <p className="m-0 text-xs text-err">{props.error}</p>}
       {props.deployedSlug && !props.error && (
         <a
-          className="font-mono text-xs text-indigo"
-          href={`/${props.deployedSlug}/`}
+          className="font-mono text-xs break-all text-indigo"
+          href={agentUrl(props.deployedSlug)}
           target="_blank"
           rel="noreferrer"
         >
-          Live at /{props.deployedSlug}/
+          Live at {agentUrl(props.deployedSlug)}
         </a>
       )}
     </div>
@@ -145,11 +154,12 @@ function TopBar(props: TopBarProps) {
       {props.deployedSlug && (
         <a
           className="font-mono text-xs text-muted hover:text-indigo"
-          href={`/${props.deployedSlug}/`}
+          href={agentUrl(props.deployedSlug)}
           target="_blank"
           rel="noreferrer"
+          title={agentUrl(props.deployedSlug)}
         >
-          /{props.deployedSlug}/ ↗
+          {agentUrl(props.deployedSlug)} ↗
         </a>
       )}
       <button type="button" className="btn" onClick={props.onSignOut}>

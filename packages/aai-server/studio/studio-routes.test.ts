@@ -142,8 +142,38 @@ describe("project CRUD", () => {
     expect((await createProject(fetch)).status).toBe(409);
   });
 
-  test("create rejects invalid names", async () => {
-    const res = await authFetch(fetch, "/studio/projects", { body: { name: "Bad Name!" } });
+  test("create slugifies a human-typed name", async () => {
+    // A project name doubles as the deploy slug, but people type "My Agent".
+    const res = await authFetch(fetch, "/studio/projects", { body: { name: "My Agent" } });
+    expect(res.status).toBe(201);
+    expect((await res.json()) as { name: string }).toMatchObject({ name: "my-agent" });
+    // The slug is what everything downstream addresses it by.
+    expect((await authFetch(fetch, "/studio/projects/my-agent", { method: "GET" })).status).toBe(
+      200,
+    );
+  });
+
+  test.each([
+    ["  Spaced  Out  ", "spaced-out"],
+    ["Pizza Bot 3000!", "pizza-bot-3000"],
+    ["Café Ordering", "caf-ordering"],
+    ["already-a-slug", "already-a-slug"],
+    ["UPPER_CASE", "upper_case"],
+  ])("create normalizes %j to %j", async (input, expected) => {
+    const res = await authFetch(fetch, "/studio/projects", { body: { name: input } });
+    expect(res.status).toBe(201);
+    expect((await res.json()) as { name: string }).toMatchObject({ name: expected });
+  });
+
+  test("create rejects names that slugify to nothing", async () => {
+    for (const name of ["!!!", "   ", "-", "…"]) {
+      expect((await authFetch(fetch, "/studio/projects", { body: { name } })).status).toBe(400);
+    }
+  });
+
+  test("create rejects a name that would claim a reserved slug", async () => {
+    // Better to fail here than to let the project exist and die at publish.
+    const res = await authFetch(fetch, "/studio/projects", { body: { name: "Studio" } });
     expect(res.status).toBe(400);
   });
 

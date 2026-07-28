@@ -5,7 +5,9 @@ export default defineConfig({
   ...sharedConfig,
   test: {
     restoreMocks: true,
-    include: ["**/*.test.ts"],
+    // .tsx too: studio-client components are unit-tested via
+    // react-dom/server (no jsdom needed) — see markdown.test.tsx.
+    include: ["**/*.test.ts", "**/*.test.tsx"],
     // This suite is credential-bound: anything that deploys an agent or
     // authenticates a request runs PBKDF2 at 600k iterations (~300ms idle,
     // ~750ms when the CPUs are contended). A test that deploys two agents and
@@ -22,12 +24,12 @@ export default defineConfig({
       "gvisor-integration*.test.ts",
       "node_modules",
       "dist",
-      "studio-client",
     ],
     coverage: {
       // studio-client/ is the browser bundle (built by Vite, runs in the
-      // browser, exercised via the served shell in studio-routes tests) —
-      // it is not server code and has no node-side tests.
+      // browser, exercised via the served shell in studio-routes tests). Its
+      // few node-testable components are covered directly, but the pane
+      // wiring is not, so it stays out of the server coverage ratchet.
       exclude: [...sharedCoverageExclude, "studio-client/**"],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.

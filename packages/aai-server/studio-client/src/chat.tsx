@@ -6,6 +6,7 @@
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import { type ReactNode, useEffect, useRef, useState } from "react";
+import { Markdown } from "./markdown.tsx";
 import { ModelPicker, useModelChoice } from "./model-picker.tsx";
 
 export type LlmStatus = { llm: boolean; provider?: string; model?: string };
@@ -116,12 +117,10 @@ function MessageView({ message }: { message: UIMessage }) {
     );
   }
   return (
-    <div className="text-[15px] leading-5 break-words whitespace-pre-wrap">
+    <div className="text-[15px] leading-[22px] break-words">
       {toBlocks(message).map((block) =>
         block.kind === "text" ? (
-          <p className="my-1" key={block.key}>
-            {block.text}
-          </p>
+          <Markdown key={block.key} text={block.text} />
         ) : (
           <ToolRow key={block.key} part={block.part} />
         ),
