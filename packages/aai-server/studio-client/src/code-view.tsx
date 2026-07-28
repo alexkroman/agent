@@ -69,11 +69,11 @@ function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
         <button type="button" className="btn" onClick={() => void save()} disabled={!path}>
           Save
         </button>
-        <span className="font-mono text-xs text-dim">
+        <span className="font-mono text-xs text-subtle">
           {path ?? ""}
           {dirty ? " •" : ""}
         </span>
-        <span className="text-xs text-dim">{saveState}</span>
+        <span className="text-xs text-subtle">{saveState}</span>
       </div>
     </div>
   );
@@ -89,7 +89,7 @@ type CodeViewProps = {
 export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewProps) {
   return (
     <div className="flex min-h-0 flex-1">
-      <div className="flex w-48 flex-col gap-0.5 overflow-y-auto border-r border-line bg-ink p-2">
+      <div className="flex w-48 flex-col gap-0.5 overflow-y-auto border-r border-line bg-cream p-2">
         {Object.keys(files)
           .sort()
           .map((path) => (
@@ -98,8 +98,8 @@ export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewP
               key={path}
               className={`cursor-pointer rounded-md border-none px-2 py-1 text-left font-mono text-xs ${
                 path === currentFile
-                  ? "bg-accent/10 text-accent"
-                  : "bg-transparent text-fg hover:bg-line/50"
+                  ? "bg-indigo-50 text-indigo"
+                  : "bg-transparent text-fg hover:bg-disabled"
               }`}
               onClick={() => onSelectFile(path)}
             >

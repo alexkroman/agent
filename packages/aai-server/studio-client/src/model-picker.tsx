@@ -81,7 +81,7 @@ export function ModelPicker({ options, choice, setChoice, disabled }: ModelPicke
   const total = providers.reduce((n, p) => n + p.models.length, 0);
   if (total < 2) {
     return (
-      <span className="font-mono text-[11px] normal-case tracking-normal text-dim">
+      <span className="font-mono text-[11px] normal-case tracking-normal text-subtle">
         {choice.provider}/{choice.model}
       </span>
     );

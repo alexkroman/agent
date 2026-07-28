@@ -5,6 +5,7 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app.tsx";
+import logoUrl from "./assets/assemblyai-logomark.svg";
 import "./styles.css";
 
 const KEY_STORAGE = "aai-studio-key";
@@ -17,17 +18,21 @@ function Gate({ onEnter }: { onEnter: (key: string) => void }) {
     if (key) onEnter(key);
   };
   return (
-    <div className="flex h-full items-center justify-center bg-ink">
-      <div className="flex w-96 flex-col gap-2.5 rounded-xl border border-line bg-panel p-7">
-        <h1 className="m-0 mb-1 text-lg font-semibold">
-          <span className="text-accent">AAI</span> Studio
+    <div className="flex h-full items-center justify-center bg-cream">
+      <div className="flex w-[420px] flex-col gap-3.5 rounded-lg border border-line bg-panel p-10 shadow-sm">
+        <div className="flex items-center gap-2.5">
+          <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
+          <span className="font-serif text-[17px]">AAI Studio</span>
+        </div>
+        <h1 className="m-0 font-serif text-[27px] leading-[1.18] font-normal text-balance">
+          Build your first voice agent
         </h1>
-        <p className="m-0 text-[13px] text-dim">
-          Build and deploy voice agents from your browser, with a coding agent doing the typing.
-          Enter your platform API key to start.
+        <p className="m-0 text-[15px] leading-[22px] text-muted">
+          Describe an agent and the studio writes, tests, and publishes it. Enter your platform API
+          key to start.
         </p>
         <input
-          className="field"
+          className="field h-10"
           type="password"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -37,7 +42,7 @@ function Gate({ onEnter }: { onEnter: (key: string) => void }) {
           placeholder="API key"
           spellCheck={false}
         />
-        <button type="button" className="btn btn-primary" onClick={enter}>
+        <button type="button" className="btn btn-primary h-10 self-start px-5" onClick={enter}>
           Open Studio
         </button>
       </div>

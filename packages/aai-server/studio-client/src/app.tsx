@@ -1,16 +1,24 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Studio layout (Lovable-style): chat on the left; a Preview/Code pane on
-// the right; project picker + Publish in the top bar. TanStack Query owns
-// all server state, invalidated after agent turns / publishes.
+// Studio shell (design 1b "Guided start"): shared top bar, 360px guided
+// chat panel on the left, Preview/Code pane on the right. TanStack Query
+// owns all server state, invalidated after agent turns / publishes.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useEffect, useState } from "react";
 import { ApiError, api, type ProjectData, parseSecrets, type StudioStatus } from "./api.ts";
+import logoUrl from "./assets/assemblyai-logomark.svg";
 import { ChatPanel } from "./chat.tsx";
 import { CodeView } from "./code-view.tsx";
 import { PreviewPane } from "./preview.tsx";
 
 type AppProps = { apiKey: string; onSignOut: () => void };
+
+const NEW_PROJECT_SENTINEL = "__new__";
+
+/** Generated name for the guided "just start typing" flow. */
+function generatedProjectName(): string {
+  return `voice-agent-${Math.random().toString(36).slice(2, 6)}`;
+}
 
 type PublishMenuProps = {
   open: boolean;
@@ -26,14 +34,14 @@ type PublishMenuProps = {
 function PublishMenu(props: PublishMenuProps) {
   if (!props.open) return null;
   return (
-    <div className="absolute top-12 right-4 z-10 flex w-80 flex-col gap-2 rounded-xl border border-line bg-panel p-4 shadow-lg">
-      <p className="m-0 text-[13px] font-medium">Publish this agent</p>
-      <p className="m-0 text-xs text-dim">
+    <div className="absolute top-14 right-5 z-10 flex w-80 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md">
+      <span className="eyebrow">Publish</span>
+      <p className="m-0 text-[13px] leading-5 text-muted">
         Builds the workspace, verifies it in a sandbox, and puts it live. Secrets (like
         ASSEMBLYAI_API_KEY) are stored with the deployment.
       </p>
       <textarea
-        className="field h-16 resize-none font-mono text-xs"
+        className="field h-16 resize-none py-2 font-mono text-xs"
         value={props.secrets}
         onChange={(e) => props.onSecretsChange(e.target.value)}
         placeholder="ASSEMBLYAI_API_KEY=..."
@@ -55,7 +63,7 @@ function PublishMenu(props: PublishMenuProps) {
       {props.error && <p className="m-0 text-xs text-err">{props.error}</p>}
       {props.deployedSlug && !props.error && (
         <a
-          className="text-xs text-accent"
+          className="font-mono text-xs text-indigo"
           href={`/${props.deployedSlug}/`}
           target="_blank"
           rel="noreferrer"
@@ -67,6 +75,99 @@ function PublishMenu(props: PublishMenuProps) {
   );
 }
 
+type TopBarProps = {
+  project: string | null;
+  projects: string[];
+  tab: "preview" | "code";
+  deployedSlug?: string | undefined;
+  hasBuild: boolean;
+  onSelectProject: (name: string | null) => void;
+  onNewProject: () => void;
+  onSelectTab: (tab: "preview" | "code") => void;
+  onSignOut: () => void;
+  onTogglePublish: () => void;
+};
+
+/** Shared 60px top bar (all 1x options): brand, switcher, segmented, actions. */
+function TopBar(props: TopBarProps) {
+  const segClass = (active: boolean) =>
+    `seg ${active ? "bg-fg text-cream" : "bg-panel text-muted hover:text-fg"}`;
+  return (
+    <header className="flex h-[60px] flex-none items-center gap-3.5 border-b border-line bg-panel px-5">
+      <div className="flex items-center gap-2.5">
+        <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
+        <span className="font-serif text-[17px]">AAI Studio</span>
+      </div>
+      <div className="h-[22px] w-px bg-line" aria-hidden />
+      <div className="flex h-[34px] items-center gap-2 rounded-sm border border-line bg-panel pl-3 hover:border-line-strong">
+        <span
+          className={`h-[7px] w-[7px] flex-none rounded-full ${props.project ? "bg-indigo" : "bg-warm-300"}`}
+          aria-hidden
+        />
+        <select
+          className="h-full cursor-pointer border-none bg-transparent pr-2 text-[13px] text-muted focus:outline-none"
+          value={props.project ?? ""}
+          onChange={(e) => {
+            if (e.target.value === NEW_PROJECT_SENTINEL) {
+              props.onNewProject();
+              return;
+            }
+            props.onSelectProject(e.target.value || null);
+          }}
+        >
+          {!props.project && <option value="">No project yet</option>}
+          {props.projects.map((name) => (
+            <option key={name} value={name}>
+              {name}
+            </option>
+          ))}
+          <option value={NEW_PROJECT_SENTINEL}>+ New project…</option>
+        </select>
+      </div>
+      <div className="flex-1" />
+      <div className="flex overflow-hidden rounded-sm border border-line">
+        <button
+          type="button"
+          className={segClass(props.tab === "preview")}
+          onClick={() => props.onSelectTab("preview")}
+        >
+          Preview
+        </button>
+        <button
+          type="button"
+          className={`border-l border-line ${segClass(props.tab === "code")}`}
+          onClick={() => props.onSelectTab("code")}
+        >
+          Code
+        </button>
+      </div>
+      <div className="flex-1" />
+      {props.deployedSlug && (
+        <a
+          className="font-mono text-xs text-muted hover:text-indigo"
+          href={`/${props.deployedSlug}/`}
+          target="_blank"
+          rel="noreferrer"
+        >
+          /{props.deployedSlug}/ ↗
+        </a>
+      )}
+      <button type="button" className="btn" onClick={props.onSignOut}>
+        Change key
+      </button>
+      <button
+        type="button"
+        className="btn btn-primary px-[18px]"
+        onClick={props.onTogglePublish}
+        disabled={!props.hasBuild}
+        title={props.hasBuild ? undefined : "Publish unlocks after your first build"}
+      >
+        Publish
+      </button>
+    </header>
+  );
+}
+
 export function App({ apiKey, onSignOut }: AppProps) {
   const queryClient = useQueryClient();
   const [project, setProject] = useState<string | null>(null);
@@ -75,6 +176,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
   const [publishOpen, setPublishOpen] = useState(false);
   const [secrets, setSecrets] = useState("");
   const [previewNonce, setPreviewNonce] = useState(0);
+  const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
   const status = useQuery<StudioStatus>({ queryKey: ["status"], queryFn: api.status });
 
@@ -100,6 +202,8 @@ export function App({ apiKey, onSignOut }: AppProps) {
   });
   const files = workspace.data?.files ?? {};
   const deployedSlug = workspace.data?.deployedSlug;
+  // "Publish unlocks after your first build" — there must be an agent to ship.
+  const hasBuild = project != null && "agent.ts" in files;
 
   // Default file selection follows the loaded workspace.
   useEffect(() => {
@@ -121,7 +225,10 @@ export function App({ apiKey, onSignOut }: AppProps) {
       setProject(created.name);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
-    onError: (err) => alert(err instanceof Error ? err.message : String(err)),
+    onError: (err) => {
+      setPendingPrompt(null);
+      alert(err instanceof Error ? err.message : String(err));
+    },
   });
 
   const saveFile = useMutation({
@@ -144,6 +251,13 @@ export function App({ apiKey, onSignOut }: AppProps) {
     if (name?.trim()) createProject.mutate(name.trim());
   };
 
+  // Guided start: typing into the chat before any project exists creates
+  // one automatically and forwards the prompt once the panel mounts.
+  const startWithPrompt = (prompt: string) => {
+    setPendingPrompt(prompt);
+    createProject.mutate(generatedProjectName());
+  };
+
   let publishError: string | undefined;
   if (publish.error) {
     publishError = publish.error instanceof Error ? publish.error.message : String(publish.error);
@@ -151,65 +265,21 @@ export function App({ apiKey, onSignOut }: AppProps) {
 
   return (
     <div className="relative flex h-full flex-col">
-      <header className="flex items-center gap-3 border-b border-line px-4 py-2">
-        <span className="h-2.5 w-2.5 rounded-full bg-accent" aria-hidden />
-        <select
-          className="field cursor-pointer border-none bg-transparent pl-0 font-medium"
-          value={project ?? ""}
-          onChange={(e) => {
-            setProject(e.target.value);
-            setCurrentFile(null);
-          }}
-        >
-          {(projects.data ?? []).map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-          {(projects.data ?? []).length === 0 && <option value="">no projects</option>}
-        </select>
-        <button type="button" className="btn" onClick={newProject}>
-          + New
-        </button>
-        <div className="ml-2 flex items-center gap-1 rounded-full border border-line p-0.5">
-          <button
-            type="button"
-            className={`seg ${tab === "preview" ? "seg-active" : ""}`}
-            onClick={() => setTab("preview")}
-          >
-            Preview
-          </button>
-          <button
-            type="button"
-            className={`seg ${tab === "code" ? "seg-active" : ""}`}
-            onClick={() => setTab("code")}
-          >
-            Code
-          </button>
-        </div>
-        <div className="flex-1" />
-        {deployedSlug && (
-          <a
-            className="font-mono text-xs text-dim hover:text-accent"
-            href={`/${deployedSlug}/`}
-            target="_blank"
-            rel="noreferrer"
-          >
-            /{deployedSlug}/ ↗
-          </a>
-        )}
-        <button type="button" className="btn" onClick={onSignOut}>
-          Change key
-        </button>
-        <button
-          type="button"
-          className="btn btn-primary"
-          onClick={() => setPublishOpen((v) => !v)}
-          disabled={!project}
-        >
-          Publish
-        </button>
-      </header>
+      <TopBar
+        project={project}
+        projects={projects.data ?? []}
+        tab={tab}
+        deployedSlug={deployedSlug}
+        hasBuild={hasBuild}
+        onSelectProject={(name) => {
+          setProject(name);
+          setCurrentFile(null);
+        }}
+        onNewProject={newProject}
+        onSelectTab={setTab}
+        onSignOut={onSignOut}
+        onTogglePublish={() => setPublishOpen((v) => !v)}
+      />
       <PublishMenu
         open={publishOpen}
         busy={publish.isPending}
@@ -221,28 +291,22 @@ export function App({ apiKey, onSignOut }: AppProps) {
         onClose={() => setPublishOpen(false)}
       />
       <main className="flex min-h-0 flex-1">
-        {project ? (
-          <ChatPanel
-            key={project}
-            apiKey={apiKey}
-            project={project}
-            llmStatus={status.data ?? { llm: false }}
-            onWorkspaceChanged={invalidateWorkspace}
-          />
-        ) : (
-          <div className="flex w-[400px] shrink-0 flex-col gap-2 border-r border-line p-4">
-            <p className="m-0 text-[15px] font-medium">Welcome to AAI Studio</p>
-            <p className="m-0 text-[13px] text-dim">Create a project to start building.</p>
-            <button type="button" className="btn btn-primary self-start" onClick={newProject}>
-              + New project
-            </button>
-          </div>
-        )}
+        <ChatPanel
+          key={project ?? "no-project"}
+          apiKey={apiKey}
+          project={project}
+          llmStatus={status.data ?? { llm: false }}
+          initialPrompt={pendingPrompt}
+          onInitialPromptSent={() => setPendingPrompt(null)}
+          onStartWithPrompt={startWithPrompt}
+          onWorkspaceChanged={invalidateWorkspace}
+        />
         {tab === "preview" ? (
           <PreviewPane
+            hasProject={project != null}
             deployedSlug={deployedSlug}
             nonce={previewNonce}
-            onPublish={() => setPublishOpen(true)}
+            onNewProject={newProject}
           />
         ) : (
           <CodeView

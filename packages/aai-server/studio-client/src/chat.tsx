@@ -1,25 +1,32 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Chat pane — `useChat` over the server's UI message stream (SSE).
-// Lovable-style: user bubbles, agent prose, tool work as compact rows,
-// suggestion chips when the conversation is empty.
+// Guided chat panel (design 1b): eyebrow header, welcome bubble + starter
+// prompts when empty, composer pinned at the bottom. Works before a project
+// exists — the first prompt auto-creates one (via onStartWithPrompt).
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { useRef, useState } from "react";
+import { type ReactNode, useEffect, useRef, useState } from "react";
 import { ModelPicker, useModelChoice } from "./model-picker.tsx";
+
+export type LlmStatus = { llm: boolean; provider?: string; model?: string };
 
 type ChatPanelProps = {
   apiKey: string;
-  project: string;
-  llmStatus: { llm: boolean; provider?: string; model?: string };
+  project: string | null;
+  llmStatus: LlmStatus;
+  /** Prompt queued before the project existed — sent once on mount. */
+  initialPrompt: string | null;
+  onInitialPromptSent: () => void;
+  /** No project yet: create one and forward this prompt. */
+  onStartWithPrompt: (prompt: string) => void;
   /** Called after each finished assistant turn so the workspace refreshes. */
   onWorkspaceChanged: () => void;
 };
 
-const SUGGESTIONS = [
-  "Build a pizza ordering agent",
-  "Add a tool that rolls dice",
-  "Test the agent, then publish it",
+const STARTERS = [
+  "A drive-thru agent that takes food orders",
+  "A front-desk agent that books appointments",
+  "A support agent that triages inbound calls",
 ];
 
 function toolPartName(part: { type: string; toolName?: string }): string {
@@ -37,18 +44,18 @@ function ToolRow({ part }: { part: Record<string, unknown> & { type: string } })
   const done = part.state === "output-available";
   const output = part.output;
   return (
-    <div className="my-1 rounded-lg border border-line bg-ink px-2.5 py-1.5 text-xs">
+    <div className="my-1 rounded-md border border-line bg-cream px-3 py-2 text-xs">
       <button
         type="button"
-        className="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent p-0 text-left font-mono text-xs text-dim"
+        className="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent p-0 text-left font-mono text-xs text-subtle"
         onClick={() => setOpen((v) => !v)}
       >
-        <span className={done ? "text-accent" : ""}>{done ? "✓" : "⏳"}</span>
+        <span className={done ? "text-indigo" : ""}>{done ? "✓" : "⏳"}</span>
         {name}
         <span className="ml-auto">{open ? "▾" : "▸"}</span>
       </button>
       {open && (
-        <div className="mt-1 text-dim">
+        <div className="mt-1 text-subtle">
           {part.input != null && (
             <code className="block overflow-x-auto font-mono text-[11px] break-all whitespace-pre-wrap">
               {JSON.stringify(part.input).slice(0, 300)}
@@ -102,14 +109,14 @@ function MessageView({ message }: { message: UIMessage }) {
       .trim();
     return (
       <div className="flex justify-end">
-        <div className="max-w-[85%] rounded-2xl bg-ink px-3.5 py-2 break-words whitespace-pre-wrap">
+        <div className="max-w-[85%] rounded-lg border border-line bg-cream px-3.5 py-2 text-[13px] leading-5 break-words whitespace-pre-wrap">
           {text}
         </div>
       </div>
     );
   }
   return (
-    <div className="break-words whitespace-pre-wrap">
+    <div className="text-[13px] leading-5 break-words whitespace-pre-wrap">
       {toBlocks(message).map((block) =>
         block.kind === "text" ? (
           <p className="my-1" key={block.key}>
@@ -123,8 +130,99 @@ function MessageView({ message }: { message: UIMessage }) {
   );
 }
 
-export function ChatPanel({ apiKey, project, llmStatus, onWorkspaceChanged }: ChatPanelProps) {
+type ComposerProps = {
+  disabled: boolean;
+  placeholder: string;
+  onSend: (text: string) => void;
+  /** Rendered above the input row (e.g. the model picker). */
+  accessory?: ReactNode;
+};
+
+/** Composer pinned to the panel bottom (1b spec). */
+function Composer({ disabled, placeholder, onSend, accessory }: ComposerProps) {
   const [input, setInput] = useState("");
+  const submit = () => {
+    const text = input.trim();
+    if (!text || disabled) return;
+    setInput("");
+    onSend(text);
+  };
+  return (
+    <div className="flex flex-none flex-col gap-2 border-t border-line px-5 pt-4 pb-5">
+      {accessory}
+      <div className="flex items-center gap-2">
+        <input
+          className="field h-10 min-w-0 flex-1 border-line-strong"
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") submit();
+          }}
+          disabled={disabled}
+          placeholder={placeholder}
+        />
+        <button
+          type="button"
+          aria-label="Send"
+          className="flex h-10 w-10 flex-none cursor-pointer items-center justify-center rounded-sm border-none bg-indigo text-white hover:bg-indigo-hover disabled:cursor-not-allowed disabled:bg-disabled disabled:text-line-strong"
+          onClick={submit}
+          disabled={disabled}
+        >
+          <svg
+            width="15"
+            height="15"
+            viewBox="0 0 24 24"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.5"
+            aria-hidden
+          >
+            <path d="M12 19V5" />
+            <path d="m5 12 7-7 7 7" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function EmptyStateBody({ llm, onPick }: { llm: boolean; onPick: (prompt: string) => void }) {
+  return (
+    <>
+      <div className="rounded-lg border border-line bg-cream px-[18px] py-4">
+        <p className="m-0 text-[13px] leading-5">
+          Welcome to AAI Studio. Tell me what your voice agent should do and I'll build the first
+          version.
+        </p>
+      </div>
+      {llm ? (
+        <div className="flex flex-col gap-2">
+          <span className="text-xs text-subtle">Try one of these</span>
+          {STARTERS.map((starter) => (
+            <button type="button" key={starter} className="starter" onClick={() => onPick(starter)}>
+              {starter}
+            </button>
+          ))}
+        </div>
+      ) : (
+        <p className="m-0 text-xs leading-4 text-subtle">
+          Chat is disabled: this server has no LLM key (ASSEMBLYAI_API_KEY or ANTHROPIC_API_KEY).
+          The Code view and Publish still work.
+        </p>
+      )}
+    </>
+  );
+}
+
+/** The live chat, mounted only when a project exists. */
+function ProjectChat({
+  apiKey,
+  project,
+  llmStatus,
+  initialPrompt,
+  onInitialPromptSent,
+  onWorkspaceChanged,
+}: Omit<ChatPanelProps, "project" | "onStartWithPrompt"> & { project: string }) {
   const logRef = useRef<HTMLDivElement>(null);
   const model = useModelChoice(apiKey);
 
@@ -147,72 +245,70 @@ export function ChatPanel({ apiKey, project, llmStatus, onWorkspaceChanged }: Ch
 
   const busy = status === "submitted" || status === "streaming";
 
+  // Prompt queued by the guided pre-project flow — send exactly once.
+  const sentInitial = useRef(false);
+  useEffect(() => {
+    if (sentInitial.current || !initialPrompt || !llmStatus.llm) return;
+    sentInitial.current = true;
+    void sendMessage({ text: initialPrompt });
+    onInitialPromptSent();
+  }, [initialPrompt, llmStatus.llm, sendMessage, onInitialPromptSent]);
+
   const send = (text: string) => {
-    if (!text.trim() || busy || !llmStatus.llm) return;
-    setInput("");
-    void sendMessage({ text: text.trim() });
+    if (busy || !llmStatus.llm) return;
+    void sendMessage({ text });
     requestAnimationFrame(() => logRef.current?.scrollTo({ top: logRef.current.scrollHeight }));
   };
 
   return (
-    <div className="flex w-[400px] shrink-0 flex-col border-r border-line">
-      <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4" ref={logRef}>
-        {messages.length === 0 && (
-          <div className="mt-6 flex flex-col items-start gap-2">
-            <p className="m-0 text-[15px] font-medium">What should your voice agent do?</p>
-            <p className="m-0 mb-2 text-[13px] text-dim">
-              Describe it and the coding agent will write, test, and publish it.
-            </p>
-            {llmStatus.llm &&
-              SUGGESTIONS.map((suggestion) => (
-                <button
-                  type="button"
-                  key={suggestion}
-                  className="chip"
-                  onClick={() => send(suggestion)}
-                >
-                  {suggestion}
-                </button>
-              ))}
-          </div>
+    <>
+      <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5" ref={logRef}>
+        {messages.length === 0 && !initialPrompt && (
+          <EmptyStateBody llm={llmStatus.llm} onPick={send} />
         )}
         {messages.map((message) => (
           <MessageView key={message.id} message={message} />
         ))}
-        {error && <div className="text-err">{error.message}</div>}
-        {busy && <div className="text-dim italic">Working…</div>}
+        {error && <div className="text-[13px] text-err">{error.message}</div>}
+        {busy && <div className="text-[13px] text-subtle italic">Working…</div>}
       </div>
-      <div className="border-t border-line p-3">
-        {llmStatus.llm && (
-          <div className="mb-1.5 flex items-center">
-            <ModelPicker {...model} disabled={busy} />
+      <Composer
+        disabled={busy || !llmStatus.llm}
+        placeholder="Describe your agent…"
+        onSend={send}
+        accessory={llmStatus.llm ? <ModelPicker {...model} disabled={busy} /> : undefined}
+      />
+    </>
+  );
+}
+
+export function ChatPanel(props: ChatPanelProps) {
+  return (
+    <div className="flex w-[360px] flex-none flex-col border-r border-line bg-panel">
+      <div className="px-6 pt-5">
+        <span className="eyebrow">Agent</span>
+      </div>
+      {props.project ? (
+        <ProjectChat
+          apiKey={props.apiKey}
+          project={props.project}
+          llmStatus={props.llmStatus}
+          initialPrompt={props.initialPrompt}
+          onInitialPromptSent={props.onInitialPromptSent}
+          onWorkspaceChanged={props.onWorkspaceChanged}
+        />
+      ) : (
+        <>
+          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
+            <EmptyStateBody llm={props.llmStatus.llm} onPick={props.onStartWithPrompt} />
           </div>
-        )}
-        <div className="flex items-center gap-1.5">
-          <input
-            className="field min-w-0 flex-1"
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") send(input);
-            }}
-            disabled={!llmStatus.llm}
-            placeholder={
-              llmStatus.llm
-                ? "Ask Studio…"
-                : "Chat disabled: server has no LLM key (ASSEMBLYAI_API_KEY or ANTHROPIC_API_KEY)"
-            }
+          <Composer
+            disabled={!props.llmStatus.llm}
+            placeholder="Describe your agent…"
+            onSend={props.onStartWithPrompt}
           />
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={() => send(input)}
-            disabled={busy || !llmStatus.llm}
-          >
-            ↑
-          </button>
-        </div>
-      </div>
+        </>
+      )}
     </div>
   );
 }

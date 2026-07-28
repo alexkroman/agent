@@ -1,16 +1,88 @@
 /* Copyright 2025 the AAI authors. MIT license. */
-/* Studio client — Tailwind CSS v4, light shell (Lovable-style layout). */
+/* Studio client — AssemblyAI website-refresh design system (design 1b).
+   Token contract: design_system/colors_and_type.css from the design handoff.
+   Warm neutrals only (never cool slate), indigo primary, serif display,
+   ALL-CAPS quasi-mono labels, small radii (no pill buttons). */
 
 @import "tailwindcss";
 
+@font-face {
+  font-family: "Monument Grotesk";
+  src: url("./fonts/ABCMonumentGrotesk-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Monument Grotesk";
+  src: url("./fonts/ABCMonumentGrotesk-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "Monument Grotesk";
+  src: url("./fonts/ABCMonumentGrotesk-Bold.woff2") format("woff2");
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./fonts/JetBrainsMono-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: "JetBrains Mono";
+  src: url("./fonts/JetBrainsMono-Medium.woff2") format("woff2");
+  font-weight: 500;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  /* Licensed-free stand-in for the Figma Tiempos/Domaine display face. */
+  font-family: "Source Serif 4";
+  src: url("./fonts/SourceSerif4-Regular.woff2") format("woff2");
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
 @theme {
-  --color-ink: #fafafa;
+  /* Surfaces */
+  --color-cream: #fbf8f2;
   --color-panel: #ffffff;
-  --color-line: #e4e4e7;
-  --color-fg: #18181b;
-  --color-dim: #71717a;
-  --color-accent: #2563eb;
-  --color-err: #dc2626;
+  --color-ink: #131210;
+  /* Text */
+  --color-fg: #1b1a18;
+  --color-muted: #57534b;
+  --color-subtle: #6f6a60;
+  /* Borders + disabled */
+  --color-line: #dcd7cc;
+  --color-line-strong: #b6b0a4;
+  --color-disabled: #e9e5dd;
+  /* Indigo primary */
+  --color-indigo: #3f2bc1;
+  --color-indigo-hover: #2f1fa6;
+  --color-indigo-200: #b7a6ff;
+  --color-indigo-300: #8e78f5;
+  --color-indigo-50: #efeaff;
+  /* Warm accents */
+  --color-warm-300: #b6b0a4;
+  --color-err: #b3261e;
+
+  --font-sans: "Monument Grotesk", "ABC Monument Grotesk", system-ui, sans-serif;
+  --font-serif: "Source Serif 4", "Source Serif Pro", Charter, "Iowan Old Style", Georgia, serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+
+  --shadow-sm: 0 1px 3px 0 rgb(20 18 12 / 0.06);
+  --shadow-md: 0 4px 12px -2px rgb(20 18 12 / 0.08);
 }
 
 @layer base {
@@ -21,30 +93,52 @@
     margin: 0;
   }
   body {
-    @apply bg-panel text-fg text-sm antialiased;
+    @apply bg-cream font-sans text-sm text-fg antialiased;
+  }
+  * {
+    transition:
+      color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+      background-color 150ms cubic-bezier(0.4, 0, 0.2, 1),
+      border-color 150ms cubic-bezier(0.4, 0, 0.2, 1);
+  }
+  :focus-visible {
+    outline: 2px solid var(--color-indigo);
+    outline-offset: 1px;
   }
 }
 
 @layer components {
+  /* Tertiary button (CHANGE KEY, project switcher) — ALL-CAPS label */
   .btn {
-    @apply cursor-pointer rounded-full border border-line bg-panel px-3.5 py-1.5 text-[13px] font-medium text-fg hover:bg-ink disabled:cursor-default disabled:opacity-50;
+    @apply h-[34px] cursor-pointer rounded-sm border border-line bg-panel px-3.5 text-[11px] font-medium tracking-[1.4px] text-fg uppercase hover:border-line-strong disabled:cursor-not-allowed;
   }
+  /* Primary indigo button; disabled = warm-100 face per handoff */
   .btn-primary {
-    @apply border-accent bg-accent text-white hover:bg-accent/90;
+    @apply border-indigo bg-indigo text-white hover:border-indigo-hover hover:bg-indigo-hover disabled:border-disabled disabled:bg-disabled disabled:text-line-strong;
   }
+  /* Input */
   .field {
-    @apply rounded-lg border border-line bg-panel px-3 py-1.5 text-[13px] text-fg placeholder:text-dim focus:border-accent focus:outline-none;
+    @apply rounded-md border border-line bg-panel px-3.5 text-[13px] text-fg placeholder:text-subtle focus:outline-none;
   }
-  .pane-title {
-    @apply my-1 text-[11px] font-semibold tracking-wider text-dim uppercase;
+  /* Eyebrow pill — tiny outlined rectangle, ALL CAPS */
+  .eyebrow {
+    @apply inline-block self-start rounded-sm border border-line-strong px-2 py-1 text-[10px] leading-none font-medium tracking-[1.2px] text-fg uppercase;
   }
-  .chip {
-    @apply cursor-pointer rounded-full border border-line bg-panel px-3 py-1.5 text-[13px] text-fg hover:bg-ink;
-  }
+  /* Segmented control label */
   .seg {
-    @apply cursor-pointer rounded-full px-3.5 py-1 text-[13px] font-medium text-dim;
+    @apply h-8 cursor-pointer border-none px-4 text-[10.5px] font-medium tracking-[1.2px] uppercase;
   }
-  .seg-active {
-    @apply bg-accent/10 text-accent;
+  /* Outlined stencil serif numeral */
+  .stat-numeral {
+    font-family: var(--font-serif);
+    font-weight: 400;
+    line-height: 1;
+    letter-spacing: -1px;
+    -webkit-text-stroke: 1px currentColor;
+    -webkit-text-fill-color: transparent;
+  }
+  /* Starter prompt button (1b) */
+  .starter {
+    @apply cursor-pointer rounded-md border border-line bg-panel px-3.5 py-2.5 text-left text-[13px] text-fg hover:border-indigo-300 hover:text-indigo;
   }
 }

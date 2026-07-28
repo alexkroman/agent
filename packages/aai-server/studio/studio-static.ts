@@ -18,11 +18,12 @@ import { SafePathSchema } from "../schemas.ts";
 
 /**
  * All assets are same-origin; scripts are external files (no inline JS).
- * `frame-src 'self'` lets the studio preview deployed agents in an iframe.
+ * `frame-src 'self'` lets the studio preview deployed agents in an iframe;
+ * `font-src 'self'` serves the self-hosted brand fonts.
  */
 export const STUDIO_CSP =
   "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-  "connect-src 'self'; img-src 'self' data:; frame-src 'self'; " +
+  "connect-src 'self'; img-src 'self' data:; frame-src 'self'; font-src 'self'; " +
   "base-uri 'none'; form-action 'none'";
 
 const FALLBACK_HTML = `<!DOCTYPE html>
