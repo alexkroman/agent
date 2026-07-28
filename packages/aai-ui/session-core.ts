@@ -15,14 +15,23 @@
 
 import { errorMessage, WS_OPEN } from "@alexkroman1/aai";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
-import { CLEARED_SESSION_STATE, createMessageHandlers } from "./session-core-messages.ts";
+import {
+  CLEARED_SESSION_STATE,
+  createMessageHandlers,
+  type SessionConfigMessage,
+} from "./session-core-messages.ts";
 import type {
   ConnState,
   SessionCore,
   SessionCoreOptions,
   SessionSnapshot,
 } from "./session-core-types.ts";
-import { MIC_SEND_MAX_BUFFERED_BYTES, type WebSocketConstructor } from "./types.ts";
+import {
+  FILE_SEND_BACKOFF_MS,
+  FILE_SEND_CHUNK_BYTES,
+  MIC_SEND_MAX_BUFFERED_BYTES,
+  type WebSocketConstructor,
+} from "./types.ts";
 
 export type {
   CustomEvent,
@@ -90,6 +99,7 @@ async function initAudioCapture(
       conn.preInitAudio = [];
     }
     deps.sendJson({ type: "audio_ready" });
+    deps.updateState({ recording: true });
     // If audio_done arrived while we were initializing, replay it now so the
     // buffered greeting plays to completion (and state flips to "listening"
     // only when playback actually drains) instead of the done being lost.
@@ -156,6 +166,12 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     contentVersion: 0,
     started: false,
     running: false,
+    // Voice until the server's config says text-only (audioOut: false).
+    audioOut: true,
+    recording: false,
+    // The programmatic endpoint — same URL the session connects to, minus
+    // resume params. Derived up front so UIs can show it before connecting.
+    apiUrl: buildWsUrl(options.platformUrl, false).toString(),
   };
 
   const subscribers = new Set<() => void>();
@@ -197,6 +213,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     generation: 0,
     preInitAudio: [],
     preInitDone: false,
+    readyConfig: null,
   };
   let connectionController: AbortController | null = null;
   let hasConnected = false;
@@ -249,6 +266,34 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     conn.ws = null;
   }
 
+  /** React to the server's `config` message: record it, set up the audio
+   *  path for the session's mode, and replay history on reconnect. */
+  function onServerConfig(config: SessionConfigMessage): void {
+    if (config.sid) options.onSessionId?.(config.sid);
+    const isReconnect = hasConnected;
+    hasConnected = true;
+    conn.readyConfig = { sampleRate: config.sampleRate, ttsSampleRate: config.ttsSampleRate };
+    const audioOut = config.audioOut !== false;
+    updateState({ audioOut });
+    if (audioOut) {
+      // initAudioCapture handles its own failures (sets error state internally).
+      void initAudioCapture(conn, config, audioDeps);
+    } else {
+      // Text-only session: no playback pipeline, and the mic is opt-in
+      // via startRecording() (the record button) — so the protocol
+      // handshake completes immediately with no permission prompt.
+      sendJson({ type: "audio_ready" });
+      updateState({ state: "listening" });
+    }
+
+    if (isReconnect && currentSnapshot.messages.length > 0) {
+      sendJson({
+        type: "history",
+        messages: currentSnapshot.messages.map((m) => ({ role: m.role, content: m.content })),
+      });
+    }
+  }
+
   function connect(opts?: { signal?: AbortSignal }): void {
     updateState({ state: "connecting", error: null });
     teardownConnection();
@@ -282,20 +327,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       "message",
       (event: MessageEvent) => {
         const config = handleMessage(event.data);
-        if (config) {
-          if (config.sid) options.onSessionId?.(config.sid);
-          const isReconnect = hasConnected;
-          hasConnected = true;
-          // initAudioCapture handles its own failures (sets error state internally).
-          void initAudioCapture(conn, config, audioDeps);
-
-          if (isReconnect && currentSnapshot.messages.length > 0) {
-            sendJson({
-              type: "history",
-              messages: currentSnapshot.messages.map((m) => ({ role: m.role, content: m.content })),
-            });
-          }
-        }
+        if (config) onServerConfig(config);
       },
       { signal: sig },
     );
@@ -333,7 +365,47 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   function disconnect(): void {
     teardownConnection();
-    updateState({ state: "disconnected", running: false });
+    updateState({ state: "disconnected", running: false, recording: false });
+  }
+
+  function startRecording(): void {
+    // Voice sessions stream the mic for their whole lifetime already.
+    if (currentSnapshot.audioOut || currentSnapshot.recording || conn.audioSetupInFlight) return;
+    const cfg = conn.readyConfig;
+    if (!(cfg && conn.ws) || conn.ws.readyState !== WS_OPEN) return;
+    // Sets `recording: true` (and error state on mic denial) itself.
+    void initAudioCapture(conn, cfg, audioDeps);
+  }
+
+  function stopRecording(): void {
+    if (currentSnapshot.audioOut || !currentSnapshot.recording) return;
+    cleanupAudio();
+    updateState({ recording: false });
+  }
+
+  async function sendAudioFile(file: Blob): Promise<void> {
+    const cfg = conn.readyConfig;
+    if (!(cfg && conn.ws) || conn.ws.readyState !== WS_OPEN) {
+      throw new Error("sendAudioFile: session is not connected");
+    }
+    const { decodeAudioToPcm16 } = await import("./audio.ts");
+    const pcm = await decodeAudioToPcm16(await file.arrayBuffer(), cfg.sampleRate);
+    const bytes = new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
+    // Unlike live mic frames (dropped under backpressure — stale speech is
+    // worthless), file audio must arrive completely: wait the socket out.
+    for (let i = 0; i < bytes.byteLength; i += FILE_SEND_CHUNK_BYTES) {
+      while (
+        conn.ws &&
+        conn.ws.readyState === WS_OPEN &&
+        conn.ws.bufferedAmount > MIC_SEND_MAX_BUFFERED_BYTES
+      ) {
+        await new Promise((r) => setTimeout(r, FILE_SEND_BACKOFF_MS));
+      }
+      if (!conn.ws || conn.ws.readyState !== WS_OPEN) {
+        throw new Error("sendAudioFile: connection closed mid-send");
+      }
+      conn.ws.send(bytes.subarray(i, i + FILE_SEND_CHUNK_BYTES) as unknown as ArrayBuffer);
+    }
   }
 
   function start(): void {
@@ -360,6 +432,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     disconnect,
     start,
     toggle,
+    startRecording,
+    stopRecording,
+    sendAudioFile,
     [Symbol.dispose]() {
       disconnect();
     },

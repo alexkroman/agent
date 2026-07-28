@@ -8,6 +8,7 @@ import { redisKv } from "./providers/kv/redis.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAI } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
+import { isTextOnlyTts, none } from "./providers/tts/none.ts";
 import { pinecone } from "./providers/vector/pinecone.ts";
 import { assertProviderTriple } from "./providers.ts";
 
@@ -440,5 +441,64 @@ describe("assertProviderTriple with s2s", () => {
     );
     expect(() => assertProviderTriple(undefined, d, undefined, d)).toThrow();
     expect(() => assertProviderTriple(undefined, undefined, d, d)).toThrow();
+  });
+});
+
+describe("parseManifest — text-only (tts: none())", () => {
+  const textOnlyFields = {
+    stt: assemblyAI({ model: "u3pro-rt" }),
+    llm: anthropic({ model: "claude-haiku-4-5" }),
+    tts: none(),
+  };
+
+  test("tts: none() completes the triple ⇒ mode: 'pipeline'", () => {
+    const m = parseManifest({ name: "x", ...textOnlyFields } as never);
+    expect(m.mode).toBe("pipeline");
+    expect(isTextOnlyTts(m.tts)).toBe(true);
+  });
+
+  test("stt + llm without tts still throws (none() must be explicit)", () => {
+    expect(() =>
+      parseManifest({
+        name: "x",
+        stt: textOnlyFields.stt,
+        llm: textOnlyFields.llm,
+      } as never),
+    ).toThrow(/stt, llm, and tts must be set together/);
+  });
+
+  test("rejects holdPhrase with tts: none()", () => {
+    expect(() =>
+      parseManifest({ name: "x", ...textOnlyFields, holdPhrase: "One sec." } as never),
+    ).toThrow(/holdPhrase requires a speaking TTS provider/);
+  });
+
+  test("accepts the other pipeline tuning fields with tts: none()", () => {
+    const m = parseManifest({
+      name: "x",
+      ...textOnlyFields,
+      minBargeInWords: 3,
+      endpointSettleMs: 800,
+      silenceTimeoutMs: 15_000,
+    } as never);
+    expect(m.minBargeInWords).toBe(3);
+    expect(m.endpointSettleMs).toBe(800);
+    expect(m.silenceTimeoutMs).toBe(15_000);
+  });
+
+  test("toAgentConfig carries the none descriptor and rejects holdPhrase", () => {
+    const base = { name: "x", systemPrompt: "p", greeting: "g", ...textOnlyFields };
+    const config = toAgentConfig(base);
+    expect(isTextOnlyTts(config.tts)).toBe(true);
+    expect(() => toAgentConfig({ ...base, holdPhrase: "Hm." })).toThrow(
+      /holdPhrase requires a speaking TTS provider/,
+    );
+  });
+
+  test("isTextOnlyTts is null-safe and rejects real providers", () => {
+    expect(isTextOnlyTts(undefined)).toBe(false);
+    expect(isTextOnlyTts(null)).toBe(false);
+    expect(isTextOnlyTts(cartesia({ voice: "v" }))).toBe(false);
+    expect(isTextOnlyTts(none())).toBe(true);
   });
 });

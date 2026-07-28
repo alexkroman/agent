@@ -10,5 +10,6 @@
 export type { TtsError, TtsEvents, TtsOpenOptions, TtsProvider, TtsSession } from "../providers.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./tts/cartesia.ts";
+export { isTextOnlyTts, NONE_TTS_KIND, type NoneTtsProvider, none } from "./tts/none.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./tts/rime.ts";

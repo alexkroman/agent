@@ -141,6 +141,25 @@ export type PipelineTuning = {
  * `IsolateConfigSchema` — one source of truth for the validation, mirroring
  * {@link assertSilencePolicy}.
  */
+/**
+ * Reject tuning fields that only make sense when replies are spoken.
+ * `holdPhrase` is literally synthesized filler ("One moment.") — with
+ * `tts: none()` it would be injected into the *text* reply instead, so an
+ * explicit value is a configuration error rather than a silent oddity.
+ *
+ * Shared by `parseManifest`, `toAgentConfig`, and the server's
+ * `IsolateConfigSchema` — one source of truth, mirroring
+ * {@link assertPipelineTuning}.
+ */
+export function assertTextOnlyTuning(
+  textOnly: boolean,
+  tuning: Pick<PipelineTuning, "holdPhrase">,
+): void {
+  if (textOnly && tuning.holdPhrase !== undefined) {
+    throw new Error("holdPhrase requires a speaking TTS provider (remove it or drop tts: none())");
+  }
+}
+
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void {
   if (mode === "pipeline") return;
   const fields: Record<string, unknown> = {

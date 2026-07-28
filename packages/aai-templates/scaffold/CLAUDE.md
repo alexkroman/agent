@@ -133,6 +133,30 @@ export default agent({
 Tools, KV, `ctx`, and the UI all behave identically across modes. Only
 the audio + LLM transport differs.
 
+**Text-only mode (`tts: none()`):** pipeline mode without synthesis —
+speech in (STT → LLM), text out. Use it for transcription assistants,
+dictation, or any agent whose replies are read rather than heard:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { anthropic } from "@alexkroman1/aai/llm";
+import { none } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "My Agent",
+  stt: assemblyAI({ model: "u3pro-rt" }),
+  llm: anthropic({ model: "claude-haiku-4-5" }),
+  tts: none(), // explicit — stt/llm without tts is still a config error
+});
+```
+
+No TTS key is needed. The default UI switches to a text layout: a record
+button (mic is opt-in, not always-on), an audio-file upload button that
+transcribes and answers, and streamed text replies. `holdPhrase` is
+rejected with `tts: none()` (it is spoken filler); the other pipeline
+tuning fields work unchanged.
+
 **Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
 assistant proactively take a turn after that much user silence (e.g.
 "Are you still there?"). Customize the injected instruction with
@@ -219,6 +243,9 @@ export default agent({
 Bare calls (`cartesia()`, `rime()`) use the defaults. Override with
 `{ voice, model, language }`. **Rime quirk:** language uses ISO 639-3
 three-letter codes (e.g. `"eng"` not `"en"`).
+
+`none()` (no env var) declares a **text-only** agent — see "Text-only
+mode" above.
 
 Set provider keys the same way as any secret: `.env` for local dev,
 `aai secret put` for production.
@@ -520,7 +547,8 @@ Common mistakes when working in aai projects:
   only what the model needs.
 - **Pipeline mode requires all three of `stt` / `llm` / `tts`.** Partial
   configs are rejected at parse time. Use S2S (omit all three) if you
-  don't need provider control.
+  don't need provider control, or `tts: none()` for a text-only agent —
+  never just leave `tts` off.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
 - **Don't use `useEffect` + `toolCalls` to derive state.** Use

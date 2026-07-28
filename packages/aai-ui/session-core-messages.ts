@@ -53,9 +53,11 @@ function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
 }
 
 /** Config payload extracted from a `config` server message. */
-type SessionConfigMessage = {
+export type SessionConfigMessage = {
   sampleRate: number;
   ttsSampleRate: number;
+  /** False for text-only agents (`tts: none()`) — see ReadyConfigSchema. */
+  audioOut?: boolean | undefined;
   sid?: string | undefined;
 };
 
@@ -297,6 +299,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       return {
         sampleRate: msg.sampleRate,
         ttsSampleRate: msg.ttsSampleRate,
+        audioOut: msg.audioOut,
         sid: msg.sessionId,
       };
     }

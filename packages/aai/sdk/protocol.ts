@@ -202,6 +202,12 @@ export const ReadyConfigSchema = z.object({
   audioFormat: z.enum(["pcm16"]),
   sampleRate: z.number().int().positive(),
   ttsSampleRate: z.number().int().positive(),
+  /**
+   * False for text-only agents (`tts: none()`): the server sends no audio
+   * frames and the client should render streamed text replies instead of
+   * expecting playback. Omitted means true (voice reply — the default).
+   */
+  audioOut: z.boolean().optional(),
 });
 
 /** Protocol-level session config returned to the client on connect. */
@@ -214,6 +220,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     audioFormat: z.string(),
     sampleRate: z.number(),
     ttsSampleRate: z.number(),
+    /** False for text-only agents — see {@link ReadyConfigSchema}. */
+    audioOut: z.boolean().optional(),
     /** Session ID for this connection. Clients can reconnect with
      *  `?sessionId=<id>` to resume a persisted session. */
     sessionId: z.string().optional(),
@@ -291,13 +299,19 @@ export type HostConfigMessage = z.infer<typeof HostConfigMessageSchema>;
 // ─── Ready config builder ───────────────────────────────────────────────────
 
 /** Build the protocol-level session config from S2S sample rates. */
-export function buildReadyConfig(s2sConfig: {
-  inputSampleRate: number;
-  outputSampleRate: number;
-}): ReadyConfig {
+export function buildReadyConfig(
+  s2sConfig: {
+    inputSampleRate: number;
+    outputSampleRate: number;
+  },
+  opts: { audioOut?: boolean } = {},
+): ReadyConfig {
   return {
     audioFormat: AUDIO_FORMAT,
     sampleRate: s2sConfig.inputSampleRate,
     ttsSampleRate: s2sConfig.outputSampleRate,
+    // Only stamped when replies are text-only, so existing voice sessions
+    // keep a byte-identical config message.
+    ...(opts.audioOut === false && { audioOut: false }),
   };
 }

@@ -1,6 +1,50 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { MIC_BUFFER_SECONDS } from "./types.ts";
 
+/** Trailing silence appended to uploaded audio so STT endpoints the turn. */
+const UPLOAD_TRAILING_SILENCE_SECONDS = 1;
+
+/**
+ * Decode an audio file (any container/codec the browser can decode) and
+ * resample it to mono PCM16 at `targetRate` — the format the server's STT
+ * side expects on the wire. Appends a second of silence so the STT
+ * provider's endpointing commits the turn instead of waiting for audio that
+ * never comes.
+ *
+ * @throws If the browser cannot decode the payload.
+ */
+export async function decodeAudioToPcm16(
+  data: ArrayBuffer,
+  targetRate: number,
+): Promise<Int16Array> {
+  // decodeAudioData needs a (possibly suspended) realtime context; rendering
+  // happens offline so nothing is audible and no user gesture is required.
+  const decodeCtx = new AudioContext();
+  let decoded: AudioBuffer;
+  try {
+    decoded = await decodeCtx.decodeAudioData(data);
+  } finally {
+    await decodeCtx.close().catch(() => {
+      /* swallow */
+    });
+  }
+  const speechFrames = Math.ceil(decoded.duration * targetRate);
+  const frames = speechFrames + UPLOAD_TRAILING_SILENCE_SECONDS * targetRate;
+  const offline = new OfflineAudioContext(1, frames, targetRate);
+  const source = offline.createBufferSource();
+  source.buffer = decoded;
+  source.connect(offline.destination);
+  source.start();
+  const rendered = await offline.startRendering();
+  const f32 = rendered.getChannelData(0);
+  const pcm = new Int16Array(f32.length);
+  for (let i = 0; i < f32.length; i++) {
+    const s = Math.max(-1, Math.min(1, f32[i] ?? 0));
+    pcm[i] = s < 0 ? s * 0x80_00 : s * 0x7f_ff;
+  }
+  return pcm;
+}
+
 /** Configuration for creating a {@link VoiceIO} instance. */
 export type VoiceIOOptions = {
   /** Sample rate in Hz expected by the STT engine (e.g. 16000). */

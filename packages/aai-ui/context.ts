@@ -33,6 +33,9 @@ export type Session = SessionSnapshot & {
   reset(): void;
   disconnect(): void;
   toggle(): void;
+  startRecording(): void;
+  stopRecording(): void;
+  sendAudioFile(file: Blob): Promise<void>;
 };
 
 /**
@@ -61,6 +64,9 @@ export function useSession(): Session {
     reset: core.reset,
     disconnect: core.disconnect,
     toggle: core.toggle,
+    startRecording: core.startRecording,
+    stopRecording: core.stopRecording,
+    sendAudioFile: core.sendAudioFile,
   };
 }
 

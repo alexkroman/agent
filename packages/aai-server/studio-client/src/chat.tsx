@@ -28,6 +28,7 @@ const STARTERS = [
   "A drive-thru agent that takes food orders",
   "A front-desk agent that books appointments",
   "A support agent that triages inbound calls",
+  "A text-only speech-to-text pipeline that dictates into structured notes — an LLM transform cleans up the transcript, and JavaScript tools compute word counts and action items",
 ];
 
 function toolPartName(part: { type: string; toolName?: string }): string {

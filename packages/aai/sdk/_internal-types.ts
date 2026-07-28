@@ -3,10 +3,12 @@
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
 import { ProviderDescriptorSchema } from "./manifest.ts";
+import { isTextOnlyTts } from "./providers/tts/none.ts";
 import {
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
+  assertTextOnlyTuning,
   type KvProvider,
   type LlmProvider,
   type S2sProvider,
@@ -111,6 +113,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s);
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
   assertPipelineTuning(mode, src);
+  assertTextOnlyTuning(isTextOnlyTts(src.tts), src);
 
   const config: AgentConfig = {
     name: src.name,

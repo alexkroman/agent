@@ -30,8 +30,11 @@ export interface PipelineTransportOptions {
   stt: SttOpener;
   /** LLM provider (Vercel AI SDK LanguageModel). */
   llm: LanguageModel;
-  /** TTS opener (resolved from a TtsProvider descriptor). */
-  tts: TtsOpener;
+  /**
+   * TTS opener (resolved from a TtsProvider descriptor), or null for a
+   * text-only agent (`tts: none()`): no synthesis, replies stream as text.
+   */
+  tts: TtsOpener | null;
   /** Transport-level callbacks into SessionCore. */
   callbacks: TransportCallbacks;
   /** Session config: systemPrompt, greeting, tools, history. */
@@ -40,10 +43,10 @@ export interface PipelineTransportOptions {
   toolSchemas?: readonly ToolSchema[];
   /** Agent's tool-execution function. */
   executeTool?: ExecuteTool;
-  /** Provider-specific API keys. */
+  /** Provider-specific API keys. `tts` is absent for text-only agents. */
   providerKeys: {
     stt: string;
-    tts: string;
+    tts?: string | undefined;
   };
   /** STT audio input sample rate (PCM16, Hz). Defaults to DEFAULT_STT_SAMPLE_RATE. */
   sttSampleRate?: number | undefined;
@@ -143,7 +146,10 @@ export function resolvePipelineOptions(opts: PipelineTransportOptions): Resolved
     interruptionMinDurationMs: opts.interruptionMinDurationMs ?? 0,
     endpointSettleMs: opts.endpointSettleMs ?? DEFAULT_ENDPOINT_SETTLE_MS,
     completeSettleMs: opts.completeSettleMs ?? DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
-    holdPhrase: opts.holdPhrase ?? DEFAULT_HOLD_PHRASE,
+    // The hold phrase is synthesized filler — with no TTS it would leak into
+    // the text reply, so text-only sessions force it off. (An explicit
+    // holdPhrase with tts: none() is already rejected at config time.)
+    holdPhrase: opts.tts === null ? "" : (opts.holdPhrase ?? DEFAULT_HOLD_PHRASE),
     falseInterruptionTimeoutMs:
       opts.falseInterruptionTimeoutMs ?? DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
     toolChoice: opts.toolChoice ?? "auto",

@@ -50,7 +50,8 @@ export type BuildTransportArgs = {
 export type ResolvedPipelineProviders = {
   stt: ResolvedOpener<SttOpener>;
   llm: LanguageModel;
-  tts: ResolvedOpener<TtsOpener>;
+  /** Null for text-only agents (`tts: none()`): no synthesis, no TTS key. */
+  tts: ResolvedOpener<TtsOpener> | null;
 };
 
 /** Runtime-scoped state the transport builders close over. */
@@ -98,7 +99,7 @@ export function createTransportFactory(
       sid: sessionOpts.id,
       stt: providers.stt.opener,
       llm: providers.llm,
-      tts: providers.tts.opener,
+      tts: providers.tts?.opener ?? null,
       callbacks,
       sessionConfig: {
         systemPrompt,
@@ -108,7 +109,7 @@ export function createTransportFactory(
       executeTool,
       providerKeys: {
         stt: resolveApiKey(providers.stt.envVar, env),
-        tts: resolveApiKey(providers.tts.envVar, env),
+        ...(providers.tts && { tts: resolveApiKey(providers.tts.envVar, env) }),
       },
       sttSampleRate: s2sConfig.inputSampleRate,
       ttsSampleRate: s2sConfig.outputSampleRate,

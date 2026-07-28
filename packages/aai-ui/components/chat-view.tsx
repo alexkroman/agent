@@ -10,6 +10,7 @@ import { TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";
+import { TextControls } from "./text-controls.tsx";
 
 const ERROR_COLOR = "#e06c75";
 
@@ -115,7 +116,9 @@ export function ChatView({
         </div>
       )}
       <MessageList />
-      <Controls />
+      {/* Text-only sessions (tts: none()) get record/upload controls; the
+          server's config message decides, so the same default UI serves both. */}
+      {session.audioOut ? <Controls /> : <TextControls />}
     </div>
   );
 }

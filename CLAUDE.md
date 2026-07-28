@@ -406,6 +406,26 @@ Each agent runs in one of two session modes, selected at parse time by
 Partial provider configs are rejected at parse time — `parseManifest()`
 requires either zero or all three of `stt`/`llm`/`tts`.
 
+- **Text-only mode** (`tts: none()` from `@alexkroman1/aai/tts`) is
+  pipeline mode without a synthesis side: speech in (STT → LLM), text out.
+  The sentinel descriptor keeps the all-or-none triple rule intact (a
+  *forgotten* `tts` stays a loud error) while `isTextOnlyTts()` flags the
+  mode wherever it matters: the runtime resolves `tts: null` (no opener,
+  no TTS credential — `requiredProviderEnvVars` skips it since `none` has
+  no registry entry), the pipeline transport skips the TTS side entirely
+  (`openTtsSide` fires `onAudioReady` immediately; `flushTtsAndWait`
+  early-returns; `holdPhrase` is forced off and rejected at config time
+  via `assertTextOnlyTuning` — enforced in `parseManifest`,
+  `toAgentConfig`, and the server's `IsolateConfigSchema`), and the
+  `config` protocol message stamps `audioOut: false` so the client skips
+  the playback pipeline. In `aai-ui`, a text-only session makes the mic
+  opt-in (`startRecording()`/`stopRecording()` on `SessionCore`), adds
+  `sendAudioFile()` (decode → resample → PCM16 stream with trailing
+  silence for endpointing), and the default `ChatView` swaps `Controls`
+  for `TextControls` (record + upload + text replies). The snapshot's
+  `apiUrl` field carries the programmatic WebSocket endpoint, shown by
+  `ApiUrlChip` in every mode. Template: `pipeline-text-only`.
+
 Reference providers shipped today:
 
 - **STT**: one of

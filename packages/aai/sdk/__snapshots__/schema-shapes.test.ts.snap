@@ -143,6 +143,7 @@ exports[`protocol schema shapes > KvSetSchema shape 1`] = `
 exports[`protocol schema shapes > ReadyConfigSchema shape 1`] = `
 [
   "audioFormat",
+  "audioOut",
   "sampleRate",
   "ttsSampleRate",
 ]
@@ -162,6 +163,7 @@ exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
   ],
   "config": [
     "audioFormat",
+    "audioOut",
     "sampleRate",
     "sessionId",
     "ttsSampleRate",

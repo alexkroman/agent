@@ -40,6 +40,24 @@ export type CustomEvent = {
 export type SessionSnapshot = {
   readonly state: AgentState;
   /**
+   * False when the server declared the session text-only (`tts: none()`):
+   * no audio frames will arrive and replies render as text. True until the
+   * server's `config` message says otherwise (voice is the default).
+   */
+  readonly audioOut: boolean;
+  /**
+   * True while the microphone is live and streaming to the server. Voice
+   * sessions record for their whole lifetime; text-only sessions toggle this
+   * via `startRecording()` / `stopRecording()` (the record button).
+   */
+  readonly recording: boolean;
+  /**
+   * The WebSocket URL a program can connect to directly (the same endpoint
+   * this session uses), e.g. `wss://host/my-agent/websocket`. Derived from
+   * `platformUrl` at construction — available before connecting.
+   */
+  readonly apiUrl: string;
+  /**
    * Monotonically increasing counter bumped whenever rendered conversation
    * content changes (`messages`, `toolCalls`, or either live transcript).
    * Cheap dependency for scroll-to-bottom effects — unlike summed lengths it
@@ -87,6 +105,20 @@ export type SessionCore = {
   start(): void;
   /** Toggle between connected and disconnected states. */
   toggle(): void;
+  /**
+   * Start streaming microphone audio (text-only sessions). Requests mic
+   * access on first use. No-op in voice sessions, where the mic is always on.
+   */
+  startRecording(): void;
+  /** Stop streaming microphone audio (text-only sessions). No-op in voice sessions. */
+  stopRecording(): void;
+  /**
+   * Decode an audio file (any format the browser can decode), resample it to
+   * the session's STT rate, and stream it to the server for transcription.
+   * Resolves once the audio has been handed to the socket. Rejects when no
+   * session is connected or the file cannot be decoded.
+   */
+  sendAudioFile(file: Blob): Promise<void>;
   /** Alias for `disconnect` for use with `using`. */
   [Symbol.dispose](): void;
 };
@@ -116,4 +148,8 @@ export type ConnState = {
    *  signal must be replayed after draining preInitAudio, or a short greeting
    *  buffered during mic-permission never finishes playing. */
   preInitDone: boolean;
+  /** The server's `config` payload for the current connection — kept so
+   *  text-only sessions can init the mic lazily (record button) and file
+   *  uploads know the STT sample rate to resample to. */
+  readyConfig: { sampleRate: number; ttsSampleRate: number } | null;
 };

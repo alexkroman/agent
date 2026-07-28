@@ -12,6 +12,8 @@ import {
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
+  assertTextOnlyTuning,
+  isTextOnlyTts,
   ProviderDescriptorSchema,
   ToolSchemaSchema,
 } from "@alexkroman1/aai/manifest";
@@ -62,6 +64,7 @@ export const IsolateConfigSchema = z
       }
       assertSilencePolicy(mode, cfg.silenceTimeoutMs, cfg.silencePrompt);
       assertPipelineTuning(mode, cfg);
+      assertTextOnlyTuning(isTextOnlyTts(cfg.tts), cfg);
     } catch (err) {
       fail(errorMessage(err));
     }

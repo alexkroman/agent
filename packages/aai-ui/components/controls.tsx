@@ -4,6 +4,7 @@
 
 import clsx from "clsx";
 import { useSessionCore, useSessionSelector, useTheme } from "../context.ts";
+import { ApiUrlChip } from "./api-url-chip.tsx";
 import { Button } from "./button.tsx";
 
 /**
@@ -39,6 +40,7 @@ export function Controls({ className }: { className?: string }) {
       <Button variant="ghost" onClick={reset}>
         New Conversation
       </Button>
+      <ApiUrlChip className="ml-auto max-w-[45%]" />
     </div>
   );
 }

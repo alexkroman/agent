@@ -47,7 +47,13 @@ type WsSessionOptions = {
   /** Factory function to create a session for a given ID and client sink. */
   createSession: (sessionId: string, client: ClientSink) => SessionCore;
   /** Protocol config sent to the client immediately on connect. */
-  readyConfig: { audioFormat: "pcm16"; sampleRate: number; ttsSampleRate: number };
+  readyConfig: {
+    audioFormat: "pcm16";
+    sampleRate: number;
+    ttsSampleRate: number;
+    /** False for text-only agents — see ReadyConfigSchema. */
+    audioOut?: boolean | undefined;
+  };
   /** Additional key-value pairs included in log messages. */
   logContext?: Record<string, string>;
   /** Callback invoked when the WebSocket connection opens. */
@@ -238,6 +244,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         audioFormat: opts.readyConfig.audioFormat,
         sampleRate: opts.readyConfig.sampleRate,
         ttsSampleRate: opts.readyConfig.ttsSampleRate,
+        // Present (false) only for text-only agents — see ReadyConfigSchema.
+        ...(opts.readyConfig.audioOut === false && { audioOut: false }),
         sessionId,
       }),
     );

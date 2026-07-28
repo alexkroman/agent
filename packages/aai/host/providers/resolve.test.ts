@@ -200,6 +200,21 @@ describe("requiredProviderEnvVars", () => {
       "ASSEMBLYAI_API_KEY",
     ]);
   });
+
+  it("requires no TTS credential for a text-only agent (tts: none())", () => {
+    // The `none` kind is deliberately absent from TTS_REGISTRY, and the
+    // descriptor still counts toward the pipeline triple — so no TTS key and
+    // no S2S fallback key either.
+    const vars = requiredProviderEnvVars({
+      stt: { kind: "deepgram" },
+      llm: { kind: "anthropic" },
+      tts: { kind: "none" },
+    });
+    expect([...vars].sort((a, b) => a.localeCompare(b))).toEqual([
+      "ANTHROPIC_API_KEY",
+      "DEEPGRAM_API_KEY",
+    ]);
+  });
 });
 
 describe("registerSttKind / registerTtsKind / registerLlmKind", () => {

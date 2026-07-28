@@ -14,6 +14,7 @@ import { DEFAULT_BUILTIN_TOOLS, DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/const
 import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
+import { isTextOnlyTts } from "../sdk/providers/tts/none.ts";
 import {
   assertProviderTriple,
   type LlmProvider,
@@ -93,7 +94,9 @@ function resolvePipelineProviders(
   return {
     stt: resolveStt(p.stt),
     llm: resolveLlm(p.llm, env),
-    tts: resolveTts(p.tts),
+    // `tts: none()` = text-only replies: no opener, no credential — the
+    // pipeline transport runs with a null TTS session.
+    tts: isTextOnlyTts(p.tts) ? null : resolveTts(p.tts),
   };
 }
 
@@ -125,6 +128,20 @@ function resolveSandboxBuiltins(
     schemas: [...providedSchemas, ...builtins.schemas],
     guidance: [...(opts.toolGuidance ?? []), ...builtins.guidance],
   };
+}
+
+/**
+ * Build the connect-time protocol config. Text-only agents (tts: none())
+ * tell the client up front that no audio frames will arrive, so it renders
+ * text replies instead of expecting playback.
+ */
+function buildRuntimeReadyConfig(
+  s2sConfig: { inputSampleRate: number; outputSampleRate: number },
+  agent: AgentDef,
+): ReadyConfig {
+  return buildReadyConfig(s2sConfig, {
+    ...(isTextOnlyTts(agent.tts) && { audioOut: false }),
+  });
 }
 
 /** Create an in-memory KV store (default for self-hosted). */
@@ -184,7 +201,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const agentConfig = toAgentConfig(agent);
   const sessions = new Map<string, SessionCore>();
   const sinkMap = new Map<string, ClientSink>();
-  const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
+  const readyConfig: ReadyConfig = buildRuntimeReadyConfig(s2sConfig, agent);
 
   // When overrides are provided (sandbox mode), skip in-process tool setup
   let executeTool: ExecuteTool;

@@ -97,7 +97,12 @@ export default agent({
 - Built-ins on by default: think, remember, recall, calculate. Opt-in via
   builtinTools: web_search, visit_webpage, fetch_json, run_code.
 - Pipeline mode: set all three of stt/llm/tts (factories from
-  "@alexkroman1/aai/stt", "/llm", "/tts") or none (S2S default).`;
+  "@alexkroman1/aai/stt", "/llm", "/tts") or none (S2S default).
+- Text-only agent (speech in, text replies, no synthesis): pipeline mode
+  with tts: none() from "@alexkroman1/aai/tts". No TTS key needed. The
+  default UI becomes record button + audio-file upload + text replies.
+  Write the systemPrompt for read (not spoken) replies. holdPhrase is
+  invalid with tts: none().`;
 
 /**
  * Locate the scaffold CLAUDE.md. Both the dev source layout
