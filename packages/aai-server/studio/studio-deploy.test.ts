@@ -17,6 +17,7 @@ function makeDeps(overrides: Partial<StudioDeployDeps> = {}): StudioDeployDeps {
     storage: createTestStorage(),
     bundle: async () => "export default {};",
     inspect: async () => TEST_AGENT_CONFIG,
+    buildClient: async () => ({}),
     ...overrides,
   };
 }
@@ -55,6 +56,42 @@ describe("deployStudioProject", () => {
     });
     expect(result.ok).toBe(true);
     expect(await deps.store.getEnv("p1")).toEqual({ ASSEMBLYAI_API_KEY: "aai-secret" });
+  });
+
+  test("ships the built client.tsx as the agent's clientFiles", async () => {
+    const built = { "index.html": "<html>custom</html>", "assets/index-abc.js": "//js" };
+    const deps = makeDeps({ buildClient: async () => built });
+    await seedProject(deps, "p1");
+    const result = await deployStudioProject(deps, {
+      apiKey: "key1",
+      scope: SCOPE,
+      project: "p1",
+    });
+    expect(result.ok).toBe(true);
+    expect(await deps.store.getClientFile("p1", "index.html")).toBe("<html>custom</html>");
+    expect(await deps.store.getClientFile("p1", "assets/index-abc.js")).toBe("//js");
+  });
+
+  test("a workspace with no client.tsx deploys no clientFiles (default UI)", async () => {
+    const deps = makeDeps({ buildClient: async () => ({}) });
+    await seedProject(deps, "p1");
+    await deployStudioProject(deps, { apiKey: "key1", scope: SCOPE, project: "p1" });
+    expect(await deps.store.getClientFile("p1", "index.html")).toBeNull();
+  });
+
+  test("surfaces client build errors as messages (agent can self-correct)", async () => {
+    const deps = makeDeps({
+      buildClient: async () => {
+        throw new StudioBuildError("Client build failed:\nclient.tsx:3: oops");
+      },
+    });
+    await seedProject(deps, "p1");
+    const result = await deployStudioProject(deps, {
+      apiKey: "key1",
+      scope: SCOPE,
+      project: "p1",
+    });
+    expect(result).toMatchObject({ ok: false, error: expect.stringContaining("oops") });
   });
 
   test("seeds the caller's API key as the agent's ASSEMBLYAI_API_KEY", async () => {

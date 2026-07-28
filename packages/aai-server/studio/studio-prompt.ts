@@ -40,10 +40,18 @@ These CLI-specific parts do NOT apply in the studio:
 - There is no shell, no pnpm, and no \`aai\` CLI. Ignore the "Workflow"
   and "CLI" sections — your loop is: edit files → deploy_agent → read the
   reported errors → fix → deploy again.
-- Imports are restricted to workspace files, "@alexkroman1/aai" (any
-  subpath), and "zod". No other npm packages can be installed.
-- Custom client UI is not built by the studio: do not create client.tsx,
-  shared.ts, or styles.css — deployed agents get the default UI.
+- agent.ts and anything it imports are restricted to workspace files,
+  "@alexkroman1/aai" (any subpath), and "zod". client.tsx may additionally
+  import "@alexkroman1/aai-ui" and "react". No other npm packages can be
+  installed.
+- Custom client UI *is* supported: add a client.tsx (plus any helper files
+  it imports, e.g. shared.ts) and deploy_agent builds it with Vite, React,
+  and Tailwind, exactly as the CLI does. Start it with
+  \`import "@alexkroman1/aai-ui/styles.css";\` so Tailwind utilities work.
+  Without a client.tsx the agent gets the default UI — only add one when
+  the user wants custom UI.
+- Do not add a vite.config.ts or index.html; the studio supplies both and
+  ignores any you write.
 - There is no .env file. Secrets are stored with the deployment: pass
   them as deploy_agent's env. ASSEMBLYAI_API_KEY is handled for you; only
   pass env for third-party keys an agent's tools actually need, and only

@@ -14,6 +14,7 @@ import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import { describeBundle } from "../sandbox-vm.ts";
 import { hashApiKey } from "../secrets.ts";
 import { bundleWorkspace, StudioBuildError } from "./studio-bundle.ts";
+import { buildWorkspaceClient } from "./studio-client-build.ts";
 import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
 
 export type StudioDeployResult =
@@ -26,6 +27,8 @@ export type StudioDeployDeps = DeployDeps & {
   bundle?: (files: Record<string, string>) => Promise<string>;
   /** Injectable for tests — defaults to sandboxed `describeBundle`. */
   inspect?: (workerCode: string) => Promise<unknown>;
+  /** Injectable for tests — defaults to the CLI's Vite client build. */
+  buildClient?: (files: Record<string, string>) => Promise<Record<string, string>>;
 };
 
 export type StudioDeployParams = {
@@ -44,9 +47,16 @@ export async function deployStudioProject(
   if (!workspace) return { ok: false, error: `Project not found: ${params.project}` };
 
   const bundle = deps.bundle ?? bundleWorkspace;
+  const buildClient = deps.buildClient ?? buildWorkspaceClient;
+  // Worker and client are independent builds; a failure in either is a
+  // message the coding agent can act on, not an exception.
   let worker: string;
+  let clientFiles: Record<string, string>;
   try {
-    worker = await bundle(workspace.files);
+    [worker, clientFiles] = await Promise.all([
+      bundle(workspace.files),
+      buildClient(workspace.files),
+    ]);
   } catch (err) {
     if (err instanceof StudioBuildError) return { ok: false, error: err.message };
     throw err;
@@ -78,7 +88,7 @@ export async function deployStudioProject(
       apiKey: params.apiKey,
       keyHash: await hashApiKey(params.apiKey),
       worker,
-      clientFiles: {},
+      clientFiles,
       env: params.env,
       // The studio has no secrets UI, so a published agent would otherwise
       // start with an empty env and its S2S connect would send `Bearer ` —

@@ -1,6 +1,8 @@
 node_modules/
 dist/
 .aai/
+# Scratch dirs where the studio materializes a workspace for its client build
+.studio-build/
 .env
 .env.*
 !.env.example

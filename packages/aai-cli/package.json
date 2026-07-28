@@ -14,6 +14,10 @@
     "./types": {
       "@dev/source": "./types.ts",
       "import": "./dist/types.mjs"
+    },
+    "./client-bundler": {
+      "@dev/source": "./client-bundler.ts",
+      "import": "./dist/client-bundler.mjs"
     }
   },
   "files": [
