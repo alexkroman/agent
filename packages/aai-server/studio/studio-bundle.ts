@@ -66,7 +66,7 @@ function isAllowedPackage(spec: string): boolean {
 export function allowlistPlugin(dir: string): PluginOption {
   const prefix = `${dir}${path.sep}`;
   const inWorkspace = (id: string | undefined): id is string =>
-    id !== undefined && id.startsWith(prefix) && !id.includes(`${path.sep}node_modules${path.sep}`);
+    id?.startsWith(prefix) === true && !id.includes(`${path.sep}node_modules${path.sep}`);
 
   /**
    * The scratch dir is a real directory inside the server package, so a `../`

@@ -26,7 +26,7 @@ import { HTTPException } from "hono/http-exception";
 import type { HonoEnv } from "../context.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
 import { runStudioChat } from "./studio-agent.ts";
-import { deployStudioProject, type StudioDeployResult } from "./studio-deploy.ts";
+import { deployStudioProject } from "./studio-deploy.ts";
 import {
   isStudioLlmConfigured,
   resolveStudioSelection,
@@ -220,25 +220,11 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
       await live?.dispose();
     };
 
-    const deployFromChat = (env?: Record<string, string>): Promise<StudioDeployResult> =>
-      deploy(
-        {
-          store: c.env.store,
-          slots: c.env.slots,
-          storage: c.env.storage,
-          // Reuse the session sandbox for config extraction instead of
-          // spawning a throwaway one.
-          inspect: async (code) => (await sandbox()).loadBundle(code).then((r) => r.config),
-        },
-        { apiKey: c.var.apiKey, scope, project, env },
-      );
-
     return runStudioChat(
       {
         storage: c.env.storage,
         scope,
         project,
-        deploy: deployFromChat,
         sandbox,
         disposeSandbox,
         llm: { provider, model },

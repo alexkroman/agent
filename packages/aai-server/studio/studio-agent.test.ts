@@ -48,7 +48,6 @@ async function makeDeps(
     storage,
     scope: SCOPE,
     project: PROJECT,
-    deploy: vi.fn(async () => ({ ok: true as const, slug: "proj", url: "/proj/" })),
     sandbox: async () => sandboxInstance,
     sandboxInstance,
     ...overrides,
@@ -147,17 +146,16 @@ describe("createStudioTools", () => {
     );
   });
 
-  test("deploy_agent reports the live URL on success and the error on failure", async () => {
-    const deps = await makeDeps();
-    const tools = createStudioTools(deps);
-    expect(await tools.deploy_agent.execute?.({}, toolOpts())).toMatch(/live at \/proj\//);
-
-    const failing = await makeDeps({
-      deploy: vi.fn(async () => ({ ok: false as const, error: "boom" })),
-    });
-    expect(await createStudioTools(failing).deploy_agent.execute?.({}, toolOpts())).toBe(
-      "Deploy failed: boom",
-    );
+  test("exposes no deploy tool — publishing is the user's call", async () => {
+    const tools = createStudioTools(await makeDeps());
+    expect(Object.keys(tools)).not.toContain("deploy_agent");
+    expect(Object.keys(tools).sort()).toEqual([
+      "delete_file",
+      "list_files",
+      "read_file",
+      "test_agent",
+      "write_file",
+    ]);
   });
 
   test("tools error cleanly when the project is missing", async () => {

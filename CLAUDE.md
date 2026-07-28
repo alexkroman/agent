@@ -271,11 +271,17 @@ voice agents without the CLI:
   (`studioScope`) — unlike the salted PBKDF2 ownership hashes, it must be
   stable so a browser session can find its projects again.
 - **Chat** (`POST /studio/chat`) runs one agent turn with file tools
-  (list/read/write/delete) plus `test_agent` and `deploy_agent`, streamed
-  as the AI SDK **UI message stream** (SSE) that the client's `useChat`
-  consumes directly. The system prompt embeds the same
-  `aai-templates/scaffold/CLAUDE.md` the CLI ships to user projects
-  (`studio-prompt.ts`) plus studio-specific overrides.
+  (list/read/write/delete) plus `test_agent`, streamed as the AI SDK **UI
+  message stream** (SSE) that the client's `useChat` consumes directly.
+  The system prompt embeds the same `aai-templates/scaffold/CLAUDE.md` the
+  CLI ships to user projects (`studio-prompt.ts`) plus studio-specific
+  overrides.
+- **The coding agent cannot publish.** There is deliberately no deploy
+  tool: going live is the user's call, made with the Publish button
+  (`POST /studio/projects/:project/deploy`). The prompt states this
+  outright so the agent doesn't claim to have deployed or invent a live
+  URL. Keep it that way — an agent that ships to a public URL on its own
+  read of "make it live" is a surprise nobody asked for.
 - **LLM selection** (`studio-llm.ts`) uses the SDK's own provider
   descriptors + `resolveLlm` (exported from `@alexkroman1/aai/runtime`).
   Keys are **platform-owned host config**, never tenant env. Default: the

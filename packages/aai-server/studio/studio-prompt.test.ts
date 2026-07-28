@@ -31,7 +31,10 @@ describe("studioSystemPrompt", () => {
     const prompt = studioSystemPrompt();
     // Studio preamble (workflow + environment overrides).
     expect(prompt).toContain("AAI Studio coding agent");
-    expect(prompt).toContain("deploy_agent");
+    expect(prompt).toContain("test_agent");
+    // Publishing is the user's call, so the agent must be told it cannot.
+    expect(prompt).toContain("You cannot publish");
+    expect(prompt).not.toContain("deploy_agent");
     expect(prompt).toContain("no `aai` CLI");
     // The full scaffold reference follows.
     expect(prompt).toContain("# aai framework reference (scaffold CLAUDE.md)");

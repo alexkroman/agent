@@ -28,8 +28,8 @@ function Gate({ onEnter }: { onEnter: (key: string) => void }) {
           Build your first voice agent
         </h1>
         <p className="m-0 text-[15px] leading-[22px] text-muted">
-          Describe an agent and the studio writes, tests, and publishes it. Enter your platform API
-          key to start.
+          Describe an agent and the studio writes and tests it — you publish when it's ready. Enter
+          your platform API key to start.
         </p>
         <input
           className="field h-10"

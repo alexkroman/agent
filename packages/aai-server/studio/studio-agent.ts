@@ -2,7 +2,12 @@
 /**
  * The studio's coding agent — a TypeScript agent loop (Vercel AI SDK
  * `streamText`, the same stack pipeline mode uses) with workspace file tools
- * and a deploy tool, streamed to the browser as the AI SDK UI message stream.
+ * and a sandboxed test tool, streamed to the browser as the AI SDK UI message
+ * stream.
+ *
+ * Publishing is deliberately *not* a tool: the agent edits and tests, the user
+ * decides when it goes live via the Publish button (`POST /studio/projects/
+ * :project/deploy`).
  *
  * LLM selection lives in `studio-llm.ts` — platform-owned host config, with
  * an optional per-request override the browser picks from `studioLlmOptions`.
@@ -20,7 +25,6 @@ import type { Storage } from "unstorage";
 import { z } from "zod";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import { bundleWorkspaceWorker } from "./studio-bundle.ts";
-import type { StudioDeployResult } from "./studio-deploy.ts";
 import { StudioBuildError } from "./studio-errors.ts";
 import { studioModel } from "./studio-llm.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
@@ -34,12 +38,10 @@ export type StudioChatDeps = {
   storage: Storage;
   scope: string;
   project: string;
-  /** Deploys the current workspace; injected so routes wire the full deps once. */
-  deploy: (env?: Record<string, string>) => Promise<StudioDeployResult>;
   /**
    * Lazy handle to this chat session's sandbox — the same warm-pool/gVisor
-   * infrastructure deployed agents run in. Used by test_agent and (via the
-   * deploy fn) config extraction. Provisioned on first use.
+   * infrastructure deployed agents run in. Used by test_agent, and reused by
+   * the deploy route for config extraction. Provisioned on first use.
    */
   sandbox: () => Promise<StudioSandbox>;
   /** Tears down the session sandbox if one was provisioned. Idempotent. */
@@ -97,8 +99,8 @@ async function runTrial(
 
 /**
  * Build the coding agent's tool set. Every file tool re-reads the workspace
- * so edits are write-through — the browser sees them immediately and the
- * deploy tool always builds the latest files.
+ * so edits are write-through — the browser sees them immediately and a
+ * Publish always builds the latest files.
  */
 export function createStudioTools(deps: StudioChatDeps) {
   const { storage, scope, project } = deps;
@@ -174,22 +176,6 @@ export function createStudioTools(deps: StudioChatDeps) {
           .describe("Arguments for the invoked tool"),
       }),
       execute: ({ tool: trialTool, args }) => runTrial(deps, trialTool, args),
-    }),
-    deploy_agent: tool({
-      description:
-        "Build the workspace and deploy it to the platform. Returns the live " +
-        "URL path on success, or a build/config error to fix. ASSEMBLYAI_API_KEY " +
-        "is seeded automatically — only pass env for third-party secrets the " +
-        "agent's tools need (e.g. STRIPE_API_KEY), and only if the user gives you one.",
-      inputSchema: z.object({
-        env: z.record(z.string(), z.string()).optional().describe("Secrets to store, KEY→value"),
-      }),
-      execute: async ({ env }) => {
-        const result = await deps.deploy(env);
-        return result.ok
-          ? `Deployed. The agent is live at ${result.url}`
-          : `Deploy failed: ${result.error}`;
-      },
     }),
   };
 }
