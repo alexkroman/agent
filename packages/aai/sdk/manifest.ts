@@ -9,6 +9,7 @@
 import { z } from "zod";
 import { validateAllowedHostPattern } from "./allowed-hosts.ts";
 import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
+import { sendAllowedHosts } from "./providers/send/open.ts";
 import { isTextOnlyTts } from "./providers/tts/none.ts";
 import {
   assertPipelineTuning,
@@ -18,6 +19,7 @@ import {
   type KvProvider,
   type LlmProvider,
   type S2sProvider,
+  type SendProvider,
   type SessionMode,
   type SttProvider,
   type TtsProvider,
@@ -130,6 +132,8 @@ export type Manifest = {
   kv?: KvProvider | undefined;
   /** Pluggable Vector backend descriptor. Falls back to platform default when omitted. */
   vector?: VectorProvider | undefined;
+  /** Outbound send channel descriptor (e.g. Slack). No default. */
+  send?: SendProvider | undefined;
   /**
    * Session mode derived from provider fields:
    * - `"s2s"`: speech-to-speech path (default when no stt/llm/tts set, or when `s2s` is set).
@@ -200,6 +204,7 @@ const ManifestSchema = z.object({
   s2s: ProviderDescriptorSchema.optional(),
   kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
+  send: ProviderDescriptorSchema.optional(),
 });
 
 /**
@@ -226,7 +231,10 @@ export function parseManifest(input: unknown): Manifest {
     maxSteps: parsed.maxSteps ?? DEFAULT_MAX_STEPS,
     toolChoice: parsed.toolChoice ?? "auto",
     tools: parsed.tools ?? {},
-    allowedHosts: parsed.allowedHosts ?? [],
+    // Declaring a send channel is the egress opt-in for its webhook host:
+    // guest tool code posts through the sandbox fetch proxy, which checks
+    // this list, so the channel works without hand-listing the host.
+    allowedHosts: [...new Set([...(parsed.allowedHosts ?? []), ...sendAllowedHosts(parsed.send)])],
     mode,
   };
 }

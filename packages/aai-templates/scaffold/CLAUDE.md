@@ -78,6 +78,7 @@ export default agent({
   completeSettleMs?: number;                 // pipeline only — shorter wait for clearly-complete finals (default 500)
   holdPhrase?: string;                       // pipeline only — spoken before a silent tool-call turn (default "One moment."; "" disables)
   falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
+  send?: SendProvider;                       // outbound send channel (e.g. slack()) — registers the send_message tool
 });
 ```
 
@@ -273,6 +274,44 @@ not `"en"`).
 
 `none()` (no env var) declares a **text-only** agent — see "Text-only
 mode" above.
+
+### Send channels — `@alexkroman1/aai/send`
+
+An outbound channel the agent can post to. Declaring one registers a
+`send_message` builtin tool (the LLM can call it when asked to send,
+post, or notify) and allowlists the channel's host for tool code.
+
+| Factory | Destination                    | Env var (the secret)  |
+| ------- | ------------------------------ | --------------------- |
+| `slack` | Slack incoming webhook (POST)  | `SLACK_WEBHOOK_URL`   |
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { slack } from "@alexkroman1/aai/send";
+
+export default agent({
+  name: "My Agent",
+  send: slack(), // + SLACK_WEBHOOK_URL secret → send_message tool works
+});
+```
+
+A string message posts as Slack's `{ text }`; custom tools can send any
+webhook body (blocks, attachments) programmatically:
+
+```ts
+import { openSender, slack } from "@alexkroman1/aai/send";
+
+execute: async ({ summary }, ctx) => {
+  await openSender(slack(), ctx.env).send(
+    { blocks: [{ type: "section", text: { type: "mrkdwn", text: summary } }] },
+    { signal: ctx.signal },
+  );
+  return "posted";
+};
+```
+
+The webhook URL **is** the credential — keep it in the env
+(`SLACK_WEBHOOK_URL`), never in code or descriptor options.
 
 Set provider keys the same way as any secret: `.env` for local dev,
 `aai secret put` for production.

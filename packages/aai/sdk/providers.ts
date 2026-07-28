@@ -54,6 +54,9 @@ export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>>;
 /** Descriptor for a KV backend. Returned by factories like `redisKv()`. */
 export type KvProvider = ProviderDescriptor<string, Record<string, unknown>>;
 
+/** Descriptor for an outbound send channel. Returned by factories like `slack()`. */
+export type SendProvider = ProviderDescriptor<string, Record<string, unknown>>;
+
 /** Descriptor for a Vector backend. Returned by factories like `pinecone(...)`. */
 export type VectorProvider = ProviderDescriptor<string, Record<string, unknown>>;
 
@@ -175,6 +178,29 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
       throw new Error(`${key} requires pipeline mode (stt, llm, and tts all set)`);
     }
   }
+}
+
+// -------- Send channel (environment-agnostic) --------------------------------
+
+/**
+ * Payload for a send channel. A string is wrapped in the channel's natural
+ * text shape (Slack: `{ text }`); an object is posted verbatim as the HTTP
+ * body, so callers control the full payload (Slack blocks, attachments, …).
+ */
+export type SendMessage = string | Record<string, unknown>;
+
+/**
+ * A live outbound channel resolved from a {@link SendProvider} descriptor
+ * via `openSender` (`@alexkroman1/aai/send`). Unlike the STT/TTS openables
+ * this is not host-only: senders are plain `fetch` + env, so the same
+ * implementation runs on the host and inside the guest sandbox (where
+ * `fetch` is the harness's proxied, allowlist-checked implementation).
+ */
+export interface Sender {
+  /** The provider kind this sender was resolved from (e.g. `"slack"`). */
+  readonly name: string;
+  /** Deliver one message. Rejects on missing credential or non-2xx response. */
+  send(message: SendMessage, opts?: { signal?: AbortSignal | undefined }): Promise<void>;
 }
 
 // -------- STT openable (host-only) ------------------------------------------

@@ -119,7 +119,10 @@ export default agent({
   with tts: none() from "@alexkroman1/aai/tts". No TTS key needed. The
   default UI becomes record button + audio-file upload + text replies.
   Write the systemPrompt for read (not spoken) replies. holdPhrase is
-  invalid with tts: none().`;
+  invalid with tts: none().
+- Send channel: send: slack() from "@alexkroman1/aai/send" +
+  SLACK_WEBHOOK_URL secret registers a send_message tool that posts to a
+  Slack incoming webhook.`;
 
 /**
  * Locate the scaffold CLAUDE.md. Both the dev source layout

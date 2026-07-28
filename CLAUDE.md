@@ -139,6 +139,7 @@ Subpath exports consumed by sibling packages and user agents:
 - `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
 - `./kv` — KV provider factories (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`)
 - `./vector` — Vector provider factories (`pinecone`, `inMemoryVector`)
+- `./send` — Send-channel factories + resolver (`slack`, `openSender`)
 
 #### `aai-ui` (UI)
 
@@ -650,6 +651,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
 | `@alexkroman1/aai/kv` | `sdk/providers/kv-barrel.ts` | KV provider factories + types (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
+| `@alexkroman1/aai/send` | `sdk/providers/send-barrel.ts` | Send-channel factories + resolver (`slack`, `openSender`, `Sender`) |
 
 ### Default values and magic numbers
 

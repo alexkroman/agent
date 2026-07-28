@@ -12,6 +12,7 @@ import {
   type KvProvider,
   type LlmProvider,
   type S2sProvider,
+  type SendProvider,
   type SttProvider,
   type TtsProvider,
   type VectorProvider,
@@ -60,6 +61,7 @@ export const AgentConfigSchema = z.object({
   mode: z.enum(["s2s", "pipeline"]).optional(),
   kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
+  send: ProviderDescriptorSchema.optional(),
 });
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
@@ -89,6 +91,7 @@ interface AgentConfigSource {
   s2s?: S2sProvider | undefined;
   kv?: KvProvider | undefined;
   vector?: VectorProvider | undefined;
+  send?: SendProvider | undefined;
 }
 
 /** Copy the defined pipeline voice-tuning fields into a config-shaped partial. */
@@ -137,6 +140,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   if (src.s2s !== undefined) config.s2s = src.s2s;
   if (src.kv !== undefined) config.kv = src.kv;
   if (src.vector !== undefined) config.vector = src.vector;
+  if (src.send !== undefined) config.send = src.send;
   return config;
 }
 

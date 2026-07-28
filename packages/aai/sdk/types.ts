@@ -9,6 +9,7 @@ import type {
   KvProvider,
   LlmProvider,
   S2sProvider,
+  SendProvider,
   SttProvider,
   TtsProvider,
   VectorProvider,
@@ -468,6 +469,13 @@ export type AgentDef<S = Record<string, unknown>> = {
   kv?: KvProvider;
   /** Pluggable Vector backend. Falls back to platform default when omitted. */
   vector?: VectorProvider;
+  /**
+   * Outbound send channel (e.g. `slack()` from `@alexkroman1/aai/send`).
+   * Declaring one registers the `send_message` builtin tool and allows the
+   * channel's host through the sandbox fetch proxy. No default — omitted
+   * means the agent has no outbound channel.
+   */
+  send?: SendProvider;
 };
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────

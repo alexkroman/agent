@@ -502,3 +502,46 @@ describe("parseManifest — text-only (tts: none())", () => {
     expect(isTextOnlyTts(none())).toBe(true);
   });
 });
+
+describe("parseManifest — send channel", () => {
+  const send = { kind: "slack", options: {} };
+
+  test("send is carried through parseManifest and toAgentConfig", () => {
+    const m = parseManifest({ name: "x", send } as never);
+    expect(m.send).toEqual(send);
+    const config = toAgentConfig({ name: "x", systemPrompt: "p", greeting: "g", send });
+    expect(config.send).toEqual(send);
+  });
+
+  test("declaring a send channel unions its host into allowedHosts", () => {
+    const m = parseManifest({ name: "x", send } as never);
+    expect(m.allowedHosts).toContain("hooks.slack.com");
+  });
+
+  test("the auto-added host deduplicates against an explicit entry", () => {
+    const m = parseManifest({
+      name: "x",
+      send,
+      allowedHosts: ["hooks.slack.com", "api.example.com"],
+    } as never);
+    expect(m.allowedHosts.filter((h) => h === "hooks.slack.com")).toHaveLength(1);
+    expect(m.allowedHosts).toContain("api.example.com");
+  });
+
+  test("no send channel leaves allowedHosts untouched", () => {
+    expect(parseManifest({ name: "x" }).allowedHosts).toEqual([]);
+  });
+
+  test("send is orthogonal to session mode", () => {
+    expect(parseManifest({ name: "x", send } as never).mode).toBe("s2s");
+    const m = parseManifest({
+      name: "x",
+      stt: assemblyAI({ model: "u3pro-rt" }),
+      llm: anthropic({ model: "claude-haiku-4-5" }),
+      tts: cartesia({ voice: "v" }),
+      send,
+    } as never);
+    expect(m.mode).toBe("pipeline");
+    expect(m.send).toEqual(send);
+  });
+});

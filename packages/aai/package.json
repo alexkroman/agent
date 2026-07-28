@@ -48,6 +48,11 @@
       "types": "./dist/sdk/providers/kv-barrel.d.ts",
       "import": "./dist/sdk/providers/kv-barrel.js"
     },
+    "./send": {
+      "@dev/source": "./sdk/providers/send-barrel.ts",
+      "types": "./dist/sdk/providers/send-barrel.d.ts",
+      "import": "./dist/sdk/providers/send-barrel.js"
+    },
     "./s2s": {
       "@dev/source": "./sdk/providers/s2s-barrel.ts",
       "types": "./dist/sdk/providers/s2s-barrel.d.ts",

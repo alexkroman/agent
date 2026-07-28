@@ -487,3 +487,54 @@ const directExec = createRuntime({
 testRuntime("direct", () => ({
   executeTool: directExec.executeTool,
 }));
+
+describe("createRuntime — send channel (send_message builtin)", () => {
+  const send = { kind: "slack", options: {} };
+
+  test("declaring send: registers the send_message tool", () => {
+    const exec = createRuntime({ agent: makeAgent({ send }), env: {} });
+    expect(exec.toolSchemas.map((s) => s.name)).toContain("send_message");
+  });
+
+  test("no send channel, no send_message tool", () => {
+    const exec = createRuntime({ agent: makeAgent(), env: {} });
+    expect(exec.toolSchemas.map((s) => s.name)).not.toContain("send_message");
+  });
+
+  test("send_message posts through the sender using the agent env credential", async () => {
+    const fetchFn = vi.fn(
+      async (_input: string | URL | Request, _init?: RequestInit) =>
+        new Response("ok", { status: 200 }),
+    );
+    const exec = createRuntime({
+      agent: makeAgent({ send }),
+      env: { SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/T/B/x" },
+      fetch: fetchFn as unknown as typeof globalThis.fetch,
+    });
+    const result = await exec.executeTool("send_message", { text: "hi" }, "s1", []);
+    expect(JSON.parse(result)).toEqual({ sent: true, channel: "slack" });
+    const [url, init] = fetchFn.mock.calls[0] ?? [];
+    expect(url).toBe("https://hooks.slack.com/services/T/B/x");
+    expect(JSON.parse(init?.body as string)).toEqual({ text: "hi" });
+  });
+
+  test("a missing webhook secret surfaces as a tool error, not a crash", async () => {
+    const exec = createRuntime({ agent: makeAgent({ send }), env: {} });
+    const result = await exec.executeTool("send_message", { text: "hi" }, "s1", []);
+    expect(result).toContain("SLACK_WEBHOOK_URL");
+  });
+
+  test("a custom tool named send_message wins over the builtin", async () => {
+    const exec = createRuntime({
+      agent: makeAgent({
+        send,
+        tools: {
+          send_message: { description: "Custom sender", execute: () => "custom ran" },
+        },
+      }),
+      env: {},
+    });
+    expect(await exec.executeTool("send_message", {}, "s1", [])).toBe("custom ran");
+    expect(exec.toolSchemas.filter((s) => s.name === "send_message")).toHaveLength(1);
+  });
+});

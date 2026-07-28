@@ -201,6 +201,13 @@ describe("requiredProviderEnvVars", () => {
     ]);
   });
 
+  it("includes the send channel's credential env var", () => {
+    expect(requiredProviderEnvVars({ send: { kind: "slack" } })).toEqual([
+      "SLACK_WEBHOOK_URL",
+      "ASSEMBLYAI_API_KEY",
+    ]);
+  });
+
   it("requires no TTS credential for a text-only agent (tts: none())", () => {
     // The `none` kind is deliberately absent from TTS_REGISTRY, and the
     // descriptor still counts toward the pipeline triple — so no TTS key and
