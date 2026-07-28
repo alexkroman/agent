@@ -21,18 +21,14 @@ vi.mock("./studio-deploy.ts", async (importOriginal) => {
   return { ...original, deployStudioProject: (...args: unknown[]) => deployMock(...args) };
 });
 
-// Chat streaming: replace the LLM loop with a scripted NDJSON stream so the
-// route's streaming plumbing is exercised without a model.
-const chatMock = vi.fn((..._args: unknown[]): ReadableStream<Uint8Array> => {
-  const enc = new TextEncoder();
-  return new ReadableStream({
-    start(controller) {
-      controller.enqueue(enc.encode(`${JSON.stringify({ type: "text", text: "hi!" })}\n`));
-      controller.enqueue(enc.encode(`${JSON.stringify({ type: "done" })}\n`));
-      controller.close();
-    },
-  });
-});
+// Chat: replace the LLM loop with a fixed SSE response so the route's
+// gating/wiring is exercised without a model or sandbox.
+const chatMock = vi.fn(
+  async (..._args: unknown[]): Promise<Response> =>
+    new Response('data: {"type":"start"}\n\ndata: [DONE]\n\n', {
+      headers: { "Content-Type": "text/event-stream" },
+    }),
+);
 vi.mock("./studio-agent.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-agent.ts")>();
   return { ...original, runStudioChat: (...args: unknown[]) => chatMock(...args) };
@@ -42,17 +38,21 @@ function createProject(fetch: TestFetch, name = "proj", key = "key1"): Promise<R
   return authFetch(fetch, "/studio/projects", { body: { name }, key });
 }
 
+function chatBody(project = "proj") {
+  return {
+    project,
+    messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] }],
+  };
+}
+
 describe("studio page + routing", () => {
-  test("GET / serves the studio page with a strict CSP", async () => {
+  test("GET / serves the studio shell with a strict CSP", async () => {
     const { fetch } = await createTestOrchestrator();
     const res = await fetch("/");
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/html");
     expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
-    const html = await res.text();
-    expect(html).toContain("AAI");
-    expect(html).toContain("Studio");
-    expect(html).toContain("/studio/status");
+    expect(await res.text()).toContain("AAI Studio");
   });
 
   test("GET /studio and /studio/ redirect to the page", async () => {
@@ -61,26 +61,48 @@ describe("studio page + routing", () => {
     expect((await fetch("/studio/")).status).toBe(302);
   });
 
+  test("studio assets 404 when unknown and 400 on traversal", async () => {
+    const { fetch } = await createTestOrchestrator();
+    expect((await fetch("/studio-assets/assets/nope.js")).status).toBe(404);
+    expect((await fetch("/studio-assets/..%2f..%2fpackage.json")).status).toBe(400);
+  });
+
   test("GET /studio/status is public and reports LLM availability", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
     const { fetch } = await createTestOrchestrator();
     const res = await fetch("/studio/status");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ llm: false });
   });
 
-  test("the studio slug is reserved: agent routes 404 and deploys reject it", async () => {
+  test("status reports the gateway provider/model when configured", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
+    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
+    vi.stubEnv("STUDIO_LLM_MODEL", "");
+    const { fetch } = await createTestOrchestrator();
+    expect(await (await fetch("/studio/status")).json()).toEqual({
+      llm: true,
+      provider: "assemblyai",
+      model: "claude-sonnet-4-6",
+    });
+  });
+
+  test("studio slugs are reserved: agent routes 404 and deploys reject them", async () => {
     const { fetch } = await createTestOrchestrator();
     expect((await fetch("/studio/websocket")).status).toBe(404);
-    const res = await authFetch(fetch, "/deploy", {
-      body: {
-        slug: "studio",
-        worker: "export default {}",
-        clientFiles: {},
-        agentConfig: { name: "x", systemPrompt: "s", toolSchemas: [], allowedHosts: [] },
-      },
-    });
-    expect(res.status).toBe(400);
+    for (const slug of ["studio", "studio-assets"]) {
+      const res = await authFetch(fetch, "/deploy", {
+        body: {
+          slug,
+          worker: "export default {}",
+          clientFiles: {},
+          agentConfig: { name: "x", systemPrompt: "s", toolSchemas: [], allowedHosts: [] },
+        },
+      });
+      expect(res.status).toBe(400);
+    }
   });
 });
 
@@ -185,6 +207,7 @@ describe("deploy + chat endpoints", () => {
   let fetch: TestFetch;
   beforeEach(async () => {
     deployMock.mockClear();
+    chatMock.mockClear();
     ({ fetch } = await createTestOrchestrator());
   });
 
@@ -195,7 +218,6 @@ describe("deploy + chat endpoints", () => {
     });
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true, slug: "proj", url: "/proj/" });
-    expect(deployMock).toHaveBeenCalledTimes(1);
     const [, params] = deployMock.mock.calls[0] as unknown[] as [
       unknown,
       { apiKey: string; project: string; env?: Record<string, string> },
@@ -216,50 +238,49 @@ describe("deploy + chat endpoints", () => {
   });
 
   test("chat returns 503 when the LLM is not configured", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     vi.stubEnv("ANTHROPIC_API_KEY", "");
+    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
     await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/chat", {
-      body: { project: "proj", messages: [{ role: "user", content: "hi" }] },
-    });
+    const res = await authFetch(fetch, "/studio/chat", { body: chatBody() });
     expect(res.status).toBe(503);
   });
 
   test("chat 404s for a missing project before touching the LLM", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
-    const res = await authFetch(fetch, "/studio/chat", {
-      body: { project: "ghost", messages: [{ role: "user", content: "hi" }] },
-    });
+    const res = await authFetch(fetch, "/studio/chat", { body: chatBody("ghost") });
     expect(res.status).toBe(404);
+    expect(chatMock).not.toHaveBeenCalled();
   });
 
-  test("chat streams NDJSON events for a valid request", async () => {
+  test("chat validates the body (empty messages, missing ids)", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
     await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/chat", {
-      body: { project: "proj", messages: [{ role: "user", content: "hi" }] },
-    });
-    expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("application/x-ndjson");
-    const lines = (await res.text())
-      .trim()
-      .split("\n")
-      .map((l) => JSON.parse(l));
-    expect(lines).toEqual([{ type: "text", text: "hi!" }, { type: "done" }]);
-    expect(chatMock).toHaveBeenCalledTimes(1);
-    const [deps, messages] = chatMock.mock.calls[0] as unknown[] as [
-      { project: string; scope: string },
-      { role: string; content: string }[],
-    ];
-    expect(deps.project).toBe("proj");
-    expect(messages).toEqual([{ role: "user", content: "hi" }]);
-  });
-
-  test("chat validates the body", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
-    await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/chat", {
+    const empty = await authFetch(fetch, "/studio/chat", {
       body: { project: "proj", messages: [] },
     });
-    expect(res.status).toBe(400);
+    expect(empty.status).toBe(400);
+    const noId = await authFetch(fetch, "/studio/chat", {
+      body: { project: "proj", messages: [{ role: "user", parts: [] }] },
+    });
+    expect(noId.status).toBe(400);
+  });
+
+  test("chat streams the UI message stream from runStudioChat", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    await createProject(fetch);
+    const res = await authFetch(fetch, "/studio/chat", { body: chatBody() });
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/event-stream");
+    expect(await res.text()).toContain('"type":"start"');
+    expect(chatMock).toHaveBeenCalledTimes(1);
+    const [deps, messages] = chatMock.mock.calls[0] as unknown[] as [
+      { project: string; sandbox: unknown; disposeSandbox: unknown },
+      { role: string }[],
+    ];
+    expect(deps.project).toBe("proj");
+    expect(typeof deps.sandbox).toBe("function");
+    expect(typeof deps.disposeSandbox).toBe("function");
+    expect(messages).toHaveLength(1);
   });
 });

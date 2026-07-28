@@ -72,6 +72,10 @@ COPY --from=build /app/packages/aai/dist/ packages/aai/dist/
 COPY --from=build /app/packages/aai-ui/dist/ packages/aai-ui/dist/
 COPY --from=build /app/packages/aai-server/dist/ packages/aai-server/dist/
 
+# The studio's coding agent loads the same authoring guide the CLI scaffolds
+# into user projects (resolved relative to the aai-server package root).
+COPY packages/aai-templates/scaffold/CLAUDE.md packages/aai-templates/scaffold/CLAUDE.md
+
 ENV NODE_ENV=production
 ENV GUEST_HARNESS_PATH=/app/packages/aai-server/dist/guest/deno-harness.mjs
 

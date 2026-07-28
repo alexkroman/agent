@@ -22,9 +22,13 @@ export default defineConfig({
       "gvisor-integration*.test.ts",
       "node_modules",
       "dist",
+      "studio-client",
     ],
     coverage: {
-      exclude: sharedCoverageExclude,
+      // studio-client/ is the browser bundle (built by Vite, runs in the
+      // browser, exercised via the served shell in studio-routes tests) —
+      // it is not server code and has no node-side tests.
+      exclude: [...sharedCoverageExclude, "studio-client/**"],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
       thresholds: { lines: 89, functions: 88, branches: 74, statements: 87 },

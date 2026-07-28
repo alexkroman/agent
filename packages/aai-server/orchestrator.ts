@@ -57,8 +57,8 @@ import { acquireSlotSession, releaseSlotSession, type SlotCache } from "./sandbo
 import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import type { BundleStore } from "./store-types.ts";
-import { STUDIO_CSP, studioPage } from "./studio/studio-page.ts";
 import { createStudioRoutes } from "./studio/studio-routes.ts";
+import { handleStudioClientAsset, handleStudioPage } from "./studio/studio-static.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
 
@@ -142,10 +142,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   });
 
   // Browser studio: loading the server root gives a coding agent that can
-  // build and deploy voice agents from the browser. `/studio` is a reserved
-  // slug (RESERVED_SLUGS) so no agent route can shadow the API namespace.
-  app.get("/", (c) => c.html(studioPage(), 200, { "Content-Security-Policy": STUDIO_CSP }));
-  app.route("/studio", createStudioRoutes());
+  // build and deploy voice agents from the browser. `studio` and
+  // `studio-assets` are reserved slugs (RESERVED_SLUGS) so no agent route
+  // can shadow the API namespace or the client assets.
+  app.get("/", handleStudioPage);
+  app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
+  app.route("/studio", createStudioRoutes({ pool: opts.pool }));
   app.get("/studio/", (c) => c.redirect("/", 302));
 
   app.post("/deploy", authMw, gzipRequestMw, zValidator("json", DeployBodySchema), handleDeployNew);

@@ -11,6 +11,7 @@
     "guest/deno-harness*.test.ts",
     "guest/harness-types.ts",
     "guest/harness-rpc.ts",
-    "guest/harness-rpc.test.ts"
+    "guest/harness-rpc.test.ts",
+    "studio-client"
   ]
 }

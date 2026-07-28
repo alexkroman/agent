@@ -124,6 +124,7 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "resolveAllBuiltins",
   "resolveAndAssertPublic",
   "resolveKv",
+  "resolveLlm",
   "resolveVector",
   "safeFetch",
   "safeSend",

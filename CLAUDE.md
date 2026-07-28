@@ -230,11 +230,16 @@ restrictions apply there.
 - `kv-handler.ts` — KV store HTTP API
 - `metrics.ts` — Prometheus metrics registry and definitions; mounted at
   `/metrics` (internal-only). Dashboards live in `grafana/`.
-- `studio/` — the browser studio (see "Browser studio" below):
+- `studio/` — the browser studio server side (see "Browser studio"):
   `studio-routes.ts` (HTTP surface), `studio-agent.ts` (coding-agent LLM
-  loop), `studio-bundle.ts` (in-memory esbuild), `studio-deploy.ts`
+  loop + tools), `studio-sandbox.ts` (per-chat-session sandbox),
+  `studio-bundle.ts` (in-memory esbuild), `studio-deploy.ts`
   (build → sandbox inspect → deploy), `studio-workspace.ts` (project file
-  store), `studio-page*.ts` (self-contained UI page)
+  store), `studio-prompt.ts` (system prompt from the scaffold CLAUDE.md),
+  `studio-static.ts` (serves the built client)
+- `studio-client/` — the studio's React front-end (Vite + Tailwind v4 +
+  `useChat` + TanStack Query + CodeMirror), built into
+  `dist/studio-client` by `pnpm --filter aai-server build`
 
 ### Browser studio (aai-server)
 
@@ -249,27 +254,47 @@ voice agents without the CLI:
   (`studioScope`) — unlike the salted PBKDF2 ownership hashes, it must be
   stable so a browser session can find its projects again.
 - **Chat** (`POST /studio/chat`) runs one agent turn with file tools
-  (list/read/write/delete) plus a `deploy_agent` tool, streamed to the
-  browser as NDJSON. The LLM key is **platform-owned host config**
-  (`ANTHROPIC_API_KEY`, model override `STUDIO_LLM_MODEL`); chat returns
-  503 when unset — the editor and deploy button still work without it.
+  (list/read/write/delete) plus `test_agent` and `deploy_agent`, streamed
+  as the AI SDK **UI message stream** (SSE) that the client's `useChat`
+  consumes directly. The system prompt embeds the same
+  `aai-templates/scaffold/CLAUDE.md` the CLI ships to user projects
+  (`studio-prompt.ts`) plus studio-specific overrides.
+- **LLM selection** (`selectStudioLlm`) uses the SDK's own provider
+  descriptors + `resolveLlm` (exported from `@alexkroman1/aai/runtime`).
+  Keys are **platform-owned host config**, never tenant env. Default: the
+  AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set (model
+  `claude-sonnet-4-6`, `STUDIO_LLM_REGION=eu` for EU), else Anthropic via
+  `ANTHROPIC_API_KEY`; `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL` override
+  (any pipeline-mode LLM provider). Chat returns 503 when unconfigured —
+  the editor and deploy button still work without it.
+- **Session sandboxes run the agent's code work on production infra**:
+  each chat request lazily provisions one sandbox (`studio-sandbox.ts`)
+  through the same warm-pool/`spawnWarmHarness` path deployed agents use
+  (gVisor in production). `test_agent` builds the workspace, loads the
+  bundle there (repeat `bundle/load` replaces it), validates the config,
+  and can trial-run one of the agent's tools via `tool/execute` against a
+  scratch KV/Vector — no tenant data, no secrets in the guest. Deploy
+  config extraction reuses the same sandbox; the standalone deploy route
+  uses a throwaway one (`describeBundle` in `sandbox-vm.ts`). The LLM
+  orchestration itself stays host-side — the guest has no network device
+  by design.
 - **Build** (`studio-bundle.ts`) bundles the workspace in memory with
   esbuild. Imports are allowlisted: workspace files, `@alexkroman1/aai`
   (any subpath), and `zod`; `node:` builtins stay external (CLI parity).
   The entry is wrapped so the bundle itself exports `__aaiConfig`
   (extracted with the dependency-free `@alexkroman1/aai/manifest`
-  helpers).
-- **Config extraction never runs user code on the host**: the deploy flow
-  loads the bundle in a throwaway sandbox (`describeBundle` in
-  `sandbox-vm.ts`); the guest harness returns the bundle's `__aaiConfig`
-  from `bundle/load`. The host only validates it (`IsolateConfigSchema`)
-  and hands it to the shared deploy core (`deployAgentBundle` in
-  `deploy.ts` — single source of slug-ownership semantics for HTTP and
-  studio deploys).
-- **Reserved slugs** (`RESERVED_SLUGS` in `schemas.ts`): `studio` can
-  never be claimed as an agent slug — it would shadow the studio API
-  namespace. Enforced in `validateSlug`, `DeployBodySchema`, and the
-  deploy core.
+  helpers) — **user code is never evaluated on the host**; the host only
+  validates the sandbox-returned config (`IsolateConfigSchema`) and hands
+  it to the shared deploy core (`deployAgentBundle` in `deploy.ts` —
+  single source of slug-ownership semantics for HTTP and studio deploys).
+- **Client**: `studio-client/` is a Vite-built React app served from
+  `dist/studio-client` (`studio-static.ts`) at `/` with hashed assets
+  under `/studio-assets/`. When it hasn't been built, `GET /` serves a
+  fallback page with build instructions (unit tests don't require it).
+- **Reserved slugs** (`RESERVED_SLUGS` in `schemas.ts`): `studio` and
+  `studio-assets` can never be claimed as agent slugs — they would shadow
+  the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
+  the deploy core.
 
 ### Session modes
 

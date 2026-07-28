@@ -1,0 +1,42 @@
+/* Copyright 2025 the AAI authors. MIT license. */
+/* Studio client — Tailwind CSS v4 (configured via CSS, no config file). */
+
+@import "tailwindcss";
+
+@theme {
+  --color-ink: #0d1117;
+  --color-panel: #161b22;
+  --color-line: #30363d;
+  --color-fg: #e6edf3;
+  --color-dim: #8b949e;
+  --color-accent: #2f81f7;
+  --color-go: #238636;
+  --color-err: #f85149;
+}
+
+@layer base {
+  html,
+  body,
+  #root {
+    height: 100%;
+    margin: 0;
+  }
+  body {
+    @apply bg-ink text-fg text-sm antialiased;
+  }
+}
+
+@layer components {
+  .btn {
+    @apply cursor-pointer rounded-md border border-line bg-panel px-2.5 py-1.5 text-[13px] text-fg hover:border-dim disabled:cursor-default disabled:opacity-50;
+  }
+  .btn-primary {
+    @apply border-go bg-go text-white hover:border-go;
+  }
+  .field {
+    @apply rounded-md border border-line bg-ink px-2.5 py-1.5 text-[13px] text-fg placeholder:text-dim;
+  }
+  .pane-title {
+    @apply my-1 text-[11px] font-semibold tracking-wider text-dim uppercase;
+  }
+}

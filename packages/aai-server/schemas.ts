@@ -24,9 +24,10 @@ export const VALID_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
 
 /**
  * Slugs that collide with top-level platform routes and can never be claimed
- * by an agent. `/studio` is the browser coding-agent UI's API namespace.
+ * by an agent. `/studio` is the browser coding-agent UI's API namespace;
+ * `/studio-assets` serves its client build.
  */
-export const RESERVED_SLUGS: ReadonlySet<string> = new Set(["studio"]);
+export const RESERVED_SLUGS: ReadonlySet<string> = new Set(["studio", "studio-assets"]);
 
 export const DeployBodySchema = z.object({
   slug: z

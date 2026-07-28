@@ -18,12 +18,15 @@
  */
 
 import { zValidator } from "@hono/zod-validator";
+import type { UIMessage } from "ai";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import type { HonoEnv } from "../context.ts";
-import { isStudioLlmConfigured, runStudioChat } from "./studio-agent.ts";
+import type { SandboxPool } from "../sandbox-pool.ts";
+import { isStudioLlmConfigured, runStudioChat, studioLlmInfo } from "./studio-agent.ts";
 import { deployStudioProject, type StudioDeployResult } from "./studio-deploy.ts";
+import { createStudioSandbox, type StudioSandbox } from "./studio-sandbox.ts";
 import {
   ChatBodySchema,
   CreateProjectSchema,
@@ -40,10 +43,15 @@ import {
   studioScope,
 } from "./studio-workspace.ts";
 
-/** Test seams: swap the deploy pipeline / LLM gate without module mocks. */
-export type StudioRouteOverrides = {
+export type StudioRouteOptions = {
+  /** Warm harness pool shared with deployed-agent sandboxes. */
+  pool?: SandboxPool | undefined;
+  /** Test seam: swap the deploy pipeline without module mocks. */
   deployProject?: typeof deployStudioProject;
+  /** Test seam: swap the LLM gate. */
   llmConfigured?: () => boolean;
+  /** Test seam: swap session-sandbox provisioning. */
+  createSandbox?: typeof createStudioSandbox;
 };
 
 /**
@@ -67,16 +75,19 @@ function validateProject(name: string | undefined): string {
   return parsed.data;
 }
 
-export function createStudioRoutes(overrides: StudioRouteOverrides = {}): Hono<HonoEnv> {
-  const deploy = overrides.deployProject ?? deployStudioProject;
-  const llmConfigured = overrides.llmConfigured ?? isStudioLlmConfigured;
+export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoEnv> {
+  const deploy = options.deployProject ?? deployStudioProject;
+  const llmConfigured = options.llmConfigured ?? isStudioLlmConfigured;
+  const newSandbox = options.createSandbox ?? createStudioSandbox;
 
   const studio = new Hono<HonoEnv>();
 
   // `GET /studio` (no trailing path) — send the browser to the studio page.
   studio.get("/", (c) => c.redirect("/", 302));
 
-  studio.get("/status", (c) => c.json({ llm: llmConfigured() }));
+  studio.get("/status", (c) =>
+    c.json({ llm: llmConfigured(), ...(llmConfigured() && studioLlmInfo()) }),
+  );
 
   studio.use("/projects", studioAuthMw);
   studio.use("/projects/*", studioAuthMw);
@@ -164,7 +175,11 @@ export function createStudioRoutes(overrides: StudioRouteOverrides = {}): Hono<H
   studio.post("/chat", zValidator("json", ChatBodySchema), async (c) => {
     if (!llmConfigured()) {
       return c.json(
-        { error: "Chat is not configured on this server (ANTHROPIC_API_KEY unset)" },
+        {
+          error:
+            "Chat is not configured on this server — set ASSEMBLYAI_API_KEY " +
+            "(LLM Gateway) or ANTHROPIC_API_KEY",
+        },
         503,
       );
     }
@@ -173,19 +188,48 @@ export function createStudioRoutes(overrides: StudioRouteOverrides = {}): Hono<H
     if (!(await getWorkspace(c.env.storage, scope, project))) {
       return c.json({ error: "Project not found" }, 404);
     }
+
+    // One sandbox per chat request, provisioned lazily on first
+    // code-executing tool call (test_agent / deploy config extraction) via
+    // the same warm-pool/spawn path deployed agents use. runStudioChat
+    // disposes it when the stream settles.
+    let sandboxPromise: Promise<StudioSandbox> | null = null;
+    const sandbox = (): Promise<StudioSandbox> => {
+      sandboxPromise ??= newSandbox({ pool: options.pool });
+      return sandboxPromise;
+    };
+    const disposeSandbox = async (): Promise<void> => {
+      if (!sandboxPromise) return;
+      const live = await sandboxPromise.catch(() => null);
+      await live?.dispose();
+    };
+
     const deployFromChat = (env?: Record<string, string>): Promise<StudioDeployResult> =>
       deploy(
-        { store: c.env.store, slots: c.env.slots, storage: c.env.storage },
+        {
+          store: c.env.store,
+          slots: c.env.slots,
+          storage: c.env.storage,
+          // Reuse the session sandbox for config extraction instead of
+          // spawning a throwaway one.
+          inspect: async (code) => (await sandbox()).loadBundle(code).then((r) => r.config),
+        },
         { apiKey: c.var.apiKey, scope, project, env },
       );
-    const stream = runStudioChat(
-      { storage: c.env.storage, scope, project, deploy: deployFromChat },
-      messages,
+
+    return runStudioChat(
+      {
+        storage: c.env.storage,
+        scope,
+        project,
+        deploy: deployFromChat,
+        sandbox,
+        disposeSandbox,
+      },
+      // Structurally validated by UiMessageSchema; part-level validation
+      // happens in convertToModelMessages.
+      messages as unknown as UIMessage[],
     );
-    return c.body(stream, 200, {
-      "Content-Type": "application/x-ndjson; charset=utf-8",
-      "Cache-Control": "no-store",
-    });
   });
 
   return studio;

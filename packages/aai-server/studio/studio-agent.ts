@@ -4,89 +4,165 @@
  * `streamText`, the same stack pipeline mode uses) with workspace file tools
  * and a deploy tool, streamed to the browser as NDJSON events.
  *
- * The LLM key is platform-owned host configuration (`ANTHROPIC_API_KEY`),
- * like the platform's default Pinecone key — it is never exposed to agent
- * bundles or stored in any tenant env.
+ * The LLM is selected from platform-owned host configuration (never tenant
+ * env) via the SDK's own provider descriptors + `resolveLlm`, so the studio
+ * can run on any pipeline-mode LLM provider — by default the AssemblyAI LLM
+ * Gateway (`ASSEMBLYAI_API_KEY`), falling back to Anthropic direct
+ * (`ANTHROPIC_API_KEY`). Override with `STUDIO_LLM_PROVIDER` /
+ * `STUDIO_LLM_MODEL` (and `STUDIO_LLM_REGION=eu` for the gateway's EU
+ * endpoint).
  */
 
-import { createAnthropic } from "@ai-sdk/anthropic";
-import { type LanguageModel, type ModelMessage, stepCountIs, streamText, tool } from "ai";
+import type { LlmProvider } from "@alexkroman1/aai/llm";
+import {
+  ANTHROPIC_API_KEY_ENV,
+  ASSEMBLYAI_LLM_API_KEY_ENV,
+  anthropic,
+  assemblyAI,
+  GATEWAY_API_KEY_ENV,
+  GOOGLE_API_KEY_ENV,
+  GROQ_API_KEY_ENV,
+  gateway,
+  google,
+  groq,
+  MISTRAL_API_KEY_ENV,
+  mistral,
+  OPENAI_API_KEY_ENV,
+  openai,
+  XAI_API_KEY_ENV,
+  xai,
+} from "@alexkroman1/aai/llm";
+import { resolveLlm } from "@alexkroman1/aai/runtime";
+import {
+  convertToModelMessages,
+  type LanguageModel,
+  stepCountIs,
+  streamText,
+  tool,
+  type UIMessage,
+} from "ai";
 import type { Storage } from "unstorage";
 import { z } from "zod";
+import { IsolateConfigSchema } from "../rpc-schemas.ts";
+import { bundleWorkspace, StudioBuildError } from "./studio-bundle.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
-import type { StudioChatMessage } from "./studio-schemas.ts";
+import { studioSystemPrompt } from "./studio-prompt.ts";
+import type { StudioSandbox } from "./studio-sandbox.ts";
 import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
 
-const DEFAULT_STUDIO_MODEL = "claude-sonnet-4-5";
 const MAX_CHAT_STEPS = 16;
 
-export const STUDIO_SYSTEM_PROMPT = `You are the AAI Studio coding agent. You help the user build and deploy \
-voice agents for the AAI platform, working on a small server-side workspace \
-of files you can read and write with your tools.
+type StudioLlmEntry = {
+  envVar: string;
+  /** Model used when STUDIO_LLM_MODEL is unset; absent = model required. */
+  defaultModel?: string;
+  make: (model: string, env: NodeJS.ProcessEnv) => LlmProvider;
+};
 
-## How AAI agents work
-
-The workspace entry point is agent.ts. It default-exports \`agent({...})\`:
-
-\`\`\`ts
-import { agent, tool } from "@alexkroman1/aai";
-import { z } from "zod";
-
-const lookup = tool({
-  description: "Look up an order by id",
-  parameters: z.object({ orderId: z.string() }),
-  execute: async ({ orderId }, ctx) => {
-    // ctx.kv (key-value store), ctx.state (per-session), ctx.env (secrets)
-    return \`Order \${orderId} is on its way\`;
+/**
+ * Providers the studio chat can run on. All pipeline-mode LLM providers are
+ * wired; only the two the platform is expected to hold keys for get default
+ * models — the rest require an explicit `STUDIO_LLM_MODEL`.
+ */
+const STUDIO_LLM_PROVIDERS: Record<string, StudioLlmEntry> = {
+  assemblyai: {
+    envVar: ASSEMBLYAI_LLM_API_KEY_ENV,
+    defaultModel: "claude-sonnet-4-6",
+    make: (model, env) =>
+      assemblyAI({ model, ...(env.STUDIO_LLM_REGION === "eu" ? { region: "eu" as const } : {}) }),
   },
-});
+  anthropic: {
+    envVar: ANTHROPIC_API_KEY_ENV,
+    defaultModel: "claude-sonnet-4-5",
+    make: (model) => anthropic({ model }),
+  },
+  openai: { envVar: OPENAI_API_KEY_ENV, make: (model) => openai({ model }) },
+  google: { envVar: GOOGLE_API_KEY_ENV, make: (model) => google({ model }) },
+  mistral: { envVar: MISTRAL_API_KEY_ENV, make: (model) => mistral({ model }) },
+  xai: { envVar: XAI_API_KEY_ENV, make: (model) => xai({ model }) },
+  groq: { envVar: GROQ_API_KEY_ENV, make: (model) => groq({ model }) },
+  gateway: { envVar: GATEWAY_API_KEY_ENV, make: (model) => gateway({ model }) },
+};
 
-export default agent({
-  name: "Support Agent",
-  systemPrompt: "You are a concise, friendly voice support agent.",
-  greeting: "Hi, how can I help?",
-  tools: { lookup_order: lookup },
-});
-\`\`\`
+/** Providers auto-selected (in order) when STUDIO_LLM_PROVIDER is unset. */
+const AUTO_PROVIDER_ORDER = ["assemblyai", "anthropic"] as const;
 
-Rules:
-- Imports are restricted to workspace files, "@alexkroman1/aai" (any
-  subpath), and "zod". No other npm packages, no Node builtins.
-- Replies are spoken aloud: keep systemPrompt guidance conversational and
-  instruct the agent to answer briefly.
-- Built-in tools (think, remember, recall, calculate) are on by default.
-  Opt-in builtins: web_search, visit_webpage, fetch_json, run_code — enable
-  via \`builtinTools: [...]\`.
-- Tool \`execute\` runs in a locked-down sandbox: no filesystem, no
-  subprocesses; network only through the built-in fetch tools.
+export type StudioLlmSelection = {
+  provider: string;
+  model: string;
+  descriptor: LlmProvider;
+  envVar: string;
+};
 
-## Your workflow
-
-1. Understand what the user wants; look at the current files first.
-2. Edit agent.ts (and helper files) with write_file. Keep code simple.
-3. When the user wants it live, call deploy_agent. If the deploy reports a
-   build or config error, fix the code and deploy again.
-4. After a successful deploy, give the user the agent's URL path and remind
-   them the agent needs an ASSEMBLYAI_API_KEY secret (set via the Secrets
-   panel or the deploy env) before voice sessions will connect.
-
-Be concise. Make the change, verify by re-reading only when unsure, and
-summarize what you did in a sentence or two.`;
+/**
+ * Pick the studio chat LLM from host env. Explicit `STUDIO_LLM_PROVIDER`
+ * wins; otherwise the AssemblyAI LLM Gateway when its key is present, then
+ * Anthropic. Returns null when nothing is configured. Throws on a
+ * misconfiguration worth surfacing (unknown provider, missing model).
+ */
+export function selectStudioLlm(env: NodeJS.ProcessEnv = process.env): StudioLlmSelection | null {
+  const explicit = env.STUDIO_LLM_PROVIDER?.toLowerCase();
+  let provider: string | undefined;
+  if (explicit) {
+    if (!(explicit in STUDIO_LLM_PROVIDERS)) {
+      throw new Error(
+        `Unknown STUDIO_LLM_PROVIDER "${explicit}" — one of: ${Object.keys(STUDIO_LLM_PROVIDERS).join(", ")}`,
+      );
+    }
+    provider = explicit;
+  } else {
+    provider = AUTO_PROVIDER_ORDER.find((name) => {
+      const candidate = STUDIO_LLM_PROVIDERS[name];
+      return candidate !== undefined && Boolean(env[candidate.envVar]);
+    });
+  }
+  if (!provider) return null;
+  // Guarded above for the explicit path; AUTO_PROVIDER_ORDER names are keys.
+  const entry = STUDIO_LLM_PROVIDERS[provider] as StudioLlmEntry;
+  // `||` not `??`: an empty-string env var means "unset".
+  const model = env.STUDIO_LLM_MODEL || entry.defaultModel;
+  if (!model) {
+    throw new Error(`STUDIO_LLM_MODEL is required for STUDIO_LLM_PROVIDER "${provider}"`);
+  }
+  return { provider, model, descriptor: entry.make(model, env), envVar: entry.envVar };
+}
 
 /** True when the platform host is configured to run the studio LLM. */
 export function isStudioLlmConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  return Boolean(env.ANTHROPIC_API_KEY);
+  try {
+    const selection = selectStudioLlm(env);
+    return selection !== null && Boolean(env[selection.envVar]);
+  } catch {
+    return false;
+  }
+}
+
+/** Provider/model info for the status endpoint; null when unconfigured. */
+export function studioLlmInfo(
+  env: NodeJS.ProcessEnv = process.env,
+): { provider: string; model: string } | null {
+  if (!isStudioLlmConfigured(env)) return null;
+  // isStudioLlmConfigured just proved this select succeeds and is non-null.
+  const selection = selectStudioLlm(env) as StudioLlmSelection;
+  return { provider: selection.provider, model: selection.model };
 }
 
 /** Resolve the studio chat model from host env. Throws when unconfigured. */
 export function studioModel(env: NodeJS.ProcessEnv = process.env): LanguageModel {
-  const apiKey = env.ANTHROPIC_API_KEY;
-  if (!apiKey) throw new Error("Studio LLM not configured: set ANTHROPIC_API_KEY");
-  // Explicit baseURL so the SDK never reads process.env at request time
-  // (same reasoning as host/providers/resolve.ts).
-  return createAnthropic({ apiKey, baseURL: "https://api.anthropic.com/v1" })(
-    env.STUDIO_LLM_MODEL ?? DEFAULT_STUDIO_MODEL,
-  );
+  const selection = selectStudioLlm(env);
+  if (!selection) {
+    throw new Error(
+      "Studio LLM not configured: set ASSEMBLYAI_API_KEY (LLM Gateway) or " +
+        "ANTHROPIC_API_KEY, or choose a provider with STUDIO_LLM_PROVIDER",
+    );
+  }
+  const key = env[selection.envVar];
+  if (!key) {
+    throw new Error(`Studio LLM misconfigured: ${selection.envVar} is not set`);
+  }
+  // resolveLlm reads the key from the env record it is given — pass exactly
+  // the one variable it needs (host env never flows anywhere else).
+  return resolveLlm(selection.descriptor, { [selection.envVar]: key });
 }
 
 export type StudioChatDeps = {
@@ -95,11 +171,59 @@ export type StudioChatDeps = {
   project: string;
   /** Deploys the current workspace; injected so routes wire the full deps once. */
   deploy: (env?: Record<string, string>) => Promise<StudioDeployResult>;
-  /** Injectable for tests — defaults to the host-env Anthropic model. */
+  /**
+   * Lazy handle to this chat session's sandbox — the same warm-pool/gVisor
+   * infrastructure deployed agents run in. Used by test_agent and (via the
+   * deploy fn) config extraction. Provisioned on first use.
+   */
+  sandbox: () => Promise<StudioSandbox>;
+  /** Tears down the session sandbox if one was provisioned. Idempotent. */
+  disposeSandbox?: () => Promise<void>;
+  /** Injectable for tests — defaults to the host-env selected provider. */
   model?: LanguageModel;
 };
 
 type WorkspaceEdit = (files: Record<string, string>) => string | Promise<string>;
+
+/** Build the workspace, load it in the session sandbox, and report back. */
+async function runTrial(
+  deps: StudioChatDeps,
+  trialTool: string | undefined,
+  args: Record<string, unknown> | undefined,
+): Promise<string> {
+  const workspace = await getWorkspace(deps.storage, deps.scope, deps.project);
+  if (!workspace) return `Error: project ${deps.project} not found`;
+  let worker: string;
+  try {
+    worker = await bundleWorkspace(workspace.files);
+  } catch (err) {
+    if (err instanceof StudioBuildError) return err.message;
+    throw err;
+  }
+  const sandbox = await deps.sandbox();
+  let loaded: { config?: unknown };
+  try {
+    loaded = await sandbox.loadBundle(worker);
+  } catch (err) {
+    return `Bundle failed to load in the sandbox: ${err instanceof Error ? err.message : String(err)}`;
+  }
+  const parsed = IsolateConfigSchema.safeParse(loaded.config);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => i.message).join("; ");
+    return `Bundle loaded but the agent config is invalid: ${issues}`;
+  }
+  const config = parsed.data;
+  const toolNames = config.toolSchemas.map((schema) => schema.name);
+  const summary =
+    `Bundle loaded in the sandbox. Agent "${config.name}" (${config.mode ?? "s2s"} mode), ` +
+    `tools: ${toolNames.length > 0 ? toolNames.join(", ") : "(none)"}.`;
+  if (!trialTool) return summary;
+  if (!toolNames.includes(trialTool)) {
+    return `${summary}\nCannot invoke "${trialTool}": not one of the agent's tools.`;
+  }
+  const output = await sandbox.executeTool(trialTool, args ?? {});
+  return `${summary}\n${trialTool}(${JSON.stringify(args ?? {})}) → ${output}`;
+}
 
 /**
  * Build the coding agent's tool set. Every file tool re-reads the workspace
@@ -164,6 +288,23 @@ export function createStudioTools(deps: StudioChatDeps) {
           return `Deleted ${path}`;
         }),
     }),
+    test_agent: tool({
+      description:
+        "Build the workspace and load it into a sandbox running the exact " +
+        "production runtime (gVisor + Deno, no network/filesystem). Reports " +
+        "build errors, load errors, and the extracted agent config. Pass " +
+        "`tool` and `args` to also invoke one of the agent's tools with " +
+        "sample arguments and see its result. Secrets are NOT available in " +
+        "test runs (ctx.env is empty); KV is a scratch store.",
+      inputSchema: z.object({
+        tool: z.string().optional().describe("Name of an agent tool to invoke after loading"),
+        args: z
+          .record(z.string(), z.unknown())
+          .optional()
+          .describe("Arguments for the invoked tool"),
+      }),
+      execute: ({ tool: trialTool, args }) => runTrial(deps, trialTool, args),
+    }),
     deploy_agent: tool({
       description:
         "Build the workspace and deploy it to the platform. Returns the live " +
@@ -182,62 +323,44 @@ export function createStudioTools(deps: StudioChatDeps) {
   };
 }
 
-/** One NDJSON event streamed to the browser. */
-export type StudioChatEvent =
-  | { type: "text"; text: string }
-  | { type: "tool_call"; name: string; input: unknown }
-  | { type: "tool_result"; name: string; output: unknown }
-  | { type: "error"; message: string }
-  | { type: "done" };
-
 /**
- * Run one coding-agent turn and stream it as NDJSON (one JSON event per
- * line). The client resends the full message history each turn, so the
- * server stays stateless between requests.
+ * Run one coding-agent turn and return a `useChat`-compatible Response (the
+ * AI SDK UI message stream over SSE). The client resends the full UIMessage
+ * history each turn, so the server stays stateless between requests.
+ *
+ * The session sandbox (if any tool provisioned one) is disposed when the
+ * stream settles — finish, error, and client abort all funnel through
+ * `onFinish`/`onError` of the UI stream response.
  */
-export function runStudioChat(
+export async function runStudioChat(
   deps: StudioChatDeps,
-  messages: StudioChatMessage[],
-): ReadableStream<Uint8Array> {
-  const encoder = new TextEncoder();
-  return new ReadableStream<Uint8Array>({
-    async start(controller) {
-      const write = (event: StudioChatEvent) =>
-        controller.enqueue(encoder.encode(`${JSON.stringify(event)}\n`));
-      try {
-        const result = streamText({
-          model: deps.model ?? studioModel(),
-          system: STUDIO_SYSTEM_PROMPT,
-          messages: messages.map((m): ModelMessage => ({ role: m.role, content: m.content })),
-          tools: createStudioTools(deps),
-          stopWhen: stepCountIs(MAX_CHAT_STEPS),
-        });
-        for await (const part of result.fullStream) {
-          switch (part.type) {
-            case "text-delta":
-              write({ type: "text", text: part.text });
-              break;
-            case "tool-call":
-              write({ type: "tool_call", name: part.toolName, input: part.input });
-              break;
-            case "tool-result":
-              write({ type: "tool_result", name: part.toolName, output: part.output });
-              break;
-            case "error":
-              write({
-                type: "error",
-                message: part.error instanceof Error ? part.error.message : String(part.error),
-              });
-              break;
-            default:
-              break;
-          }
-        }
-        write({ type: "done" });
-      } catch (err) {
-        write({ type: "error", message: err instanceof Error ? err.message : String(err) });
-      }
-      controller.close();
-    },
-  });
+  messages: UIMessage[],
+): Promise<Response> {
+  let disposeCalled = false;
+  const disposeSandbox = () => {
+    if (disposeCalled) return;
+    disposeCalled = true;
+    void deps.disposeSandbox?.();
+  };
+  try {
+    const result = streamText({
+      model: deps.model ?? studioModel(),
+      system: studioSystemPrompt(),
+      messages: await convertToModelMessages(messages, { ignoreIncompleteToolCalls: true }),
+      tools: createStudioTools(deps),
+      stopWhen: stepCountIs(MAX_CHAT_STEPS),
+      onFinish: disposeSandbox,
+      onAbort: disposeSandbox,
+      onError: disposeSandbox,
+    });
+    return result.toUIMessageStreamResponse({
+      onError: (error) => {
+        disposeSandbox();
+        return error instanceof Error ? error.message : String(error);
+      },
+    });
+  } catch (err) {
+    disposeSandbox();
+    throw err;
+  }
 }
