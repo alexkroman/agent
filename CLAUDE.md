@@ -107,7 +107,7 @@ Five workspace packages under `packages/`:
 | Package | npm name | Purpose |
 | --- | --- | --- |
 | `packages/aai/` | `@alexkroman1/aai` | Shared core: manifest, types, protocol, S2S, session, KV |
-| `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
+| `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
 | `packages/aai-server/` | `aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
@@ -137,9 +137,9 @@ Subpath exports consumed by sibling packages and user agents:
 
 #### `aai-ui` (UI)
 
-- `.` — default Preact UI component + session + client helpers
-- `./session` — session management (no Preact dependency)
+- `.` — default React UI component + session + client helpers
 - `./styles.css` — default styles
+- `./default-client/*` — prebuilt default client assets (`dist/default-client/`)
 
 #### `aai-cli` (CLI)
 
@@ -197,16 +197,21 @@ restrictions apply there.
 
 #### packages/aai-ui/
 
-- `index.ts` — main exports, Preact UI component
-- `session.ts` — WebSocket session management, message handling, reactive state
-- `context.ts` — SessionProvider, useSession, ClientConfigProvider, useClientConfig
-- `hooks.ts` — useToolResult, useToolCallStart, useAutoScroll
+- `index.ts` — main exports, React UI component
+- `session-core.ts` — WebSocket session management + reactive snapshot
+  (`createSessionCore`); split across `session-core-messages.ts`
+  (message/history handling) and `session-core-types.ts`
+- `context.ts` — SessionProvider, useSession, useSessionCore,
+  useSessionSelector, ThemeProvider, useTheme
+- `hooks.ts` — useToolResult, useToolCallStart, useEvent
 - `audio.ts` — PCM encoding/decoding, AudioWorklet management
 - `define-client.tsx` — client mount helper
+- `default-client.tsx` / `build-default-client.ts` — the default UI shipped
+  to agents with no `client.tsx`, and its build step
 - `types.ts` — UI type definitions
-- `components/` — UI components (app, chat-view, controls,
-  message-list, start-screen, sidebar-layout, tool-call-block, button,
-  tool-icons)
+- `components/` — UI components (chat-view, controls, message-list,
+  start-screen, sidebar-layout, tool-call-block, button, aai-logo,
+  tool-config-context)
 
 #### packages/aai-server/
 

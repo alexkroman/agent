@@ -36,7 +36,7 @@ pnpm check
 | Package | Description |
 | ------- | ----------- |
 | `packages/aai` | Core SDK (`defineAgent`, `createRuntime`, `createServer`, types) |
-| `packages/aai-ui` | Browser client (Preact) |
+| `packages/aai-ui` | Browser client (React 19) |
 | `packages/aai-cli` | The `aai` CLI tool |
 | `packages/aai-server` | Managed platform server (private) |
 
