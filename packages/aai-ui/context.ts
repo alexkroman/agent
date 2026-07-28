@@ -6,6 +6,7 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useSyncExternalStore,
 } from "react";
@@ -120,7 +121,32 @@ export function ThemeProvider({
   children?: ReactNode;
 }) {
   const merged = value ? { ...DEFAULT_THEME, ...value } : DEFAULT_THEME;
+  usePageBackground(merged.bg);
   return createElement(ThemeCtx.Provider, { value: merged }, children);
+}
+
+/**
+ * Paint `html`/`body` with the theme background.
+ *
+ * Components paint `theme.bg` on their own containers, but the page behind
+ * them keeps whatever the static `<style>` in index.html set. Any viewport
+ * wider (or taller) than the app column then shows that color as a border
+ * around the UI — which is how a cream theme ended up letterboxed in black.
+ * Driving it from the theme means a custom `client({ theme })` covers the
+ * page too, instead of trading one hardcoded color for another.
+ */
+function usePageBackground(bg: string): void {
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const { body, documentElement: html } = document;
+    const previous = { body: body.style.background, html: html.style.background };
+    body.style.background = bg;
+    html.style.background = bg;
+    return () => {
+      body.style.background = previous.body;
+      html.style.background = previous.html;
+    };
+  }, [bg]);
 }
 
 export function useTheme(): Required<ClientTheme> {

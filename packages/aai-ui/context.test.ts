@@ -131,6 +131,26 @@ describe("useTheme", () => {
     expect(result.current.primary).toBe("#f00");
   });
 
+  it("paints the page background so the theme reaches beyond the app column", () => {
+    // Components paint theme.bg on their own containers, but html/body kept the
+    // static color from index.html — so any viewport wider than the app column
+    // showed a black letterbox around a cream UI.
+    renderHook(() => useTheme(), {
+      wrapper: ({ children }: { children: ReactNode }) =>
+        React.createElement(ThemeProvider, { value: undefined }, children),
+    });
+    expect(document.body.style.background).toBe("rgb(251, 248, 242)");
+    expect(document.documentElement.style.background).toBe("rgb(251, 248, 242)");
+  });
+
+  it("a custom theme repaints the page too", () => {
+    renderHook(() => useTheme(), {
+      wrapper: ({ children }: { children: ReactNode }) =>
+        React.createElement(ThemeProvider, { value: { bg: "#123456" } }, children),
+    });
+    expect(document.body.style.background).toBe("rgb(18, 52, 86)");
+  });
+
   it("fills missing theme fields with defaults", () => {
     const partial: ClientTheme = { primary: "#f00" };
     const wrapper = ({ children }: { children: ReactNode }) =>

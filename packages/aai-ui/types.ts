@@ -133,9 +133,9 @@ export type WebSocketConstructor = {
  * @public
  */
 export type ClientTheme = {
-  /** Background color. Default: `#101010`. */
+  /** Background color, also painted on `html`/`body`. Default: `#FBF8F2`. */
   bg?: string;
-  /** Primary accent color. Default: `#fab283`. */
+  /** Primary accent color. Default: `#3F2BC1`. */
   primary?: string;
   /** Main text color. */
   text?: string;
