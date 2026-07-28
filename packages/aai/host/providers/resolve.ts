@@ -57,6 +57,11 @@ import {
   type SonioxOptions,
 } from "../../sdk/providers/stt/soniox.ts";
 import {
+  ASSEMBLYAI_TTS_API_KEY_ENV,
+  ASSEMBLYAI_TTS_KIND,
+  type AssemblyAITtsOptions,
+} from "../../sdk/providers/tts/assemblyai.ts";
+import {
   CARTESIA_API_KEY_ENV,
   CARTESIA_KIND,
   type CartesiaOptions,
@@ -174,6 +179,13 @@ const TTS_REGISTRY: Record<string, OpenerRegistryEntry<TtsOpener>> = {
     open: (d) =>
       lazyOpener(RIME_KIND, async () =>
         (await import("./tts/rime.ts")).openRime(options<RimeOptions>(d)),
+      ),
+  },
+  [ASSEMBLYAI_TTS_KIND]: {
+    envVar: ASSEMBLYAI_TTS_API_KEY_ENV,
+    open: (d) =>
+      lazyOpener(ASSEMBLYAI_TTS_KIND, async () =>
+        (await import("./tts/assemblyai.ts")).openAssemblyAITts(options<AssemblyAITtsOptions>(d)),
       ),
   },
 };

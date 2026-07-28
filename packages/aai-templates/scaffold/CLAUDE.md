@@ -233,16 +233,43 @@ export default agent({
 });
 ```
 
+An all-AssemblyAI pipeline — one provider, one key:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "My Agent",
+  stt: assemblyAI({ model: "u3pro-rt" }),
+  llm: assemblyAILlm({ model: "claude-haiku-4-5-20251001" }),
+  tts: assemblyAITts({ voice: "vera" }),
+});
+```
+
 ### TTS — `@alexkroman1/aai/tts`
 
-| Factory    | Default voice                            | Env var               |
-| ---------- | ---------------------------------------- | --------------------- |
-| `cartesia` | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`    |
-| `rime`     | `"cove"` (model `mistv2`)                | `RIME_API_KEY`        |
+| Factory      | Default voice                            | Env var              |
+| ------------ | ---------------------------------------- | -------------------- |
+| `assemblyAI` | `"vera"`                                 | `ASSEMBLYAI_API_KEY` |
+| `cartesia`   | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
+| `rime`       | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
 
-Bare calls (`cartesia()`, `rime()`) use the defaults. Override with
-`{ voice, model, language }`. **Rime quirk:** language uses ISO 639-3
-three-letter codes (e.g. `"eng"` not `"en"`).
+Bare calls (`assemblyAI()`, `cartesia()`, `rime()`) use the defaults.
+Override with `{ voice, model, language }`.
+
+**AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the
+LLM Gateway, so an all-AssemblyAI pipeline needs exactly one secret. Each
+voice speaks one language — English includes `vera`, `michael`, `alba`,
+`jane`, `george`, `mary`, `paul`; non-English are `estelle` (fr),
+`giovanni` (it), `juergen` (de), `lola` (es), `rafael` (pt). Set
+`language` only alongside a voice that speaks it. Because the factory is
+named `assemblyAI` in `/stt`, `/llm`, and `/tts`, alias on import.
+
+**Rime quirk:** language uses ISO 639-3 three-letter codes (e.g. `"eng"`
+not `"en"`).
 
 `none()` (no env var) declares a **text-only** agent — see "Text-only
 mode" above.

@@ -24,11 +24,45 @@ type ChatPanelProps = {
   onWorkspaceChanged: () => void;
 };
 
-const STARTERS = [
-  "A drive-thru agent that takes food orders",
-  "A front-desk agent that books appointments",
-  "A support agent that triages inbound calls",
-  "A text-only speech-to-text pipeline that dictates into structured notes — an LLM transform cleans up the transcript, and JavaScript tools compute word counts and action items",
+/**
+ * Starter prompts. `label` is the button; `prompt` is what the agent receives
+ * — several of these need to name providers and model ids precisely, which is
+ * far too much text to put on a button.
+ */
+const STARTERS: { label: string; prompt: string }[] = [
+  {
+    label: "Quickstart: all-AssemblyAI pipeline agent",
+    // Spelled out so the agent writes a pipeline-mode config rather than
+    // defaulting to S2S. All three providers share ASSEMBLYAI_API_KEY, which
+    // publishing seeds — so this path needs no secrets from the user.
+    prompt:
+      "Build a pipeline-mode agent that uses AssemblyAI for all three stages: " +
+      'stt: assemblyAI({ model: "u3pro-rt" }) from "@alexkroman1/aai/stt", ' +
+      'llm: the AssemblyAI LLM Gateway with model "claude-haiku-4-5-20251001" ' +
+      'from "@alexkroman1/aai/llm", and tts: assemblyAI({ voice: "vera" }) from ' +
+      '"@alexkroman1/aai/tts". The factory is called assemblyAI in all three ' +
+      "subpaths, so alias two of them on import. Make it a friendly " +
+      "general-purpose voice assistant, then run test_agent.",
+  },
+  {
+    label: "A drive-thru agent that takes food orders",
+    prompt: "A drive-thru agent that takes food orders",
+  },
+  {
+    label: "A front-desk agent that books appointments",
+    prompt: "A front-desk agent that books appointments",
+  },
+  {
+    label: "A support agent that triages inbound calls",
+    prompt: "A support agent that triages inbound calls",
+  },
+  {
+    label: "A text-only dictation pipeline (no TTS)",
+    prompt:
+      "A text-only speech-to-text pipeline that dictates into structured notes — " +
+      "an LLM transform cleans up the transcript, and JavaScript tools compute " +
+      "word counts and action items",
+  },
 ];
 
 function toolPartName(part: { type: string; toolName?: string }): string {
@@ -199,8 +233,13 @@ function EmptyStateBody({ llm, onPick }: { llm: boolean; onPick: (prompt: string
         <div className="flex flex-col gap-2">
           <span className="text-xs text-subtle">Try one of these</span>
           {STARTERS.map((starter) => (
-            <button type="button" key={starter} className="starter" onClick={() => onPick(starter)}>
-              {starter}
+            <button
+              type="button"
+              key={starter.label}
+              className="starter"
+              onClick={() => onPick(starter.prompt)}
+            >
+              {starter.label}
             </button>
           ))}
         </div>

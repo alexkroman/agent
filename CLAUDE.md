@@ -465,6 +465,17 @@ Reference providers shipped today:
 - **TTS**: one of
   - `cartesia({ voice })` — `CARTESIA_API_KEY`
   - `rime({ voice })` — `RIME_API_KEY`
+  - `assemblyAI({ voice, language? })` — `ASSEMBLYAI_API_KEY`; AssemblyAI's
+    streaming TTS over `wss://streaming-tts.assemblyai.com/v1/ws/`. Third
+    factory named `assemblyAI` (STT and LLM have one too) — alias on import.
+    Sharing one key with STT and the gateway means an all-AssemblyAI pipeline
+    needs exactly one secret. Two protocol details that are easy to get wrong:
+    the streaming sockets authenticate with the **raw** key, not `Bearer`, and
+    production sends no `Begin` frame until the client speaks first, so the
+    adapter must not block waiting for one (the AssemblyAI CLI does, which is
+    why it marks prod streaming TTS unavailable). Turns end on `FlushDone`;
+    a rejected key arrives in-band as an `Error` frame, i.e. as
+    `tts_stream_error` rather than `tts_auth_failed`.
 
 The provider SDKs (`ai`, `assemblyai`, `@cartesia/cartesia-js`,
 `@ai-sdk/*`, …) are regular dependencies of `@alexkroman1/aai`, but they
@@ -633,7 +644,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
 | `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
 | `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `gateway`) |
-| `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`) |
+| `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
 | `@alexkroman1/aai/kv` | `sdk/providers/kv-barrel.ts` | KV provider factories + types (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
 
