@@ -39,7 +39,7 @@ export function ApiUrlChip({ className }: { className?: string | undefined }) {
       type="button"
       onClick={copy}
       title={`API endpoint (click to copy)\n${apiUrl}`}
-      className={`flex items-center gap-1.5 min-w-0 appearance-none m-0 px-2 py-1 rounded-aai border cursor-pointer outline-none text-[11px] leading-none font-mono ${className ?? ""}`}
+      className={`flex items-center gap-1.5 min-w-0 appearance-none m-0 px-2 py-1 rounded-aai border cursor-pointer outline-none text-[11px] leading-none font-aai-mono ${className ?? ""}`}
       style={{ background: SURFACE_TINT, borderColor: theme.border, color: TEXT_FAINT }}
       data-testid="api-url-chip"
     >

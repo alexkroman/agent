@@ -4,11 +4,12 @@
 
 import clsx from "clsx";
 import { useRef, useState } from "react";
-import { useSessionCore, useSessionSelector, useTheme } from "../context.ts";
+import { useSessionCore, useSessionSelector } from "../context.ts";
+import { ERROR_COLOR } from "./_colors.ts";
 import { ApiUrlChip } from "./api-url-chip.tsx";
 import { Button } from "./button.tsx";
 
-const RECORDING_COLOR = "#e06c75";
+const RECORDING_COLOR = ERROR_COLOR;
 
 /**
  * Controls for a text-only session (`tts: none()`): a **record** toggle that
@@ -25,7 +26,6 @@ export function TextControls({ className }: { className?: string | undefined }) 
   const recording = useSessionSelector((s) => s.recording);
   const state = useSessionSelector((s) => s.state);
   const core = useSessionCore();
-  const theme = useTheme();
   const fileInput = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [uploadError, setUploadError] = useState<string | null>(null);
@@ -54,10 +54,7 @@ export function TextControls({ className }: { className?: string | undefined }) 
   }
 
   return (
-    <div
-      className={clsx("flex flex-col gap-1 px-4 py-3 border-t shrink-0", className)}
-      style={{ borderColor: theme.border }}
-    >
+    <div className={clsx("flex flex-col gap-1.5 shrink-0", className)}>
       <div className="flex items-center gap-2">
         <Button
           variant={recording ? "default" : "secondary"}

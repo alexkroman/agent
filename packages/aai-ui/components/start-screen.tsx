@@ -5,13 +5,15 @@
 import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useSessionCore, useSessionSelector, useTheme } from "../context.ts";
-import { TEXT_FAINT } from "./_colors.ts";
+import { TEXT_MUTED } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Button } from "./button.tsx";
+import { Eyebrow } from "./eyebrow.tsx";
 
 /**
- * A centered start screen with icon, title, subtitle, and a start button.
- * Renders `children` (the main app) once the session has started.
+ * A centered start screen: a white card on the cream page with the logo, an
+ * eyebrow label, a serif title, subtitle, and the start CTA. Renders
+ * `children` (the main app) once the session has started.
  *
  * @example
  * ```tsx
@@ -31,7 +33,7 @@ export function StartScreen({
   icon,
   title,
   subtitle,
-  buttonText = "Start",
+  buttonText = "Start Conversation",
   className,
 }: {
   children: ReactNode;
@@ -57,21 +59,29 @@ export function StartScreen({
       style={{ background: theme.bg }}
     >
       <div
-        className="flex flex-col items-center gap-4 border rounded-lg px-12 py-10 max-w-sm text-center"
-        style={{ background: theme.surface, borderColor: theme.border }}
+        className="flex flex-col items-center gap-5 border rounded-xl px-10 py-12 sm:px-16 sm:py-14 max-w-105 text-center"
+        style={{
+          background: theme.surface,
+          borderColor: theme.border,
+          boxShadow: "0 4px 12px -2px rgb(20 18 12 / 0.08)",
+        }}
       >
-        {icon ?? (!title && <AaiLogo size={20} />)}
+        {icon ?? <AaiLogo size={24} />}
+        <Eyebrow>Voice Agent</Eyebrow>
         {title && (
-          <h1 className="font-semibold m-0" style={{ color: theme.primary }}>
+          <h1
+            className="font-aai-serif font-normal text-[32px] leading-[1.15] tracking-[-0.2px] m-0 text-balance"
+            style={{ color: theme.text }}
+          >
             {title}
           </h1>
         )}
         {subtitle && (
-          <p className="text-sm m-0" style={{ color: TEXT_FAINT }}>
+          <p className="text-[15px] leading-[22px] m-0 max-w-75" style={{ color: TEXT_MUTED }}>
             {subtitle}
           </p>
         )}
-        <Button size="lg" className="mt-2 w-full" onClick={start}>
+        <Button size="lg" className="mt-2" onClick={start}>
           {buttonText}
         </Button>
       </div>

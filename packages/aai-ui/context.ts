@@ -12,12 +12,15 @@ import {
 import type { SessionCore, SessionSnapshot } from "./session-core.ts";
 import type { ClientTheme } from "./types.ts";
 
+// AssemblyAI design system ("website refresh"): warm cream surface, deep
+// indigo primary, warm-ink text, taupe borders. Overridable per client via
+// `client({ theme })`.
 const DEFAULT_THEME: Required<ClientTheme> = {
-  bg: "#101010",
-  primary: "#fab283",
-  text: "rgba(255, 255, 255, 0.94)",
-  surface: "#151515",
-  border: "#282828",
+  bg: "#FBF8F2",
+  primary: "#3F2BC1",
+  text: "#1B1A18",
+  surface: "#FFFFFF",
+  border: "#DCD7CC",
 };
 
 const SessionCtx = createContext<SessionCore | null>(null);

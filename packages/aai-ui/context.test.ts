@@ -112,8 +112,8 @@ describe("useSessionSelector", () => {
 describe("useTheme", () => {
   it("returns default theme when no provider", () => {
     const { result } = renderHook(() => useTheme());
-    expect(result.current.bg).toBe("#101010");
-    expect(result.current.primary).toBe("#fab283");
+    expect(result.current.bg).toBe("#FBF8F2");
+    expect(result.current.primary).toBe("#3F2BC1");
   });
 
   it("returns custom theme from provider", () => {
@@ -137,6 +137,6 @@ describe("useTheme", () => {
       React.createElement(ThemeProvider, { value: partial }, children);
     const { result } = renderHook(() => useTheme(), { wrapper });
     expect(result.current.primary).toBe("#f00");
-    expect(result.current.bg).toBe("#101010");
+    expect(result.current.bg).toBe("#FBF8F2");
   });
 });
