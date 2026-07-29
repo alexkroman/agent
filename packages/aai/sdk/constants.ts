@@ -156,6 +156,34 @@ export const DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS = 2000;
 export const DEFAULT_HOLD_PHRASE = "One moment.";
 
 /**
+ * How long a pipeline turn may send nothing to TTS while tools run before the
+ * transport speaks a {@link DEAD_AIR_COVER_PHRASES} filler.
+ *
+ * {@link DEFAULT_HOLD_PHRASE} only covers a turn whose *first* action is a
+ * tool call: once the model has spoken a word it is suppressed for the rest of
+ * the turn. A model that says "Let me look that up" and then chains six tool
+ * calls therefore goes silent for as long as the chain takes — measured at
+ * 15-24s against the tau2-bench retail tasks, well past the point a caller
+ * assumes the line is dead. Cover is time-based instead: any gap this long
+ * gets filler, whether or not the model already spoke.
+ */
+export const DEFAULT_DEAD_AIR_COVER_MS = 2000;
+
+/**
+ * Fillers cycled through while a tool chain keeps the line silent, in order.
+ *
+ * Distinct from {@link DEFAULT_HOLD_PHRASE} and from each other because the
+ * gap they cover repeats: "One moment." six times reads as a stuck loop, which
+ * is its own kind of broken. The wait between them backs off exponentially, so
+ * a long chain thins out rather than chattering.
+ */
+export const DEAD_AIR_COVER_PHRASES: readonly string[] = [
+  "Still working on that.",
+  "Just a moment longer.",
+  "Almost there.",
+];
+
+/**
  * Instruction injected as a synthetic user turn when a barge-in turns out to
  * be a false interruption (see {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS}).
  * The interrupted reply's spoken-so-far text is already in history, marked

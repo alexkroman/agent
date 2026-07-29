@@ -19,7 +19,7 @@ import {
 } from "ai";
 import pTimeout from "p-timeout";
 import {
-  DEFAULT_HOLD_PHRASE,
+  DEFAULT_DEAD_AIR_COVER_MS,
   PIPELINE_FLUSH_TIMEOUT_MS,
   PIPELINE_PLAYBACK_GRACE_MS,
   TTS_COALESCE_MAX_CHARS,
@@ -27,9 +27,10 @@ import {
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
 import type { Message, ToolChoice } from "../../sdk/types.ts";
-import { capToolResult, errorMessage } from "../../sdk/utils.ts";
+import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
 import { smoothTextStream } from "./pipeline-smooth.ts";
+import { createStreamPartHandler, type StreamPartHandler } from "./pipeline-stream-parts.ts";
 import type { TransportCallbacks } from "./types.ts";
 
 /** Estimated client-side playback clock — see {@link createPlaybackClock}. */
@@ -120,9 +121,9 @@ export type TtsTextCoalescer = {
    * Batching may only defer text that more text is still coming for. Holding a
    * sub-threshold fragment ("let me") across a tool call would strand it for the
    * whole execution window — the caller hears the words before it, then dead
-   * air, and `holdPhrase` is suppressed from covering that gap because the model
-   * did speak. Re-arming also keeps the post-tool reply's first words immediate,
-   * since that gap is exactly when time-to-first-audio matters again.
+   * air, with only the dead-air cover (a whole {@link DEFAULT_DEAD_AIR_COVER_MS}
+   * later) to break it. Re-arming also keeps the post-tool reply's first words
+   * immediate, since that gap is exactly when time-to-first-audio matters again.
    */
   boundary(): void;
 };
@@ -172,141 +173,6 @@ export function createTtsTextCoalescer(sendRaw: (text: string) => void): TtsText
       flush();
       firstSent = false;
     },
-  };
-}
-
-/** A single `fullStream` part from `streamText`. */
-export type StreamPart = {
-  readonly type: string;
-  readonly text?: string;
-  readonly input?: unknown;
-  readonly output?: unknown;
-  readonly toolCallId?: string;
-  readonly toolName?: string;
-  readonly error?: unknown;
-};
-
-/** Dependencies the stream-part handler needs from the owning transport. */
-type StreamPartHandlerDeps = {
-  /** Receives each assistant text delta (accumulated into the transcript). */
-  onDelta: (delta: string) => void;
-  /** Forwards text to the active TTS session (no-op if none). */
-  sendTtsText: (text: string) => void;
-  /**
-   * A speech segment ended — see {@link TtsTextCoalescer.boundary}. Omitted when
-   * `sendTtsText` does no batching, in which case there is nothing to release.
-   */
-  onTtsBoundary?: (() => void) | undefined;
-  /** Observability-only tool-call notification. */
-  onToolCall: (callId: string, name: string, args: Record<string, unknown>) => void;
-  /** Tool-result completion, so the client UI can flip pending → done. */
-  onToolCallDone?: ((callId: string, result: string) => void) | undefined;
-  /** Report an LLM-stream error. */
-  emitError: (code: SessionErrorCode, message: string) => void;
-  /**
-   * Spoken when the model's first action in a turn is a tool call with no
-   * preceding text — guarantees the caller hears something instead of dead
-   * air while the tool runs, even if the model skips the prompt's preamble.
-   * Defaults to {@link DEFAULT_HOLD_PHRASE}; set `""` to disable.
-   */
-  holdPhrase?: string | undefined;
-  log: Logger;
-  sid: string;
-};
-
-/**
- * Stateful per-turn handler for `streamText` `fullStream` parts.
- *
- * Tracks text-segment boundaries so that consecutive segments — which the
- * Vercel SDK emits across tool-call hops as `text-end` followed later by a
- * fresh `text-start` — don't fuse into "...up.Got it" when concatenated for
- * the transcript or streamed to TTS. When a boundary is crossed and neither
- * side carries whitespace, a single space is injected into both streams.
- */
-function createStreamPartHandler(deps: StreamPartHandlerDeps): (part: StreamPart) => void {
-  const { onDelta, sendTtsText, onToolCall, onToolCallDone, emitError, log, sid } = deps;
-  const holdPhrase = deps.holdPhrase ?? DEFAULT_HOLD_PHRASE;
-  const ttsBoundary = deps.onTtsBoundary ?? ((): void => undefined);
-  let pendingSeparator = false;
-  let lastChar = "";
-  // Track whether the model has spoken any text this turn, and whether we've
-  // already injected the hold phrase — so it fires at most once, only when the
-  // turn opens with a tool call and no speech.
-  let spokeText = false;
-  let holdEmitted = false;
-
-  function emitText(delta: string): void {
-    if (delta.length === 0) return;
-    let out = delta;
-    if (pendingSeparator) {
-      pendingSeparator = false;
-      const boundaryHasSpace = lastChar === "" || /\s/.test(lastChar) || /^\s/.test(out);
-      if (!boundaryHasSpace) out = ` ${out}`;
-    }
-    lastChar = out.slice(-1);
-    onDelta(out);
-    sendTtsText(out);
-  }
-
-  function emitToolResult(part: StreamPart): void {
-    // Inline execution finished — surface completion so the client UI can
-    // flip the tool-call from "pending" to "done". Schema requires a
-    // string result capped at MAX_TOOL_RESULT_CHARS.
-    const callId = part.toolCallId ?? "";
-    if (!callId) return;
-    const raw =
-      (part as { output?: unknown; result?: unknown }).output ??
-      (part as { result?: unknown }).result ??
-      "";
-    const str = typeof raw === "string" ? raw : JSON.stringify(raw);
-    onToolCallDone?.(callId, capToolResult(str));
-  }
-
-  return function handlePart(part: StreamPart): void {
-    switch (part.type) {
-      case "text-delta": {
-        const t = part.text ?? "";
-        if (t.length > 0) spokeText = true;
-        emitText(t);
-        return;
-      }
-      case "text-end":
-        pendingSeparator = true;
-        // This segment is finished, so nothing more will arrive to batch with
-        // what is buffered — release it now rather than across the gap that
-        // usually follows (a tool call).
-        ttsBoundary();
-        return;
-      case "tool-call": {
-        // Guarantee the caller hears a hold phrase if the model jumps straight
-        // to a tool call without speaking. Fire once per turn; separate it from
-        // the model's later reply so they don't fuse.
-        if (!(spokeText || holdEmitted) && holdPhrase.length > 0) {
-          holdEmitted = true;
-          emitText(holdPhrase);
-          pendingSeparator = true;
-        }
-        // Belt-and-braces for a tool call not preceded by `text-end`: the
-        // execution window must never start with speech still buffered. Also
-        // releases the hold phrase just emitted above.
-        ttsBoundary();
-        // Observability only — actual execution happens inline via toVercelTools.
-        const input = (part.input ?? {}) as Record<string, unknown>;
-        onToolCall(part.toolCallId ?? "", part.toolName ?? "", input);
-        return;
-      }
-      case "tool-result":
-        emitToolResult(part);
-        return;
-      case "error": {
-        const msg = errorMessage(part.error);
-        log.error("LLM stream error", { message: msg, sid });
-        emitError("llm", msg);
-        return;
-      }
-      default:
-        return;
-    }
   };
 }
 
@@ -388,6 +254,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   // Batch word-granularity deltas into fewer TTS provider sends; the
   // transcript path (onDelta) keeps full delta granularity.
   const ttsText = createTtsTextCoalescer(sendTtsText);
+  let handler: StreamPartHandler | undefined;
   try {
     const result = streamText({
       model: llm,
@@ -407,7 +274,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
         onStepPersisted?.();
       },
     });
-    const handlePart = createStreamPartHandler({
+    handler = createStreamPartHandler({
       onDelta,
       sendTtsText: ttsText.send,
       onTtsBoundary: ttsText.boundary,
@@ -420,8 +287,11 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     });
     for await (const part of result.fullStream) {
       if (ctl.signal.aborted) break;
-      handlePart(part);
+      handler.handle(part);
     }
+    // The model is done: no filler may fire during the flush or the wait for
+    // `result.steps` below, both of which follow the last stream part.
+    handler.dispose();
     // Aborted turns skip the flush — TTS is being cancelled anyway.
     if (ctl.signal.aborted) return collected;
     ttsText.flush();
@@ -442,5 +312,9 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       emitError("llm", msg);
     }
     return collected;
+  } finally {
+    // The turn is over on every path (completed, aborted, errored) — no
+    // dead-air filler may fire into the silence that follows it.
+    handler?.dispose();
   }
 }
