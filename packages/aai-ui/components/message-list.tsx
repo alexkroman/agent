@@ -88,13 +88,8 @@ type RowTheme = { text: string; border: string; primary: string; surface: string
  * list: message objects and the theme are referentially stable across
  * snapshots, and rows are keyed on stable ids (`ChatMessage.id`) that survive
  * the sliding 200-message window.
- *
- * Exported for the sync-transport chat shell, which renders the same rows
- * from client-held history instead of a session snapshot.
- *
- * @internal
  */
-export const MessageBubble = memo(function MessageBubble({
+const MessageBubble = memo(function MessageBubble({
   message,
   theme,
 }: {

@@ -3,18 +3,20 @@
 /** @jsxImportSource react */
 
 /**
- * Default chat shell for sync-transport agents (`agent({ transport: "sync" })`).
+ * Default shell for sync-transport agents (`agent({ transport: "sync" })`).
  *
- * No WebSocket anywhere: voice turns are endpointed in the browser (WebRTC
- * mic + energy VAD via `startSyncMicrophone`) and each utterance — or each
- * typed message — is one `POST /sync` request through `createSyncSession`.
- * The conversation history lives client-side and replays with every turn.
+ * Not a chat interface: one **push-to-talk** button. Recording runs exactly
+ * while the button is held (no VAD — releasing the button endpoints the
+ * utterance), and each release sends one `POST /sync` request through
+ * `createSyncSession`. The view shows what was heard, the agent's reply,
+ * and — via the endpoint chip next to the button — exactly where each
+ * utterance is being sent. Spoken replies play from the response.
  *
  * Visually it is the same "voice agent console" as the WebSocket
- * {@link ChatView}: header with logo + live-status eyebrow, the conversation
- * on a raised card, controls beneath — built from the same shared pieces
- * ({@link MessageBubble}, {@link ThinkingDots}, {@link Eyebrow},
- * {@link Button}) so the two transports are indistinguishable at a glance.
+ * {@link ChatView}: header with logo + live-status eyebrow, the output on a
+ * raised card, controls beneath — built from the same shared pieces
+ * ({@link ThinkingDots}, {@link Eyebrow}, {@link Button}, {@link UrlChip})
+ * so the two transports are indistinguishable at a glance.
  *
  * Rendered by `client()` when the agent's `GET /client-config` declares
  * `transport: "sync"`; also exported for custom clients that want the stock
@@ -24,17 +26,22 @@
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "../context.ts";
-import { type SyncMicrophone, startSyncMicrophone } from "../sync-mic.ts";
+import { createPttRecorder, DEFAULT_SYNC_MIC_SAMPLE_RATE, type PttRecorder } from "../sync-mic.ts";
 import { createSyncSession, type SyncTurnResult } from "../sync-session.ts";
 import type { AgentState } from "../types.ts";
-import { ERROR_COLOR, TEXT_MUTED } from "./_colors.ts";
+import { ERROR_COLOR, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Button } from "./button.tsx";
 import { stateColor } from "./chat-view.tsx";
 import { Eyebrow } from "./eyebrow.tsx";
-import { MessageBubble, ThinkingDots } from "./message-list.tsx";
+import { ThinkingDots } from "./message-list.tsx";
+import { UrlChip } from "./url-chips.tsx";
 
-type Line = { id: number; role: "user" | "assistant"; text: string };
+/** One completed turn: what the agent heard and what it answered. */
+type Exchange = { id: number; heard: string; reply: string };
+
+/** Sub-quarter-second presses are button fumbles, not speech. */
+const MIN_UTTERANCE_SAMPLES = DEFAULT_SYNC_MIC_SAMPLE_RATE / 4;
 
 /** Play one reply's PCM16 through a shared AudioContext. */
 function playReply(ctxRef: { current: AudioContext | null }, turn: SyncTurnResult): void {
@@ -53,19 +60,19 @@ function playReply(ctxRef: { current: AudioContext | null }, turn: SyncTurnResul
 }
 
 /**
- * Map the sync turn lifecycle onto the same states the WebSocket eyebrow
+ * Map the push-to-talk lifecycle onto the same states the WebSocket eyebrow
  * shows, so the status chip reads identically across transports.
  */
-function syncState(error: string | null, busy: boolean, micOn: boolean): AgentState {
-  if (error) return "error";
+function syncState(error: string | null, busy: boolean, holding: boolean): AgentState {
+  if (holding) return "listening";
   if (busy) return "thinking";
-  if (micOn) return "listening";
+  if (error) return "error";
   return "ready";
 }
 
 /**
- * Sync-transport chat view: mic toggle (client-side VAD), text composer,
- * message list, and spoken-reply playback — one HTTP request per turn.
+ * Sync-transport view: hold-to-talk button, transcript + reply output, and
+ * the endpoint each utterance is POSTed to — one HTTP request per turn.
  *
  * @public
  */
@@ -79,29 +86,27 @@ export function SyncChatView({
   /** Agent name shown in the header. */
   title?: string | undefined;
   /**
-   * Greeting shown as the opening assistant message. Sync turns have no
-   * session start for the server to speak it on, so it is display-only.
+   * Greeting shown as the card's opening line. Sync turns have no session
+   * start for the server to speak it on, so it is display-only.
    */
   greeting?: string | undefined;
 }) {
   const theme = useTheme();
-  const [lines, setLines] = useState<Line[]>([]);
-  const [draft, setDraft] = useState("");
+  const [exchanges, setExchanges] = useState<Exchange[]>([]);
+  const [holding, setHolding] = useState(false);
   const [busy, setBusy] = useState(false);
-  const [micOn, setMicOn] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const playbackCtx = useRef<AudioContext | null>(null);
-  const micRef = useRef<SyncMicrophone | null>(null);
+  const recorder = useRef<PttRecorder | null>(null);
   const anchorRef = useRef<HTMLDivElement>(null);
 
   const sessionRef = useRef(
     createSyncSession({
       url: syncUrl,
       onTurn: (turn) => {
-        setLines((prev) => [
+        setExchanges((prev) => [
           ...prev,
-          { id: prev.length, role: "user", text: turn.transcript },
-          { id: prev.length + 1, role: "assistant", text: turn.reply },
+          { id: prev.length, heard: turn.transcript, reply: turn.reply },
         ]);
         setBusy(false);
         setError(turn.ttsError ? `TTS unavailable: ${turn.ttsError}` : null);
@@ -117,51 +122,50 @@ export function SyncChatView({
   // Release the mic and audio context when the component unmounts.
   useEffect(
     () => () => {
-      void micRef.current?.stop();
+      void recorder.current?.close();
       void playbackCtx.current?.close();
     },
     [],
   );
 
-  // Keep the newest exchange in view as turns land.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: lines/busy drive the scroll, not the effect body
+  // Keep the newest exchange in view as turns land (and when the thinking
+  // indicator appears): scroll whenever the card's content count advances.
+  const contentCount = exchanges.length + (busy ? 1 : 0);
   useEffect(() => {
+    if (contentCount === 0) return;
     anchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
-  }, [lines, busy]);
+  }, [contentCount]);
 
-  async function toggleMic(): Promise<void> {
-    if (micRef.current) {
-      const mic = micRef.current;
-      micRef.current = null;
-      setMicOn(false);
-      await mic.stop();
-      return;
-    }
+  async function pressStart(): Promise<void> {
+    if (holding || busy) return;
     try {
-      micRef.current = await startSyncMicrophone({
-        session: sessionRef.current,
-        onSpeechEnd: () => setBusy(true),
-        onError: (err) => setError(err.message),
-      });
-      setMicOn(true);
+      recorder.current ??= createPttRecorder();
+      await recorder.current.start();
+      setHolding(true);
       setError(null);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
   }
 
-  function sendDraft(): void {
-    const text = draft.trim();
-    if (!text || busy) return;
-    setDraft("");
+  async function pressEnd(): Promise<void> {
+    if (!(holding && recorder.current)) return;
+    setHolding(false);
     setBusy(true);
-    sessionRef.current.sendText(text).catch(() => {
+    const pcm = await recorder.current.stop();
+    if (pcm.length < MIN_UTTERANCE_SAMPLES) {
+      setBusy(false);
+      return;
+    }
+    sessionRef.current.sendPcm16(pcm, DEFAULT_SYNC_MIC_SAMPLE_RATE).catch(() => {
       // surfaced via onError
     });
   }
 
-  const state = syncState(error, busy, micOn);
-  const pulsing = state === "listening";
+  const state = syncState(error, busy, holding);
+  let buttonLabel = "Hold to talk";
+  if (holding) buttonLabel = "Release to send";
+  else if (busy) buttonLabel = "Sending…";
 
   return (
     <div
@@ -184,7 +188,7 @@ export function SyncChatView({
             className="w-[7px] h-[7px] rounded-full"
             style={{
               background: stateColor(state, theme.primary),
-              animation: pulsing ? "aai-pulse 1.6s ease-in-out infinite" : "none",
+              animation: holding ? "aai-pulse 1.6s ease-in-out infinite" : "none",
             }}
           />
           {state}
@@ -203,7 +207,7 @@ export function SyncChatView({
           {error}
         </div>
       )}
-      {/* Conversation card */}
+      {/* Output card: what was heard, what the agent answered */}
       <div
         className="flex flex-col flex-1 min-h-0 border rounded-lg overflow-hidden"
         style={{
@@ -217,21 +221,42 @@ export function SyncChatView({
           className="flex-1 overflow-y-auto [scrollbar-width:none]"
           style={{ background: theme.surface }}
         >
-          <div className="flex flex-col gap-4 p-7">
+          <div className="flex flex-col gap-5 p-7">
             {greeting !== undefined && greeting.length > 0 && (
-              <MessageBubble message={{ role: "assistant", content: greeting }} theme={theme} />
-            )}
-            {lines.length === 0 && (
-              <p className="text-sm" style={{ color: TEXT_MUTED }}>
-                Turn the mic on and speak — each utterance becomes one HTTP request — or type below.
+              <p className="text-[15px] leading-[23px]" style={{ color: theme.text }}>
+                {greeting}
               </p>
             )}
-            {lines.map((line) => (
-              <MessageBubble
-                key={line.id}
-                message={{ role: line.role, content: line.text }}
-                theme={theme}
-              />
+            {exchanges.length === 0 && (
+              <p className="text-sm" style={{ color: TEXT_MUTED }}>
+                Hold the button, speak, and release — the utterance goes out as one HTTP request to
+                the endpoint below.
+              </p>
+            )}
+            {exchanges.map((ex) => (
+              <div key={ex.id} className="flex flex-col gap-1.5">
+                <span
+                  className="text-[10px] font-medium tracking-[1.2px] uppercase leading-none"
+                  style={{ color: TEXT_FAINT }}
+                >
+                  Heard
+                </span>
+                <p className="text-[15px] leading-[22px]" style={{ color: TEXT_MUTED }}>
+                  {ex.heard}
+                </p>
+                <span
+                  className="text-[10px] font-medium tracking-[1.2px] uppercase leading-none mt-1.5"
+                  style={{ color: TEXT_FAINT }}
+                >
+                  Agent
+                </span>
+                <p
+                  className="whitespace-pre-wrap wrap-break-word text-[15px] font-normal leading-[23px]"
+                  style={{ color: theme.text }}
+                >
+                  {ex.reply}
+                </p>
+              </div>
             ))}
             {busy && (
               <div data-testid="thinking">
@@ -242,34 +267,33 @@ export function SyncChatView({
           </div>
         </div>
       </div>
-      {/* Controls: mic toggle + composer, styled like the WebSocket controls */}
+      {/* Controls: hold-to-talk + where each utterance is sent */}
       <div className="flex items-center gap-2 shrink-0">
         <Button
-          variant={micOn ? "default" : "secondary"}
-          onClick={() => void toggleMic()}
-          aria-pressed={micOn}
-          style={micOn ? { background: ERROR_COLOR, borderColor: "transparent" } : undefined}
-          title={micOn ? "Stop listening" : "Start listening"}
+          size="lg"
+          variant={holding ? "default" : "secondary"}
+          disabled={busy && !holding}
+          className="select-none touch-none"
+          style={holding ? { background: ERROR_COLOR, borderColor: "transparent" } : undefined}
+          onPointerDown={() => void pressStart()}
+          onPointerUp={() => void pressEnd()}
+          onPointerLeave={() => void pressEnd()}
+          aria-pressed={holding}
+          title="Hold to record — release to send"
         >
           <span
-            className={clsx("w-2 h-2 rounded-full mr-2", micOn && "animate-pulse")}
-            style={{ background: micOn ? "#fff" : ERROR_COLOR }}
+            className={clsx("w-2 h-2 rounded-full mr-2", holding && "animate-pulse")}
+            style={{ background: holding ? "#fff" : ERROR_COLOR }}
           />
-          {micOn ? "Stop listening" : "Start listening"}
+          {buttonLabel}
         </Button>
-        <input
-          className="flex-1 h-9 rounded-aai px-3 text-sm border bg-transparent outline-none"
-          style={{ borderColor: theme.border, color: theme.text }}
-          placeholder="Type a message…"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") sendDraft();
-          }}
+        <UrlChip
+          label="Sync"
+          url={syncUrl}
+          hint="Each utterance is one POST to this endpoint"
+          testId="sync-url-chip"
+          className="ml-auto min-w-0 max-w-[55%]"
         />
-        <Button onClick={sendDraft} disabled={busy || draft.trim().length === 0}>
-          Send
-        </Button>
       </div>
     </div>
   );

@@ -108,6 +108,108 @@ export type SyncMicrophone = {
   stop(): Promise<void>;
 };
 
+/** Hold-to-record handle returned by {@link createPttRecorder}. */
+export type PttRecorder = {
+  /** Open the mic (first call) and start collecting frames. */
+  start(): Promise<void>;
+  /** Stop collecting and return everything recorded since `start()` as PCM16. */
+  stop(): Promise<Int16Array>;
+  /** Release the mic and the AudioContext. */
+  close(): Promise<void>;
+};
+
+/**
+ * Push-to-talk recorder on the same WebRTC capture pipeline as
+ * {@link startSyncMicrophone} — `getUserMedia` voice processing feeding the
+ * capture worklet — minus the VAD: the caller's button is the endpointing.
+ * Recording runs exactly between `start()` and `stop()`; the mic stays open
+ * across presses until `close()`.
+ *
+ * @public
+ */
+export function createPttRecorder(sampleRate = DEFAULT_SYNC_MIC_SAMPLE_RATE): PttRecorder {
+  let ctx: AudioContext | null = null;
+  let stream: MediaStream | null = null;
+  let node: AudioWorkletNode | null = null;
+  let chunks: Float32Array[] = [];
+  let recording = false;
+
+  async function ensureOpen(): Promise<void> {
+    if (ctx) return;
+    const streamPromise = navigator.mediaDevices.getUserMedia({
+      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+    });
+    const audioCtx = new AudioContext({ sampleRate, latencyHint: "interactive" });
+    try {
+      const [media] = await Promise.all([
+        streamPromise,
+        audioCtx.resume(),
+        audioCtx.audioWorklet.addModule(CAPTURE_WORKLET_MODULE_URL),
+      ]);
+      stream = media;
+    } catch (err) {
+      // Release the mic if it was granted while another step failed.
+      void streamPromise
+        .then((s) => {
+          for (const t of s.getTracks()) t.stop();
+        })
+        .catch(() => {
+          /* rejected with the same error */
+        });
+      await audioCtx.close().catch(() => {
+        /* already closing */
+      });
+      throw err;
+    }
+    const workletNode = new AudioWorkletNode(audioCtx, "aai-sync-capture", {
+      channelCount: 1,
+      channelCountMode: "explicit",
+      processorOptions: { batchSamples: CAPTURE_BATCH_SAMPLES },
+    });
+    workletNode.port.onmessage = (e: MessageEvent) => {
+      const data = e.data as { event?: string; samples?: Float32Array };
+      if (recording && data.event === "chunk" && data.samples) chunks.push(data.samples);
+    };
+    audioCtx.createMediaStreamSource(stream).connect(workletNode);
+    ctx = audioCtx;
+    node = workletNode;
+  }
+
+  return {
+    async start() {
+      await ensureOpen();
+      chunks = [];
+      recording = true;
+    },
+    async stop() {
+      // Give the worklet one beat to post the batch in flight; anything
+      // still inside a partial batch (<~130ms) is dropped.
+      await new Promise((r) => setTimeout(r, 150));
+      recording = false;
+      const total = chunks.reduce((n, c) => n + c.length, 0);
+      const all = new Float32Array(total);
+      let offset = 0;
+      for (const c of chunks) {
+        all.set(c, offset);
+        offset += c.length;
+      }
+      chunks = [];
+      return floatToPcm16(all);
+    },
+    async close() {
+      recording = false;
+      node?.disconnect();
+      if (stream) for (const t of stream.getTracks()) t.stop();
+      await ctx?.close().catch(() => {
+        /* already closed */
+      });
+      ctx = null;
+      node = null;
+      stream = null;
+    },
+  };
+}
+
 /**
  * Open the microphone and stream endpointed utterances into a sync session.
  *

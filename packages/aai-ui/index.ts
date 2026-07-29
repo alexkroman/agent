@@ -47,8 +47,10 @@ export { createSessionCore } from "./session-core.ts";
 // Sync mode (HTTP turns, WebRTC mic + client-side VAD — no WebSocket)
 export {
   CAPTURE_WORKLET_MODULE_URL,
+  createPttRecorder,
   DEFAULT_SYNC_MIC_SAMPLE_RATE,
   floatToPcm16,
+  type PttRecorder,
   type SyncMicrophone,
   type SyncMicrophoneOptions,
   startSyncMicrophone,

@@ -21,6 +21,7 @@ exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
   "base64ToPcm16",
   "buildAgentUrl",
   "client",
+  "createPttRecorder",
   "createSessionCore",
   "createSyncSession",
   "createUtteranceDetector",

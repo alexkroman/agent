@@ -542,8 +542,11 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   `client()`'s config tier renders `DefaultRoot`, which resolves the
   transport (explicit `transport` option, else `fetchClientConfig` — any
   failure degrades to WebSocket, so older servers keep working) and mounts
-  either the WebSocket shell or `SyncChatView` (stock sync UI: VAD mic,
-  text composer, reply playback). A custom `component` ignores all of it.
+  either the WebSocket shell or `SyncChatView` (stock sync UI: push-to-talk
+  button on `createPttRecorder` — no VAD, the button is the endpointing —
+  transcript/reply output, a chip showing the `/sync` endpoint each
+  utterance is POSTed to, reply playback; styled as the same console as
+  `ChatView`). A custom `component` ignores all of it.
   The `aai dev` Vite proxy forwards `/client-config` *and* `/sync` to the
   backend — without the latter, custom sync clients 404'd under dev.
 
