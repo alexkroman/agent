@@ -181,9 +181,15 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       opts.callbacks.onCancelled();
     }
     void resume(prevId).catch((err: unknown) => {
-      const msg = errorMessage(err);
-      log.warn("S2S resume failed", { sid: opts.sid, error: msg });
-      failResume(`S2S resume failed: ${msg}`);
+      // Throw-safe: the logger and onError sink are caller-injectable, and a
+      // throw from this handler would itself be an unhandled rejection.
+      try {
+        const msg = errorMessage(err);
+        log.warn("S2S resume failed", { sid: opts.sid, error: msg });
+        failResume(`S2S resume failed: ${msg}`);
+      } catch {
+        // Nothing further to report the failure to.
+      }
     });
   }
 

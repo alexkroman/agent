@@ -24,15 +24,8 @@ export class ApiError extends Error {
   }
 }
 
-async function request<T>(key: string, path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`/studio${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${key}`,
-      ...(init.body != null && { "Content-Type": "application/json" }),
-      ...init.headers,
-    },
-  });
+/** Throw an {@link ApiError} on non-2xx responses, else parse the JSON body. */
+async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
     let message = `Request failed (${res.status})`;
     try {
@@ -46,9 +39,21 @@ async function request<T>(key: string, path: string, init: RequestInit = {}): Pr
   return (await res.json()) as T;
 }
 
+async function request<T>(key: string, path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(`/studio${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${key}`,
+      ...(init.body != null && { "Content-Type": "application/json" }),
+      ...init.headers,
+    },
+  });
+  return handleResponse<T>(res);
+}
+
 export const api = {
   status: (): Promise<StudioStatus> =>
-    fetch("/studio/status").then((r) => r.json() as Promise<StudioStatus>),
+    fetch("/studio/status").then((res) => handleResponse<StudioStatus>(res)),
 
   listProjects: (key: string) =>
     request<{ projects: string[] }>(key, "/projects").then((r) => r.projects),

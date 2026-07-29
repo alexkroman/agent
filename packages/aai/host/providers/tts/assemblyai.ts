@@ -148,7 +148,24 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
         throw connectError(`AssemblyAI TTS: failed to create WebSocket: ${errorMessage(cause)}`);
       }
 
-      await connectOrThrow("AssemblyAI TTS", connectError, () => waitForOpen(ws));
+      // Placeholder 'error' listener bound before connecting (see the
+      // cartesia.ts pattern): waitForOpen's own listener is removed once it
+      // settles, and a later socket error with zero listeners is an unhandled
+      // 'error' event that crashes the process.
+      ws.on("error", () => undefined);
+
+      try {
+        await connectOrThrow("AssemblyAI TTS", connectError, () => waitForOpen(ws));
+      } catch (err) {
+        // Failed connect: close the socket before rethrowing so it can't
+        // linger half-open (late errors land in the placeholder above).
+        try {
+          ws.close();
+        } catch {
+          // Socket already broken — nothing left to release.
+        }
+        throw err;
+      }
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
       let doneEmitted = true; // no turn in flight until the first sendText
@@ -164,7 +181,11 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
               // Already going away; the close below is what matters.
             }
           }
-          ws.close();
+          try {
+            ws.close();
+          } catch {
+            // Socket already broken — still drop the listeners below.
+          }
           // Drop handlers so their closures don't stay reachable via the
           // socket if `ws` outlives this session.
           ws.removeAllListeners();

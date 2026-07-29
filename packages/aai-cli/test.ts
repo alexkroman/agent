@@ -9,6 +9,7 @@ import path from "node:path";
 import { execaSync } from "execa";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
+import { errorCode, errorMessage } from "./_utils.ts";
 
 type TestData = { passed: boolean; skipped?: boolean };
 
@@ -67,6 +68,25 @@ export function runVitest(cwd: string): boolean {
   return true;
 }
 
+/**
+ * Classify a {@link runVitest} failure. execaSync throws an ENOENT-coded
+ * error when the binary itself couldn't be spawned (infrastructure problem)
+ * and an exit-code error when vitest ran and the tests failed.
+ */
+export function classifyVitestError(err: unknown): {
+  code: "spawn_failed" | "test_failed";
+  message: string;
+} {
+  if (errorCode(err) === "ENOENT") {
+    return {
+      code: "spawn_failed",
+      // execFileSync's ENOENT message names the missing binary ("spawnSync npx ENOENT").
+      message: `Could not launch the test runner: ${errorMessage(err)} — is the binary on your PATH?`,
+    };
+  }
+  return { code: "test_failed", message: `Tests failed: ${errorMessage(err)}` };
+}
+
 /** Execute agent tests and return structured result. */
 export async function executeTest(cwd: string): Promise<CommandResult<TestData>> {
   log.step("Running agent tests");
@@ -78,9 +98,8 @@ export async function executeTest(cwd: string): Promise<CommandResult<TestData>>
     }
     log.success("Tests passed");
     return ok({ passed: true });
-  } catch {
-    // The error itself is intentionally dropped: vitest already printed its
-    // full report to the terminal via stdio: "inherit".
-    return fail("test_failed", "Tests failed");
+  } catch (err: unknown) {
+    const { code, message } = classifyVitestError(err);
+    return fail(code, message);
   }
 }

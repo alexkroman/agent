@@ -1,5 +1,13 @@
 # @alexkroman1/aai-cli
 
+## 1.9.2
+
+### Patch Changes
+
+- fff8cc1: Resolve React from the client build's root so publishing a UI works in the production image, where aai-ui's peer copy is pruned
+  - @alexkroman1/aai@1.9.2
+  - @alexkroman1/aai-ui@1.9.2
+
 ## 1.9.1
 
 ### Patch Changes

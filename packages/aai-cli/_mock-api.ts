@@ -45,6 +45,9 @@ export async function startMockApi(): Promise<MockApi> {
   }
 
   async function readBody(req: IncomingMessage): Promise<string> {
+    // buffer() settles on failure paths too — a socket error or client abort
+    // destroys the stream and rejects, so the handler (and the test awaiting
+    // it) can never hang. gunzipSync throws on garbage, rejecting likewise.
     const raw = await buffer(req);
     // Mirror the platform server: transparently inflate gzipped uploads
     // (the CLI compresses deploy bodies).
@@ -130,8 +133,11 @@ export async function startMockApi(): Promise<MockApi> {
   }
 
   const server: Server = createServer((req, res) => {
+    // Bad JSON in a route body (JSON.parse throws) lands here as a 500.
     handler(req, res).catch((err) => {
-      res.writeHead(500);
+      // Headers may already be out when the failure hit mid-response;
+      // writeHead would then throw ERR_HTTP_HEADERS_SENT and crash the test.
+      if (!res.headersSent) res.writeHead(500);
       res.end(String(err));
     });
   });

@@ -9,6 +9,7 @@
 import { existsSync, unlinkSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import type { Plugin } from "vite";
+import { errorMessage } from "./_utils.ts";
 
 export const DEFAULT_HTML = `<!DOCTYPE html>
 <html lang="en">
@@ -37,10 +38,15 @@ export function fallbackHtmlPlugin(root: string): Plugin {
       if (htmlExists) return;
       server.middlewares.use((req, res, next) => {
         if (req.url === "/" || req.url === "/index.html") {
-          server.transformIndexHtml("/", DEFAULT_HTML, req.originalUrl).then((html) => {
-            res.setHeader("Content-Type", "text/html");
-            res.end(html);
-          }, next);
+          // .catch (not a two-arg .then) so a throw in the fulfillment
+          // callback is also routed to next() instead of going unhandled.
+          server
+            .transformIndexHtml("/", DEFAULT_HTML, req.originalUrl)
+            .then((html) => {
+              res.setHeader("Content-Type", "text/html");
+              res.end(html);
+            })
+            .catch(next);
           return;
         }
         next();
@@ -59,12 +65,23 @@ export function writeTempHtml(root: string): () => void {
     return () => {
       /* no-op: user-provided */
     };
-  writeFileSync(htmlPath, DEFAULT_HTML);
-  return () => {
+  const cleanup = () => {
     try {
       unlinkSync(htmlPath);
     } catch {
       /* best-effort cleanup */
     }
   };
+  try {
+    writeFileSync(htmlPath, DEFAULT_HTML);
+  } catch (err) {
+    // A partial write (ENOSPC) must not leave a stray index.html behind.
+    cleanup();
+    throw new Error(
+      `Failed to write a temporary index.html at ${htmlPath} for the client build — ` +
+        `is the project directory writable? (${errorMessage(err)})`,
+      { cause: err },
+    );
+  }
+  return cleanup;
 }

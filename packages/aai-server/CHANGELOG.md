@@ -1,5 +1,15 @@
 # @alexkroman1/aai-server
 
+## 1.2.2
+
+### Patch Changes
+
+- Updated dependencies [fff8cc1]
+  - @alexkroman1/aai-cli@1.9.2
+  - @alexkroman1/aai@1.9.2
+  - @alexkroman1/aai-ui@1.9.2
+  - aai-studio-client@0.1.3
+
 ## 1.2.1
 
 ### Patch Changes

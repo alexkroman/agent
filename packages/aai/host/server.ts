@@ -17,12 +17,13 @@ import { lookup as mimeLookup } from "mime-types";
 import { WebSocketServer } from "ws";
 import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
 import type { AgentDef } from "../sdk/types.ts";
+import { errorMessage } from "../sdk/utils.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
 import { isHostAllowed, startHostSession } from "./host-mode.ts";
 import type { Runtime } from "./runtime.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
-import type { SessionWebSocket } from "./ws-handler.ts";
+import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 
 export { createRuntime, type Runtime, type RuntimeOptions } from "./runtime.ts";
 
@@ -87,6 +88,7 @@ async function serveStatic(
   dir: string,
   req: http.IncomingMessage,
   res: http.ServerResponse,
+  logger: Logger,
 ): Promise<boolean> {
   const url = req.url?.split("?")[0] ?? "/";
   const filePath = path.join(dir, url === "/" ? "index.html" : url);
@@ -96,17 +98,37 @@ async function serveStatic(
   const resolved = path.resolve(dir);
   if (!filePath.startsWith(resolved + path.sep) && filePath !== resolved) return false;
 
+  // Only pre-response failures (ENOENT, EACCES, a directory) return false —
+  // the caller then writes the 404. Once headers go out below, every failure
+  // must be handled here: falling through would write on a broken response.
+  let stat: fs.Stats;
   try {
-    const stat = await fs.promises.stat(filePath);
-    if (!stat.isFile()) return false;
-    const ext = path.extname(filePath).toLowerCase();
-    const mime = mimeLookup(ext) || "application/octet-stream";
-    res.writeHead(200, { "Content-Type": mime, "Content-Length": stat.size });
-    fs.createReadStream(filePath).pipe(res);
-    return true;
+    stat = await fs.promises.stat(filePath);
   } catch {
     return false;
   }
+  if (!stat.isFile()) return false;
+
+  const ext = path.extname(filePath).toLowerCase();
+  const mime = mimeLookup(ext) || "application/octet-stream";
+  try {
+    res.writeHead(200, { "Content-Type": mime, "Content-Length": stat.size });
+  } catch (err) {
+    // Response already broken (headers sent / destroyed) — claim the request
+    // so the caller doesn't try to write a 404 on it too.
+    logger.error("serveStatic: response unusable", { error: errorMessage(err) });
+    res.destroy();
+    return true;
+  }
+  const stream = fs.createReadStream(filePath);
+  stream.on("error", (err) => {
+    // Headers are already sent — destroy so the client sees a truncated
+    // body instead of a hang (and the read stream is released).
+    logger.error("serveStatic: read stream failed", { error: errorMessage(err) });
+    res.destroy(err);
+  });
+  stream.pipe(res);
+  return true;
 }
 
 /**
@@ -126,7 +148,7 @@ export function createServer(options: ServerOptions): AgentServer {
     url: string,
     method: string,
   ): Promise<void> {
-    if (clientDir && (await serveStatic(clientDir, req, res))) return;
+    if (clientDir && (await serveStatic(clientDir, req, res, logger))) return;
 
     if (method === "GET" && url === "/") {
       res.writeHead(200, { "Content-Type": "text/html" });
@@ -150,7 +172,20 @@ export function createServer(options: ServerOptions): AgentServer {
       sendJson(res, 200, { status: "ok", name });
       return;
     }
-    void handleRequest(req, res, url, method);
+    handleRequest(req, res, url, method).catch((err: unknown) => {
+      // A rejection here would otherwise be an unhandled rejection that can
+      // take down the process; answer 500 when possible, else drop the socket.
+      logger.error("Request handler failed", { error: errorMessage(err) });
+      try {
+        if (res.headersSent) {
+          res.destroy();
+        } else {
+          sendJson(res, 500, { error: "Internal server error" });
+        }
+      } catch {
+        res.destroy();
+      }
+    });
   });
 
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
@@ -192,12 +227,14 @@ export function createServer(options: ServerOptions): AgentServer {
       }
       if (wantsHost) {
         logger.warn(`WS upgrade ${url} rejected: host mode unavailable`);
-        session.send(
+        safeSend(
+          session,
           JSON.stringify({
             type: "error",
             code: "protocol",
             message: "host mode is not enabled on this server",
           }),
+          logger,
         );
         (ws as unknown as { close?: (code?: number) => void }).close?.(1008);
         return;
@@ -210,6 +247,13 @@ export function createServer(options: ServerOptions): AgentServer {
 
   let listenPort: number | undefined;
 
+  // Post-listen server errors have no promise to reject into (listen()'s
+  // one-shot reject is removed once bound) — log instead of crashing on an
+  // unhandled 'error' event.
+  httpServer.on("error", (err) => {
+    logger.error("HTTP server error", { error: errorMessage(err) });
+  });
+
   return {
     get port() {
       return listenPort;
@@ -217,8 +261,11 @@ export function createServer(options: ServerOptions): AgentServer {
 
     async listen(port = 3000, host = DEFAULT_LISTEN_HOST) {
       await new Promise<void>((resolve, reject) => {
-        httpServer.on("error", reject);
+        // `once` + removal on success: a persistent reject here would pile up
+        // one listener per listen() call and reject a long-settled promise.
+        httpServer.once("error", reject);
         httpServer.listen(port, host, () => {
+          httpServer.removeListener("error", reject);
           const addr = httpServer.address();
           listenPort = typeof addr === "object" && addr ? addr.port : port;
           resolve();

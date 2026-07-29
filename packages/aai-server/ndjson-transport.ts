@@ -211,9 +211,25 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
         });
         return;
       }
-      case "notification":
-        notificationHandlers.get(msg.data.method)?.(msg.data.params);
+      case "notification": {
+        // Notification handlers run bare inside the readline 'line' listener
+        // — a throw (or a rejected promise from an async handler) would be an
+        // uncaughtException/unhandledRejection on the whole host. Contain both.
+        const handler = notificationHandlers.get(msg.data.method);
+        if (!handler) return;
+        try {
+          Promise.resolve(handler(msg.data.params)).catch((err: unknown) => {
+            console.error(
+              `NDJSON notification handler "${msg.data.method}" rejected: ${errorMessage(err)}`,
+            );
+          });
+        } catch (err) {
+          console.error(
+            `NDJSON notification handler "${msg.data.method}" threw: ${errorMessage(err)}`,
+          );
+        }
         return;
+      }
       default:
         return;
     }

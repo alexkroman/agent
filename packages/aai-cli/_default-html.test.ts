@@ -28,6 +28,14 @@ describe("writeTempHtml", () => {
     });
   });
 
+  test("throws a friendly error when the project directory is unwritable", async () => {
+    await withTempDir(async (dir) => {
+      // A root that doesn't exist makes writeFileSync fail with ENOENT.
+      const missingRoot = path.join(dir, "does-not-exist");
+      expect(() => writeTempHtml(missingRoot)).toThrow("is the project directory writable?");
+    });
+  });
+
   test("leaves a user-provided index.html untouched", async () => {
     await withTempDir(async (dir) => {
       const htmlPath = path.join(dir, "index.html");
@@ -126,6 +134,27 @@ describe("fallbackHtmlPlugin", () => {
       );
       await vi.waitFor(() => expect(next).toHaveBeenCalledWith(error));
       expect(res.end).not.toHaveBeenCalled();
+    });
+  });
+
+  test("routes a throw in the fulfillment callback to next", async () => {
+    await withTempDir(async (dir) => {
+      const { use } = await runPlugin(dir);
+      const middleware = getMiddleware(use);
+      const error = new Error("res.end failed");
+      const res = {
+        setHeader: vi.fn(),
+        end: vi.fn(() => {
+          throw error;
+        }),
+      };
+      const next = vi.fn();
+      middleware(
+        { url: "/" } as Connect.IncomingMessage,
+        res as unknown as Parameters<Connect.NextHandleFunction>[1],
+        next,
+      );
+      await vi.waitFor(() => expect(next).toHaveBeenCalledWith(error));
     });
   });
 });

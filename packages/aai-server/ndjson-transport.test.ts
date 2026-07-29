@@ -214,6 +214,41 @@ describe("createNdjsonConnection", () => {
     expect(writtenLines.length).toBe(0);
   });
 
+  it("contains a notification handler that throws (later messages still dispatch)", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const okHandler = vi.fn();
+    const conn = createNdjsonConnection(readable, writable);
+    conn.onNotification("boom", () => {
+      throw new Error("handler threw");
+    });
+    conn.onNotification("ok", okHandler);
+    conn.listen();
+
+    writeMessage(readable, { jsonrpc: "2.0", method: "boom" });
+    writeMessage(readable, { jsonrpc: "2.0", method: "ok" });
+
+    await vi.waitFor(() => okHandler.mock.calls.length > 0);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("handler threw"));
+    errorSpy.mockRestore();
+  });
+
+  it("contains a notification handler that returns a rejected promise", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const conn = createNdjsonConnection(readable, writable);
+    // The public handler type returns void, but an async handler slips
+    // through at runtime — its rejection must not become unhandled.
+    const rejectingHandler = () => Promise.reject(new Error("async fail"));
+    conn.onNotification("async-boom", rejectingHandler as () => void);
+    conn.listen();
+
+    writeMessage(readable, { jsonrpc: "2.0", method: "async-boom" });
+
+    await vi.waitFor(() =>
+      expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("async fail")),
+    );
+    errorSpy.mockRestore();
+  });
+
   // ── concurrent requests (out-of-order responses) ─────────────────────────
 
   it("resolves concurrent requests correctly when responses arrive out of order", async () => {

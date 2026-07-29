@@ -142,6 +142,12 @@ function createConnection(child: ChildProcess): NdjsonConnection {
   child.stdout.on("error", () => {
     /* guest died; RPC layer surfaces this via the readline close */
   });
+  // stderr is only piped on the gVisor path, where gvisor.ts consumes and
+  // logs it — this no-op just guarantees a stray stream error can never
+  // become an uncaughtException regardless of backend.
+  child.stderr?.on("error", () => {
+    /* guest died; nothing left to read */
+  });
   return createNdjsonConnection(child.stdout, child.stdin);
 }
 
@@ -228,7 +234,18 @@ async function spawnGvisorWarm(
     harnessPath,
     ...(limits && { limits }),
   });
-  return warmFromChild(gvisor.process, () => gvisor.cleanup());
+  const warm = warmFromChild(gvisor.process, () => gvisor.cleanup());
+  // A spawn `error` fires on process.nextTick, which runs before this await
+  // continuation — warmFromChild's own `error` listener attached too late to
+  // see it. createGvisorSandbox buffers it; surface it as a spawn failure so
+  // the pool/fallback path replaces the harness instead of handing out a
+  // dead one.
+  const spawnErr = gvisor.spawnError();
+  if (spawnErr) {
+    await warm.cleanup().catch(() => undefined);
+    throw new Error(`runsc spawn failed: ${spawnErr.message}`);
+  }
+  return warm;
 }
 
 // ── Warm-harness spawning ────────────────────────────────────────────────────

@@ -286,14 +286,23 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       }
       const { sandbox, mode, agentConfig } = result;
       wss.handleUpgrade(req, socket, head, (ws) => {
-        onSessionSocket(ws as unknown as SessionWebSocket, {
-          slug,
-          mode,
-          sandbox,
-          agentConfig,
-          hostMode,
-          rawUrl,
-        });
+        // This callback runs after completeUpgrade's own try/catch has already
+        // passed — a throw here (slot acquisition, session start) would
+        // otherwise be an uncaughtException. Close the ws instead; its `close`
+        // event releases the connection slot and any acquired slot session.
+        try {
+          onSessionSocket(ws as unknown as SessionWebSocket, {
+            slug,
+            mode,
+            sandbox,
+            agentConfig,
+            hostMode,
+            rawUrl,
+          });
+        } catch (err: unknown) {
+          console.error("WebSocket session start error:", err);
+          ws.close(1011, "internal error");
+        }
       });
     } catch (err: unknown) {
       console.error("WebSocket open error:", err);
@@ -350,8 +359,43 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     sandbox?.startSession(ws, parseWsUpgradeParams(rawUrl));
   }
 
+  async function handleUpgradeRequest(
+    req: import("node:http").IncomingMessage,
+    socket: import("node:stream").Duplex,
+    head: Buffer,
+  ): Promise<void> {
+    const rawUrl = req.url ?? "";
+    const pathOnly = rawUrl.split("?")[0] ?? "";
+    const slugMatch = pathOnly.match(SLUG_WS_RE);
+    if (!slugMatch) {
+      // No other upgrade consumer exists on this server: an unmatched
+      // upgrade socket would otherwise dangle forever.
+      socket.destroy();
+      return;
+    }
+    const slug = slugMatch[1] as string;
+
+    if (!acquireConnectionSlot(socket)) return;
+
+    // Host mode lets the caller replace the agent's prompt and tools, so it
+    // requires proving ownership of the slug — unlike a plain connection,
+    // which stays unauthenticated. The guard answers and closes the socket
+    // itself when it refuses. See ws-host-mode.ts.
+    const hostMode = wantsHostMode(rawUrl);
+    const mayProceed = await guardHostModeUpgrade({
+      rawUrl,
+      slug,
+      headers: req.headers,
+      store: opts.store,
+      socket,
+    });
+    if (!mayProceed) return;
+
+    await completeUpgrade(req, socket, head, { slug, rawUrl, hostMode });
+  }
+
   const injectWebSocket = (server: import("node:http").Server) => {
-    server.on("upgrade", async (req, socket, head) => {
+    server.on("upgrade", (req, socket, head) => {
       // Node removes its own socket error listener before emitting `upgrade`;
       // without one, a client RST during the async resolve becomes an
       // unhandled `error` → uncaughtException → the whole host exits. Attach
@@ -360,34 +404,24 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         /* handled via close/destroy below; presence prevents an uncaught throw */
       });
 
-      const rawUrl = req.url ?? "";
-      const pathOnly = rawUrl.split("?")[0] ?? "";
-      const slugMatch = pathOnly.match(SLUG_WS_RE);
-      if (!slugMatch) {
-        // No other upgrade consumer exists on this server: an unmatched
-        // upgrade socket would otherwise dangle forever.
+      // A rejection anywhere in the async path (e.g. a storage blip inside
+      // guardHostModeUpgrade) would otherwise be an unhandledRejection that
+      // strands the socket. Answer the handshake — same pattern as
+      // guardHostModeUpgrade's refusal — then destroy.
+      void handleUpgradeRequest(req, socket, head).catch((err: unknown) => {
+        console.error("WebSocket upgrade error:", err);
+        try {
+          socket.write(
+            "HTTP/1.1 500 Internal Server Error\r\n" +
+              "Connection: close\r\n" +
+              "Content-Type: text/plain\r\n\r\n" +
+              "internal error\n",
+          );
+        } catch {
+          // Socket already gone — destroy below is all that's left.
+        }
         socket.destroy();
-        return;
-      }
-      const slug = slugMatch[1] as string;
-
-      if (!acquireConnectionSlot(socket)) return;
-
-      // Host mode lets the caller replace the agent's prompt and tools, so it
-      // requires proving ownership of the slug — unlike a plain connection,
-      // which stays unauthenticated. The guard answers and closes the socket
-      // itself when it refuses. See ws-host-mode.ts.
-      const hostMode = wantsHostMode(rawUrl);
-      const mayProceed = await guardHostModeUpgrade({
-        rawUrl,
-        slug,
-        headers: req.headers,
-        store: opts.store,
-        socket,
       });
-      if (!mayProceed) return;
-
-      await completeUpgrade(req, socket, head, { slug, rawUrl, hostMode });
     });
   };
 

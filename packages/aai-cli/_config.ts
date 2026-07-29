@@ -6,8 +6,8 @@ import * as p from "@clack/prompts";
 import { consola } from "consola";
 import envPaths from "env-paths";
 import { z } from "zod";
-import { unwrapCancel } from "./_ui.ts";
-import { readJson, writeJson } from "./_utils.ts";
+import { log, unwrapCancel } from "./_ui.ts";
+import { errorMessage, readJson, writeJson } from "./_utils.ts";
 
 /**
  * `.aai/project.json` lives in the working tree, so everything in it is
@@ -58,7 +58,21 @@ export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;
 
 export async function readProjectConfig(agentDir: string): Promise<ProjectConfig | null> {
   const file = path.join(agentDir, ".aai", "project.json");
-  const parsed = ProjectConfigSchema.safeParse(await readJson(file));
+  let data: unknown;
+  try {
+    data = await readJson(file);
+  } catch (err) {
+    // A corrupted project.json must not read as "never deployed": a deploy
+    // with no slug generates a fresh one, orphaning the live deployment.
+    const reason = errorMessage(err).replace(`Invalid JSON in ${file}: `, "");
+    throw new Error(
+      `project.json is corrupted at ${file}: ${reason}\n` +
+        "  Fix or delete the file — deploying without it would create a new agent under a fresh slug.",
+      { cause: err },
+    );
+  }
+  if (data === null) return null;
+  const parsed = ProjectConfigSchema.safeParse(data);
   if (!parsed.success) {
     consola.debug(`Failed to read project config from ${file}:`, parsed.error);
     return null;
@@ -123,6 +137,21 @@ export async function writeGlobalConfig(configDir: string, data: GlobalConfig): 
   await writeJson(path.join(configDir, "config.json"), data);
 }
 
+/**
+ * Persist the API key to the global config, warning (not failing) when the
+ * config dir is unwritable — the key in hand still works for this run.
+ */
+async function trySaveApiKey(dir: string, config: GlobalConfig, apiKey: string): Promise<void> {
+  try {
+    await writeGlobalConfig(dir, { ...config, apiKey });
+  } catch (err) {
+    log.warn(
+      `Couldn't save your API key to ${path.join(dir, "config.json")}: ${errorMessage(err)} — ` +
+        "you'll be prompted again next run.",
+    );
+  }
+}
+
 export async function ensureApiKey(configDir?: string): Promise<string> {
   const dir = configDir ?? getConfigDir();
   const config = await readGlobalConfig(dir);
@@ -131,11 +160,11 @@ export async function ensureApiKey(configDir?: string): Promise<string> {
   // Allow non-interactive usage (CI, Claude Code) via env var
   const envKey = process.env.ASSEMBLYAI_API_KEY;
   if (envKey) {
-    await writeGlobalConfig(dir, { ...config, apiKey: envKey });
+    await trySaveApiKey(dir, config, envKey);
     return envKey;
   }
 
   const apiKey = unwrapCancel(await p.password({ message: "Enter your AssemblyAI API key" }));
-  await writeGlobalConfig(dir, { ...config, apiKey });
+  await trySaveApiKey(dir, config, apiKey);
   return apiKey;
 }

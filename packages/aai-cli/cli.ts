@@ -9,6 +9,7 @@ import {
   type CommandResult,
   fail,
   getOutputMode,
+  installStdoutGuard,
   type OutputMode,
   withOutput,
   writeLine,
@@ -25,15 +26,24 @@ const sharedArgs = {
 } as const;
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
-function findPkgJson(dir: string): string {
-  try {
-    return readFileSync(path.join(dir, "package.json"), "utf-8");
-  } catch {
-    return readFileSync(path.join(dir, "..", "package.json"), "utf-8");
+/**
+ * Read this CLI's own version from its package.json (source layout keeps it
+ * next to cli.ts; dist layout one level up). A missing or corrupt file must
+ * not brick every command over a cosmetic string — warn and fall back.
+ */
+function readCliVersion(dir: string): string {
+  for (const candidate of [path.join(dir, "package.json"), path.join(dir, "..", "package.json")]) {
+    try {
+      const parsed = JSON.parse(readFileSync(candidate, "utf-8")) as { version?: unknown };
+      if (typeof parsed.version === "string") return parsed.version;
+    } catch {
+      /* missing or corrupt — try the next candidate */
+    }
   }
+  process.stderr.write("warning: could not read aai's package.json — reporting version unknown\n");
+  return "unknown";
 }
-const pkgJson = JSON.parse(findPkgJson(cliDir));
-const VERSION: string = pkgJson.version;
+const VERSION: string = readCliVersion(cliDir);
 
 /** Shared command setup: resolve cwd, optionally require agent.ts. */
 async function setup(opts?: { agent?: boolean }): Promise<string> {
@@ -173,8 +183,20 @@ const build = defineCommand({
       async () => {
         const cwd = await setup({ agent: true });
         if (!args.skipTests) {
-          const { runVitest } = await import("./test.ts");
-          runVitest(cwd);
+          const { classifyVitestError, runVitest } = await import("./test.ts");
+          // Distinguish a real test failure (test_failed) from the runner not
+          // spawning (spawn_failed) instead of a generic command_failed.
+          const toCliError = (err: unknown): CliError => {
+            const { code, message } = classifyVitestError(err);
+            return new CliError(code, message, "Re-run with --skipTests to build without tests", {
+              cause: err,
+            });
+          };
+          try {
+            runVitest(cwd);
+          } catch (err: unknown) {
+            throw toCliError(err);
+          }
         }
         const { executeBuild } = await import("./_bundler.ts");
         return executeBuild(cwd);
@@ -284,6 +306,10 @@ export const mainCommand = defineCommand({
 });
 
 if (process.env.VITEST !== "true") {
+  // JSON mode writes to stdout, which may be a pipe whose consumer exits
+  // early (`aai … --json | head -1`) — EPIPE must not crash with a raw stack.
+  installStdoutGuard();
+
   const sub = process.argv[2];
   const helpFlags = new Set(["--help", "--version", "-h", "-V"]);
 

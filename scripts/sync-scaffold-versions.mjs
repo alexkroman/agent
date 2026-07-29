@@ -22,11 +22,35 @@ const pkgMap = {
   "@alexkroman1/aai-cli": "packages/aai-cli/package.json",
 };
 
-const scaffold = JSON.parse(readFileSync(scaffoldPath, "utf8"));
+/** Read and parse a package.json, failing loudly with the offending path. */
+function readJson(path) {
+  let text;
+  try {
+    text = readFileSync(path, "utf8");
+  } catch (err) {
+    console.error(`sync-scaffold-versions: failed to read ${path}: ${err.message}`);
+    process.exit(1);
+  }
+  try {
+    return JSON.parse(text);
+  } catch (err) {
+    console.error(`sync-scaffold-versions: failed to parse ${path}: ${err.message}`);
+    process.exit(1);
+  }
+}
+
+const scaffold = readJson(scaffoldPath);
 let changed = false;
 
 for (const [dep, pkgPath] of Object.entries(pkgMap)) {
-  const { version } = JSON.parse(readFileSync(join(root, pkgPath), "utf8"));
+  const { version } = readJson(join(root, pkgPath));
+  // Never let a missing version become a literal "^undefined" in the scaffold.
+  if (typeof version !== "string" || version.length === 0) {
+    console.error(
+      `sync-scaffold-versions: ${pkgPath} has no valid "version" field (got ${JSON.stringify(version)}).`,
+    );
+    process.exit(1);
+  }
   const caretRange = `^${version}`;
 
   for (const section of ["dependencies", "devDependencies"]) {
@@ -39,7 +63,12 @@ for (const [dep, pkgPath] of Object.entries(pkgMap)) {
 }
 
 if (changed) {
-  writeFileSync(scaffoldPath, JSON.stringify(scaffold, null, 2) + "\n");
+  try {
+    writeFileSync(scaffoldPath, JSON.stringify(scaffold, null, 2) + "\n");
+  } catch (err) {
+    console.error(`sync-scaffold-versions: failed to write ${scaffoldPath}: ${err.message}`);
+    process.exit(1);
+  }
   console.log("Scaffold package.json updated.");
 } else {
   console.log("Scaffold package.json already in sync.");

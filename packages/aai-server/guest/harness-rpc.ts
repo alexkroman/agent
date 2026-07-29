@@ -44,14 +44,28 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, label: str
 
 const encoder = new TextEncoder();
 
+/**
+ * Set once the host has closed our stdout pipe (BrokenPipe). Further writes
+ * are dropped: retrying would throw again — including from error paths like
+ * sendError inside dispatchMessage's catch — making guest teardown noisy.
+ */
+let stdoutDead = false;
+
 export function writeMessage(msg: JsonRpcMessage): void {
+  if (stdoutDead) return;
   const line = `${JSON.stringify(msg)}\n`;
   const bytes = encoder.encode(line);
-  // writeSync may write fewer bytes than requested (pipe buffer full) —
-  // loop until the whole line is flushed so NDJSON framing never tears.
-  let written = 0;
-  while (written < bytes.byteLength) {
-    written += Deno.stdout.writeSync(bytes.subarray(written));
+  try {
+    // writeSync may write fewer bytes than requested (pipe buffer full) —
+    // loop until the whole line is flushed so NDJSON framing never tears.
+    let written = 0;
+    while (written < bytes.byteLength) {
+      written += Deno.stdout.writeSync(bytes.subarray(written));
+    }
+  } catch {
+    // Host closed the pipe — the connection is gone; mark it dead and drop
+    // this and all further writes so teardown stays clean.
+    stdoutDead = true;
   }
 }
 
@@ -68,6 +82,14 @@ export function sendError(id: number | string, code: number, message: string): v
 let hostRequestId = 1;
 
 /**
+ * Timeout for a guest→host request — mirrors the host side's
+ * DEFAULT_REQUEST_TIMEOUT_MS (ndjson-transport.ts). A host that never
+ * replies (crashed mid-RPC, pipe wedged) must not leave a tool call awaiting
+ * a KV/Vector response forever.
+ */
+const HOST_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
  * Pending host responses, keyed by request id.
  * The main NDJSON loop resolves these when the host replies.
  */
@@ -80,9 +102,41 @@ export const pendingHostRequests = new Map<
 function hostRequest(method: string, params: Record<string, unknown>): Promise<unknown> {
   const id = hostRequestId++;
   const { promise, resolve, reject } = Promise.withResolvers<unknown>();
-  pendingHostRequests.set(id, { resolve, reject });
+  const timer = setTimeout(() => {
+    if (pendingHostRequests.delete(id)) {
+      reject(new Error(`Host RPC "${method}" timed out after ${HOST_REQUEST_TIMEOUT_MS}ms`));
+    }
+  }, HOST_REQUEST_TIMEOUT_MS);
+  pendingHostRequests.set(id, {
+    resolve: (value) => {
+      clearTimeout(timer);
+      resolve(value);
+    },
+    reject: (err) => {
+      clearTimeout(timer);
+      reject(err);
+    },
+  });
   writeMessage({ jsonrpc: "2.0", id, method, params });
   return promise;
+}
+
+/**
+ * Reject every pending host request and proxied fetch. Called by the main
+ * loop when stdin closes — the host is gone, so nothing pending can ever be
+ * answered (mirrors rejectAllPending on the host's NDJSON connection).
+ * Rejecting also clears each request's timeout timer, letting Deno exit.
+ */
+export function rejectAllPendingHostRequests(reason: string): void {
+  const err = new Error(reason);
+  for (const entry of pendingHostRequests.values()) {
+    entry.reject(err);
+  }
+  pendingHostRequests.clear();
+  for (const fetchEntry of pendingFetches.values()) {
+    fetchEntry.reject(new TypeError(`fetch failed: ${reason}`));
+  }
+  pendingFetches.clear();
 }
 
 // ---- Fetch proxy ---------------------------------------------------------------

@@ -1,6 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { MIC_BUFFER_SECONDS } from "./types.ts";
 
+/** How often {@link VoiceIO.done} checks that the AudioContext is still rendering. */
+const DONE_POLL_INTERVAL_MS = 1000;
+
+/**
+ * Hard cap on waiting for playback to drain. The playback worklet buffers up
+ * to 60s of audio, so the longest legitimate drain is just under that — a
+ * wait past this means the processor died without reporting 'stop'.
+ */
+const DONE_MAX_WAIT_MS = 65_000;
+
 /**
  * Decode an audio file (any container/codec the browser can decode) and
  * resample it to mono PCM16 at `targetRate` — the format the server's STT
@@ -45,6 +55,12 @@ export type VoiceIOOptions = {
   playbackWorkletSrc: string;
   /** Callback invoked with buffered PCM16 microphone data to send to the server. */
   onMicData: (pcm16: ArrayBuffer) => void;
+  /**
+   * Called when an AudioWorklet processor throws and is killed by the browser
+   * (the node produces no further audio or messages), so the session can
+   * transition out of listening/speaking instead of looking healthy forever.
+   */
+  onError?: ((err: Error) => void) | undefined;
 };
 
 /**
@@ -78,7 +94,14 @@ export type VoiceIO = AsyncDisposable & {
  * @throws If microphone access is denied or AudioWorklet registration fails.
  */
 export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
-  const { sttSampleRate, ttsSampleRate, captureWorkletSrc, playbackWorkletSrc, onMicData } = opts;
+  const {
+    sttSampleRate,
+    ttsSampleRate,
+    captureWorkletSrc,
+    playbackWorkletSrc,
+    onMicData,
+    onError,
+  } = opts;
 
   // Use TTS rate for the context — playback fidelity is more perceptible.
   // Capture path resamples to STT rate if they differ.
@@ -135,6 +158,14 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   });
   mic.connect(capNode);
 
+  // A processor exception permanently kills the worklet — no further mic
+  // chunks will ever arrive. Surface it rather than staying silently deaf.
+  capNode.onprocessorerror = () => {
+    const err = new Error("Audio capture worklet crashed");
+    console.error("[aai-ui]", err.message);
+    onError?.(err);
+  };
+
   capNode.port.postMessage({ event: "start" });
 
   // The worklet batches ~MIC_BUFFER_SECONDS of PCM16 at the STT rate and posts
@@ -164,6 +195,15 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
         onPlaybackStop = null;
       }
     };
+    // A dead processor never posts 'stop' — settle any pending done() wait so
+    // session state can't hang in "speaking", then surface the failure.
+    node.onprocessorerror = () => {
+      const err = new Error("Audio playback worklet crashed");
+      console.error("[aai-ui]", err.message);
+      onPlaybackStop?.();
+      onPlaybackStop = null;
+      onError?.(err);
+    };
     playNode = node;
     return node;
   }
@@ -183,7 +223,22 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       // tab), the 'stop' round-trip never happens — resolve now rather than hang.
       if (ctx.state !== "running") return Promise.resolve();
       return new Promise<void>((resolve) => {
-        onPlaybackStop = resolve;
+        // Bounded wait: if the context suspends mid-playback or the processor
+        // dies, the 'stop' message never arrives — resolve anyway so session
+        // state can't be stuck in "speaking". The poll catches a suspension
+        // quickly; the hard cap covers a silently dead processor and sits
+        // just past the worklet's 60s buffer (the longest legitimate drain).
+        const settle = (): void => {
+          clearInterval(poll);
+          clearTimeout(cap);
+          if (onPlaybackStop === settle) onPlaybackStop = null;
+          resolve();
+        };
+        const poll = setInterval(() => {
+          if (ctx.state !== "running") settle();
+        }, DONE_POLL_INTERVAL_MS);
+        const cap = setTimeout(settle, DONE_MAX_WAIT_MS);
+        onPlaybackStop = settle;
         playNode?.port.postMessage({ event: "done" });
       });
     },

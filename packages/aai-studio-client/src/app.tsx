@@ -204,16 +204,22 @@ export function App({ apiKey, onSignOut }: AppProps) {
     if (projects.error instanceof ApiError && projects.error.status === 401) onSignOut();
   }, [projects.error, onSignOut]);
 
-  // Default to the first project once the list arrives.
-  useEffect(() => {
-    if (!project && projects.data?.[0]) setProject(projects.data[0]);
-  }, [projects.data, project]);
-
   const workspace = useQuery<ProjectData>({
     queryKey: ["project", project],
     queryFn: () => api.getProject(apiKey, project as string),
     enabled: project != null,
   });
+
+  // Same global handling for the workspace fetch (see projects above).
+  useEffect(() => {
+    if (workspace.error instanceof ApiError && workspace.error.status === 401) onSignOut();
+  }, [workspace.error, onSignOut]);
+
+  // Default to the first project once the list arrives.
+  useEffect(() => {
+    if (!project && projects.data?.[0]) setProject(projects.data[0]);
+  }, [projects.data, project]);
+
   const files = workspace.data?.files ?? {};
   const deployedSlug = workspace.data?.deployedSlug;
   // "Publish unlocks after your first build" — there must be an agent to ship.
@@ -249,6 +255,11 @@ export function App({ apiKey, onSignOut }: AppProps) {
     mutationFn: ({ path, content }: { path: string; content: string }) =>
       api.writeFile(apiKey, project as string, path, content),
     onSuccess: invalidateWorkspace,
+    // The editor's save handler shows the failure inline next to the buffer;
+    // log it too so a rejected save is never completely silent.
+    onError: (err) => {
+      console.error("File save failed:", err);
+    },
   });
 
   const publish = useMutation({
@@ -275,6 +286,14 @@ export function App({ apiKey, onSignOut }: AppProps) {
   let publishError: string | undefined;
   if (publish.error) {
     publishError = publish.error instanceof Error ? publish.error.message : String(publish.error);
+  }
+
+  // A failed workspace fetch would otherwise render as an empty project (and
+  // a misleading "Publish unlocks after your first build" tooltip).
+  let workspaceError: string | undefined;
+  if (workspace.error) {
+    workspaceError =
+      workspace.error instanceof Error ? workspace.error.message : String(workspace.error);
   }
 
   return (
@@ -304,6 +323,11 @@ export function App({ apiKey, onSignOut }: AppProps) {
         onPublish={() => publish.mutate()}
         onClose={() => setPublishOpen(false)}
       />
+      {workspaceError && (
+        <div className="border-b border-line bg-panel px-5 py-2 text-xs text-err">
+          Failed to load project: {workspaceError}
+        </div>
+      )}
       <main className="flex min-h-0 flex-1">
         <ChatPanel
           key={project ?? "no-project"}

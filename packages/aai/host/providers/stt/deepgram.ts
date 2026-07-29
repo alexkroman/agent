@@ -97,13 +97,20 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
 
       wireSocketEvents(connection, emitter, shell);
 
-      connection.connect();
-      await connectOrThrow(
-        "Deepgram STT",
-        connectError,
-        () => connection.waitForOpen(),
-        "WebSocket open failed",
-      );
+      try {
+        connection.connect();
+        await connectOrThrow(
+          "Deepgram STT",
+          connectError,
+          () => connection.waitForOpen(),
+          "WebSocket open failed",
+        );
+      } catch (err) {
+        // Open failed: release the half-open SDK socket instead of leaking
+        // it. shell.close() is idempotent and swallows teardown errors.
+        await shell.close();
+        throw err;
+      }
 
       closeOnAbort(openOpts.signal, shell.close);
 

@@ -48,6 +48,18 @@ describe("readProjectConfig / writeProjectConfig", () => {
       expect(result?.slug).toBe("new");
     });
   });
+
+  test("throws a clear error for a corrupted project.json (never null)", async () => {
+    await withTempDir(async (dir) => {
+      // Returning null here would make deploy generate a NEW slug and orphan
+      // the live deployment — corruption must be loud.
+      const fsp = await import("node:fs/promises");
+      const file = path.join(dir, ".aai", "project.json");
+      await fsp.mkdir(path.dirname(file), { recursive: true });
+      await fsp.writeFile(file, "{ definitely not json");
+      await expect(readProjectConfig(dir)).rejects.toThrow(`project.json is corrupted at ${file}`);
+    });
+  });
 });
 
 describe("getConfigDir", () => {

@@ -6,7 +6,7 @@
 import { z } from "zod";
 import type { ToolSchema } from "../sdk/_internal-types.ts";
 import { LOG_PREVIEW_CHARS, WS_OPEN } from "../sdk/constants.ts";
-import { safeJsonParse } from "../sdk/utils.ts";
+import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import {
   type CreateHeaderWebSocket,
@@ -313,16 +313,25 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   }
 
   ws.addEventListener("message", (ev) => {
-    const raw = safeJsonParse(String(ev.data));
-    if (raw === undefined) {
-      log.warn("S2S << invalid JSON", { data: String(ev.data).slice(0, LOG_PREVIEW_CHARS) });
-      return;
+    // The dispatch below fans out into session/tool code; a throw escaping a
+    // ws 'message' handler would be an uncaughtException that takes down the
+    // host — surface it through the session error path instead.
+    try {
+      const raw = safeJsonParse(String(ev.data));
+      if (raw === undefined) {
+        log.warn("S2S << invalid JSON", { data: String(ev.data).slice(0, LOG_PREVIEW_CHARS) });
+        return;
+      }
+      if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+        log.warn("S2S << non-object JSON message", { type: typeof raw });
+        return;
+      }
+      handleObject(raw as Record<string, unknown>, raw);
+    } catch (err) {
+      const msg = errorMessage(err);
+      log.error("S2S message dispatch failed", { error: msg });
+      callbacks.onError(new Error(`S2S message dispatch failed: ${msg}`));
     }
-    if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
-      log.warn("S2S << non-object JSON message", { type: typeof raw });
-      return;
-    }
-    handleObject(raw as Record<string, unknown>, raw);
   });
 
   ws.addEventListener("close", (ev) => {

@@ -168,6 +168,21 @@ describe("createSandboxPool", () => {
     expect(pool.readySize()).toBe(1);
   });
 
+  it("cleans up a warm harness evicted while idle (no leaked container/bundle dir)", async () => {
+    const w1 = makeFakeWarm();
+    const spawn = vi.fn(async (): Promise<WarmHarness> => w1);
+
+    const pool = createSandboxPool({ targetSize: 1, spawn });
+    await waitForReady(pool, 1);
+
+    // Dies while idle in the pool (e.g. OOM-killed at the cgroup limit) —
+    // eviction must also release the runsc registration + bundle dir.
+    w1.__die();
+
+    expect(pool.readySize()).toBe(0);
+    await vi.waitFor(() => expect(w1.__cleanedUp()).toBe(true));
+  });
+
   it("does not auto-replenish when a warm harness dies (avoids fail loops)", async () => {
     const harnesses = Array.from({ length: 10 }, () => makeFakeWarm());
     let i = 0;

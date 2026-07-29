@@ -26,7 +26,7 @@ import { ensureApiKey } from "./_config.ts";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
-import { errorMessage } from "./_utils.ts";
+import { errorCode, errorMessage } from "./_utils.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
@@ -128,7 +128,25 @@ function watchDirectory(dir: string, onChange: () => void): FSWatcher {
     ignoreInitial: true,
     persistent: false,
   });
-  watcher.on("all", () => void debouncedChange());
+  // Without an 'error' listener an ENOSPC/EMFILE from the OS watcher would
+  // either crash the process (unhandled 'error') or kill watching silently.
+  watcher.on("error", (err: unknown) => {
+    const hint =
+      errorCode(err) === "ENOSPC"
+        ? " The inotify watch limit was reached — raise the fs.inotify max_user_watches sysctl."
+        : "";
+    log.error(
+      `File watcher error: ${errorMessage(err)}.${hint} ` +
+        "Auto-restart on file changes may have stopped; restart `aai dev` after fixing.",
+    );
+  });
+  watcher.on("all", () => {
+    // debouncedChange resolves after onChange runs — a throw there must not
+    // become an unhandled rejection that kills the dev server.
+    debouncedChange().catch((err: unknown) => {
+      log.error(`Watch handler failed: ${errorMessage(err)}`);
+    });
+  });
   return watcher;
 }
 
@@ -137,7 +155,16 @@ function watchDirectory(dir: string, onChange: () => void): FSWatcher {
 /** Locate the pre-built default aai-ui client (served when no custom client.tsx). */
 function resolveDefaultClientDir(): string {
   const require = createRequire(import.meta.url);
-  const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
+  let pkgPath: string;
+  try {
+    pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
+  } catch (err) {
+    throw new Error(
+      `Could not locate the default client UI (${errorMessage(err)}) — ` +
+        "is @alexkroman1/aai-ui installed? Try reinstalling dependencies (pnpm install).",
+      { cause: err },
+    );
+  }
   return path.join(path.dirname(pkgPath), "dist", "default-client");
 }
 
@@ -219,6 +246,12 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       },
     });
     await viteServer.listen();
+    // Post-listen socket errors would otherwise be an unhandled 'error' event.
+    // (The backend AgentServer keeps its own 'error' listener from listen(),
+    // and exposes no event surface to add logging here.)
+    viteServer.httpServer?.on("error", (err) => {
+      log.error(`Vite dev server error: ${errorMessage(err)}`);
+    });
   }
 
   let restarting = false;
@@ -235,9 +268,16 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       return;
     }
     restarting = true;
-    void restart().finally(() => {
-      restarting = false;
-    });
+    // restart() catches its own build/listen failures, but a throw from an
+    // unexpected path must still be logged and must still clear `restarting`
+    // (catch-then-finally = try/finally semantics), or watching wedges forever.
+    void restart()
+      .catch((err: unknown) => {
+        log.error(`Restart failed: ${errorMessage(err)}`);
+      })
+      .finally(() => {
+        restarting = false;
+      });
   });
 
   async function restart(): Promise<void> {
@@ -292,8 +332,9 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
   return async () => {
     closed = true;
-    await watcher.close();
-    await viteServer?.close();
-    await currentServer.close();
+    // Each close is best-effort: one failing must not leak the others.
+    await watcher.close().catch(() => undefined);
+    await viteServer?.close().catch(() => undefined);
+    await currentServer.close().catch(() => undefined);
   };
 }

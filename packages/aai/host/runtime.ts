@@ -7,7 +7,7 @@
  * lifecycle hooks, and session management.
  */
 
-import pTimeout from "p-timeout";
+import pTimeout, { TimeoutError } from "p-timeout";
 import { createStorage } from "unstorage";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
@@ -24,6 +24,7 @@ import {
 } from "../sdk/providers.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { AgentDef } from "../sdk/types.ts";
+import { errorMessage } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { createMemoryVector } from "./memory-vector.ts";
 import { resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
@@ -368,9 +369,13 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         if (r.status === "rejected")
           logger.warn(`Session stop failed during shutdown: ${r.reason}`);
       }
-    } catch {
+    } catch (err) {
+      // allSettled never rejects, so this is normally pTimeout's TimeoutError
+      // — but don't mislabel anything else (e.g. a throwing logger above).
       logger.warn(
-        `Shutdown timeout (${shutdownTimeoutMs}ms) exceeded — force-closing ${sessions.size} remaining session(s)`,
+        err instanceof TimeoutError
+          ? `Shutdown timeout (${shutdownTimeoutMs}ms) exceeded — force-closing ${sessions.size} remaining session(s)`
+          : `Shutdown failed: ${errorMessage(err)} — force-closing ${sessions.size} remaining session(s)`,
       );
     }
     sessions.clear();

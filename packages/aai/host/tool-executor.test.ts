@@ -29,6 +29,15 @@ describe("executeToolCall", () => {
     expect(await run("test", {}, makeTool({ execute: () => null }))).toBe("null");
   });
 
+  test("stringifies a non-JSON-serializable result instead of returning undefined", async () => {
+    // JSON.stringify(function) is undefined — the String() fallback keeps the
+    // contract that the provider always gets a string.
+    const fn = () => "nope";
+    const result = await run("test", {}, makeTool({ execute: () => fn as unknown as string }));
+    expect(typeof result).toBe("string");
+    expect(result).toBe(String(fn));
+  });
+
   test("validates args against parameter schema", async () => {
     const tool = makeTool({
       parameters: z.object({ name: z.string() }),

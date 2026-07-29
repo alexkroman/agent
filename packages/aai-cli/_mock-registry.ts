@@ -123,24 +123,71 @@ export async function startMockRegistry(
   writeConfig(configPath, port);
   const { server: child } = await startServer(configPath);
 
+  // Terminate (SIGTERM, escalating to SIGKILL via execa's default
+  // forceKillAfterDelay) and await exit, swallowing the "killed" rejection.
+  const killServer = async () => {
+    child.kill();
+    await child.catch(() => undefined);
+  };
+
+  try {
+    publishPackages(packagesDir, packageNames, testVersion, registryUrl, registryEnv);
+  } catch (err) {
+    // A failed build/publish (or unparseable package.json) must not leave
+    // the verdaccio child running across the rest of the test run.
+    await killServer();
+    throw err;
+  }
+
+  return {
+    registryUrl,
+    testVersion,
+    env: registryEnv,
+    stop: async () => {
+      await killServer();
+      fs.rmSync(registryDir, { recursive: true, force: true });
+    },
+  };
+}
+
+/** Parse a package.json, rewriting version + workspace: deps to `testVersion`. */
+function patchPkgJson(originalPkg: string, pkgJsonPath: string, testVersion: string): string {
+  let pkg: ReturnType<typeof JSON.parse>;
+  try {
+    pkg = JSON.parse(originalPkg);
+  } catch (err) {
+    throw new Error(
+      `Invalid JSON in ${pkgJsonPath}: ${err instanceof Error ? err.message : String(err)}`,
+      { cause: err },
+    );
+  }
+  pkg.version = testVersion;
+  delete pkg.private; // Allow publishing private packages to mock registry
+  for (const depField of ["dependencies", "devDependencies", "peerDependencies"]) {
+    if (!pkg[depField]) continue;
+    for (const [dep, ver] of Object.entries(pkg[depField])) {
+      if (typeof ver === "string" && ver.startsWith("workspace:")) {
+        pkg[depField][dep] = testVersion;
+      }
+    }
+  }
+  return `${JSON.stringify(pkg, null, 2)}\n`;
+}
+
+function publishPackages(
+  packagesDir: string,
+  packageNames: string[],
+  testVersion: string,
+  registryUrl: string,
+  registryEnv: Record<string, string>,
+): void {
   for (const pkgName of packageNames) {
     const pkgPath = path.join(packagesDir, pkgName);
     const pkgJsonPath = path.join(pkgPath, "package.json");
     const originalPkg = fs.readFileSync(pkgJsonPath, "utf-8");
 
     // Temporarily set a unique version so pnpm never hits a stale cache
-    const pkg = JSON.parse(originalPkg);
-    pkg.version = testVersion;
-    delete pkg.private; // Allow publishing private packages to mock registry
-    for (const depField of ["dependencies", "devDependencies", "peerDependencies"]) {
-      if (!pkg[depField]) continue;
-      for (const [dep, ver] of Object.entries(pkg[depField])) {
-        if (typeof ver === "string" && ver.startsWith("workspace:")) {
-          pkg[depField][dep] = testVersion;
-        }
-      }
-    }
-    fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
+    fs.writeFileSync(pkgJsonPath, patchPkgJson(originalPkg, pkgJsonPath, testVersion));
 
     try {
       execaSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
@@ -154,17 +201,4 @@ export async function startMockRegistry(
       fs.writeFileSync(pkgJsonPath, originalPkg);
     }
   }
-
-  return {
-    registryUrl,
-    testVersion,
-    env: registryEnv,
-    stop: async () => {
-      // Terminate (SIGTERM, escalating to SIGKILL via execa's default
-      // forceKillAfterDelay) and await exit, swallowing the "killed" rejection.
-      child.kill();
-      await child.catch(() => undefined);
-      fs.rmSync(registryDir, { recursive: true, force: true });
-    },
-  };
 }

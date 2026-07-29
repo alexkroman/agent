@@ -45,10 +45,34 @@ export async function withOutput<T>(
   if (!result.ok) process.exit(1);
 }
 
-/** Write a line to stdout, resolving only once it has been flushed. */
+/**
+ * Write a line to stdout, resolving only once it has been flushed.
+ *
+ * Resolves (never rejects) even when the write fails: the common failure is
+ * EPIPE — the consumer closed the pipe (`aai … --json | head -1`) — and there
+ * is nothing useful to do about a broken stdout except carry on and exit.
+ * Stream-level `'error'` events are handled by {@link installStdoutGuard}.
+ */
 export function writeLine(line: string): Promise<void> {
   return new Promise((resolve) => {
     process.stdout.write(line, () => resolve());
+  });
+}
+
+/**
+ * Install an `'error'` listener on stdout so a broken pipe doesn't crash the
+ * CLI with an unhandled `'error'` event. EPIPE (consumer went away, e.g.
+ * `aai … --json | head -1`) exits quietly; anything else is reported on
+ * stderr and exits non-zero.
+ */
+export function installStdoutGuard(stream: NodeJS.WriteStream = process.stdout): void {
+  stream.on("error", (err: NodeJS.ErrnoException) => {
+    if (err.code === "EPIPE") {
+      process.exit(0);
+    } else {
+      process.stderr.write(`stdout error: ${err.message}\n`);
+      process.exit(1);
+    }
   });
 }
 
@@ -67,8 +91,8 @@ export class CliError extends Error {
   readonly code: string;
   readonly hint?: string | undefined;
 
-  constructor(code: string, message: string, hint?: string) {
-    super(message);
+  constructor(code: string, message: string, hint?: string, options?: ErrorOptions) {
+    super(message, options);
     this.name = "CliError";
     this.code = code;
     if (hint !== undefined) this.hint = hint;

@@ -5,7 +5,7 @@ import systemPrompt from "./system-prompt.md";
 type RxCui = { name: string; rxcui: string };
 
 async function resolveRxCui(name: string): Promise<RxCui | null> {
-  let raw: { idGroup: { rxnormId?: string[] } } | null;
+  let raw: { idGroup?: { rxnormId?: string[] } } | null;
   try {
     const resp = await fetch(
       `https://rxnav.nlm.nih.gov/REST/rxcui.json?name=${encodeURIComponent(name)}`,
@@ -15,7 +15,7 @@ async function resolveRxCui(name: string): Promise<RxCui | null> {
     raw = null;
   }
   if (!raw) return null;
-  const id = raw.idGroup.rxnormId?.[0];
+  const id = raw.idGroup?.rxnormId?.[0];
   return id ? { name, rxcui: id } : null;
 }
 

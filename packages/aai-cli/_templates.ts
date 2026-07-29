@@ -1,11 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { existsSync } from "node:fs";
+import { type Dirent, existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { downloadTemplate } from "giget";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
+import { errorMessage } from "./_utils.ts";
 
 const GIGET_SOURCE = "github:alexkroman/agent/packages/aai-templates";
 const GIGET_REF = process.env.AAI_TEMPLATES_REF ?? "main";
@@ -20,12 +21,21 @@ async function resolveTemplatesDir(): Promise<string> {
   // `<cwd>/<repo-owner>-<repo-name>`, which dumps a stray
   // `alexkroman-agent/` folder next to the user's project.
   const extractDir = await fs.mkdtemp(path.join(os.tmpdir(), "aai-templates-"));
-  const { dir } = await downloadTemplate(`${GIGET_SOURCE}#${GIGET_REF}`, {
-    dir: extractDir,
-    force: true,
-    forceClean: true,
-  });
-  return dir;
+  try {
+    const { dir } = await downloadTemplate(`${GIGET_SOURCE}#${GIGET_REF}`, {
+      dir: extractDir,
+      force: true,
+      forceClean: true,
+    });
+    return dir;
+  } catch (err) {
+    // Don't leave a half-extracted tmp dir behind on a failed download.
+    await fs.rm(extractDir, { recursive: true, force: true }).catch(() => undefined);
+    throw new Error(
+      `Failed to download templates from ${GIGET_SOURCE}#${GIGET_REF}: ${errorMessage(err)}`,
+      { cause: err },
+    );
+  }
 }
 
 /**
@@ -35,7 +45,18 @@ export async function downloadAndMergeTemplate(template: string, targetDir: stri
   const root = await resolveTemplatesDir();
   const templatesDir = path.join(root, "templates");
 
-  const available = await fs.readdir(templatesDir, { withFileTypes: true });
+  let available: Dirent[];
+  try {
+    available = await fs.readdir(templatesDir, { withFileTypes: true });
+  } catch (err) {
+    // A missing templates/ dir means the download was incomplete or corrupt,
+    // not that the user picked a bad name — say so instead of a raw ENOENT.
+    throw new Error(
+      `Templates directory is missing or unreadable at ${templatesDir} ` +
+        `(corrupt or incomplete template download?): ${errorMessage(err)}`,
+      { cause: err },
+    );
+  }
   const names = available.filter((e) => e.isDirectory()).map((e) => e.name);
   if (!names.includes(template)) {
     throw new Error(`Unknown template "${template}". Available templates: ${names.join(", ")}`);

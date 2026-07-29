@@ -41,6 +41,11 @@ const server = net.createServer((conn) => {
   const { stdin, stdout } = harness;
   if (!(stdin && stdout)) throw new Error("harness stdio missing");
 
+  // Writing to a harness that died mid-pipe emits `error` on stdin; without
+  // a listener that's an uncaughtException. `exit` below handles teardown.
+  stdin.on("error", () => {
+    /* harness died; 'exit' handler tears down */
+  });
   conn.pipe(stdin);
   stdout.pipe(conn);
 

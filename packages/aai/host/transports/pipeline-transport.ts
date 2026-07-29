@@ -66,6 +66,20 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const systemPrompt = sessionConfig.systemPrompt;
 
   const sessionAbort = new AbortController();
+  /**
+   * Turn-crash handler for chainTurn call sites. Throw-safe: the logger is
+   * caller-injectable, and a throw from a `.catch` handler would reject the
+   * chained turn promise anyway — exactly what the handler exists to prevent.
+   */
+  function logTurnCrash(what: string): (err: unknown) => void {
+    return (err: unknown): void => {
+      try {
+        log.error(what, { error: errorMessage(err), sid: opts.sid });
+      } catch {
+        // A throwing logger must not poison the turn chain.
+      }
+    };
+  }
   let audioReady = false;
   let terminated = false;
   let turnController: AbortController | null = null;
@@ -82,11 +96,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       if (terminated) return;
       speechEdges.speechEnded();
       callbacks.onUserTranscript(text);
-      chainTurn(() =>
-        runTurn(text).catch((err: unknown) => {
-          log.error("Pipeline turn crashed", { error: errorMessage(err), sid: opts.sid });
-        }),
-      );
+      chainTurn(() => runTurn(text).catch(logTurnCrash("Pipeline turn crashed")));
     },
   });
   // Pipeline transport owns its conversation memory (SessionCore does not in
@@ -112,11 +122,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     isTurnInFlight: () => turnController !== null || playbackClock.pending(),
     onNudge(consecutive) {
       log.info("Pipeline silence nudge", { sid: opts.sid, consecutive });
-      chainTurn(() =>
-        runTurn(silencePrompt).catch((err: unknown) => {
-          log.error("Pipeline silence nudge crashed", { error: errorMessage(err), sid: opts.sid });
-        }),
-      );
+      chainTurn(() => runTurn(silencePrompt).catch(logTurnCrash("Pipeline silence nudge crashed")));
     },
   });
 
@@ -138,12 +144,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       log.info("Pipeline false-interruption resume", { sid: opts.sid });
       speechEdges.speechEnded();
       chainTurn(() =>
-        runTurn(DEFAULT_FALSE_INTERRUPTION_PROMPT).catch((err: unknown) => {
-          log.error("Pipeline false-interruption resume crashed", {
-            error: errorMessage(err),
-            sid: opts.sid,
-          });
-        }),
+        runTurn(DEFAULT_FALSE_INTERRUPTION_PROMPT).catch(
+          logTurnCrash("Pipeline false-interruption resume crashed"),
+        ),
       );
     },
   });
@@ -204,7 +207,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   });
 
   function chainTurn(start: () => Promise<void>): void {
-    turnPromise = (turnPromise ?? Promise.resolve()).then(start);
+    // Chain past a rejected predecessor: every call site attaches its own
+    // .catch, but one that slips through must cost that turn, not wedge the
+    // serializer (a rejected turnPromise would mean no turn ever runs again).
+    turnPromise = (turnPromise ?? Promise.resolve()).catch(() => undefined).then(start);
   }
 
   function emitError(code: SessionErrorCode, message: string): void {
@@ -235,7 +241,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     sessionAbort.abort();
     // Close whatever was adopted before the failure (e.g. TTS went live,
     // then STT's open failed) — it must not outlive the terminate.
-    void providers.close();
+    providers.close().catch(() => {
+      // Best-effort teardown; a failed close is not actionable here.
+    });
   }
 
   /** Either provider failing is unrecoverable: surface it and tear the session down. */
@@ -370,11 +378,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (opts.skipGreeting) return;
     const greeting = sessionConfig.greeting;
     if (!greeting) return;
-    chainTurn(() =>
-      runGreeting(greeting).catch((err: unknown) => {
-        log.error("Pipeline greeting failed", { error: errorMessage(err), sid: opts.sid });
-      }),
-    );
+    chainTurn(() => runGreeting(greeting).catch(logTurnCrash("Pipeline greeting failed")));
   }
 
   // One-shot uploaded-clip transcription (Transport.transcribeFile) — the
@@ -390,9 +394,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     chainTurn,
     runTurn,
     callbacks,
-    onTurnCrash: (err) => {
-      log.error("Pipeline file turn crashed", { error: errorMessage(err), sid: opts.sid });
-    },
+    onTurnCrash: logTurnCrash("Pipeline file turn crashed"),
   });
 
   return {
@@ -425,7 +427,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // opened mid-connect is adopted-then-closed (openSide) before we close
       // below — otherwise a slow socket lands after stop() and lingers.
       if (startPromise !== null) await startPromise.catch(() => undefined);
-      if (turnPromise !== null) await turnPromise;
+      if (turnPromise !== null) await turnPromise.catch(() => undefined);
       await providers.close();
     },
 

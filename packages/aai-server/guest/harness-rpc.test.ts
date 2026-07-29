@@ -152,6 +152,34 @@ describe("host RPC round-trip", () => {
   test("ignores responses with no matching pending request", () => {
     expect(() => handleHostResponse({ id: 999_999, result: "orphan" })).not.toThrow();
   });
+
+  test("times out a host request that never gets a response", async () => {
+    vi.useFakeTimers();
+    try {
+      const promise = kvAdapter.get("wedged");
+      const rejection = expect(promise).rejects.toThrow(/timed out after 30000ms/);
+      vi.advanceTimersByTime(30_000);
+      await rejection;
+      expect(pendingHostRequests.size).toBe(0);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("rejectAllPendingHostRequests fails pending requests and proxied fetches", async () => {
+    const kvPromise = kvAdapter.get("a");
+    const fetchPromise = fetch("https://api.test/pending");
+    await flush();
+    expect(pendingHostRequests.size).toBeGreaterThan(0);
+    expect(pendingFetches.size).toBe(1);
+
+    rpc.rejectAllPendingHostRequests("Connection closed");
+
+    await expect(kvPromise).rejects.toThrow("Connection closed");
+    await expect(fetchPromise).rejects.toThrow(/fetch failed: Connection closed/);
+    expect(pendingHostRequests.size).toBe(0);
+    expect(pendingFetches.size).toBe(0);
+  });
 });
 
 describe("proxied fetch", () => {

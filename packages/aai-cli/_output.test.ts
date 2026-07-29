@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { EventEmitter } from "node:events";
 import { describe, expect, it, vi } from "vitest";
-import { fail, getOutputMode, ok, withOutput } from "./_output.ts";
+import { fail, getOutputMode, installStdoutGuard, ok, withOutput } from "./_output.ts";
 
 describe("getOutputMode", () => {
   it("returns json when --json flag is true", () => {
@@ -82,6 +83,42 @@ describe("withOutput", () => {
 
     expect(exitSpy).toHaveBeenCalledWith(1);
     exitSpy.mockRestore();
+  });
+});
+
+describe("installStdoutGuard", () => {
+  function makeStream(): NodeJS.WriteStream {
+    return new EventEmitter() as unknown as NodeJS.WriteStream;
+  }
+
+  it("exits 0 quietly on EPIPE (consumer closed the pipe)", () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const stream = makeStream();
+    installStdoutGuard(stream);
+
+    const err = new Error("broken pipe") as NodeJS.ErrnoException;
+    err.code = "EPIPE";
+    stream.emit("error", err);
+
+    expect(exitSpy).toHaveBeenCalledWith(0);
+    expect(stderrSpy).not.toHaveBeenCalled();
+    exitSpy.mockRestore();
+    stderrSpy.mockRestore();
+  });
+
+  it("reports other stream errors on stderr and exits 1", () => {
+    const exitSpy = vi.spyOn(process, "exit").mockImplementation(() => undefined as never);
+    const stderrSpy = vi.spyOn(process.stderr, "write").mockImplementation(() => true);
+    const stream = makeStream();
+    installStdoutGuard(stream);
+
+    stream.emit("error", new Error("disk full"));
+
+    expect(exitSpy).toHaveBeenCalledWith(1);
+    expect(stderrSpy).toHaveBeenCalledWith("stdout error: disk full\n");
+    exitSpy.mockRestore();
+    stderrSpy.mockRestore();
   });
 });
 
