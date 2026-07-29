@@ -210,12 +210,19 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     } catch (err: unknown) {
       return toolError(`Sandbox failed to start: ${errorMessage(err)}`);
     }
-    const raw = await sandboxHandle.conn.sendRequest("tool/execute", {
-      name,
-      args,
-      sessionId: sessionId ?? "",
-      messages: messages ?? [],
-    });
+    let raw: unknown;
+    try {
+      raw = await sandboxHandle.conn.sendRequest("tool/execute", {
+        name,
+        args,
+        sessionId: sessionId ?? "",
+        messages: messages ?? [],
+      });
+    } catch (err: unknown) {
+      // RPC failure (guest died, timeout) — name the tool at this layer so
+      // the error the LLM sees is actionable.
+      return toolError(`Tool "${name}" failed in sandbox: ${errorMessage(err)}`);
+    }
     const parsed = ToolCallResponseSchema.safeParse(raw);
     if (parsed.success) {
       return parsed.data.result;

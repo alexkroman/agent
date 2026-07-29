@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { createStorage } from "unstorage";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createBundleStore } from "./bundle-store.ts";
+import { agentObjectKey } from "./constants.ts";
 import { importMasterKey } from "./secrets.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
@@ -55,6 +56,34 @@ describe("bundle store (unstorage)", () => {
 
     const result = await store.getManifest("nonexistent");
     expect(result).toBeNull();
+  });
+
+  test("getManifest treats corrupt stored JSON as missing instead of throwing", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    await storage.setItem(agentObjectKey("bad-agent", "manifest.json"), "{not json at all");
+
+    await expect(store.getManifest("bad-agent")).resolves.toBeNull();
+    warnSpy.mockRestore();
+  });
+
+  test("getManifest treats a schema-invalid manifest as missing instead of throwing", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+
+    // Valid JSON, wrong shape — a corrupt or half-written manifest object.
+    await storage.setItem(
+      agentObjectKey("bad-agent", "manifest.json"),
+      JSON.stringify({ slug: 42 }),
+    );
+
+    await expect(store.getManifest("bad-agent")).resolves.toBeNull();
+    warnSpy.mockRestore();
   });
 
   test("concurrent putEnv calls do not lose updates", async () => {

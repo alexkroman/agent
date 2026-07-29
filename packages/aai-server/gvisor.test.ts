@@ -246,6 +246,44 @@ describe("createGvisorSandbox", () => {
     expect(runscCalls).toContain(`delete --force ${sandbox.containerId}`);
   });
 
+  test("buffers a spawn `error` emitted before the caller can attach listeners", async () => {
+    installAllBinaries();
+    const child = makeFakeChild(null);
+    mocks.spawn.mockReturnValue(child);
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const { createGvisorSandbox } = await loadGvisor();
+    const sandboxPromise = createGvisorSandbox({ slug: "a", harnessPath: "/srv/harness.mjs" });
+
+    const sandbox = await sandboxPromise;
+    expect(sandbox.spawnError()).toBeNull();
+
+    // With no listener this would be an uncaughtException; the sandbox's
+    // synchronously-attached listener buffers it for the caller instead.
+    child.emit("error", new Error("spawn EAGAIN"));
+    expect(sandbox.spawnError()?.message).toBe("spawn EAGAIN");
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("spawn EAGAIN"));
+    errorSpy.mockRestore();
+  });
+
+  test("consumes and logs the child's stderr with the containerId prefix", async () => {
+    installAllBinaries();
+    const child = makeFakeChild(null);
+    const stderr = new EventEmitter();
+    (child as unknown as { stderr: EventEmitter }).stderr = stderr;
+    mocks.spawn.mockReturnValue(child);
+    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { createGvisorSandbox } = await loadGvisor();
+    const sandbox = await createGvisorSandbox({ slug: "a", harnessPath: "/srv/harness.mjs" });
+
+    stderr.emit("data", Buffer.from("guest stack trace\n"));
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining(`[gvisor:${sandbox.containerId}] stderr: guest stack trace`),
+    );
+    // A stderr stream error must not throw either.
+    expect(() => stderr.emit("error", new Error("read after close"))).not.toThrow();
+    warnSpy.mockRestore();
+  });
+
   test("cleanup skips SIGKILL once the child emits exit", async () => {
     installAllBinaries();
     const child = makeFakeChild(null);

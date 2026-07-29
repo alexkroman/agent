@@ -9,7 +9,7 @@
  * it starts listening (see `configureSandbox` in sandbox-vm.ts).
  */
 
-import type { Kv } from "@alexkroman1/aai";
+import { errorMessage, type Kv } from "@alexkroman1/aai";
 import {
   VectorDeleteSchema,
   VectorQuerySchema,
@@ -143,7 +143,19 @@ export function registerGuestRpcHandlers(conn: NdjsonConnection, opts: GuestRpcO
       // Emit response messages as notifications in the background. The guest
       // already listens for this id (see FetchRequestParamsSchema), so even
       // synchronous early rejections are never dropped.
-      void handleFetch(req, p.id, (msg) => conn.sendNotification(msg.type, msg));
+      void handleFetch(req, p.id, (msg) => conn.sendNotification(msg.type, msg)).catch(
+        (err: unknown) => {
+          // handleFetch reports expected failures in-band; a throw means it
+          // died before emitting response-error. Fail the guest's pending
+          // fetch fast instead of letting it stall to the tool timeout.
+          console.error(`Sandbox fetch handler failed: ${errorMessage(err)}`);
+          conn.sendNotification("fetch/response-error", {
+            type: "fetch/response-error",
+            id: p.id,
+            message: errorMessage(err),
+          });
+        },
+      );
       // Ack the request with the same id.
       return { id: p.id };
     });

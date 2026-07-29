@@ -27,6 +27,7 @@ import {
   handleFetchNotification,
   handleHostResponse,
   kvAdapter,
+  rejectAllPendingHostRequests,
   sendError,
   sendResponse,
   sendToClient,
@@ -208,12 +209,15 @@ export async function executeTool(
     send: (event, data) => sendToClient(req.sessionId, event, data),
   };
 
-  const parsed =
-    tool.parameters && typeof tool.parameters.parse === "function"
-      ? tool.parameters.parse(req.args)
-      : req.args;
-
   try {
+    // Parse inside the try: invalid LLM-supplied args must surface as a
+    // `{ error }` tool result (which the LLM can repair), not as a JSON-RPC
+    // protocol error.
+    const parsed =
+      tool.parameters && typeof tool.parameters.parse === "function"
+        ? tool.parameters.parse(req.args)
+        : req.args;
+
     const result = await withTimeout(
       Promise.resolve(tool.execute(parsed, ctx)),
       TOOL_TIMEOUT_MS,
@@ -307,6 +311,9 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
 }
 
 export function handleNotification(notif: JsonRpcNotification, state: HarnessState): void {
+  // The frame came off the wire — a malformed notification with no string
+  // `method` must be ignored, not allowed to throw and kill the main loop.
+  if (typeof notif?.method !== "string") return;
   if (notif.method === "shutdown") Deno.exit(0);
   if (notif.method === "session/end" && state.sessionState) {
     const params = notif.params as { sessionId?: string } | undefined;
@@ -356,6 +363,11 @@ async function main(): Promise<void> {
 
     dispatchMessage(msg, state);
   }
+
+  // stdin closed — the host is gone. Nothing pending can ever be answered,
+  // so fail it all fast (this also clears the per-request timeout timers,
+  // letting the process exit instead of idling until they fire).
+  rejectAllPendingHostRequests("Connection closed");
 }
 
 // Only run main loop when executed directly by Deno (not when imported in tests).
