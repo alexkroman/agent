@@ -194,10 +194,7 @@ describe("tool egress guard — shared policy", () => {
   });
 
   test("rejects past the shared concurrency cap", async () => {
-    let release = () => undefined as void;
-    const gate = new Promise<void>((resolve) => {
-      release = () => resolve();
-    });
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
     inner.mockImplementation(async () => {
       await gate;
       return new Response("ok");
