@@ -197,7 +197,9 @@ export function deployBody(overrides?: Record<string, unknown>): string {
 
 export type TestFetch = (input: string | Request, init?: RequestInit) => Promise<Response>;
 
-export async function createTestOrchestrator(): Promise<{
+export async function createTestOrchestrator(
+  overrides: Partial<Parameters<typeof createOrchestrator>[0]> = {},
+): Promise<{
   fetch: TestFetch;
   store: BundleStore;
   storage: Storage;
@@ -209,6 +211,7 @@ export async function createTestOrchestrator(): Promise<{
     store,
     storage,
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
+    ...overrides,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
   return { fetch, store, storage };

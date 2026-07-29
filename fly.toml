@@ -1,6 +1,22 @@
 app = 'aai-agent'
 primary_region = 'sjc'
 
+# ── Shutdown ──
+# These MUST stay above the first [table]. In TOML, bare keys after a table
+# header belong to that table — they sat at the bottom of this file, below
+# [metrics], so Fly parsed them as `metrics.kill_signal`/`metrics.kill_timeout`
+# and silently ignored both. Verified with `fly config show --local`: down there
+# they read as null, up here they read as SIGTERM / 2m30s. The Machines API
+# agreed (kill_timeout: null) and the deploy logs showed Fly sending its default
+# SIGINT, which means the process was really being force-killed 5s after the
+# stop signal.
+kill_signal = "SIGTERM"
+# Seconds (integer; a "150s" string also parses). 150 leaves the 120s session
+# drain (SHUTDOWN_DRAIN_MS) room to finish, plus slack for sandbox teardown and
+# the listener close after it. Fly caps this at 300. Raising the drain means
+# raising this first, or Fly SIGKILLs mid-drain and the wait buys nothing.
+kill_timeout = 150
+
 [build]
   dockerfile = "packages/aai-server/Dockerfile"
 
@@ -47,14 +63,24 @@ primary_region = 'sjc'
     path = "/health"
 
 [deploy]
-  strategy = "rolling"
+  # Bluegreen boots a replacement alongside each running machine and only moves
+  # traffic once every new machine passes health checks. Rolling replaced them
+  # in place, which with 2 machines meant serving on half capacity for the ~42s
+  # each took to boot — and Fly says as much during it ("services exposed on
+  # ports [80, 443] will have intermittent failures"). Here the old machines
+  # keep serving until the new ones are actually ready.
+  #
+  # Costs two extra machines for the length of a deploy (4 total, briefly);
+  # steady state is unchanged at 2. Eligible because the app has no volumes,
+  # which bluegreen cannot migrate.
+  #
+  # Note this does not by itself save calls in flight: at cutover the old
+  # machines still stop. That is what the drain below is for.
+  strategy = "bluegreen"
 
 [metrics]
   port = 8080
   path = "/metrics"
-
-kill_signal = "SIGTERM"
-kill_timeout = "10s"
 
 [[vm]]
   memory = '2gb'

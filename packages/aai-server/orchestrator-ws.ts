@@ -33,16 +33,27 @@ export type WsUpgradeOpts = {
   sandboxOpts: Parameters<typeof resolveSandbox>[1];
   /** Max concurrent WebSocket connections. Defaults to MAX_CONNECTIONS. */
   maxConnections?: number;
+  /**
+   * True once shutdown has begun. New upgrades are refused while draining so
+   * the machine stops taking calls it is about to drop — see `_drain.ts`.
+   */
+  isDraining?: () => boolean;
 };
 
 export type WsUpgrades = {
   injectWebSocket: (server: import("node:http").Server) => void;
   /**
    * Close every live session WebSocket (1001 "going away"). Graceful
-   * shutdown calls this before `server.close()` — an HTTP server with open
+   * shutdown calls this after the drain deadline — an HTTP server with open
    * WebSockets never finishes closing on its own.
    */
   closeActiveSockets: () => void;
+  /**
+   * Live session sockets. Shutdown polls this to know when draining is done,
+   * rather than subscribing to close events — nothing to leak if a socket
+   * closes while shutdown is already walking the set.
+   */
+  activeSessionCount: () => number;
 };
 
 export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
@@ -245,6 +256,22 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
     }
     const slug = slugMatch[1] as string;
 
+    // Draining: this machine is being replaced, so starting a session here
+    // would only get it cut when the process exits. Answer the handshake
+    // instead of dropping the socket — a bare RST is indistinguishable from a
+    // network fault, and the client should reconnect (landing on a machine
+    // that is staying) rather than retry into the same refusal.
+    if (opts.isDraining?.()) {
+      socket.write(
+        "HTTP/1.1 503 Service Unavailable\r\n" +
+          "Connection: close\r\n" +
+          "Content-Type: text/plain\r\n\r\n" +
+          "server draining\n",
+      );
+      socket.destroy();
+      return;
+    }
+
     if (!acquireConnectionSlot(socket)) return;
 
     // Host mode lets the caller replace the agent's prompt and tools, so it
@@ -301,5 +328,5 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
     }
   };
 
-  return { injectWebSocket, closeActiveSockets };
+  return { injectWebSocket, closeActiveSockets, activeSessionCount: () => wss.clients.size };
 }

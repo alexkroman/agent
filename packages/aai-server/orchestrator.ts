@@ -73,6 +73,11 @@ export type OrchestratorOpts = {
   pool?: SandboxPool;
   /** Max concurrent WebSocket connections. Defaults to MAX_CONNECTIONS. */
   maxConnections?: number;
+  /**
+   * True once shutdown has begun. Fails `/health` and refuses new WebSocket
+   * upgrades so the machine stops taking sessions it is about to drop.
+   */
+  isDraining?: () => boolean;
 };
 
 async function loadAgentConfig(
@@ -98,10 +103,12 @@ export type Orchestrator = {
   injectWebSocket: (server: import("node:http").Server) => void;
   /**
    * Close every live session WebSocket (1001 "going away"). Graceful
-   * shutdown calls this before `server.close()` — an HTTP server with open
+   * shutdown calls this after the drain deadline — an HTTP server with open
    * WebSockets never finishes closing on its own.
    */
   closeActiveSockets: () => void;
+  /** Live session sockets. Shutdown polls this while draining. */
+  activeSessionCount: () => number;
 };
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
@@ -142,7 +149,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.onError(createErrorHandler());
   app.use("*", prometheusMiddleware);
 
-  app.get("/health", (c) => c.json({ status: "ok" }));
+  // 503 while draining is what pulls the machine out of fly-proxy's rotation,
+  // so new traffic goes to a machine that is staying up. Without it the drain
+  // would keep accepting the very sessions it is waiting to finish.
+  app.get("/health", (c) =>
+    opts.isDraining?.() ? c.json({ status: "draining" }, 503) : c.json({ status: "ok" }),
+  );
 
   // Internal-only: Fly's private network doesn't add X-Forwarded-For;
   // public edge always does — treat XFF presence as "external request".
@@ -261,12 +273,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
     original(req, { ...bindings, ...env });
 
-  const { injectWebSocket, closeActiveSockets } = createWsUpgrades({
+  const { injectWebSocket, closeActiveSockets, activeSessionCount } = createWsUpgrades({
     slots: opts.slots,
     store: opts.store,
     sandboxOpts,
     ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),
+    ...(opts.isDraining && { isDraining: opts.isDraining }),
   });
 
-  return { app, injectWebSocket, closeActiveSockets };
+  return { app, injectWebSocket, closeActiveSockets, activeSessionCount };
 }

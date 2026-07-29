@@ -17,6 +17,18 @@ export const IDLE_SANDBOX_MS = 5 * 60 * 1000;
 /** 10 MB. */
 export const MAX_WORKER_SIZE = 10_000_000;
 
+/**
+ * How long shutdown waits for live sessions to end before force-closing them.
+ *
+ * Must stay below `kill_timeout` in fly.toml (currently 150s) with room for
+ * sandbox teardown afterwards, or Fly SIGKILLs the process mid-drain and the
+ * wait accomplishes nothing. Override with `SHUTDOWN_DRAIN_MS`.
+ */
+export const DEFAULT_SHUTDOWN_DRAIN_MS = 120_000;
+
+/** How often the drain loop re-checks the live-session count. */
+export const DRAIN_POLL_MS = 250;
+
 // ── Storage layout ──
 // Single source of truth for the `agents/{slug}` storage namespace. Note
 // that the platform-default KV lives under the same prefix, so a prefix

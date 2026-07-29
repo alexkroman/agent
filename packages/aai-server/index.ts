@@ -11,7 +11,8 @@ import { createMemoryVector, createPineconeVector, type Vector } from "@alexkrom
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
-import { assertDevKeys, isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
+import { assertDevKeys, isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize } from "./_boot.ts";
+import { waitForIdle } from "./_drain.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
 import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
@@ -101,7 +102,15 @@ async function main(): Promise<void> {
   initHostCapacityGauges();
   const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
 
-  const opts = await buildOpts(env);
+  // Flipped by `shutdown()` before anything is torn down: it fails /health so
+  // fly-proxy stops routing here, and refuses new WebSocket upgrades. Both are
+  // needed for the drain below to converge — otherwise the machine keeps
+  // accepting the sessions it is waiting to finish.
+  let draining = false;
+  const opts: OrchestratorOpts = {
+    ...(await buildOpts(env)),
+    isDraining: () => draining,
+  };
 
   // Pay the rootfs prep cost (deno binary copy, lib mount points) up
   // front, before the HTTP listener is exposed to traffic. Without this,
@@ -117,7 +126,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const { app, injectWebSocket, closeActiveSockets } = createOrchestrator(opts);
+  const { app, injectWebSocket, closeActiveSockets, activeSessionCount } = createOrchestrator(opts);
   const nodeServer = serve({ fetch: app.fetch, port });
   injectWebSocket(nodeServer as import("node:http").Server);
 
@@ -140,8 +149,29 @@ async function main(): Promise<void> {
     // run sandbox shutdown twice.
     if (shuttingDown) return;
     shuttingDown = true;
+
+    // Stop taking work before waiting for it to finish, then let live calls
+    // end on their own. A voice session is a long-lived socket, so closing
+    // them immediately (which this used to do) cut every conversation in
+    // flight on every deploy — both strategies replace all machines, so that
+    // was every active call, mid-sentence.
+    draining = true;
+    const active = activeSessionCount();
+    const drainMs = resolveDrainMs(env.SHUTDOWN_DRAIN_MS);
+    console.info("Draining active sessions...", { active, drainMs });
+    const { drained, remaining } = await waitForIdle({
+      activeCount: activeSessionCount,
+      timeoutMs: drainMs,
+    });
+    if (!drained) {
+      // Deliberately loud: this is a call that got cut, and the deadline is
+      // only correct if it is rarely hit. Fly SIGKILLs at kill_timeout, so
+      // waiting past it is not an option.
+      console.warn("Drain deadline reached; closing sessions still in flight", { remaining });
+    }
+
     console.info("Shutting down...");
-    // Close client WebSockets first: `nodeServer.close()` only waits for
+    // Close client WebSockets: `nodeServer.close()` only waits for
     // connections to end, it never ends them, so open sessions would ride
     // out the whole fallback timeout on every SIGTERM under load.
     closeActiveSockets();
