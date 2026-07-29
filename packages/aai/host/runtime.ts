@@ -157,9 +157,16 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const sinkMap = new Map<string, ClientSink>();
   // Text-only agents (tts: none()) tell the client up front that no audio
   // frames will arrive, so it renders text replies instead of playback.
+  //
+  // Reads the *effective* tts, not `agent.tts`: the platform never puts
+  // providers on the agent object, it passes them as runtime options (see
+  // sandbox.ts `toRuntimeAgent`). Checking `agent.tts` alone meant every
+  // deployed text-only agent told the browser to expect audio, so it rendered
+  // the voice UI and waited for playback that never came — while `aai dev`,
+  // which does hand over the agent's own descriptors, worked fine.
   const readyConfig: ReadyConfig = buildReadyConfig(
     s2sConfig,
-    isTextOnlyTts(agent.tts) ? { audioOut: false } : {},
+    isTextOnlyTts(effectiveProviders.tts) ? { audioOut: false } : {},
   );
 
   // Per-session tool state (self-hosted mode only); cleaned up on session end.

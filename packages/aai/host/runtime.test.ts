@@ -9,6 +9,10 @@ import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
 import { fetchMock } from "../sdk/_test-utils.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
+import { anthropic } from "../sdk/providers/llm/anthropic.ts";
+import { assemblyAI } from "../sdk/providers/stt/assemblyai.ts";
+import { cartesia } from "../sdk/providers/tts/cartesia.ts";
+import { none } from "../sdk/providers/tts/none.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent } from "./_test-utils.ts";
@@ -534,5 +538,61 @@ describe("createRuntime — send channel (send_message builtin)", () => {
     });
     expect(await exec.executeTool("send_message", {}, "s1", [])).toBe("custom ran");
     expect(exec.toolSchemas.filter((s) => s.name === "send_message")).toHaveLength(1);
+  });
+});
+
+describe("createRuntime — text-only readyConfig", () => {
+  // Providers resolve eagerly, so the runtime needs keys to construct at all.
+  const PROVIDER_KEYS = {
+    ASSEMBLYAI_API_KEY: "k",
+    ANTHROPIC_API_KEY: "k",
+    CARTESIA_API_KEY: "k",
+  };
+  const textOnlyAgent = {
+    name: "Notes",
+    systemPrompt: "x",
+    greeting: "",
+    maxSteps: 1,
+    tools: {},
+  };
+
+  test("tts: none() on the agent declares audioOut: false", () => {
+    const runtime = createRuntime({
+      agent: {
+        ...textOnlyAgent,
+        stt: assemblyAI({ model: "u3pro-rt" }),
+        llm: anthropic({ model: "claude-haiku-4-5" }),
+        tts: none(),
+      },
+      env: PROVIDER_KEYS,
+    });
+    expect(runtime.readyConfig.audioOut).toBe(false);
+  });
+
+  test("tts: none() passed as a runtime option also declares audioOut: false", () => {
+    // The platform does not put providers on the agent object — it hands them
+    // to createRuntime as options (see sandbox.ts toRuntimeAgent). Reading
+    // agent.tts alone meant a deployed text-only agent told the browser to
+    // expect audio, so it rendered the voice UI and waited for playback that
+    // never came.
+    const runtime = createRuntime({
+      agent: textOnlyAgent,
+      env: PROVIDER_KEYS,
+      stt: assemblyAI({ model: "u3pro-rt" }),
+      llm: anthropic({ model: "claude-haiku-4-5" }),
+      tts: none(),
+    });
+    expect(runtime.readyConfig.audioOut).toBe(false);
+  });
+
+  test("a speaking agent leaves audioOut alone", () => {
+    const runtime = createRuntime({
+      agent: textOnlyAgent,
+      env: PROVIDER_KEYS,
+      stt: assemblyAI({ model: "u3pro-rt" }),
+      llm: anthropic({ model: "claude-haiku-4-5" }),
+      tts: cartesia(),
+    });
+    expect(runtime.readyConfig.audioOut).toBeUndefined();
   });
 });
