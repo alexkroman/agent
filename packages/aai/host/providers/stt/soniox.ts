@@ -13,10 +13,13 @@ import {
 import { safeJsonParse } from "../../../sdk/utils.ts";
 import { createAudioSendGate } from "../../_audio-gate.ts";
 import { pcm16ToBytes } from "../../_pcm.ts";
+import { createRestartableTimer } from "../../_timer.ts";
 import {
   closeOnAbort,
   connectOrThrow,
+  createGuardedWs,
   createSessionShell,
+  dropSocket,
   requireApiKey,
   waitForOpen,
 } from "../_utils.ts";
@@ -24,6 +27,11 @@ import {
 // `@soniox/speech-to-text-web` is browser-only (MediaRecorder/getUserMedia),
 // so we speak the WebSocket protocol directly.
 const SONIOX_WS_URL = "wss://stt-rt.soniox.com/transcribe-websocket";
+
+// Quiet window after an all-final frame before flushing the batched final on
+// its own. Short enough that turn commit isn't perceptibly delayed, long
+// enough to still batch a follow-up final that lands a frame or two later.
+const SONIOX_FINAL_FLUSH_MS = 300;
 
 interface SonioxToken {
   text?: string;
@@ -73,19 +81,17 @@ function parseFrame(raw: WebSocket.RawData): SonioxResponse | null {
   return (safeJsonParse(raw.toString()) as SonioxResponse | undefined) ?? null;
 }
 
-function handleResponse(
-  res: SonioxResponse,
-  emitter: Emitter<SttEvents>,
-  finalBuf: { value: string },
-): void {
+interface SonioxEmit {
+  emitFinal: (text: string) => void;
+  emitPartial: (text: string) => void;
+  streamError: (message: string) => void;
+  /** Arm the flush-on-quiet timer so a trailing final commits without a follow-up utterance. */
+  armFlush: () => void;
+}
+
+function handleResponse(res: SonioxResponse, emit: SonioxEmit, finalBuf: { value: string }): void {
   if (res.error_code !== undefined) {
-    emitter.emit(
-      "error",
-      makeSttError(
-        "stt_stream_error",
-        `Soniox error ${res.error_code}: ${res.error_message ?? "unknown"}`,
-      ),
-    );
+    emit.streamError(`Soniox error ${res.error_code}: ${res.error_message ?? "unknown"}`);
     return;
   }
   if (!res.tokens || res.tokens.length === 0) return;
@@ -95,11 +101,18 @@ function handleResponse(
   // Batch contiguous finals into one `final` event by flushing only when
   // a new non-final preview starts (or the session finishes).
   if (finalBuf.value.length > 0 && (nonFinal.length > 0 || res.finished)) {
-    emitter.emit("final", finalBuf.value);
+    emit.emitFinal(finalBuf.value);
     finalBuf.value = "";
+  } else if (finalBuf.value.length > 0) {
+    // Soniox runs without endpoint detection, so an utterance whose last
+    // frames are all-final (user stops, no more partials) would otherwise sit
+    // buffered until the *next* utterance's first partial flushes it — the
+    // pipeline never gets a `final` and the turn never commits. Arm a short
+    // quiet timer to flush it on its own.
+    emit.armFlush();
   }
   if (nonFinal.length > 0) {
-    emitter.emit("partial", nonFinal);
+    emit.emitPartial(nonFinal);
   }
 }
 
@@ -111,35 +124,61 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
         makeSttError("stt_auth_failed", msg),
       );
 
-      const ws = new WebSocket(SONIOX_WS_URL);
+      const ws = createGuardedWs(
+        () => new WebSocket(SONIOX_WS_URL),
+        (msg) => makeSttError("stt_connect_failed", msg),
+        "Soniox STT",
+      );
       const emitter: Emitter<SttEvents> = createNanoEvents<SttEvents>();
       const finalBuf = { value: "" };
+
+      // Emit `final`/`partial` through the shell's throw containment: a
+      // listener that throws must not escape a socket 'message' handler (an
+      // uncaughtException), and nothing may be emitted once the session closed.
+      const safeEmitFinal = (text: string): void =>
+        shell.safeEmit(() => emitter.emit("final", text));
+      const safeEmitPartial = (text: string): void =>
+        shell.safeEmit(() => emitter.emit("partial", text));
+
+      const flushTimer = createRestartableTimer(() => {
+        if (finalBuf.value.length > 0) {
+          safeEmitFinal(finalBuf.value);
+          finalBuf.value = "";
+        }
+      });
+
+      const emit: SonioxEmit = {
+        emitFinal: (text) => {
+          flushTimer.clear();
+          safeEmitFinal(text);
+        },
+        emitPartial: safeEmitPartial,
+        streamError: (message) => shell.streamError(message),
+        armFlush: () => flushTimer.arm(SONIOX_FINAL_FLUSH_MS),
+      };
 
       const shell = createSessionShell({
         makeStreamError: (msg) => makeSttError("stt_stream_error", msg),
         emitError: (err) => emitter.emit("error", err),
         teardown: () => {
-          // Flush any batched finals so the last utterance isn't dropped.
+          flushTimer.clear();
+          // Flush any batched finals so the last utterance isn't dropped. This
+          // runs after the shell marked the session closed, so `safeEmit`
+          // (gated on `closed`) would swallow it — emit directly, still
+          // containing a listener throw so it can't escape teardown.
           if (finalBuf.value.length > 0) {
-            emitter.emit("final", finalBuf.value);
+            try {
+              emitter.emit("final", finalBuf.value);
+            } catch {
+              // A listener threw during teardown; nothing further to do.
+            }
             finalBuf.value = "";
           }
-          try {
-            ws.close();
-          } catch {
-            // Socket already broken — still drop the listeners below.
-          }
-          // Drop our handlers so their closures (emitter/finalBuf/shell) don't
-          // stay reachable via the socket if `ws` outlives this session.
-          ws.removeAllListeners();
+          // Detach and close, leaving a zero-listener error guard so a late
+          // error during the close handshake can't crash the process.
+          dropSocket(ws);
         },
       });
-
-      // Placeholder 'error' listener bound before connecting (see the
-      // cartesia.ts pattern): waitForOpen's own listener is removed once it
-      // settles, and a later socket error with zero listeners is an unhandled
-      // 'error' event that crashes the process.
-      ws.on("error", () => undefined);
 
       try {
         await connectOrThrow(
@@ -151,19 +190,15 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
         ws.send(JSON.stringify(buildConfigFrame(apiKey, opts, openOpts.sampleRate)));
       } catch (err) {
         // Failed connect / config send: close the socket before rethrowing so
-        // it can't linger half-open (late errors land in the placeholder).
-        try {
-          ws.close();
-        } catch {
-          // Socket already broken — nothing left to release.
-        }
+        // it can't linger half-open (late errors land in the guard listener).
+        dropSocket(ws);
         throw err;
       }
 
       ws.on("message", (raw: WebSocket.RawData) => {
         if (shell.isClosed()) return;
         const res = parseFrame(raw);
-        if (res) handleResponse(res, emitter, finalBuf);
+        if (res) handleResponse(res, emit, finalBuf);
       });
 
       ws.on("error", (err: Error) => shell.onSocketError(err));

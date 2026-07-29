@@ -244,10 +244,18 @@ export function repairOpenAiStream(
     const response = await (baseFetch ?? globalThis.fetch)(input, init);
     const contentType = response.headers.get("content-type") ?? "";
     if (!(response.body && contentType.includes(SSE_CONTENT_TYPE))) return response;
+    // The repair transform rewrites frames (synthetic tool-call ids lengthen
+    // chunks), so the original body-length/encoding headers no longer describe
+    // the stream. Copy the headers but drop those two, or a gateway/proxy that
+    // set `content-length` would make undici truncate the repaired stream
+    // mid-flight — on exactly the responses that needed repairing.
+    const headers = new Headers(response.headers);
+    headers.delete("content-length");
+    headers.delete("content-encoding");
     return new Response(response.body.pipeThrough(createRepairTransform(newId)), {
       status: response.status,
       statusText: response.statusText,
-      headers: response.headers,
+      headers,
     });
   };
 }

@@ -43,15 +43,10 @@ export function scanWords(text: string, min: number): number {
   return count;
 }
 
-/** Count whitespace-delimited words in an interim transcript. */
-export function countWords(text: string): number {
-  return scanWords(text, Number.POSITIVE_INFINITY);
-}
-
 /**
  * True when `text` holds at least `min` whitespace-delimited words. Cheaper
- * than {@link countWords} on the barge-in path: `minBargeInWords` is small, so
- * the scan stops after a couple of words instead of walking a long partial.
+ * than a full count on the barge-in path: `minBargeInWords` is small, so the
+ * scan stops after a couple of words instead of walking a long partial.
  */
 export function hasMinWords(text: string, min: number): boolean {
   if (min <= 0) return true;

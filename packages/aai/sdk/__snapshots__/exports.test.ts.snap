@@ -35,6 +35,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "MAX_CONSECUTIVE_SILENCE_NUDGES",
   "MAX_ERROR_MESSAGE_CHARS",
   "MAX_HTML_BYTES",
+  "MAX_JSON_BYTES",
   "MAX_MESSAGE_BUFFER_SIZE",
   "MAX_PAGE_CHARS",
   "MAX_PROVIDER_WS_BUFFERED_BYTES",
@@ -87,6 +88,7 @@ exports[`export surface stability > @alexkroman1/aai/manifest export 1`] = `
 
 exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
 [
+  "CLIENT_MESSAGE_TYPES",
   "ClientEventSchema",
   "ClientMessageSchema",
   "HostConfigMessageSchema",

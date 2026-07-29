@@ -9,6 +9,7 @@ import {
 import type { ClientEvent, ServerMessage } from "./protocol.ts";
 import {
   buildReadyConfig,
+  CLIENT_MESSAGE_TYPES,
   ClientEventSchema,
   ClientMessageSchema,
   KvRequestSchema,
@@ -247,6 +248,29 @@ describe("property: lenientParse", () => {
         }
       }),
     );
+  });
+
+  test("a known type that fails validation is malformed (not an ignorable unknown type)", () => {
+    // A tool_result missing toolCallId is a *known* type that failed strict
+    // validation — with CLIENT_MESSAGE_TYPES it must report malformed:true so
+    // the host warns, not silently swallow it as a forward-compat unknown type.
+    const result = lenientParse(
+      ClientMessageSchema,
+      { type: "tool_result", result: "x" },
+      CLIENT_MESSAGE_TYPES,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.malformed).toBe(true);
+  });
+
+  test("an unknown type is not malformed (safe to ignore across versions)", () => {
+    const result = lenientParse(
+      ClientMessageSchema,
+      { type: "from_a_newer_client" },
+      CLIENT_MESSAGE_TYPES,
+    );
+    expect(result.ok).toBe(false);
+    if (!result.ok) expect(result.malformed).toBe(false);
   });
 });
 

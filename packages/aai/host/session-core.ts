@@ -128,8 +128,22 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     // with silence so endpointing commits the final turn (the client
     // skips padding on this path).
     const padded = withTrailingSilence(pcm, upload.sampleRate);
+    void replayClipThroughRealtime(padded);
+  }
+
+  /**
+   * Replay a padded clip through the realtime audio path, yielding between
+   * chunks. A synchronous blast never lets the provider socket flush, so its
+   * send buffer grows past the audio gate's cap (~1 MiB ≈ 25 s of PCM16) and
+   * every later chunk — including the trailing endpointing silence, so the
+   * turn may never commit — is silently dropped. Yielding lets the socket
+   * drain and keeps the buffered amount under the gate threshold.
+   */
+  async function replayClipThroughRealtime(padded: Uint8Array): Promise<void> {
     for (let i = 0; i < padded.byteLength; i += FILE_UPLOAD_CHUNK_BYTES) {
+      if (stopped) return;
       opts.transport.sendUserAudio(padded.subarray(i, i + FILE_UPLOAD_CHUNK_BYTES));
+      await new Promise<void>((resolve) => setImmediate(resolve));
     }
   }
 

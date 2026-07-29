@@ -294,6 +294,17 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         opts.callbacks.onAudioDone();
         return;
       case "input_audio_buffer.speech_started":
+        if (replyInFlight) {
+          // Server-VAD barge-in: OpenAI cancels the in-flight response
+          // server-side, but unlike a client `cancelReply()` nothing else
+          // tells the client to flush its buffered audio, so the interrupted
+          // reply keeps playing out over the user. Emit `onCancelled` to flush
+          // playback (the pipeline transport does the same on an interim
+          // barge-in). Mirrors `cancelReply()`'s local state reset.
+          replyInFlight = false;
+          clearTurnBuffers();
+          opts.callbacks.onCancelled();
+        }
         opts.callbacks.onSpeechStarted();
         return;
       case "input_audio_buffer.speech_stopped":

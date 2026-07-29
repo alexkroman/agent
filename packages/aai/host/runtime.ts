@@ -149,6 +149,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // agent manifest nor the caller supplied one — a declared `kv:` descriptor
   // would otherwise shadow (and waste) an eagerly-built instance.
   const resolvedKv = agent.kv ? resolveKv(agent.kv, providerEnv, "") : (kv ?? createLocalKv());
+  // The runtime owns (and must close) the KV only when it built it — from a
+  // declared `kv:` descriptor (e.g. redisKv → a live connection) or the local
+  // fallback. A caller-injected `kv` stays the caller's to dispose.
+  const ownsKv = agent.kv !== undefined || kv === undefined;
   const resolvedVector = agent.vector
     ? resolveVector(agent.vector, providerEnv, slug)
     : (vector ?? createLocalVector(slug));
@@ -365,8 +369,24 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     });
   }
 
+  function releaseResources(): void {
+    sessions.clear();
+    sinkMap.clear();
+    // Force-close on timeout skips the per-session stop wrapper's stateMap
+    // cleanup (its sink-identity check fails against the cleared map), so clear
+    // it here too or timed-out sessions leak their tool state permanently.
+    stateMap.clear();
+    // Release a runtime-owned KV (e.g. redisKv's connection). Without this,
+    // `aai dev` — which rebuilds the runtime on every file save — strands the
+    // previous connection on each reload.
+    if (ownsKv) resolvedKv.close?.();
+  }
+
   async function shutdown(): Promise<void> {
-    if (sessions.size === 0) return;
+    if (sessions.size === 0) {
+      releaseResources();
+      return;
+    }
     try {
       const results = await pTimeout(
         Promise.allSettled([...sessions.values()].map((s) => s.stop())),
@@ -385,8 +405,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
           : `Shutdown failed: ${errorMessage(err)} — force-closing ${sessions.size} remaining session(s)`,
       );
     }
-    sessions.clear();
-    sinkMap.clear();
+    releaseResources();
   }
 
   return {

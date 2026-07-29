@@ -55,7 +55,6 @@
     "@types/node": "^26.1.1",
     "@vitest/coverage-v8": "^4.1.10",
     "citty": "^0.2.2",
-    "fast-check": "^4.9.0",
     "knip": "^6.29.0",
     "kokoro-js": "^1.2.1",
     "lefthook": "^2.1.10",

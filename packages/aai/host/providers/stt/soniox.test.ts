@@ -203,6 +203,26 @@ describe("Soniox real-time STT adapter", () => {
     await session.close();
   });
 
+  test("a trailing all-final utterance flushes on its own after the quiet window", async () => {
+    const { session, ws } = await openSession();
+    const finals: string[] = [];
+    session.on("final", (t) => finals.push(t));
+
+    vi.useFakeTimers();
+    try {
+      // User stops talking; the last frame is all-final. Soniox runs without
+      // endpoint detection, so nothing would flush the batched final until the
+      // next utterance — the quiet timer must flush it on its own.
+      ws._fire("message", frame({ tokens: [{ text: "goodbye", is_final: true }] }));
+      expect(finals).toEqual([]);
+      await vi.advanceTimersByTimeAsync(300);
+      expect(finals).toEqual(["goodbye"]);
+    } finally {
+      vi.useRealTimers();
+    }
+    await session.close();
+  });
+
   test("a `finished` flag flushes the trailing final buffer", async () => {
     const { session, ws } = await openSession();
     const finals: string[] = [];
@@ -228,11 +248,15 @@ describe("Soniox real-time STT adapter", () => {
     expect(finals).toEqual(["trailing"]);
   });
 
-  test("close() removes the socket listeners so their closures can be freed", async () => {
+  test("close() drops the session listeners but leaves a no-op error guard", async () => {
     const { session, ws } = await openSession();
-    expect(ws.listenerCount()).toBeGreaterThan(0);
+    expect(ws.listenerCount()).toBeGreaterThan(1);
     await session.close();
-    expect(ws.listenerCount()).toBe(0);
+    // The session's message/close/error handlers (which capture emitter,
+    // finalBuf, shell) are gone; only a single no-op `error` guard remains so
+    // a late error during the close handshake can't crash the process.
+    expect(ws.listenerCount()).toBe(1);
+    expect(() => ws._fire("error", new Error("late reset"))).not.toThrow();
   });
 
   test("error_code in a server frame fires an stt_stream_error", async () => {

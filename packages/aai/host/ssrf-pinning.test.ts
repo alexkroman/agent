@@ -72,6 +72,21 @@ describe("ssrfSafeFetch: DNS pinning", () => {
     expect(init.dispatcher).toBeDefined();
   });
 
+  test("resolves DNS exactly once per hop (single resolution closes the TOCTOU/rebinding window)", async () => {
+    const { lookup } = await import("node:dns/promises");
+    const lookupMock = lookup as unknown as ReturnType<typeof vi.fn>;
+    lookupMock.mockClear();
+    const mockFetch = okFetch();
+    await ssrfSafeFetch(
+      "https://example.com/page",
+      {},
+      mockFetch as unknown as typeof globalThis.fetch,
+    );
+    // The same resolved IP must feed both the bogon check and the dispatcher
+    // pin. A second resolution would reopen the rebinding window the pin closes.
+    expect(lookupMock).toHaveBeenCalledTimes(1);
+  });
+
   test("attaches no dispatcher when the URL is already a literal IP", async () => {
     const mockFetch = okFetch();
     await ssrfSafeFetch(

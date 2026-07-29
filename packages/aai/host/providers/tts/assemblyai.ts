@@ -62,7 +62,9 @@ import {
   assertPcm16Rate,
   closeOnAbort,
   connectOrThrow,
+  createGuardedWs,
   createSessionShell,
+  dropSocket as dropSocketShared,
   requireApiKey,
   waitForOpen,
 } from "../_utils.ts";
@@ -150,35 +152,23 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       const connectError = (msg: string) => makeTtsError("tts_connect_failed", msg);
       const sampleRate = assertPcm16Rate(openOpts.sampleRate, "AssemblyAI TTS", connectError);
 
-      const connect = (): WebSocket => {
-        let socket: WebSocket;
-        try {
-          // Raw key, not `Bearer` — see the module doc.
-          socket = new WebSocket(buildUrl(opts, sampleRate), {
-            headers: { Authorization: apiKey },
-          });
-        } catch (cause) {
-          throw connectError(`AssemblyAI TTS: failed to create WebSocket: ${errorMessage(cause)}`);
-        }
-        // Placeholder 'error' listener bound before connecting (see the
-        // cartesia.ts pattern): waitForOpen's own listener is removed once it
-        // settles, and a later socket error with zero listeners is an
-        // unhandled 'error' event that crashes the process.
-        socket.on("error", () => undefined);
-        return socket;
-      };
+      const connect = (): WebSocket =>
+        // Raw key, not `Bearer` — see the module doc. The guard listener
+        // protects against a late socket error with zero listeners crashing
+        // the process.
+        createGuardedWs(
+          () => new WebSocket(buildUrl(opts, sampleRate), { headers: { Authorization: apiKey } }),
+          connectError,
+          "AssemblyAI TTS",
+        );
 
       let ws = connect();
       try {
         await connectOrThrow("AssemblyAI TTS", connectError, () => waitForOpen(ws));
       } catch (err) {
         // Failed connect: close the socket before rethrowing so it can't
-        // linger half-open (late errors land in the placeholder above).
-        try {
-          ws.close();
-        } catch {
-          // Socket already broken — nothing left to release.
-        }
+        // linger half-open (late errors land in the guard listener).
+        dropSocketShared(ws);
         throw err;
       }
 
@@ -189,24 +179,8 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       let queued: Record<string, unknown>[] | null = null;
 
       /** Detach + politely close a socket without emitting anything for it. */
-      const dropSocket = (socket: WebSocket): void => {
-        socket.removeAllListeners();
-        // Re-add the zero-listener guard: an 'error' emitted while the close
-        // below is in flight would otherwise crash the process.
-        socket.on("error", () => undefined);
-        if (socket.readyState === WebSocket.OPEN) {
-          try {
-            socket.send(JSON.stringify({ type: "Terminate" }));
-          } catch {
-            // Already going away; the close below is what matters.
-          }
-        }
-        try {
-          socket.close();
-        } catch {
-          // Socket already broken — nothing left to release.
-        }
-      };
+      const dropSocket = (socket: WebSocket): void =>
+        dropSocketShared(socket, () => socket.send(JSON.stringify({ type: "Terminate" })));
 
       const shell = createSessionShell({
         makeStreamError: (msg) => makeTtsError("tts_stream_error", msg),
@@ -228,11 +202,18 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           handleMessage(raw, emitter, emitDoneOnce, shell.streamError);
         });
         socket.on("error", (err: Error) => shell.onSocketError(err));
-        socket.on("close", () => {
+        socket.on("close", (code: number) => {
           if (shell.isClosed()) return;
           // Unexpected server-side close: release the turn so the pipeline
           // doesn't wait for an utterance that will never complete.
           emitDoneOnce();
+          // A non-normal close (idle kick, 1011, deploy) leaves the session
+          // alive but every later `send` silently dropped by the readyState
+          // guard — surface it so the session fails loudly rather than going
+          // permanently, silently mute.
+          if (code !== 1000) {
+            shell.streamError(`AssemblyAI TTS: socket closed ${code}`);
+          }
         });
       };
       attach(ws);

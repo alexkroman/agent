@@ -385,7 +385,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // STT and TTS open concurrently; a failed side (with the session still
       // live) tears the whole transport down.
       startPromise = providers.open();
-      if ((await startPromise) === "failed") terminate();
+      if ((await startPromise) === "failed") {
+        // terminate() already emitted the provider error + `cancelled` and
+        // aborted the session. Do NOT go on to signal session-ready — that
+        // would hand the runtime a "started" session that is actually dead,
+        // holding it open until the idle timeout.
+        terminate();
+        return;
+      }
       // S2S fires onSessionReady when the provider acks; in pipeline mode the
       // equivalent "ready" signal is providers having opened.
       callbacks.onSessionReady?.(opts.sid);

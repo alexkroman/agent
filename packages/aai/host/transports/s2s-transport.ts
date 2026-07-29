@@ -57,6 +57,22 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   // resumed session actually does work (a reply starts); caps a server that
   // keeps accepting a resume then immediately dropping it (flapping loop).
   let resumeAttempts = 0;
+  // Set by cancelReply(): AssemblyAI S2S has no cancel RPC, so audio for the
+  // cancelled reply can still be on the wire after the client presses stop.
+  // Drop those chunks until the next reply starts, or they resume playback of
+  // the very reply the user interrupted.
+  let suppressAudioUntilReply = false;
+  // Latched once we surface a fatal connection error (failed/abandoned resume,
+  // fatal close). The session is over; any trailing close from a dead socket
+  // must not re-emit an error or start another resume loop.
+  let sessionEnded = false;
+
+  /** Surface a fatal connection error exactly once and retire the session. */
+  function endSession(detail: string): void {
+    if (sessionEnded) return;
+    sessionEnded = true;
+    opts.callbacks.onError("connection", detail);
+  }
 
   function buildCallbacks(): S2sCallbacks {
     return {
@@ -75,6 +91,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         // A reply on the (possibly resumed) socket is real progress — the
         // session is healthy again, so clear the flapping-resume counter.
         resumeAttempts = 0;
+        suppressAudioUntilReply = false;
         currentReplyId = replyId;
         opts.callbacks.onReplyStarted(replyId);
       },
@@ -86,7 +103,10 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         currentReplyId = null;
         opts.callbacks.onCancelled();
       },
-      onAudio: (bytes) => opts.callbacks.onAudioChunk(bytes),
+      onAudio: (bytes) => {
+        if (suppressAudioUntilReply) return;
+        opts.callbacks.onAudioChunk(bytes);
+      },
       onUserTranscript: opts.callbacks.onUserTranscript,
       onAgentTranscript: opts.callbacks.onAgentTranscript,
       onToolCall: opts.callbacks.onToolCall,
@@ -125,7 +145,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     if (!reconnecting) return;
     reconnecting = false;
     providerSessionId = null;
-    opts.callbacks.onError("connection", detail);
+    endSession(detail);
   }
 
   function emitFatalClose(code: number, reason: string, wasReconnecting: boolean): void {
@@ -142,10 +162,22 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         code,
         reason,
       });
-      opts.callbacks.onError("connection", `S2S closed mid-reply (code=${code})`);
+      endSession(`S2S closed mid-reply (code=${code})`);
       return;
     }
-    log.info("S2S closed", { code, reason });
+    // An unexpected close with no reply in flight is NOT harmless: a
+    // client-initiated close was already filtered out in handleClose (the
+    // `closing` guard) and a session already declared dead is filtered by the
+    // `sessionEnded` guard, so reaching here means the provider dropped a live
+    // idle session. Staying silent left the client "connected" while every
+    // later utterance vanished into a dead handle until the idle timeout.
+    log.warn("S2S closed unexpectedly while idle", {
+      sid: opts.sid,
+      agent: opts.agent,
+      code,
+      reason,
+    });
+    endSession(`S2S closed unexpectedly (code=${code})`);
   }
 
   function startResume(prevId: string, code: number, reason: string): void {
@@ -160,10 +192,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         code,
       });
       providerSessionId = null;
-      opts.callbacks.onError(
-        "connection",
-        `S2S resume abandoned after ${resumeAttempts} attempts (code=${code})`,
-      );
+      endSession(`S2S resume abandoned after ${resumeAttempts} attempts (code=${code})`);
       return;
     }
     resumeAttempts++;
@@ -196,6 +225,11 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   function handleClose(code: number, reason: string): void {
     if (closing) {
       log.info("S2S closed", { code, reason });
+      return;
+    }
+    if (sessionEnded) {
+      // Trailing close from a socket whose session we already declared dead.
+      log.info("S2S trailing close after session ended", { code, reason });
       return;
     }
     const wasReconnecting = reconnecting;
@@ -253,9 +287,12 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
     },
     cancelReply() {
       // AssemblyAI S2S doesn't expose an explicit cancel RPC — reply is
-      // cancelled when the user speaks. Our `onCancel` from the client is
-      // a best-effort signal.
+      // cancelled when the user speaks. Our `onCancel` from the client is a
+      // best-effort signal, so drop any audio still arriving for the cancelled
+      // reply until the next one starts; otherwise it resumes playback of the
+      // reply the user just interrupted.
       currentReplyId = null;
+      suppressAudioUntilReply = true;
     },
   };
 }
