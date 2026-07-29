@@ -20,7 +20,7 @@ import { TOOL_FETCH_MAX_CONCURRENT, TOOL_FETCH_MAX_REQUEST_BODY_BYTES } from "..
 import { createMemoryVector } from "./memory-vector.ts";
 import { exemptFromToolEgress, installToolFetchGuard, runInToolEgress } from "./tool-egress.ts";
 
-const { ssrfSafeFetch } = vi.hoisted(() => ({
+const { ssrfSafeFetch, pinnedFetch } = vi.hoisted(() => ({
   ssrfSafeFetch: vi.fn(
     async (
       url: string,
@@ -29,16 +29,24 @@ const { ssrfSafeFetch } = vi.hoisted(() => ({
       _opts?: { isHostAllowed?: (h: string) => boolean },
     ) => fetchFn(url, init),
   ),
+  pinnedFetch: vi.fn(),
 }));
 
-vi.mock("./ssrf.ts", () => ({ ssrfSafeFetch }));
+vi.mock("./ssrf.ts", () => ({ ssrfSafeFetch, pinnedFetch }));
 
 const realFetch = globalThis.fetch;
 let inner: ReturnType<typeof vi.fn>;
 
 beforeEach(() => {
   inner = vi.fn(async () => new Response("ok"));
-  globalThis.fetch = inner as unknown as typeof globalThis.fetch;
+  const stub = inner as unknown as typeof globalThis.fetch;
+  globalThis.fetch = stub;
+  // An in-scope tool fetch leaves via `pinnedFetch` and the host's own traffic
+  // via `globalThis.fetch`; pointing both at one stub lets each spec assert on
+  // `inner` without caring which seam carried the call. The spec that *does*
+  // care asserts on the identity of the fetch handed to `ssrfSafeFetch` — see
+  // "pairs the SSRF dispatcher with its own undici".
+  pinnedFetch.mockImplementation(stub);
   installToolFetchGuard();
 });
 
@@ -248,6 +256,28 @@ describe("tool egress guard — scoping", () => {
     await runInToolEgress(["api.example.com"], async () => undefined);
     await globalThis.fetch("https://anything.example.net/x");
     expect(inner).toHaveBeenCalledOnce();
+  });
+});
+
+describe("tool egress guard — undici pairing", () => {
+  test("pairs the SSRF dispatcher with its own undici, not the runtime's", async () => {
+    // `ssrfSafeFetch` attaches a dispatcher built from *this package's* undici
+    // on every hostname request. Node's global `fetch` is backed by the undici
+    // bundled into the runtime — a different major — and rejects that
+    // dispatcher with `InvalidArgumentError: invalid onRequestStart method`,
+    // which surfaces as a bare `TypeError: fetch failed`. Because a dispatcher
+    // is attached to every hostname, handing the global in here breaks *all*
+    // tool-code egress at once, so this guard has to hold at the call site and
+    // not just on `performToolFetch`'s default.
+    await runInToolEgress(["api.example.com"], () =>
+      globalThis.fetch("https://api.example.com/thing"),
+    );
+
+    expect(ssrfSafeFetch).toHaveBeenCalledOnce();
+    const handedTo = ssrfSafeFetch.mock.calls[0]?.[2];
+    expect(handedTo).toBe(pinnedFetch);
+    expect(handedTo).not.toBe(globalThis.fetch);
+    expect(handedTo).not.toBe(realFetch);
   });
 });
 

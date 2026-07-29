@@ -128,7 +128,7 @@ async function streamResponseBody(
 
 function performFetch(
   req: FetchRequest,
-  fetchFn: typeof globalThis.fetch,
+  fetchFn: typeof globalThis.fetch | undefined,
   skipSsrf: boolean,
   allowedHosts: string[],
 ): Promise<Response> {
@@ -147,7 +147,13 @@ function performFetch(
 
 export function createFetchHandler(opts: FetchHandlerOptions) {
   const allowedHosts = opts.allowedHosts;
-  const fetchFn = opts.fetchFn ?? globalThis.fetch;
+  // Deliberately no `?? globalThis.fetch`: an unset `fetchFn` has to reach
+  // `performToolFetch`'s own pinned default. The SSRF layer pins DNS with a
+  // dispatcher built from the SDK's undici, which the runtime's bundled undici
+  // (a different major) rejects — so a caller-side default here fails every
+  // hostname request with a bare `TypeError: fetch failed`. It is also the
+  // caller-side duplication the shared-policy module exists to prevent.
+  const fetchFn = opts.fetchFn;
   const skipSsrf = opts.skipSsrf ?? false;
   const maxResponseBytes = opts.maxResponseBytes ?? TOOL_FETCH_MAX_RESPONSE_BYTES;
 

@@ -108,11 +108,17 @@ export function installToolFetchGuard(): void {
 
     scope.active.count++;
     try {
-      // Exit the scope for the outbound call itself: `performToolFetch` calls
-      // the *pre-guard* fetch, but any nested fetch it makes (SSRF redirect
-      // follow) must not re-enter this wrapper and double-count concurrency.
+      // No `fetchFn`: `performToolFetch` must use its own pinned default. Its
+      // SSRF screening attaches a DNS-pinning dispatcher built from this
+      // package's undici, and only that package's `fetch` accepts it — handing
+      // in the host runtime's global (a different undici major) fails every
+      // hostname request with a bare `TypeError: fetch failed`.
+      //
+      // Exiting the scope is still required: a nested fetch `performToolFetch`
+      // makes (following an SSRF-checked redirect) must not re-enter this
+      // wrapper and double-count concurrency.
       const response = await egressScope.exit(() =>
-        performToolFetch(url, normalized, { allowedHosts: scope.allowedHosts, fetchFn: current }),
+        performToolFetch(url, normalized, { allowedHosts: scope.allowedHosts }),
       );
       return capResponseBody(response);
     } finally {
