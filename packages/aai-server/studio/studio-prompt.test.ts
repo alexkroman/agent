@@ -44,6 +44,10 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain('"gemini-2.5-flash-lite" for a fast, cheap voice agent');
     // Publishing is the user's call, so the agent must be told it cannot.
     expect(prompt).toContain("You cannot publish");
+    // Working-style rules: implement with tools instead of pasting code
+    // into chat, and respect edits the user makes in the code editor.
+    expect(prompt).toContain("Act, don't propose");
+    expect(prompt).toContain("treat changes you didn't make as");
     expect(prompt).not.toContain("deploy_agent");
     expect(prompt).toContain("no `aai` CLI");
     // The full scaffold reference follows.
