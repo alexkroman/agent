@@ -23,6 +23,10 @@ COPY packages/aai-ui/package.json packages/aai-ui/
 # bundler (@alexkroman1/aai-cli/client-bundler), so the CLI ships in the
 # runtime image rather than the studio carrying a second client bundler.
 COPY packages/aai-cli/package.json packages/aai-cli/
+# pnpm links the CLI's `aai` bin into aai-server/node_modules/.bin at install
+# time, so the wrapper has to exist before the install layer runs (it changes
+# about never, so it costs no cache).
+COPY packages/aai-cli/bin.mjs packages/aai-cli/
 COPY packages/aai-server/package.json packages/aai-server/
 COPY packages/aai-studio-client/package.json packages/aai-studio-client/
 

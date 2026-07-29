@@ -14,6 +14,7 @@ export default defineConfig([
     format: "esm",
     target: "node22",
     outDir: "dist/guest",
-    noExternal: [/.*/], // Bundle everything -- guest has no node_modules
+    // Bundle everything -- guest has no node_modules
+    deps: { alwaysBundle: [/.*/] },
   },
 ]);
