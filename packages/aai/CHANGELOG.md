@@ -1,5 +1,15 @@
 # @alexkroman1/aai
 
+## 1.15.0
+
+### Minor Changes
+
+- f87ff84: Add errorPhrase: pipeline agents now speak a recovery line when the LLM stream fails instead of going silent
+
+### Patch Changes
+
+- 9ffec74: Never silently fall back to S2S: forward pipeline providers based on the descriptors rather than the optional mode field, and log the resolved session mode once per runtime
+
 ## 1.14.0
 
 ### Patch Changes
