@@ -52,7 +52,11 @@ describe("studio page + routing", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/html");
     expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
-    expect(await res.text()).toContain("AssemblyAI Studio");
+    // The shell is either the built client (whatever dist/studio-client holds
+    // — its content is a build artifact, possibly stale in dev checkouts) or
+    // the not-built fallback. Assert only the invariants shared by both;
+    // asserting on branding text made this test race the client build.
+    expect(await res.text()).toContain("<!DOCTYPE html>");
   });
 
   test("GET /studio and /studio/ redirect to the page", async () => {
