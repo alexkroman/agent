@@ -302,6 +302,12 @@ voice agents without the CLI:
     no business posting feedback as the user.
   - `STUDIO_MCP_URLS` overrides the default list; setting it empty disables
     MCP entirely.
+- **Dev-mode key check.** `assertDevKeys` (`index.ts`) refuses to start a
+  *local dev* server without `ASSEMBLYAI_API_KEY` and `BRAVE_API_KEY`. Both
+  stay optional in production — the studio degrades (chat 503s, `web_search`
+  is dropped) — but in dev that degradation is silent and reads as a bug, so
+  it fails at boot where the cause is obvious. `AAI_DEV_SKIP_KEY_CHECK=1`
+  overrides.
 - **Web access** (`studio-web.ts`) exposes the SDK's own `visit_webpage`
   and `web_search` builtins to the coding agent rather than reimplementing
   them — which is what buys `safeFetch`, the SSRF guard. A URL here is
