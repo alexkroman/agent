@@ -8,14 +8,28 @@ import { App } from "./app.tsx";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 import "./styles.css";
 
+// The platform API key is the caller's full account credential (it is also
+// their AssemblyAI key). Deployed tenant agents are served from the *same web
+// origin* as the studio (`/:slug/`), and that HTML/JS is attacker-controlled,
+// so anything persisted here is reachable by another tenant's page script.
+// `sessionStorage` (not `localStorage`) scopes the key to this browsing
+// context: it never persists across restarts and is unreadable from a
+// separately-opened tab, so a phishing link to a malicious agent page cannot
+// read a studio user's key. (A dedicated origin for tenant agent pages remains
+// the complete fix for same-origin tenant/tenant exposure.)
 const KEY_STORAGE = "aai-studio-key";
+// `sessionStorage`, not `localStorage`: the key is scoped to this browsing
+// context — never persisted across restarts, and unreadable from a
+// separately-opened tab — so a phishing link to a malicious tenant agent page
+// cannot read it (see comment above).
+const keyStore: Storage = sessionStorage;
 const queryClient = new QueryClient();
 
-// localStorage access throws in some contexts (Safari private mode, storage
-// blocked by policy) — degrade to a session-only key instead of crashing.
+// Storage access throws in some contexts (Safari private mode, storage blocked
+// by policy) — degrade to a session-only key instead of crashing.
 function readStoredKey(): string {
   try {
-    return localStorage.getItem(KEY_STORAGE) ?? "";
+    return keyStore.getItem(KEY_STORAGE) ?? "";
   } catch {
     return "";
   }
@@ -23,8 +37,8 @@ function readStoredKey(): string {
 
 function writeStoredKey(key: string | null): void {
   try {
-    if (key === null) localStorage.removeItem(KEY_STORAGE);
-    else localStorage.setItem(KEY_STORAGE, key);
+    if (key === null) keyStore.removeItem(KEY_STORAGE);
+    else keyStore.setItem(KEY_STORAGE, key);
   } catch {
     // Storage unavailable — the key still lives in component state for this tab.
   }
