@@ -1012,6 +1012,37 @@ behind, using [vitest-evals](https://github.com/getsentry/vitest-evals)
   real studio sandbox, self-describe a valid `IsolateConfigSchema`
   config, and expose the tools the prompt asked for — the "code actually
   works" gate.
+- **`TemplateParityJudge`** (threshold 0.8): the workspace must be
+  functionally equivalent to a hand-written template — the "built the
+  *right* thing" gate. Most cases are template-parity cases: the prompt is
+  one of the studio's own starter prompts
+  (`aai-studio-client/src/starters.ts`, each modeled on a template) and the
+  matching `aai-templates/templates/<name>/` is the reference. The
+  reference is read off disk as **text**, never imported — evaluating it
+  would need the templates package's own raw-`.md` import plugin. The
+  prompts are duplicated rather than shared because aai-server and
+  aai-studio-client talk over HTTP only, with no code imports either way.
+
+  Grading is one LLM call on the host-selected studio model over a fixed
+  5-criterion rubric with stable ids (`mode`, `capabilities`, `state`,
+  `assets`, `persona`); the score is the fraction passed, and a criterion
+  the judge skips counts as a failure. `TEMPLATE_CASES` holds one case per
+  distinct agent shape and `UNCOVERED` records why each remaining template
+  has none, with a non-LLM guard test asserting every template is in one or
+  the other — both directions, so a rename can't leave a dangling entry.
+
+  Much of the rubric's wording exists because a **false negative** was
+  observed: left to itself the judge fails a generated agent for doing
+  *more* than the reference — extra tools, the framework's default cognitive
+  builtins on top of an explicit `builtinTools`, a stricter system prompt.
+  Two related traps: the per-case `shape` string is deliberately **not**
+  shown to the judge (it read "run_code only" as a requirement and failed an
+  agent for keeping the defaults), and the `ONE_SHOT` suffix is stripped
+  from the judge's view of the prompt (it instructs the *builder*, and the
+  judge graded the voice agent's persona against it). When a case regresses,
+  suspect the rubric before the studio prompt. `temperature: 0` is
+  deliberately absent — the default studio model is a reasoning model that
+  rejects it, and generation variance dominates anyway.
 
 Run with `pnpm --filter aai-server test:evals` (the e2e profile of
 `vitest.slow.config.ts`). The suite is excluded from the unit project and

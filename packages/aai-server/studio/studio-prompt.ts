@@ -43,6 +43,13 @@ ASSEMBLYAI_API_KEY automatically, so never ask the user for that key.
 - Fix problems at the root cause, and keep each change minimal and focused
   on what was asked. Don't fix unrelated issues you notice — mention them
   instead.
+- Cover every capability the user enumerated. When a request lists them
+  ("add a pizza, remove one, list the order with a running total, and place
+  the order"), give each its own tool, named for what it does. Before you
+  finish, re-read the request and confirm each one exists. Dropping a named
+  capability, or folding two into a single tool, is the most common way a
+  build silently misses the ask — "minimal" applies to how you implement
+  each capability, never to how many of them you deliver.
 - On a fresh or near-empty project, be ambitious: flesh out the prompt,
   greeting, and tools into something genuinely useful. In a project with
   existing work, be surgical: match its style and don't rename or

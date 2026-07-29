@@ -39,6 +39,21 @@ export function counterValue(name: string, labels: Record<string, string> = {}):
 }
 
 /**
+ * Sum a counter across every label combination matching `labels`.
+ *
+ * `counterValue` returns the first match, which is wrong for a counter whose
+ * label set is broader than the query — `aai_sessions_started_total{slug,mode}`
+ * read by slug alone spans one entry per mode.
+ */
+export function counterTotal(name: string, labels: Record<string, string> = {}): number {
+  const m = getMetric(name);
+  if (!m?.hashMap) return 0;
+  return Object.values(m.hashMap)
+    .filter((entry) => entryMatches(entry, labels))
+    .reduce((sum, entry) => sum + (entry.value ?? 0), 0);
+}
+
+/**
  * Read a gauge's value (unlabeled or matched). Returns 0 if unset.
  *
  * Triggers any registered `collect()` callback so pull-based gauges are

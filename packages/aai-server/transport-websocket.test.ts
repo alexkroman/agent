@@ -11,6 +11,7 @@ import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey } from "./secrets.ts";
 import {
   authHeaders,
+  counterTotal,
   counterValue,
   createTestOrchestrator,
   createTestStorage,
@@ -226,10 +227,29 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
         slots,
         store,
         sandbox,
-        close: () =>
-          new Promise<void>((r) => {
+        // Teardown must not return while a session is still unwinding. The
+        // decrement of `aai_sessions_active` lives on the *server-side*
+        // WebSocket's `close` event, which fires independently of both the
+        // client socket (`wsClosed(ws)` resolves before it) and
+        // `server.close()` — an upgraded socket is no longer a tracked HTTP
+        // connection. Left pending, that decrement lands after the next
+        // test's `registry.resetMetrics()` and drives the gauge to -1,
+        // failing whichever test happens to run next. Waiting for every
+        // started session to be accounted as ended is the observable form of
+        // "no decrement is in flight".
+        close: async () => {
+          await vi.waitFor(() => {
+            const started = counterTotal("aai_sessions_started_total", { slug });
+            const ended = counterTotal("aai_sessions_ended_total", { slug });
+            // A throw, not expect(): this runs outside a test body.
+            if (ended !== started) {
+              throw new Error(`session teardown pending: started=${started} ended=${ended}`);
+            }
+          });
+          await new Promise<void>((r) => {
             server.close(() => r());
-          }),
+          });
+        },
       });
     });
   });
