@@ -2,7 +2,7 @@
 
 import type { PassThrough } from "node:stream";
 import { describe, expect, test, vi } from "vitest";
-import { createTestConn, makeWarm } from "../_sandbox-vm-test-utils.ts";
+import { createTestConn, makeWarm, writeResponse } from "../_sandbox-vm-test-utils.ts";
 import type { WarmHarness } from "../sandbox-vm.ts";
 import { createStudioSandbox } from "./studio-sandbox.ts";
 
@@ -100,6 +100,48 @@ describe("createStudioSandbox", () => {
     });
     expect(await failing.executeTool("roll_dice", {})).toBe("Tool error: kaboom");
     await failing.dispose();
+  });
+
+  test("dispose waits for an in-flight request instead of rejecting it", async () => {
+    // No auto-responder yet: the guest has not answered, so bundle/load is
+    // still in flight when the turn's teardown runs. Before the in-flight
+    // guard this rejected with the transport's "Connection disposed", which
+    // `test_agent` reported as "Bundle failed to load in the sandbox".
+    const { conn, hostReadable, writtenLines } = createTestConn();
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const sandbox = await createStudioSandbox({
+      harnessPath: "/tmp/h.mjs",
+      spawn: async () => makeWarm(conn, cleanup),
+    });
+
+    const pending = sandbox.loadBundle("export default {};");
+    await vi.waitFor(() => {
+      if (!writtenLines.some((l) => l.includes("bundle/load"))) throw new Error("not sent yet");
+    });
+    const requestId = JSON.parse(writtenLines.find((l) => l.includes("bundle/load")) as string)
+      .id as number;
+
+    // Teardown races the request; the guest replies only afterwards.
+    const disposing = sandbox.dispose();
+    writeResponse(hostReadable, requestId, { ok: true, config: { name: "A" } });
+
+    await expect(pending).resolves.toEqual({ config: { name: "A" } });
+    await disposing;
+    expect(cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  test("a request that starts after dispose reports the teardown, not a transport error", async () => {
+    const fixture = makeFixture();
+    const sandbox = await createStudioSandbox({
+      harnessPath: "/tmp/h.mjs",
+      spawn: fixture.spawn,
+    });
+    await sandbox.dispose();
+
+    // The coding agent reads these strings — "Connection disposed" would read
+    // as the user's bundle being broken.
+    await expect(sandbox.loadBundle("export default {};")).rejects.toThrow(/chat turn ended/);
+    await expect(sandbox.executeTool("roll_dice", {})).rejects.toThrow(/chat turn ended/);
   });
 
   test("dispose is idempotent and sends a shutdown notification", async () => {

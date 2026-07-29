@@ -28,6 +28,16 @@ import { spawnWarmHarness, type WarmHarness } from "../sandbox-vm.ts";
 /** Session id used for trial tool executions inside the guest. */
 const TRIAL_SESSION_ID = "studio-trial";
 
+/**
+ * Reported for calls that arrive after this turn's sandbox is gone. The
+ * transport's own "Connection disposed" is a host internal, and these strings
+ * are read by the coding agent — it needs a cause it can act on, not one that
+ * reads like the user's bundle is broken.
+ */
+const DISPOSED_MESSAGE =
+  "The sandbox for this turn was torn down because the chat turn ended. " +
+  "Retry and it will run in a fresh sandbox.";
+
 export type StudioSandbox = {
   /** Load (or replace) the worker bundle; returns its self-described config. */
   loadBundle(code: string): Promise<{ config?: unknown }>;
@@ -78,27 +88,60 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
   live.conn.listen();
 
   let disposed = false;
+  const inFlight = new Set<Promise<unknown>>();
+
+  /**
+   * Runs one guest request, keeping `dispose()` from yanking the connection
+   * out from under it.
+   *
+   * A turn settles — finish, model error, or client abort — while `test_agent`
+   * is still mid-request, and the teardown is fire-and-forget
+   * (`studio-agent.ts`). Disposing the transport there rejected the pending
+   * request with "Connection disposed", which the tool then reported as
+   * "Bundle failed to load in the sandbox", i.e. as the user's bundle being at
+   * fault. The window is wide in production because the Vite worker build in
+   * front of `loadBundle` takes seconds on a one-CPU host.
+   */
+  async function track<T>(op: () => Promise<T>): Promise<T> {
+    if (disposed) throw new Error(DISPOSED_MESSAGE);
+    const pending = op();
+    inFlight.add(pending);
+    try {
+      return await pending;
+    } finally {
+      inFlight.delete(pending);
+    }
+  }
+
   return {
-    async loadBundle(code: string) {
-      const result = await live.conn.sendRequest<{ ok: boolean; config?: unknown }>("bundle/load", {
-        code,
-        env: {},
+    loadBundle(code: string) {
+      return track(async () => {
+        const result = await live.conn.sendRequest<{ ok: boolean; config?: unknown }>(
+          "bundle/load",
+          { code, env: {} },
+        );
+        return { ...(result?.config !== undefined && { config: result.config }) };
       });
-      return { ...(result?.config !== undefined && { config: result.config }) };
     },
 
-    async executeTool(name: string, args: Record<string, unknown>) {
-      const response = await live.conn.sendRequest<{ result?: string; error?: string }>(
-        "tool/execute",
-        { name, args, sessionId: TRIAL_SESSION_ID, messages: [] },
-      );
-      if (response?.error) return `Tool error: ${response.error}`;
-      return response?.result ?? "(no result)";
+    executeTool(name: string, args: Record<string, unknown>) {
+      return track(async () => {
+        const response = await live.conn.sendRequest<{ result?: string; error?: string }>(
+          "tool/execute",
+          { name, args, sessionId: TRIAL_SESSION_ID, messages: [] },
+        );
+        if (response?.error) return `Tool error: ${response.error}`;
+        return response?.result ?? "(no result)";
+      });
     },
 
     async dispose() {
       if (disposed) return;
       disposed = true;
+      // Let in-flight requests settle before tearing the transport down.
+      // Bounded, not open-ended: every request carries the transport's own
+      // timeout, so a wedged guest delays teardown but cannot block it.
+      if (inFlight.size > 0) await Promise.allSettled([...inFlight]);
       try {
         void live.conn.sendNotification("shutdown");
         live.conn.dispose();

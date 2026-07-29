@@ -225,6 +225,27 @@ describe("test_agent tool (sandboxed trial runs)", () => {
       "config is invalid",
     );
   }, 60_000);
+
+  test("logs a load failure host-side, not only into the tool result", async () => {
+    // The failure text goes to the model as a tool result, so without this the
+    // server's own logs stay empty and a broken sandbox is undebuggable in
+    // production — which is exactly how the "Connection disposed" race hid.
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const deps = await makeDeps({
+      sandbox: async () =>
+        fakeSandbox({
+          loadBundle: vi.fn(async () => {
+            throw new Error("top-level explosion");
+          }),
+        }),
+    });
+    await createStudioTools(deps).test_agent.execute?.({}, toolOpts());
+    expect(warn).toHaveBeenCalledWith(
+      "Studio trial: bundle/load failed",
+      expect.objectContaining({ error: "top-level explosion" }),
+    );
+    warn.mockRestore();
+  }, 60_000);
 });
 
 describe("runStudioChat", () => {
