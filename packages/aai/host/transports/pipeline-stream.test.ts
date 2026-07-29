@@ -2,14 +2,16 @@
 // Unit specs for the pure stream helpers in pipeline-stream.ts. Turn-level
 // behavior (settle window, aggregation) lives in pipeline-turn.test.ts.
 
+import { APICallError, RetryError } from "ai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import {
   DEAD_AIR_COVER_PHRASES,
   DEFAULT_DEAD_AIR_COVER_MS,
   TTS_COALESCE_MAX_CHARS,
 } from "../../sdk/constants.ts";
-import { silentLogger } from "../_test-utils.ts";
-import { createTtsTextCoalescer } from "./pipeline-stream.ts";
+import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
+import { makeLogger, silentLogger } from "../_test-utils.ts";
+import { consumeLlmStream, createTtsTextCoalescer } from "./pipeline-stream.ts";
 import { createStreamPartHandler } from "./pipeline-stream-parts.ts";
 
 describe("createTtsTextCoalescer", () => {
@@ -103,6 +105,97 @@ describe("createTtsTextCoalescer", () => {
     c.send("");
     c.send("Hi ");
     expect(sent).toEqual(["Hi "]);
+  });
+});
+
+describe("LLM stream error reporting", () => {
+  function apiError(): APICallError {
+    return new APICallError({
+      message: "Internal Server Error",
+      url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
+      requestBodyValues: { model: "claude-sonnet-4-6" },
+      statusCode: 500,
+      responseHeaders: { "x-request-id": "06ad6271" },
+      responseBody: '{"request_id":"06ad6271","message":"something went wrong","code":500}',
+      isRetryable: true,
+    });
+  }
+
+  test("an error part logs the HTTP diagnostics, not just the message", () => {
+    const log = makeLogger();
+    const handler = createStreamPartHandler({
+      onDelta: () => undefined,
+      sendTtsText: () => undefined,
+      onToolCall: () => undefined,
+      emitError: () => undefined,
+      log,
+      sid: "sid-1",
+    });
+    handler.handle({ type: "error", error: apiError() });
+    expect(log.error).toHaveBeenCalledWith("LLM stream error", {
+      message: "Internal Server Error",
+      sid: "sid-1",
+      statusCode: 500,
+      url: "https://llm-gateway.assemblyai.com/v1/chat/completions",
+      requestId: "06ad6271",
+      responseBody: '{"request_id":"06ad6271","message":"something went wrong","code":500}',
+    });
+  });
+
+  test("unwraps a RetryError so exhausted retries still report the last status", () => {
+    const log = makeLogger();
+    const handler = createStreamPartHandler({
+      onDelta: () => undefined,
+      sendTtsText: () => undefined,
+      onToolCall: () => undefined,
+      emitError: () => undefined,
+      log,
+      sid: "sid-2",
+    });
+    const last = apiError();
+    handler.handle({
+      type: "error",
+      error: new RetryError({
+        message: "Failed after 3 attempts. Last error: Internal Server Error",
+        reason: "maxRetriesExceeded",
+        errors: [last, last, last],
+      }),
+    });
+    expect(log.error).toHaveBeenCalledWith(
+      "LLM stream error",
+      expect.objectContaining({ statusCode: 500, requestId: "06ad6271" }),
+    );
+  });
+
+  test("streamText never dumps the raw error object to the console", async () => {
+    // The SDK's default onError is `console.error(error)`. For a retried API
+    // failure that is ~100 lines (three nested stack traces plus the whole
+    // request body) — enough to evict every other line from a host's log
+    // buffer, which is how this went unnoticed in production.
+    const consoleError = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const log = makeLogger();
+    await consumeLlmStream({
+      llm: createFakeLanguageModel({ script: [{ type: "error", error: apiError() }] }),
+      systemPrompt: "s",
+      messages: [{ role: "user", content: "hi" }],
+      tools: {},
+      toolChoice: "auto",
+      temperature: undefined,
+      repairToolCall: async () => null,
+      maxSteps: 1,
+      sendTtsText: () => undefined,
+      callbacks: { onToolCall: () => undefined },
+      emitError: () => undefined,
+      log,
+      sid: "sid-3",
+      ctl: new AbortController(),
+      onDelta: () => undefined,
+    });
+    expect(consoleError).not.toHaveBeenCalled();
+    expect(log.error).toHaveBeenCalledWith(
+      "LLM stream error",
+      expect.objectContaining({ statusCode: 500 }),
+    );
   });
 });
 

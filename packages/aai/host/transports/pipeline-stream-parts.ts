@@ -7,6 +7,7 @@
 // Split out of `pipeline-stream.ts`, which owns the turn-level plumbing
 // (streamText invocation, TTS coalescing and flush, audio conversion).
 
+import { APICallError, RetryError } from "ai";
 import {
   DEAD_AIR_COVER_PHRASES,
   DEFAULT_DEAD_AIR_COVER_MS,
@@ -56,6 +57,38 @@ type StreamPartHandlerDeps = {
   log: Logger;
   sid: string;
 };
+
+/** Max `responseBody` characters kept in a log line — providers pad error JSON. */
+const MAX_LOGGED_RESPONSE_BODY = 300;
+
+/**
+ * Compact HTTP diagnostics for a failed LLM call, for the one log line the
+ * failure gets (see {@link createStreamPartHandler}'s `error` case).
+ *
+ * An `APICallError`'s `message` alone is the bare HTTP status text
+ * ("Internal Server Error"), which cannot be acted on: whether a provider
+ * outage is worth reporting upstream turns on the status code and the
+ * provider's own request id, and which endpoint was even called turns on the
+ * URL. Retries wrap the last attempt in a `RetryError`, whose message
+ * ("Failed after 3 attempts…") hides all of it one level down.
+ *
+ * Returns `{}` for anything that is not an HTTP failure — a tool error, an
+ * abort, a malformed-response error — so the caller can spread it
+ * unconditionally.
+ */
+export function llmErrorDetails(error: unknown): Record<string, unknown> {
+  const call = RetryError.isInstance(error) ? error.lastError : error;
+  if (!APICallError.isInstance(call)) return {};
+  const requestId = call.responseHeaders?.["x-request-id"];
+  return {
+    statusCode: call.statusCode,
+    url: call.url,
+    ...(requestId ? { requestId } : {}),
+    ...(call.responseBody
+      ? { responseBody: call.responseBody.slice(0, MAX_LOGGED_RESPONSE_BODY) }
+      : {}),
+  };
+}
 
 /** Stateful per-turn stream-part handler — see {@link createStreamPartHandler}. */
 export type StreamPartHandler = {
@@ -188,7 +221,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         return;
       case "error": {
         const msg = errorMessage(part.error);
-        log.error("LLM stream error", { message: msg, sid });
+        log.error("LLM stream error", { message: msg, sid, ...llmErrorDetails(part.error) });
         emitError("llm", msg);
         return;
       }
