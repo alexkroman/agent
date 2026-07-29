@@ -112,22 +112,33 @@ export function attachSandbox(
   resetIdleTimer(slots, slot);
 }
 
-/** Register a new active session on `slug`; pauses idle eviction. */
-export function acquireSlotSession(slots: SlotCache, slug: string): void {
+/**
+ * Register a new active session on `slug`; pauses idle eviction.
+ *
+ * Returns the specific slot object the session was counted on. Release MUST
+ * go through {@link releaseSlotSession} with this handle: a redeploy replaces
+ * the slot object (deploy.ts `setSlot`), and a stale slug-keyed release would
+ * decrement the *replacement* slot's counter — rearming idle eviction under a
+ * live session on the new sandbox.
+ */
+export function acquireSlotSession(slots: SlotCache, slug: string): AgentSlot | null {
   const slot = slots.get(slug);
-  if (!slot) return;
+  if (!slot) return null;
   slot.activeSessions = (slot.activeSessions ?? 0) + 1;
   // A live session must never be idle-evicted mid-call; stop the timer while
   // any session is active (rearmed on release when the count hits zero).
   clearIdleTimer(slot);
+  return slot;
 }
 
-/** Release an active session on `slug`; rearms idle eviction when none remain. */
-export function releaseSlotSession(slots: SlotCache, slug: string): void {
-  const slot = slots.get(slug);
-  if (!slot) return;
-  slot.activeSessions = Math.max(0, (slot.activeSessions ?? 0) - 1);
-  if (slot.activeSessions === 0 && slot.sandbox) resetIdleTimer(slots, slot);
+/** Release an acquired session handle; rearms idle eviction when none remain. */
+export function releaseSlotSession(slots: SlotCache, acquired: AgentSlot | null): void {
+  if (!acquired) return;
+  acquired.activeSessions = Math.max(0, (acquired.activeSessions ?? 0) - 1);
+  // Only the slot currently installed for this slug may drive idle eviction —
+  // a handle from before a redeploy/delete must not touch the new slot.
+  if (slots.get(acquired.slug) !== acquired) return;
+  if (acquired.activeSessions === 0 && acquired.sandbox) resetIdleTimer(slots, acquired);
 }
 
 function resetIdleTimer(slots: SlotCache, slot: AgentSlot): void {

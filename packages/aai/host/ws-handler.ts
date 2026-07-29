@@ -268,7 +268,11 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         log.error("Session stop failed", { ...ctx, sid, error: errorDetail(err) });
       })
       .finally(() => {
-        sessions.delete(sessionId);
+        // Delete by identity, not key: stop() is async, and a reconnect with
+        // ?sessionId=<same id> (resumeFrom) can register a NEW session under
+        // this key while the old one drains — a key delete here would evict
+        // the resumed session's entry and leak it past runtime.shutdown().
+        if (sessions.get(sessionId) === s) sessions.delete(sessionId);
         opts.onSessionEnd?.(sessionId);
       })
       .catch(() => {
@@ -326,8 +330,10 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         const failed = session;
         session = null;
         messageBuffer = null;
+        // session === null means the close handler already ran endSession for
+        // this session; its identity-guarded cleanup covers the map, and a
+        // bare key delete here could evict a resumed session's entry.
         if (failed) endSession(failed);
-        else sessions.delete(sessionId);
       });
   }
 

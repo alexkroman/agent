@@ -144,6 +144,49 @@ describe("createRuntime createSession", () => {
     expect(typeof session.onHistory).toBe("function");
   });
 
+  test("old session's delayed stop keeps the resumed session's sink and state", async () => {
+    const agent = makeAgent({
+      state: () => ({ counter: 0 }),
+      tools: {
+        ping: {
+          description: "Ping the client and bump state",
+          execute: (_args, ctx) => {
+            const state = ctx.state as { counter: number };
+            state.counter++;
+            ctx.send("ping", { n: state.counter });
+            return String(state.counter);
+          },
+        },
+      },
+    });
+    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+
+    const oldClient = makeClientSink();
+    const oldSession = runtime.createSession({
+      id: "resume-1",
+      agent: agent.name,
+      client: oldClient,
+    });
+
+    // Reconnect resumes the same id while the old session is still tearing
+    // down: the new session registers its sink/state under the same key.
+    const newClient = makeClientSink();
+    runtime.createSession({ id: "resume-1", agent: agent.name, client: newClient });
+    await runtime.executeTool("ping", {}, "resume-1", []);
+
+    // The old session's stop settles AFTER the resume — its cleanup must not
+    // wipe the new session's sink (ctx.send would no-op) or tool state.
+    await oldSession.stop();
+
+    const result = await runtime.executeTool("ping", {}, "resume-1", []);
+    expect(result).toBe("2");
+    expect(newClient.event).toHaveBeenCalledWith({
+      type: "custom_event",
+      event: "ping",
+      data: { n: 2 },
+    });
+  });
+
   test("createSession passes skipGreeting option", () => {
     const agent = makeAgent();
     const runtime = createRuntime({ agent, env: {} });

@@ -66,6 +66,8 @@ type MessageHandlerDeps = {
   getSnapshot: () => SessionSnapshot;
   updateState: (partial: Partial<SessionSnapshot>) => void;
   conn: ConnState;
+  /** Invalidate any in-flight file upload (the upload sender's `discard`). */
+  discardUpload: () => void;
 };
 
 type MessageHandlers = {
@@ -79,6 +81,14 @@ type MessageHandlers = {
    * otherwise `undefined`.
    */
   handleMessage(data: unknown): SessionConfigMessage | undefined;
+  /**
+   * Wait for `io`'s playback queue to drain, then transition to `"listening"`
+   * — guarded by the same turn-boundary generation the live `audio_done`
+   * path uses. `initAudioCapture` routes the pre-init greeting replay
+   * through this so a barge-in mid-greeting can't be stomped by the
+   * replayed completion resolving late.
+   */
+  settleWhenAudioDrained(io: NonNullable<ConnState["voiceIO"]>): void;
 };
 
 /**
@@ -89,7 +99,7 @@ type MessageHandlers = {
  * dedup) that previously lived as closure locals in `createSessionCore`.
  */
 export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers {
-  const { getSnapshot, updateState, conn } = deps;
+  const { getSnapshot, updateState, conn, discardUpload } = deps;
 
   /** Incremented on each turn boundary -- stale async callbacks compare against this. */
   let handlerGeneration = 0;
@@ -230,6 +240,10 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         break;
       case "reset": {
         handlerGeneration++;
+        // A server-initiated reset invalidates any in-flight upload too —
+        // otherwise a long clip keeps streaming stale audio into the
+        // freshly-reset conversation.
+        discardUpload();
         conn.voiceIO?.flush();
         updateState({ ...CLEARED_SESSION_STATE, state: "listening" });
         break;
@@ -262,24 +276,31 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
     }
   }
 
+  /** See {@link MessageHandlers.settleWhenAudioDrained}. Captures
+   *  `handlerGeneration` so a completion (or failure) that lands after a turn
+   *  boundary is discarded instead of overwriting the newer turn's state. */
+  function settleWhenAudioDrained(io: NonNullable<ConnState["voiceIO"]>): void {
+    const gen = handlerGeneration;
+    void io
+      .done()
+      .then(() => {
+        if (handlerGeneration !== gen) return;
+        updateState({ state: "listening" });
+      })
+      .catch((err: unknown) => {
+        console.warn("Audio playback done failed:", err);
+      });
+  }
+
   /**
    * Signal that the server has finished sending audio for this turn.
    * Waits for the audio queue to drain, then transitions state to `"listening"`.
    * Uses the `handlerGeneration` counter to discard stale completions from interrupted turns.
    */
   function playAudioDone(): void {
-    const gen = handlerGeneration;
     const io = conn.voiceIO;
     if (io) {
-      void io
-        .done()
-        .then(() => {
-          if (handlerGeneration !== gen) return;
-          updateState({ state: "listening" });
-        })
-        .catch((err: unknown) => {
-          console.warn("Audio playback done failed:", err);
-        });
+      settleWhenAudioDrained(io);
     } else {
       // voiceIO isn't up yet (mic permission / worklet load still pending) and
       // greeting chunks are buffering in preInitAudio. Record the done so
@@ -330,5 +351,5 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
     handleEvent(msg);
   }
 
-  return { handleMessage };
+  return { handleMessage, settleWhenAudioDrained };
 }

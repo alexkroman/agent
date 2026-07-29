@@ -54,6 +54,14 @@ type StreamPartHandlerDeps = {
    * disables the time-based dead-air cover ({@link DEAD_AIR_COVER_PHRASES}).
    */
   holdPhrase?: string | undefined;
+  /**
+   * The owning turn's abort signal. The dead-air cover is a real timer, and a
+   * barge-in can abort the turn while a tool execution has the `fullStream`
+   * read parked — deferring `dispose()` for seconds. The signal lets the
+   * armed timer die with the turn instead of speaking filler into the
+   * post-cancel silence (and polluting the interrupted-turn transcript).
+   */
+  signal?: AbortSignal | undefined;
   log: Logger;
   sid: string;
 };
@@ -108,7 +116,7 @@ export type StreamPartHandler = {
  * side carries whitespace, a single space is injected into both streams.
  */
 export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPartHandler {
-  const { onDelta, sendTtsText, onToolCall, onToolCallDone, emitError, log, sid } = deps;
+  const { onDelta, sendTtsText, onToolCall, onToolCallDone, emitError, signal, log, sid } = deps;
   const holdPhrase = deps.holdPhrase ?? DEFAULT_HOLD_PHRASE;
   const ttsBoundary = deps.onTtsBoundary ?? ((): void => undefined);
   let pendingSeparator = false;
@@ -144,6 +152,10 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
    * is precisely what is being covered.
    */
   const deadAir = createRestartableTimer((): void => {
+    // Fire-time re-check, matching the transport's other timers: the abort
+    // listener below clears the timer, but a callback already dispatched (or
+    // an abort that raced the arm) must still no-op.
+    if (signal?.aborted) return;
     const phrase = DEAD_AIR_COVER_PHRASES[coverCount % DEAD_AIR_COVER_PHRASES.length] ?? "";
     coverCount += 1;
     emitText(phrase);
@@ -158,8 +170,18 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
    * that reads as patience rather than a stuck loop.
    */
   function armCover(): void {
-    if (!coverEnabled) return;
+    if (!coverEnabled || signal?.aborted) return;
     deadAir.arm(DEFAULT_DEAD_AIR_COVER_MS * 2 ** coverCount);
+  }
+
+  // Kill the armed cover the moment the turn aborts rather than at dispose(),
+  // which a tool execution that ignores its abort signal defers for seconds.
+  const onAbort = (): void => deadAir.clear();
+  signal?.addEventListener("abort", onAbort, { once: true });
+
+  function dispose(): void {
+    signal?.removeEventListener("abort", onAbort);
+    deadAir.clear();
   }
 
   function emitToolResult(part: StreamPart): void {
@@ -230,5 +252,5 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     }
   }
 
-  return { handle, dispose: deadAir.clear };
+  return { handle, dispose };
 }

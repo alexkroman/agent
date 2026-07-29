@@ -313,15 +313,21 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // Tie map cleanup to the session's own stop() so it happens on every
     // teardown path — including a direct `runtime.createSession()` caller that
     // never goes through startSession's onSessionEnd hook (which would
-    // otherwise leak the sinkMap/stateMap entry). Delete is idempotent, so the
-    // onSessionEnd path staying is harmless.
+    // otherwise leak the sinkMap/stateMap entry). The sink identity check
+    // guards the reconnect-resume race: an old session's async stop() can
+    // settle after a resumed session re-registered the same id, and a bare
+    // key delete would then wipe the NEW session's sink (ctx.send no-ops)
+    // and tool state. The sink is the ownership token — it is set at
+    // createSession, so `get === ours` means no newer session took over.
     const stopCore = core.stop.bind(core);
     core.stop = async () => {
       try {
         await stopCore();
       } finally {
-        sinkMap.delete(sessionOpts.id);
-        stateMap.delete(sessionOpts.id);
+        if (sinkMap.get(sessionOpts.id) === sessionOpts.client) {
+          sinkMap.delete(sessionOpts.id);
+          stateMap.delete(sessionOpts.id);
+        }
       }
     };
 
@@ -348,9 +354,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ...(startOpts?.onOpen ? { onOpen: startOpts.onOpen } : {}),
       ...(startOpts?.onClose ? { onClose: startOpts.onClose } : {}),
       ...(startOpts?.onSinkCreated ? { onSinkCreated: startOpts.onSinkCreated } : {}),
+      // sinkMap/stateMap cleanup lives in the identity-guarded stop() wrapper
+      // (createSession) — a key delete here would hit the resumed session's
+      // entries when an old session's stop settles after a reconnect.
       onSessionEnd: (sid) => {
-        sinkMap.delete(sid);
-        stateMap.delete(sid);
         userOnSessionEnd?.(sid);
       },
       ...(sessionStartTimeoutMs !== undefined ? { sessionStartTimeoutMs } : {}),

@@ -28,6 +28,16 @@
  * audio:<base64 PCM16 LE>}` frames and ends the turn with `FlushDone` (or an
  * `Audio` frame flagged `is_final`). `Warning` frames are informational;
  * `Error` frames carry `error_code` + `error`. `Terminate` closes cleanly.
+ *
+ * **Cancel.** The protocol has no discard/cancel frame, so a mid-turn
+ * `cancel()` drops the whole connection and reconnects: text Generate'd but
+ * never Flush'ed would otherwise sit in the server-side buffer and be spliced
+ * into the NEXT turn's synthesis on its Flush, and Audio frames already in
+ * flight would audibly resume the interrupted reply. The cancelled socket's
+ * listeners are detached before it closes, so its late frames (audio, a stale
+ * `is_final`/`FlushDone` that could end the next turn early, the close
+ * itself) are unobservable. Text sent while the replacement socket is still
+ * connecting is queued and flushed to it on open.
  */
 
 import { createNanoEvents, type Emitter } from "nanoevents";
@@ -140,20 +150,25 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       const connectError = (msg: string) => makeTtsError("tts_connect_failed", msg);
       const sampleRate = assertPcm16Rate(openOpts.sampleRate, "AssemblyAI TTS", connectError);
 
-      let ws: WebSocket;
-      try {
-        // Raw key, not `Bearer` — see the module doc.
-        ws = new WebSocket(buildUrl(opts, sampleRate), { headers: { Authorization: apiKey } });
-      } catch (cause) {
-        throw connectError(`AssemblyAI TTS: failed to create WebSocket: ${errorMessage(cause)}`);
-      }
+      const connect = (): WebSocket => {
+        let socket: WebSocket;
+        try {
+          // Raw key, not `Bearer` — see the module doc.
+          socket = new WebSocket(buildUrl(opts, sampleRate), {
+            headers: { Authorization: apiKey },
+          });
+        } catch (cause) {
+          throw connectError(`AssemblyAI TTS: failed to create WebSocket: ${errorMessage(cause)}`);
+        }
+        // Placeholder 'error' listener bound before connecting (see the
+        // cartesia.ts pattern): waitForOpen's own listener is removed once it
+        // settles, and a later socket error with zero listeners is an
+        // unhandled 'error' event that crashes the process.
+        socket.on("error", () => undefined);
+        return socket;
+      };
 
-      // Placeholder 'error' listener bound before connecting (see the
-      // cartesia.ts pattern): waitForOpen's own listener is removed once it
-      // settles, and a later socket error with zero listeners is an unhandled
-      // 'error' event that crashes the process.
-      ws.on("error", () => undefined);
-
+      let ws = connect();
       try {
         await connectOrThrow("AssemblyAI TTS", connectError, () => waitForOpen(ws));
       } catch (err) {
@@ -169,27 +184,36 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
       let doneEmitted = true; // no turn in flight until the first sendText
+      // Non-null while a post-cancel replacement socket is connecting: frames
+      // queue here and flush to it on open, preserving order.
+      let queued: Record<string, unknown>[] | null = null;
+
+      /** Detach + politely close a socket without emitting anything for it. */
+      const dropSocket = (socket: WebSocket): void => {
+        socket.removeAllListeners();
+        // Re-add the zero-listener guard: an 'error' emitted while the close
+        // below is in flight would otherwise crash the process.
+        socket.on("error", () => undefined);
+        if (socket.readyState === WebSocket.OPEN) {
+          try {
+            socket.send(JSON.stringify({ type: "Terminate" }));
+          } catch {
+            // Already going away; the close below is what matters.
+          }
+        }
+        try {
+          socket.close();
+        } catch {
+          // Socket already broken — nothing left to release.
+        }
+      };
 
       const shell = createSessionShell({
         makeStreamError: (msg) => makeTtsError("tts_stream_error", msg),
         emitError: (err) => emitter.emit("error", err),
-        teardown: () => {
-          if (ws.readyState === WebSocket.OPEN) {
-            try {
-              ws.send(JSON.stringify({ type: "Terminate" }));
-            } catch {
-              // Already going away; the close below is what matters.
-            }
-          }
-          try {
-            ws.close();
-          } catch {
-            // Socket already broken — still drop the listeners below.
-          }
-          // Drop handlers so their closures don't stay reachable via the
-          // socket if `ws` outlives this session.
-          ws.removeAllListeners();
-        },
+        // `ws` is read at teardown time so a close after a cancel-reconnect
+        // releases the replacement socket, not the one already dropped.
+        teardown: () => dropSocket(ws),
       });
 
       const emitDoneOnce = () => {
@@ -198,25 +222,65 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
         emitter.emit("done");
       };
 
-      ws.on("message", (raw: WebSocket.Data) => {
-        if (shell.isClosed()) return;
-        handleMessage(raw, emitter, emitDoneOnce, shell.streamError);
-      });
-      ws.on("error", (err: Error) => shell.onSocketError(err));
-      ws.on("close", () => {
-        if (shell.isClosed()) return;
-        // Unexpected server-side close: release the turn so the pipeline
-        // doesn't wait for an utterance that will never complete.
-        emitDoneOnce();
-      });
+      const attach = (socket: WebSocket): void => {
+        socket.on("message", (raw: WebSocket.Data) => {
+          if (shell.isClosed()) return;
+          handleMessage(raw, emitter, emitDoneOnce, shell.streamError);
+        });
+        socket.on("error", (err: Error) => shell.onSocketError(err));
+        socket.on("close", () => {
+          if (shell.isClosed()) return;
+          // Unexpected server-side close: release the turn so the pipeline
+          // doesn't wait for an utterance that will never complete.
+          emitDoneOnce();
+        });
+      };
+      attach(ws);
 
-      closeOnAbort(openOpts.signal, shell.close);
+      /** Replace the connection after a mid-turn cancel — see the module doc. */
+      const reconnect = (): void => {
+        dropSocket(ws);
+        const frames: Record<string, unknown>[] = [];
+        queued = frames;
+        let next: WebSocket;
+        try {
+          next = connect();
+        } catch (cause) {
+          queued = null;
+          shell.streamError(errorMessage(cause));
+          return;
+        }
+        ws = next;
+        void waitForOpen(next).then(
+          () => {
+            // Superseded (closed, or cancelled again) — not the live socket.
+            if (shell.isClosed() || ws !== next) return;
+            attach(next);
+            queued = null;
+            for (const frame of frames) next.send(JSON.stringify(frame));
+          },
+          (cause: unknown) => {
+            if (shell.isClosed() || ws !== next) return;
+            queued = null;
+            shell.streamError(
+              `AssemblyAI TTS: reconnect after cancel failed: ${errorMessage(cause)}`,
+            );
+          },
+        );
+      };
 
       const send = (payload: Record<string, unknown>): boolean => {
-        if (shell.isClosed() || ws.readyState !== WebSocket.OPEN) return false;
+        if (shell.isClosed()) return false;
+        if (queued !== null) {
+          queued.push(payload);
+          return true;
+        }
+        if (ws.readyState !== WebSocket.OPEN) return false;
         ws.send(JSON.stringify(payload));
         return true;
       };
+
+      closeOnAbort(openOpts.signal, shell.close);
 
       const session: AssemblyAITtsSession = {
         sendText(text: string) {
@@ -230,12 +294,20 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
 
         cancel() {
           if (shell.isClosed()) return;
-          // There is no server-side "discard buffered audio" frame, so the
-          // guard against a cancelled turn's audio leaking into the next one
-          // is the pipeline's own: it stops forwarding on `done`. Emit it
-          // synchronously — the orchestrator's state machine advances on
-          // `done`, and barge-in must not be microtask-deferred.
+          const turnInFlight = !doneEmitted;
+          // Emit `done` synchronously — the orchestrator's state machine
+          // advances on it, and barge-in must not be microtask-deferred.
           emitDoneOnce();
+          // Idempotent: nothing sent since the last done means nothing is
+          // buffered server-side and no audio is in flight.
+          if (!turnInFlight) return;
+          if (queued !== null) {
+            // The replacement socket is still connecting, so the cancelled
+            // turn's frames never left the process — dropping them IS the cancel.
+            queued.length = 0;
+            return;
+          }
+          reconnect();
         },
 
         on(event, fn) {
@@ -244,7 +316,9 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
 
         close: shell.close,
 
-        _ws: ws,
+        get _ws() {
+          return ws;
+        },
       };
 
       return session;

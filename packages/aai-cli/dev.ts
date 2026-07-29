@@ -25,8 +25,13 @@ export async function executeDev(opts: {
   log.success(`${colorize("bold", agentName)} running at ${fmtUrl(url)}`);
   log.info("Press Ctrl-C to stop");
 
-  // Graceful shutdown
+  // Graceful shutdown. Once-guarded: SIGINT followed by SIGTERM (common under
+  // process supervisors) must not run cleanup twice concurrently — the second
+  // signal joins the in-flight teardown instead.
+  let shuttingDown = false;
   const onSignal = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     void cleanup().finally(() => process.exit(0));
   };
   process.on("SIGINT", onSignal);

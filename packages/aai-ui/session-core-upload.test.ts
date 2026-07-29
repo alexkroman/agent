@@ -111,6 +111,17 @@ describe("sendAudioFile upload guards", () => {
     expect(sentJson().map((m) => m.type)).not.toContain("transcribe_file_start");
   });
 
+  it("a server-initiated reset abandons the upload", async () => {
+    const promise = core.sendAudioFile(new Blob(["x"]));
+    await vi.waitFor(() => expect(pendingDecodes.length).toBe(1));
+    // The server's reset event must bump the upload epoch just like a
+    // client-side reset(), or the stale clip streams into the fresh session.
+    lastSocket?.simulateMessage(JSON.stringify({ type: "reset" }));
+    pendingDecodes.pop()?.(shortClip());
+    await expect(promise).rejects.toThrow(/reset mid-send/);
+    expect(sentJson().map((m) => m.type)).not.toContain("transcribe_file_start");
+  });
+
   it("a disconnect during the decode abandons the upload", async () => {
     const promise = core.sendAudioFile(new Blob(["x"]));
     await vi.waitFor(() => expect(pendingDecodes.length).toBe(1));

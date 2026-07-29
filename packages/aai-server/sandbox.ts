@@ -40,7 +40,7 @@ import {
 } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
-import { attachSandbox, setSlot, withSlugLock } from "./sandbox-slots.ts";
+import { attachSandbox, setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -72,6 +72,13 @@ export type SandboxOptions = {
    * If omitted, falls back to an in-memory vector store.
    */
   defaultVector?: (slug: string) => Vector;
+  /**
+   * Called when the sandbox VM fails to start (rejected `vmReady`). The
+   * sandbox object was already returned synchronously by then, so this is
+   * the caller's hook to detach a now-permanently-broken sandbox from
+   * wherever it was installed.
+   */
+  onVmFailed?: (err: unknown) => void;
 };
 
 export type Sandbox = AgentRuntime;
@@ -293,6 +300,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     })
     .catch((err: unknown) => {
       console.error("Sandbox VM failed to start", { slug, error: errorMessage(err) });
+      opts.onVmFailed?.(err);
     });
 
   debug("Sandbox initializing", { slug, agent: config.name });
@@ -401,6 +409,19 @@ export async function resolveSandbox(
       agentConfig,
       ...(pool && { pool }),
       ...(opts.defaultVector && { defaultVector: opts.defaultVector }),
+      // A rejected vmReady leaves this sandbox permanently broken (every tool
+      // call fails) while live traffic keeps clearing its idle timer, so it
+      // would never self-heal. Detach it so the next connection rebuilds —
+      // identity-checked and under the slug lock so a deploy/delete that
+      // already replaced the slot is never raced. (createSandbox returns
+      // synchronously and attachSandbox below runs in the same task, so the
+      // async failure callback can only fire after the attach.)
+      onVmFailed: () => {
+        void withSlugLock(slug, async () => {
+          const current = slots.get(slug);
+          if (current?.sandbox === sandbox) await terminateSlot(current);
+        });
+      },
     });
 
     attachSandbox(slots, slot, sandbox);

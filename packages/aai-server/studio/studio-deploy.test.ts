@@ -7,7 +7,13 @@ import { createTestStorage, createTestStore, TEST_AGENT_CONFIG } from "../test-u
 import { clearStudioBuildCache, putCachedBuild } from "./studio-build-cache.ts";
 import { StudioBuildError } from "./studio-bundle.ts";
 import { deployStudioProject, type StudioDeployDeps } from "./studio-deploy.ts";
-import { filesHash, getWorkspace, putWorkspace } from "./studio-workspace.ts";
+import {
+  deleteWorkspace,
+  filesHash,
+  getWorkspace,
+  hasUnpublishedChanges,
+  putWorkspace,
+} from "./studio-workspace.ts";
 
 const SCOPE = "test-scope";
 
@@ -159,6 +165,48 @@ describe("deployStudioProject", () => {
       project: "p1",
     });
     expect(result).toMatchObject({ ok: true, slug: "older-slug" });
+  });
+
+  test("does not revert files written during the build", async () => {
+    const deps = makeDeps();
+    // Simulate an edit landing while the multi-second build runs: the final
+    // metadata write must merge onto the current files, not the snapshot.
+    deps.bundle = async () => {
+      await putWorkspace(deps.storage, SCOPE, "p1", {
+        files: { "agent.ts": "export default {}", "mid-build.ts": "added while building" },
+      });
+      return "export default {};";
+    };
+    await seedProject(deps, "p1");
+    const result = await deployStudioProject(deps, {
+      apiKey: "key1",
+      scope: SCOPE,
+      project: "p1",
+    });
+    expect(result).toMatchObject({ ok: true, slug: "p1" });
+    const ws = await getWorkspace(deps.storage, SCOPE, "p1");
+    expect(ws?.files["mid-build.ts"]).toBe("added while building");
+    expect(ws?.deployedSlug).toBe("p1");
+    // The hash is of the snapshot actually built, so the mid-build edit
+    // correctly reads as unpublished.
+    expect(ws && hasUnpublishedChanges(ws)).toBe(true);
+  });
+
+  test("a project deleted during the build is not resurrected", async () => {
+    const deps = makeDeps();
+    deps.bundle = async () => {
+      await deleteWorkspace(deps.storage, SCOPE, "p1");
+      return "export default {};";
+    };
+    await seedProject(deps, "p1");
+    const result = await deployStudioProject(deps, {
+      apiKey: "key1",
+      scope: SCOPE,
+      project: "p1",
+    });
+    // The agent still deployed — only the workspace metadata write is skipped.
+    expect(result).toMatchObject({ ok: true, slug: "p1" });
+    expect(await getWorkspace(deps.storage, SCOPE, "p1")).toBeNull();
   });
 
   test("returns an error for a missing project", async () => {

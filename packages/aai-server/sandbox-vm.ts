@@ -112,6 +112,9 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
   return {
     conn,
     async shutdown() {
+      // Best-effort: under stdin backpressure the queued notification hits
+      // dispose()'s dead-stream guard and is dropped. That's acceptable —
+      // cleanup() escalates SIGTERM→SIGKILL, so the guest dies either way.
       void conn.sendNotification("shutdown");
       conn.dispose();
       await warm.cleanup();
@@ -395,10 +398,11 @@ export const _internals = {
 export async function createSandboxVm(
   opts: SandboxVmOptions,
   pool?: WarmHarnessSource,
+  spawn: typeof spawnWarmHarness = spawnWarmHarness,
 ): Promise<SandboxHandle> {
   const t0 = process.hrtime.bigint();
   try {
-    const { handle, path } = await createSandboxVmInner(opts, pool);
+    const { handle, path } = await createSandboxVmInner(opts, pool, spawn);
     metrics.sandboxInit.observe({ path }, hrtimeSeconds(t0));
     return handle;
   } catch (err) {
@@ -420,11 +424,27 @@ function classifyInitFailure(err: unknown): SandboxInitFailReason {
 async function createSandboxVmInner(
   opts: SandboxVmOptions,
   pool: WarmHarnessSource | undefined,
+  spawn: typeof spawnWarmHarness,
 ): Promise<{ handle: SandboxHandle; path: SandboxInitPath }> {
   if (pool) {
     const warm = await pool.acquire();
     // A ready pooled harness is the only fast path.
-    if (warm) return { handle: await configureSandbox(warm, opts), path: "warm" };
+    if (warm) {
+      try {
+        return { handle: await configureSandbox(warm, opts), path: "warm" };
+      } catch (err: unknown) {
+        // The warm harness can die between acquire()'s alive() check and
+        // bundle/load. Don't fail the session for it — clean up (idempotent;
+        // the bundle/load failure path already did) and fall through to a
+        // cold spawn, which either works or surfaces the real error.
+        console.warn("Warm sandbox configuration failed; falling back to cold spawn", {
+          slug: opts.slug,
+          error: errorMessage(err),
+        });
+        warm.conn.dispose();
+        await warm.cleanup().catch(() => undefined);
+      }
+    }
   }
 
   if (!isGvisorAvailable() && process.env.NODE_ENV !== "production") {
@@ -433,7 +453,7 @@ async function createSandboxVmInner(
     );
   }
   // spawnWarmHarness reads the env-var limits itself.
-  const warm = await spawnWarmHarness({
+  const warm = await spawn({
     harnessPath: opts.harnessPath,
     slug: opts.slug,
   });

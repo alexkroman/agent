@@ -76,8 +76,25 @@ export async function readJson(filePath: string): Promise<unknown> {
   }
 }
 
-/** Write `data` as pretty-printed JSON (+ trailing newline), creating parent dirs. */
+/**
+ * Write `data` as pretty-printed JSON (+ trailing newline), creating parent dirs.
+ *
+ * Writes to a temp file in the same directory, then renames it into place.
+ * A plain `writeFile` can be observed (or left, on crash) half-written; a
+ * torn config.json fails `JSON.parse`, reads back as `{}`, and the next
+ * read-modify-write silently wipes fields like `approvedServers`. Rename on
+ * the same filesystem is atomic, so readers only ever see a complete file.
+ * Two concurrent CLI processes can still lose each other's *updates*
+ * (last rename wins) — acceptable for these small user-config files.
+ */
 export async function writeJson(filePath: string, data: unknown): Promise<void> {
   await fs.mkdir(path.dirname(filePath), { recursive: true });
-  await fs.writeFile(filePath, `${JSON.stringify(data, null, 2)}\n`);
+  const tmpPath = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
+  await fs.writeFile(tmpPath, `${JSON.stringify(data, null, 2)}\n`);
+  try {
+    await fs.rename(tmpPath, filePath);
+  } catch (err) {
+    await fs.rm(tmpPath, { force: true }).catch(() => undefined);
+    throw err;
+  }
 }

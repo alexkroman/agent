@@ -345,6 +345,43 @@ describe("resolveAllBuiltins defs", () => {
     expect(await defs.recall?.execute({}, s2)).toEqual({ notes: {} });
   });
 
+  test("two concurrent remember calls both persist (read-modify-write is serialized)", async () => {
+    const kv = memoryKv();
+    const { defs } = resolveAllBuiltins(["remember", "recall"]);
+    const ctx = createMockToolContext({ kv, sessionId: "s1" });
+
+    // One LLM step's tool calls execute concurrently (pipeline streamText runs
+    // them in parallel) — both remembers start before either finishes writing.
+    // Without serialization both read the same snapshot and one note is lost.
+    await Promise.all([
+      defs.remember?.execute({ key: "user_id", value: "usr_1" }, ctx),
+      defs.remember?.execute({ key: "res_code", value: "BOB12" }, ctx),
+    ]);
+
+    expect(await defs.recall?.execute({}, ctx)).toEqual({
+      notes: { user_id: "usr_1", res_code: "BOB12" },
+    });
+  });
+
+  test("a failed remember does not wedge later remembers on the same session", async () => {
+    const kv = memoryKv();
+    let failNext = true;
+    const set = kv.set.bind(kv);
+    kv.set = async (key, val, opts) => {
+      if (failNext) {
+        failNext = false;
+        throw new Error("kv down");
+      }
+      await set(key, val, opts);
+    };
+    const { defs } = resolveAllBuiltins(["remember", "recall"]);
+    const ctx = createMockToolContext({ kv, sessionId: "s1" });
+
+    await expect(defs.remember?.execute({ key: "a", value: "1" }, ctx)).rejects.toThrow("kv down");
+    await defs.remember?.execute({ key: "b", value: "2" }, ctx);
+    expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: { b: "2" } });
+  });
+
   // ─── calculate ─────────────────────────────────────────────────────────
 
   test("calculate evaluates expressions and reports errors in-band", async () => {

@@ -61,7 +61,30 @@ export type StudioChatDeps = {
    * `runStudioChat` awaits it as late as possible (see below).
    */
   mcp?: McpSession | Promise<McpSession>;
+  /**
+   * Client-abort signal (the HTTP request's). Lets streamText stop the LLM
+   * call and in-flight tool executions promptly instead of leaving them to
+   * race the sandbox/MCP teardown.
+   */
+  abortSignal?: AbortSignal;
 };
+
+/** Invoke one agent tool in the sandbox, reporting failures as text. */
+async function trialToolRun(
+  sandbox: StudioSandbox,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string> {
+  try {
+    const output = await sandbox.executeTool(name, args);
+    return `${name}(${JSON.stringify(args)}) → ${output}`;
+  } catch (err) {
+    // A stream abort disposes the sandbox mid round-trip; the pending RPC
+    // rejects ("Connection disposed"). Answer as tool-result text rather
+    // than letting the rejection rattle through the AI SDK tool machinery.
+    return `Tool run failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
 
 /** Build the workspace, load it in the session sandbox, and report back. */
 async function runTrial(
@@ -113,8 +136,7 @@ async function runTrial(
   if (!toolNames.includes(trialTool)) {
     return `${summary}\nCannot invoke "${trialTool}": not one of the agent's tools.`;
   }
-  const output = await sandbox.executeTool(trialTool, args ?? {});
-  return `${summary}\n${trialTool}(${JSON.stringify(args ?? {})}) → ${output}`;
+  return `${summary}\n${await trialToolRun(sandbox, trialTool, args ?? {})}`;
 }
 
 /**
@@ -287,6 +309,7 @@ export async function runStudioChat(
       // Studio tools last: neither an MCP server nor a web builtin may
       // shadow write_file.
       tools: { ...mcp.tools, ...createWebTools(), ...createStudioTools(deps) },
+      ...(deps.abortSignal && { abortSignal: deps.abortSignal }),
       stopWhen: stepCountIs(MAX_CHAT_STEPS),
       onFinish: disposeSandbox,
       onAbort: disposeSandbox,

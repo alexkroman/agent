@@ -143,6 +143,16 @@ describe("runDeploy", () => {
     expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 
+  test("does not retry a slug-less first deploy (server mints a slug per request)", async () => {
+    // A retried lost-response would create a second, orphaned agent.
+    const mockFetch = vi
+      .fn()
+      .mockImplementation(() => Promise.resolve(new Response("server error", { status: 500 })));
+    const { slug: _slug, ...optsWithoutSlug } = deployOpts(mockFetch);
+    await expect(runDeploy(optsWithoutSlug)).rejects.toThrow("deploy failed (HTTP 500)");
+    expect(mockFetch).toHaveBeenCalledTimes(1);
+  });
+
   test("throws on network failure", async () => {
     const mockFetch = vi.fn().mockRejectedValue(new Error("ECONNREFUSED"));
     await expect(runDeploy(deployOpts(mockFetch))).rejects.toThrow(

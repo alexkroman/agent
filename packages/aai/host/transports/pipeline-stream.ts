@@ -300,6 +300,9 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       sendTtsText: ttsText.send,
       onTtsBoundary: ttsText.boundary,
       holdPhrase,
+      // Lets the dead-air cover die with the turn: a barge-in during a tool
+      // execution parks the fullStream read, deferring dispose() below.
+      signal: ctl.signal,
       onToolCall: callbacks.onToolCall,
       onToolCallDone: callbacks.onToolCallDone,
       emitError,

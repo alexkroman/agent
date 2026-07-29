@@ -163,6 +163,77 @@ describe("createVoiceIO", () => {
     await io.close();
   });
 
+  test("done resolves on the worklet's stop message", async () => {
+    const io = await createVoiceIO(voiceOpts());
+    io.enqueue(new Int16Array([1, 2, 3]).buffer);
+    const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
+
+    let resolved = false;
+    void io.done().then(() => {
+      resolved = true;
+    });
+    playNode.port.simulateMessage({ event: "stop" });
+    await vi.waitFor(() => expect(resolved).toBe(true));
+    await io.close();
+  });
+
+  test("a stop queued by flush does not resolve a later done early", async () => {
+    const io = await createVoiceIO(voiceOpts());
+    io.enqueue(new Int16Array([1, 2, 3]).buffer);
+    const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
+
+    // Interrupt the current turn: the worklet will post a 'stop' for it on
+    // its next tick, after this turn's done() has been settled.
+    io.flush();
+
+    // Next turn registers its own done() before the stale stop arrives.
+    let resolved = false;
+    void io.done().then(() => {
+      resolved = true;
+    });
+    playNode.port.simulateMessage({ event: "stop" }); // the interrupt's stop
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+
+    playNode.port.simulateMessage({ event: "stop" }); // this turn's real stop
+    await vi.waitFor(() => expect(resolved).toBe(true));
+    await io.close();
+  });
+
+  test("flush settles a pending done instead of stranding it", async () => {
+    const io = await createVoiceIO(voiceOpts());
+    io.enqueue(new Int16Array([1, 2, 3]).buffer);
+
+    let resolved = false;
+    void io.done().then(() => {
+      resolved = true;
+    });
+    io.flush();
+    await vi.waitFor(() => expect(resolved).toBe(true));
+    await io.close();
+  });
+
+  test("a second done settles the promise it replaces", async () => {
+    const io = await createVoiceIO(voiceOpts());
+    io.enqueue(new Int16Array([1, 2, 3]).buffer);
+    const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
+
+    let firstResolved = false;
+    let secondResolved = false;
+    void io.done().then(() => {
+      firstResolved = true;
+    });
+    void io.done().then(() => {
+      secondResolved = true;
+    });
+    await vi.waitFor(() => expect(firstResolved).toBe(true));
+    expect(secondResolved).toBe(false);
+
+    playNode.port.simulateMessage({ event: "stop" });
+    await vi.waitFor(() => expect(secondResolved).toBe(true));
+    await io.close();
+  });
+
   test("close stops media tracks and closes AudioContext", async () => {
     const io = await createVoiceIO(voiceOpts());
     await io.close();

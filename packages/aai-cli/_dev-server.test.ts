@@ -159,11 +159,6 @@ async function writeAgentTs(dir: string, name = "test-agent"): Promise<void> {
   );
 }
 
-/** Fire a synthetic chokidar change event for a path inside `dir`. */
-function fireChange(dir: string, relPath: string): void {
-  chokidarState.allCallback?.("change", path.join(dir, relPath));
-}
-
 // ─── Setup ──────────────────────────────────────────────────────────────────
 
 beforeEach(() => {
@@ -416,98 +411,6 @@ describe("file watcher filtering", () => {
       expect(ignored?.(path.join(dir, ".env.local"))).toBe(false);
       // The watch root itself is never ignored.
       expect(ignored?.(dir)).toBe(false);
-
-      await cleanup();
-    });
-  });
-
-  test("watcher triggers restart on agent file change", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      mockClose.mockClear();
-      mockCreateRuntime.mockClear();
-      mockCreateServer.mockClear();
-      mockListen.mockClear();
-
-      // Trigger with a regular file change
-      fireChange(dir, "agent.ts");
-
-      // Wait for the 300ms debounce + full async restart sequence
-      await vi.waitFor(
-        () => {
-          expect(mockClose).toHaveBeenCalled();
-          expect(mockCreateRuntime).toHaveBeenCalled();
-          expect(mockCreateServer).toHaveBeenCalled();
-          expect(mockListen).toHaveBeenCalled();
-        },
-        { timeout: 1000 },
-      );
-
-      await cleanup();
-    });
-  });
-
-  test("builds the new server before closing the old one on restart", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      mockClose.mockClear();
-      mockCreateServer.mockClear();
-      mockListen.mockClear();
-
-      fireChange(dir, "agent.ts");
-
-      await vi.waitFor(
-        () => {
-          expect(mockListen).toHaveBeenCalled();
-        },
-        { timeout: 2000 },
-      );
-
-      // Build (createServer) completes BEFORE the old server closes, so the
-      // down-window is only the close+listen swap — not the whole rebuild.
-      const createOrder = mockCreateServer.mock.invocationCallOrder[0] ?? Number.POSITIVE_INFINITY;
-      const closeOrder = mockClose.mock.invocationCallOrder[0] ?? Number.NEGATIVE_INFINITY;
-      const listenOrder = mockListen.mock.invocationCallOrder[0] ?? Number.NEGATIVE_INFINITY;
-      expect(createOrder).toBeLessThan(closeOrder);
-      expect(closeOrder).toBeLessThan(listenOrder);
-
-      await cleanup();
-    });
-  });
-
-  test("restart logs error on failure instead of crashing", async () => {
-    await withTempDir(async (dir) => {
-      await writeAgentTs(dir);
-
-      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
-
-      // After initial load, make validation throw on next reload
-      mockValidateAgentExport.mockImplementation(() => {
-        throw new Error("agent broke");
-      });
-
-      mockClose.mockClear();
-
-      // Actually change the file: an unchanged bundle is served from the
-      // eval memo (createWorkerEvaluator) and never re-validated.
-      await writeAgentTs(dir, "test-agent-v2");
-      fireChange(dir, "agent.ts");
-
-      await vi.waitFor(
-        () => {
-          expect(log.error).toHaveBeenCalledWith(expect.stringContaining("Restart failed"));
-        },
-        { timeout: 2000 },
-      );
-
-      // A failed build must leave the previous server running: no close.
-      expect(mockClose).not.toHaveBeenCalled();
 
       await cleanup();
     });

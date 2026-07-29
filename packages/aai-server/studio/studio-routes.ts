@@ -47,6 +47,7 @@ import {
   putWorkspace,
   studioScope,
 } from "./studio-workspace.ts";
+import { withWorkspaceLock } from "./studio-workspace-lock.ts";
 
 export type StudioRouteOptions = {
   /** Warm harness pool shared with deployed-agent sandboxes. */
@@ -105,11 +106,15 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
     const scope = studioScope(c.var.apiKey);
     const { name } = c.req.valid("json");
-    if (await getWorkspace(c.env.storage, scope, name)) {
-      return c.json({ error: "Project already exists" }, 409);
-    }
-    const workspace = await putWorkspace(c.env.storage, scope, name, { files: starterFiles() });
-    return c.json({ name, files: workspace.files }, 201);
+    // Exists-check and create are one atomic step: two concurrent creates
+    // must not both pass the check and have the loser reset the winner.
+    return withWorkspaceLock(scope, name, async () => {
+      if (await getWorkspace(c.env.storage, scope, name)) {
+        return c.json({ error: "Project already exists" }, 409);
+      }
+      const workspace = await putWorkspace(c.env.storage, scope, name, { files: starterFiles() });
+      return c.json({ name, files: workspace.files }, 201);
+    });
   });
 
   studio.get("/projects/:project", async (c) => {
@@ -128,25 +133,31 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   studio.delete("/projects/:project", async (c) => {
     const scope = studioScope(c.var.apiKey);
     const project = validateProject(c.req.param("project"));
-    await deleteWorkspace(c.env.storage, scope, project);
+    // Locked so an in-flight read-modify-write cannot resurrect the project
+    // by writing back a snapshot taken before the delete.
+    await withWorkspaceLock(scope, project, () => deleteWorkspace(c.env.storage, scope, project));
     return c.json({ ok: true });
   });
 
   studio.put("/projects/:project/file", zValidator("json", StudioFileSchema), async (c) => {
     const scope = studioScope(c.var.apiKey);
     const project = validateProject(c.req.param("project"));
-    const workspace = await getWorkspace(c.env.storage, scope, project);
-    if (!workspace) return c.json({ error: "Project not found" }, 404);
     const { path, content } = c.req.valid("json");
-    try {
-      await putWorkspace(c.env.storage, scope, project, {
-        ...workspace,
-        files: { ...workspace.files, [path]: content },
-      });
-    } catch (err) {
-      return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
-    }
-    return c.json({ ok: true });
+    // Locked read-modify-write: an editor PUT racing a chat turn must not
+    // drop either edit.
+    return withWorkspaceLock(scope, project, async () => {
+      const workspace = await getWorkspace(c.env.storage, scope, project);
+      if (!workspace) return c.json({ error: "Project not found" }, 404);
+      try {
+        await putWorkspace(c.env.storage, scope, project, {
+          ...workspace,
+          files: { ...workspace.files, [path]: content },
+        });
+      } catch (err) {
+        return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+      }
+      return c.json({ ok: true });
+    });
   });
 
   studio.delete("/projects/:project/file", async (c) => {
@@ -154,12 +165,14 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     const project = validateProject(c.req.param("project"));
     const path = c.req.query("path");
     if (!path) return c.json({ error: "Missing path query parameter" }, 400);
-    const workspace = await getWorkspace(c.env.storage, scope, project);
-    if (!workspace?.files[path]) return c.json({ error: "File not found" }, 404);
-    const files = { ...workspace.files };
-    delete files[path];
-    await putWorkspace(c.env.storage, scope, project, { ...workspace, files });
-    return c.json({ ok: true });
+    return withWorkspaceLock(scope, project, async () => {
+      const workspace = await getWorkspace(c.env.storage, scope, project);
+      if (!workspace?.files[path]) return c.json({ error: "File not found" }, 404);
+      const files = { ...workspace.files };
+      delete files[path];
+      await putWorkspace(c.env.storage, scope, project, { ...workspace, files });
+      return c.json({ ok: true });
+    });
   });
 
   studio.post(
@@ -244,6 +257,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
         sandbox,
         disposeSandbox,
         mcp,
+        abortSignal: c.req.raw.signal,
       },
       // Structurally validated by UiMessageSchema; part-level validation
       // happens in convertToModelMessages.

@@ -17,6 +17,7 @@ import {
 } from "../../sdk/providers/kv/s3.ts";
 import type { KvProvider } from "../../sdk/providers.ts";
 import { createUnstorageKv } from "../unstorage-kv.ts";
+import { withAtomicFsWrites } from "./_fs-atomic.ts";
 import { loadProviderPackage, resolveApiKey } from "./resolve.ts";
 
 type DriverFactory<O> = (opts: O) => Driver;
@@ -57,8 +58,12 @@ export function resolveKv(descriptor: KvProvider, env: Record<string, string>, p
     case FS_KV_KIND: {
       const opts = descriptor.options as unknown as FsKvOptions;
       const fsDriver = loadDriver<{ base: string }>("unstorage/drivers/fs", "fs");
+      // The stock driver's plain writeFile can leave torn values on crash;
+      // the wrapper swaps its write paths for temp-file + rename.
       return createUnstorageKv({
-        storage: createStorage({ driver: fsDriver({ base: opts.base }) }),
+        storage: createStorage({
+          driver: withAtomicFsWrites(fsDriver({ base: opts.base }), opts.base),
+        }),
         prefix,
       });
     }

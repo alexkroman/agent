@@ -200,7 +200,7 @@ describe("LLM stream error reporting", () => {
 });
 
 describe("createStreamPartHandler dead-air cover", () => {
-  function harness(overrides: { holdPhrase?: string } = {}) {
+  function harness(overrides: { holdPhrase?: string; signal?: AbortSignal } = {}) {
     const spoken: string[] = [];
     const handler = createStreamPartHandler({
       onDelta: () => undefined,
@@ -274,6 +274,29 @@ describe("createStreamPartHandler dead-air cover", () => {
     for (const phrase of DEAD_AIR_COVER_PHRASES) {
       expect(spoken.join("")).not.toContain(phrase);
     }
+  });
+
+  test("a barge-in abort stops a pending cover from firing", () => {
+    // Barge-in during a tool execution: dispose() waits on the parked
+    // fullStream read, so the abort signal is what must kill the timer —
+    // otherwise the filler is spoken into post-cancel silence AND appended
+    // to `accumulated`, polluting the interrupted-turn history.
+    const ctl = new AbortController();
+    const { spoken, toolCall } = harness({ signal: ctl.signal });
+    toolCall("tc-1");
+    ctl.abort();
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
+    for (const phrase of DEAD_AIR_COVER_PHRASES) {
+      expect(spoken.join("")).not.toContain(phrase);
+    }
+  });
+
+  test("an unaborted signal leaves the cover working", () => {
+    const ctl = new AbortController();
+    const { spoken, toolCall } = harness({ signal: ctl.signal });
+    toolCall("tc-1");
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
+    expect(spoken.join("")).toContain(DEAD_AIR_COVER_PHRASES[0]);
   });
 
   test("holdPhrase '' disables the dead-air cover too", () => {

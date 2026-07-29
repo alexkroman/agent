@@ -31,6 +31,23 @@ describe("resolveKv", () => {
     expect(() => resolveKv(fsKv({ base: "/tmp/aai-test" }), {}, "p")).not.toThrow();
   });
 
+  it("fsKv round-trips values with atomic writes (no temp files left behind)", async () => {
+    const fsp = await import("node:fs/promises");
+    const os = await import("node:os");
+    const path = await import("node:path");
+    const base = await fsp.mkdtemp(path.join(os.tmpdir(), "aai_fskv_"));
+    try {
+      const kv = resolveKv(fsKv({ base }), {}, "p");
+      await kv.set("k", { n: 1 });
+      expect(await kv.get("k")).toEqual({ n: 1 });
+      // Writes go through temp-file + rename (see _fs-atomic.ts); nothing but
+      // the value file may remain.
+      expect(await fsp.readdir(path.join(base, "p"))).toEqual(["k"]);
+    } finally {
+      await fsp.rm(base, { recursive: true, force: true });
+    }
+  });
+
   it("resolves s3Kv when AWS creds are present", () => {
     expect(() =>
       resolveKv(

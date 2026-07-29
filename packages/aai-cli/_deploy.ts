@@ -42,6 +42,11 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
     hints: {
       413: "Your bundle is too large. Try reducing dependencies or splitting your agent.",
     },
+    // A slug-less first deploy is not idempotent: the server generates a
+    // fresh slug per request, so retrying a request that succeeded but lost
+    // its response would create a second, orphaned agent. Redeploys target a
+    // fixed slug and stay retried.
+    ...(opts.slug ? {} : { retry: 0 }),
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
 

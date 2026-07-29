@@ -28,6 +28,13 @@ export type ApiRequestOptions = {
   headers?: Record<string, string>;
   /** Extra error hints keyed by HTTP status. The 401 hint is built in. */
   hints?: Record<number, string>;
+  /**
+   * Transient-failure retry count (default 2). Pass 0 for requests that are
+   * not idempotent server-side — a retry of a request that succeeded but lost
+   * its response would perform the action twice (e.g. a first deploy with no
+   * slug creates a fresh agent per attempt).
+   */
+  retry?: number;
   /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
   fetch?: typeof globalThis.fetch;
 };
@@ -46,7 +53,7 @@ export async function apiRequest<T = unknown>(url: string, opts: ApiRequestOptio
       method: opts.method ?? "GET",
       headers: { Authorization: `Bearer ${opts.apiKey}`, ...opts.headers },
       ...(opts.body !== undefined ? { body: opts.body } : {}),
-      retry: 2,
+      retry: opts.retry ?? 2,
       retryDelay: 300,
     });
   } catch (err) {
