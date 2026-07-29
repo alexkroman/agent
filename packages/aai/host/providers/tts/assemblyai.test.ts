@@ -1,6 +1,10 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import type {
+  AssemblyAITtsLanguage,
+  AssemblyAITtsOptions,
+} from "../../../sdk/providers/tts/assemblyai.ts";
 import type { TtsError } from "../../../sdk/providers.ts";
 import { type AssemblyAITtsSession, openAssemblyAITts } from "./assemblyai.ts";
 
@@ -103,7 +107,7 @@ function pcmBase64(samples: number[]): string {
 }
 
 async function openSession(
-  opts: { voice?: string; language?: string } = {},
+  opts: AssemblyAITtsOptions = {},
   apiKey = "test-key",
 ): Promise<{
   session: AssemblyAITtsSession;
@@ -144,9 +148,39 @@ describe("AssemblyAI TTS adapter", () => {
     expect(params.get("voice")).toBe("vera");
     // Every voice speaks one language; a mismatched pair is worse than no hint.
     expect(params.has("language")).toBe(false);
+  });
 
-    const withLang = await openSession({ voice: "lola", language: "es" });
-    expect(new URL(withLang.ws.url).searchParams.get("language")).toBe("es");
+  test("sends the language as the API's full name, not the ISO 639-1 code", async () => {
+    // The service rejects codes in-band: `Bad connection parameters: language:
+    // language 'es' not in supported set ['english', ...]` — which arrives
+    // AFTER the socket opens, so an unmapped code is a silently mute session.
+    const { ws } = await openSession({ voice: "lola", language: "es" });
+    expect(new URL(ws.url).searchParams.get("language")).toBe("spanish");
+  });
+
+  test.each<[AssemblyAITtsLanguage, string]>([
+    ["en", "english"],
+    ["fr", "french"],
+    ["de", "german"],
+    ["it", "italian"],
+    ["pt", "portuguese"],
+    ["es", "spanish"],
+  ])("maps %s to %s", async (code, wire) => {
+    const { ws } = await openSession({ language: code });
+    expect(new URL(ws.url).searchParams.get("language")).toBe(wire);
+  });
+
+  test("open() throws tts_connect_failed for an unsupported language", async () => {
+    // Fail at connect rather than let the service refuse in-band: the
+    // descriptor reaches the host as unvalidated `Record<string, unknown>`
+    // options, so this is the only place a bad value can be caught.
+    const opener = openAssemblyAITts({ language: "zh" as "es" });
+    await expect(
+      opener.open({ sampleRate: 16_000, apiKey: "k", signal: new AbortController().signal }),
+    ).rejects.toMatchObject({
+      code: "tts_connect_failed",
+      message: expect.stringContaining("zh"),
+    });
   });
 
   test("authenticates with the raw API key, not a Bearer token", async () => {

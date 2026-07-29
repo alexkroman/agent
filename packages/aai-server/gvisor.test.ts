@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   execFile: vi.fn(),
   mkdir: vi.fn(async () => undefined),
   copyFile: vi.fn(async () => undefined),
+  link: vi.fn(async () => undefined),
   chmod: vi.fn(async () => undefined),
   writeFile: vi.fn(async (_path: string, _data: string) => undefined),
   rm: vi.fn(async () => undefined),
@@ -24,6 +25,7 @@ vi.mock("node:fs/promises", async (importOriginal) => {
     ...orig,
     mkdir: mocks.mkdir,
     copyFile: mocks.copyFile,
+    link: mocks.link,
     chmod: mocks.chmod,
     writeFile: mocks.writeFile,
     rm: mocks.rm,
@@ -66,6 +68,7 @@ beforeEach(() => {
   });
   mocks.mkdir.mockClear();
   mocks.copyFile.mockClear();
+  mocks.link.mockReset().mockResolvedValue(undefined);
   mocks.chmod.mockClear();
   mocks.writeFile.mockClear();
   mocks.rm.mockClear();
@@ -112,22 +115,44 @@ describe("prepareRootfs", () => {
     await expect(prepareRootfs("/srv/harness.mjs")).rejects.toThrow("deno not found on PATH");
   });
 
-  it("copies deno + harness once and reuses the cached rootfs", async () => {
+  it("hard-links deno instead of copying it, and copies the harness", async () => {
+    // Copying the ~130 MB binary cost 23.7s on a production boot — most of the
+    // window the healthcheck grace period has to cover. A link is O(1).
     mocks.existsSync.mockImplementation((p) => p === "/usr/local/bin/deno");
     const { prepareRootfs } = await loadGvisor();
     const first = await prepareRootfs("/srv/harness.mjs");
     const second = await prepareRootfs("/srv/harness.mjs");
     expect(second).toBe(first);
-    expect(mocks.copyFile).toHaveBeenCalledTimes(2); // deno + harness, once total
-    expect(mocks.copyFile).toHaveBeenCalledWith(
+    expect(mocks.link).toHaveBeenCalledTimes(1);
+    expect(mocks.link).toHaveBeenCalledWith(
       "/usr/local/bin/deno",
       expect.stringMatching(/\/deno$/),
     );
+    // Only the harness is copied; deno never is.
+    expect(mocks.copyFile).toHaveBeenCalledTimes(1);
     expect(mocks.copyFile).toHaveBeenCalledWith(
       "/srv/harness.mjs",
       expect.stringMatching(/harness\.mjs$/),
     );
+    // chmod would mutate the shared inode — the image's binary is already 0755.
+    expect(mocks.chmod).not.toHaveBeenCalled();
     expect(first.libMounts).toEqual([]);
+  });
+
+  it("falls back to copying deno when the link crosses filesystems", async () => {
+    // A tmpfs /tmp puts the rootfs on a different device than the image, so
+    // link() fails with EXDEV — that must degrade to the old copy, not a boot
+    // failure.
+    mocks.existsSync.mockImplementation((p) => p === "/usr/local/bin/deno");
+    mocks.link.mockRejectedValueOnce(Object.assign(new Error("cross-device"), { code: "EXDEV" }));
+    const { prepareRootfs } = await loadGvisor();
+    await expect(prepareRootfs("/srv/harness.mjs")).resolves.toMatchObject({ libMounts: [] });
+    expect(mocks.copyFile).toHaveBeenCalledWith(
+      "/usr/local/bin/deno",
+      expect.stringMatching(/\/deno$/),
+    );
+    // The copied file is a new inode, so it needs the exec bit set.
+    expect(mocks.chmod).toHaveBeenCalledWith(expect.stringMatching(/\/deno$/), 0o755);
   });
 
   it("resets the cache on failure so a retry can succeed", async () => {

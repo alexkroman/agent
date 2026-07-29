@@ -23,8 +23,20 @@ primary_region = 'sjc'
 
   [[http_service.checks]]
     interval = "10s"
-    timeout = "2s"
-    grace_period = "5s"
+    # A /health hit is trivial, but this VM has one CPU and spends boot
+    # spawning Deno harnesses — 2s was tight enough to fail a machine that was
+    # merely busy, which ejects it from rotation.
+    timeout = "5s"
+    # The listener does not open until the sandbox rootfs is prepared (see
+    # index.ts), so a check before that is guaranteed to fail and is pure noise:
+    # every machine of every deploy logged "Health check has failed" at T+1s.
+    # Sized to cover a normal boot; deliberately NOT sized to cover the old
+    # ~34s worst case, because Fly does not document whether the proxy routes
+    # to a machine mid-grace-period — a long window risks trading a logged
+    # error for a silent one. The fix for a slow boot is a faster boot
+    # (gvisor.ts hard-links Deno instead of copying 130 MB), not a wider
+    # blindfold.
+    grace_period = "15s"
     method = "GET"
     path = "/health"
 
@@ -42,4 +54,7 @@ kill_timeout = "10s"
   memory = '2gb'
   cpu_kind = 'performance'
   cpus = 1
-  scale = 5
+  # NOTE: machine count is not a fly.toml [[vm]] setting — it comes from
+  # `fly scale count` (currently 2). A `scale = 5` key lived here and did
+  # nothing: Fly ignores unknown keys silently, so it read as "we run 5
+  # machines" while the app ran 2. Change the count with the CLI, not here.

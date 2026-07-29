@@ -10,6 +10,7 @@ import { z } from "zod";
 import { AllowedHostsSchema } from "./allowed-hosts.ts";
 import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
 import { sendAllowedHosts } from "./providers/send/open.ts";
+import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import {
   assertPipelineTuning,
   assertProviderTriple,
@@ -151,6 +152,14 @@ const ToolManifestSchema = z.object({
  * like `assemblyAI(...)` / `anthropic(...)` / `cartesia(...)`. Kept
  * deliberately generic at the schema layer: kind-specific validation lives
  * in the host-side resolver, which knows what each adapter expects.
+ *
+ * The exception is an option the resolver can only reject *too late to help* —
+ * one whose failure surfaces mid-session rather than at open. AssemblyAI TTS's
+ * `language` is the case that taught this (`assertAssemblyAITtsLanguage`, run
+ * from `parseManifest` and `toAgentConfig`): the service refuses a bad value
+ * in-band after the socket is already open, so the only signal was an agent
+ * that went mute in production. Those get an assert here, where the CLI and the
+ * studio's `test_agent` both see it while the author is still authoring.
  */
 export const ProviderDescriptorSchema = z.object({
   kind: z.string().min(1),
@@ -208,6 +217,7 @@ export function parseManifest(input: unknown): Manifest {
   assertSilencePolicy(mode, parsed.silenceTimeoutMs, parsed.silencePrompt);
   assertPipelineTuning(mode, parsed);
   assertTextOnlyTuning(parsed.tts, parsed);
+  assertAssemblyAITtsLanguage(parsed.tts);
   return {
     ...parsed,
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,

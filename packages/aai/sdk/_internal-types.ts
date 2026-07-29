@@ -4,6 +4,7 @@ import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
 import { AllowedHostsSchema } from "./allowed-hosts.ts";
 import { ProviderDescriptorSchema } from "./manifest.ts";
+import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import {
   assertPipelineTuning,
   assertProviderTriple,
@@ -119,6 +120,9 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
   assertPipelineTuning(mode, src);
   assertTextOnlyTuning(src.tts, src);
+  // Runs inside the generated bundle entry too, so the studio's test_agent
+  // surfaces a bad TTS language as a load error rather than shipping a mute agent.
+  assertAssemblyAITtsLanguage(src.tts);
 
   const config: AgentConfig = {
     name: src.name,
