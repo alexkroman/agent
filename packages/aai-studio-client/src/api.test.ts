@@ -24,11 +24,27 @@ describe("parseSecrets", () => {
     expect(parseSecrets("export A=1")).toEqual({ A: "1" });
   });
 
-  test("keeps '=' and '#' inside a value", () => {
-    // Base64 and URLs routinely contain '='; only a *leading* '#' is a comment.
-    expect(parseSecrets("A=b=c==\nB=https://x/y#frag")).toEqual({
+  test("keeps '=' inside a value; '#' needs quoting (.env comment syntax)", () => {
+    // Base64 and URLs routinely contain '='. An unquoted '#' starts an
+    // inline comment in .env syntax — quoting the value keeps it literal.
+    expect(parseSecrets('A=b=c==\nB=https://x/y#frag\nC="https://x/y#frag"')).toEqual({
       A: "b=c==",
-      B: "https://x/y#frag",
+      B: "https://x/y",
+      C: "https://x/y#frag",
+    });
+  });
+
+  test("keeps multi-line quoted values intact (PEM keys, JSON)", () => {
+    // The whole point of real .env parsing: a pasted PEM key or
+    // service-account JSON spans lines inside one quoted value.
+    const pem = "-----BEGIN KEY-----\nabc\ndef\n-----END KEY-----";
+    expect(parseSecrets(`A="${pem}"\nB=1`)).toEqual({ A: pem, B: "1" });
+  });
+
+  test("expands \\n escapes in double-quoted values only", () => {
+    expect(parseSecrets("A=\"line1\\nline2\"\nB='raw\\nvalue'")).toEqual({
+      A: "line1\nline2",
+      B: "raw\\nvalue",
     });
   });
 

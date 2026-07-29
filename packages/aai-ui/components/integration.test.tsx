@@ -12,7 +12,7 @@
  */
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import type { ReactNode } from "react";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createMockSessionCore } from "../_react-test-utils.ts";
 import { SessionProvider, ThemeProvider } from "../context.ts";
 import type { SessionCore } from "../session-core.ts";
@@ -289,6 +289,65 @@ describe("MessageList: messages + tool calls interleaved", () => {
 
     renderWithProvider(<MessageList />, core);
     expect(screen.getByText("hello wor")).toBeDefined();
+  });
+});
+
+// --- MessageList auto-scroll guard ---
+
+describe("MessageList: auto-scroll guard", () => {
+  test("follows new content at the bottom, but not after the user scrolls up", () => {
+    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => {
+      /* noop */
+    });
+    // Run the deduped scroll synchronously so assertions can follow updates.
+    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0);
+      return 0;
+    });
+    try {
+      const core = createMockSessionCore({ started: true, state: "listening" });
+      renderWithProvider(<MessageList />, core);
+
+      // jsdom reports zero scroll metrics — that reads as "at the bottom",
+      // so new content auto-scrolls.
+      act(() => core.update({ messages: [{ id: 1, role: "user", content: "one" }] }));
+      expect(scrollSpy).toHaveBeenCalledTimes(1);
+
+      // The user scrolls up to read history: far from the bottom.
+      const log = screen.getByRole("log");
+      Object.defineProperty(log, "scrollHeight", { value: 1000, configurable: true });
+      Object.defineProperty(log, "clientHeight", { value: 200, configurable: true });
+      Object.defineProperty(log, "scrollTop", { value: 100, configurable: true, writable: true });
+      fireEvent.scroll(log);
+
+      // Streaming content must not yank them back down.
+      act(() =>
+        core.update({
+          messages: [
+            { id: 1, role: "user", content: "one" },
+            { id: 2, role: "assistant", content: "two" },
+          ],
+        }),
+      );
+      expect(scrollSpy).toHaveBeenCalledTimes(1);
+
+      // Scrolling back near the bottom re-engages auto-scroll.
+      log.scrollTop = 900;
+      fireEvent.scroll(log);
+      act(() =>
+        core.update({
+          messages: [
+            { id: 1, role: "user", content: "one" },
+            { id: 2, role: "assistant", content: "two" },
+            { id: 3, role: "user", content: "three" },
+          ],
+        }),
+      );
+      expect(scrollSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      scrollSpy.mockRestore();
+      rafSpy.mockRestore();
+    }
   });
 });
 

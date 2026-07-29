@@ -15,6 +15,7 @@
 
 import { errorMessage, WS_OPEN } from "@alexkroman1/aai";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
+import ReconnectingWebSocket from "partysocket/ws";
 import {
   CLEARED_SESSION_STATE,
   createMessageHandlers,
@@ -126,6 +127,35 @@ async function initAudioCapture(
   }
 }
 
+// ─── Reconnection ───────────────────────────────────────────────────────────
+
+/**
+ * Backoff for automatic reconnects after an unexpected close (partysocket):
+ * exponential from 1s, capped at 15s, giving up after 10 attempts. Applies
+ * only to the default socket implementation — an injected
+ * `options.WebSocket` (tests) never reconnects on its own.
+ */
+const RECONNECT_OPTIONS = {
+  minReconnectionDelay: 1000,
+  maxReconnectionDelay: 15_000,
+  reconnectionDelayGrowFactor: 2,
+  maxRetries: 10,
+} as const;
+
+/**
+ * True while `socket` is a reconnecting socket that will retry after the
+ * close event currently being handled. partysocket schedules the retry
+ * *before* dispatching `close`, so `retryCount` already names the attempt
+ * just scheduled — at `maxRetries` it has given up.
+ */
+function reconnectPending(socket: unknown): boolean {
+  return (
+    socket instanceof ReconnectingWebSocket &&
+    socket.shouldReconnect &&
+    socket.retryCount < RECONNECT_OPTIONS.maxRetries
+  );
+}
+
 // ─── URL builder ────────────────────────────────────────────────────────────
 
 function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): URL {
@@ -151,9 +181,6 @@ function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): U
  * @public
  */
 export function createSessionCore(options: SessionCoreOptions): SessionCore {
-  const WS: WebSocketConstructor =
-    options.WebSocket ?? (WebSocket as unknown as WebSocketConstructor);
-
   // ─── Internal state (replaces signals) ──────────────────────────────────
 
   let currentSnapshot: SessionSnapshot = {
@@ -295,6 +322,25 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     }
   }
 
+  /**
+   * The WebSocket URL for the *next* connection attempt. Evaluated per
+   * attempt (partysocket takes it as a URL provider), so once the first
+   * `config` arrives, every reconnect — automatic or explicit — carries
+   * `resume=1` and the session resumes instead of starting over.
+   */
+  function currentWsUrl(): string {
+    const resumeId = !hasConnected ? options.resumeSessionId : undefined;
+    return buildWsUrl(options.platformUrl, hasConnected, resumeId).toString();
+  }
+
+  /** Open a socket: an injected constructor as-is (tests), or partysocket's
+   *  reconnecting WebSocket — same interface, plus reconnect-on-close. */
+  function openSocket(): InstanceType<WebSocketConstructor> {
+    if (options.WebSocket) return new options.WebSocket(currentWsUrl());
+    const socket = new ReconnectingWebSocket(currentWsUrl, undefined, RECONNECT_OPTIONS);
+    return socket as unknown as InstanceType<WebSocketConstructor>;
+  }
+
   function connect(opts?: { signal?: AbortSignal }): void {
     updateState({ state: "connecting", error: null });
     teardownConnection();
@@ -309,10 +355,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       });
     }
 
-    const resumeId = !hasConnected ? options.resumeSessionId : undefined;
-    const wsUrl = buildWsUrl(options.platformUrl, hasConnected, resumeId);
-
-    const socket = new WS(wsUrl.toString());
+    const socket = openSocket();
     socket.binaryType = "arraybuffer";
     conn.ws = socket;
 
@@ -339,8 +382,18 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         if (sig.aborted) {
           return;
         }
-        controller.abort();
         cleanupAudio();
+        if (reconnectPending(socket)) {
+          // partysocket retries with backoff. Keep the listeners attached
+          // and the session logically alive: the URL provider re-derives the
+          // resume URL and `onServerConfig` replays history on the next open.
+          updateState({ state: "connecting", recording: false });
+          return;
+        }
+        // Terminal: explicit close, or retries exhausted — cancel any
+        // still-scheduled attempt before tearing down.
+        if (socket instanceof ReconnectingWebSocket) socket.close();
+        controller.abort();
         updateState({ state: "disconnected", running: false, recording: false });
       },
       { signal: sig },

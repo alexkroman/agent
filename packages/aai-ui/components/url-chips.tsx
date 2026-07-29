@@ -2,6 +2,7 @@
 
 /** @jsxImportSource react */
 
+import clsx from "clsx";
 import { useState } from "react";
 import { useSessionSelector, useTheme } from "../context.ts";
 import { SURFACE_TINT, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
@@ -48,7 +49,10 @@ function UrlChip({
       type="button"
       onClick={copy}
       title={`${hint} (click to copy)\n${url}`}
-      className={`flex items-center gap-1.5 min-w-0 appearance-none m-0 px-2 py-1 rounded-aai border cursor-pointer outline-none text-[11px] leading-none font-aai-mono ${className ?? ""}`}
+      className={clsx(
+        "flex items-center gap-1.5 min-w-0 appearance-none m-0 px-2 py-1 rounded-aai border cursor-pointer outline-none text-[11px] leading-none font-aai-mono",
+        className,
+      )}
       style={{ background: SURFACE_TINT, borderColor: theme.border, color: TEXT_FAINT }}
       data-testid={testId}
     >
@@ -114,7 +118,7 @@ export function ApiUrlChip({ className }: { className?: string | undefined }) {
  */
 export function SessionUrlChips({ className }: { className?: string | undefined }) {
   return (
-    <div className={`flex items-center gap-1.5 min-w-0 ${className ?? ""}`}>
+    <div className={clsx("flex items-center gap-1.5 min-w-0", className)}>
       <UiUrlChip className="min-w-0 flex-1" />
       <ApiUrlChip className="min-w-0 flex-1" />
     </div>

@@ -3,7 +3,7 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import { type ReactNode, useMemo, useState } from "react";
+import { memo, type ReactNode, useMemo, useState } from "react";
 import { truncate, tryParseJSON } from "../_utils.ts";
 import { useTheme } from "../context.ts";
 import type { ToolCallInfo } from "../types.ts";
@@ -28,6 +28,10 @@ function formatResult(result: string): string {
  * While the tool call is pending a shimmer animation is shown. Once
  * complete, clicking the row expands the formatted JSON result.
  *
+ * Memoized: tool-call objects are referentially stable across session
+ * snapshots and rows are keyed on the stable `callId`, so a list update only
+ * re-renders the rows whose tool call actually changed.
+ *
  * @example
  * ```tsx
  * <ToolCallBlock toolCall={toolCall} />
@@ -38,7 +42,7 @@ function formatResult(result: string): string {
  *
  * @public
  */
-export function ToolCallBlock({
+export const ToolCallBlock = memo(function ToolCallBlock({
   toolCall,
   className,
 }: {
@@ -144,4 +148,4 @@ export function ToolCallBlock({
       )}
     </div>
   );
-}
+});

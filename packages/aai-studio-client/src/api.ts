@@ -1,6 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 // REST helpers for the studio's project/file/deploy endpoints.
 
+import { parse } from "dotenv";
+
 export type ProjectData = {
   files: Record<string, string>;
   deployedSlug?: string;
@@ -86,31 +88,14 @@ export const api = {
     ),
 };
 
-/** Parse "KEY=value" lines from the secrets textarea. */
+/**
+ * Parse "KEY=value" lines from the secrets textarea.
+ *
+ * People paste straight from a .env file, so this must speak real .env
+ * syntax — including multi-line quoted values (PEM keys, service-account
+ * JSON) and `\n` escapes in double-quoted values — hence dotenv's `parse`
+ * rather than a hand-rolled line splitter.
+ */
 export function parseSecrets(text: string): Record<string, string> {
-  const env: Record<string, string> = {};
-  for (const raw of text.split("\n")) {
-    const line = raw.trim();
-    // A commented-out secret must stay switched off, not come back as a key.
-    if (line.length === 0 || line.startsWith("#")) continue;
-    const withoutExport = line.startsWith("export ") ? line.slice("export ".length) : line;
-    const i = withoutExport.indexOf("=");
-    if (i <= 0) continue;
-    const key = withoutExport.slice(0, i).trim();
-    // Only the first "=" splits: base64 and URLs routinely contain more.
-    const value = withoutExport.slice(i + 1).trim();
-    // Quoting a value is .env syntax, not part of the secret — people paste
-    // straight from a .env file and would otherwise store the quotes.
-    env[key] = unquote(value);
-  }
-  return env;
-}
-
-/** Strip one matching pair of surrounding single or double quotes. */
-function unquote(value: string): string {
-  const quoted =
-    value.length >= 2 &&
-    (value.startsWith('"') || value.startsWith("'")) &&
-    value.at(-1) === value[0];
-  return quoted ? value.slice(1, -1) : value;
+  return parse(text);
 }
