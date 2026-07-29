@@ -63,7 +63,7 @@ These CLI-specific parts do NOT apply in the studio:
   Cartesia, Rime, Deepgram — needs a key the user has to supply, so an agent
   built on one cannot run until they do. Unless the user names a specific
   provider, choose:
-    stt: assemblyAI({ model: "u3pro-rt" })       from "@alexkroman1/aai/stt"
+    stt: assemblyAI({ model: "universal-3-5-pro" })       from "@alexkroman1/aai/stt"
     llm: assemblyAI({ model: "<gateway model>" }) from "@alexkroman1/aai/llm"
     tts: assemblyAI({ voice: "vera" })            from "@alexkroman1/aai/tts"
   The factory is named assemblyAI in all three subpaths — alias two on

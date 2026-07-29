@@ -127,6 +127,26 @@ function toRuntimeAgent(config: IsolateConfig): Parameters<typeof createRuntime>
   };
 }
 
+/**
+ * The deployed agent as an `AgentDef`, *including* its provider descriptors.
+ *
+ * `toRuntimeAgent` deliberately omits stt/llm/tts because `createSandbox`
+ * passes them to `createRuntime` as separate options. Host mode has no such
+ * seam — `startHostSession` builds its own runtime from a base agent — so the
+ * providers have to ride along, or a pipeline agent would silently fall back
+ * to S2S when driven over `?host=1`.
+ */
+export function toHostBaseAgent(
+  config: IsolateConfig,
+): Parameters<typeof createRuntime>[0]["agent"] {
+  return {
+    ...toRuntimeAgent(config),
+    ...(config.mode === "pipeline" && config.stt && config.llm && config.tts
+      ? { stt: config.stt, llm: config.llm, tts: config.tts }
+      : {}),
+  };
+}
+
 // ── Public API ──────────────────────────────────────────────────────────
 
 /**

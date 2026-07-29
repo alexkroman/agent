@@ -221,6 +221,17 @@ export type StartHostSessionOptions = {
   relayTimeoutMs?: number;
   /** Injectable runtime factory (test seam). Defaults to {@link createRuntime}. */
   createRuntime?: (opts: RuntimeOptions) => ReturnType<typeof createRuntime>;
+  /**
+   * Whether this connection may use host mode, overriding the `AAI_ALLOW_HOST`
+   * env gate.
+   *
+   * The self-hosted dev server leaves this unset: it is single-user and
+   * loopback-bound, so an operator env flag is the right control. The
+   * multi-tenant platform passes `true` only after verifying the caller owns
+   * the slug — there, an env flag would be all-or-nothing across tenants, and
+   * host mode spends the *owner's* provider credentials.
+   */
+  allowHost?: boolean | undefined;
 };
 
 function sendEvent(ws: SessionWebSocket, event: ClientEvent, log: Logger): void {
@@ -300,7 +311,7 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
       return;
     }
 
-    if (!isHostAllowed(opts.env)) {
+    if (!(opts.allowHost ?? isHostAllowed(opts.env))) {
       rejectHandshake(ws, log, "host-mode is disabled on this server (AAI_ALLOW_HOST)");
       return;
     }

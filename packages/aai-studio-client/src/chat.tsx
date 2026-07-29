@@ -38,7 +38,7 @@ const STARTERS: { label: string; prompt: string }[] = [
     // path needs no secrets from the user.
     prompt:
       "Build a cascaded (pipeline-mode) agent: " +
-      'stt: assemblyAI({ model: "u3pro-rt" }) from "@alexkroman1/aai/stt", ' +
+      'stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt", ' +
       'llm: the AssemblyAI LLM Gateway with model "gemini-2.5-flash-lite" ' +
       'from "@alexkroman1/aai/llm", and tts: assemblyAI({ voice: "vera" }) from ' +
       '"@alexkroman1/aai/tts". The factory is called assemblyAI in all three ' +

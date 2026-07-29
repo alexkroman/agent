@@ -61,6 +61,7 @@ import { createStudioRoutes } from "./studio/studio-routes.ts";
 import { handleStudioClientAsset, handleStudioPage } from "./studio/studio-static.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
+import { guardHostModeUpgrade, startDeployedHostSession, wantsHostMode } from "./ws-host-mode.ts";
 
 export type OrchestratorOpts = {
   slots: SlotCache;
@@ -235,7 +236,115 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     ]);
     if (!sandbox) return null;
     const mode: SessionMode = agentConfig?.mode === "pipeline" ? "pipeline" : "s2s";
-    return { sandbox, mode };
+    return { sandbox, mode, agentConfig };
+  }
+
+  /**
+   * Take a connection slot for this upgrade and wire its single release point.
+   * Returns false (and destroys the socket) when the server is at capacity.
+   *
+   * The raw socket's `close` fires in every outcome — client abort during the
+   * async resolve (where handleUpgrade would otherwise destroy the socket
+   * without invoking its callback, leaking the slot forever), a failed
+   * upgrade, or a normal session end — so it is the one reliable place to
+   * release.
+   */
+  function acquireConnectionSlot(socket: { destroy: () => void; on: Function }): boolean {
+    if (!connections.tryAcquire()) {
+      console.warn("WebSocket connection limit reached, rejecting upgrade");
+      socket.destroy();
+      return false;
+    }
+    let released = false;
+    socket.on("close", () => {
+      if (released) return;
+      released = true;
+      connections.release();
+    });
+    return true;
+  }
+
+  /**
+   * Resolve the agent and hand the socket to the session, or destroy it.
+   * Split out of the upgrade handler so each stays under the complexity cap.
+   */
+  async function completeUpgrade(
+    req: import("node:http").IncomingMessage,
+    socket: import("node:stream").Duplex,
+    head: Buffer,
+    ctx: { slug: string; rawUrl: string; hostMode: boolean },
+  ): Promise<void> {
+    const { slug, rawUrl, hostMode } = ctx;
+    try {
+      const result = await resolveUpgrade(slug);
+      if (!result) {
+        socket.destroy();
+        return;
+      }
+      const { sandbox, mode, agentConfig } = result;
+      wss.handleUpgrade(req, socket, head, (ws) => {
+        onSessionSocket(ws as unknown as SessionWebSocket, {
+          slug,
+          mode,
+          sandbox,
+          agentConfig,
+          hostMode,
+          rawUrl,
+        });
+      });
+    } catch (err: unknown) {
+      console.error("WebSocket open error:", err);
+      socket.destroy();
+    }
+  }
+
+  /**
+   * Wire metrics and start the session once the socket is upgraded. Extracted
+   * from the upgrade handler so neither piece trips the complexity cap.
+   */
+  function onSessionSocket(
+    ws: SessionWebSocket,
+    ctx: {
+      slug: string;
+      mode: SessionMode;
+      sandbox: Awaited<ReturnType<typeof resolveSandbox>>;
+      agentConfig: IsolateConfig | null;
+      hostMode: boolean;
+      rawUrl: string;
+    },
+  ): void {
+    const { slug, mode, sandbox, agentConfig, hostMode, rawUrl } = ctx;
+    metrics.sessionsStarted.inc({ slug, mode });
+    metrics.sessionsActive.inc({ slug });
+    // Track the live session so idle eviction can't kill the sandbox mid-call
+    // (a session can outlive IDLE_SANDBOX_MS).
+    acquireSlotSession(opts.slots, slug);
+    const startedAt = process.hrtime.bigint();
+    const socket = ws as unknown as {
+      on: (event: string, fn: (arg: number) => void) => void;
+    };
+    socket.on("close", (code: number) => {
+      releaseSlotSession(opts.slots, slug);
+      metrics.sessionDuration.observe(hrtimeSeconds(startedAt));
+      metrics.sessionsActive.dec({ slug });
+      const reason: SessionEndReason =
+        code === 1000 || code === 1001 ? "client_close" : "server_close";
+      metrics.sessionsEnded.inc({ slug, reason });
+    });
+    socket.on("error", () => {
+      const kind: SessionErrorKind = "internal";
+      metrics.sessionErrors.inc({ kind });
+    });
+    if (hostMode && agentConfig) {
+      startDeployedHostSession(ws, {
+        slug,
+        agentConfig,
+        store: opts.store,
+        startOpts: parseWsUpgradeParams(rawUrl),
+      });
+      return;
+    }
+    sandbox?.startSession(ws, parseWsUpgradeParams(rawUrl));
   }
 
   const injectWebSocket = (server: import("node:http").Server) => {
@@ -248,7 +357,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
         /* handled via close/destroy below; presence prevents an uncaught throw */
       });
 
-      const pathOnly = req.url?.split("?")[0] ?? "";
+      const rawUrl = req.url ?? "";
+      const pathOnly = rawUrl.split("?")[0] ?? "";
       const slugMatch = pathOnly.match(SLUG_WS_RE);
       if (!slugMatch) {
         // No other upgrade consumer exists on this server: an unmatched
@@ -258,60 +368,23 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       }
       const slug = slugMatch[1] as string;
 
-      if (!connections.tryAcquire()) {
-        console.warn("WebSocket connection limit reached, rejecting upgrade");
-        socket.destroy();
-        return;
-      }
+      if (!acquireConnectionSlot(socket)) return;
 
-      // Release the slot exactly once. The raw socket's `close` fires in every
-      // outcome — client abort during the async resolve below (where
-      // handleUpgrade would otherwise destroy the socket without invoking its
-      // callback, leaking the slot forever), a failed upgrade, or a normal
-      // session end after upgrade — so it is the single reliable release point.
-      let released = false;
-      const releaseConn = () => {
-        if (released) return;
-        released = true;
-        connections.release();
-      };
-      socket.on("close", releaseConn);
+      // Host mode lets the caller replace the agent's prompt and tools, so it
+      // requires proving ownership of the slug — unlike a plain connection,
+      // which stays unauthenticated. The guard answers and closes the socket
+      // itself when it refuses. See ws-host-mode.ts.
+      const hostMode = wantsHostMode(rawUrl);
+      const mayProceed = await guardHostModeUpgrade({
+        rawUrl,
+        slug,
+        headers: req.headers,
+        store: opts.store,
+        socket,
+      });
+      if (!mayProceed) return;
 
-      try {
-        const result = await resolveUpgrade(slug);
-        if (!result) {
-          socket.destroy();
-          return;
-        }
-        const { sandbox, mode } = result;
-        wss.handleUpgrade(req, socket, head, (ws) => {
-          metrics.sessionsStarted.inc({ slug, mode });
-          metrics.sessionsActive.inc({ slug });
-          // Track the live session so idle eviction can't kill the sandbox
-          // mid-call (a session can outlive IDLE_SANDBOX_MS).
-          acquireSlotSession(opts.slots, slug);
-          const startedAt = process.hrtime.bigint();
-          ws.on("close", (code: number) => {
-            releaseSlotSession(opts.slots, slug);
-            metrics.sessionDuration.observe(hrtimeSeconds(startedAt));
-            metrics.sessionsActive.dec({ slug });
-            const reason: SessionEndReason =
-              code === 1000 || code === 1001 ? "client_close" : "server_close";
-            metrics.sessionsEnded.inc({ slug, reason });
-          });
-          ws.on("error", () => {
-            const kind: SessionErrorKind = "internal";
-            metrics.sessionErrors.inc({ kind });
-          });
-          sandbox.startSession(
-            ws as unknown as SessionWebSocket,
-            parseWsUpgradeParams(req.url ?? ""),
-          );
-        });
-      } catch (err: unknown) {
-        console.error("WebSocket open error:", err);
-        socket.destroy();
-      }
+      await completeUpgrade(req, socket, head, { slug, rawUrl, hostMode });
     });
   };
 

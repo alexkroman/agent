@@ -1049,6 +1049,42 @@ stored env at sandbox creation time and kept host-side only.
   a `humanId()` collision returns 409 rather than overwriting an existing
   agent and appending the caller's credential hash to it.
 
+### Host mode on deployed agents (`aai-server/ws-host-mode.ts`)
+
+A deployed agent's `WS /:slug/websocket` accepts `?host=1`, the same override
+channel the dev server offers: the caller supplies `systemPrompt`, `greeting`,
+and relayed tool schemas, and the session runs on the *deployed agent's*
+credentials and provider pipeline.
+
+The gate differs from the dev server's on purpose. `aai dev` is single-user
+and loopback-bound, so `AAI_ALLOW_HOST` is an adequate control. The platform
+is multi-tenant and an agent's WebSocket is deliberately **unauthenticated** —
+anyone with the URL can talk to it. Allowing prompt/tool overrides on that
+footing would make every deployed agent an open LLM proxy billed to its owner.
+So `?host=1` requires `Authorization: Bearer <api key>` on the upgrade,
+verified against slug ownership (the check `/:slug/secret` and `/:slug/kv`
+already use). `startHostSession` gained an `allowHost` option so the platform
+can gate on ownership instead of the env flag, which would be all-or-nothing
+across tenants.
+
+Details worth keeping:
+
+- **Header, not a query param.** A URL leaks through proxy logs, history, and
+  `Referer`, and this token is the caller's whole platform credential.
+  Browsers can't set WebSocket headers, which is intended — host mode is for
+  programmatic clients.
+- **A refusal answers the handshake** (401/403 + reason) rather than dropping
+  the socket; a bare RST is indistinguishable from a network fault.
+- **Unknown slug and forbidden slug return the same thing**, so a non-owner
+  gets no existence oracle.
+- **Runs in the server process, not the gVisor sandbox.** Host mode replaces
+  the agent's tools with ones relayed to the caller, so there is no tenant
+  code to isolate. `toHostBaseAgent` carries the provider descriptors on the
+  agent object (unlike `toRuntimeAgent`, which omits them because
+  `createSandbox` passes them as options) — otherwise a pipeline agent would
+  silently fall back to S2S when driven over `?host=1`.
+- Plain connections are untouched and stay unauthenticated.
+
 ### Self-hosted server defaults (`aai/host/server.ts`)
 
 `createServer` has no request authentication of its own — it is the `aai dev`

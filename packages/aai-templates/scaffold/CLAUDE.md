@@ -125,7 +125,7 @@ import { cartesia } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  stt: assemblyAI({ model: "u3pro-rt" }),
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
   llm: anthropic({ model: "claude-haiku-4-5" }),
   tts: cartesia(),
 });
@@ -146,7 +146,7 @@ import { none } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  stt: assemblyAI({ model: "u3pro-rt" }),
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
   llm: anthropic({ model: "claude-haiku-4-5" }),
   tts: none(), // explicit — stt/llm without tts is still a config error
 });
@@ -198,12 +198,12 @@ for the providers you actually use.
 
 ### STT — `@alexkroman1/aai/stt`
 
-| Factory       | Default model           | Env var               |
-| ------------- | ----------------------- | --------------------- |
-| `assemblyAI`  | `"u3pro-rt"`            | `ASSEMBLYAI_API_KEY`  |
-| `deepgram`    | `"nova-3"`              | `DEEPGRAM_API_KEY`    |
-| `elevenlabs`  | `"scribe_v2_realtime"`  | `ELEVENLABS_API_KEY`  |
-| `soniox`      | `"stt-rt-v3"`           | `SONIOX_API_KEY`      |
+| Factory       | Default model            | Env var              |
+| ------------- | ------------------------ | -------------------- |
+| `assemblyAI`  | `"universal-3-5-pro"`    | `ASSEMBLYAI_API_KEY` |
+| `deepgram`    | `"nova-3"`               | `DEEPGRAM_API_KEY`   |
+| `elevenlabs`  | `"scribe_v2_realtime"`   | `ELEVENLABS_API_KEY` |
+| `soniox`      | `"stt-rt-v3"`            | `SONIOX_API_KEY`     |
 
 All STT factories accept `{ model?: string, ... }`. Bare calls
 (`deepgram()`, `soniox()`, etc.) use the default model.
@@ -243,7 +243,7 @@ import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
 
 export default agent({
   name: "My Agent",
-  stt: assemblyAI({ model: "u3pro-rt" }),
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
   llm: assemblyAILlm({ model: "claude-sonnet-4-6" }),
   tts: cartesia(),
 });
@@ -259,7 +259,7 @@ import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  stt: assemblyAI({ model: "u3pro-rt" }),
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
   llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
   tts: assemblyAITts({ voice: "vera" }),
 });
