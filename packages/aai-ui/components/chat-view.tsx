@@ -16,8 +16,13 @@ import { TextControls } from "./text-controls.tsx";
 // States whose indicator dot pulses (the agent is actively in the exchange).
 const PULSING_STATES: ReadonlySet<AgentState> = new Set(["listening", "speaking"]);
 
-/** Indicator dot color per state, on the light refresh palette. */
-function stateColor(state: AgentState, primary: string): string {
+/**
+ * Indicator dot color per state, on the light refresh palette. Shared with
+ * the sync-transport chat shell's status eyebrow.
+ *
+ * @internal
+ */
+export function stateColor(state: AgentState, primary: string): string {
   switch (state) {
     case "listening":
     case "speaking":

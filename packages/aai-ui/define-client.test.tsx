@@ -135,7 +135,7 @@ describe("client", () => {
       transport: "sync",
     });
     // The sync shell is up immediately, and the explicit value skips the lookup.
-    expect(container.textContent).toContain("HTTP turns — no WebSocket");
+    expect(container.textContent).toContain("Hold to talk");
     expect(container.textContent).toContain("Sync Agent");
     expect(fetchSpy).not.toHaveBeenCalled();
     handle.dispose();
@@ -156,9 +156,9 @@ describe("client", () => {
     const handle = client({ target: "#app", platformUrl: "http://localhost:3000" });
     // Optimistic websocket shell first…
     expect(container.textContent).toContain("Start Conversation");
-    // …then the declared transport lands.
+    // …then the declared transport lands (the sync shell's push-to-talk button).
     await vi.waitFor(() => {
-      expect(container.textContent).toContain("HTTP turns — no WebSocket");
+      expect(container.textContent).toContain("Hold to talk");
     });
     expect(container.textContent).toContain("Server Name");
     expect(container.textContent).toContain("Hi there!");

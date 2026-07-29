@@ -8,7 +8,8 @@ import {
   type MockAudioWorkletNode,
 } from "./_react-test-utils.ts";
 import {
-  CAPTURE_WORKLET_DATA_URI,
+  CAPTURE_WORKLET_MODULE_URL,
+  createPttRecorder,
   floatToPcm16,
   type SyncMicrophone,
   startSyncMicrophone,
@@ -63,8 +64,9 @@ async function start(overrides: Partial<Parameters<typeof startSyncMicrophone>[0
 describe("startSyncMicrophone", () => {
   test("registers the inline worklet and wires mic → capture node", async () => {
     await start();
-    expect(mocks.lastContext().audioWorklet.modules).toContain(CAPTURE_WORKLET_DATA_URI);
-    expect(CAPTURE_WORKLET_DATA_URI.startsWith("data:application/javascript")).toBe(true);
+    expect(mocks.lastContext().audioWorklet.modules).toContain(CAPTURE_WORKLET_MODULE_URL);
+    // Blob URL, not a data URI — the agent CSP allows `script-src blob:` only.
+    expect(CAPTURE_WORKLET_MODULE_URL.startsWith("blob:")).toBe(true);
     expect(captureNode()).toBeDefined();
   });
 
@@ -130,6 +132,39 @@ describe("startSyncMicrophone", () => {
     await expect(startSyncMicrophone({ session: { sendPcm16: vi.fn() } })).rejects.toThrow(
       "denied",
     );
+    expect(mocks.lastContext().closed).toBe(true);
+  });
+});
+
+describe("createPttRecorder", () => {
+  test("records exactly between start() and stop(), across presses", async () => {
+    const recorder = createPttRecorder();
+    await recorder.start();
+    expect(mocks.lastContext().audioWorklet.modules).toContain(CAPTURE_WORKLET_MODULE_URL);
+
+    emitChunk(voicedChunk());
+    emitChunk(voicedChunk());
+    const first = await recorder.stop();
+    expect(first.length).toBe(2 * 2048);
+
+    // Frames outside a press are dropped…
+    emitChunk(voicedChunk());
+    // …and the next press starts clean on the same open mic.
+    await recorder.start();
+    emitChunk(voicedChunk());
+    const second = await recorder.stop();
+    expect(second.length).toBe(2048);
+
+    await recorder.close();
+    expect(mocks.lastContext().closed).toBe(true);
+  });
+
+  test("getUserMedia rejection fails start() and closes the context", async () => {
+    const nav = navigator as unknown as {
+      mediaDevices: { getUserMedia: () => Promise<unknown> };
+    };
+    nav.mediaDevices.getUserMedia = () => Promise.reject(new Error("denied"));
+    await expect(createPttRecorder().start()).rejects.toThrow("denied");
     expect(mocks.lastContext().closed).toBe(true);
   });
 });
