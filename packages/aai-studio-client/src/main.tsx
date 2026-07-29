@@ -10,18 +10,21 @@ import "./styles.css";
 
 // The platform API key is the caller's full account credential (it is also
 // their AssemblyAI key). Deployed tenant agents are served from the *same web
-// origin* as the studio (`/:slug/`), and that HTML/JS is attacker-controlled,
-// so anything persisted here is reachable by another tenant's page script.
-// `sessionStorage` (not `localStorage`) scopes the key to this browsing
-// context: it never persists across restarts and is unreadable from a
-// separately-opened tab, so a phishing link to a malicious agent page cannot
-// read a studio user's key. (A dedicated origin for tenant agent pages remains
-// the complete fix for same-origin tenant/tenant exposure.)
+// origin* as the studio (`/:slug/`), and that HTML/JS is attacker-controlled.
+// `sessionStorage` (not `localStorage`) limits the blast radius: the key never
+// persists across restarts and is unreadable from a separately-opened tab, so
+// a phishing link to a malicious agent page cannot read a studio user's key.
+//
+// It does NOT protect against the studio's own Live pane: the preview iframes
+// `/:slug/` same-origin (preview.tsx), and a same-origin iframe shares this
+// tab's sessionStorage and can script the parent, so a hostile published
+// client.tsx owns the studio session regardless of where the key lives.
+// Sandboxing that iframe without `allow-same-origin` would close this but
+// gives the frame an opaque origin, which blocks getUserMedia — the pane's
+// whole purpose. The complete fix is serving tenant agent pages from a
+// dedicated origin; until then the preview trusts the user's own published
+// agent and nothing else is ever framed.
 const KEY_STORAGE = "aai-studio-key";
-// `sessionStorage`, not `localStorage`: the key is scoped to this browsing
-// context — never persisted across restarts, and unreadable from a
-// separately-opened tab — so a phishing link to a malicious tenant agent page
-// cannot read it (see comment above).
 const keyStore: Storage = sessionStorage;
 const queryClient = new QueryClient();
 
@@ -70,7 +73,8 @@ function Gate({ onEnter }: { onEnter: (key: string) => void }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") enter();
+            // isComposing: Enter confirms an IME candidate, not the form.
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) enter();
           }}
           placeholder="API key"
           spellCheck={false}
@@ -103,6 +107,9 @@ function Root() {
       onSignOut={() => {
         writeStoredKey(null);
         setApiKey("");
+        // Query keys don't carry the API key, so cached projects/files from
+        // this key must not survive into the next one entered.
+        queryClient.clear();
       }}
     />
   );

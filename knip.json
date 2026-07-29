@@ -72,10 +72,7 @@
       "entry": [
         "**/*.test.{ts,tsx}"
       ],
-      "includeEntryExports": true,
-      "ignoreDependencies": [
-        "@alexkroman1/aai"
-      ]
+      "includeEntryExports": true
     }
   }
 }

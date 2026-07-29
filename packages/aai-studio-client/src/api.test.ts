@@ -130,6 +130,14 @@ describe("api", () => {
     expect((err as ApiError).message).toBe("no such project");
   });
 
+  test("a 2xx with a non-JSON body throws ApiError, not a raw SyntaxError", async () => {
+    // A proxy can answer 200 with an HTML page; callers match on ApiError.
+    stubFetch(() => new Response("<html>ok?</html>", { status: 200 }));
+    const err = await api.listProjects("k").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).message).toBe("Server returned an invalid response");
+  });
+
   test("non-JSON error bodies fall back to the status message", async () => {
     stubFetch(() => new Response("<html>gateway timeout</html>", { status: 502 }));
     const err = await api.listProjects("k").catch((e: unknown) => e);

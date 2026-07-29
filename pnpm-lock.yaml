@@ -374,9 +374,6 @@ importers:
       '@ai-sdk/react':
         specifier: ^4.0.44
         version: 4.0.44(react@19.2.8)(zod@4.4.3)
-      '@alexkroman1/aai':
-        specifier: workspace:*
-        version: link:../aai
       '@codemirror/lang-javascript':
         specifier: ^6.2.5
         version: 6.2.5
@@ -414,12 +411,21 @@ importers:
       '@tailwindcss/vite':
         specifier: ^4.3.3
         version: 4.3.3(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+      '@testing-library/dom':
+        specifier: ^10.4.1
+        version: 10.4.1
+      '@testing-library/react':
+        specifier: ^16.3.2
+        version: 16.3.2(@testing-library/dom@10.4.1)(@types/react-dom@19.2.3(@types/react@19.2.17))(@types/react@19.2.17)(react-dom@19.2.8(react@19.2.8))(react@19.2.8)
       '@types/react':
         specifier: ^19.2.17
         version: 19.2.17
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.17)
+      jsdom:
+        specifier: ^29.1.1
+        version: 29.1.1(@noble/hashes@1.8.0)
       tailwindcss:
         specifier: ^4.3.2
         version: 4.3.3

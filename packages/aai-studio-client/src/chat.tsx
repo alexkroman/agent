@@ -8,14 +8,16 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
+import type { StudioStatus } from "./api.ts";
 import { Markdown } from "./markdown.tsx";
-
-export type LlmStatus = { llm: boolean; provider?: string; model?: string };
 
 type ChatPanelProps = {
   apiKey: string;
   project: string | null;
-  llmStatus: LlmStatus;
+  /** Undefined while `/studio/status` is loading or unreachable. */
+  llmStatus: StudioStatus | undefined;
+  /** A project is being created for the guided-start flow. */
+  creating: boolean;
   /** Prompt queued before the project existed — sent once on mount. */
   initialPrompt: string | null;
   onInitialPromptSent: () => void;
@@ -23,6 +25,8 @@ type ChatPanelProps = {
   onStartWithPrompt: (prompt: string) => void;
   /** Called after each finished assistant turn so the workspace refreshes. */
   onWorkspaceChanged: () => void;
+  /** The key was rejected — same global handling as the REST queries. */
+  onUnauthorized: () => void;
 };
 
 /**
@@ -154,8 +158,9 @@ type MessageBlock =
  * Group a message's parts into renderable blocks with stable keys: tool
  * blocks key on their toolCallId, text runs key on the tool block they
  * follow (parts are append-only, so these never collide or reorder).
+ * Exported for tests.
  */
-function toBlocks(message: UIMessage): MessageBlock[] {
+export function toBlocks(message: UIMessage): MessageBlock[] {
   const blocks: MessageBlock[] = [];
   let lastToolKey = "lead";
   for (const part of message.parts) {
@@ -206,7 +211,6 @@ type ComposerProps = {
   disabled: boolean;
   placeholder: string;
   onSend: (text: string) => void;
-  /** Rendered above the input row (e.g. the model picker). */
 };
 
 /** Composer pinned to the panel bottom (1b spec). */
@@ -226,7 +230,8 @@ function Composer({ disabled, placeholder, onSend }: ComposerProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            if (e.key === "Enter") submit();
+            // isComposing: Enter confirms an IME candidate, not the message.
+            if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
           }}
           disabled={disabled}
           placeholder={placeholder}
@@ -256,7 +261,15 @@ function Composer({ disabled, placeholder, onSend }: ComposerProps) {
   );
 }
 
-function EmptyStateBody({ llm, onPick }: { llm: boolean; onPick: (prompt: string) => void }) {
+function EmptyStateBody({
+  status,
+  disabled,
+  onPick,
+}: {
+  status: StudioStatus | undefined;
+  disabled?: boolean;
+  onPick: (prompt: string) => void;
+}) {
   return (
     <>
       <div className="rounded-lg border border-line bg-cream px-[18px] py-4">
@@ -265,7 +278,7 @@ function EmptyStateBody({ llm, onPick }: { llm: boolean; onPick: (prompt: string
           build the first version.
         </p>
       </div>
-      {llm ? (
+      {status?.llm && (
         <div className="flex flex-col gap-2">
           <span className="text-xs text-subtle">Try one of these</span>
           {STARTERS.map((starter) => (
@@ -273,13 +286,20 @@ function EmptyStateBody({ llm, onPick }: { llm: boolean; onPick: (prompt: string
               type="button"
               key={starter.label}
               className="starter"
+              disabled={disabled}
               onClick={() => onPick(starter.prompt)}
             >
               {starter.label}
             </button>
           ))}
         </div>
-      ) : (
+      )}
+      {/* No status yet is loading or a network failure — either way, don't
+          claim the server is misconfigured. */}
+      {status === undefined && (
+        <p className="m-0 text-xs leading-4 text-subtle">Checking the server's chat status…</p>
+      )}
+      {status !== undefined && !status.llm && (
         <p className="m-0 text-xs leading-4 text-subtle">
           Chat is disabled: this server has no LLM key (ASSEMBLYAI_API_KEY or ANTHROPIC_API_KEY).
           The Code view and Publish still work.
@@ -297,29 +317,47 @@ function ProjectChat({
   initialPrompt,
   onInitialPromptSent,
   onWorkspaceChanged,
-}: Omit<ChatPanelProps, "project" | "onStartWithPrompt"> & { project: string }) {
+  onUnauthorized,
+}: Omit<ChatPanelProps, "project" | "onStartWithPrompt" | "creating"> & { project: string }) {
+  // Keep the latest callback out of the transport, which is created once.
+  const unauthorizedRef = useRef(onUnauthorized);
+  unauthorizedRef.current = onUnauthorized;
+
+  const [transport] = useState(
+    () =>
+      new DefaultChatTransport({
+        api: "/studio/chat",
+        headers: { Authorization: `Bearer ${apiKey}` },
+        body: () => ({ project }),
+        // A rejected key gets the same global handling as the REST queries
+        // (app.tsx) — useChat only surfaces a generic Error otherwise.
+        fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
+          const res = await fetch(input, init);
+          if (res.status === 401) unauthorizedRef.current();
+          return res;
+        }) as typeof fetch,
+      }),
+  );
+
   const { messages, sendMessage, status, error } = useChat({
-    transport: new DefaultChatTransport({
-      api: "/studio/chat",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: () => ({ project }),
-    }),
+    transport,
     onFinish: onWorkspaceChanged,
   });
 
   const busy = status === "submitted" || status === "streaming";
+  const llmReady = llmStatus?.llm === true;
 
   // Prompt queued by the guided pre-project flow — send exactly once.
   const sentInitial = useRef(false);
   useEffect(() => {
-    if (sentInitial.current || !initialPrompt || !llmStatus.llm) return;
+    if (sentInitial.current || !initialPrompt || !llmReady) return;
     sentInitial.current = true;
     void sendMessage({ text: initialPrompt });
     onInitialPromptSent();
-  }, [initialPrompt, llmStatus.llm, sendMessage, onInitialPromptSent]);
+  }, [initialPrompt, llmReady, sendMessage, onInitialPromptSent]);
 
   const send = (text: string) => {
-    if (busy || !llmStatus.llm) return;
+    if (busy || !llmReady) return;
     void sendMessage({ text });
   };
 
@@ -330,7 +368,7 @@ function ProjectChat({
       <StickToBottom className="min-h-0 flex-1" initial="instant" resize="smooth">
         <StickToBottom.Content className="flex flex-col gap-4 px-6 py-5">
           {messages.length === 0 && !initialPrompt && (
-            <EmptyStateBody llm={llmStatus.llm} onPick={send} />
+            <EmptyStateBody status={llmStatus} onPick={send} />
           )}
           {messages.map((message) => (
             <MessageView key={message.id} message={message} />
@@ -340,7 +378,7 @@ function ProjectChat({
         </StickToBottom.Content>
       </StickToBottom>
       <Composer
-        disabled={busy || !llmStatus.llm}
+        disabled={busy || !llmReady}
         placeholder="Describe your agent or workflow…"
         onSend={send}
       />
@@ -362,15 +400,24 @@ export function ChatPanel(props: ChatPanelProps) {
           initialPrompt={props.initialPrompt}
           onInitialPromptSent={props.onInitialPromptSent}
           onWorkspaceChanged={props.onWorkspaceChanged}
+          onUnauthorized={props.onUnauthorized}
         />
       ) : (
         <>
           <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
-            <EmptyStateBody llm={props.llmStatus.llm} onPick={props.onStartWithPrompt} />
+            <EmptyStateBody
+              status={props.llmStatus}
+              // While the guided-start project is being created, a second
+              // click would create a second (orphan) project.
+              disabled={props.creating}
+              onPick={props.onStartWithPrompt}
+            />
           </div>
           <Composer
-            disabled={!props.llmStatus.llm}
-            placeholder="Describe your agent or workflow…"
+            disabled={props.creating || props.llmStatus?.llm !== true}
+            placeholder={
+              props.creating ? "Creating your project…" : "Describe your agent or workflow…"
+            }
             onSend={props.onStartWithPrompt}
           />
         </>

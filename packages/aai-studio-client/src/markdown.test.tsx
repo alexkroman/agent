@@ -55,6 +55,13 @@ describe("Markdown", () => {
     expect(html).toContain("&lt;");
   });
 
+  test("drops javascript: link targets", () => {
+    // react-markdown's default urlTransform strips unsafe protocols — pin
+    // that, since this href comes from model output.
+    const html = render("[click](javascript:alert(1))");
+    expect(html).not.toContain("javascript:");
+  });
+
   test("leaves plain prose alone", () => {
     expect(render("Just a sentence.")).toContain("Just a sentence.");
   });
