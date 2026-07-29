@@ -626,6 +626,24 @@ Reference providers shipped today:
     a rejected key arrives in-band as an `Error` frame, i.e. as
     `tts_stream_error` rather than `tts_auth_failed`.
 
+    A third, and the one that decides whether the agent feels responsive:
+    **`Generate` only buffers — `Flush` is what starts synthesis.** Unlike
+    Cartesia (`continue: true` synthesizes on arrival), relaying LLM deltas and
+    flushing once makes time-to-first-audio the length of the whole turn, since
+    the pipeline's only provider-level flush is the end-of-turn drain
+    (`flushTtsAndWait`, once per reply — after every LLM step *and* tool call).
+    A tool-chaining reply was silent for its entire duration, `holdPhrase` and
+    the dead-air cover included, as those are just more buffered text. The
+    adapter therefore buffers host-side and emits `Generate`+`Flush` per
+    *sentence*: measured, that is ~350ms to first audio instead of the full
+    turn, for ~4% more total audio, where flushing every word-granularity delta
+    costs 2.6x and sounds disjointed. Two invariants come with it — only the
+    turn's **last** acknowledgement may emit `done` (`flushTtsAndWait` resolves
+    on it, so a segment's `FlushDone` leaking through advances the orchestrator
+    mid-reply), and the end-of-turn flush is never sent empty, so `done` never
+    depends on the service acking a contentless `Flush`. See the module doc in
+    `host/providers/tts/assemblyai.ts` for the measurements.
+
 The provider SDKs (`ai`, `assemblyai`, `@cartesia/cartesia-js`,
 `@ai-sdk/*`, …) are regular dependencies of `@alexkroman1/aai`, but they
 are only imported by the host-side openers/resolvers in

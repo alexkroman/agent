@@ -29,6 +29,57 @@
  * `Audio` frame flagged `is_final`). `Warning` frames are informational;
  * `Error` frames carry `error_code` + `error`. `Terminate` closes cleanly.
  *
+ * **Flush is what starts synthesis, so this adapter flushes per sentence.**
+ * `Generate` only buffers: measured against production, a turn's Generate
+ * frames produce *zero* audio and the first `Audio` frame lands ~33ms after a
+ * `Flush`. The pipeline's only provider-level flush is the end-of-turn drain
+ * (`flushTtsAndWait`, once per reply — after every LLM step *and* every tool
+ * call), so relaying deltas verbatim makes time-to-first-audio the length of
+ * the entire turn: a tool-chaining reply is total silence for its whole
+ * duration, with `holdPhrase` and the dead-air cover mute too, since they are
+ * just more buffered text. Cartesia has no equivalent — `continue: true`
+ * synthesizes on arrival — so this is the adapter's job, not the pipeline's.
+ *
+ * The segment size is a measured tradeoff, since each flushed segment is
+ * synthesized as its own utterance with its own prosody and padding. For one
+ * fixed text: end-of-turn flush only = 5.44s of audio but no sound until the
+ * stream ended; flushing every word-granularity delta = 94ms to first audio
+ * but 14.16s of audio (2.6x, audibly disjointed); flushing per *sentence* =
+ * 6.48s vs 6.24s for the same three sentences, i.e. ~4%. Hence
+ * {@link SEGMENT_BOUNDARY_RE} — sentence-terminal punctuation only, never the
+ * commas the pipeline's own coalescer breaks on. {@link MIN_SEGMENT_WORDS}
+ * then holds off on single-token segments, which are the abbreviation false
+ * positives ("Dr. ", "e.g. ") that measured 25% longer audio; they simply wait
+ * for the rest of the sentence. Two words is the floor rather than a character
+ * count because every hold/cover phrase ("One moment.", "Almost there.") is a
+ * short two-word sentence that *must* still flush — being audible mid-turn is
+ * the only reason those phrases exist.
+ *
+ * Text is therefore buffered host-side and `Generate` is only ever sent as the
+ * head of a `Generate`+`Flush` pair, which has two consequences worth keeping.
+ * First, the segment split is exact and owned here: matching only on the *end*
+ * of each incoming delta would outsource segmentation to the pipeline
+ * coalescer's own chunking (whose `CLAUSE_BOUNDARY_RE` and 32-char cap can put
+ * a sentence end mid-chunk), and a boundary missed that way silently restores
+ * the whole-turn lag. Buffering costs nothing because the server does no work
+ * before a `Flush` anyway. Second, the server never holds unflushed text, so at
+ * end of turn there is either buffered text to synthesize or nothing at all —
+ * and in the nothing case this adapter emits `done` itself rather than sending
+ * a contentless `Flush` and waiting to be told. Production does answer one (an
+ * immediate `FlushDone` carrying no audio), so this is not working around a
+ * defect; it removes the dependency. The failure it would buy is bad out of
+ * proportion to the frame it saves — an unanswered end-of-turn flush means
+ * `done` never fires and `flushTtsAndWait` burns its full
+ * PIPELINE_FLUSH_TIMEOUT_MS on every turn, which is worse than the lag being
+ * fixed here.
+ *
+ * Consequence for `done`: every flush earns its own `FlushDone`, but the turn
+ * ends only when the *last* one is acknowledged. `flushTtsAndWait` resolves on
+ * `done`, so a segment's completion leaking through would advance the
+ * orchestrator while audio is still streaming — and, since the end-of-turn
+ * flush may have nothing to send, "last" cannot simply mean "the final flush's
+ * ack" either. `outstandingFlushes` + `turnClosed` together are the condition.
+ *
  * **Cancel.** The protocol has no discard/cancel frame, so a mid-turn
  * `cancel()` drops the whole connection and reconnects: text Generate'd but
  * never Flush'ed would otherwise sit in the server-side buffer and be spliced
@@ -93,6 +144,49 @@ function errorDetail(msg: AssemblyAITtsMessage): string {
   return `(${msg.error_code ?? ""}): ${reason}`;
 }
 
+/**
+ * A sentence end anywhere in the buffered text: terminal punctuation, optional
+ * closing quotes/brackets, then whitespace or the end of the buffer. The
+ * trailing-whitespace requirement is what keeps "3.5" and "v1.2" from matching.
+ *
+ * Deliberately narrower than the pipeline coalescer's CLAUSE_BOUNDARY_RE, which
+ * also breaks on `,;:` — a comma is mid-sentence, and flushing there hands the
+ * server a fragment to synthesize with a falling final intonation.
+ */
+const SEGMENT_BOUNDARY_RE = /[.!?…]["')\]]*(?:\s|$)/g;
+
+/**
+ * Words a segment needs before sentence-terminal punctuation flushes it — see
+ * the module doc. Single-token segments are abbreviations far more often than
+ * sentences.
+ */
+const MIN_SEGMENT_WORDS = 2;
+
+/** Word count, used to keep abbreviation fragments out of their own utterance. */
+function wordCount(text: string): number {
+  const trimmed = text.trim();
+  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
+}
+
+/**
+ * Split `buffered` at the LAST sentence boundary whose head is a big enough
+ * utterance, returning the text to synthesize now and the remainder to hold.
+ *
+ * The *last* boundary rather than the first: when several sentences arrive
+ * before a flush, one larger segment sounds better than several small ones and
+ * costs fewer round trips.
+ */
+function splitSegment(buffered: string): { head: string; tail: string } | undefined {
+  let end: number | undefined;
+  // matchAll clones the regex, so the shared `lastIndex` is never mutated here.
+  for (const m of buffered.matchAll(SEGMENT_BOUNDARY_RE)) {
+    const candidate = m.index + m[0].length;
+    if (wordCount(buffered.slice(0, candidate)) >= MIN_SEGMENT_WORDS) end = candidate;
+  }
+  if (end === undefined) return;
+  return { head: buffered.slice(0, end), tail: buffered.slice(end) };
+}
+
 function buildUrl(
   opts: AssemblyAITtsOptions,
   sampleRate: number,
@@ -128,7 +222,7 @@ function buildUrl(
 function handleMessage(
   raw: WebSocket.Data,
   emitter: Emitter<TtsEvents>,
-  emitDoneOnce: () => void,
+  onSynthesisComplete: () => void,
   streamError: (message: string) => void,
 ): void {
   const msg = safeJsonParse(typeof raw === "string" ? raw : raw.toString()) as
@@ -143,11 +237,11 @@ function handleMessage(
         if (pcm.length > 0) emitter.emit("audio", pcm);
       }
       // Older servers flag the final frame; the live one uses FlushDone.
-      if (msg.is_final) emitDoneOnce();
+      if (msg.is_final) onSynthesisComplete();
       return;
     }
     case "FlushDone":
-      emitDoneOnce();
+      onSynthesisComplete();
       return;
     case "Error":
       streamError(`AssemblyAI TTS ${errorDetail(msg)}`);
@@ -199,6 +293,15 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       // Non-null while a post-cancel replacement socket is connecting: frames
       // queue here and flush to it on open, preserving order.
       let queued: Record<string, unknown>[] | null = null;
+      // Accepted text not yet sent: `Generate` goes out only paired with a
+      // `Flush`, so the server never holds unsynthesized text.
+      let buffered = "";
+      // Flushes awaiting acknowledgement. The server answers in order on one
+      // socket, so a count is enough to know when the turn's audio is complete.
+      let outstandingFlushes = 0;
+      // `flush()` was called for the current turn: the pipeline has no more
+      // text, so the last outstanding acknowledgement ends the turn.
+      let turnClosed = false;
 
       /** Detach + politely close a socket without emitting anything for it. */
       const dropSocket = (socket: WebSocket): void =>
@@ -215,13 +318,32 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       const emitDoneOnce = () => {
         if (doneEmitted || shell.isClosed()) return;
         doneEmitted = true;
+        // The turn is over, so text still held here belongs to nothing. Keeping
+        // it would splice it into the next turn's first segment.
+        buffered = "";
         emitter.emit("done");
+      };
+
+      /**
+       * A `FlushDone` (or an `Audio` frame flagged `is_final`) arrived. The turn
+       * ends when its last flush is acknowledged — see the module doc.
+       */
+      const onSynthesisComplete = (): void => {
+        if (outstandingFlushes === 0) {
+          // Nothing was pending, so this is an unsolicited completion (a server
+          // that flags frames rather than sending FlushDone, or a stray ack).
+          // Treat it as the turn ending, as this adapter always has.
+          emitDoneOnce();
+          return;
+        }
+        outstandingFlushes -= 1;
+        if (outstandingFlushes === 0 && turnClosed) emitDoneOnce();
       };
 
       const attach = (socket: WebSocket): void => {
         socket.on("message", (raw: WebSocket.Data) => {
           if (shell.isClosed()) return;
-          handleMessage(raw, emitter, emitDoneOnce, shell.streamError);
+          handleMessage(raw, emitter, onSynthesisComplete, shell.streamError);
         });
         socket.on("error", (err: Error) => shell.onSocketError(err));
         socket.on("close", (code: number) => {
@@ -287,17 +409,51 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
 
       const session: AssemblyAITtsSession = {
         sendText(text: string) {
-          if (text.length === 0) return;
-          if (send({ type: "Generate", text })) doneEmitted = false;
+          if (text.length === 0 || shell.isClosed()) return;
+          if (doneEmitted) {
+            // First text of a new turn — nothing from the last one carries over.
+            doneEmitted = false;
+            turnClosed = false;
+            outstandingFlushes = 0;
+          }
+          buffered += text;
+          // Synthesize each complete sentence as it lands rather than waiting
+          // for the end of the turn — see the module doc.
+          const split = splitSegment(buffered);
+          if (!split) return;
+          buffered = split.tail;
+          if (send({ type: "Generate", text: split.head }) && send({ type: "Flush" })) {
+            outstandingFlushes += 1;
+          }
         },
 
         flush() {
-          send({ type: "Flush" });
+          if (shell.isClosed()) return;
+          turnClosed = true;
+          if (buffered.length > 0) {
+            const text = buffered;
+            buffered = "";
+            if (send({ type: "Generate", text }) && send({ type: "Flush" })) {
+              outstandingFlushes += 1;
+            }
+            return;
+          }
+          // Nothing left to synthesize. Every segment already acknowledged means
+          // the turn's audio is complete; otherwise the last outstanding
+          // acknowledgement ends it. Either way, do NOT send an empty Flush —
+          // see the module doc.
+          if (outstandingFlushes === 0) emitDoneOnce();
         },
 
         cancel() {
           if (shell.isClosed()) return;
           const turnInFlight = !doneEmitted;
+          // The cancelled turn's flushes are abandoned: either the socket is
+          // dropped below (its late frames unobservable) or the queued frames
+          // are discarded, so no acknowledgement for them will ever arrive.
+          buffered = "";
+          outstandingFlushes = 0;
+          turnClosed = false;
           // Emit `done` synchronously — the orchestrator's state machine
           // advances on it, and barge-in must not be microtask-deferred.
           emitDoneOnce();
