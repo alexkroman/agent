@@ -104,7 +104,7 @@ describe("requireOwner unclaimed-slug paths", () => {
       allowUnclaimed: true,
     });
     expect(apiKey).toBe("some-key");
-    expect(keyHash).toMatch(/^pbkdf2:/);
+    expect(keyHash).toMatch(/^\$argon2id\$/);
   });
 });
 

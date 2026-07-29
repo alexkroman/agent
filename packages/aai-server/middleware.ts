@@ -2,14 +2,14 @@
 
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
+import { parseBearer } from "./_bearer.ts";
 import type { HonoEnv } from "./context.ts";
 import { RESERVED_SLUGS, VALID_SLUG_RE } from "./schemas.ts";
 import { hashApiKey, verifySlugOwner } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 
 function requireBearerToken(req: Request): string {
-  const header = req.headers.get("Authorization");
-  const token = header?.startsWith("Bearer ") ? header.slice(7) : "";
+  const token = parseBearer(req.headers.get("Authorization"));
   if (!token) {
     throw new HTTPException(401, {
       message: "Missing Authorization header (Bearer <API_KEY>)",

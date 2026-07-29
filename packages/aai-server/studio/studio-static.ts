@@ -11,11 +11,11 @@
  * self-hosted setups) a minimal fallback page explains how to build it.
  */
 
-import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
+import { createCachedDirReader } from "../_static-files.ts";
 import type { AppContext } from "../context.ts";
 import { SafePathSchema } from "../schemas.ts";
 
@@ -49,24 +49,8 @@ function clientDir(): string {
   return _clientDir;
 }
 
-// Content cache. Misses are NOT cached (same reasoning as the default-client
-// cache in transport-websocket.ts: the build may land after the first read).
-const fileCache = new Map<string, Buffer>();
-
-async function readClientFile(relPath: string): Promise<Buffer | null> {
-  const cached = fileCache.get(relPath);
-  if (cached !== undefined) return cached;
-  const baseDir = clientDir();
-  const fullPath = path.join(baseDir, relPath);
-  if (!fullPath.startsWith(baseDir)) return null;
-  try {
-    const content = await readFile(fullPath);
-    fileCache.set(relPath, content);
-    return content;
-  } catch {
-    return null;
-  }
-}
+// Cached, containment-checked reads over the studio client build.
+const readClientFile = createCachedDirReader(clientDir);
 
 /** `GET /` — the studio app shell (or the not-built fallback). */
 export async function handleStudioPage(c: AppContext): Promise<Response> {

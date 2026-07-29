@@ -22,6 +22,7 @@ import type { UIMessage } from "ai";
 import { Hono } from "hono";
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
+import { parseBearer } from "../_bearer.ts";
 import type { HonoEnv } from "../context.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
 import { runStudioChat } from "./studio-agent.ts";
@@ -62,8 +63,7 @@ export type StudioRouteOptions = {
  * `studioScope`, and the deploy path derives the ownership hash itself.
  */
 const studioAuthMw = createMiddleware<HonoEnv>(async (c, next) => {
-  const header = c.req.header("Authorization");
-  const apiKey = header?.startsWith("Bearer ") ? header.slice(7) : "";
+  const apiKey = parseBearer(c.req.header("Authorization"));
   if (!apiKey) {
     throw new HTTPException(401, { message: "Missing Authorization header (Bearer <API_KEY>)" });
   }
