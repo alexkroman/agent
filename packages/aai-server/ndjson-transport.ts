@@ -1,9 +1,22 @@
 // Copyright 2025 the AAI authors. MIT license.
 // NDJSON transport for host↔guest JSON-RPC 2.0 communication.
+//
+// Line framing (node:readline) and write backpressure are handled here;
+// JSON-RPC id allocation, response correlation, per-request timeouts, and
+// request dispatch are delegated to the `json-rpc-2.0` library. The wire
+// format is unchanged: one JSON object per line with `jsonrpc`/`id`/
+// `method`/`params`/`result`/`error` fields, -32601 for unknown methods
+// and -32603 for handler failures (the guest harness speaks exactly this).
 
 import { createInterface } from "node:readline";
 import type { Readable, Writable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
+import {
+  createJSONRPCErrorResponse,
+  JSONRPCClient,
+  JSONRPCErrorCode,
+  JSONRPCServer,
+} from "json-rpc-2.0";
 import { z } from "zod";
 
 type JsonRpcRequest = {
@@ -45,12 +58,6 @@ const JsonRpcNotificationSchema = z.object({
   method: z.string(),
   params: z.unknown().optional(),
 });
-
-type PendingRequest = {
-  resolve: (value: unknown) => void;
-  reject: (reason: unknown) => void;
-  timer?: NodeJS.Timeout;
-};
 
 /**
  * Default timeout for a host→guest request. A wedged guest (e.g. a bundle
@@ -103,12 +110,9 @@ function parseJsonRpcMessage(line: string): ParsedMessage {
 }
 
 export function createNdjsonConnection(readable: Readable, writable: Writable): NdjsonConnection {
-  let nextId = 1;
   let disposed = false;
   let rl: ReturnType<typeof createInterface> | null = null;
 
-  const pending = new Map<number, PendingRequest>();
-  const requestHandlers = new Map<string, (params: unknown) => unknown | Promise<unknown>>();
   const notificationHandlers = new Map<string, (params?: unknown) => void>();
 
   // Write queue for backpressure: while a previous write is waiting for
@@ -165,47 +169,22 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
     writeChain = chained;
   }
 
+  // json-rpc-2.0 handles id allocation, response correlation, and pending
+  // rejection; `send` above is its transport. The errorListener is silenced —
+  // handler failures already travel back to the peer as -32603 responses.
+  const client = new JSONRPCClient((payload) => {
+    send(payload);
+  });
+  const server = new JSONRPCServer({ errorListener: () => undefined });
+  // The library defaults handler failures to error code 0; the guest protocol
+  // uses JSON-RPC's -32603 (internal error) with the thrown message.
+  server.mapErrorToJSONRPCErrorResponse = (id, error) =>
+    createJSONRPCErrorResponse(id, JSONRPCErrorCode.InternalError, errorMessage(error));
+
   function rejectAllPending(reason: string): void {
     if (disposed) return;
     disposed = true;
-    const err = new Error(reason);
-    for (const pend of pending.values()) {
-      if (pend.timer) clearTimeout(pend.timer);
-      pend.reject(err);
-    }
-    pending.clear();
-  }
-
-  function handleResponse(response: JsonRpcResponse): void {
-    const pend = pending.get(response.id);
-    if (!pend) return;
-    if (pend.timer) clearTimeout(pend.timer);
-    pending.delete(response.id);
-
-    if (response.error) {
-      const err = Object.assign(new Error(response.error.message), { code: response.error.code });
-      pend.reject(err);
-    } else {
-      pend.resolve(response.result);
-    }
-  }
-
-  async function handleIncomingRequest(req: JsonRpcRequest): Promise<void> {
-    const handler = requestHandlers.get(req.method);
-    if (!handler) {
-      send({
-        jsonrpc: "2.0",
-        id: req.id,
-        error: { code: -32_601, message: `Method not found: ${req.method}` },
-      });
-      return;
-    }
-    try {
-      const result = await handler(req.params);
-      send({ jsonrpc: "2.0", id: req.id, result });
-    } catch (err) {
-      send({ jsonrpc: "2.0", id: req.id, error: { code: -32_603, message: errorMessage(err) } });
-    }
+    client.rejectAllPendingRequests(reason);
   }
 
   function handleLine(line: string): void {
@@ -213,11 +192,25 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
     if (!msg) return;
     switch (msg.kind) {
       case "response":
-        handleResponse(msg.data);
+        client.receive(msg.data as Parameters<typeof client.receive>[0]);
         return;
-      case "request":
-        void handleIncomingRequest(msg.data);
+      case "request": {
+        const req = msg.data;
+        if (!server.hasMethod(req.method)) {
+          // Sent directly to preserve the exact wire message the guest
+          // already sees (the library's own text omits the method name).
+          send({
+            jsonrpc: "2.0",
+            id: req.id,
+            error: { code: -32_601, message: `Method not found: ${req.method}` },
+          });
+          return;
+        }
+        void server.receive(req).then((response) => {
+          if (response) send(response);
+        });
         return;
+      }
       case "notification":
         notificationHandlers.get(msg.data.method)?.(msg.data.params);
         return;
@@ -233,35 +226,25 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
       timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
     ): Promise<T> {
       if (disposed) return Promise.reject(new Error("Connection disposed"));
-      const id = nextId++;
-      const { promise, resolve, reject } = Promise.withResolvers<T>();
-      const entry: PendingRequest = { resolve: resolve as (v: unknown) => void, reject };
-      if (timeoutMs > 0 && Number.isFinite(timeoutMs)) {
-        entry.timer = setTimeout(() => {
-          if (!pending.delete(id)) return;
-          reject(new Error(`RPC "${method}" timed out after ${timeoutMs}ms`));
-        }, timeoutMs);
-        entry.timer.unref?.();
-      }
-      pending.set(id, entry);
-      const msg: JsonRpcRequest = { jsonrpc: "2.0", id, method };
-      if (params !== undefined) msg.params = params;
-      send(msg);
-      return promise;
+      const requester =
+        timeoutMs > 0 && Number.isFinite(timeoutMs)
+          ? client.timeout(timeoutMs, (id) =>
+              createJSONRPCErrorResponse(id, 0, `RPC "${method}" timed out after ${timeoutMs}ms`),
+            )
+          : client;
+      return Promise.resolve(requester.request(method, params, undefined));
     },
 
     sendNotification(method: string, params?: unknown): void {
       if (disposed) return;
-      const msg: JsonRpcNotification = { jsonrpc: "2.0", method };
-      if (params !== undefined) msg.params = params;
-      send(msg);
+      client.notify(method, params, undefined);
     },
 
     onRequest<T = unknown>(
       method: string,
       handler: (params: T) => unknown | Promise<unknown>,
     ): void {
-      requestHandlers.set(method, handler as (params: unknown) => unknown | Promise<unknown>);
+      server.addMethod(method, handler as (params: unknown) => unknown | Promise<unknown>);
     },
 
     onNotification(method: string, handler: (params?: unknown) => void): void {

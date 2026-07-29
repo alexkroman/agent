@@ -3,9 +3,9 @@ import { describe, expect, test } from "vitest";
 import { hashApiKey, verifyApiKeyHash, verifySlugOwner } from "./secrets.ts";
 import { createTestStore, TEST_AGENT_CONFIG } from "./test-utils.ts";
 
-test("hashApiKey produces PBKDF2 format", async () => {
+test("hashApiKey produces argon2 PHC format", async () => {
   const h = await hashApiKey("key");
-  expect(h).toMatch(/^pbkdf2:600000:/);
+  expect(h).toMatch(/^\$argon2id\$/);
   // Same key hashes differently each time (random salt)
   const h2 = await hashApiKey("key");
   expect(h).not.toBe(h2);
@@ -86,12 +86,12 @@ test("verifySlugOwner rejects when credential_hashes is empty", async () => {
 });
 
 describe("auth timing safety", () => {
-  test("PBKDF2 hashes have consistent format", async () => {
+  test("argon2 hashes have consistent format", async () => {
     const shortKey = await hashApiKey("a");
     const longKey = await hashApiKey("a".repeat(1000));
     const emptyKey = await hashApiKey("");
 
-    const pattern = /^pbkdf2:600000:[A-Za-z0-9_-]+:[A-Za-z0-9_-]+$/;
+    const pattern = /^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/;
     expect(shortKey).toMatch(pattern);
     expect(longKey).toMatch(pattern);
     expect(emptyKey).toMatch(pattern);
