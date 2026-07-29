@@ -1,6 +1,9 @@
 {
   "type": "module",
-  "packageManager": "pnpm@10.33.0",
+  "packageManager": "pnpm@10.29.3",
+  "engines": {
+    "node": ">=24 <27"
+  },
   "scripts": {
     "dev": "aai dev",
     "build": "aai build",
@@ -10,18 +13,20 @@
   "dependencies": {
     "@alexkroman1/aai": "^1.9.2",
     "@alexkroman1/aai-ui": "^1.9.2",
-    "react": "^19.2.7",
-    "react-dom": "^19.2.7",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
     "tailwindcss": "^4.3.2",
     "zod": "^4.4.3"
   },
   "devDependencies": {
     "@alexkroman1/aai-cli": "^1.9.2",
-    "@tailwindcss/vite": "^4.3.2",
+    "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.1.1",
-    "@vitejs/plugin-react": "^6.0.3",
+    "@types/react": "^19.2.17",
+    "@types/react-dom": "^19.2.3",
+    "@vitejs/plugin-react": "^6.0.4",
     "typescript": "^7.0.2",
-    "vite": "^8.1.4",
+    "vite": "^8.1.5",
     "vitest": "^4.1.10"
   }
 }

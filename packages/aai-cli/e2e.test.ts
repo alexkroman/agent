@@ -41,7 +41,9 @@ function hasPlaywrightBrowser(): boolean {
 }
 
 // Representative subset: minimal baseline, stateful + tools, external tools + custom UI.
-// Full template coverage is handled by the templates unit test tier (pnpm test:templates).
+// This tier only builds these two end-to-end. Config-level validation of EVERY
+// template (asset imports resolve, toAgentConfig accepts the config) lives in
+// packages/aai-templates/templates.test.ts (pnpm test:templates).
 const templates = ["simple", "web-researcher"];
 
 let aaiBin: string;

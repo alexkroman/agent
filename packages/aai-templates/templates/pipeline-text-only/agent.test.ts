@@ -1,7 +1,14 @@
+import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 
 describe("pipeline-text-only template", () => {
+  test("config passes manifest validation", () => {
+    // Same conversion `aai build`/`aai deploy` run — catches a partial
+    // provider triple or text-only tuning that assertTextOnlyTuning rejects.
+    expect(() => toAgentConfig(agentDef)).not.toThrow();
+  });
+
   test("exports an agent with the full pipeline triple", () => {
     // tts: none() still counts toward the all-or-none stt/llm/tts rule —
     // that's what keeps a *forgotten* tts a loud config error.

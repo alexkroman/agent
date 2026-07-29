@@ -941,7 +941,9 @@ catches the most common issues that historically required follow-up commits:
 
 1. **Syncpack version drift**: When bumping a dependency, also update
    `packages/aai-templates/scaffold/package.json` if it has the same dep.
-   `pnpm check:syncpack` catches this.
+   Note syncpack does NOT check the scaffold (it is excluded in
+   `.syncpackrc.json`) — run `node scripts/sync-scaffold-versions.mjs`
+   to sync it (or `--check` to verify).
 2. **Test assertion mismatches**: After changing output formats or error
    messages, run `pnpm test` and update affected assertions.
 3. **Lint in related files**: Pre-commit only lints staged files. Run
