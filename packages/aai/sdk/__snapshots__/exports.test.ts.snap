@@ -60,6 +60,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "PIPELINE_PLAYBACK_GRACE_MS",
   "RESERVED_SLUGS",
   "S2S_MAX_RESUME_ATTEMPTS",
+  "SESSION_KEEPALIVE_INTERVAL_MS",
   "SESSION_NOTES_TTL_MS",
   "STT_FRAME_FLOOR_MS",
   "STT_FRAME_MAX_MS",

@@ -589,4 +589,92 @@ describe("wireSessionSocket lifecycle", () => {
     expect(capturedId).not.toBe("");
     expect(capturedId).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
   });
+  // ── Keepalive ──────────────────────────────────────────────────────────────
+  // A silent voice session sends nothing client-ward until the user speaks, and
+  // a deployed agent behind Fly's proxy was dropped ~40s into that silence with
+  // no close frame. These pin the ping that keeps the connection warm.
+
+  test("pings the socket on the keepalive interval while open", () => {
+    vi.useFakeTimers();
+    try {
+      const ping = vi.fn();
+      const ws = Object.assign(openSocket(), { ping });
+
+      wireSessionSocket(ws, {
+        sessions: new Map(),
+        createSession: () => makeMockCore(),
+        readyConfig: defaultConfig,
+        logger: silentLogger,
+        keepaliveIntervalMs: 1000,
+      });
+
+      expect(ping).not.toHaveBeenCalled();
+      vi.advanceTimersByTime(3000);
+      expect(ping).toHaveBeenCalledTimes(3);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("stops pinging once the socket closes", () => {
+    vi.useFakeTimers();
+    try {
+      const ping = vi.fn();
+      const ws = Object.assign(openSocket(), { ping });
+
+      wireSessionSocket(ws, {
+        sessions: new Map(),
+        createSession: () => makeMockCore(),
+        readyConfig: defaultConfig,
+        logger: silentLogger,
+        keepaliveIntervalMs: 1000,
+      });
+
+      vi.advanceTimersByTime(2000);
+      expect(ping).toHaveBeenCalledTimes(2);
+
+      ws.disconnect(1006);
+      vi.advanceTimersByTime(5000);
+      // Still 2: a leaked interval would keep firing against a dead socket.
+      expect(ping).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a socket with no ping method is wired without throwing", () => {
+    vi.useFakeTimers();
+    try {
+      const ws = openSocket(); // MockWebSocket has no ping()
+      expect(() =>
+        wireSessionSocket(ws, {
+          sessions: new Map(),
+          createSession: () => makeMockCore(),
+          readyConfig: defaultConfig,
+          logger: silentLogger,
+          keepaliveIntervalMs: 1000,
+        }),
+      ).not.toThrow();
+      expect(() => vi.advanceTimersByTime(3000)).not.toThrow();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("logs the close code so a dropped session is diagnosable", () => {
+    const logger = makeLogger();
+    const ws = openSocket();
+
+    wireSessionSocket(ws, {
+      sessions: new Map(),
+      createSession: () => makeMockCore(),
+      readyConfig: defaultConfig,
+      logger,
+    });
+
+    ws.disconnect(1006);
+
+    const disconnect = logger.info.mock.calls.find((c) => c[0] === "Session disconnected");
+    expect(disconnect?.[1]).toMatchObject({ code: 1006 });
+  });
 });

@@ -19,6 +19,25 @@ export const DEFAULT_RELAY_TOOL_TIMEOUT_MS = 120_000;
  */
 export const DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS = 15_000;
 export const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
+/**
+ * How often the host pings an open session socket.
+ *
+ * A voice session is silent on the wire in the server→client direction for as
+ * long as the user says nothing — no speech means no transcript, no reply, no
+ * TTS audio. Measured against a deployed agent behind Fly's proxy, such a
+ * session was dropped ~40s in, with no close frame on either side (so nothing
+ * in the app logs, and `close_code` unset on the client). Inbound audio did not
+ * prevent it: a client streaming continuous silence died on the same schedule
+ * as one sending nothing at all, which is what points at the idle *response*
+ * direction rather than the connection as a whole.
+ *
+ * 15s keeps two intervals inside that ~40s window, so a single missed tick is
+ * not fatal, and stays well under the 60s idle timeout common to other proxies
+ * this may sit behind. Ping frames rather than a protocol message: they cost a
+ * couple of bytes, need no client support (every WebSocket implementation
+ * auto-replies with a pong), and can't be mistaken for session traffic.
+ */
+export const SESSION_KEEPALIVE_INTERVAL_MS = 15_000;
 export const FETCH_TIMEOUT_MS = 15_000;
 /**
  * Max consecutive S2S `session.resume` attempts before giving up and surfacing

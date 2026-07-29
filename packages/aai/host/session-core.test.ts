@@ -498,3 +498,39 @@ describe("transcribe_file upload buffering", () => {
     expect(transport.sendUserAudio).not.toHaveBeenCalled();
   });
 });
+
+describe("createSessionCore — error logging", () => {
+  // A provider ending a session (STT session cap, idle cutoff) used to reach the
+  // client only, so the server's log showed the close and nothing about why.
+  test("a fatal error is logged server-side, not just emitted", () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const { core, sink } = makeCore({ logger });
+
+    core.onError("stt", "socket closed 1000");
+
+    expect(logger.warn).toHaveBeenCalledWith("session error (fatal)", {
+      sid: "s-test",
+      code: "stt",
+      message: "socket closed 1000",
+    });
+    expect(sink.events).toContainEqual({
+      type: "error",
+      code: "stt",
+      message: "socket closed 1000",
+    });
+  });
+
+  test("a non-fatal error stays at debug level", () => {
+    const logger = { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
+    const { core } = makeCore({ logger });
+
+    core.onError("internal", "recoverable", { fatal: false });
+
+    expect(logger.warn).not.toHaveBeenCalled();
+    expect(logger.debug).toHaveBeenCalledWith("session error", {
+      sid: "s-test",
+      code: "internal",
+      message: "recoverable",
+    });
+  });
+});
