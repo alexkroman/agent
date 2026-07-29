@@ -15,10 +15,11 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    type-checks, and validates the manifest. Catches issues `dev` won't.
 4. **Make small, focused changes** — verify each one before stacking the
    next.
-5. **Look at templates before writing custom code** —
-   `node_modules/@alexkroman1/aai-templates/templates/` has 14 working
-   examples. Closest matches: `simple`, `pipeline-simple`, `web-researcher`,
-   `solo-rpg`, `pizza-ordering`.
+5. **Look at templates before writing custom code** — the framework repo
+   ships 15 working examples under `packages/aai-templates/templates/`
+   (github.com/alexkroman/agent; `aai init --template <name>` scaffolds
+   any of them). Closest matches: `simple`, `pipeline-simple`,
+   `web-researcher`, `solo-rpg`, `pizza-ordering`.
 
 ## CLI
 
@@ -49,7 +50,6 @@ my-agent/
   shared.ts           # Types shared between agent.ts and client.tsx
   system-prompt.md    # Long system prompts (optional, imported)
   tools/              # Tool files when too large for inline (optional)
-  styles.css          # Tailwind CSS entry point
   package.json
   tsconfig.json
   .env                # Local dev secrets (gitignored)
@@ -67,7 +67,7 @@ export default agent({
   sttPrompt?: string;                        // STT guidance for jargon/acronyms
   builtinTools?: BuiltinTool[];              // see built-in tools table
   tools?: Record<string, ToolDef>;
-  maxSteps?: number;                         // default: 5 — max tool calls per turn
+  maxSteps?: number;                         // default: 10 — max tool calls per turn
   toolChoice?: "auto" | "required";          // default: "auto"
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
   silenceTimeoutMs?: number;                 // pipeline only — assistant speaks up after this much user silence (ms)
@@ -416,7 +416,7 @@ set `builtinTools` explicitly (including `[]`) to override.
 
 | Tool | Description | Params |
 | --- | --- | --- |
-| `web_search` | Search the web (Brave) | `query`, `max_results?` (default 5) |
+| `web_search` | Search the web (Brave) — requires the `BRAVE_API_KEY` secret | `query`, `max_results?` (default 5) |
 | `visit_webpage` | Fetch URL to plain text | `url` |
 | `fetch_json` | HTTP GET a JSON API | `url`, `headers?` |
 | `run_code` | Execute JS in sandbox (no net/fs, 5s timeout) | `code` |
@@ -593,6 +593,10 @@ Never hardcode secrets in agent code.
 - **Access:** `ctx.env.MY_KEY` in tool execute functions.
 - **AssemblyAI key:** CLI prompts on first use, stores globally. No `.env`
   entry needed. For CI, set `ASSEMBLYAI_API_KEY` env var.
+- **`BRAVE_API_KEY`:** required by the `web_search` builtin (a free key from
+  brave.com/search/api). Without it, `web_search` returns an error result.
+  Set it like any other secret: `.env` locally, `aai secret put` in
+  production.
 
 ## Voice rules for systemPrompt
 
@@ -642,6 +646,10 @@ Common mistakes when working in aai projects:
 - **Voice prompts ≠ chat prompts.** No bullets, no bold, no exclamation
   points. See "Voice rules" above.
 - **`fetch` to private IPs is blocked** (SSRF protection). Use public URLs.
+- **`run_code` only executes on the deployed platform.** It runs inside the
+  platform's gVisor/Deno sandbox; the self-hosted `aai dev` server has no
+  sandbox, so there `run_code` refuses with an error result. Deploy to test
+  it end-to-end, or use the `calculate` builtin for simple arithmetic in dev.
 - **KV is per-deployment.** A new slug = fresh namespace. Don't expect
   data to survive `aai delete` + `aai deploy` with a different name.
 - **Rime language codes are ISO 639-3** (3-letter, e.g. `"eng"`), not
@@ -656,7 +664,7 @@ Common mistakes when working in aai projects:
 - Agent code runs in a sandboxed worker — use `fetch` for HTTP, `ctx.env`
   for secrets
 - Tool execution timeout: 30 seconds
-- `maxSteps` limits tool calls per turn (default 5) — increase for
+- `maxSteps` limits tool calls per turn (default 10) — increase for
   multi-tool workflows
 - KV reads return `null` after redeployment with a new slug
 - Tool returns `undefined` if execute function has no return statement —
