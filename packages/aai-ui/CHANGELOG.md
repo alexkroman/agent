@@ -1,5 +1,14 @@
 # @alexkroman1/aai-ui
 
+## 1.16.0
+
+### Patch Changes
+
+- da2662a: Fix the sync-mode microphone going permanently deaf on its first flush: the capture worklet sized its next batch buffer from a view whose ArrayBuffer had just been transferred (and so detached to length 0), which wedged the audio render thread in an infinite loop posting empty chunks. No utterance was ever endpointed, so a sync agent never sent a turn. Also bound the sync session's replayed history to the server's own window and release the microphone when the view unmounts mid-startup.
+- Updated dependencies [c261662]
+- Updated dependencies [5ea4cba]
+  - @alexkroman1/aai@1.16.0
+
 ## 1.15.0
 
 ### Patch Changes

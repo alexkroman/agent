@@ -1,5 +1,15 @@
 # @alexkroman1/aai-cli
 
+## 1.16.0
+
+### Patch Changes
+
+- Updated dependencies [c261662]
+- Updated dependencies [da2662a]
+- Updated dependencies [5ea4cba]
+  - @alexkroman1/aai@1.16.0
+  - @alexkroman1/aai-ui@1.16.0
+
 ## 1.15.0
 
 ### Patch Changes

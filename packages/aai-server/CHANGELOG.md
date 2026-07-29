@@ -1,5 +1,17 @@
 # @alexkroman1/aai-server
 
+## 1.3.7
+
+### Patch Changes
+
+- 7043302: Add a studio codegen eval for the slack-translator shape (text-only pipeline plus send: slack()), and let SandboxLoadJudge assert the generated config's send channel.
+- Updated dependencies [c261662]
+- Updated dependencies [da2662a]
+- Updated dependencies [5ea4cba]
+  - @alexkroman1/aai@1.16.0
+  - @alexkroman1/aai-ui@1.16.0
+  - @alexkroman1/aai-cli@1.16.0
+
 ## 1.3.6
 
 ### Patch Changes
