@@ -13,6 +13,7 @@ import {
   MAX_MESSAGE_BUFFER_SIZE,
   MAX_SYNC_AUDIO_BYTES,
   MAX_WS_PAYLOAD_BYTES,
+  SESSION_KEEPALIVE_INTERVAL_MS,
   WS_OPEN,
 } from "../sdk/constants.ts";
 import {
@@ -43,7 +44,24 @@ export type SessionWebSocket = {
   send(data: string | ArrayBuffer | Uint8Array): void;
   /** Close the connection (standard WebSocket / `ws` method). */
   close?(code?: number, reason?: string): void;
-  addEventListener(type: "close" | "open", listener: () => void): void;
+  /**
+   * Send a WebSocket ping frame (`ws`-only; the browser API has no equivalent).
+   * Optional so test doubles and any non-`ws` socket stay assignable — when
+   * absent the keepalive is skipped rather than emulated with a protocol
+   * message, which would reach the client as unexpected session traffic.
+   */
+  ping?(): void;
+  addEventListener(type: "open", listener: () => void): void;
+  /**
+   * Split from `"open"` so the close listener can read the frame's `code` and
+   * `reason` — the only evidence of *why* a session ended. Both are optional:
+   * an abrupt drop arrives with no close frame at all, and minimal test
+   * doubles that invoke the listener with no argument stay assignable.
+   */
+  addEventListener(
+    type: "close",
+    listener: (event: { code?: number; reason?: string }) => void,
+  ): void;
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
   addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
 };
@@ -70,6 +88,12 @@ type WsSessionOptions = {
   logger?: Logger;
   /** Timeout in ms for session.start(). Defaults to 10 000 (10s). */
   sessionStartTimeoutMs?: number;
+  /**
+   * Keepalive ping interval in ms. Defaults to
+   * {@link SESSION_KEEPALIVE_INTERVAL_MS}; exposed so tests can drive it on a
+   * short clock rather than waiting out the real interval.
+   */
+  keepaliveIntervalMs?: number;
   /** Old session ID to resume. When set, reuses this ID instead of generating a new UUID. */
   resumeFrom?: string;
 };
@@ -206,6 +230,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   const ctx = opts.logContext ?? {};
 
   let session: SessionCore | null = null;
+  /** Keepalive ping timer, armed on open and cleared on close. */
+  let keepalive: ReturnType<typeof setInterval> | null = null;
   /** Set to true once session.start() resolves. Messages arriving before
    *  this flag is set are buffered and replayed once the session is ready,
    *  preventing audio/frames from being dispatched to a half-initialized session. */
@@ -296,9 +322,34 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     }
   }
 
+  function startKeepalive(): void {
+    if (!ws.ping) return;
+    keepalive = setInterval(() => {
+      if (ws.readyState !== WS_OPEN) return;
+      try {
+        ws.ping?.();
+      } catch (err) {
+        // A socket closing between the readyState check and the ping is
+        // routine, and this runs on a bare timer with no caller to catch for
+        // it — an escaping throw would surface as an unhandled exception.
+        log.debug("ws: keepalive ping failed", { sid, error: errorMessage(err) });
+      }
+    }, opts.keepaliveIntervalMs ?? SESSION_KEEPALIVE_INTERVAL_MS);
+    // Never let the keepalive alone hold the event loop open: without this a
+    // finished CLI process would linger for the life of the socket.
+    keepalive.unref?.();
+  }
+
+  function stopKeepalive(): void {
+    if (keepalive === null) return;
+    clearInterval(keepalive);
+    keepalive = null;
+  }
+
   function onOpen(): void {
     opts.onOpen?.();
     log.info("Session connected", { ...ctx, sid });
+    startKeepalive();
 
     const client = createClientSink(ws, log);
     // createSession runs synchronously from the 'open'/handleUpgrade callback;
@@ -388,8 +439,20 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     dispatchSafely(event.data, session);
   });
 
-  ws.addEventListener("close", () => {
-    log.info("Session disconnected", { ...ctx, sid });
+  ws.addEventListener("close", (ev) => {
+    stopKeepalive();
+    // A provider cutting its upstream socket, a proxy dropping the connection,
+    // and a client hanging up all produced the same bare "Session
+    // disconnected" line, which left a dead session undiagnosable from the
+    // server's own logs. `ev` is optional-chained because test doubles invoke
+    // close listeners with no argument, and an abrupt drop carries no frame —
+    // "none" distinguishes that from a real code, which 0 would not.
+    log.info("Session disconnected", {
+      ...ctx,
+      sid,
+      code: ev?.code ?? "none",
+      reason: ev?.reason || "none",
+    });
     // Null the session and buffer before stopping: if session.start() is
     // still in flight, its .then() would otherwise mark the stopped session
     // ready and drain buffered frames into it.
