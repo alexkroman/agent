@@ -59,10 +59,18 @@ export function handleSecretDelete(c: AppContext): Promise<Response> {
     if (!existing) {
       throw new HTTPException(404, { message: `Agent ${slug} not found` });
     }
+    if (!(key in existing)) {
+      // Deleting a key that isn't set is a no-op: skip the manifest rewrite
+      // and — more importantly — the sandbox restart, which would kill the
+      // agent's live sessions for nothing. The aai-cli client only checks
+      // for a 2xx here (see aai-cli/secret.ts), so answering 200 with the
+      // unchanged key list stays compatible.
+      return c.json({ ok: true, keys: Object.keys(existing) });
+    }
     delete existing[key];
     await c.env.store.putEnv(slug, existing);
     await restartSandbox(c, slug, "secret delete");
     console.info("Secret deleted", { slug });
-    return c.json({ ok: true });
+    return c.json({ ok: true, keys: Object.keys(existing) });
   });
 }

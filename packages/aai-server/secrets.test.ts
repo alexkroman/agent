@@ -226,6 +226,40 @@ describe("credential encryption", () => {
     expect(await decryptEnv(masterKey, { encrypted, slug: "s" })).toEqual({});
   });
 
+  test("iron blob with a flipped byte rejects at every payload offset", async () => {
+    const masterKey = await importMasterKey("master-secret");
+    const encrypted = await encryptEnv(masterKey, { env: testEnv, slug: "s" });
+    const { fromBase64Url, toBase64Url } = await import("./base64url.ts");
+    const raw = fromBase64Url(encrypted);
+
+    // Offsets spread across the sealed payload (never the version byte):
+    // header, early fields, middle of the ciphertext, and the trailing MAC.
+    // Not the very last byte: it is the final base64 char of the MAC digest,
+    // whose 2 trailing bits are discarded on decode — flipping only those is
+    // encoding malleability, not a MAC bypass (the decoded bytes are equal).
+    const offsets = [1, 8, 32, Math.floor(raw.length / 2), raw.length - 2];
+    for (const offset of offsets) {
+      const corrupted = new Uint8Array(raw);
+      corrupted[offset] = (corrupted[offset] ?? 0) ^ 0x01;
+      await expect(
+        decryptEnv(masterKey, { encrypted: toBase64Url(corrupted), slug: "s" }),
+      ).rejects.toThrow();
+    }
+  });
+
+  test("truncated iron blob rejects instead of yielding partial plaintext", async () => {
+    const masterKey = await importMasterKey("master-secret");
+    const encrypted = await encryptEnv(masterKey, { env: testEnv, slug: "s" });
+    const { fromBase64Url, toBase64Url } = await import("./base64url.ts");
+    const raw = fromBase64Url(encrypted);
+
+    for (const truncated of [raw.slice(0, 10), raw.slice(0, raw.length - 20)]) {
+      await expect(
+        decryptEnv(masterKey, { encrypted: toBase64Url(truncated), slug: "s" }),
+      ).rejects.toThrow();
+    }
+  });
+
   test("unrecognized version byte throws", async () => {
     const masterKey = await importMasterKey("test-secret");
     const encrypted = await encryptEnv(masterKey, {
@@ -347,6 +381,37 @@ describe("legacy stored-format compatibility", () => {
     const encrypted = await legacyEncryptEnv("roll-secret", env, "old-agent");
     const masterKey = await importMasterKey("roll-secret");
     expect(await decryptEnv(masterKey, { encrypted, slug: "old-agent" })).toEqual(env);
+  });
+
+  test("legacy v1 blob with a flipped byte rejects at every payload offset", async () => {
+    const encrypted = await legacyEncryptEnv("roll-secret", { TOKEN: "t-1" }, "old-agent");
+    const masterKey = await importMasterKey("roll-secret");
+    const { fromBase64Url, toBase64Url } = await import("./base64url.ts");
+    const raw = fromBase64Url(encrypted);
+
+    // Offsets spanning the v1 layout: salt (1..16), IV (17..28), ciphertext
+    // body, and the trailing GCM auth tag.
+    const offsets = [1, 20, 40, Math.floor(raw.length / 2), raw.length - 1];
+    for (const offset of offsets) {
+      const corrupted = new Uint8Array(raw);
+      corrupted[offset] = (corrupted[offset] ?? 0) ^ 0x01;
+      await expect(
+        decryptEnv(masterKey, { encrypted: toBase64Url(corrupted), slug: "old-agent" }),
+      ).rejects.toThrow();
+    }
+  });
+
+  test("truncated legacy v1 blob rejects instead of yielding partial plaintext", async () => {
+    const encrypted = await legacyEncryptEnv("roll-secret", { TOKEN: "t-1" }, "old-agent");
+    const masterKey = await importMasterKey("roll-secret");
+    const { fromBase64Url, toBase64Url } = await import("./base64url.ts");
+    const raw = fromBase64Url(encrypted);
+
+    for (const truncated of [raw.slice(0, 10), raw.slice(0, raw.length - 8)]) {
+      await expect(
+        decryptEnv(masterKey, { encrypted: toBase64Url(truncated), slug: "old-agent" }),
+      ).rejects.toThrow();
+    }
   });
 
   test("legacy and argon2 hashes coexist in one credential list", async () => {

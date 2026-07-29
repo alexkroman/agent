@@ -51,17 +51,10 @@ import type {
 } from "./harness-types.ts";
 import { RUN_CODE_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./limits.ts";
 
-// Re-export the host-RPC surface so existing consumers/tests can keep
-// importing it from `./deno-harness.ts`.
-export {
-  handleHostResponse,
-  kvAdapter,
-  pendingHostRequests,
-  sendError,
-  sendResponse,
-  vectorAdapter,
-  writeMessage,
-} from "./harness-rpc.ts";
+// Re-export the slice of the host-RPC surface that deno-harness-rpc.test.ts
+// still reaches through this module (everything else is imported straight
+// from `./harness-rpc.ts`).
+export { handleHostResponse, pendingHostRequests, vectorAdapter } from "./harness-rpc.ts";
 
 // ---- Inline TextLineStream (avoids jsr: import that can't be bundled) -------
 

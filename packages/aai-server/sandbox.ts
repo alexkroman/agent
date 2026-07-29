@@ -46,14 +46,7 @@ import type { BundleStore } from "./store-types.ts";
 
 // ── Re-exports consumed by orchestrator / handlers / tests ──────────────
 
-export {
-  type AgentSlot,
-  createSlotCache,
-  type SlotCache,
-  terminateSlot,
-  withSlugLock,
-} from "./sandbox-slots.ts";
-export type { AgentMetadata } from "./schemas.ts";
+export { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────
 

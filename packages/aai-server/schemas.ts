@@ -28,9 +28,8 @@ export const SafePathSchema = z
  *
  * This is the single key grammar for BOTH boundaries that accept KV keys:
  * the owner HTTP routes (`GET`/`POST /:slug/kv`) and the guest→host RPC
- * (sandbox-guest-rpc.ts, which currently restates the same rules — keep the
- * two in lockstep so a key written on one side is always reachable from the
- * other).
+ * (sandbox-guest-rpc.ts imports it from here), so a key written on one
+ * side is always reachable from the other.
  */
 export const SafeKvKeySchema = z
   .string()

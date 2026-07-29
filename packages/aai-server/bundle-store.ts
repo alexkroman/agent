@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createKeyedLock } from "./_keyed-lock.ts";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
-import { agentObjectKey, agentPrefix } from "./constants.ts";
+import { agentKvPrefix, agentObjectKey, agentPrefix } from "./constants.ts";
 import { metrics, observeDurationWithStatus } from "./metrics.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { withLock } from "./sandbox-slots.ts";
@@ -50,6 +50,12 @@ const WORKER_CODE_CACHE_MAX_BYTES = 128 * 1024 * 1024;
 // under a pure byte budget and accumulate one Map slot per probed slug.
 const BYTE_CACHE_ENTRY_OVERHEAD = 4096;
 
+// Confirmed-miss (null) worker-code entries use the short manifest TTL, not
+// the 10-minute worker TTL: another replica reading during a redeploy's
+// delete→write window would otherwise cache the transient miss and serve
+// failures for up to 10 minutes. Misses are cheap to re-probe.
+const WORKER_CODE_MISS_TTL_MS = STORE_CACHE_TTL_MS;
+
 type ByteCacheEntry<V> = { value: V; bytes: number; expiresAt: number };
 
 /**
@@ -91,14 +97,17 @@ export class ByteBudgetTtlCache<V> {
     return entry.value;
   }
 
-  /** `valueBytes` is the value's size; string `length` is a fine approximation. */
-  set(key: string, value: V, valueBytes: number): void {
+  /**
+   * `valueBytes` is the value's size; string `length` is a fine approximation.
+   * `ttlMs` overrides the cache-wide TTL for this one entry.
+   */
+  set(key: string, value: V, valueBytes: number, ttlMs: number = this.#ttlMs): void {
     this.delete(key);
     const bytes = valueBytes + BYTE_CACHE_ENTRY_OVERHEAD;
     // A value larger than the whole budget can never fit — don't evict
     // everything else only to fail anyway.
     if (bytes > this.#maxBytes) return;
-    this.#entries.set(key, { value, bytes, expiresAt: Date.now() + this.#ttlMs });
+    this.#entries.set(key, { value, bytes, expiresAt: Date.now() + ttlMs });
     this.#totalBytes += bytes;
     for (const oldest of this.#entries.keys()) {
       if (this.#totalBytes <= this.#maxBytes || oldest === key) break;
@@ -148,6 +157,25 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
   async function deleteByPrefix(prefix: string): Promise<void> {
     const keys = await storage.getKeys(prefix);
     await Promise.all(keys.map((k) => storage.removeItem(k)));
+  }
+
+  /**
+   * Delete the agent's *bundle* objects (manifest, worker, config, client
+   * assets) while preserving its platform-default KV data under
+   * `agentKvPrefix` — a redeploy must not wipe remember/recall state.
+   * `deleteAgent` still sweeps the whole prefix, KV included.
+   *
+   * unstorage normalizes `/` separators to `:` in the keys `getKeys`
+   * returns, so the KV-prefix filter compares normalized forms.
+   */
+  async function deleteBundleObjects(slug: string): Promise<void> {
+    const kvPrefix = `${agentKvPrefix(slug).replaceAll("/", ":")}:`;
+    const keys = await storage.getKeys(agentPrefix(slug));
+    await Promise.all(
+      keys
+        .filter((k) => !k.replaceAll("/", ":").startsWith(kvPrefix))
+        .map((k) => storage.removeItem(k)),
+    );
   }
 
   function readItem(key: string): Promise<string | null> {
@@ -209,9 +237,11 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
       return instrumentTigris("putAgent", async () => {
         invalidate(bundle.slug);
         try {
-          // Note: this sweep covers the whole agent prefix, including the
-          // agent's platform-default KV data (see constants.ts).
-          await deleteByPrefix(agentPrefix(bundle.slug));
+          // Sweep only the agent's bundle objects: a redeploy replaces the
+          // code but must preserve the agent's platform-default KV data
+          // (remember/recall state). Full cleanup — KV included — happens
+          // only in deleteAgent (see constants.ts).
+          await deleteBundleObjects(bundle.slug);
         } catch (err) {
           console.warn(
             `Failed to delete old agent files for ${bundle.slug}, proceeding with overwrite: ${errorMessage(err)}`,
@@ -252,7 +282,13 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
         const cached = workerCodeCache.get(slug);
         if (cached !== undefined) return cached;
         const value = await readItem(agentObjectKey(slug, "worker.js"));
-        workerCodeCache.set(slug, value, value?.length ?? 0);
+        // Misses expire on the short TTL (see WORKER_CODE_MISS_TTL_MS).
+        workerCodeCache.set(
+          slug,
+          value,
+          value?.length ?? 0,
+          value === null ? WORKER_CODE_MISS_TTL_MS : WORKER_CODE_CACHE_TTL_MS,
+        );
         return value;
       });
     },
@@ -271,6 +307,7 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     deleteAgent(slug) {
       return instrumentTigris("deleteAgent", async () => {
         invalidate(slug);
+        // Full cleanup on delete: the whole prefix, KV data included.
         await deleteByPrefix(agentPrefix(slug));
         invalidate(slug);
       });

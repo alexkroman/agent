@@ -104,12 +104,17 @@ describe("createSandbox", () => {
     vi.restoreAllMocks();
   });
 
-  it("creates a sandbox and returns a runtime with expected shape", async () => {
+  it("exposes the runtime's real protocol config to the ws handler", async () => {
     const sandbox = createSandbox(makeSandboxOptions());
-    expect(sandbox).toBeDefined();
-    expect(typeof sandbox.startSession).toBe("function");
-    expect(typeof sandbox.shutdown).toBe("function");
-    expect(sandbox.readyConfig).toBeDefined();
+    // The values the ws handler sends to every client on connect — actual
+    // protocol behavior, not just "a config object exists".
+    expect(sandbox.readyConfig).toEqual(
+      expect.objectContaining({
+        audioFormat: "pcm16",
+        sampleRate: 16_000,
+        ttsSampleRate: 24_000,
+      }),
+    );
     await sandbox.shutdown();
   });
 
@@ -198,15 +203,9 @@ describe("createSandbox", () => {
     await sandbox.shutdown();
   });
 
-  it("startSession is a wrapped function (not the raw runtime version)", async () => {
-    const sandbox = createSandbox(makeSandboxOptions());
-
-    // startSession should be defined and callable
-    expect(typeof sandbox.startSession).toBe("function");
-    // It should be the wrapper, not the original — name check confirms wrapping
-    expect(sandbox.startSession.name).toBe("startSessionWithCleanup");
-    await sandbox.shutdown();
-  });
+  // The startSession wrapper's session-lifecycle behavior (sink registration,
+  // guest session/end notification, cleanup) is covered behaviorally in
+  // sandbox-session-cleanup.test.ts.
 
   it("passes harnessPath from GUEST_HARNESS_PATH env var to createSandboxVm", async () => {
     const { createSandboxVm } = await import("./sandbox-vm.ts");

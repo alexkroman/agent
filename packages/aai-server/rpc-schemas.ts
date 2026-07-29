@@ -18,8 +18,6 @@ import {
 } from "@alexkroman1/aai/manifest";
 import { z } from "zod";
 
-export { ToolSchemaSchema } from "@alexkroman1/aai/manifest";
-
 /**
  * Validated independently from `AgentConfig` (sdk/_internal-types.ts) so the
  * host↔guest wire format can evolve separately from the in-process type.

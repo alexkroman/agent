@@ -37,6 +37,19 @@ describe("fromBase64Url", () => {
     const decoded = fromBase64Url(encoded);
     expect(decoded).toEqual(new Uint8Array([251, 255, 254, 63, 62]));
   });
+
+  // Buffer.from silently drops characters outside the base64url alphabet, so
+  // without validation garbage would decode to *something* and flow into
+  // decryptEnv. fromBase64Url rejects it instead.
+  test("rejects characters outside the base64url alphabet", () => {
+    expect(() => fromBase64Url("!!!")).toThrow("Invalid base64url string");
+    expect(() => fromBase64Url("a b")).toThrow("Invalid base64url string");
+  });
+
+  test("rejects standard-base64 padding and symbols", () => {
+    expect(() => fromBase64Url("SGVsbG8=")).toThrow("Invalid base64url string");
+    expect(() => fromBase64Url("a+b/c")).toThrow("Invalid base64url string");
+  });
 });
 
 describe("round-trip", () => {

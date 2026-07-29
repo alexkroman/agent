@@ -19,23 +19,11 @@ import type { Vector } from "@alexkroman1/aai/runtime";
 import { z } from "zod";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
+// The single key grammar shared with the owner HTTP KV routes — a key
+// written on one boundary must always be reachable from the other.
+import { SafeKvKeySchema } from "./schemas.ts";
 
 // ── KV param schemas for guest → host validation ────────────────────────────
-
-/**
- * Safe KV key: non-empty, no path traversal. The agent prefix
- * (`agents/${slug}/kv`) uses `/` as the namespace separator, so we reject `/`,
- * `\`, `..`, and null bytes. `:` is allowed — it's a common Redis-style
- * delimiter for hierarchical keys (e.g. `incident:INC-0001`) and isn't used
- * by the prefix scheme.
- */
-const SafeKvKeySchema = z
-  .string()
-  .min(1)
-  .refine((k) => !k.includes("\0"), "Key must not contain null bytes")
-  .refine((k) => !k.includes("/"), "Key must not contain /")
-  .refine((k) => !k.includes("\\"), "Key must not contain \\")
-  .refine((k) => !k.includes(".."), "Key must not contain ..");
 
 const KvGetParamsSchema = z.object({ key: SafeKvKeySchema });
 const KvSetParamsSchema = z.object({

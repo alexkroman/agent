@@ -118,6 +118,12 @@ export const pendingHostRequests = new Map<
 
 /** Send an RPC request to the host and wait for its response. */
 function hostRequest(method: string, params: Record<string, unknown>): Promise<unknown> {
+  // A dead stdout means the host is gone: the request could never be
+  // written, so no response (only the 30s timeout) would ever settle it.
+  // Fail fast instead of parking every subsequent RPC for the full timeout.
+  if (stdoutDead) {
+    return Promise.reject(new Error(`Host RPC "${method}" failed: connection closed`));
+  }
   const id = hostRequestId++;
   const { promise, resolve, reject } = Promise.withResolvers<unknown>();
   const timer = setTimeout(() => {

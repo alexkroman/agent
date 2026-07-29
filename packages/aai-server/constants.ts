@@ -27,10 +27,12 @@ export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
 export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65_536;
 
 // ── Storage layout ──
-// Single source of truth for the `agents/{slug}` storage namespace. Note
-// that the platform-default KV lives under the same prefix, so a prefix
-// sweep of `agentPrefix(slug)` (deploy/delete) also removes the agent's
-// KV data.
+// Single source of truth for the `agents/{slug}` storage namespace. The
+// platform-default KV lives under the same prefix (`agentKvPrefix`), but
+// the two lifecycles differ: a redeploy replaces only the bundle objects
+// and preserves the KV sub-prefix (remember/recall state survives), while
+// deleting the agent sweeps the whole `agentPrefix(slug)`, KV included
+// (see bundle-store.ts).
 
 /** Root storage prefix for everything belonging to one agent. */
 export function agentPrefix(slug: string): string {

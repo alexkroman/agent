@@ -10,12 +10,12 @@
  */
 
 import { type ChildProcess, execFile, spawn } from "node:child_process";
+import { randomBytes } from "node:crypto";
 import { existsSync } from "node:fs";
 import { chmod, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
-import { nanoid } from "nanoid";
 import { metrics } from "./metrics.ts";
 import { buildOciSpec, type SandboxResourceLimits } from "./oci-spec.ts";
 
@@ -231,7 +231,7 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
   const { rootfsPath, libMounts } = await prepareRootfs(opts.harnessPath);
   const tRootfs = performance.now();
 
-  const containerId = `aai-${opts.slug}-${nanoid(8)}`;
+  const containerId = `aai-${opts.slug}-${randomBytes(6).toString("base64url")}`;
 
   const spec = buildOciSpec({
     rootfsPath,

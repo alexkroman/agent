@@ -14,29 +14,45 @@ let throwBrokenPipe = false;
 
 (globalThis as Record<string, unknown>).Deno = {
   stdout: {
-    writeSync(data: Uint8Array) {
-      if (throwBrokenPipe) throw new Error("Broken pipe (os error 32)");
+    write(data: Uint8Array) {
+      if (throwBrokenPipe) return Promise.reject(new Error("Broken pipe (os error 32)"));
       writtenBytes.push(new Uint8Array(data));
-      return data.byteLength;
+      return Promise.resolve(data.byteLength);
     },
   },
   exit: vi.fn(),
   stdin: undefined,
 };
 
-const { sendResponse } = await import("./harness-rpc.ts");
+const { kvAdapter, pendingHostRequests, sendResponse } = await import("./harness-rpc.ts");
 
 describe("writeMessage on a broken stdout pipe", () => {
-  test("swallows the throw, marks the pipe dead, and drops further writes", () => {
+  test("swallows the throw, marks the pipe dead, and drops further writes", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     // Host closed the pipe: the write must not throw (sendError inside
     // dispatchMessage's catch would otherwise throw again during teardown).
     throwBrokenPipe = true;
-    expect(() => sendResponse(1, { ok: true })).not.toThrow();
+    await expect(sendResponse(1, { ok: true })).resolves.toBeUndefined();
 
     // Even if the pipe were somehow writable again, the connection is dead —
     // later writes are dropped rather than retried.
     throwBrokenPipe = false;
-    sendResponse(2, { ok: true });
+    await sendResponse(2, { ok: true });
     expect(writtenBytes).toEqual([]);
+    errorSpy.mockRestore();
+  });
+
+  test("hostRequest rejects synchronously once stdout is dead", async () => {
+    // The pipe is dead (previous test's sticky module state; sendResponse
+    // below would re-kill it either way). A guest→host RPC can never be
+    // written, so it must fail fast with a clear error instead of parking a
+    // pending entry for the full 30s timeout.
+    await sendResponse(3, { ok: true });
+
+    await expect(kvAdapter.get("any-key")).rejects.toThrow(
+      'Host RPC "kv/get" failed: connection closed',
+    );
+    // No pending entry (and no timeout timer) was ever registered.
+    expect(pendingHostRequests.size).toBe(0);
   });
 });

@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { createUnstorageKv } from "@alexkroman1/aai/runtime";
 import { createStorage } from "unstorage";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ByteBudgetTtlCache, createBundleStore } from "./bundle-store.ts";
-import { agentObjectKey } from "./constants.ts";
+import { agentKvPrefix, agentObjectKey } from "./constants.ts";
 import { importMasterKey } from "./secrets.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
@@ -184,6 +185,68 @@ describe("bundle store (unstorage)", () => {
     expect(await store.getWorkerCode("test-agent")).toBe("v2");
   });
 
+  test("redeploy preserves the agent's platform-default KV data", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { A: "1" },
+      worker: "v1",
+      clientFiles: { "index.html": "<html>v1</html>", "assets/old.js": "old" },
+      credential_hashes: ["hash1"],
+      agentConfig: { ...TEST_AGENT_CONFIG, name: "v1" },
+    });
+
+    // The agent's remember/recall state lives under the kv/ sub-prefix.
+    const kv = createUnstorageKv({ storage, prefix: agentKvPrefix("test-agent") });
+    await kv.set("memory", { note: "keep me" });
+    await kv.set("counter", 42);
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { A: "2" },
+      worker: "v2",
+      clientFiles: { "index.html": "<html>v2</html>", "assets/new.js": "new" },
+      credential_hashes: ["hash1"],
+      agentConfig: { ...TEST_AGENT_CONFIG, name: "v2" },
+    });
+
+    // KV entries survive the redeploy...
+    expect(await kv.get("memory")).toEqual({ note: "keep me" });
+    expect(await kv.get("counter")).toBe(42);
+    // ...while the bundle objects were fully replaced.
+    expect(await store.getWorkerCode("test-agent")).toBe("v2");
+    expect(await store.getClientFile("test-agent", "index.html")).toBe("<html>v2</html>");
+    expect(await store.getClientFile("test-agent", "assets/new.js")).toBe("new");
+    expect(await store.getClientFile("test-agent", "assets/old.js")).toBeNull();
+    expect((await store.getManifest("test-agent"))?.env).toEqual({ A: "2" });
+    expect((await store.getAgentConfig("test-agent"))?.name).toBe("v2");
+  });
+
+  test("deleteAgent wipes the agent's KV data along with the bundle", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: {},
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+    const kv = createUnstorageKv({ storage, prefix: agentKvPrefix("test-agent") });
+    await kv.set("memory", "gone after delete");
+
+    await store.deleteAgent("test-agent");
+
+    expect(await kv.get("memory")).toBeNull();
+    expect(await store.getManifest("test-agent")).toBeNull();
+  });
+
   test("deleteAgent removes all files", async () => {
     const storage = createStorage();
     const masterKey = await importMasterKey("test-secret");
@@ -357,6 +420,60 @@ describe("bundle store (unstorage)", () => {
     const code = await store.getWorkerCode("test-agent");
     expect(code).toBe("console.log('cached');");
     expect(reads).toBe(0);
+  });
+
+  test("a cached worker-code miss expires on the short TTL while a hit lives the long one", async () => {
+    vi.useFakeTimers();
+    try {
+      const storage = createStorage();
+      const masterKey = await importMasterKey("test-secret");
+      const store = createBundleStore(storage, { masterKey });
+
+      await store.putAgent({
+        slug: "test-agent",
+        env: {},
+        worker: "v1",
+        clientFiles: {},
+        credential_hashes: ["hash1"],
+        agentConfig: TEST_AGENT_CONFIG,
+      });
+
+      // Prime a hit and a confirmed miss.
+      expect(await store.getWorkerCode("test-agent")).toBe("v1");
+      expect(await store.getWorkerCode("ghost")).toBeNull();
+
+      // The missing worker appears in storage (deploy landed on another
+      // replica during our delete→write window).
+      await storage.setItem(agentObjectKey("ghost", "worker.js"), "late");
+
+      let reads = 0;
+      const originalGetItem = storage.getItem.bind(storage);
+      storage.getItem = (async (key: string) => {
+        reads++;
+        return originalGetItem(key);
+      }) as typeof storage.getItem;
+
+      // Inside the short TTL both answers still come from the cache.
+      vi.advanceTimersByTime(59_999);
+      expect(await store.getWorkerCode("ghost")).toBeNull();
+      expect(await store.getWorkerCode("test-agent")).toBe("v1");
+      expect(reads).toBe(0);
+
+      // Past the short TTL the miss is re-probed (and now found)...
+      vi.advanceTimersByTime(2);
+      expect(await store.getWorkerCode("ghost")).toBe("late");
+      expect(reads).toBe(1);
+      // ...while the hit still lives on the long worker TTL.
+      expect(await store.getWorkerCode("test-agent")).toBe("v1");
+      expect(reads).toBe(1);
+
+      // Past the long TTL the hit expires too.
+      vi.advanceTimersByTime(10 * 60 * 1000);
+      expect(await store.getWorkerCode("test-agent")).toBe("v1");
+      expect(reads).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("putAgent invalidates the worker-code cache", async () => {
@@ -560,5 +677,19 @@ describe("ByteBudgetTtlCache", () => {
     const cache = new ByteBudgetTtlCache<string | null>(60_000, 250_000);
     cache.set("missing", null, 0);
     expect(cache.get("missing")).toBeNull();
+  });
+
+  test("a per-set TTL overrides the cache-wide TTL for that entry", () => {
+    vi.useFakeTimers();
+    const cache = new ByteBudgetTtlCache<string | null>(60_000, 250_000);
+    cache.set("short", null, 0, 10_000);
+    cache.set("long", "L", KB100);
+
+    vi.advanceTimersByTime(10_000);
+    expect(cache.get("short")).toBeUndefined();
+    expect(cache.get("long")).toBe("L");
+
+    vi.advanceTimersByTime(50_000);
+    expect(cache.get("long")).toBeUndefined();
   });
 });

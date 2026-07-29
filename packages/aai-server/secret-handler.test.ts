@@ -1,5 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { expect, test } from "vitest";
+import { expect, test, vi } from "vitest";
+import type { AppContext } from "./context.ts";
+import { handleSecretDelete } from "./secret-handler.ts";
 import { createTestOrchestrator, deployAgent } from "./test-utils.ts";
 
 async function deployAndAuth(slug = "my-agent", key = "key1") {
@@ -108,6 +110,49 @@ test("secret delete allows removing ASSEMBLYAI_API_KEY", async () => {
     headers: { Authorization: `Bearer ${key}` },
   });
   expect(res.status).toBe(200);
+});
+
+test("secret delete of a missing key is a no-op: no manifest rewrite, unchanged keys", async () => {
+  const { fetch, store, key } = await deployAndAuth();
+  await fetch(...secretReq("my-agent", key, "PUT", { KEEP: "val" }));
+  const putEnvSpy = vi.spyOn(store, "putEnv");
+
+  const res = await fetch("/my-agent/secret/MISSING", {
+    method: "DELETE",
+    headers: { Authorization: `Bearer ${key}` },
+  });
+
+  expect(res.status).toBe(200);
+  const body = (await res.json()) as Record<string, unknown>;
+  expect(body.ok).toBe(true);
+  expect(body.keys).toEqual(["KEEP"]);
+  expect(putEnvSpy).not.toHaveBeenCalled();
+
+  const listRes = await fetch(...secretReq("my-agent", key, "GET"));
+  expect(((await listRes.json()) as Record<string, unknown>).vars).toEqual(["KEEP"]);
+});
+
+test("secret delete of a missing key does not restart the agent's sandbox", async () => {
+  const shutdown = vi.fn().mockResolvedValue(undefined);
+  const store = {
+    getEnv: vi.fn().mockResolvedValue({ KEEP: "val" }),
+    putEnv: vi.fn().mockResolvedValue(undefined),
+  };
+  // A live slot with a running sandbox: a real delete would terminate it.
+  const slots = new Map([["my-agent", { slug: "my-agent", keyHash: "h", sandbox: { shutdown } }]]);
+  const c = {
+    var: { slug: "my-agent" },
+    req: { param: () => "MISSING" },
+    env: { store, slots },
+    json: (body: unknown) => Response.json(body),
+  } as unknown as AppContext;
+
+  const res = await handleSecretDelete(c);
+
+  expect(res.status).toBe(200);
+  expect((await res.json()) as Record<string, unknown>).toEqual({ ok: true, keys: ["KEEP"] });
+  expect(store.putEnv).not.toHaveBeenCalled();
+  expect(shutdown).not.toHaveBeenCalled();
 });
 
 test("secret delete returns 404 for unknown agent", async () => {

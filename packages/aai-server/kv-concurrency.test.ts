@@ -94,12 +94,27 @@ describe("KV concurrency", () => {
     expect(val === null || typeof val === "string").toBe(true);
   });
 
-  test("concurrent close and operations don't throw", async () => {
+  test("close during in-flight operations settles everything and disposes the data", async () => {
     const kv = createUnstorageKv({ storage, prefix: "agents/a/kv" });
     await kv.set("k", "v");
-    // Close while operations may be in flight
+
+    // close() is a best-effort dispose (fire-and-forget by contract): fire it
+    // while writes are in flight. Every operation must settle — no throw, no
+    // rejection — because a dispose failure is swallowed by design.
+    const inFlight = [kv.set("a", 1), kv.set("b", 2), kv.get("k")];
     kv.close?.();
-    // Further operations after close — should not throw hard errors
-    // (behavior is undefined but shouldn't crash the process)
+    await expect(Promise.all(inFlight)).resolves.toBeDefined();
+
+    // dispose() runs on a microtask after close(); let it settle. The memory
+    // driver's dispose clears stored data, so pre-close writes are gone.
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(await kv.get("k")).toBeNull();
+
+    // The store stays functional after close: operations still settle and
+    // remain read-your-writes rather than corrupting or crashing.
+    await kv.set("after-close", "ok");
+    expect(await kv.get("after-close")).toBe("ok");
+    await kv.delete("after-close");
+    expect(await kv.get("after-close")).toBeNull();
   });
 });

@@ -275,6 +275,88 @@ describe("fetch/request handler", () => {
   });
 });
 
+// ── Hostile guest params ──────────────────────────────────────────────────────
+//
+// The guest is untrusted: malformed or malicious RPC params must come back as
+// JSON-RPC error responses on the wire — never crash the host or reach the
+// underlying Kv/Vector — and the connection must keep serving requests.
+
+describe("hostile guest RPC params", () => {
+  let hostReadable: PassThrough;
+  let hostWritable: PassThrough;
+  let writtenLines: string[];
+  let conn: NdjsonConnection;
+
+  beforeEach(() => {
+    const result = createTestConn();
+    hostReadable = result.hostReadable;
+    hostWritable = result.hostWritable;
+    writtenLines = result.writtenLines;
+    conn = result.conn;
+  });
+
+  afterEach(() => {
+    hostReadable.destroy();
+    hostWritable.destroy();
+  });
+
+  function pushRequest(id: number, method: string, paramsJson: string): void {
+    // Params arrive as a raw JSON string so hostile shapes like "__proto__"
+    // keys survive exactly as a compromised guest would put them on the wire
+    // (a JS object literal would set the prototype instead of a property).
+    hostReadable.push(`{"jsonrpc":"2.0","id":${id},"method":"${method}","params":${paramsJson}}\n`);
+  }
+
+  it("answers hostile kv/vector params with JSON-RPC errors and keeps serving", async () => {
+    const kvGetSpy = vi.fn().mockResolvedValue("legit-value");
+    const kvSetSpy = vi.fn().mockResolvedValue(undefined);
+    const kv = { get: kvGetSpy, set: kvSetSpy, delete: vi.fn().mockResolvedValue(undefined) };
+    const querySpy = vi.fn().mockResolvedValue([]);
+    const vector = {
+      upsert: vi.fn().mockResolvedValue(undefined),
+      query: querySpy,
+      delete: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const opts = baseOpts({ kv, vector });
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const detach = autorespondBundleLoad(hostWritable, hostReadable);
+    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
+    detach();
+
+    // Non-string key.
+    pushRequest(801, "kv/set", JSON.stringify({ key: {}, value: "v" }));
+    // Path traversal in the key.
+    pushRequest(802, "kv/set", JSON.stringify({ key: "../../other-agent/kv/steal", value: "v" }));
+    // topK as a huge string instead of a number.
+    pushRequest(803, "vector/query", JSON.stringify({ text: "q", topK: "9".repeat(10_000) }));
+    // Prototype-pollution-shaped payload (no valid key at all).
+    pushRequest(804, "kv/set", '{"__proto__":{"polluted":true}}');
+
+    for (const id of [801, 802, 803, 804]) {
+      await waitForResponseId(writtenLines, id);
+      const response = findResponseById(writtenLines, id);
+      expect(response?.error, `request ${id} must fail`).toBeDefined();
+      expect(response?.result).toBeUndefined();
+    }
+
+    // Nothing reached the underlying stores, and no prototype was polluted.
+    expect(kvSetSpy).not.toHaveBeenCalled();
+    expect(querySpy).not.toHaveBeenCalled();
+    expect(({} as Record<string, unknown>).polluted).toBeUndefined();
+
+    // The connection survived: a legitimate request still round-trips.
+    pushRequest(805, "kv/get", JSON.stringify({ key: "legit" }));
+    await waitForResponseId(writtenLines, 805);
+    const ok = findResponseById(writtenLines, 805);
+    expect(ok?.error).toBeUndefined();
+    expect(ok?.result).toBe("legit-value");
+    expect(kvGetSpy).toHaveBeenCalledWith("legit");
+
+    handle.conn.dispose();
+  });
+});
+
 // ── kv/* delegation through resolved Kv tests ────────────────────────────────
 
 describe("kv/* handlers via injected Kv", () => {

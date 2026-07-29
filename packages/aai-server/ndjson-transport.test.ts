@@ -2,7 +2,7 @@
 
 import { PassThrough } from "node:stream";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createNdjsonConnection } from "./ndjson-transport.ts";
+import { createNdjsonConnection, MAX_NDJSON_LINE_BYTES } from "./ndjson-transport.ts";
 
 // Helper: collect lines written to a writable stream
 function collectLines(stream: PassThrough): string[] {
@@ -311,6 +311,46 @@ describe("createNdjsonConnection", () => {
     // sends must be no-ops against the dead stream.
     await new Promise((resolve) => setImmediate(resolve));
     expect(() => conn.sendNotification("evt", { after: true })).not.toThrow();
+  });
+
+  // ── per-line byte cap ────────────────────────────────────────────────────
+
+  it("tears down the transport when a line exceeds the byte cap", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const conn = createNdjsonConnection(readable, writable);
+    conn.listen();
+
+    const pending = conn.sendRequest("slow");
+    await vi.waitFor(() => expect(writtenLines.length).toBeGreaterThan(0));
+
+    // A hostile peer streams past the cap without ever sending a newline.
+    // Written in two chunks so the byte counter must carry across chunks.
+    const half = Buffer.alloc(Math.ceil(MAX_NDJSON_LINE_BYTES / 2) + 1, 0x61);
+    readable.push(half);
+    readable.push(half);
+
+    // The pending request fails with the cap violation, not the 30s timeout.
+    await expect(pending).rejects.toThrow(/NDJSON line exceeded \d+ bytes/);
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining("NDJSON line exceeded"));
+
+    // The transport is dead: further requests fail fast.
+    await expect(conn.sendRequest("after")).rejects.toThrow("Connection disposed");
+    errorSpy.mockRestore();
+  });
+
+  it("still parses a legitimate large line under the cap", async () => {
+    const conn = createNdjsonConnection(readable, writable);
+    conn.listen();
+
+    const pending = conn.sendRequest<string>("big");
+    await vi.waitFor(() => expect(writtenLines.length).toBeGreaterThan(0));
+    const sent = JSON.parse(writtenLines.at(0) ?? "");
+
+    // ~10 MB payload — the size of a max worker bundle — well under the cap.
+    const big = "x".repeat(10_000_000);
+    writeMessage(readable, { jsonrpc: "2.0", id: sent.id, result: big });
+
+    await expect(pending).resolves.toBe(big);
   });
 
   // ── dispose ──────────────────────────────────────────────────────────────

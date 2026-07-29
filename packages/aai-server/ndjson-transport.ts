@@ -9,7 +9,7 @@
 // and -32603 for handler failures (the guest harness speaks exactly this).
 
 import { createInterface } from "node:readline";
-import type { Readable, Writable } from "node:stream";
+import { type Readable, Transform, type Writable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import {
   createJSONRPCErrorResponse,
@@ -66,6 +66,56 @@ const JsonRpcNotificationSchema = z.object({
  * forever.
  */
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
+
+/**
+ * Hard cap on one NDJSON line. Without it, a compromised guest can stream
+ * gigabytes with no newline and grow the host's readline buffer without
+ * bound — a cross-tenant DoS on the shared host process.
+ *
+ * Sizing: the largest legitimate frames are `bundle/load` requests carrying
+ * a whole worker bundle (MAX_WORKER_SIZE, 10 MB, and JSON string escaping
+ * can roughly double that in pathological bundles) and proxied-fetch bodies
+ * (1 MB, ~1.4 MB as base64). 32 MB clears both with generous headroom while
+ * still bounding a hostile stream to a small constant.
+ */
+export const MAX_NDJSON_LINE_BYTES = 32 * 1024 * 1024;
+
+/**
+ * Pass-through that counts bytes since the last newline and fires
+ * `onExceeded` once a single line exceeds `maxLineBytes` — readline never
+ * sees the oversized line, so its internal buffer stays bounded. After the
+ * cap trips, all further input is swallowed (the callback handles teardown;
+ * erroring the Transform mid-pipe would raise an uncaught stream error).
+ */
+function createLineCapGuard(maxLineBytes: number, onExceeded: (err: Error) => void): Transform {
+  // Bytes accumulated on the current (not yet newline-terminated) line.
+  let lineBytes = 0;
+  let exceeded = false;
+  return new Transform({
+    transform(chunk: Buffer, _encoding, callback) {
+      if (exceeded) {
+        callback();
+        return;
+      }
+      let start = 0;
+      while (start <= chunk.length) {
+        const nl = chunk.indexOf(0x0a, start);
+        const segmentEnd = nl === -1 ? chunk.length : nl;
+        lineBytes += segmentEnd - start;
+        if (lineBytes > maxLineBytes) {
+          exceeded = true;
+          onExceeded(new Error(`NDJSON line exceeded ${maxLineBytes} bytes without a newline`));
+          callback();
+          return;
+        }
+        if (nl === -1) break;
+        lineBytes = 0;
+        start = nl + 1;
+      }
+      callback(null, chunk);
+    },
+  });
+}
 
 export interface NdjsonConnection {
   sendRequest<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T>;
@@ -268,7 +318,18 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
     },
 
     listen(): void {
-      rl = createInterface({ input: readable, crlfDelay: Number.POSITIVE_INFINITY });
+      // Cap line length BEFORE readline buffers it (see MAX_NDJSON_LINE_BYTES).
+      const guard = createLineCapGuard(MAX_NDJSON_LINE_BYTES, (err) => {
+        // Fatal transport error: same teardown as a closed connection, with
+        // the cap violation as the pending-rejection reason. Destroy the
+        // source too so a hostile peer can't keep streaming into the pipe
+        // (deferred a tick — this fires from inside the pipe's write path).
+        console.error(`NDJSON transport error: ${errorMessage(err)}`);
+        rejectAllPending(errorMessage(err));
+        rl?.close();
+        process.nextTick(() => readable.destroy());
+      });
+      rl = createInterface({ input: readable.pipe(guard), crlfDelay: Number.POSITIVE_INFINITY });
       rl.on("line", handleLine);
       rl.on("close", () => {
         rejectAllPending("Connection closed");
