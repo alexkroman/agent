@@ -1,5 +1,11 @@
 # aai-templates
 
+## 0.2.0
+
+### Minor Changes
+
+- c5a5351: Add pipeline-mode silence nudge: new silenceTimeoutMs and silencePrompt agent config fields make the assistant proactively take a turn after a period of user silence (capped at 3 consecutive nudges until the user speaks again)
+
 ## 0.1.0
 
 ### Minor Changes

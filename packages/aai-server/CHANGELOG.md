@@ -1,5 +1,107 @@
 # @alexkroman1/aai-server
 
+## 1.2.0
+
+### Minor Changes
+
+- c5a5351: Add pipeline-mode silence nudge: new silenceTimeoutMs and silencePrompt agent config fields make the assistant proactively take a turn after a period of user silence (capped at 3 consecutive nudges until the user speaks again)
+- 82f8253: Performance pass on the platform server: guest fetch requests use guest-generated ids so rejection notifications can no longer race the RPC ack (previously a disallowed-host fetch stalled 30s and leaked a pending entry), the warm sandbox pool recovers from spawn failures with exponential-backoff cooldown instead of disabling itself permanently, worker bundles are TTL-cached like manifests, the guest NDJSON line splitter is linear instead of quadratic on large bundle loads, PBKDF2 hashing is skipped for requests to nonexistent slugs, tool-call RPC responses no longer round-trip unused session state, NDJSON writes respect stream backpressure (host drain-aware queue, guest full-write loop), keyed slug locks free their map entries when released (p-lock dependency removed), custom-event size caps measure UTF-8 bytes, and deploy uploads accept gzip-compressed bodies with a decompressed-size limit.
+- d718fe9: The platform server root now serves a browser studio: a coding agent (Vercel AI SDK `streamText` loop, streamed to a React `useChat` client as the AI SDK UI message stream) that edits per-API-key server-side workspaces and builds, tests, and deploys voice agents directly from the browser. The agent's code-executing work runs in per-session sandboxes provisioned through the same warm-pool/gVisor infrastructure as deployed agents: bundles are built in-memory with esbuild (import allowlist), loaded and trial-run in the sandbox (`test_agent`), and config extraction happens in-guest via a self-describing `__aaiConfig` export — user code is never evaluated on the host. Chat LLM defaults to the AssemblyAI LLM Gateway (`ASSEMBLYAI_API_KEY`) with Anthropic fallback, configurable to any pipeline-mode provider via `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL`; the system prompt embeds the CLI's scaffold CLAUDE.md authoring guide. `studio` and `studio-assets` are now reserved slugs.
+
+### Patch Changes
+
+- 38a2553: Replace hand-rolled HTTP, retry, cache, and child-process plumbing with ofetch, p-retry + is-network-error, quick-lru, and execa
+- 8817f3f: Remove unused code and fallback paths: legacy host-guest RPC schemas, backward-compat aliases (`pendingKvRequests`, `handleKvResponse`), unused exports (`jsonLogger`, `touchSlot`, `S2sEvent`, `DEFAULT_THEME`, unused metric label types), legacy OpenAI Realtime beta event-name fallbacks, inert CLI flags (`--server`/`--yes` on commands that never read them), and over-exported internal types.
+- a252842: Bump dev dependencies: `tsdown`, `@biomejs/biome`, `@changesets/cli`, `knip`,
+  `markdownlint-cli2`, `publint`, `turbo`, `@tailwindcss/vite`,
+  `@vitejs/plugin-react`, `react`/`react-dom` (also widening the `aai-ui` peer
+  range to `^19.2.8`), and the `@pinecone-database/pinecone` peer range to
+  `^8.1.0`.
+- bbb9d73: Bump production dependencies: `@ai-sdk/*` providers, `ai`, `assemblyai`,
+  `@cartesia/cartesia-js`, `@deepgram/sdk`, `@elevenlabs/elevenlabs-js`,
+  `hono`, `@hono/node-server`, and `vite`.
+- cf56703: Use `AbortSignal.timeout` for the sandbox fetch timeout, `Promise.withResolvers` for NDJSON/guest RPC correlation, and `structuredClone` for per-session state isolation.
+- 0c57887: Use the SDK's relocated SSRF module, drop the now-redundant local safeFetch wrapper, and check slug ownership on generated-slug deploys so a humanId collision can't overwrite an existing agent.
+- 3db093f: Internal refactor: split oversized modules at natural seams (no behavior change). `host/runtime.ts` → transport construction extracted to `host/runtime-transport.ts`; `host/transports/pipeline-transport.ts` → STT/TTS provider lifecycle extracted to `host/transports/pipeline-providers.ts`; `aai-server/sandbox-vm.ts` → guest KV/Vector/fetch RPC surface extracted to `sandbox-guest-rpc.ts`. Oversized test files split alongside.
+- Updated dependencies [0235618]
+- Updated dependencies [4758dfc]
+- Updated dependencies [0f72bef]
+- Updated dependencies [56e96b5]
+- Updated dependencies [bc62b75]
+- Updated dependencies [7e67c24]
+- Updated dependencies [38a2553]
+- Updated dependencies [8817f3f]
+- Updated dependencies [394867e]
+- Updated dependencies [8004ff8]
+- Updated dependencies [262f1e7]
+- Updated dependencies [82f8253]
+- Updated dependencies [257a372]
+- Updated dependencies [0bdb115]
+- Updated dependencies [578a840]
+- Updated dependencies [c5a5351]
+- Updated dependencies [0235618]
+- Updated dependencies [0235618]
+- Updated dependencies [a252842]
+- Updated dependencies [bbb9d73]
+- Updated dependencies [257a372]
+- Updated dependencies [d718fe9]
+- Updated dependencies [a413caf]
+- Updated dependencies [d718fe9]
+- Updated dependencies [2898f21]
+- Updated dependencies [882e7d9]
+- Updated dependencies [e2ee4fd]
+- Updated dependencies [9750db7]
+- Updated dependencies [0d024e0]
+- Updated dependencies [cb2821c]
+- Updated dependencies [9aed108]
+- Updated dependencies [257a372]
+- Updated dependencies [d718fe9]
+- Updated dependencies [ab38293]
+- Updated dependencies [d718fe9]
+- Updated dependencies [968c917]
+- Updated dependencies [257a372]
+- Updated dependencies [d718fe9]
+- Updated dependencies [860bb7d]
+- Updated dependencies [82f8253]
+- Updated dependencies [d718fe9]
+- Updated dependencies [7240ce5]
+- Updated dependencies [f22b0f4]
+- Updated dependencies [0bb1a20]
+- Updated dependencies [7d4a193]
+- Updated dependencies [5bf4d41]
+- Updated dependencies [ad295be]
+- Updated dependencies [d22d9f8]
+- Updated dependencies [8f2093b]
+- Updated dependencies [296a874]
+- Updated dependencies [752af3d]
+- Updated dependencies [38f02fa]
+- Updated dependencies [d718fe9]
+- Updated dependencies [d718fe9]
+- Updated dependencies [82f8253]
+- Updated dependencies [257a372]
+- Updated dependencies [d718fe9]
+- Updated dependencies [d718fe9]
+- Updated dependencies [d718fe9]
+- Updated dependencies [2fd1078]
+- Updated dependencies [711edeb]
+- Updated dependencies [fd5a54e]
+- Updated dependencies [a413caf]
+- Updated dependencies [3db093f]
+- Updated dependencies [0c57887]
+- Updated dependencies [79e51cb]
+- Updated dependencies [d718fe9]
+- Updated dependencies [d718fe9]
+- Updated dependencies [578a840]
+- Updated dependencies [0235618]
+- Updated dependencies [cf56703]
+- Updated dependencies [115a88e]
+- Updated dependencies [d718fe9]
+- Updated dependencies [d718fe9]
+  - @alexkroman1/aai@1.9.0
+  - @alexkroman1/aai-cli@1.9.0
+  - @alexkroman1/aai-ui@1.9.0
+  - aai-studio-client@0.1.1
+
 ## 1.1.9
 
 ### Patch Changes
