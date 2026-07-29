@@ -3,46 +3,59 @@ import { z } from "zod";
 import {
   ARCHETYPES,
   chooseStoryStructure,
-  clockSummary,
   creativitySeed,
+  DEFAULT_STATE,
   DISPOSITIONS,
   GENRES,
-  getGameState,
+  MAX_CLOCK_SEGMENTS,
+  MIN_CLOCK_SEGMENTS,
   makeNpc,
-  npcSummary,
   saveGameState,
+  shuffle,
+  stateSummary,
   TIME_PHASES,
   TONES,
 } from "../shared.ts";
 
 export const setupCharacter = tool({
   description:
-    "Set up the entire game in one call. Generates stats, initializes state, and marks the game as ready. After this returns, just narrate the opening scene. No need to call update_state — everything is already done.",
+    "Set up the entire game in one call. Starts a completely fresh game (any previous unsaved game is replaced), generates stats, initializes state, and marks the game as ready. After this returns, just narrate the opening scene. No need to call update_state — everything is already done.",
   parameters: z.object({
-    genre: z.string().describe("Chosen genre code or custom description"),
-    tone: z.string().describe("Chosen tone code or custom description"),
-    archetype: z.string().describe("Chosen archetype code or custom description"),
-    playerName: z.string().describe("Character name"),
-    characterConcept: z.string().describe("One-line character concept"),
-    settingDescription: z.string().describe("Two to three sentence setting description"),
-    startingLocation: z.string().describe("Name of starting location"),
-    locationDesc: z.string().describe("One sentence description of starting location"),
+    genre: z.string().max(100).describe("Chosen genre code or custom description"),
+    tone: z.string().max(100).describe("Chosen tone code or custom description"),
+    archetype: z.string().max(100).describe("Chosen archetype code or custom description"),
+    playerName: z.string().max(100).describe("Character name"),
+    characterConcept: z.string().max(300).describe("One-line character concept"),
+    settingDescription: z.string().max(1000).describe("Two to three sentence setting description"),
+    startingLocation: z.string().max(200).describe("Name of starting location"),
+    locationDesc: z.string().max(500).describe("One sentence description of starting location"),
     timeOfDay: z.enum(TIME_PHASES).describe("Starting time of day"),
-    openingSituation: z.string().describe("One sentence dramatic hook for the opening scene"),
-    npc1Name: z.string().describe("First NPC name"),
-    npc1Desc: z.string().describe("First NPC one-line description"),
+    openingSituation: z
+      .string()
+      .max(500)
+      .describe("One sentence dramatic hook for the opening scene"),
+    npc1Name: z.string().max(100).describe("First NPC name"),
+    npc1Desc: z.string().max(300).describe("First NPC one-line description"),
     npc1Disposition: z.enum(DISPOSITIONS).describe("First NPC disposition"),
-    npc1Agenda: z.string().describe("First NPC agenda"),
-    threatClockName: z.string().describe("Name of initial threat clock"),
-    threatClockDesc: z.string().describe("What happens when the threat clock fills"),
-    threatClockSegments: z.number().describe("Segments for threat clock, default 6").optional(),
-    backstory: z.string().optional(),
-    wishes: z.string().optional(),
-    contentLines: z.string().optional(),
+    npc1Agenda: z.string().max(300).describe("First NPC agenda"),
+    threatClockName: z.string().max(100).describe("Name of initial threat clock"),
+    threatClockDesc: z.string().max(300).describe("What happens when the threat clock fills"),
+    threatClockSegments: z
+      .number()
+      .int()
+      .min(MIN_CLOCK_SEGMENTS)
+      .max(MAX_CLOCK_SEGMENTS)
+      .describe("Segments for threat clock, default 6")
+      .optional(),
+    backstory: z.string().max(2000).optional(),
+    wishes: z.string().max(1000).optional(),
+    contentLines: z.string().max(1000).optional(),
     kidMode: z.boolean().optional(),
   }),
   async execute(args, ctx) {
-    const state = await getGameState(ctx.kv);
+    // Always start from a pristine state — re-running setup begins a new
+    // story instead of layering NPCs/clocks onto a stale one.
+    const state = structuredClone(DEFAULT_STATE);
 
     // Store creation choices
     state.settingGenre = args.genre;
@@ -57,11 +70,7 @@ export const setupCharacter = tool({
     state.kidMode = args.kidMode ?? false;
 
     // Generate stats: one at 3, two at 2, two at 1 (total = 7)
-    const statValues = [3, 2, 2, 1, 1];
-    for (let i = statValues.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [statValues[i], statValues[j]] = [statValues[j]!, statValues[i]!];
-    }
+    const statValues = shuffle([3, 2, 2, 1, 1]);
     const archetypeBias: Record<string, number> = {
       outsider_loner: 0,
       investigator: 4,
@@ -108,7 +117,6 @@ export const setupCharacter = tool({
       segments: args.threatClockSegments ?? 6,
       filled: 0,
       triggerDescription: args.threatClockDesc,
-      owner: "world",
     });
 
     // Story blueprint
@@ -173,8 +181,6 @@ export const setupCharacter = tool({
                 transitionTrigger: "Story reaches its conclusion",
               },
             ],
-      revelations: [],
-      possibleEndings: [],
       currentAct: 1,
       storyComplete: false,
     };
@@ -184,49 +190,19 @@ export const setupCharacter = tool({
     state.phase = "playing";
     state.sceneCount = 1;
 
-    await saveGameState(ctx.kv, state);
+    await saveGameState(ctx.kv, ctx.sessionId, state);
     ctx.send("game_state", state);
 
     return {
       success: true,
-      initialized: true,
-      playerName: state.playerName,
-      characterConcept: state.characterConcept,
-      settingGenre: GENRES[args.genre as keyof typeof GENRES] || args.genre,
-      settingTone: TONES[args.tone as keyof typeof TONES] || args.tone,
-      settingArchetype: ARCHETYPES[args.archetype as keyof typeof ARCHETYPES] || args.archetype,
-      settingDescription: state.settingDescription,
-      stats: {
-        edge: state.edge,
-        heart: state.heart,
-        iron: state.iron,
-        shadow: state.shadow,
-        wits: state.wits,
-      },
-      health: 5,
-      spirit: 5,
-      supply: 5,
-      momentum: 2,
-      currentLocation: state.currentLocation,
-      currentSceneContext: state.currentSceneContext,
-      timeOfDay: state.timeOfDay,
-      chaosFactor: 5,
-      npcs: state.npcs.map(npcSummary),
-      clocks: state.clocks.map(clockSummary),
-      storyBlueprint: {
-        structureType: state.storyBlueprint.structureType,
-        currentAct: 1,
-        totalActs: state.storyBlueprint.acts.length,
-        centralConflict: state.storyBlueprint.centralConflict,
-        thematicThread: "",
-        storyComplete: false,
-        currentPhase: state.storyBlueprint.acts[0]?.phase,
-      },
+      // Human-readable labels when a known code was used
+      genreLabel: GENRES[args.genre as keyof typeof GENRES] || args.genre,
+      toneLabel: TONES[args.tone as keyof typeof TONES] || args.tone,
+      archetypeLabel: ARCHETYPES[args.archetype as keyof typeof ARCHETYPES] || args.archetype,
       openingSituation: args.openingSituation,
       creativitySeed: creativitySeed(),
-      phase: "playing",
-      sceneCount: 1,
-      kidMode: state.kidMode,
+      // The real saved state — never hardcoded values
+      ...stateSummary(state),
     };
   },
 });

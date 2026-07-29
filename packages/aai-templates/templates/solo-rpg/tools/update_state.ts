@@ -1,16 +1,21 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
-  clockSummary,
   DISPOSITIONS,
   getGameState,
+  MAX_BOND,
+  MAX_CLOCK_SEGMENTS,
+  MAX_CLOCKS,
+  MAX_NPCS,
   MAX_RESOURCE,
   MAX_SESSION_LOG,
+  MIN_CLOCK_SEGMENTS,
   MIN_MOMENTUM,
   makeNpc,
-  nextNpcId,
-  npcSummary,
+  nextSeqId,
   saveGameState,
+  stateSummary,
+  TIME_PHASES,
   updateCrisisFlags,
 } from "../shared.ts";
 
@@ -18,33 +23,41 @@ export const updateState = tool({
   description:
     "Lightweight state sync for during gameplay. Handles location changes, NPC additions, clock additions, time changes, and session log entries. Resource changes (health/spirit/supply/momentum) are auto-applied by action_roll — only use those fields here for manual adjustments like resting or trading. Pass only what changed.",
   parameters: z.object({
-    location: z.string().describe("New location name").optional(),
-    locationDesc: z.string().describe("Short location description").optional(),
-    timeOfDay: z.string().describe("New time of day").optional(),
-    health: z.number().optional(),
-    spirit: z.number().optional(),
-    supply: z.number().optional(),
-    momentum: z.number().optional(),
-    addNpcName: z.string().describe("New NPC name").optional(),
-    addNpcDesc: z.string().describe("New NPC one-line description").optional(),
+    location: z.string().max(200).describe("New location name").optional(),
+    locationDesc: z.string().max(500).describe("Short location description").optional(),
+    timeOfDay: z.enum(TIME_PHASES).describe("New time of day").optional(),
+    health: z.number().int().optional(),
+    spirit: z.number().int().optional(),
+    supply: z.number().int().optional(),
+    momentum: z.number().int().optional(),
+    addNpcName: z.string().max(100).describe("New NPC name").optional(),
+    addNpcDesc: z.string().max(300).describe("New NPC one-line description").optional(),
     addNpcDisposition: z.enum(DISPOSITIONS).describe("New NPC disposition").optional(),
-    addNpcAgenda: z.string().describe("New NPC agenda").optional(),
-    updateNpcId: z.string().describe("NPC id to update").optional(),
+    addNpcAgenda: z.string().max(300).describe("New NPC agenda").optional(),
+    updateNpcId: z.string().max(32).describe("NPC id to update").optional(),
     updateNpcDisposition: z.enum(DISPOSITIONS).optional(),
-    updateNpcBond: z.number().optional(),
+    updateNpcBond: z.number().int().min(0).max(MAX_BOND).optional(),
     updateNpcStatus: z.enum(["active", "background", "deceased"]).optional(),
-    addClockName: z.string().describe("New clock name").optional(),
+    addClockName: z.string().max(100).describe("New clock name").optional(),
     addClockType: z.enum(["threat", "progress", "scheme"]).optional(),
-    addClockSegments: z.number().describe("Number of segments, default 6").optional(),
-    addClockTrigger: z.string().describe("What happens when clock fills").optional(),
-    advanceClockName: z.string().describe("Clock name to advance by 1").optional(),
-    removeClockName: z.string().describe("Clock name to remove").optional(),
+    addClockSegments: z
+      .number()
+      .int()
+      .min(MIN_CLOCK_SEGMENTS)
+      .max(MAX_CLOCK_SEGMENTS)
+      .describe("Number of segments, default 6")
+      .optional(),
+    addClockTrigger: z.string().max(300).describe("What happens when clock fills").optional(),
+    advanceClockName: z.string().max(100).describe("Clock name to advance by 1").optional(),
+    removeClockName: z.string().max(100).describe("Clock name to remove").optional(),
     advanceAct: z.boolean().describe("Move to next story act").optional(),
     storyComplete: z.boolean().describe("Mark story as complete").optional(),
-    logEntry: z.string().describe("Short log entry for this scene").optional(),
+    logEntry: z.string().max(500).describe("Short log entry for this scene").optional(),
   }),
   async execute(args, ctx) {
-    const state = await getGameState(ctx.kv);
+    const state = await getGameState(ctx.kv, ctx.sessionId);
+    const warnings: string[] = [];
+    const clockEvents: { clock: string; trigger: string }[] = [];
 
     // Resources
     if (args.health !== undefined) state.health = Math.max(0, Math.min(MAX_RESOURCE, args.health));
@@ -54,29 +67,27 @@ export const updateState = tool({
       state.momentum = Math.max(MIN_MOMENTUM, Math.min(state.maxMomentum, args.momentum));
 
     // Location
-    if (args.location !== undefined) {
-      if (state.currentLocation && state.currentLocation !== args.location) {
-        state.locationHistory.push(state.currentLocation);
-        if (state.locationHistory.length > 5)
-          state.locationHistory = state.locationHistory.slice(-5);
-      }
-      state.currentLocation = args.location;
-    }
+    if (args.location !== undefined) state.currentLocation = args.location;
     if (args.locationDesc !== undefined) state.currentSceneContext = args.locationDesc;
     if (args.timeOfDay !== undefined) state.timeOfDay = args.timeOfDay;
 
     // Add NPC
     if (args.addNpcName) {
-      state.npcs.push(
-        makeNpc({
-          id: nextNpcId(state.npcs),
-          name: args.addNpcName,
-          description: args.addNpcDesc,
-          disposition: args.addNpcDisposition,
-          agenda: args.addNpcAgenda,
-          lastMentionScene: state.sceneCount,
-        }),
-      );
+      if (state.npcs.length >= MAX_NPCS) {
+        warnings.push(
+          `NPC limit of ${MAX_NPCS} reached — mark an existing NPC deceased or background instead.`,
+        );
+      } else {
+        state.npcs.push(
+          makeNpc({
+            id: nextSeqId(state.npcs, "npc"),
+            name: args.addNpcName,
+            description: args.addNpcDesc,
+            disposition: args.addNpcDisposition,
+            agenda: args.addNpcAgenda,
+          }),
+        );
+      }
     }
 
     // Update NPC
@@ -86,27 +97,36 @@ export const updateState = tool({
         if (args.updateNpcDisposition !== undefined) npc.disposition = args.updateNpcDisposition;
         if (args.updateNpcBond !== undefined) npc.bond = args.updateNpcBond;
         if (args.updateNpcStatus !== undefined) npc.status = args.updateNpcStatus;
-        npc.lastMentionScene = state.sceneCount;
+      } else {
+        warnings.push(`No NPC with id ${args.updateNpcId}.`);
       }
     }
 
     // Add clock
     if (args.addClockName) {
-      state.clocks.push({
-        id: `clock_${state.clocks.length + 1}`,
-        name: args.addClockName,
-        clockType: args.addClockType ?? "threat",
-        segments: args.addClockSegments ?? 6,
-        filled: 0,
-        triggerDescription: args.addClockTrigger ?? "",
-        owner: "world",
-      });
+      if (state.clocks.length >= MAX_CLOCKS) {
+        warnings.push(`Clock limit of ${MAX_CLOCKS} reached — remove a finished clock first.`);
+      } else {
+        state.clocks.push({
+          id: nextSeqId(state.clocks, "clock"),
+          name: args.addClockName,
+          clockType: args.addClockType ?? "threat",
+          segments: args.addClockSegments ?? 6,
+          filled: 0,
+          triggerDescription: args.addClockTrigger ?? "",
+        });
+      }
     }
 
     // Advance clock
     if (args.advanceClockName) {
       const clock = state.clocks.find((c) => c.name === args.advanceClockName);
-      if (clock) clock.filled = Math.min(clock.segments, clock.filled + 1);
+      if (clock && clock.filled < clock.segments) {
+        clock.filled = Math.min(clock.segments, clock.filled + 1);
+        if (clock.filled >= clock.segments) {
+          clockEvents.push({ clock: clock.name, trigger: clock.triggerDescription });
+        }
+      }
     }
 
     // Remove clock
@@ -140,51 +160,14 @@ export const updateState = tool({
     // Crisis check
     updateCrisisFlags(state);
 
-    await saveGameState(ctx.kv, state);
+    await saveGameState(ctx.kv, ctx.sessionId, state);
     ctx.send("game_state", state);
 
     return {
       success: true,
-      initialized: state.initialized,
-      phase: state.phase,
-      settingGenre: state.settingGenre,
-      settingTone: state.settingTone,
-      settingArchetype: state.settingArchetype,
-      settingDescription: state.settingDescription,
-      playerName: state.playerName,
-      characterConcept: state.characterConcept,
-      edge: state.edge,
-      heart: state.heart,
-      iron: state.iron,
-      shadow: state.shadow,
-      wits: state.wits,
-      health: state.health,
-      spirit: state.spirit,
-      supply: state.supply,
-      momentum: state.momentum,
-      maxMomentum: state.maxMomentum,
-      currentLocation: state.currentLocation,
-      currentSceneContext: state.currentSceneContext,
-      timeOfDay: state.timeOfDay,
-      chaosFactor: state.chaosFactor,
-      crisisMode: state.crisisMode,
-      gameOver: state.gameOver,
-      sceneCount: state.sceneCount,
-      npcs: state.npcs.map(npcSummary),
-      clocks: state.clocks.map(clockSummary),
-      storyBlueprint: state.storyBlueprint
-        ? {
-            structureType: state.storyBlueprint.structureType,
-            currentAct: state.storyBlueprint.currentAct,
-            totalActs: state.storyBlueprint.acts.length,
-            centralConflict: state.storyBlueprint.centralConflict,
-            thematicThread: state.storyBlueprint.thematicThread,
-            storyComplete: state.storyBlueprint.storyComplete,
-            currentPhase: state.storyBlueprint.acts[state.storyBlueprint.currentAct - 1]?.phase,
-          }
-        : null,
-      kidMode: state.kidMode,
-      sessionLog: state.sessionLog.slice(-5),
+      ...(warnings.length > 0 ? { warnings } : {}),
+      clockEvents,
+      ...stateSummary(state),
     };
   },
 });
