@@ -53,17 +53,17 @@ type StudioLlmEntry = {
  * https://www.assemblyai.com/docs/llm-gateway/available-models.
  *
  * Order matters: the first entry available in the configured region is the
- * default. `gpt-5.2` leads because OpenAI models are the only ones the
- * gateway documents streamed responses for — and it is the fastest of them
- * at a comparable LMArena score. Claude and Gemini do stream, but only once
- * their id-less `tool_calls` deltas are repaired (`_openai-stream-repair.ts`
- * in the SDK), so they are a step off the supported path.
+ * default. `gpt-5.5` leads because OpenAI models are the only ones the
+ * gateway documents streamed responses for. Claude and Gemini do stream,
+ * but only once their id-less `tool_calls` deltas are repaired
+ * (`_openai-stream-repair.ts` in the SDK), so they are a step off the
+ * supported path.
  */
 export const ASSEMBLYAI_GATEWAY_MODELS = [
-  "gpt-5.2",
-  // Leads the EU list — the OpenAI models above are US-only.
-  "claude-sonnet-4-6",
   "gpt-5.5",
+  // Leads the EU list — the OpenAI models are US-only.
+  "claude-sonnet-4-6",
+  "gpt-5.2",
   "gpt-5.1",
   "gpt-5",
   "gpt-5-mini",

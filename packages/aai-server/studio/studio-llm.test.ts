@@ -24,9 +24,9 @@ describe("LLM provider selection", () => {
 
   test("prefers the AssemblyAI LLM Gateway when its key is present", () => {
     const both = env({ ASSEMBLYAI_API_KEY: "k", ANTHROPIC_API_KEY: "k2" });
-    expect(selectStudioLlm(both)).toMatchObject({ provider: "assemblyai", model: "gpt-5.2" });
-    expect(studioLlmInfo(both)).toEqual({ provider: "assemblyai", model: "gpt-5.2" });
-    expect((studioModel(both) as { modelId: string }).modelId).toBe("gpt-5.2");
+    expect(selectStudioLlm(both)).toMatchObject({ provider: "assemblyai", model: "gpt-5.5" });
+    expect(studioLlmInfo(both)).toEqual({ provider: "assemblyai", model: "gpt-5.5" });
+    expect((studioModel(both) as { modelId: string }).modelId).toBe("gpt-5.5");
   });
 
   test("falls back to Anthropic when only its key is present", () => {
@@ -50,7 +50,7 @@ describe("LLM provider selection", () => {
   });
 
   test("gateway EU region flows into the descriptor and defaults to Claude", () => {
-    // gpt-5.2 leads the US list but OpenAI models are US-only, so the EU
+    // gpt-5.5 leads the US list but OpenAI models are US-only, so the EU
     // default falls to the first Claude model.
     const eu = env({ ASSEMBLYAI_API_KEY: "k", STUDIO_LLM_REGION: "eu" });
     expect(selectStudioLlm(eu)?.descriptor).toMatchObject({

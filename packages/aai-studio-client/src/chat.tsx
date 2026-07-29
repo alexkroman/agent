@@ -379,8 +379,20 @@ function ProjectChat({
 export function ChatPanel(props: ChatPanelProps) {
   return (
     <div className="flex w-[360px] flex-none flex-col border-r border-line bg-panel">
-      <div className="px-6 pt-5">
+      <div className="flex items-center justify-between gap-2 px-6 pt-5">
         <span className="eyebrow">Agent</span>
+        {props.llmStatus?.model && (
+          <span
+            title={
+              props.llmStatus.provider
+                ? `Model: ${props.llmStatus.model} (${props.llmStatus.provider})`
+                : `Model: ${props.llmStatus.model}`
+            }
+            className="min-w-0 truncate rounded-sm border border-line px-1.5 py-[3px] font-mono text-[10px] leading-none text-subtle"
+          >
+            {props.llmStatus.model}
+          </span>
+        )}
       </div>
       {props.project ? (
         <ProjectChat

@@ -363,7 +363,7 @@ voice agents without the CLI:
 - **LLM selection** (`studio-llm.ts`) uses the SDK's own provider
   descriptors + `resolveLlm` (exported from `@alexkroman1/aai/runtime`).
   Keys are **platform-owned host config**, never tenant env. Default: the
-  AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set (model `gpt-5.2` —
+  AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set (model `gpt-5.5` —
   OpenAI models are the only ones the gateway documents streamed responses
   for), else Anthropic via `ANTHROPIC_API_KEY`;
   `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL` override (any pipeline-mode LLM
