@@ -46,7 +46,14 @@ function isToolPart(part: { type: string }): boolean {
  * The two surfaces show the same thing, so they should read as one component —
  * only the type scale differs, since the studio is a denser surface.
  */
-export function ToolRow({ part }: { part: Record<string, unknown> & { type: string } }) {
+export function ToolRow({
+  part,
+  active = true,
+}: {
+  part: Record<string, unknown> & { type: string };
+  /** False once the turn is over — a call abandoned by Stop must not shimmer forever. */
+  active?: boolean;
+}) {
   const [open, setOpen] = useState(false);
   const name = toolPartName(part as { type: string; toolName?: string });
   const done = part.state === "output-available";
@@ -72,7 +79,7 @@ export function ToolRow({ part }: { part: Record<string, unknown> & { type: stri
         <span
           className={clsx(
             "shrink-0 font-mono text-[11px] font-medium text-fg",
-            !done && "tool-shimmer",
+            !done && active && "tool-shimmer",
           )}
         >
           {name}
@@ -137,7 +144,7 @@ export function toBlocks(message: UIMessage): MessageBlock[] {
   return blocks;
 }
 
-function MessageView({ message }: { message: UIMessage }) {
+function MessageView({ message, busy = false }: { message: UIMessage; busy?: boolean }) {
   if (message.role === "user") {
     const text = message.parts
       .map((part) => (part.type === "text" ? part.text : ""))
@@ -157,7 +164,7 @@ function MessageView({ message }: { message: UIMessage }) {
         block.kind === "text" ? (
           <Markdown key={block.key} text={block.text} />
         ) : (
-          <ToolRow key={block.key} part={block.part} />
+          <ToolRow key={block.key} part={block.part} active={busy} />
         ),
       )}
     </div>
@@ -168,17 +175,26 @@ type ComposerProps = {
   disabled: boolean;
   placeholder: string;
   onSend: (text: string) => void;
+  /** A turn is in flight: the send button becomes a Stop button. */
+  busy?: boolean;
+  /** Cancel the in-flight turn. Required whenever `busy` can be true. */
+  onStop?: () => void;
 };
 
-/** Composer pinned to the panel bottom (1b spec). */
-function Composer({ disabled, placeholder, onSend }: ComposerProps) {
+/**
+ * Composer pinned to the panel bottom (1b spec). Exported for tests.
+ * While a turn streams, the send button swaps to a Stop button — the one
+ * escape hatch when a tool call is taking forever.
+ */
+export function Composer({ disabled, placeholder, onSend, busy = false, onStop }: ComposerProps) {
   const [input, setInput] = useState("");
   const submit = () => {
     const text = input.trim();
-    if (!text || disabled) return;
+    if (!text || disabled || busy) return;
     setInput("");
     onSend(text);
   };
+  const showStop = busy && onStop != null;
   return (
     <div className="flex flex-none flex-col gap-2 border-t border-line px-5 pt-4 pb-5">
       <div className="flex items-center gap-2">
@@ -190,28 +206,34 @@ function Composer({ disabled, placeholder, onSend }: ComposerProps) {
             // isComposing: Enter confirms an IME candidate, not the message.
             if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
           }}
-          disabled={disabled}
+          disabled={disabled || busy}
           placeholder={placeholder}
         />
         <button
           type="button"
-          aria-label="Send"
+          aria-label={showStop ? "Stop" : "Send"}
           className="flex h-10 w-10 flex-none cursor-pointer items-center justify-center rounded-sm border-none bg-indigo text-white hover:bg-indigo-hover disabled:cursor-not-allowed disabled:bg-disabled disabled:text-line-strong"
-          onClick={submit}
-          disabled={disabled}
+          onClick={showStop ? onStop : submit}
+          disabled={!showStop && (disabled || busy)}
         >
-          <svg
-            width="15"
-            height="15"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
-            strokeWidth="1.5"
-            aria-hidden
-          >
-            <path d="M12 19V5" />
-            <path d="m5 12 7-7 7 7" />
-          </svg>
+          {showStop ? (
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
+              <rect x="6" y="6" width="12" height="12" rx="1.5" />
+            </svg>
+          ) : (
+            <svg
+              width="15"
+              height="15"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+              aria-hidden
+            >
+              <path d="M12 19V5" />
+              <path d="m5 12 7-7 7 7" />
+            </svg>
+          )}
         </button>
       </div>
     </div>
@@ -296,13 +318,22 @@ function ProjectChat({
       }),
   );
 
-  const { messages, sendMessage, status, error } = useChat({
+  const { messages, sendMessage, status, error, stop } = useChat({
     transport,
     onFinish: onWorkspaceChanged,
   });
 
   const busy = status === "submitted" || status === "streaming";
   const llmReady = llmStatus?.llm === true;
+
+  const handleStop = () => {
+    // Aborts the SSE fetch; the server sees the request signal fire and
+    // cancels the LLM stream, in-flight tool calls, and the session sandbox.
+    void stop();
+    // The turn may have written files before it was stopped — onFinish won't
+    // fire for an aborted stream, so refresh the workspace here.
+    onWorkspaceChanged();
+  };
 
   // Prompt queued by the guided pre-project flow — send exactly once.
   const sentInitial = useRef(false);
@@ -328,14 +359,16 @@ function ProjectChat({
             <EmptyStateBody status={llmStatus} onPick={send} />
           )}
           {messages.map((message) => (
-            <MessageView key={message.id} message={message} />
+            <MessageView key={message.id} message={message} busy={busy} />
           ))}
           {error && <div className="text-[13px] text-err">{error.message}</div>}
           {busy && <div className="text-[13px] text-subtle italic">Working…</div>}
         </StickToBottom.Content>
       </StickToBottom>
       <Composer
-        disabled={busy || !llmReady}
+        disabled={!llmReady}
+        busy={busy}
+        onStop={handleStop}
         placeholder="Describe your agent or workflow…"
         onSend={send}
       />

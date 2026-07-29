@@ -34,6 +34,7 @@ import { studioModel } from "./studio-llm.ts";
 import { type McpSession, openMcpTools } from "./studio-mcp.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
+import { withToolTimeouts } from "./studio-tool-timeout.ts";
 import { createWebTools } from "./studio-web.ts";
 import { currentFilesHash } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
@@ -112,8 +113,14 @@ async function runTrial(
   try {
     sandbox = await deps.sandbox();
   } catch (err) {
-    // Provisioning refused (e.g. the turn was aborted and its sandbox
-    // lifecycle already torn down) — answer as tool-result text.
+    // Provisioning refused (spawn failure, or the turn was aborted and its
+    // sandbox lifecycle already torn down) — answer as tool-result text.
+    // Also log host-side: this text goes to the model, so without a log a
+    // host that can't spawn sandboxes leaves nothing to debug from.
+    console.warn("Studio trial: sandbox provisioning failed", {
+      project: deps.project,
+      error: errorMessage(err),
+    });
     return `Sandbox unavailable: ${errorMessage(err)}`;
   }
   let loaded: { config?: unknown };
@@ -314,8 +321,10 @@ export async function runStudioChat(
       system: studioSystemPrompt(),
       messages: modelMessages,
       // Studio tools last: neither an MCP server nor a web builtin may
-      // shadow write_file.
-      tools: { ...mcp.tools, ...createWebTools(), ...createStudioTools(deps) },
+      // shadow write_file. Every tool gets a per-call deadline — a hung
+      // sandbox RPC or silent MCP server must cost one tool result, not
+      // the whole turn (the UI would shimmer forever).
+      tools: withToolTimeouts({ ...mcp.tools, ...createWebTools(), ...createStudioTools(deps) }),
       ...(deps.abortSignal && { abortSignal: deps.abortSignal }),
       stopWhen: stepCountIs(MAX_CHAT_STEPS),
       onFinish: disposeSandbox,
