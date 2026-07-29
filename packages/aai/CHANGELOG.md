@@ -1,5 +1,12 @@
 # @alexkroman1/aai
 
+## 1.13.0
+
+### Patch Changes
+
+- 2b3c0e0: Fix all host-side egress failing with `TypeError: fetch failed`: the SSRF pinning dispatcher is built from this package's undici 8, but was handed to Node's built-in fetch (undici 7), which undici 8 rejects with `invalid onRequestStart method`. Pair the dispatcher with undici's own fetch.
+- f662e45: Surface a provider-initiated STT socket close instead of going silently deaf. `createSessionShell` treated every clean (1000) close as expected, but only a close we initiate ourselves is — a graceful close from the provider (a session cap, an idle cutoff, an upstream deploy) still means no further transcripts will arrive. Because the `closed` latch stayed false, `sendAudio` kept forwarding frames to a dead socket: the session looked healthy, no error reached the caller, and the agent stopped responding to speech for the rest of the call. Closes now emit `stt_stream_error` for all four STT providers via a new opt-in `cleanCloseIsFatal`, keyed off the latch rather than the close code. TTS openers keep the lenient behavior, where a provider closing after it has finished sending audio is normal completion.
+
 ## 1.12.0
 
 ### Minor Changes
