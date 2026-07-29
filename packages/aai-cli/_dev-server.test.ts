@@ -3,6 +3,7 @@
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { AgentDef } from "@alexkroman1/aai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
 
@@ -40,6 +41,7 @@ mockCreateServer.mockReturnValue({ listen: mockListen, close: mockClose });
 const { chokidarState, mockChokidarWatch } = vi.hoisted(() => {
   const chokidarState = {
     allCallback: undefined as ((event: string, filePath: string) => void) | undefined,
+    errorCallback: undefined as ((err: unknown) => void) | undefined,
     ignored: undefined as ((filePath: string) => boolean) | undefined,
     close: vi.fn().mockResolvedValue(undefined),
     watchedDir: undefined as string | undefined,
@@ -51,6 +53,7 @@ const { chokidarState, mockChokidarWatch } = vi.hoisted(() => {
       return {
         on: (event: string, cb: (event: string, filePath: string) => void) => {
           if (event === "all") chokidarState.allCallback = cb;
+          if (event === "error") chokidarState.errorCallback = cb as (err: unknown) => void;
         },
         close: chokidarState.close,
       };
@@ -119,8 +122,32 @@ vi.mock("./_utils.ts", async (importOriginal) => ({
 
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
-import { startDevServer } from "./_dev-server.ts";
+import { loadAgentDefWith, startDevServer, watchDirectory } from "./_dev-server.ts";
 import { log } from "./_ui.ts";
+
+describe("watchDirectory", () => {
+  test("logs watcher errors, with an inotify hint for ENOSPC", () => {
+    watchDirectory("/tmp/watched", () => undefined);
+    const enospc = Object.assign(new Error("watch limit"), { code: "ENOSPC" });
+    chokidarState.errorCallback?.(enospc);
+    expect(log.error).toHaveBeenCalledWith(expect.stringContaining("max_user_watches"));
+
+    chokidarState.errorCallback?.(new Error("disk gone"));
+    expect(log.error).toHaveBeenLastCalledWith(expect.stringContaining("disk gone"));
+    expect(log.error).toHaveBeenLastCalledWith(expect.not.stringContaining("max_user_watches"));
+  });
+
+  test("a throwing onChange is logged, not an unhandled rejection", async () => {
+    watchDirectory("/tmp/watched", () => {
+      throw new Error("restart exploded");
+    });
+    chokidarState.allCallback?.("change", "/tmp/watched/agent.ts");
+    // The debounce window is 300ms; the throw surfaces via the catch handler.
+    await vi.waitFor(() =>
+      expect(log.error).toHaveBeenCalledWith(expect.stringContaining("restart exploded")),
+    );
+  });
+});
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
@@ -467,6 +494,9 @@ describe("file watcher filtering", () => {
 
       mockClose.mockClear();
 
+      // Actually change the file: an unchanged bundle is served from the
+      // eval memo (createWorkerEvaluator) and never re-validated.
+      await writeAgentTs(dir, "test-agent-v2");
       fireChange(dir, "agent.ts");
 
       await vi.waitFor(
@@ -548,6 +578,35 @@ describe("dev server host mode gate", () => {
       const opts = mockCreateServer.mock.calls.at(-1)?.[0] as { env: Record<string, string> };
       expect(opts.env).not.toHaveProperty("AAI_ALLOW_HOST");
       await cleanup();
+    });
+  });
+});
+
+describe("loadAgentDefWith", () => {
+  const fakeDef = (name: string) => ({ name, tools: {} }) as AgentDef;
+
+  test("compile errors from the incremental builder propagate (no Vite fallback)", async () => {
+    await withTempDir(async (dir) => {
+      const buildFailure = Object.assign(new Error("Build failed"), { errors: [] });
+      const builder = { build: vi.fn().mockRejectedValue(buildFailure) };
+      const evaluate = vi.fn();
+      await expect(loadAgentDefWith(dir, builder, evaluate)).rejects.toBe(buildFailure);
+      expect(evaluate).not.toHaveBeenCalled();
+    });
+  });
+
+  test("non-compile builder failures fall back to the cold Vite build", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir, "fallback-agent");
+      const builder = { build: vi.fn().mockRejectedValue(new Error("esbuild service died")) };
+      const evaluated: string[] = [];
+      const def = await loadAgentDefWith(dir, builder, async (code) => {
+        evaluated.push(code);
+        return fakeDef("fallback-agent");
+      });
+      expect(def.name).toBe("fallback-agent");
+      // The Vite-built worker was handed to the evaluator.
+      expect(evaluated[0]).toContain("fallback-agent");
     });
   });
 });

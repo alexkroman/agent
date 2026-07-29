@@ -78,6 +78,17 @@ describe("verifyApiKeyHash", () => {
     expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
     expect(performance.now() - start).toBeLessThan(20);
   });
+
+  test("distinct keys against the same stored hash cache independent results", async () => {
+    // Guards the SHA-256(apiKey) cache keying: two keys verified against the
+    // same stored hash must land in separate entries with distinct results.
+    const hash = await hashApiKey("right-key");
+    expect(await verifyApiKeyHash("right-key", hash)).toBe(true);
+    expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
+    // Both answered from the cache now — and still distinct.
+    expect(await verifyApiKeyHash("right-key", hash)).toBe(true);
+    expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
+  });
 });
 
 describe("verifySlugOwner", () => {

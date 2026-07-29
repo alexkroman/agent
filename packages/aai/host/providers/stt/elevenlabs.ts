@@ -134,6 +134,9 @@ export function openElevenLabs(opts: ElevenLabsOptions = {}): SttOpener {
       });
 
       return {
+        // No backpressure gate here (unlike the other STT openers): the
+        // ElevenLabs SDK keeps its WebSocket private with no buffered-amount
+        // accessor, so a stalled link cannot be observed from this side.
         sendAudio(pcm: Int16Array) {
           if (shell.isClosed()) return;
           frames.push(pcm);

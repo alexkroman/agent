@@ -3,7 +3,7 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSessionSelector, useTheme } from "../context.ts";
 import { SURFACE_TINT, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
 
@@ -31,13 +31,18 @@ function UrlChip({
 }) {
   const theme = useTheme();
   const [copied, setCopied] = useState(false);
+  // The feedback timer must not outlive the chip — a setState after unmount
+  // is a leak (and a React warning). Re-clicking also resets the countdown.
+  const timerRef = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(timerRef.current), []);
 
   function copy(): void {
     navigator.clipboard
       ?.writeText(url)
       .then(() => {
         setCopied(true);
-        setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
+        clearTimeout(timerRef.current);
+        timerRef.current = setTimeout(() => setCopied(false), COPIED_FEEDBACK_MS);
       })
       .catch(() => {
         /* clipboard unavailable (permissions/insecure context) — chip still shows the URL */

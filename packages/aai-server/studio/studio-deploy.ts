@@ -11,12 +11,13 @@ import type { Storage } from "unstorage";
 import { resolveHarnessPath } from "../constants.ts";
 import { type DeployDeps, deployAgentBundle } from "../deploy.ts";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
+import type { SandboxPool } from "../sandbox-pool.ts";
 import { describeBundle } from "../sandbox-vm.ts";
-import { hashApiKey } from "../secrets.ts";
+import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
 import { bundleWorkspaceWorker } from "./studio-bundle.ts";
 import { buildWorkspaceClient } from "./studio-client-build.ts";
 import { StudioBuildError } from "./studio-errors.ts";
-import { filesHash, getWorkspace, putWorkspace } from "./studio-workspace.ts";
+import { currentFilesHash, getWorkspace, putWorkspace } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 
 export type StudioDeployResult =
@@ -25,6 +26,8 @@ export type StudioDeployResult =
 
 export type StudioDeployDeps = DeployDeps & {
   storage: Storage;
+  /** Warm harness pool — config extraction acquires from it when present. */
+  pool?: SandboxPool | undefined;
   /** Injectable for tests — defaults to the CLI's Vite worker build. */
   bundle?: (dir: string) => Promise<string>;
   /** Injectable for tests — defaults to sandboxed `describeBundle`. */
@@ -41,6 +44,43 @@ export type StudioDeployParams = {
   env?: Record<string, string> | undefined;
 };
 
+/**
+ * Build (or reuse) the deployable artifacts for one workspace content hash.
+ *
+ * Content-hash keyed build reuse: `test_agent` already built this exact
+ * worker during the chat turn, and a repeat Publish of unchanged files built
+ * both artifacts. A full hit skips materialize + both Vite passes; a
+ * worker-only hit (the test_agent case) pays just the client build.
+ *
+ * @throws {StudioBuildError} on compile errors, exactly like the builders.
+ */
+async function buildArtifacts(
+  deps: StudioDeployDeps,
+  files: Record<string, string>,
+  hash: string,
+): Promise<{ worker: string; clientFiles: Record<string, string> }> {
+  const bundle = deps.bundle ?? bundleWorkspaceWorker;
+  const buildClient = deps.buildClient ?? buildWorkspaceClient;
+  const cached = getCachedBuild(hash);
+  let worker: string;
+  let clientFiles: Record<string, string>;
+  if (cached?.worker !== undefined && cached.clientFiles !== undefined) {
+    worker = cached.worker;
+    clientFiles = cached.clientFiles;
+  } else if (cached?.worker !== undefined) {
+    worker = cached.worker;
+    clientFiles = await withWorkspaceDir(files, buildClient);
+  } else {
+    // One materialize feeds both builds — they read the same scratch dir and
+    // are otherwise independent.
+    [worker, clientFiles] = await withWorkspaceDir(files, (dir) =>
+      Promise.all([bundle(dir), buildClient(dir)]),
+    );
+  }
+  putCachedBuild(hash, { worker, clientFiles });
+  return { worker, clientFiles };
+}
+
 export async function deployStudioProject(
   deps: StudioDeployDeps,
   params: StudioDeployParams,
@@ -48,17 +88,14 @@ export async function deployStudioProject(
   const workspace = await getWorkspace(deps.storage, params.scope, params.project);
   if (!workspace) return { ok: false, error: `Project not found: ${params.project}` };
 
-  const bundle = deps.bundle ?? bundleWorkspaceWorker;
-  const buildClient = deps.buildClient ?? buildWorkspaceClient;
-  // One materialize feeds both builds — they read the same scratch dir and
-  // are otherwise independent. A failure in either is a message the coding
-  // agent can act on, not an exception.
+  // Computed once and reused for the build cache and `deployedHash` below.
+  const hash = currentFilesHash(workspace);
   let worker: string;
   let clientFiles: Record<string, string>;
   try {
-    [worker, clientFiles] = await withWorkspaceDir(workspace.files, (dir) =>
-      Promise.all([bundle(dir), buildClient(dir)]),
-    );
+    // A build failure is a message the coding agent can act on, not an
+    // exception.
+    ({ worker, clientFiles } = await buildArtifacts(deps, workspace.files, hash));
   } catch (err) {
     if (err instanceof StudioBuildError) return { ok: false, error: err.message };
     throw err;
@@ -66,7 +103,8 @@ export async function deployStudioProject(
 
   const inspect =
     deps.inspect ??
-    ((code: string) => describeBundle({ harnessPath: resolveHarnessPath(), workerCode: code }));
+    ((code: string) =>
+      describeBundle({ harnessPath: resolveHarnessPath(), workerCode: code, pool: deps.pool }));
   let rawConfig: unknown;
   try {
     rawConfig = await inspect(worker);
@@ -88,7 +126,6 @@ export async function deployStudioProject(
       // name itself (matching what a user would expect their URL to be).
       slug: workspace.deployedSlug ?? params.project,
       apiKey: params.apiKey,
-      keyHash: await hashApiKey(params.apiKey),
       worker,
       clientFiles,
       env: params.env,
@@ -110,7 +147,7 @@ export async function deployStudioProject(
   await putWorkspace(deps.storage, params.scope, params.project, {
     files: workspace.files,
     deployedSlug: outcome.slug,
-    deployedHash: filesHash(workspace.files),
+    deployedHash: hash,
   });
   return { ok: true, slug: outcome.slug, url: `/${outcome.slug}/` };
 }

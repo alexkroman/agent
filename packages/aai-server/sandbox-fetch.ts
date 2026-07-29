@@ -19,7 +19,14 @@ const DEFAULT_MAX_CONCURRENT = 10;
  * don't confuse the two when tuning fetch timeouts.
  */
 const SANDBOX_FETCH_TIMEOUT_MS = 30_000;
-const CHUNK_SIZE = 64 * 1024;
+/**
+ * 256 KiB per relayed chunk. Each chunk costs a base64 encode, a JSON frame,
+ * a pipe write, and a guest-side parse+decode, so bigger chunks cut the
+ * per-chunk overhead on large responses; the guest's incremental line
+ * scanner handles multi-MB lines linearly, and the 4 MB response cap bounds
+ * the worst case.
+ */
+const CHUNK_SIZE = 256 * 1024;
 
 export type FetchRequest = {
   url: string;

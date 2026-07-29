@@ -69,9 +69,36 @@ export const StudioFileSchema = z.object({
 });
 
 /**
+ * Summed lengths of every string reachable inside `value` — the size that
+ * matters in a chat message, counted without re-serializing it. The old
+ * per-message `JSON.stringify(...).length` refine re-built up to
+ * `MAX_STUDIO_CHAT_BYTES` of string per request (twice, with the aggregate
+ * refine) on a body that had *just* been parsed from a string; this walk
+ * allocates nothing. Structural overhead (keys, punctuation, numbers) is not
+ * counted, so the cap is enforced on slightly less than serialized size —
+ * string content is what dominates a near-limit message either way.
+ */
+function totalStringLength(value: unknown): number {
+  if (typeof value === "string") return value.length;
+  if (Array.isArray(value)) {
+    let total = 0;
+    for (const item of value) total += totalStringLength(item);
+    return total;
+  }
+  if (value !== null && typeof value === "object") {
+    let total = 0;
+    for (const item of Object.values(value)) total += totalStringLength(item);
+    return total;
+  }
+  return 0;
+}
+
+/**
  * One `useChat` UIMessage. Validated structurally (role + parts) with a
- * serialized-size cap; the AI SDK's `convertToModelMessages` performs the
- * full part-level validation.
+ * content-size cap; the AI SDK's `convertToModelMessages` performs the
+ * full part-level validation. The aggregate (whole-conversation) cap is
+ * enforced by the chat route on the raw request body *before* JSON parsing —
+ * see `studio-routes.ts` — so it is deliberately absent here.
  */
 export const UiMessageSchema = z
   .looseObject({
@@ -80,20 +107,13 @@ export const UiMessageSchema = z
     parts: z.array(z.looseObject({ type: z.string() })),
   })
   .refine(
-    (message) => JSON.stringify(message).length <= MAX_STUDIO_MESSAGE_BYTES,
+    (message) => totalStringLength(message.parts) <= MAX_STUDIO_MESSAGE_BYTES,
     "Message too large",
   );
 
 export const ChatBodySchema = z.object({
   project: ProjectNameSchema,
-  messages: z
-    .array(UiMessageSchema)
-    .min(1)
-    .max(MAX_STUDIO_CHAT_MESSAGES)
-    .refine(
-      (messages) => JSON.stringify(messages).length <= MAX_STUDIO_CHAT_BYTES,
-      "Conversation too large",
-    ),
+  messages: z.array(UiMessageSchema).min(1).max(MAX_STUDIO_CHAT_MESSAGES),
 });
 
 export type ChatBody = z.infer<typeof ChatBodySchema>;

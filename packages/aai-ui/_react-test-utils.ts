@@ -97,8 +97,10 @@ export function createMockSessionCore(
       return Promise.resolve();
     },
     update(partial: Partial<SessionSnapshot>) {
-      // Mirror the real core: content changes bump contentVersion.
-      snapshot = { ...snapshot, ...partial, contentVersion: snapshot.contentVersion + 1 };
+      // Mirror the real core: content changes bump contentVersion. An explicit
+      // contentVersion in `partial` wins, so tests can pin it for updates the
+      // real core would not treat as content (e.g. `recording`).
+      snapshot = { ...snapshot, contentVersion: snapshot.contentVersion + 1, ...partial };
       notify();
     },
     [Symbol.dispose]() {

@@ -10,6 +10,12 @@ import WsWebSocket from "ws";
 
 export type HeaderWebSocket = {
   readonly readyState: number;
+  /**
+   * Unsent bytes queued in the socket buffer (the `ws` package exposes this).
+   * Optional so adapters/stubs without it simply skip the audio backpressure
+   * gate (see `_audio-gate.ts`).
+   */
+  readonly bufferedAmount?: number | undefined;
   send(data: string): void;
   /**
    * `code` is optional but callers should pass one: omitting it sends a

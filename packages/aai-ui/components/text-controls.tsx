@@ -4,7 +4,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import clsx from "clsx";
-import { useRef, useState } from "react";
+import { memo, useRef, useState } from "react";
 import { useSessionCore, useSessionSelector } from "../context.ts";
 import { ERROR_COLOR } from "./_colors.ts";
 import { Button } from "./button.tsx";
@@ -21,7 +21,13 @@ import { SessionUrlChips } from "./url-chips.tsx";
  *
  * @public
  */
-export function TextControls({ className }: { className?: string | undefined }) {
+// memo(): string-only props, so parent re-renders don't cascade — only the
+// `recording`/`state` selectors below trigger re-renders.
+export const TextControls = memo(function TextControls({
+  className,
+}: {
+  className?: string | undefined;
+}) {
   const recording = useSessionSelector((s) => s.recording);
   const state = useSessionSelector((s) => s.state);
   const core = useSessionCore();
@@ -97,4 +103,4 @@ export function TextControls({ className }: { className?: string | undefined }) 
       )}
     </div>
   );
-}
+});

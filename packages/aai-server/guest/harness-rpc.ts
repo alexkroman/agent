@@ -44,6 +44,13 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, label: str
 
 const encoder = new TextEncoder();
 
+// Writes are serialized through a promise chain so NDJSON framing and
+// ordering are preserved without blocking the event loop. The old
+// `Deno.stdout.writeSync` loop stalled the guest's ENTIRE event loop (every
+// concurrent tool in the sandbox) whenever a line outran the ~64 KB pipe
+// buffer while the host was busy.
+let writeQueue: Promise<void> = Promise.resolve();
+
 /**
  * Set once the host has closed our stdout pipe (BrokenPipe). Further writes
  * are dropped: retrying would throw again — including from error paths like
@@ -51,30 +58,41 @@ const encoder = new TextEncoder();
  */
 let stdoutDead = false;
 
-export function writeMessage(msg: JsonRpcMessage): void {
-  if (stdoutDead) return;
-  const line = `${JSON.stringify(msg)}\n`;
-  const bytes = encoder.encode(line);
-  try {
-    // writeSync may write fewer bytes than requested (pipe buffer full) —
-    // loop until the whole line is flushed so NDJSON framing never tears.
-    let written = 0;
-    while (written < bytes.byteLength) {
-      written += Deno.stdout.writeSync(bytes.subarray(written));
-    }
-  } catch {
-    // Host closed the pipe — the connection is gone; mark it dead and drop
-    // this and all further writes so teardown stays clean.
-    stdoutDead = true;
-  }
+/**
+ * Queue one NDJSON line for stdout. Serialization happens synchronously at
+ * call time, so later mutation of `msg` cannot affect what is written. The
+ * returned promise settles when the line is fully flushed; it never
+ * rejects — a failed write marks the pipe dead (stdout is the harness's
+ * only channel to the host, so a write error means the host is gone), is
+ * logged to stderr once, and all further writes are dropped so teardown
+ * stays clean.
+ */
+export function writeMessage(msg: JsonRpcMessage): Promise<void> {
+  if (stdoutDead) return Promise.resolve();
+  const bytes = encoder.encode(`${JSON.stringify(msg)}\n`);
+  writeQueue = writeQueue
+    .then(async () => {
+      if (stdoutDead) return;
+      // write may accept fewer bytes than requested (pipe buffer full) —
+      // loop until the whole line is flushed so framing never tears.
+      let written = 0;
+      while (written < bytes.byteLength) {
+        written += await Deno.stdout.write(bytes.subarray(written));
+      }
+    })
+    .catch((err: unknown) => {
+      stdoutDead = true;
+      console.error(`harness stdout write failed: ${errMsg(err)}`);
+    });
+  return writeQueue;
 }
 
-export function sendResponse(id: number | string, result: unknown): void {
-  writeMessage({ jsonrpc: "2.0", id, result });
+export function sendResponse(id: number | string, result: unknown): Promise<void> {
+  return writeMessage({ jsonrpc: "2.0", id, result });
 }
 
-export function sendError(id: number | string, code: number, message: string): void {
-  writeMessage({ jsonrpc: "2.0", id, error: { code, message } });
+export function sendError(id: number | string, code: number, message: string): Promise<void> {
+  return writeMessage({ jsonrpc: "2.0", id, error: { code, message } });
 }
 
 // ---- Host RPC proxy ---------------------------------------------------------
@@ -117,7 +135,9 @@ function hostRequest(method: string, params: Record<string, unknown>): Promise<u
       reject(err);
     },
   });
-  writeMessage({ jsonrpc: "2.0", id, method, params });
+  // Fire-and-forget: the write chain preserves ordering and marks the pipe
+  // dead on failure; the response (or the timeout) is what settles `promise`.
+  void writeMessage({ jsonrpc: "2.0", id, method, params });
   return promise;
 }
 
@@ -256,8 +276,8 @@ globalThis.fetch = async (input: string | URL | Request, init?: RequestInit): Pr
 
 // ---- Client send --------------------------------------------------------------
 
-export function sendToClient(sessionId: string, event: string, data: unknown): void {
-  writeMessage({
+export function sendToClient(sessionId: string, event: string, data: unknown): Promise<void> {
+  return writeMessage({
     jsonrpc: "2.0",
     method: "client/send",
     params: { sessionId, event, data },

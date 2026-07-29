@@ -20,13 +20,16 @@ function isSpaceAt(text: string, i: number): boolean {
 
 /**
  * Count whitespace-delimited words in an interim transcript, stopping early
- * once `min` is reached (`Infinity` counts them all).
+ * once `min` is reached (`Infinity` counts them all) — i.e. the result is
+ * `min(actual count, min)`.
  *
  * Scans instead of `split()`: STT partials arrive several times a second and
  * grow with the utterance, so allocating a word array per partial is pure
- * garbage on a latency-sensitive path.
+ * garbage on a latency-sensitive path. Exported for callers that only
+ * threshold the count (the partial handler in pipeline-user-speech.ts), so a
+ * long partial never pays a full O(transcript length) scan.
  */
-function scanWords(text: string, min: number): number {
+export function scanWords(text: string, min: number): number {
   let count = 0;
   let inWord = false;
   for (let i = 0; i < text.length; i++) {
@@ -112,8 +115,46 @@ const CONTINUATION_CUES: ReadonlySet<string> = new Set([
 export function utteranceLooksComplete(text: string): boolean {
   const trimmed = text.trim();
   if (trimmed.length === 0) return false;
-  const words = trimmed.toLowerCase().match(/[a-z']+/g);
-  const lastWord = words?.at(-1) ?? "";
-  if (CONTINUATION_CUES.has(lastWord)) return false;
-  return /[.?!]["')\]]*$/.test(trimmed);
+  // Punctuation first: it reads a few tail characters, and a fragment
+  // without terminal punctuation is the common case — the cue lookup (which
+  // walks back to the last word) then never runs.
+  if (!endsWithTerminalPunct(trimmed)) return false;
+  return !CONTINUATION_CUES.has(lastWord(trimmed));
+}
+
+/** Charcode test for the cue-word alphabet `[a-z']`, case-insensitive. */
+function isCueWordChar(code: number): boolean {
+  return (code >= 97 && code <= 122) || (code >= 65 && code <= 90) || code === 39; // a-z A-Z '
+}
+
+/**
+ * The last `[a-z']+` run of `text`, lowercased — `""` when there is none.
+ * Scans backward from the end instead of `toLowerCase().match(/[a-z']+/g)`,
+ * which lowercases the whole transcript and allocates every word match just
+ * to read the final one.
+ */
+function lastWord(text: string): string {
+  let end = text.length;
+  while (end > 0 && !isCueWordChar(text.charCodeAt(end - 1))) end--;
+  let start = end;
+  while (start > 0 && isCueWordChar(text.charCodeAt(start - 1))) start--;
+  return start < end ? text.slice(start, end).toLowerCase() : "";
+}
+
+/**
+ * Does `text` end with terminal punctuation, allowing trailing closers?
+ * Equivalent to `/[.?!]["')\]]*$/.test(text)` but O(tail): an end-anchored
+ * regex without a start anchor still scans candidate positions from the
+ * front of the string.
+ */
+function endsWithTerminalPunct(text: string): boolean {
+  let i = text.length - 1;
+  while (i >= 0) {
+    const c = text[i];
+    if (c === '"' || c === "'" || c === ")" || c === "]") i--;
+    else break;
+  }
+  if (i < 0) return false;
+  const c = text[i];
+  return c === "." || c === "?" || c === "!";
 }

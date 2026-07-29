@@ -1,14 +1,21 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { describe, expect, test } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createSlotCache } from "../sandbox-slots.ts";
 import { hashApiKey } from "../secrets.ts";
 import { createTestStorage, createTestStore, TEST_AGENT_CONFIG } from "../test-utils.ts";
+import { clearStudioBuildCache, putCachedBuild } from "./studio-build-cache.ts";
 import { StudioBuildError } from "./studio-bundle.ts";
 import { deployStudioProject, type StudioDeployDeps } from "./studio-deploy.ts";
-import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
+import { filesHash, getWorkspace, putWorkspace } from "./studio-workspace.ts";
 
 const SCOPE = "test-scope";
+
+// The build cache is process-wide and content-hash keyed; tests here reuse
+// identical file contents with different injected bundlers, so isolate them.
+beforeEach(() => {
+  clearStudioBuildCache();
+});
 
 function makeDeps(overrides: Partial<StudioDeployDeps> = {}): StudioDeployDeps {
   return {
@@ -222,6 +229,50 @@ describe("deployStudioProject", () => {
       ok: false,
       error: expect.stringContaining("Invalid agent config"),
     });
+  });
+
+  test("a repeat publish of unchanged files skips both builds", async () => {
+    const bundle = vi.fn(async () => "export default {};");
+    const buildClient = vi.fn(async () => ({}));
+    const deps = makeDeps({ bundle, buildClient });
+    await seedProject(deps, "p1");
+    expect((await deployStudioProject(deps, { apiKey: "k", scope: SCOPE, project: "p1" })).ok).toBe(
+      true,
+    );
+    expect((await deployStudioProject(deps, { apiKey: "k", scope: SCOPE, project: "p1" })).ok).toBe(
+      true,
+    );
+    // Content-hash keyed cache: the second publish built nothing.
+    expect(bundle).toHaveBeenCalledTimes(1);
+    expect(buildClient).toHaveBeenCalledTimes(1);
+  });
+
+  test("a worker cached by test_agent leaves only the client build to publish", async () => {
+    const bundle = vi.fn(async () => "should not run");
+    const buildClient = vi.fn(async () => ({ "index.html": "<html>built</html>" }));
+    const deps = makeDeps({ bundle, buildClient });
+    await seedProject(deps, "p1");
+    const workspace = await getWorkspace(deps.storage, SCOPE, "p1");
+    // Simulate the chat turn's test_agent build of the same content.
+    putCachedBuild(filesHash(workspace?.files ?? {}), { worker: "from-test-agent" });
+
+    const result = await deployStudioProject(deps, { apiKey: "k", scope: SCOPE, project: "p1" });
+    expect(result.ok).toBe(true);
+    expect(bundle).not.toHaveBeenCalled();
+    expect(buildClient).toHaveBeenCalledTimes(1);
+    expect(await deps.store.getWorkerCode("p1")).toBe("from-test-agent");
+    expect(await deps.store.getClientFile("p1", "index.html")).toBe("<html>built</html>");
+  });
+
+  test("reuses the workspace's stored hash for deployedHash", async () => {
+    const deps = makeDeps();
+    await seedProject(deps, "p1");
+    const before = await getWorkspace(deps.storage, SCOPE, "p1");
+    expect(before?.hash).toBeDefined();
+    await deployStudioProject(deps, { apiKey: "k", scope: SCOPE, project: "p1" });
+    const after = await getWorkspace(deps.storage, SCOPE, "p1");
+    expect(after?.deployedHash).toBe(before?.hash);
+    expect(after?.deployedHash).toBe(filesHash(before?.files ?? {}));
   });
 
   test("a project named after a reserved slug cannot claim it", async () => {

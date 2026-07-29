@@ -5,18 +5,35 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 
-const clients: { tools: ReturnType<typeof vi.fn>; close: ReturnType<typeof vi.fn> }[] = [];
+type FakeClient = {
+  listTools: ReturnType<typeof vi.fn>;
+  toolsFromDefinitions: ReturnType<typeof vi.fn>;
+  close: ReturnType<typeof vi.fn>;
+};
+const clients: FakeClient[] = [];
 /** Per-URL behavior for the next openMcpTools call. */
 const behavior = new Map<string, { tools?: Record<string, unknown>; toolsError?: Error }>();
+
+type FakeDefinitions = { tools: { name: string; description: string | undefined }[] };
 
 vi.mock("@ai-sdk/mcp", () => ({
   createMCPClient: vi.fn(async ({ transport }: { transport: { url: string } }) => {
     const spec = behavior.get(transport.url) ?? {};
-    const client = {
-      tools: vi.fn(async () => {
+    const client: FakeClient = {
+      // The wire shape: `tools/list` returns definitions...
+      listTools: vi.fn(async (): Promise<FakeDefinitions> => {
         if (spec.toolsError) throw spec.toolsError;
-        return spec.tools ?? {};
+        return {
+          tools: Object.entries(spec.tools ?? {}).map(([name, def]) => ({
+            name,
+            description: (def as { description?: string }).description,
+          })),
+        };
       }),
+      // ...and tool objects are built client-side, bound to this client.
+      toolsFromDefinitions: vi.fn((definitions: FakeDefinitions) =>
+        Object.fromEntries(definitions.tools.map((t) => [t.name, { description: t.description }])),
+      ),
       close: vi.fn(async () => undefined),
     };
     clients.push(client);
@@ -24,13 +41,14 @@ vi.mock("@ai-sdk/mcp", () => ({
   }),
 }));
 
-import { openMcpTools } from "./studio-mcp.ts";
+import { clearMcpToolListCache, openMcpTools } from "./studio-mcp.ts";
 
 const env = (values: Record<string, string>) => values as NodeJS.ProcessEnv;
 
 afterEach(() => {
   clients.length = 0;
   behavior.clear();
+  clearMcpToolListCache();
   vi.restoreAllMocks();
 });
 
@@ -60,5 +78,61 @@ describe("openMcpTools (connected)", () => {
     // The failed client was cleaned up at connect time, not leaked.
     expect(clients[0]?.close).toHaveBeenCalledTimes(1);
     await session.close();
+  });
+
+  test("the tool listing is cached across turns; tool objects are rebuilt per turn", async () => {
+    behavior.set("https://docs/mcp", { tools: { search_docs: { description: "d" } } });
+    const mcpEnv = env({ STUDIO_MCP_URLS: "https://docs/mcp" });
+
+    const first = await openMcpTools(mcpEnv);
+    await first.close();
+    const second = await openMcpTools(mcpEnv);
+    await second.close();
+
+    // Two turns, two clients — but only the first paid the tools/list round
+    // trip. The second turn rebuilt tool objects on its own (open) client
+    // from the cached definitions, because a tool's execute is bound to the
+    // client it came from and the first turn's client is closed.
+    expect(clients).toHaveLength(2);
+    expect(clients[0]?.listTools).toHaveBeenCalledTimes(1);
+    expect(clients[1]?.listTools).not.toHaveBeenCalled();
+    expect(clients[1]?.toolsFromDefinitions).toHaveBeenCalledTimes(1);
+    expect(Object.keys(second.tools)).toEqual(["search_docs"]);
+  });
+
+  test("a failed listing is not cached — the next turn retries", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    behavior.set("https://docs/mcp", { toolsError: new Error("down") });
+    const mcpEnv = env({ STUDIO_MCP_URLS: "https://docs/mcp" });
+    const first = await openMcpTools(mcpEnv);
+    expect(first.tools).toEqual({});
+
+    behavior.set("https://docs/mcp", { tools: { search_docs: { description: "d" } } });
+    const second = await openMcpTools(mcpEnv);
+    expect(Object.keys(second.tools)).toEqual(["search_docs"]);
+    await second.close();
+  });
+
+  test("clearing the cache forces a fresh listing", async () => {
+    behavior.set("https://docs/mcp", { tools: { search_docs: { description: "d" } } });
+    const mcpEnv = env({ STUDIO_MCP_URLS: "https://docs/mcp" });
+    await (await openMcpTools(mcpEnv)).close();
+    clearMcpToolListCache();
+    await (await openMcpTools(mcpEnv)).close();
+    expect(clients[1]?.listTools).toHaveBeenCalledTimes(1);
+  });
+
+  test("a cached listing expires after its TTL", async () => {
+    vi.useFakeTimers();
+    try {
+      behavior.set("https://docs/mcp", { tools: { search_docs: { description: "d" } } });
+      const mcpEnv = env({ STUDIO_MCP_URLS: "https://docs/mcp" });
+      await (await openMcpTools(mcpEnv)).close();
+      vi.advanceTimersByTime(5 * 60 * 1000 + 1);
+      await (await openMcpTools(mcpEnv)).close();
+      expect(clients[1]?.listTools).toHaveBeenCalledTimes(1);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

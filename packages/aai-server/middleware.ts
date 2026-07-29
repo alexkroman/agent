@@ -55,13 +55,6 @@ export async function requireOwner(
   return { apiKey, keyHash: result.keyHash };
 }
 
-/** Authenticates the bearer token without checking slug ownership (e.g. new deploys). */
-export async function requireAuth(req: Request): Promise<{ apiKey: string; keyHash: string }> {
-  const apiKey = requireBearerToken(req);
-  const keyHash = await hashApiKey(apiKey);
-  return { apiKey, keyHash };
-}
-
 export const slugMw = createMiddleware<HonoEnv>(async (c, next) => {
   // biome-ignore lint/style/noNonNullAssertion: slug param guaranteed by route pattern
   c.set("slug", validateSlug(c.req.param("slug")!));
@@ -97,9 +90,15 @@ export const existingOwnerMw = createMiddleware<HonoEnv>(async (c, next) => {
   await next();
 });
 
+/**
+ * Authenticates the bearer token without checking slug ownership
+ * (`POST /deploy`, where the slug may not exist yet). Deliberately computes
+ * no keyHash: a fresh-salt `hashApiKey` costs ~100ms of uncacheable PBKDF2
+ * on every request, so the deploy core resolves ownership through the
+ * cacheable verify path and hashes only when the slug is genuinely
+ * unclaimed (mirroring `requireOwner`'s lazy hash for `/:slug` routes).
+ */
 export const authMw = createMiddleware<HonoEnv>(async (c, next) => {
-  const { apiKey, keyHash } = await requireAuth(c.req.raw);
-  c.set("apiKey", apiKey);
-  c.set("keyHash", keyHash);
+  c.set("apiKey", requireBearerToken(c.req.raw));
   await next();
 });

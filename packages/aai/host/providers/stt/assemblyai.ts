@@ -14,6 +14,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { createAudioSendGate } from "../../_audio-gate.ts";
 import {
   closeOnAbort,
   connectOrThrow,
@@ -86,6 +87,19 @@ export function suppressDiscardedSocketError(transcriber: StreamingTranscriber):
       /* swallow ws's async "closed before the connection was established" */
     });
   };
+}
+
+/**
+ * Best-effort view of the transcriber socket's unsent-byte count, for the
+ * audio backpressure gate. The streaming SDK does not expose its WebSocket,
+ * so this probes the same private `socket` field
+ * {@link suppressDiscardedSocketError} already relies on; if the SDK renames
+ * its internals the probe degrades to `undefined` and the gate is skipped.
+ */
+function transcriberBufferedAmount(transcriber: StreamingTranscriber): number | undefined {
+  const socket = (transcriber as unknown as { socket?: { bufferedAmount?: unknown } }).socket;
+  const buffered = socket?.bufferedAmount;
+  return typeof buffered === "number" ? buffered : undefined;
 }
 
 /** AssemblyAI's `agent_context` cap. Values longer than this are truncated. */
@@ -183,9 +197,17 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
           ),
       });
 
+      // Drop audio frames while the provider link is stalled — mic audio is
+      // real-time paced and loss-tolerant; see _audio-gate.ts. Gated before
+      // accumulation so a stall doesn't buffer host-side either.
+      const audioGate = createAudioSendGate({
+        bufferedAmount: () => transcriberBufferedAmount(transcriber),
+        label: "AssemblyAI STT",
+      });
+
       const session: AssemblyAISession = {
         sendAudio(pcm: Int16Array) {
-          if (shell.isClosed()) return;
+          if (shell.isClosed() || audioGate.shouldDrop()) return;
           frames.push(pcm);
         },
         on(event, fn) {

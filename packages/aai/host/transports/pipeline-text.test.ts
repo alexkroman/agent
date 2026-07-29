@@ -3,7 +3,7 @@
 // behavior (settle window, aggregation) lives in pipeline-turn.test.ts.
 
 import { describe, expect, test } from "vitest";
-import { countWords, hasMinWords, utteranceLooksComplete } from "./pipeline-text.ts";
+import { countWords, hasMinWords, scanWords, utteranceLooksComplete } from "./pipeline-text.ts";
 
 /** The `split`-based implementation these helpers replaced, as an oracle. */
 const splitCount = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
@@ -32,6 +32,23 @@ describe("countWords", () => {
     for (const text of SAMPLES) {
       expect(countWords(text), JSON.stringify(text)).toBe(splitCount(text));
     }
+  });
+});
+
+describe("scanWords", () => {
+  test("returns min(actual count, cap) — the bounded scan the partial handler relies on", () => {
+    for (const text of SAMPLES) {
+      const total = splitCount(text);
+      for (let cap = 1; cap <= total + 2; cap++) {
+        expect(scanWords(text, cap), `${JSON.stringify(text)} cap ${cap}`).toBe(
+          Math.min(total, cap),
+        );
+      }
+    }
+  });
+
+  test("stops at the cap on a long transcript", () => {
+    expect(scanWords("one two three four five six", 2)).toBe(2);
   });
 });
 
@@ -75,5 +92,27 @@ describe("utteranceLooksComplete", () => {
   test("empty / whitespace is never complete", () => {
     expect(utteranceLooksComplete("")).toBe(false);
     expect(utteranceLooksComplete("   ")).toBe(false);
+  });
+
+  test("the last word is found behind trailing digits and punctuation", () => {
+    // The tail scan must skip non-word characters (digits, punctuation) to
+    // reach the actual last word, exactly like the old whole-string match.
+    expect(utteranceLooksComplete("make it the 2.")).toBe(false); // cue "the"
+    expect(utteranceLooksComplete("order number 42.")).toBe(true); // "number"
+  });
+
+  test("apostrophes are part of the last word", () => {
+    expect(utteranceLooksComplete("okay let's.")).toBe(false); // cue "let's"
+    expect(utteranceLooksComplete("that's what I don't.")).toBe(true);
+  });
+
+  test("cue detection sees through trailing quotes and brackets", () => {
+    expect(utteranceLooksComplete('I want to search for, and."')).toBe(false);
+    expect(utteranceLooksComplete("(so.)")).toBe(false); // cue "so"
+  });
+
+  test("punctuation-only text is never complete", () => {
+    expect(utteranceLooksComplete("...")).toBe(true); // ends in ".", no cue word
+    expect(utteranceLooksComplete('"')).toBe(false); // closers with no punctuation
   });
 });

@@ -157,6 +157,23 @@ function repairChunk(payload: unknown, ids: Map<string, string>, newId: () => st
 }
 
 /**
+ * Cheap pre-parse check: a line can only need repair when it carries a
+ * `tool_calls` delta or an explicitly-null `choices`. `JSON.stringify` never
+ * puts whitespace after a colon, so the compact spelling covers everything
+ * the gateway emits; the single-space variant is tolerated for
+ * pretty-printing upstreams. Lines failing this check — the vast majority of
+ * every stream (text deltas) — pass through with no parse/stringify round
+ * trip, and byte-for-byte by construction.
+ */
+function mayNeedRepair(body: string): boolean {
+  return (
+    body.includes('"tool_calls"') ||
+    body.includes('"choices":null') ||
+    body.includes('"choices": null')
+  );
+}
+
+/**
  * Repair one SSE line. Non-`data:` lines, the `[DONE]` sentinel, non-JSON
  * payloads, and chunks without tool calls are returned unchanged.
  */
@@ -167,6 +184,7 @@ function repairLine(line: string, ids: Map<string, string>, newId: () => string)
   const carriageReturn = raw.endsWith("\r");
   const body = (carriageReturn ? raw.slice(0, -1) : raw).trim();
   if (body === "" || body === "[DONE]") return line;
+  if (!mayNeedRepair(body)) return line;
 
   let payload: unknown;
   try {
@@ -192,13 +210,18 @@ function createRepairTransform(newId: () => string): TransformStream<Uint8Array,
   return new TransformStream<Uint8Array, Uint8Array>({
     transform(chunk, controller) {
       buffer += decoder.decode(chunk, { stream: true });
-      let newline = buffer.indexOf("\n");
+      // Moving start index with one tail slice at the end: re-slicing the
+      // buffer after every line reallocates the remaining tail per line,
+      // which is O(chunk²) on a many-line network chunk.
+      let start = 0;
+      let newline = buffer.indexOf("\n", start);
       while (newline !== -1) {
-        const line = buffer.slice(0, newline);
-        buffer = buffer.slice(newline + 1);
+        const line = buffer.slice(start, newline);
+        start = newline + 1;
         controller.enqueue(encoder.encode(`${repairLine(line, ids, newId)}\n`));
-        newline = buffer.indexOf("\n");
+        newline = buffer.indexOf("\n", start);
       }
+      if (start > 0) buffer = buffer.slice(start);
     },
     flush(controller) {
       buffer += decoder.decode();

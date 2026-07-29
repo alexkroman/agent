@@ -28,10 +28,12 @@ import type { SandboxPool } from "../sandbox-pool.ts";
 import { runStudioChat } from "./studio-agent.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { isStudioLlmConfigured, studioLlmInfo } from "./studio-llm.ts";
+import { openMcpTools } from "./studio-mcp.ts";
 import { createStudioSandbox, type StudioSandbox } from "./studio-sandbox.ts";
 import {
   ChatBodySchema,
   CreateProjectSchema,
+  MAX_STUDIO_CHAT_BYTES,
   ProjectNameSchema,
   StudioDeployBodySchema,
   StudioFileSchema,
@@ -168,7 +170,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
       const project = validateProject(c.req.param("project"));
       const { env } = c.req.valid("json");
       const result = await deploy(
-        { store: c.env.store, slots: c.env.slots, storage: c.env.storage },
+        { store: c.env.store, slots: c.env.slots, storage: c.env.storage, pool: options.pool },
         { apiKey: c.var.apiKey, scope, project, env },
       );
       if (!result.ok) return c.json({ error: result.error }, 400);
@@ -176,7 +178,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     },
   );
 
-  studio.post("/chat", zValidator("json", ChatBodySchema), async (c) => {
+  studio.post("/chat", async (c) => {
     if (!llmConfigured()) {
       return c.json(
         {
@@ -187,9 +189,35 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
         503,
       );
     }
+    // The aggregate conversation cap is enforced on the raw body *before*
+    // parsing: near-limit requests used to pay a whole-array JSON.stringify
+    // inside a zod refine — re-serializing up to 4 MB that had just been
+    // parsed. The raw text length is measured directly (Content-Length can
+    // lie) and bounds everything the parse below can produce.
+    const raw = await c.req.text();
+    if (raw.length > MAX_STUDIO_CHAT_BYTES) {
+      return c.json({ error: "Conversation too large" }, 400);
+    }
+    let json: unknown;
+    try {
+      json = JSON.parse(raw);
+    } catch {
+      return c.json({ error: "Malformed JSON in request body" }, 400);
+    }
+    const body = ChatBodySchema.safeParse(json);
+    if (!body.success) {
+      return c.json({ error: "Invalid chat body", issues: body.error.issues }, 400);
+    }
     const scope = studioScope(c.var.apiKey);
-    const { project, messages } = c.req.valid("json");
+    const { project, messages } = body.data;
+
+    // Start the MCP connect now so it overlaps the workspace fetch below and
+    // runStudioChat's prompt assembly. Never rejects — failure degrades to no
+    // MCP tools. Closed by runStudioChat when the stream settles, or right
+    // here on the early-return path.
+    const mcp = openMcpTools();
     if (!(await getWorkspace(c.env.storage, scope, project))) {
+      void mcp.then((session) => session.close());
       return c.json({ error: "Project not found" }, 404);
     }
 
@@ -215,6 +243,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
         project,
         sandbox,
         disposeSandbox,
+        mcp,
       },
       // Structurally validated by UiMessageSchema; part-level validation
       // happens in convertToModelMessages.

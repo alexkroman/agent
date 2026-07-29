@@ -25,6 +25,7 @@ import {
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
+import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
 import { bundleWorkspaceWorker } from "./studio-bundle.ts";
 import { applyEdit, StudioEditError } from "./studio-edit.ts";
 import { StudioBuildError } from "./studio-errors.ts";
@@ -34,8 +35,9 @@ import { type McpSession, openMcpTools } from "./studio-mcp.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
 import { createWebTools } from "./studio-web.ts";
-import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
+import { currentFilesHash } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
+import { createWorkspaceSession, type WorkspaceSession } from "./studio-workspace-session.ts";
 
 const MAX_CHAT_STEPS = 16;
 
@@ -53,26 +55,35 @@ export type StudioChatDeps = {
   disposeSandbox?: () => Promise<void>;
   /** Injectable for tests — defaults to the host-env selected provider. */
   model?: LanguageModel;
-  /** Injectable for tests — defaults to the configured MCP servers. */
-  mcp?: McpSession;
+  /**
+   * Injectable for tests — defaults to the configured MCP servers. A promise
+   * is accepted so the route can start the connect early and hand it in;
+   * `runStudioChat` awaits it as late as possible (see below).
+   */
+  mcp?: McpSession | Promise<McpSession>;
 };
-
-type WorkspaceEdit = (files: Record<string, string>) => string | Promise<string>;
 
 /** Build the workspace, load it in the session sandbox, and report back. */
 async function runTrial(
   deps: StudioChatDeps,
+  workspaces: WorkspaceSession,
   trialTool: string | undefined,
   args: Record<string, unknown> | undefined,
 ): Promise<string> {
-  const workspace = await getWorkspace(deps.storage, deps.scope, deps.project);
+  const workspace = await workspaces.current();
   if (!workspace) return `Error: project ${deps.project} not found`;
-  let worker: string;
-  try {
-    worker = await withWorkspaceDir(workspace.files, bundleWorkspaceWorker);
-  } catch (err) {
-    if (err instanceof StudioBuildError) return err.message;
-    throw err;
+  // Content-hash keyed: a Publish right after this trial reuses the worker
+  // instead of re-materializing and re-running Vite (see studio-build-cache).
+  const hash = currentFilesHash(workspace);
+  let worker = getCachedBuild(hash)?.worker;
+  if (worker === undefined) {
+    try {
+      worker = await withWorkspaceDir(workspace.files, bundleWorkspaceWorker);
+    } catch (err) {
+      if (err instanceof StudioBuildError) return err.message;
+      throw err;
+    }
+    putCachedBuild(hash, { worker });
   }
   const sandbox = await deps.sandbox();
   let loaded: { config?: unknown };
@@ -107,32 +118,25 @@ async function runTrial(
 }
 
 /**
- * Build the coding agent's tool set. Every file tool re-reads the workspace
- * so edits are write-through — the browser sees them immediately and a
- * Publish always builds the latest files.
+ * Build the coding agent's tool set. File tools share one per-turn
+ * `WorkspaceSession`: reads come from an in-memory snapshot (one storage GET
+ * per turn instead of one per tool step) while every mutation still writes
+ * through — the browser sees edits immediately and a Publish always builds
+ * the latest files.
  */
-export function createStudioTools(deps: StudioChatDeps) {
-  const { storage, scope, project } = deps;
-
-  async function withFiles(edit: WorkspaceEdit): Promise<string> {
-    const workspace = await getWorkspace(storage, scope, project);
-    if (!workspace) return `Error: project ${project} not found`;
-    const files = { ...workspace.files };
-    try {
-      const message = await edit(files);
-      await putWorkspace(storage, scope, project, { ...workspace, files });
-      return message;
-    } catch (err) {
-      return `Error: ${err instanceof Error ? err.message : String(err)}`;
-    }
-  }
+export function createStudioTools(
+  deps: StudioChatDeps,
+  workspaces: WorkspaceSession = createWorkspaceSession(deps.storage, deps.scope, deps.project),
+) {
+  const { project } = deps;
+  const withFiles = workspaces.update;
 
   return {
     list_files: tool({
       description: "List the files in the project workspace",
       inputSchema: z.object({}),
       execute: async () => {
-        const workspace = await getWorkspace(storage, scope, project);
+        const workspace = await workspaces.current();
         if (!workspace) return `Error: project ${project} not found`;
         const paths = Object.keys(workspace.files).sort();
         return paths.length > 0 ? paths.join("\n") : "(empty workspace)";
@@ -142,7 +146,7 @@ export function createStudioTools(deps: StudioChatDeps) {
       description: "Read a file from the project workspace",
       inputSchema: z.object({ path: z.string().describe("Workspace-relative path") }),
       execute: async ({ path }) => {
-        const workspace = await getWorkspace(storage, scope, project);
+        const workspace = await workspaces.current();
         const content = workspace?.files[path];
         return content === undefined ? `Error: no such file: ${path}` : content;
       },
@@ -161,7 +165,7 @@ export function createStudioTools(deps: StudioChatDeps) {
         limit: z.number().optional().describe("Max matches (default 100)"),
       }),
       execute: async ({ pattern, ...opts }) => {
-        const workspace = await getWorkspace(storage, scope, project);
+        const workspace = await workspaces.current();
         if (!workspace) return `Error: project ${project} not found`;
         try {
           return grepWorkspace(workspace.files, pattern, opts);
@@ -239,7 +243,7 @@ export function createStudioTools(deps: StudioChatDeps) {
           .optional()
           .describe("Arguments for the invoked tool"),
       }),
-      execute: ({ tool: trialTool, args }) => runTrial(deps, trialTool, args),
+      execute: ({ tool: trialTool, args }) => runTrial(deps, workspaces, trialTool, args),
     }),
   };
 }
@@ -257,20 +261,29 @@ export async function runStudioChat(
   deps: StudioChatDeps,
   messages: UIMessage[],
 ): Promise<Response> {
-  // Never fails: an unreachable server yields no tools rather than an error.
-  const mcp = deps.mcp ?? (await openMcpTools());
+  // Started, not awaited: the MCP connect (never fails — an unreachable
+  // server yields no tools rather than an error) runs concurrently with
+  // prompt assembly below, and with the route's workspace fetch when the
+  // route handed in an already-started promise. `streamText` needs the tool
+  // set synchronously, so the await lands as late as possible instead of
+  // serializing ahead of the first token.
+  const mcpPromise = Promise.resolve(deps.mcp ?? openMcpTools());
   let disposeCalled = false;
   const disposeSandbox = () => {
     if (disposeCalled) return;
     disposeCalled = true;
     void deps.disposeSandbox?.();
-    void mcp.close();
+    void mcpPromise.then((mcp) => mcp.close());
   };
   try {
+    const modelMessages = await convertToModelMessages(messages, {
+      ignoreIncompleteToolCalls: true,
+    });
+    const mcp = await mcpPromise;
     const result = streamText({
       model: deps.model ?? studioModel(),
       system: studioSystemPrompt(),
-      messages: await convertToModelMessages(messages, { ignoreIncompleteToolCalls: true }),
+      messages: modelMessages,
       // Studio tools last: neither an MCP server nor a web builtin may
       // shadow write_file.
       tools: { ...mcp.tools, ...createWebTools(), ...createStudioTools(deps) },

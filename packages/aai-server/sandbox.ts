@@ -28,6 +28,11 @@ import {
 import type { Storage } from "unstorage";
 import { debug } from "./_debug-log.ts";
 import {
+  createMessageDeltaTracker,
+  isMessagesDesync,
+  type MessagesDelta,
+} from "./_sandbox-messages.ts";
+import {
   agentKvPrefix,
   MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_CLIENT_EVENT_PAYLOAD_BYTES,
@@ -77,9 +82,12 @@ export type Sandbox = AgentRuntime;
  *
  * The payload cap is measured in UTF-8 bytes (`Buffer.byteLength`), matching
  * what actually goes over the WebSocket — `.length` counts UTF-16 code units
- * and undercounts multibyte text. The serialized string is only used for the
+ * and undercounts multibyte text. The serialized string exists only for that
  * size check: `ClientSink.event` takes the event object and owns the final
- * envelope serialization, so we pass `data` through untouched.
+ * envelope serialization (there is no pre-serialized variant of the API), so
+ * this is the single stringify on the aai-server side and `data` passes
+ * through untouched. The sink lookup runs first so events for unknown or
+ * closed sessions never pay the serialization at all.
  *
  * Exported for unit tests.
  */
@@ -88,14 +96,13 @@ export function createClientSendHandler(sessionSinks: Map<string, ClientSink>) {
     const params = raw as { sessionId: string; event: string; data: unknown };
     if (typeof params.sessionId !== "string" || typeof params.event !== "string") return;
     if (params.event.length > MAX_CLIENT_EVENT_NAME_LENGTH) return;
+    const sink = sessionSinks.get(params.sessionId);
+    if (!sink?.open) return;
     // `data` may be undefined (event sent with no payload) — JSON.stringify
     // returns undefined for it, so guard before measuring.
     const serializedData = JSON.stringify(params.data ?? null);
     if (Buffer.byteLength(serializedData) > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return;
-    const sink = sessionSinks.get(params.sessionId);
-    if (sink?.open) {
-      sink.event({ type: "custom_event", event: params.event, data: params.data });
-    }
+    sink.event({ type: "custom_event", event: params.event, data: params.data });
   };
 }
 
@@ -203,6 +210,11 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     opts.pool,
   );
 
+  // Ships only the history the guest doesn't already hold on each
+  // tool/execute (see _sandbox-messages.ts) — late-session calls used to pay
+  // stringify + pipe + parse of the full transcript per step.
+  const messageTracker = createMessageDeltaTracker();
+
   const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
     let sandboxHandle: Awaited<typeof vmReady>;
     try {
@@ -210,14 +222,32 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     } catch (err: unknown) {
       return toolError(`Sandbox failed to start: ${errorMessage(err)}`);
     }
+    const sid = sessionId ?? "";
+    const history = messages ?? [];
+    const send = async (delta: MessagesDelta): Promise<unknown> => {
+      try {
+        return await sandboxHandle.conn.sendRequest("tool/execute", {
+          name,
+          args,
+          sessionId: sid,
+          ...delta,
+        });
+      } catch (err) {
+        // The guest may or may not have applied this delta — next call must
+        // carry full history.
+        messageTracker.reset(sid);
+        throw err;
+      }
+    };
     let raw: unknown;
     try {
-      raw = await sandboxHandle.conn.sendRequest("tool/execute", {
-        name,
-        args,
-        sessionId: sessionId ?? "",
-        messages: messages ?? [],
-      });
+      raw = await send(messageTracker.delta(sid, history));
+      if (isMessagesDesync(raw)) {
+        // The guest lost the prefix (restart, cache eviction) — retry once
+        // with the full history.
+        messageTracker.reset(sid);
+        raw = await send(messageTracker.delta(sid, history));
+      }
     } catch (err: unknown) {
       // RPC failure (guest died, timeout) — name the tool at this layer so
       // the error the LLM sees is actionable.
@@ -291,6 +321,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       },
       onSessionEnd(sessionId) {
         sessionSinks.delete(sessionId);
+        messageTracker.reset(sessionId);
         vmReady
           .then((handle) => handle.conn.sendNotification("session/end", { sessionId }))
           .catch(() => {
@@ -334,6 +365,17 @@ export async function resolveSandbox(
     let slot = slots.get(slug);
     if (slot?.sandbox) return slot.sandbox as Sandbox;
 
+    // Kick off the bundle reads now so a cold miss doesn't serialize the
+    // manifest read ahead of them (one extra storage RTT per
+    // first-session-per-slug-per-replica). Each gets a no-op rejection
+    // handler immediately: on a manifest miss the trio is discarded while
+    // possibly still in flight, and a late rejection must not surface as an
+    // unhandled rejection. `Promise.all` below still observes the originals.
+    const workerCodeP = store.getWorkerCode(slug);
+    const agentConfigP = store.getAgentConfig(slug);
+    const envP = store.getEnv(slug).then((e) => e ?? {});
+    for (const p of [workerCodeP, agentConfigP, envP]) p.catch(() => undefined);
+
     if (!slot) {
       const manifest = await store.getManifest(slug);
       if (!manifest) return null;
@@ -345,11 +387,7 @@ export async function resolveSandbox(
       debug("Lazy-discovered agent from store", { slug });
     }
 
-    const [workerCode, agentConfig, env] = await Promise.all([
-      store.getWorkerCode(slug),
-      store.getAgentConfig(slug),
-      store.getEnv(slug).then((e) => e ?? {}),
-    ]);
+    const [workerCode, agentConfig, env] = await Promise.all([workerCodeP, agentConfigP, envP]);
 
     if (!(workerCode && agentConfig)) {
       return null;

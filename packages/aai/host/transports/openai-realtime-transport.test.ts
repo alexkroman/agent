@@ -232,6 +232,20 @@ describe("audio in/out", () => {
     expect(Buffer.from(msg.audio, "base64")).toEqual(Buffer.from([1, 2, 3, 4]));
   });
 
+  test("sendUserAudio drops frames while the socket buffer exceeds the cap, then resumes", async () => {
+    const { fake, transport, ready } = startedTransport();
+    await ready;
+    fake.sent.length = 0;
+
+    Object.assign(fake, { bufferedAmount: 8 * 1024 * 1024 });
+    transport.sendUserAudio(new Uint8Array([1, 2, 3, 4]));
+    expect(fake.sent.length).toBe(0);
+
+    Object.assign(fake, { bufferedAmount: 0 });
+    transport.sendUserAudio(new Uint8Array([1, 2, 3, 4]));
+    expect(fake.sent.length).toBe(1);
+  });
+
   test("response.output_audio.delta calls onAudioChunk with decoded bytes", async () => {
     const type = "response.output_audio.delta";
     const { fake, cbs, ready } = startedTransport();

@@ -7,6 +7,7 @@ import { z } from "zod";
 import type { ToolSchema } from "../sdk/_internal-types.ts";
 import { LOG_PREVIEW_CHARS, WS_OPEN } from "../sdk/constants.ts";
 import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
+import { createAudioSendGate } from "./_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import {
   type CreateHeaderWebSocket,
@@ -214,6 +215,15 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     headers: { Authorization: `Bearer ${apiKey}` },
   });
 
+  // Drop mic frames while the provider link is stalled (audio is
+  // loss-tolerant; a stalled socket must not queue live speech unboundedly).
+  // Only sendAudio is gated — control messages always go through.
+  const audioGate = createAudioSendGate({
+    bufferedAmount: () => ws.bufferedAmount,
+    label: "S2S",
+    log,
+  });
+
   const dispatchState: DispatchState = { speechActive: false };
   const dispatchCtx: DispatchContext = sid !== undefined ? { log, sid } : { log };
   // Handlers below stay registered for the socket's whole life; the race routes
@@ -238,7 +248,7 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
   const handle: S2sHandle = {
     sendAudio(audio: Uint8Array): void {
-      if (ws.readyState !== WS_OPEN) return;
+      if (ws.readyState !== WS_OPEN || audioGate.shouldDrop()) return;
       ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
     },
 

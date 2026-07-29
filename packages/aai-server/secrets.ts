@@ -4,7 +4,7 @@
 // legacy decrypt). Both stored formats are self-describing, so records
 // written by older servers keep working — never delete a legacy read path.
 
-import { timingSafeEqual } from "node:crypto";
+import { createHash, timingSafeEqual } from "node:crypto";
 import { hash as argon2Hash, verify as argon2Verify } from "@node-rs/argon2";
 import { defaults as ironDefaults, seal as ironSeal, unseal as ironUnseal } from "iron-webcrypto";
 import { TtlCache } from "./_ttl-cache.ts";
@@ -34,8 +34,13 @@ const ARGON2_OPTIONS = {
 // legacy PBKDF2 ~100ms). Authenticated routes run it on every request, so
 // repeated (apiKey, storedHash) pairs get cached here. Both inputs together
 // uniquely determine the boolean result (the storedHash embeds its own salt
-// + parameters), making the cache safe.
-const VERIFY_CACHE_MAX = 256;
+// + parameters), making the cache safe. Entries are keyed by
+// SHA-256(apiKey) rather than the plaintext key — SHA-256 is only a cache
+// key (argon2/PBKDF2 stay the verification boundary), but not retaining
+// plaintext keys is what lets the cap be generous: at ~200 bytes per entry,
+// 10k active pairs is ~2 MB, so multi-tenant traffic doesn't fall off an
+// expensive-derivation latency cliff once the tenant count passes the cap.
+const VERIFY_CACHE_MAX = 10_000;
 const VERIFY_CACHE_TTL_MS = 5 * 60 * 1000;
 
 const verifyCache = new TtlCache<boolean>(VERIFY_CACHE_TTL_MS, VERIFY_CACHE_MAX);
@@ -93,9 +98,9 @@ async function verifyPbkdf2Hash(apiKey: string, storedHash: string): Promise<boo
  * verify inside `@node-rs/argon2`; malformed strings verify false).
  */
 export async function verifyApiKeyHash(apiKey: string, storedHash: string): Promise<boolean> {
-  // Length-prefix the apiKey so no (apiKey, storedHash) pair can collide
-  // with another by concatenation.
-  const cacheKey = `${apiKey.length}:${apiKey}:${storedHash}`;
+  // The fixed-length hex digest doubles as a concatenation-safe prefix — no
+  // (apiKey, storedHash) pair can collide with another by concatenation.
+  const cacheKey = `${createHash("sha256").update(apiKey).digest("hex")}:${storedHash}`;
   const cached = verifyCache.get(cacheKey);
   if (cached !== undefined) return cached;
 

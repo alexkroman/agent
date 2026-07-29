@@ -7,7 +7,44 @@ import {
   MockAudioContext,
   voiceOpts,
 } from "./_react-test-utils.ts";
-import { createVoiceIO } from "./audio.ts";
+import { createVoiceIO, decodeAudioToPcm16 } from "./audio.ts";
+
+describe("decodeAudioToPcm16", () => {
+  test("decodes, clamps, and converts samples to PCM16", async () => {
+    const samples = new Float32Array([0.5, -0.5, 2, -2, 0]);
+    class FakeOfflineAudioContext {
+      destination = {};
+      rate: number;
+      constructor(_channels: number, _frames: number, rate: number) {
+        this.rate = rate;
+      }
+      decodeAudioData(_data: ArrayBuffer) {
+        return Promise.resolve({ duration: samples.length / this.rate });
+      }
+      createBufferSource() {
+        return {
+          buffer: null as unknown,
+          connect(_dest: unknown) {
+            /* noop */
+          },
+          start() {
+            /* noop */
+          },
+        };
+      }
+      startRendering() {
+        return Promise.resolve({ getChannelData: () => samples });
+      }
+    }
+    vi.stubGlobal("OfflineAudioContext", FakeOfflineAudioContext);
+    try {
+      const pcm = await decodeAudioToPcm16(new ArrayBuffer(4), 16_000);
+      expect(Array.from(pcm)).toEqual([16_383, -16_384, 32_767, -32_768, 0]);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+});
 
 describe("createVoiceIO", () => {
   let audio: AudioMockContext & { restore: () => void };

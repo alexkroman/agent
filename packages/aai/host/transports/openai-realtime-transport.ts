@@ -5,6 +5,7 @@ import type { ToolSchema } from "../../sdk/_internal-types.ts";
 import { LOG_PREVIEW_CHARS, WS_OPEN } from "../../sdk/constants.ts";
 import type { OpenaiRealtimeOptions } from "../../sdk/providers/s2s/openai-realtime.ts";
 import { errorMessage, safeJsonParse } from "../../sdk/utils.ts";
+import { createAudioSendGate } from "../_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import {
   type CreateHeaderWebSocket,
@@ -54,6 +55,14 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
   let ws: OpenaiRealtimeWebSocket | null = null;
   let closing = false;
+  // Drop mic frames while the provider link is stalled (audio is
+  // loss-tolerant; a stalled socket must not queue live speech unboundedly).
+  // Only sendUserAudio is gated — control messages always go through.
+  const audioGate = createAudioSendGate({
+    bufferedAmount: () => ws?.bufferedAmount,
+    label: "OpenAI Realtime",
+    log,
+  });
   const agentTranscriptBuffers = new Map<string, string>();
   type ToolBuffer = { callId: string; name: string; argsBuffer: string };
   const toolBuffers = new Map<string, ToolBuffer>();
@@ -345,7 +354,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
     start,
     stop,
     sendUserAudio(bytes) {
-      if (!ws || ws.readyState !== WS_OPEN) return;
+      if (!ws || ws.readyState !== WS_OPEN || audioGate.shouldDrop()) return;
       ws.send(`{"type":"input_audio_buffer.append","audio":"${uint8ToBase64(bytes)}"}`);
     },
     sendToolResult(callId, result) {

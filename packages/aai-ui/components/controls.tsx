@@ -3,6 +3,7 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
+import { memo } from "react";
 import { useSessionCore, useSessionSelector } from "../context.ts";
 import { Button } from "./button.tsx";
 import { SessionUrlChips } from "./url-chips.tsx";
@@ -22,7 +23,10 @@ import { SessionUrlChips } from "./url-chips.tsx";
  *
  * @public
  */
-export function Controls({ className }: { className?: string }) {
+// memo(): the only prop is a string, so ChatView re-rendering (state flips,
+// errors) never cascades here; the narrow `running` subscription below stays
+// the sole re-render trigger.
+export const Controls = memo(function Controls({ className }: { className?: string }) {
   // Narrow subscription: only re-render when `running` flips, not on every
   // snapshot change (messages, transcripts, audio state, ...).
   const running = useSessionSelector((s) => s.running);
@@ -39,4 +43,4 @@ export function Controls({ className }: { className?: string }) {
       <SessionUrlChips className="ml-auto max-w-[60%]" />
     </div>
   );
-}
+});

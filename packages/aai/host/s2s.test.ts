@@ -72,6 +72,22 @@ describe("connectS2s", () => {
     expect(typeof sent.audio).toBe("string");
   });
 
+  test("sendAudio drops frames while the provider socket buffer exceeds the cap", async () => {
+    const { raw, handle, logger } = await setupHandle();
+
+    // Stalled provider link: unsent bytes past the cap → frames drop, one warn.
+    Object.assign(raw, { bufferedAmount: 8 * 1024 * 1024 });
+    handle.sendAudio(new Uint8Array([1, 2, 3, 4]));
+    handle.sendAudio(new Uint8Array([5, 6, 7, 8]));
+    expect(raw.send).not.toHaveBeenCalled();
+    expect(logger.warn).toHaveBeenCalledTimes(1);
+
+    // Buffer drained: sending resumes.
+    Object.assign(raw, { bufferedAmount: 0 });
+    handle.sendAudio(new Uint8Array([1, 2, 3, 4]));
+    expect(raw.send).toHaveBeenCalledOnce();
+  });
+
   test("sendAudio is no-op when ws is not open", async () => {
     const { raw, handle } = await setupHandle();
     raw.readyState = 3;

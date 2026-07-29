@@ -12,6 +12,18 @@
  * the session sandbox is handled: a studio turn is short, and a long-lived
  * shared client would be one more thing to health-check and reconnect.
  *
+ * Two things keep the per-turn connect off the time-to-first-token path:
+ *
+ * - **The tool *listing* is cached process-wide** (per URL, short TTL). The
+ *   AI SDK binds each tool's `execute` to the client it came from, so tool
+ *   *objects* cannot outlive their turn's client — but the `tools/list`
+ *   result can, and `client.toolsFromDefinitions()` rebuilds the objects on
+ *   the fresh client without a round trip. A warm turn pays one connect, not
+ *   connect + list.
+ * - **Callers start `openMcpTools()` early and await it late** (see
+ *   `runStudioChat`), overlapping the remaining connect latency with the
+ *   turn's other awaits instead of serializing ahead of `streamText`.
+ *
  * **Failure is never fatal.** A server that is down, slow, or returns
  * nonsense must not take the turn with it — the agent still has its file
  * tools and the embedded guide. Every failure path here degrades to "no MCP
@@ -19,7 +31,7 @@
  */
 
 import { setTimeout as sleep } from "node:timers/promises";
-import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
+import { createMCPClient, type ListToolsResult, type MCPClient } from "@ai-sdk/mcp";
 import { debug } from "../_debug-log.ts";
 
 /**
@@ -44,11 +56,42 @@ export const ASSEMBLYAI_DOCS_MCP_URL = "https://www.assemblyai.com/docs/mcp";
 const DENIED_TOOLS: ReadonlySet<string> = new Set(["submit_feedback"]);
 
 /**
- * How long to wait for connect + tool listing before giving up on MCP for
- * this turn. The user is watching a chat box; a slow docs server should cost
- * them a lookup, not the reply.
+ * How long to wait for the connect phase before giving up on MCP for this
+ * turn. The user is watching a chat box; a slow docs server should cost them
+ * a lookup, not the reply. Kept short: tool objects cannot be cached across
+ * turns (their `execute` is bound to the turn's client), so a degraded server
+ * charges this bound to every turn — 2s is plenty for a healthy HTTPS
+ * handshake and small enough to hide inside the turn's other awaits.
  */
-const CONNECT_TIMEOUT_MS = 5000;
+const CONNECT_TIMEOUT_MS = 2000;
+
+/** How long to wait for `tools/list`. Paid only on a listing-cache miss. */
+const LIST_TIMEOUT_MS = 5000;
+
+/**
+ * How long a cached `tools/list` result stays fresh. Docs-server tool sets
+ * change on deploys, not per request; five minutes of staleness is invisible
+ * next to the system-prompt snapshot it supplements.
+ */
+const TOOL_LIST_TTL_MS = 5 * 60 * 1000;
+
+/** Process-wide `tools/list` cache, keyed by server URL. */
+const toolListCache = new Map<string, { definitions: ListToolsResult; expiresAt: number }>();
+
+/** Test seam: drop every cached tool listing. */
+export function clearMcpToolListCache(): void {
+  toolListCache.clear();
+}
+
+function cachedToolList(url: string, now = Date.now()): ListToolsResult | null {
+  const entry = toolListCache.get(url);
+  if (!entry) return null;
+  if (entry.expiresAt <= now) {
+    toolListCache.delete(url);
+    return null;
+  }
+  return entry.definitions;
+}
 
 /** `STUDIO_MCP_URLS` overrides the default; empty string disables MCP entirely. */
 export function mcpUrls(env: NodeJS.ProcessEnv = process.env): string[] {
@@ -106,8 +149,15 @@ async function connectOne(url: string): Promise<{ client: MCPClient; tools: McpT
       `MCP connect (${url})`,
     );
     try {
-      const tools = await withTimeout(client.tools(), CONNECT_TIMEOUT_MS, `MCP tools (${url})`);
-      return { client, tools };
+      // The listing is cacheable across turns; the client is not (each tool's
+      // `execute` calls back through the client it was built on, and this
+      // turn's client closes when the stream settles).
+      let definitions = cachedToolList(url);
+      if (!definitions) {
+        definitions = await withTimeout(client.listTools(), LIST_TIMEOUT_MS, `MCP tools (${url})`);
+        toolListCache.set(url, { definitions, expiresAt: Date.now() + TOOL_LIST_TTL_MS });
+      }
+      return { client, tools: client.toolsFromDefinitions(definitions) };
     } catch (err) {
       await client.close().catch(() => undefined);
       throw err;

@@ -5,6 +5,7 @@ import { createTestStorage } from "../test-utils.ts";
 import { MAX_STUDIO_FILES } from "./studio-schemas.ts";
 import {
   assertWorkspaceLimits,
+  currentFilesHash,
   deleteWorkspace,
   filesHash,
   getWorkspace,
@@ -37,6 +38,14 @@ describe("workspace CRUD", () => {
     expect(ws?.files).toEqual({ "agent.ts": "code" });
     expect(ws?.deployedSlug).toBe("my-slug");
     expect(ws?.updatedAt).toBeGreaterThan(0);
+  });
+
+  test("put stamps the files hash so reads never recompute it", async () => {
+    const storage = createTestStorage();
+    const files = { "agent.ts": "code" };
+    await putWorkspace(storage, "s", "p", { files });
+    const ws = await getWorkspace(storage, "s", "p");
+    expect(ws?.hash).toBe(filesHash(files));
   });
 
   test("get returns null for a missing project", async () => {
@@ -163,6 +172,35 @@ describe("hasUnpublishedChanges", () => {
     expect(
       hasUnpublishedChanges(at({ files: {}, deployedSlug: "s", deployedHash: published })),
     ).toBe(true);
+  });
+});
+
+describe("currentFilesHash", () => {
+  test("uses the stored hash when present", () => {
+    // The stored value wins even when it disagrees with the files — that is
+    // the point: reads trust what the write stamped instead of recomputing.
+    const ws: StudioWorkspace = { files: { "a.ts": "1" }, hash: "stored", updatedAt: 1 };
+    expect(currentFilesHash(ws)).toBe("stored");
+  });
+
+  test("falls back to computing for pre-hash documents", () => {
+    const files = { "a.ts": "1" };
+    const ws: StudioWorkspace = { files, updatedAt: 1 };
+    expect(currentFilesHash(ws)).toBe(filesHash(files));
+  });
+});
+
+describe("hasUnpublishedChanges (stored hash)", () => {
+  test("an old document without a stored hash still compares correctly", () => {
+    const files = { "agent.ts": "a" };
+    expect(
+      hasUnpublishedChanges({
+        files,
+        updatedAt: 1,
+        deployedSlug: "s",
+        deployedHash: filesHash(files),
+      }),
+    ).toBe(false);
   });
 });
 

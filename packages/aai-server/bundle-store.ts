@@ -34,10 +34,85 @@ const STORE_CACHE_TTL_MS = 60_000;
 // since individual assets can be large.
 const CLIENT_FILE_CACHE_MAX = 64;
 
-// Worker bundles can be up to MAX_WORKER_SIZE (10 MB), so cap the entry
-// count low. Note quick-lru's dual-generation eviction can briefly hold up
-// to 2× maxSize entries, so worst case is ~160 MB, not ~80 MB.
-const WORKER_CODE_CACHE_MAX = 8;
+// Worker bundles are immutable per deploy, and every deploy/delete calls
+// invalidate() — so on this replica a long TTL is safe. The TTL exists only
+// to bound cross-replica staleness (a deploy landing on another replica
+// invalidates *its* cache, not ours); 10 minutes keeps that window short
+// while sparing hosts the up-to-10 MB S3 refetch on every cold start.
+const WORKER_CODE_CACHE_TTL_MS = 10 * 60 * 1000;
+// Bundles range from KBs to MAX_WORKER_SIZE (10 MB), so an entry-count cap
+// is either too tight for many small agents or too loose for a few large
+// ones — budget by total bytes instead and evict LRU until under budget.
+const WORKER_CODE_CACHE_MAX_BYTES = 128 * 1024 * 1024;
+
+// Charged per entry on top of the value size: bounds the entry count for
+// tiny and confirmed-miss (null) entries, which would otherwise be "free"
+// under a pure byte budget and accumulate one Map slot per probed slug.
+const BYTE_CACHE_ENTRY_OVERHEAD = 4096;
+
+type ByteCacheEntry<V> = { value: V; bytes: number; expiresAt: number };
+
+/**
+ * Byte-budgeted expire-on-read LRU cache. Unlike `TtlCache` (entry-counted),
+ * eviction is driven by total value bytes, so the same budget serves many
+ * small bundles or a few large ones. Exported for direct testing.
+ */
+export class ByteBudgetTtlCache<V> {
+  readonly #entries = new Map<string, ByteCacheEntry<V>>();
+  readonly #ttlMs: number;
+  readonly #maxBytes: number;
+  #totalBytes = 0;
+
+  constructor(ttlMs: number, maxBytes: number) {
+    this.#ttlMs = ttlMs;
+    this.#maxBytes = maxBytes;
+  }
+
+  /** Total bytes currently charged against the budget (incl. per-entry overhead). */
+  get totalBytes(): number {
+    return this.#totalBytes;
+  }
+
+  get size(): number {
+    return this.#entries.size;
+  }
+
+  get(key: string): V | undefined {
+    const entry = this.#entries.get(key);
+    if (!entry) return;
+    if (Date.now() >= entry.expiresAt) {
+      this.delete(key);
+      return;
+    }
+    // Refresh recency — Map iteration order is insertion order, so the
+    // oldest key is always first when evicting.
+    this.#entries.delete(key);
+    this.#entries.set(key, entry);
+    return entry.value;
+  }
+
+  /** `valueBytes` is the value's size; string `length` is a fine approximation. */
+  set(key: string, value: V, valueBytes: number): void {
+    this.delete(key);
+    const bytes = valueBytes + BYTE_CACHE_ENTRY_OVERHEAD;
+    // A value larger than the whole budget can never fit — don't evict
+    // everything else only to fail anyway.
+    if (bytes > this.#maxBytes) return;
+    this.#entries.set(key, { value, bytes, expiresAt: Date.now() + this.#ttlMs });
+    this.#totalBytes += bytes;
+    for (const oldest of this.#entries.keys()) {
+      if (this.#totalBytes <= this.#maxBytes || oldest === key) break;
+      this.delete(oldest);
+    }
+  }
+
+  delete(key: string): void {
+    const entry = this.#entries.get(key);
+    if (!entry) return;
+    this.#entries.delete(key);
+    this.#totalBytes -= entry.bytes;
+  }
+}
 
 async function instrumentTigris<T>(op: string, fn: () => Promise<T>): Promise<T> {
   return observeDurationWithStatus(
@@ -58,7 +133,10 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
   const configCache = new TtlCache<IsolateConfig | null>(STORE_CACHE_TTL_MS);
   // Keyed by full object key (`agents/<slug>/client/<path>`).
   const clientFileCache = new TtlCache<string | null>(STORE_CACHE_TTL_MS, CLIENT_FILE_CACHE_MAX);
-  const workerCodeCache = new TtlCache<string | null>(STORE_CACHE_TTL_MS, WORKER_CODE_CACHE_MAX);
+  const workerCodeCache = new ByteBudgetTtlCache<string | null>(
+    WORKER_CODE_CACHE_TTL_MS,
+    WORKER_CODE_CACHE_MAX_BYTES,
+  );
 
   function invalidate(slug: string): void {
     manifestCache.delete(slug);
@@ -82,7 +160,9 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     });
   }
 
-  // Some unstorage drivers auto-parse JSON keys; normalize back to a string before parsing.
+  // Some unstorage drivers auto-parse JSON keys; return the parsed value
+  // directly instead of a stringify→parse round trip. Callers Zod-validate
+  // the shape either way, so both paths are checked identically.
   async function readJson(key: string): Promise<unknown | null> {
     const data = await readItem(key);
     if (data == null) return null;
@@ -172,7 +252,7 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
         const cached = workerCodeCache.get(slug);
         if (cached !== undefined) return cached;
         const value = await readItem(agentObjectKey(slug, "worker.js"));
-        workerCodeCache.set(slug, value);
+        workerCodeCache.set(slug, value, value?.length ?? 0);
         return value;
       });
     },
