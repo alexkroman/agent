@@ -2,19 +2,14 @@
 
 import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 
-/** Microphone buffer duration in seconds before sending to the server. */
-export const MIC_BUFFER_SECONDS = 0.1;
-
-/**
- * Backpressure threshold for outbound mic audio. When the WebSocket's
- * `bufferedAmount` exceeds this many bytes (~2s of 16 kHz PCM16), mic frames
- * are dropped instead of queued — for live voice, stale audio flushed into
- * STT on recovery is worse than a gap.
- */
-export const MIC_SEND_MAX_BUFFERED_BYTES = 64 * 1024;
-
-/** Poll interval while waiting out socket backpressure during a file send. */
-export const FILE_SEND_BACKOFF_MS = 50;
+// Client audio/backpressure budgets live in the SDK's constants module,
+// next to the host-side halves of the same wire paths (e.g.
+// FILE_UPLOAD_CHUNK_BYTES, MAX_CLIENT_WS_BUFFERED_BYTES).
+export {
+  FILE_SEND_BACKOFF_MS,
+  MIC_BUFFER_SECONDS,
+  MIC_SEND_MAX_BUFFERED_BYTES,
+} from "@alexkroman1/aai";
 
 /**
  * Current state of the voice agent session.
