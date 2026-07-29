@@ -12,6 +12,7 @@ import {
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
+  assertTextOnlyTuning,
   ProviderDescriptorSchema,
   ToolSchemaSchema,
 } from "@alexkroman1/aai/manifest";
@@ -50,6 +51,7 @@ export const IsolateConfigSchema = z
     mode: z.enum(["s2s", "pipeline"]).optional(),
     kv: ProviderDescriptorSchema.optional(),
     vector: ProviderDescriptorSchema.optional(),
+    send: ProviderDescriptorSchema.optional(),
   })
   .superRefine((cfg, ctx) => {
     function fail(message: string): void {
@@ -62,6 +64,7 @@ export const IsolateConfigSchema = z
       }
       assertSilencePolicy(mode, cfg.silenceTimeoutMs, cfg.silencePrompt);
       assertPipelineTuning(mode, cfg);
+      assertTextOnlyTuning(cfg.tts, cfg);
     } catch (err) {
       fail(errorMessage(err));
     }

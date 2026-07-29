@@ -53,9 +53,11 @@ function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
 }
 
 /** Config payload extracted from a `config` server message. */
-type SessionConfigMessage = {
+export type SessionConfigMessage = {
   sampleRate: number;
   ttsSampleRate: number;
+  /** False for text-only agents (`tts: none()`) — see ReadyConfigSchema. */
+  audioOut?: boolean | undefined;
   sid?: string | undefined;
 };
 
@@ -137,13 +139,37 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
     });
   }
 
+  /** Clear error state when a non-error event arrives — proves the session
+   *  is functional (e.g. audio init failed but WebSocket still works). */
+  function clearRecoveredError(): void {
+    const snap = getSnapshot();
+    if (snap.state === "error") {
+      updateState({ state: "disconnected", error: null });
+    } else if (snap.error !== null) {
+      // Lingering non-fatal error banner (fatal: false) — the session kept
+      // running, so any later activity clears it.
+      updateState({ error: null });
+    }
+  }
+
+  function handleErrorEvent(e: Extract<ClientEvent, { type: "error" }>): void {
+    console.error("Agent error:", e.message);
+    if (e.fatal === false) {
+      // Turn-level failure (e.g. one upload's transcription failed): show
+      // the banner but keep the session usable — the server kept running.
+      updateState({ error: { code: e.code, message: e.message } });
+    } else {
+      updateState({
+        state: "error",
+        error: { code: e.code, message: e.message },
+        running: false,
+      });
+    }
+  }
+
   /** Single entry point for all server->client session events. */
   function handleEvent(e: ClientEvent): void {
-    // Clear error state when a non-error event arrives — proves the session
-    // is functional (e.g. audio init failed but WebSocket still works).
-    if (getSnapshot().state === "error" && e.type !== "error") {
-      updateState({ state: "disconnected", error: null });
-    }
+    if (e.type !== "error") clearRecoveredError();
 
     switch (e.type) {
       case "speech_started":
@@ -212,12 +238,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         appendCustomEvent(e.event, e.data);
         break;
       case "error":
-        console.error("Agent error:", e.message);
-        updateState({
-          state: "error",
-          error: { code: e.code, message: e.message },
-          running: false,
-        });
+        handleErrorEvent(e);
         break;
       case "idle_timeout":
         // Server-side idle timeout — treat as a graceful disconnect signal.
@@ -297,6 +318,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       return {
         sampleRate: msg.sampleRate,
         ttsSampleRate: msg.ttsSampleRate,
+        audioOut: msg.audioOut,
         sid: msg.sessionId,
       };
     }

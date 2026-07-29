@@ -75,14 +75,14 @@ describe("StartScreen: start flow", () => {
     );
 
     // Shows start button, not children
-    expect(screen.getByText("Start")).toBeDefined();
+    expect(screen.getByText("Start Conversation")).toBeDefined();
     expect(screen.queryByTestId("chat")).toBeNull();
 
     // Click start
-    fireEvent.click(screen.getByText("Start"));
+    fireEvent.click(screen.getByText("Start Conversation"));
 
     // start() sets started=true, which notifies subscribers and triggers re-render
-    expect(screen.queryByText("Start")).toBeNull();
+    expect(screen.queryByText("Start Conversation")).toBeNull();
     expect(screen.getByTestId("chat")).toBeDefined();
   });
 
@@ -309,10 +309,10 @@ describe("ChatView + StartScreen: full component tree integration", () => {
     );
 
     // 1. Start screen
-    expect(screen.getByText("Start")).toBeDefined();
+    expect(screen.getByText("Start Conversation")).toBeDefined();
 
     // 2. Click start -> chat view
-    fireEvent.click(screen.getByText("Start"));
+    fireEvent.click(screen.getByText("Start Conversation"));
 
     // The start() call sets started=true and running=true
     // We also need to update state to "listening"

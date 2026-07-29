@@ -103,6 +103,16 @@ describe("connectS2s", () => {
     expect(sent.session_id).toBe("session-abc");
   });
 
+  test("close() sends Normal Closure so our own teardown is distinguishable", async () => {
+    // Without an explicit code the close frame carries no status, and both
+    // ends report 1005 "No Status Received" — identical to the peer dropping
+    // us. 1005 is also in TRANSIENT_CLOSE_CODES, so an intentional close
+    // would look resumable. Saying 1000 keeps the two apart in the logs.
+    const { raw, handle } = await setupHandle();
+    handle.close();
+    expect(raw.close).toHaveBeenCalledWith(1000);
+  });
+
   test("close() closes the underlying ws", async () => {
     const { raw, handle } = await setupHandle();
 

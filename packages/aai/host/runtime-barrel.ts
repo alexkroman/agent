@@ -19,10 +19,12 @@ export * from "./host-mode.ts";
 export { createMemoryVector } from "./memory-vector.ts";
 export * from "./pinecone-vector.ts";
 export * from "./providers/host-env.ts";
-// Narrow named export rather than `export *`: the rest of resolve.ts is
-// internal descriptor plumbing, and this is the one piece callers outside the
-// package need (the CLI dev server, to check credentials before starting).
-export { requiredProviderEnvVars } from "./providers/resolve.ts";
+// Narrow named exports rather than `export *`: the rest of resolve.ts is
+// internal descriptor plumbing. `requiredProviderEnvVars` is used by the CLI
+// dev server to check credentials before starting; `resolveLlm` lets host
+// applications (e.g. the platform server's browser studio) turn an LLM
+// descriptor into a Vercel AI SDK model without duplicating provider wiring.
+export { requiredProviderEnvVars, resolveLlm } from "./providers/resolve.ts";
 export * from "./providers/resolve-kv.ts";
 export * from "./providers/resolve-vector.ts";
 export * from "./runtime.ts";

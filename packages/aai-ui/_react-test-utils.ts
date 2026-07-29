@@ -25,6 +25,9 @@ export function createMockSessionCore(
     error: SessionError | null;
     started: boolean;
     running: boolean;
+    audioOut: boolean;
+    recording: boolean;
+    apiUrl: string;
   }>,
 ): SessionCore & { update(partial: Partial<SessionSnapshot>): void } {
   let snapshot: SessionSnapshot = {
@@ -38,6 +41,9 @@ export function createMockSessionCore(
     error: overrides?.error ?? null,
     started: overrides?.started ?? false,
     running: overrides?.running ?? true,
+    audioOut: overrides?.audioOut ?? true,
+    recording: overrides?.recording ?? false,
+    apiUrl: overrides?.apiUrl ?? "ws://test.local/websocket",
   };
 
   const subscribers = new Set<() => void>();
@@ -78,6 +84,17 @@ export function createMockSessionCore(
     toggle() {
       snapshot = { ...snapshot, running: !snapshot.running };
       notify();
+    },
+    startRecording() {
+      snapshot = { ...snapshot, recording: true };
+      notify();
+    },
+    stopRecording() {
+      snapshot = { ...snapshot, recording: false };
+      notify();
+    },
+    sendAudioFile(_file: Blob) {
+      return Promise.resolve();
     },
     update(partial: Partial<SessionSnapshot>) {
       // Mirror the real core: content changes bump contentVersion.

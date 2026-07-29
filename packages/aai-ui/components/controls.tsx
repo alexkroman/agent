@@ -3,8 +3,9 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import { useSessionCore, useSessionSelector, useTheme } from "../context.ts";
+import { useSessionCore, useSessionSelector } from "../context.ts";
 import { Button } from "./button.tsx";
+import { SessionUrlChips } from "./url-chips.tsx";
 
 /**
  * Session control buttons: **Stop / Resume** and **New Conversation**.
@@ -26,19 +27,16 @@ export function Controls({ className }: { className?: string }) {
   // snapshot change (messages, transcripts, audio state, ...).
   const running = useSessionSelector((s) => s.running);
   const { toggle, reset } = useSessionCore();
-  const theme = useTheme();
 
   return (
-    <div
-      className={clsx("flex gap-2 px-4 py-3 border-t shrink-0", className)}
-      style={{ borderColor: theme.border }}
-    >
+    <div className={clsx("flex items-center gap-3 shrink-0", className)}>
       <Button variant="secondary" onClick={toggle}>
         {running ? "Stop" : "Resume"}
       </Button>
       <Button variant="ghost" onClick={reset}>
         New Conversation
       </Button>
+      <SessionUrlChips className="ml-auto max-w-[60%]" />
     </div>
   );
 }

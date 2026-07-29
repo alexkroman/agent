@@ -78,6 +78,7 @@ export default agent({
   completeSettleMs?: number;                 // pipeline only — shorter wait for clearly-complete finals (default 500)
   holdPhrase?: string;                       // pipeline only — spoken before a silent tool-call turn (default "One moment."; "" disables)
   falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
+  send?: SendProvider;                       // outbound send channel (e.g. slack()) — registers the send_message tool
 });
 ```
 
@@ -124,7 +125,7 @@ import { cartesia } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  stt: assemblyAI({ model: "u3pro-rt" }),
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
   llm: anthropic({ model: "claude-haiku-4-5" }),
   tts: cartesia(),
 });
@@ -132,6 +133,45 @@ export default agent({
 
 Tools, KV, `ctx`, and the UI all behave identically across modes. Only
 the audio + LLM transport differs.
+
+**Text-only mode (`tts: none()`):** pipeline mode without synthesis —
+speech in (STT → LLM), text out. Use it for transcription assistants,
+dictation, or any agent whose replies are read rather than heard:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { anthropic } from "@alexkroman1/aai/llm";
+import { none } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "My Agent",
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
+  llm: anthropic({ model: "claude-haiku-4-5" }),
+  tts: none(), // explicit — stt/llm without tts is still a config error
+});
+```
+
+No TTS key is needed. The default UI switches to a text layout: a record
+button (mic is opt-in, not always-on), an audio-file upload button that
+transcribes and answers, and streamed text replies. `holdPhrase` is
+rejected with `tts: none()` (it is spoken filler); the other pipeline
+tuning fields work unchanged.
+
+Uploads of **two minutes or less** are transcribed in a single request
+via AssemblyAI's Sync API (`universal-3-5-pro`) — the preferred endpoint
+for short files — rather than replayed through the realtime socket.
+This is platform behavior; the agent code needs nothing extra. Longer
+uploads stream through the agent's realtime STT. (Custom tools can also
+call the Sync API directly with `syncTranscribe` from
+`@alexkroman1/aai/stt`.)
+
+**One-shot transform agents.** Most text-only agents are *transforms*
+(dictation → structured notes, voice memo → summary), not chat: treat
+each utterance or upload as an independent request and reply with only
+the transformed output. Write the systemPrompt accordingly ("Transform
+the user's dictation into X. Output only X, nothing else.") and keep the
+greeting to a one-line instruction — or omit it.
 
 **Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
 assistant proactively take a turn after that much user silence (e.g.
@@ -158,12 +198,12 @@ for the providers you actually use.
 
 ### STT — `@alexkroman1/aai/stt`
 
-| Factory       | Default model           | Env var               |
-| ------------- | ----------------------- | --------------------- |
-| `assemblyAI`  | `"u3pro-rt"`            | `ASSEMBLYAI_API_KEY`  |
-| `deepgram`    | `"nova-3"`              | `DEEPGRAM_API_KEY`    |
-| `elevenlabs`  | `"scribe_v2_realtime"`  | `ELEVENLABS_API_KEY`  |
-| `soniox`      | `"stt-rt-v3"`           | `SONIOX_API_KEY`      |
+| Factory       | Default model            | Env var              |
+| ------------- | ------------------------ | -------------------- |
+| `assemblyAI`  | `"universal-3-5-pro"`    | `ASSEMBLYAI_API_KEY` |
+| `deepgram`    | `"nova-3"`               | `DEEPGRAM_API_KEY`   |
+| `elevenlabs`  | `"scribe_v2_realtime"`   | `ELEVENLABS_API_KEY` |
+| `soniox`      | `"stt-rt-v3"`            | `SONIOX_API_KEY`     |
 
 All STT factories accept `{ model?: string, ... }`. Bare calls
 (`deepgram()`, `soniox()`, etc.) use the default model.
@@ -203,22 +243,90 @@ import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
 
 export default agent({
   name: "My Agent",
-  stt: assemblyAI({ model: "u3pro-rt" }),
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
   llm: assemblyAILlm({ model: "claude-sonnet-4-6" }),
   tts: cartesia(),
 });
 ```
 
+An all-AssemblyAI pipeline — one provider, one key:
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "My Agent",
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
+  llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
+  tts: assemblyAITts({ voice: "vera" }),
+});
+```
+
 ### TTS — `@alexkroman1/aai/tts`
 
-| Factory    | Default voice                            | Env var               |
-| ---------- | ---------------------------------------- | --------------------- |
-| `cartesia` | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`    |
-| `rime`     | `"cove"` (model `mistv2`)                | `RIME_API_KEY`        |
+| Factory      | Default voice                            | Env var              |
+| ------------ | ---------------------------------------- | -------------------- |
+| `assemblyAI` | `"vera"`                                 | `ASSEMBLYAI_API_KEY` |
+| `cartesia`   | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
+| `rime`       | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
 
-Bare calls (`cartesia()`, `rime()`) use the defaults. Override with
-`{ voice, model, language }`. **Rime quirk:** language uses ISO 639-3
-three-letter codes (e.g. `"eng"` not `"en"`).
+Bare calls (`assemblyAI()`, `cartesia()`, `rime()`) use the defaults.
+Override with `{ voice, model, language }`.
+
+**AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the
+LLM Gateway, so an all-AssemblyAI pipeline needs exactly one secret. Each
+voice speaks one language — English includes `vera`, `michael`, `alba`,
+`jane`, `george`, `mary`, `paul`; non-English are `estelle` (fr),
+`giovanni` (it), `juergen` (de), `lola` (es), `rafael` (pt). Set
+`language` only alongside a voice that speaks it. Because the factory is
+named `assemblyAI` in `/stt`, `/llm`, and `/tts`, alias on import.
+
+**Rime quirk:** language uses ISO 639-3 three-letter codes (e.g. `"eng"`
+not `"en"`).
+
+`none()` (no env var) declares a **text-only** agent — see "Text-only
+mode" above.
+
+### Send channels — `@alexkroman1/aai/send`
+
+An outbound channel the agent can post to. Declaring one registers a
+`send_message` builtin tool (the LLM can call it when asked to send,
+post, or notify) and allowlists the channel's host for tool code.
+
+| Factory | Destination                    | Env var (the secret)  |
+| ------- | ------------------------------ | --------------------- |
+| `slack` | Slack incoming webhook (POST)  | `SLACK_WEBHOOK_URL`   |
+
+```ts
+import { agent } from "@alexkroman1/aai";
+import { slack } from "@alexkroman1/aai/send";
+
+export default agent({
+  name: "My Agent",
+  send: slack(), // + SLACK_WEBHOOK_URL secret → send_message tool works
+});
+```
+
+A string message posts as Slack's `{ text }`; custom tools can send any
+webhook body (blocks, attachments) programmatically:
+
+```ts
+import { openSender, slack } from "@alexkroman1/aai/send";
+
+execute: async ({ summary }, ctx) => {
+  await openSender(slack(), ctx.env).send(
+    { blocks: [{ type: "section", text: { type: "mrkdwn", text: summary } }] },
+    { signal: ctx.signal },
+  );
+  return "posted";
+};
+```
+
+The webhook URL **is** the credential — keep it in the env
+(`SLACK_WEBHOOK_URL`), never in code or descriptor options.
 
 Set provider keys the same way as any secret: `.env` for local dev,
 `aai secret put` for production.
@@ -520,7 +628,8 @@ Common mistakes when working in aai projects:
   only what the model needs.
 - **Pipeline mode requires all three of `stt` / `llm` / `tts`.** Partial
   configs are rejected at parse time. Use S2S (omit all three) if you
-  don't need provider control.
+  don't need provider control, or `tts: none()` for a text-only agent —
+  never just leave `tts` off.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
 - **Don't use `useEffect` + `toolCalls` to derive state.** Use

@@ -36,6 +36,30 @@ function isLocalDev(env: NodeJS.ProcessEnv): boolean {
   return env.AAI_LOCAL_DEV === "1" || !env.BUCKET_NAME;
 }
 
+/**
+ * Keys a local dev run needs to exercise the studio end to end.
+ *
+ * `ASSEMBLYAI_API_KEY` drives the chat LLM (and is seeded into every agent
+ * published from the studio); `BRAVE_API_KEY` backs the coding agent's
+ * `web_search`. Both are optional in production — the studio degrades
+ * (chat 503s, web_search is dropped from the tool set) — but in dev that
+ * degradation is silent and easy to mistake for a bug, so fail at boot
+ * where the cause is obvious instead of ten minutes into a session.
+ */
+const DEV_REQUIRED_KEYS = ["ASSEMBLYAI_API_KEY", "BRAVE_API_KEY"] as const;
+
+function assertDevKeys(env: NodeJS.ProcessEnv): void {
+  if (!isLocalDev(env) || env.AAI_DEV_SKIP_KEY_CHECK === "1") return;
+  const missing = DEV_REQUIRED_KEYS.filter((key) => !env[key]);
+  if (missing.length === 0) return;
+  const it = missing.length === 1 ? "it" : "them";
+  throw new Error(
+    `Local dev is missing ${missing.join(" and ")}. Set ${it} in ` +
+      "packages/aai-server/.env (or the shell) before `pnpm dev:aai-server`, " +
+      "or set AAI_DEV_SKIP_KEY_CHECK=1 to start without.",
+  );
+}
+
 function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
   const raw = env.SANDBOX_POOL_SIZE;
   if (!raw) return null;
@@ -102,6 +126,7 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
 
 async function main(): Promise<void> {
   const env = process.env;
+  assertDevKeys(env);
   initHostCapacityGauges();
   const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
 

@@ -3,11 +3,41 @@
 @source "./";
 @source "../dist/ui/";
 
+/*
+ * AssemblyAI design system ("website refresh") tokens.
+ * - font-aai: Monument Grotesk when the host page loads it, warm system
+ *   grotesque otherwise (the package ships no font binaries).
+ * - font-aai-serif: editorial serif for headings (Source Serif 4 stand-in,
+ *   graceful Georgia-class fallbacks).
+ * - font-aai-mono: JetBrains Mono stand-in for code/tool rows.
+ * - radius-aai: the refresh's squared-off 4px control radius.
+ */
+@theme {
+  --font-aai:
+    "Monument Grotesk", "ABC Monument Grotesk", ui-sans-serif, system-ui, -apple-system, sans-serif;
+  --font-aai-serif:
+    "Source Serif 4", "Source Serif Pro", Charter, "Iowan Old Style", Georgia, serif;
+  --font-aai-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-aai: 4px;
+}
+
 @layer base {
   html,
   body {
     margin: 0;
     padding: 0;
+  }
+}
+
+@keyframes aai-pulse {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.82);
   }
 }
 

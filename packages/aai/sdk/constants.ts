@@ -187,6 +187,29 @@ export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 
 /**
+ * Cap on one uploaded-audio transcription buffer (`transcribe_file_start`'s
+ * `byteLength`). Sized to the Sync API's 120 s limit at its highest PCM16
+ * mono rate (48 kHz × 2 bytes × 120 s ≈ 11.5 MB) — anything bigger belongs
+ * on the streaming path.
+ */
+export const MAX_SYNC_AUDIO_BYTES = 12 * 1024 * 1024;
+
+/**
+ * Chunk size for file-audio transfers (client upload frames and server-side
+ * replay into a realtime STT session) — socket-friendly, comfortably under
+ * {@link MAX_WS_PAYLOAD_BYTES}. Shared by aai-ui and the host so the two
+ * halves of the upload path cannot drift.
+ */
+export const FILE_UPLOAD_CHUNK_BYTES = 32 * 1024;
+
+/**
+ * Highest client-declarable audio sample rate (Hz). Bounds the
+ * `transcribe_file_start` schema — the declared rate sizes server-side
+ * silence-padding allocations, so it must not be an unbounded lever.
+ */
+export const MAX_AUDIO_SAMPLE_RATE = 192_000;
+
+/**
  * Cap on unsent bytes buffered in a client session WebSocket before the
  * client is treated as stalled and the connection is closed. TTS synthesis
  * outruns real-time playback, so a slow or wedged client link would otherwise

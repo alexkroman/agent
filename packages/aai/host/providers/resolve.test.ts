@@ -9,6 +9,7 @@
  */
 
 import { describe, expect, it } from "vitest";
+import { fetchMockJson } from "../../sdk/_test-utils.ts";
 import { ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import { ASSEMBLYAI_LLM_KIND } from "../../sdk/providers/llm/assemblyai.ts";
 import { GATEWAY_KIND } from "../../sdk/providers/llm/gateway.ts";
@@ -200,6 +201,28 @@ describe("requiredProviderEnvVars", () => {
       "ASSEMBLYAI_API_KEY",
     ]);
   });
+
+  it("includes the send channel's credential env var", () => {
+    expect(requiredProviderEnvVars({ send: { kind: "slack" } })).toEqual([
+      "SLACK_WEBHOOK_URL",
+      "ASSEMBLYAI_API_KEY",
+    ]);
+  });
+
+  it("requires no TTS credential for a text-only agent (tts: none())", () => {
+    // The `none` kind is deliberately absent from TTS_REGISTRY, and the
+    // descriptor still counts toward the pipeline triple — so no TTS key and
+    // no S2S fallback key either.
+    const vars = requiredProviderEnvVars({
+      stt: { kind: "deepgram" },
+      llm: { kind: "anthropic" },
+      tts: { kind: "none" },
+    });
+    expect([...vars].sort((a, b) => a.localeCompare(b))).toEqual([
+      "ANTHROPIC_API_KEY",
+      "DEEPGRAM_API_KEY",
+    ]);
+  });
 });
 
 describe("registerSttKind / registerTtsKind / registerLlmKind", () => {
@@ -243,5 +266,26 @@ describe("registerSttKind / registerTtsKind / registerLlmKind", () => {
     expect(requiredProviderEnvVars({ llm: { kind: ANTHROPIC_KIND } })).toContain(
       "ANTHROPIC_API_KEY",
     );
+  });
+});
+
+describe("resolveStt — AssemblyAI transcribeClip capability", () => {
+  it("posts the clip to the Sync API and returns the transcript text", async () => {
+    const fetchFn = fetchMockJson({ text: "hello from sync", words: [] });
+    const { opener } = resolveStt({ kind: "assemblyai", options: { model: "u3pro-rt" } });
+    expect(opener.transcribeClip).toBeDefined();
+    const text = await opener.transcribeClip?.(new Uint8Array([1, 0]), 16_000, {
+      apiKey: "k",
+      fetch: fetchFn,
+    });
+    expect(text).toBe("hello from sync");
+    const [url, init] = fetchFn.mock.calls[0] ?? [];
+    expect(String(url)).toContain("sync");
+    const form = init?.body as FormData;
+    expect(JSON.parse(form.get("config") as string)).toEqual({ sample_rate: 16_000, channels: 1 });
+  });
+
+  it("other STT kinds carry no clip capability", () => {
+    expect(resolveStt({ kind: "deepgram", options: {} }).opener.transcribeClip).toBeUndefined();
   });
 });

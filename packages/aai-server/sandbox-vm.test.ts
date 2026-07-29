@@ -24,6 +24,7 @@ import type { NdjsonConnection } from "./ndjson-transport.ts";
 import {
   _internals,
   createSandboxVm,
+  describeBundle,
   parseSandboxLimitsFromEnv,
   type WarmHarness,
 } from "./sandbox-vm.ts";
@@ -378,5 +379,73 @@ describe("createSandboxVm metrics", () => {
       counterValue("aai_sandbox_init_failed_total", { reason: "bundle_missing" }),
     ).toBeGreaterThanOrEqual(1);
     detach();
+  });
+});
+
+// ── describeBundle ───────────────────────────────────────────────────────────
+
+describe("describeBundle", () => {
+  function makeInspectFixture(loadResult: unknown) {
+    const { conn, hostReadable, hostWritable, writtenLines } = createTestConn();
+    const detach = (() => {
+      const handler = (chunk: Buffer) => {
+        for (const line of chunk.toString().split("\n")) {
+          if (!line.trim()) continue;
+          const msg = JSON.parse(line);
+          if (msg.method === "bundle/load" && msg.id != null) {
+            hostReadable.push(
+              `${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: loadResult })}\n`,
+            );
+          }
+        }
+      };
+      hostWritable.on("data", handler);
+      return () => hostWritable.off("data", handler);
+    })();
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const warm = makeWarm(conn, cleanup);
+    const spawn = vi.fn(async () => warm);
+    return { spawn, cleanup, writtenLines, detach, hostReadable, hostWritable };
+  }
+
+  it("loads the bundle in a scratch harness and returns its config", async () => {
+    const fixture = makeInspectFixture({ ok: true, config: { name: "studio-agent" } });
+    const config = await describeBundle(
+      { harnessPath: "/tmp/harness.mjs", workerCode: "export default {};" },
+      fixture.spawn,
+    );
+    fixture.detach();
+    expect(config).toEqual({ name: "studio-agent" });
+    // The harness is always torn down, and a shutdown notification was sent.
+    expect(fixture.cleanup).toHaveBeenCalledTimes(1);
+    expect(fixture.writtenLines.some((l) => l.includes('"shutdown"'))).toBe(true);
+    fixture.hostReadable.destroy();
+    fixture.hostWritable.destroy();
+  });
+
+  it("returns undefined for a bundle that does not self-describe", async () => {
+    const fixture = makeInspectFixture({ ok: true });
+    const config = await describeBundle(
+      { harnessPath: "/tmp/harness.mjs", workerCode: "export default {};" },
+      fixture.spawn,
+    );
+    fixture.detach();
+    expect(config).toBeUndefined();
+    fixture.hostReadable.destroy();
+    fixture.hostWritable.destroy();
+  });
+
+  it("tears the harness down even when bundle/load rejects", async () => {
+    const { conn, hostReadable, hostWritable } = createTestConn();
+    const detach = autorespondBundleLoadError(hostWritable, hostReadable);
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const spawn = vi.fn(async () => makeWarm(conn, cleanup));
+    await expect(
+      describeBundle({ harnessPath: "/tmp/harness.mjs", workerCode: "throw 1" }, spawn),
+    ).rejects.toThrow(/Worker code not found/);
+    detach();
+    expect(cleanup).toHaveBeenCalledTimes(1);
+    hostReadable.destroy();
+    hostWritable.destroy();
   });
 });

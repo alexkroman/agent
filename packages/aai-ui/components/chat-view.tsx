@@ -6,28 +6,37 @@ import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useSession, useTheme } from "../context.ts";
 import type { AgentState } from "../types.ts";
-import { TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
+import { ERROR_COLOR, TEXT_FAINT } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Controls } from "./controls.tsx";
+import { Eyebrow } from "./eyebrow.tsx";
 import { MessageList } from "./message-list.tsx";
+import { TextControls } from "./text-controls.tsx";
 
-const ERROR_COLOR = "#e06c75";
+// States whose indicator dot pulses (the agent is actively in the exchange).
+const PULSING_STATES: ReadonlySet<AgentState> = new Set(["listening", "speaking"]);
 
-// State indicator dot color map
-const STATE_COLORS: Record<AgentState, string> = {
-  disconnected: TEXT_MUTED,
-  connecting: TEXT_MUTED,
-  ready: "#7fd88f",
-  listening: "#56b6c2",
-  thinking: "#f5a742",
-  speaking: ERROR_COLOR,
-  error: ERROR_COLOR,
-};
+/** Indicator dot color per state, on the light refresh palette. */
+function stateColor(state: AgentState, primary: string): string {
+  switch (state) {
+    case "listening":
+    case "speaking":
+    case "ready":
+      return primary;
+    case "thinking":
+      return "#B98900";
+    case "error":
+      return ERROR_COLOR;
+    default:
+      return TEXT_FAINT; // disconnected / connecting
+  }
+}
 
 /**
- * The main chat interface for a voice agent session.
- * Displays a header (with optional icon, title, and state indicator), an
- * inline error banner, the {@link MessageList}, and session {@link Controls}.
+ * The main chat interface for a voice agent session — the design-system
+ * "voice agent console": a 760px column on the cream page with a header
+ * (logo + live-status eyebrow), the conversation on a raised white card,
+ * and the session controls beneath it.
  *
  * Must be rendered inside a {@link SessionProvider}.
  *
@@ -38,19 +47,7 @@ const STATE_COLORS: Record<AgentState, string> = {
  * </StartScreen>
  * ```
  *
- * @example Pair with a sidebar
- * ```tsx
- * <SidebarLayout sidebar={<RecipeCard />}>
- *   <ChatView className="border-l" />
- * </SidebarLayout>
- * ```
- *
- * @example Custom header icon
- * ```tsx
- * <ChatView icon={<img src="/logo.svg" />} title="My Agent" />
- * ```
- *
- * @param icon - Optional element rendered before the title in the header.
+ * @param icon - Optional element rendered in place of the logo in the header.
  * @param title - Optional title string for the header.
  * @param className - Additional CSS class names applied to the root element.
  *
@@ -67,55 +64,67 @@ export function ChatView({
 }): ReactNode {
   const session = useSession();
   const theme = useTheme();
+  const pulsing = PULSING_STATES.has(session.state);
 
   return (
     <div
-      className={clsx("flex flex-col h-screen max-w-130 mx-auto font-aai text-sm", className)}
+      className={clsx(
+        "flex flex-col h-screen w-full max-w-190 mx-auto box-border px-6 py-8 gap-5 font-aai text-sm",
+        className,
+      )}
       style={{ background: theme.bg, color: theme.text }}
     >
-      {/* Header */}
-      <div
-        className="flex items-center gap-3 px-4 py-3 border-b shrink-0"
-        style={{ borderColor: theme.border }}
-      >
-        {icon}
-        {title ? (
-          <span className="text-sm font-semibold" style={{ color: theme.primary }}>
-            {title}
-          </span>
-        ) : (
-          !icon && <AaiLogo />
-        )}
-        {/* State indicator */}
-        <div className="ml-auto">
-          <div
-            className="inline-flex items-center justify-center gap-1.5 text-[13px] font-medium leading-[130%] capitalize"
-            style={{ color: TEXT_FAINT }}
-            data-state={session.state}
-          >
-            <div
-              className="w-2 h-2 rounded-full"
-              style={{ background: STATE_COLORS[session.state] }}
-            />
-            {session.state}
-          </div>
+      {/* Header: brand left, live status right */}
+      <div className="flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          {icon ?? <AaiLogo size={22} />}
+          {title && (
+            <span
+              className="font-aai-serif text-[22px] leading-[1.2] font-normal truncate"
+              style={{ color: theme.text }}
+            >
+              {title}
+            </span>
+          )}
         </div>
+        <Eyebrow className="shrink-0" data-state={session.state}>
+          <span
+            className="w-[7px] h-[7px] rounded-full"
+            style={{
+              background: stateColor(session.state, theme.primary),
+              animation: pulsing ? "aai-pulse 1.6s ease-in-out infinite" : "none",
+            }}
+          />
+          {session.state}
+        </Eyebrow>
       </div>
       {/* Error banner */}
       {session.error && (
         <div
-          className="mx-4 mt-3 px-3 py-2 rounded-aai border text-[13px] leading-[130%]"
+          className="px-3.5 py-2.5 rounded-aai border text-[13px] leading-[130%] shrink-0"
           style={{
-            borderColor: "rgba(224,108,117,0.4)",
-            background: "rgba(224,108,117,0.08)",
+            borderColor: "rgba(179,38,30,0.35)",
+            background: "rgba(179,38,30,0.06)",
             color: ERROR_COLOR,
           }}
         >
           {session.error.message}
         </div>
       )}
-      <MessageList />
-      <Controls />
+      {/* Conversation card */}
+      <div
+        className="flex flex-col flex-1 min-h-0 border rounded-lg overflow-hidden"
+        style={{
+          background: theme.surface,
+          borderColor: theme.border,
+          boxShadow: "0 1px 3px 0 rgb(20 18 12 / 0.06)",
+        }}
+      >
+        <MessageList />
+      </div>
+      {/* Text-only sessions (tts: none()) get record/upload controls; the
+          server's config message decides, so the same default UI serves both. */}
+      {session.audioOut ? <Controls /> : <TextControls />}
     </div>
   );
 }

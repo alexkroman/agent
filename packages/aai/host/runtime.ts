@@ -9,11 +9,12 @@
 
 import pTimeout from "p-timeout";
 import { createStorage } from "unstorage";
-import { agentToolsToSchemas, type ToolSchema, toAgentConfig } from "../sdk/_internal-types.ts";
-import { DEFAULT_BUILTIN_TOOLS, DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
+import { toAgentConfig } from "../sdk/_internal-types.ts";
+import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
+import { isTextOnlyTts } from "../sdk/providers/tts/none.ts";
 import {
   assertProviderTriple,
   type LlmProvider,
@@ -22,15 +23,14 @@ import {
   type TtsProvider,
 } from "../sdk/providers.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
-import type { AgentDef, ToolDef } from "../sdk/types.ts";
-import { toolError } from "../sdk/utils.ts";
+import type { AgentDef } from "../sdk/types.ts";
 import type { Vector } from "../sdk/vector.ts";
-import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createMemoryVector } from "./memory-vector.ts";
 import { resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
 import { resolveKv } from "./providers/resolve-kv.ts";
 import { resolveVector } from "./providers/resolve-vector.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
+import { setupTools } from "./runtime-tools.ts";
 import {
   createTransportFactory,
   type ResolvedPipelineProviders,
@@ -38,7 +38,6 @@ import {
 } from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
-import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
@@ -93,37 +92,9 @@ function resolvePipelineProviders(
   return {
     stt: resolveStt(p.stt),
     llm: resolveLlm(p.llm, env),
-    tts: resolveTts(p.tts),
-  };
-}
-
-/**
- * Resolve builtins for the sandbox/relay tool path — the single owner of that
- * decision for every caller (platform sandbox, relay/host mode, self-hosted).
- * Callers supply the tools they dispatch themselves via `toolSchemas`; a
- * supplied tool with the same name as a builtin wins, and the colliding builtin
- * is dropped from both dispatch and schemas so the host never shadows a tool
- * the caller expects to execute and the LLM never sees a duplicate name.
- */
-function resolveSandboxBuiltins(
-  agent: AgentDef,
-  opts: RuntimeOptions,
-  fetchOpt: { fetch: typeof globalThis.fetch } | undefined,
-): {
-  defs: Record<string, ToolDef>;
-  schemas: ToolSchema[];
-  guidance: string[];
-} {
-  const providedSchemas = opts.toolSchemas ?? [];
-  const providedNames = new Set(providedSchemas.map((s) => s.name));
-  const names = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
-    (name) => !providedNames.has(name),
-  );
-  const builtins = resolveAllBuiltins(names, fetchOpt);
-  return {
-    defs: builtins.defs,
-    schemas: [...providedSchemas, ...builtins.schemas],
-    guidance: [...(opts.toolGuidance ?? []), ...builtins.guidance],
+    // `tts: none()` = text-only replies: no opener, no credential — the
+    // pipeline transport runs with a null TTS session.
+    tts: isTextOnlyTts(p.tts) ? null : resolveTts(p.tts),
   };
 }
 
@@ -184,93 +155,34 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const agentConfig = toAgentConfig(agent);
   const sessions = new Map<string, SessionCore>();
   const sinkMap = new Map<string, ClientSink>();
-  const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
+  // Text-only agents (tts: none()) tell the client up front that no audio
+  // frames will arrive, so it renders text replies instead of playback.
+  //
+  // Reads the *effective* tts, not `agent.tts`: the platform never puts
+  // providers on the agent object, it passes them as runtime options (see
+  // sandbox.ts `toRuntimeAgent`). Checking `agent.tts` alone meant every
+  // deployed text-only agent told the browser to expect audio, so it rendered
+  // the voice UI and waited for playback that never came — while `aai dev`,
+  // which does hand over the agent's own descriptors, worked fine.
+  const readyConfig: ReadyConfig = buildReadyConfig(
+    s2sConfig,
+    isTextOnlyTts(effectiveProviders.tts) ? { audioOut: false } : {},
+  );
 
-  // When overrides are provided (sandbox mode), skip in-process tool setup
-  let executeTool: ExecuteTool;
-  let toolSchemas: ToolSchema[];
-  let toolGuidance: string[] = [];
   // Per-session tool state (self-hosted mode only); cleaned up on session end.
   const stateMap = new Map<string, Record<string, unknown>>();
 
-  const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
-
-  if (opts.executeTool && opts.toolSchemas) {
-    // Sandbox mode — custom tools are RPC-backed; builtins run host-side.
-    const resolved = resolveSandboxBuiltins(agent, opts, builtinFetchOpt);
-    const builtinDefs = resolved.defs;
-    toolSchemas = resolved.schemas;
-    toolGuidance = resolved.guidance;
-    const rpcExecuteTool = opts.executeTool;
-    const frozenEnv = Object.freeze({ ...env });
-
-    executeTool = async (name, args, sessionId, messages, callOpts) => {
-      // Handle builtins on the host (where SSRF-safe fetch lives) — EXCEPT
-      // sandbox-only builtins (see SANDBOX_ONLY_BUILTINS), which execute
-      // untrusted JS and must run inside the guest sandbox (gVisor/Deno),
-      // never on the host. They are delegated via RPC like custom tools;
-      // the guest harness runs them directly.
-      if (builtinDefs[name] && !SANDBOX_ONLY_BUILTINS.has(name)) {
-        const tool = builtinDefs[name];
-        return executeToolCall(name, args, {
-          tool,
-          env: frozenEnv,
-          sessionId: sessionId ?? "",
-          kv: resolvedKv,
-          vector: resolvedVector,
-          messages,
-          logger,
-          signal: callOpts?.signal,
-        });
-      }
-      // Delegate custom tools (and run_code) to the isolate via RPC. Forward
-      // `callOpts` (which carries `toolCallId`) — the relay executor needs it to
-      // correlate the client's `tool_result`; dropping it makes every relayed
-      // tool call fail with "invoked without a toolCallId" in pipeline mode.
-      return rpcExecuteTool(name, args, sessionId, messages, callOpts);
-    };
-  } else {
-    // Self-hosted mode — in-process tool execution. A custom tool with the
-    // same name as a builtin wins: the builtin is dropped from both dispatch
-    // and schemas rather than emitting a duplicate schema name to the LLM.
-    const customNames = new Set(Object.keys(agent.tools ?? {}));
-    const builtinNames = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
-      (name) => !customNames.has(name),
-    );
-    const builtins = resolveAllBuiltins(builtinNames, builtinFetchOpt);
-    const allTools: Record<string, AgentDef["tools"][string]> = {
-      ...builtins.defs,
-      ...agent.tools,
-    };
-    const customSchemas = agentToolsToSchemas(agent.tools ?? {});
-    toolSchemas = [...customSchemas, ...builtins.schemas];
-    toolGuidance = builtins.guidance;
-
-    const getState = (sid: string) => {
-      if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
-      return stateMap.get(sid) ?? {};
-    };
-    const frozenEnv = Object.freeze({ ...env });
-
-    executeTool = async (name, args, sessionId, messages, callOpts) => {
-      const tool = allTools[name];
-      if (!tool) return toolError(`Unknown tool: ${name}`);
-      const sink = sinkMap.get(sessionId ?? "");
-      return executeToolCall(name, args, {
-        tool,
-        env: frozenEnv,
-        state: getState(sessionId ?? ""),
-        sessionId: sessionId ?? "",
-        kv: resolvedKv,
-        vector: resolvedVector,
-        messages,
-        logger,
-        send: sink ? (event, data) => sink.event({ type: "custom_event", event, data }) : undefined,
-        // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
-        signal: callOpts?.signal,
-      });
-    };
-  }
+  const { executeTool, toolSchemas, toolGuidance } = setupTools({
+    agent,
+    opts,
+    env,
+    providerEnv,
+    resolvedKv,
+    resolvedVector,
+    logger,
+    sinkMap,
+    stateMap,
+  });
 
   // Resolve pipeline providers once per runtime (not per session). Each
   // session reuses the same opener / LanguageModel — the opener's `open()`
@@ -290,6 +202,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     env: providerEnv,
     s2sConfig,
     pipelineProviders,
+    fetch: opts.fetch,
     createWebSocket,
     createOpenaiRealtimeWebSocket,
     logger,
@@ -374,7 +287,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
               sessionOpts.client.event({ type: "tool_call_done", toolCallId: id, result }),
           }
         : {}),
-      onError: (code, message) => bindCore().onError(code, message),
+      onError: (code, message, errOpts) => bindCore().onError(code, message, errOpts),
       onSpeechStarted: () => bindCore().onSpeechStarted(),
       onSpeechStopped: () => bindCore().onSpeechStopped(),
     };

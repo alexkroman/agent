@@ -6,7 +6,7 @@ import clsx from "clsx";
 import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef } from "react";
 import { useSession, useTheme } from "../context.ts";
 import type { ChatMessage, ToolCallInfo } from "../types.ts";
-import { SURFACE_TINT, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
+import { primaryTint, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
 import { ToolCallBlock } from "./tool-call-block.tsx";
 
 const DOT_STYLES: CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
@@ -33,21 +33,30 @@ function ThinkingDots(): ReactNode {
   );
 }
 
-/** Right-aligned user bubble — shared by finalized messages and the live transcript. */
+/**
+ * Right-aligned user bubble — a primary-tinted card (the design system's
+ * indigo-50 fill with an indigo-100 edge, derived from the theme primary so
+ * custom themes stay coherent). Shared by finalized messages and the live
+ * transcript.
+ */
 function UserBubble({
   theme,
   color,
   children,
 }: {
-  theme: { border: string };
+  theme: RowTheme;
   color: string;
   children: ReactNode;
 }): ReactNode {
   return (
     <div className="flex flex-col w-full items-end">
       <div
-        className="max-w-[min(82%,64ch)] border px-3 py-2 rounded-aai whitespace-pre-wrap wrap-break-word text-sm font-normal leading-[150%]"
-        style={{ background: SURFACE_TINT, borderColor: theme.border, color }}
+        className="max-w-[min(78%,64ch)] border px-3.5 py-2.5 rounded-md whitespace-pre-wrap wrap-break-word text-[15px] font-normal leading-[22px]"
+        style={{
+          background: primaryTint(theme.primary, theme.surface, 7),
+          borderColor: primaryTint(theme.primary, theme.surface, 16),
+          color,
+        }}
       >
         {children}
       </div>
@@ -55,9 +64,9 @@ function UserBubble({
   );
 }
 
-type RowTheme = { text: string; border: string };
+type RowTheme = { text: string; border: string; primary: string; surface: string };
 
-/** Renders a single chat message as a styled bubble. */
+/** Renders a single chat message: labeled agent prose, or a user bubble. */
 function MessageBubble({
   message,
   theme,
@@ -73,11 +82,19 @@ function MessageBubble({
     );
   }
   return (
-    <div
-      className="whitespace-pre-wrap wrap-break-word text-sm font-normal leading-[150%]"
-      style={{ color: theme.text }}
-    >
-      {message.content}
+    <div className="flex flex-col gap-1 max-w-[82%]">
+      <span
+        className="text-[10px] font-medium tracking-[1.2px] uppercase leading-none"
+        style={{ color: TEXT_FAINT }}
+      >
+        Agent
+      </span>
+      <div
+        className="whitespace-pre-wrap wrap-break-word text-[15px] font-normal leading-[23px]"
+        style={{ color: theme.text }}
+      >
+        {message.content}
+      </div>
     </div>
   );
 }
@@ -217,7 +234,7 @@ export function MessageList({ className }: { className?: string }) {
       className={clsx("flex-1 overflow-y-auto [scrollbar-width:none]", className)}
       style={{ background: theme.surface }}
     >
-      <div className="flex flex-col gap-4.5 p-4">
+      <div className="flex flex-col gap-4 p-7">
         {items}
         {agentTranscript && (
           <MessageBubble message={{ role: "assistant", content: agentTranscript }} theme={theme} />

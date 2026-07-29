@@ -3,7 +3,7 @@
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import type { HonoEnv } from "./context.ts";
-import { VALID_SLUG_RE } from "./schemas.ts";
+import { RESERVED_SLUGS, VALID_SLUG_RE } from "./schemas.ts";
 import { hashApiKey, verifySlugOwner } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -21,6 +21,11 @@ function requireBearerToken(req: Request): string {
 export function validateSlug(slug: string): string {
   if (!VALID_SLUG_RE.test(slug)) {
     throw new HTTPException(400, { message: "Invalid slug" });
+  }
+  // Reserved names shadow platform routes (e.g. /studio). No agent can ever
+  // exist there, so report the same 404 an unknown agent would get.
+  if (RESERVED_SLUGS.has(slug)) {
+    throw new HTTPException(404, { message: `Not found: ${slug}` });
   }
   return slug;
 }

@@ -2,14 +2,18 @@
 
 exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
 [
+  "ApiUrlChip",
   "Button",
   "ChatView",
   "MessageList",
   "SessionProvider",
+  "SessionUrlChips",
   "SidebarLayout",
   "StartScreen",
+  "TextControls",
   "ThemeProvider",
   "ToolConfigContext",
+  "UiUrlChip",
   "client",
   "createSessionCore",
   "useEvent",

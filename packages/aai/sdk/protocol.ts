@@ -8,7 +8,7 @@
 import { z } from "zod";
 
 import { ToolSchemaSchema } from "./_internal-types.ts";
-import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
+import { MAX_AUDIO_SAMPLE_RATE, MAX_SYNC_AUDIO_BYTES, MAX_TOOL_RESULT_CHARS } from "./constants.ts";
 
 /**
  * Audio codec identifier used in the wire protocol.
@@ -167,7 +167,18 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   ev("cancelled"),
   ev("reset"),
   ev("idle_timeout"),
-  z.object({ type: z.literal("error"), code: SessionErrorCodeSchema, message: z.string() }),
+  z.object({
+    type: z.literal("error"),
+    code: SessionErrorCodeSchema,
+    message: z.string(),
+    /**
+     * False for turn-level errors the session survives (e.g. a failed
+     * one-shot transcription): the client should surface the message but
+     * keep the session interactive. Absent means fatal — the historical
+     * semantics, where an error always followed a session teardown.
+     */
+    fatal: z.boolean().optional(),
+  }),
   z.object({
     type: z.literal("custom_event"),
     event: z.string().min(1),
@@ -202,6 +213,12 @@ export const ReadyConfigSchema = z.object({
   audioFormat: z.enum(["pcm16"]),
   sampleRate: z.number().int().positive(),
   ttsSampleRate: z.number().int().positive(),
+  /**
+   * False for text-only agents (`tts: none()`): the server sends no audio
+   * frames and the client should render streamed text replies instead of
+   * expecting playback. Omitted means true (voice reply — the default).
+   */
+  audioOut: z.boolean().optional(),
 });
 
 /** Protocol-level session config returned to the client on connect. */
@@ -214,6 +231,8 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
     audioFormat: z.string(),
     sampleRate: z.number(),
     ttsSampleRate: z.number(),
+    /** False for text-only agents — see {@link ReadyConfigSchema}. */
+    audioOut: z.boolean().optional(),
     /** Session ID for this connection. Clients can reconnect with
      *  `?sessionId=<id>` to resume a persisted session. */
     sessionId: z.string().optional(),
@@ -242,6 +261,26 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     result: z.string().max(MAX_TOOL_RESULT_CHARS),
     error: z.string().optional(),
   }),
+  /**
+   * One-shot file transcription: the binary frames between `start` and `end`
+   * are buffered as a single PCM16 clip and transcribed in one request (the
+   * AssemblyAI Sync API when the agent's STT supports it) instead of being
+   * replayed through the realtime socket. Preferred for uploads under two
+   * minutes.
+   */
+  z.object({
+    type: z.literal("transcribe_file_start"),
+    // Capped: the rate feeds server-side padding allocations
+    // (withTrailingSilence), so an unbounded client value would be an
+    // allocation-size lever. 192 kHz is beyond any real capture rate.
+    sampleRate: z.number().int().positive().max(MAX_AUDIO_SAMPLE_RATE),
+    byteLength: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_SYNC_AUDIO_BYTES, "audio exceeds the one-shot transcription cap"),
+  }),
+  ev("transcribe_file_end"),
 ]);
 
 /** Client→server text messages (binary frames carry raw PCM16 audio). */
@@ -291,13 +330,19 @@ export type HostConfigMessage = z.infer<typeof HostConfigMessageSchema>;
 // ─── Ready config builder ───────────────────────────────────────────────────
 
 /** Build the protocol-level session config from S2S sample rates. */
-export function buildReadyConfig(s2sConfig: {
-  inputSampleRate: number;
-  outputSampleRate: number;
-}): ReadyConfig {
+export function buildReadyConfig(
+  s2sConfig: {
+    inputSampleRate: number;
+    outputSampleRate: number;
+  },
+  opts: { audioOut?: boolean } = {},
+): ReadyConfig {
   return {
     audioFormat: AUDIO_FORMAT,
     sampleRate: s2sConfig.inputSampleRate,
     ttsSampleRate: s2sConfig.outputSampleRate,
+    // Only stamped when replies are text-only, so existing voice sessions
+    // keep a byte-identical config message.
+    ...(opts.audioOut === false && { audioOut: false }),
   };
 }

@@ -112,8 +112,8 @@ describe("useSessionSelector", () => {
 describe("useTheme", () => {
   it("returns default theme when no provider", () => {
     const { result } = renderHook(() => useTheme());
-    expect(result.current.bg).toBe("#101010");
-    expect(result.current.primary).toBe("#fab283");
+    expect(result.current.bg).toBe("#FBF8F2");
+    expect(result.current.primary).toBe("#3F2BC1");
   });
 
   it("returns custom theme from provider", () => {
@@ -131,12 +131,32 @@ describe("useTheme", () => {
     expect(result.current.primary).toBe("#f00");
   });
 
+  it("paints the page background so the theme reaches beyond the app column", () => {
+    // Components paint theme.bg on their own containers, but html/body kept the
+    // static color from index.html — so any viewport wider than the app column
+    // showed a black letterbox around a cream UI.
+    renderHook(() => useTheme(), {
+      wrapper: ({ children }: { children: ReactNode }) =>
+        React.createElement(ThemeProvider, { value: undefined }, children),
+    });
+    expect(document.body.style.background).toBe("rgb(251, 248, 242)");
+    expect(document.documentElement.style.background).toBe("rgb(251, 248, 242)");
+  });
+
+  it("a custom theme repaints the page too", () => {
+    renderHook(() => useTheme(), {
+      wrapper: ({ children }: { children: ReactNode }) =>
+        React.createElement(ThemeProvider, { value: { bg: "#123456" } }, children),
+    });
+    expect(document.body.style.background).toBe("rgb(18, 52, 86)");
+  });
+
   it("fills missing theme fields with defaults", () => {
     const partial: ClientTheme = { primary: "#f00" };
     const wrapper = ({ children }: { children: ReactNode }) =>
       React.createElement(ThemeProvider, { value: partial }, children);
     const { result } = renderHook(() => useTheme(), { wrapper });
     expect(result.current.primary).toBe("#f00");
-    expect(result.current.bg).toBe("#101010");
+    expect(result.current.bg).toBe("#FBF8F2");
   });
 });

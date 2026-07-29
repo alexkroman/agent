@@ -234,8 +234,16 @@ export async function executeTool(
  *
  * The code is imported via a data: URL so Deno treats it as an ES module.
  * This avoids Function() evaluation and supports top-level await in the bundle.
+ *
+ * Bundles built by the browser studio also export `__aaiConfig` — the agent
+ * config extracted *inside* the bundle (by `@alexkroman1/aai/manifest`
+ * helpers bundled in). Returning it lets the host obtain the config without
+ * ever evaluating user code outside the sandbox.
  */
-async function loadBundle(code: string, env: Record<string, string>): Promise<AgentDef> {
+async function loadBundle(
+  code: string,
+  env: Record<string, string>,
+): Promise<{ agent: AgentDef; config?: unknown }> {
   _bundleEnv = Object.freeze({ ...env });
 
   const dataUrl = `data:application/javascript,${encodeURIComponent(code)}`;
@@ -246,7 +254,8 @@ async function loadBundle(code: string, env: Record<string, string>): Promise<Ag
     throw new Error("Agent bundle must export an object");
   }
 
-  return agent;
+  const config = (mod as { __aaiConfig?: unknown }).__aaiConfig;
+  return config === undefined ? { agent } : { agent, config };
 }
 
 // ---- Main dispatch loop -----------------------------------------------------
@@ -266,11 +275,15 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
         break;
       }
       const params = req.params as { code: string; env: Record<string, string> };
-      state.agent = await loadBundle(params.code, params.env ?? {});
+      const loaded = await loadBundle(params.code, params.env ?? {});
+      state.agent = loaded.agent;
       state.sessionState = createSessionStateMap(
         typeof state.agent.state === "function" ? state.agent.state : undefined,
       );
-      sendResponse(req.id, { ok: true });
+      sendResponse(req.id, {
+        ok: true,
+        ...(loaded.config !== undefined && { config: loaded.config }),
+      });
       break;
     }
 

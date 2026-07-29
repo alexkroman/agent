@@ -3,19 +3,54 @@
 import { humanId } from "human-id";
 import { debug } from "./_debug-log.ts";
 import type { ValidatedAppContext } from "./context.ts";
-import { setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
+import type { IsolateConfig } from "./rpc-schemas.ts";
+import { type SlotCache, setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import type { DeployBody } from "./schemas.ts";
-import { EnvSchema } from "./schemas.ts";
+import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { verifyApiKeyHash } from "./secrets.ts";
+import type { BundleStore } from "./store-types.ts";
 
-export function handleDeploy(c: ValidatedAppContext<DeployBody>): Promise<Response> {
-  const slug = c.var.slug;
-  return withSlugLock(slug, () => handleDeployInner(c, slug));
-}
+/** Server-level dependencies the deploy core needs (a subset of Bindings). */
+export type DeployDeps = {
+  store: BundleStore;
+  slots: SlotCache;
+};
 
-export function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Response> {
-  const body = c.req.valid("json");
-  const slug = body.slug ?? humanId({ separator: "-", capitalize: false });
+export type DeployParams = {
+  /** Requested slug. Omit to generate one (`humanId`). */
+  slug?: string | undefined;
+  apiKey: string;
+  keyHash: string;
+  worker: string;
+  clientFiles: Record<string, string>;
+  env?: Record<string, string> | undefined;
+  /**
+   * Env floor: applied only where neither the agent's stored env nor `env`
+   * already supplies the key. Lets a caller seed a credential without ever
+   * clobbering one the user set deliberately (`aai secret put`).
+   */
+  defaultEnv?: Record<string, string> | undefined;
+  agentConfig: IsolateConfig;
+};
+
+export type DeployOutcome =
+  | { ok: true; slug: string; message: string }
+  | { ok: false; status: 400 | 403 | 409; error: string };
+
+/**
+ * Deploy an agent bundle: claim (or re-claim) the slug under its lock,
+ * verify ownership, and persist the bundle. Shared by the HTTP deploy
+ * handlers and the browser studio's deploy tool so ownership semantics
+ * have a single source of truth.
+ */
+export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promise<DeployOutcome> {
+  const requested = params.slug;
+  // Single choke point for reserved names — programmatic callers (the studio
+  // deploy tool) don't pass through DeployBodySchema.
+  if (requested && RESERVED_SLUGS.has(requested)) {
+    return Promise.resolve({ ok: false as const, status: 400 as const, error: "Reserved slug" });
+  }
+  const slug = requested ?? humanId({ separator: "-", capitalize: false });
   return withSlugLock(slug, async () => {
     // Ownership is checked whether the slug was requested or generated. A
     // generated slug used to skip this entirely, so a `humanId()` collision
@@ -23,15 +58,15 @@ export function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Res
     // the caller's credential hash to it — silently granting a stranger
     // co-ownership. Collisions aren't attacker-targetable, but they are
     // possible, and the check costs one manifest read either way.
-    const existing = await c.env.store.getManifest(slug);
-    if (existing && !(await matchesAnyHash(c.var.apiKey, existing.credential_hashes))) {
-      return body.slug
-        ? c.json({ error: "Forbidden: slug already owned by another user" }, 403)
+    const existing = await deps.store.getManifest(slug);
+    if (existing && !(await matchesAnyHash(params.apiKey, existing.credential_hashes))) {
+      return requested
+        ? { ok: false, status: 403, error: "Forbidden: slug already owned by another user" }
         : // The caller never chose this slug, so "forbidden" would be
           // confusing — tell them to retry and get a fresh one.
-          c.json({ error: "Slug collision on generated name — retry the deploy" }, 409);
+          { ok: false, status: 409, error: "Slug collision on generated name — retry the deploy" };
     }
-    return handleDeployInner(c, slug);
+    return deployLocked(deps, params, slug);
   });
 }
 
@@ -42,22 +77,23 @@ async function matchesAnyHash(apiKey: string, hashes: string[]): Promise<boolean
   return results.some(Boolean);
 }
 
-async function handleDeployInner(
-  c: ValidatedAppContext<DeployBody>,
+/** Persist the bundle for a slug the caller is entitled to. Runs under the slug lock. */
+async function deployLocked(
+  deps: DeployDeps,
+  params: DeployParams,
   slug: string,
-): Promise<Response> {
-  const { apiKey, keyHash } = c.var;
-  const body = c.req.valid("json");
+): Promise<DeployOutcome> {
+  const { apiKey, keyHash } = params;
 
-  const storedEnv = (await c.env.store.getEnv(slug)) ?? {};
-  const env = body.env ? { ...storedEnv, ...body.env } : storedEnv;
+  const storedEnv = (await deps.store.getEnv(slug)) ?? {};
+  const env = { ...params.defaultEnv, ...storedEnv, ...params.env };
 
   const envParsed = EnvSchema.safeParse(env);
   if (!envParsed.success) {
-    return c.json({ error: `Invalid platform config: ${envParsed.error.message}` }, 400);
+    return { ok: false, status: 400, error: `Invalid platform config: ${envParsed.error.message}` };
   }
 
-  const existingSlot = c.env.slots.get(slug);
+  const existingSlot = deps.slots.get(slug);
   if (existingSlot?.sandbox) {
     debug("Replacing existing deploy", { slug });
     await terminateSlot(existingSlot);
@@ -65,23 +101,57 @@ async function handleDeployInner(
 
   // Preserve multi-user ownership: append the deployer's hash only when no
   // stored hash already matches their key.
-  const existingHashes = (await c.env.store.getManifest(slug))?.credential_hashes ?? [];
+  const existingHashes = (await deps.store.getManifest(slug))?.credential_hashes ?? [];
   const alreadyStored =
     existingHashes.includes(keyHash) || (await matchesAnyHash(apiKey, existingHashes));
   const mergedHashes = alreadyStored ? existingHashes : [...existingHashes, keyHash];
 
-  await c.env.store.putAgent({
+  await deps.store.putAgent({
     slug,
     env,
-    worker: body.worker,
-    clientFiles: body.clientFiles,
+    worker: params.worker,
+    clientFiles: params.clientFiles,
     credential_hashes: mergedHashes,
-    agentConfig: body.agentConfig,
+    agentConfig: params.agentConfig,
   });
 
-  setSlot(c.env.slots, { slug, keyHash });
+  setSlot(deps.slots, { slug, keyHash });
 
   debug("Deploy received", { slug });
 
-  return c.json({ ok: true, slug, message: `Deployed ${slug}` });
+  return { ok: true, slug, message: `Deployed ${slug}` };
+}
+
+// ── HTTP handlers ────────────────────────────────────────────────────────────
+
+function outcomeToResponse(c: ValidatedAppContext<DeployBody>, outcome: DeployOutcome): Response {
+  if (!outcome.ok) return c.json({ error: outcome.error }, outcome.status);
+  return c.json({ ok: true, slug: outcome.slug, message: outcome.message });
+}
+
+function paramsFromBody(c: ValidatedAppContext<DeployBody>, slug?: string): DeployParams {
+  const body = c.req.valid("json");
+  return {
+    slug,
+    apiKey: c.var.apiKey,
+    keyHash: c.var.keyHash,
+    worker: body.worker,
+    clientFiles: body.clientFiles,
+    env: body.env,
+    agentConfig: body.agentConfig,
+  };
+}
+
+/** `POST /:slug/deploy` — deploy to a caller-chosen slug (ownership via `ownerMw`). */
+export async function handleDeploy(c: ValidatedAppContext<DeployBody>): Promise<Response> {
+  const deps = { store: c.env.store, slots: c.env.slots };
+  const outcome = await deployAgentBundle(deps, paramsFromBody(c, c.var.slug));
+  return outcomeToResponse(c, outcome);
+}
+
+/** `POST /deploy` — deploy to the body's slug, or a server-generated one. */
+export async function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Response> {
+  const deps = { store: c.env.store, slots: c.env.slots };
+  const outcome = await deployAgentBundle(deps, paramsFromBody(c, c.req.valid("json").slug));
+  return outcomeToResponse(c, outcome);
 }

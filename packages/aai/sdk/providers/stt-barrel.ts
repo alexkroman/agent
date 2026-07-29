@@ -11,6 +11,8 @@ export type { SttError, SttEvents, SttOpenOptions, SttProvider, SttSession } fro
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./stt/assemblyai.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
+export * from "./stt/assemblyai-sync.ts";
+// biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./stt/deepgram.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./stt/elevenlabs.ts";

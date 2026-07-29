@@ -30,6 +30,7 @@ import {
   flushTtsAndWait,
   consumeLlmStream as runLlmStream,
 } from "./pipeline-stream.ts";
+import { createFileTranscriber } from "./pipeline-transcribe.ts";
 import {
   type PipelineTransportOptions,
   resolvePipelineOptions,
@@ -376,6 +377,24 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     );
   }
 
+  // One-shot uploaded-clip transcription (Transport.transcribeFile) — the
+  // batch-vs-replay choice and the discard-on-reset epoch live in
+  // pipeline-transcribe.ts.
+  const fileTranscriber = createFileTranscriber({
+    transcribeClip: opts.stt.transcribeClip,
+    apiKey: opts.providerKeys.stt,
+    fetchImpl: opts.fetch,
+    signal: sessionAbort.signal,
+    isTerminated: () => terminated,
+    sendRealtimeAudio: (pcm16) => providers.stt?.sendAudio(pcm16),
+    chainTurn,
+    runTurn,
+    callbacks,
+    onTurnCrash: (err) => {
+      log.error("Pipeline file turn crashed", { error: errorMessage(err), sid: opts.sid });
+    },
+  });
+
   return {
     async start(): Promise<void> {
       // STT and TTS open concurrently; a failed side (with the session still
@@ -415,6 +434,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       providers.stt?.sendAudio(bytesToPcm16(bytes));
     },
 
+    transcribeFile(pcm: Uint8Array, sampleRate: number): void {
+      if (terminated || !audioReady) return;
+      fileTranscriber.transcribeFile(pcm, sampleRate);
+    },
+
     // Tool execution stays inside toVercelTools/streamText; results aren't
     // routed through the transport.
     // biome-ignore lint/suspicious/noEmptyBlockStatements: intentional no-op for pipeline mode
@@ -422,7 +446,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     cancelReply(): void {
       if (terminated) return;
-      // A client-initiated cancel is intentional — never resume from it.
+      // A client-initiated cancel is intentional — never resume from it,
+      // and discard any one-shot transcription still in flight.
+      fileTranscriber.discard();
       recovery.clear();
       abortInFlightTurn();
       // Silence after a client-initiated cancel should still nudge.
@@ -441,6 +467,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     reset(): void {
       // A reset is user activity: restore the resume budget as well.
       recovery.onUserTurn();
+      // A one-shot transcription still in flight belongs to the discarded
+      // conversation — its transcript must not commit into the new one.
+      fileTranscriber.discard();
       speechEdges.reset();
       settler.reset();
       abortInFlightTurn();

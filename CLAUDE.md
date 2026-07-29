@@ -35,6 +35,7 @@ pnpm test:aai-core       # Run only aai unit tests
 pnpm test:aai-ui         # Run only aai-ui unit tests
 pnpm test:aai-cli        # Run only aai-cli unit tests
 pnpm test:aai-server     # Run only aai-server unit tests
+pnpm test:aai-studio-client  # Run studio front-end unit tests
 pnpm test:templates      # Run template agent tests
 pnpm dev:aai-server      # Start aai-server in dev mode
 ```
@@ -102,18 +103,24 @@ Coverage measures production source only; test infrastructure
 
 ## Architecture
 
-Five workspace packages under `packages/`:
+Six workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
 | `packages/aai/` | `@alexkroman1/aai` | Shared core: manifest, types, protocol, S2S, session, KV |
-| `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (Preact): session, audio, UI components |
+| `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
 | `packages/aai-server/` | `aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
+| `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
 
-**Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` depend on `@alexkroman1/aai`
-(via `workspace:*`) but never on each other.
+**Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` all depend on
+`@alexkroman1/aai` (via `workspace:*`). The one edge between them is
+`aai-server` → `aai-cli`, and only for its two public bundler subpaths
+(`/worker-bundler`, `/client-bundler`): the studio builds workspaces
+through the CLI's own Vite pipeline rather than carrying a second
+bundler. Do not widen it — nothing else in the server may import from
+the CLI, and the CLI must never import from the server.
 
 **Publishable packages must use the `@alexkroman1/` scope.** The unscoped
 names `aai`, `aai-ui`, `aai-cli` are taken on npm by other publishers —
@@ -134,12 +141,13 @@ Subpath exports consumed by sibling packages and user agents:
 - `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
 - `./kv` — KV provider factories (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`)
 - `./vector` — Vector provider factories (`pinecone`, `inMemoryVector`)
+- `./send` — Send-channel factories + resolver (`slack`, `openSender`)
 
 #### `aai-ui` (UI)
 
-- `.` — default Preact UI component + session + client helpers
-- `./session` — session management (no Preact dependency)
+- `.` — default React UI component + session + client helpers
 - `./styles.css` — default styles
+- `./default-client/*` — prebuilt default client assets (`dist/default-client/`)
 
 #### `aai-cli` (CLI)
 
@@ -197,16 +205,21 @@ restrictions apply there.
 
 #### packages/aai-ui/
 
-- `index.ts` — main exports, Preact UI component
-- `session.ts` — WebSocket session management, message handling, reactive state
-- `context.ts` — SessionProvider, useSession, ClientConfigProvider, useClientConfig
-- `hooks.ts` — useToolResult, useToolCallStart, useAutoScroll
+- `index.ts` — main exports, React UI component
+- `session-core.ts` — WebSocket session management + reactive snapshot
+  (`createSessionCore`); split across `session-core-messages.ts`
+  (message/history handling) and `session-core-types.ts`
+- `context.ts` — SessionProvider, useSession, useSessionCore,
+  useSessionSelector, ThemeProvider, useTheme
+- `hooks.ts` — useToolResult, useToolCallStart, useEvent
 - `audio.ts` — PCM encoding/decoding, AudioWorklet management
 - `define-client.tsx` — client mount helper
+- `default-client.tsx` / `build-default-client.ts` — the default UI shipped
+  to agents with no `client.tsx`, and its build step
 - `types.ts` — UI type definitions
-- `components/` — UI components (app, chat-view, controls,
-  message-list, start-screen, sidebar-layout, tool-call-block, button,
-  tool-icons)
+- `components/` — UI components (chat-view, controls, message-list,
+  start-screen, sidebar-layout, tool-call-block, button, aai-logo,
+  tool-config-context)
 
 #### packages/aai-server/
 
@@ -230,6 +243,199 @@ restrictions apply there.
 - `kv-handler.ts` — KV store HTTP API
 - `metrics.ts` — Prometheus metrics registry and definitions; mounted at
   `/metrics` (internal-only). Dashboards live in `grafana/`.
+- `studio/` — the browser studio server side (see "Browser studio"):
+  `studio-routes.ts` (HTTP surface), `studio-agent.ts` (coding-agent LLM
+  loop + tools), `studio-llm.ts` (provider/model selection + the picker's
+  option list), `studio-sandbox.ts` (per-chat-session sandbox),
+  `studio-edit.ts` (`edit_file`'s matching + diff), `studio-grep.ts`
+  (workspace content search), `studio-workspace-dir.ts`
+  (materializes a workspace to a scratch dir),
+  `studio-bundle.ts` (worker build + import allowlist),
+  `studio-client-build.ts` (client.tsx build), `studio-errors.ts`
+  (`StudioBuildError`), `studio-deploy.ts` (build → sandbox inspect →
+  deploy), `studio-workspace.ts` (project file store), `studio-prompt.ts`
+  (system prompt from the scaffold CLAUDE.md), `studio-static.ts` (serves
+  the built client)
+- `packages/aai-studio-client/` — the studio's React front-end (Vite +
+  Tailwind v4 + `useChat` + TanStack Query + CodeMirror), its own private
+  workspace package built into its `dist/` by
+  `pnpm --filter aai-studio-client build`. It talks to the server purely
+  over HTTP/SSE (no code imports in either direction); aai-server serves
+  the built artifact, resolved via `require.resolve` in
+  `studio-static.ts` the same way aai-ui's `dist/default-client` is.
+  Panes: `chat.tsx` (chat + composer), `code-view.tsx` / `preview.tsx`
+  (the Code/Preview pane).
+
+### Browser studio (aai-server)
+
+Loading the platform server root (`GET /`) serves the **studio** — a
+browser-based coding agent (TypeScript agent loop on the Vercel AI SDK,
+the same `streamText` stack pipeline mode uses) that builds and deploys
+voice agents without the CLI:
+
+- **Workspaces** are small server-side file trees stored one JSON doc per
+  project under `studio/{scope}/{project}` in the platform `Storage`.
+  `scope` is a *deterministic* SHA-256 of the caller's API key
+  (`studioScope`) — unlike the salted PBKDF2 ownership hashes, it must be
+  stable so a browser session can find its projects again.
+- **Chat** (`POST /studio/chat`) runs one agent turn with file tools
+  (list/read/write/edit/delete/grep) plus `test_agent`, streamed as the AI SDK **UI
+  message stream** (SSE) that the client's `useChat` consumes directly.
+  The system prompt embeds the same `aai-templates/scaffold/CLAUDE.md` the
+  CLI ships to user projects (`studio-prompt.ts`) plus studio-specific
+  overrides.
+- **Docs MCP** (`studio-mcp.ts`). The system prompt embeds a *snapshot* of
+  the scaffold guide, so anything outside it — a voice, a newly added
+  gateway model, a provider option — was previously a guess. The agent now
+  also gets AssemblyAI's docs MCP server
+  (`https://www.assemblyai.com/docs/mcp`, via `@ai-sdk/mcp`'s
+  `createMCPClient`) merged into its tool set. Points worth keeping:
+  - One client per chat turn, closed when the stream settles, alongside the
+    session sandbox. A turn is short; a shared long-lived client would be
+    another thing to health-check.
+  - **Failure is never fatal.** Connect and tool-listing are bounded at 5s
+    and every failure path degrades to "no MCP tools this turn" — a docs
+    server being down must cost a lookup, not the user's reply.
+  - Studio tools are merged *on top* of MCP tools, so a server can never
+    shadow `write_file`. `DENIED_TOOLS` additionally drops
+    `submit_feedback`, which the docs server advertises — a coding turn has
+    no business posting feedback as the user.
+  - `STUDIO_MCP_URLS` overrides the default list; setting it empty disables
+    MCP entirely.
+- **Dev-mode key check.** `assertDevKeys` (`index.ts`) refuses to start a
+  *local dev* server without `ASSEMBLYAI_API_KEY` and `BRAVE_API_KEY`. Both
+  stay optional in production — the studio degrades (chat 503s, `web_search`
+  is dropped) — but in dev that degradation is silent and reads as a bug, so
+  it fails at boot where the cause is obvious. `AAI_DEV_SKIP_KEY_CHECK=1`
+  overrides.
+- **Web access** (`studio-web.ts`) exposes the SDK's own `visit_webpage`
+  and `web_search` builtins to the coding agent rather than reimplementing
+  them — which is what buys `safeFetch`, the SSRF guard. A URL here is
+  model-controlled and the studio runs on the platform host, so a
+  hand-rolled `fetch` would be a request-forgery hole aimed at the metadata
+  endpoint. `visit_webpage` needs no key; `web_search` is dropped from the
+  tool set unless the host holds `BRAVE_API_KEY`, since without one it can
+  only return "not set" and waste a turn. The tool context is built from
+  that single variable, never `process.env`, so a coding turn cannot read
+  the host's other credentials.
+- **The preview shows the *published* agent**, so edits look like they did
+  nothing until Publish. `hasUnpublishedChanges` (`studio-workspace.ts`)
+  compares a `filesHash` of the workspace against `deployedHash`, recorded
+  on every successful deploy, and `GET /studio/projects/:project` returns it
+  as `unpublished` so the client never hashes anything. The preview then
+  says so, with a Publish button in the banner. A hash rather than a
+  timestamp for two reasons: publishing itself writes the workspace (which
+  bumps `updatedAt`), and editing a file then undoing it should not leave
+  the project permanently "stale".
+- **The coding agent cannot publish.** There is deliberately no deploy
+  tool: going live is the user's call, made with the Publish button
+  (`POST /studio/projects/:project/deploy`). The prompt states this
+  outright so the agent doesn't claim to have deployed or invent a live
+  URL. Keep it that way — an agent that ships to a public URL on its own
+  read of "make it live" is a surprise nobody asked for.
+- **LLM selection** (`studio-llm.ts`) uses the SDK's own provider
+  descriptors + `resolveLlm` (exported from `@alexkroman1/aai/runtime`).
+  Keys are **platform-owned host config**, never tenant env. Default: the
+  AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set (model `gpt-5.2` —
+  OpenAI models are the only ones the gateway documents streamed responses
+  for), else Anthropic via `ANTHROPIC_API_KEY`;
+  `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL` override (any pipeline-mode LLM
+  provider). Chat returns 503 when unconfigured — the editor and deploy
+  button still work without it.
+- **Gateway regions.** `STUDIO_LLM_REGION=eu` selects the EU endpoint,
+  which serves only Claude and most Gemini models. The gateway model list
+  is therefore region-filtered (`GATEWAY_US_ONLY_MODELS`) and the EU
+  default falls to `claude-sonnet-4-6`. Ordering the one
+  `ASSEMBLYAI_GATEWAY_MODELS` array is what sets both defaults: the first
+  entry surviving the region filter wins.
+- **Model picker.** `GET /studio/models` (auth required — the list reveals
+  which provider keys the host holds) returns `studioLlmOptions()`: the
+  host default plus every provider whose key is present, with the models
+  curated for it. `POST /studio/chat` takes an optional `provider`/`model`
+  pair; the route validates it with `resolveStudioSelection` and answers
+  400 rather than letting `studioModel` throw mid-stream. **A client can
+  never name an arbitrary provider/model and never supplies a key.**
+  Only `assemblyai` (the full gateway model list) and `anthropic` carry
+  curated models; the other providers stay env-only and appear in the
+  picker only while `STUDIO_LLM_PROVIDER` selects them.
+- **Session sandboxes run the agent's code work on production infra**:
+  each chat request lazily provisions one sandbox (`studio-sandbox.ts`)
+  through the same warm-pool/`spawnWarmHarness` path deployed agents use
+  (gVisor in production). `test_agent` builds the workspace, loads the
+  bundle there (repeat `bundle/load` replaces it), validates the config,
+  and can trial-run one of the agent's tools via `tool/execute` against a
+  scratch KV/Vector — no tenant data, no secrets in the guest. Deploy
+  config extraction reuses the same sandbox; the standalone deploy route
+  uses a throwaway one (`describeBundle` in `sandbox-vm.ts`). The LLM
+  orchestration itself stays host-side — the guest has no network device
+  by design.
+- **Builds run through the CLI's bundlers, not copies of them.**
+  `withWorkspaceDir` (`studio-workspace-dir.ts`) materializes the
+  workspace to one scratch dir and both builds read it. The scratch dir
+  lives under the server package, not `os.tmpdir()`, so Node resolves
+  `@alexkroman1/aai`, `zod`, `react`, and `@alexkroman1/aai-ui` by
+  walking up to the workspace `node_modules`. Workspace keys are
+  re-validated with `SafePathSchema` at the point they become real paths.
+- **Worker build** (`studio-bundle.ts`) calls `buildWorker` from
+  `@alexkroman1/aai-cli/worker-bundler` — the same Vite/Rollup pass
+  `aai deploy` runs. The studio supplies the policy on top:
+  - A generated entry (`__aai-entry.ts`) re-exports the agent *and* its
+    config as `__aaiConfig` (via the dependency-free
+    `@alexkroman1/aai/manifest` helpers) so the guest reports the config
+    back from `bundle/load`. **User code is never evaluated on the host** —
+    which is why only `buildWorker` is reused and *not* the CLI's
+    `buildAgentBundle`, whose `evalWorkerBundle` dynamic-imports the built
+    worker.
+  - `allowlistPlugin` enforces the import policy: workspace files,
+    `@alexkroman1/aai` (any subpath), and `zod`; `node:` builtins stay
+    external (CLI parity). It also **rejects any relative or absolute
+    import resolving outside the scratch dir** — that dir is a real
+    directory inside the server package, so a `../` climb would otherwise
+    pull server source into the guest bundle. The in-memory esbuild
+    version got this for free ("file not found"); on a real filesystem it
+    has to be an explicit check.
+  - `configFile: false` — a `vite.config.ts` is executable host code and
+    workspace files are untrusted, so any the agent writes is inert.
+  - Diagnostics are scrubbed (`scrub`) of the scratch-dir prefix and ANSI
+    codes; the coding agent only knows workspace-relative paths.
+- **Vite must not be allowed to mutate `process.env`.** Vite's `build()`
+  sets `NODE_ENV=production` when it is unset — a permanent, global side
+  effect on the calling process. Both CLI bundlers therefore wrap the
+  build in `withPreservedNodeEnv` (`aai-cli/_vite-env.ts`), which
+  snapshots and restores it. Without that, the first studio build in a
+  `pnpm dev:aai-server` process flips the server to "production" and
+  every later deploy dies with *"gVisor (runsc) is required in production
+  but not found on PATH"*; `aai dev`, which rebuilds on every file change,
+  has the same problem. Keep any new Vite invocation inside that wrapper.
+- **Client build** (`studio-client-build.ts`) handles a workspace
+  `client.tsx`, built by `buildClient` from
+  `@alexkroman1/aai-cli/client-bundler` — the same Vite pass
+  `aai deploy` runs, so browser-published UIs match
+  CLI-deployed ones. The studio injects `@vitejs/plugin-react` +
+  `@tailwindcss/vite` (a workspace has no `vite.config.ts`) and passes
+  `configFile: false`. No `client.tsx` → `{}` → the agent gets the
+  default UI.
+- **Deployed-agent credentials.** The studio has no secrets UI, so a
+  published agent would otherwise start with an empty env — its S2S
+  connect sends an empty bearer token (`runtime-transport.ts`:
+  `env[ASSEMBLYAI_API_KEY_ENV] ?? ""`) and AssemblyAI answers
+  `unauthorized`. The bearer token a studio caller
+  authenticates with *is* their AssemblyAI key (see `aai-cli/_config.ts`),
+  so `studio-deploy.ts` seeds it as the agent's `ASSEMBLYAI_API_KEY` via
+  `DeployParams.defaultEnv`. `defaultEnv` is an env **floor**, not an
+  override: `deployLocked` merges it as `{...defaultEnv, ...storedEnv, ...env}`,
+  so a key the user set deliberately (deploy-time `env`, or `aai secret put`
+  afterwards) always wins. This stays inside the credential-separation
+  rule — it forwards *the caller's own* key, never a platform-owned one.
+- **Client**: `packages/aai-studio-client` is a Vite-built React app;
+  `studio-static.ts` resolves its `dist/` via `require.resolve` and serves
+  it at `/` with hashed assets under `/studio-assets/`. When it hasn't
+  been built, `GET /` serves a fallback page with build instructions
+  (unit tests don't require it).
+- **Reserved slugs** (`RESERVED_SLUGS` in `schemas.ts`): `studio` and
+  `studio-assets` can never be claimed as agent slugs — they would shadow
+  the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
+  the deploy core.
 
 ### Session modes
 
@@ -251,6 +457,26 @@ Each agent runs in one of two session modes, selected at parse time by
 
 Partial provider configs are rejected at parse time — `parseManifest()`
 requires either zero or all three of `stt`/`llm`/`tts`.
+
+- **Text-only mode** (`tts: none()` from `@alexkroman1/aai/tts`) is
+  pipeline mode without a synthesis side: speech in (STT → LLM), text out.
+  The sentinel descriptor keeps the all-or-none triple rule intact (a
+  *forgotten* `tts` stays a loud error) while `isTextOnlyTts()` flags the
+  mode wherever it matters: the runtime resolves `tts: null` (no opener,
+  no TTS credential — `requiredProviderEnvVars` skips it since `none` has
+  no registry entry), the pipeline transport skips the TTS side entirely
+  (`openTtsSide` fires `onAudioReady` immediately; `flushTtsAndWait`
+  early-returns; `holdPhrase` is forced off and rejected at config time
+  via `assertTextOnlyTuning` — enforced in `parseManifest`,
+  `toAgentConfig`, and the server's `IsolateConfigSchema`), and the
+  `config` protocol message stamps `audioOut: false` so the client skips
+  the playback pipeline. In `aai-ui`, a text-only session makes the mic
+  opt-in (`startRecording()`/`stopRecording()` on `SessionCore`), adds
+  `sendAudioFile()` (decode → resample → PCM16 stream with trailing
+  silence for endpointing), and the default `ChatView` swaps `Controls`
+  for `TextControls` (record + upload + text replies). The snapshot's
+  `apiUrl` field carries the programmatic WebSocket endpoint, shown by
+  `ApiUrlChip` in every mode. Template: `pipeline-text-only`.
 
 Reference providers shipped today:
 
@@ -278,9 +504,33 @@ Reference providers shipped today:
     (OpenAI-compatible chat-completions endpoint fronting 25+ models) via
     `@ai-sdk/openai`'s `.chat()` client. `region: "eu"` selects the EU
     endpoint. Same factory name as the STT provider — alias one on import.
+    The client is built with a `fetch` wrapper,
+    `repairOpenAiStream` (`host/providers/_openai-stream-repair.ts`): the
+    gateway documents streamed responses for OpenAI models only, and its
+    Claude streams break two AI SDK expectations. (1) `tool_calls` deltas
+    arrive with no `id`/`type`, which makes `StreamingToolCallTracker` in
+    `@ai-sdk/provider-utils` throw `Expected 'id' to be a string` and kill any
+    turn that calls a tool — the wrapper fills in a synthetic id (stable per
+    tool-call index within one response) and `type: "function"`, leaving real
+    ids alone. (2) The final usage-only chunk carries `"choices": null` where
+    the schema requires an array, so the turn dies with "Type validation
+    failed" *after* the reply has streamed — the wrapper rewrites that null to
+    `[]` (an absent `choices` stays absent). Every other byte passes through.
+    Remove each repair once the gateway emits conformant frames.
 - **TTS**: one of
   - `cartesia({ voice })` — `CARTESIA_API_KEY`
   - `rime({ voice })` — `RIME_API_KEY`
+  - `assemblyAI({ voice, language? })` — `ASSEMBLYAI_API_KEY`; AssemblyAI's
+    streaming TTS over `wss://streaming-tts.assemblyai.com/v1/ws/`. Third
+    factory named `assemblyAI` (STT and LLM have one too) — alias on import.
+    Sharing one key with STT and the gateway means an all-AssemblyAI pipeline
+    needs exactly one secret. Two protocol details that are easy to get wrong:
+    the streaming sockets authenticate with the **raw** key, not `Bearer`, and
+    production sends no `Begin` frame until the client speaks first, so the
+    adapter must not block waiting for one (the AssemblyAI CLI does, which is
+    why it marks prod streaming TTS unavailable). Turns end on `FlushDone`;
+    a rejected key arrives in-band as an `Error` frame, i.e. as
+    `tts_stream_error` rather than `tts_auth_failed`.
 
 The provider SDKs (`ai`, `assemblyai`, `@cartesia/cartesia-js`,
 `@ai-sdk/*`, …) are regular dependencies of `@alexkroman1/aai`, but they
@@ -449,9 +699,10 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
 | `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
 | `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `gateway`) |
-| `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`) |
+| `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
 | `@alexkroman1/aai/kv` | `sdk/providers/kv-barrel.ts` | KV provider factories + types (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
+| `@alexkroman1/aai/send` | `sdk/providers/send-barrel.ts` | Send-channel factories + resolver (`slack`, `openSender`, `Sender`) |
 
 ### Default values and magic numbers
 
@@ -511,6 +762,7 @@ you only need to list one package.
 | aai-ui | threads | **jsdom** | `_jsdom-setup.ts` (stubs `scrollIntoView`) | `globals: true` so `describe`/`test`/`expect` don't need imports |
 | aai-cli | threads | node | — | `restoreMocks: true` |
 | aai-server | **forks** | node | — | Forks for process isolation; excludes integration/load/adversarial |
+| aai-studio-client | threads | node | — | `.tsx` tests via `react-dom/server` (no jsdom) |
 | aai-templates | threads | node | — | Only matches `templates/*/agent.test.ts` |
 
 #### Test environment variables
@@ -796,6 +1048,42 @@ stored env at sandbox creation time and kept host-side only.
 - Deploys check slug ownership whether the slug was requested or generated —
   a `humanId()` collision returns 409 rather than overwriting an existing
   agent and appending the caller's credential hash to it.
+
+### Host mode on deployed agents (`aai-server/ws-host-mode.ts`)
+
+A deployed agent's `WS /:slug/websocket` accepts `?host=1`, the same override
+channel the dev server offers: the caller supplies `systemPrompt`, `greeting`,
+and relayed tool schemas, and the session runs on the *deployed agent's*
+credentials and provider pipeline.
+
+The gate differs from the dev server's on purpose. `aai dev` is single-user
+and loopback-bound, so `AAI_ALLOW_HOST` is an adequate control. The platform
+is multi-tenant and an agent's WebSocket is deliberately **unauthenticated** —
+anyone with the URL can talk to it. Allowing prompt/tool overrides on that
+footing would make every deployed agent an open LLM proxy billed to its owner.
+So `?host=1` requires `Authorization: Bearer <api key>` on the upgrade,
+verified against slug ownership (the check `/:slug/secret` and `/:slug/kv`
+already use). `startHostSession` gained an `allowHost` option so the platform
+can gate on ownership instead of the env flag, which would be all-or-nothing
+across tenants.
+
+Details worth keeping:
+
+- **Header, not a query param.** A URL leaks through proxy logs, history, and
+  `Referer`, and this token is the caller's whole platform credential.
+  Browsers can't set WebSocket headers, which is intended — host mode is for
+  programmatic clients.
+- **A refusal answers the handshake** (401/403 + reason) rather than dropping
+  the socket; a bare RST is indistinguishable from a network fault.
+- **Unknown slug and forbidden slug return the same thing**, so a non-owner
+  gets no existence oracle.
+- **Runs in the server process, not the gVisor sandbox.** Host mode replaces
+  the agent's tools with ones relayed to the caller, so there is no tenant
+  code to isolate. `toHostBaseAgent` carries the provider descriptors on the
+  agent object (unlike `toRuntimeAgent`, which omits them because
+  `createSandbox` passes them as options) — otherwise a pipeline agent would
+  silently fall back to S2S when driven over `?host=1`.
+- Plain connections are untouched and stay unauthenticated.
 
 ### Self-hosted server defaults (`aai/host/server.ts`)
 

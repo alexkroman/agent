@@ -22,8 +22,19 @@ export const SafePathSchema = z
 
 export const VALID_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
 
+/**
+ * Slugs that collide with top-level platform routes and can never be claimed
+ * by an agent. `/studio` is the browser coding-agent UI's API namespace;
+ * `/studio-assets` serves its client build.
+ */
+export const RESERVED_SLUGS: ReadonlySet<string> = new Set(["studio", "studio-assets"]);
+
 export const DeployBodySchema = z.object({
-  slug: z.string().regex(VALID_SLUG_RE, "Invalid slug format").optional(),
+  slug: z
+    .string()
+    .regex(VALID_SLUG_RE, "Invalid slug format")
+    .refine((s) => !RESERVED_SLUGS.has(s), "Reserved slug")
+    .optional(),
   env: z.record(z.string(), z.string()).optional(),
   worker: z.string().min(1).max(MAX_WORKER_SIZE),
   clientFiles: z

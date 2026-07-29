@@ -13,6 +13,9 @@ export const MIC_BUFFER_SECONDS = 0.1;
  */
 export const MIC_SEND_MAX_BUFFERED_BYTES = 64 * 1024;
 
+/** Poll interval while waiting out socket backpressure during a file send. */
+export const FILE_SEND_BACKOFF_MS = 50;
+
 /**
  * Current state of the voice agent session.
  *
@@ -127,9 +130,9 @@ export type WebSocketConstructor = {
  * @public
  */
 export type ClientTheme = {
-  /** Background color. Default: `#101010`. */
+  /** Background color, also painted on `html`/`body`. Default: `#FBF8F2`. */
   bg?: string;
-  /** Primary accent color. Default: `#fab283`. */
+  /** Primary accent color. Default: `#3F2BC1`. */
   primary?: string;
   /** Main text color. */
   text?: string;

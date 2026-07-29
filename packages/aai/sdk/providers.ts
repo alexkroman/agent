@@ -24,6 +24,8 @@
  * at bundle load — the exact failure mode that forced this refactor.
  */
 
+import { isTextOnlyTts } from "./providers/tts/none.ts";
+
 /** Unsubscribe callback returned by `.on()` event subscriptions. */
 export type Unsubscribe = () => void;
 
@@ -53,6 +55,9 @@ export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>>;
 
 /** Descriptor for a KV backend. Returned by factories like `redisKv()`. */
 export type KvProvider = ProviderDescriptor<string, Record<string, unknown>>;
+
+/** Descriptor for an outbound send channel. Returned by factories like `slack()`. */
+export type SendProvider = ProviderDescriptor<string, Record<string, unknown>>;
 
 /** Descriptor for a Vector backend. Returned by factories like `pinecone(...)`. */
 export type VectorProvider = ProviderDescriptor<string, Record<string, unknown>>;
@@ -141,6 +146,25 @@ export type PipelineTuning = {
  * `IsolateConfigSchema` — one source of truth for the validation, mirroring
  * {@link assertSilencePolicy}.
  */
+/**
+ * Reject tuning fields that only make sense when replies are spoken.
+ * `holdPhrase` is literally synthesized filler ("One moment.") — with
+ * `tts: none()` it would be injected into the *text* reply instead, so an
+ * explicit value is a configuration error rather than a silent oddity.
+ *
+ * Shared by `parseManifest`, `toAgentConfig`, and the server's
+ * `IsolateConfigSchema` — one source of truth, mirroring
+ * {@link assertPipelineTuning}.
+ */
+export function assertTextOnlyTuning(
+  tts: unknown,
+  tuning: Pick<PipelineTuning, "holdPhrase">,
+): void {
+  if (isTextOnlyTts(tts) && tuning.holdPhrase !== undefined) {
+    throw new Error("holdPhrase requires a speaking TTS provider (remove it or drop tts: none())");
+  }
+}
+
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void {
   if (mode === "pipeline") return;
   const fields: Record<string, unknown> = {
@@ -156,6 +180,29 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
       throw new Error(`${key} requires pipeline mode (stt, llm, and tts all set)`);
     }
   }
+}
+
+// -------- Send channel (environment-agnostic) --------------------------------
+
+/**
+ * Payload for a send channel. A string is wrapped in the channel's natural
+ * text shape (Slack: `{ text }`); an object is posted verbatim as the HTTP
+ * body, so callers control the full payload (Slack blocks, attachments, …).
+ */
+export type SendMessage = string | Record<string, unknown>;
+
+/**
+ * A live outbound channel resolved from a {@link SendProvider} descriptor
+ * via `openSender` (`@alexkroman1/aai/send`). Unlike the STT/TTS openables
+ * this is not host-only: senders are plain `fetch` + env, so the same
+ * implementation runs on the host and inside the guest sandbox (where
+ * `fetch` is the harness's proxied, allowlist-checked implementation).
+ */
+export interface Sender {
+  /** The provider kind this sender was resolved from (e.g. `"slack"`). */
+  readonly name: string;
+  /** Deliver one message. Rejects on missing credential or non-2xx response. */
+  send(message: SendMessage, opts?: { signal?: AbortSignal | undefined }): Promise<void>;
 }
 
 // -------- STT openable (host-only) ------------------------------------------
@@ -204,10 +251,28 @@ export interface SttOpenOptions {
   signal: AbortSignal;
 }
 
+/** Options for {@link SttOpener.transcribeClip}. */
+export interface TranscribeClipOptions {
+  apiKey: string;
+  fetch?: typeof globalThis.fetch | undefined;
+  signal?: AbortSignal | undefined;
+}
+
 /** Host-side openable STT provider — produced by `resolveStt(descriptor)`. */
 export interface SttOpener {
   readonly name: string;
   open(opts: SttOpenOptions): Promise<SttSession>;
+  /**
+   * One-shot transcription of a short PCM16 clip (an uploaded file), for
+   * providers with a synchronous batch endpoint — AssemblyAI implements it
+   * via the Sync API. Providers without one omit it; the pipeline transport
+   * then replays the clip through the realtime session instead.
+   */
+  transcribeClip?(
+    pcm: Uint8Array,
+    sampleRate: number,
+    opts: TranscribeClipOptions,
+  ): Promise<string>;
 }
 
 // -------- TTS openable (host-only) ------------------------------------------

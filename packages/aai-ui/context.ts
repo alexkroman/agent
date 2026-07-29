@@ -6,18 +6,22 @@ import {
   type ReactNode,
   useCallback,
   useContext,
+  useEffect,
   useRef,
   useSyncExternalStore,
 } from "react";
 import type { SessionCore, SessionSnapshot } from "./session-core.ts";
 import type { ClientTheme } from "./types.ts";
 
+// AssemblyAI design system ("website refresh"): warm cream surface, deep
+// indigo primary, warm-ink text, taupe borders. Overridable per client via
+// `client({ theme })`.
 const DEFAULT_THEME: Required<ClientTheme> = {
-  bg: "#101010",
-  primary: "#fab283",
-  text: "rgba(255, 255, 255, 0.94)",
-  surface: "#151515",
-  border: "#282828",
+  bg: "#FBF8F2",
+  primary: "#3F2BC1",
+  text: "#1B1A18",
+  surface: "#FFFFFF",
+  border: "#DCD7CC",
 };
 
 const SessionCtx = createContext<SessionCore | null>(null);
@@ -33,6 +37,9 @@ export type Session = SessionSnapshot & {
   reset(): void;
   disconnect(): void;
   toggle(): void;
+  startRecording(): void;
+  stopRecording(): void;
+  sendAudioFile(file: Blob): Promise<void>;
 };
 
 /**
@@ -61,6 +68,9 @@ export function useSession(): Session {
     reset: core.reset,
     disconnect: core.disconnect,
     toggle: core.toggle,
+    startRecording: core.startRecording,
+    stopRecording: core.stopRecording,
+    sendAudioFile: core.sendAudioFile,
   };
 }
 
@@ -111,7 +121,32 @@ export function ThemeProvider({
   children?: ReactNode;
 }) {
   const merged = value ? { ...DEFAULT_THEME, ...value } : DEFAULT_THEME;
+  usePageBackground(merged.bg);
   return createElement(ThemeCtx.Provider, { value: merged }, children);
+}
+
+/**
+ * Paint `html`/`body` with the theme background.
+ *
+ * Components paint `theme.bg` on their own containers, but the page behind
+ * them keeps whatever the static `<style>` in index.html set. Any viewport
+ * wider (or taller) than the app column then shows that color as a border
+ * around the UI — which is how a cream theme ended up letterboxed in black.
+ * Driving it from the theme means a custom `client({ theme })` covers the
+ * page too, instead of trading one hardcoded color for another.
+ */
+function usePageBackground(bg: string): void {
+  useEffect(() => {
+    if (typeof document === "undefined") return;
+    const { body, documentElement: html } = document;
+    const previous = { body: body.style.background, html: html.style.background };
+    body.style.background = bg;
+    html.style.background = bg;
+    return () => {
+      body.style.background = previous.body;
+      html.style.background = previous.html;
+    };
+  }, [bg]);
 }
 
 export function useTheme(): Required<ClientTheme> {

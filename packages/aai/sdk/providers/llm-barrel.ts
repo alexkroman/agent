@@ -11,6 +11,7 @@ export type { LlmProvider } from "../providers.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./llm/anthropic.ts";
 export {
+  ASSEMBLYAI_LLM_API_KEY_ENV,
   ASSEMBLYAI_LLM_GATEWAY_EU_URL,
   ASSEMBLYAI_LLM_GATEWAY_URL,
   ASSEMBLYAI_LLM_KIND,

@@ -141,6 +141,35 @@ describe("ClientMessageSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  test("accepts transcribe_file_start within the caps", () => {
+    const result = ClientMessageSchema.safeParse({
+      type: "transcribe_file_start",
+      sampleRate: 48_000,
+      byteLength: 1024,
+    });
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects transcribe_file_start with an absurd sampleRate", () => {
+    // The host preallocates sampleRate-derived padding buffers, so an
+    // unbounded rate is a memory DoS — capped at MAX_AUDIO_SAMPLE_RATE.
+    const result = ClientMessageSchema.safeParse({
+      type: "transcribe_file_start",
+      sampleRate: 2 ** 31,
+      byteLength: 1024,
+    });
+    expect(result.success).toBe(false);
+  });
+
+  test("rejects transcribe_file_start past the byte cap", () => {
+    const result = ClientMessageSchema.safeParse({
+      type: "transcribe_file_start",
+      sampleRate: 16_000,
+      byteLength: 13 * 1024 * 1024,
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("buildReadyConfig", () => {
@@ -157,6 +186,14 @@ describe("buildReadyConfig", () => {
     const config = buildReadyConfig({ inputSampleRate: 8000, outputSampleRate: 48_000 });
     expect(config.sampleRate).toBe(8000);
     expect(config.ttsSampleRate).toBe(48_000);
+  });
+
+  test("stamps audioOut: false only for text-only sessions", () => {
+    const rates = { inputSampleRate: 16_000, outputSampleRate: 24_000 };
+    // Voice sessions keep a byte-identical config — no audioOut key at all.
+    expect(buildReadyConfig(rates)).not.toHaveProperty("audioOut");
+    expect(buildReadyConfig(rates, { audioOut: true })).not.toHaveProperty("audioOut");
+    expect(buildReadyConfig(rates, { audioOut: false }).audioOut).toBe(false);
   });
 });
 

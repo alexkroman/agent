@@ -88,6 +88,16 @@ export default defineConfig({
       {
         ...sharedConfig,
         test: {
+          name: "aai-studio-client",
+          root: "packages/aai-studio-client",
+          // Components are unit-tested via react-dom/server (no jsdom needed).
+          include: ["**/*.test.{ts,tsx}"],
+          exclude: ["node_modules", "dist"],
+        },
+      },
+      {
+        ...sharedConfig,
+        test: {
           name: "templates",
           root: "packages/aai-templates",
           include: ["templates/*/agent.test.ts"],

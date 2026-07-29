@@ -5,33 +5,24 @@
 import clsx from "clsx";
 import type { CSSProperties, ReactNode } from "react";
 import { useTheme } from "../context.ts";
-import { SURFACE_RAISED, TEXT_SOFT } from "./_colors.ts";
 
 /**
- * Visual style of a {@link Button}.
+ * Visual style of a {@link Button} (design-system "website refresh":
+ * rectangular, ALL-CAPS, tracked labels).
  *
- * - `"default"` — Primary filled button (accent background).
- * - `"secondary"` — Muted surface background with border.
- * - `"ghost"` — Transparent background with border.
+ * - `"default"` — Primary filled button (indigo background).
+ * - `"secondary"` — Outlined primary (transparent background, primary border).
+ * - `"ghost"` — Raised neutral (surface background with hairline border).
  */
 type ButtonVariant = "default" | "secondary" | "ghost";
 
 /**
  * Size preset for a {@link Button}.
  *
- * - `"default"` — Compact (height 2rem / 32 px).
- * - `"lg"` — Large with generous padding, suitable for primary CTAs.
+ * - `"default"` — Compact control (height 36 px).
+ * - `"lg"` — Primary CTA (height 44 px, generous padding).
  */
 type ButtonSize = "default" | "lg";
-
-const LG_STYLE: CSSProperties = {
-  display: "grid",
-  placeItems: "center",
-  appearance: "none",
-  margin: 0,
-  padding: "12px 32px",
-  lineHeight: 1,
-};
 
 /**
  * A styled button with variant and size presets.
@@ -74,17 +65,17 @@ export function Button({
 
   let variantStyle: CSSProperties;
   if (variant === "default") {
-    variantStyle = { background: theme.primary, color: "#fff", borderColor: "transparent" };
+    variantStyle = { background: theme.primary, color: theme.surface, borderColor: "transparent" };
   } else if (variant === "secondary") {
     variantStyle = {
-      background: SURFACE_RAISED,
-      color: TEXT_SOFT,
-      borderColor: theme.border,
+      background: "transparent",
+      color: theme.primary,
+      borderColor: theme.primary,
     };
   } else {
     variantStyle = {
-      background: "transparent",
-      color: TEXT_SOFT,
+      background: theme.surface,
+      color: theme.text,
       borderColor: theme.border,
     };
   }
@@ -92,15 +83,13 @@ export function Button({
   return (
     <button
       type="button"
-      style={{
-        ...(size === "lg" ? LG_STYLE : undefined),
-        ...variantStyle,
-        ...style,
-      }}
+      style={{ ...variantStyle, ...style }}
       className={clsx(
-        size !== "lg" &&
-          "flex items-center justify-center appearance-none m-0 h-8 px-3 py-1.5 w-fit leading-none",
-        "rounded-aai text-sm font-medium cursor-pointer border outline-none",
+        "inline-flex items-center justify-center appearance-none m-0 w-fit whitespace-nowrap",
+        size === "lg" ? "h-11 px-7 text-xs" : "h-9 px-5 text-[11px]",
+        "rounded-aai font-aai font-medium tracking-[1.4px] uppercase leading-none",
+        "cursor-pointer border outline-none transition-colors duration-150",
+        "disabled:cursor-not-allowed disabled:opacity-50",
         className,
       )}
       {...rest}

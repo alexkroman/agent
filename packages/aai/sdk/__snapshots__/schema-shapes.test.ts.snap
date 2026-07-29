@@ -17,6 +17,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "mode",
   "name",
   "s2s",
+  "send",
   "silencePrompt",
   "silenceTimeoutMs",
   "stt",
@@ -53,6 +54,7 @@ exports[`protocol schema shapes > ClientEventSchema option shapes 1`] = `
   ],
   "error": [
     "code",
+    "fatal",
     "message",
     "type",
   ],
@@ -114,6 +116,14 @@ exports[`protocol schema shapes > ClientMessageSchema option shapes 1`] = `
     "toolCallId",
     "type",
   ],
+  "transcribe_file_end": [
+    "type",
+  ],
+  "transcribe_file_start": [
+    "byteLength",
+    "sampleRate",
+    "type",
+  ],
 }
 `;
 
@@ -143,6 +153,7 @@ exports[`protocol schema shapes > KvSetSchema shape 1`] = `
 exports[`protocol schema shapes > ReadyConfigSchema shape 1`] = `
 [
   "audioFormat",
+  "audioOut",
   "sampleRate",
   "ttsSampleRate",
 ]
@@ -162,6 +173,7 @@ exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
   ],
   "config": [
     "audioFormat",
+    "audioOut",
     "sampleRate",
     "sessionId",
     "ttsSampleRate",
@@ -174,6 +186,7 @@ exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
   ],
   "error": [
     "code",
+    "fatal",
     "message",
     "type",
   ],

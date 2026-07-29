@@ -3,10 +3,15 @@
 // and tool-step enforcement. Replaces session.ts + pipeline-session.ts.
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
-import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
+import {
+  DEFAULT_IDLE_TIMEOUT_MS,
+  DEFAULT_MAX_HISTORY,
+  FILE_UPLOAD_CHUNK_BYTES,
+} from "../sdk/constants.ts";
 import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
 import { capToolResult, errorMessage, toolError } from "../sdk/utils.ts";
+import { withTrailingSilence } from "./_pcm.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { Transport } from "./transports/types.ts";
@@ -56,6 +61,10 @@ export type SessionCore = {
   // Inbound from client (decoded by ws-handler)
   onAudio(bytes: Uint8Array): void;
   onAudioReady(): void;
+  /** Begin buffering binary frames as one uploaded clip (see `transcribe_file_start`). */
+  onTranscribeFileStart(sampleRate: number, byteLength: number): void;
+  /** Finish the upload: transcribe the buffered clip in one shot (or replay it). */
+  onTranscribeFileEnd(): void;
   onCancel(): void;
   onReset(): void;
   onHistory(messages: readonly Message[]): void;
@@ -72,7 +81,7 @@ export type SessionCore = {
   onUserTranscriptPartial(text: string): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
   onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
-  onError(code: SessionErrorCode, message: string): void;
+  onError(code: SessionErrorCode, message: string, opts?: { fatal?: boolean }): void;
   onSpeechStarted(): void;
   onSpeechStopped(): void;
 };
@@ -98,6 +107,31 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   let idleTimer: NodeJS.Timeout | null = null;
   let lastActivityMs = 0;
   let stopped = false;
+  /** In-flight file upload (between transcribe_file_start and _end): binary
+   *  frames land here instead of streaming to the transport as mic audio.
+   *  Preallocated to the declared (cap-validated) byteLength; `received`
+   *  tracks the fill so the per-frame append stays O(frame). */
+  let fileUpload: { sampleRate: number; buffer: Uint8Array; received: number } | null = null;
+
+  /** Hand the buffered clip to the transport (idempotent — see onAudio). */
+  function finishFileUpload(): void {
+    const upload = fileUpload;
+    fileUpload = null;
+    if (!upload || upload.received === 0) return;
+    const pcm = upload.buffer.subarray(0, upload.received);
+    if (opts.transport.transcribeFile) {
+      opts.transport.transcribeFile(pcm, upload.sampleRate);
+      return;
+    }
+    // No one-shot path on this transport (e.g. S2S): replay the clip
+    // through the realtime audio path in socket-friendly chunks, padded
+    // with silence so endpointing commits the final turn (the client
+    // skips padding on this path).
+    const padded = withTrailingSilence(pcm, upload.sampleRate);
+    for (let i = 0; i < padded.byteLength; i += FILE_UPLOAD_CHUNK_BYTES) {
+      opts.transport.sendUserAudio(padded.subarray(i, i + FILE_UPLOAD_CHUNK_BYTES));
+    }
+  }
 
   function emit(event: ClientEvent): void {
     opts.client.event(event);
@@ -187,7 +221,32 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     // ─── Inbound from client ──────────────────────────────────────────────
     onAudio(bytes) {
       resetIdle();
+      if (fileUpload) {
+        // Mid-upload: this frame is part of the clip, not live mic audio.
+        // Frames beyond the declared byteLength are dropped rather than
+        // buffered — the declaration was validated against the cap.
+        if (fileUpload.received + bytes.byteLength <= fileUpload.buffer.byteLength) {
+          fileUpload.buffer.set(bytes, fileUpload.received);
+          fileUpload.received += bytes.byteLength;
+          // The declaration is fulfilled — finalize now rather than waiting
+          // on `transcribe_file_end` (which then no-ops). A dropped end
+          // frame must not leave the session absorbing mic audio forever.
+          if (fileUpload.received === fileUpload.buffer.byteLength) finishFileUpload();
+        } else {
+          log.warn("transcribe_file: dropping bytes past declared byteLength", { sid: opts.id });
+        }
+        return;
+      }
       opts.transport.sendUserAudio(bytes);
+    },
+    onTranscribeFileStart(sampleRate, byteLength) {
+      resetIdle();
+      // A new upload replaces any half-finished one (client retry).
+      fileUpload = { sampleRate, buffer: new Uint8Array(byteLength), received: 0 };
+    },
+    onTranscribeFileEnd() {
+      resetIdle();
+      finishFileUpload();
     },
     onAudioReady() {
       // Intentionally inert, and there is no override mechanism: greeting
@@ -203,6 +262,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
     onReset() {
       cancelReply();
+      fileUpload = null;
       history = [];
       // Clear conversation state the transport owns (pipeline LLM history);
       // without this the "forgotten" dialogue keeps feeding the next turn.
@@ -341,8 +401,8 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       turnPromise = (turnPromise ?? Promise.resolve()).then(() => p);
     },
 
-    onError(code, message) {
-      emit({ type: "error", code, message });
+    onError(code, message, errOpts) {
+      emit({ type: "error", code, message, ...(errOpts?.fatal === false && { fatal: false }) });
     },
     onSpeechStarted() {
       emit({ type: "speech_started" });

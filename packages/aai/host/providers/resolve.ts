@@ -36,11 +36,13 @@ import { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "../../sdk/providers/llm/mistr
 import { OPENAI_API_KEY_ENV, OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
 import { XAI_API_KEY_ENV, XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import { OPENAI_REALTIME_KIND } from "../../sdk/providers/s2s/openai-realtime.ts";
+import { SEND_CHANNEL_REGISTRY } from "../../sdk/providers/send/open.ts";
 import {
   ASSEMBLYAI_API_KEY_ENV,
   ASSEMBLYAI_KIND,
   type AssemblyAIOptions,
 } from "../../sdk/providers/stt/assemblyai.ts";
+import { syncTranscribe } from "../../sdk/providers/stt/assemblyai-sync.ts";
 import {
   DEEPGRAM_API_KEY_ENV,
   DEEPGRAM_KIND,
@@ -57,6 +59,11 @@ import {
   type SonioxOptions,
 } from "../../sdk/providers/stt/soniox.ts";
 import {
+  ASSEMBLYAI_TTS_API_KEY_ENV,
+  ASSEMBLYAI_TTS_KIND,
+  type AssemblyAITtsOptions,
+} from "../../sdk/providers/tts/assemblyai.ts";
+import {
   CARTESIA_API_KEY_ENV,
   CARTESIA_KIND,
   type CartesiaOptions,
@@ -69,6 +76,7 @@ import type {
   TtsOpener,
   TtsProvider,
 } from "../../sdk/providers.ts";
+import { repairOpenAiStream } from "./_openai-stream-repair.ts";
 import { requireApiKey } from "./_utils.ts";
 
 /**
@@ -132,10 +140,23 @@ function lazyOpener<Opts, Session>(
 const STT_REGISTRY: Record<string, OpenerRegistryEntry<SttOpener>> = {
   [ASSEMBLYAI_KIND]: {
     envVar: ASSEMBLYAI_API_KEY_ENV,
-    open: (d) =>
-      lazyOpener(ASSEMBLYAI_KIND, async () =>
+    open: (d) => ({
+      ...lazyOpener(ASSEMBLYAI_KIND, async () =>
         (await import("./stt/assemblyai.ts")).openAssemblyAI(options<AssemblyAIOptions>(d)),
       ),
+      // One-shot clips (uploaded files) go through the Sync API — the
+      // preferred endpoint for short audio. Zero-dep, so no lazy load.
+      transcribeClip: (pcm, sampleRate, o) =>
+        syncTranscribe({
+          audio: pcm,
+          contentType: "audio/pcm",
+          sampleRate,
+          channels: 1,
+          apiKey: o.apiKey,
+          fetch: o.fetch,
+          signal: o.signal,
+        }).then((r) => r.text),
+    }),
   },
   [DEEPGRAM_KIND]: {
     envVar: DEEPGRAM_API_KEY_ENV,
@@ -173,6 +194,13 @@ const TTS_REGISTRY: Record<string, OpenerRegistryEntry<TtsOpener>> = {
     open: (d) =>
       lazyOpener(RIME_KIND, async () =>
         (await import("./tts/rime.ts")).openRime(options<RimeOptions>(d)),
+      ),
+  },
+  [ASSEMBLYAI_TTS_KIND]: {
+    envVar: ASSEMBLYAI_TTS_API_KEY_ENV,
+    open: (d) =>
+      lazyOpener(ASSEMBLYAI_TTS_KIND, async () =>
+        (await import("./tts/assemblyai.ts")).openAssemblyAITts(options<AssemblyAITtsOptions>(d)),
       ),
   },
 };
@@ -318,7 +346,14 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
         opts.region === "eu" ? ASSEMBLYAI_LLM_GATEWAY_EU_URL : ASSEMBLYAI_LLM_GATEWAY_URL;
       // The gateway implements /chat/completions only, so use .chat() —
       // the provider's default callable targets OpenAI's Responses API.
-      return createOpenAI({ apiKey, baseURL, name: "assemblyai" }).chat(opts.model);
+      // `fetch` repairs the gateway's id-less streaming tool_call deltas,
+      // which the SDK's streaming tracker would otherwise reject.
+      return createOpenAI({
+        apiKey,
+        baseURL,
+        name: "assemblyai",
+        fetch: repairOpenAiStream(),
+      }).chat(opts.model);
     },
   },
 };
@@ -391,6 +426,7 @@ export function requiredProviderEnvVars(agent: {
   llm?: { kind: string } | object | undefined;
   tts?: { kind: string } | object | undefined;
   s2s?: { kind: string } | object | undefined;
+  send?: { kind: string } | object | undefined;
 }): string[] {
   const vars = new Set<string>();
   const add = (envVar: string | undefined): void => {
@@ -405,6 +441,7 @@ export function requiredProviderEnvVars(agent: {
   add(envVarFor(STT_REGISTRY, agent.stt));
   add(envVarFor(TTS_REGISTRY, agent.tts));
   add(envVarFor(LLM_REGISTRY, agent.llm));
+  add(envVarFor(SEND_CHANNEL_REGISTRY, agent.send));
 
   // S2S mode: an explicit descriptor selects its vendor, and its *absence*
   // means the default AssemblyAI S2S path (see createTransportFactory).
@@ -433,6 +470,7 @@ export const ALL_PROVIDER_ENV_VARS: readonly string[] = [
     ...Object.values(STT_REGISTRY).map((e) => e.envVar),
     ...Object.values(TTS_REGISTRY).map((e) => e.envVar),
     ...Object.values(LLM_REGISTRY).map((e) => e.envVar),
+    ...Object.values(SEND_CHANNEL_REGISTRY).map((e) => e.envVar),
     // S2S: the default AssemblyAI path and the OpenAI Realtime alternative.
     ASSEMBLYAI_API_KEY_ENV,
     OPENAI_API_KEY_ENV,

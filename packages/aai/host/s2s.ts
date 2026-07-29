@@ -157,6 +157,9 @@ function dispatchS2sMessage(
   }
 }
 
+/** RFC 6455 Normal Closure. Sent on an intentional close — see `close()`. */
+const WS_NORMAL_CLOSURE = 1000;
+
 export type S2sSessionConfig = {
   systemPrompt: string;
   tools: ToolSchema[];
@@ -255,7 +258,12 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
 
     close(): void {
       log.info("S2S closing");
-      ws.close();
+      // Explicitly Normal Closure. `close()` with no code sends a statusless
+      // frame, which both ends then report as 1005 "No Status Received" —
+      // indistinguishable in the logs from the peer dropping us, and 1005 is
+      // in the transport's TRANSIENT_CLOSE_CODES, so our own teardown would
+      // look like something worth resuming.
+      ws.close(WS_NORMAL_CLOSURE);
     },
   };
 

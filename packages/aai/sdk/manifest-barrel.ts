@@ -16,9 +16,11 @@ export {
   toAgentConfig,
 } from "./_internal-types.ts";
 export { ProviderDescriptorSchema } from "./manifest.ts";
+export { isTextOnlyTts, NONE_TTS_KIND } from "./providers/tts/none.ts";
 export {
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
+  assertTextOnlyTuning,
   type SessionMode,
 } from "./providers.ts";

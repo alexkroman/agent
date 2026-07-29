@@ -81,6 +81,7 @@ export function makeConfig(
   sampleRate = 16_000,
   ttsSampleRate = 24_000,
   sessionId = "sess-123",
+  extra: Record<string, unknown> = {},
 ): string {
   return JSON.stringify({
     type: "config",
@@ -88,5 +89,6 @@ export function makeConfig(
     sampleRate,
     ttsSampleRate,
     sessionId,
+    ...extra,
   });
 }

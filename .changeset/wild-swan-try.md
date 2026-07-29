@@ -1,0 +1,5 @@
+---
+"aai-server": minor
+---
+
+The platform server root now serves a browser studio: a coding agent (Vercel AI SDK `streamText` loop, streamed to a React `useChat` client as the AI SDK UI message stream) that edits per-API-key server-side workspaces and builds, tests, and deploys voice agents directly from the browser. The agent's code-executing work runs in per-session sandboxes provisioned through the same warm-pool/gVisor infrastructure as deployed agents: bundles are built in-memory with esbuild (import allowlist), loaded and trial-run in the sandbox (`test_agent`), and config extraction happens in-guest via a self-describing `__aaiConfig` export — user code is never evaluated on the host. Chat LLM defaults to the AssemblyAI LLM Gateway (`ASSEMBLYAI_API_KEY`) with Anthropic fallback, configurable to any pipeline-mode provider via `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL`; the system prompt embeds the CLI's scaffold CLAUDE.md authoring guide. `studio` and `studio-assets` are now reserved slugs.

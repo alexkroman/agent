@@ -9,7 +9,12 @@ import WsWebSocket from "ws";
 export type HeaderWebSocket = {
   readonly readyState: number;
   send(data: string): void;
-  close(): void;
+  /**
+   * `code` is optional but callers should pass one: omitting it sends a
+   * statusless close frame, which both ends report as 1005 "No Status
+   * Received" — indistinguishable from the peer dropping the connection.
+   */
+  close(code?: number): void;
   addEventListener(type: "open", listener: () => void): void;
   addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
   addEventListener(
