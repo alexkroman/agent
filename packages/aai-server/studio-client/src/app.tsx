@@ -46,14 +46,14 @@ function PublishMenu(props: PublishMenuProps) {
     <div className="absolute top-14 right-5 z-10 flex w-80 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md">
       <span className="eyebrow">Publish</span>
       <p className="m-0 text-[13px] leading-5 text-muted">
-        Builds the workspace, verifies it in a sandbox, and puts it live. Secrets (like
-        ASSEMBLYAI_API_KEY) are stored with the deployment.
+        Builds the workspace, verifies it in a sandbox, and puts it live. ASSEMBLYAI_API_KEY is
+        added for you — add third-party keys here, one KEY=value per line.
       </p>
       <textarea
         className="field h-16 resize-none py-2 font-mono text-xs"
         value={props.secrets}
         onChange={(e) => props.onSecretsChange(e.target.value)}
-        placeholder="ASSEMBLYAI_API_KEY=..."
+        placeholder="PINECONE_API_KEY=..."
         spellCheck={false}
       />
       <div className="flex items-center gap-2">
