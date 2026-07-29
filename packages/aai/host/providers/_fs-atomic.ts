@@ -11,26 +11,44 @@
  * complete new one.
  *
  * Everything except the two write paths delegates to the wrapped driver. The
- * key→path mapping mirrors the driver's own (`unstorage/drivers/fs`): reject
- * `..` segments, then `join(base, key.replace(/:/g, "/"))` — it must stay in
- * lockstep or writes would land where reads never look.
+ * key→path mapping mirrors the driver's own (`unstorage/drivers/fs`):
+ * `key.replace(/:/g, "/")` under `base`. KV keys are attacker-controlled (a
+ * guest RPC or agent tool can set any string), so the mapped path is confirmed
+ * to stay inside the root before any filesystem op — see {@link assertSafeKey}.
  */
 
 import { promises as fsp } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { dirname, resolve, sep } from "node:path";
 import type { Driver } from "unstorage";
 
-// Same traversal guard as unstorage/drivers/fs.
-const PATH_TRAVERSE_RE = /\.\.:|\.\.$/;
+// Upper bound on key length. Long keys map to long paths that blow past the
+// filesystem's NAME_MAX/PATH_MAX; bounding it also caps the traversal check.
+const MAX_KEY_LENGTH = 1024;
 
 export function withAtomicFsWrites(driver: Driver, base: string): Driver {
   const root = resolve(base);
 
+  /**
+   * Map a KV key to an absolute path and confirm it stays within `root`.
+   *
+   * The stock driver's guard (`/\.\.:|\.\.$/`) only catches `..:` or a trailing
+   * `..` — it misses `../` with a literal slash, so a key like
+   * `../../../etc/cron.d/x` escaped the KV directory into a host-filesystem
+   * write primitive. Resolving the joined path and checking it is `root` or
+   * sits under `root + sep` rejects every escape regardless of form.
+   */
   function keyPath(key: string): string {
-    if (PATH_TRAVERSE_RE.test(key)) {
-      throw new Error(`fs KV: invalid key ${JSON.stringify(key)} (contains .. segments)`);
+    if (key.length === 0 || key.length > MAX_KEY_LENGTH) {
+      throw new Error(`fs KV: invalid key length ${key.length} (max ${MAX_KEY_LENGTH})`);
     }
-    return join(root, key.replace(/:/g, "/"));
+    const target = resolve(root, key.replace(/:/g, "/"));
+    // Must sit strictly under the root: `startsWith(root + sep)` rejects both
+    // an escape (`../…`) and a key that maps to the root directory itself
+    // (`foo:..`), which is not a valid item path.
+    if (!target.startsWith(root + sep)) {
+      throw new Error(`fs KV: invalid key ${JSON.stringify(key)} (escapes the KV root)`);
+    }
+    return target;
   }
 
   async function atomicWrite(key: string, value: string | Uint8Array): Promise<void> {
@@ -46,8 +64,39 @@ export function withAtomicFsWrites(driver: Driver, base: string): Driver {
     }
   }
 
+  // Validate the key on every path-taking op, not just writes: reads and
+  // deletes with an escaping key are an info-leak / out-of-root-unlink
+  // primitive too. The stock driver would apply only its weak guard. Only
+  // methods the wrapped driver actually defines are overridden.
+  const reads: Partial<Driver> = {};
+  const get = driver.getItem?.bind(driver);
+  if (get)
+    reads.getItem = (key, opts) => {
+      keyPath(key);
+      return get(key, opts);
+    };
+  const getRaw = driver.getItemRaw?.bind(driver);
+  if (getRaw)
+    reads.getItemRaw = (key, opts) => {
+      keyPath(key);
+      return getRaw(key, opts);
+    };
+  const has = driver.hasItem?.bind(driver);
+  if (has)
+    reads.hasItem = (key, opts) => {
+      keyPath(key);
+      return has(key, opts);
+    };
+  const remove = driver.removeItem?.bind(driver);
+  if (remove)
+    reads.removeItem = (key, opts) => {
+      keyPath(key);
+      return remove(key, opts);
+    };
+
   return {
     ...driver,
+    ...reads,
     setItem: (key, value) => atomicWrite(key, value),
     setItemRaw: (key, value) => atomicWrite(key, value),
   };

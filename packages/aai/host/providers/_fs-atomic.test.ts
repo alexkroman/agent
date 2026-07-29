@@ -69,6 +69,39 @@ describe("withAtomicFsWrites", () => {
     });
   });
 
+  it("rejects a `../`-with-slashes key that escapes the KV root (write, read, delete)", async () => {
+    await withTempDir(async (dir) => {
+      // A tenant KV directory sits under the root; the escape target is a
+      // sibling the guard must never let a key reach.
+      const kvRoot = path.join(dir, "kv");
+      await fsp.mkdir(kvRoot, { recursive: true });
+      const { default: fsDriver } = await import("unstorage/drivers/fs");
+      const driver = withAtomicFsWrites(fsDriver({ base: kvRoot }), kvRoot);
+
+      // No colons, so the stock `/\.\.:|\.\.$/` guard missed it: `../pwned`
+      // resolves to a sibling of the KV root.
+      const escapeKey = "../pwned";
+      await expect(async () => driver.setItem?.(escapeKey, "owned", {})).rejects.toThrow(
+        /escapes the KV root/,
+      );
+      await expect(async () => driver.getItem?.(escapeKey)).rejects.toThrow(/escapes the KV root/);
+      await expect(async () => driver.removeItem?.(escapeKey, {})).rejects.toThrow(
+        /escapes the KV root/,
+      );
+      // Nothing was written outside the KV root.
+      expect(await fsp.readdir(dir)).toEqual(["kv"]);
+    });
+  });
+
+  it("rejects an over-long key", async () => {
+    await withTempDir(async (dir) => {
+      const driver = await makeDriver(dir);
+      await expect(async () => driver.setItem?.("x".repeat(1025), "v", {})).rejects.toThrow(
+        /invalid key length/,
+      );
+    });
+  });
+
   it("delegates removal and key listing to the wrapped driver", async () => {
     await withTempDir(async (dir) => {
       const driver = await makeDriver(dir);

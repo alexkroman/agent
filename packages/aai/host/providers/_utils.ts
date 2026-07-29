@@ -2,7 +2,7 @@
 /** Shared helpers for host-side STT/TTS provider openers. */
 
 import { pEvent } from "p-event";
-import type WebSocket from "ws";
+import WebSocket from "ws";
 import { STT_FRAME_MAX_MS, STT_FRAME_TARGET_MS } from "../../sdk/constants.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 
@@ -49,6 +49,55 @@ export function requireApiKey(
 /** Resolve once the socket opens; reject with the socket error if it fails first. */
 export async function waitForOpen(ws: WebSocket): Promise<void> {
   await pEvent(ws, "open"); // rejects on "error" (p-event's default rejectionEvents)
+}
+
+/**
+ * Construct a raw provider WebSocket, wrapping a constructor throw as a connect
+ * error, and bind the pre-connect zero-listener `error` guard.
+ *
+ * The guard matters: `waitForOpen`'s own `error` listener is removed once it
+ * settles, so a later socket `error` with no listener bound is an unhandled
+ * `'error'` event — an uncaughtException that crashes the multi-tenant host.
+ * This is the one place that invariant now lives; openers call it instead of
+ * repeating the try/catch + placeholder-listener dance.
+ */
+export function createGuardedWs(
+  create: () => WebSocket,
+  makeConnectError: (msg: string) => Error,
+  label: string,
+): WebSocket {
+  let socket: WebSocket;
+  try {
+    socket = create();
+  } catch (cause) {
+    throw makeConnectError(`${label}: failed to create WebSocket: ${errorMessage(cause)}`);
+  }
+  socket.on("error", () => undefined);
+  return socket;
+}
+
+/**
+ * Detach and politely close a socket, leaving a fresh zero-listener `error`
+ * guard behind so an `'error'` emitted while the close handshake is in flight
+ * (a TCP reset, a write failure) can't crash the process. `removeAllListeners`
+ * on its own strips that guard — the bug this centralizes away from the
+ * openers. Pass `terminate` to send a graceful shutdown frame when still open.
+ */
+export function dropSocket(ws: WebSocket, terminate?: () => void): void {
+  ws.removeAllListeners();
+  ws.on("error", () => undefined);
+  if (terminate && ws.readyState === WebSocket.OPEN) {
+    try {
+      terminate();
+    } catch {
+      // Already going away; the close below is what matters.
+    }
+  }
+  try {
+    ws.close();
+  } catch {
+    // Socket already broken — nothing left to release.
+  }
 }
 
 /** Invoke `close` when `signal` aborts (immediately if already aborted). */
@@ -168,6 +217,12 @@ export interface SessionShell {
   close(): Promise<void>;
   /** Emit the provider's stream error unless the session is closed. */
   streamError(message: string): void;
+  /**
+   * Run `emit` unless the session is closed, swallowing any throw from a
+   * listener. Use for non-error events (partial/final/audio) fired from inside
+   * a raw socket handler, where an escaping throw is an uncaughtException.
+   */
+  safeEmit(emit: () => void): void;
   /** Standard socket `error` handler: surfaces the error's message as a stream error. */
   onSocketError(err: unknown): void;
   /** Standard socket `close` handler: non-1000 close codes surface as stream errors. */
@@ -209,10 +264,20 @@ export function createSessionShell<E extends Error>(opts: {
       // Nothing further to report the error to.
     }
   };
+  const safeEmit = (emit: () => void): void => {
+    if (closed) return;
+    try {
+      emit();
+    } catch {
+      // A listener threw; nothing further to report it to, and it must not
+      // escape the raw socket handler that fired this event.
+    }
+  };
   return {
     isClosed: () => closed,
     close,
     streamError,
+    safeEmit,
     onSocketError: (err) => streamError(errorMessage(err)),
     onSocketClose: (code) => {
       // 1000 = normal closure.

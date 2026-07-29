@@ -342,6 +342,52 @@ describe("wireSessionSocket lifecycle", () => {
     ws.close();
   });
 
+  const textFrames = (ws: MockWebSocket): Record<string, unknown>[] =>
+    (ws.sent as unknown[])
+      .filter((d): d is string => typeof d === "string")
+      .map((s) => JSON.parse(s) as Record<string, unknown>);
+
+  test("start() failure sends the client an error frame and closes the socket", async () => {
+    const core = makeMockCore({ start: vi.fn(() => Promise.reject(new Error("boom"))) });
+    const ws = openSocket();
+
+    wireSessionSocket(ws, {
+      sessions: new Map(),
+      createSession: () => core,
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+    });
+
+    // Without this the client, which already got `config`, streams audio into a
+    // dead session forever with no retry signal.
+    await vi.waitFor(() => {
+      expect(textFrames(ws).some((f) => f.type === "error")).toBe(true);
+    });
+    expect(ws.readyState).toBe(MockWebSocket.CLOSED);
+  });
+
+  test("createSession throwing sends an error frame and closes without crashing", () => {
+    const ws = openSocket();
+    const sessions = new Map<string, SessionCore>();
+
+    // A synchronous throw from createSession (e.g. buildTransport rejecting an
+    // unregistered transport kind) must not escape as an uncaughtException.
+    expect(() =>
+      wireSessionSocket(ws, {
+        sessions,
+        createSession: () => {
+          throw new Error("unregistered transport kind");
+        },
+        readyConfig: defaultConfig,
+        logger: silentLogger,
+      }),
+    ).not.toThrow();
+
+    expect(textFrames(ws).some((f) => f.type === "error")).toBe(true);
+    expect(ws.readyState).toBe(MockWebSocket.CLOSED);
+    expect(sessions.size).toBe(0);
+  });
+
   test("session.start() timeout triggers 'Session start failed'", async () => {
     const core = makeMockCore({
       start: vi.fn(

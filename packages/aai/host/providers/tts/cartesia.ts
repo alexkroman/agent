@@ -130,11 +130,18 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       // chunks + Cartesia's real `done` (tagged with the flushed context's id)
       // still pass the filter. Rotating eagerly would drop in-flight audio.
       let rotatePending = false;
+      // Set by `cancel()` only: the active context is still `context` until the
+      // next `sendText` rotates it, so its id still matches the chunk filter —
+      // without this flag, audio already on the wire when barge-in fired would
+      // emit *after* `done`, audibly resuming the interrupted reply. `flush()`
+      // does NOT set it: there we want the remaining audio and the real `done`.
+      let activeContextCancelled = false;
       const rotateIfPending = () => {
         if (!rotatePending) return;
         context = mintContext();
         doneEmitted = false;
         rotatePending = false;
+        activeContextCancelled = false;
       };
       const emitDoneOnce = () => {
         if (doneEmitted || shell.isClosed()) return;
@@ -146,6 +153,9 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       // socket; filter by the currently-active context_id.
       ws.on("chunk", (event) => {
         if (shell.isClosed() || event.context_id !== context.contextId) return;
+        // Drop chunks for a context that was cancelled but not yet rotated —
+        // they were in flight when barge-in fired and must not play past `done`.
+        if (activeContextCancelled) return;
         const buf = event.audio;
         if (!buf || buf.byteLength === 0) return;
         // Zero-copy view when aligned; drops a trailing odd byte instead of
@@ -214,8 +224,10 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
             void context.cancel().catch(ignoreRejection);
           }
           // Emit synchronously: barge-in advances the orchestrator on `done`;
-          // delaying would audibly stall subsequent turns. Cartesia stops
-          // producing audio after cancel, so dropping late chunks is fine.
+          // delaying would audibly stall subsequent turns. Mark the context
+          // cancelled so any chunks already on the wire are dropped rather than
+          // emitted after `done`.
+          activeContextCancelled = true;
           emitDoneOnce();
           rotatePending = true;
         },

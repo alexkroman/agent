@@ -417,14 +417,19 @@ describe("transcribe_file upload buffering", () => {
     expect(transport.sendUserAudio).toHaveBeenCalledOnce();
   });
 
-  test("falls back to replaying through sendUserAudio when the transport has no one-shot path", () => {
+  test("falls back to replaying through sendUserAudio when the transport has no one-shot path", async () => {
     const { core, transport } = makeCore();
     core.onTranscribeFileStart(16_000, 4);
     core.onAudio(new Uint8Array([1, 2, 3, 4]));
     core.onTranscribeFileEnd();
-    const calls = (transport.sendUserAudio as ReturnType<typeof vi.fn>).mock.calls;
-    expect(calls.length).toBeGreaterThan(0);
-    const replayed = calls.flatMap((c) => [...(c[0] as Uint8Array)]);
+    // The replay is paced across event-loop ticks (so the provider socket
+    // drains and its backpressure gate never drops a chunk), so wait for it.
+    const sendUserAudio = transport.sendUserAudio as ReturnType<typeof vi.fn>;
+    await vi.waitFor(() => {
+      const total = sendUserAudio.mock.calls.reduce((n, c) => n + (c[0] as Uint8Array).length, 0);
+      expect(total).toBe(4 + 16_000 * 2);
+    });
+    const replayed = sendUserAudio.mock.calls.flatMap((c) => [...(c[0] as Uint8Array)]);
     // The clip itself, then one second of endpointing silence at 16 kHz PCM16.
     expect(replayed.slice(0, 4)).toEqual([1, 2, 3, 4]);
     expect(replayed.length).toBe(4 + 16_000 * 2);

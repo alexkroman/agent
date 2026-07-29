@@ -32,7 +32,7 @@
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.0.4",
     "aai-studio-client": "workspace:*",
-    "ai": "^7.0.35",
+    "ai": "^7.0.41",
     "diff": "^9.0.0",
     "hono": "^4.12.31",
     "human-id": "^4.2.0",

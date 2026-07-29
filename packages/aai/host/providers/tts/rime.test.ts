@@ -262,10 +262,14 @@ describe("rime TTS adapter", () => {
     await expect(session.close()).resolves.toBeUndefined();
   });
 
-  test("close() removes the socket listeners so their closures can be freed", async () => {
+  test("close() drops the session listeners but leaves a no-op error guard", async () => {
     const { session, ws } = await openSession();
-    expect(ws.listenerCount()).toBeGreaterThan(0);
+    expect(ws.listenerCount()).toBeGreaterThan(1);
     await session.close();
-    expect(ws.listenerCount()).toBe(0);
+    // The session's message/close/error handlers are gone; only a single
+    // no-op `error` guard remains so a late error during the close handshake
+    // can't crash the process.
+    expect(ws.listenerCount()).toBe(1);
+    expect(() => ws._fire("error", new Error("late reset"))).not.toThrow();
   });
 });

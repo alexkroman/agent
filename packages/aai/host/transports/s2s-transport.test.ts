@@ -342,4 +342,37 @@ describe("S2sTransport reconnect", () => {
     expect(callbacks.onError).not.toHaveBeenCalled();
     expect(handles.length).toBe(cycles + 1);
   });
+
+  test("surfaces onError on an unexpected fatal close while idle", async () => {
+    const { callbacks, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    const cb = expectAt(capturedCallbacks, 0, "callbacks");
+    cb.onSessionReady("sess_x");
+    // 1008 is non-transient (not resumable) and no reply is in flight — the
+    // provider dropped a live idle session. This must not be swallowed, or the
+    // client sits "connected" while every later utterance vanishes.
+    cb.onClose(1008, "policy");
+    expect(callbacks.onError).toHaveBeenCalledWith(
+      "connection",
+      expect.stringContaining("closed unexpectedly"),
+    );
+  });
+
+  test("cancelReply drops in-flight audio until the next reply starts", async () => {
+    const { callbacks, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    const cb = expectAt(capturedCallbacks, 0, "callbacks");
+    cb.onSessionReady("sess");
+    cb.onReplyStarted("r1");
+    cb.onAudio(new Uint8Array([1, 2])); // during the reply → forwarded
+    t.cancelReply();
+    cb.onAudio(new Uint8Array([3, 4])); // after cancel → dropped
+    cb.onReplyStarted("r2");
+    cb.onAudio(new Uint8Array([5, 6])); // new reply → forwarded again
+    expect(callbacks.onAudioChunk).toHaveBeenCalledTimes(2);
+  });
 });

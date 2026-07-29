@@ -39,10 +39,16 @@ describe("parseWsUpgradeParams", () => {
     });
   });
 
-  test("handles empty sessionId", () => {
-    // Empty string from URLSearchParams.get is truthy for ?? check
-    expect(parseWsUpgradeParams("/ws?sessionId=")).toEqual({
-      resumeFrom: "",
+  test("treats an empty sessionId as absent (no resume, greeting kept)", () => {
+    // An empty `?sessionId=` is not a resumable session; it must not become a
+    // defined-but-empty resumeFrom (which would also suppress the greeting).
+    expect(parseWsUpgradeParams("/ws?sessionId=")).toEqual({ skipGreeting: false });
+  });
+
+  test("does not truncate a query value containing a literal '?'", () => {
+    // Slicing from the first "?" (not split[1]) keeps the whole query string.
+    expect(parseWsUpgradeParams("/ws?sessionId=a?b")).toEqual({
+      resumeFrom: "a?b",
       skipGreeting: true,
     });
   });

@@ -221,6 +221,28 @@ describe("cartesia TTS adapter", () => {
     await session.close();
   });
 
+  test("cancel() drops audio chunks still in flight for the cancelled context", async () => {
+    const { session, controller } = await openSession();
+    const turn1 = session._currentContextId();
+    const audioLengths: number[] = [];
+    session.on("audio", (pcm) => audioLengths.push(pcm.length));
+    const ws = session._ws as unknown as { _fire(event: string, payload: unknown): void };
+
+    session.sendText("hello");
+    // A chunk for the active context plays normally.
+    ws._fire("chunk", { context_id: turn1, audio: new Uint8Array([1, 0, 2, 0]) });
+    expect(audioLengths).toEqual([2]);
+
+    session.cancel();
+    // A chunk already on the wire when barge-in fired still carries the active
+    // (not-yet-rotated) context id — it must be dropped, not played after `done`.
+    ws._fire("chunk", { context_id: turn1, audio: new Uint8Array([3, 0, 4, 0]) });
+    expect(audioLengths).toEqual([2]);
+
+    controller.abort();
+    await session.close();
+  });
+
   test("cancel() after done is a no-op on the wire (avoids Cartesia's 'context ID does not exist' 400)", async () => {
     const { session, controller } = await openSession();
     const turn1 = session._currentContextId();

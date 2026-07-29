@@ -16,6 +16,7 @@ import {
   WS_OPEN,
 } from "../sdk/constants.ts";
 import {
+  CLIENT_MESSAGE_TYPES,
   ClientMessageSchema,
   type ClientSink,
   lenientParse,
@@ -91,6 +92,7 @@ export function safeSend(ws: SessionWebSocket, data: string | Uint8Array, log: L
 
 /** WebSocket close code sent when a stalled client is disconnected (policy violation). */
 const WS_CLOSE_POLICY_VIOLATION = 1008;
+const WS_CLOSE_INTERNAL = 1011;
 
 /**
  * Creates a {@link ClientSink} backed by a plain WebSocket.
@@ -154,7 +156,7 @@ function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: 
     log.warn("ws: invalid JSON; dropping", { sid, data: data.slice(0, LOG_PREVIEW_CHARS) });
     return;
   }
-  const result = lenientParse(ClientMessageSchema, parsed);
+  const result = lenientParse(ClientMessageSchema, parsed, CLIENT_MESSAGE_TYPES);
   if (!result.ok) {
     if (result.malformed) {
       log.warn("ws: malformed client message", { sid, error: result.error });
@@ -280,12 +282,37 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       });
   }
 
+  /**
+   * Tell the client the session died and close the socket. Without this a
+   * client that already received `config` keeps streaming mic audio into a
+   * dead session, stuck "connecting" forever with no signal to retry.
+   */
+  function failClientAndClose(client: ClientSink, message: string): void {
+    client.event({ type: "error", code: "internal", message });
+    try {
+      ws.close?.(WS_CLOSE_INTERNAL, "session start failed");
+    } catch (err) {
+      log.debug("ws: close after start failure failed", { error: errorMessage(err) });
+    }
+  }
+
   function onOpen(): void {
     opts.onOpen?.();
     log.info("Session connected", { ...ctx, sid });
 
     const client = createClientSink(ws, log);
-    session = opts.createSession(sessionId, client);
+    // createSession runs synchronously from the 'open'/handleUpgrade callback;
+    // a throw here (e.g. buildTransport rejecting an unregistered transport
+    // kind on a programmatically-built agent) would escape as an
+    // uncaughtException and take down the host process.
+    try {
+      session = opts.createSession(sessionId, client);
+    } catch (err) {
+      log.error("Session create failed", { ...ctx, sid, error: errorDetail(err) });
+      session = null;
+      failClientAndClose(client, "Failed to start session");
+      return;
+    }
     sessions.set(sessionId, session);
     opts.onSinkCreated?.(sessionId, client);
 
@@ -333,7 +360,13 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         // session === null means the close handler already ran endSession for
         // this session; its identity-guarded cleanup covers the map, and a
         // bare key delete here could evict a resumed session's entry.
-        if (failed) endSession(failed);
+        if (failed) {
+          endSession(failed);
+          // The client received `config` and believes the session is live; tell
+          // it the start failed and close, or it streams audio into a dead
+          // session forever with no retry signal.
+          failClientAndClose(client, "Session failed to start");
+        }
       });
   }
 

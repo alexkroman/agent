@@ -20,6 +20,7 @@ import { EMPTY_PARAMS, type ToolSchema, toToolJsonSchema } from "../sdk/_interna
 import {
   FETCH_TIMEOUT_MS,
   MAX_HTML_BYTES,
+  MAX_JSON_BYTES,
   MAX_PAGE_CHARS,
   SESSION_NOTES_TTL_MS,
 } from "../sdk/constants.ts";
@@ -205,11 +206,16 @@ function createFetchJson(
         ...(safeHeaders && { headers: safeHeaders }),
         signal: fetchSignal(),
       });
-      if (!resp.ok) {
-        return { error: `HTTP ${resp.status} ${resp.statusText}`, url };
-      }
+      if (!resp.ok) return { error: `HTTP ${resp.status} ${resp.statusText}`, url };
+      // Cap the body — a prompt-injected URL could otherwise make resp.json()
+      // buffer an unbounded response (visit_webpage slices to MAX_HTML_BYTES).
+      const max = MAX_JSON_BYTES;
+      const declared = Number(resp.headers.get("content-length"));
+      if (Number.isFinite(declared) && declared > max) return { error: "Response too large", url };
+      const body = await resp.text();
+      if (body.length > max) return { error: "Response too large", url };
       try {
-        return await resp.json();
+        return JSON.parse(body);
       } catch {
         return { error: "Response was not valid JSON", url };
       }

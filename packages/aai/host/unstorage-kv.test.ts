@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createStorage } from "unstorage";
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 
 function makeKv(prefix?: string) {
@@ -67,6 +67,30 @@ describe("createUnstorageKv", () => {
     const kv = makeKv();
     await kv.set("temp", "val", { expireIn: 10_000 });
     expect(await kv.get("temp")).toBe("val");
+  });
+
+  test("expireIn is enforced on a driver that ignores unstorage ttl (memory)", async () => {
+    vi.useFakeTimers();
+    try {
+      const kv = makeKv(); // memory driver ignores the { ttl } option outright
+      await kv.set("temp", "val", { expireIn: 1000 });
+      expect(await kv.get("temp")).toBe("val");
+      vi.advanceTimersByTime(1001);
+      // The wrapper's expiry envelope makes get() report it missing…
+      expect(await kv.get("temp")).toBe(null);
+      // …and drop it lazily.
+      expect(await kv.get("temp")).toBe(null);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("size cap counts bytes, not UTF-16 code units", async () => {
+    const kv = makeKv();
+    // 40k multi-byte chars ≈ 120k bytes (>64 KiB) but only 40k code units:
+    // the old `.length` check would have wrongly accepted it.
+    const multibyte = "🎧".repeat(40_000);
+    await expect(kv.set("big", multibyte)).rejects.toThrow("exceeds max size");
   });
 
   test("overwrite replaces value", async () => {

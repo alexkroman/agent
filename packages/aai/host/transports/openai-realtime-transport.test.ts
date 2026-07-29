@@ -456,6 +456,32 @@ describe("cancel, error, close", () => {
     expect(cbs.onCancelled).not.toHaveBeenCalled();
   });
 
+  test("server-VAD barge-in flushes client playback via onCancelled", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    fake.fire("message", {
+      data: JSON.stringify({ type: "response.created", response: { id: "r3" } }),
+    });
+    // OpenAI cancels the response server-side on speech_started; unlike a
+    // client cancelReply, nothing else tells the client to flush its buffered
+    // audio, so the transport must emit onCancelled itself.
+    fake.fire("message", {
+      data: JSON.stringify({ type: "input_audio_buffer.speech_started" }),
+    });
+    expect(cbs.onCancelled).toHaveBeenCalledTimes(1);
+    expect(cbs.onSpeechStarted).toHaveBeenCalledTimes(1);
+  });
+
+  test("speech_started with no reply in flight does not fire onCancelled", async () => {
+    const { fake, cbs, ready } = startedTransport();
+    await ready;
+    fake.fire("message", {
+      data: JSON.stringify({ type: "input_audio_buffer.speech_started" }),
+    });
+    expect(cbs.onCancelled).not.toHaveBeenCalled();
+    expect(cbs.onSpeechStarted).toHaveBeenCalledTimes(1);
+  });
+
   test("error event routes to onError with internal code", async () => {
     const { fake, cbs, ready } = startedTransport();
     await ready;

@@ -29,7 +29,7 @@ import {
   type TtsOpenOptions,
   type TtsSession,
 } from "../../../sdk/providers.ts";
-import { errorMessage, safeJsonParse } from "../../../sdk/utils.ts";
+import { safeJsonParse } from "../../../sdk/utils.ts";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
 import { createRestartableTimer } from "../../_timer.ts";
@@ -37,7 +37,9 @@ import {
   assertPcm16Rate,
   closeOnAbort,
   connectOrThrow,
+  createGuardedWs,
   createSessionShell,
+  dropSocket,
   requireApiKey,
   waitForOpen,
 } from "../_utils.ts";
@@ -109,30 +111,20 @@ export function openRime(opts: RimeOptions): TtsOpener {
       const url = `wss://users-ws.rime.ai/ws2?speaker=${encodeURIComponent(voice)}&modelId=${encodeURIComponent(model)}&audioFormat=pcm&samplingRate=${sampleRate}&lang=${encodeURIComponent(lang)}`;
 
       // Construct synchronously so `waitForOpen`'s listener is registered
-      // before the socket can emit `open`.
-      let ws: WebSocket;
-      try {
-        ws = new WebSocket(url, { headers: { Authorization: `Bearer ${apiKey}` } });
-      } catch (cause) {
-        throw connectError(`Rime TTS: failed to create WebSocket: ${errorMessage(cause)}`);
-      }
-
-      // Placeholder 'error' listener bound before connecting (see the
-      // cartesia.ts pattern): waitForOpen's own listener is removed once it
-      // settles, and a later socket error with zero listeners is an unhandled
-      // 'error' event that crashes the process.
-      ws.on("error", () => undefined);
+      // before the socket can emit `open`; the guard listener protects against
+      // a late socket error with zero listeners crashing the process.
+      const ws = createGuardedWs(
+        () => new WebSocket(url, { headers: { Authorization: `Bearer ${apiKey}` } }),
+        connectError,
+        "Rime TTS",
+      );
 
       try {
         await connectOrThrow("Rime TTS", connectError, () => waitForOpen(ws));
       } catch (err) {
         // Failed connect: close the socket before rethrowing so it can't
-        // linger half-open (late errors land in the placeholder above).
-        try {
-          ws.close();
-        } catch {
-          // Socket already broken — nothing left to release.
-        }
+        // linger half-open (late errors land in the guard listener).
+        dropSocket(ws);
         throw err;
       }
 
@@ -148,14 +140,9 @@ export function openRime(opts: RimeOptions): TtsOpener {
         emitError: (err) => emitter.emit("error", err),
         teardown: () => {
           quiescence.clear();
-          try {
-            ws.close();
-          } catch {
-            // Socket already broken — still drop the listeners below.
-          }
-          // Drop our handlers so their closures don't stay reachable via the
-          // socket if `ws` outlives this session.
-          ws.removeAllListeners();
+          // Detach and close, leaving a zero-listener error guard so a late
+          // error during the close handshake can't crash the process.
+          dropSocket(ws);
         },
       });
 
@@ -176,11 +163,17 @@ export function openRime(opts: RimeOptions): TtsOpener {
 
       ws.on("error", (err: Error) => shell.onSocketError(err));
 
-      ws.on("close", () => {
+      ws.on("close", (code: number) => {
         if (shell.isClosed()) return;
-        // Unexpected server-side close — surface `done` so the pipeline
-        // doesn't hang waiting for an utterance that will never complete.
+        // Release the turn either way so the pipeline doesn't hang. But a
+        // non-normal close (idle kick, 1011, deploy) means every later
+        // `sendText` will be silently dropped by the readyState guard and the
+        // caller would hear nothing with no error — surface it so the session
+        // fails loudly instead of dying silent.
         emitDoneOnce();
+        if (code !== 1000) {
+          shell.streamError(`Rime TTS: socket closed ${code}`);
+        }
       });
 
       closeOnAbort(openOpts.signal, shell.close);

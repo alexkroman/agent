@@ -99,6 +99,8 @@ export const MAX_ERROR_MESSAGE_CHARS = 10_000;
 export const LOG_PREVIEW_CHARS = 200;
 export const MAX_PAGE_CHARS = 10_000;
 export const MAX_HTML_BYTES = 200_000;
+/** Cap on a `fetch_json` response body — bounds host memory on a hostile URL. */
+export const MAX_JSON_BYTES = 1_000_000;
 export const MAX_VALUE_SIZE = 65_536;
 export const DEFAULT_MAX_HISTORY = 200;
 /**

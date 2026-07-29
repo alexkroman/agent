@@ -54,7 +54,7 @@ export type Manifest = {
    * {@link DEFAULT_BUILTIN_TOOLS} when unset; explicit `[]` disables all.
    */
   builtinTools: string[];
-  /** Max tool calls per LLM reply. Prevents runaway loops. Default: 5. */
+  /** Max tool calls per LLM reply. Prevents runaway loops. Default: {@link DEFAULT_MAX_STEPS} (10). */
   maxSteps: number;
   /** `"auto"` = LLM decides when to use tools; `"required"` = always call a tool. */
   toolChoice: "auto" | "required";
@@ -211,7 +211,7 @@ const ManifestSchema = z.object({
  * optional fields. Input is typically the JSON from a bundled agent.ts.
  *
  * Key defaults:
- * - `maxSteps`: 5 — prevents runaway tool-call loops in a single reply
+ * - `maxSteps`: {@link DEFAULT_MAX_STEPS} (10) — prevents runaway tool-call loops in a single reply
  * - `toolChoice`: "auto" — LLM decides when to use tools vs respond directly
  * - `builtinTools`: {@link DEFAULT_BUILTIN_TOOLS} (think, remember, recall,
  *   calculate) — set explicitly (including `[]`) to override

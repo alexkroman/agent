@@ -39,19 +39,40 @@ const MessageEnvelopeSchema = z.object({ type: z.string() }).passthrough();
  * rolling upgrades) from genuinely malformed messages.
  *
  * Return value when `ok: false`:
- * - `malformed: true` — message doesn't even have a `{ type: string }` shape;
- *   likely corrupt data, should warn
- * - `malformed: false` — has a valid `type` field but the type is unrecognised;
+ * - `malformed: true` — message doesn't have a `{ type: string }` shape (likely
+ *   corrupt data), OR its `type` is one of `knownTypes` but it still failed
+ *   strict validation (e.g. a `tool_result` missing `toolCallId`); both should
+ *   warn
+ * - `malformed: false` — has a valid `type` field whose value is unrecognised;
  *   safe to ignore (e.g. new message type from a newer server version)
+ *
+ * Passing `knownTypes` is what separates "unknown newer-version type" from
+ * "known type that failed validation" — without it, an invalid known message
+ * is silently swallowed as if it were a forward-compat unknown type.
  */
 export function lenientParse<T>(
   schema: z.ZodType<T>,
   json: unknown,
+  knownTypes?: ReadonlySet<string>,
 ): { ok: true; data: T } | { ok: false; malformed: boolean; error: string } {
   const result = schema.safeParse(json);
   if (result.success) return { ok: true, data: result.data };
-  const malformed = !MessageEnvelopeSchema.safeParse(json).success;
+  const envelope = MessageEnvelopeSchema.safeParse(json);
+  const malformed = !envelope.success || (knownTypes?.has(envelope.data.type) ?? false);
   return { ok: false, malformed, error: result.error.message };
+}
+
+/** Discriminator literal values (the known `type`s) of a discriminated union. */
+function discriminatorValues(union: z.ZodDiscriminatedUnion): ReadonlySet<string> {
+  const key = union.def.discriminator;
+  const values = new Set<string>();
+  for (const option of union.options) {
+    const field = (option as z.ZodObject).shape[key];
+    if (field instanceof z.ZodLiteral && typeof field.value === "string") {
+      values.add(field.value);
+    }
+  }
+  return values;
 }
 
 /** Zod schema for the KV "get" operation. */
@@ -292,6 +313,11 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   }),
   ev("transcribe_file_end"),
 ]);
+
+/** The set of recognised client→server message `type` values — pass to
+ *  `lenientParse` so a known-but-invalid message warns instead of being
+ *  silently dropped as an unknown forward-compat type. */
+export const CLIENT_MESSAGE_TYPES: ReadonlySet<string> = discriminatorValues(ClientMessageSchema);
 
 /** Client→server text messages (binary frames carry raw PCM16 audio). */
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;

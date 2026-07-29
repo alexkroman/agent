@@ -261,6 +261,54 @@ describe("SSRF: redirect chain validation", () => {
     ).rejects.toThrow("Blocked");
   });
 
+  test("strips credential headers on a cross-origin redirect", async () => {
+    // Two public IP literals = two origins, no DNS. The token must not follow
+    // the redirect off its original origin (open-redirect exfiltration guard).
+    const seen: Record<string, string | null>[] = [];
+    const mockFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      const h = init.headers as Headers;
+      seen.push({
+        authorization: h.get("authorization"),
+        cookie: h.get("cookie"),
+      });
+      if (seen.length === 1) {
+        return new Response("", { status: 302, headers: { Location: "https://8.8.8.8/next" } });
+      }
+      return new Response("ok");
+    });
+
+    await ssrfSafeFetch(
+      "https://93.184.216.34/start",
+      { headers: { Authorization: "Bearer secret", Cookie: "sid=1" } },
+      mockFetch as typeof globalThis.fetch,
+    );
+
+    expect(seen[0]).toEqual({ authorization: "Bearer secret", cookie: "sid=1" });
+    expect(seen[1]).toEqual({ authorization: null, cookie: null });
+  });
+
+  test("keeps credential headers on a same-origin redirect", async () => {
+    const seen: Array<string | null> = [];
+    const mockFetch = vi.fn(async (_url: string, init: RequestInit) => {
+      seen.push((init.headers as Headers).get("authorization"));
+      if (seen.length === 1) {
+        return new Response("", {
+          status: 302,
+          headers: { Location: "https://93.184.216.34/next" },
+        });
+      }
+      return new Response("ok");
+    });
+
+    await ssrfSafeFetch(
+      "https://93.184.216.34/start",
+      { headers: { Authorization: "Bearer secret" } },
+      mockFetch as typeof globalThis.fetch,
+    );
+
+    expect(seen).toEqual(["Bearer secret", "Bearer secret"]);
+  });
+
   test("ssrfSafeFetch handles relative redirect URLs", async () => {
     // Use a public IP literal to avoid DNS lookups that cause timeouts
     const mockFetch = vi.fn(async (url: string) => {

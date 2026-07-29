@@ -139,14 +139,6 @@ export type PipelineTuning = {
 };
 
 /**
- * Reject pipeline-only voice-UX tuning fields in S2S mode — the S2S provider
- * owns endpointing/barge-in service-side, so these would be silently ignored.
- *
- * Shared by `parseManifest`, `toAgentConfig`, and the server's
- * `IsolateConfigSchema` — one source of truth for the validation, mirroring
- * {@link assertSilencePolicy}.
- */
-/**
  * Reject tuning fields that only make sense when replies are spoken.
  * `holdPhrase` is literally synthesized filler ("One moment.") — with
  * `tts: none()` it would be injected into the *text* reply instead, so an
@@ -165,6 +157,14 @@ export function assertTextOnlyTuning(
   }
 }
 
+/**
+ * Reject pipeline-only voice-UX tuning fields in S2S mode — the S2S provider
+ * owns endpointing/barge-in service-side, so these would be silently ignored.
+ *
+ * Shared by `parseManifest`, `toAgentConfig`, and the server's
+ * `IsolateConfigSchema` — one source of truth for the validation, mirroring
+ * {@link assertSilencePolicy}.
+ */
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void {
   if (mode === "pipeline") return;
   const fields: Record<string, unknown> = {

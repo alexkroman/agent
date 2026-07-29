@@ -3,7 +3,10 @@
 // behavior (settle window, aggregation) lives in pipeline-turn.test.ts.
 
 import { describe, expect, test } from "vitest";
-import { countWords, hasMinWords, scanWords, utteranceLooksComplete } from "./pipeline-text.ts";
+import { hasMinWords, scanWords, utteranceLooksComplete } from "./pipeline-text.ts";
+
+/** Full word count via the exported scan — the oracle `hasMinWords` is checked against. */
+const countWords = (text: string): number => scanWords(text, Number.POSITIVE_INFINITY);
 
 /** The `split`-based implementation these helpers replaced, as an oracle. */
 const splitCount = (text: string): number => text.trim().split(/\s+/).filter(Boolean).length;
