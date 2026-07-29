@@ -1,5 +1,13 @@
 # @alexkroman1/aai-cli
 
+## 1.9.1
+
+### Patch Changes
+
+- Updated dependencies [713025a]
+  - @alexkroman1/aai@1.9.1
+  - @alexkroman1/aai-ui@1.9.1
+
 ## 1.9.0
 
 ### Minor Changes
