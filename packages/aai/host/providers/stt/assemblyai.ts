@@ -91,10 +91,19 @@ export function suppressDiscardedSocketError(transcriber: StreamingTranscriber):
 /** AssemblyAI's `agent_context` cap. Values longer than this are truncated. */
 const AGENT_CONTEXT_MAX_CHARS = 1750;
 
-/** Cap `text` at {@link AGENT_CONTEXT_MAX_CHARS}; `undefined` for empty/whitespace-only text. */
+/**
+ * Cap `text` at {@link AGENT_CONTEXT_MAX_CHARS}; `undefined` for
+ * empty/whitespace-only text.
+ *
+ * Keeps the **tail**, not the head. The docs say to "trim long agent replies
+ * down to the substantive question", and a voice agent's question lands at the
+ * end of its reply ("…so, what's your email address?") — that trailing question
+ * is the whole reason to send context, and slicing from the front is exactly
+ * what would drop it.
+ */
 function normalizeAgentContext(text: string): string | undefined {
   if (text.trim().length === 0) return;
-  return text.length > AGENT_CONTEXT_MAX_CHARS ? text.slice(0, AGENT_CONTEXT_MAX_CHARS) : text;
+  return text.length > AGENT_CONTEXT_MAX_CHARS ? text.slice(-AGENT_CONTEXT_MAX_CHARS) : text;
 }
 
 export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {

@@ -139,6 +139,25 @@ describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", ()
     await session.close();
   });
 
+  test("over-long agent context keeps the tail, where the question is", async () => {
+    // Docs: "Trim long agent replies down to the substantive question before
+    // sending." A voice agent's question is at the *end* of its reply, so
+    // truncating from the front drops the one part worth sending.
+    const long = `${"filler. ".repeat(400)}What is your email address?`;
+    expect(long.length).toBeGreaterThan(1750);
+
+    const session = await openSession({ model: "universal-3-5-pro" }, { agentContext: long });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+    expect((fake.params.agentContext as string).length).toBe(1750);
+    expect(fake.params.agentContext).toContain("What is your email address?");
+
+    session.updateAgentContext?.(long);
+    const sent = fake.updateConfigurationCalls[0]?.agent_context as string;
+    expect(sent.length).toBe(1750);
+    expect(sent).toContain("What is your email address?");
+    await session.close();
+  });
+
   test("universal-3-5-pro: skips empty/whitespace-only agentContext, both at connect and mid-stream", async () => {
     const session = await openSession({ model: "universal-3-5-pro" }, { agentContext: "   " });
     const fake = session._transcriber as unknown as FakeTranscriber;
