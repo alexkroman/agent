@@ -13,19 +13,15 @@
  * No dependency on React, Preact, or any UI framework.
  */
 
-import { errorMessage, WS_OPEN } from "@alexkroman1/aai";
+import { WS_OPEN } from "@alexkroman1/aai";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
-import type { VoiceIO } from "./audio.ts";
+import { initAudioCapture } from "./session-core-audio-setup.ts";
 import {
   CLEARED_SESSION_STATE,
   createMessageHandlers,
   type SessionConfigMessage,
 } from "./session-core-messages.ts";
-import {
-  cancelPendingReconnect,
-  openReconnectingSocket,
-  reconnectPending,
-} from "./session-core-reconnect.ts";
+import { openReconnectingSocket, reconnectPending } from "./session-core-reconnect.ts";
 import type {
   ConnState,
   SessionCore,
@@ -42,116 +38,6 @@ export type {
   SessionCoreOptions,
   SessionSnapshot,
 } from "./session-core-types.ts";
-
-// ─── Audio initialization ────────────────────────────────────────────────────
-
-/**
- * Initialize audio capture and playback after the server sends a ready config.
- *
- * Lifecycle: dynamically import audio modules -> request microphone access ->
- * register AudioWorklet processors -> create a `VoiceIO` instance -> send
- * `audio_ready` to the server -> transition state to `"listening"`.
- *
- * Uses the connection `generation` counter to detect if `connect()` was called
- * while awaiting async operations; if so, the stale VoiceIO is closed immediately
- * to prevent it from being assigned to a newer connection.
- *
- * On failure (e.g. microphone permission denied, WebSocket closed mid-setup),
- * sets the error state and transitions to `"disconnected"`.
- */
-async function initAudioCapture(
-  conn: ConnState,
-  msg: { sampleRate: number; ttsSampleRate: number },
-  deps: {
-    sendJson: (msg: ClientMessage) => void;
-    sendAudio: (bytes: Uint8Array) => void;
-    updateState: (partial: Partial<SessionSnapshot>) => void;
-    /** Turn-boundary-guarded drain from the message handlers — replays a
-     *  buffered `audio_done` without stomping a barge-in's state. */
-    settleWhenAudioDrained: (io: VoiceIO) => void;
-  },
-): Promise<void> {
-  if (conn.audioSetupInFlight) return;
-  conn.audioSetupInFlight = true;
-  const gen = conn.generation;
-  try {
-    const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await Promise.all([
-      import("./audio.ts"),
-      import("./worklets/capture-processor.ts").then((m) => m.default),
-      import("./worklets/playback-processor.ts").then((m) => m.default),
-    ]);
-    const io = await createVoiceIO({
-      sttSampleRate: msg.sampleRate,
-      ttsSampleRate: msg.ttsSampleRate,
-      captureWorkletSrc: captureWorklet,
-      playbackWorkletSrc: playbackWorklet,
-      onMicData: (pcm16: ArrayBuffer) => {
-        try {
-          deps.sendAudio(new Uint8Array(pcm16));
-        } catch {
-          console.debug("[aai-ui] sendAudio dropped: connection closed");
-        }
-      },
-      // A worklet processor crash after setup: the audio path is dead even
-      // though the socket is fine, so surface it instead of staying in a
-      // healthy-looking listening/speaking state forever.
-      onError: (err: Error) => {
-        if (conn.generation !== gen) return;
-        deps.updateState({
-          state: "error",
-          error: { code: "audio", message: err.message },
-          running: false,
-        });
-      },
-    });
-    if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) {
-      void io.close().catch(() => {
-        /* stale connection — nothing to report the failure to */
-      });
-      return;
-    }
-    // Defensive: if a previous VoiceIO somehow survived to this point, close
-    // it before overwriting the slot — an orphaned instance keeps its mic
-    // tracks live and pumps duplicate audio.
-    void conn.voiceIO?.close().catch(() => {
-      /* already closing */
-    });
-    conn.voiceIO = io;
-    if (conn.preInitAudio.length > 0) {
-      for (const chunk of conn.preInitAudio) {
-        io.enqueue(chunk.buffer as ArrayBuffer);
-      }
-      conn.preInitAudio = [];
-    }
-    deps.sendJson({ type: "audio_ready" });
-    deps.updateState({ recording: true });
-    // If audio_done arrived while we were initializing, replay it now so the
-    // buffered greeting plays to completion (and state flips to "listening"
-    // only when playback actually drains) instead of the done being lost.
-    if (conn.preInitDone) {
-      conn.preInitDone = false;
-      deps.settleWhenAudioDrained(io);
-    } else {
-      deps.updateState({ state: "listening" });
-    }
-  } catch (err: unknown) {
-    if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) return;
-    deps.updateState({
-      state: "error",
-      error: {
-        code: "audio",
-        message: `Microphone access failed: ${errorMessage(err)}`,
-      },
-      running: false,
-    });
-  } finally {
-    // Only the init that still owns the flag may clear it: a stale
-    // generation's settle must not unlock a newer init that is in flight
-    // (which would let a second same-generation init start and orphan a
-    // live microphone).
-    if (conn.generation === gen) conn.audioSetupInFlight = false;
-  }
-}
 
 // ─── Factory ────────────────────────────────────────────────────────────────
 
@@ -269,6 +155,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     updateState,
     conn,
     discardUpload: upload.discard,
+    cleanupAudio,
   });
 
   const audioDeps = {
@@ -276,6 +163,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     sendAudio,
     updateState,
     settleWhenAudioDrained,
+    cleanupAudio,
   };
 
   // ─── Connection management ──────────────────────────────────────────────
@@ -300,7 +188,8 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     updateState({ audioOut });
     if (audioOut) {
       // initAudioCapture handles its own failures (sets error state internally).
-      void initAudioCapture(conn, config, audioDeps);
+      // Fatal: a voice session without a mic cannot function.
+      void initAudioCapture(conn, config, audioDeps, true);
     } else {
       // Text-only session: no playback pipeline, and the mic is opt-in
       // via startRecording() (the record button) — so the protocol
@@ -337,6 +226,12 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   }
 
   function connect(opts?: { signal?: AbortSignal }): void {
+    // Abort listeners on an already-aborted signal never fire (DOM spec), so
+    // honor the documented "aborted ⇒ disconnected" contract up front.
+    if (opts?.signal?.aborted) {
+      disconnect();
+      return;
+    }
     updateState({ state: "connecting", error: null });
     teardownConnection();
     conn.generation++;
@@ -395,16 +290,24 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           // partysocket retries with backoff. Keep the listeners attached
           // and the session logically alive: the URL provider re-derives the
           // resume URL and `onServerConfig` replays history on the next open.
+          // Invalidate any audio init still awaiting getUserMedia — the retry
+          // will start its own, and cleanupAudio just cleared the in-flight
+          // flag, so a survivor would otherwise pass the same-generation
+          // guard and double-run (two live mics, duplicate `audio_ready`).
+          conn.generation++;
           // A socket error here is part of the retry cycle, not terminal —
           // clear it so a later clean disconnect isn't misreported.
           socketErrored = false;
           updateState({ state: "connecting", recording: false });
           return;
         }
-        // Terminal: explicit close, or retries exhausted — cancel any
-        // still-scheduled attempt before tearing down.
-        cancelPendingReconnect(socket);
+        // Terminal: explicit close, or retries exhausted. Abort first (detaches
+        // these listeners, so the close() below can't re-enter), then cancel
+        // any still-scheduled partysocket retry — close() on an already-closed
+        // socket is a spec-level no-op.
         controller.abort();
+        socket.close();
+        conn.ws = null;
         if (socketErrored) {
           updateState({
             state: "error",
@@ -412,8 +315,13 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
             running: false,
             recording: false,
           });
+        } else if (currentSnapshot.state === "error") {
+          // Keep a fatal error on screen — downgrading it to "disconnected"
+          // would hide why the session ended.
+          updateState({ running: false, recording: false });
         } else {
-          updateState({ state: "disconnected", running: false, recording: false });
+          // A clean close also retires any lingering non-fatal error banner.
+          updateState({ state: "disconnected", error: null, running: false, recording: false });
         }
       },
       { signal: sig },
@@ -421,6 +329,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   }
 
   function cancel(): void {
+    // Only meaningful mid-session: called while disconnected/errored it would
+    // fake a "listening" state with nobody on the other end.
+    if (!conn.ws || conn.ws.readyState !== WS_OPEN) return;
     conn.voiceIO?.flush();
     updateState({ state: "listening" });
     sendJson({ type: "cancel" });
@@ -435,6 +346,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     }
     resetState();
     disconnect();
+    // The reconnect keeps the session live — without this, `running` stays
+    // false and the controls show "Resume" on a freshly connected session.
+    updateState({ running: true });
     connect();
   }
 
@@ -455,8 +369,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       return;
     const cfg = conn.readyConfig;
     if (!(cfg && conn.ws) || conn.ws.readyState !== WS_OPEN) return;
-    // Sets `recording: true` (and error state on mic denial) itself.
-    void initAudioCapture(conn, cfg, audioDeps);
+    // Sets `recording: true` itself. Non-fatal: mic denial on the opt-in
+    // record button must not brick a session that can still text/upload.
+    void initAudioCapture(conn, cfg, audioDeps, false);
   }
 
   function stopRecording(): void {

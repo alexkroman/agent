@@ -5,6 +5,7 @@ exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
   "ApiUrlChip",
   "Button",
   "ChatView",
+  "Controls",
   "MessageList",
   "SessionProvider",
   "SessionUrlChips",

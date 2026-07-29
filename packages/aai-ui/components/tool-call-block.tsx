@@ -53,7 +53,9 @@ export const ToolCallBlock = memo(function ToolCallBlock({
   const theme = useTheme();
   const toolConfig = useToolConfig();
 
-  const config = toolConfig[toolCall.name];
+  // Own-property lookup: the tool name comes off the wire, so a name like
+  // "constructor" must not resolve through the object's prototype chain.
+  const config = Object.hasOwn(toolConfig, toolCall.name) ? toolConfig[toolCall.name] : undefined;
   const isPending = toolCall.status === "pending";
   const title = config?.label || toolCall.name;
   const icon = config?.icon;

@@ -77,12 +77,15 @@ function useToolCallEffect(
 
   const toolCalls = useSessionSelector((s) => s.toolCalls);
   const cursorRef = useRef<ToolCallCursor>({ seq: 0, fired: new Set<string>() });
+  const mountedRef = useRef(false);
   const callbackRef = useRef(callback);
   callbackRef.current = callback;
   const fireRef = useRef(fire);
   fireRef.current = fire;
 
   useEffect(() => {
+    const firstRun = !mountedRef.current;
+    mountedRef.current = true;
     processToolCallTail(
       toolCalls,
       cursorRef.current,
@@ -90,7 +93,11 @@ function useToolCallEffect(
       // itself settles the item; the done hook must wait for completion.
       (tc) => status === "pending" || tc.status === status,
       (tc) => {
-        if (tc.status !== status) return;
+        // A new call first observed past `status` still *reached* it — e.g.
+        // `tool_call` and `tool_call_done` frames coalescing into one commit
+        // must not lose the start event. The exception is the mount pass,
+        // where pre-existing settled calls are history, not new events.
+        if (tc.status !== status && firstRun) return;
         if (filterName && tc.name !== filterName) return;
         fireRef.current(callbackRef.current, tc, filterName !== null);
       },

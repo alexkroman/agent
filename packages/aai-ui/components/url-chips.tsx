@@ -89,7 +89,7 @@ export function UiUrlChip({ className }: { className?: string | undefined }) {
       url={pageUrl()}
       hint="Shareable UI"
       testId="ui-url-chip"
-      {...(className !== undefined && { className })}
+      className={className}
     />
   );
 }
@@ -108,7 +108,7 @@ export function ApiUrlChip({ className }: { className?: string | undefined }) {
       url={apiUrl}
       hint="API endpoint"
       testId="api-url-chip"
-      {...(className !== undefined && { className })}
+      className={className}
     />
   );
 }

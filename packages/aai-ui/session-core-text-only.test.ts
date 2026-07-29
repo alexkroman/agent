@@ -16,7 +16,14 @@ import { createSessionCore, type SessionCore } from "./session-core.ts";
 
 const textOnlyConfig = () => makeConfig(16_000, 24_000, "sess-text", { audioOut: false });
 
-const flush = () => new Promise((r) => setTimeout(r, 10));
+/** Deterministic "prove nothing happened" wait: drain a handful of macrotask
+ *  turns — enough for the audio-init dynamic imports and their microtask
+ *  chains to have settled — instead of sleeping a wall-clock interval. */
+const flush = async () => {
+  for (let i = 0; i < 5; i++) {
+    await new Promise((r) => setTimeout(r, 0));
+  }
+};
 
 describe("createSessionCore (text-only)", () => {
   let core: SessionCore;

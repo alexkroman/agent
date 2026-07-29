@@ -8,7 +8,13 @@
 import { z } from "zod";
 
 import { ToolSchemaSchema } from "./_internal-types.ts";
-import { MAX_AUDIO_SAMPLE_RATE, MAX_SYNC_AUDIO_BYTES, MAX_TOOL_RESULT_CHARS } from "./constants.ts";
+import {
+  MAX_AUDIO_SAMPLE_RATE,
+  MAX_ERROR_MESSAGE_CHARS,
+  MAX_SYNC_AUDIO_BYTES,
+  MAX_TOOL_RESULT_CHARS,
+  MAX_TRANSCRIPT_CHARS,
+} from "./constants.ts";
 
 /**
  * Audio codec identifier used in the wire protocol.
@@ -136,7 +142,7 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   ev("speech_stopped"),
   z.object({
     type: z.literal("user_transcript"),
-    text: z.string(),
+    text: z.string().max(MAX_TRANSCRIPT_CHARS),
   }),
   /**
    * Interim (in-progress) user transcript — live captions while the user is
@@ -146,11 +152,11 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
    */
   z.object({
     type: z.literal("user_transcript_partial"),
-    text: z.string(),
+    text: z.string().max(MAX_TRANSCRIPT_CHARS),
   }),
   z.object({
     type: z.literal("agent_transcript"),
-    text: z.string(),
+    text: z.string().max(MAX_TRANSCRIPT_CHARS),
   }),
   z.object({
     type: z.literal("tool_call"),
@@ -170,7 +176,7 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("error"),
     code: SessionErrorCodeSchema,
-    message: z.string(),
+    message: z.string().max(MAX_ERROR_MESSAGE_CHARS),
     /**
      * False for turn-level errors the session survives (e.g. a failed
      * one-shot transcription): the client should surface the message but
@@ -229,8 +235,12 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("config"),
     audioFormat: z.string(),
-    sampleRate: z.number(),
-    ttsSampleRate: z.number(),
+    // Bounded like the client→server `transcribe_file_start` rate: these
+    // numbers feed client-side allocations (upload padding, the playback
+    // worklet's rate*60 ring buffer), so an unbounded server value would be
+    // an allocation-size lever against the client.
+    sampleRate: z.number().int().positive().max(MAX_AUDIO_SAMPLE_RATE),
+    ttsSampleRate: z.number().int().positive().max(MAX_AUDIO_SAMPLE_RATE),
     /** False for text-only agents — see {@link ReadyConfigSchema}. */
     audioOut: z.boolean().optional(),
     /** Session ID for this connection. Clients can reconnect with

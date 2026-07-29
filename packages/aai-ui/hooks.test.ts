@@ -163,6 +163,27 @@ describe("useToolCallStart", () => {
     expect(cb).not.toHaveBeenCalled();
   });
 
+  it("fires when a call first appears already done in a live update (coalesced frames)", () => {
+    // tool_call + tool_call_done can land in one commit: the call is first
+    // seen with status "done", but it still *started* during this session,
+    // so the start hook must fire (exactly once).
+    const core = createMockCore([]);
+    const cb = vi.fn();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      createElement(SessionProvider, { value: core }, children);
+    renderHook(() => useToolCallStart(cb), { wrapper });
+    expect(cb).not.toHaveBeenCalled();
+
+    const done = makeToolCall({ status: "done" });
+    act(() => core.update({ toolCalls: [done] }));
+    expect(cb).toHaveBeenCalledOnce();
+    expect(cb.mock.calls[0]?.at(0)).toMatchObject({ callId: "tc-1" });
+
+    // No re-fire on a later snapshot containing the same call.
+    act(() => core.update({ toolCalls: [done] }));
+    expect(cb).toHaveBeenCalledOnce();
+  });
+
   it("fires once per callId even as status changes", () => {
     const pending = makeToolCall({ status: "pending", result: undefined });
     const core = createMockCore([pending]);

@@ -49,8 +49,11 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   // End the current turn: notify the host and rearm for the next reply.
   // Must NOT return false from process() — a processor that stops is dead
   // for good, forcing a new node (and buffer) per reply.
-  stopTurn() {
-    this.port.postMessage({ event: 'stop' });
+  // \`reason\` ('interrupt' | 'done') tells the host which turn boundary this
+  // stop belongs to: interrupt-stops are dropped host-side (flush() already
+  // settled that turn), so they can never resolve a later turn's done() early.
+  stopTurn(reason) {
+    this.port.postMessage({ event: 'stop', reason });
     this.resetTurn();
   }
 
@@ -115,7 +118,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     const out = outputs[0][0];
     if (this.interrupted) {
       out.fill(0);
-      this.stopTurn();
+      this.stopTurn('interrupt');
       return true;
     }
 
@@ -146,7 +149,7 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // No data: output silence, end the turn only when done
     out.fill(0);
     if (this.isDone) {
-      this.stopTurn();
+      this.stopTurn('done');
     }
     return true;
   }

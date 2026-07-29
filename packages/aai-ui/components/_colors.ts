@@ -9,14 +9,10 @@
  * steps and ink alpha layers the refresh uses over any light surface.
  */
 
-/** Soft text — button labels on muted surfaces (warm-700). */
-export const TEXT_SOFT = "#3D3A35";
 /** Muted text — subtitles, secondary labels, thinking dots (fg-muted). */
 export const TEXT_MUTED = "#57534B";
 /** Faint text — live transcripts, state indicator, start-screen subtitle (warm-500). */
 export const TEXT_FAINT = "#6F6A60";
-/** Raised surface tint — secondary button background. */
-export const SURFACE_RAISED = "rgba(20,18,12,0.05)";
 /** Subtle surface tint — message bubbles, tool-call blocks. */
 export const SURFACE_TINT = "rgba(20,18,12,0.03)";
 /** Error red tuned for warm light surfaces. */

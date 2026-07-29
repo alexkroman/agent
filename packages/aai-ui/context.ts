@@ -9,7 +9,9 @@ import {
   useMemo,
   useSyncExternalStore,
 } from "react";
-import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector";
+// The non-shim entry point delegates to React's native useSyncExternalStore
+// (guaranteed by the React 18+ peer) instead of bundling the userland shim.
+import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
 import type { SessionCore, SessionSnapshot } from "./session-core.ts";
 import type { ClientTheme } from "./types.ts";
 
@@ -30,17 +32,21 @@ export function SessionProvider({ value, children }: { value: SessionCore; child
   return createElement(SessionCtx.Provider, { value }, children);
 }
 
-export type Session = SessionSnapshot & {
-  start(): void;
-  cancel(): void;
-  resetState(): void;
-  reset(): void;
-  disconnect(): void;
-  toggle(): void;
-  startRecording(): void;
-  stopRecording(): void;
-  sendAudioFile(file: Blob): Promise<void>;
-};
+/** The session snapshot merged with the core's control methods. Method
+ *  signatures come from {@link SessionCore} — one source of truth. */
+export type Session = SessionSnapshot &
+  Pick<
+    SessionCore,
+    | "start"
+    | "cancel"
+    | "resetState"
+    | "reset"
+    | "disconnect"
+    | "toggle"
+    | "startRecording"
+    | "stopRecording"
+    | "sendAudioFile"
+  >;
 
 /**
  * Return the raw {@link SessionCore} from context without subscribing to
@@ -63,8 +69,9 @@ export function useSession(): Session {
   // Methods are stable per core; memoizing the merged object keeps the
   // returned Session referentially stable across renders the snapshot didn't
   // cause (parent re-renders), so consumers can use it in hook deps.
-  const methods = useMemo(
+  return useMemo(
     () => ({
+      ...snapshot,
       start: core.start,
       cancel: core.cancel,
       resetState: core.resetState,
@@ -75,9 +82,8 @@ export function useSession(): Session {
       stopRecording: core.stopRecording,
       sendAudioFile: core.sendAudioFile,
     }),
-    [core],
+    [snapshot, core],
   );
-  return useMemo(() => ({ ...snapshot, ...methods }), [snapshot, methods]);
 }
 
 /**

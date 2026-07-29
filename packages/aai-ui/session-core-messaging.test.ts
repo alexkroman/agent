@@ -7,6 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { type AudioMockContext, findWorkletNode, installAudioMocks } from "./_react-test-utils.ts";
 import {
+  assertValidClientFrames,
   type ConstructorType,
   lastSocket,
   MockWebSocket,
@@ -167,6 +168,7 @@ describe("createSessionCore", () => {
       const msg = JSON.parse(sent as string);
       expect(msg.type).toBe("cancel");
       expect(core.getSnapshot().state).toBe("listening");
+      assertValidClientFrames(lastSocket);
     });
 
     it("cancel does not throw when disconnected", () => {
@@ -187,6 +189,7 @@ describe("createSessionCore", () => {
       expect(typeof sent).toBe("string");
       const msg = JSON.parse(sent as string);
       expect(msg.type).toBe("reset");
+      assertValidClientFrames(lastSocket);
     });
 
     it("disconnects and reconnects when WebSocket is not open", () => {
@@ -285,6 +288,7 @@ describe("createSessionCore", () => {
       const msg = JSON.parse(historyCall?.[0] as string);
       expect(msg.type).toBe("history");
       expect(msg.messages).toEqual([{ role: "user", content: "Hello" }]);
+      assertValidClientFrames(reconnectSocket);
     });
   });
 

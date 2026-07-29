@@ -99,12 +99,17 @@ export type VoiceSessionOptions = {
    * Called when the server sends a session ID in the config message.
    * Use this to store the ID (e.g. in localStorage) for reconnection
    * via `resumeSessionId`.
+   *
+   * Treat session IDs as sensitive: whoever holds one can resume the
+   * session and read its replayed history. They travel as a WebSocket
+   * query parameter (browsers cannot set WS headers), so they may appear
+   * in proxy and server access logs — don't put them in shared URLs.
    */
   onSessionId?: ((sessionId: string) => void) | undefined;
   /**
    * Session ID from a previous connection. When set, the server will
    * attempt to restore persisted session state (if the agent has
-   * `persistence` enabled).
+   * `persistence` enabled). Sensitive — see {@link onSessionId}.
    */
   resumeSessionId?: string | undefined;
   /**

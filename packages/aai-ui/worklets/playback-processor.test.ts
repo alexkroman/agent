@@ -44,7 +44,7 @@ describe("playback-processor worklet", () => {
     expect(Array.from(out)).toEqual([0.5, -1, 0.25, 0]);
     // Turn ends on the next render once the buffer has drained.
     render(w, 4);
-    expect(w.posted).toContainEqual({ event: "stop" });
+    expect(w.posted).toContainEqual({ event: "stop", reason: "done" });
   });
 
   test("odd byte offset (DataView path) produces identical output", () => {
@@ -86,6 +86,22 @@ describe("playback-processor worklet", () => {
     expect(Array.from(out)).toEqual([41 / 0x80_00, 42 / 0x80_00, 43 / 0x80_00, 44 / 0x80_00]);
   });
 
+  test("a single render's copy splits cleanly across the ring wrap boundary", () => {
+    // sampleRate 1 -> capacity 60, jitter 0: the wrap is reachable in-test.
+    const w = makeProcessor(1);
+    // Advance readPos to 59: write and fully render 59 samples.
+    const first = Array.from({ length: 59 }, (_, i) => i + 1);
+    writePcm(w, first);
+    expect(Array.from(render(w, 59))).toEqual(first.map((v) => v / 0x80_00));
+
+    // This run occupies ring index 59 and wraps to 0..28; a single render
+    // must stitch the two segments back together with no gap or reorder.
+    const second = Array.from({ length: 30 }, (_, i) => 100 + i);
+    writePcm(w, second);
+    const out = render(w, 30);
+    expect(Array.from(out)).toEqual(second.map((v) => v / 0x80_00));
+  });
+
   test("waits for the jitter buffer before playing", () => {
     // 24k rate -> jitter = 9600 samples; a small write must not start playback.
     const w = makeProcessor();
@@ -103,6 +119,8 @@ describe("playback-processor worklet", () => {
 
     const out = render(w, 4);
     expect(Array.from(out)).toEqual([0, 0, 0, 0]);
-    expect(w.posted).toContainEqual({ event: "stop" });
+    // The reason tag is what lets the host drop interrupt-stops instead of
+    // letting them settle a later turn's done().
+    expect(w.posted).toContainEqual({ event: "stop", reason: "interrupt" });
   });
 });

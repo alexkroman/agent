@@ -6,6 +6,11 @@
   ],
   "versionGroups": [
     {
+      "label": "Peer ranges are compatibility floors, not pinned versions — do not drag them along with devDependency bumps",
+      "dependencyTypes": ["peer"],
+      "isIgnored": true
+    },
+    {
       "label": "Ensure zod stays in sync across all packages",
       "dependencies": ["zod"],
       "policy": "sameRange"

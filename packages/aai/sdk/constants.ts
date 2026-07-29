@@ -87,6 +87,14 @@ export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [
 export const SESSION_NOTES_TTL_MS = 86_400_000;
 
 export const MAX_TOOL_RESULT_CHARS = 4000;
+/**
+ * Wire cap on a single transcript event's text (matches the per-message
+ * `history` content cap). Bounds what a hostile/buggy server can push into
+ * client state per frame; a legitimate turn never approaches it.
+ */
+export const MAX_TRANSCRIPT_CHARS = 100_000;
+/** Wire cap on an error event's message. */
+export const MAX_ERROR_MESSAGE_CHARS = 10_000;
 /** Cap on raw wire data echoed into warn/info logs. */
 export const LOG_PREVIEW_CHARS = 200;
 export const MAX_PAGE_CHARS = 10_000;
