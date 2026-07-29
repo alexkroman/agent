@@ -27,9 +27,9 @@ export const STUDIO_CSP =
   "base-uri 'none'; form-action 'none'";
 
 const FALLBACK_HTML = `<!DOCTYPE html>
-<html lang="en"><head><meta charset="utf-8"><title>AAI Studio</title></head>
+<html lang="en"><head><meta charset="utf-8"><title>AssemblyAI Studio</title></head>
 <body style="font-family:sans-serif;max-width:40rem;margin:4rem auto;line-height:1.5">
-<h1>AAI Studio</h1>
+<h1>AssemblyAI Studio</h1>
 <p>The studio client has not been built on this server.</p>
 <p>Run <code>pnpm --filter aai-server build</code> and restart, then reload
 this page to use the browser coding agent.</p>

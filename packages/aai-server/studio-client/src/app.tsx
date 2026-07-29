@@ -45,7 +45,7 @@ function PublishMenu(props: PublishMenuProps) {
   return (
     <div className="absolute top-14 right-5 z-10 flex w-80 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md">
       <span className="eyebrow">Publish</span>
-      <p className="m-0 text-[15px] leading-5 text-muted">
+      <p className="m-0 text-[13px] leading-5 text-muted">
         Builds the workspace, verifies it in a sandbox, and puts it live. Secrets (like
         ASSEMBLYAI_API_KEY) are stored with the deployment.
       </p>
@@ -105,7 +105,7 @@ function TopBar(props: TopBarProps) {
     <header className="flex h-[60px] flex-none items-center gap-3.5 border-b border-line bg-panel px-5">
       <div className="flex items-center gap-2.5">
         <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
-        <span className="font-serif text-[19px]">AAI Studio</span>
+        <span className="font-serif text-[16px]">AssemblyAI Studio</span>
       </div>
       <div className="h-[22px] w-px bg-line" aria-hidden />
       <div className="flex h-[34px] items-center gap-2 rounded-sm border border-line bg-panel pl-3 hover:border-line-strong">
@@ -114,7 +114,7 @@ function TopBar(props: TopBarProps) {
           aria-hidden
         />
         <select
-          className="h-full cursor-pointer border-none bg-transparent pr-2 text-[15px] text-muted focus:outline-none"
+          className="h-full cursor-pointer border-none bg-transparent pr-2 text-[13px] text-muted focus:outline-none"
           value={props.project ?? ""}
           onChange={(e) => {
             if (e.target.value === NEW_PROJECT_SENTINEL) {

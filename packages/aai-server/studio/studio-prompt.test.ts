@@ -30,7 +30,7 @@ describe("studioSystemPrompt", () => {
   test("composes the studio preamble with the scaffold guide", () => {
     const prompt = studioSystemPrompt();
     // Studio preamble (workflow + environment overrides).
-    expect(prompt).toContain("AAI Studio coding agent");
+    expect(prompt).toContain("AssemblyAI Studio coding agent");
     expect(prompt).toContain("test_agent");
     // Any non-AssemblyAI provider needs a key the user must supply, so a
     // generated agent should default to the one key publishing guarantees.
@@ -58,7 +58,7 @@ describe("studioSystemPrompt", () => {
 
   test("falls back to the built-in guide when the scaffold file is absent", () => {
     const prompt = composeStudioPrompt(null);
-    expect(prompt).toContain("AAI Studio coding agent");
+    expect(prompt).toContain("AssemblyAI Studio coding agent");
     expect(prompt).toContain("agent() essentials");
     expect(prompt).not.toContain("## `agent()` API"); // scaffold-only heading
   });

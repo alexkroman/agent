@@ -81,7 +81,7 @@ export function ModelPicker({ options, choice, setChoice, disabled }: ModelPicke
   const total = providers.reduce((n, p) => n + p.models.length, 0);
   if (total < 2) {
     return (
-      <span className="font-mono text-[12px] normal-case tracking-normal text-subtle">
+      <span className="font-mono text-[10px] normal-case tracking-normal text-subtle">
         {choice.provider}/{choice.model}
       </span>
     );
@@ -89,7 +89,7 @@ export function ModelPicker({ options, choice, setChoice, disabled }: ModelPicke
 
   return (
     <select
-      className="field max-w-[15rem] py-0.5 font-mono text-[12px] normal-case tracking-normal"
+      className="field max-w-[15rem] py-0.5 font-mono text-[10px] normal-case tracking-normal"
       value={`${choice.provider}${VALUE_SEP}${choice.model}`}
       disabled={disabled}
       title="Model used by the coding agent"

@@ -18,11 +18,11 @@ function StepCard({ numeral, title, caption, active }: StepCardProps) {
         active ? "border-indigo-200" : "border-line"
       }`}
     >
-      <span className={`stat-numeral text-[57px] ${active ? "text-indigo" : "text-warm-300"}`}>
+      <span className={`stat-numeral text-[48px] ${active ? "text-indigo" : "text-warm-300"}`}>
         {numeral}
       </span>
-      <span className="font-serif text-[21px]">{title}</span>
-      <p className="m-0 text-xs leading-[20px] text-muted">{caption}</p>
+      <span className="font-serif text-[18px]">{title}</span>
+      <p className="m-0 text-xs leading-[17px] text-muted">{caption}</p>
     </div>
   );
 }
@@ -53,8 +53,8 @@ export function PreviewPane({ hasProject, deployedSlug, nonce, onNewProject }: P
     <div className="flex flex-1 flex-col items-center justify-center gap-11 bg-cream p-10">
       <div className="flex flex-col items-center gap-2.5">
         <span className="eyebrow self-center">Get started</span>
-        <h2 className="m-0 text-center font-serif text-[33px] leading-[1.15] font-normal text-balance">
-          Three steps to a live voice agent
+        <h2 className="m-0 text-center font-serif text-[28px] leading-[1.15] font-normal text-balance">
+          Three steps to a live voice agent or workflow
         </h2>
       </div>
       <div className="flex gap-7">
@@ -66,14 +66,14 @@ export function PreviewPane({ hasProject, deployedSlug, nonce, onNewProject }: P
         />
         <StepCard
           numeral="2"
-          title="Describe your agent"
+          title="Describe what you want"
           caption="Chat with the agent on the left. It writes and revises the build."
           active={activeStep === 2}
         />
         <StepCard
           numeral="3"
           title="Publish"
-          caption="Push it live and talk to your agent in this pane."
+          caption="Push it live and try it in this pane."
           active={false}
         />
       </div>

@@ -14,9 +14,9 @@ import { readFileSync } from "node:fs";
 import path from "node:path";
 import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
 
-const STUDIO_PREAMBLE = `You are the AAI Studio coding agent. You help the user build and deploy \
-voice agents for the AAI platform, working on a small server-side workspace \
-of files via your tools.
+const STUDIO_PREAMBLE = `You are the AssemblyAI Studio coding agent. You help the user build and deploy \
+voice agents and voice workflows for the AAI platform, working on a small \
+server-side workspace of files via your tools.
 
 ## Your workflow
 

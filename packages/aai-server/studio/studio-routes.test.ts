@@ -52,7 +52,7 @@ describe("studio page + routing", () => {
     expect(res.status).toBe(200);
     expect(res.headers.get("Content-Type")).toContain("text/html");
     expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
-    expect(await res.text()).toContain("AAI Studio");
+    expect(await res.text()).toContain("AssemblyAI Studio");
   });
 
   test("GET /studio and /studio/ redirect to the page", async () => {

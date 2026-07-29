@@ -22,9 +22,9 @@ export function Markdown({ text }: { text: string }) {
         ul: (props) => <ul className="my-1.5 list-disc pl-5" {...props} />,
         ol: (props) => <ol className="my-1.5 list-decimal pl-5" {...props} />,
         li: (props) => <li className="my-0.5" {...props} />,
-        h1: (props) => <h1 className="mt-3 mb-1.5 text-[17px] font-medium" {...props} />,
-        h2: (props) => <h2 className="mt-3 mb-1.5 text-[16px] font-medium" {...props} />,
-        h3: (props) => <h3 className="mt-3 mb-1.5 text-[15px] font-medium" {...props} />,
+        h1: (props) => <h1 className="mt-3 mb-1.5 text-[15px] font-medium" {...props} />,
+        h2: (props) => <h2 className="mt-3 mb-1.5 text-[14px] font-medium" {...props} />,
+        h3: (props) => <h3 className="mt-3 mb-1.5 text-[13px] font-medium" {...props} />,
         a: (props) => (
           <a
             className="text-indigo underline"
@@ -38,12 +38,12 @@ export function Markdown({ text }: { text: string }) {
           // wraps them in <pre>; anything else is an inline span.
           const fenced = /language-/.test(className ?? "");
           return fenced ? (
-            <code className="font-mono text-[13px]" {...rest}>
+            <code className="font-mono text-[11px]" {...rest}>
               {children}
             </code>
           ) : (
             <code
-              className="rounded-sm border border-line bg-cream px-1 py-0.5 font-mono text-[13px]"
+              className="rounded-sm border border-line bg-cream px-1 py-0.5 font-mono text-[11px]"
               {...rest}
             >
               {children}
@@ -60,7 +60,7 @@ export function Markdown({ text }: { text: string }) {
           <blockquote className="my-1.5 border-l-2 border-line pl-3 text-muted" {...props} />
         ),
         table: (props) => (
-          <table className="my-1.5 w-full border-collapse text-[14px]" {...props} />
+          <table className="my-1.5 w-full border-collapse text-[12px]" {...props} />
         ),
         th: (props) => (
           <th className="border border-line px-2 py-1 text-left font-medium" {...props} />

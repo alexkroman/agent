@@ -22,14 +22,14 @@ function Gate({ onEnter }: { onEnter: (key: string) => void }) {
       <div className="flex w-[420px] flex-col gap-3.5 rounded-lg border border-line bg-panel p-10 shadow-sm">
         <div className="flex items-center gap-2.5">
           <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
-          <span className="font-serif text-[19px]">AAI Studio</span>
+          <span className="font-serif text-[16px]">AssemblyAI Studio</span>
         </div>
-        <h1 className="m-0 font-serif text-[30px] leading-[1.18] font-normal text-balance">
-          Build your first voice agent
+        <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
+          Build your first voice agent or workflow
         </h1>
-        <p className="m-0 text-[17px] leading-[25px] text-muted">
-          Describe an agent and the studio writes and tests it — you publish when it's ready. Enter
-          your platform API key to start.
+        <p className="m-0 text-[15px] leading-[21px] text-muted">
+          Describe a voice agent or workflow and the studio writes and tests it — you publish when
+          it's ready. Enter your platform API key to start.
         </p>
         <input
           className="field h-10"
