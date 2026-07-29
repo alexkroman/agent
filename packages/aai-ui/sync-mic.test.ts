@@ -8,7 +8,7 @@ import {
   type MockAudioWorkletNode,
 } from "./_react-test-utils.ts";
 import {
-  CAPTURE_WORKLET_DATA_URI,
+  CAPTURE_WORKLET_MODULE_URL,
   floatToPcm16,
   type SyncMicrophone,
   startSyncMicrophone,
@@ -63,8 +63,9 @@ async function start(overrides: Partial<Parameters<typeof startSyncMicrophone>[0
 describe("startSyncMicrophone", () => {
   test("registers the inline worklet and wires mic → capture node", async () => {
     await start();
-    expect(mocks.lastContext().audioWorklet.modules).toContain(CAPTURE_WORKLET_DATA_URI);
-    expect(CAPTURE_WORKLET_DATA_URI.startsWith("data:application/javascript")).toBe(true);
+    expect(mocks.lastContext().audioWorklet.modules).toContain(CAPTURE_WORKLET_MODULE_URL);
+    // Blob URL, not a data URI — the agent CSP allows `script-src blob:` only.
+    expect(CAPTURE_WORKLET_MODULE_URL.startsWith("blob:")).toBe(true);
     expect(captureNode()).toBeDefined();
   });
 

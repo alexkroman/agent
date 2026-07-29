@@ -9,8 +9,11 @@
  * through the utterance detector, and hands each completed utterance to
  * the sync session as one HTTP turn. No WebSocket anywhere on the path.
  *
- * The worklet module ships inline as a data URI, so sync mode needs no
- * separately-served processor file.
+ * The worklet module ships inline as a blob URL (same pattern as the
+ * WebSocket path's worklets), so sync mode needs no separately-served
+ * processor file. A blob URL rather than a data URI because the agent
+ * page's CSP allows `script-src blob:` but not `data:` — a data-URI
+ * module fails `addModule` with "Unable to load a worklet's module".
  */
 
 import { errorMessage } from "@alexkroman1/aai";
@@ -31,7 +34,7 @@ const CAPTURE_BATCH_SAMPLES = 2048;
  * The capture processor: coalesces 128-sample render quanta into
  * {@link CAPTURE_BATCH_SAMPLES} batches and posts them (transferred, so no
  * per-batch copy). Inlined as source because it must be stringified into a
- * data URI.
+ * blob URL.
  */
 const CAPTURE_PROCESSOR_SRC = `
 registerProcessor("aai-sync-capture", class extends AudioWorkletProcessor {
@@ -62,10 +65,13 @@ registerProcessor("aai-sync-capture", class extends AudioWorkletProcessor {
 });
 `;
 
-/** Data URI form of the capture processor (no served asset, no blob URL). */
-export const CAPTURE_WORKLET_DATA_URI = `data:application/javascript;charset=utf-8,${encodeURIComponent(
-  CAPTURE_PROCESSOR_SRC,
-)}`;
+/**
+ * Blob-URL module for the capture processor (no served asset). Satisfies the
+ * agent page's `script-src blob:` CSP, which rejects data-URI modules.
+ */
+export const CAPTURE_WORKLET_MODULE_URL = URL.createObjectURL(
+  new Blob([CAPTURE_PROCESSOR_SRC], { type: "application/javascript" }),
+);
 
 /** Clamp-and-convert one Float32 capture batch to PCM16. */
 export function floatToPcm16(samples: Float32Array): Int16Array {
@@ -129,7 +135,7 @@ export async function startSyncMicrophone(opts: SyncMicrophoneOptions): Promise<
     [stream] = await Promise.all([
       streamPromise,
       ctx.resume(),
-      ctx.audioWorklet.addModule(CAPTURE_WORKLET_DATA_URI),
+      ctx.audioWorklet.addModule(CAPTURE_WORKLET_MODULE_URL),
     ]);
   } catch (err) {
     // Release the mic if it was granted while another step failed.

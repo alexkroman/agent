@@ -1,6 +1,6 @@
 import "@alexkroman1/aai-ui/styles.css";
 import {
-  CAPTURE_WORKLET_DATA_URI,
+  CAPTURE_WORKLET_MODULE_URL,
   client,
   createSyncSession,
   DEFAULT_SYNC_MIC_SAMPLE_RATE,
@@ -45,7 +45,7 @@ function createPttRecorder(): PttRecorder {
       const [media] = await Promise.all([
         streamPromise,
         audioCtx.resume(),
-        audioCtx.audioWorklet.addModule(CAPTURE_WORKLET_DATA_URI),
+        audioCtx.audioWorklet.addModule(CAPTURE_WORKLET_MODULE_URL),
       ]);
       stream = media;
     } catch (err) {

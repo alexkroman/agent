@@ -10,16 +10,29 @@
  * typed message — is one `POST /sync` request through `createSyncSession`.
  * The conversation history lives client-side and replays with every turn.
  *
+ * Visually it is the same "voice agent console" as the WebSocket
+ * {@link ChatView}: header with logo + live-status eyebrow, the conversation
+ * on a raised card, controls beneath — built from the same shared pieces
+ * ({@link MessageBubble}, {@link ThinkingDots}, {@link Eyebrow},
+ * {@link Button}) so the two transports are indistinguishable at a glance.
+ *
  * Rendered by `client()` when the agent's `GET /client-config` declares
  * `transport: "sync"`; also exported for custom clients that want the stock
  * sync UI with their own chrome around it.
  */
 
+import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { useTheme } from "../context.ts";
 import { type SyncMicrophone, startSyncMicrophone } from "../sync-mic.ts";
 import { createSyncSession, type SyncTurnResult } from "../sync-session.ts";
-import { TEXT_MUTED } from "./_colors.ts";
+import type { AgentState } from "../types.ts";
+import { ERROR_COLOR, TEXT_MUTED } from "./_colors.ts";
+import { AaiLogo } from "./aai-logo.tsx";
+import { Button } from "./button.tsx";
+import { stateColor } from "./chat-view.tsx";
+import { Eyebrow } from "./eyebrow.tsx";
+import { MessageBubble, ThinkingDots } from "./message-list.tsx";
 
 type Line = { id: number; role: "user" | "assistant"; text: string };
 
@@ -37,6 +50,17 @@ function playReply(ctxRef: { current: AudioContext | null }, turn: SyncTurnResul
   source.buffer = buffer;
   source.connect(ctx.destination);
   source.start();
+}
+
+/**
+ * Map the sync turn lifecycle onto the same states the WebSocket eyebrow
+ * shows, so the status chip reads identically across transports.
+ */
+function syncState(error: string | null, busy: boolean, micOn: boolean): AgentState {
+  if (error) return "error";
+  if (busy) return "thinking";
+  if (micOn) return "listening";
+  return "ready";
 }
 
 /**
@@ -68,6 +92,7 @@ export function SyncChatView({
   const [error, setError] = useState<string | null>(null);
   const playbackCtx = useRef<AudioContext | null>(null);
   const micRef = useRef<SyncMicrophone | null>(null);
+  const anchorRef = useRef<HTMLDivElement>(null);
 
   const sessionRef = useRef(
     createSyncSession({
@@ -97,6 +122,12 @@ export function SyncChatView({
     },
     [],
   );
+
+  // Keep the newest exchange in view as turns land.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: lines/busy drive the scroll, not the effect body
+  useEffect(() => {
+    anchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+  }, [lines, busy]);
 
   async function toggleMic(): Promise<void> {
     if (micRef.current) {
@@ -129,74 +160,105 @@ export function SyncChatView({
     });
   }
 
+  const state = syncState(error, busy, micOn);
+  const pulsing = state === "listening";
+
   return (
     <div
-      className="flex flex-col h-screen max-w-2xl mx-auto font-aai"
+      className="flex flex-col h-screen w-full max-w-190 mx-auto box-border px-6 py-8 gap-5 font-aai text-sm"
       style={{ background: theme.bg, color: theme.text }}
     >
-      <header
-        className="px-4 py-3 border-b flex items-center justify-between shrink-0"
-        style={{ borderColor: theme.border }}
-      >
-        <h1 className="font-bold">{title ?? "Voice Agent"}</h1>
-        <span className="text-xs opacity-60">HTTP turns — no WebSocket</span>
-      </header>
-
-      <main className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
-        {greeting !== undefined && greeting.length > 0 && (
-          <div
-            className="max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap"
-            style={{ background: theme.surface, color: theme.text }}
+      {/* Header: brand left, live status right */}
+      <div className="flex items-center justify-between shrink-0">
+        <div className="flex items-center gap-3 min-w-0">
+          <AaiLogo size={22} />
+          <span
+            className="font-aai-serif text-[22px] leading-[1.2] font-normal truncate"
+            style={{ color: theme.text }}
           >
-            {greeting}
-          </div>
-        )}
-        {lines.length === 0 && (
-          <p className="text-sm" style={{ color: TEXT_MUTED }}>
-            Turn the mic on and speak — each utterance becomes one HTTP request — or type below.
-          </p>
-        )}
-        {lines.map((line) => (
-          <div
-            key={line.id}
-            className={`max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap ${
-              line.role === "user" ? "ml-auto" : ""
-            }`}
+            {title ?? "Voice Agent"}
+          </span>
+        </div>
+        <Eyebrow className="shrink-0" data-state={state}>
+          <span
+            className="w-[7px] h-[7px] rounded-full"
             style={{
-              background: line.role === "user" ? theme.primary : theme.surface,
-              color: line.role === "user" ? "#fff" : theme.text,
+              background: stateColor(state, theme.primary),
+              animation: pulsing ? "aai-pulse 1.6s ease-in-out infinite" : "none",
             }}
-          >
-            {line.text}
-          </div>
-        ))}
-        {busy && <p className="text-sm opacity-60 animate-pulse">Thinking…</p>}
-        {error && (
-          <p className="text-sm" style={{ color: "#dc2626" }}>
-            {error}
-          </p>
-        )}
-      </main>
-
-      <footer
-        className="p-3 border-t flex gap-2 items-center shrink-0"
-        style={{ borderColor: theme.border }}
+          />
+          {state}
+        </Eyebrow>
+      </div>
+      {/* Error banner */}
+      {error && (
+        <div
+          className="px-3.5 py-2.5 rounded-aai border text-[13px] leading-[130%] shrink-0"
+          style={{
+            borderColor: "rgba(179,38,30,0.35)",
+            background: "rgba(179,38,30,0.06)",
+            color: ERROR_COLOR,
+          }}
+        >
+          {error}
+        </div>
+      )}
+      {/* Conversation card */}
+      <div
+        className="flex flex-col flex-1 min-h-0 border rounded-lg overflow-hidden"
+        style={{
+          background: theme.surface,
+          borderColor: theme.border,
+          boxShadow: "0 1px 3px 0 rgb(20 18 12 / 0.06)",
+        }}
       >
-        <button
-          type="button"
+        <div
+          role="log"
+          className="flex-1 overflow-y-auto [scrollbar-width:none]"
+          style={{ background: theme.surface }}
+        >
+          <div className="flex flex-col gap-4 p-7">
+            {greeting !== undefined && greeting.length > 0 && (
+              <MessageBubble message={{ role: "assistant", content: greeting }} theme={theme} />
+            )}
+            {lines.length === 0 && (
+              <p className="text-sm" style={{ color: TEXT_MUTED }}>
+                Turn the mic on and speak — each utterance becomes one HTTP request — or type below.
+              </p>
+            )}
+            {lines.map((line) => (
+              <MessageBubble
+                key={line.id}
+                message={{ role: line.role, content: line.text }}
+                theme={theme}
+              />
+            ))}
+            {busy && (
+              <div data-testid="thinking">
+                <ThinkingDots />
+              </div>
+            )}
+            <div ref={anchorRef} />
+          </div>
+        </div>
+      </div>
+      {/* Controls: mic toggle + composer, styled like the WebSocket controls */}
+      <div className="flex items-center gap-2 shrink-0">
+        <Button
+          variant={micOn ? "default" : "secondary"}
           onClick={() => void toggleMic()}
           aria-pressed={micOn}
-          className="rounded-full w-11 h-11 shrink-0 text-lg"
-          style={{
-            background: micOn ? "#dc2626" : theme.primary,
-            color: "#fff",
-          }}
+          style={micOn ? { background: ERROR_COLOR, borderColor: "transparent" } : undefined}
           title={micOn ? "Stop listening" : "Start listening"}
         >
-          {micOn ? "■" : "\u{1F3A4}"}
-        </button>
+          <span
+            className={clsx("w-2 h-2 rounded-full mr-2", micOn && "animate-pulse")}
+            style={{ background: micOn ? "#fff" : ERROR_COLOR }}
+          />
+          {micOn ? "Stop listening" : "Start listening"}
+        </Button>
         <input
-          className="flex-1 rounded-lg px-3 py-2 text-sm border bg-transparent"
+          className="flex-1 h-9 rounded-aai px-3 text-sm border bg-transparent outline-none"
           style={{ borderColor: theme.border, color: theme.text }}
           placeholder="Type a message…"
           value={draft}
@@ -205,16 +267,10 @@ export function SyncChatView({
             if (e.key === "Enter") sendDraft();
           }}
         />
-        <button
-          type="button"
-          onClick={sendDraft}
-          disabled={busy || draft.trim().length === 0}
-          className="rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50"
-          style={{ background: theme.primary, color: "#fff" }}
-        >
+        <Button onClick={sendDraft} disabled={busy || draft.trim().length === 0}>
           Send
-        </button>
-      </footer>
+        </Button>
+      </div>
     </div>
   );
 }

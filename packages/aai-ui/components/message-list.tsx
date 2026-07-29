@@ -24,8 +24,13 @@ const DOT_STYLES: CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
   animationDelay: `${delay}s`,
 }));
 
-/** Animated three-dot "thinking" indicator. */
-function ThinkingDots(): ReactNode {
+/**
+ * Animated three-dot "thinking" indicator. Shared with the sync-transport
+ * chat shell so both defaults render the same wait state.
+ *
+ * @internal
+ */
+export function ThinkingDots(): ReactNode {
   return (
     <div
       className="flex items-center gap-2 text-sm font-medium min-h-5"
@@ -83,8 +88,13 @@ type RowTheme = { text: string; border: string; primary: string; surface: string
  * list: message objects and the theme are referentially stable across
  * snapshots, and rows are keyed on stable ids (`ChatMessage.id`) that survive
  * the sliding 200-message window.
+ *
+ * Exported for the sync-transport chat shell, which renders the same rows
+ * from client-held history instead of a session snapshot.
+ *
+ * @internal
  */
-const MessageBubble = memo(function MessageBubble({
+export const MessageBubble = memo(function MessageBubble({
   message,
   theme,
 }: {

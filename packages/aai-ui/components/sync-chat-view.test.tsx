@@ -154,7 +154,7 @@ describe("SyncChatView", () => {
 
     // An endpointed utterance flips the busy indicator on…
     act(() => opts?.onSpeechEnd?.());
-    expect(screen.getByText("Thinking…")).toBeTruthy();
+    expect(screen.getByTestId("thinking")).toBeTruthy();
     // …and a capture failure surfaces without killing the mic.
     act(() => opts?.onError?.(new Error("mic glitch")));
     expect(screen.getByText("mic glitch")).toBeTruthy();
