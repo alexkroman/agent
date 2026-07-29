@@ -221,18 +221,36 @@ export interface ConsumeLlmStreamParams {
   onStepPersisted?: (() => void) | undefined;
 }
 
+/** Outcome of one {@link consumeLlmStream} turn. */
+export interface LlmStreamResult {
+  /**
+   * Response messages of every step that COMPLETED, for history.
+   *
+   * On abort or stream error this holds the steps finished before the
+   * interruption (tool calls with their results) — never `undefined` — so
+   * barge-in does not erase work already done: the next turn's LLM still sees
+   * which tools ran and what they returned. An in-flight step is dropped whole
+   * (no dangling tool call without its result).
+   */
+  messages: ModelMessage[];
+  /**
+   * The stream errored out rather than completing or being aborted.
+   *
+   * The caller needs this to speak a recovery phrase: a failed turn usually
+   * produces no text at all, so nothing reaches TTS and the caller hears
+   * silence. An empty `messages` array cannot express it — a successful turn
+   * that produced no tool steps looks identical. A deliberate barge-in is NOT
+   * a failure; it has its own recovery path.
+   */
+  failed: boolean;
+}
+
 /**
  * Run one `streamText` turn against the LLM, fan its stream parts out via
  * {@link createStreamPartHandler}, and return the accumulated response
- * messages (for history) once the stream completes.
- *
- * On abort or stream error, returns the response messages of every step that
- * COMPLETED before the interruption (tool calls with their results) — never
- * `undefined` — so barge-in does not erase work already done: the next turn's
- * LLM still sees which tools ran and what they returned. An in-flight step is
- * dropped whole (no dangling tool call without its result).
+ * messages plus whether the stream failed.
  */
-export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<ModelMessage[]> {
+export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<LlmStreamResult> {
   const {
     llm,
     systemPrompt,
@@ -317,7 +335,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     // `result.steps` below, both of which follow the last stream part.
     handler.dispose();
     // Aborted turns skip the flush — TTS is being cancelled anyway.
-    if (ctl.signal.aborted) return collected;
+    if (ctl.signal.aborted) return { messages: collected, failed: false };
     ttsText.flush();
     // Gather every step's response messages (assistant tool-call + `tool`
     // result + text) so tool context carries into the next turn. Top-level
@@ -325,17 +343,23 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     // Preferred over `collected` on the happy path in case a final step
     // resolves after the stream ends but before its onStepFinish fires.
     const steps = await result.steps;
-    return steps.flatMap((step) => step.response.messages);
+    return {
+      messages: steps.flatMap((step) => step.response.messages),
+      // A stream can end without throwing having emitted nothing but an `error`
+      // part, which is still a turn the caller never heard a reply to.
+      failed: handler.errored(),
+    };
   } catch (err: unknown) {
-    if (!ctl.signal.aborted) {
-      // Flush buffered TTS text so speech matches the transcript already
-      // accumulated via onDelta for the pre-error portion of the turn.
-      ttsText.flush();
-      const msg = errorMessage(err);
-      log.error("LLM streamText failed", { error: msg, sid, ...llmErrorDetails(err) });
-      emitError("llm", msg);
-    }
-    return collected;
+    // A barge-in is not a failure — it has its own recovery path, and an
+    // apology on top of a deliberate interruption would be wrong.
+    if (ctl.signal.aborted) return { messages: collected, failed: false };
+    // Flush buffered TTS text so speech matches the transcript already
+    // accumulated via onDelta for the pre-error portion of the turn.
+    ttsText.flush();
+    const msg = errorMessage(err);
+    log.error("LLM streamText failed", { error: msg, sid, ...llmErrorDetails(err) });
+    emitError("llm", msg);
+    return { messages: collected, failed: true };
   } finally {
     // The turn is over on every path (completed, aborted, errored) — no
     // dead-air filler may fire into the silence that follows it.

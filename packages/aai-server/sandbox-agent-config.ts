@@ -58,6 +58,7 @@ export function toRuntimeAgent(config: IsolateConfig): RuntimeAgent {
       endpointSettleMs: config.endpointSettleMs,
       completeSettleMs: config.completeSettleMs,
       holdPhrase: config.holdPhrase,
+      errorPhrase: config.errorPhrase,
       falseInterruptionTimeoutMs: config.falseInterruptionTimeoutMs,
       toolChoice: config.toolChoice satisfies ToolChoice | undefined,
       builtinTools: config.builtinTools as BuiltinTool[] | undefined,

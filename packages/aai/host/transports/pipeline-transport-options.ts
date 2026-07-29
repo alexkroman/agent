@@ -10,6 +10,7 @@ import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
   DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
   DEFAULT_ENDPOINT_SETTLE_MS,
+  DEFAULT_ERROR_PHRASE,
   DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
   DEFAULT_HOLD_PHRASE,
   DEFAULT_MAX_STEPS,
@@ -90,6 +91,11 @@ export interface PipelineTransportOptions {
    */
   holdPhrase?: string | undefined;
   /**
+   * Phrase spoken when the turn's LLM stream fails. Defaults to
+   * {@link DEFAULT_ERROR_PHRASE}; `""` disables.
+   */
+  errorPhrase?: string | undefined;
+  /**
    * False-interruption recovery window (ms): when a barge-in aborts the
    * in-flight reply but no user turn commits within this window, the agent
    * resumes the interrupted reply via a synthetic continuation turn.
@@ -134,6 +140,7 @@ export interface ResolvedPipelineOptions {
   endpointSettleMs: number;
   completeSettleMs: number;
   holdPhrase: string;
+  errorPhrase: string;
   falseInterruptionTimeoutMs: number;
   toolChoice: ToolChoice;
   toolSchemas: readonly ToolSchema[];
@@ -155,6 +162,10 @@ export function resolvePipelineOptions(opts: PipelineTransportOptions): Resolved
     // the text reply, so text-only sessions force it off. (An explicit
     // holdPhrase with tts: none() is already rejected at config time.)
     holdPhrase: opts.tts === null ? "" : (opts.holdPhrase ?? DEFAULT_HOLD_PHRASE),
+    // Unlike holdPhrase, NOT forced off for text-only: a failed turn otherwise
+    // produces no reply at all, and "something went wrong" is as useful in text
+    // as in speech.
+    errorPhrase: opts.errorPhrase ?? DEFAULT_ERROR_PHRASE,
     falseInterruptionTimeoutMs:
       opts.falseInterruptionTimeoutMs ?? DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
     toolChoice: opts.toolChoice ?? "auto",

@@ -281,6 +281,13 @@ export type AgentDef<S = Record<string, unknown>> = {
    */
   holdPhrase?: string;
   /**
+   * Pipeline mode only. Phrase spoken when the turn's LLM stream fails, so a
+   * provider outage hands the conversation back instead of going silent — a
+   * failed turn produces no text, so nothing would otherwise reach TTS.
+   * Defaults to {@link DEFAULT_ERROR_PHRASE}; set `""` to disable.
+   */
+  errorPhrase?: string;
+  /**
    * Pipeline mode only. False-interruption recovery window (ms): when a
    * barge-in aborts the agent's reply but no user turn commits within this
    * window (STT noise, hallucinated partial), the agent resumes the

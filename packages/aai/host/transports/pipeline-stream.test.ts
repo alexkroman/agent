@@ -197,6 +197,77 @@ describe("LLM stream error reporting", () => {
       expect.objectContaining({ statusCode: 500 }),
     );
   });
+
+  test("reports failed: true so the caller can speak a recovery phrase", async () => {
+    // A failed turn produces no text, so nothing reaches TTS and the caller
+    // hears silence. The transport speaks `errorPhrase` instead — but it can
+    // only do that if it can tell a failed turn from an empty successful one,
+    // which the message array alone cannot express.
+    const result = await consumeLlmStream({
+      llm: createFakeLanguageModel({ script: [{ type: "error", error: apiError() }] }),
+      systemPrompt: "s",
+      messages: [{ role: "user", content: "hi" }],
+      tools: {},
+      toolChoice: "auto",
+      temperature: undefined,
+      repairToolCall: async () => null,
+      maxSteps: 1,
+      sendTtsText: () => undefined,
+      callbacks: { onToolCall: () => undefined },
+      emitError: () => undefined,
+      log: silentLogger,
+      sid: "sid-4",
+      ctl: new AbortController(),
+      onDelta: () => undefined,
+    });
+    expect(result.failed).toBe(true);
+  });
+
+  test("reports failed: false for a turn that completed", async () => {
+    const result = await consumeLlmStream({
+      llm: createFakeLanguageModel({ script: [{ type: "text", text: "all good" }] }),
+      systemPrompt: "s",
+      messages: [{ role: "user", content: "hi" }],
+      tools: {},
+      toolChoice: "auto",
+      temperature: undefined,
+      repairToolCall: async () => null,
+      maxSteps: 1,
+      sendTtsText: () => undefined,
+      callbacks: { onToolCall: () => undefined },
+      emitError: () => undefined,
+      log: silentLogger,
+      sid: "sid-5",
+      ctl: new AbortController(),
+      onDelta: () => undefined,
+    });
+    expect(result.failed).toBe(false);
+  });
+
+  test("an aborted turn is not a failure", async () => {
+    // Barge-in already has its own recovery path (persistInterruptedTurn); an
+    // apology on top of a deliberate interruption would be wrong.
+    const ctl = new AbortController();
+    ctl.abort();
+    const result = await consumeLlmStream({
+      llm: createFakeLanguageModel({ script: [{ type: "text", text: "hi" }] }),
+      systemPrompt: "s",
+      messages: [{ role: "user", content: "hi" }],
+      tools: {},
+      toolChoice: "auto",
+      temperature: undefined,
+      repairToolCall: async () => null,
+      maxSteps: 1,
+      sendTtsText: () => undefined,
+      callbacks: { onToolCall: () => undefined },
+      emitError: () => undefined,
+      log: silentLogger,
+      sid: "sid-6",
+      ctl,
+      onDelta: () => undefined,
+    });
+    expect(result.failed).toBe(false);
+  });
 });
 
 describe("createStreamPartHandler dead-air cover", () => {

@@ -104,6 +104,17 @@ export type StreamPartHandler = {
   handle(part: StreamPart): void;
   /** Release turn-scoped resources (timers). Idempotent; call when the turn ends. */
   dispose(): void;
+  /**
+   * An `error` part arrived during this turn.
+   *
+   * A provider failure reaches the host two different ways: as this stream part
+   * (logged "LLM stream error") and, when it leaves the turn with no output, as
+   * a thrown `No output generated`. A gateway 500 produces both. The caller
+   * speaks a recovery phrase on either, so it needs the part-level signal too —
+   * the stream can otherwise end "successfully" having emitted nothing but an
+   * error.
+   */
+  errored(): boolean;
 };
 
 /**
@@ -125,6 +136,8 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   // already injected the hold phrase — so it fires at most once, only when the
   // turn opens with a tool call and no speech.
   let spokeText = false;
+  // An `error` part arrived — see StreamPartHandler.errored.
+  let errored = false;
   let holdEmitted = false;
   // Dead-air cover: how many fillers this turn has spoken, which sets both the
   // next phrase and the (exponentially backed-off) wait before it.
@@ -242,6 +255,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         emitToolResult(part);
         return;
       case "error": {
+        errored = true;
         const msg = errorMessage(part.error);
         log.error("LLM stream error", { message: msg, sid, ...llmErrorDetails(part.error) });
         emitError("llm", msg);
@@ -252,5 +266,5 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     }
   }
 
-  return { handle, dispose };
+  return { handle, dispose, errored: () => errored };
 }

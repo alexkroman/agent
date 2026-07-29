@@ -129,6 +129,13 @@ export function agent(def: {
    */
   holdPhrase?: string;
   /**
+   * Pipeline mode only. Phrase spoken when the turn's LLM stream fails, so the
+   * caller hears something instead of silence. Defaults to
+   * `"Sorry, I had a problem just then. Could you say that again?"`; set `""`
+   * to disable.
+   */
+  errorPhrase?: string;
+  /**
    * Pipeline mode only. Resume the interrupted reply when a barge-in turns
    * out to be false (no user turn commits within this many ms). Defaults to
    * 2000; 0 disables recovery.

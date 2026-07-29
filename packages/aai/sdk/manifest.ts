@@ -100,6 +100,11 @@ export type Manifest = {
    */
   holdPhrase?: string | undefined;
   /**
+   * Pipeline mode only. Phrase spoken when the turn's LLM stream fails.
+   * Default {@link DEFAULT_ERROR_PHRASE}; `""` disables.
+   */
+  errorPhrase?: string | undefined;
+  /**
    * Pipeline mode only. False-interruption recovery window (ms). Default
    * 2000; 0 disables recovery.
    */
@@ -196,6 +201,8 @@ const ManifestSchema = z.object({
   completeSettleMs: z.number().int().nonnegative().optional(),
   // "" is the documented "disable the hold phrase" value — no min(1).
   holdPhrase: z.string().optional(),
+  // "" is the documented "disable the error phrase" value — no min(1).
+  errorPhrase: z.string().optional(),
   falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
   theme: z.record(z.string(), z.string()).optional(),
   tools: z.record(z.string(), ToolManifestSchema).optional(),

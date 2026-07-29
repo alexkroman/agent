@@ -7,19 +7,19 @@
 // which is S2S-only). `sendToolResult` is a no-op because results are
 // already handled by streamText.
 
-import type { ModelMessage } from "ai";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
-import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
+import { createPipelineHistory } from "./pipeline-history.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
 import {
   createPlaybackClock,
   flushTtsAndWait,
+  type LlmStreamResult,
   consumeLlmStream as runLlmStream,
 } from "./pipeline-stream.ts";
 import { createFileTranscriber } from "./pipeline-transcribe.ts";
@@ -28,6 +28,7 @@ import {
   resolvePipelineOptions,
 } from "./pipeline-transport-options.ts";
 import { createTurnGate, linkAbort } from "./pipeline-turn-gate.ts";
+import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
 import type { Transport } from "./types.ts";
 
@@ -45,6 +46,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     endpointSettleMs,
     completeSettleMs,
     holdPhrase,
+    errorPhrase,
     falseInterruptionTimeoutMs,
     toolChoice,
     toolSchemas,
@@ -224,11 +226,23 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     providers.tts?.sendText(text);
   }
 
+  // How a turn is wrapped up once its stream settles — interrupted, failed, or
+  // spoken. See pipeline-turn-outcome.ts.
+  const outcome = createTurnOutcome({
+    history,
+    callbacks,
+    providers,
+    gate,
+    holdPhrase,
+    errorPhrase,
+    sendTtsText,
+  });
+
   const consumeLlmStream = (
     ctl: AbortController,
     onDelta: (delta: string) => void,
     onStepPersisted?: () => void,
-  ): Promise<ModelMessage[]> =>
+  ): Promise<LlmStreamResult> =>
     runLlmStream({
       llm: opts.llm,
       systemPrompt,
@@ -307,24 +321,17 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       const onDelta = (delta: string): void => {
         accumulated += delta;
       };
-      const responseMessages = await consumeLlmStream(ctl, onDelta, () => {
+      const { messages: responseMessages, failed } = await consumeLlmStream(ctl, onDelta, () => {
         persistedLen = accumulated.length;
       });
 
       if (ctl.signal.aborted) {
-        // Barge-in mid-turn: keep the completed tool steps and the
-        // spoken-so-far text — see persistInterruptedTurn.
-        if (gate.historyCurrent(historyEpoch)) {
-          persistInterruptedTurn({
-            history,
-            accumulated,
-            persistedLen,
-            stepMessages: responseMessages,
-            holdPhrase,
-            onTranscript: (text) => callbacks.onAgentTranscript(text, true),
-            updateAgentContext: (text) => providers.stt?.updateAgentContext?.(text),
-          });
-        }
+        outcome.persistBargeIn({
+          historyEpoch,
+          accumulated,
+          persistedLen,
+          stepMessages: responseMessages,
+        });
         return false;
       }
 
@@ -332,12 +339,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // the next turn retains tool context, not just the spoken transcript.
       if (responseMessages.length > 0) history.pushLlm(...responseMessages);
 
+      if (outcome.speakRecovery(failed)) return true;
+
       if (accumulated.length === 0) return false;
-      callbacks.onAgentTranscript(accumulated, false);
-      history.pushConversation({ role: "assistant", content: accumulated });
-      // Seed the STT provider with the agent's side of the dialog (AssemblyAI
-      // Universal-3.5 Pro only; other providers have no such hook).
-      providers.stt?.updateAgentContext?.(accumulated);
+      outcome.finishSpokenTurn(accumulated);
       return true;
     });
   }

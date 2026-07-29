@@ -38,6 +38,7 @@ export const IsolateConfigSchema = z
     endpointSettleMs: z.number().int().nonnegative().optional(),
     completeSettleMs: z.number().int().nonnegative().optional(),
     holdPhrase: z.string().optional(),
+    errorPhrase: z.string().optional(),
     falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
     maxSteps: z.number().optional(),
     idleTimeoutMs: z.number().int().nonnegative().optional(),

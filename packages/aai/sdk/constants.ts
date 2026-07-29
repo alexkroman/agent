@@ -181,6 +181,22 @@ export const DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS = 2000;
 export const DEFAULT_HOLD_PHRASE = "One moment.";
 
 /**
+ * Spoken when a pipeline turn's LLM stream fails, so a provider outage is a
+ * recoverable moment in the conversation instead of a dead line.
+ *
+ * Without it the caller hears nothing at all: a failed turn produces no text,
+ * so nothing reaches TTS, and the only trace is a `llm` session error the
+ * browser surfaces silently. Observed against the AssemblyAI LLM Gateway
+ * returning 429 and 500 — three SDK retry attempts, then a turn that simply
+ * never speaks.
+ *
+ * Asks the user to repeat rather than just apologizing: the session is still
+ * live and the next turn usually succeeds, so the useful thing is to hand the
+ * conversation back. `""` disables it.
+ */
+export const DEFAULT_ERROR_PHRASE = "Sorry, I had a problem just then. Could you say that again?";
+
+/**
  * How long a pipeline turn may send nothing to TTS while tools run before the
  * transport speaks a {@link DEAD_AIR_COVER_PHRASES} filler.
  *

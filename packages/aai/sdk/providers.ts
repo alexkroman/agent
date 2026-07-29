@@ -168,6 +168,7 @@ export type PipelineTuning = {
   endpointSettleMs?: number | undefined;
   completeSettleMs?: number | undefined;
   holdPhrase?: string | undefined;
+  errorPhrase?: string | undefined;
   falseInterruptionTimeoutMs?: number | undefined;
 };
 
@@ -206,6 +207,9 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
     endpointSettleMs: tuning.endpointSettleMs,
     completeSettleMs: tuning.completeSettleMs,
     holdPhrase: tuning.holdPhrase,
+    // Unlike holdPhrase this is NOT rejected by assertTextOnlyTuning: an error
+    // message is meaningful as text, where synthesized dead-air filler is not.
+    errorPhrase: tuning.errorPhrase,
     falseInterruptionTimeoutMs: tuning.falseInterruptionTimeoutMs,
   };
   for (const [key, value] of Object.entries(fields)) {
