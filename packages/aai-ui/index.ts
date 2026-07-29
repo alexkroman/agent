@@ -37,6 +37,28 @@ export type {
 // Session core (for advanced use)
 export { createSessionCore } from "./session-core.ts";
 
+// Sync mode (HTTP turns, WebRTC mic + client-side VAD — no WebSocket)
+export {
+  DEFAULT_SYNC_MIC_SAMPLE_RATE,
+  floatToPcm16,
+  type SyncMicrophone,
+  type SyncMicrophoneOptions,
+  startSyncMicrophone,
+} from "./sync-mic.ts";
+export {
+  base64ToPcm16,
+  createSyncSession,
+  pcm16ToBase64,
+  type SyncSession,
+  type SyncSessionOptions,
+  type SyncTurnResult,
+} from "./sync-session.ts";
+export {
+  createUtteranceDetector,
+  type UtteranceDetector,
+  type UtteranceDetectorOptions,
+} from "./sync-vad.ts";
+
 // Types
 export type {
   AgentState,

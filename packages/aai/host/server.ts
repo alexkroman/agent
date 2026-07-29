@@ -15,7 +15,8 @@ import path from "node:path";
 import escapeHtml from "escape-html";
 import { lookup as mimeLookup } from "mime-types";
 import { WebSocketServer } from "ws";
-import { AGENT_CSP, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
+import { AGENT_CSP, MAX_SYNC_BODY_BYTES, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
+import { SyncTurnRequestSchema } from "../sdk/sync.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
@@ -23,6 +24,7 @@ import { isHostAllowed, startHostSession } from "./host-mode.ts";
 import type { Runtime } from "./runtime.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
+import { SyncTurnError } from "./sync-turn.ts";
 import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 
 export { createRuntime, type Runtime, type RuntimeOptions } from "./runtime.ts";
@@ -95,6 +97,66 @@ function sendJson(res: http.ServerResponse, status: number, body: unknown): void
   res.end(JSON.stringify(body));
 }
 
+/**
+ * Read a request body up to `maxBytes`. Rejects with a {@link SyncTurnError}
+ * carrying 413 when the cap is exceeded, so the caller's error mapping
+ * answers with the right status instead of a generic 500.
+ */
+function readBody(req: http.IncomingMessage, maxBytes: number): Promise<Buffer> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (chunk: Buffer) => {
+      size += chunk.byteLength;
+      if (size > maxBytes) {
+        req.destroy();
+        reject(new SyncTurnError("request body too large", { status: 413 }));
+        return;
+      }
+      chunks.push(chunk);
+    });
+    req.on("end", () => resolve(Buffer.concat(chunks)));
+    req.on("error", reject);
+  });
+}
+
+/**
+ * `POST /sync` — one connectionless conversational turn (see
+ * `host/sync-turn.ts`). Body and response are the Zod-validated shapes in
+ * `sdk/sync.ts`; provider/mode failures map to the {@link SyncTurnError}
+ * status, malformed input to 400.
+ */
+async function handleSyncTurn(
+  runtime: Runtime,
+  req: http.IncomingMessage,
+  res: http.ServerResponse,
+): Promise<void> {
+  let response: unknown;
+  try {
+    const body = await readBody(req, MAX_SYNC_BODY_BYTES);
+    let json: unknown;
+    try {
+      json = JSON.parse(body.toString("utf8"));
+    } catch {
+      sendJson(res, 400, { error: "invalid JSON body" });
+      return;
+    }
+    const parsed = SyncTurnRequestSchema.safeParse(json);
+    if (!parsed.success) {
+      sendJson(res, 400, { error: parsed.error.issues[0]?.message ?? "invalid request" });
+      return;
+    }
+    response = await runtime.runSyncTurn(parsed.data);
+  } catch (err) {
+    if (err instanceof SyncTurnError) {
+      sendJson(res, err.status, { error: err.message });
+      return;
+    }
+    throw err;
+  }
+  sendJson(res, 200, response);
+}
+
 async function serveStatic(
   dir: string,
   req: http.IncomingMessage,
@@ -159,6 +221,11 @@ export function createServer(options: ServerOptions): AgentServer {
     url: string,
     method: string,
   ): Promise<void> {
+    if (method === "POST" && url === "/sync") {
+      await handleSyncTurn(runtime, req, res);
+      return;
+    }
+
     if (clientDir && (await serveStatic(clientDir, req, res, logger))) return;
 
     if (method === "GET" && url === "/") {

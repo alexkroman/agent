@@ -17,6 +17,17 @@ import {
   MAX_TRANSCRIPT_CHARS,
 } from "./constants.ts";
 
+// The sync-turn HTTP wire format lives beside this module and is part of the
+// same protocol surface — re-exported so clients import one subpath.
+export {
+  type SyncHistoryMessage,
+  SyncHistoryMessageSchema,
+  type SyncTurnRequest,
+  SyncTurnRequestSchema,
+  type SyncTurnResponse,
+  SyncTurnResponseSchema,
+} from "./sync.ts";
+
 /**
  * Audio codec identifier used in the wire protocol.
  *

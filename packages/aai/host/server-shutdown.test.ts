@@ -12,6 +12,7 @@ function createMockRuntime(): Runtime {
     executeTool: vi.fn().mockResolvedValue(""),
     toolSchemas: [],
     createSession: vi.fn() as Runtime["createSession"],
+    runSyncTurn: vi.fn().mockRejectedValue(new Error("not implemented")),
     readyConfig: { audioFormat: "pcm16" as const, sampleRate: 16_000, ttsSampleRate: 24_000 },
     startSession: vi.fn(),
     shutdown: (...args: Parameters<Runtime["shutdown"]>) => mockShutdown(...args),

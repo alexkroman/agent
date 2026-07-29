@@ -495,6 +495,29 @@ Each agent runs in one of two session modes, selected at parse time by
 Partial provider configs are rejected at parse time — `parseManifest()`
 requires either zero or all three of `stt`/`llm`/`tts`.
 
+- **Sync mode** (pipeline agents only) is a connectionless *transport*, not
+  a third session mode: `POST /sync` on the self-hosted server runs one
+  complete conversational turn per HTTP request with **no WebSockets on
+  either leg** — not browser→server, not server→providers. The client
+  endpoints speech itself and sends one utterance (base64 PCM16) or
+  committed text plus the conversation history (the server holds no session
+  state between turns); the response carries the transcript, the reply, and
+  the spoken reply when available. Provider calls are all one-shot HTTP:
+  STT via `SttOpener.transcribeClip` (AssemblyAI Sync API — providers
+  without it 422 on audio input), the LLM loop via `streamText` drained
+  server-side (tools execute exactly as on the pipeline path), TTS via
+  `TtsOpener.synthesizeClip` (Cartesia `/tts/bytes`; providers without it
+  degrade to a text-only reply, a synthesis *failure* degrades to
+  `ttsError` alongside the intact text reply). Key files:
+  `host/sync-turn.ts` (runner + `SyncTurnError` status mapping),
+  `sdk/sync.ts` (wire schemas, exported from `/protocol`),
+  `runtime.runSyncTurn` (rejects 409 for S2S agents). In `aai-ui`:
+  `createSyncSession` (HTTP turns, client-held history, turn queue),
+  `startSyncMicrophone` (WebRTC `getUserMedia` voice-processing capture
+  through an inline data-URI AudioWorklet), `createUtteranceDetector`
+  (`sync-vad.ts`, pure energy-VAD state machine — browser-API-free and the
+  reason the mic glue stays thin).
+
 - **Text-only mode** (`tts: none()` from `@alexkroman1/aai/tts`) is
   pipeline mode without a synthesis side: speech in (STT → LLM), text out.
   The sentinel descriptor keeps the all-or-none triple rule intact (a

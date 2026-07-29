@@ -39,6 +39,7 @@ import {
 } from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
+import { createSyncTurnRunner, SyncTurnError } from "./sync-turn.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
@@ -236,6 +237,28 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     return promptCache.text;
   }
 
+  // Sync turns (`POST /sync`) reuse the same resolved pipeline providers,
+  // tool executor, and cached system prompt the WebSocket sessions run on —
+  // one credential path, one tool surface, two transports.
+  const runSyncTurn: Runtime["runSyncTurn"] = pipelineProviders
+    ? createSyncTurnRunner({
+        agentConfig,
+        providers: pipelineProviders,
+        env: providerEnv,
+        toolSchemas,
+        executeTool,
+        systemPrompt: () => systemPromptForToday(),
+        fetch: opts.fetch,
+        ttsSampleRate: s2sConfig.outputSampleRate,
+        logger,
+      })
+    : () =>
+        Promise.reject(
+          new SyncTurnError("sync turns require pipeline mode (stt, llm, and tts all set)", {
+            status: 409,
+          }),
+        );
+
   function createSession(sessionOpts: TransportSessionOpts): SessionCore {
     sinkMap.set(sessionOpts.id, sessionOpts.client);
 
@@ -413,6 +436,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     toolSchemas,
     createSession,
     startSession,
+    runSyncTurn,
     shutdown,
     readyConfig,
   };
