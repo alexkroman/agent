@@ -136,14 +136,59 @@ describe("idle sandbox eviction", () => {
     attachSandbox(cache, slot, sandbox);
 
     // A live session pauses idle eviction indefinitely.
-    acquireSlotSession(cache, "busy");
+    const acquired = acquireSlotSession(cache, "busy");
+    expect(acquired).toBe(slot);
     await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS * 3);
     expect(sandbox.shutdown).not.toHaveBeenCalled();
 
     // Releasing the last session rearms the timer.
-    releaseSlotSession(cache, "busy");
+    releaseSlotSession(cache, acquired);
     await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
     expect(sandbox.shutdown).toHaveBeenCalledOnce();
+  });
+
+  it("a stale release from before a redeploy cannot idle-evict the new sandbox", async () => {
+    const cache = createSlotCache();
+    const oldSlot = makeSlot("agent");
+    setSlot(cache, oldSlot);
+    attachSandbox(cache, oldSlot, makeSandbox());
+
+    // Session O goes live on the old slot.
+    const handleO = acquireSlotSession(cache, "agent");
+
+    // Redeploy: old slot terminated, replaced by a fresh slot object
+    // (deploy.ts resets the counter), new sandbox attached.
+    await terminateSlot(oldSlot);
+    const newSlot = makeSlot("agent");
+    setSlot(cache, newSlot);
+    const newSandbox = makeSandbox();
+    attachSandbox(cache, newSlot, newSandbox);
+
+    // Session N goes live on the new slot.
+    const handleN = acquireSlotSession(cache, "agent");
+    expect(handleN).toBe(newSlot);
+
+    // O's socket finally closes. Its release targets the OLD slot only — it
+    // must not decrement the new slot's counter or rearm its idle timer.
+    releaseSlotSession(cache, handleO);
+    expect(newSlot.activeSessions).toBe(1);
+    expect(newSlot.idleTimer).toBeUndefined();
+
+    // N stays alive well past the idle window.
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS * 3);
+    expect(newSandbox.shutdown).not.toHaveBeenCalled();
+
+    // Releasing N (the real last session) rearms eviction as usual.
+    releaseSlotSession(cache, handleN);
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+    expect(newSandbox.shutdown).toHaveBeenCalledOnce();
+  });
+
+  it("acquire returns null and release tolerates it for an unknown slug", () => {
+    const cache = createSlotCache();
+    const acquired = acquireSlotSession(cache, "missing");
+    expect(acquired).toBeNull();
+    expect(() => releaseSlotSession(cache, acquired)).not.toThrow();
   });
 
   it("terminateSlot clears the idle timer to avoid leaks", async () => {

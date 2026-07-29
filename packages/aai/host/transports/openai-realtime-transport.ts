@@ -392,7 +392,10 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       send({ type: "response.cancel" });
       replyInFlight = false;
       clearTurnBuffers();
-      opts.callbacks.onCancelled();
+      // Do NOT call callbacks.onCancelled() here — session-core.onCancel
+      // (client-initiated, the only cancelReply caller) emits `cancelled`
+      // itself, so firing it here double-emits the frame. The S2S and
+      // pipeline transports follow the same rule.
     },
   };
 }

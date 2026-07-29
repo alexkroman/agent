@@ -37,7 +37,11 @@ import type { StudioSandbox } from "./studio-sandbox.ts";
 import { createWebTools } from "./studio-web.ts";
 import { currentFilesHash } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
+<<<<<<< HEAD
 import { createWorkspaceSession, type WorkspaceSession } from "./studio-workspace-session.ts";
+=======
+import { withWorkspaceLock } from "./studio-workspace-lock.ts";
+>>>>>>> 692c230 (Fix race conditions and concurrency issues across all packages)
 
 const MAX_CHAT_STEPS = 16;
 
@@ -55,6 +59,7 @@ export type StudioChatDeps = {
   disposeSandbox?: () => Promise<void>;
   /** Injectable for tests — defaults to the host-env selected provider. */
   model?: LanguageModel;
+<<<<<<< HEAD
   /**
    * Injectable for tests — defaults to the configured MCP servers. A promise
    * is accepted so the route can start the connect early and hand it in;
@@ -63,6 +68,37 @@ export type StudioChatDeps = {
   mcp?: McpSession | Promise<McpSession>;
 };
 
+=======
+  /** Injectable for tests — defaults to the configured MCP servers. */
+  mcp?: McpSession;
+  /**
+   * Client-abort signal (the HTTP request's). Lets streamText stop the LLM
+   * call and in-flight tool executions promptly instead of leaving them to
+   * race the sandbox/MCP teardown.
+   */
+  abortSignal?: AbortSignal;
+};
+
+type WorkspaceEdit = (files: Record<string, string>) => string | Promise<string>;
+
+/** Invoke one agent tool in the sandbox, reporting failures as text. */
+async function trialToolRun(
+  sandbox: StudioSandbox,
+  name: string,
+  args: Record<string, unknown>,
+): Promise<string> {
+  try {
+    const output = await sandbox.executeTool(name, args);
+    return `${name}(${JSON.stringify(args)}) → ${output}`;
+  } catch (err) {
+    // A stream abort disposes the sandbox mid round-trip; the pending RPC
+    // rejects ("Connection disposed"). Answer as tool-result text rather
+    // than letting the rejection rattle through the AI SDK tool machinery.
+    return `Tool run failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
+}
+
+>>>>>>> 692c230 (Fix race conditions and concurrency issues across all packages)
 /** Build the workspace, load it in the session sandbox, and report back. */
 async function runTrial(
   deps: StudioChatDeps,
@@ -113,8 +149,7 @@ async function runTrial(
   if (!toolNames.includes(trialTool)) {
     return `${summary}\nCannot invoke "${trialTool}": not one of the agent's tools.`;
   }
-  const output = await sandbox.executeTool(trialTool, args ?? {});
-  return `${summary}\n${trialTool}(${JSON.stringify(args ?? {})}) → ${output}`;
+  return `${summary}\n${await trialToolRun(sandbox, trialTool, args ?? {})}`;
 }
 
 /**
@@ -124,12 +159,36 @@ async function runTrial(
  * through — the browser sees edits immediately and a Publish always builds
  * the latest files.
  */
+<<<<<<< HEAD
 export function createStudioTools(
   deps: StudioChatDeps,
   workspaces: WorkspaceSession = createWorkspaceSession(deps.storage, deps.scope, deps.project),
 ) {
   const { project } = deps;
   const withFiles = workspaces.update;
+=======
+export function createStudioTools(deps: StudioChatDeps) {
+  const { storage, scope, project } = deps;
+
+  // Under the workspace lock: the AI SDK executes tool calls from one
+  // assistant step concurrently, so two unserialized read-modify-writes
+  // would both read the same snapshot and the second put would drop the
+  // first's change.
+  function withFiles(edit: WorkspaceEdit): Promise<string> {
+    return withWorkspaceLock(scope, project, async () => {
+      const workspace = await getWorkspace(storage, scope, project);
+      if (!workspace) return `Error: project ${project} not found`;
+      const files = { ...workspace.files };
+      try {
+        const message = await edit(files);
+        await putWorkspace(storage, scope, project, { ...workspace, files });
+        return message;
+      } catch (err) {
+        return `Error: ${err instanceof Error ? err.message : String(err)}`;
+      }
+    });
+  }
+>>>>>>> 692c230 (Fix race conditions and concurrency issues across all packages)
 
   return {
     list_files: tool({
@@ -287,6 +346,7 @@ export async function runStudioChat(
       // Studio tools last: neither an MCP server nor a web builtin may
       // shadow write_file.
       tools: { ...mcp.tools, ...createWebTools(), ...createStudioTools(deps) },
+      ...(deps.abortSignal && { abortSignal: deps.abortSignal }),
       stopWhen: stepCountIs(MAX_CHAT_STEPS),
       onFinish: disposeSandbox,
       onAbort: disposeSandbox,

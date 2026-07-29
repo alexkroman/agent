@@ -17,13 +17,28 @@
  *
  * Snapshot and restore rather than pinning a value: callers that legitimately
  * run with NODE_ENV=production must keep it.
+ *
+ * The snapshot is refcounted, not per-call: both bundle paths run the worker
+ * and client builds concurrently (`Promise.all`), and independent snapshots
+ * interleave — the second entrant would snapshot the "production" the first
+ * build's Vite just set, and "restore" it after the first exiter deleted it,
+ * flipping the process permanently anyway. So the first entrant snapshots,
+ * later entrants just join, and only the last exiter restores. This keeps the
+ * builds parallel (a mutex serializing them would cost real deploy time).
  */
+let activeBuilds = 0;
+let savedNodeEnv: string | undefined;
+
 export async function withPreservedNodeEnv<T>(fn: () => Promise<T>): Promise<T> {
-  const saved = process.env.NODE_ENV;
+  if (activeBuilds === 0) savedNodeEnv = process.env.NODE_ENV;
+  activeBuilds++;
   try {
     return await fn();
   } finally {
-    if (saved === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = saved;
+    activeBuilds--;
+    if (activeBuilds === 0) {
+      if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
+      else process.env.NODE_ENV = savedNodeEnv;
+    }
   }
 }

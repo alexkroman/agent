@@ -248,6 +248,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     });
   }
 
+<<<<<<< HEAD
   let agentServer: AgentServer;
   try {
     agentServer = await buildServer();
@@ -287,10 +288,17 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   }
 
   let restarting = false;
+=======
+  // `restarting` starts true: startup counts as an in-flight "restart", so a
+  // change event landing during the multi-second boot queues a restart
+  // instead of racing the initial build.
+  let restarting = true;
+>>>>>>> 692c230 (Fix race conditions and concurrency issues across all packages)
   let pendingRestart = false;
   let closed = false;
-  let currentServer: AgentServer = agentServer;
-  const watcher = watchDirectory(cwd, () => {
+  let currentServer: AgentServer;
+
+  function kickRestart(): void {
     // A change during an in-flight restart must not be dropped: flag it so
     // restart() loops once more with the newest files. Otherwise the final
     // save is silently ignored (stale server), or — if the in-flight restart
@@ -310,7 +318,55 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       .finally(() => {
         restarting = false;
       });
-  });
+  }
+
+  // Install the watcher BEFORE the initial build: `ignoreInitial` means an
+  // edit saved during startup (bundle + listen + Vite boot) would otherwise
+  // never fire an event and the dev server would serve stale code until the
+  // next save.
+  const watcher = watchDirectory(cwd, kickRestart);
+
+  let viteServer: ViteDevServer | undefined;
+  try {
+    currentServer = await buildServer();
+    // Loopback by default (the dev server has no auth). AAI_DEV_HOST is the
+    // escape hatch for setups where loopback isn't reachable — e.g. running
+    // `aai dev` inside a container and connecting from the host.
+    await currentServer.listen(backendPort, devBindHost());
+
+    if (hasClient) {
+      const { createServer: createViteServer } = await import("vite");
+      const target = `http://localhost:${backendPort}`;
+      viteServer = await createViteServer({
+        root: cwd,
+        plugins: [fallbackHtmlPlugin(cwd)],
+        server: {
+          port: vitePort,
+          proxy: {
+            "/health": target,
+            "/websocket": { target, ws: true },
+          },
+        },
+      });
+      await viteServer.listen();
+      // Post-listen socket errors would otherwise be an unhandled 'error'
+      // event. (The backend AgentServer keeps its own 'error' listener from
+      // listen(), and exposes no event surface to add logging here.)
+      viteServer.httpServer?.on("error", (err) => {
+        log.error(`Vite dev server error: ${errorMessage(err)}`);
+      });
+    }
+  } catch (err) {
+    // Startup failed — the watcher was already opened, don't leak it.
+    await watcher.close().catch(() => undefined);
+    await viteServer?.close().catch(() => undefined);
+    throw err;
+  }
+
+  // Startup complete: release the queue, and run the one restart an edit
+  // saved during boot asked for.
+  restarting = false;
+  if (pendingRestart) kickRestart();
 
   async function restart(): Promise<void> {
     do {
@@ -345,9 +401,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       /* ignore */
     }
     try {
-      // Bind host matches the initial listen — a restart must not silently
-      // widen the dev server's exposure.
-      await newServer.listen(backendPort, devBindHost());
+      await listenWithRetry(newServer);
       currentServer = newServer;
       if (closed) {
         // Cleanup raced with the swap: it closed the old server, so shut the
@@ -357,11 +411,12 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       }
       log.success("Restarted");
     } catch (err) {
-      log.error(`Restart failed: ${errorMessage(err)}`);
+      log.error(`Restart failed: ${errorMessage(err)} — dev server is down; save a file to retry.`);
       await newServer.close().catch(() => undefined);
     }
   }
 
+<<<<<<< HEAD
   return async () => {
     closed = true;
     // Each close is best-effort: one failing must not leak the others.
@@ -369,5 +424,42 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     await devBuilder.dispose().catch(() => undefined);
     await viteServer?.close().catch(() => undefined);
     await currentServer.close().catch(() => undefined);
+=======
+  /**
+   * Listen with a few short-backoff retries. During the close→listen swap the
+   * port is momentarily free, so another process can snatch it (or the OS can
+   * hold it in TIME_WAIT); one blind attempt would leave the dev server down
+   * until the next file change.
+   */
+  async function listenWithRetry(server: AgentServer): Promise<void> {
+    const LISTEN_ATTEMPTS = 3;
+    const LISTEN_RETRY_DELAY_MS = 250;
+    for (let attempt = 1; ; attempt++) {
+      try {
+        // Bind host matches the initial listen — a restart must not silently
+        // widen the dev server's exposure.
+        await server.listen(backendPort, devBindHost());
+        return;
+      } catch (err) {
+        if (attempt >= LISTEN_ATTEMPTS || closed) throw err;
+        await new Promise((resolve) => setTimeout(resolve, LISTEN_RETRY_DELAY_MS));
+      }
+    }
+  }
+
+  // Idempotent: SIGINT followed by SIGTERM must not run the teardown twice
+  // concurrently (double server close → ERR_SERVER_NOT_RUNNING noise, double
+  // runtime shutdown). The second call joins the in-flight teardown.
+  let cleanupPromise: Promise<void> | undefined;
+  return () => {
+    cleanupPromise ??= (async () => {
+      closed = true;
+      // Each close is best-effort: one failing must not leak the others.
+      await watcher.close().catch(() => undefined);
+      await viteServer?.close().catch(() => undefined);
+      await currentServer.close().catch(() => undefined);
+    })();
+    return cleanupPromise;
+>>>>>>> 692c230 (Fix race conditions and concurrency issues across all packages)
   };
 }

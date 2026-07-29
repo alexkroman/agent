@@ -139,7 +139,9 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
 
   // Re-armed at audio-frame rate, so the coalescing timer matters: it records
   // the deadline and keeps one long-lived timer instead of re-arming a
-  // 5-minute timeout on every chunk.
+  // 5-minute timeout on every chunk. (Its clear() also zeroes the deadline,
+  // so a callback that already fired when stop() ran cannot re-arm and pin
+  // the session for another idleMs.)
   const idleTimer = createCoalescingTimer(() => {
     log.info("session idle timeout", { sid: opts.id });
     emit({ type: "idle_timeout" });

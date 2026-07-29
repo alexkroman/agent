@@ -138,6 +138,21 @@ describe("createStudioTools", () => {
     ).toMatch(/^Error:/);
   });
 
+  test("concurrent tool mutations are serialized — neither write is lost", async () => {
+    // The AI SDK executes tool calls from one assistant step concurrently;
+    // without the workspace lock both reads see the same snapshot and the
+    // second put drops the first's file.
+    const deps = await makeDeps();
+    const tools = createStudioTools(deps);
+    await Promise.all([
+      tools.write_file.execute?.({ path: "a.ts", content: "a" }, toolOpts()),
+      tools.write_file.execute?.({ path: "b.ts", content: "b" }, toolOpts()),
+    ]);
+    const ws = await getWorkspace(deps.storage, SCOPE, PROJECT);
+    expect(ws?.files["a.ts"]).toBe("a");
+    expect(ws?.files["b.ts"]).toBe("b");
+  });
+
   test("delete_file removes files and errors on missing ones", async () => {
     const deps = await makeDeps();
     const tools = createStudioTools(deps);
@@ -227,6 +242,24 @@ describe("test_agent tool (sandboxed trial runs)", () => {
     const tools = createStudioTools(deps);
     expect(await tools.test_agent.execute?.({}, toolOpts())).toContain("Build failed");
     expect(deps.sandboxInstance.loadBundle).not.toHaveBeenCalled();
+  }, 30_000);
+
+  test("a sandbox torn down mid tool run yields an error result, not a rejection", async () => {
+    // Stream abort disposes the sandbox while the NDJSON round-trip is in
+    // flight; the pending RPC rejection must come back as tool-result text.
+    const deps = await makeDeps({
+      sandbox: async () =>
+        fakeSandbox({
+          executeTool: vi.fn(async () => {
+            throw new Error("Connection disposed");
+          }),
+        }),
+    });
+    const out = await createStudioTools(deps).test_agent.execute?.(
+      { tool: "roll_dice" },
+      toolOpts(),
+    );
+    expect(out).toContain("Tool run failed: Connection disposed");
   }, 30_000);
 
   test("reports sandbox load failures and invalid configs", async () => {

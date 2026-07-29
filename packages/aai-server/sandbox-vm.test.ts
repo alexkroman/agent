@@ -368,17 +368,64 @@ describe("createSandboxVm metrics", () => {
   });
 
   it("increments aai_sandbox_init_failed_total{reason=bundle_missing} when bundle/load rejects", async () => {
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const opts = baseOpts();
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const warm = makeWarm(conn, cleanup);
     const detach = autorespondBundleLoadError(hostWritable, hostReadable);
     const pool = { acquire: vi.fn(async (): Promise<WarmHarness | null> => warm) };
 
-    await expect(createSandboxVm(opts, pool)).rejects.toThrow();
+    // The warm failure falls back to a cold spawn; make that fail identically
+    // so the whole init rejects (a genuinely broken bundle breaks both paths).
+    const cold = createTestConn();
+    const detachCold = autorespondBundleLoadError(cold.hostWritable, cold.hostReadable);
+    const coldCleanup = vi.fn().mockResolvedValue(undefined);
+    const spawn = vi.fn(async () => makeWarm(cold.conn, coldCleanup));
+
+    await expect(createSandboxVm(opts, pool, spawn)).rejects.toThrow();
+    expect(spawn).toHaveBeenCalledOnce();
     expect(
       counterValue("aai_sandbox_init_failed_total", { reason: "bundle_missing" }),
     ).toBeGreaterThanOrEqual(1);
     detach();
+    detachCold();
+    cold.hostReadable.destroy();
+    cold.hostWritable.destroy();
+    consoleSpy.mockRestore();
+  });
+
+  it("falls back to a cold spawn when the warm harness fails configuration", async () => {
+    const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const opts = baseOpts();
+
+    // Warm harness dies at bundle/load (acquired alive, dead by configure).
+    const warmCleanup = vi.fn().mockResolvedValue(undefined);
+    const warm = makeWarm(conn, warmCleanup);
+    const detachWarm = autorespondBundleLoadError(hostWritable, hostReadable);
+    const pool = { acquire: vi.fn(async (): Promise<WarmHarness | null> => warm) };
+
+    // Cold fallback spawn succeeds.
+    const cold = createTestConn();
+    const detachCold = autorespondBundleLoad(cold.hostWritable, cold.hostReadable);
+    const coldCleanup = vi.fn().mockResolvedValue(undefined);
+    const spawn = vi.fn(async () => makeWarm(cold.conn, coldCleanup));
+
+    const handle = await createSandboxVm(opts, pool, spawn);
+
+    expect(spawn).toHaveBeenCalledOnce();
+    expect(handle.conn).toBe(cold.conn);
+    // The failed warm harness was cleaned up, not leaked.
+    expect(warmCleanup).toHaveBeenCalled();
+    // The successful fallback is recorded as a cold init, not a failure.
+    expect(counterValue("aai_sandbox_init_failed_total", { reason: "bundle_missing" })).toBe(0);
+    expect(histogramCount("aai_sandbox_init_seconds", { path: "cold" })).toBe(1);
+
+    detachWarm();
+    detachCold();
+    handle.conn.dispose();
+    cold.hostReadable.destroy();
+    cold.hostWritable.destroy();
+    consoleSpy.mockRestore();
   });
 });
 

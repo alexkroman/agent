@@ -294,6 +294,35 @@ function notesKvKey(sessionId: string): string {
   return `builtin:notes:${sessionId}`;
 }
 
+// `remember` is a KV read-modify-write, and one LLM step's tool calls execute
+// concurrently (pipeline streamText runs them in parallel; S2S starts each on
+// arrival) — two unserialized remembers read the same snapshot and the second
+// set() silently drops the first note. Chain the ops per Kv instance + key.
+// WeakMap so a Kv's chains die with it; entries are pruned once drained.
+const notesOpChains = new WeakMap<Kv, Map<string, Promise<void>>>();
+
+function withNotesLock<T>(kv: Kv, key: string, op: () => Promise<T>): Promise<T> {
+  let chains = notesOpChains.get(kv);
+  if (!chains) {
+    chains = new Map();
+    notesOpChains.set(kv, chains);
+  }
+  const scope = chains;
+  const prev = scope.get(key) ?? Promise.resolve();
+  // Run after the predecessor settles either way — a failed remember must not
+  // wedge the chain for the rest of the session.
+  const result = prev.then(op, op);
+  const link = result.then(
+    () => undefined,
+    () => undefined,
+  );
+  scope.set(key, link);
+  void link.then(() => {
+    if (scope.get(key) === link) scope.delete(key);
+  });
+  return result;
+}
+
 async function readNotes(ctx: { kv: Kv; sessionId: string }): Promise<Record<string, string>> {
   return (await ctx.kv.get<Record<string, string>>(notesKvKey(ctx.sessionId))) ?? {};
 }
@@ -318,11 +347,13 @@ function createRemember(): ToolDef<typeof rememberParams> & { guidance: string }
       "notes. Use it right after a value is confirmed, so later steps can recall the exact " +
       "value instead of re-reading a noisy transcript.",
     parameters: rememberParams,
-    async execute(args, ctx) {
-      const notes = await readNotes(ctx);
-      notes[args.key] = args.value;
-      await ctx.kv.set(notesKvKey(ctx.sessionId), notes, { expireIn: SESSION_NOTES_TTL_MS });
-      return { saved: args.key, notes };
+    execute(args, ctx) {
+      return withNotesLock(ctx.kv, notesKvKey(ctx.sessionId), async () => {
+        const notes = await readNotes(ctx);
+        notes[args.key] = args.value;
+        await ctx.kv.set(notesKvKey(ctx.sessionId), notes, { expireIn: SESSION_NOTES_TTL_MS });
+        return { saved: args.key, notes };
+      });
     },
   };
 }

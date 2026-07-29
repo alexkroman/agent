@@ -180,6 +180,12 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
   let playNode: AudioWorkletNode | null = null;
   let onPlaybackStop: (() => void) | null = null;
+  // The worklet answers an 'interrupt' with a 'stop' on its next process()
+  // tick. That queued stop belongs to the interrupted turn — set on flush()
+  // so it can't resolve a later turn's done() early. A boolean (not a
+  // counter): consecutive interrupts before the worklet ticks collapse into
+  // a single stop, so counting them would swallow a later real stop.
+  let staleStopPending = false;
   const lifecycle = new AbortController();
 
   // One persistent node per session: the worklet's 60s Float32 buffer is
@@ -194,6 +200,10 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     node.connect(ctx.destination);
     node.port.onmessage = (e: MessageEvent) => {
       if (e.data.event === "stop") {
+        if (staleStopPending) {
+          staleStopPending = false;
+          return;
+        }
         onPlaybackStop?.();
         onPlaybackStop = null;
       }
@@ -226,6 +236,8 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       // tab), the 'stop' round-trip never happens — resolve now rather than hang.
       if (ctx.state !== "running") return Promise.resolve();
       return new Promise<void>((resolve) => {
+        // Settle a resolver this call replaces so its promise never strands.
+        onPlaybackStop?.();
         // Bounded wait: if the context suspends mid-playback or the processor
         // dies, the 'stop' message never arrives — resolve anyway so session
         // state can't be stuck in "speaking". The poll catches a suspension
@@ -247,7 +259,14 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     },
 
     flush() {
-      if (playNode) playNode.port.postMessage({ event: "interrupt" });
+      if (!playNode) return;
+      // The interrupted turn is over: settle its pending done() now, and mark
+      // the stop the worklet will post for this interrupt as stale so it
+      // can't resolve the next turn's done() early.
+      onPlaybackStop?.();
+      onPlaybackStop = null;
+      staleStopPending = true;
+      playNode.port.postMessage({ event: "interrupt" });
     },
 
     async close() {

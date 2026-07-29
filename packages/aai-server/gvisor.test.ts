@@ -284,6 +284,38 @@ describe("createGvisorSandbox", () => {
     warnSpy.mockRestore();
   });
 
+  test("a concurrent second cleanup caller waits for the in-flight cleanup", async () => {
+    installAllBinaries();
+    const child = makeFakeChild(null); // still running
+    mocks.spawn.mockReturnValue(child);
+    const { createGvisorSandbox } = await loadGvisor();
+    const sandbox = await createGvisorSandbox({ slug: "a", harnessPath: "/srv/harness.mjs" });
+
+    let firstDone = false;
+    let secondDone = false;
+    const first = sandbox.cleanup().then(() => {
+      firstDone = true;
+    });
+    const second = sandbox.cleanup().then(() => {
+      secondDone = true;
+    });
+
+    // The container is still alive — neither caller may have resolved yet.
+    // (Pre-fix, the second returned immediately on the `cleaned` flag.)
+    await new Promise((resolve) => setImmediate(resolve));
+    expect(firstDone).toBe(false);
+    expect(secondDone).toBe(false);
+
+    child.exitCode = 0;
+    child.emit("exit", 0);
+    await Promise.all([first, second]);
+
+    // kill/delete ran once total, not once per caller.
+    const runscCalls = mocks.execFile.mock.calls.map((c) => (c[1] as string[]).join(" "));
+    expect(runscCalls.filter((c) => c.startsWith("kill")).length).toBe(1);
+    expect(runscCalls.filter((c) => c.startsWith("delete")).length).toBe(1);
+  });
+
   test("cleanup skips SIGKILL once the child emits exit", async () => {
     installAllBinaries();
     const child = makeFakeChild(null);

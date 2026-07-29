@@ -154,6 +154,23 @@ describe("apiRequest", () => {
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
+  test("retry: 0 disables retries for non-idempotent requests", async () => {
+    const fetch = vi
+      .fn<typeof globalThis.fetch>()
+      .mockImplementation(() => Promise.resolve(new Response("boom", { status: 503 })));
+
+    await expect(
+      apiRequest("https://api.example.com/deploy", {
+        apiKey: "my-key",
+        action: "deploy",
+        method: "POST",
+        retry: 0,
+        fetch,
+      }),
+    ).rejects.toThrow("deploy failed (HTTP 503)");
+    expect(fetch).toHaveBeenCalledOnce();
+  });
+
   test("throws descriptive error with hint on network failure", async () => {
     const cause = new Error("ECONNREFUSED");
     const fetch = vi.fn<typeof globalThis.fetch>().mockRejectedValue(cause);

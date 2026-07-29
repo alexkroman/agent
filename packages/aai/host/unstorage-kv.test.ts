@@ -103,6 +103,16 @@ describe("createUnstorageKv", () => {
     });
   });
 
+  test("close swallows a dispose rejection (no unhandled rejection)", async () => {
+    const storage = createStorage();
+    storage.dispose = () => Promise.reject(new Error("dispose failed"));
+    const kv = createUnstorageKv({ storage });
+    kv.close?.();
+    // Let the rejected dispose settle — an unhandled rejection here would
+    // fail the test run.
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
   test("delete with array of keys", async () => {
     const kv = makeKv();
     await kv.set("a", 1);

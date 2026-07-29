@@ -220,6 +220,23 @@ describe("project CRUD", () => {
     ).toBe(400);
   });
 
+  test("concurrent creates: one wins, the loser cannot reset the files", async () => {
+    const [a, b] = await Promise.all([createProject(fetch), createProject(fetch)]);
+    expect([a.status, b.status].sort()).toEqual([201, 409]);
+  });
+
+  test("concurrent file writes both survive", async () => {
+    await createProject(fetch);
+    const put = (path: string, content: string) =>
+      authFetch(fetch, "/studio/projects/proj/file", { method: "PUT", body: { path, content } });
+    await Promise.all([put("a.ts", "a"), put("b.ts", "b")]);
+    const { files } = (await (
+      await authFetch(fetch, "/studio/projects/proj", { method: "GET" })
+    ).json()) as { files: Record<string, string> };
+    expect(files["a.ts"]).toBe("a");
+    expect(files["b.ts"]).toBe("b");
+  });
+
   test("file write rejects traversal paths", async () => {
     await createProject(fetch);
     const res = await authFetch(fetch, "/studio/projects/proj/file", {

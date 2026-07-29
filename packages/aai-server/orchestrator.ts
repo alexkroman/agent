@@ -287,22 +287,21 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       const { sandbox, mode, agentConfig } = result;
       wss.handleUpgrade(req, socket, head, (ws) => {
         // This callback runs after completeUpgrade's own try/catch has already
-        // passed — a throw here (slot acquisition, session start) would
-        // otherwise be an uncaughtException. Close the ws instead; its `close`
-        // event releases the connection slot and any acquired slot session.
-        try {
-          onSessionSocket(ws as unknown as SessionWebSocket, {
-            slug,
-            mode,
-            sandbox,
-            agentConfig,
-            hostMode,
-            rawUrl,
-          });
-        } catch (err: unknown) {
+        // passed — a failure here (slot acquisition, session start) would
+        // otherwise be an unhandled rejection. Close the ws instead; its
+        // `close` event releases the connection slot and any acquired slot
+        // session.
+        onSessionSocket(ws as unknown as SessionWebSocket, {
+          slug,
+          mode,
+          sandbox,
+          agentConfig,
+          hostMode,
+          rawUrl,
+        }).catch((err: unknown) => {
           console.error("WebSocket session start error:", err);
           ws.close(1011, "internal error");
-        }
+        });
       });
     } catch (err: unknown) {
       console.error("WebSocket open error:", err);
@@ -314,7 +313,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
    * Wire metrics and start the session once the socket is upgraded. Extracted
    * from the upgrade handler so neither piece trips the complexity cap.
    */
-  function onSessionSocket(
+  async function onSessionSocket(
     ws: SessionWebSocket,
     ctx: {
       slug: string;
@@ -324,19 +323,23 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       hostMode: boolean;
       rawUrl: string;
     },
-  ): void {
-    const { slug, mode, sandbox, agentConfig, hostMode, rawUrl } = ctx;
+  ): Promise<void> {
+    const { slug, mode, agentConfig, hostMode, rawUrl } = ctx;
+    let { sandbox } = ctx;
     metrics.sessionsStarted.inc({ slug, mode });
     metrics.sessionsActive.inc({ slug });
-    // Track the live session so idle eviction can't kill the sandbox mid-call
-    // (a session can outlive IDLE_SANDBOX_MS).
-    acquireSlotSession(opts.slots, slug);
+    // Assigned after the re-resolve below; the close listener is attached
+    // first so a socket that dies during the await still runs the metrics
+    // path (releasing a null handle is a no-op).
+    let sessionSlot: ReturnType<typeof acquireSlotSession> = null;
+    let closed = false;
     const startedAt = process.hrtime.bigint();
     const socket = ws as unknown as {
       on: (event: string, fn: (arg: number) => void) => void;
     };
     socket.on("close", (code: number) => {
-      releaseSlotSession(opts.slots, slug);
+      closed = true;
+      releaseSlotSession(opts.slots, sessionSlot);
       metrics.sessionDuration.observe(hrtimeSeconds(startedAt));
       metrics.sessionsActive.dec({ slug });
       const reason: SessionEndReason =
@@ -347,6 +350,19 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       const kind: SessionErrorKind = "internal";
       metrics.sessionErrors.inc({ kind });
     });
+    // The sandbox resolved at upgrade time can be shut down (idle eviction,
+    // deploy/delete) before the handshake completes; starting a session on it
+    // would be use-after-teardown. When the slot no longer holds it,
+    // re-resolve once (or fail the session cleanly below).
+    if (!hostMode && opts.slots.get(slug)?.sandbox !== sandbox) {
+      sandbox = await resolveSandbox(slug, sandboxOpts).catch(() => null);
+    }
+    // Track the live session so idle eviction can't kill the sandbox mid-call
+    // (a session can outlive IDLE_SANDBOX_MS). The returned handle pins the
+    // specific slot object — a redeploy replaces the slot, and releasing by
+    // slug would decrement the replacement's counter.
+    if (closed) return;
+    sessionSlot = acquireSlotSession(opts.slots, slug);
     if (hostMode && agentConfig) {
       startDeployedHostSession(ws, {
         slug,
@@ -356,7 +372,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
       });
       return;
     }
-    sandbox?.startSession(ws, parseWsUpgradeParams(rawUrl));
+    if (!sandbox) {
+      // Agent was deleted (or its sandbox can't be rebuilt) between upgrade
+      // and handshake — answer with a close frame, not a dangling socket.
+      ws.close?.(1011, "agent unavailable");
+      return;
+    }
+    sandbox.startSession(ws, parseWsUpgradeParams(rawUrl));
   }
 
   async function handleUpgradeRequest(

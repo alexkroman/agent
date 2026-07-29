@@ -15,6 +15,7 @@
 
 import { errorMessage, WS_OPEN } from "@alexkroman1/aai";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
+import type { VoiceIO } from "./audio.ts";
 import {
   CLEARED_SESSION_STATE,
   createMessageHandlers,
@@ -64,6 +65,9 @@ async function initAudioCapture(
     sendJson: (msg: ClientMessage) => void;
     sendAudio: (bytes: Uint8Array) => void;
     updateState: (partial: Partial<SessionSnapshot>) => void;
+    /** Turn-boundary-guarded drain from the message handlers — replays a
+     *  buffered `audio_done` without stomping a barge-in's state. */
+    settleWhenAudioDrained: (io: VoiceIO) => void;
   },
 ): Promise<void> {
   if (conn.audioSetupInFlight) return;
@@ -105,6 +109,12 @@ async function initAudioCapture(
       });
       return;
     }
+    // Defensive: if a previous VoiceIO somehow survived to this point, close
+    // it before overwriting the slot — an orphaned instance keeps its mic
+    // tracks live and pumps duplicate audio.
+    void conn.voiceIO?.close().catch(() => {
+      /* already closing */
+    });
     conn.voiceIO = io;
     if (conn.preInitAudio.length > 0) {
       for (const chunk of conn.preInitAudio) {
@@ -119,13 +129,7 @@ async function initAudioCapture(
     // only when playback actually drains) instead of the done being lost.
     if (conn.preInitDone) {
       conn.preInitDone = false;
-      void io
-        .done()
-        .then(() => {
-          if (conn.generation !== gen) return;
-          deps.updateState({ state: "listening" });
-        })
-        .catch(() => deps.updateState({ state: "listening" }));
+      deps.settleWhenAudioDrained(io);
     } else {
       deps.updateState({ state: "listening" });
     }
@@ -140,7 +144,11 @@ async function initAudioCapture(
       running: false,
     });
   } finally {
-    conn.audioSetupInFlight = false;
+    // Only the init that still owns the flag may clear it: a stale
+    // generation's settle must not unlock a newer init that is in flight
+    // (which would let a second same-generation init start and orphan a
+    // live microphone).
+    if (conn.generation === gen) conn.audioSetupInFlight = false;
   }
 }
 
@@ -259,19 +267,25 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     conn.ws.send(bytes as unknown as ArrayBuffer);
   }
 
-  const audioDeps = {
-    sendJson,
-    sendAudio,
-    updateState,
-  };
-
   // ─── File uploads ─────────────────────────────────────────────────────────
 
   const upload = createUploadSender({ conn, getSnapshot, sendJson });
 
   // ─── Message handling ─────────────────────────────────────────────────────
 
-  const { handleMessage } = createMessageHandlers({ getSnapshot, updateState, conn });
+  const { handleMessage, settleWhenAudioDrained } = createMessageHandlers({
+    getSnapshot,
+    updateState,
+    conn,
+    discardUpload: upload.discard,
+  });
+
+  const audioDeps = {
+    sendJson,
+    sendAudio,
+    updateState,
+    settleWhenAudioDrained,
+  };
 
   // ─── Connection management ──────────────────────────────────────────────
 

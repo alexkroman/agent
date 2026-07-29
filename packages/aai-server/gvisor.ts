@@ -276,19 +276,22 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
     }
   }
 
-  let cleaned = false;
+  let cleanupPromise: Promise<void> | null = null;
 
-  async function cleanup(): Promise<void> {
-    if (cleaned) return;
-    cleaned = true;
-
-    await tryRunsc("kill", containerId, "SIGTERM");
-    if (!(await waitForChildExit(child, 5000))) {
-      await tryRunsc("kill", containerId, "SIGKILL");
-      await waitForChildExit(child, 2000);
-    }
-    await tryRunsc("delete", "--force", containerId);
-    await cleanupBundleDir(containerId);
+  function cleanup(): Promise<void> {
+    // Memoize the in-flight promise: a concurrent second caller must wait for
+    // the container to actually be dead, not return before the first caller's
+    // kill/delete has finished.
+    cleanupPromise ??= (async () => {
+      await tryRunsc("kill", containerId, "SIGTERM");
+      if (!(await waitForChildExit(child, 5000))) {
+        await tryRunsc("kill", containerId, "SIGKILL");
+        await waitForChildExit(child, 2000);
+      }
+      await tryRunsc("delete", "--force", containerId);
+      await cleanupBundleDir(containerId);
+    })();
+    return cleanupPromise;
   }
   return {
     process: child,

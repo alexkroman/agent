@@ -8,8 +8,14 @@ import { cartesia } from "@alexkroman1/aai/tts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { createClientSendHandler, createSandbox, type SandboxOptions } from "./sandbox.ts";
-import { createTestStorage } from "./test-utils.ts";
+import {
+  createClientSendHandler,
+  createSandbox,
+  createSlotCache,
+  resolveSandbox,
+  type SandboxOptions,
+} from "./sandbox.ts";
+import { createTestStorage, createTestStore } from "./test-utils.ts";
 
 // ── Mock sandbox-vm ──────────────────────────────────────────────────────────
 // vi.mock factory is hoisted, so we cannot reference top-level variables.
@@ -303,6 +309,18 @@ describe("createSandbox", () => {
     await expect(sandbox.shutdown()).resolves.toBeUndefined();
   });
 
+  it("invokes onVmFailed when the VM fails to start", async () => {
+    mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
+    const onVmFailed = vi.fn();
+
+    const sandbox = createSandbox(makeSandboxOptions({ onVmFailed }));
+
+    await vi.waitFor(() => {
+      expect(onVmFailed).toHaveBeenCalledOnce();
+    });
+    await sandbox.shutdown();
+  });
+
   it("executeTool returns toolError when VM fails to start", async () => {
     mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
 
@@ -574,6 +592,66 @@ describe("createSandbox", () => {
         event: "ping",
         data: undefined,
       });
+    });
+  });
+
+  // ── resolveSandbox: poisoned-sandbox detach (rejected vmReady) ────────────
+
+  describe("resolveSandbox vmReady failure", () => {
+    async function seedAgent(slug: string) {
+      const store = createTestStore();
+      await store.putAgent({
+        slug,
+        env: {},
+        worker: 'export default { name: "t" };',
+        clientFiles: {},
+        credential_hashes: ["hash"],
+        agentConfig: TEST_AGENT_CONFIG,
+      });
+      return { slots: createSlotCache(), store, storage: createTestStorage() };
+    }
+
+    it("detaches the resident sandbox when its VM fails to start", async () => {
+      mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
+      const deps = await seedAgent("broken");
+
+      const sandbox = await resolveSandbox("broken", deps);
+      expect(sandbox).not.toBeNull();
+
+      // The async vmReady rejection must detach the poisoned sandbox so the
+      // next connection rebuilds it (live traffic would otherwise keep
+      // clearing the idle timer forever). The detach may already have run by
+      // the time resolveSandbox returns — its lock section queues right
+      // behind the resolve's.
+      await vi.waitFor(() => {
+        expect(deps.slots.get("broken")?.sandbox).toBeUndefined();
+      });
+      // The slot itself stays registered for the rebuild.
+      expect(deps.slots.has("broken")).toBe(true);
+    });
+
+    it("does not detach a replacement sandbox installed after the failure", async () => {
+      mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
+      const deps = await seedAgent("raced");
+
+      await resolveSandbox("raced", deps);
+      // A deploy replaces the slot's sandbox before the failure callback runs.
+      const replacement = { shutdown: vi.fn().mockResolvedValue(undefined) };
+      const slot = deps.slots.get("raced");
+      if (!slot) throw new Error("slot missing");
+      slot.sandbox = replacement;
+
+      await vi.waitFor(() => {
+        expect(console.error).toHaveBeenCalledWith(
+          "Sandbox VM failed to start",
+          expect.objectContaining({ slug: "raced" }),
+        );
+      });
+      // Let the identity-checked detach (queued under the slug lock) settle.
+      await new Promise((resolve) => setTimeout(resolve, 0));
+
+      expect(deps.slots.get("raced")?.sandbox).toBe(replacement);
+      expect(replacement.shutdown).not.toHaveBeenCalled();
     });
   });
 

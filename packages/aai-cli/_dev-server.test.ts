@@ -481,6 +481,115 @@ describe("file watcher filtering", () => {
     });
   });
 
+  test("edit saved during startup triggers one restart after startup completes", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+      mockCreateServer.mockClear();
+      mockListen.mockClear();
+
+      // Block startup at the initial listen so the change event lands mid-boot.
+      let releaseListen!: () => void;
+      mockListen.mockImplementationOnce(
+        () =>
+          new Promise<void>((resolve) => {
+            releaseListen = resolve;
+          }),
+      );
+
+      const startPromise = startDevServer({ cwd: dir, port: 3000 });
+      // The watcher must exist before the initial build/listen finishes —
+      // otherwise a save during boot never fires an event at all.
+      await vi.waitFor(() => expect(chokidarState.allCallback).toBeDefined());
+      await vi.waitFor(() => expect(mockListen).toHaveBeenCalled());
+
+      fireChange(dir, "agent.ts");
+      // Let the debounce elapse while startup is still blocked: the event must
+      // be queued, not start a restart racing the initial build.
+      await new Promise((resolve) => setTimeout(resolve, 400));
+      expect(mockCreateServer).toHaveBeenCalledTimes(1);
+
+      releaseListen();
+      const cleanup = await startPromise;
+
+      await vi.waitFor(() => expect(mockCreateServer).toHaveBeenCalledTimes(2), {
+        timeout: 5000,
+      });
+
+      await cleanup();
+    });
+  });
+
+  test("restart retries listen when the port is momentarily taken", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+      mockListen.mockClear();
+      vi.mocked(log.success).mockClear();
+      // Two rejected attempts, then the default (resolving) implementation
+      // from beforeEach serves the third — nothing queued leaks past the test.
+      mockListen
+        .mockRejectedValueOnce(new Error("EADDRINUSE"))
+        .mockRejectedValueOnce(new Error("EADDRINUSE"));
+
+      fireChange(dir, "agent.ts");
+
+      await vi.waitFor(() => expect(log.success).toHaveBeenCalledWith("Restarted"), {
+        timeout: 5000,
+      });
+      expect(mockListen).toHaveBeenCalledTimes(3);
+
+      await cleanup();
+    });
+  });
+
+  test("restart logs a save-to-retry hint when listen fails after all retries", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+
+      mockListen.mockClear();
+      vi.mocked(log.error).mockClear();
+      // Exactly three rejected attempts; later calls fall back to the default
+      // resolving implementation so nothing queued leaks past the test.
+      mockListen
+        .mockRejectedValueOnce(new Error("EADDRINUSE"))
+        .mockRejectedValueOnce(new Error("EADDRINUSE"))
+        .mockRejectedValueOnce(new Error("EADDRINUSE"));
+
+      fireChange(dir, "agent.ts");
+
+      await vi.waitFor(
+        () => expect(log.error).toHaveBeenCalledWith(expect.stringContaining("save a file")),
+        { timeout: 5000 },
+      );
+      expect(mockListen).toHaveBeenCalledTimes(3);
+
+      await cleanup();
+    });
+  });
+
+  // SIGINT then SIGTERM invokes cleanup twice — the teardown must run once.
+  test("cleanup is idempotent: second call joins the in-flight teardown", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
+
+      const cleanup = await startDevServer({ cwd: dir, port: 3000 });
+      mockClose.mockClear();
+
+      const first = cleanup();
+      const second = cleanup();
+      expect(second).toBe(first);
+      await first;
+      await cleanup();
+
+      expect(mockClose).toHaveBeenCalledTimes(1);
+      expect(chokidarState.close).toHaveBeenCalledTimes(1);
+    });
+  });
+
   test("restart logs error on failure instead of crashing", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);

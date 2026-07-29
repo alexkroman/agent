@@ -432,6 +432,98 @@ describe("wireSessionSocket lifecycle", () => {
     expect(msg.sessionId).toBe("resume-id-123");
   });
 
+  test("old session's delayed stop does not evict a resumed session with the same id", async () => {
+    const sessions = new Map<string, SessionCore>();
+    const onSessionEnd = vi.fn();
+    const stopGate = Promise.withResolvers<void>();
+    const oldCore = makeMockCore({ stop: vi.fn(() => stopGate.promise) });
+    const oldWs = openSocket();
+
+    wireSessionSocket(oldWs, {
+      sessions,
+      createSession: () => oldCore,
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+      onSessionEnd,
+      resumeFrom: "resume-race-id",
+    });
+    expect(sessions.get("resume-race-id")).toBe(oldCore);
+
+    // Client disconnects — the old session's stop() starts draining slowly
+    // (in-flight tool / transport teardown).
+    oldWs.close();
+    expect(oldCore.stop).toHaveBeenCalledOnce();
+
+    // Client reconnects and resumes the same session id before stop settles.
+    const newCore = makeMockCore();
+    const newWs = openSocket();
+    wireSessionSocket(newWs, {
+      sessions,
+      createSession: () => newCore,
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+      resumeFrom: "resume-race-id",
+    });
+    expect(sessions.get("resume-race-id")).toBe(newCore);
+
+    // The old stop settles — its cleanup must not delete the NEW session's
+    // registry entry (it would escape runtime.shutdown()).
+    stopGate.resolve();
+    await vi.waitFor(() => {
+      expect(onSessionEnd).toHaveBeenCalledWith("resume-race-id");
+    });
+    expect(sessions.get("resume-race-id")).toBe(newCore);
+  });
+
+  test("start-timeout cleanup after close does not evict a resumed session", async () => {
+    const sessions = new Map<string, SessionCore>();
+    const stopGate = Promise.withResolvers<void>();
+    const oldCore = makeMockCore({
+      start: vi.fn(
+        () =>
+          new Promise<void>(() => {
+            /* never resolves */
+          }),
+      ),
+      stop: vi.fn(() => stopGate.promise),
+    });
+    const oldWs = openSocket();
+
+    wireSessionSocket(oldWs, {
+      sessions,
+      createSession: () => oldCore,
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+      sessionStartTimeoutMs: 30,
+      resumeFrom: "timeout-race-id",
+    });
+
+    // Close before the start timeout fires: endSession runs (pending on the
+    // slow stop) and the timeout's catch later sees session === null.
+    oldWs.close();
+
+    const newCore = makeMockCore();
+    const newWs = openSocket();
+    wireSessionSocket(newWs, {
+      sessions,
+      createSession: () => newCore,
+      readyConfig: defaultConfig,
+      logger: silentLogger,
+      resumeFrom: "timeout-race-id",
+    });
+    expect(sessions.get("timeout-race-id")).toBe(newCore);
+
+    // Let the start timeout fire; its cleanup must not key-delete the
+    // resumed session's entry.
+    await new Promise((r) => setTimeout(r, 60));
+    expect(sessions.get("timeout-race-id")).toBe(newCore);
+
+    stopGate.resolve();
+    await vi.waitFor(() => {
+      expect(sessions.get("timeout-race-id")).toBe(newCore);
+    });
+  });
+
   test("without resumeFrom, generates a new UUID session ID", () => {
     const sessions = new Map<string, SessionCore>();
     const ws = openSocket();

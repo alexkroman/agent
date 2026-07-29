@@ -446,14 +446,14 @@ describe("cancel, error, close", () => {
     expect(JSON.parse(fake.sent[0] ?? "{}").type).toBe("response.cancel");
   });
 
-  test("cancelReply also fires onCancelled", async () => {
+  test("cancelReply does not fire onCancelled (session-core emits `cancelled` itself)", async () => {
     const { fake, cbs, transport, ready } = startedTransport();
     await ready;
     fake.fire("message", {
       data: JSON.stringify({ type: "response.created", response: { id: "r2" } }),
     });
     transport.cancelReply();
-    expect(cbs.onCancelled).toHaveBeenCalledTimes(1);
+    expect(cbs.onCancelled).not.toHaveBeenCalled();
   });
 
   test("error event routes to onError with internal code", async () => {
