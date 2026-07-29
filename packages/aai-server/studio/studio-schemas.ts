@@ -88,17 +88,8 @@ export const UiMessageSchema = z
     "Message too large",
   );
 
-/**
- * Max length for a client-supplied provider/model name. Both are validated
- * against `studioLlmOptions()` server-side — this only bounds the input.
- */
-const MAX_LLM_NAME_LENGTH = 100;
-
 export const ChatBodySchema = z.object({
   project: ProjectNameSchema,
-  /** Optional model override; must name a provider/model the host offers. */
-  provider: z.string().max(MAX_LLM_NAME_LENGTH).optional(),
-  model: z.string().max(MAX_LLM_NAME_LENGTH).optional(),
   messages: z
     .array(UiMessageSchema)
     .min(1)

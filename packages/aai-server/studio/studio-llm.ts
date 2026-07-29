@@ -187,28 +187,6 @@ export type StudioLlmSelection = {
 };
 
 /** A provider the browser may pick, with the models it may pick from. */
-export type StudioLlmOption = {
-  provider: string;
-  label: string;
-  models: string[];
-};
-
-export type StudioLlmOptions = {
-  /** The host-configured default; null when no provider is configured. */
-  default: { provider: string; model: string } | null;
-  providers: StudioLlmOption[];
-};
-
-function entryFor(provider: string): StudioLlmEntry | undefined {
-  return STUDIO_LLM_PROVIDERS[provider];
-}
-
-/**
- * Pick the studio chat LLM from host env. Explicit `STUDIO_LLM_PROVIDER`
- * wins; otherwise the AssemblyAI LLM Gateway when its key is present, then
- * Anthropic. Returns null when nothing is configured. Throws on a
- * misconfiguration worth surfacing (unknown provider, missing model).
- */
 export function selectStudioLlm(env: NodeJS.ProcessEnv = process.env): StudioLlmSelection | null {
   const explicit = env.STUDIO_LLM_PROVIDER?.toLowerCase();
   let provider: string | undefined;
@@ -261,62 +239,9 @@ export function studioLlmInfo(
  * the host holds and that have curated models, plus the host-selected
  * default (so an env-only provider still shows the model it is running).
  */
-export function studioLlmOptions(env: NodeJS.ProcessEnv = process.env): StudioLlmOptions {
-  const active = isStudioLlmConfigured(env) ? selectStudioLlm(env) : null;
-  const providers: StudioLlmOption[] = [];
-  for (const [provider, entry] of Object.entries(STUDIO_LLM_PROVIDERS)) {
-    if (!env[entry.envVar]) continue;
-    const models = [...entry.models(env)];
-    // An env-only provider contributes just the model it was told to run.
-    if (active?.provider === provider && !models.includes(active.model)) {
-      models.unshift(active.model);
-    }
-    if (models.length > 0) providers.push({ provider, label: entry.label, models });
-  }
-  return {
-    default: active ? { provider: active.provider, model: active.model } : null,
-    providers,
-  };
-}
-
-/**
- * Validate a browser-supplied provider/model against `studioLlmOptions` and
- * build the selection. Returns null when the request names something the
- * host cannot or may not run, so callers can answer 400 rather than
- * constructing a model from unvalidated input.
- */
-export function resolveStudioSelection(
-  requested: { provider?: string | undefined; model?: string | undefined },
-  env: NodeJS.ProcessEnv = process.env,
-): StudioLlmSelection | null {
-  const { provider, model } = requested;
-  if (!(provider && model)) return null;
-  const offered = studioLlmOptions(env).providers.find((p) => p.provider === provider);
-  if (!offered?.models.includes(model)) return null;
-  const entry = entryFor(provider);
-  if (!entry) return null;
-  return { provider, model, descriptor: entry.make(model, env), envVar: entry.envVar };
-}
-
-/**
- * Resolve the studio chat model. With no `requested` override this is the
- * host-env default. Throws when unconfigured, or when an override names a
- * provider/model outside `studioLlmOptions`.
- */
-export function studioModel(
-  requested: { provider?: string | undefined; model?: string | undefined } = {},
-  env: NodeJS.ProcessEnv = process.env,
-): LanguageModel {
-  const selection =
-    requested.provider || requested.model
-      ? resolveStudioSelection(requested, env)
-      : selectStudioLlm(env);
+export function studioModel(env: NodeJS.ProcessEnv = process.env): LanguageModel {
+  const selection = selectStudioLlm(env);
   if (!selection) {
-    if (requested.provider || requested.model) {
-      throw new Error(
-        `Studio LLM "${requested.provider}/${requested.model}" is not available on this server`,
-      );
-    }
     throw new Error(
       "Studio LLM not configured: set ASSEMBLYAI_API_KEY (LLM Gateway) or " +
         "ANTHROPIC_API_KEY, or choose a provider with STUDIO_LLM_PROVIDER",

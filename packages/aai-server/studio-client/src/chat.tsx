@@ -5,9 +5,8 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { type ReactNode, useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Markdown } from "./markdown.tsx";
-import { ModelPicker, useModelChoice } from "./model-picker.tsx";
 
 export type LlmStatus = { llm: boolean; provider?: string; model?: string };
 
@@ -201,11 +200,10 @@ type ComposerProps = {
   placeholder: string;
   onSend: (text: string) => void;
   /** Rendered above the input row (e.g. the model picker). */
-  accessory?: ReactNode;
 };
 
 /** Composer pinned to the panel bottom (1b spec). */
-function Composer({ disabled, placeholder, onSend, accessory }: ComposerProps) {
+function Composer({ disabled, placeholder, onSend }: ComposerProps) {
   const [input, setInput] = useState("");
   const submit = () => {
     const text = input.trim();
@@ -215,7 +213,6 @@ function Composer({ disabled, placeholder, onSend, accessory }: ComposerProps) {
   };
   return (
     <div className="flex flex-none flex-col gap-2 border-t border-line px-5 pt-4 pb-5">
-      {accessory}
       <div className="flex items-center gap-2">
         <input
           className="field h-10 min-w-0 flex-1 border-line-strong"
@@ -295,18 +292,12 @@ function ProjectChat({
   onWorkspaceChanged,
 }: Omit<ChatPanelProps, "project" | "onStartWithPrompt"> & { project: string }) {
   const logRef = useRef<HTMLDivElement>(null);
-  const model = useModelChoice(apiKey);
-
-  // `body` is read per request but the transport may outlive a render, so go
-  // through a ref to be sure each turn sends the currently-selected model.
-  const choiceRef = useRef(model.choice);
-  choiceRef.current = model.choice;
 
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
       api: "/studio/chat",
       headers: { Authorization: `Bearer ${apiKey}` },
-      body: () => ({ project, ...choiceRef.current }),
+      body: () => ({ project }),
     }),
     onFinish: onWorkspaceChanged,
     onData: () => {
@@ -347,7 +338,6 @@ function ProjectChat({
         disabled={busy || !llmStatus.llm}
         placeholder="Describe your agent or workflow…"
         onSend={send}
-        accessory={llmStatus.llm ? <ModelPicker {...model} disabled={busy} /> : undefined}
       />
     </>
   );

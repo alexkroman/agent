@@ -3,7 +3,6 @@
  * HTTP surface of the browser studio, mounted at `/studio`:
  *
  * - `GET  /studio/status`                     — is the chat LLM configured?
- * - `GET  /studio/models`                     — provider/model choices (auth)
  * - `GET  /studio/projects`                   — list the caller's projects
  * - `POST /studio/projects`                   — create a project (starter files)
  * - `GET  /studio/projects/:project`          — files + deployed slug
@@ -27,12 +26,7 @@ import type { HonoEnv } from "../context.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
 import { runStudioChat } from "./studio-agent.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
-import {
-  isStudioLlmConfigured,
-  resolveStudioSelection,
-  studioLlmInfo,
-  studioLlmOptions,
-} from "./studio-llm.ts";
+import { isStudioLlmConfigured, studioLlmInfo } from "./studio-llm.ts";
 import { createStudioSandbox, type StudioSandbox } from "./studio-sandbox.ts";
 import {
   ChatBodySchema,
@@ -99,10 +93,6 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   studio.use("/projects", studioAuthMw);
   studio.use("/projects/*", studioAuthMw);
   studio.use("/chat", studioAuthMw);
-  studio.use("/models", studioAuthMw);
-
-  // Behind auth: the option list reveals which provider keys the host holds.
-  studio.get("/models", (c) => c.json(studioLlmOptions()));
 
   studio.get("/projects", async (c) => {
     const scope = studioScope(c.var.apiKey);
@@ -195,12 +185,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
       );
     }
     const scope = studioScope(c.var.apiKey);
-    const { project, provider, model, messages } = c.req.valid("json");
-    // Reject an unofferable provider/model here rather than letting
-    // studioModel throw mid-stream, where the client only sees a stream error.
-    if ((provider || model) && !resolveStudioSelection({ provider, model })) {
-      return c.json({ error: `Model "${provider}/${model}" is not available on this server` }, 400);
-    }
+    const { project, messages } = c.req.valid("json");
     if (!(await getWorkspace(c.env.storage, scope, project))) {
       return c.json({ error: "Project not found" }, 404);
     }
@@ -227,7 +212,6 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
         project,
         sandbox,
         disposeSandbox,
-        llm: { provider, model },
       },
       // Structurally validated by UiMessageSchema; part-level validation
       // happens in convertToModelMessages.

@@ -12,22 +12,6 @@ export type StudioStatus = {
   model?: string;
 };
 
-/** One provider the host can run, with the models it offers. */
-export type ModelOption = {
-  provider: string;
-  label: string;
-  models: string[];
-};
-
-export type ModelOptions = {
-  /** Host-configured default; null when the server has no LLM key. */
-  default: { provider: string; model: string } | null;
-  providers: ModelOption[];
-};
-
-/** A provider/model pair the user picked in the model select box. */
-export type ModelChoice = { provider: string; model: string };
-
 export class ApiError extends Error {
   readonly status: number;
   constructor(status: number, message: string) {
@@ -61,8 +45,6 @@ async function request<T>(key: string, path: string, init: RequestInit = {}): Pr
 export const api = {
   status: (): Promise<StudioStatus> =>
     fetch("/studio/status").then((r) => r.json() as Promise<StudioStatus>),
-
-  models: (key: string) => request<ModelOptions>(key, "/models"),
 
   listProjects: (key: string) =>
     request<{ projects: string[] }>(key, "/projects").then((r) => r.projects),

@@ -9,8 +9,8 @@
  * decides when it goes live via the Publish button (`POST /studio/projects/
  * :project/deploy`).
  *
- * LLM selection lives in `studio-llm.ts` — platform-owned host config, with
- * an optional per-request override the browser picks from `studioLlmOptions`.
+ * LLM selection lives in `studio-llm.ts` — platform-owned host config. There
+ * is no per-request override: the studio runs on the host's configured model.
  */
 
 import {
@@ -46,11 +46,6 @@ export type StudioChatDeps = {
   sandbox: () => Promise<StudioSandbox>;
   /** Tears down the session sandbox if one was provisioned. Idempotent. */
   disposeSandbox?: () => Promise<void>;
-  /**
-   * Browser-picked provider/model for this turn. Already validated against
-   * `studioLlmOptions` by the route; omitted means the host-env default.
-   */
-  llm?: { provider?: string | undefined; model?: string | undefined };
   /** Injectable for tests — defaults to the host-env selected provider. */
   model?: LanguageModel;
 };
@@ -201,7 +196,7 @@ export async function runStudioChat(
   };
   try {
     const result = streamText({
-      model: deps.model ?? studioModel(deps.llm ?? {}),
+      model: deps.model ?? studioModel(),
       system: studioSystemPrompt(),
       messages: await convertToModelMessages(messages, { ignoreIncompleteToolCalls: true }),
       tools: createStudioTools(deps),
