@@ -13,6 +13,7 @@
  */
 
 import { lookup } from "node:dns/promises";
+import { isIP } from "node:net";
 import bogon from "bogon";
 import pTimeout from "p-timeout";
 import { Agent } from "undici";
@@ -27,8 +28,13 @@ export function isPrivateIp(ip: string): boolean {
   return bogon(ip);
 }
 
+/**
+ * Literal IPv4/IPv6 address? Callers strip the URL's `[...]` brackets first.
+ * Near-miss strings the old hand-rolled regex accepted (`999.1.1.1`, stray
+ * colons) now fall through to the DNS path, where resolution fails closed.
+ */
 function isLiteralIp(hostname: string): boolean {
-  return /^\d{1,3}(\.\d{1,3}){3}$/.test(hostname) || hostname.includes(":");
+  return isIP(hostname) !== 0;
 }
 
 /**

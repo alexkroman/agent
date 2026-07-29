@@ -65,11 +65,11 @@ describe("calculate", () => {
 
   test("malformed input returns errors instead of throwing", () => {
     expect(error("")).toBe("Empty expression");
-    expect(error("2 +")).toMatch(/Unexpected end/);
-    expect(error("(1 + 2")).toMatch(/closing parenthesis/);
-    expect(error("1 + 2)")).toMatch(/after end of expression/);
+    expect(error("2 +")).toMatch(/unexpected/i);
+    expect(error("(1 + 2")).toMatch(/Expected \)/);
+    expect(error("1 + 2)")).toMatch(/Expected EOF/);
     expect(error("two + 2")).toMatch(/Unexpected character/);
-    expect(error("1 // 2")).toMatch(/Unexpected/);
+    expect(error("1 // 2")).toMatch(/unexpected/i);
   });
 
   test("no code execution — JS syntax is rejected", () => {

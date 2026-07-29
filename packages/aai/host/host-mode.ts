@@ -15,6 +15,7 @@
  * when the matching inbound `tool_result` arrives.
  */
 
+import pTimeout from "p-timeout";
 import type { ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
 import {
   DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS,
@@ -83,20 +84,8 @@ export function createRelayExecuteTool(opts: {
   type Pending = {
     resolve: (value: string) => void;
     reject: (reason: Error) => void;
-    timer: ReturnType<typeof setTimeout>;
-    /** Remove the abort listener (no-op when the call carried no signal). */
-    unlisten: () => void;
   };
   const pending = new Map<string, Pending>();
-
-  function clear(toolCallId: string): Pending | undefined {
-    const entry = pending.get(toolCallId);
-    if (!entry) return;
-    clearTimeout(entry.timer);
-    entry.unlisten();
-    pending.delete(toolCallId);
-    return entry;
-  }
 
   const executeTool: ExecuteTool = (name, args, _sessionId, _messages, callOpts) => {
     const toolCallId = callOpts?.toolCallId;
@@ -118,26 +107,24 @@ export function createRelayExecuteTool(opts: {
       return Promise.resolve(toolError(`Relay tool "${name}" (${toolCallId}) was cancelled`));
     }
     const { promise, resolve, reject } = Promise.withResolvers<string>();
-    const timer = setTimeout(() => {
-      clear(toolCallId);
-      reject(new Error(`Relay tool "${name}" (${toolCallId}) timed out after ${timeoutMs}ms`));
-    }, timeoutMs);
-    // Never let a pending relay call keep the process alive on its own.
-    timer.unref?.();
-    const onAbort = () => {
-      clear(toolCallId);
-      reject(new Error(`Relay tool "${name}" (${toolCallId}) was cancelled`));
-    };
-    signal?.addEventListener("abort", onAbort, { once: true });
-    const unlisten = () => signal?.removeEventListener("abort", onAbort);
-    pending.set(toolCallId, { resolve, reject, timer, unlisten });
+    pending.set(toolCallId, { resolve, reject });
     opts.send({ type: "tool_call", toolCallId, toolName: name, args });
-    return promise;
+    // p-timeout owns the deadline and the abort listener: it rejects with the
+    // timeout Error below, or with the signal's abort reason on cancellation.
+    // Either way the pending entry is dropped once the call settles.
+    return pTimeout(promise, {
+      milliseconds: timeoutMs,
+      ...(signal !== undefined ? { signal } : {}),
+      message: new Error(`Relay tool "${name}" (${toolCallId}) timed out after ${timeoutMs}ms`),
+    }).finally(() => {
+      pending.delete(toolCallId);
+    });
   };
 
   function onToolResult(msg: RelayToolResult): void {
-    const entry = clear(msg.toolCallId);
+    const entry = pending.get(msg.toolCallId);
     if (!entry) return;
+    pending.delete(msg.toolCallId);
     if (msg.error !== undefined) {
       entry.reject(new Error(msg.error));
       return;
@@ -147,8 +134,6 @@ export function createRelayExecuteTool(opts: {
 
   function dispose(): void {
     for (const [, entry] of pending) {
-      clearTimeout(entry.timer);
-      entry.unlisten();
       entry.reject(new Error("Relay disposed before tool result arrived"));
     }
     pending.clear();
