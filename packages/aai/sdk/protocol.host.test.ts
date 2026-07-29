@@ -93,6 +93,31 @@ describe("HostConfigMessageSchema", () => {
     });
     expect(result.success).toBe(false);
   });
+
+  test("accepts the pcm16 audio negotiation fields", () => {
+    const result = HostConfigMessageSchema.safeParse({
+      type: "config",
+      host: { systemPrompt: "Hi", tools: [] },
+      audioFormat: "pcm16",
+      sampleRate: 16_000,
+      ttsSampleRate: 24_000,
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.audioFormat).toBe("pcm16");
+      expect(result.data.sampleRate).toBe(16_000);
+      expect(result.data.ttsSampleRate).toBe(24_000);
+    }
+  });
+
+  test("rejects an audioFormat other than pcm16", () => {
+    const result = HostConfigMessageSchema.safeParse({
+      type: "config",
+      host: { systemPrompt: "Hi", tools: [] },
+      audioFormat: "wav",
+    });
+    expect(result.success).toBe(false);
+  });
 });
 
 describe("ClientMessageSchema tool_result", () => {

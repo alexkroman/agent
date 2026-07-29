@@ -100,7 +100,11 @@ describe("parseManifest", () => {
   });
 
   test("rejects invalid allowedHosts pattern", () => {
-    expect(() => parseManifest({ name: "test", allowedHosts: ["*"] })).toThrow();
+    // Pin the diagnostic text: it names the offending pattern so users can
+    // find it in a long allowedHosts list.
+    expect(() => parseManifest({ name: "test", allowedHosts: ["*"] })).toThrow(
+      /Invalid allowedHosts pattern/,
+    );
   });
 
   test("rejects allowedHosts with IP address", () => {

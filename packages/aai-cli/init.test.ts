@@ -31,6 +31,19 @@ async function useFakeTemplates(dir: string): Promise<void> {
 const executeDeploy = vi.hoisted(() => vi.fn());
 vi.mock("./deploy.ts", () => ({ executeDeploy }));
 
+// executeInit shells out (corepack/safe-chain/pnpm) only when the scaffolded
+// project has dependencies; mock execa so those paths are testable hermetically.
+const execaMock = vi.hoisted(() => vi.fn());
+vi.mock("execa", () => ({ execa: execaMock }));
+
+/** Add a template whose package.json declares deps, so installDeps runs. */
+async function addDepsTemplate(dir: string): Promise<void> {
+  await writeFiles(path.join(dir, "fake-root"), {
+    "templates/deps/agent.json": JSON.stringify({ name: "Deps" }),
+    "templates/deps/package.json": JSON.stringify({ dependencies: { zod: "^4.0.0" } }),
+  });
+}
+
 afterEach(() => {
   vi.unstubAllEnvs();
 });
@@ -108,6 +121,100 @@ describe("scaffold client.tsx", () => {
 describe("executeInit", () => {
   beforeEach(() => {
     executeDeploy.mockReset();
+    execaMock.mockReset();
+  });
+
+  test("installs deps then deploys when the template declares dependencies", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await useFakeTemplates(dir);
+        await addDepsTemplate(dir);
+        const target = path.join(dir, "with-deps");
+        // corepack enable ok, safe-chain missing, pnpm install ok
+        execaMock.mockImplementation((cmd: string) =>
+          Promise.resolve({ failed: cmd === "safe-chain" }),
+        );
+        executeDeploy.mockResolvedValue({
+          ok: true,
+          data: { slug: "with-deps", url: "https://agents.test/with-deps" },
+        });
+
+        const result = await executeInit(
+          { dir: target, template: "deps", server: "https://api.test" },
+          { silent: true },
+        );
+
+        expect(result.ok).toBe(true);
+        if (result.ok) expect(result.data.deployed).toBe(true);
+        const pnpmCall = execaMock.mock.calls.find(([cmd]) => cmd === "pnpm");
+        expect(pnpmCall?.[1]).toContain("install");
+        expect(pnpmCall?.[2]).toEqual({ cwd: target });
+      }),
+    );
+  });
+
+  test("routes the install through safe-chain when it is on PATH", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await useFakeTemplates(dir);
+        await addDepsTemplate(dir);
+        const target = path.join(dir, "safe-chained");
+        execaMock.mockResolvedValue({ failed: false });
+
+        await executeInit({ dir: target, template: "deps", skipDeploy: true }, { silent: true });
+
+        // Skip the `safe-chain --version` probe; find the actual install.
+        const installCall = execaMock.mock.calls.find(
+          ([cmd, args]) => cmd === "safe-chain" && (args as string[]).includes("install"),
+        );
+        expect(installCall?.[1]).toEqual(
+          expect.arrayContaining(["pnpm", "--safe-chain-skip-minimum-package-age", "install"]),
+        );
+      }),
+    );
+  });
+
+  test("skips deploy when pnpm install fails", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await useFakeTemplates(dir);
+        await addDepsTemplate(dir);
+        const target = path.join(dir, "broken-install");
+        execaMock.mockImplementation((cmd: string) =>
+          cmd === "pnpm"
+            ? Promise.reject(new Error("registry unreachable"))
+            : Promise.resolve({ failed: true }),
+        );
+
+        const result = await executeInit(
+          { dir: target, template: "deps", server: "https://api.test" },
+          { silent: true },
+        );
+
+        // Deploying without node_modules would fail confusingly further in —
+        // the deploy must not even be attempted.
+        expect(executeDeploy).not.toHaveBeenCalled();
+        expect(result).toEqual({
+          ok: true,
+          data: { dir: target, template: "deps", deployed: false },
+        });
+      }),
+    );
+  });
+
+  test("skips the install entirely when node_modules already exists", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await useFakeTemplates(dir);
+        await addDepsTemplate(dir);
+        const target = path.join(dir, "preinstalled");
+        await fs.mkdir(path.join(target, "node_modules"), { recursive: true });
+
+        await executeInit({ dir: target, template: "deps", skipDeploy: true }, { silent: true });
+
+        expect(execaMock).not.toHaveBeenCalled();
+      }),
+    );
   });
 
   test("scaffolds a project and skips deploy when requested", async () => {
