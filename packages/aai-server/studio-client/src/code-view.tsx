@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Code view — file list on the left, CodeMirror editor on the right.
+// Code view — file tabs across the top, CodeMirror editor below. A workspace
+// is one or two files, so a full sidebar column spent width to list them.
 // Server refreshes (agent edits) update the buffer unless the user has
 // unsaved changes.
 
@@ -87,25 +88,33 @@ type CodeViewProps = {
 };
 
 export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewProps) {
+  const paths = Object.keys(files).sort();
   return (
-    <div className="flex min-h-0 flex-1">
-      <div className="flex w-48 flex-col gap-0.5 overflow-y-auto border-r border-line bg-cream p-2">
-        {Object.keys(files)
-          .sort()
-          .map((path) => (
+    <div className="flex min-h-0 flex-1 flex-col">
+      <div
+        role="tablist"
+        aria-label="Workspace files"
+        className="flex shrink-0 overflow-x-auto border-b border-line bg-cream"
+      >
+        {paths.map((path) => {
+          const active = path === currentFile;
+          return (
             <button
               type="button"
+              role="tab"
+              aria-selected={active}
               key={path}
-              className={`cursor-pointer rounded-md border-none px-2 py-1 text-left font-mono text-xs ${
-                path === currentFile
-                  ? "bg-indigo-50 text-indigo"
-                  : "bg-transparent text-fg hover:bg-disabled"
+              className={`shrink-0 cursor-pointer border-x-0 border-t-0 border-b-2 px-3 py-2 font-mono text-[11px] ${
+                active
+                  ? "border-indigo bg-panel text-indigo"
+                  : "border-transparent bg-transparent text-subtle hover:text-fg"
               }`}
               onClick={() => onSelectFile(path)}
             >
               {path}
             </button>
-          ))}
+          );
+        })}
       </div>
       <FileBuffer
         key={currentFile ?? ""}
