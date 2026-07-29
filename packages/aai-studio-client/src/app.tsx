@@ -319,8 +319,10 @@ export function App({ apiKey, onSignOut }: AppProps) {
           <PreviewPane
             hasProject={project != null}
             deployedSlug={deployedSlug}
+            unpublished={workspace.data?.unpublished}
             nonce={previewNonce}
             onNewProject={newProject}
+            onPublish={() => setPublishOpen(true)}
           />
         ) : (
           <CodeView

@@ -39,6 +39,7 @@ import { starterFiles } from "./studio-template.ts";
 import {
   deleteWorkspace,
   getWorkspace,
+  hasUnpublishedChanges,
   listProjects,
   putWorkspace,
   studioScope,
@@ -117,6 +118,8 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     return c.json({
       files: workspace.files,
       ...(workspace.deployedSlug && { deployedSlug: workspace.deployedSlug }),
+      // Computed here so the client never has to hash files itself.
+      unpublished: hasUnpublishedChanges(workspace),
     });
   });
 

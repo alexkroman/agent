@@ -6,9 +6,12 @@ import { MAX_STUDIO_FILES } from "./studio-schemas.ts";
 import {
   assertWorkspaceLimits,
   deleteWorkspace,
+  filesHash,
   getWorkspace,
+  hasUnpublishedChanges,
   listProjects,
   putWorkspace,
+  type StudioWorkspace,
   studioScope,
 } from "./studio-workspace.ts";
 
@@ -100,5 +103,75 @@ describe("assertWorkspaceLimits", () => {
 
   test("accepts a normal workspace", () => {
     expect(() => assertWorkspaceLimits({ "agent.ts": "export default {}" })).not.toThrow();
+  });
+});
+
+describe("hasUnpublishedChanges", () => {
+  const at = (over: Partial<StudioWorkspace> = {}): StudioWorkspace => ({
+    files: { "agent.ts": "a" },
+    updatedAt: 1,
+    ...over,
+  });
+
+  test("a never-published project is not 'stale'", () => {
+    // The preview says "nothing published yet"; a stale banner on top of that
+    // would be noise.
+    expect(hasUnpublishedChanges(at())).toBe(false);
+  });
+
+  test("published and untouched is up to date", () => {
+    const files = { "agent.ts": "a" };
+    expect(
+      hasUnpublishedChanges(at({ files, deployedSlug: "s", deployedHash: filesHash(files) })),
+    ).toBe(false);
+  });
+
+  test("an edit since the last publish is unpublished", () => {
+    expect(
+      hasUnpublishedChanges(
+        at({
+          files: { "agent.ts": "b" },
+          deployedSlug: "s",
+          deployedHash: filesHash({ "agent.ts": "a" }),
+        }),
+      ),
+    ).toBe(true);
+  });
+
+  test("editing and undoing is not a change", () => {
+    // A timestamp would call this stale forever; a content hash does not.
+    const files = { "agent.ts": "a" };
+    const published = filesHash(files);
+    expect(
+      hasUnpublishedChanges(
+        at({ files: { ...files }, deployedSlug: "s", deployedHash: published }),
+      ),
+    ).toBe(false);
+  });
+
+  test("adding or deleting a file counts", () => {
+    const published = filesHash({ "agent.ts": "a" });
+    expect(
+      hasUnpublishedChanges(
+        at({
+          files: { "agent.ts": "a", "shared.ts": "x" },
+          deployedSlug: "s",
+          deployedHash: published,
+        }),
+      ),
+    ).toBe(true);
+    expect(
+      hasUnpublishedChanges(at({ files: {}, deployedSlug: "s", deployedHash: published })),
+    ).toBe(true);
+  });
+});
+
+describe("filesHash", () => {
+  test("does not depend on key order", () => {
+    expect(filesHash({ a: "1", b: "2" })).toBe(filesHash({ b: "2", a: "1" }));
+  });
+
+  test("changes when content changes", () => {
+    expect(filesHash({ a: "1" })).not.toBe(filesHash({ a: "2" }));
   });
 });

@@ -16,7 +16,7 @@ import { hashApiKey } from "../secrets.ts";
 import { bundleWorkspaceWorker } from "./studio-bundle.ts";
 import { buildWorkspaceClient } from "./studio-client-build.ts";
 import { StudioBuildError } from "./studio-errors.ts";
-import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
+import { filesHash, getWorkspace, putWorkspace } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 
 export type StudioDeployResult =
@@ -104,11 +104,13 @@ export async function deployStudioProject(
   );
   if (!outcome.ok) return { ok: false, error: outcome.error };
 
-  if (workspace.deployedSlug !== outcome.slug) {
-    await putWorkspace(deps.storage, params.scope, params.project, {
-      files: workspace.files,
-      deployedSlug: outcome.slug,
-    });
-  }
+  // Always written, not just on a slug change: `deployedHash` is what tells
+  // the preview whether the running agent still matches the editor, so a
+  // redeploy to the same slug has to refresh it too.
+  await putWorkspace(deps.storage, params.scope, params.project, {
+    files: workspace.files,
+    deployedSlug: outcome.slug,
+    deployedHash: filesHash(workspace.files),
+  });
   return { ok: true, slug: outcome.slug, url: `/${outcome.slug}/` };
 }

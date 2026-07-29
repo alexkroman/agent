@@ -4,6 +4,8 @@
 export type ProjectData = {
   files: Record<string, string>;
   deployedSlug?: string;
+  /** Workspace has edits the running agent does not have yet. */
+  unpublished?: boolean;
 };
 
 export type StudioStatus = {

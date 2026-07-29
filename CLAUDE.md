@@ -318,6 +318,15 @@ voice agents without the CLI:
   only return "not set" and waste a turn. The tool context is built from
   that single variable, never `process.env`, so a coding turn cannot read
   the host's other credentials.
+- **The preview shows the *published* agent**, so edits look like they did
+  nothing until Publish. `hasUnpublishedChanges` (`studio-workspace.ts`)
+  compares a `filesHash` of the workspace against `deployedHash`, recorded
+  on every successful deploy, and `GET /studio/projects/:project` returns it
+  as `unpublished` so the client never hashes anything. The preview then
+  says so, with a Publish button in the banner. A hash rather than a
+  timestamp for two reasons: publishing itself writes the workspace (which
+  bumps `updatedAt`), and editing a file then undoing it should not leave
+  the project permanently "stale".
 - **The coding agent cannot publish.** There is deliberately no deploy
   tool: going live is the user's call, made with the Publish button
   (`POST /studio/projects/:project/deploy`). The prompt states this

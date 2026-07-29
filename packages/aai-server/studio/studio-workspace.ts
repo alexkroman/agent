@@ -22,8 +22,32 @@ export type StudioWorkspace = {
   files: Record<string, string>;
   /** Slug of the last successful deploy — redeploys reuse it. */
   deployedSlug?: string;
+  /**
+   * `filesHash` of the files as they were at the last successful deploy.
+   * Compared against the current files to tell whether what is running is
+   * still what is in the editor. A hash rather than a timestamp because
+   * publishing itself writes the workspace (bumping `updatedAt`), and
+   * because editing a file and undoing it should not count as a change.
+   */
+  deployedHash?: string;
   updatedAt: number;
 };
+
+/** Stable content hash of a workspace's files. Key order never matters. */
+export function filesHash(files: Record<string, string>): string {
+  const stable = Object.keys(files)
+    .sort()
+    .map((path) => [path, files[path]]);
+  return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+}
+
+/** True when the workspace has edits that have not been published. */
+export function hasUnpublishedChanges(workspace: StudioWorkspace): boolean {
+  // Never deployed: there is nothing to be out of date with, and the preview
+  // says "nothing published yet" rather than showing a stale banner.
+  if (!workspace.deployedSlug) return false;
+  return workspace.deployedHash !== filesHash(workspace.files);
+}
 
 /**
  * Deterministic per-API-key namespace for studio data.

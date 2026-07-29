@@ -33,21 +33,46 @@ function StepCard({ numeral, title, caption, active }: StepCardProps) {
 type PreviewPaneProps = {
   hasProject: boolean;
   deployedSlug?: string | undefined;
+  /** Workspace has edits the running agent does not have yet. */
+  unpublished?: boolean | undefined;
   /** Bumped after each publish / agent deploy so the iframe reloads. */
   nonce: number;
   onNewProject: () => void;
+  onPublish: () => void;
 };
 
-export function PreviewPane({ hasProject, deployedSlug, nonce, onNewProject }: PreviewPaneProps) {
+export function PreviewPane({
+  hasProject,
+  deployedSlug,
+  unpublished,
+  nonce,
+  onNewProject,
+  onPublish,
+}: PreviewPaneProps) {
   if (deployedSlug) {
     return (
-      <iframe
-        key={`${deployedSlug}-${nonce}`}
-        src={`/${deployedSlug}/`}
-        title="Agent preview"
-        allow="microphone"
-        className="h-full w-full flex-1 border-0 bg-white"
-      />
+      <div className="flex min-h-0 flex-1 flex-col">
+        {/* The frame shows the *published* agent, so edits appear to do
+            nothing until Publish. Saying so beats looking broken. */}
+        {unpublished && (
+          <div className="flex shrink-0 items-center gap-3 border-b border-line bg-indigo-50 px-4 py-2">
+            <span className="text-[11px] text-fg">
+              You've changed the code since this was published — the preview is still running the
+              last published version.
+            </span>
+            <button type="button" className="btn btn-primary ml-auto" onClick={onPublish}>
+              Publish
+            </button>
+          </div>
+        )}
+        <iframe
+          key={`${deployedSlug}-${nonce}`}
+          src={`/${deployedSlug}/`}
+          title="Agent preview"
+          allow="microphone"
+          className="min-h-0 w-full flex-1 border-0 bg-white"
+        />
+      </div>
     );
   }
   // Steps: 1 until a project exists, then 2 (describe) until published.
