@@ -35,6 +35,9 @@ export type ApiRequestOptions = {
    * slug creates a fresh agent per attempt).
    */
   retry?: number;
+  /** Delay between retries in ms (default 300). Tests pass 0 so retry-path
+   * assertions don't sleep real wall-clock time. */
+  retryDelay?: number;
   /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
   fetch?: typeof globalThis.fetch;
 };
@@ -54,7 +57,7 @@ export async function apiRequest<T = unknown>(url: string, opts: ApiRequestOptio
       headers: { Authorization: `Bearer ${opts.apiKey}`, ...opts.headers },
       ...(opts.body !== undefined ? { body: opts.body } : {}),
       retry: opts.retry ?? 2,
-      retryDelay: 300,
+      retryDelay: opts.retryDelay ?? 300,
     });
   } catch (err) {
     throw toApiError(err, url, opts);

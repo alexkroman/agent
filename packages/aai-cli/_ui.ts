@@ -1,8 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import * as p from "@clack/prompts";
-import { colorize } from "consola/utils";
-import { z } from "zod";
+import pc from "picocolors";
 
 type Log = typeof p.log;
 
@@ -36,17 +35,21 @@ export function unwrapCancel<T>(result: T | symbol): T {
 
 /** Format a URL for display. */
 export function fmtUrl(url: string): string {
-  return colorize("cyanBright", url);
+  return pc.cyanBright(url);
 }
 
-const PortSchema = z.coerce.number().int().min(0).max(65_535);
-
-/** Parse and validate a port string. Returns the numeric port or throws. */
+/**
+ * Parse and validate a port string. Returns the numeric port or throws.
+ *
+ * Deliberately zod-free: this module loads on every CLI invocation
+ * (including `aai --help`), and keeping zod off that path is the same
+ * startup-cost invariant `_utils.ts` documents for its error helpers.
+ */
 export function parsePort(raw: string): number {
   // `Number("")` is 0, so an empty/whitespace string must be rejected up front.
-  const parsed = raw.trim() === "" ? undefined : PortSchema.safeParse(raw);
-  if (!parsed?.success) {
+  const port = raw.trim() === "" ? Number.NaN : Number(raw);
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
     throw new Error(`Invalid port: ${raw}. Must be a number between 0 and 65535.`);
   }
-  return parsed.data;
+  return port;
 }

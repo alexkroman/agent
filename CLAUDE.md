@@ -56,6 +56,15 @@ parallelism. Turbo handles the dependency graph — tasks with no
 dependencies (lint, test, syncpack, sherif) start immediately while
 build-dependent tasks (typecheck, publint, attw) wait for build.
 
+Turbo runs tasks in **strict env mode**, so proxy/CA variables
+(`HTTPS_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, …) are listed in
+`globalPassThroughEnv` in `turbo.json` — passed through to tasks but kept
+out of cache hashes. Without this, any task that makes real network calls
+(the e2e suite's verdaccio→npmjs uplink) silently loses its egress config
+in proxied environments and fails with misleading errors (instant
+`ERR_PNPM_FETCH_404`s) that only reproduce under `turbo run`, never when
+running the underlying script directly.
+
 `pnpm check:local` uses the same script with `--local` flag, running a
 subset: build, typecheck, lint, publint, syncpack, sherif, knip, test —
 all in one turbo call with `--continue` (shows all failures at once).
@@ -645,7 +654,11 @@ Each package has distinct test helpers tailored to its domain:
 - **`aai/host/_test-utils.ts`** — `flush()` (microtask yield), `makeTool()`,
   `makeAgent()`, `makeConfig()`, fixture replay helpers for S2S mocking
 - **`aai-cli/_test-utils.ts`** — `withTempDir()` (temp dir + cleanup),
-  `silenceSteps()`, `fakeDownloadAndMerge()`, `makeBundle()`
+  `silenceSteps()`, `silenced()`, `makeBundle()`. The dev-server specs share
+  their mock scaffolding (fake chokidar, runtime/server mocks) via
+  `_dev-server-test-utils.ts`. A `_test-setup.ts` setup file points
+  `AAI_CONFIG_DIR` at a per-run temp dir so tests can never touch the
+  developer's real `~/.config/aai/config.json` (API key + approved servers).
 - **`aai-ui/_react-test-utils.ts`** — `createMockSessionCore()`,
   `MockAudioContext`, `installAudioMocks()`
 - **`aai-server/test-utils.ts`** — (no underscore) `createMockKv()`,
@@ -1167,10 +1180,31 @@ both are fail-closed:
 `.aai/project.json` is in the working tree, so a cloned repo controls its
 `serverUrl` — and `aai deploy` / `aai secret` pair that URL with the user's API
 key and secret values. `resolveServerUrl` therefore honors a config-supplied
-origin only when it is the shipped default, loopback, or already in
-`approvedServers` in the user-owned global config. Passing `--server` is what
-approves an origin (it is user intent, not repo content) and is remembered for
-later commands. Never widen this to trust `serverUrl` directly.
+origin only when it is the shipped default or already in `approvedServers` in
+the user-owned global config. Loopback origins are deliberately NOT implicitly
+trusted from config — a repo-supplied `http://localhost:<port>` would hand the
+key to whatever is listening on that local port (dev mode targets its own
+default server before the project config is consulted, so `aai dev` workflows
+are unaffected). Passing `--server` is what approves an origin (it is user
+intent, not repo content) and is remembered for later commands. Never widen
+this to trust `serverUrl` directly.
+
+The `slug` from the same file is validated against the platform's slug shape
+(`VALID_SLUG_RE`, duplicated from aai-server's `schemas.ts`) before it is ever
+interpolated into a URL path, so a hostile `"slug": "x/../admin"` cannot steer
+a credentialed request; `aai secret delete` also URL-encodes the secret name.
+The API key itself is stored 0600 in the global `config.json`
+(`AAI_CONFIG_DIR` overrides the config dir location), and `ensureApiKey`
+refuses to prompt without a TTY — the hidden prompt would otherwise consume
+piped stdin as keystrokes.
+
+Note also that `aai build` / `aai deploy` evaluate the repository's bundled
+`agent.ts` in the host process (`evalWorkerBundle`) — running either against
+an untrusted clone executes that repo's code locally. The studio path avoids
+this by design (guest-side `bundle/load`); the CLI currently accepts it as the
+price of config extraction, so deploy resolves the server-trust check and API
+key BEFORE bundling, and a bare `aai` in a project asks for confirmation on a
+TTY before implicitly deploying.
 
 ### Testing security boundaries
 

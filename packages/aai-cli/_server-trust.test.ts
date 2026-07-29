@@ -42,12 +42,22 @@ describe("resolveServerUrl: config-supplied origins", () => {
     expect(resolveServerUrl(undefined, DEFAULT_SERVER)).toBe(DEFAULT_SERVER);
   });
 
+  // Loopback is NOT implicitly trusted: `.aai/project.json` is repo content,
+  // and a repo-supplied `http://localhost:<port>` would hand the API key (and
+  // `aai secret` values) to whatever the attacker has listening on that local
+  // port. `--server` approves a local origin like any other.
   test.each(["http://localhost:8080", "http://127.0.0.1:3000", "http://[::1]:3000"])(
-    "allows loopback without approval: %s",
+    "refuses unapproved loopback from config: %s",
     (url: string) => {
-      expect(resolveServerUrl(undefined, url)).toBe(url);
+      expect(() => resolveServerUrl(undefined, url)).toThrow(/Refusing to send your API key/);
     },
   );
+
+  test("allows loopback once approved", () => {
+    expect(resolveServerUrl(undefined, "http://127.0.0.1:3000", ["http://127.0.0.1:3000"])).toBe(
+      "http://127.0.0.1:3000",
+    );
+  });
 
   test("allows an origin the user previously approved", () => {
     expect(resolveServerUrl(undefined, `${EVIL}/`, [EVIL])).toBe(EVIL);

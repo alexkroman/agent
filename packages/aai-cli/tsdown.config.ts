@@ -2,8 +2,8 @@ import { defineConfig } from "tsdown";
 
 export default defineConfig({
   // The *-bundler modules are public subpath exports (aai-server's studio
-  // builds workspaces through them); types.ts backs the "./types" export.
-  entry: ["cli.ts", "types.ts", "client-bundler.ts", "worker-bundler.ts"],
+  // builds workspaces through them).
+  entry: ["cli.ts", "client-bundler.ts", "worker-bundler.ts"],
   format: "esm",
   platform: "node",
   target: "node22",

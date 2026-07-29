@@ -2,8 +2,8 @@
 
 import path from "node:path";
 import * as p from "@clack/prompts";
-import { colorize } from "consola/utils";
 import { execa } from "execa";
+import pc from "picocolors";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { log, unwrapCancel } from "./_ui.ts";
@@ -110,8 +110,16 @@ async function tryDeploy(
   // Server defaulting (dev mode → localhost) is owned by resolveServerUrl
   // inside executeDeploy — pass the explicit flag through untouched.
   const { executeDeploy } = await import("./deploy.ts");
-  const result = await executeDeploy({ cwd, ...(server ? { server } : {}) });
-  return result.ok ? { slug: result.data.slug, url: result.data.url } : null;
+  try {
+    const result = await executeDeploy({ cwd, ...(server ? { server } : {}) });
+    return result.ok ? { slug: result.data.slug, url: result.data.url } : null;
+  } catch (err) {
+    // The project was scaffolded and installed — a deploy failure (server
+    // unreachable, bad key) must not fail the whole init.
+    log.warn(`Deploy failed: ${errorMessage(err)}`);
+    log.warn("Your project was still created — run `aai deploy` in it to retry.");
+    return null;
+  }
 }
 
 /** Scaffold the project, optionally showing a spinner. */
@@ -152,7 +160,7 @@ export async function executeInit(
 ): Promise<CommandResult<InitData>> {
   const suppressUi = extra?.silent;
   if (!suppressUi) {
-    p.intro(colorize("cyanBright", "Create a new voice agent"));
+    p.intro(pc.cyanBright("Create a new voice agent"));
   }
 
   const dir = opts.dir ?? (await promptProjectName(opts.yes));
@@ -161,7 +169,7 @@ export async function executeInit(
 
   if (!opts.force && (await fileExists(path.join(cwd, "agent.ts")))) {
     throw new Error(
-      `agent.ts already exists in this directory. Use ${colorize("cyanBright", "--force")} to overwrite.`,
+      `agent.ts already exists in this directory. Use ${pc.cyanBright("--force")} to overwrite.`,
     );
   }
 

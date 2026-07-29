@@ -176,7 +176,7 @@ export type ToolDef<
  * @example
  * ```ts
  * // shared.ts
- * import type { ToolResultMap } from "@alexkroman1/aai-cli/types";
+ * import type { ToolResultMap } from "@alexkroman1/aai";
  *
  * export interface Pizza {
  *   id: number;

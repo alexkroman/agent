@@ -4,120 +4,38 @@ import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { withTempDir } from "./_test-utils.ts";
-
-// ─── Hoisted mock fns (survive vi.mock hoisting) ───────────────────────────
-
-const {
-  mockListen,
+import {
+  chokidarState,
+  mockChokidarWatch,
   mockClose,
   mockCreateRuntime,
-  mockRequiredProviderEnvVars,
   mockCreateServer,
-  mockEnsureApiKey,
-  mockResolveServerEnv,
+  mockListen,
   mockValidateAgentExport,
-} = vi.hoisted(() => ({
-  mockListen: vi.fn().mockResolvedValue(undefined),
-  mockClose: vi.fn().mockResolvedValue(undefined),
-  mockCreateRuntime: vi.fn().mockReturnValue({ runtime: "mock" }),
-  mockCreateServer: vi.fn(),
-  // The runtime barrel is mocked to keep it out of these specs, so this stands
-  // in for the real registry-derived lookup. The default-S2S agent these tests
-  // write needs an AssemblyAI key; the real function has its own specs in the
-  // aai package (providers/resolve.test.ts).
-  mockRequiredProviderEnvVars: vi.fn().mockReturnValue(["ASSEMBLYAI_API_KEY"]),
-  mockEnsureApiKey: vi.fn().mockResolvedValue("test-api-key"),
-  mockResolveServerEnv: vi.fn().mockResolvedValue({ ASSEMBLYAI_API_KEY: "test-key" }),
-  mockValidateAgentExport: vi.fn(),
-}));
-
-// Wire mockCreateServer to return the mock server object
-mockCreateServer.mockReturnValue({ listen: mockListen, close: mockClose });
-
-// Fake chokidar: captures the watched dir, the `ignored` matcher, and the
-// "all" event callback so tests can fire synthetic change events.
-const { chokidarState, mockChokidarWatch } = vi.hoisted(() => {
-  const chokidarState = {
-    allCallback: undefined as ((event: string, filePath: string) => void) | undefined,
-    errorCallback: undefined as ((err: unknown) => void) | undefined,
-    ignored: undefined as ((filePath: string) => boolean) | undefined,
-    close: vi.fn().mockResolvedValue(undefined),
-    watchedDir: undefined as string | undefined,
-  };
-  const mockChokidarWatch = vi.fn(
-    (dir: string, opts: { ignored?: (filePath: string) => boolean }) => {
-      chokidarState.watchedDir = dir;
-      chokidarState.ignored = opts.ignored;
-      return {
-        on: (event: string, cb: (event: string, filePath: string) => void) => {
-          if (event === "all") chokidarState.allCallback = cb;
-          if (event === "error") chokidarState.errorCallback = cb as (err: unknown) => void;
-        },
-        close: chokidarState.close,
-      };
-    },
-  );
-  return { chokidarState, mockChokidarWatch };
-});
+  primeDevServerMocks,
+} from "./_dev-server-test-utils.ts";
+import { withTempDir } from "./_test-utils.ts";
 
 // ─── Module mocks ───────────────────────────────────────────────────────────
+// Factories (and the mock fns/state they wire up) live in the shared
+// harness — see _dev-server-test-utils.ts. vi.mock calls must stay
+// top-level in each test file for vitest's hoisting.
 
-vi.mock("node:fs", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("node:fs")>();
-  return {
-    ...actual,
-    existsSync: vi.fn().mockReturnValue(false),
-  };
-});
-
-vi.mock("chokidar", () => ({
-  watch: mockChokidarWatch,
-}));
-
-// Deterministic port selection: always return the first candidate port.
-vi.mock("get-port", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("get-port")>();
-  return {
-    ...actual,
-    default: vi.fn(async (opts?: { port?: Iterable<number> }) => {
-      const first = opts?.port?.[Symbol.iterator]().next().value;
-      return first ?? 0;
-    }),
-  };
-});
-
-vi.mock("@alexkroman1/aai/runtime", () => ({
-  createRuntime: mockCreateRuntime,
-  createServer: mockCreateServer,
-  requiredProviderEnvVars: mockRequiredProviderEnvVars,
-  // The dev server applies the self-hosted credential fallback when building
-  // `env`; identity here keeps these tests focused on wiring. The helper's own
-  // behavior is covered in aai/host/providers/host-env.test.ts.
-  withHostCredentialFallback: (env: Record<string, string>) => env,
-}));
-
-vi.mock("./_config.ts", () => ({
-  ensureApiKey: mockEnsureApiKey,
-}));
-
-vi.mock("./_server-common.ts", () => ({
-  resolveServerEnv: mockResolveServerEnv,
-}));
-
-vi.mock("./_ui.ts", async () => ({
-  log: (await import("./_test-utils.ts")).makeMockLog(),
-  fmtUrl: vi.fn((url: string) => url),
-}));
-
-vi.mock("./_default-html.ts", () => ({
-  fallbackHtmlPlugin: vi.fn().mockReturnValue({ name: "mock-plugin" }),
-}));
-
-vi.mock("./_utils.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("./_utils.ts")>()),
-  validateAgentExport: mockValidateAgentExport,
-}));
+vi.mock("node:fs", async () => (await import("./_dev-server-test-utils.ts")).nodeFsModule());
+vi.mock("chokidar", async () => (await import("./_dev-server-test-utils.ts")).chokidarModule());
+vi.mock("get-port", async () => (await import("./_dev-server-test-utils.ts")).getPortModule());
+vi.mock("@alexkroman1/aai/runtime", async () =>
+  (await import("./_dev-server-test-utils.ts")).aaiRuntimeModule(),
+);
+vi.mock("./_config.ts", async () => (await import("./_dev-server-test-utils.ts")).configModule());
+vi.mock("./_server-common.ts", async () =>
+  (await import("./_dev-server-test-utils.ts")).serverCommonModule(),
+);
+vi.mock("./_ui.ts", async () => (await import("./_dev-server-test-utils.ts")).uiModule());
+vi.mock("./_default-html.ts", async () =>
+  (await import("./_dev-server-test-utils.ts")).defaultHtmlModule(),
+);
+vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts")).utilsModule());
 
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
@@ -148,12 +66,7 @@ beforeEach(() => {
   chokidarState.watchedDir = undefined;
   chokidarState.close = vi.fn().mockResolvedValue(undefined);
   mockChokidarWatch.mockClear();
-  mockCreateRuntime.mockReturnValue({ runtime: "mock" });
-  mockCreateServer.mockReturnValue({ listen: mockListen, close: mockClose });
-  mockListen.mockResolvedValue(undefined);
-  mockClose.mockResolvedValue(undefined);
-  mockResolveServerEnv.mockResolvedValue({ ASSEMBLYAI_API_KEY: "test-key" });
-  mockEnsureApiKey.mockResolvedValue("test-api-key");
+  primeDevServerMocks();
   mockValidateAgentExport.mockImplementation(() => undefined);
 });
 

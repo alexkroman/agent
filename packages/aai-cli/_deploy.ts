@@ -12,6 +12,8 @@ export type DeployOpts = {
   /** Existing slug for redeployment. Omit for first deploy — server generates one. */
   slug?: string;
   apiKey: string;
+  /** Retry delay override for tests (0 = no real sleeps on retry paths). */
+  retryDelay?: number;
   /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
   fetch?: typeof globalThis.fetch;
 };
@@ -47,6 +49,7 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
     // its response would create a second, orphaned agent. Redeploys target a
     // fixed slug and stay retried.
     ...(opts.slug ? {} : { retry: 0 }),
+    ...(opts.retryDelay !== undefined ? { retryDelay: opts.retryDelay } : {}),
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
 

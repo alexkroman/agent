@@ -12,11 +12,6 @@ import { errorMessage, validateAgentExport } from "./_utils.ts";
 import { buildClient } from "./client-bundler.ts";
 import { type BuildWorkerOptions, buildWorker } from "./worker-bundler.ts";
 
-export type { BuildWorkerOptions } from "./worker-bundler.ts";
-// Re-exported so existing internal importers (_dev-server) keep one entry
-// point for bundling; the implementations live in the public *-bundler modules.
-export { buildWorker } from "./worker-bundler.ts";
-
 /** Output from the bundler: agentConfig + worker ESM + client files. */
 export type DirectoryBundleOutput = {
   /** ESM bundle of agent.ts (tool execute functions + hook handlers). */

@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs";
 import path from "node:path";
-import { describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
@@ -63,6 +63,18 @@ describe("readProjectConfig / writeProjectConfig", () => {
 });
 
 describe("getConfigDir", () => {
+  // The suite-wide setup file sets AAI_CONFIG_DIR (see _test-setup.ts);
+  // clear it here so the injected legacy/modern dirs are what's under test.
+  beforeEach(() => {
+    vi.stubEnv("AAI_CONFIG_DIR", "");
+  });
+
+  test("AAI_CONFIG_DIR overrides everything", async () => {
+    const { getConfigDir } = await import("./_config.ts");
+    vi.stubEnv("AAI_CONFIG_DIR", "/tmp/aai-override");
+    expect(getConfigDir({ legacy: "/l", modern: "/m" })).toBe("/tmp/aai-override");
+  });
+
   test("prefers the legacy dir when a config file already exists there", async () => {
     await withTempDir(async (dir) => {
       const { getConfigDir, writeGlobalConfig } = await import("./_config.ts");
@@ -136,27 +148,60 @@ describe("ensureApiKey", () => {
     vi.mocked(p.password).mockReset();
   });
 
+  /**
+   * Pretend stdin is a TTY for the duration of `fn`. The prompt path is
+   * gated on `process.stdin.isTTY` (a real non-TTY run must fail fast, not
+   * prompt), and the test process itself has no TTY.
+   */
+  async function withTtyStdin(fn: () => Promise<void>): Promise<void> {
+    const original = Object.getOwnPropertyDescriptor(process.stdin, "isTTY");
+    Object.defineProperty(process.stdin, "isTTY", { value: true, configurable: true });
+    try {
+      await fn();
+    } finally {
+      if (original) Object.defineProperty(process.stdin, "isTTY", original);
+      else delete (process.stdin as { isTTY?: boolean }).isTTY;
+    }
+  }
+
   test("prompts and saves when no key exists", async () => {
+    // Isolate from the host shell: an exported ASSEMBLYAI_API_KEY would
+    // short-circuit the prompt path and fail this test on developer machines.
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     const p = await import("@clack/prompts");
     vi.mocked(p.password).mockResolvedValue("new-api-key");
     vi.mocked(p.isCancel).mockReturnValue(false);
 
-    await withTempDir(async (dir) => {
-      const { readGlobalConfig, ensureApiKey } = await import("./_config.ts");
-      const key = await ensureApiKey(dir);
-      expect(key).toBe("new-api-key");
-      expect(p.password).toHaveBeenCalledWith({ message: "Enter your AssemblyAI API key" });
-      const saved = await readGlobalConfig(dir);
-      expect(saved.apiKey).toBe("new-api-key");
-    });
+    await withTtyStdin(() =>
+      withTempDir(async (dir) => {
+        const { readGlobalConfig, ensureApiKey } = await import("./_config.ts");
+        const key = await ensureApiKey(dir);
+        expect(key).toBe("new-api-key");
+        expect(p.password).toHaveBeenCalledWith({ message: "Enter your AssemblyAI API key" });
+        const saved = await readGlobalConfig(dir);
+        expect(saved.apiKey).toBe("new-api-key");
+      }),
+    );
     vi.mocked(p.password).mockReset();
     vi.mocked(p.isCancel).mockReset();
   });
 
+  test("fails fast (no prompt) when there is no key and no TTY", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
+    const p = await import("@clack/prompts");
+
+    await withTempDir(async (dir) => {
+      const { ensureApiKey } = await import("./_config.ts");
+      // The hidden password prompt would otherwise consume piped stdin as
+      // keystrokes (e.g. eat the secret in `echo $V | aai secret put N`).
+      await expect(ensureApiKey(dir)).rejects.toThrow(/no TTY/i);
+      expect(p.password).not.toHaveBeenCalled();
+    });
+  });
+
   test("reads from ASSEMBLYAI_API_KEY env var and saves to config", async () => {
     const p = await import("@clack/prompts");
-    const original = process.env.ASSEMBLYAI_API_KEY;
-    process.env.ASSEMBLYAI_API_KEY = "env-var-key";
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "env-var-key");
 
     await withTempDir(async (dir) => {
       const { readGlobalConfig, ensureApiKey } = await import("./_config.ts");
@@ -166,13 +211,25 @@ describe("ensureApiKey", () => {
       const saved = await readGlobalConfig(dir);
       expect(saved.apiKey).toBe("env-var-key");
     });
-
-    if (original === undefined) delete process.env.ASSEMBLYAI_API_KEY;
-    else process.env.ASSEMBLYAI_API_KEY = original;
     vi.mocked(p.password).mockReset();
   });
 
+  test("still returns the env key (with a warning) when the config write fails", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "env-var-key");
+    await withTempDir(async (dir) => {
+      const { ensureApiKey } = await import("./_config.ts");
+      const fsp = (await import("node:fs/promises")).default;
+      const writeSpy = vi
+        .spyOn(fsp, "writeFile")
+        .mockRejectedValueOnce(Object.assign(new Error("EACCES: permission denied"), {}));
+      // Saving is best-effort — the key in hand still works for this run.
+      await expect(ensureApiKey(dir)).resolves.toBe("env-var-key");
+      expect(writeSpy).toHaveBeenCalled();
+    });
+  });
+
   test("calls cancel and exits when user cancels prompt", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     const p = await import("@clack/prompts");
     const cancelSymbol = Symbol("cancel");
     vi.mocked(p.password).mockResolvedValue(cancelSymbol as unknown as string);
@@ -181,12 +238,14 @@ describe("ensureApiKey", () => {
       throw new Error("process.exit");
     });
 
-    await withTempDir(async (dir) => {
-      const { ensureApiKey } = await import("./_config.ts");
-      await expect(ensureApiKey(dir)).rejects.toThrow("process.exit");
-      expect(p.cancel).toHaveBeenCalledWith("Setup cancelled");
-      expect(exitSpy).toHaveBeenCalledWith(0);
-    });
+    await withTtyStdin(() =>
+      withTempDir(async (dir) => {
+        const { ensureApiKey } = await import("./_config.ts");
+        await expect(ensureApiKey(dir)).rejects.toThrow("process.exit");
+        expect(p.cancel).toHaveBeenCalledWith("Setup cancelled");
+        expect(exitSpy).toHaveBeenCalledWith(0);
+      }),
+    );
     exitSpy.mockRestore();
     vi.mocked(p.password).mockReset();
     vi.mocked(p.isCancel).mockReset();

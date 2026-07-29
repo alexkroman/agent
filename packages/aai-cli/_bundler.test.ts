@@ -37,19 +37,6 @@ describe("createWorkerEvaluator", () => {
   });
 });
 
-describe("buildAgentBundle", () => {
-  test("module exports buildAgentBundle function", async () => {
-    const mod = await import("./_bundler.ts");
-    expect(typeof mod.buildAgentBundle).toBe("function");
-  });
-
-  test("module exports executeBuild function", async () => {
-    const mod = await import("./_bundler.ts");
-    expect(typeof mod.executeBuild).toBe("function");
-  });
-
-  test("module exports evalWorkerBundle function", async () => {
-    const mod = await import("./_bundler.ts");
-    expect(typeof mod.evalWorkerBundle).toBe("function");
-  });
-});
+// buildAgentBundle / executeBuild / evalWorkerBundle behavior is covered by
+// _build.test.ts — the `typeof fn === "function"` shape tests that used to
+// live here asserted nothing a broken implementation would fail.

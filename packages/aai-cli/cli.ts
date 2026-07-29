@@ -11,7 +11,6 @@ import {
   getOutputMode,
   installStdoutGuard,
   type OutputMode,
-  withOutput,
   writeLine,
 } from "./_output.ts";
 import { log, silenceOutput } from "./_ui.ts";
@@ -57,51 +56,43 @@ async function setup(opts?: { agent?: boolean }): Promise<string> {
   return cwd;
 }
 
-/** Catch command errors and display a clean message instead of a raw stack trace. */
-async function handleErrors(mode: OutputMode, fn: () => Promise<void>): Promise<void> {
-  try {
-    await fn();
-  } catch (err: unknown) {
-    const code = err instanceof CliError ? err.code : "command_failed";
-    const hint = err instanceof CliError ? err.hint : undefined;
-    if (mode === "json") {
-      const result = fail(code, errorMessage(err), hint);
-      await writeLine(`${JSON.stringify(result)}\n`);
-      process.exit(1);
-    }
-    log.error(errorMessage(err));
-    process.exit(1);
-  }
-}
-
 /**
- * Run a command body with standard error handling, output mode resolution, and withOutput wrapping.
+ * Run a command body with standard output-mode resolution, error handling,
+ * and result emission.
  *
  * - `setYes`: json mode sets `args.yes = true` (only meaningful for commands with a `yes` arg).
- * - `apiKey`: prompt for / resolve the AssemblyAI API key before the command body runs
- *   (default true — pass false for commands that never talk to the platform).
+ * - API key acquisition is owned by `resolveDeployTarget`/`getServerInfo`
+ *   inside the commands that talk to the platform — after the server-trust
+ *   check, so an untrusted `serverUrl` is refused without prompting for a
+ *   key, and commands with no platform traffic never prompt at all.
+ *
+ * A thrown error and a returned `fail(...)` converge here on one emitter:
+ * human mode logs the message, JSON mode writes exactly one result line,
+ * and both exit 1.
  */
 async function runCommand(
   args: { json?: boolean | undefined; yes?: boolean | undefined },
   fn: (mode: OutputMode) => Promise<CommandResult<unknown>>,
-  opts: { setYes?: boolean; apiKey?: boolean } = {},
+  opts: { setYes?: boolean } = {},
 ): Promise<void> {
   const mode = getOutputMode(args);
   if (mode === "json") {
     silenceOutput();
     if (opts.setYes) args.yes = true;
   }
-  await handleErrors(mode, () =>
-    withOutput(mode, async () => {
-      if (opts.apiKey !== false) {
-        // Resolve the key up front so the prompt appears before any slow work
-        // (bundling, scaffolding). Lazy import keeps zod off the --help path.
-        const { ensureApiKey } = await import("./_config.ts");
-        await ensureApiKey();
-      }
-      return fn(mode);
-    }),
-  );
+  let result: CommandResult<unknown>;
+  try {
+    result = await fn(mode);
+  } catch (err: unknown) {
+    const code = err instanceof CliError ? err.code : "command_failed";
+    const hint = err instanceof CliError ? err.hint : undefined;
+    if (mode === "human") log.error(errorMessage(err));
+    result = fail(code, errorMessage(err), hint);
+  }
+  // Await the flush before exiting: on a pipe (the JSON-mode case) stdout is
+  // async, so process.exit() would truncate the JSON line just queued.
+  if (mode === "json") await writeLine(`${JSON.stringify(result)}\n`);
+  if (!result.ok) process.exit(1);
 }
 
 const init = defineCommand({
@@ -113,7 +104,10 @@ const init = defineCommand({
     server: sharedArgs.server,
     yes: sharedArgs.yes,
     json: sharedArgs.json,
-    skipApi: { type: "boolean", description: "Skip API key check" },
+    skipApi: {
+      type: "boolean",
+      description: "Deprecated no-op: the API key is now only requested when deploying",
+    },
     skipDeploy: { type: "boolean", description: "Skip deploy after scaffolding" },
   },
   async run({ args }) {
@@ -133,7 +127,7 @@ const init = defineCommand({
           mode === "json" ? { silent: true } : undefined,
         );
       },
-      { setYes: true, apiKey: !args.skipApi },
+      { setYes: true },
     );
   },
 });
@@ -159,15 +153,11 @@ const test = defineCommand({
     json: sharedArgs.json,
   },
   async run({ args }) {
-    await runCommand(
-      args,
-      async () => {
-        const cwd = await setup();
-        const { executeTest } = await import("./test.ts");
-        return executeTest(cwd);
-      },
-      { apiKey: false },
-    );
+    await runCommand(args, async () => {
+      const cwd = await setup();
+      const { executeTest } = await import("./test.ts");
+      return executeTest(cwd);
+    });
   },
 });
 
@@ -178,31 +168,27 @@ const build = defineCommand({
     skipTests: { type: "boolean", description: "Skip running tests before build" },
   },
   async run({ args }) {
-    await runCommand(
-      args,
-      async () => {
-        const cwd = await setup({ agent: true });
-        if (!args.skipTests) {
-          const { classifyVitestError, runVitest } = await import("./test.ts");
-          // Distinguish a real test failure (test_failed) from the runner not
-          // spawning (spawn_failed) instead of a generic command_failed.
-          const toCliError = (err: unknown): CliError => {
-            const { code, message } = classifyVitestError(err);
-            return new CliError(code, message, "Re-run with --skipTests to build without tests", {
-              cause: err,
-            });
-          };
-          try {
-            runVitest(cwd);
-          } catch (err: unknown) {
-            throw toCliError(err);
-          }
+    await runCommand(args, async () => {
+      const cwd = await setup({ agent: true });
+      if (!args.skipTests) {
+        const { classifyVitestError, runVitest } = await import("./test.ts");
+        // Distinguish a real test failure (test_failed) from the runner not
+        // spawning (spawn_failed) instead of a generic command_failed.
+        const toCliError = (err: unknown): CliError => {
+          const { code, message } = classifyVitestError(err);
+          return new CliError(code, message, "Re-run with --skipTests to build without tests", {
+            cause: err,
+          });
+        };
+        try {
+          runVitest(cwd);
+        } catch (err: unknown) {
+          throw toCliError(err);
         }
-        const { executeBuild } = await import("./_bundler.ts");
-        return executeBuild(cwd);
-      },
-      { apiKey: false },
-    );
+      }
+      const { executeBuild } = await import("./_bundler.ts");
+      return executeBuild(cwd);
+    });
   },
 });
 
@@ -310,19 +296,37 @@ if (process.env.VITEST !== "true") {
   // early (`aai … --json | head -1`) — EPIPE must not crash with a raw stack.
   installStdoutGuard();
 
-  const sub = process.argv[2];
-  const helpFlags = new Set(["--help", "--version", "-h", "-V"]);
+  // A default command is injected ONLY on a truly bare `aai` — a leading
+  // flag no longer counts as "no subcommand". It used to, which meant a
+  // typo like `aai -v` or `aai --hlep` in a deployed project silently
+  // became `deploy <flag>` and pushed to production.
+  const runDefault = async (): Promise<void> => {
+    if (process.argv.length > 2) return;
+    if (!existsSync(path.join(resolveCwd(), "agent.ts"))) {
+      process.argv.splice(2, 0, "init");
+      return;
+    }
+    // Deploying is an outward-facing act that also executes the project's
+    // agent.ts locally — when there's a human at the terminal, make sure a
+    // bare `aai` (often "what does this do?") means it. Non-TTY keeps the
+    // old behavior: scripts invoking bare `aai` are deliberate.
+    if (process.stdin.isTTY && process.stdout.isTTY) {
+      const p = await import("@clack/prompts");
+      const confirmed = await p.confirm({ message: "Deploy this agent to production?" });
+      if (confirmed !== true) {
+        log.info("Cancelled. Run `aai --help` to see all commands.");
+        process.exit(0);
+      }
+    }
+    process.argv.splice(2, 0, "deploy");
+  };
 
-  if (!sub || (sub.startsWith("-") && !helpFlags.has(sub))) {
-    // No subcommand: deploy if agent.ts exists, otherwise init
-    const defaultCmd = existsSync(path.join(resolveCwd(), "agent.ts")) ? "deploy" : "init";
-    process.argv.splice(2, 0, defaultCmd);
-  }
-
-  // API key acquisition happens inside runCommand (per-command `apiKey` opt),
-  // after citty parses args — so --help/--version never prompt for a key.
-  void runMain(mainCommand).catch((err: unknown) => {
-    log.error(errorMessage(err));
-    process.exitCode = 1;
-  });
+  // API key acquisition happens inside the platform commands, after citty
+  // parses args — so --help/--version never prompt for a key.
+  void runDefault()
+    .then(() => runMain(mainCommand))
+    .catch((err: unknown) => {
+      log.error(errorMessage(err));
+      process.exitCode = 1;
+    });
 }

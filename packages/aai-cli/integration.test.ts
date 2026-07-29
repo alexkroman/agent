@@ -9,13 +9,15 @@
  * Edge cases (network failure, missing config, init, JSON output) live in
  * integration-edge-cases.test.ts.
  */
+import { writeFile } from "node:fs/promises";
+import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { readProjectConfig, writeProjectConfig } from "./_config.ts";
-import { runDelete } from "./_delete.ts";
 import { runDeploy } from "./_deploy.ts";
 import type { MockApi } from "./_mock-api.ts";
 import { startMockApi } from "./_mock-api.ts";
 import { makeBundle, silenced, withTempDir } from "./_test-utils.ts";
+import { runDelete } from "./delete.ts";
 import { executeSecretDelete, executeSecretList, executeSecretPut } from "./secret.ts";
 
 // Mock @clack/prompts to avoid interactive input in tests
@@ -142,6 +144,7 @@ describe("deploy against mock API", () => {
         env: {},
         slug: "my-agent",
         apiKey: "test-key",
+        retryDelay: 0,
       }),
     ).rejects.toThrow("deploy failed (HTTP 500)");
   });
@@ -227,6 +230,25 @@ describe("secrets against mock API", () => {
     expect(api.secrets.TO_DELETE).toBeUndefined();
   });
 
+  test("secret delete URL-encodes hostile names", async () => {
+    await withProjectDir(async (dir) => {
+      // A name containing `/` must not become extra path segments.
+      await executeSecretDelete(dir, "A/B", api.url).catch(() => undefined);
+      const delReq = api.requests.find((r) => r.method === "DELETE");
+      expect(delReq?.path).toBe("/my-agent/secret/A%2FB");
+    });
+  });
+
+  test("a hostile slug from .aai/project.json is rejected before any request", async () => {
+    await withTempDir(async (dir) => {
+      // Repo-controlled input: `..`/`/` shaped slugs would otherwise steer a
+      // credentialed request to an arbitrary path on an approved origin.
+      await writeProjectConfig(dir, { slug: "x/../admin", serverUrl: api.url });
+      await expect(executeSecretList(dir, api.url)).rejects.toThrow(/Invalid slug/);
+      expect(api.requests).toHaveLength(0);
+    });
+  });
+
   test("secret with 401 throws API key hint", async () => {
     const configMod = await import("./_config.ts");
     vi.mocked(configMod.ensureApiKey).mockResolvedValueOnce("invalid-key");
@@ -237,52 +259,90 @@ describe("secrets against mock API", () => {
   });
 });
 
-// ── Deploy: config persistence ───────────────────────────────────────────────
+// ── executeDeploy: the full command composition ─────────────────────────────
+//
+// These exercise the REAL deploy path (target resolution → bundling →
+// upload → config write), not hand-rolled equivalents: the old "config
+// persistence" tests wrote .aai/project.json themselves "like deploy.ts
+// does" and kept passing with executeDeploy deleted entirely.
 
-describe("deploy config persistence", () => {
-  test("deploy saves returned slug to .aai/project.json", async () => {
-    await withTempDir(async (dir) => {
-      const result = await runDeploy({
-        url: api.url,
-        bundle: makeBundle(),
-        env: {},
-        apiKey: "test-key",
-      });
+describe("executeDeploy end to end", () => {
+  /** Scaffold a minimal dependency-free agent project in `dir`. */
+  async function writeAgentProject(dir: string): Promise<void> {
+    await writeFile(
+      path.join(dir, "agent.ts"),
+      `export default { name: "deploy-test-agent", systemPrompt: "Test", tools: {} };`,
+    );
+  }
 
-      // Manually write config like deploy.ts does
-      await writeProjectConfig(dir, { slug: result.slug, serverUrl: api.url });
+  test("persists the server-returned slug to .aai/project.json", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await writeAgentProject(dir);
+        const { executeDeploy } = await import("./deploy.ts");
+        const result = await executeDeploy({ cwd: dir, server: api.url });
 
-      const config = await readProjectConfig(dir);
-      expect(config?.slug).toBe(result.slug);
-      expect(config?.serverUrl).toBe(api.url);
-    });
+        expect(result.ok).toBe(true);
+        if (!result.ok) return;
+        // First deploy: no slug sent, server generated one…
+        expect(result.data.slug).toMatch(/^generated-/);
+        // …and it MUST be recorded, or the next deploy would mint a fresh
+        // slug and orphan this agent.
+        const config = await readProjectConfig(dir);
+        expect(config?.slug).toBe(result.data.slug);
+        expect(config?.serverUrl).toBe(api.url);
+      }),
+    );
   });
 
-  test("redeploy sends existing slug from config", async () => {
-    await withTempDir(async (dir) => {
-      // First deploy — no slug
-      const first = await runDeploy({
-        url: api.url,
-        bundle: makeBundle(),
-        env: {},
-        apiKey: "test-key",
-      });
-      await writeProjectConfig(dir, { slug: first.slug, serverUrl: api.url });
-      api.clear();
+  test("redeploy reuses the recorded slug", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await writeAgentProject(dir);
+        const { executeDeploy } = await import("./deploy.ts");
+        const first = await executeDeploy({ cwd: dir, server: api.url });
+        if (!first.ok) throw new Error("first deploy failed");
+        api.clear();
 
-      // Second deploy — should reuse slug from config
-      const config = await readProjectConfig(dir);
-      const second = await runDeploy({
-        url: api.url,
-        bundle: makeBundle(),
-        env: {},
-        ...(config?.slug ? { slug: config.slug } : {}),
-        apiKey: "test-key",
-      });
+        const second = await executeDeploy({ cwd: dir, server: api.url });
+        if (!second.ok) throw new Error("second deploy failed");
+        expect(second.data.slug).toBe(first.data.slug);
+        const body = JSON.parse(getReq(0).body) as Record<string, unknown>;
+        expect(body.slug).toBe(first.data.slug);
+      }),
+    );
+  });
 
-      expect(second.slug).toBe(first.slug);
-      const body = JSON.parse(getReq(0).body) as Record<string, unknown>;
-      expect(body.slug).toBe(first.slug);
-    });
+  test("an ASSEMBLYAI_API_KEY declared in .env wins over the login key", async () => {
+    // Shell env would take precedence over the .env file value — isolate
+    // from a developer machine's exported key.
+    vi.stubEnv("ASSEMBLYAI_API_KEY", undefined);
+    await withTempDir(
+      silenced(async (dir) => {
+        await writeAgentProject(dir);
+        // The user deliberately targets a different account in .env; the
+        // login key is a floor, not an override.
+        await writeFile(path.join(dir, ".env"), "ASSEMBLYAI_API_KEY=user-dot-env-key\n");
+        const { executeDeploy } = await import("./deploy.ts");
+        const result = await executeDeploy({ cwd: dir, server: api.url });
+
+        expect(result.ok).toBe(true);
+        const body = JSON.parse(getReq(0).body) as { env: Record<string, string> };
+        expect(body.env.ASSEMBLYAI_API_KEY).toBe("user-dot-env-key");
+      }),
+    );
+  });
+
+  test("without .env the login key is seeded as ASSEMBLYAI_API_KEY", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await writeAgentProject(dir);
+        const { executeDeploy } = await import("./deploy.ts");
+        await executeDeploy({ cwd: dir, server: api.url });
+
+        const body = JSON.parse(getReq(0).body) as { env: Record<string, string> };
+        expect(body.env.ASSEMBLYAI_API_KEY).toBe("test-key");
+      }),
+    );
   });
 });

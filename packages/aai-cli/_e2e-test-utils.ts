@@ -128,14 +128,31 @@ export function installDeps(registry: MockRegistry, projectDir: string): void {
   // which rejects any transitive dep published in the last 24h — flakes the
   // suite against fresh upstream releases. Disable via env var (most reliable
   // override; .npmrc is sometimes ignored when corepack-loaded).
-  const installEnv = { ...env, NPM_CONFIG_MINIMUM_RELEASE_AGE: "0" };
+  // CI=true lets pnpm purge a node_modules left by `aai init`'s own install
+  // (which targets the real registry) without a TTY confirmation prompt —
+  // otherwise the registry switch dies with
+  // ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY on machines where that inner
+  // install succeeded.
+  // FETCH_RETRIES: with the uplink no longer converting transient upstream
+  // failures into definitive 404s (see _mock-registry.ts), pnpm's own retry
+  // machinery can actually absorb a dropped connection under parallel load.
+  const installEnv = {
+    ...env,
+    NPM_CONFIG_MINIMUM_RELEASE_AGE: "0",
+    NPM_CONFIG_FETCH_RETRIES: "5",
+    CI: "true",
+  };
 
+  // Output is CAPTURED (not inherited) so an install failure carries the
+  // package manager's own error text on the thrown ExecaSyncError — the e2e
+  // suite classifies that text to decide "registry proxy flake → skip"
+  // versus "our published packages are broken → fail". With stdio:
+  // "inherit" the error message was just the command line, unclassifiable.
   if (pm === "npm") {
-    execaSync("npm", ["install"], { cwd: projectDir, stdio: "inherit", extendEnv: false, env });
+    execaSync("npm", ["install"], { cwd: projectDir, extendEnv: false, env });
   } else if (pm === "yarn") {
     execaSync("yarn", ["install", "--no-lockfile"], {
       cwd: projectDir,
-      stdio: "inherit",
       extendEnv: false,
       env,
     });
@@ -148,7 +165,7 @@ export function installDeps(registry: MockRegistry, projectDir: string): void {
         "--no-strict-peer-dependencies",
         "--config.minimumReleaseAge=0",
       ],
-      { cwd: projectDir, stdio: "inherit", extendEnv: false, env: installEnv },
+      { cwd: projectDir, extendEnv: false, env: installEnv },
     );
   }
 }

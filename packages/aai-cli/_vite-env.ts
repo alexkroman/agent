@@ -29,16 +29,24 @@
 let activeBuilds = 0;
 let savedNodeEnv: string | undefined;
 
-export async function withPreservedNodeEnv<T>(fn: () => Promise<T>): Promise<T> {
-  if (activeBuilds === 0) savedNodeEnv = process.env.NODE_ENV;
+/**
+ * `env` is injectable for tests ONLY, so specs can exercise the
+ * snapshot/refcount logic on a plain object instead of mutating (and
+ * repeatedly deleting) the real `process.env.NODE_ENV` mid-suite.
+ */
+export async function withPreservedNodeEnv<T>(
+  fn: () => Promise<T>,
+  env: { NODE_ENV?: string } = process.env,
+): Promise<T> {
+  if (activeBuilds === 0) savedNodeEnv = env.NODE_ENV;
   activeBuilds++;
   try {
     return await fn();
   } finally {
     activeBuilds--;
     if (activeBuilds === 0) {
-      if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
-      else process.env.NODE_ENV = savedNodeEnv;
+      if (savedNodeEnv === undefined) delete env.NODE_ENV;
+      else env.NODE_ENV = savedNodeEnv;
     }
   }
 }

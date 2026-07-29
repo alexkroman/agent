@@ -5,7 +5,7 @@ import * as p from "@clack/prompts";
 import { getServerInfo } from "./_agent.ts";
 import { type ApiRequestOptions, apiRequest } from "./_api-client.ts";
 import { type CommandResult, fail, ok } from "./_output.ts";
-import { log } from "./_ui.ts";
+import { log, unwrapCancel } from "./_ui.ts";
 
 async function secretRequest<T = unknown>(
   cwd: string,
@@ -45,8 +45,7 @@ export async function executeSecretPut(
 
   if (!secretValue) {
     // TTY path — interactive prompt
-    const result = await p.password({ message: `Enter value for ${name}` });
-    if (p.isCancel(result)) process.exit(0);
+    const result = unwrapCancel(await p.password({ message: `Enter value for ${name}` }));
     if (!result) return fail("no_input", "No value provided", "Pipe secret value to stdin");
     secretValue = result;
   }
@@ -66,7 +65,14 @@ export async function executeSecretDelete(
   name: string,
   server: string | undefined,
 ): Promise<CommandResult<SecretDeleteData>> {
-  const { slug } = await secretRequest(cwd, `/${name}`, { method: "DELETE" }, server);
+  // Encoded so a name containing `/`, `?`, `#`, or `%` can't target a
+  // different path (or truncate the request) on the server.
+  const { slug } = await secretRequest(
+    cwd,
+    `/${encodeURIComponent(name)}`,
+    { method: "DELETE" },
+    server,
+  );
   log.success(`Deleted ${name} from ${slug}`);
   return ok({ name });
 }
