@@ -5,6 +5,8 @@ dist/
 .studio-build/
 # Playwright MCP scratch output (screenshots, console logs)
 .playwright-mcp/
+# Local agent-tooling state, not project content
+.superpowers/
 .env
 .env.*
 !.env.example
