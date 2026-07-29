@@ -85,7 +85,6 @@ export function writeMessage(msg: JsonRpcMessage): Promise<void> {
       console.error(`harness stdout write failed: ${errMsg(err)}`);
     });
   return writeQueue;
->>>>>>> d0c104f (Fix performance-audit findings across all packages)
 }
 
 export function sendResponse(id: number | string, result: unknown): Promise<void> {

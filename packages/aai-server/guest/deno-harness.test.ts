@@ -224,7 +224,7 @@ describe("executeTool", () => {
       } as never,
     });
     const state = createSessionStateMap();
-    const result = await executeTool(agent, makeReq("strict", { x: 1 }), state);
+    const result = await executeTool(agent, makeReq("strict", { x: 1 }), state, makeMessages());
     expect(result).toEqual({ error: "Expected string, received number" });
   });
 

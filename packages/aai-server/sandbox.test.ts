@@ -423,7 +423,10 @@ describe("createSandbox", () => {
       await executeTool("t", {}, "s1", [m1]);
 
       vi.mocked(mockConn.sendRequest).mockRejectedValueOnce(new Error("RPC timed out"));
-      await expect(executeTool("t", {}, "s1", [m1, m2])).rejects.toThrow("RPC timed out");
+      // RPC failures are contained as a named tool error, not a rejection.
+      await expect(executeTool("t", {}, "s1", [m1, m2])).resolves.toContain(
+        "failed in sandbox: RPC timed out",
+      );
 
       // The guest may or may not have applied the failed delta — resend full.
       await executeTool("t", {}, "s1", [m1, m2]);
