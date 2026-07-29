@@ -234,7 +234,7 @@ describe("deployStudioProject", () => {
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("oops") });
   });
 
-  test("uses the real esbuild bundler by default (build error, no sandbox needed)", async () => {
+  test("uses the real worker bundler by default (build error, no sandbox needed)", async () => {
     const { bundle: _omit, ...deps } = makeDeps(); // fall through to bundleWorkspace
     await putWorkspace(deps.storage, SCOPE, "broken", {
       files: { "agent.ts": "const nope = {" },

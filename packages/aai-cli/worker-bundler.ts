@@ -27,8 +27,9 @@ import { withPreservedNodeEnv } from "./_vite-env.ts";
 /** Options for worker bundling. */
 export type BuildWorkerOptions = {
   /**
-   * Minify the worker with esbuild. Deploy builds set this to shrink the
-   * upload payload; dev builds stay unminified for readable stack traces.
+   * Minify the worker with Oxc (Vite 8's native minifier). Deploy builds set
+   * this to shrink the upload payload; dev builds stay unminified for
+   * readable stack traces.
    */
   minify?: boolean;
   /** Entry module, absolute or relative to `cwd`. Defaults to `agent.ts`. */
@@ -71,7 +72,7 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
       build: {
         lib: { entry: agentEntry, formats: ["es"], fileName: "worker" },
         target: "node20",
-        minify: opts.minify ? "esbuild" : false,
+        minify: opts.minify ? "oxc" : false,
         write: false,
         rollupOptions: {
           output: { entryFileNames: "[name].js" },

@@ -416,7 +416,7 @@ describe("loadAgentDefWith", () => {
   test("non-compile builder failures fall back to the cold Vite build", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir, "fallback-agent");
-      const builder = { build: vi.fn().mockRejectedValue(new Error("esbuild service died")) };
+      const builder = { build: vi.fn().mockRejectedValue(new Error("bundler infra died")) };
       const evaluated: string[] = [];
       const def = await loadAgentDefWith(dir, builder, async (code) => {
         evaluated.push(code);

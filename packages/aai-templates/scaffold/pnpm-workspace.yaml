@@ -1,9 +1,9 @@
-# esbuild's postinstall must be approved or pnpm fails the install in CI
-# (unapproved build scripts). It ships via @alexkroman1/aai-cli's dev
-# bundler; nothing else in the scaffold runs build scripts. pnpm 10 reads
+# No scaffold dependency runs a build script today (esbuild used to, via
+# @alexkroman1/aai-cli's dev bundler, which now bundles with Rolldown —
+# prebuilt binaries, no postinstall). The empty approval lists keep installs
+# fail-closed if a future transitive dep adds one: pnpm 10 reads
 # `onlyBuiltDependencies`; pnpm 11 renamed it to `allowBuilds` and ignores
-# the old key, so both are declared.
-onlyBuiltDependencies:
-  - esbuild
-allowBuilds:
-  esbuild: true
+# the old key, so both are declared. This file also marks the project as its
+# own pnpm workspace root.
+onlyBuiltDependencies: []
+allowBuilds: {}

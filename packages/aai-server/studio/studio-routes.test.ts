@@ -26,7 +26,7 @@ const deployMock = vi.fn(
 );
 
 // The orchestrator constructs its studio routes internally; intercept the
-// deploy pipeline at the module boundary so no esbuild/sandbox runs here.
+// deploy pipeline at the module boundary so no bundler/sandbox runs here.
 vi.mock("./studio-deploy.ts", async (importOriginal) => {
   const original = await importOriginal<typeof import("./studio-deploy.ts")>();
   return { ...original, deployStudioProject: (...args: unknown[]) => deployMock(...args) };

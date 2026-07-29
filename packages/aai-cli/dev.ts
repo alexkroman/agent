@@ -31,8 +31,7 @@ export async function executeDev(opts: {
     if (shuttingDown) return;
     shuttingDown = true;
     // Mid-startup: no cleanup handle yet. Exiting kills the process group's
-    // children (esbuild service, Vite) with it — 130 is the conventional
-    // SIGINT exit code.
+    // children (Vite) with it — 130 is the conventional SIGINT exit code.
     if (!cleanup) process.exit(130);
     cleanup().then(
       () => process.exit(0),
