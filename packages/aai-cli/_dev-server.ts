@@ -134,7 +134,7 @@ export function isIgnoredPath(dir: string, filePath: string): boolean {
  * Debounces to avoid rapid restarts. Uses chokidar for reliable recursive
  * watching across platforms (raw `fs.watch` misses events on Linux).
  */
-function watchDirectory(dir: string, onChange: () => void): FSWatcher {
+export function watchDirectory(dir: string, onChange: () => void): FSWatcher {
   const DEBOUNCE_MS = 300;
 
   const debouncedChange = pDebounce(() => {

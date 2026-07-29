@@ -41,6 +41,7 @@ mockCreateServer.mockReturnValue({ listen: mockListen, close: mockClose });
 const { chokidarState, mockChokidarWatch } = vi.hoisted(() => {
   const chokidarState = {
     allCallback: undefined as ((event: string, filePath: string) => void) | undefined,
+    errorCallback: undefined as ((err: unknown) => void) | undefined,
     ignored: undefined as ((filePath: string) => boolean) | undefined,
     close: vi.fn().mockResolvedValue(undefined),
     watchedDir: undefined as string | undefined,
@@ -52,6 +53,7 @@ const { chokidarState, mockChokidarWatch } = vi.hoisted(() => {
       return {
         on: (event: string, cb: (event: string, filePath: string) => void) => {
           if (event === "all") chokidarState.allCallback = cb;
+          if (event === "error") chokidarState.errorCallback = cb as (err: unknown) => void;
         },
         close: chokidarState.close,
       };
@@ -120,8 +122,32 @@ vi.mock("./_utils.ts", async (importOriginal) => ({
 
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
-import { loadAgentDefWith, startDevServer } from "./_dev-server.ts";
+import { loadAgentDefWith, startDevServer, watchDirectory } from "./_dev-server.ts";
 import { log } from "./_ui.ts";
+
+describe("watchDirectory", () => {
+  test("logs watcher errors, with an inotify hint for ENOSPC", () => {
+    watchDirectory("/tmp/watched", () => undefined);
+    const enospc = Object.assign(new Error("watch limit"), { code: "ENOSPC" });
+    chokidarState.errorCallback?.(enospc);
+    expect(log.error).toHaveBeenCalledWith(expect.stringContaining("max_user_watches"));
+
+    chokidarState.errorCallback?.(new Error("disk gone"));
+    expect(log.error).toHaveBeenLastCalledWith(expect.stringContaining("disk gone"));
+    expect(log.error).toHaveBeenLastCalledWith(expect.not.stringContaining("max_user_watches"));
+  });
+
+  test("a throwing onChange is logged, not an unhandled rejection", async () => {
+    watchDirectory("/tmp/watched", () => {
+      throw new Error("restart exploded");
+    });
+    chokidarState.allCallback?.("change", "/tmp/watched/agent.ts");
+    // The debounce window is 300ms; the throw surfaces via the catch handler.
+    await vi.waitFor(() =>
+      expect(log.error).toHaveBeenCalledWith(expect.stringContaining("restart exploded")),
+    );
+  });
+});
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
 

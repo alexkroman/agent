@@ -384,11 +384,12 @@ describe("ChatView: narrow subscriptions", () => {
 describe("MessageList: auto-scroll behavior", () => {
   test("jumps instantly while a partial transcript streams, smooth otherwise", () => {
     const behaviors: (ScrollBehavior | undefined)[] = [];
-    const scrollSpy = vi
-      .spyOn(Element.prototype, "scrollIntoView")
-      .mockImplementation(function (this: Element, arg?: boolean | ScrollIntoViewOptions) {
-        behaviors.push(typeof arg === "object" ? arg.behavior : undefined);
-      });
+    const scrollSpy = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(function (
+      this: Element,
+      arg?: boolean | ScrollIntoViewOptions,
+    ) {
+      behaviors.push(typeof arg === "object" ? arg.behavior : undefined);
+    });
     // Run the deduped scroll synchronously so assertions can follow updates.
     const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
       cb(0);
