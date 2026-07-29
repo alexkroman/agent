@@ -10,7 +10,6 @@ import { errorMessage } from "@alexkroman1/aai";
 import { createMemoryVector, createPineconeVector, type Vector } from "@alexkroman1/aai/runtime";
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
-import s3Driver from "unstorage/drivers/s3";
 import { assertDevKeys, isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize } from "./_boot.ts";
 import { waitForIdle } from "./_drain.ts";
 import { createBundleStore } from "./bundle-store.ts";
@@ -18,6 +17,7 @@ import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
 import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
 import { initHostCapacityGauges, metrics } from "./metrics.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
+import { createS3Storage } from "./s3-storage.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import { createSlotCache, registerSlotsForGauges } from "./sandbox-slots.ts";
 import { spawnWarmHarness } from "./sandbox-vm.ts";
@@ -49,14 +49,12 @@ function buildStorage(env: NodeJS.ProcessEnv): {
     "AWS_SECRET_ACCESS_KEY",
     "KV_SCOPE_SECRET",
   ]);
-  const storage = createStorage({
-    driver: s3Driver({
-      bucket: required.BUCKET_NAME,
-      endpoint: env.AWS_ENDPOINT_URL_S3 ?? "https://fly.storage.tigris.dev",
-      region: "auto",
-      accessKeyId: required.AWS_ACCESS_KEY_ID,
-      secretAccessKey: required.AWS_SECRET_ACCESS_KEY,
-    }),
+  const storage = createS3Storage({
+    bucket: required.BUCKET_NAME,
+    endpoint: env.AWS_ENDPOINT_URL_S3 ?? "https://fly.storage.tigris.dev",
+    region: "auto",
+    accessKeyId: required.AWS_ACCESS_KEY_ID,
+    secretAccessKey: required.AWS_SECRET_ACCESS_KEY,
   });
   return { storage, secret: required.KV_SCOPE_SECRET };
 }

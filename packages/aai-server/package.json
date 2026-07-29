@@ -34,6 +34,7 @@
     "@vitejs/plugin-react": "^6.0.4",
     "aai-studio-client": "workspace:*",
     "ai": "^7.0.41",
+    "aws4fetch": "^1.0.20",
     "diff": "^9.0.0",
     "hono": "^4.12.31",
     "human-id": "^4.2.0",
