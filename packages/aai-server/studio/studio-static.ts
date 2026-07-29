@@ -1,7 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Serves the studio's React client (Vite build output in
- * `dist/studio-client`, built by `pnpm --filter aai-server build`).
+ * Serves the studio's React client — the `aai-studio-client` workspace
+ * package's Vite build output (`pnpm --filter aai-studio-client build`),
+ * resolved the same way the default agent client resolves from aai-ui
+ * (see transport-websocket.ts).
  *
  * `GET /` returns the app shell; hashed assets are served under
  * `/studio-assets/` (a reserved slug, so no agent route can shadow them).
@@ -10,6 +12,7 @@
  */
 
 import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
@@ -31,16 +34,19 @@ const FALLBACK_HTML = `<!DOCTYPE html>
 <body style="font-family:sans-serif;max-width:40rem;margin:4rem auto;line-height:1.5">
 <h1>AssemblyAI Studio</h1>
 <p>The studio client has not been built on this server.</p>
-<p>Run <code>pnpm --filter aai-server build</code> and restart, then reload
-this page to use the browser coding agent.</p>
+<p>Run <code>pnpm --filter aai-studio-client build</code> and restart, then
+reload this page to use the browser coding agent.</p>
 </body></html>`;
 
-/**
- * Both the dev source layout (`studio/`) and the bundled layout (`dist/`)
- * sit directly under the package root, so one relative path serves both.
- */
+let _clientDir: string | undefined;
+/** The aai-studio-client package's Vite build output. */
 function clientDir(): string {
-  return path.resolve(import.meta.dirname, "..", "dist", "studio-client");
+  if (!_clientDir) {
+    const require = createRequire(import.meta.url);
+    const pkgPath = require.resolve("aai-studio-client/package.json");
+    _clientDir = path.join(path.dirname(pkgPath), "dist");
+  }
+  return _clientDir;
 }
 
 // Content cache. Misses are NOT cached (same reasoning as the default-client

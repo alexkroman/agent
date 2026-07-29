@@ -35,6 +35,7 @@ pnpm test:aai-core       # Run only aai unit tests
 pnpm test:aai-ui         # Run only aai-ui unit tests
 pnpm test:aai-cli        # Run only aai-cli unit tests
 pnpm test:aai-server     # Run only aai-server unit tests
+pnpm test:aai-studio-client  # Run studio front-end unit tests
 pnpm test:templates      # Run template agent tests
 pnpm dev:aai-server      # Start aai-server in dev mode
 ```
@@ -102,7 +103,7 @@ Coverage measures production source only; test infrastructure
 
 ## Architecture
 
-Five workspace packages under `packages/`:
+Six workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
@@ -110,6 +111,7 @@ Five workspace packages under `packages/`:
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
 | `packages/aai-server/` | `aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
+| `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
 
 **Dependency flow:** `aai-cli`, `aai-ui`, and `aai-server` all depend on
@@ -254,12 +256,15 @@ restrictions apply there.
   deploy), `studio-workspace.ts` (project file store), `studio-prompt.ts`
   (system prompt from the scaffold CLAUDE.md), `studio-static.ts` (serves
   the built client)
-- `studio-client/` — the studio's React front-end (Vite + Tailwind v4 +
-  `useChat` + TanStack Query + CodeMirror), built into
-  `dist/studio-client` by `pnpm --filter aai-server build`. Panes:
-  `chat.tsx` (chat + composer), `code-view.tsx` / `preview.tsx` (the
-  Code/Preview pane), `model-picker.tsx` (the model select box —
-  `useModelChoice` + `ModelPicker`, pick persisted in `localStorage`).
+- `packages/aai-studio-client/` — the studio's React front-end (Vite +
+  Tailwind v4 + `useChat` + TanStack Query + CodeMirror), its own private
+  workspace package built into its `dist/` by
+  `pnpm --filter aai-studio-client build`. It talks to the server purely
+  over HTTP/SSE (no code imports in either direction); aai-server serves
+  the built artifact, resolved via `require.resolve` in
+  `studio-static.ts` the same way aai-ui's `dist/default-client` is.
+  Panes: `chat.tsx` (chat + composer), `code-view.tsx` / `preview.tsx`
+  (the Code/Preview pane).
 
 ### Browser studio (aai-server)
 
@@ -407,10 +412,11 @@ voice agents without the CLI:
   so a key the user set deliberately (deploy-time `env`, or `aai secret put`
   afterwards) always wins. This stays inside the credential-separation
   rule — it forwards *the caller's own* key, never a platform-owned one.
-- **Client**: `studio-client/` is a Vite-built React app served from
-  `dist/studio-client` (`studio-static.ts`) at `/` with hashed assets
-  under `/studio-assets/`. When it hasn't been built, `GET /` serves a
-  fallback page with build instructions (unit tests don't require it).
+- **Client**: `packages/aai-studio-client` is a Vite-built React app;
+  `studio-static.ts` resolves its `dist/` via `require.resolve` and serves
+  it at `/` with hashed assets under `/studio-assets/`. When it hasn't
+  been built, `GET /` serves a fallback page with build instructions
+  (unit tests don't require it).
 - **Reserved slugs** (`RESERVED_SLUGS` in `schemas.ts`): `studio` and
   `studio-assets` can never be claimed as agent slugs — they would shadow
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
@@ -741,6 +747,7 @@ you only need to list one package.
 | aai-ui | threads | **jsdom** | `_jsdom-setup.ts` (stubs `scrollIntoView`) | `globals: true` so `describe`/`test`/`expect` don't need imports |
 | aai-cli | threads | node | — | `restoreMocks: true` |
 | aai-server | **forks** | node | — | Forks for process isolation; excludes integration/load/adversarial |
+| aai-studio-client | threads | node | — | `.tsx` tests via `react-dom/server` (no jsdom) |
 | aai-templates | threads | node | — | Only matches `templates/*/agent.test.ts` |
 
 #### Test environment variables

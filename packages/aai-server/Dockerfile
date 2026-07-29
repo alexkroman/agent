@@ -24,6 +24,7 @@ COPY packages/aai-ui/package.json packages/aai-ui/
 # runtime image rather than the studio carrying a second client bundler.
 COPY packages/aai-cli/package.json packages/aai-cli/
 COPY packages/aai-server/package.json packages/aai-server/
+COPY packages/aai-studio-client/package.json packages/aai-studio-client/
 
 # Install all deps (dev too — needed for build)
 RUN pnpm install --frozen-lockfile --ignore-scripts --prod=false
@@ -33,12 +34,14 @@ COPY packages/aai/ packages/aai/
 COPY packages/aai-ui/ packages/aai-ui/
 COPY packages/aai-cli/ packages/aai-cli/
 COPY packages/aai-server/ packages/aai-server/
+COPY packages/aai-studio-client/ packages/aai-studio-client/
 COPY tsconfig.json ./
 
-# Build SDK + UI (default client) + CLI (client bundler) + server
+# Build SDK + UI (default client) + CLI (client bundler) + studio client + server
 RUN pnpm --filter aai build \
     && pnpm --filter aai-ui build \
     && pnpm --filter @alexkroman1/aai-cli build \
+    && pnpm --filter aai-studio-client build \
     && pnpm --filter aai-server build
 
 # Install production deps only (separate layer for COPY)
@@ -71,6 +74,9 @@ COPY --from=build /app/packages/aai/package.json packages/aai/
 COPY --from=build /app/packages/aai-ui/package.json packages/aai-ui/
 COPY --from=build /app/packages/aai-cli/package.json packages/aai-cli/
 COPY --from=build /app/packages/aai-server/package.json packages/aai-server/
+# The studio client is a static browser bundle — its package.json + dist are
+# all the server needs (resolved via require.resolve in studio-static.ts).
+COPY --from=build /app/packages/aai-studio-client/package.json packages/aai-studio-client/
 COPY --from=build /app/node_modules/ node_modules/
 COPY --from=build /app/packages/aai/node_modules/ packages/aai/node_modules/
 COPY --from=build /app/packages/aai-ui/node_modules/ packages/aai-ui/node_modules/
@@ -80,6 +86,7 @@ COPY --from=build /app/packages/aai/dist/ packages/aai/dist/
 COPY --from=build /app/packages/aai-ui/dist/ packages/aai-ui/dist/
 COPY --from=build /app/packages/aai-cli/dist/ packages/aai-cli/dist/
 COPY --from=build /app/packages/aai-server/dist/ packages/aai-server/dist/
+COPY --from=build /app/packages/aai-studio-client/dist/ packages/aai-studio-client/dist/
 
 # The studio's coding agent loads the same authoring guide the CLI scaffolds
 # into user projects (resolved relative to the aai-server package root).

@@ -71,9 +71,7 @@ export default defineConfig({
           name: "aai-server",
           root: "packages/aai-server",
           pool: "forks",
-          // .tsx too: studio-client components are unit-tested via
-          // react-dom/server (no jsdom needed) — see markdown.test.tsx.
-          include: ["**/*.test.ts", "**/*.test.tsx"],
+          include: ["**/*.test.ts"],
           exclude: [
             "docker-build.test.ts",
             "fake-vm-integration*.test.ts",
@@ -85,6 +83,16 @@ export default defineConfig({
             "node_modules",
             "dist",
           ],
+        },
+      },
+      {
+        ...sharedConfig,
+        test: {
+          name: "aai-studio-client",
+          root: "packages/aai-studio-client",
+          // Components are unit-tested via react-dom/server (no jsdom needed).
+          include: ["**/*.test.{ts,tsx}"],
+          exclude: ["node_modules", "dist"],
         },
       },
       {

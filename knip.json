@@ -80,6 +80,16 @@
       "ignoreDependencies": [
         "@types/json-schema"
       ]
+    },
+    "packages/aai-studio-client": {
+      "entry": [
+        "src/main.tsx",
+        "**/*.test.{ts,tsx}"
+      ],
+      "includeEntryExports": true,
+      "ignoreDependencies": [
+        "@alexkroman1/aai"
+      ]
     }
   }
 }
