@@ -1,5 +1,33 @@
 # @alexkroman1/aai
 
+## 1.11.0
+
+### Minor Changes
+
+- a6bb262: Make `allowedHosts` declarable in `agent()` and enforce the same tool-fetch policy in `aai dev` as in production, from one shared implementation. Adds the missing `send`/`state` fields to the `agent()` parameter type.
+- d72c86b: Add a zod-free `@alexkroman1/aai/utils` subpath export exposing the shared utilities plus the platform slug contract (`VALID_SLUG_RE`, `RESERVED_SLUGS`, new `sdk/slug.ts`). Client wire constants (`MIC_BUFFER_SECONDS`, `MIC_SEND_MAX_BUFFERED_BYTES`, `FILE_SEND_BACKOFF_MS`) and the `custom_event` relay caps now live in `sdk/constants.ts`; `isPathInside` is exported from the runtime. The CLI and UI re-export these from the SDK instead of carrying their own copies.
+- 163cb6f: Add sync mode: connectionless HTTP turns with no WebSockets on either leg.
+
+  Server side (`@alexkroman1/aai`): pipeline-mode runtimes gain
+  `runtime.runSyncTurn()` and the self-hosted server a `POST /sync` route —
+  one request per conversational turn carrying committed text or one
+  endpointed utterance of PCM16 audio plus the client-held history. STT runs
+  through the provider's one-shot batch capability (`transcribeClip`,
+  AssemblyAI Sync API), the LLM loop runs host-side with the agent's tools,
+  and TTS runs through the new one-shot `TtsOpener.synthesizeClip`
+  capability (implemented for Cartesia via its `/tts/bytes` endpoint). The
+  request/response schemas ship from `@alexkroman1/aai/protocol`.
+
+  Client side (`@alexkroman1/aai-ui`): `createSyncSession()` (HTTP turns +
+  history replay), `startSyncMicrophone()` (WebRTC `getUserMedia` voice
+  capture through an inline AudioWorklet), and `createUtteranceDetector()`
+  (pure energy-VAD utterance endpointing) — speech is endpointed in the
+  browser and each utterance becomes one HTTP turn.
+
+### Patch Changes
+
+- 310eedb: Fix AssemblyAI TTS `language`: translate ISO 639-1 codes to the full names the streaming API requires, and reject unsupported ones at config time. Passing `language: "es"` produced a session that connected, reported ready, and was silently mute — the service refuses a bad value in-band after the socket opens. Bad values now fail in the CLI and the studio's test_agent instead.
+
 ## 1.10.0
 
 ### Patch Changes

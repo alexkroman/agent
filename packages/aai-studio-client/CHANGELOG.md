@@ -1,5 +1,17 @@
 # aai-studio-client
 
+## 0.1.5
+
+### Patch Changes
+
+- 0f95e0c: Rename the studio's user-facing brand name to AssemblyAI App Builder
+- 857c7d3: Studio onboarding: expand the starter prompts to cover the aai-templates agent templates
+- 8699bb4: Studio: a hung tool call no longer hangs the chat turn, and the user can cancel one.
+
+  - Every coding-agent tool (studio, web, and MCP) now runs under a per-call deadline (`STUDIO_TOOL_TIMEOUT_MS`, default 120s) — a dead sandbox RPC or silent MCP server resolves to an error tool result instead of leaving the tool row shimmering forever.
+  - The studio composer's send button becomes a Stop button while a turn streams; stopping aborts the SSE request, which cancels the server-side LLM stream, in-flight tool calls, and the session sandbox. Tool rows abandoned by a stop no longer shimmer.
+  - A failed sandbox provisioning is no longer cached for the rest of the turn — one transient spawn failure used to answer "Sandbox unavailable" to every later `test_agent` call. Provisioning failures are now also logged host-side.
+
 ## 0.1.4
 
 ### Patch Changes

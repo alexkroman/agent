@@ -1,5 +1,17 @@
 # aai-templates
 
+## 0.2.1
+
+### Patch Changes
+
+- fbcb755: Drop the direct esbuild dependency: the CLI now bundles with Rolldown end to end.
+
+  - `aai dev`'s fast worker builds (`_dev-bundler.ts`) run on Rolldown — the native bundler Vite 8 itself uses, so the dependency dedupes to zero extra install weight. Fresh builds land in tens of ms, so the old incremental esbuild context is no longer needed; non-compile failures still fall back to the cold Vite path.
+  - Deploy/studio worker minification switches from `minify: "esbuild"` (which loaded esbuild as Vite's optional peer) to Vite 8's native `"oxc"` minifier. The studio inherits this automatically via `@alexkroman1/aai-cli/worker-bundler`.
+  - The scaffold keeps its pnpm build-script approval for esbuild: the CLI no longer pulls it in, but esbuild remains an optional peer of vite, so projects whose lockfile ever resolved it (upgrades from an older CLI) still install it and need its postinstall approved.
+
+- 857c7d3: Remove the smart-research template
+
 ## 0.2.0
 
 ### Minor Changes

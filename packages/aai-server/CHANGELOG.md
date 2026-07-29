@@ -1,5 +1,41 @@
 # @alexkroman1/aai-server
 
+## 1.3.0
+
+### Minor Changes
+
+- a6bb262: Make `allowedHosts` declarable in `agent()` and enforce the same tool-fetch policy in `aai dev` as in production, from one shared implementation. Adds the missing `send`/`state` fields to the `agent()` parameter type.
+
+### Patch Changes
+
+- 0f95e0c: Rename the studio's user-facing brand name to AssemblyAI App Builder
+- fbcb755: Drop the direct esbuild dependency: the CLI now bundles with Rolldown end to end.
+
+  - `aai dev`'s fast worker builds (`_dev-bundler.ts`) run on Rolldown — the native bundler Vite 8 itself uses, so the dependency dedupes to zero extra install weight. Fresh builds land in tens of ms, so the old incremental esbuild context is no longer needed; non-compile failures still fall back to the cold Vite path.
+  - Deploy/studio worker minification switches from `minify: "esbuild"` (which loaded esbuild as Vite's optional peer) to Vite 8's native `"oxc"` minifier. The studio inherits this automatically via `@alexkroman1/aai-cli/worker-bundler`.
+  - The scaffold keeps its pnpm build-script approval for esbuild: the CLI no longer pulls it in, but esbuild remains an optional peer of vite, so projects whose lockfile ever resolved it (upgrades from an older CLI) still install it and need its postinstall approved.
+
+- 2144b6d: Fix the deployed `send:` channel: carry the descriptor onto the runtime agent so the `send_message` builtin is registered, and derive the channel's webhook host into the sandbox's `allowedHosts` so guest tool code can post through `openSender`.
+- 9fc7f4e: Add LLM-in-the-loop one-shot codegen evals for the studio coding agent (vitest-evals): a WorkerBuildJudge that requires generated workspaces to survive the production worker bundler, and a SandboxLoadJudge that loads the built worker in a real studio sandbox and validates the agent config. Run with pnpm --filter aai-server test:evals; skips without an LLM key.
+- 8699bb4: Studio: a hung tool call no longer hangs the chat turn, and the user can cancel one.
+
+  - Every coding-agent tool (studio, web, and MCP) now runs under a per-call deadline (`STUDIO_TOOL_TIMEOUT_MS`, default 120s) — a dead sandbox RPC or silent MCP server resolves to an error tool result instead of leaving the tool row shimmering forever.
+  - The studio composer's send button becomes a Stop button while a turn streams; stopping aborts the SSE request, which cancels the server-side LLM stream, in-flight tool calls, and the session sandbox. Tool rows abandoned by a stop no longer shimmer.
+  - A failed sandbox provisioning is no longer cached for the rest of the turn — one transient spawn failure used to answer "Sandbox unavailable" to every later `test_agent` call. Provisioning failures are now also logged host-side.
+
+- Updated dependencies [0f95e0c]
+- Updated dependencies [857c7d3]
+- Updated dependencies [310eedb]
+- Updated dependencies [fbcb755]
+- Updated dependencies [a6bb262]
+- Updated dependencies [d72c86b]
+- Updated dependencies [8699bb4]
+- Updated dependencies [163cb6f]
+  - aai-studio-client@0.1.5
+  - @alexkroman1/aai@1.11.0
+  - @alexkroman1/aai-cli@1.11.0
+  - @alexkroman1/aai-ui@1.11.0
+
 ## 1.2.3
 
 ### Patch Changes
