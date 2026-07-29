@@ -9,7 +9,7 @@
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
 import { TOOL_FETCH_MAX_CONCURRENT } from "@alexkroman1/aai/runtime";
-import { afterAll, beforeAll, describe, expect, test } from "vitest";
+import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import {
   createFetchHandler,
   type FetchRequest,
@@ -261,6 +261,35 @@ describe("createFetchHandler: wildcard patterns", () => {
       | undefined;
     expect(err).toBeDefined();
     expect(err?.message).toMatch(/not allowed/i);
+  });
+});
+
+describe("createFetchHandler: undici pairing", () => {
+  test("does not fetch through the runtime's global fetch", async () => {
+    // The SSRF layer pins DNS with a dispatcher built from the SDK's own undici,
+    // and only that undici's `fetch` accepts it — Node's global `fetch` is
+    // backed by the copy bundled into the runtime (a different major) and
+    // rejects it with `InvalidArgumentError: invalid onRequestStart method`,
+    // surfacing as a bare `TypeError: fetch failed`. A dispatcher is attached to
+    // every hostname request, so defaulting this handler to the global takes out
+    // every deployed agent's tool egress at once. Leaving `fetchFn` unset must
+    // therefore fall through to `performToolFetch`'s pinned default rather than
+    // a caller-side `?? globalThis.fetch`.
+    const realFetch = globalThis.fetch;
+    const globalSpy = vi.fn(async () => new Response("FROM-GLOBAL"));
+    globalThis.fetch = globalSpy as unknown as typeof globalThis.fetch;
+    try {
+      const handler = createFetchHandler({ allowedHosts: ["127.0.0.1"], skipSsrf: true });
+
+      const msgs = await collectMessages(handler, makeReq(`${baseUrl}/`), "r9");
+
+      const chunks = msgs.filter((m): m is FetchResponseChunk => m.type === "fetch/response-chunk");
+      const body = chunks.map((c) => Buffer.from(c.data, "base64").toString()).join("");
+      expect(body).toBe("hello from test server");
+      expect(globalSpy).not.toHaveBeenCalled();
+    } finally {
+      globalThis.fetch = realFetch;
+    }
   });
 });
 

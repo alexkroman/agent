@@ -1423,6 +1423,28 @@ stored env at sandbox creation time and kept host-side only.
   there. Guarded by `ssrf-dispatcher.test.ts` — the rest of the SSRF suite
   injects a fake fetch and never builds a real dispatcher, which is why this
   shipped unnoticed.
+
+  **A correct default is not enough — every call site has to leave it alone.**
+  `performToolFetch` defaulted to `pinnedFetch` while both of its real callers
+  passed `globalThis.fetch` explicitly and undid it: `tool-egress.ts` forwarded
+  the pre-guard global (to avoid re-entering its own wrapper, which
+  `pinnedFetch` never does anyway, being a different function object) and
+  `sandbox-fetch.ts` re-declared the default as `opts.fetchFn ?? globalThis.fetch`.
+  So *all* tool-code `fetch` failed — in `aai dev` and on the platform alike —
+  with a bare `TypeError: fetch failed` and the real reason only in `.cause`.
+  An agent declaring `allowedHosts` correctly still could not reach them, which
+  reads as an egress-policy bug and is not one.
+
+  Two rules follow. **Neither caller may name a fetch implementation**: leave
+  `fetchFn` unset (it exists for tests) so the pinned default applies, and never
+  re-spell a default a caller-side `??` — that is the same drift
+  `guest-fetch-policy.ts`'s module comment forbids for limits. And the guard
+  test has to cover the *call sites*, not just `pinnedFetch` in isolation:
+  `tool-egress.test.ts` asserts which fetch reaches `ssrfSafeFetch`, and
+  `sandbox-fetch.test.ts` asserts the handler's response did not come from a
+  stubbed global. Note the dispatcher only attaches for *hostname* URLs, and
+  SSRF rejects loopback, so a `skipSsrf` + `127.0.0.1` spec cannot exercise
+  the pairing — which is precisely how both call sites stayed green.
 - The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
   `fetch_json`) take a
   model-controlled URL and **default** to this via `safeFetch` in
