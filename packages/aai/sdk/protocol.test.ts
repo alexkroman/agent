@@ -169,6 +169,8 @@ describe("ClientMessageSchema", () => {
       byteLength: 13 * 1024 * 1024,
     });
     expect(result.success).toBe(false);
+    // The custom message explains *why* the upload was refused — keep it.
+    expect(result.error?.message).toContain("audio exceeds the one-shot transcription cap");
   });
 });
 

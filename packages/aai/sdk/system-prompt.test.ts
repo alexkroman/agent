@@ -114,4 +114,61 @@ describe("buildSystemPrompt", () => {
     const result = buildSystemPrompt(makeConfig({ systemPrompt: "" }), { hasTools: false });
     expect(result).not.toContain("Agent-Specific Instructions:");
   });
+
+  test("toolGuidance: [] omits the Built-in Tool Usage section", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: false, toolGuidance: [] });
+    expect(result).not.toContain("Built-in Tool Usage:");
+  });
+
+  test("toolGuidance lines are joined with newlines under one header", () => {
+    const result = buildSystemPrompt(makeConfig(), {
+      hasTools: false,
+      toolGuidance: ["- Use think before answering.", "- Use recall to look things up."],
+    });
+    expect(result).toContain(
+      "\n\nBuilt-in Tool Usage:\n- Use think before answering.\n- Use recall to look things up.",
+    );
+  });
+
+  // Exact-equality assertions: the prompt text is behavior (it steers the
+  // LLM), so pin every assembled byte rather than spot-checking fragments.
+  test("minimal prompt is exactly the default plus the date", () => {
+    const result = buildSystemPrompt(makeConfig(), { hasTools: false });
+    expect(result).toBe(`${DEFAULT_SYSTEM_PROMPT}\n\nToday's date is Wednesday, January 15, 2025.`);
+  });
+
+  test("full prompt assembles every section verbatim", () => {
+    const result = buildSystemPrompt(makeConfig({ systemPrompt: "Custom rules." }), {
+      hasTools: true,
+      voice: true,
+      toolGuidance: ["- Guidance line."],
+    });
+    const toolPreamble =
+      "\n\nWhen you decide to use a tool, ALWAYS say a brief natural phrase BEFORE the tool call " +
+      '(e.g. "Let me look that up" or "One moment while I check"). ' +
+      "This fills silence while the tool executes. Keep preambles to one short sentence.";
+    const voiceRules =
+      "\n\nCRITICAL OUTPUT RULES — you MUST follow these for EVERY response:\n" +
+      "Your response will be spoken aloud by a TTS system and displayed as plain text.\n" +
+      "- NEVER use markdown: no **, no *, no _, no #, no `, no [](), no ---\n" +
+      "- NEVER use bullet points (-, *, •) or numbered lists (1., 2.)\n" +
+      "- NEVER use code blocks or inline code\n" +
+      "- NEVER mention tools, search, APIs, or technical failures to the user. " +
+      "If a tool returns no results, just answer naturally without explaining why.\n" +
+      "- Write exactly as you would say it out loud to a friend\n" +
+      '- Use short conversational sentences. To list things, say "First," "Next," "Finally,"\n' +
+      "- Keep responses concise — 1 to 3 sentences max\n" +
+      "- When the caller spells something (a name, email, or ID) or reads out digits, do NOT " +
+      "read the whole thing back letter by letter — it is slow and invites interruptions. " +
+      'Confirm briefly and move on (e.g. "Thanks, got it" or "Okay, Yusuf Rossi, ZIP 1-9-1-2-2 — one moment"). ' +
+      "Only re-spell a specific character if you need to resolve a genuine ambiguity.";
+    expect(result).toBe(
+      DEFAULT_SYSTEM_PROMPT +
+        "\n\nToday's date is Wednesday, January 15, 2025." +
+        "\n\nAgent-Specific Instructions:\nCustom rules." +
+        toolPreamble +
+        "\n\nBuilt-in Tool Usage:\n- Guidance line." +
+        voiceRules,
+    );
+  });
 });

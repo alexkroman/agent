@@ -16,12 +16,12 @@ export default defineConfig({
       // Ratchet: these floors only move UP. When a coverage run shows actuals
       // comfortably above a floor, raise the floor to ~2-3 points below the
       // actual so regressions fail fast but routine refactors don't flap.
-      // Actuals (2026-07): lines ~88%, branches ~74%, functions ~86%, statements ~86%.
+      // Actuals (2026-07): lines ~91%, branches ~80%, functions ~87%, statements ~89%.
       thresholds: {
-        lines: 85,
-        functions: 83,
-        branches: 72,
-        statements: 83,
+        lines: 88,
+        functions: 84,
+        branches: 77,
+        statements: 86,
       },
     },
     projects: [

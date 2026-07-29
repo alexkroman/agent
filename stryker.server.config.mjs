@@ -6,7 +6,6 @@ export default {
   mutate: [
     "packages/aai-server/ndjson-transport.ts",
     "packages/aai-server/orchestrator.ts",
-    "packages/aai-server/ssrf.ts",
     "packages/aai-server/secrets.ts",
     "packages/aai-server/middleware.ts",
     "packages/aai-server/bundle-store.ts",

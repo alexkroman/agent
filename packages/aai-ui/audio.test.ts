@@ -9,6 +9,10 @@ import {
 } from "./_react-test-utils.ts";
 import { createVoiceIO } from "./audio.ts";
 
+function noop() {
+  /* silence expected console.error output */
+}
+
 describe("createVoiceIO", () => {
   let audio: AudioMockContext & { restore: () => void };
 
@@ -132,6 +136,97 @@ describe("createVoiceIO", () => {
     const io = await createVoiceIO(voiceOpts());
     await io.close();
     await io.close();
+  });
+
+  test("done() resolves immediately when nothing was ever enqueued", async () => {
+    const io = await createVoiceIO(voiceOpts());
+    await expect(io.done()).resolves.toBeUndefined();
+    await io.close();
+  });
+
+  test("done() resolves immediately when the context is not running", async () => {
+    const io = await createVoiceIO(voiceOpts());
+    io.enqueue(new ArrayBuffer(2));
+    audio.lastContext().state = "suspended";
+    await expect(io.done()).resolves.toBeUndefined();
+    await io.close();
+  });
+
+  test("done() resolves when the playback worklet reports stop", async () => {
+    const io = await createVoiceIO(voiceOpts());
+    io.enqueue(new ArrayBuffer(2));
+    const play = findWorkletNode(audio.workletNodes(), "playback-processor");
+    const done = io.done();
+    expect(play.port.posted).toContainEqual({ event: "done" });
+    play.port.simulateMessage({ event: "stop" });
+    await expect(done).resolves.toBeUndefined();
+    await io.close();
+  });
+
+  test("done() settles via the poll when the context suspends mid-wait", async () => {
+    vi.useFakeTimers();
+    try {
+      const io = await createVoiceIO(voiceOpts());
+      io.enqueue(new ArrayBuffer(2));
+      const done = io.done();
+      // No stop message arrives; the context suspends (backgrounded tab).
+      audio.lastContext().state = "suspended";
+      await vi.advanceTimersByTimeAsync(1100);
+      await expect(done).resolves.toBeUndefined();
+      await io.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("enqueue drops empty buffers", async () => {
+    const io = await createVoiceIO(voiceOpts());
+    io.enqueue(new ArrayBuffer(0));
+    // The playback node is created lazily — an empty write must not create it.
+    expect(audio.workletNodes().some((n) => n.name === "playback-processor")).toBe(false);
+    await io.close();
+  });
+
+  test("a capture worklet crash surfaces through onError", async () => {
+    vi.spyOn(console, "error").mockImplementation(noop);
+    const onError = vi.fn();
+    const io = await createVoiceIO(voiceOpts({ onError }));
+    const cap = findWorkletNode(audio.workletNodes(), "capture-processor");
+    (cap as unknown as { onprocessorerror: () => void }).onprocessorerror();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("capture") }),
+    );
+    await io.close();
+  });
+
+  test("a playback worklet crash settles a pending done() and surfaces onError", async () => {
+    vi.spyOn(console, "error").mockImplementation(noop);
+    const onError = vi.fn();
+    const io = await createVoiceIO(voiceOpts({ onError }));
+    io.enqueue(new ArrayBuffer(2));
+    const play = findWorkletNode(audio.workletNodes(), "playback-processor");
+    const done = io.done();
+    (play as unknown as { onprocessorerror: () => void }).onprocessorerror();
+    await expect(done).resolves.toBeUndefined();
+    expect(onError).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining("playback") }),
+    );
+    await io.close();
+  });
+
+  test("non-chunk capture messages are ignored", async () => {
+    const onMicData = vi.fn();
+    const io = await createVoiceIO(voiceOpts({ onMicData }));
+    const cap = findWorkletNode(audio.workletNodes(), "capture-processor");
+    cap.port.simulateMessage({ event: "started" });
+    expect(onMicData).not.toHaveBeenCalled();
+    await io.close();
+  });
+
+  test("Symbol.asyncDispose releases the audio resources", async () => {
+    const io = await createVoiceIO(voiceOpts());
+    await io[Symbol.asyncDispose]();
+    expect(audio.lastContext().closed).toBe(true);
   });
 
   test("cleans up on worklet load error", async () => {

@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { symlink, writeFile } from "node:fs/promises";
+import { readdir, symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { buildAgentBundle } from "./_bundler.ts";
+import { buildAgentBundle, evalWorkerBundle, executeBuild } from "./_bundler.ts";
 import { silenced, withTempDir } from "./_test-utils.ts";
 
 describe("buildAgentBundle", () => {
@@ -109,5 +109,50 @@ export default { name: "minify-test-agent", systemPrompt: longDescriptiveVariabl
         expect(bundle.worker.length).toBeGreaterThan(20);
       }),
     );
+  });
+});
+
+describe("executeBuild", () => {
+  test("returns the agent name and worker size", async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await writeFile(
+          path.join(dir, "agent.ts"),
+          `export default { name: "exec-build", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
+        );
+        const result = await executeBuild(dir);
+        expect(result.ok).toBe(true);
+        if (result.ok) {
+          expect(result.data.name).toBe("exec-build");
+          expect(result.data.workerBytes).toBeGreaterThan(20);
+        }
+      }),
+    );
+  });
+});
+
+describe("evalWorkerBundle", () => {
+  test("explains an unwritable eval dir instead of a raw fs error", async () => {
+    await withTempDir(async (dir) => {
+      // `.aai` exists as a *file*, so mkdir(.aai/eval) fails — the error must
+      // say what the CLI was doing, not just surface ENOTDIR.
+      await writeFile(path.join(dir, ".aai"), "not a directory");
+      await expect(evalWorkerBundle("export default {}", dir)).rejects.toThrow(
+        /Failed to write the eval bundle/,
+      );
+    });
+  });
+
+  test("evaluates a worker bundle and cleans up the temp file", async () => {
+    await withTempDir(async (dir) => {
+      const agent = await evalWorkerBundle(
+        `export default { name: "evaled", systemPrompt: "p", greeting: "g", tools: {} };`,
+        dir,
+      );
+      expect(agent.name).toBe("evaled");
+      const evalDir = path.join(dir, ".aai", "eval");
+      const leftovers = await readdir(evalDir);
+      expect(leftovers).toEqual([]);
+    });
   });
 });
