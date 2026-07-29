@@ -335,12 +335,13 @@ voice agents without the CLI:
   `streamText` cancels the LLM call while `disposeSandbox` tears down the
   sandbox and MCP clients. A failed sandbox provisioning is retried on the
   next tool call, not cached for the turn (`studio-routes.ts`).
-- **Web access** (`studio-web.ts`) exposes the SDK's own `visit_webpage`
-  and `web_search` builtins to the coding agent rather than reimplementing
+- **Web access** (`studio-web.ts`) exposes the SDK's own `visit_webpage`,
+  `get_page_design`, and `web_search` builtins to the coding agent rather than reimplementing
   them — which is what buys `safeFetch`, the SSRF guard. A URL here is
   model-controlled and the studio runs on the platform host, so a
   hand-rolled `fetch` would be a request-forgery hole aimed at the metadata
-  endpoint. `visit_webpage` needs no key; `web_search` is dropped from the
+  endpoint. `visit_webpage` and `get_page_design` need no key; `web_search`
+  is dropped from the
   tool set unless the host holds `BRAVE_API_KEY`, since without one it can
   only return "not set" and waste a turn. The tool context is built from
   that single variable, never `process.env`, so a coding turn cannot read
@@ -689,7 +690,8 @@ declares in `agent({ allowedHosts: [...] })`. The guest has no network
 device, so its `fetch` is RPC-proxied to the host, which matches the
 hostname against the list (`sandbox-fetch.ts`) *and* SSRF-screens the
 request. The host-side network builtins (`fetch_json`, `visit_webpage`,
-`web_search`) bypass the list entirely — they run in the server process, so
+`get_page_design`, `web_search`) bypass the list entirely — they run in the
+server process, so
 they reach any public host with nothing declared. Those are two different
 capabilities that both read as "the agent can call an API".
 
@@ -730,7 +732,8 @@ by a wrapped global `fetch`. Per-async-context rather than per-process
 because one session's policy must not leak into another's. Two deliberate
 exemptions, both matching what the platform actually restricts:
 
-- **Built-in network tools** (`fetch_json`, `visit_webpage`, `web_search`)
+- **Built-in network tools** (`fetch_json`, `visit_webpage`,
+  `get_page_design`, `web_search`)
   execute host-side in production too, where `allowedHosts` never applies.
 - **`ctx.kv` / `ctx.vector`** are RPC methods in the guest, not `fetch`, so
   a BYO `s3Kv`/`pinecone` provider's endpoint needs no declaration.
@@ -916,7 +919,7 @@ defaults that affect agent behavior:
 | dead-air cover | 2000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream.ts` | Pipeline only: tool execution that sends nothing to TTS for this long gets a `DEAD_AIR_COVER_PHRASES` filler — unlike `holdPhrase` this is time-based, so it still fires after the model has spoken, and repeats across a tool chain with the wait doubling each time. `holdPhrase: ""` disables both. |
 | `falseInterruptionTimeoutMs` | 2000 (`DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS`) | `constants.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn (`DEFAULT_FALSE_INTERRUPTION_PROMPT`) after this window. 0 disables. |
 | `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. |
-| `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (`think`, `remember`, `recall`, `calculate`) | `constants.ts` | Cognitive built-ins on by default: private reasoning scratchpad, session notes, safe calculator. Set `builtinTools` explicitly (including `[]`) to override. `web_search`/`visit_webpage`/`fetch_json`/`run_code` remain opt-in. A custom or relayed tool with the same name wins — the built-in is dropped. |
+| `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (`think`, `remember`, `recall`, `calculate`) | `constants.ts` | Cognitive built-ins on by default: private reasoning scratchpad, session notes, safe calculator. Set `builtinTools` explicitly (including `[]`) to override. `web_search`/`visit_webpage`/`get_page_design`/`fetch_json`/`run_code` remain opt-in. A custom or relayed tool with the same name wins — the built-in is dropped. |
 
 ### Fixed release coupling
 
@@ -1298,7 +1301,8 @@ stored env at sandbox creation time and kept host-side only.
   rewriting the URL hostname. Rewriting broke TLS — SNI and cert verification
   use the URL, not the `Host` header — so every `https://` request failed. Keep
   the URL intact when touching this.
-- The network builtins (`web_search`, `visit_webpage`, `fetch_json`) take a
+- The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
+  `fetch_json`) take a
   model-controlled URL and **default** to this via `safeFetch` in
   `builtin-tools.ts`. Protection is not opt-in per caller; only tests override
   the `fetch` option.

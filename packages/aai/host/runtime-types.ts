@@ -112,7 +112,7 @@ export type RuntimeOptions = {
   toolGuidance?: string[] | undefined;
   /**
    * Override the fetch implementation used by built-in tools (web_search,
-   * visit_webpage, fetch_json). Defaults to `globalThis.fetch`.
+   * visit_webpage, get_page_design, fetch_json). Defaults to `globalThis.fetch`.
    *
    * In platform mode, pass an SSRF-safe fetch to prevent requests to
    * private/internal networks. In self-hosted mode, users may provide

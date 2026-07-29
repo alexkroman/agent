@@ -15,7 +15,7 @@
  * traffic — LLM streams, STT/TTS sockets, the network builtins — is untouched:
  *
  * - **Built-in tools are exempt on purpose.** `fetch_json`, `visit_webpage`,
- *   and `web_search` execute host-side in production too (see
+ *   `get_page_design`, and `web_search` execute host-side in production too (see
  *   `SANDBOX_ONLY_BUILTINS`), where `allowedHosts` never applies to them.
  *   Subjecting them to it here would invent a restriction production doesn't
  *   have — the opposite of the parity this module exists for.

@@ -24,6 +24,8 @@ import type { Vector } from "./vector.ts";
  *
  * - `"web_search"` — Search the web for current information, facts, or news.
  * - `"visit_webpage"` — Fetch a URL and return its content as clean text.
+ * - `"get_page_design"` — Fetch a URL's raw HTML and CSS (markup, style blocks,
+ *   linked stylesheets) to study or mimic a site's visual design.
  * - `"fetch_json"` — Call a REST API endpoint and return the JSON response.
  * - `"run_code"` — Execute JavaScript in a sandbox for calculations and data processing.
  * - `"think"` — Private no-op scratchpad for policy checks and planning (never spoken).
@@ -40,6 +42,7 @@ import type { Vector } from "./vector.ts";
 export type BuiltinTool =
   | "web_search"
   | "visit_webpage"
+  | "get_page_design"
   | "fetch_json"
   | "run_code"
   | "think"
@@ -484,8 +487,8 @@ export type AgentDef<S = Record<string, unknown>> = {
    *
    * Bare hostnames with at most one leading `*.` wildcard; a declared `send`
    * channel's host is added automatically. Does not apply to the host-side
-   * network builtins (`fetch_json`, `visit_webpage`, `web_search`), which
-   * reach any public host unlisted.
+   * network builtins (`fetch_json`, `visit_webpage`, `get_page_design`,
+   * `web_search`), which reach any public host unlisted.
    */
   allowedHosts?: string[];
 };
