@@ -1,0 +1,5 @@
+# esbuild's postinstall must be approved or pnpm >=11 fails the install
+# outright (strict dep builds). It ships via @alexkroman1/aai-cli's dev
+# bundler; nothing else in the scaffold runs build scripts.
+onlyBuiltDependencies:
+  - esbuild
