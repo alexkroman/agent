@@ -762,7 +762,7 @@ you only need to list one package.
 | aai | threads (default) | node | — | Excludes pentest, sandbox, integration tests; `restoreMocks: true` |
 | aai-ui | threads | **jsdom** | `_jsdom-setup.ts` (stubs `scrollIntoView`) | `globals: true` so `describe`/`test`/`expect` don't need imports |
 | aai-cli | threads | node | — | `restoreMocks: true` |
-| aai-server | **forks** | node | — | Forks for process isolation; excludes integration/load/adversarial |
+| aai-server | **forks** | node | — | Forks for process isolation; excludes integration tests |
 | aai-studio-client | threads | node | — | `.tsx` tests via `react-dom/server` (no jsdom) |
 | aai-templates | threads | node | — | Only matches `templates/*/agent.test.ts` |
 
@@ -776,6 +776,34 @@ package.json scripts (not always obvious from test code alone):
   `docker` (600s), `gvisor` (30s)
 - `VITEST_INCLUDE` — filters which test files to include
 - `VITEST_POOL` — can override pool strategy at runtime
+- `AAI_TEST_PM` — package manager the e2e suite installs the scaffolded
+  project with (`pnpm` | `npm` | `yarn`; default `pnpm`). **CI only runs
+  `pnpm`** — see below.
+
+#### The e2e suite is pnpm-only in CI
+
+`aai init` scaffolds a project that the e2e suite then installs from a mock
+registry, so the install step can in principle run under any package
+manager. CI used to fan that out (`pm: [pnpm, npm, yarn]` × 2 OSes = 6
+jobs); it now runs pnpm alone.
+
+The npm/yarn legs were paying for themselves in flakes rather than bugs:
+each one is a full cold install of the published tarballs on a shared
+runner, they tripped over resolver-specific quirks unrelated to our code
+(hence `--no-lockfile`, `--no-strict-peer-dependencies`,
+`NPM_CONFIG_MINIMUM_RELEASE_AGE=0`), and the repo itself is pnpm-only, so
+the thing they guarded — "our published `exports` maps resolve under a
+non-pnpm resolver" — is better served by `publint` + `attw`, which run on
+every build and check the package metadata directly.
+
+The `AAI_TEST_PM` switch in `_e2e-test-utils.ts` stays, so an npm or yarn
+install is one env var away when reproducing a user report:
+
+```sh
+AAI_TEST_PM=npm pnpm test:e2e
+```
+
+Treat those two branches as a debugging tool, not covered ground.
 
 #### Fixture replay testing (aai/host)
 
@@ -1129,6 +1157,41 @@ later commands. Never widen this to trust `serverUrl` directly.
   cross-invocation isolation).
 - `net.test.ts` / `ssrf-extended.test.ts` — SSRF bypass prevention
   (IPv4-mapped IPv6, cloud metadata, `.internal` domains).
+
+There is deliberately **no load or chaos tier.** `packages/aai-server/load/`
+and `packages/aai-server/adversarial/` (plus the `load-and-adversarial` CI
+job and `docker-compose.load.yml`) were deleted, because what they asserted
+had drifted away from what they claimed to test:
+
+- The two "adversarial" tests deployed an agent whose tool body was a
+  `while (true) {}` spin or an unbounded allocation loop — **and then never
+  invoked it.** No message was ever sent on the socket and the deploy seeded
+  a fake `ASSEMBLYAI_API_KEY`, so no LLM existed to call the tool. Both
+  amounted to "an idle server stays under 90% memory." Their docstrings still
+  described "the isolate" and a "V8 heap (128 MB limit)" — the secure-exec
+  design replaced two architectures ago.
+- `lru-eviction.test.ts` configured `MAX_SLOTS` / `SLOT_IDLE_MS`, neither of
+  which exists in the server anymore; testcontainers passes unknown env vars
+  through silently, so it stayed green while testing nothing.
+- `ws-memory.test.ts`, `session-memory.test.ts`, and
+  `s2s-session-memory.test.ts` were benchmarks with `.test.ts` extensions —
+  their only assertions were shape checks like `results.length > 0` and
+  `sessions.length === TIERS.at(-1)`. `ws-memory` imported no aai-server code
+  at all; it measured the `ws` package.
+- `sandbox-storm.test.ts` swallowed deploy failures and passed on
+  `aliveCount > 0` — 1 of 14 sandboxes working was a pass.
+
+Two were real (`connection-flood`, `kv-corruption`), but not worth an 8-minute
+Docker job wired into the required `ci` gate, where a wall-clock memory
+threshold on a shared runner blocks merges when it flakes.
+
+If you reintroduce load or chaos testing, the bar is: **the hostile code must
+actually execute** (put it at the bundle's top level so `bundle/load` triggers
+it — no LLM needed), the thresholds must be tied to constants the server
+really reads, and it belongs outside the merge gate. Note also that a
+successful WebSocket upgrade proves nothing about the sandbox:
+`orchestrator.ts` completes `handleUpgrade` before `acquireSlotSession` and
+session start, so `opened.length === 1` can hold while every sandbox fails.
 
 ### Known limitations
 
