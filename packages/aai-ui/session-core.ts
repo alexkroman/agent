@@ -82,9 +82,22 @@ async function initAudioCapture(
           console.debug("[aai-ui] sendAudio dropped: connection closed");
         }
       },
+      // A worklet processor crash after setup: the audio path is dead even
+      // though the socket is fine, so surface it instead of staying in a
+      // healthy-looking listening/speaking state forever.
+      onError: (err: Error) => {
+        if (conn.generation !== gen) return;
+        deps.updateState({
+          state: "error",
+          error: { code: "audio", message: err.message },
+          running: false,
+        });
+      },
     });
     if (conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN) {
-      io.close();
+      void io.close().catch(() => {
+        /* stale connection — nothing to report the failure to */
+      });
       return;
     }
     conn.voiceIO = io;
@@ -217,7 +230,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   function cleanupAudio(): void {
     upload.discard();
     conn.audioSetupInFlight = false;
-    void conn.voiceIO?.close();
+    void conn.voiceIO?.close().catch(() => {
+      /* already tearing down — nothing to report the failure to */
+    });
     conn.voiceIO = null;
     conn.preInitAudio = [];
     conn.preInitDone = false;
@@ -316,6 +331,11 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     socket.binaryType = "arraybuffer";
     conn.ws = socket;
 
+    // Browsers fire "error" with no payload and always follow it with
+    // "close" — record that it happened so the close handler can report a
+    // connection error instead of a plain disconnect.
+    let socketErrored = false;
+
     socket.addEventListener(
       "open",
       () => {
@@ -334,6 +354,14 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     );
 
     socket.addEventListener(
+      "error",
+      () => {
+        socketErrored = true;
+      },
+      { signal: sig },
+    );
+
+    socket.addEventListener(
       "close",
       () => {
         if (sig.aborted) {
@@ -341,7 +369,16 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         }
         controller.abort();
         cleanupAudio();
-        updateState({ state: "disconnected", running: false, recording: false });
+        if (socketErrored) {
+          updateState({
+            state: "error",
+            error: { code: "connection", message: "WebSocket connection error" },
+            running: false,
+            recording: false,
+          });
+        } else {
+          updateState({ state: "disconnected", running: false, recording: false });
+        }
       },
       { signal: sig },
     );
