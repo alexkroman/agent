@@ -245,7 +245,8 @@ restrictions apply there.
   `studio-routes.ts` (HTTP surface), `studio-agent.ts` (coding-agent LLM
   loop + tools), `studio-llm.ts` (provider/model selection + the picker's
   option list), `studio-sandbox.ts` (per-chat-session sandbox),
-  `studio-workspace-dir.ts` (materializes a workspace to a scratch dir),
+  `studio-edit.ts` (`edit_file`'s matching + diff), `studio-workspace-dir.ts`
+  (materializes a workspace to a scratch dir),
   `studio-bundle.ts` (worker build + import allowlist),
   `studio-client-build.ts` (client.tsx build), `studio-errors.ts`
   (`StudioBuildError`), `studio-deploy.ts` (build → sandbox inspect →
@@ -272,7 +273,7 @@ voice agents without the CLI:
   (`studioScope`) — unlike the salted PBKDF2 ownership hashes, it must be
   stable so a browser session can find its projects again.
 - **Chat** (`POST /studio/chat`) runs one agent turn with file tools
-  (list/read/write/delete) plus `test_agent`, streamed as the AI SDK **UI
+  (list/read/write/edit/delete) plus `test_agent`, streamed as the AI SDK **UI
   message stream** (SSE) that the client's `useChat` consumes directly.
   The system prompt embeds the same `aai-templates/scaffold/CLAUDE.md` the
   CLI ships to user projects (`studio-prompt.ts`) plus studio-specific

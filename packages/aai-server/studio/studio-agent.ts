@@ -25,6 +25,7 @@ import type { Storage } from "unstorage";
 import { z } from "zod";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import { bundleWorkspaceWorker } from "./studio-bundle.ts";
+import { applyEdit, StudioEditError } from "./studio-edit.ts";
 import { StudioBuildError } from "./studio-errors.ts";
 import { studioModel } from "./studio-llm.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
@@ -133,8 +134,38 @@ export function createStudioTools(deps: StudioChatDeps) {
         return content === undefined ? `Error: no such file: ${path}` : content;
       },
     }),
+    edit_file: tool({
+      description:
+        "Replace an exact snippet in a workspace file. Prefer this over " +
+        "write_file for changes to an existing file — write_file rewrites the " +
+        "whole thing, which is slow and risks dropping code you meant to keep. " +
+        "oldText must appear exactly once; include surrounding lines if it " +
+        "would otherwise be ambiguous. Returns a diff of what changed.",
+      inputSchema: z.object({
+        path: z.string().describe("Workspace-relative path"),
+        oldText: z.string().describe("Exact text to replace; must be unique in the file"),
+        newText: z.string().describe("Replacement text"),
+      }),
+      execute: ({ path, oldText, newText }) =>
+        withFiles((files) => {
+          const current = files[path];
+          if (current === undefined) return `Error: no such file: ${path}`;
+          try {
+            const { content, diff } = applyEdit(path, current, oldText, newText);
+            files[path] = content;
+            return `Edited ${path}\n\n${diff}`;
+          } catch (err) {
+            // A failed match is the agent's cue to re-read and retry with more
+            // context, so surface the reason rather than throwing.
+            if (err instanceof StudioEditError) return `Error: ${err.message}`;
+            throw err;
+          }
+        }),
+    }),
     write_file: tool({
-      description: "Create or overwrite a file in the project workspace",
+      description:
+        "Create a new file, or fully replace one. For edits to an existing " +
+        "file prefer edit_file.",
       inputSchema: z.object({
         path: z.string().describe("Workspace-relative path"),
         content: z.string().describe("Full new file contents"),

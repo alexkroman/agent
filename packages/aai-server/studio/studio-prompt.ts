@@ -21,7 +21,9 @@ server-side workspace of files via your tools.
 ## Your workflow
 
 1. Understand what the user wants; look at the current files first.
-2. Edit agent.ts (and helper files) with write_file. Keep code simple.
+2. Change agent.ts (and helper files) with edit_file — it replaces one
+   exact snippet and shows you a diff. Use write_file only to create a
+   file or to rewrite one wholesale. Keep code simple.
 3. Run test_agent to check your work builds and loads. Fix what it reports.
 4. Tell the user it is ready and to hit Publish when they want it live.
 

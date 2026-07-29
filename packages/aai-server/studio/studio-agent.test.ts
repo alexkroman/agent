@@ -151,6 +151,7 @@ describe("createStudioTools", () => {
     expect(Object.keys(tools)).not.toContain("deploy_agent");
     expect(Object.keys(tools).sort()).toEqual([
       "delete_file",
+      "edit_file",
       "list_files",
       "read_file",
       "test_agent",
