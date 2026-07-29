@@ -1354,6 +1354,21 @@ stored env at sandbox creation time and kept host-side only.
   rewriting the URL hostname. Rewriting broke TLS — SNI and cert verification
   use the URL, not the `Host` header — so every `https://` request failed. Keep
   the URL intact when touching this.
+- **The dispatcher and the `fetch` it is handed to must come from the same
+  undici.** `pinnedDispatcher` builds an `Agent` from this package's `undici`
+  dependency, while `globalThis.fetch` is backed by the copy bundled into the
+  Node runtime (`process.versions.undici`) — a different major. undici 8
+  reworked the dispatch-handler interface, so a v8 `Agent` rejects the v7-style
+  handler Node's internal fetch builds, with `InvalidArgumentError: invalid
+  onRequestStart method` surfacing as a bare `TypeError: fetch failed`. A
+  dispatcher is attached to *every* hostname request, so the mismatch takes out
+  all host-side egress at once — `send_message`, `web_search`, `visit_webpage`,
+  `get_page_design`, `fetch_json`, and the platform's guest-fetch proxy. Both
+  defaults (`safeFetch` and `performToolFetch`) therefore route through
+  `pinnedFetch`, undici's own `fetch`; never reintroduce `globalThis.fetch`
+  there. Guarded by `ssrf-dispatcher.test.ts` — the rest of the SSRF suite
+  injects a fake fetch and never builds a real dispatcher, which is why this
+  shipped unnoticed.
 - The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
   `fetch_json`) take a
   model-controlled URL and **default** to this via `safeFetch` in
