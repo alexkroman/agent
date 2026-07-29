@@ -253,8 +253,8 @@ function EmptyStateBody({
     <>
       <div className="rounded-lg border border-line bg-cream px-[18px] py-4">
         <p className="m-0 text-[13px] leading-5">
-          Welcome to AssemblyAI Studio. Tell me what your voice agent or workflow should do and I'll
-          build the first version.
+          Welcome to AssemblyAI App Builder. Tell me what your voice agent or workflow should do and
+          I'll build the first version.
         </p>
       </div>
       {status?.llm && (

@@ -109,7 +109,7 @@ function TopBar(props: TopBarProps) {
     <header className="flex h-[60px] flex-none items-center gap-3.5 border-b border-line bg-panel px-5">
       <div className="flex items-center gap-2.5">
         <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
-        <span className="font-serif text-[16px]">AssemblyAI Studio</span>
+        <span className="font-serif text-[16px]">AssemblyAI App Builder</span>
       </div>
       <div className="h-[22px] w-px bg-line" aria-hidden />
       <div className="flex h-[34px] items-center gap-2 rounded-sm border border-line bg-panel pl-3 hover:border-line-strong">
