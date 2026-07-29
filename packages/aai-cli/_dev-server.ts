@@ -24,7 +24,7 @@ import type { ViteDevServer } from "vite";
 import { createWorkerEvaluator } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
-import { createDevWorkerBuilder, isEsbuildBuildFailure } from "./_dev-bundler.ts";
+import { createDevWorkerBuilder, isBundlerBuildFailure } from "./_dev-bundler.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
@@ -86,11 +86,11 @@ function devBindHost(): string | undefined {
  * stay in Node's ESM registry, so edits to them are ignored on reload.
  * Bundling picks them up.
  *
- * The bundle comes from the incremental esbuild builder (`_dev-bundler.ts`)
+ * The bundle comes from the fast Rolldown builder (`_dev-bundler.ts`)
  * rather than the deploy path's cold Vite build — a save rebuilds in tens of
  * ms instead of 1–3 s. Compile errors in the agent's code propagate (the
  * restart loop reports them and keeps the old server); any other builder
- * failure falls back to the cold Vite build so an esbuild-specific gap can't
+ * failure falls back to the cold Vite build so a Rolldown-specific gap can't
  * take the dev loop down. Evaluation goes through the memoizing evaluator so
  * a no-op save doesn't leak another module into the ESM registry.
  */
@@ -103,7 +103,7 @@ export async function loadAgentDefWith(
   try {
     code = await builder.build();
   } catch (err) {
-    if (isEsbuildBuildFailure(err)) throw err;
+    if (isBundlerBuildFailure(err)) throw err;
     code = await buildWorker(cwd);
   }
   return evaluate(code);
@@ -334,8 +334,8 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       });
     }
   } catch (err) {
-    // Startup failed — the watcher was already opened and the esbuild
-    // context holds a service child process; don't leak either.
+    // Startup failed — the watcher was already opened and the dev builder
+    // may hold resources; don't leak either.
     await watcher.close().catch(() => undefined);
     await devBuilder.dispose().catch(() => undefined);
     await viteServer?.close().catch(() => undefined);

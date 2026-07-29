@@ -2,10 +2,10 @@
 import { symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
-import { createDevWorkerBuilder, isEsbuildBuildFailure } from "./_dev-bundler.ts";
+import { createDevWorkerBuilder, isBundlerBuildFailure } from "./_dev-bundler.ts";
 import { withTempDir, writeFiles } from "./_test-utils.ts";
 
-/** Create a builder, run `fn`, always dispose (esbuild holds a child process). */
+/** Create a builder, run `fn`, always dispose. */
 async function withBuilder(
   dir: string,
   fn: (builder: ReturnType<typeof createDevWorkerBuilder>) => Promise<void>,
@@ -66,7 +66,7 @@ export default { name: "raw-test", systemPrompt: text, tools: {} };`,
 
   test("keeps node: builtins external, bundles npm deps in (deploy parity)", async () => {
     await withTempDir(async (dir) => {
-      // Symlink node_modules so esbuild can resolve zod, like _build.test.ts.
+      // Symlink node_modules so the bundler can resolve zod, like _build.test.ts.
       await symlink(
         path.resolve(import.meta.dirname, "node_modules"),
         path.join(dir, "node_modules"),
@@ -110,7 +110,7 @@ export default { name: "rebuild-test", greeting, tools: {} };`,
       await writeFile(path.join(dir, "agent.ts"), `export default { name: "broken",`);
       await withBuilder(dir, async (builder) => {
         const err = await builder.build().catch((e: unknown) => e);
-        expect(isEsbuildBuildFailure(err)).toBe(true);
+        expect(isBundlerBuildFailure(err)).toBe(true);
       });
     });
   });
@@ -136,15 +136,15 @@ export default { name: "rebuild-test", greeting, tools: {} };`,
   });
 });
 
-describe("isEsbuildBuildFailure", () => {
+describe("isBundlerBuildFailure", () => {
   test("false for plain errors and non-errors", () => {
-    expect(isEsbuildBuildFailure(new Error("nope"))).toBe(false);
-    expect(isEsbuildBuildFailure("string")).toBe(false);
-    expect(isEsbuildBuildFailure(undefined)).toBe(false);
+    expect(isBundlerBuildFailure(new Error("nope"))).toBe(false);
+    expect(isBundlerBuildFailure("string")).toBe(false);
+    expect(isBundlerBuildFailure(undefined)).toBe(false);
   });
 
-  test("true for errors carrying an esbuild errors array", () => {
+  test("true for errors carrying a bundler errors array", () => {
     const err = Object.assign(new Error("Build failed"), { errors: [] });
-    expect(isEsbuildBuildFailure(err)).toBe(true);
+    expect(isBundlerBuildFailure(err)).toBe(true);
   });
 });

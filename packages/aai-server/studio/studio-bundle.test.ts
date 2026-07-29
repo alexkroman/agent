@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Real-esbuild tests: bundling is a pure transform (no code execution), so
+// Real-bundler tests: bundling is a pure transform (no code execution), so
 // exercising it directly keeps the import policy honest.
 
 import { describe, expect, test } from "vitest";
@@ -83,7 +83,7 @@ export default agent({ name: "Md Agent", systemPrompt: prompt });`,
   }, 30_000);
 
   test("rejects imports outside the allowlist", async () => {
-    // The import must be *used* — esbuild tree-shakes unused imports away
+    // The import must be *used* — the bundler tree-shakes unused imports away
     // before resolution, which is fine (nothing disallowed reaches the bundle).
     await expect(
       bundleWorkspace({
