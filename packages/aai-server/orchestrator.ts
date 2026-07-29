@@ -249,7 +249,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
    * upgrade, or a normal session end — so it is the one reliable place to
    * release.
    */
-  function acquireConnectionSlot(socket: { destroy: () => void; on: Function }): boolean {
+  function acquireConnectionSlot(socket: {
+    destroy: () => void;
+    on: (event: "close", listener: () => void) => unknown;
+  }): boolean {
     if (!connections.tryAcquire()) {
       console.warn("WebSocket connection limit reached, rejecting upgrade");
       socket.destroy();
