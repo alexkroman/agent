@@ -225,7 +225,11 @@ export interface SessionShell {
   safeEmit(emit: () => void): void;
   /** Standard socket `error` handler: surfaces the error's message as a stream error. */
   onSocketError(err: unknown): void;
-  /** Standard socket `close` handler: non-1000 close codes surface as stream errors. */
+  /**
+   * Standard socket `close` handler. Abnormal close codes always surface as
+   * stream errors; whether a clean (1000) close does depends on
+   * `cleanCloseIsFatal` — see {@link createSessionShell}.
+   */
   onSocketClose(code?: number): void;
 }
 
@@ -243,6 +247,23 @@ export function createSessionShell<E extends Error>(opts: {
   emitError: (err: E) => void;
   /** Release the underlying connection. Runs at most once. */
   teardown: () => Promise<void> | void;
+  /**
+   * Whether a clean (1000) close we did not initiate is fatal. Default `false`.
+   *
+   * Set for continuous **input** streams (STT): the provider closing mid-session
+   * — a session cap, an idle cutoff, an upstream deploy — is graceful on the
+   * wire but means no further transcripts will ever arrive. Left unset, the
+   * session stays nominally open while `sendAudio` discards every frame, so the
+   * agent goes permanently deaf with nothing reported to the caller.
+   *
+   * Leave `false` for **output** streams (TTS), where the provider closing after
+   * it has finished sending audio is normal completion, not a failure.
+   *
+   * A close we initiated ourselves is never fatal either way: `close()` sets the
+   * latch first, and `streamError` no-ops once closed. The latch — not the close
+   * code — is what distinguishes our intent from the provider's.
+   */
+  cleanCloseIsFatal?: boolean | undefined;
 }): SessionShell {
   let closed = false;
   const close = async (): Promise<void> => {
@@ -280,8 +301,11 @@ export function createSessionShell<E extends Error>(opts: {
     safeEmit,
     onSocketError: (err) => streamError(errorMessage(err)),
     onSocketClose: (code) => {
-      // 1000 = normal closure.
-      if (code !== undefined && code !== 1000) streamError(`socket closed ${code}`);
+      // 1000 = normal closure; an absent code carries no signal either way.
+      // Both are graceful on the wire, so only `cleanCloseIsFatal` decides —
+      // an abnormal code is always an error, as before.
+      const graceful = code === undefined || code === 1000;
+      if (!graceful || opts.cleanCloseIsFatal) streamError(`socket closed ${code ?? "unknown"}`);
     },
   };
 }
