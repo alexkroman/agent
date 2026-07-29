@@ -30,7 +30,11 @@ import type { Message, ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
 import { smoothTextStream } from "./pipeline-smooth.ts";
-import { createStreamPartHandler, type StreamPartHandler } from "./pipeline-stream-parts.ts";
+import {
+  createStreamPartHandler,
+  llmErrorDetails,
+  type StreamPartHandler,
+} from "./pipeline-stream-parts.ts";
 import type { TransportCallbacks } from "./types.ts";
 
 /** Estimated client-side playback clock — see {@link createPlaybackClock}. */
@@ -273,8 +277,15 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
         collected.push(...step.response.messages);
         onStepPersisted?.();
       },
-      // Stream errors also surface as `error` parts handled below; the
-      // callback keeps the SDK from routing them anywhere unobserved.
+      // Every `error` part is delivered to `onError` and to `fullStream`
+      // alike, so the handler below is what reports the failure — at error
+      // level, with its HTTP diagnostics (see `llmErrorDetails`). Claiming
+      // this callback is still mandatory: the SDK's default is
+      // `console.error(error)`, which spends ~100 log lines on the same
+      // event (three nested stack traces plus the entire request body, one
+      // console depth level away from the conversation itself). On a host
+      // with a bounded log buffer that evicts every other line — which is
+      // how a gateway 500 became the only thing visible in production logs.
       onError: ({ error }) => {
         log.debug("streamText onError", { error: errorMessage(error), sid });
       },
@@ -318,7 +329,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       // accumulated via onDelta for the pre-error portion of the turn.
       ttsText.flush();
       const msg = errorMessage(err);
-      log.error("LLM streamText failed", { error: msg, sid });
+      log.error("LLM streamText failed", { error: msg, sid, ...llmErrorDetails(err) });
       emitError("llm", msg);
     }
     return collected;
