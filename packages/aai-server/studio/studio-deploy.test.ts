@@ -7,16 +7,13 @@ import { createTestStorage, createTestStore, TEST_AGENT_CONFIG } from "../test-u
 import { clearStudioBuildCache, putCachedBuild } from "./studio-build-cache.ts";
 import { StudioBuildError } from "./studio-bundle.ts";
 import { deployStudioProject, type StudioDeployDeps } from "./studio-deploy.ts";
-<<<<<<< HEAD
-import { filesHash, getWorkspace, putWorkspace } from "./studio-workspace.ts";
-=======
 import {
   deleteWorkspace,
+  filesHash,
   getWorkspace,
   hasUnpublishedChanges,
   putWorkspace,
 } from "./studio-workspace.ts";
->>>>>>> 692c230 (Fix race conditions and concurrency issues across all packages)
 
 const SCOPE = "test-scope";
 

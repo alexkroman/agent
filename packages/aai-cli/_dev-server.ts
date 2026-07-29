@@ -248,52 +248,10 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     });
   }
 
-<<<<<<< HEAD
-  let agentServer: AgentServer;
-  try {
-    agentServer = await buildServer();
-  } catch (err) {
-    // Startup failed before the cleanup fn exists — don't strand the esbuild
-    // context (it holds a service child process).
-    await devBuilder.dispose();
-    throw err;
-  }
-  // Loopback by default (the dev server has no auth). AAI_DEV_HOST is the
-  // escape hatch for setups where loopback isn't reachable — e.g. running
-  // `aai dev` inside a container and connecting from the host.
-  await agentServer.listen(backendPort, devBindHost());
-
-  let viteServer: ViteDevServer | undefined;
-  if (hasClient) {
-    const { createServer: createViteServer } = await import("vite");
-    const target = `http://localhost:${backendPort}`;
-    viteServer = await createViteServer({
-      root: cwd,
-      plugins: [fallbackHtmlPlugin(cwd)],
-      server: {
-        port: vitePort,
-        proxy: {
-          "/health": target,
-          "/websocket": { target, ws: true },
-        },
-      },
-    });
-    await viteServer.listen();
-    // Post-listen socket errors would otherwise be an unhandled 'error' event.
-    // (The backend AgentServer keeps its own 'error' listener from listen(),
-    // and exposes no event surface to add logging here.)
-    viteServer.httpServer?.on("error", (err) => {
-      log.error(`Vite dev server error: ${errorMessage(err)}`);
-    });
-  }
-
-  let restarting = false;
-=======
   // `restarting` starts true: startup counts as an in-flight "restart", so a
   // change event landing during the multi-second boot queues a restart
   // instead of racing the initial build.
   let restarting = true;
->>>>>>> 692c230 (Fix race conditions and concurrency issues across all packages)
   let pendingRestart = false;
   let closed = false;
   let currentServer: AgentServer;
@@ -357,8 +315,10 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       });
     }
   } catch (err) {
-    // Startup failed — the watcher was already opened, don't leak it.
+    // Startup failed — the watcher was already opened and the esbuild
+    // context holds a service child process; don't leak either.
     await watcher.close().catch(() => undefined);
+    await devBuilder.dispose().catch(() => undefined);
     await viteServer?.close().catch(() => undefined);
     throw err;
   }
@@ -416,15 +376,6 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     }
   }
 
-<<<<<<< HEAD
-  return async () => {
-    closed = true;
-    // Each close is best-effort: one failing must not leak the others.
-    await watcher.close().catch(() => undefined);
-    await devBuilder.dispose().catch(() => undefined);
-    await viteServer?.close().catch(() => undefined);
-    await currentServer.close().catch(() => undefined);
-=======
   /**
    * Listen with a few short-backoff retries. During the close→listen swap the
    * port is momentarily free, so another process can snatch it (or the OS can
@@ -456,10 +407,10 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       closed = true;
       // Each close is best-effort: one failing must not leak the others.
       await watcher.close().catch(() => undefined);
+      await devBuilder.dispose().catch(() => undefined);
       await viteServer?.close().catch(() => undefined);
       await currentServer.close().catch(() => undefined);
     })();
     return cleanupPromise;
->>>>>>> 692c230 (Fix race conditions and concurrency issues across all packages)
   };
 }

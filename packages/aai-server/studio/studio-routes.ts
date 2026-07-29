@@ -256,11 +256,8 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
         project,
         sandbox,
         disposeSandbox,
-<<<<<<< HEAD
         mcp,
-=======
         abortSignal: c.req.raw.signal,
->>>>>>> 692c230 (Fix race conditions and concurrency issues across all packages)
       },
       // Structurally validated by UiMessageSchema; part-level validation
       // happens in convertToModelMessages.

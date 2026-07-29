@@ -145,16 +145,10 @@ export async function deployStudioProject(
   // Always written, not just on a slug change: `deployedHash` is what tells
   // the preview whether the running agent still matches the editor, so a
   // redeploy to the same slug has to refresh it too.
-<<<<<<< HEAD
-  await putWorkspace(deps.storage, params.scope, params.project, {
-    files: workspace.files,
-    deployedSlug: outcome.slug,
-    deployedHash: hash,
-=======
   //
   // Re-read under the workspace lock and stamp only the deploy metadata:
   // the builds above take seconds, and writing the pre-build `files`
-  // snapshot back would silently revert anything edited meanwhile. The hash
+  // snapshot back would silently revert anything edited meanwhile. `hash`
   // is of the snapshot that was actually built, so mid-build edits still
   // show as unpublished.
   await withWorkspaceLock(params.scope, params.project, async () => {
@@ -164,9 +158,8 @@ export async function deployStudioProject(
     await putWorkspace(deps.storage, params.scope, params.project, {
       ...current,
       deployedSlug: outcome.slug,
-      deployedHash: filesHash(workspace.files),
+      deployedHash: hash,
     });
->>>>>>> 692c230 (Fix race conditions and concurrency issues across all packages)
   });
   return { ok: true, slug: outcome.slug, url: `/${outcome.slug}/` };
 }

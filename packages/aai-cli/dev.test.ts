@@ -80,4 +80,24 @@ describe("executeDev", () => {
       expect(process.exit).toHaveBeenCalledTimes(1);
     });
   });
+
+  // The defense-in-depth process handlers must log and keep the host alive —
+  // one bad session's stray rejection/throw must not crash every other one.
+  test("unhandledRejection and uncaughtException handlers log without exiting", async () => {
+    await withCapturedHandlers(async (handlers) => {
+      mockCleanup.mockResolvedValue(undefined);
+      await executeDev({ cwd: "/tmp/agent", port: "3123" });
+      const { log } = await import("./_ui.ts");
+      const logError = log.error as ReturnType<typeof vi.fn>;
+      logError.mockClear();
+
+      handlers.get("unhandledRejection")?.(new Error("socket died"));
+      expect(logError).toHaveBeenCalledWith(expect.stringContaining("socket died"));
+
+      handlers.get("uncaughtException")?.(new Error("callback threw"));
+      expect(logError).toHaveBeenCalledWith(expect.stringContaining("callback threw"));
+
+      expect(process.exit).not.toHaveBeenCalled();
+    });
+  });
 });

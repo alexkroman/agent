@@ -33,6 +33,7 @@ import type {
   SessionSnapshot,
 } from "./session-core-types.ts";
 import { createUploadSender } from "./session-core-upload.ts";
+import { buildWsUrl } from "./session-core-url.ts";
 import { MIC_SEND_MAX_BUFFERED_BYTES, type WebSocketConstructor } from "./types.ts";
 
 export type {
@@ -150,16 +151,6 @@ async function initAudioCapture(
     // live microphone).
     if (conn.generation === gen) conn.audioSetupInFlight = false;
   }
-}
-
-// ─── URL builder ────────────────────────────────────────────────────────────
-
-function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): URL {
-  const wsUrl = new URL("websocket", platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
-  wsUrl.protocol = wsUrl.protocol === "https:" ? "wss:" : "ws:";
-  if (sessionId) wsUrl.searchParams.set("sessionId", sessionId);
-  else if (resume) wsUrl.searchParams.set("resume", "1");
-  return wsUrl;
 }
 
 // ─── Factory ────────────────────────────────────────────────────────────────

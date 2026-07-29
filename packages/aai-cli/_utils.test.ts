@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
-import { errorCode, fileExists, readJson, resolveCwd, writeJson } from "./_utils.ts";
+import { errorCode, errorDetail, fileExists, readJson, resolveCwd, writeJson } from "./_utils.ts";
 
 describe("resolveCwd", () => {
   afterEach(() => {
@@ -82,6 +82,19 @@ describe("errorCode", () => {
   test("returns undefined for plain errors and non-errors", () => {
     expect(errorCode(new Error("boom"))).toBeUndefined();
     expect(errorCode("boom")).toBeUndefined();
+  });
+});
+
+describe("errorDetail", () => {
+  test("prefers the stack of an Error, falls back to the message", () => {
+    const err = new Error("boom");
+    expect(errorDetail(err)).toBe(err.stack ?? "boom");
+    delete err.stack;
+    expect(errorDetail(err)).toBe("boom");
+  });
+
+  test("stringifies non-errors", () => {
+    expect(errorDetail("boom")).toBe("boom");
   });
 });
 
