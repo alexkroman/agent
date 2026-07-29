@@ -69,6 +69,10 @@ These CLI-specific parts do NOT apply in the studio:
   The factory is named assemblyAI in all three subpaths — alias two on
   import. (S2S mode, i.e. no stt/llm/tts at all, is also all-AssemblyAI and
   remains the right default when the user just wants a voice agent.)
+- **Look things up instead of guessing.** The AssemblyAI docs are available
+  as MCP tools (search + fetch). The reference below is a snapshot; when a
+  question is about a voice, a model id, a provider option, or anything the
+  reference does not cover, search the docs rather than inventing an answer.
 - **Never invent a gateway model id.** The LLM Gateway rejects unknown
   models with a 400 "model not found" that only shows up at runtime. Use one
   of exactly these: ${ASSEMBLYAI_GATEWAY_MODELS.join(", ")}. Prefer

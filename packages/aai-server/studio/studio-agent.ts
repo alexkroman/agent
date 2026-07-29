@@ -29,6 +29,7 @@ import { applyEdit, StudioEditError } from "./studio-edit.ts";
 import { StudioBuildError } from "./studio-errors.ts";
 import { grepWorkspace, StudioGrepError } from "./studio-grep.ts";
 import { studioModel } from "./studio-llm.ts";
+import { type McpSession, openMcpTools } from "./studio-mcp.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
 import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
@@ -50,6 +51,8 @@ export type StudioChatDeps = {
   disposeSandbox?: () => Promise<void>;
   /** Injectable for tests — defaults to the host-env selected provider. */
   model?: LanguageModel;
+  /** Injectable for tests — defaults to the configured MCP servers. */
+  mcp?: McpSession;
 };
 
 type WorkspaceEdit = (files: Record<string, string>) => string | Promise<string>;
@@ -237,26 +240,30 @@ export function createStudioTools(deps: StudioChatDeps) {
  * AI SDK UI message stream over SSE). The client resends the full UIMessage
  * history each turn, so the server stays stateless between requests.
  *
- * The session sandbox (if any tool provisioned one) is disposed when the
- * stream settles — finish, error, and client abort all funnel through
- * `onFinish`/`onError` of the UI stream response.
+ * The session sandbox (if any tool provisioned one) and the MCP clients are
+ * disposed when the stream settles — finish, error, and client abort all
+ * funnel through `onFinish`/`onError` of the UI stream response.
  */
 export async function runStudioChat(
   deps: StudioChatDeps,
   messages: UIMessage[],
 ): Promise<Response> {
+  // Never fails: an unreachable server yields no tools rather than an error.
+  const mcp = deps.mcp ?? (await openMcpTools());
   let disposeCalled = false;
   const disposeSandbox = () => {
     if (disposeCalled) return;
     disposeCalled = true;
     void deps.disposeSandbox?.();
+    void mcp.close();
   };
   try {
     const result = streamText({
       model: deps.model ?? studioModel(),
       system: studioSystemPrompt(),
       messages: await convertToModelMessages(messages, { ignoreIncompleteToolCalls: true }),
-      tools: createStudioTools(deps),
+      // Studio tools last: an MCP server must never shadow write_file.
+      tools: { ...mcp.tools, ...createStudioTools(deps) },
       stopWhen: stepCountIs(MAX_CHAT_STEPS),
       onFinish: disposeSandbox,
       onAbort: disposeSandbox,

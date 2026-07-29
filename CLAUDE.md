@@ -279,6 +279,24 @@ voice agents without the CLI:
   The system prompt embeds the same `aai-templates/scaffold/CLAUDE.md` the
   CLI ships to user projects (`studio-prompt.ts`) plus studio-specific
   overrides.
+- **Docs MCP** (`studio-mcp.ts`). The system prompt embeds a *snapshot* of
+  the scaffold guide, so anything outside it — a voice, a newly added
+  gateway model, a provider option — was previously a guess. The agent now
+  also gets AssemblyAI's docs MCP server
+  (`https://www.assemblyai.com/docs/mcp`, via `@ai-sdk/mcp`'s
+  `createMCPClient`) merged into its tool set. Points worth keeping:
+  - One client per chat turn, closed when the stream settles, alongside the
+    session sandbox. A turn is short; a shared long-lived client would be
+    another thing to health-check.
+  - **Failure is never fatal.** Connect and tool-listing are bounded at 5s
+    and every failure path degrades to "no MCP tools this turn" — a docs
+    server being down must cost a lookup, not the user's reply.
+  - Studio tools are merged *on top* of MCP tools, so a server can never
+    shadow `write_file`. `DENIED_TOOLS` additionally drops
+    `submit_feedback`, which the docs server advertises — a coding turn has
+    no business posting feedback as the user.
+  - `STUDIO_MCP_URLS` overrides the default list; setting it empty disables
+    MCP entirely.
 - **The coding agent cannot publish.** There is deliberately no deploy
   tool: going live is the user's call, made with the Publish button
   (`POST /studio/projects/:project/deploy`). The prompt states this

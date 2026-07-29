@@ -18,6 +18,7 @@
   "workspace": {
     "packageJson": {
       "dependencies": [
+        "npm:@ai-sdk/mcp@^2.0.18",
         "npm:@ai-sdk/react@^4.0.44",
         "npm:@codemirror/lang-javascript@^6.2.5",
         "npm:@hono/node-server@^2.0.11",
