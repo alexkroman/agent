@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { assertDevKeys, isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
+import { assertDevKeys, isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize } from "./_boot.ts";
+import { DEFAULT_SHUTDOWN_DRAIN_MS } from "./constants.ts";
 
 // ── isLocalDev ─────────────────────────────────────────────────────────
 
@@ -84,5 +85,26 @@ describe("resolvePoolSize", () => {
     ["over the cap clamps to 16", "99", 16],
   ] as const)("%s → %s", (_label, raw, expected) => {
     expect(resolvePoolSize(raw)).toBe(expected);
+  });
+});
+
+// ── resolveDrainMs ─────────────────────────────────────────────────────
+
+describe("resolveDrainMs", () => {
+  test.each([
+    ["unset", undefined, DEFAULT_SHUTDOWN_DRAIN_MS],
+    ["empty string", "", DEFAULT_SHUTDOWN_DRAIN_MS],
+    ["non-numeric", "abc", DEFAULT_SHUTDOWN_DRAIN_MS],
+    ["negative", "-1", DEFAULT_SHUTDOWN_DRAIN_MS],
+    ["explicit value", "30000", 30_000],
+  ] as const)("%s → %s", (_label, raw, expected) => {
+    expect(resolveDrainMs(raw)).toBe(expected);
+  });
+
+  test("zero means do not wait, not unset", () => {
+    // Unlike resolvePoolSize, 0 is a meaningful setting here: it restores the
+    // old close-immediately shutdown. Substituting the two-minute default
+    // would make a deploy look hung for whoever set it.
+    expect(resolveDrainMs("0")).toBe(0);
   });
 });

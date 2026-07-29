@@ -14,6 +14,20 @@ test("returns health check", async () => {
   expect(await res.json()).toMatchObject({ status: "ok" });
 });
 
+test("health fails while draining so fly-proxy stops routing here", async () => {
+  let draining = false;
+  const { fetch } = await createTestOrchestrator({ isDraining: () => draining });
+  expect((await fetch("/health")).status).toBe(200);
+
+  draining = true;
+  const res = await fetch("/health");
+  // 503, not 200-with-a-flag: the status code is the whole mechanism that
+  // moves new calls to a machine that is staying up, which is what lets the
+  // drain converge instead of racing incoming sessions.
+  expect(res.status).toBe(503);
+  expect(await res.json()).toMatchObject({ status: "draining" });
+});
+
 test("returns 404 for unknown paths", async () => {
   const { fetch } = await createTestOrchestrator();
   expect((await fetch("/foo/bar/baz")).status).toBe(404);

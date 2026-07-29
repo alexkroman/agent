@@ -5,6 +5,8 @@
  * starting a server.
  */
 
+import { DEFAULT_SHUTDOWN_DRAIN_MS } from "./constants.ts";
+
 export function requireEnv<const K extends string>(
   env: NodeJS.ProcessEnv,
   keys: readonly K[],
@@ -60,4 +62,20 @@ export function resolvePoolSize(raw: string | undefined): number | null {
   const size = Number.parseInt(raw, 10);
   if (!Number.isFinite(size) || size < 1) return null;
   return Math.min(size, POOL_SIZE_MAX);
+}
+
+/**
+ * Parse `SHUTDOWN_DRAIN_MS`: how long shutdown waits for live sessions before
+ * force-closing them. Unset or unparseable falls back to
+ * {@link DEFAULT_SHUTDOWN_DRAIN_MS}.
+ *
+ * `0` is honored as "don't wait" rather than treated as unset — it is the way
+ * to get the old close-immediately behavior back, and silently substituting a
+ * two-minute default for it would make a deploy look hung.
+ */
+export function resolveDrainMs(raw: string | undefined): number {
+  if (raw === undefined || raw === "") return DEFAULT_SHUTDOWN_DRAIN_MS;
+  const ms = Number.parseInt(raw, 10);
+  if (!Number.isFinite(ms) || ms < 0) return DEFAULT_SHUTDOWN_DRAIN_MS;
+  return ms;
 }
