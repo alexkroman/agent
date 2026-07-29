@@ -5,6 +5,7 @@
  * (deploy, delete, secrets). Records all requests for assertion.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { buffer } from "node:stream/consumers";
 import { gunzipSync } from "node:zlib";
 
 export interface RecordedRequest {
@@ -43,20 +44,12 @@ export async function startMockApi(): Promise<MockApi> {
     );
   }
 
-  function readBody(req: IncomingMessage): Promise<string> {
-    return new Promise((resolve) => {
-      const chunks: Buffer[] = [];
-      req.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
-      });
-      req.on("end", () => {
-        const raw = Buffer.concat(chunks);
-        // Mirror the platform server: transparently inflate gzipped uploads
-        // (the CLI compresses deploy bodies).
-        const inflated = req.headers["content-encoding"] === "gzip" ? gunzipSync(raw) : raw;
-        resolve(inflated.toString("utf-8"));
-      });
-    });
+  async function readBody(req: IncomingMessage): Promise<string> {
+    const raw = await buffer(req);
+    // Mirror the platform server: transparently inflate gzipped uploads
+    // (the CLI compresses deploy bodies).
+    const inflated = req.headers["content-encoding"] === "gzip" ? gunzipSync(raw) : raw;
+    return inflated.toString("utf-8");
   }
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: mock server routes are intentionally flat

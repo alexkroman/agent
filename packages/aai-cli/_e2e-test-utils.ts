@@ -4,9 +4,12 @@
  * registry setup, dependency installation, and process/server utilities.
  * Each e2e suite performs its own setup/teardown using these helpers.
  */
-import { type ChildProcess, execFileSync } from "node:child_process";
+import type { ChildProcess } from "node:child_process";
+import { once } from "node:events";
 import fs from "node:fs";
 import path from "node:path";
+import { execaSync } from "execa";
+import { ofetch } from "ofetch";
 import type { MockRegistry } from "./_mock-registry.ts";
 
 export const dir = import.meta.dirname ?? path.dirname(new URL(import.meta.url).pathname);
@@ -29,8 +32,9 @@ export function aaiEnv(): NodeJS.ProcessEnv {
 }
 
 export function aai(aaiBin: string, args: string[], cwd: string, timeoutMs = 120_000): void {
-  execFileSync(process.execPath, [aaiBin, ...args], {
+  execaSync(process.execPath, [aaiBin, ...args], {
     cwd,
+    extendEnv: false, // aaiEnv() is already the full, curated environment
     env: aaiEnv(),
     stdio: "inherit",
     timeout: timeoutMs,
@@ -39,7 +43,7 @@ export function aai(aaiBin: string, args: string[], cwd: string, timeoutMs = 120
 
 /** Build the CLI with tsdown and return the path to the built binary. */
 export function buildCli(): string {
-  execFileSync("npx", ["tsdown"], { cwd: dir, stdio: "inherit" });
+  execaSync("npx", ["tsdown"], { cwd: dir, stdio: "inherit" });
   const mjs = path.resolve(dir, "dist/cli.mjs");
   const js = path.resolve(dir, "dist/cli.js");
   return fs.existsSync(mjs) ? mjs : js;
@@ -65,28 +69,24 @@ export async function waitForHealth(
   child?.stderr?.on("data", (chunk: Buffer) => {
     stderr += chunk.toString();
   });
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    try {
-      const res = await fetch(url);
-      if (res.ok) return;
-    } catch {
-      // server not ready yet
-    }
-    await new Promise((r) => setTimeout(r, 500));
+  const retryDelay = 500;
+  try {
+    await ofetch.raw(url, { retry: Math.ceil(timeoutMs / retryDelay), retryDelay });
+  } catch (err) {
+    throw new Error(`Timed out waiting for ${url}${stderr ? `\nServer stderr:\n${stderr}` : ""}`, {
+      cause: err,
+    });
   }
-  throw new Error(`Timed out waiting for ${url}${stderr ? `\nServer stderr:\n${stderr}` : ""}`);
 }
 
 /** Wait for a child process to exit (for clean teardown). */
-export function waitForExit(child: ChildProcess, timeoutMs = 5000): Promise<void> {
-  return new Promise((resolve) => {
-    const timer = setTimeout(resolve, timeoutMs);
-    child.on("exit", () => {
-      clearTimeout(timer);
-      resolve();
-    });
-  });
+export async function waitForExit(child: ChildProcess, timeoutMs = 5000): Promise<void> {
+  if (child.exitCode !== null || child.signalCode !== null) return;
+  try {
+    await once(child, "exit", { signal: AbortSignal.timeout(timeoutMs) });
+  } catch {
+    /* timed out — teardown proceeds anyway (matches previous behavior) */
+  }
 }
 
 /** Install dependencies using the mock registry. */
@@ -131,11 +131,16 @@ export function installDeps(registry: MockRegistry, projectDir: string): void {
   const installEnv = { ...env, NPM_CONFIG_MINIMUM_RELEASE_AGE: "0" };
 
   if (pm === "npm") {
-    execFileSync("npm", ["install"], { cwd: projectDir, stdio: "inherit", env });
+    execaSync("npm", ["install"], { cwd: projectDir, stdio: "inherit", extendEnv: false, env });
   } else if (pm === "yarn") {
-    execFileSync("yarn", ["install", "--no-lockfile"], { cwd: projectDir, stdio: "inherit", env });
+    execaSync("yarn", ["install", "--no-lockfile"], {
+      cwd: projectDir,
+      stdio: "inherit",
+      extendEnv: false,
+      env,
+    });
   } else {
-    execFileSync(
+    execaSync(
       "pnpm",
       [
         "install",
@@ -143,7 +148,7 @@ export function installDeps(registry: MockRegistry, projectDir: string): void {
         "--no-strict-peer-dependencies",
         "--config.minimumReleaseAge=0",
       ],
-      { cwd: projectDir, stdio: "inherit", env: installEnv },
+      { cwd: projectDir, stdio: "inherit", extendEnv: false, env: installEnv },
     );
   }
 }

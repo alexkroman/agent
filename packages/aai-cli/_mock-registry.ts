@@ -6,10 +6,10 @@
  * they are always served from verdaccio's local storage. Consumer projects
  * use a fresh pnpm store-dir to avoid stale content-addressable cache hits.
  */
-import { type ChildProcess, execFileSync, fork } from "node:child_process";
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execaNode, execaSync, type ResultPromise } from "execa";
 
 export interface MockRegistry {
   /** Local registry URL (http://localhost:<port>) */
@@ -50,42 +50,38 @@ listen: localhost:${port}
   fs.writeFileSync(configPath, yaml);
 }
 
-function startServer(configPath: string): Promise<ChildProcess> {
-  return new Promise((resolve, reject) => {
-    const verdaccioEntry = require.resolve("verdaccio/bin/verdaccio");
-    const child = fork(verdaccioEntry, ["-c", configPath], {
-      silent: true,
-    });
+type VerdaccioProcess = ResultPromise<{ ipc: true; stdout: "ignore"; stderr: "ignore" }>;
 
-    const timeout = setTimeout(() => {
-      child.kill();
-      reject(new Error("Verdaccio failed to start within 30s"));
-    }, 30_000);
-
-    child.on("message", (msg: { verdaccio_started: boolean }) => {
-      if (msg.verdaccio_started) {
-        clearTimeout(timeout);
-        resolve(child);
-      }
-    });
-
-    child.on("error", (err) => {
-      clearTimeout(timeout);
-      reject(err);
-    });
-
-    child.on("exit", (code) => {
-      clearTimeout(timeout);
-      if (code) reject(new Error(`Verdaccio exited with code ${code}`));
-    });
+// The subprocess is returned wrapped in an object: a ResultPromise is itself
+// a thenable, so returning it bare would make the caller's `await` unwrap it
+// into a final Result instead of the live process handle.
+async function startServer(configPath: string): Promise<{ server: VerdaccioProcess }> {
+  const verdaccioEntry = require.resolve("verdaccio/bin/verdaccio");
+  const subprocess = execaNode(verdaccioEntry, ["-c", configPath], {
+    ipc: true,
+    stdout: "ignore",
+    stderr: "ignore",
   });
-}
 
-async function killTree(pid: number): Promise<void> {
-  const treeKill = (await import("tree-kill")).default;
-  return new Promise((resolve, reject) => {
-    treeKill(pid, (err?: Error) => (err ? reject(err) : resolve()));
+  // getOneMessage rejects on its own if the process errors or exits early,
+  // so only the startup deadline needs wiring up by hand. execa's `timeout`
+  // option is not usable here — it would kill the long-running server.
+  const started = subprocess.getOneMessage({
+    filter: (msg) => typeof msg === "object" && msg !== null && "verdaccio_started" in msg,
   });
+  let timer: NodeJS.Timeout | undefined;
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error("Verdaccio failed to start within 30s")), 30_000);
+  });
+  try {
+    await Promise.race([started, deadline]);
+  } catch (err) {
+    subprocess.kill();
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+  return { server: subprocess };
 }
 
 /**
@@ -125,7 +121,7 @@ export async function startMockRegistry(
 
   // Start verdaccio, then build and publish each workspace package
   writeConfig(configPath, port);
-  const child = await startServer(configPath);
+  const { server: child } = await startServer(configPath);
 
   for (const pkgName of packageNames) {
     const pkgPath = path.join(packagesDir, pkgName);
@@ -147,16 +143,13 @@ export async function startMockRegistry(
     fs.writeFileSync(pkgJsonPath, `${JSON.stringify(pkg, null, 2)}\n`);
 
     try {
-      execFileSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
-      execFileSync(
-        "pnpm",
-        ["publish", "--no-git-checks", "--tag", "e2e", "--registry", registryUrl],
-        {
-          cwd: pkgPath,
-          stdio: "inherit",
-          env: { ...process.env, ...registryEnv },
-        },
-      );
+      execaSync("pnpm", ["run", "build"], { cwd: pkgPath, stdio: "inherit" });
+      execaSync("pnpm", ["publish", "--no-git-checks", "--tag", "e2e", "--registry", registryUrl], {
+        cwd: pkgPath,
+        stdio: "inherit",
+        // execa extends process.env by default, so only the overrides are passed.
+        env: registryEnv,
+      });
     } finally {
       fs.writeFileSync(pkgJsonPath, originalPkg);
     }
@@ -167,8 +160,10 @@ export async function startMockRegistry(
     testVersion,
     env: registryEnv,
     stop: async () => {
-      // biome-ignore lint/suspicious/noEmptyBlockStatements: intentionally swallowing cleanup errors
-      if (child.pid) await killTree(child.pid).catch(() => {});
+      // Terminate (SIGTERM, escalating to SIGKILL via execa's default
+      // forceKillAfterDelay) and await exit, swallowing the "killed" rejection.
+      child.kill();
+      await child.catch(() => undefined);
       fs.rmSync(registryDir, { recursive: true, force: true });
     },
   };

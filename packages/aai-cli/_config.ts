@@ -1,8 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as p from "@clack/prompts";
 import { consola } from "consola";
+import envPaths from "env-paths";
 import { z } from "zod";
 import { unwrapCancel } from "./_ui.ts";
 import { readJson, writeJson } from "./_utils.ts";
@@ -24,11 +26,32 @@ const ProjectConfigSchema = z.object({
   sessionId: z.string().optional(),
 });
 
-export function getConfigDir(): string {
+/**
+ * Config dir the CLI used before switching to env-paths. On Linux it matches
+ * env-paths exactly; on macOS (XDG-style vs ~/Library/Preferences/aai) and
+ * Windows (no trailing `Config` segment) it does not.
+ */
+function legacyConfigDir(): string {
   if (process.platform === "win32") {
     return path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "aai");
   }
   return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "aai");
+}
+
+/**
+ * Resolve the global config directory, preferring the platform-conventional
+ * env-paths location while staying backward compatible: an existing config at
+ * the legacy path keeps winning so already-authenticated users are not
+ * silently logged out. Injectable for tests.
+ */
+export function getConfigDir(
+  dirs: { legacy: string; modern: string } = {
+    legacy: legacyConfigDir(),
+    modern: envPaths("aai", { suffix: "" }).config,
+  },
+  exists: (p: string) => boolean = existsSync,
+): string {
+  return exists(path.join(dirs.legacy, "config.json")) ? dirs.legacy : dirs.modern;
 }
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;

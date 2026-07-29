@@ -3,10 +3,10 @@
  * `aai test` — run agent tests via vitest.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { execaSync } from "execa";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 
@@ -57,10 +57,11 @@ export function runVitest(cwd: string): boolean {
   if (!testFile) return false;
 
   const { cmd, args } = resolveVitestCommand(cwd);
-  execFileSync(cmd, [...args, "run", "--root", ".", testFile], {
+  // execa extends process.env by default, so only the override is passed.
+  execaSync(cmd, [...args, "run", "--root", ".", testFile], {
     cwd,
     stdio: "inherit",
-    env: { ...process.env, NODE_OPTIONS: "--experimental-strip-types" },
+    env: { NODE_OPTIONS: "--experimental-strip-types" },
   });
 
   return true;
@@ -78,6 +79,8 @@ export async function executeTest(cwd: string): Promise<CommandResult<TestData>>
     log.success("Tests passed");
     return ok({ passed: true });
   } catch {
+    // The error itself is intentionally dropped: vitest already printed its
+    // full report to the terminal via stdio: "inherit".
     return fail("test_failed", "Tests failed");
   }
 }
