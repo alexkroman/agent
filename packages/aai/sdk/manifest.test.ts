@@ -499,6 +499,36 @@ describe("parseManifest — text-only (tts: none())", () => {
     );
   });
 
+  test("rejects an unsupported AssemblyAI TTS language at parse time", () => {
+    // The service refuses a bad `language` in-band, after the socket opens, so
+    // without this the only signal is a mute session in production. Parse time
+    // is what surfaces it to the CLI (aai dev/build/deploy) and to the
+    // studio's test_agent, which reads the config the bundle entry builds.
+    const fields = {
+      stt: { kind: "assemblyai", options: {} },
+      llm: { kind: "anthropic", options: { model: "m" } },
+      tts: { kind: "assemblyai", options: { voice: "lola", language: "spanish" } },
+    };
+    expect(() => parseManifest({ name: "x", ...fields } as never)).toThrow(
+      /unsupported language "spanish".*en, fr, de, it, pt, es/s,
+    );
+    expect(() =>
+      toAgentConfig({ name: "x", systemPrompt: "p", greeting: "g", ...fields } as never),
+    ).toThrow(/unsupported language "spanish"/);
+  });
+
+  test("accepts the six supported AssemblyAI TTS language codes", () => {
+    for (const language of ["en", "fr", "de", "it", "pt", "es"]) {
+      const m = parseManifest({
+        name: "x",
+        stt: { kind: "assemblyai", options: {} },
+        llm: { kind: "anthropic", options: { model: "m" } },
+        tts: { kind: "assemblyai", options: { language } },
+      } as never);
+      expect(m.tts?.options.language).toBe(language);
+    }
+  });
+
   test("isTextOnlyTts is null-safe and rejects real providers", () => {
     expect(isTextOnlyTts(undefined)).toBe(false);
     expect(isTextOnlyTts(null)).toBe(false);

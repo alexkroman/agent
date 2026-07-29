@@ -47,6 +47,8 @@ import {
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
   ASSEMBLYAI_TTS_HOST,
   type AssemblyAITtsOptions,
+  assemblyAITtsLanguageCodes,
+  resolveAssemblyAITtsLanguage,
 } from "../../../sdk/providers/tts/assemblyai.ts";
 import {
   makeTtsError,
@@ -91,14 +93,31 @@ function errorDetail(msg: AssemblyAITtsMessage): string {
   return `(${msg.error_code ?? ""}): ${reason}`;
 }
 
-function buildUrl(opts: AssemblyAITtsOptions, sampleRate: number): string {
+function buildUrl(
+  opts: AssemblyAITtsOptions,
+  sampleRate: number,
+  fail: (message: string) => Error,
+): string {
   const params = new URLSearchParams({
     voice: opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE,
     sample_rate: String(sampleRate),
   });
   // Omitted unless set: every voice speaks one language, so the server infers
   // it, and a mismatched pair is worse than no hint.
-  if (opts.language) params.set("language", opts.language);
+  if (opts.language) {
+    // The wire wants `spanish`, not `es` — see ASSEMBLYAI_TTS_LANGUAGES. An
+    // unsupported code must throw here: the service's own refusal arrives
+    // in-band after the socket is open, which leaves the session "ready" and
+    // silently mute instead of failing it.
+    const language = resolveAssemblyAITtsLanguage(opts.language);
+    if (language === undefined) {
+      throw fail(
+        `AssemblyAI TTS: unsupported language ${JSON.stringify(opts.language)} ` +
+          `(supported: ${assemblyAITtsLanguageCodes().join(", ")})`,
+      );
+    }
+    params.set("language", language);
+  }
   return `wss://${ASSEMBLYAI_TTS_HOST}/v1/ws/?${params.toString()}`;
 }
 
@@ -151,13 +170,16 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       );
       const connectError = (msg: string) => makeTtsError("tts_connect_failed", msg);
       const sampleRate = assertPcm16Rate(openOpts.sampleRate, "AssemblyAI TTS", connectError);
+      // Built once so an unsupported language throws here, at open, rather
+      // than on a cancel-triggered reconnect mid-conversation.
+      const url = buildUrl(opts, sampleRate, connectError);
 
       const connect = (): WebSocket =>
         // Raw key, not `Bearer` — see the module doc. The guard listener
         // protects against a late socket error with zero listeners crashing
         // the process.
         createGuardedWs(
-          () => new WebSocket(buildUrl(opts, sampleRate), { headers: { Authorization: apiKey } }),
+          () => new WebSocket(url, { headers: { Authorization: apiKey } }),
           connectError,
           "AssemblyAI TTS",
         );

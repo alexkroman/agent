@@ -283,8 +283,11 @@ LLM Gateway, so an all-AssemblyAI pipeline needs exactly one secret. Each
 voice speaks one language — English includes `vera`, `michael`, `alba`,
 `jane`, `george`, `mary`, `paul`; non-English are `estelle` (fr),
 `giovanni` (it), `juergen` (de), `lola` (es), `rafael` (pt). Set
-`language` only alongside a voice that speaks it. Because the factory is
-named `assemblyAI` in `/stt`, `/llm`, and `/tts`, alias on import.
+`language` only alongside a voice that speaks it, as an ISO 639-1 code —
+`"en"`, `"fr"`, `"de"`, `"it"`, `"pt"`, `"es"` are the six the catalog
+covers, and the SDK translates each to the full name the service wants.
+Anything else fails at session start. Because the factory is named
+`assemblyAI` in `/stt`, `/llm`, and `/tts`, alias on import.
 
 **Rime quirk:** language uses ISO 639-3 three-letter codes (e.g. `"eng"`
 not `"en"`).

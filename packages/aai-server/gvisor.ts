@@ -11,7 +11,7 @@
 
 import { type ChildProcess, execFile, spawn } from "node:child_process";
 import { existsSync } from "node:fs";
-import { chmod, copyFile, mkdir, rm, writeFile } from "node:fs/promises";
+import { chmod, copyFile, link, mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { promisify } from "node:util";
@@ -131,6 +131,39 @@ let rootfsReady: Promise<RootfsState> | null = null;
  * promise. Safe to invoke at server startup to pay the I/O cost off the hot
  * path; subsequent `createGvisorSandbox` calls reuse the cached state.
  */
+/**
+ * Materialize `src` at `dest` for the sandbox rootfs, preferring a hard link.
+ * Returns true when the link succeeded.
+ *
+ * Copying the Deno binary is the single most expensive thing the server does at
+ * boot: production logs show `prepareRootfs` taking 23.7 s, essentially all of
+ * it this one ~130 MB `copyFile`, on every machine of every rolling deploy. It
+ * is also unnecessary work — the guest only ever execs the binary read-only, so
+ * sharing the image's inode is equivalent, O(1), and adds no bytes on disk.
+ *
+ * Falls back to a copy on *any* link failure, since the reasons are
+ * environmental rather than bugs: a tmpfs `/tmp` puts the rootfs on another
+ * device (EXDEV), and some filesystems refuse links outright (EPERM). The copy
+ * is what shipped before, so the fallback is the old behavior, not a new risk.
+ *
+ * Deliberately does not `chmod` the link: it shares the source inode, so
+ * changing its mode would change the image's binary too. The image's Deno is
+ * already 0755 (runsc has to exec it). Only the copied path needs the bit set.
+ */
+async function linkOrCopy(src: string, dest: string): Promise<boolean> {
+  // link() is EEXIST-strict, unlike copyFile() which overwrites — a leftover
+  // dest from an earlier boot or a failed attempt must not win.
+  await rm(dest, { force: true });
+  try {
+    await link(src, dest);
+    return true;
+  } catch {
+    await copyFile(src, dest);
+    await chmod(dest, 0o755);
+    return false;
+  }
+}
+
 export function prepareRootfs(harnessPath: string): Promise<RootfsState> {
   if (rootfsReady !== null) return rootfsReady;
   rootfsReady = (async () => {
@@ -140,8 +173,7 @@ export function prepareRootfs(harnessPath: string): Promise<RootfsState> {
     const t0 = performance.now();
     await mkdir(SANDBOX_ROOTFS, { recursive: true });
     const denoDest = join(SANDBOX_ROOTFS, "deno");
-    await copyFile(denoSrc, denoDest);
-    await chmod(denoDest, 0o755);
+    const denoLinked = await linkOrCopy(denoSrc, denoDest);
     await copyFile(harnessPath, join(SANDBOX_ROOTFS, "harness.mjs"));
 
     // Deno is dynamically linked — it needs the host's libc and dynamic
@@ -154,7 +186,10 @@ export function prepareRootfs(harnessPath: string): Promise<RootfsState> {
       libMounts.push({ destination: dir, type: "bind", source: dir, options: ["ro"] });
     }
     const ms = Math.round(performance.now() - t0);
-    console.info("Sandbox rootfs prepared", { rootfs: SANDBOX_ROOTFS, ms });
+    // `denoLinked` is in the log because it is the difference between a ~1 ms
+    // boot step and a ~24 s one, and it depends on how the host mounts /tmp —
+    // which the deploy logs are the only place to observe.
+    console.info("Sandbox rootfs prepared", { rootfs: SANDBOX_ROOTFS, ms, denoLinked });
     return { rootfsPath: SANDBOX_ROOTFS, libMounts };
   })().catch((err) => {
     rootfsReady = null;

@@ -36,6 +36,80 @@ export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
  */
 export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "vera";
 
+/**
+ * ISO 639-1 code → the `language` query-param value the service accepts.
+ *
+ * The streaming-TTS endpoint takes the **full lowercase English name**, not a
+ * code: `?language=es` is refused with `Bad connection parameters: language:
+ * language 'es' not in supported set ['english', 'french', 'german',
+ * 'italian', 'portuguese', 'spanish']`. That refusal arrives *in-band* after
+ * the socket opens, so an unmapped code doesn't fail the session — it leaves
+ * the agent connected, "ready", and permanently mute. Every other language
+ * knob in the ecosystem (AssemblyAI STT's `language_codes`, Cartesia) is a
+ * code, so the codes are the SDK's contract and this map is the translation.
+ *
+ * Keys are the six languages the voice catalog covers.
+ */
+export const ASSEMBLYAI_TTS_LANGUAGES = {
+  en: "english",
+  fr: "french",
+  de: "german",
+  it: "italian",
+  pt: "portuguese",
+  es: "spanish",
+} as const;
+
+/** ISO 639-1 code for a language the AssemblyAI voice catalog speaks. */
+export type AssemblyAITtsLanguage = keyof typeof ASSEMBLYAI_TTS_LANGUAGES;
+
+/**
+ * Translate an ISO 639-1 code to the service's `language` value.
+ *
+ * Returns `undefined` for anything unsupported so callers can fail at connect
+ * time. A descriptor reaches the host as unvalidated
+ * `Record<string, unknown>` options (`ProviderDescriptorSchema` does not know
+ * provider-specific fields), so the type union alone does not keep a bad value
+ * off the wire.
+ */
+export function resolveAssemblyAITtsLanguage(code: string): string | undefined {
+  return ASSEMBLYAI_TTS_LANGUAGES[code as AssemblyAITtsLanguage];
+}
+
+/** The codes {@link resolveAssemblyAITtsLanguage} accepts, for error messages. */
+export function assemblyAITtsLanguageCodes(): string[] {
+  return Object.keys(ASSEMBLYAI_TTS_LANGUAGES);
+}
+
+/**
+ * Reject an AssemblyAI TTS descriptor carrying an unsupported `language`.
+ *
+ * Shared by `parseManifest` and `toAgentConfig` — the same two-call-site shape
+ * as {@link assertTextOnlyTuning}. Both matter for *where the author sees the
+ * error*: `parseManifest` covers the CLI (`aai dev`, `aai build`, `aai deploy`)
+ * and `toAgentConfig` runs inside the generated bundle entry, so the studio's
+ * `test_agent` reports it as a load error instead of the coding agent shipping
+ * an agent that goes mute in production.
+ *
+ * The type union on `AssemblyAITtsOptions.language` cannot carry this: a
+ * descriptor arrives here as `Record<string, unknown>` options from a bundle,
+ * and the opener's connect-time throw fires too late to help anyone authoring.
+ *
+ * Takes `unknown` so callers can pass a possibly-absent descriptor.
+ */
+export function assertAssemblyAITtsLanguage(tts: unknown): void {
+  if (typeof tts !== "object" || tts === null) return;
+  const { kind, options } = tts as { kind?: unknown; options?: unknown };
+  if (kind !== ASSEMBLYAI_TTS_KIND) return;
+  if (typeof options !== "object" || options === null) return;
+  const { language } = options as { language?: unknown };
+  if (language === undefined) return;
+  if (typeof language === "string" && resolveAssemblyAITtsLanguage(language) !== undefined) return;
+  throw new Error(
+    `AssemblyAI TTS: unsupported language ${JSON.stringify(language)} ` +
+      `(supported: ${assemblyAITtsLanguageCodes().join(", ")})`,
+  );
+}
+
 export interface AssemblyAITtsOptions {
   /**
    * Voice id, e.g. `"vera"`, `"michael"`, `"alba"`. Defaults to
@@ -50,9 +124,11 @@ export interface AssemblyAITtsOptions {
   /**
    * Spoken language as an ISO 639-1 code (`"en"`, `"fr"`, `"de"`, `"es"`,
    * `"it"`, `"pt"`). Omitted by default so the server infers it from the
-   * voice — set it only alongside a voice that speaks it.
+   * voice — set it only alongside a voice that speaks it. Translated to the
+   * name the service wants by {@link resolveAssemblyAITtsLanguage}; an
+   * unsupported code fails at connect time rather than muting the session.
    */
-  language?: string;
+  language?: AssemblyAITtsLanguage;
 }
 
 export type AssemblyAITtsProvider = TtsProvider & {
