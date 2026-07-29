@@ -16,6 +16,9 @@ import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
+/** RFC 6455 Normal Closure. */
+const WS_NORMAL_CLOSURE = 1000;
+
 const DEFAULT_MODEL = "gpt-realtime-2";
 const DEFAULT_VOICE = "alloy";
 const DEFAULT_URL = "wss://api.openai.com/v1/realtime";
@@ -320,7 +323,10 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
 
   async function stop(): Promise<void> {
     closing = true;
-    ws?.close();
+    // Normal Closure rather than a statusless frame: the `closing` flag
+    // already keeps *our* logs honest, but the peer would otherwise see 1005
+    // "No Status Received" and treat a deliberate stop as a dropped socket.
+    ws?.close(WS_NORMAL_CLOSURE);
     ws = null;
   }
 
