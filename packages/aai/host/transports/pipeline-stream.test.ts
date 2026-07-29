@@ -2,9 +2,15 @@
 // Unit specs for the pure stream helpers in pipeline-stream.ts. Turn-level
 // behavior (settle window, aggregation) lives in pipeline-turn.test.ts.
 
-import { describe, expect, test } from "vitest";
-import { TTS_COALESCE_MAX_CHARS } from "../../sdk/constants.ts";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import {
+  DEAD_AIR_COVER_PHRASES,
+  DEFAULT_DEAD_AIR_COVER_MS,
+  TTS_COALESCE_MAX_CHARS,
+} from "../../sdk/constants.ts";
+import { silentLogger } from "../_test-utils.ts";
 import { createTtsTextCoalescer } from "./pipeline-stream.ts";
+import { createStreamPartHandler } from "./pipeline-stream-parts.ts";
 
 describe("createTtsTextCoalescer", () => {
   function collect(): { sent: string[]; send: (text: string) => void } {
@@ -97,5 +103,91 @@ describe("createTtsTextCoalescer", () => {
     c.send("");
     c.send("Hi ");
     expect(sent).toEqual(["Hi "]);
+  });
+});
+
+describe("createStreamPartHandler dead-air cover", () => {
+  function harness(overrides: { holdPhrase?: string } = {}) {
+    const spoken: string[] = [];
+    const handler = createStreamPartHandler({
+      onDelta: () => undefined,
+      // Route through a real coalescer: a filler that only reaches the batch
+      // buffer is not speech, and the tool window is exactly when nothing
+      // arrives to flush it.
+      sendTtsText: createTtsTextCoalescer((t) => spoken.push(t)).send,
+      onTtsBoundary: () => undefined,
+      onToolCall: () => undefined,
+      emitError: () => undefined,
+      log: silentLogger,
+      sid: "t",
+      ...overrides,
+    });
+    const toolCall = (id: string): void =>
+      handler.handle({ type: "tool-call", toolCallId: id, toolName: "lookup", input: {} });
+    return { spoken, handler, toolCall };
+  }
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  test("covers a tool window that opens after the model has already spoken", () => {
+    // The failure this exists for: the model says "Let me check that", then
+    // chains tool calls for 15+ seconds. holdPhrase is state-gated on "has the
+    // model spoken this turn", so it stays suppressed and the caller hears
+    // nothing until the chain ends — by which point they have hung up.
+    const { spoken, toolCall, handler } = harness();
+    handler.handle({ type: "text-delta", text: "Let me check that for you. " });
+    handler.handle({ type: "text-end" });
+    toolCall("tc-1");
+    expect(spoken.join("")).toBe("Let me check that for you. ");
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
+    expect(spoken.join("")).toContain(DEAD_AIR_COVER_PHRASES[0]);
+  });
+
+  test("keeps covering a long tool chain, backing off between fillers", () => {
+    const { spoken, toolCall } = harness();
+    toolCall("tc-1"); // opens with a tool call: holdPhrase fires immediately
+    const covers = (): number =>
+      DEAD_AIR_COVER_PHRASES.filter((p) => spoken.join("").includes(p)).length;
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
+    expect(covers()).toBe(1);
+    // Backoff: the second cover is not due at another single window.
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
+    expect(covers()).toBe(1);
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 8);
+    expect(covers()).toBeGreaterThanOrEqual(2);
+  });
+
+  test("speech cancels a pending cover", () => {
+    const { spoken, toolCall, handler } = harness();
+    toolCall("tc-1");
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS - 1);
+    handler.handle({ type: "text-delta", text: "Found it. " });
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
+    for (const phrase of DEAD_AIR_COVER_PHRASES) {
+      expect(spoken.join("")).not.toContain(phrase);
+    }
+  });
+
+  test("dispose() stops a cover from firing into the silence after the turn", () => {
+    const { spoken, toolCall, handler } = harness();
+    toolCall("tc-1");
+    handler.dispose();
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
+    for (const phrase of DEAD_AIR_COVER_PHRASES) {
+      expect(spoken.join("")).not.toContain(phrase);
+    }
+  });
+
+  test("holdPhrase '' disables the dead-air cover too", () => {
+    // One kill switch for filler speech, not two.
+    const { spoken, toolCall } = harness({ holdPhrase: "" });
+    toolCall("tc-1");
+    vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
+    expect(spoken).toEqual([]);
   });
 });
