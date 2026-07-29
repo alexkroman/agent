@@ -6,6 +6,8 @@ import {
   type ReactNode,
   useContext,
   useEffect,
+  useMemo,
+  useRef,
   useSyncExternalStore,
 } from "react";
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector";
@@ -59,18 +61,24 @@ export function useSessionCore(): SessionCore {
 export function useSession(): Session {
   const core = useSessionCore();
   const snapshot = useSyncExternalStore(core.subscribe, core.getSnapshot);
-  return {
-    ...snapshot,
-    start: core.start,
-    cancel: core.cancel,
-    resetState: core.resetState,
-    reset: core.reset,
-    disconnect: core.disconnect,
-    toggle: core.toggle,
-    startRecording: core.startRecording,
-    stopRecording: core.stopRecording,
-    sendAudioFile: core.sendAudioFile,
-  };
+  // Methods are stable per core; memoizing the merged object keeps the
+  // returned Session referentially stable across renders the snapshot didn't
+  // cause (parent re-renders), so consumers can use it in hook deps.
+  const methods = useMemo(
+    () => ({
+      start: core.start,
+      cancel: core.cancel,
+      resetState: core.resetState,
+      reset: core.reset,
+      disconnect: core.disconnect,
+      toggle: core.toggle,
+      startRecording: core.startRecording,
+      stopRecording: core.stopRecording,
+      sendAudioFile: core.sendAudioFile,
+    }),
+    [core],
+  );
+  return useMemo(() => ({ ...snapshot, ...methods }), [snapshot, methods]);
 }
 
 /**
@@ -113,7 +121,9 @@ export function ThemeProvider({
   value?: ClientTheme | undefined;
   children?: ReactNode;
 }) {
-  const merged = value ? { ...DEFAULT_THEME, ...value } : DEFAULT_THEME;
+  // Identity-stable merge: the useChatItems row cache compares theme by
+  // reference, so a fresh object per render would rebuild every message row.
+  const merged = useMemo(() => (value ? { ...DEFAULT_THEME, ...value } : DEFAULT_THEME), [value]);
   usePageBackground(merged.bg);
   return createElement(ThemeCtx.Provider, { value: merged }, children);
 }

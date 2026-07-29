@@ -20,6 +20,12 @@ import {
 
 export type StudioWorkspace = {
   files: Record<string, string>;
+  /**
+   * `filesHash` of `files`, stamped by `putWorkspace` on every write so reads
+   * (project GET, deploy) never recompute it. Optional because documents
+   * written before the field existed lack it — readers fall back to computing.
+   */
+  hash?: string;
   /** Slug of the last successful deploy — redeploys reuse it. */
   deployedSlug?: string;
   /**
@@ -41,12 +47,20 @@ export function filesHash(files: Record<string, string>): string {
   return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
 }
 
+/**
+ * `workspace.hash` when present (stamped on write), else computed. The
+ * fallback covers documents written before the hash was stored.
+ */
+export function currentFilesHash(workspace: StudioWorkspace): string {
+  return workspace.hash ?? filesHash(workspace.files);
+}
+
 /** True when the workspace has edits that have not been published. */
 export function hasUnpublishedChanges(workspace: StudioWorkspace): boolean {
   // Never deployed: there is nothing to be out of date with, and the preview
   // says "nothing published yet" rather than showing a stale banner.
   if (!workspace.deployedSlug) return false;
-  return workspace.deployedHash !== filesHash(workspace.files);
+  return workspace.deployedHash !== currentFilesHash(workspace);
 }
 
 /**
@@ -110,11 +124,17 @@ export async function putWorkspace(
   storage: Storage,
   scope: string,
   project: string,
-  workspace: Omit<StudioWorkspace, "updatedAt">,
+  workspace: Omit<StudioWorkspace, "updatedAt" | "hash">,
 ): Promise<StudioWorkspace> {
   for (const path of Object.keys(workspace.files)) assertSafeFilePath(path);
   assertWorkspaceLimits(workspace.files);
-  const doc: StudioWorkspace = { ...workspace, updatedAt: Date.now() };
+  // The hash is always recomputed here — never trusted from the caller, who
+  // typically spreads a stale document around a `files` replacement.
+  const doc: StudioWorkspace = {
+    ...workspace,
+    hash: filesHash(workspace.files),
+    updatedAt: Date.now(),
+  };
   await storage.setItem(projectKey(scope, project), JSON.stringify(doc));
   return doc;
 }

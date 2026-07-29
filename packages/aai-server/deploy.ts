@@ -5,9 +5,9 @@ import { debug } from "./_debug-log.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { type SlotCache, setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
-import type { DeployBody } from "./schemas.ts";
+import type { AgentMetadata, DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
-import { verifyApiKeyHash } from "./secrets.ts";
+import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 
 /** Server-level dependencies the deploy core needs (a subset of Bindings). */
@@ -20,7 +20,13 @@ export type DeployParams = {
   /** Requested slug. Omit to generate one (`humanId`). */
   slug?: string | undefined;
   apiKey: string;
-  keyHash: string;
+  /**
+   * Precomputed ownership hash for `apiKey` (e.g. from `ownerMw`). Optional:
+   * when omitted, the deploy core reuses the stored hash the key matches and
+   * only pays the ~100ms fresh-salt `hashApiKey` when the slug is genuinely
+   * unclaimed and a hash must be stored.
+   */
+  keyHash?: string | undefined;
   worker: string;
   clientFiles: Record<string, string>;
   env?: Record<string, string> | undefined;
@@ -59,33 +65,53 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
     // co-ownership. Collisions aren't attacker-targetable, but they are
     // possible, and the check costs one manifest read either way.
     const existing = await deps.store.getManifest(slug);
-    if (existing && !(await matchesAnyHash(params.apiKey, existing.credential_hashes))) {
+    const matchedHash = existing
+      ? await matchAnyHash(params.apiKey, existing.credential_hashes)
+      : null;
+    if (existing && matchedHash === null) {
       return requested
         ? { ok: false, status: 403, error: "Forbidden: slug already owned by another user" }
         : // The caller never chose this slug, so "forbidden" would be
           // confusing — tell them to retry and get a fresh one.
           { ok: false, status: 409, error: "Slug collision on generated name — retry the deploy" };
     }
-    return deployLocked(deps, params, slug);
+    // The matched stored hash doubles as the caller's keyHash. A fresh-salt
+    // hashApiKey (~100ms, uncacheable) only runs when the slug is genuinely
+    // unclaimed and no middleware precomputed one (`POST /deploy`).
+    const keyHash = matchedHash ?? params.keyHash ?? (await hashApiKey(params.apiKey));
+    // The check above and deployLocked run under the same slug lock, so the
+    // manifest snapshot and match result can be passed through — no TOCTOU,
+    // no second read, no second PBKDF2 sweep.
+    return deployLocked(deps, params, { slug, existing, matchedHash, keyHash });
   });
 }
 
-async function matchesAnyHash(apiKey: string, hashes: string[]): Promise<boolean> {
+/** Resolve the first stored hash `apiKey` matches, or null when none do. */
+async function matchAnyHash(apiKey: string, hashes: string[]): Promise<string | null> {
   // Verify concurrently — each cache miss costs ~100ms of PBKDF2, and
   // deriveBits runs off the main thread.
-  const results = await Promise.all(hashes.map((h) => verifyApiKeyHash(apiKey, h)));
-  return results.some(Boolean);
+  const results = await Promise.all(
+    hashes.map(async (h) => ((await verifyApiKeyHash(apiKey, h)) ? h : null)),
+  );
+  return results.find((h) => h !== null) ?? null;
 }
 
 /** Persist the bundle for a slug the caller is entitled to. Runs under the slug lock. */
 async function deployLocked(
   deps: DeployDeps,
   params: DeployParams,
-  slug: string,
+  ctx: {
+    slug: string;
+    /** Manifest snapshot read under the slug lock in `deployAgentBundle`. */
+    existing: AgentMetadata | null;
+    /** Stored hash `apiKey` matched, or null when the slug was unclaimed. */
+    matchedHash: string | null;
+    keyHash: string;
+  },
 ): Promise<DeployOutcome> {
-  const { apiKey, keyHash } = params;
+  const { slug, existing, matchedHash, keyHash } = ctx;
 
-  const storedEnv = (await deps.store.getEnv(slug)) ?? {};
+  const storedEnv = existing?.env ?? {};
   const env = { ...params.defaultEnv, ...storedEnv, ...params.env };
 
   const envParsed = EnvSchema.safeParse(env);
@@ -101,9 +127,8 @@ async function deployLocked(
 
   // Preserve multi-user ownership: append the deployer's hash only when no
   // stored hash already matches their key.
-  const existingHashes = (await deps.store.getManifest(slug))?.credential_hashes ?? [];
-  const alreadyStored =
-    existingHashes.includes(keyHash) || (await matchesAnyHash(apiKey, existingHashes));
+  const existingHashes = existing?.credential_hashes ?? [];
+  const alreadyStored = matchedHash !== null || existingHashes.includes(keyHash);
   const mergedHashes = alreadyStored ? existingHashes : [...existingHashes, keyHash];
 
   await deps.store.putAgent({
@@ -129,12 +154,15 @@ function outcomeToResponse(c: ValidatedAppContext<DeployBody>, outcome: DeployOu
   return c.json({ ok: true, slug: outcome.slug, message: outcome.message });
 }
 
-function paramsFromBody(c: ValidatedAppContext<DeployBody>, slug?: string): DeployParams {
+function paramsFromBody(
+  c: ValidatedAppContext<DeployBody>,
+  opts: { slug?: string | undefined; keyHash?: string | undefined },
+): DeployParams {
   const body = c.req.valid("json");
   return {
-    slug,
+    slug: opts.slug,
     apiKey: c.var.apiKey,
-    keyHash: c.var.keyHash,
+    keyHash: opts.keyHash,
     worker: body.worker,
     clientFiles: body.clientFiles,
     env: body.env,
@@ -145,13 +173,21 @@ function paramsFromBody(c: ValidatedAppContext<DeployBody>, slug?: string): Depl
 /** `POST /:slug/deploy` — deploy to a caller-chosen slug (ownership via `ownerMw`). */
 export async function handleDeploy(c: ValidatedAppContext<DeployBody>): Promise<Response> {
   const deps = { store: c.env.store, slots: c.env.slots };
-  const outcome = await deployAgentBundle(deps, paramsFromBody(c, c.var.slug));
+  const outcome = await deployAgentBundle(
+    deps,
+    paramsFromBody(c, { slug: c.var.slug, keyHash: c.var.keyHash }),
+  );
   return outcomeToResponse(c, outcome);
 }
 
 /** `POST /deploy` — deploy to the body's slug, or a server-generated one. */
 export async function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Response> {
   const deps = { store: c.env.store, slots: c.env.slots };
-  const outcome = await deployAgentBundle(deps, paramsFromBody(c, c.req.valid("json").slug));
+  // No keyHash: `authMw` doesn't hash, and the deploy core resolves
+  // ownership via the cacheable verify path (hashing only when unclaimed).
+  const outcome = await deployAgentBundle(
+    deps,
+    paramsFromBody(c, { slug: c.req.valid("json").slug }),
+  );
   return outcomeToResponse(c, outcome);
 }

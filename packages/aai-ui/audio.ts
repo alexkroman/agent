@@ -36,9 +36,12 @@ export async function decodeAudioToPcm16(
   const rendered = await offline.startRendering();
   const f32 = rendered.getChannelData(0);
   const pcm = new Int16Array(f32.length);
-  for (let i = 0; i < f32.length; i++) {
-    const s = Math.max(-1, Math.min(1, f32[i] ?? 0));
-    pcm[i] = s < 0 ? s * 0x80_00 : s * 0x7f_ff;
+  // for-of over the typed array: every sample is in bounds, so this avoids
+  // a per-sample undefined check that indexed access would require.
+  let i = 0;
+  for (const sample of f32) {
+    const s = Math.max(-1, Math.min(1, sample));
+    pcm[i++] = s < 0 ? s * 0x80_00 : s * 0x7f_ff;
   }
   return pcm;
 }

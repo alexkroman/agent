@@ -14,7 +14,7 @@ import {
   useMemo,
   useRef,
 } from "react";
-import { useSession, useTheme } from "../context.ts";
+import { useSessionSelector, useTheme } from "../context.ts";
 import type { ChatMessage, ToolCallInfo } from "../types.ts";
 import { primaryTint, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
 import { ToolCallBlock } from "./tool-call-block.tsx";
@@ -131,14 +131,24 @@ const NEAR_BOTTOM_PX = 96;
  * The scroll runs inside `requestAnimationFrame` and is deduped per frame:
  * several snapshot updates in one frame (transcript + message + tool call)
  * trigger a single scroll after layout instead of one forced layout each.
+ *
+ * While a partial transcript is streaming, updates arrive faster than a
+ * smooth scroll finishes — each restart leaves the animation perpetually
+ * mid-flight — so `streaming` switches to an instant jump; committed-content
+ * updates keep the smooth animation.
  */
-function useAutoScroll(contentVersion: number): {
+function useAutoScroll(
+  contentVersion: number,
+  streaming: boolean,
+): {
   anchorRef: RefObject<HTMLDivElement | null>;
   onScroll: (event: UIEvent<HTMLDivElement>) => void;
 } {
   const anchorRef = useRef<HTMLDivElement>(null);
   const pinnedRef = useRef(true);
   const scheduledRef = useRef(false);
+  const streamingRef = useRef(streaming);
+  streamingRef.current = streaming;
   const onScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
     const el = event.currentTarget;
     pinnedRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - NEAR_BOTTOM_PX;
@@ -149,7 +159,10 @@ function useAutoScroll(contentVersion: number): {
     requestAnimationFrame(() => {
       scheduledRef.current = false;
       if (!pinnedRef.current) return;
-      anchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      anchorRef.current?.scrollIntoView({
+        behavior: streamingRef.current ? "instant" : "smooth",
+        block: "end",
+      });
     });
   }, [contentVersion]);
   return { anchorRef, onScroll };
@@ -205,21 +218,28 @@ function interleave(
  *
  * @public
  */
-export function MessageList({ className }: { className?: string }) {
-  const session = useSession();
+export const MessageList = memo(function MessageList({ className }: { className?: string }) {
+  // Individual selectors (cached per selector) rather than useSession(): the
+  // list already re-renders on every content change, but a full-snapshot
+  // subscription would also drag it through unrelated updates (custom events,
+  // recording flips, ...).
+  const state = useSessionSelector((s) => s.state);
+  const messages = useSessionSelector((s) => s.messages);
+  const toolCalls = useSessionSelector((s) => s.toolCalls);
+  const userTranscript = useSessionSelector((s) => s.userTranscript);
+  const agentTranscript = useSessionSelector((s) => s.agentTranscript);
+  const contentVersion = useSessionSelector((s) => s.contentVersion);
   const theme = useTheme();
 
   const showThinking = useMemo(() => {
-    if (session.state !== "thinking") return false;
-    const last = session.toolCalls.at(-1);
+    if (state !== "thinking") return false;
+    const last = toolCalls.at(-1);
     if (last?.status === "pending") return false;
-    const lastMsg = session.messages.at(-1);
+    const lastMsg = messages.at(-1);
     return !lastMsg || lastMsg.role === "user" || Boolean(last);
-  }, [session.state, session.toolCalls, session.messages]);
+  }, [state, toolCalls, messages]);
 
-  const { messages, toolCalls, userTranscript, agentTranscript } = session;
-
-  const { anchorRef, onScroll } = useAutoScroll(session.contentVersion);
+  const { anchorRef, onScroll } = useAutoScroll(contentVersion, userTranscript !== null);
 
   // Memoized rows: `MessageBubble` and `ToolCallBlock` are memo()-wrapped and
   // their inputs are referentially stable across snapshots, so appending one
@@ -257,4 +277,4 @@ export function MessageList({ className }: { className?: string }) {
       </div>
     </div>
   );
-}
+});

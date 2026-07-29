@@ -150,6 +150,41 @@ describe("repairOpenAiStream", () => {
     expect(ids).toEqual(["call_real", "call_real"]);
   });
 
+  it("repairs a null choices spelled with a space after the colon", async () => {
+    // The pre-parse fast path checks substrings; both compact and
+    // single-space spellings must still reach the repair.
+    const spaced = '{"id": "x", "choices": null, "usage": {"total_tokens": 2}}';
+    const payloads = await repaired(sse(spaced));
+    expect(JSON.parse(payloads[0] ?? "{}")).toMatchObject({ choices: [] });
+  });
+
+  it("passes lines that cannot need repair through without reserializing", async () => {
+    // Non-canonical spacing and key order survive verbatim — JSON.stringify
+    // would normalize both, so byte-equality proves the fast path skipped
+    // the parse/stringify round trip entirely.
+    const body = `data: {"choices" :[ {"delta": {"content":"hi"} } ],  "id":"x"}\n\ndata: [DONE]\n\n`;
+    const wrapped = repairOpenAiStream(sseFetch(body), { generateId: seqIds() });
+    const out = await (await wrapped("https://example.test/v1/chat/completions")).text();
+    expect(out).toBe(body);
+  });
+
+  it("emits every line of a many-line network chunk in order", async () => {
+    // One network chunk carrying several complete SSE events exercises the
+    // moving-start line scan (vs. the old slice-per-line loop).
+    const payloads = await repaired(
+      sse(
+        chunk({ content: "a" }),
+        chunk({ tool_calls: [{ index: 0, function: { name: "f", arguments: "" } }] }),
+        chunk({ content: "b" }),
+      ),
+      1,
+    );
+    expect(payloads).toHaveLength(4); // 3 chunks + [DONE]
+    expect(JSON.parse(payloads[0] as string).choices[0].delta.content).toBe("a");
+    expect(JSON.parse(payloads[1] as string).choices[0].delta.tool_calls[0].id).toBe("id_1");
+    expect(JSON.parse(payloads[2] as string).choices[0].delta.content).toBe("b");
+  });
+
   it("leaves text-only deltas and the [DONE] sentinel untouched", async () => {
     const body = sse(chunk({ role: "assistant", content: "hi" }), chunk({}, "stop"));
     const wrapped = repairOpenAiStream(sseFetch(body), { generateId: seqIds() });

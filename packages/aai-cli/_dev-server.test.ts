@@ -3,6 +3,7 @@
 import { existsSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
+import type { AgentDef } from "@alexkroman1/aai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
 
@@ -119,7 +120,7 @@ vi.mock("./_utils.ts", async (importOriginal) => ({
 
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
-import { startDevServer } from "./_dev-server.ts";
+import { loadAgentDefWith, startDevServer } from "./_dev-server.ts";
 import { log } from "./_ui.ts";
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -467,6 +468,9 @@ describe("file watcher filtering", () => {
 
       mockClose.mockClear();
 
+      // Actually change the file: an unchanged bundle is served from the
+      // eval memo (createWorkerEvaluator) and never re-validated.
+      await writeAgentTs(dir, "test-agent-v2");
       fireChange(dir, "agent.ts");
 
       await vi.waitFor(
@@ -548,6 +552,35 @@ describe("dev server host mode gate", () => {
       const opts = mockCreateServer.mock.calls.at(-1)?.[0] as { env: Record<string, string> };
       expect(opts.env).not.toHaveProperty("AAI_ALLOW_HOST");
       await cleanup();
+    });
+  });
+});
+
+describe("loadAgentDefWith", () => {
+  const fakeDef = (name: string) => ({ name, tools: {} }) as AgentDef;
+
+  test("compile errors from the incremental builder propagate (no Vite fallback)", async () => {
+    await withTempDir(async (dir) => {
+      const buildFailure = Object.assign(new Error("Build failed"), { errors: [] });
+      const builder = { build: vi.fn().mockRejectedValue(buildFailure) };
+      const evaluate = vi.fn();
+      await expect(loadAgentDefWith(dir, builder, evaluate)).rejects.toBe(buildFailure);
+      expect(evaluate).not.toHaveBeenCalled();
+    });
+  });
+
+  test("non-compile builder failures fall back to the cold Vite build", async () => {
+    await withTempDir(async (dir) => {
+      await writeAgentTs(dir, "fallback-agent");
+      const builder = { build: vi.fn().mockRejectedValue(new Error("esbuild service died")) };
+      const evaluated: string[] = [];
+      const def = await loadAgentDefWith(dir, builder, async (code) => {
+        evaluated.push(code);
+        return fakeDef("fallback-agent");
+      });
+      expect(def.name).toBe("fallback-agent");
+      // The Vite-built worker was handed to the evaluator.
+      expect(evaluated[0]).toContain("fallback-agent");
     });
   });
 });

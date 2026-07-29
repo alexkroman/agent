@@ -2,16 +2,16 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 // ── Deno global shim ──────────────────────────────────────────────────────
-// harness-rpc writes NDJSON via Deno.stdout.writeSync. Shim it before any
-// call so the module runs cleanly in Node.
+// harness-rpc writes NDJSON via an async serialized `Deno.stdout.write`
+// chain. Shim it before any call so the module runs cleanly in Node.
 
 const writtenBytes: Uint8Array[] = [];
 
 (globalThis as Record<string, unknown>).Deno = {
   stdout: {
-    writeSync(data: Uint8Array) {
+    write(data: Uint8Array) {
       writtenBytes.push(new Uint8Array(data));
-      return data.byteLength;
+      return Promise.resolve(data.byteLength);
     },
   },
   exit: vi.fn(),
@@ -67,8 +67,10 @@ function respondToLastRequest(result: unknown): void {
 }
 
 /**
- * Yield a macrotask so the async fetch proxy can progress: it serializes the
- * request body before registering its pending-fetch entry and writing the RPC.
+ * Yield a macrotask so async work can progress: the fetch proxy serializes
+ * the request body before registering its pending-fetch entry and writing
+ * the RPC, and every NDJSON write settles through the serialized async
+ * write chain.
  */
 function flush(): Promise<void> {
   return new Promise((resolve) => setImmediate(resolve));
@@ -88,13 +90,13 @@ beforeEach(() => {
 });
 
 describe("NDJSON writing", () => {
-  test("sendResponse writes a JSON-RPC result line", () => {
-    sendResponse(7, { ok: true });
+  test("sendResponse writes a JSON-RPC result line", async () => {
+    await sendResponse(7, { ok: true });
     expect(lastMessage()).toEqual({ jsonrpc: "2.0", id: 7, result: { ok: true } });
   });
 
-  test("sendError writes a JSON-RPC error line", () => {
-    sendError("abc", -32_601, "no such method");
+  test("sendError writes a JSON-RPC error line", async () => {
+    await sendError("abc", -32_601, "no such method");
     expect(lastMessage()).toEqual({
       jsonrpc: "2.0",
       id: "abc",
@@ -102,8 +104,8 @@ describe("NDJSON writing", () => {
     });
   });
 
-  test("sendToClient writes a client/send notification", () => {
-    sendToClient("sess-1", "status", { level: "info" });
+  test("sendToClient writes a client/send notification", async () => {
+    await sendToClient("sess-1", "status", { level: "info" });
     expect(lastMessage()).toEqual({
       jsonrpc: "2.0",
       method: "client/send",
@@ -111,23 +113,52 @@ describe("NDJSON writing", () => {
     });
   });
 
-  test("writeMessage loops until all bytes are written when writeSync is partial", () => {
+  test("writeMessage loops until all bytes are written when write is partial", async () => {
     const deno = (globalThis as Record<string, unknown>).Deno as {
-      stdout: { writeSync(data: Uint8Array): number };
+      stdout: { write(data: Uint8Array): Promise<number> };
     };
-    const original = deno.stdout.writeSync;
+    const original = deno.stdout.write;
     // Simulate a full pipe buffer: accept at most 5 bytes per call.
-    deno.stdout.writeSync = (data: Uint8Array) => {
+    deno.stdout.write = (data: Uint8Array) => {
       const n = Math.min(5, data.byteLength);
+      writtenBytes.push(new Uint8Array(data.subarray(0, n)));
+      return Promise.resolve(n);
+    };
+    try {
+      await sendResponse(9, { ok: "0123456789abcdef" });
+    } finally {
+      deno.stdout.write = original;
+    }
+    expect(lastMessage()).toEqual({ jsonrpc: "2.0", id: 9, result: { ok: "0123456789abcdef" } });
+  });
+
+  test("concurrent writeMessage calls stay ordered and unfragmented under partial writes", async () => {
+    const deno = (globalThis as Record<string, unknown>).Deno as {
+      stdout: { write(data: Uint8Array): Promise<number> };
+    };
+    const original = deno.stdout.write;
+    // Accept 3 bytes per call, yielding a macrotask each time — interleaves
+    // aggressively if writes are not serialized through the chain.
+    deno.stdout.write = async (data: Uint8Array) => {
+      await new Promise((resolve) => setImmediate(resolve));
+      const n = Math.min(3, data.byteLength);
       writtenBytes.push(new Uint8Array(data.subarray(0, n)));
       return n;
     };
     try {
-      sendResponse(9, { ok: "0123456789abcdef" });
+      // Fire-and-forget all three, then await the last: the chain guarantees
+      // 1 and 2 are fully flushed before 3.
+      void sendResponse(1, "first");
+      void sendResponse(2, "second");
+      await sendResponse(3, "third");
     } finally {
-      deno.stdout.writeSync = original;
+      deno.stdout.write = original;
     }
-    expect(lastMessage()).toEqual({ jsonrpc: "2.0", id: 9, result: { ok: "0123456789abcdef" } });
+    expect(getWrittenMessages()).toEqual([
+      { jsonrpc: "2.0", id: 1, result: "first" },
+      { jsonrpc: "2.0", id: 2, result: "second" },
+      { jsonrpc: "2.0", id: 3, result: "third" },
+    ]);
   });
 });
 
@@ -135,6 +166,7 @@ describe("host RPC round-trip", () => {
   // hostRequest is module-private; exercise it through the KV adapter.
   test("writes a JSON-RPC request and resolves with the host result", async () => {
     const promise = kvAdapter.get("a");
+    await flush();
     const msg = lastMessage();
     expect(msg.method).toBe("kv/get");
     expect(msg.params).toEqual({ key: "a" });
@@ -144,6 +176,7 @@ describe("host RPC round-trip", () => {
 
   test("rejects when the host returns an error", async () => {
     const promise = kvAdapter.get("a");
+    await flush();
     const { id } = lastMessage();
     handleHostResponse({ id: id as number, error: { code: 1, message: "kv down" } });
     await expect(promise).rejects.toThrow("kv down");
@@ -321,10 +354,12 @@ describe("kvAdapter", () => {
   test("get resolves the host result and maps undefined to null", async () => {
     const kv = kvAdapter;
     const p1 = kv.get("present");
+    await flush();
     respondToLastRequest("stored");
     await expect(p1).resolves.toBe("stored");
 
     const p2 = kv.get("missing");
+    await flush();
     respondToLastRequest(undefined);
     await expect(p2).resolves.toBeNull();
   });
@@ -332,11 +367,13 @@ describe("kvAdapter", () => {
   test("set forwards expireIn only when provided", async () => {
     const kv = kvAdapter;
     const p1 = kv.set("a", 1, { expireIn: 60 });
+    await flush();
     expect(lastMessage().params).toEqual({ key: "a", value: 1, expireIn: 60 });
     respondToLastRequest(null);
     await p1;
 
     const p2 = kv.set("b", 2);
+    await flush();
     expect(lastMessage().params).toEqual({ key: "b", value: 2 });
     respondToLastRequest(null);
     await p2;
@@ -345,11 +382,13 @@ describe("kvAdapter", () => {
   test("delete accepts a single key or an array of keys", async () => {
     const kv = kvAdapter;
     const p1 = kv.delete("solo");
+    await flush();
     expect(lastMessage()).toMatchObject({ method: "kv/del", params: { key: "solo" } });
     respondToLastRequest(null);
     await p1;
 
     const p2 = kv.delete(["a", "b"]);
+    await flush();
     const delMessages = getWrittenMessages().filter((m) => m.method === "kv/del");
     expect(delMessages.map((m) => m.params?.key)).toEqual(["solo", "a", "b"]);
     for (const m of delMessages.slice(1)) {
@@ -363,6 +402,7 @@ describe("vectorAdapter", () => {
   test("upsert omits metadata when not provided", async () => {
     const vector = vectorAdapter;
     const p = vector.upsert("id-1", "text");
+    await flush();
     expect(lastMessage()).toMatchObject({
       method: "vector/upsert",
       params: { id: "id-1", text: "text" },
@@ -376,6 +416,7 @@ describe("vectorAdapter", () => {
     const vector = vectorAdapter;
     const matches = [{ id: "m1", score: 0.5, text: "hit" }];
     const p = vector.query("needle", { topK: 2, filter: { lang: "en" } });
+    await flush();
     expect(lastMessage()).toMatchObject({
       method: "vector/query",
       params: { text: "needle", topK: 2, filter: { lang: "en" } },
@@ -387,6 +428,7 @@ describe("vectorAdapter", () => {
   test("delete forwards ids", async () => {
     const vector = vectorAdapter;
     const p = vector.delete(["a", "b"]);
+    await flush();
     expect(lastMessage()).toMatchObject({ method: "vector/delete", params: { ids: ["a", "b"] } });
     respondToLastRequest(null);
     await p;

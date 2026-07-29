@@ -41,6 +41,23 @@ describe("useSession", () => {
     expect(result.current.disconnect).toBeTypeOf("function");
     expect(result.current.toggle).toBeTypeOf("function");
   });
+
+  it("returns a referentially stable object across renders without snapshot changes", () => {
+    // Parent re-renders must not mint a fresh 15-property Session object —
+    // consumers may put it in hook deps.
+    const core = createMockSessionCore();
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      React.createElement(SessionProvider, { value: core }, children);
+    const { result, rerender } = renderHook(() => useSession(), { wrapper });
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
+
+    // A snapshot change still produces a new object with the new state.
+    act(() => core.update({ state: "listening" }));
+    expect(result.current).not.toBe(first);
+    expect(result.current.state).toBe("listening");
+  });
 });
 
 describe("useSessionSelector", () => {
@@ -149,6 +166,18 @@ describe("useTheme", () => {
         React.createElement(ThemeProvider, { value: { bg: "#123456" } }, children),
     });
     expect(document.body.style.background).toBe("rgb(18, 52, 86)");
+  });
+
+  it("keeps merged theme identity stable across re-renders", () => {
+    // The useChatItems row cache compares theme by reference — a fresh merged
+    // object per ThemeProvider render would rebuild every message row.
+    const value: ClientTheme = { primary: "#f00" };
+    const wrapper = ({ children }: { children: ReactNode }) =>
+      React.createElement(ThemeProvider, { value }, children);
+    const { result, rerender } = renderHook(() => useTheme(), { wrapper });
+    const first = result.current;
+    rerender();
+    expect(result.current).toBe(first);
   });
 
   it("fills missing theme fields with defaults", () => {

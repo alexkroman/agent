@@ -21,9 +21,10 @@ import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
 import pDebounce from "p-debounce";
 import type { ViteDevServer } from "vite";
-import { buildWorker, evalWorkerBundle } from "./_bundler.ts";
+import { buildWorker, createWorkerEvaluator } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
+import { createDevWorkerBuilder, isEsbuildBuildFailure } from "./_dev-bundler.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
@@ -82,11 +83,29 @@ function devBindHost(): string | undefined {
  * into a single ESM file, then importing that. A raw `import(agent.ts?t=...)`
  * only cache-busts agent.ts itself — transitive imports (./tools.ts, etc.)
  * stay in Node's ESM registry, so edits to them are ignored on reload.
- * Bundling picks them up and matches the deploy path exactly.
+ * Bundling picks them up.
+ *
+ * The bundle comes from the incremental esbuild builder (`_dev-bundler.ts`)
+ * rather than the deploy path's cold Vite build — a save rebuilds in tens of
+ * ms instead of 1–3 s. Compile errors in the agent's code propagate (the
+ * restart loop reports them and keeps the old server); any other builder
+ * failure falls back to the cold Vite build so an esbuild-specific gap can't
+ * take the dev loop down. Evaluation goes through the memoizing evaluator so
+ * a no-op save doesn't leak another module into the ESM registry.
  */
-async function loadAgentDef(cwd: string): Promise<AgentDef> {
-  const code = await buildWorker(cwd);
-  return evalWorkerBundle(code, cwd);
+export async function loadAgentDefWith(
+  cwd: string,
+  builder: Pick<ReturnType<typeof createDevWorkerBuilder>, "build">,
+  evaluate: (code: string) => Promise<AgentDef>,
+): Promise<AgentDef> {
+  let code: string;
+  try {
+    code = await builder.build();
+  } catch (err) {
+    if (isEsbuildBuildFailure(err)) throw err;
+    code = await buildWorker(cwd);
+  }
+  return evaluate(code);
 }
 
 // ─── File watching ──────────────────────────────────────────────────────────
@@ -194,9 +213,14 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
   // Resolved once — the location can't change for the process lifetime.
   const clientDirOpt = hasClient ? {} : { clientDir: resolveDefaultClientDir() };
 
+  // One incremental build context + one eval memo for the server's lifetime —
+  // reuse across watcher events is what makes restarts fast.
+  const devBuilder = createDevWorkerBuilder(cwd);
+  const evaluateWorker = createWorkerEvaluator(cwd);
+
   /** Full build sequence, shared by initial startup and every restart. */
   async function buildServer(): Promise<AgentServer> {
-    const agentDef = await loadAgentDef(cwd);
+    const agentDef = await loadAgentDefWith(cwd, devBuilder, evaluateWorker);
     const env = await resolveAgentEnv(cwd, agentDef);
     // Self-hosted only: let provider credentials exported in the shell reach
     // the resolvers without entering `ctx.env`. Keeping them out of `ctx.env`
@@ -224,7 +248,15 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     });
   }
 
-  const agentServer = await buildServer();
+  let agentServer: AgentServer;
+  try {
+    agentServer = await buildServer();
+  } catch (err) {
+    // Startup failed before the cleanup fn exists — don't strand the esbuild
+    // context (it holds a service child process).
+    await devBuilder.dispose();
+    throw err;
+  }
   // Loopback by default (the dev server has no auth). AAI_DEV_HOST is the
   // escape hatch for setups where loopback isn't reachable — e.g. running
   // `aai dev` inside a container and connecting from the host.
@@ -334,6 +366,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
     closed = true;
     // Each close is best-effort: one failing must not leak the others.
     await watcher.close().catch(() => undefined);
+    await devBuilder.dispose().catch(() => undefined);
     await viteServer?.close().catch(() => undefined);
     await currentServer.close().catch(() => undefined);
   };

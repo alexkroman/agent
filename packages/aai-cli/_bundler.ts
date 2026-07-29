@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { createHash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -58,6 +59,15 @@ export async function buildAgentBundle(
  * Write the worker ESM to a temp file and dynamic-import it, returning
  * the AgentDef default export. All dependencies are bundled in, so the
  * file can be evaluated from any directory.
+ *
+ * Each call imports a uniquely-named file, and Node's ESM registry never
+ * evicts — so every call retains one bundle for the process lifetime. That is
+ * fine for one-shot commands (`aai build`/`aai deploy`); long-lived callers
+ * must go through `createWorkerEvaluator` to at least dedupe identical
+ * builds. Evaluating in a discardable context is not an option: tool
+ * `execute` functions from the returned AgentDef are called in-process by the
+ * dev runtime, which rules out worker threads, and `node:vm` ESM evaluation
+ * is still flagged experimental.
  */
 export async function evalWorkerBundle(code: string, cwd: string): Promise<AgentDef> {
   const evalDir = path.join(cwd, ".aai", "eval");
@@ -92,6 +102,27 @@ export async function evalWorkerBundle(code: string, cwd: string): Promise<Agent
       /* best-effort cleanup */
     });
   }
+}
+
+/**
+ * Memoizing wrapper around `evalWorkerBundle` for long-lived callers (the
+ * dev server): byte-identical worker code returns the previously evaluated
+ * AgentDef without touching the ESM registry. No-op saves and formatter
+ * churn are the common watcher events, so this caps the registry leak (see
+ * `evalWorkerBundle`) to genuinely-new bundles — the residual one-module-per-
+ * distinct-build leak is accepted for the reasons documented there.
+ */
+export function createWorkerEvaluator(cwd: string): (code: string) => Promise<AgentDef> {
+  let lastHash: string | undefined;
+  let lastAgentDef: AgentDef | undefined;
+  return async (code: string): Promise<AgentDef> => {
+    const hash = createHash("sha256").update(code).digest("hex");
+    if (lastAgentDef && hash === lastHash) return lastAgentDef;
+    const agentDef = await evalWorkerBundle(code, cwd);
+    lastHash = hash;
+    lastAgentDef = agentDef;
+    return agentDef;
+  };
 }
 
 type BuildData = {

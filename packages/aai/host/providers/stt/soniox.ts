@@ -11,6 +11,7 @@ import {
   type SttSession,
 } from "../../../sdk/providers.ts";
 import { safeJsonParse } from "../../../sdk/utils.ts";
+import { createAudioSendGate } from "../../_audio-gate.ts";
 import { pcm16ToBytes } from "../../_pcm.ts";
 import {
   closeOnAbort,
@@ -170,9 +171,17 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
 
       closeOnAbort(openOpts.signal, shell.close);
 
+      // Drop audio frames while the provider link is stalled — mic audio is
+      // real-time paced and loss-tolerant; see _audio-gate.ts.
+      const audioGate = createAudioSendGate({
+        bufferedAmount: () => ws.bufferedAmount,
+        label: "Soniox STT",
+      });
+
       return {
         sendAudio(pcm: Int16Array) {
           if (shell.isClosed() || ws.readyState !== WebSocket.OPEN) return;
+          if (audioGate.shouldDrop()) return;
           ws.send(pcm16ToBytes(pcm), { binary: true });
         },
         on(event, fn) {

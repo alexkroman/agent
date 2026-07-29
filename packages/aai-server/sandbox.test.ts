@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import type { Message } from "@alexkroman1/aai";
 import { anthropic } from "@alexkroman1/aai/llm";
 import type { ClientEvent, ClientSink } from "@alexkroman1/aai/protocol";
 import { assemblyAI } from "@alexkroman1/aai/stt";
@@ -323,6 +324,133 @@ describe("createSandbox", () => {
 
     // Should return a toolError JSON string, not throw
     expect(result).toBe(JSON.stringify({ error: "Sandbox failed to start: VM spawn failed" }));
+  });
+
+  // ── Incremental message deltas over tool/execute ──────────────────────────
+  //
+  // The host ships only the history the guest doesn't already hold (see
+  // _sandbox-messages.ts + guest/harness-messages.ts): full on first send,
+  // append-of-the-tail afterwards, full again on splice/reset/desync.
+
+  describe("executeTool message deltas", () => {
+    const m1: Message = { role: "user", content: "hi" };
+    const m2: Message = { role: "assistant", content: "yo" };
+    const m3: Message = { role: "user", content: "more" };
+
+    function makeExecuteTool() {
+      vi.mocked(mockConn.sendRequest).mockResolvedValue({ result: "ok" });
+      createSandbox(makeSandboxOptions());
+      if (!capturedExecuteTool.current) throw new Error("executeTool was not captured");
+      return capturedExecuteTool.current;
+    }
+
+    it("sends full history first, then only the appended tail", async () => {
+      const executeTool = makeExecuteTool();
+
+      await executeTool("t", { a: 1 }, "s1", [m1]);
+      expect(mockConn.sendRequest).toHaveBeenLastCalledWith("tool/execute", {
+        name: "t",
+        args: { a: 1 },
+        sessionId: "s1",
+        messages: [m1],
+        messagesMode: "full",
+      });
+
+      // Same prefix objects (the runtime snapshots with history.slice()).
+      await executeTool("t", { a: 2 }, "s1", [m1, m2]);
+      expect(mockConn.sendRequest).toHaveBeenLastCalledWith("tool/execute", {
+        name: "t",
+        args: { a: 2 },
+        sessionId: "s1",
+        messages: [m2],
+        messagesMode: "append",
+        messagesBase: 1,
+      });
+    });
+
+    it("falls back to a full send when the prefix identity breaks (front splice)", async () => {
+      const executeTool = makeExecuteTool();
+
+      await executeTool("t", {}, "s1", [m1, m2]);
+      // maxHistory splice dropped m1 — the watermark objects no longer match.
+      await executeTool("t", {}, "s1", [m2, m3]);
+
+      expect(mockConn.sendRequest).toHaveBeenLastCalledWith(
+        "tool/execute",
+        expect.objectContaining({ messages: [m2, m3], messagesMode: "full" }),
+      );
+    });
+
+    it("tracks sessions independently", async () => {
+      const executeTool = makeExecuteTool();
+
+      await executeTool("t", {}, "s1", [m1]);
+      await executeTool("t", {}, "s2", [m1]);
+      expect(mockConn.sendRequest).toHaveBeenLastCalledWith(
+        "tool/execute",
+        expect.objectContaining({ sessionId: "s2", messagesMode: "full" }),
+      );
+
+      await executeTool("t", {}, "s1", [m1, m2]);
+      expect(mockConn.sendRequest).toHaveBeenLastCalledWith(
+        "tool/execute",
+        expect.objectContaining({ sessionId: "s1", messagesMode: "append", messagesBase: 1 }),
+      );
+    });
+
+    it("retries once with full history when the guest reports a desync", async () => {
+      const executeTool = makeExecuteTool();
+      await executeTool("t", {}, "s1", [m1]);
+
+      // Guest lost its cache (pool restart / LRU eviction): the append is
+      // answered with the desync sentinel, then the full resend succeeds.
+      vi.mocked(mockConn.sendRequest)
+        .mockResolvedValueOnce({ error: "messages_desync" })
+        .mockResolvedValueOnce({ result: "recovered" });
+
+      const result = await executeTool("t", {}, "s1", [m1, m2]);
+
+      expect(result).toBe("recovered");
+      expect(mockConn.sendRequest).toHaveBeenCalledTimes(3);
+      expect(mockConn.sendRequest).toHaveBeenLastCalledWith(
+        "tool/execute",
+        expect.objectContaining({ messages: [m1, m2], messagesMode: "full" }),
+      );
+    });
+
+    it("resets tracking after a failed send so the next call is full", async () => {
+      const executeTool = makeExecuteTool();
+      await executeTool("t", {}, "s1", [m1]);
+
+      vi.mocked(mockConn.sendRequest).mockRejectedValueOnce(new Error("RPC timed out"));
+      await expect(executeTool("t", {}, "s1", [m1, m2])).rejects.toThrow("RPC timed out");
+
+      // The guest may or may not have applied the failed delta — resend full.
+      await executeTool("t", {}, "s1", [m1, m2]);
+      expect(mockConn.sendRequest).toHaveBeenLastCalledWith(
+        "tool/execute",
+        expect.objectContaining({ messages: [m1, m2], messagesMode: "full" }),
+      );
+    });
+
+    it("a fresh sandbox (pool acquire / guest restart) starts with full history", async () => {
+      const executeTool1 = makeExecuteTool();
+      await executeTool1("t", {}, "s1", [m1]);
+      await executeTool1("t", {}, "s1", [m1, m2]);
+      expect(mockConn.sendRequest).toHaveBeenLastCalledWith(
+        "tool/execute",
+        expect.objectContaining({ messagesMode: "append" }),
+      );
+
+      // A new createSandbox = a new guest process = a new tracker: the same
+      // session's next call must carry the whole history again.
+      const executeTool2 = makeExecuteTool();
+      await executeTool2("t", {}, "s1", [m1, m2]);
+      expect(mockConn.sendRequest).toHaveBeenLastCalledWith(
+        "tool/execute",
+        expect.objectContaining({ messages: [m1, m2], messagesMode: "full" }),
+      );
+    });
   });
 
   // ── Pipeline mode wiring ─────────────────────────────────────────────────

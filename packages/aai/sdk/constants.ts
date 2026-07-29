@@ -248,6 +248,20 @@ export const MAX_AUDIO_SAMPLE_RATE = 192_000;
 export const MAX_CLIENT_WS_BUFFERED_BYTES = 4 * 1024 * 1024;
 
 /**
+ * Cap on unsent bytes buffered in a provider-facing WebSocket (S2S, OpenAI
+ * Realtime, streaming STT) before outbound audio frames are dropped. Mic
+ * audio is real-time paced, so a stalled provider link would otherwise
+ * accumulate memory without bound — the queue can never drain faster than
+ * speech arrives. Unlike the client-side guard above (which closes, since
+ * TTS can re-synthesize on reconnect), live speech delivered late is
+ * worthless, so frames past the cap are dropped and sending resumes once
+ * the buffer drains. 1 MiB ≈ 8–24 s of 16–48 kHz base64/binary PCM16.
+ * Non-audio control messages (tool results, session updates) are never
+ * gated. See `host/_audio-gate.ts`.
+ */
+export const MAX_PROVIDER_WS_BUFFERED_BYTES = 1024 * 1024;
+
+/**
  * Pipeline mode: max characters of LLM text batched before a TTS provider
  * send. The word-coalescing stream transform (pipeline-smooth.ts) emits
  * one chunk per word; forwarding each word as its own provider message is

@@ -9,7 +9,7 @@ import { createRestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
 import type { EndpointSettler } from "./pipeline-endpointing.ts";
 import type { SilenceNudger } from "./pipeline-silence.ts";
-import { countWords, hasMinWords } from "./pipeline-text.ts";
+import { hasMinWords, scanWords } from "./pipeline-text.ts";
 
 /**
  * Edge-detect "user is speaking" from the STT transcript stream: the first
@@ -220,10 +220,12 @@ export function createSttEventHandlers(deps: {
       if (deps.isTerminated()) return;
       // User speech proves presence: reset the nudge budget, restart the window.
       nudger.onUserSpeech();
-      // Counted once: the speaking edge, the settler extension and the barge-in
-      // threshold all need it, and it is O(transcript length) — which grows to
-      // full-utterance length as the user keeps speaking.
-      const words = countWords(text);
+      // Counted once, with a bounded scan: every consumer here is a threshold
+      // check — the speaking edge, caption emit and settler extension need
+      // >= 1, the barge-in gate needs >= minBargeInWords — so the scan stops
+      // at max(minBargeInWords, 1) instead of walking the whole partial,
+      // which grows to full-utterance length as the user keeps speaking.
+      const words = scanWords(text, Math.max(deps.minBargeInWords, 1));
       // Live captions: forward the interim transcript as-is. The committed turn
       // still arrives via onUserTranscript once the settler fires. Emitted after
       // any barge-in below, because the client's `cancelled` handler clears

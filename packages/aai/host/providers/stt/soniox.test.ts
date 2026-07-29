@@ -7,6 +7,7 @@ import { openSoniox } from "./soniox.ts";
 
 interface FakeWSInstance {
   readyState: number;
+  bufferedAmount?: number;
   sent: Array<string | Uint8Array>;
   send(data: string | Uint8Array, opts?: unknown): void;
   close(): void;
@@ -286,6 +287,20 @@ describe("Soniox real-time STT adapter", () => {
     const sent = ws.sent.at(-1);
     expect(sent).toBeInstanceOf(Uint8Array);
     expect((sent as Uint8Array).byteLength).toBe(pcm.byteLength);
+    await session.close();
+  });
+
+  test("sendAudio drops frames while the socket buffer exceeds the cap, then resumes", async () => {
+    const { session, ws } = await openSession();
+    const before = ws.sent.length;
+
+    ws.bufferedAmount = 8 * 1024 * 1024;
+    session.sendAudio(new Int16Array([1, 2, 3]));
+    expect(ws.sent.length).toBe(before);
+
+    ws.bufferedAmount = 0;
+    session.sendAudio(new Int16Array([1, 2, 3]));
+    expect(ws.sent.length).toBe(before + 1);
     await session.close();
   });
 

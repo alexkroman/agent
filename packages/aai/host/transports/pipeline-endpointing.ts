@@ -27,8 +27,8 @@ export interface EndpointSettler {
    * partial was consumed this way (the caller should skip barge-in handling).
    *
    * Takes the partial's word count rather than its text: the caller already
-   * counts words to drive the speaking edge and the barge-in threshold, and
-   * the count is O(transcript length) to compute.
+   * counts words (with a bounded scan — only `>= 1` matters here) to drive
+   * the speaking edge and the barge-in threshold.
    */
   extendOnPartial(words: number): boolean;
   /** Drop any buffered utterance and cancel its settle timer. */

@@ -11,7 +11,7 @@
  * messages, thinking indicator visibility, and start screen transitions.
  */
 import { act, fireEvent, render, screen } from "@testing-library/react";
-import type { ReactNode } from "react";
+import { Profiler, type ReactNode } from "react";
 import { describe, expect, test, vi } from "vitest";
 import { createMockSessionCore } from "../_react-test-utils.ts";
 import { SessionProvider, ThemeProvider } from "../context.ts";
@@ -344,6 +344,72 @@ describe("MessageList: auto-scroll guard", () => {
         }),
       );
       expect(scrollSpy).toHaveBeenCalledTimes(2);
+    } finally {
+      scrollSpy.mockRestore();
+      rafSpy.mockRestore();
+    }
+  });
+});
+
+// --- Narrow subscriptions ---
+
+describe("ChatView: narrow subscriptions", () => {
+  test("does not re-render on snapshot changes no rendered component reads", () => {
+    const core = createMockSessionCore({ started: true, state: "listening", audioOut: true });
+    let commits = 0;
+    render(
+      <ThemeProvider>
+        <SessionProvider value={core}>
+          <Profiler id="chat-view" onRender={() => commits++}>
+            <ChatView />
+          </Profiler>
+        </SessionProvider>
+      </ThemeProvider>,
+    );
+    const before = commits;
+
+    // `recording` is read by nothing in the audio-out tree; contentVersion is
+    // pinned because the real core doesn't treat it as content. Nothing under
+    // ChatView may re-render — with useSession() this fired the whole tree.
+    act(() => core.update({ recording: true, contentVersion: core.getSnapshot().contentVersion }));
+    expect(commits).toBe(before);
+
+    // A field ChatView does read still re-renders it.
+    act(() => core.update({ state: "thinking" }));
+    expect(commits).toBeGreaterThan(before);
+    expect(screen.getByText("thinking")).toBeDefined();
+  });
+});
+
+describe("MessageList: auto-scroll behavior", () => {
+  test("jumps instantly while a partial transcript streams, smooth otherwise", () => {
+    const behaviors: (ScrollBehavior | undefined)[] = [];
+    const scrollSpy = vi
+      .spyOn(Element.prototype, "scrollIntoView")
+      .mockImplementation(function (this: Element, arg?: boolean | ScrollIntoViewOptions) {
+        behaviors.push(typeof arg === "object" ? arg.behavior : undefined);
+      });
+    // Run the deduped scroll synchronously so assertions can follow updates.
+    const rafSpy = vi.spyOn(window, "requestAnimationFrame").mockImplementation((cb) => {
+      cb(0);
+      return 0;
+    });
+    try {
+      const core = createMockSessionCore({ started: true, state: "listening" });
+      renderWithProvider(<MessageList />, core);
+
+      // Streaming: partials arrive faster than a smooth scroll finishes.
+      act(() => core.update({ userTranscript: "hel" }));
+      expect(behaviors.at(-1)).toBe("instant");
+
+      // Committed content keeps the smooth animation.
+      act(() =>
+        core.update({
+          userTranscript: null,
+          messages: [{ id: 1, role: "user", content: "hello" }],
+        }),
+      );
+      expect(behaviors.at(-1)).toBe("smooth");
     } finally {
       scrollSpy.mockRestore();
       rafSpy.mockRestore();

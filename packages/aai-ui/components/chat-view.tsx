@@ -4,7 +4,7 @@
 
 import clsx from "clsx";
 import type { ReactNode } from "react";
-import { useSession, useTheme } from "../context.ts";
+import { useSessionSelector, useTheme } from "../context.ts";
 import type { AgentState } from "../types.ts";
 import { ERROR_COLOR, TEXT_FAINT } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
@@ -62,9 +62,14 @@ export function ChatView({
   title?: string | undefined;
   className?: string | undefined;
 }): ReactNode {
-  const session = useSession();
+  // Narrow subscriptions: the shell only reads these three fields, so it must
+  // not re-render at STT-partial rate the way a full useSession() would —
+  // that cascades into every child below.
+  const state = useSessionSelector((s) => s.state);
+  const error = useSessionSelector((s) => s.error);
+  const audioOut = useSessionSelector((s) => s.audioOut);
   const theme = useTheme();
-  const pulsing = PULSING_STATES.has(session.state);
+  const pulsing = PULSING_STATES.has(state);
 
   return (
     <div
@@ -87,19 +92,19 @@ export function ChatView({
             </span>
           )}
         </div>
-        <Eyebrow className="shrink-0" data-state={session.state}>
+        <Eyebrow className="shrink-0" data-state={state}>
           <span
             className="w-[7px] h-[7px] rounded-full"
             style={{
-              background: stateColor(session.state, theme.primary),
+              background: stateColor(state, theme.primary),
               animation: pulsing ? "aai-pulse 1.6s ease-in-out infinite" : "none",
             }}
           />
-          {session.state}
+          {state}
         </Eyebrow>
       </div>
       {/* Error banner */}
-      {session.error && (
+      {error && (
         <div
           className="px-3.5 py-2.5 rounded-aai border text-[13px] leading-[130%] shrink-0"
           style={{
@@ -108,7 +113,7 @@ export function ChatView({
             color: ERROR_COLOR,
           }}
         >
-          {session.error.message}
+          {error.message}
         </div>
       )}
       {/* Conversation card */}
@@ -124,7 +129,7 @@ export function ChatView({
       </div>
       {/* Text-only sessions (tts: none()) get record/upload controls; the
           server's config message decides, so the same default UI serves both. */}
-      {session.audioOut ? <Controls /> : <TextControls />}
+      {audioOut ? <Controls /> : <TextControls />}
     </div>
   );
 }

@@ -7,6 +7,28 @@ evidence-backed findings with file/line references. Top findings were
 re-verified against source before inclusion. Line numbers are as of this
 audit's commit.
 
+## Fix status
+
+All Priority 1 and Priority 2 findings below are **fixed** on this branch,
+as are the Priority 3 items, with these exceptions:
+
++ **`bytesToPcm16` copy branch** — skipped: eliminating it would widen the
+  public `SttSession.sendAudio(Int16Array)` contract across all four STT
+  providers (two don't use `PcmFrameAccumulator` at all) for a micro win.
++ **ElevenLabs STT backpressure** — skipped: the SDK keeps its WebSocket
+  private with no buffered-amount accessor, so the stall is unobservable;
+  documented at the send site. All other provider sockets are gated.
++ **`client/send` double-serialization** — partially fixed: `ClientSink.event`
+  accepts only the event object, so the sink-side stringify stays; the
+  handler now checks sink liveness before serializing and keeps a single
+  stringify for the byte cap.
++ **Per-slug Prometheus label cardinality** — deliberately unchanged: it is
+  a documented design decision guarded by a cardinality permitlist test.
+
+The `evalWorkerBundle` ESM retention is mitigated (byte-identical rebuilds
+are served from a hash-keyed memo; one module per *distinct* dev build is
+still retained, documented as inherent to in-process evaluation).
+
 ## Executive summary
 
 The codebase is unusually performance-conscious: the realtime audio paths

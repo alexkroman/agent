@@ -20,6 +20,7 @@ import {
   type SttOpenOptions,
   type SttSession,
 } from "../../../sdk/providers.ts";
+import { createAudioSendGate } from "../../_audio-gate.ts";
 import { pcm16ToBytes } from "../../_pcm.ts";
 import {
   closeOnAbort,
@@ -114,9 +115,18 @@ export function openDeepgram(opts: DeepgramOptions = {}): SttOpener {
 
       closeOnAbort(openOpts.signal, shell.close);
 
+      // Drop audio frames while the provider link is stalled — mic audio is
+      // real-time paced and loss-tolerant; see _audio-gate.ts. The SDK's
+      // socket wrapper exposes the underlying ws buffer; fakes (and future
+      // SDK shapes) without it skip the gate.
+      const audioGate = createAudioSendGate({
+        bufferedAmount: () => connection.socket?.bufferedAmount,
+        label: "Deepgram STT",
+      });
+
       const session: DeepgramSession = {
         sendAudio(pcm: Int16Array) {
-          if (shell.isClosed()) return;
+          if (shell.isClosed() || audioGate.shouldDrop()) return;
           connection.sendMedia(pcm16ToBytes(pcm));
         },
         on(event, fn) {

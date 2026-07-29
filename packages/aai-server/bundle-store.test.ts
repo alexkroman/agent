@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { createStorage } from "unstorage";
-import { describe, expect, test, vi } from "vitest";
-import { createBundleStore } from "./bundle-store.ts";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { ByteBudgetTtlCache, createBundleStore } from "./bundle-store.ts";
 import { agentObjectKey } from "./constants.ts";
 import { importMasterKey } from "./secrets.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
@@ -436,6 +436,32 @@ describe("bundle store (unstorage)", () => {
     expect((await store.getAgentConfig("test-agent"))?.name).toBe("v2");
   });
 
+  test("getManifest and getAgentConfig handle drivers that auto-parse JSON", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { A: "1" },
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+
+    // Simulate a driver that returns `.json` keys pre-parsed instead of raw
+    // strings (readJson must use the object directly, no re-serialization).
+    const originalGetItem = storage.getItem.bind(storage);
+    storage.getItem = (async (key: string) => {
+      const value = await originalGetItem(key);
+      return key.endsWith(".json") && typeof value === "string" ? JSON.parse(value) : value;
+    }) as typeof storage.getItem;
+
+    expect((await store.getManifest("test-agent"))?.env).toEqual({ A: "1" });
+    expect((await store.getAgentConfig("test-agent"))?.name).toBe(TEST_AGENT_CONFIG.name);
+  });
+
   test("deleteAgent invalidates cache — subsequent reads return null", async () => {
     const storage = createStorage();
     const masterKey = await importMasterKey("test-secret");
@@ -456,5 +482,83 @@ describe("bundle store (unstorage)", () => {
 
     expect(await store.getManifest("test-agent")).toBeNull();
     expect(await store.getAgentConfig("test-agent")).toBeNull();
+  });
+});
+
+describe("ByteBudgetTtlCache", () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  // Values sized well above the per-entry overhead so budget math dominates.
+  const KB100 = 100_000;
+
+  test("evicts least-recently-used entries once the byte budget is exceeded", () => {
+    const cache = new ByteBudgetTtlCache<string>(60_000, 250_000);
+    cache.set("a", "A", KB100);
+    cache.set("b", "B", KB100);
+    expect(cache.size).toBe(2);
+
+    cache.set("c", "C", KB100);
+    expect(cache.get("a")).toBeUndefined(); // oldest evicted
+    expect(cache.get("b")).toBe("B");
+    expect(cache.get("c")).toBe("C");
+  });
+
+  test("get refreshes recency — recently read entries survive eviction", () => {
+    const cache = new ByteBudgetTtlCache<string>(60_000, 250_000);
+    cache.set("a", "A", KB100);
+    cache.set("b", "B", KB100);
+    expect(cache.get("a")).toBe("A"); // "b" is now the LRU entry
+
+    cache.set("c", "C", KB100);
+    expect(cache.get("b")).toBeUndefined();
+    expect(cache.get("a")).toBe("A");
+    expect(cache.get("c")).toBe("C");
+  });
+
+  test("a value larger than the whole budget is not cached and evicts nothing", () => {
+    const cache = new ByteBudgetTtlCache<string>(60_000, 250_000);
+    cache.set("a", "A", KB100);
+    cache.set("huge", "H", 300_000);
+    expect(cache.get("huge")).toBeUndefined();
+    expect(cache.get("a")).toBe("A");
+  });
+
+  test("overwriting a key replaces its byte charge instead of adding to it", () => {
+    const cache = new ByteBudgetTtlCache<string>(60_000, 250_000);
+    cache.set("a", "A1", KB100);
+    const charged = cache.totalBytes;
+    cache.set("a", "A2", KB100);
+    expect(cache.totalBytes).toBe(charged);
+    expect(cache.get("a")).toBe("A2");
+    expect(cache.size).toBe(1);
+  });
+
+  test("delete releases the entry's byte charge", () => {
+    const cache = new ByteBudgetTtlCache<string>(60_000, 250_000);
+    cache.set("a", "A", KB100);
+    cache.delete("a");
+    expect(cache.totalBytes).toBe(0);
+    expect(cache.get("a")).toBeUndefined();
+  });
+
+  test("entries expire after the TTL", () => {
+    vi.useFakeTimers();
+    const cache = new ByteBudgetTtlCache<string>(10_000, 250_000);
+    cache.set("a", "A", KB100);
+
+    vi.advanceTimersByTime(9999);
+    expect(cache.get("a")).toBe("A");
+
+    vi.advanceTimersByTime(1);
+    expect(cache.get("a")).toBeUndefined();
+    expect(cache.totalBytes).toBe(0);
+  });
+
+  test("null values (confirmed misses) are cacheable", () => {
+    const cache = new ByteBudgetTtlCache<string | null>(60_000, 250_000);
+    cache.set("missing", null, 0);
+    expect(cache.get("missing")).toBeNull();
   });
 });

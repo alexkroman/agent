@@ -23,6 +23,7 @@ import {
 import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
 import type { SandboxResourceLimits } from "./oci-spec.ts";
 import { registerGuestRpcHandlers } from "./sandbox-guest-rpc.ts";
+import type { SandboxPool } from "./sandbox-pool.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -298,10 +299,15 @@ type BundleLoadResult = { ok: boolean; config?: unknown };
  * CLI-built worker, which ships its config separately).
  */
 export async function describeBundle(
-  opts: { harnessPath: string; workerCode: string },
+  opts: { harnessPath: string; workerCode: string; pool?: SandboxPool | undefined },
   spawn: typeof spawnWarmHarness = spawnWarmHarness,
 ): Promise<unknown> {
-  const warm = await spawn({ harnessPath: opts.harnessPath, slug: "studio-inspect" });
+  // Prefer a pre-warmed harness when the caller holds a pool — the studio's
+  // Publish path does — falling back to a cold spawn exactly like
+  // `createStudioSandbox`. `acquire()` returns null when the pool is empty.
+  const warm =
+    (await opts.pool?.acquire()) ??
+    (await spawn({ harnessPath: opts.harnessPath, slug: "studio-inspect" }));
   try {
     // Register the standard guest-RPC handlers (with no KV/Vector bound) so a
     // bundle whose top level issues a guest→host request gets an error reply

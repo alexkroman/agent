@@ -7,28 +7,27 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 
 // ── Deno global shim ──────────────────────────────────────────────────────
-// The harness uses Deno.stdout.writeSync and Deno.exit at module scope.
+// The harness uses Deno.stdout.write and Deno.exit at module scope.
 // Shim them before importing so the module loads cleanly in Node.
+// Deliberately no `version` field: importBundleModule uses `Deno.version.deno`
+// to detect real Deno (Node cannot import blob: modules).
 
 const writtenBytes: Uint8Array[] = [];
 
-function shimDeno() {
-  (globalThis as Record<string, unknown>).Deno = {
-    stdout: {
-      writeSync(data: Uint8Array) {
-        writtenBytes.push(new Uint8Array(data));
-        return data.byteLength;
-      },
+(globalThis as Record<string, unknown>).Deno = {
+  stdout: {
+    write(data: Uint8Array) {
+      writtenBytes.push(new Uint8Array(data));
+      return Promise.resolve(data.byteLength);
     },
-    exit: vi.fn(),
-    stdin: undefined, // prevents main() from running
-  };
-}
-
-shimDeno();
+  },
+  exit: vi.fn(),
+  stdin: undefined, // prevents main() from running
+};
 
 // Dynamic import after shim is in place.
 const { TextLineStream, createSessionStateMap, executeTool } = await import("./deno-harness.ts");
+const { createSessionMessagesCache, MESSAGES_DESYNC_ERROR } = await import("./harness-messages.ts");
 
 beforeEach(() => {
   writtenBytes.length = 0;
@@ -149,12 +148,15 @@ describe("executeTool", () => {
     messages: [],
   });
 
+  /** Fresh per-test messages cache (executeTool's 4th argument). */
+  const makeMessages = () => createSessionMessagesCache();
+
   test("returns result string for successful execution", async () => {
     const agent = makeAgent({
       greet: { description: "greet", execute: () => "hello" },
     });
     const state = createSessionStateMap();
-    const result = await executeTool(agent, makeReq("greet"), state);
+    const result = await executeTool(agent, makeReq("greet"), state, makeMessages());
     expect(result).toEqual({ result: "hello" });
   });
 
@@ -163,14 +165,14 @@ describe("executeTool", () => {
       count: { description: "count", execute: () => ({ n: 42 }) },
     });
     const state = createSessionStateMap();
-    const result = await executeTool(agent, makeReq("count"), state);
+    const result = await executeTool(agent, makeReq("count"), state, makeMessages());
     expect(result).toEqual({ result: '{"n":42}' });
   });
 
   test("returns error for unknown tool", async () => {
     const agent = makeAgent({});
     const state = createSessionStateMap();
-    const result = await executeTool(agent, makeReq("nope"), state);
+    const result = await executeTool(agent, makeReq("nope"), state, makeMessages());
     expect(result).toEqual({ error: "Unknown tool: nope" });
   });
 
@@ -184,7 +186,7 @@ describe("executeTool", () => {
       },
     });
     const state = createSessionStateMap();
-    const result = await executeTool(agent, makeReq("fail"), state);
+    const result = await executeTool(agent, makeReq("fail"), state, makeMessages());
     expect(result).toEqual({ error: "boom" });
   });
 
@@ -198,7 +200,7 @@ describe("executeTool", () => {
       },
     });
     const state = createSessionStateMap();
-    const resultPromise = executeTool(agent, makeReq("slow"), state);
+    const resultPromise = executeTool(agent, makeReq("slow"), state, makeMessages());
     vi.advanceTimersByTime(30_000);
     const result = await resultPromise;
     expect(result).toEqual({
@@ -237,7 +239,7 @@ describe("executeTool", () => {
       } as never,
     });
     const state = createSessionStateMap();
-    const result = await executeTool(agent, makeReq("echo", { x: 1 }), state);
+    const result = await executeTool(agent, makeReq("echo", { x: 1 }), state, makeMessages());
     expect(result).toEqual({ result: '{"parsed":true,"x":1}' });
   });
 
@@ -249,6 +251,7 @@ describe("executeTool", () => {
       makeAgent({}),
       makeReq("run_code", { code: 'console.log("hello", 2 + 2)' }),
       state,
+      makeMessages(),
     );
     expect(result).toEqual({ result: "hello 4" });
   });
@@ -261,6 +264,7 @@ describe("executeTool", () => {
         code: "await Promise.resolve(); console.log('done')",
       }),
       state,
+      makeMessages(),
     );
     expect(result).toEqual({ result: "done" });
   });
@@ -271,6 +275,7 @@ describe("executeTool", () => {
       makeAgent({}),
       makeReq("run_code", { code: "const x = 1 + 1;" }),
       state,
+      makeMessages(),
     );
     expect(result).toEqual({ result: "Code ran successfully (no output)" });
   });
@@ -281,6 +286,7 @@ describe("executeTool", () => {
       makeAgent({}),
       makeReq("run_code", { code: "throw new Error('boom')" }),
       state,
+      makeMessages(),
     );
     expect(result).toEqual({ error: "boom" });
   });
@@ -293,7 +299,81 @@ describe("executeTool", () => {
       makeAgent({}),
       makeReq("run_code", { code: 'console.log("ok")' }),
       state,
+      makeMessages(),
     );
     expect(result).toEqual({ result: "ok" });
+  });
+
+  // ── Incremental message deltas (see harness-messages.ts) ────────────────
+
+  const echoMessagesAgent = () =>
+    makeAgent({
+      echo_messages: {
+        description: "echo",
+        execute: (_args: unknown, ctx: { messages: readonly { content: string }[] }) =>
+          ctx.messages.map((m) => m.content).join(","),
+      } as never,
+    });
+
+  test("append delta extends the cached history for ctx.messages", async () => {
+    const agent = echoMessagesAgent();
+    const state = createSessionStateMap();
+    const cache = makeMessages();
+
+    const r1 = await executeTool(
+      agent,
+      {
+        ...makeReq("echo_messages"),
+        messages: [{ role: "user" as const, content: "a" }],
+        messagesMode: "full" as const,
+      },
+      state,
+      cache,
+    );
+    expect(r1).toEqual({ result: "a" });
+
+    const r2 = await executeTool(
+      agent,
+      {
+        ...makeReq("echo_messages"),
+        messages: [{ role: "assistant" as const, content: "b" }],
+        messagesMode: "append" as const,
+        messagesBase: 1,
+      },
+      state,
+      cache,
+    );
+    expect(r2).toEqual({ result: "a,b" });
+  });
+
+  test("append with a mismatched base returns the desync error", async () => {
+    const agent = echoMessagesAgent();
+    const state = createSessionStateMap();
+    const cache = makeMessages();
+
+    const result = await executeTool(
+      agent,
+      {
+        ...makeReq("echo_messages"),
+        messages: [{ role: "user" as const, content: "late" }],
+        messagesMode: "append" as const,
+        messagesBase: 3,
+      },
+      state,
+      cache,
+    );
+    expect(result).toEqual({ error: MESSAGES_DESYNC_ERROR });
+  });
+
+  test("plain messages without a mode are treated as full history", async () => {
+    const agent = echoMessagesAgent();
+    const state = createSessionStateMap();
+    const result = await executeTool(
+      agent,
+      { ...makeReq("echo_messages"), messages: [{ role: "user" as const, content: "legacy" }] },
+      state,
+      makeMessages(),
+    );
+    expect(result).toEqual({ result: "legacy" });
   });
 });

@@ -244,6 +244,9 @@ describe("deploy + chat endpoints", () => {
   beforeEach(async () => {
     deployMock.mockClear();
     chatMock.mockClear();
+    // The chat route starts the MCP connect itself (to overlap it with the
+    // workspace fetch); disable it so route tests never touch the network.
+    vi.stubEnv("STUDIO_MCP_URLS", "");
     ({ fetch } = await createTestOrchestrator());
   });
 
@@ -300,6 +303,49 @@ describe("deploy + chat endpoints", () => {
       body: { project: "proj", messages: [{ role: "user", parts: [] }] },
     });
     expect(noId.status).toBe(400);
+  });
+
+  test("chat rejects an oversized raw body before parsing it", async () => {
+    // The aggregate cap is enforced on raw text length — no JSON.parse, no
+    // zod, no re-stringify of a 4MB body.
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    await createProject(fetch);
+    const padding = "x".repeat(4_000_001);
+    const res = await authFetch(fetch, "/studio/chat", {
+      body: { ...chatBody(), padding },
+    });
+    expect(res.status).toBe(400);
+    expect(((await res.json()) as { error: string }).error).toContain("too large");
+    expect(chatMock).not.toHaveBeenCalled();
+  });
+
+  test("chat rejects malformed JSON with a 400", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    await createProject(fetch);
+    const res = await fetch("/studio/chat", {
+      method: "POST",
+      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      body: "{not json",
+    });
+    expect(res.status).toBe(400);
+    expect(chatMock).not.toHaveBeenCalled();
+  });
+
+  test("chat rejects a single message over the per-message content cap", async () => {
+    // Per-message size is summed string content, not a per-message
+    // JSON.stringify — same effective limit, no re-serialization.
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    await createProject(fetch);
+    const res = await authFetch(fetch, "/studio/chat", {
+      body: {
+        project: "proj",
+        messages: [
+          { id: "m1", role: "user", parts: [{ type: "text", text: "y".repeat(600_001) }] },
+        ],
+      },
+    });
+    expect(res.status).toBe(400);
+    expect(chatMock).not.toHaveBeenCalled();
   });
 
   test("chat streams the UI message stream from runStudioChat", async () => {

@@ -23,6 +23,12 @@
  */
 
 import {
+  createSessionMessagesCache,
+  MESSAGES_DESYNC_ERROR,
+  type MessagesMode,
+  type SessionMessagesCache,
+} from "./harness-messages.ts";
+import {
   errMsg,
   handleFetchNotification,
   handleHostResponse,
@@ -164,7 +170,12 @@ type ToolCallRequest = {
   name: string;
   args: Record<string, unknown>;
   sessionId: string;
-  messages: Message[];
+  /** Full history, or (in append mode) only the tail after `messagesBase`. */
+  messages?: Message[];
+  /** Absent means "full" — callers predating the delta protocol send that. */
+  messagesMode?: MessagesMode;
+  /** Append mode: history length the guest's cache must already have. */
+  messagesBase?: number;
 };
 
 // No `state` field: the guest's own sessionState map is the source of truth
@@ -182,7 +193,21 @@ export async function executeTool(
   agent: AgentDef,
   req: ToolCallRequest,
   sessionState: ReturnType<typeof createSessionStateMap>,
+  sessionMessages: SessionMessagesCache,
 ): Promise<ToolCallResponse | ToolCallErrorResponse> {
+  // Reconstruct this call's conversation history from the delta the host
+  // sent (see harness-messages.ts). A desync answer makes the host retry
+  // with full history, so it must never reach the tool as its result.
+  const messages = sessionMessages.apply(
+    req.sessionId,
+    req.messages ?? [],
+    req.messagesMode,
+    req.messagesBase,
+  );
+  if (messages === null) {
+    return { error: MESSAGES_DESYNC_ERROR };
+  }
+
   // The run_code builtin is not part of the agent bundle; execute it directly
   // in this sandboxed guest (see runCode) rather than on the host.
   if (req.name === "run_code") {
@@ -204,9 +229,9 @@ export async function executeTool(
     state: sessionState.get(req.sessionId),
     kv: kvAdapter,
     vector: vectorAdapter,
-    messages: req.messages,
+    messages,
     sessionId: req.sessionId,
-    send: (event, data) => sendToClient(req.sessionId, event, data),
+    send: (event, data) => void sendToClient(req.sessionId, event, data),
   };
 
   try {
@@ -234,10 +259,33 @@ export async function executeTool(
 // ---- bundle/load ------------------------------------------------------------
 
 /**
- * Load an agent ESM bundle delivered as raw JS source code.
+ * Import raw JS source as an ES module (no Function() evaluation, top-level
+ * await supported).
  *
- * The code is imported via a data: URL so Deno treats it as an ES module.
- * This avoids Function() evaluation and supports top-level await in the bundle.
+ * Under Deno the code goes through a `blob:` object URL: percent-encoding a
+ * bundle of up to 10 MB into a `data:` URL costs a full encodeURIComponent
+ * pass on the guest's single event loop plus an extra in-memory copy inside
+ * the 64 MB cgroup, all inside the timed cold-start bundle/load round trip.
+ * The object URL is revoked once the import settles (the module registry
+ * keeps the loaded module alive). Node — where the unit tests run — cannot
+ * import `blob:` modules, so it keeps the `data:` URL path; real Deno is
+ * detected via `Deno.version.deno`, which the test shims don't define.
+ */
+async function importBundleModule(code: string): Promise<Record<string, unknown>> {
+  const deno = (globalThis as { Deno?: { version?: { deno?: unknown } } }).Deno;
+  if (typeof deno?.version?.deno === "string") {
+    const blobUrl = URL.createObjectURL(new Blob([code], { type: "application/javascript" }));
+    try {
+      return await import(blobUrl);
+    } finally {
+      URL.revokeObjectURL(blobUrl);
+    }
+  }
+  return await import(`data:application/javascript,${encodeURIComponent(code)}`);
+}
+
+/**
+ * Load an agent ESM bundle delivered as raw JS source code.
  *
  * Bundles built by the browser studio also export `__aaiConfig` — the agent
  * config extracted *inside* the bundle (by `@alexkroman1/aai/manifest`
@@ -250,8 +298,7 @@ async function loadBundle(
 ): Promise<{ agent: AgentDef; config?: unknown }> {
   _bundleEnv = Object.freeze({ ...env });
 
-  const dataUrl = `data:application/javascript,${encodeURIComponent(code)}`;
-  const mod = await import(dataUrl);
+  const mod = await importBundleModule(code);
   const agent = (mod.default ?? mod) as AgentDef;
 
   if (!agent || typeof agent !== "object") {
@@ -268,6 +315,7 @@ async function loadBundle(
 type HarnessState = {
   agent: AgentDef | null;
   sessionState: ReturnType<typeof createSessionStateMap> | null;
+  sessionMessages: SessionMessagesCache | null;
 };
 
 /** Resolve and settle a single incoming JSON-RPC request. */
@@ -275,7 +323,7 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
   switch (req.method) {
     case "bundle/load": {
       if (!req.params || typeof (req.params as Record<string, unknown>).code !== "string") {
-        sendError(req.id, -32_602, "bundle/load requires { code: string, env: {} }");
+        await sendError(req.id, -32_602, "bundle/load requires { code: string, env: {} }");
         break;
       }
       const params = req.params as { code: string; env: Record<string, string> };
@@ -284,7 +332,8 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
       state.sessionState = createSessionStateMap(
         typeof state.agent.state === "function" ? state.agent.state : undefined,
       );
-      sendResponse(req.id, {
+      state.sessionMessages = createSessionMessagesCache();
+      await sendResponse(req.id, {
         ok: true,
         ...(loaded.config !== undefined && { config: loaded.config }),
       });
@@ -292,21 +341,22 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
     }
 
     case "tool/execute": {
-      if (!(state.agent && state.sessionState)) {
-        sendError(req.id, -32_000, "Agent not loaded");
+      if (!(state.agent && state.sessionState && state.sessionMessages)) {
+        await sendError(req.id, -32_000, "Agent not loaded");
         break;
       }
       const toolResult = await executeTool(
         state.agent,
         req.params as ToolCallRequest,
         state.sessionState,
+        state.sessionMessages,
       );
-      sendResponse(req.id, toolResult);
+      await sendResponse(req.id, toolResult);
       break;
     }
 
     default:
-      sendError(req.id, -32_601, `Method not found: ${req.method}`);
+      await sendError(req.id, -32_601, `Method not found: ${req.method}`);
   }
 }
 
@@ -315,9 +365,12 @@ export function handleNotification(notif: JsonRpcNotification, state: HarnessSta
   // `method` must be ignored, not allowed to throw and kill the main loop.
   if (typeof notif?.method !== "string") return;
   if (notif.method === "shutdown") Deno.exit(0);
-  if (notif.method === "session/end" && state.sessionState) {
+  if (notif.method === "session/end") {
     const params = notif.params as { sessionId?: string } | undefined;
-    if (params?.sessionId) state.sessionState.delete(params.sessionId);
+    if (params?.sessionId) {
+      state.sessionState?.delete(params.sessionId);
+      state.sessionMessages?.delete(params.sessionId);
+    }
   }
   if (notif.method.startsWith("fetch/response-")) {
     handleFetchNotification(notif.method, notif.params);
@@ -338,7 +391,7 @@ export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void 
   // Request -- handle concurrently so the loop reads the next line immediately
   const req = msg as JsonRpcRequest;
   void handleRequest(req, state).catch((err) => {
-    sendError(req.id, -32_603, errMsg(err));
+    void sendError(req.id, -32_603, errMsg(err));
   });
 }
 
@@ -347,7 +400,7 @@ async function main(): Promise<void> {
     .pipeThrough(new TextDecoderStream())
     .pipeThrough(new TextLineStream());
 
-  const state: HarnessState = { agent: null, sessionState: null };
+  const state: HarnessState = { agent: null, sessionState: null, sessionMessages: null };
 
   for await (const line of lineStream) {
     const trimmed = line.trim();

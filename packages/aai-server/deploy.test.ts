@@ -188,6 +188,71 @@ describe("deployAgentBundle defaultEnv", () => {
   });
 });
 
+// ── Lazy keyHash (deployAgentBundle without a precomputed hash) ───────────
+
+describe("deployAgentBundle without a precomputed keyHash", () => {
+  const baseParams = {
+    apiKey: "key1",
+    worker: "w",
+    clientFiles: {},
+    agentConfig: TEST_AGENT_CONFIG,
+  };
+
+  test("unclaimed slug: derives and stores a hash that verifies the key", async () => {
+    const store = createTestStore();
+    const outcome = await deployAgentBundle(
+      { store, slots: createSlotCache() },
+      { ...baseParams, slug: "fresh-agent" },
+    );
+    expect(outcome.ok).toBe(true);
+    const hashes = (await store.getManifest("fresh-agent"))?.credential_hashes ?? [];
+    expect(hashes).toHaveLength(1);
+    expect(await verifyApiKeyHash("key1", hashes[0] ?? "")).toBe(true);
+  });
+
+  test("owned slug: reuses the matched stored hash — nothing appended", async () => {
+    const store = createTestStore();
+    const keyHash = await hashApiKey("key1");
+    await store.putAgent({
+      slug: "owned-agent",
+      env: {},
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: [keyHash],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+    const outcome = await deployAgentBundle(
+      { store, slots: createSlotCache() },
+      { ...baseParams, slug: "owned-agent" },
+    );
+    expect(outcome.ok).toBe(true);
+    expect((await store.getManifest("owned-agent"))?.credential_hashes).toEqual([keyHash]);
+  });
+
+  test("slug owned by another key: 403, hashes untouched", async () => {
+    const store = createTestStore();
+    const ownerHash = await hashApiKey("owner-key");
+    await store.putAgent({
+      slug: "their-agent",
+      env: {},
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: [ownerHash],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+    const outcome = await deployAgentBundle(
+      { store, slots: createSlotCache() },
+      { ...baseParams, slug: "their-agent", apiKey: "intruder-key" },
+    );
+    expect(outcome).toEqual({
+      ok: false,
+      status: 403,
+      error: "Forbidden: slug already owned by another user",
+    });
+    expect((await store.getManifest("their-agent"))?.credential_hashes).toEqual([ownerHash]);
+  });
+});
+
 // ── Top-level deploy (POST /deploy) — server generates slug ───────────────
 
 describe("POST /deploy", () => {
