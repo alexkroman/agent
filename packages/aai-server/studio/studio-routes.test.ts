@@ -160,9 +160,11 @@ describe("project CRUD", () => {
   test.each([
     ["  Spaced  Out  ", "spaced-out"],
     ["Pizza Bot 3000!", "pizza-bot-3000"],
-    ["Café Ordering", "caf-ordering"],
+    // Transliterated, not stripped — this is why slugify beats a regex.
+    ["Café Ordering", "cafe-ordering"],
     ["already-a-slug", "already-a-slug"],
-    ["UPPER_CASE", "upper_case"],
+    // slugify normalizes "_" to "-"; both are valid slugs, "-" reads better in a URL.
+    ["UPPER_CASE", "upper-case"],
   ])("create normalizes %j to %j", async (input, expected) => {
     const res = await authFetch(fetch, "/studio/projects", { body: { name: input } });
     expect(res.status).toBe(201);

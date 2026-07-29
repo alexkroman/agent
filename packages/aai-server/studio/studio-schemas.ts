@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Zod schemas + limits for the browser studio (coding agent) HTTP surface.
 
+import slugifyLib from "@sindresorhus/slugify";
 import { z } from "zod";
 import { RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "../schemas.ts";
 
@@ -35,21 +36,16 @@ const MAX_TYPED_PROJECT_NAME = 100;
  * Normalize a human-typed project name into the slug grammar.
  *
  * People type "My Agent"; the name doubles as the deploy slug and appears in
- * the agent's URL, so it has to reduce to `VALID_SLUG_RE`. Non-alphanumerics
- * collapse to single dashes and the edges are trimmed — the same shape GitHub
- * and Vercel produce, so the result is predictable rather than surprising.
+ * the agent's URL, so it has to reduce to `VALID_SLUG_RE`. Delegated to
+ * `@sindresorhus/slugify` rather than a local regex so non-ASCII
+ * transliterates properly — "Café Ordering" becomes `cafe-ordering`, where a
+ * plain `[^a-z0-9]` strip would have produced `caf-ordering`.
  *
- * Note this is deliberately ASCII-only: "Café" becomes "caf". Transliterating
- * accents would need a mapping table for every script, and the slug is an
- * identifier, not a display name.
+ * `decamelize: false` keeps "MyAgent" as one word instead of "my-agent": the
+ * name is an identifier the user typed, not a symbol to be prettified.
  */
 export function slugifyProjectName(input: string): string {
-  return input
-    .toLowerCase()
-    .replace(/[^a-z0-9_]+/g, "-")
-    .replace(/^[-_]+|[-_]+$/g, "")
-    .slice(0, 64)
-    .replace(/[-_]+$/g, "");
+  return slugifyLib(input, { decamelize: false }).slice(0, 64).replace(/-+$/g, "");
 }
 
 export const CreateProjectSchema = z.object({

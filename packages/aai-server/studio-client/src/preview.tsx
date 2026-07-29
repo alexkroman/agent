@@ -4,6 +4,8 @@
 // real progress; after publishing, the live agent embedded same-origin
 // (iframe with microphone delegation).
 
+import clsx from "clsx";
+
 type StepCardProps = {
   numeral: string;
   title: string;
@@ -14,11 +16,12 @@ type StepCardProps = {
 function StepCard({ numeral, title, caption, active }: StepCardProps) {
   return (
     <div
-      className={`flex w-[230px] flex-col gap-3 rounded-lg border bg-panel p-6 ${
-        active ? "border-indigo-200" : "border-line"
-      }`}
+      className={clsx(
+        "flex w-[230px] flex-col gap-3 rounded-lg border bg-panel p-6",
+        active ? "border-indigo-200" : "border-line",
+      )}
     >
-      <span className={`stat-numeral text-[48px] ${active ? "text-indigo" : "text-warm-300"}`}>
+      <span className={clsx("stat-numeral text-[48px]", active ? "text-indigo" : "text-warm-300")}>
         {numeral}
       </span>
       <span className="font-serif text-[18px]">{title}</span>

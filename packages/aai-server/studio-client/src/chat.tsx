@@ -5,6 +5,7 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
+import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { Markdown } from "./markdown.tsx";
 
@@ -97,25 +98,30 @@ export function ToolRow({ part }: { part: Record<string, unknown> & { type: stri
         type="button"
         aria-expanded={canExpand ? open : undefined}
         disabled={!canExpand}
-        className={`flex w-full appearance-none items-center gap-2 border-none bg-transparent px-3 py-2 text-left select-none ${
-          canExpand ? "cursor-pointer" : ""
-        }`}
+        className={clsx(
+          "flex w-full appearance-none items-center gap-2 border-none bg-transparent px-3 py-2 text-left select-none",
+          canExpand && "cursor-pointer",
+        )}
         onClick={() => canExpand && setOpen((v) => !v)}
       >
         <span className="shrink-0 rounded-sm border border-line px-1.5 py-[3px] text-[9px] leading-none font-medium tracking-[1.2px] text-subtle uppercase">
           Tool
         </span>
         <span
-          className={`shrink-0 font-mono text-[11px] font-medium text-fg ${done ? "" : "tool-shimmer"}`}
+          className={clsx(
+            "shrink-0 font-mono text-[11px] font-medium text-fg",
+            !done && "tool-shimmer",
+          )}
         >
           {name}
         </span>
         <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-subtle">{args}</span>
         {canExpand && (
           <span
-            className={`shrink-0 text-[9px] text-subtle transition-transform duration-150 ${
-              open ? "rotate-90" : ""
-            }`}
+            className={clsx(
+              "shrink-0 text-[9px] text-subtle transition-transform duration-150",
+              open && "rotate-90",
+            )}
           >
             ▶
           </span>

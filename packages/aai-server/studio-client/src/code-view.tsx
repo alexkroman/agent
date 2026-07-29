@@ -6,6 +6,7 @@
 
 import { javascript } from "@codemirror/lang-javascript";
 import CodeMirror from "@uiw/react-codemirror";
+import clsx from "clsx";
 import { useState } from "react";
 
 const extensions = [javascript({ typescript: true })];
@@ -104,11 +105,12 @@ export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewP
               role="tab"
               aria-selected={active}
               key={path}
-              className={`shrink-0 cursor-pointer border-x-0 border-t-0 border-b-2 px-3 py-2 font-mono text-[11px] ${
+              className={clsx(
+                "shrink-0 cursor-pointer border-x-0 border-t-0 border-b-2 px-3 py-2 font-mono text-[11px]",
                 active
                   ? "border-indigo bg-panel text-indigo"
-                  : "border-transparent bg-transparent text-subtle hover:text-fg"
-              }`}
+                  : "border-transparent bg-transparent text-subtle hover:text-fg",
+              )}
               onClick={() => onSelectFile(path)}
             >
               {path}

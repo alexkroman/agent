@@ -4,6 +4,7 @@
 // owns all server state, invalidated after agent turns / publishes.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import clsx from "clsx";
 import { useEffect, useState } from "react";
 import { ApiError, api, type ProjectData, parseSecrets, type StudioStatus } from "./api.ts";
 import logoUrl from "./assets/assemblyai-logomark.svg";
@@ -110,7 +111,10 @@ function TopBar(props: TopBarProps) {
       <div className="h-[22px] w-px bg-line" aria-hidden />
       <div className="flex h-[34px] items-center gap-2 rounded-sm border border-line bg-panel pl-3 hover:border-line-strong">
         <span
-          className={`h-[7px] w-[7px] flex-none rounded-full ${props.project ? "bg-indigo" : "bg-warm-300"}`}
+          className={clsx(
+            "h-[7px] w-[7px] flex-none rounded-full",
+            props.project ? "bg-indigo" : "bg-warm-300",
+          )}
           aria-hidden
         />
         <select
@@ -144,7 +148,7 @@ function TopBar(props: TopBarProps) {
         </button>
         <button
           type="button"
-          className={`border-l border-line ${segClass(props.tab === "code")}`}
+          className={clsx("border-l border-line", segClass(props.tab === "code"))}
           onClick={() => props.onSelectTab("code")}
         >
           Code
