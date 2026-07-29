@@ -19,6 +19,7 @@ import type { Vector } from "../sdk/vector.ts";
 import { resolveSendBuiltin, SEND_MESSAGE_TOOL } from "./builtin-send.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS, safeFetch } from "./builtin-tools.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
+import { exemptFromToolEgress, installToolFetchGuard, runInToolEgress } from "./tool-egress.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
 
 /**
@@ -166,23 +167,34 @@ function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetu
   };
   const frozenEnv = Object.freeze({ ...env });
 
+  // There is no sandbox on this path, so `allowedHosts` has nothing enforcing
+  // it: tool code would reach any host locally and then fail once deployed.
+  // See tool-egress.ts — builtins and ctx.kv/ctx.vector stay exempt, matching
+  // what the platform actually restricts.
+  installToolFetchGuard();
+  const allowedHosts = agent.allowedHosts ?? [];
+  const kv = exemptFromToolEgress(resolvedKv);
+  const vector = exemptFromToolEgress(resolvedVector);
+
   const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
     const tool = allTools[name];
     if (!tool) return toolError(`Unknown tool: ${name}`);
     const sink = sinkMap.get(sessionId ?? "");
-    return executeToolCall(name, args, {
-      tool,
-      env: frozenEnv,
-      state: getState(sessionId ?? ""),
-      sessionId: sessionId ?? "",
-      kv: resolvedKv,
-      vector: resolvedVector,
-      messages,
-      logger,
-      send: sink ? (event, data) => sink.event({ type: "custom_event", event, data }) : undefined,
-      // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
-      signal: callOpts?.signal,
-    });
+    const run = () =>
+      executeToolCall(name, args, {
+        tool,
+        env: frozenEnv,
+        state: getState(sessionId ?? ""),
+        sessionId: sessionId ?? "",
+        kv,
+        vector,
+        messages,
+        logger,
+        send: sink ? (event, data) => sink.event({ type: "custom_event", event, data }) : undefined,
+        // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
+        signal: callOpts?.signal,
+      });
+    return customNames.has(name) ? runInToolEgress(allowedHosts, run) : run();
   };
   return { executeTool, toolSchemas, toolGuidance: builtins.guidance };
 }

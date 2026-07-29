@@ -7,7 +7,7 @@
  * evolve independently.
  */
 
-import { DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
+import { AllowedHostsSchema, DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
 import {
   assertPipelineTuning,
   assertProviderTriple,
@@ -43,7 +43,12 @@ export const IsolateConfigSchema = z
     toolChoice: z.enum(["auto", "required"]).optional(),
     builtinTools: z.array(z.string()).optional(),
     toolSchemas: z.array(ToolSchemaSchema).default([]),
-    allowedHosts: z.array(z.string()).default([]),
+    // Re-validated host-side, not trusted: this list arrives from a tenant's
+    // bundle and decides that agent's guest egress, so the platform applies
+    // the same pattern rules the SDK does rather than assuming the CLI ran
+    // them. Rejects protocols, paths, ports, IP literals, bare `*`, and
+    // private TLDs; the SSRF guard still screens every request on top.
+    allowedHosts: AllowedHostsSchema.default([]),
     stt: ProviderDescriptorSchema.optional(),
     llm: ProviderDescriptorSchema.optional(),
     tts: ProviderDescriptorSchema.optional(),

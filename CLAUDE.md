@@ -624,19 +624,102 @@ agent needs both wired or the failure is silent:
   a tool error mid-conversation rather than a session-start failure.
 - **Guest side** — tool code calling `openSender(slack(), ctx.env)` posts
   through the sandbox's proxied `fetch`, which the host validates against
-  `allowedHosts`. `resolveAgentAllowedHosts` (`sandbox.ts`) derives the
-  channel's webhook host from the *validated descriptor* host-side rather
-  than trusting a bundle-supplied field — note `toAgentConfig` has no
-  `allowedHosts` at all, so the deploy path cannot carry one, and
-  `parseManifest`'s union (`sdk/manifest.ts`) has no live consumer. Getting
-  this wrong disables guest fetch **entirely**, not just Slack:
-  `registerGuestRpcHandlers` registers no `fetch/request` handler for an
-  empty list.
+  `allowedHosts`. `resolveAgentAllowedHosts` (`sandbox.ts`) unions the
+  agent's declared hosts with the channel's webhook host, derived from the
+  *validated descriptor* host-side rather than trusting a bundle-supplied
+  field. Getting this wrong disables guest fetch **entirely**, not just
+  Slack: `registerGuestRpcHandlers` registers no `fetch/request` handler for
+  an empty list.
 
-Both sides are covered by `packages/aai-server/sandbox-send.test.ts`. When
+Both sides are covered by `packages/aai-server/sandbox-egress.test.ts`. When
 adding a channel kind, the registry entry in `sdk/providers/send/open.ts`
 (env var + hosts + opener) is the only place that needs the hostname —
 everything above derives from it.
+
+### Guest egress (`allowedHosts`)
+
+`fetch` from an agent's own tool code only works against hostnames the agent
+declares in `agent({ allowedHosts: [...] })`. The guest has no network
+device, so its `fetch` is RPC-proxied to the host, which matches the
+hostname against the list (`sandbox-fetch.ts`) *and* SSRF-screens the
+request. The host-side network builtins (`fetch_json`, `visit_webpage`,
+`web_search`) bypass the list entirely — they run in the server process, so
+they reach any public host with nothing declared. Those are two different
+capabilities that both read as "the agent can call an API".
+
+`allowedHosts` is **tenant-controlled input**, so it is validated at three
+points from one implementation (`AllowedHostsSchema` in
+`sdk/allowed-hosts.ts`): `AgentConfigSchema` (worker→host), `ManifestSchema`,
+and the platform's `IsolateConfigSchema`. The server re-validates rather
+than trusting that the CLI ran the rules — the list arrives inside a
+tenant's bundle and decides that agent's egress. Patterns are bare
+hostnames with at most one leading `*.`; protocols, paths, ports, IP
+literals, bare `*`, and `.internal`/`.local`/`.localhost` TLDs are refused.
+
+### Dev/prod parity for tool fetches
+
+An agent's tool code runs in two very different places — a gVisor guest with
+no network device on the platform, the plain Node host process under
+`aai dev` — and the policy governing its `fetch` must not differ, or the
+first time a developer learns about a limit is a production incident.
+
+**One implementation, two call sites.** `host/guest-fetch-policy.ts` holds
+the whole decision: `checkToolFetch()` (allowlist, request-body cap,
+concurrency, URL validity) and `performToolFetch()` (SSRF screening,
+per-redirect-hop allowlist re-check, timeout). The platform's
+`sandbox-fetch.ts` and the self-hosted guard in `host/tool-egress.ts` both
+call them and hold **no limits of their own** — the numbers live in
+`sdk/constants.ts` as `TOOL_FETCH_*`. Adding a limit means editing the
+policy, not a caller; a caller-side check is the drift this arrangement
+exists to prevent.
+
+The one unavoidable split is response size: the platform enforces it while
+relaying NDJSON chunks, self-hosted mode via `capResponseBody()`'s
+`TransformStream`. Same constant, different mechanism, both documented in
+that module.
+
+**Self-hosted enforcement mechanism** (`host/tool-egress.ts`): an
+`AsyncLocalStorage` scope entered around each *custom* tool call, consulted
+by a wrapped global `fetch`. Per-async-context rather than per-process
+because one session's policy must not leak into another's. Two deliberate
+exemptions, both matching what the platform actually restricts:
+
+- **Built-in network tools** (`fetch_json`, `visit_webpage`, `web_search`)
+  execute host-side in production too, where `allowedHosts` never applies.
+- **`ctx.kv` / `ctx.vector`** are RPC methods in the guest, not `fetch`, so
+  a BYO `s3Kv`/`pinecone` provider's endpoint needs no declaration.
+  `exemptFromToolEgress()` proxies them to run outside the scope.
+
+`node:async_hooks` is banned in `sdk/` (which must stay Node-free) but
+allowed in `host/` — the biome override was package-wide, with a
+guest-VM-availability rationale that never applied to host-only code.
+
+**Guest permissions match too.** The dev sandbox spawn
+(`sandbox-vm.ts:devSandboxSpawnArgs`, `guest/fake-vm.ts`) passes
+`--no-prompt` and nothing else, exactly like production's OCI spec. It used
+to add `--allow-env` and `--allow-read`, which the harness never needs (the
+bundle arrives over RPC and loads from a `blob:` URL; sibling harness
+modules are static imports) — so agent code touching `Deno.env` or the
+filesystem worked on a macOS dev box and failed once deployed.
+
+**Known remaining asymmetries**, none closable without larger work:
+
+| Divergence | Direction | Why it stands |
+| --- | --- | --- |
+| `aai dev` runs tools in **Node**, production in **Deno** with no permissions | works in dev, fails in prod | `process.env`, `node:fs`, `child_process` are all reachable locally. Closing it means running dev tool code in a Deno sandbox — a dev-server redesign, not a tweak. |
+| cgroup limits (64 MB, 32 PIDs) and `--max-heap-size` | works in dev, fails in prod | A memory-hungry tool OOMs only when deployed. Enforcing locally would need a container. |
+| `run_code` | fails in dev, works in prod | The host-side guard refuses rather than evaluating in-process. Fail-closed, so harmless. |
+| `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. The prod failure is a loud auth error at session start. |
+| KV/Vector defaults (memory vs Tigris/Pinecone), KV prefix `""` vs `kv:{hash}:{slug}:` | prod is stricter | Data doesn't persist across dev restarts; prod is the more isolated side. |
+| gVisor unavailable on macOS | prod is stricter | Platform capability, documented under "gVisor notes". |
+
+**`agent()` re-declares its parameter shape inline** rather than deriving it
+from `AgentDef`, and returns `{...defaults, ...def}`. A field added to
+`AgentDef` alone therefore *works at runtime* while being a TS2353
+excess-property error for the author — and neither bundler typechecks, so
+nothing catches it. `send` and `state` both shipped in that state.
+`define.test-d.ts` now asserts
+`Exclude<keyof AgentDef, keyof Parameters<typeof agent>[0]>` is `never`.
 
 `toRuntimeAgent` copies ~14 optional fields through a `defined({...})` helper
 rather than one conditional spread each. That shape is deliberate: the

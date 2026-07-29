@@ -2,6 +2,7 @@
 
 exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
 [
+  "allowedHosts",
   "builtinTools",
   "completeSettleMs",
   "endpointSettleMs",

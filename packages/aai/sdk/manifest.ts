@@ -7,7 +7,7 @@
  */
 
 import { z } from "zod";
-import { validateAllowedHostPattern } from "./allowed-hosts.ts";
+import { AllowedHostsSchema } from "./allowed-hosts.ts";
 import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
 import { sendAllowedHosts } from "./providers/send/open.ts";
 import {
@@ -182,21 +182,7 @@ const ManifestSchema = z.object({
   falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
   theme: z.record(z.string(), z.string()).optional(),
   tools: z.record(z.string(), ToolManifestSchema).optional(),
-  allowedHosts: z
-    .array(z.string())
-    .optional()
-    .superRefine((hosts, ctx) => {
-      if (!hosts) return;
-      for (const h of hosts) {
-        const result = validateAllowedHostPattern(h);
-        if (!result.valid) {
-          ctx.addIssue({
-            code: z.ZodIssueCode.custom,
-            message: `Invalid allowedHosts pattern "${h}": ${result.reason}`,
-          });
-        }
-      }
-    }),
+  allowedHosts: AllowedHostsSchema.optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),

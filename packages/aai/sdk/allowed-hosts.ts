@@ -9,6 +9,8 @@
  * environment (browser, Deno, Node.js sandboxes).
  */
 
+import { z } from "zod";
+
 const BLOCKED_TLDS = ["local", "internal", "localhost"];
 
 const IPV4_RE = /^(\d{1,3}\.){3}\d{1,3}$/;
@@ -73,6 +75,28 @@ export function validateAllowedHostPattern(pattern: string): ValidationResult {
 
   return { valid: true };
 }
+
+/**
+ * Zod schema for an `allowedHosts` list, validating every entry with
+ * {@link validateAllowedHostPattern}.
+ *
+ * Shared by the three schemas that accept the field so they cannot drift:
+ * `AgentConfigSchema` (worker→host), `ManifestSchema`, and the platform's
+ * `IsolateConfigSchema`. The server must re-validate rather than trust the
+ * value: the list arrives from a tenant's bundle and decides that agent's
+ * outbound egress.
+ */
+export const AllowedHostsSchema = z.array(z.string()).superRefine((hosts, ctx) => {
+  for (const host of hosts) {
+    const result = validateAllowedHostPattern(host);
+    if (!result.valid) {
+      ctx.addIssue({
+        code: "custom",
+        message: `Invalid allowedHosts pattern "${host}": ${result.reason}`,
+      });
+    }
+  }
+});
 
 /**
  * Test whether `hostname` matches any pattern in `patterns`.

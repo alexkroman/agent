@@ -1,6 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * A deployed agent's `send:` channel, end to end through `createSandbox`.
+ * What a deployed agent may reach on the network, end to end through
+ * `createSandbox` — the agent's declared `allowedHosts` plus its `send:`
+ * channel's webhook host.
  *
  * The channel has two sides and each was dropped between the deploy config
  * and the thing that reads it:
@@ -137,12 +139,23 @@ describe("createSandbox — send channel", () => {
     });
   });
 
-  describe("guest side: egress for openSender", () => {
+  describe("guest side: egress for guest tool code", () => {
     function allowedHosts(): string[] {
       const call = mockCreateSandboxVm.mock.calls[0]?.[0] as { allowedHosts: string[] } | undefined;
       if (!call) throw new Error("createSandboxVm not called");
       return call.allowedHosts;
     }
+
+    it("passes the agent's declared hosts through to the guest RPC layer", async () => {
+      const sandbox = createSandbox(
+        makeSandboxOptions({
+          agentConfig: { ...BASE_CONFIG, allowedHosts: ["api.example.com", "*.example.org"] },
+        }),
+      );
+
+      expect(allowedHosts()).toEqual(["api.example.com", "*.example.org"]);
+      await sandbox.shutdown();
+    });
 
     it("allowlists the channel's webhook host", async () => {
       const sandbox = createSandbox(makeSandboxOptions({ agentConfig: SEND_CONFIG }));

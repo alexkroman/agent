@@ -1,24 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Host-side fetch handler for the sandbox.
+ * Host-side fetch handler for the sandbox: relays a guest's proxied `fetch`,
+ * streaming the response back in chunks via an emit callback.
  *
- * Validates outbound fetch requests from guest agents against an allowedHosts
- * list, applies SSRF protection, and streams the response back in chunks via
- * an emit callback.
+ * The **policy** — allowlist, body/response caps, timeout, concurrency, SSRF —
+ * is not decided here. It lives in the SDK's `host/guest-fetch-policy.ts`,
+ * which self-hosted mode (`aai dev`) is also routed through, so tool code
+ * cannot behave one way locally and another once deployed. This module owns
+ * only the NDJSON relay: what to do with a verdict, not what the verdict is.
+ * Resist re-adding a limit here.
  */
 
-import { errorMessage, matchesAllowedHost } from "@alexkroman1/aai";
-import { ssrfSafeFetch } from "@alexkroman1/aai/runtime";
-import { MAX_REQUEST_BODY_BYTES } from "./guest/limits.ts";
+import { errorMessage } from "@alexkroman1/aai";
+import {
+  checkToolFetch,
+  performToolFetch,
+  TOOL_FETCH_MAX_RESPONSE_BYTES,
+} from "@alexkroman1/aai/runtime";
 
-const DEFAULT_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
-const DEFAULT_MAX_CONCURRENT = 10;
-/**
- * Wall-clock cap for one guest-proxied fetch. Deliberately longer than the
- * SDK's `FETCH_TIMEOUT_MS` (15s), which governs host-side builtin tools —
- * don't confuse the two when tuning fetch timeouts.
- */
-const SANDBOX_FETCH_TIMEOUT_MS = 30_000;
 /**
  * 256 KiB per relayed chunk. Each chunk costs a base64 encode, a JSON frame,
  * a pipe write, and a guest-side parse+decode, so bigger chunks cut the
@@ -70,8 +69,14 @@ type FetchHandlerOptions = {
   allowedHosts: string[];
   fetchFn?: typeof globalThis.fetch;
   skipSsrf?: boolean;
+  /**
+   * Response cap override. Tests shrink it to assert the streaming cap without
+   * moving 4 MiB of bytes; production leaves it at
+   * {@link TOOL_FETCH_MAX_RESPONSE_BYTES}. There is deliberately no override
+   * for the allowlist, timeout, body cap, or concurrency — those come from the
+   * shared policy so the two execution modes cannot diverge.
+   */
   maxResponseBytes?: number;
-  maxConcurrent?: number;
 };
 
 type Emit = (msg: FetchResponseMessage) => void;
@@ -121,65 +126,46 @@ async function streamResponseBody(
   }
 }
 
-async function performFetch(
+function performFetch(
   req: FetchRequest,
   fetchFn: typeof globalThis.fetch,
   skipSsrf: boolean,
   allowedHosts: string[],
 ): Promise<Response> {
-  const init: RequestInit = {
-    method: req.method,
-    headers: req.headers,
-    signal: AbortSignal.timeout(SANDBOX_FETCH_TIMEOUT_MS),
-    ...(req.body !== null ? { body: Buffer.from(req.body, "base64") } : {}),
-  };
-  // Enforce the egress allowlist on every redirect hop, not just the initial
-  // URL (ssrfSafeFetch also strips credentials on cross-origin redirects).
-  return skipSsrf
-    ? await fetchFn(req.url, init)
-    : await ssrfSafeFetch(req.url, init, fetchFn, {
-        isHostAllowed: (h) => matchesAllowedHost(h, allowedHosts),
-      });
+  // Timeout, SSRF screening, and the per-redirect-hop allowlist re-check all
+  // come from the shared policy — see the module comment.
+  return performToolFetch(
+    req.url,
+    {
+      method: req.method,
+      headers: req.headers,
+      ...(req.body !== null ? { body: Buffer.from(req.body, "base64") } : {}),
+    },
+    { allowedHosts, fetchFn, skipSsrf },
+  );
 }
 
 export function createFetchHandler(opts: FetchHandlerOptions) {
   const allowedHosts = opts.allowedHosts;
   const fetchFn = opts.fetchFn ?? globalThis.fetch;
   const skipSsrf = opts.skipSsrf ?? false;
-  const maxResponseBytes = opts.maxResponseBytes ?? DEFAULT_MAX_RESPONSE_BYTES;
-  const maxConcurrent = opts.maxConcurrent ?? DEFAULT_MAX_CONCURRENT;
+  const maxResponseBytes = opts.maxResponseBytes ?? TOOL_FETCH_MAX_RESPONSE_BYTES;
 
   let activeCount = 0;
 
   return async function handleFetch(req: FetchRequest, id: string, emit: Emit): Promise<void> {
-    if (activeCount >= maxConcurrent) {
-      emitError(id, `Fetch concurrent limit of ${maxConcurrent} exceeded`, emit);
-      return;
-    }
-
-    // The guest's fetch wrapper checks this too, but the guest is untrusted —
-    // the host is the authoritative side of the boundary. Base64 decodes to
-    // at most 3/4 of its encoded length, so this bounds the decoded size
-    // without decoding.
-    if (req.body !== null && (req.body.length * 3) / 4 > MAX_REQUEST_BODY_BYTES) {
-      emitError(id, `Request body exceeds ${MAX_REQUEST_BODY_BYTES} byte limit`, emit);
-      return;
-    }
-
-    let parsedUrl: URL;
-    try {
-      parsedUrl = new URL(req.url);
-    } catch {
-      emitError(id, `Invalid URL: ${req.url}`, emit);
-      return;
-    }
-
-    if (!matchesAllowedHost(parsedUrl.hostname, allowedHosts)) {
-      emitError(
-        id,
-        `Host "${parsedUrl.hostname}" is not allowed. Add it to the agent's allowedHosts list.`,
-        emit,
-      );
+    // One shared verdict for both execution modes. The guest checks the body
+    // size too, but the guest is untrusted — the host is the authoritative
+    // side. Base64 decodes to at most 3/4 of its encoded length, which bounds
+    // the decoded size without decoding.
+    const verdict = checkToolFetch({
+      url: req.url,
+      allowedHosts,
+      activeCount,
+      ...(req.body !== null ? { bodyBytes: Math.ceil((req.body.length * 3) / 4) } : {}),
+    });
+    if (!verdict.ok) {
+      emitError(id, verdict.reason, emit);
       return;
     }
 
