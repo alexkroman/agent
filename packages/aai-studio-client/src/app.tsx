@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Studio shell (design 1b "Guided start"): shared top bar, 360px guided
-// chat panel on the left, Preview/Code pane on the right. TanStack Query
+// chat panel on the left, Live/Code pane on the right. TanStack Query
 // owns all server state, invalidated after agent turns / publishes.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -144,7 +144,7 @@ function TopBar(props: TopBarProps) {
           className={segClass(props.tab === "preview")}
           onClick={() => props.onSelectTab("preview")}
         >
-          Preview
+          Live
         </button>
         <button
           type="button"
