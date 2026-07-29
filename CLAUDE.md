@@ -27,6 +27,7 @@ pnpm check:affected      # Only check packages affected by changes since main
 | Integration | `pnpm test:integration` | Real subsystems (Deno sandboxes, HTTP servers) | 30s |
 | E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
 | Templates | `pnpm test:templates` | Template agent example tests | 5s |
+| Evals | `pnpm --filter aai-server test:evals` | LLM-in-the-loop studio codegen evals (vitest-evals) | 300s |
 
 ### Single-package shortcuts
 
@@ -841,6 +842,35 @@ package.json scripts (not always obvious from test code alone):
 - `AAI_TEST_PM` — package manager the e2e suite installs the scaffolded
   project with (`pnpm` | `npm` | `yarn`; default `pnpm`). **CI only runs
   `pnpm`** — see below.
+
+#### Studio codegen evals (aai-server)
+
+`packages/aai-server/studio/studio-eval.test.ts` runs the real studio
+coding agent (`runStudioChat` with the host-env selected LLM) one-shot
+against fresh starter workspaces and judges the workspace it leaves
+behind, using [vitest-evals](https://github.com/getsentry/vitest-evals)
+(`describeEval` + `createHarness` + `createJudge`):
+
+- **`WorkerBuildJudge`** (suite judge, threshold 1): the workspace must
+  build through `bundleWorkspaceWorker` — the exact Vite/Rollup pass
+  Publish runs. This is the "one-shot produces syntactically valid code"
+  gate.
+- **`SandboxLoadJudge`** (asserted via `toSatisfyJudge` when Deno + the
+  built guest harness are available): the built worker must load in a
+  real studio sandbox, self-describe a valid `IsolateConfigSchema`
+  config, and expose the tools the prompt asked for — the "code actually
+  works" gate.
+
+Run with `pnpm --filter aai-server test:evals` (the e2e profile of
+`vitest.slow.config.ts`). The suite is excluded from the unit project and
+**skips entirely without an LLM key** (`ASSEMBLYAI_API_KEY` or
+`ANTHROPIC_API_KEY`, or `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL`), so
+`pnpm test` stays hermetic. For the sandbox judge, build the guest
+harness first (`pnpm --filter aai-server build`, or point
+`GUEST_HARNESS_PATH` at one). MCP is stubbed out so the eval measures the
+model + system prompt + studio tools, never the docs server. An errored
+agent turn fails the run loudly — judging the leftover starter workspace
+(which builds fine) would be a false pass.
 
 #### The e2e suite is pnpm-only in CI
 
