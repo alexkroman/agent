@@ -13,6 +13,7 @@ import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
+import { createTaskScope, type TaskScope } from "../task-scope.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
@@ -27,7 +28,7 @@ import {
   type PipelineTransportOptions,
   resolvePipelineOptions,
 } from "./pipeline-transport-options.ts";
-import { createTurnGate, linkAbort } from "./pipeline-turn-gate.ts";
+import { createTurnQueue } from "./pipeline-turn-queue.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
 import type { Transport } from "./types.ts";
 
@@ -56,7 +57,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   const sessionAbort = new AbortController();
   /**
-   * Turn-crash handler for chainTurn call sites. Throw-safe: the logger is
+   * Turn-crash handler for queue.chain call sites. Throw-safe: the logger is
    * caller-injectable, and a throw from a `.catch` handler would reject the
    * chained turn promise anyway — exactly what the handler exists to prevent.
    */
@@ -71,11 +72,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   }
   let audioReady = false;
   let terminated = false;
-  let turnController: AbortController | null = null;
+  // The in-flight turn's scope: owns its abort signal, its dead-air timer,
+  // and its interrupted-turn persistence finalizer — see ../task-scope.ts.
+  let turnScope: TaskScope | null = null;
   let nextReplyId = 0;
-  // Invalidation epochs for queued turns and an aborted turn's deferred
-  // persistence — see pipeline-turn-gate.ts.
-  const gate = createTurnGate();
+  // Turn serializer: runs turns one at a time, strands queued turns on
+  // invalidation — see pipeline-turn-queue.ts.
+  const queue = createTurnQueue(() => terminated);
   // Closed on abort so TTS chunks still in flight can't re-advance the
   // playback clock (which would re-arm barge-in against nothing) or reach the
   // just-flushed client; reopened by the next turn's first TTS text, which
@@ -85,7 +88,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // pipeline mode): a text view (client/resume/tool-context) and a
   // ModelMessage view (what the LLM sees, incl. tool calls/results).
   const history = createPipelineHistory(sessionConfig.history);
-  let turnPromise: Promise<void> | null = null;
   // The in-flight providers.open() from start(). stop() awaits it so a
   // disconnect mid-connect tears the just-opened provider sockets down
   // deterministically instead of leaving fire-and-forget opens to pile up.
@@ -110,9 +112,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     interruptionMinDurationMs,
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
-    isTurnInFlight: () => turnController !== null,
+    isTurnInFlight: () => turnScope !== null,
     isPlaybackPending: () => playbackClock.pending(),
-    abortInFlightTurn: () => abortInFlightTurn(),
+    // Barge-in: the conversation continues, so the interrupted tail persists.
+    abortInFlightTurn: () => abortInFlightTurn({ keepPersistence: true }),
     runChainedTurn,
   });
 
@@ -154,31 +157,30 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     messages: () => history.conversation,
   });
 
-  function chainTurn(start: () => Promise<void>): void {
-    // Captured at enqueue, re-checked at run: a reset/stop/cancelReply landing
-    // while this turn waits behind an active one strands it — otherwise it
-    // would run a full billed streamText turn after the session moved on.
-    const epoch = gate.queueEpoch();
-    // Chain past a rejected predecessor: every call site attaches its own
-    // .catch, but one that slips through must cost that turn, not wedge the
-    // serializer (a rejected turnPromise would mean no turn ever runs again).
-    turnPromise = (turnPromise ?? Promise.resolve())
-      .catch(() => undefined)
-      .then(() => (terminated || !gate.queueCurrent(epoch) ? undefined : start()));
-  }
-
   function runChainedTurn(text: string, crashLabel: string): void {
-    chainTurn(() => runTurn(text).catch(logTurnCrash(crashLabel)));
+    queue.chain(() => runTurn(text).catch(logTurnCrash(crashLabel)));
   }
 
   function emitError(code: SessionErrorCode, message: string): void {
     callbacks.onError(code, message);
   }
 
-  /** Abort the in-flight turn (if any) and cancel TTS playback. */
-  function abortInFlightTurn(): void {
-    turnController?.abort();
-    turnController = null;
+  /**
+   * Abort the in-flight turn (if any) and cancel TTS playback.
+   *
+   * `keepPersistence` decides the fate of the aborted turn's interrupted-tail
+   * persistence (a TaskScope interrupt finalizer): a client cancel keeps it —
+   * the conversation continues and the spoken-so-far text must be recorded —
+   * while reset/stop/terminate discard it, since the conversation is being
+   * cleared or ended and the tail must not be written (or its transcript
+   * emitted) over that.
+   */
+  function abortInFlightTurn(opts: { keepPersistence: boolean }): void {
+    const scope = turnScope;
+    turnScope = null;
+    // interrupt() aborts synchronously; the finalizer wind-down it awaits is
+    // ordered before any later interrupt() of the same scope resolves.
+    void scope?.interrupt({ discardFinalizers: !opts.keepPersistence });
     providers.tts?.cancel();
     ttsAudioOpen = false;
     // Every abort path ends with the client flushing its playback buffer
@@ -191,12 +193,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   function terminate(): void {
     if (terminated) return;
     terminated = true;
-    gate.invalidateAll();
+    queue.invalidate();
     nudger.clear();
     recovery.clear();
     speechEdges.reset();
     settler.reset();
-    abortInFlightTurn();
+    abortInFlightTurn({ keepPersistence: false });
     callbacks.onCancelled();
     sessionAbort.abort();
     // Close whatever was adopted before the failure (e.g. TTS went live,
@@ -225,7 +227,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   }
 
   const consumeLlmStream = (
-    ctl: AbortController,
+    scope: TaskScope,
     onDelta: (delta: string) => void,
     onStepPersisted?: () => void,
   ): Promise<ModelMessage[]> =>
@@ -237,10 +239,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       toolChoice,
       temperature: opts.temperature,
       // Built per turn so the repair holds THIS turn's signal. Reading the
-      // mutable `turnController` at repair time raced barge-in: nulled, the
+      // mutable `turnScope` at repair time raced barge-in: nulled, the
       // repair ran unsignalled (an orphaned billed call); replaced, it held
       // the NEXT turn's signal.
-      repairToolCall: createToolCallRepair(opts.llm, log, () => ctl.signal),
+      repairToolCall: createToolCallRepair(opts.llm, log, () => scope.signal),
       maxSteps,
       holdPhrase,
       sendTtsText,
@@ -248,7 +250,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       emitError,
       log,
       sid: opts.sid,
-      ctl,
+      scope,
       onDelta,
       onStepPersisted,
     });
@@ -268,69 +270,77 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
    */
   async function runReply(
     idPrefix: string,
-    body: (ctl: AbortController) => Promise<boolean /* spoke */>,
+    body: (scope: TaskScope) => Promise<boolean /* spoke */>,
   ): Promise<void> {
     callbacks.onReplyStarted(`${idPrefix}-${++nextReplyId}`);
 
-    const ctl = new AbortController();
-    // stop()/terminate() aborts only the turnController of the moment; link
-    // the session signal so a turn that starts later still dies with the
-    // session instead of running against closed providers.
-    const unlink = linkAbort(sessionAbort.signal, ctl);
-    turnController = ctl;
+    // stop()/terminate() interrupts only the turnScope of the moment; the
+    // parent link makes a turn that starts later still die with the session
+    // instead of running against closed providers (unlinked at settle).
+    const scope = createTaskScope({ parent: sessionAbort.signal });
+    turnScope = scope;
 
     try {
-      const spoke = await body(ctl);
-      if (spoke && !ctl.signal.aborted) await drainTts(ctl.signal);
-      if (!ctl.signal.aborted) callbacks.onReplyDone();
+      await scope.run(async () => {
+        const spoke = await body(scope);
+        if (spoke && !scope.signal.aborted) await drainTts(scope.signal);
+      });
+      if (!scope.signal.aborted) callbacks.onReplyDone();
     } finally {
-      unlink();
-      // Clear the controller unless a newer turn replaced it.
-      if (turnController === ctl) turnController = null;
+      // Clear the scope unless a newer turn replaced it.
+      if (turnScope === scope) turnScope = null;
       // Aborted turns skip the re-arm: onSttPartial / cancelReply handle those.
-      if (!ctl.signal.aborted) nudger.arm();
+      if (!scope.signal.aborted) nudger.arm();
     }
   }
 
   function runTurn(userText: string): Promise<void> {
-    return runReply("pipeline", async (ctl) => {
-      // reset() bumps this before clearing history — the persistence below
-      // runs asynchronously after the abort and must not write the
-      // interrupted tail into (or emit a transcript over) a fresh conversation.
-      const historyEpoch = gate.historyEpoch();
+    return runReply("pipeline", async (scope) => {
       history.pushConversation({ role: "user", content: userText });
       history.pushLlm({ role: "user", content: userText });
 
       let accumulated = "";
       // Portion of `accumulated` already inside persisted step messages.
       let persistedLen = 0;
+      let stepMessages: readonly ModelMessage[] = [];
+      // Set once the un-interrupted path below has recorded the turn, so a
+      // late abort (e.g. barge-in during the TTS drain) doesn't persist the
+      // same turn a second time as an interrupted tail.
+      let committed = false;
+
+      // Barge-in mid-turn: keep the completed tool steps and the
+      // spoken-so-far text — see persistInterruptedTurn. As a scope
+      // finalizer this runs after the LLM stream settles and before the
+      // interrupting side's interrupt() resolves; reset()/stop()/terminate
+      // discard it instead (see abortInFlightTurn), so it can never write
+      // the interrupted tail into (or emit a transcript over) a fresh
+      // conversation — the race the old history epoch suppressed.
+      scope.onInterrupt(() => {
+        if (committed) return;
+        persistInterruptedTurn({
+          history,
+          accumulated,
+          persistedLen,
+          stepMessages,
+          holdPhrase,
+          onTranscript: (text) => callbacks.onAgentTranscript(text, true),
+          updateAgentContext: (text) => providers.stt?.updateAgentContext?.(text),
+        });
+      });
+
       const onDelta = (delta: string): void => {
         accumulated += delta;
       };
-      const responseMessages = await consumeLlmStream(ctl, onDelta, () => {
+      stepMessages = await consumeLlmStream(scope, onDelta, () => {
         persistedLen = accumulated.length;
       });
 
-      if (ctl.signal.aborted) {
-        // Barge-in mid-turn: keep the completed tool steps and the
-        // spoken-so-far text — see persistInterruptedTurn.
-        if (gate.historyCurrent(historyEpoch)) {
-          persistInterruptedTurn({
-            history,
-            accumulated,
-            persistedLen,
-            stepMessages: responseMessages,
-            holdPhrase,
-            onTranscript: (text) => callbacks.onAgentTranscript(text, true),
-            updateAgentContext: (text) => providers.stt?.updateAgentContext?.(text),
-          });
-        }
-        return false;
-      }
+      if (scope.signal.aborted) return false;
 
       // Persist the assistant tool-call message(s) and their `tool` results so
       // the next turn retains tool context, not just the spoken transcript.
-      if (responseMessages.length > 0) history.pushLlm(...responseMessages);
+      if (stepMessages.length > 0) history.pushLlm(...stepMessages);
+      committed = true;
 
       if (accumulated.length === 0) return false;
       callbacks.onAgentTranscript(accumulated, false);
@@ -361,7 +371,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     if (opts.skipGreeting) return;
     const greeting = sessionConfig.greeting;
     if (!greeting) return;
-    chainTurn(() => runGreeting(greeting).catch(logTurnCrash("Pipeline greeting failed")));
+    queue.chain(() => runGreeting(greeting).catch(logTurnCrash("Pipeline greeting failed")));
   }
 
   // One-shot uploaded-clip transcription (Transport.transcribeFile) — the
@@ -374,7 +384,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     signal: sessionAbort.signal,
     isTerminated: () => terminated,
     sendRealtimeAudio: (pcm16) => providers.stt?.sendAudio(pcm16),
-    chainTurn,
+    chainTurn: queue.chain,
     runTurn,
     callbacks,
     onTurnCrash: logTurnCrash("Pipeline file turn crashed"),
@@ -406,19 +416,22 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // Gate late inbound work (sendUserAudio into a closing STT session)
       // the same way a provider-error teardown does.
       terminated = true;
-      gate.invalidateAll();
+      queue.invalidate();
       nudger.clear();
       recovery.clear();
       speechEdges.reset();
       settler.reset();
+      // Discard before the session abort reaches the scope via its parent
+      // link: the session is over, so the aborted turn's interrupted-tail
+      // persistence must not run (nor emit a transcript to a closing client).
+      void turnScope?.interrupt({ discardFinalizers: true });
       sessionAbort.abort();
-      turnController?.abort();
       providers.unsubscribe();
       // Let an in-flight start() settle after the abort so any provider that
       // opened mid-connect is adopted-then-closed (openSide) before we close
       // below — otherwise a slow socket lands after stop() and lingers.
       if (startPromise !== null) await startPromise.catch(() => undefined);
-      if (turnPromise !== null) await turnPromise.catch(() => undefined);
+      await queue.settled();
       await providers.close();
     },
 
@@ -448,8 +461,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // turns already queued behind the cancelled one. History persistence
       // stays valid — the conversation continues.
       settler.reset();
-      gate.invalidateQueued();
-      abortInFlightTurn();
+      queue.invalidate();
+      abortInFlightTurn({ keepPersistence: true });
       // Silence after a client-initiated cancel should still nudge.
       nudger.arm();
       // Do NOT call callbacks.onCancelled() here — session-core.onCancel
@@ -464,9 +477,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     },
 
     reset(): void {
-      // Bumped before the abort/history.reset below so the aborted turn's
-      // deferred persistence and any queued turns see the change.
-      gate.invalidateAll();
+      // Strand queued turns before the abort/history.reset below.
+      queue.invalidate();
       // A reset is user activity: restore the resume budget as well.
       recovery.onUserTurn();
       // A one-shot transcription still in flight belongs to the discarded
@@ -474,7 +486,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       fileTranscriber.discard();
       speechEdges.reset();
       settler.reset();
-      abortInFlightTurn();
+      // Discarding the interrupted-tail persistence (not racing it) is what
+      // makes the synchronous history.reset() below safe.
+      abortInFlightTurn({ keepPersistence: false });
       history.reset();
       // A reset is user activity: restore the budget, restart the window.
       nudger.onUserSpeech();

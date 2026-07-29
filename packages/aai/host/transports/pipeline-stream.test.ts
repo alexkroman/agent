@@ -11,6 +11,8 @@ import {
 } from "../../sdk/constants.ts";
 import { createFakeLanguageModel } from "../_pipeline-test-fakes.ts";
 import { makeLogger, silentLogger } from "../_test-utils.ts";
+import { createRestartableTimer } from "../_timer.ts";
+import { createTaskScope, type TaskScope } from "../task-scope.ts";
 import { consumeLlmStream, createTtsTextCoalescer } from "./pipeline-stream.ts";
 import { createStreamPartHandler } from "./pipeline-stream-parts.ts";
 
@@ -128,6 +130,7 @@ describe("LLM stream error reporting", () => {
       sendTtsText: () => undefined,
       onToolCall: () => undefined,
       emitError: () => undefined,
+      createTimer: createRestartableTimer,
       log,
       sid: "sid-1",
     });
@@ -149,6 +152,7 @@ describe("LLM stream error reporting", () => {
       sendTtsText: () => undefined,
       onToolCall: () => undefined,
       emitError: () => undefined,
+      createTimer: createRestartableTimer,
       log,
       sid: "sid-2",
     });
@@ -188,7 +192,7 @@ describe("LLM stream error reporting", () => {
       emitError: () => undefined,
       log,
       sid: "sid-3",
-      ctl: new AbortController(),
+      scope: createTaskScope(),
       onDelta: () => undefined,
     });
     expect(consoleError).not.toHaveBeenCalled();
@@ -200,8 +204,11 @@ describe("LLM stream error reporting", () => {
 });
 
 describe("createStreamPartHandler dead-air cover", () => {
-  function harness(overrides: { holdPhrase?: string; signal?: AbortSignal } = {}) {
+  function harness(overrides: { holdPhrase?: string; scope?: TaskScope } = {}) {
     const spoken: string[] = [];
+    // The cover timer is scope-owned in production (consumeLlmStream passes
+    // the turn scope's signal + timer); mirror that wiring here.
+    const scope = overrides.scope ?? createTaskScope();
     const handler = createStreamPartHandler({
       onDelta: () => undefined,
       // Route through a real coalescer: a filler that only reaches the batch
@@ -211,9 +218,11 @@ describe("createStreamPartHandler dead-air cover", () => {
       onTtsBoundary: () => undefined,
       onToolCall: () => undefined,
       emitError: () => undefined,
+      signal: scope.signal,
+      createTimer: scope.timer,
       log: silentLogger,
       sid: "t",
-      ...overrides,
+      ...(overrides.holdPhrase !== undefined ? { holdPhrase: overrides.holdPhrase } : {}),
     });
     const toolCall = (id: string): void =>
       handler.handle({ type: "tool-call", toolCallId: id, toolName: "lookup", input: {} });
@@ -276,24 +285,25 @@ describe("createStreamPartHandler dead-air cover", () => {
     }
   });
 
-  test("a barge-in abort stops a pending cover from firing", () => {
+  test("a barge-in interrupt stops a pending cover from firing", () => {
     // Barge-in during a tool execution: dispose() waits on the parked
-    // fullStream read, so the abort signal is what must kill the timer —
-    // otherwise the filler is spoken into post-cancel silence AND appended
-    // to `accumulated`, polluting the interrupted-turn history.
-    const ctl = new AbortController();
-    const { spoken, toolCall } = harness({ signal: ctl.signal });
+    // fullStream read, so the scope-owned timer clearing on interrupt is
+    // what must kill the cover — otherwise the filler is spoken into
+    // post-cancel silence AND appended to `accumulated`, polluting the
+    // interrupted-turn history.
+    const scope = createTaskScope();
+    const { spoken, toolCall } = harness({ scope });
     toolCall("tc-1");
-    ctl.abort();
+    void scope.interrupt();
     vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS * 10);
     for (const phrase of DEAD_AIR_COVER_PHRASES) {
       expect(spoken.join("")).not.toContain(phrase);
     }
   });
 
-  test("an unaborted signal leaves the cover working", () => {
-    const ctl = new AbortController();
-    const { spoken, toolCall } = harness({ signal: ctl.signal });
+  test("a live (uninterrupted) scope leaves the cover working", () => {
+    const scope = createTaskScope();
+    const { spoken, toolCall } = harness({ scope });
     toolCall("tc-1");
     vi.advanceTimersByTime(DEFAULT_DEAD_AIR_COVER_MS);
     expect(spoken.join("")).toContain(DEAD_AIR_COVER_PHRASES[0]);

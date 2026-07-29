@@ -184,7 +184,12 @@ boundary** — this split is critical for sandbox security:
   `transports/` (S2S / pipeline / OpenAI Realtime `Transport`
   implementations), `to-vercel-tools.ts`,
   `providers/` (STT/TTS openers + descriptor→instance resolvers),
-  `builtin-tools.ts`, `unstorage-kv.ts`.
+  `builtin-tools.ts`, `unstorage-kv.ts`, `task-scope.ts` (`TaskScope`:
+  awaitable interrupt + scope-owned timers/finalizers — when a piece of
+  per-turn/per-task async work needs an abort signal, a timer that must die
+  with it, or cleanup that invalidation must await-or-discard rather than
+  race, own it with a `TaskScope` instead of hand-rolling epochs,
+  abort-listener pairs, or deferred-cleanup flags).
 
 **Rule**: When adding new SDK code, place it in `sdk/` if it has no
 `node:` dependencies. Moving code from `sdk/` → `host/` is safe;

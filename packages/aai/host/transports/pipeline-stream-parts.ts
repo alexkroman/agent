@@ -15,7 +15,7 @@ import {
 } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import { capToolResult, errorMessage } from "../../sdk/utils.ts";
-import { createRestartableTimer } from "../_timer.ts";
+import type { RestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
 
 /** A single `fullStream` part from `streamText`. */
@@ -55,13 +55,21 @@ type StreamPartHandlerDeps = {
    */
   holdPhrase?: string | undefined;
   /**
-   * The owning turn's abort signal. The dead-air cover is a real timer, and a
-   * barge-in can abort the turn while a tool execution has the `fullStream`
-   * read parked — deferring `dispose()` for seconds. The signal lets the
-   * armed timer die with the turn instead of speaking filler into the
-   * post-cancel silence (and polluting the interrupted-turn transcript).
+   * The owning turn's abort signal, re-checked at fire/arm time so a
+   * dead-air callback already dispatched (or an abort racing an arm) still
+   * no-ops.
    */
   signal?: AbortSignal | undefined;
+  /**
+   * Timer factory for the dead-air cover — pass the owning turn's
+   * `TaskScope.timer` so the armed cover dies with the turn the moment it is
+   * interrupted. The cover is a real timer, and a barge-in can abort the
+   * turn while a tool execution has the `fullStream` read parked — deferring
+   * `dispose()` for seconds; without scope ownership it would speak filler
+   * into the post-cancel silence (and pollute the interrupted transcript).
+   * Required (not defaulted) so that ownership can't silently be forgotten.
+   */
+  createTimer: (onElapsed: () => void) => RestartableTimer;
   log: Logger;
   sid: string;
 };
@@ -151,7 +159,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
    * arrive to flush the coalescer until the tool chain ends, and that silence
    * is precisely what is being covered.
    */
-  const deadAir = createRestartableTimer((): void => {
+  const deadAir = deps.createTimer((): void => {
     // Fire-time re-check, matching the transport's other timers: the abort
     // listener below clears the timer, but a callback already dispatched (or
     // an abort that raced the arm) must still no-op.
@@ -174,13 +182,12 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     deadAir.arm(DEFAULT_DEAD_AIR_COVER_MS * 2 ** coverCount);
   }
 
-  // Kill the armed cover the moment the turn aborts rather than at dispose(),
-  // which a tool execution that ignores its abort signal defers for seconds.
-  const onAbort = (): void => deadAir.clear();
-  signal?.addEventListener("abort", onAbort, { once: true });
+  // Killing the armed cover the moment the turn aborts (rather than at
+  // dispose(), which a tool execution that ignores its abort signal defers
+  // for seconds) is the timer owner's job: a scope-owned timer is cleared on
+  // interrupt by its TaskScope.
 
   function dispose(): void {
-    signal?.removeEventListener("abort", onAbort);
     deadAir.clear();
   }
 

@@ -29,6 +29,7 @@ import type { TtsSession, Unsubscribe } from "../../sdk/providers.ts";
 import type { Message, ToolChoice } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
 import type { Logger } from "../runtime-config.ts";
+import type { TaskScope } from "../task-scope.ts";
 import { smoothTextStream } from "./pipeline-smooth.ts";
 import {
   createStreamPartHandler,
@@ -208,8 +209,12 @@ export interface ConsumeLlmStreamParams {
   emitError: (code: SessionErrorCode, message: string) => void;
   log: Logger;
   sid: string;
-  /** Aborts the LLM stream (turn cancellation / barge-in). */
-  ctl: AbortController;
+  /**
+   * The owning turn's scope: its signal aborts the LLM stream (turn
+   * cancellation / barge-in) and it owns the dead-air cover timer, so the
+   * cover structurally cannot fire after the turn is interrupted.
+   */
+  scope: TaskScope;
   /** Receives each assistant text delta (accumulated into the transcript). */
   onDelta: (delta: string) => void;
   /**
@@ -248,10 +253,11 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     emitError,
     log,
     sid,
-    ctl,
+    scope,
     onDelta,
     onStepPersisted,
   } = params;
+  const signal = scope.signal;
   // Response messages of completed steps, collected incrementally so an
   // aborted turn still returns everything that finished before the abort.
   const collected: ModelMessage[] = [];
@@ -272,7 +278,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       experimental_transform: smoothTextStream(),
       experimental_repairToolCall: repairToolCall,
       stopWhen: stepCountIs(maxSteps),
-      abortSignal: ctl.signal,
+      abortSignal: signal,
       onStepFinish: (step) => {
         collected.push(...step.response.messages);
         onStepPersisted?.();
@@ -300,9 +306,11 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       sendTtsText: ttsText.send,
       onTtsBoundary: ttsText.boundary,
       holdPhrase,
-      // Lets the dead-air cover die with the turn: a barge-in during a tool
-      // execution parks the fullStream read, deferring dispose() below.
-      signal: ctl.signal,
+      signal,
+      // Scope-owned dead-air cover: dies with the turn the moment it is
+      // interrupted — a barge-in during a tool execution parks the
+      // fullStream read, deferring dispose() below.
+      createTimer: scope.timer,
       onToolCall: callbacks.onToolCall,
       onToolCallDone: callbacks.onToolCallDone,
       emitError,
@@ -310,14 +318,14 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       sid,
     });
     for await (const part of result.fullStream) {
-      if (ctl.signal.aborted) break;
+      if (signal.aborted) break;
       handler.handle(part);
     }
     // The model is done: no filler may fire during the flush or the wait for
     // `result.steps` below, both of which follow the last stream part.
     handler.dispose();
     // Aborted turns skip the flush — TTS is being cancelled anyway.
-    if (ctl.signal.aborted) return collected;
+    if (signal.aborted) return collected;
     ttsText.flush();
     // Gather every step's response messages (assistant tool-call + `tool`
     // result + text) so tool context carries into the next turn. Top-level
@@ -327,7 +335,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     const steps = await result.steps;
     return steps.flatMap((step) => step.response.messages);
   } catch (err: unknown) {
-    if (!ctl.signal.aborted) {
+    if (!signal.aborted) {
       // Flush buffered TTS text so speech matches the transcript already
       // accumulated via onDelta for the pre-error portion of the turn.
       ttsText.flush();
