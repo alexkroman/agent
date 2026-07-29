@@ -73,10 +73,15 @@ function trimHistory(history: SyncTurnRequest["history"], max: number): Message[
  * Build a sync-turn runner for a pipeline-mode runtime. Each call to the
  * returned function is one independent turn: transcribe (when audio came
  * in), run the LLM loop with the agent's tools, synthesize the reply.
+ *
+ * `sessionId` names the turn for tool execution (`executeTool`'s session
+ * scope); callers that keep per-session state elsewhere (the platform's
+ * guest sandbox) pass their own id so they can clean that state up after
+ * the turn. Omitted, each turn gets a fresh `sync:` id.
  */
 export function createSyncTurnRunner(
   deps: SyncTurnDeps,
-): (req: SyncTurnRequest) => Promise<SyncTurnResponse> {
+): (req: SyncTurnRequest, sessionId?: string) => Promise<SyncTurnResponse> {
   const { agentConfig, providers, env, toolSchemas, executeTool, logger } = deps;
   const maxSteps = agentConfig.maxSteps ?? DEFAULT_MAX_STEPS;
 
@@ -108,13 +113,16 @@ export function createSyncTurnRunner(
     }
   }
 
-  async function runLlm(history: Message[], transcript: string): Promise<string> {
+  async function runLlm(
+    history: Message[],
+    transcript: string,
+    sessionId: string,
+  ): Promise<string> {
     const messages: Message[] = [...history, { role: "user", content: transcript }];
     const modelMessages: ModelMessage[] = messages.map((m) => ({
       role: m.role === "assistant" ? "assistant" : "user",
       content: m.content,
     }));
-    const sessionId = `sync:${randomUUID()}`;
     const tools = toVercelTools(toolSchemas, {
       executeTool,
       sessionId,
@@ -164,13 +172,16 @@ export function createSyncTurnRunner(
     }
   }
 
-  return async function runSyncTurn(req: SyncTurnRequest): Promise<SyncTurnResponse> {
+  return async function runSyncTurn(
+    req: SyncTurnRequest,
+    sessionId: string = `sync:${randomUUID()}`,
+  ): Promise<SyncTurnResponse> {
     const transcript = await transcribe(req);
     if (transcript.length === 0) {
       throw new SyncTurnError("transcription produced no speech", { status: 422 });
     }
     const history = trimHistory(req.history, DEFAULT_MAX_HISTORY);
-    const reply = await runLlm(history, transcript);
+    const reply = await runLlm(history, transcript, sessionId);
     const spoken = await synthesize(reply);
     return { transcript, reply, ...spoken };
   };

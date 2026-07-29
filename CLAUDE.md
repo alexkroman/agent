@@ -516,7 +516,16 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   `startSyncMicrophone` (WebRTC `getUserMedia` voice-processing capture
   through an inline data-URI AudioWorklet), `createUtteranceDetector`
   (`sync-vad.ts`, pure energy-VAD state machine — browser-API-free and the
-  reason the mic glue stays thin).
+  reason the mic glue stays thin). On the platform, `POST /:slug/sync`
+  (unauthenticated, parity with the agent WebSocket) runs the turn through
+  the deployed agent's sandbox — `Sandbox.runSyncTurn` wraps the runtime
+  call so the guest's per-session tool state is released after the turn
+  (`session/end`, message-delta cache), and the studio exposes
+  `POST /studio/projects/:project/sync` (bearer-auth'd) against a project's
+  *published* slug; both share `sync-turn-handler.ts`. Templates:
+  `sync-voice` (VAD mic + text, all sync transports) and
+  `push-to-talk-translator` (hold-to-record, no VAD — the button is the
+  endpoint).
 
 - **Text-only mode** (`tts: none()` from `@alexkroman1/aai/tts`) is
   pipeline mode without a synthesis side: speech in (STT → LLM), text out.

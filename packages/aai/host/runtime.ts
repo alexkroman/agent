@@ -7,6 +7,7 @@
  * lifecycle hooks, and session management.
  */
 
+import { randomUUID } from "node:crypto";
 import pTimeout, { TimeoutError } from "p-timeout";
 import { createStorage } from "unstorage";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
@@ -240,7 +241,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Sync turns (`POST /sync`) reuse the same resolved pipeline providers,
   // tool executor, and cached system prompt the WebSocket sessions run on —
   // one credential path, one tool surface, two transports.
-  const runSyncTurn: Runtime["runSyncTurn"] = pipelineProviders
+  const syncTurnRunner = pipelineProviders
     ? createSyncTurnRunner({
         agentConfig,
         providers: pipelineProviders,
@@ -252,12 +253,23 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         ttsSampleRate: s2sConfig.outputSampleRate,
         logger,
       })
-    : () =>
-        Promise.reject(
-          new SyncTurnError("sync turns require pipeline mode (stt, llm, and tts all set)", {
-            status: 409,
-          }),
-        );
+    : null;
+  const runSyncTurn: Runtime["runSyncTurn"] = async (req, syncOpts) => {
+    if (!syncTurnRunner) {
+      throw new SyncTurnError("sync turns require pipeline mode (stt, llm, and tts all set)", {
+        status: 409,
+      });
+    }
+    const sessionId = syncOpts?.sessionId ?? `sync:${randomUUID()}`;
+    try {
+      return await syncTurnRunner(req, sessionId);
+    } finally {
+      // A tool that touched ctx.state created a per-session entry under this
+      // id; a sync turn has no session teardown path, so release it here.
+      stateMap.delete(sessionId);
+      sinkMap.delete(sessionId);
+    }
+  };
 
   function createSession(sessionOpts: TransportSessionOpts): SessionCore {
     sinkMap.set(sessionOpts.id, sessionOpts.client);

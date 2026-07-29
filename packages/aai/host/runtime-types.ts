@@ -155,8 +155,13 @@ export type Runtime = AgentRuntime & {
    * TTS via one-shot synthesis. Requires pipeline mode — S2S agents have no
    * provider triple to run it against, so the call rejects with a
    * `SyncTurnError` there.
+   *
+   * `opts.sessionId` names the turn for tool execution; callers that hold
+   * per-session state keyed by that id (the platform sandbox's guest) pass
+   * their own so they can release it after the turn. The runtime cleans its
+   * own per-session tool state either way.
    */
-  runSyncTurn(req: SyncTurnRequest): Promise<SyncTurnResponse>;
+  runSyncTurn(req: SyncTurnRequest, opts?: { sessionId?: string }): Promise<SyncTurnResponse>;
   /** Tool schemas registered with the S2S API (custom + built-in). */
   toolSchemas: ToolSchema[];
   /** Create a new voice session for a connected client (lower-level than startSession). */

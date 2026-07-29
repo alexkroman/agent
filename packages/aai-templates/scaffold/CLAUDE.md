@@ -193,6 +193,20 @@ before committing the turn (aggregating disfluent multi-final utterances).
 `falseInterruptionTimeoutMs` resumes an interrupted reply when a barge-in
 turns out to be noise (no user turn commits within the window).
 
+**Sync turns (pipeline only):** every pipeline agent also answers
+`POST /sync` — one complete conversational turn per HTTP request, with no
+WebSocket on either leg. The body carries `{ text }` *or*
+`{ audio, sampleRate }` (base64 mono PCM16 of one utterance, endpointed
+client-side) plus `history` (prior `{ role, content }` turns — the server
+keeps no session state); the response returns `{ transcript, reply }` and,
+when the TTS provider supports one-shot synthesis (Cartesia), base64
+`audio`. Audio input needs an STT provider with a batch endpoint
+(AssemblyAI); text input works with any. Tools, KV, and `ctx` behave
+exactly as in a voice session. Nothing in agent code opts in — it comes
+with pipeline mode. Programmatic clients can use `createSyncSession` /
+`startSyncMicrophone` (WebRTC mic capture + client-side VAD) from
+`@alexkroman1/aai-ui`.
+
 ## Providers
 
 Provider SDKs are **optional peer dependencies**. Install only the SDKs

@@ -11,6 +11,7 @@
  * mediated by the `SandboxHandle` from `sandbox-vm.ts`.
  */
 
+import { randomUUID } from "node:crypto";
 import type { BuiltinTool, Kv, ToolChoice } from "@alexkroman1/aai";
 import {
   DEFAULT_MAX_STEPS,
@@ -26,6 +27,7 @@ import {
   createRuntime,
   createUnstorageKv,
   type ExecuteTool,
+  type Runtime,
   resolveKv,
   resolveVector,
   safeFetch,
@@ -83,7 +85,15 @@ export type SandboxOptions = {
   onVmFailed?: (err: unknown) => void;
 };
 
-export type Sandbox = AgentRuntime;
+export type Sandbox = AgentRuntime & {
+  /**
+   * One connectionless sync turn against this agent (`POST /:slug/sync`) —
+   * see `host/sync-turn.ts` in the SDK. Wrapped here so the guest's
+   * per-session tool state (message cache, ctx.state) is released after the
+   * turn, the job `session/end` does for WebSocket sessions.
+   */
+  runSyncTurn: Runtime["runSyncTurn"];
+};
 
 /**
  * Handler for guest→client `client/send` notifications: validates the
@@ -379,9 +389,26 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     });
   }
 
+  const runSyncTurn: Sandbox["runSyncTurn"] = async (req, syncOpts) => {
+    const sessionId = syncOpts?.sessionId ?? `sync:${randomUUID()}`;
+    try {
+      return await agentRuntime.runSyncTurn(req, { sessionId });
+    } finally {
+      // Mirror onSessionEnd for WebSocket sessions: drop the host-side
+      // message-delta cache and tell the guest to free its session state.
+      messageTracker.reset(sessionId);
+      vmReady
+        .then((handle) => handle.conn.sendNotification("session/end", { sessionId }))
+        .catch(() => {
+          // VM failed to start — session/end notification is best-effort
+        });
+    }
+  };
+
   return {
     readyConfig: agentRuntime.readyConfig,
     startSession: startSessionWithCleanup,
+    runSyncTurn,
     shutdown: shutdownSandbox,
   };
 }
