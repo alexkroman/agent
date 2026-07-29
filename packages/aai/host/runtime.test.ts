@@ -585,6 +585,41 @@ describe("createRuntime — text-only readyConfig", () => {
     expect(runtime.readyConfig.audioOut).toBe(false);
   });
 
+  test.each([
+    ["holdPhrase", { holdPhrase: "One moment." }],
+    ["minBargeInWords", { minBargeInWords: 3 }],
+    ["interruptionMinDurationMs", { interruptionMinDurationMs: 200 }],
+    ["endpointSettleMs", { endpointSettleMs: 800 }],
+    ["completeSettleMs", { completeSettleMs: 300 }],
+    ["falseInterruptionTimeoutMs", { falseInterruptionTimeoutMs: 1500 }],
+  ])("accepts %s when the providers arrive as runtime options", (_name, tuning) => {
+    // Same seam as the audioOut case above: the platform strips stt/llm/tts off
+    // the agent object and passes them as options, so validating the agent's
+    // own fields resolved mode "s2s" and rejected every pipeline tuning knob —
+    // a deployed pipeline agent with `holdPhrase` failed at session start with
+    // "holdPhrase requires pipeline mode (stt, llm, and tts all set)" while
+    // `aai dev`, which does hand over the descriptors, worked fine.
+    expect(() =>
+      createRuntime({
+        agent: { ...textOnlyAgent, ...tuning },
+        env: PROVIDER_KEYS,
+        stt: assemblyAI({ model: "u3pro-rt" }),
+        llm: anthropic({ model: "claude-haiku-4-5" }),
+        tts: cartesia(),
+      }),
+    ).not.toThrow();
+  });
+
+  test("still rejects pipeline tuning on a genuine S2S agent", () => {
+    // The assertion must keep firing where it is right: no providers anywhere.
+    expect(() =>
+      createRuntime({
+        agent: { ...textOnlyAgent, holdPhrase: "One moment." },
+        env: PROVIDER_KEYS,
+      }),
+    ).toThrow(/holdPhrase requires pipeline mode/);
+  });
+
   test("a speaking agent leaves audioOut alone", () => {
     const runtime = createRuntime({
       agent: textOnlyAgent,

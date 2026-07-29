@@ -22,7 +22,10 @@
  * `executeTool` that file captures.
  */
 
+import { anthropic } from "@alexkroman1/aai/llm";
 import { slack } from "@alexkroman1/aai/send";
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { cartesia } from "@alexkroman1/aai/tts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
@@ -182,5 +185,58 @@ describe("createSandbox — send channel", () => {
       expect(allowedHosts()).toEqual([]);
       await sandbox.shutdown();
     });
+  });
+});
+
+describe("createSandbox — pipeline voice tuning", () => {
+  beforeEach(() => {
+    capturedRuntime.current = null;
+    mockCreateSandboxVm.mockClear();
+  });
+
+  // The other half of the same drop: `toRuntimeAgent` copies the six pipeline
+  // tuning fields but deliberately NOT stt/llm/tts, which `createSandbox`
+  // passes to `createRuntime` as options instead. `createRuntime` validated the
+  // agent object alone, so mode resolved to "s2s" and `assertPipelineTuning`
+  // rejected every one of those fields — a deployed pipeline agent setting
+  // `holdPhrase` failed at session start with "holdPhrase requires pipeline
+  // mode (stt, llm, and tts all set)" while listing all three providers.
+  const PIPELINE_CONFIG: IsolateConfig = {
+    ...BASE_CONFIG,
+    mode: "pipeline",
+    stt: assemblyAI({ model: "universal-3-5-pro" }),
+    llm: anthropic({ model: "claude-haiku-4-5" }),
+    tts: cartesia(),
+  };
+
+  it("starts a deployed pipeline agent that sets holdPhrase", async () => {
+    const sandbox = createSandbox(
+      makeSandboxOptions({
+        agentConfig: { ...PIPELINE_CONFIG, holdPhrase: "I'll look that up now." },
+        env: { ASSEMBLYAI_API_KEY: "k", ANTHROPIC_API_KEY: "k", CARTESIA_API_KEY: "k" },
+      }),
+    );
+
+    expect(capturedRuntime.current).not.toBeNull();
+    await sandbox.shutdown();
+  });
+
+  it("starts a deployed pipeline agent that sets the endpointing knobs", async () => {
+    const sandbox = createSandbox(
+      makeSandboxOptions({
+        agentConfig: {
+          ...PIPELINE_CONFIG,
+          minBargeInWords: 3,
+          interruptionMinDurationMs: 200,
+          endpointSettleMs: 900,
+          completeSettleMs: 300,
+          falseInterruptionTimeoutMs: 1500,
+        },
+        env: { ASSEMBLYAI_API_KEY: "k", ANTHROPIC_API_KEY: "k", CARTESIA_API_KEY: "k" },
+      }),
+    );
+
+    expect(capturedRuntime.current).not.toBeNull();
+    await sandbox.shutdown();
   });
 });
