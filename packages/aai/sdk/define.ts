@@ -6,6 +6,7 @@ import type {
   KvProvider,
   LlmProvider,
   S2sProvider,
+  SendProvider,
   SttProvider,
   TtsProvider,
   VectorProvider,
@@ -157,6 +158,18 @@ export function agent(def: {
   kv?: KvProvider;
   /** Pluggable Vector backend. Falls back to platform default when omitted. */
   vector?: VectorProvider;
+  /**
+   * Outbound send channel (e.g. `slack()` from `@alexkroman1/aai/send`).
+   * Registers the `send_message` builtin and allowlists the channel's host.
+   */
+  send?: SendProvider;
+  /**
+   * Hostnames this agent's own tool code may `fetch`. Required for outbound
+   * requests from a deployed agent — see {@link AgentDef.allowedHosts}.
+   */
+  allowedHosts?: string[];
+  /** Per-session mutable state factory, exposed to tools as `ctx.state`. */
+  state?: () => Record<string, unknown>;
 }): AgentDef {
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,

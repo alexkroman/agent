@@ -162,10 +162,7 @@
   },
   "overrides": [
     {
-      "includes": [
-        "packages/aai/**/*.ts",
-        "packages/aai/**/*.tsx"
-      ],
+      "includes": ["packages/aai/**/*.ts", "packages/aai/**/*.tsx"],
       "linter": {
         "rules": {
           "style": {
@@ -181,8 +178,7 @@
                   "node:perf_hooks": "Use @opentelemetry/api instead.",
                   "node:trace_events": "Not available in Firecracker guest VMs.",
                   "node:v8": "Not available in Firecracker guest VMs.",
-                  "node:wasi": "Not available in Firecracker guest VMs.",
-                  "node:async_hooks": "Not available in Firecracker guest VMs."
+                  "node:wasi": "Not available in Firecracker guest VMs."
                 }
               }
             }
@@ -191,10 +187,7 @@
       }
     },
     {
-      "includes": [
-        "packages/aai/sdk/**/*.ts",
-        "packages/aai/sdk/**/*.tsx"
-      ],
+      "includes": ["packages/aai/sdk/**/*.ts", "packages/aai/sdk/**/*.tsx"],
       "linter": {
         "rules": {
           "style": {
@@ -203,6 +196,7 @@
               "options": {
                 "paths": {
                   "node:dns/promises": "sdk/ must have zero node: imports \u2014 DNS belongs in host/.",
+                  "node:async_hooks": "sdk/ must have zero node: imports \u2014 async context belongs in host/ (see host/tool-egress.ts).",
                   "node:child_process": "Not available in Firecracker guest VMs.",
                   "node:worker_threads": "Not available in Firecracker guest VMs.",
                   "node:cluster": "Not available in Firecracker guest VMs.",
@@ -211,8 +205,7 @@
                   "node:perf_hooks": "Use @opentelemetry/api instead.",
                   "node:trace_events": "Not available in Firecracker guest VMs.",
                   "node:v8": "Not available in Firecracker guest VMs.",
-                  "node:wasi": "Not available in Firecracker guest VMs.",
-                  "node:async_hooks": "Not available in Firecracker guest VMs."
+                  "node:wasi": "Not available in Firecracker guest VMs."
                 }
               }
             }

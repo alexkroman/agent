@@ -35,7 +35,8 @@ const denoHarnessPath = path.resolve(import.meta.dirname, "deno-harness.ts");
 const server = net.createServer((conn) => {
   server.close();
 
-  const harness = spawn("deno", ["run", "--allow-env", "--no-prompt", denoHarnessPath], {
+  // Same permission set as production's OCI spec — see devSandboxSpawnArgs.
+  const harness = spawn("deno", ["run", "--no-prompt", denoHarnessPath], {
     stdio: ["pipe", "pipe", "inherit"],
   });
   const { stdin, stdout } = harness;

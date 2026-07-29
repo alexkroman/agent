@@ -278,7 +278,7 @@ describe.skipIf(!hasDeno)("Fake VM integration (no KVM) — host RPC", () => {
 
       const server = net.createServer((conn) => {
         server.close();
-        const harness = spawn("deno", ["run", "--allow-env", "--no-prompt", harnessPath], {
+        const harness = spawn("deno", ["run", "--no-prompt", harnessPath], {
           stdio: ["pipe", "pipe", "inherit"],
         });
         if (harness.stdin) conn.pipe(harness.stdin);

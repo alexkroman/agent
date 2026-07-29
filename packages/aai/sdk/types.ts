@@ -3,7 +3,7 @@
  * Core type definitions for the AAI agent SDK.
  */
 
-import { z } from "zod";
+import type { z } from "zod";
 import type { Kv } from "./kv.ts";
 import type {
   KvProvider,
@@ -476,21 +476,22 @@ export type AgentDef<S = Record<string, unknown>> = {
    * means the agent has no outbound channel.
    */
   send?: SendProvider;
+  /**
+   * Hostnames this agent's own tool code may `fetch` — required for any
+   * outbound request from a tool's `execute`, in both `aai dev` and
+   * production (see `host/tool-egress.ts`). Omitting it means no network
+   * access from tool code at all.
+   *
+   * Bare hostnames with at most one leading `*.` wildcard; a declared `send`
+   * channel's host is added automatically. Does not apply to the host-side
+   * network builtins (`fetch_json`, `visit_webpage`, `web_search`), which
+   * reach any public host unlisted.
+   */
+  allowedHosts?: string[];
 };
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────
 
-/** @internal Zod schema for {@link BuiltinTool}. Exported for reuse in internal schemas. */
-export const BuiltinToolSchema = z.enum([
-  "web_search",
-  "visit_webpage",
-  "fetch_json",
-  "run_code",
-  "think",
-  "remember",
-  "recall",
-  "calculate",
-]);
-
-/** @internal Zod schema for {@link ToolChoice}. Exported for reuse in internal schemas. */
-export const ToolChoiceSchema = z.enum(["auto", "required"]);
+// Defined in type-schemas.ts and re-exported here, so importers see one module
+// for a type and its schema. See that file for why they are split.
+export { BuiltinToolSchema, ToolChoiceSchema } from "./type-schemas.ts";

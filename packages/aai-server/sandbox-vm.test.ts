@@ -314,14 +314,16 @@ describe("devSandboxSpawnArgs", () => {
     expect(env.HOME).toBe(process.env.HOME);
   });
 
-  it("includes --allow-read scoped to harness path", () => {
+  it("grants no Deno permissions, matching the production OCI spec", () => {
+    // Dev used to pass --allow-env and --allow-read, which production denies
+    // (see oci-spec.test.ts). Agent code reading env or the filesystem then
+    // worked on a macOS dev box and failed once deployed.
     const { args } = _internals.devSandboxSpawnArgs("/tmp/harness.mjs");
-    expect(args).toContain("--allow-read=/tmp/harness.mjs");
+    expect(args.filter((a) => a.startsWith("--allow"))).toEqual([]);
   });
 
-  it("includes --allow-env and --no-prompt", () => {
+  it("includes --no-prompt", () => {
     const { args } = _internals.devSandboxSpawnArgs("/tmp/harness.mjs");
-    expect(args).toContain("--allow-env");
     expect(args).toContain("--no-prompt");
   });
 

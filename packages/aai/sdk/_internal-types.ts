@@ -2,6 +2,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
+import { AllowedHostsSchema } from "./allowed-hosts.ts";
 import { ProviderDescriptorSchema } from "./manifest.ts";
 import {
   assertPipelineTuning,
@@ -61,6 +62,7 @@ export const AgentConfigSchema = z.object({
   kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
   send: ProviderDescriptorSchema.optional(),
+  allowedHosts: AllowedHostsSchema.optional(),
 });
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
@@ -91,6 +93,7 @@ interface AgentConfigSource {
   kv?: KvProvider | undefined;
   vector?: VectorProvider | undefined;
   send?: SendProvider | undefined;
+  allowedHosts?: readonly string[] | undefined;
 }
 
 /** Copy the defined pipeline voice-tuning fields into a config-shaped partial. */
@@ -140,6 +143,11 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   if (src.kv !== undefined) config.kv = src.kv;
   if (src.vector !== undefined) config.vector = src.vector;
   if (src.send !== undefined) config.send = src.send;
+  // Copied verbatim, NOT unioned with the send channel's host. The platform
+  // derives that itself (`resolveAgentAllowedHosts`) from the validated
+  // descriptor, so deriving it here too would be a second place to keep in
+  // sync — and the server's is the one a bundle cannot bypass.
+  if (src.allowedHosts !== undefined) config.allowedHosts = [...src.allowedHosts];
   return config;
 }
 

@@ -195,7 +195,13 @@ function devSandboxSpawnArgs(harnessPath: string): {
   env: Record<string, string | undefined>;
 } {
   return {
-    args: ["run", "--allow-env", `--allow-read=${harnessPath}`, "--no-prompt", harnessPath],
+    // Permissions match production's OCI spec exactly — `--no-prompt` and
+    // nothing else. Dev used to add `--allow-env` and `--allow-read`, which
+    // the harness never needs (the agent bundle arrives over RPC and loads
+    // from a `blob:` URL; sibling harness modules are static imports, which
+    // need no permission). Granting them meant an agent calling `Deno.env` or
+    // reading a file worked on a macOS dev box and failed once deployed.
+    args: ["run", "--no-prompt", harnessPath],
     env: {
       PATH: process.env.PATH,
       HOME: process.env.HOME,

@@ -8,6 +8,7 @@
 
 import * as http from "node:http";
 import type { AddressInfo } from "node:net";
+import { TOOL_FETCH_MAX_CONCURRENT } from "@alexkroman1/aai/runtime";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
 import {
   createFetchHandler,
@@ -175,19 +176,17 @@ describe("createFetchHandler: response size cap", () => {
 });
 
 describe("createFetchHandler: concurrency limit", () => {
-  test("enforces maxConcurrent limit", async () => {
-    const handler = createFetchHandler({
-      allowedHosts: ["127.0.0.1"],
-      skipSsrf: true,
-      maxConcurrent: 2,
-    });
+  test("enforces the shared TOOL_FETCH_MAX_CONCURRENT limit", async () => {
+    // No per-handler override any more: the cap is the one self-hosted mode
+    // also enforces, so this asserts against the shared constant and follows
+    // it automatically if the policy changes.
+    const handler = createFetchHandler({ allowedHosts: ["127.0.0.1"], skipSsrf: true });
 
-    // Fire 3 concurrent requests — one should fail immediately with an error
-    const results = await Promise.all([
-      collectMessages(handler, makeReq(`${baseUrl}/slow`), "c1"),
-      collectMessages(handler, makeReq(`${baseUrl}/slow`), "c2"),
-      collectMessages(handler, makeReq(`${baseUrl}/slow`), "c3"),
-    ]);
+    const results = await Promise.all(
+      Array.from({ length: TOOL_FETCH_MAX_CONCURRENT + 1 }, (_, i) =>
+        collectMessages(handler, makeReq(`${baseUrl}/slow`), `c${i}`),
+      ),
+    );
 
     const errors = results.filter((msgs) => msgs.some((m) => m.type === "fetch/response-error"));
     expect(errors.length).toBeGreaterThanOrEqual(1);

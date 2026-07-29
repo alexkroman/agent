@@ -155,6 +155,11 @@ export default agent({
 - Tool execute functions run sandboxed (no fs/subprocess; fetch is
   SSRF-proxied) and MUST return a value. ctx gives env, kv, messages,
   sessionId, send().
+- A tool that calls an external API with fetch MUST list its hostname in
+  allowedHosts (e.g. allowedHosts: ["api.example.com", "*.example.org"]) or
+  the request is rejected once published. Bare hostnames only — no
+  protocol, path, port, IP literal, or bare "*". The host-side builtins
+  (fetch_json, visit_webpage, web_search) need no entry.
 - Built-ins on by default: think, remember, recall, calculate. Opt-in via
   builtinTools: web_search, visit_webpage, fetch_json, run_code.
 - Pipeline mode: set all three of stt/llm/tts (factories from
