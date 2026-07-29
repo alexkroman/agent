@@ -56,7 +56,10 @@ function findDeno(): string | null {
  */
 export function waitForChildExit(child: ChildProcess, timeoutMs: number): Promise<boolean> {
   return new Promise<boolean>((resolve) => {
-    if (child.exitCode !== null) {
+    // A signal-killed child has exitCode null and signalCode set (its `exit`
+    // event already fired), so checking exitCode alone would burn the full
+    // timeout — which cleanup awaits under the slug lock.
+    if (child.exitCode !== null || child.signalCode !== null) {
       resolve(true);
       return;
     }

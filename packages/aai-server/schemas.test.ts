@@ -10,6 +10,8 @@ import {
   AgentMetadataSchema,
   DeployBodySchema,
   EnvSchema,
+  RESERVED_SLUGS,
+  SafeKvKeySchema,
   SafePathSchema,
   SecretUpdatesSchema,
 } from "./schemas.ts";
@@ -140,6 +142,27 @@ describe("DeployBodySchema", () => {
     expect(DeployBodySchema.safeParse([]).success).toBe(false);
   });
 
+  test.each([["studio"], ["studio-assets"], ["health"], ["metrics"], ["deploy"]])(
+    "rejects reserved slug %s",
+    (slug) => {
+      const result = DeployBodySchema.safeParse({
+        slug,
+        worker: "code",
+        clientFiles: {},
+        agentConfig: TEST_AGENT_CONFIG,
+      });
+      expect(result.success).toBe(false);
+    },
+  );
+
+  test("RESERVED_SLUGS covers every top-level platform route", () => {
+    // /health and /metrics are top-level routes (orchestrator.ts) that an
+    // agent slug would shadow; /deploy is the top-level deploy route.
+    for (const slug of ["studio", "studio-assets", "health", "metrics", "deploy"]) {
+      expect(RESERVED_SLUGS.has(slug)).toBe(true);
+    }
+  });
+
   test("rejects too many client files", () => {
     const tooMany: Record<string, string> = {};
     for (let i = 0; i < 101; i++) tooMany[`file${i}.js`] = "content";
@@ -215,6 +238,46 @@ describe("SafePathSchema", () => {
     if (result.success) {
       expect(result.data).toBe("file.txt");
     }
+  });
+
+  // Adversarial inputs. The schema normalizes with posix.normalize and then
+  // rejects anything that escapes the root; it does NOT URL-decode (that
+  // happens at the routing layer before the schema ever sees the string),
+  // and it has no length cap (client file counts/sizes are capped elsewhere).
+  test.each([
+    ["plain parent traversal", "../a", false],
+    ["traversal hidden behind a segment", "a/../../b", false],
+    ["backslash traversal", "..\\a", false],
+    ["backslash traversal mid-path", "a\\..\\b", false],
+    ["absolute path", "/etc/passwd", false],
+    ["empty string", "", false],
+    // Accepted: normalizes to ".." only if it escapes; these do not.
+    ["percent-encoded traversal stays a literal filename", "%2e%2e%2f", true],
+    ["space in filename", "a b", true],
+    ["bare dot normalizes to '.'", ".", true],
+    ["dot-slash prefix", "./a", true],
+    ["segment ending in parent that stays inside root", "a/..", true],
+    ["300-char segment (no length cap at this layer)", "x".repeat(300), true],
+  ] as const)("adversarial: %s → %s", (_label, input, expected) => {
+    expect(SafePathSchema.safeParse(input).success).toBe(expected);
+  });
+});
+
+// ── SafeKvKeySchema ────────────────────────────────────────────────────
+
+describe("SafeKvKeySchema", () => {
+  test.each([
+    ["plain key", "user-123", true],
+    ["redis-style hierarchical key", "incident:INC-0001", true],
+    ["dots that are not traversal", "v1.2.3", true],
+    ["empty string", "", false],
+    ["slash (prefix separator)", "a/b", false],
+    ["backslash", "a\\b", false],
+    ["parent traversal", "..", false],
+    ["embedded parent traversal", "a..b", false],
+    ["null byte", "a\0b", false],
+  ] as const)("%s → %s", (_label, input, expected) => {
+    expect(SafeKvKeySchema.safeParse(input).success).toBe(expected);
   });
 });
 

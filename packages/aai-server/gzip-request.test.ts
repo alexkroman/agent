@@ -1,7 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { gzipSync } from "node:zlib";
+import { Hono } from "hono";
 import { describe, expect, test } from "vitest";
-import { MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
+import type { HonoEnv } from "./context.ts";
+import { createGzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authHeaders, createTestOrchestrator, deployBody } from "./test-utils.ts";
 
 function gzipHeaders(key = "key1"): Record<string, string> {
@@ -85,6 +87,21 @@ describe("gzip deploy request decompression", () => {
     expect(res.status).toBe(400);
   });
 
+  test("deploy body over the wire-size cap is rejected with 413 (bodyLimit)", async () => {
+    const { fetch } = await createTestOrchestrator();
+
+    // Uncompressed JSON larger than MAX_INFLATED_BODY_BYTES: the deploy
+    // route's bodyLimit middleware must reject it (via Content-Length)
+    // before anything buffers or parses it.
+    const res = await fetch("/my-agent/deploy", {
+      method: "POST",
+      headers: authHeaders(),
+      body: `{"pad":"${"x".repeat(MAX_INFLATED_BODY_BYTES + 1)}"}`,
+    });
+
+    expect(res.status).toBe(413);
+  });
+
   test("unsupported Content-Encoding is rejected with 415", async () => {
     const { fetch } = await createTestOrchestrator();
 
@@ -95,5 +112,76 @@ describe("gzip deploy request decompression", () => {
     });
 
     expect(res.status).toBe(415);
+  });
+});
+
+// ── Compressed-size cap (unit, injectable cap) ─────────────────────────
+
+describe("compressed body size cap", () => {
+  const CAP = 1024;
+
+  function makeApp(): Hono<HonoEnv> {
+    const app = new Hono<HonoEnv>();
+    app.post("/deploy", createGzipRequestMw(CAP), async (c) => c.json(await c.req.json()));
+    return app;
+  }
+
+  test("oversized declared Content-Length is rejected with 413", async () => {
+    const app = makeApp();
+    // An empty stream body: without the Content-Length fast path this would
+    // buffer 0 bytes and fail as invalid gzip (400), so a 413 proves the
+    // declared size was rejected up front.
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.close();
+      },
+    });
+    const req = new Request("http://localhost/deploy", {
+      method: "POST",
+      headers: { "Content-Encoding": "gzip", "Content-Length": String(CAP + 1) },
+      body,
+      duplex: "half",
+    });
+    const res = await app.request(req);
+    expect(res.status).toBe(413);
+  });
+
+  test("oversized actual body (no Content-Length) is rejected with 413 while buffering", async () => {
+    const app = makeApp();
+    // Stream more than the cap without a Content-Length header — the
+    // counting reader must bail mid-stream, not buffer it all.
+    const chunk = new Uint8Array(512);
+    let pushed = 0;
+    const body = new ReadableStream<Uint8Array>({
+      pull(controller) {
+        if (pushed >= CAP * 4) {
+          controller.close();
+          return;
+        }
+        pushed += chunk.byteLength;
+        controller.enqueue(chunk);
+      },
+    });
+    const req = new Request("http://localhost/deploy", {
+      method: "POST",
+      headers: { "Content-Encoding": "gzip" },
+      body,
+      duplex: "half",
+    });
+    const res = await app.request(req);
+    expect(res.status).toBe(413);
+    // The reader was cancelled at the cap; the source never drained fully.
+    expect(pushed).toBeLessThan(CAP * 4);
+  });
+
+  test("a compressed body under the cap still round-trips", async () => {
+    const app = makeApp();
+    const res = await app.request("/deploy", {
+      method: "POST",
+      headers: { "Content-Encoding": "gzip", "Content-Type": "application/json" },
+      body: new Uint8Array(gzipSync(JSON.stringify({ ok: true }))),
+    });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ ok: true });
   });
 });

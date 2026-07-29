@@ -20,14 +20,43 @@ export const SafePathSchema = z
   .refine((p) => !p.startsWith("/"), "Path must be relative")
   .refine((p) => !p.startsWith(".."), "Path must not traverse above root");
 
+/**
+ * Safe KV key: non-empty, no path traversal. The agent prefix
+ * (`agents/${slug}/kv`) uses `/` as the namespace separator, so `/`, `\`,
+ * `..`, and null bytes are rejected. `:` is allowed — a common Redis-style
+ * delimiter for hierarchical keys (e.g. `incident:INC-0001`).
+ *
+ * This is the single key grammar for BOTH boundaries that accept KV keys:
+ * the owner HTTP routes (`GET`/`POST /:slug/kv`) and the guest→host RPC
+ * (sandbox-guest-rpc.ts, which currently restates the same rules — keep the
+ * two in lockstep so a key written on one side is always reachable from the
+ * other).
+ */
+export const SafeKvKeySchema = z
+  .string()
+  .min(1)
+  .refine((k) => !k.includes("\0"), "Key must not contain null bytes")
+  .refine((k) => !k.includes("/"), "Key must not contain /")
+  .refine((k) => !k.includes("\\"), "Key must not contain \\")
+  .refine((k) => !k.includes(".."), "Key must not contain ..");
+
 export const VALID_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
 
 /**
  * Slugs that collide with top-level platform routes and can never be claimed
  * by an agent. `/studio` is the browser coding-agent UI's API namespace;
- * `/studio-assets` serves its client build.
+ * `/studio-assets` serves its client build; `/health` and `/metrics` are the
+ * platform health check and Prometheus endpoint; `POST /deploy` is the
+ * top-level deploy route (an agent named `deploy` could never be deployed to
+ * by slug, and its page would shadow the redirect).
  */
-export const RESERVED_SLUGS: ReadonlySet<string> = new Set(["studio", "studio-assets"]);
+export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
+  "studio",
+  "studio-assets",
+  "health",
+  "metrics",
+  "deploy",
+]);
 
 export const DeployBodySchema = z.object({
   slug: z
