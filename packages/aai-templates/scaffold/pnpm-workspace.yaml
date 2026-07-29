@@ -1,9 +1,13 @@
-# No scaffold dependency runs a build script today (esbuild used to, via
-# @alexkroman1/aai-cli's dev bundler, which now bundles with Rolldown —
-# prebuilt binaries, no postinstall). The empty approval lists keep installs
-# fail-closed if a future transitive dep adds one: pnpm 10 reads
-# `onlyBuiltDependencies`; pnpm 11 renamed it to `allowBuilds` and ignores
-# the old key, so both are declared. This file also marks the project as its
-# own pnpm workspace root.
-onlyBuiltDependencies: []
-allowBuilds: {}
+# esbuild's postinstall must stay approved or pnpm fails the install
+# (unapproved build scripts). @alexkroman1/aai-cli no longer depends on it
+# directly (its dev bundler runs on Rolldown, prebuilt binaries, no
+# postinstall), but esbuild is an optional peer of vite: any project whose
+# lockfile ever resolved it (an upgrade from an older CLI, or a reinstall
+# over an existing lockfile) keeps it installed, and pnpm then blocks its
+# build script without this entry. pnpm 10 reads `onlyBuiltDependencies`;
+# pnpm 11 renamed it to `allowBuilds` and ignores the old key, so both are
+# declared. This file also marks the project as its own pnpm workspace root.
+onlyBuiltDependencies:
+  - esbuild
+allowBuilds:
+  esbuild: true
