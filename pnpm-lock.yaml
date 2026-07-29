@@ -280,6 +280,9 @@ importers:
       ai:
         specifier: ^7.0.41
         version: 7.0.41(zod@4.4.3)
+      aws4fetch:
+        specifier: ^1.0.20
+        version: 1.0.20
       diff:
         specifier: ^9.0.0
         version: 9.0.0
@@ -8316,8 +8319,7 @@ snapshots:
 
   aws4@1.13.2: {}
 
-  aws4fetch@1.0.20:
-    optional: true
+  aws4fetch@1.0.20: {}
 
   b4a@1.8.1: {}
 
