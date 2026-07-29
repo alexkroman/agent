@@ -121,6 +121,14 @@ type TemplateCase = {
   shape: string;
   /** One-shot user prompt, mirroring the matching studio starter prompt. */
   prompt: string;
+  /**
+   * Send-channel kind the generated config must declare (e.g. `"slack"`).
+   * Checked deterministically by `SandboxLoadJudge` rather than left to the
+   * parity judge: a dropped `send:` is a *silent* failure — the agent still
+   * builds, loads, and talks, it just never registers `send_message` — so it
+   * is worth asserting against the real config, not a rubric reading.
+   */
+  expectedSend?: string;
 };
 
 /**
@@ -209,6 +217,31 @@ const TEMPLATE_CASES: TemplateCase[] = [
       "chat. An LLM transform turns each dictation independently into clean " +
       "notes (output only the notes), and JavaScript tools compute word counts " +
       "and extract action items." +
+      ONE_SHOT,
+  },
+  {
+    template: "slack-translator",
+    shape: "text-only pipeline plus an outbound send channel (send: slack())",
+    expectedSend: "slack",
+    // The user-level ask is "record my audio, translate to french, and send to
+    // slack". Expanded here in the style of the other cases for the two things
+    // the terse form leaves ambiguous and the parity rubric grades strictly:
+    // the session mode (nothing in "record my audio" implies `tts: none()`)
+    // and provider identity (unnamed providers get graded against the
+    // reference's, which is why the pipeline-simple case above names its own).
+    prompt:
+      "Record my audio, translate it to French, and send it to Slack. Make it " +
+      "text-only — the reply belongs in Slack, not in the speaker: " +
+      'stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt", ' +
+      'llm: the AssemblyAI LLM Gateway with model "gemini-2.5-flash-lite" from ' +
+      '"@alexkroman1/aai/llm" (both factories are called assemblyAI, so alias ' +
+      'one on import), and tts: none() from "@alexkroman1/aai/tts". Declare ' +
+      'send: slack() from "@alexkroman1/aai/send" so the agent gets the ' +
+      "send_message tool, and add a prepare_french_translation tool that " +
+      "records the original transcript and the final French text before it " +
+      "sends. It should treat every recording as text to translate rather than " +
+      "a question, send only the French translation to Slack, then confirm in " +
+      "one short English sentence." +
       ONE_SHOT,
   },
 ];
@@ -372,39 +405,50 @@ const WorkerBuildJudge = createJudge<string, StudioEvalOutput>(
 /**
  * Score 1 when the built worker loads in a real studio sandbox and reports a
  * valid agent config — the "actually works" gate. Optionally requires the
- * config to expose specific tool names.
+ * config to expose specific tool names, or to declare a send channel.
  */
-const SandboxLoadJudge = createJudge<string, StudioEvalOutput, { expectedTools?: string[] }>(
-  "SandboxLoadJudge",
-  async ({ output, expectedTools }) => {
-    const worker = await buildWorker(output.files);
-    const sandbox = await createStudioSandbox();
-    try {
-      const loaded = await sandbox.loadBundle(worker);
-      const parsed = IsolateConfigSchema.safeParse(loaded.config);
-      if (!parsed.success) {
-        const issues = parsed.error.issues.map((i) => i.message).join("; ");
-        return { score: 0, metadata: { rationale: `invalid agent config: ${issues}` } };
-      }
-      const tools = parsed.data.toolSchemas.map((schema) => schema.name);
-      const missing = (expectedTools ?? []).filter((name) => !tools.includes(name));
-      if (missing.length > 0) {
-        return {
-          score: 0,
-          metadata: { rationale: `missing expected tools: ${missing.join(", ")}`, tools },
-        };
-      }
-      return {
-        score: 1,
-        metadata: { rationale: `loaded agent "${parsed.data.name}"`, tools },
-      };
-    } catch (err) {
-      return { score: 0, metadata: { rationale: `bundle failed to load: ${String(err)}` } };
-    } finally {
-      await sandbox.dispose();
+const SandboxLoadJudge = createJudge<
+  string,
+  StudioEvalOutput,
+  { expectedTools?: string[]; expectedSend?: string }
+>("SandboxLoadJudge", async ({ output, expectedTools, expectedSend }) => {
+  const worker = await buildWorker(output.files);
+  const sandbox = await createStudioSandbox();
+  try {
+    const loaded = await sandbox.loadBundle(worker);
+    const parsed = IsolateConfigSchema.safeParse(loaded.config);
+    if (!parsed.success) {
+      const issues = parsed.error.issues.map((i) => i.message).join("; ");
+      return { score: 0, metadata: { rationale: `invalid agent config: ${issues}` } };
     }
-  },
-);
+    const tools = parsed.data.toolSchemas.map((schema) => schema.name);
+    const missing = (expectedTools ?? []).filter((name) => !tools.includes(name));
+    if (missing.length > 0) {
+      return {
+        score: 0,
+        metadata: { rationale: `missing expected tools: ${missing.join(", ")}`, tools },
+      };
+    }
+    // A send channel is a config field, not a tool name, so unlike
+    // `expectedTools` there is no "the generated name may differ" caveat —
+    // and its absence is silent, since the agent still builds and runs.
+    if (expectedSend !== undefined && parsed.data.send?.kind !== expectedSend) {
+      const got = parsed.data.send === undefined ? "none" : `"${parsed.data.send.kind}"`;
+      return {
+        score: 0,
+        metadata: { rationale: `expected send channel "${expectedSend}", got ${got}`, tools },
+      };
+    }
+    return {
+      score: 1,
+      metadata: { rationale: `loaded agent "${parsed.data.name}"`, tools },
+    };
+  } catch (err) {
+    return { score: 0, metadata: { rationale: `bundle failed to load: ${String(err)}` } };
+  } finally {
+    await sandbox.dispose();
+  }
+});
 
 /**
  * The parity rubric. Ids are stable so a failure means the same thing across
@@ -422,10 +466,14 @@ const RUBRIC: Record<(typeof RUBRIC_IDS)[number], string> = {
   capabilities:
     "Every capability the reference offers is reachable in the generated agent — " +
     "as a custom tool or a `builtinTools` entry. Judge by function, not by name: " +
-    "`add_pizza` and `add_item` are the same capability. This criterion is about " +
-    "coverage ONLY: extra tools, and extra builtins (including the framework " +
-    "defaults think/remember/recall/calculate), are never a failure. Fail only " +
-    "when a capability the reference has cannot be reached at all.",
+    "`add_pizza` and `add_item` are the same capability. A capability the " +
+    "reference gets by *declaring* a channel rather than writing a tool counts " +
+    "too — `send: slack()` is what registers the framework's `send_message` " +
+    "tool, so an agent expected to send messages must declare it. This " +
+    "criterion is about coverage ONLY: extra tools, and extra builtins " +
+    "(including the framework defaults think/remember/recall/calculate), are " +
+    "never a failure. Fail only when a capability the reference has cannot be " +
+    "reached at all.",
   state:
     "If the reference persists state in `ctx.kv`, the generated agent does too, with " +
     "the same scoping — per-session keys built from `ctx.sessionId` where the " +
@@ -563,15 +611,22 @@ describeEval(
 
     // The template cases are all from-scratch rewrites of the starter
     // workspace, graded against the hand-written template of the same shape.
-    for (const { template, prompt } of TEMPLATE_CASES) {
+    for (const { template, prompt, expectedSend } of TEMPLATE_CASES) {
       it(`builds the ${template} shape`, async ({ run }) => {
         const result = await run(prompt);
         expect(Object.keys(result.output.files)).toContain("agent.ts");
         if (canSandbox) {
           // No `expectedTools` here: generated tool names legitimately differ
           // from the template's, and capability coverage is the parity judge's
-          // job. This is purely the "loads and self-describes" gate.
-          await expect(result).toSatisfyJudge(SandboxLoadJudge, { threshold: 1 });
+          // job. This is the "loads and self-describes" gate, plus the send
+          // channel where a case declares one.
+          await expect(result).toSatisfyJudge(SandboxLoadJudge, {
+            threshold: 1,
+            // Spread rather than `expectedSend` directly: under
+            // exactOptionalPropertyTypes an explicit `undefined` is not the
+            // same as an absent optional property.
+            ...(expectedSend === undefined ? {} : { expectedSend }),
+          });
         }
         // 0.8 of a 5-criterion rubric: at most one criterion may miss. Runs
         // mostly score 1.00; the slack absorbs residual tension between a
