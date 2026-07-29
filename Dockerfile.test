@@ -2,11 +2,15 @@
 #
 # Fast iteration: no kernel build, no guest images. Just the full
 # project with all deps installed, ready to run any test command.
+# Includes gVisor (runsc), so sandbox tests exercise the production
+# isolation path — run the container with --privileged (or
+# --security-opt seccomp=unconfined) for that to work.
 #
 # Usage:
 #   ./scripts/docker-test.sh                  # run all tests
 #   ./scripts/docker-test.sh pnpm check:local # run check:local
 #   ./scripts/docker-test.sh pnpm vitest run packages/aai-server/sandbox-vm.test.ts
+#   ./packages/aai-server/guest/docker-test.sh  # gVisor integration tests
 
 FROM node:24-slim
 
@@ -19,6 +23,15 @@ RUN apt-get update \
 # Install Deno — needed for sandbox tests
 RUN curl -fsSL https://deno.land/install.sh | DENO_INSTALL=/usr/local sh
 
+# Install gVisor (runsc) — needed for gVisor sandbox tests. x86_64 only;
+# on other arches the tests fall back to fake-vm / are skipped.
+RUN if [ "$(uname -m)" = "x86_64" ]; then \
+      curl -fsSL "https://storage.googleapis.com/gvisor/releases/release/latest/x86_64/runsc" \
+        -o /usr/local/bin/runsc \
+      && chmod +x /usr/local/bin/runsc \
+      && runsc --version; \
+    fi
+
 RUN corepack enable && corepack prepare pnpm@10.29.3 --activate
 
 # Layer 1: workspace config + lockfile (cached unless deps change)
@@ -27,6 +40,7 @@ COPY packages/aai/package.json packages/aai/
 COPY packages/aai-ui/package.json packages/aai-ui/
 COPY packages/aai-cli/package.json packages/aai-cli/
 COPY packages/aai-server/package.json packages/aai-server/
+COPY packages/aai-studio-client/package.json packages/aai-studio-client/
 COPY packages/aai-templates/package.json packages/aai-templates/
 
 RUN pnpm install --frozen-lockfile --ignore-scripts --prod=false

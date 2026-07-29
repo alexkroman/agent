@@ -908,8 +908,11 @@ bumped automatically.
 ### gVisor notes
 
 - gVisor integration tests run via: `./packages/aai-server/guest/docker-test.sh`
+- That script uses the repo-wide test image (`Dockerfile.test`, which ships
+  runsc) — the same image CI's `docker-test` job builds to run unit,
+  integration, and gVisor tests in a container. One image, no drift.
 - No KVM required — uses systrap platform (works on Fly.io, any Linux)
-- Docker needs `--security-opt seccomp=unconfined` for gVisor
+- Docker needs `--security-opt seccomp=unconfined` (or `--privileged`) for gVisor
 - On macOS (dev), gVisor is unavailable; sandbox falls back to a plain child
   process with no isolation. This is expected — the security boundary only
   applies in Linux production deployments.
