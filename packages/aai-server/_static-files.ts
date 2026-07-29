@@ -10,17 +10,10 @@
 
 import { readFile } from "node:fs/promises";
 import path from "node:path";
+import { isPathInside } from "@alexkroman1/aai/runtime";
 
-/**
- * Separator-safe containment: `target` is `dir` itself or strictly inside it.
- *
- * A bare `target.startsWith(dir)` also admits sibling directories sharing the
- * prefix (`<dir>-evil`) — the classic path-containment bug. Same check as
- * studio/studio-workspace-dir.ts.
- */
-export function isPathInside(dir: string, target: string): boolean {
-  return target === dir || target.startsWith(dir + path.sep);
-}
+// Consumed by transport-websocket.ts and studio/* alongside the reader below.
+export { isPathInside } from "@alexkroman1/aai/runtime";
 
 /**
  * Content-cached reader over one directory.

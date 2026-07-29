@@ -12,7 +12,13 @@
  */
 
 import type { BuiltinTool, Kv, ToolChoice } from "@alexkroman1/aai";
-import { DEFAULT_MAX_STEPS, errorMessage, toolError } from "@alexkroman1/aai";
+import {
+  DEFAULT_MAX_STEPS,
+  errorMessage,
+  MAX_CLIENT_EVENT_NAME_LENGTH,
+  MAX_CLIENT_EVENT_PAYLOAD_BYTES,
+  toolError,
+} from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import {
   type AgentRuntime,
@@ -33,12 +39,7 @@ import {
   isMessagesDesync,
   type MessagesDelta,
 } from "./_sandbox-messages.ts";
-import {
-  agentKvPrefix,
-  MAX_CLIENT_EVENT_NAME_LENGTH,
-  MAX_CLIENT_EVENT_PAYLOAD_BYTES,
-  resolveHarnessPath,
-} from "./constants.ts";
+import { agentKvPrefix, resolveHarnessPath } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { attachSandbox, setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";

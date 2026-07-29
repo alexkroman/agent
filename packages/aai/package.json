@@ -8,6 +8,11 @@
       "types": "./dist/index.d.ts",
       "import": "./dist/index.js"
     },
+    "./utils": {
+      "@dev/source": "./sdk/utils.ts",
+      "types": "./dist/sdk/utils.d.ts",
+      "import": "./dist/sdk/utils.js"
+    },
     "./protocol": {
       "@dev/source": "./sdk/protocol.ts",
       "types": "./dist/sdk/protocol.d.ts",

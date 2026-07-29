@@ -2,6 +2,7 @@
 // Zod schemas -- validate untrusted input at HTTP/WebSocket boundaries.
 
 import { posix } from "node:path";
+import { RESERVED_SLUGS, VALID_SLUG_RE } from "@alexkroman1/aai";
 import { z } from "zod";
 import { MAX_WORKER_SIZE } from "./constants.ts";
 import { IsolateConfigSchema } from "./rpc-schemas.ts";
@@ -40,23 +41,9 @@ export const SafeKvKeySchema = z
   .refine((k) => !k.includes("\\"), "Key must not contain \\")
   .refine((k) => !k.includes(".."), "Key must not contain ..");
 
-export const VALID_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
-
-/**
- * Slugs that collide with top-level platform routes and can never be claimed
- * by an agent. `/studio` is the browser coding-agent UI's API namespace;
- * `/studio-assets` serves its client build; `/health` and `/metrics` are the
- * platform health check and Prometheus endpoint; `POST /deploy` is the
- * top-level deploy route (an agent named `deploy` could never be deployed to
- * by slug, and its page would shadow the redirect).
- */
-export const RESERVED_SLUGS: ReadonlySet<string> = new Set([
-  "studio",
-  "studio-assets",
-  "health",
-  "metrics",
-  "deploy",
-]);
+// The slug contract (shape + reserved names) lives in the shared SDK so the
+// CLI validates against the exact rules this server enforces.
+export { RESERVED_SLUGS, VALID_SLUG_RE } from "@alexkroman1/aai";
 
 export const DeployBodySchema = z.object({
   slug: z

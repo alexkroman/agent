@@ -1,28 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fs from "node:fs/promises";
 import path from "node:path";
+// The `/utils` subpath is deliberately zod-free, so re-exporting from it
+// keeps `aai --help` from paying zod's startup cost (the root barrel would).
+import { errorMessage } from "@alexkroman1/aai/utils";
+
+export { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
 
 /** Resolve the working directory from INIT_CWD or process.cwd(). */
 export function resolveCwd(): string {
   return process.env.INIT_CWD || process.cwd();
-}
-
-/**
- * Extract a message from an unknown error. Local copy of `errorMessage` from
- * `@alexkroman1/aai` — importing the root barrel pulls zod into every CLI
- * invocation (including `aai --help`), so the one-liner lives here instead.
- */
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
-
-/**
- * Extract a stack (falling back to the message) from an unknown error. Local
- * copy of `errorDetail` from `@alexkroman1/aai` for the same reason as
- * {@link errorMessage} above.
- */
-export function errorDetail(err: unknown): string {
-  return err instanceof Error ? (err.stack ?? err.message) : String(err);
 }
 
 /** The `code` of a Node errno-style error (`"ENOENT"`, `"EPIPE"`, …), or undefined. */

@@ -79,6 +79,17 @@ export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
+/**
+ * Separator-safe containment: `target` is `dir` itself or strictly inside it.
+ *
+ * A bare `target.startsWith(dir)` also admits sibling directories sharing the
+ * prefix (`<dir>-evil`) — the classic path-containment bug. Both paths must
+ * already be resolved; this is a pure string check.
+ */
+export function isPathInside(dir: string, target: string): boolean {
+  return target === dir || target.startsWith(dir + path.sep);
+}
+
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
   res.writeHead(status, JSON_HEADERS);
   res.end(JSON.stringify(body));
@@ -93,10 +104,10 @@ async function serveStatic(
   const url = req.url?.split("?")[0] ?? "/";
   const filePath = path.join(dir, url === "/" ? "index.html" : url);
 
-  // Use resolved dir + separator to avoid prefix collisions
+  // Resolve before the containment check to avoid prefix collisions
   // (e.g. dir="/app/static" matching "/app/static-secrets/…").
   const resolved = path.resolve(dir);
-  if (!filePath.startsWith(resolved + path.sep) && filePath !== resolved) return false;
+  if (!isPathInside(resolved, filePath)) return false;
 
   // Only pre-response failures (ENOENT, EACCES, a directory) return false —
   // the caller then writes the 404. Once headers go out below, every failure

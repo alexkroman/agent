@@ -21,6 +21,11 @@ describe("export surface stability", { timeout: IMPORT_TIMEOUT_MS }, () => {
     expect(Object.keys(mod).sort()).toMatchSnapshot();
   });
 
+  test("@alexkroman1/aai/utils export", async () => {
+    const mod = await import("@alexkroman1/aai/utils");
+    expect(Object.keys(mod).sort()).toMatchSnapshot();
+  });
+
   test("@alexkroman1/aai/protocol export", async () => {
     const mod = await import("@alexkroman1/aai/protocol");
     expect(Object.keys(mod).sort()).toMatchSnapshot();

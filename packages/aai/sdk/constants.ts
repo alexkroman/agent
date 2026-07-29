@@ -95,6 +95,15 @@ export const MAX_TOOL_RESULT_CHARS = 4000;
 export const MAX_TRANSCRIPT_CHARS = 100_000;
 /** Wire cap on an error event's message. */
 export const MAX_ERROR_MESSAGE_CHARS = 10_000;
+/** Wire cap on a `custom_event` event name (guest→client `client/send` relay). */
+export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
+/**
+ * Wire cap on a `custom_event`'s serialized payload (64 KB) — prevents
+ * memory abuse via the WebSocket relay. The payload is arbitrary JSON, so
+ * this is enforced imperatively (serialize + measure) by the relay rather
+ * than in the zod schema.
+ */
+export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65_536;
 /** Cap on raw wire data echoed into warn/info logs. */
 export const LOG_PREVIEW_CHARS = 200;
 export const MAX_PAGE_CHARS = 10_000;
@@ -239,6 +248,21 @@ export const MAX_SYNC_AUDIO_BYTES = 12 * 1024 * 1024;
  * halves of the upload path cannot drift.
  */
 export const FILE_UPLOAD_CHUNK_BYTES = 32 * 1024;
+
+/** Microphone buffer duration in seconds before the client sends audio to the server. */
+export const MIC_BUFFER_SECONDS = 0.1;
+
+/**
+ * Client-side backpressure threshold for outbound mic audio. When the
+ * WebSocket's `bufferedAmount` exceeds this many bytes (~2s of 16 kHz PCM16),
+ * mic frames are dropped instead of queued — for live voice, stale audio
+ * flushed into STT on recovery is worse than a gap. The client-side mirror
+ * of the host-side buffering budgets below.
+ */
+export const MIC_SEND_MAX_BUFFERED_BYTES = 64 * 1024;
+
+/** Client poll interval while waiting out socket backpressure during a file send. */
+export const FILE_SEND_BACKOFF_MS = 50;
 
 /**
  * Highest client-declarable audio sample rate (Hz). Bounds the

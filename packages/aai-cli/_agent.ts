@@ -2,6 +2,7 @@
 import { existsSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { VALID_SLUG_RE } from "@alexkroman1/aai/utils";
 import {
   approveServer,
   ensureApiKey,
@@ -116,22 +117,16 @@ export async function resolveDeployTarget(cwd: string, explicitServer?: string) 
   return { config, serverUrl, apiKey };
 }
 
-/**
- * Slug shape accepted by the platform (kept in sync with `VALID_SLUG_RE` in
- * aai-server's schemas.ts — the server package is private, so the pattern is
- * duplicated here). Enforced before a slug is ever interpolated into a URL
- * path: `.aai/project.json` is repo-controlled, so a hostile
- * `"slug": "x/../admin"` must not steer a credentialed request to an
- * arbitrary path on an approved origin.
- */
-const VALID_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
-
 /** Like resolveDeployTarget, but requires an existing deployment (project config). */
 export async function getServerInfo(cwd: string, explicitServer?: string) {
   const { config, serverUrl, apiKey } = await resolveDeployTarget(cwd, explicitServer);
   if (!config) {
     throw new Error("No .aai/project.json found — run `aai deploy` first");
   }
+  // Enforced before a slug is ever interpolated into a URL path:
+  // `.aai/project.json` is repo-controlled, so a hostile
+  // `"slug": "x/../admin"` must not steer a credentialed request to an
+  // arbitrary path on an approved origin.
   if (!VALID_SLUG_RE.test(config.slug)) {
     throw new Error(
       `Invalid slug in .aai/project.json: ${JSON.stringify(config.slug)}\n` +

@@ -143,6 +143,7 @@ script enforces this at CI time.
 Subpath exports consumed by sibling packages and user agents:
 
 - `.` — `agent()`, `tool()` helpers, `Kv`, types, utils, constants
+- `./utils` — zod-free utilities + platform slug contract (fast CLI startup path)
 - `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
 - `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
 - `./manifest` — `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`
@@ -756,6 +757,7 @@ of subpath exports in `aai/package.json`:
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
 | `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, KV, utils, constants, `agent()`/`tool()` helpers |
+| `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …) + the slug contract (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`). Deliberately dependency-free so the CLI can load it on every invocation without paying zod's startup cost |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
@@ -1226,7 +1228,8 @@ intent, not repo content) and is remembered for later commands. Never widen
 this to trust `serverUrl` directly.
 
 The `slug` from the same file is validated against the platform's slug shape
-(`VALID_SLUG_RE`, duplicated from aai-server's `schemas.ts`) before it is ever
+(`VALID_SLUG_RE`, shared with aai-server via `@alexkroman1/aai/utils` —
+`sdk/slug.ts` is the single definition) before it is ever
 interpolated into a URL path, so a hostile `"slug": "x/../admin"` cannot steer
 a credentialed request; `aai secret delete` also URL-encodes the secret name.
 The API key itself is stored 0600 in the global `config.json`

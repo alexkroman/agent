@@ -17,15 +17,6 @@ export const IDLE_SANDBOX_MS = 5 * 60 * 1000;
 /** 10 MB. */
 export const MAX_WORKER_SIZE = 10_000_000;
 
-/** Max event-name length accepted on the guest→client `client/send` relay. */
-export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
-
-/**
- * Max serialized payload accepted on the guest→client `client/send` relay
- * (64 KB) — prevents memory abuse via the WebSocket relay.
- */
-export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65_536;
-
 // ── Storage layout ──
 // Single source of truth for the `agents/{slug}` storage namespace. Note
 // that the platform-default KV lives under the same prefix, so a prefix

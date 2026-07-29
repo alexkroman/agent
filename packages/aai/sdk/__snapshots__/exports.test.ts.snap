@@ -27,9 +27,12 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "DEFAULT_SYSTEM_PROMPT",
   "DEFAULT_TTS_SAMPLE_RATE",
   "FETCH_TIMEOUT_MS",
+  "FILE_SEND_BACKOFF_MS",
   "FILE_UPLOAD_CHUNK_BYTES",
   "LOG_PREVIEW_CHARS",
   "MAX_AUDIO_SAMPLE_RATE",
+  "MAX_CLIENT_EVENT_NAME_LENGTH",
+  "MAX_CLIENT_EVENT_PAYLOAD_BYTES",
   "MAX_CLIENT_WS_BUFFERED_BYTES",
   "MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES",
   "MAX_CONSECUTIVE_SILENCE_NUDGES",
@@ -44,8 +47,11 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "MAX_TRANSCRIPT_CHARS",
   "MAX_VALUE_SIZE",
   "MAX_WS_PAYLOAD_BYTES",
+  "MIC_BUFFER_SECONDS",
+  "MIC_SEND_MAX_BUFFERED_BYTES",
   "PIPELINE_FLUSH_TIMEOUT_MS",
   "PIPELINE_PLAYBACK_GRACE_MS",
+  "RESERVED_SLUGS",
   "S2S_MAX_RESUME_ATTEMPTS",
   "SESSION_NOTES_TTL_MS",
   "STT_FRAME_FLOOR_MS",
@@ -54,6 +60,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "TOOL_EXECUTION_TIMEOUT_MS",
   "TTS_COALESCE_MAX_CHARS",
   "ToolChoiceSchema",
+  "VALID_SLUG_RE",
   "WS_OPEN",
   "agent",
   "capToolResult",
@@ -132,6 +139,7 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "executeToolCall",
   "isDebugEnv",
   "isHostAllowed",
+  "isPathInside",
   "isPrivateIp",
   "requiredProviderEnvVars",
   "resolveAllBuiltins",
@@ -152,5 +160,18 @@ exports[`export surface stability > @alexkroman1/aai/s2s export 1`] = `
 [
   "OPENAI_REALTIME_KIND",
   "openaiRealtime",
+]
+`;
+
+exports[`export surface stability > @alexkroman1/aai/utils export 1`] = `
+[
+  "RESERVED_SLUGS",
+  "VALID_SLUG_RE",
+  "capToolResult",
+  "errorDetail",
+  "errorMessage",
+  "isTextAssetPath",
+  "safeJsonParse",
+  "toolError",
 ]
 `;

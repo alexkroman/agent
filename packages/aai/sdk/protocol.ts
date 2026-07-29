@@ -10,6 +10,7 @@ import { z } from "zod";
 import { ToolSchemaSchema } from "./_internal-types.ts";
 import {
   MAX_AUDIO_SAMPLE_RATE,
+  MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_ERROR_MESSAGE_CHARS,
   MAX_SYNC_AUDIO_BYTES,
   MAX_TOOL_RESULT_CHARS,
@@ -208,7 +209,7 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   }),
   z.object({
     type: z.literal("custom_event"),
-    event: z.string().min(1),
+    event: z.string().min(1).max(MAX_CLIENT_EVENT_NAME_LENGTH),
     data: z.unknown(),
   }),
 ]);

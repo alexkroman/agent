@@ -1,7 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
-/** Shared utility functions. */
+/**
+ * Shared utility functions.
+ *
+ * This module (exposed as the `@alexkroman1/aai/utils` subpath) must stay
+ * free of zod and other runtime dependencies: the CLI imports it on every
+ * invocation (including `aai --help`), where pulling zod in would be a
+ * measurable startup cost.
+ */
 
 import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
+
+export { RESERVED_SLUGS, VALID_SLUG_RE } from "./slug.ts";
 
 /** Extract an error message from an unknown thrown value. */
 export function errorMessage(err: unknown): string {
