@@ -1,19 +1,20 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
+  assertNotResolved,
   calculateTriageScore,
+  dashboardEvent,
   findIncident,
-  getState,
-  recalculateAlertLevel,
+  logEvent,
   recommendResources,
-  saveState,
+  updateState,
 } from "../shared.ts";
 
 export const incidentEscalate = tool({
   description: "Escalate an incident when it exceeds current capacity or severity increases.",
   parameters: z.object({
-    incidentId: z.string().describe("The incident ID"),
-    reason: z.string().describe("Reason for escalation"),
+    incidentId: z.string().max(20).describe("The incident ID"),
+    reason: z.string().max(1000).describe("Reason for escalation"),
     requestMutualAid: z
       .boolean()
       .describe("Whether to request mutual aid from neighboring jurisdictions")
@@ -21,73 +22,73 @@ export const incidentEscalate = tool({
     newSeverity: z.enum(["critical", "urgent"]).describe("Escalated severity level").optional(),
   }),
   async execute(args, ctx) {
-    const state = await getState(ctx.kv);
-    const inc = findIncident(state, args.incidentId);
-    if ("error" in inc) return inc;
+    return updateState(
+      ctx.kv,
+      ctx.sessionId,
+      (state) => {
+        const inc = findIncident(state, args.incidentId);
+        if ("error" in inc) return inc;
+        const blocked = assertNotResolved(inc, "escalate");
+        if (blocked) return blocked;
 
-    inc.escalationLevel++;
-    if (args.newSeverity) inc.severity = args.newSeverity;
-    inc.status = "escalated";
-    inc.updatedAt = Date.now();
-    inc.timeline.push({
-      time: Date.now(),
-      event: `ESCALATED (Level ${inc.escalationLevel}): ${args.reason}`,
-    });
-    inc.notes.push(`Escalation: ${args.reason}`);
+        inc.escalationLevel++;
+        if (args.newSeverity) inc.severity = args.newSeverity;
+        inc.status = "escalated";
+        logEvent(inc, `ESCALATED (Level ${inc.escalationLevel}): ${args.reason}`);
 
-    if (args.requestMutualAid) {
-      state.mutualAidRequested = true;
-      inc.timeline.push({
-        time: Date.now(),
-        event: "Mutual aid requested from neighboring jurisdictions",
-      });
-      state.resources.push(
-        {
-          id: `MA-${Date.now()}-1`,
-          type: "ambulance",
-          callsign: "Mutual-Aid-Medic",
-          status: "available",
-          assignedIncident: null,
-          eta: null,
-          capabilities: ["als"],
-        },
-        {
-          id: `MA-${Date.now()}-2`,
-          type: "fire_engine",
-          callsign: "Mutual-Aid-Engine",
-          status: "available",
-          assignedIncident: null,
-          eta: null,
-          capabilities: ["structural"],
-        },
-      );
-    }
+        if (args.requestMutualAid) {
+          logEvent(inc, "Mutual aid requested from neighboring jurisdictions");
+          // Counter-based ids/callsigns: Date.now() collides across rapid
+          // escalations, and duplicate callsigns break dispatch-by-callsign.
+          const medicN = ++state.mutualAidCounter;
+          const engineN = ++state.mutualAidCounter;
+          state.resources.push(
+            {
+              id: `MA-${medicN}`,
+              type: "ambulance",
+              callsign: `Mutual-Aid-Medic-${medicN}`,
+              status: "available",
+              assignedIncident: null,
+              eta: null,
+              capabilities: ["als"],
+            },
+            {
+              id: `MA-${engineN}`,
+              type: "fire_engine",
+              callsign: `Mutual-Aid-Engine-${engineN}`,
+              status: "available",
+              assignedIncident: null,
+              eta: null,
+              capabilities: ["structural"],
+            },
+          );
+        }
 
-    inc.triageScore = calculateTriageScore(
-      inc.severity,
-      inc.type,
-      inc.casualties.estimated,
-      inc.hazards.length,
+        inc.triageScore = calculateTriageScore(
+          inc.severity,
+          inc.type,
+          inc.casualties.estimated,
+          inc.hazards.length,
+        );
+
+        const additionalResources = recommendResources(inc.type, inc.severity, state).filter(
+          (r) => !inc.assignedResources.includes(r.id),
+        );
+
+        return {
+          incidentId: args.incidentId,
+          escalationLevel: inc.escalationLevel,
+          newSeverity: inc.severity,
+          newTriageScore: inc.triageScore,
+          mutualAidRequested: args.requestMutualAid ?? false,
+          additionalResourcesAvailable: additionalResources.map((r) => ({
+            callsign: r.callsign,
+            type: r.type,
+          })),
+          message: `ESCALATION CONFIRMED — ${args.incidentId} now Level ${inc.escalationLevel}. ${additionalResources.length} additional resource(s) available for dispatch.`,
+        };
+      },
+      (state) => ctx.send("incidents", dashboardEvent(state)),
     );
-    recalculateAlertLevel(state);
-    await saveState(ctx.kv, state);
-
-    const additionalResources = recommendResources(inc.type, inc.severity, state).filter(
-      (r) => !inc.assignedResources.includes(r.id),
-    );
-
-    return {
-      incidentId: args.incidentId,
-      escalationLevel: inc.escalationLevel,
-      newSeverity: inc.severity,
-      newTriageScore: inc.triageScore,
-      mutualAidRequested: args.requestMutualAid,
-      additionalResourcesAvailable: additionalResources.map((r) => ({
-        callsign: r.callsign,
-        type: r.type,
-      })),
-      systemAlertLevel: state.alertLevel,
-      message: `ESCALATION CONFIRMED — ${args.incidentId} now Level ${inc.escalationLevel}. ${additionalResources.length} additional resource(s) available for dispatch.`,
-    };
   },
 });

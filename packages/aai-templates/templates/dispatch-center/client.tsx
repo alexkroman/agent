@@ -1,8 +1,8 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
 import { client, useEvent, useSession } from "@alexkroman1/aai-ui";
-import { useEffect, useRef } from "react";
-import type { DispatchState, Incident, Severity } from "./shared.ts";
+import { useEffect, useRef, useState } from "react";
+import type { IncidentSummary } from "./shared.ts";
 
 const CSS = `
 @keyframes dc-pulse {
@@ -48,13 +48,16 @@ const statusColors: Record<string, string> = {
   escalated: "#ef4444",
 };
 
-// Track dashboard state from tool results
+// Dashboard state accumulated from the "incidents" events the tools send
+// (see dashboardEvent in shared.ts).
 interface DashboardState {
   alertLevel: string;
-  incidents: Record<
-    string,
-    { id: string; severity?: Severity; status?: string; location?: string }
-  >;
+  incidents: Record<string, IncidentSummary>;
+}
+
+interface IncidentsEvent {
+  systemAlertLevel?: string;
+  incidents?: IncidentSummary[];
 }
 
 function stateColor(state: string): string {
@@ -94,47 +97,74 @@ function StatRow({ label, value, color }: { label: string; value: number; color?
   );
 }
 
+function IncidentCard({ inc }: { inc: IncidentSummary }) {
+  const sevColor = severityColors[inc.severity] || "#334155";
+  return (
+    <div
+      className="rounded-md p-2.5 mb-2"
+      style={{
+        background: "#0f172a",
+        animation: "dc-slide-in 0.3s ease-out",
+        border: `1px solid ${sevColor}40`,
+        borderLeft: `3px solid ${sevColor}`,
+      }}
+    >
+      <div className="flex justify-between items-center mb-1">
+        <span className="text-xs font-bold" style={{ color: "#f1f5f9" }}>
+          {inc.id}
+        </span>
+        <span
+          className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase"
+          style={{ background: `${sevColor}30`, color: sevColor }}
+        >
+          {inc.severity}
+        </span>
+      </div>
+      {inc.location && (
+        <div className="text-[11px] mb-0.5" style={{ color: "#94a3b8" }}>
+          {inc.location}
+        </div>
+      )}
+      <div
+        className="text-[10px] uppercase tracking-wider"
+        style={{ color: statusColors[inc.status] || "#6b7280" }}
+      >
+        {inc.status.replace("_", " ")}
+      </div>
+    </div>
+  );
+}
+
 function App() {
   const session = useSession();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const dashRef = useRef<DashboardState>({ alertLevel: "green", incidents: {} });
+  // useState (not a ref) so the sidebar re-renders when events arrive.
+  const [dash, setDash] = useState<DashboardState>({ alertLevel: "green", incidents: {} });
 
-  // Track incidents and alert level from events
+  // Track incidents and alert level from tool events
   useEvent("incidents", (result: unknown) => {
-    const r = result as { incident?: Incident; state?: DispatchState; systemAlertLevel?: string };
-    if (r.state) {
-      dashRef.current.alertLevel = r.state.alertLevel;
-      for (const inc of Object.values(r.state.incidents)) {
-        dashRef.current.incidents[inc.id] = {
-          id: inc.id,
-          severity: inc.severity,
-          status: inc.status,
-          location: inc.location,
-        };
+    const r = result as IncidentsEvent;
+    setDash((prev) => {
+      const incidents = { ...prev.incidents };
+      for (const inc of r.incidents ?? []) {
+        incidents[inc.id] = inc;
       }
-    } else if (r.incident) {
-      dashRef.current.incidents[r.incident.id] = {
-        ...dashRef.current.incidents[r.incident.id],
-        id: r.incident.id,
-        severity: r.incident.severity,
-        status: r.incident.status,
-        location: r.incident.location,
+      return {
+        alertLevel: r.systemAlertLevel ?? prev.alertLevel,
+        incidents,
       };
-    }
-    if (r.systemAlertLevel) {
-      dashRef.current.alertLevel = r.systemAlertLevel;
-    }
+    });
   });
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session.messages]);
 
-  const incidentList = Object.values(dashRef.current.incidents).reverse();
+  const incidentList = Object.values(dash.incidents).reverse();
   const activeIncidents = incidentList.filter((i) => i.status !== "resolved");
   const resolvedCount = incidentList.filter((i) => i.status === "resolved").length;
 
-  const alertLevel = dashRef.current.alertLevel;
+  const alertLevel = dash.alertLevel;
   const alertBg = alertColors[alertLevel] || "#6b7280";
   const alertTextColor = alertLevel === "yellow" ? "#000" : "#fff";
 
@@ -249,7 +279,7 @@ function App() {
                   className="w-2.5 h-2.5 rounded-full inline-block mr-2"
                   style={{ background: "#22c55e", animation: "dc-pulse 1.5s ease-in-out infinite" }}
                 />
-                {session.userTranscript || "..."}
+                {session.userTranscript === "" ? "..." : session.userTranscript}
               </div>
             )}
             {session.error && (
@@ -325,48 +355,7 @@ function App() {
                   No active incidents
                 </div>
               ) : (
-                activeIncidents.map((inc) => (
-                  <div
-                    key={inc.id}
-                    className="rounded-md p-2.5 mb-2"
-                    style={{
-                      background: "#0f172a",
-                      animation: "dc-slide-in 0.3s ease-out",
-                      border: `1px solid ${severityColors[inc.severity ?? ""] || "#334155"}40`,
-                      borderLeft: `3px solid ${severityColors[inc.severity ?? ""] || "#334155"}`,
-                    }}
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="text-xs font-bold" style={{ color: "#f1f5f9" }}>
-                        {inc.id}
-                      </span>
-                      {inc.severity && (
-                        <span
-                          className="text-[9px] px-1.5 py-0.5 rounded font-bold uppercase"
-                          style={{
-                            background: `${severityColors[inc.severity ?? ""]}30`,
-                            color: severityColors[inc.severity ?? ""],
-                          }}
-                        >
-                          {inc.severity}
-                        </span>
-                      )}
-                    </div>
-                    {inc.location && (
-                      <div className="text-[11px] mb-0.5" style={{ color: "#94a3b8" }}>
-                        {inc.location}
-                      </div>
-                    )}
-                    {inc.status && (
-                      <div
-                        className="text-[10px] uppercase tracking-wider"
-                        style={{ color: statusColors[inc.status] || "#6b7280" }}
-                      >
-                        {inc.status.replace("_", " ")}
-                      </div>
-                    )}
-                  </div>
-                ))
+                activeIncidents.map((inc) => <IncidentCard key={inc.id} inc={inc} />)
               )}
             </Panel>
 
