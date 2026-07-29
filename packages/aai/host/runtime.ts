@@ -28,7 +28,7 @@ import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { createMemoryVector } from "./memory-vector.ts";
-import { resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
+import { descriptorKind, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
 import { resolveKv } from "./providers/resolve-kv.ts";
 import { resolveVector } from "./providers/resolve-vector.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
@@ -173,6 +173,23 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     stt: effectiveProviders.stt,
     llm: effectiveProviders.llm,
     tts: effectiveProviders.tts,
+  });
+
+  // Report the resolved mode once per runtime. A pipeline agent whose providers
+  // fail to reach the runtime does not error — it runs a perfectly healthy S2S
+  // session instead (see sandbox.ts `pipelineProviderOpts` for how that
+  // happened), so "which transport is this agent on" has to be answerable from
+  // one log line rather than inferred from the shape of the message stream.
+  logger.info("Session mode resolved", {
+    slug,
+    mode: effectiveProviders.mode,
+    ...(effectiveProviders.mode === "pipeline"
+      ? {
+          stt: descriptorKind(effectiveProviders.stt),
+          llm: descriptorKind(effectiveProviders.llm),
+          tts: descriptorKind(effectiveProviders.tts),
+        }
+      : { s2s: descriptorKind(agent.s2s) ?? "assemblyai" }),
   });
   const sessions = new Map<string, SessionCore>();
   const sinkMap = new Map<string, ClientSink>();

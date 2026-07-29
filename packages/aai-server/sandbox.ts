@@ -12,9 +12,8 @@
  */
 
 import { randomUUID } from "node:crypto";
-import type { BuiltinTool, Kv, ToolChoice } from "@alexkroman1/aai";
+import type { Kv } from "@alexkroman1/aai";
 import {
-  DEFAULT_MAX_STEPS,
   errorMessage,
   MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_CLIENT_EVENT_PAYLOAD_BYTES,
@@ -43,6 +42,7 @@ import {
 } from "./_sandbox-messages.ts";
 import { agentKvPrefix, resolveHarnessPath } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
+import { pipelineProviderOpts, toRuntimeAgent } from "./sandbox-agent-config.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { attachSandbox, setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
@@ -122,76 +122,6 @@ export function createClientSendHandler(sessionSinks: Map<string, ClientSink>) {
     const serializedData = JSON.stringify(params.data ?? null);
     if (Buffer.byteLength(serializedData) > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return;
     sink.event({ type: "custom_event", event: params.event, data: params.data });
-  };
-}
-
-/**
- * Drop the keys whose value is `undefined`, so an unset config field stays
- * absent on the runtime agent rather than becoming an explicit `undefined`.
- *
- * Exists so {@link toRuntimeAgent} can be one flat `key: config.key` block.
- * The `...(config.x !== undefined ? { x: config.x } : {})` spread per field it
- * replaces is what let fields go missing unnoticed — `builtinTools` (every
- * deployed agent silently lost the default cognitive builtins) and then `send`
- * (a deployed `send: slack()` never registered `send_message`) — because every
- * field is optional, so an omission is valid TypeScript and invisible in
- * review. It also kept the function over the cognitive-complexity cap.
- */
-function defined<T extends object>(fields: T): { [K in keyof T]?: Exclude<T[K], undefined> } {
-  // `Partial<T>` would keep `| undefined` in each value type, which
-  // `exactOptionalPropertyTypes` then rejects against AgentDef's `x?: string`.
-  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as {
-    [K in keyof T]?: Exclude<T[K], undefined>;
-  };
-}
-
-/** Map the deploy-time IsolateConfig onto the runtime's agent-definition shape. */
-function toRuntimeAgent(config: IsolateConfig): Parameters<typeof createRuntime>[0]["agent"] {
-  return {
-    name: config.name,
-    systemPrompt: config.systemPrompt,
-    greeting: config.greeting ?? "",
-    maxSteps: config.maxSteps ?? DEFAULT_MAX_STEPS,
-    tools: {},
-    ...defined({
-      sttPrompt: config.sttPrompt,
-      idleTimeoutMs: config.idleTimeoutMs,
-      silenceTimeoutMs: config.silenceTimeoutMs,
-      silencePrompt: config.silencePrompt,
-      minBargeInWords: config.minBargeInWords,
-      interruptionMinDurationMs: config.interruptionMinDurationMs,
-      endpointSettleMs: config.endpointSettleMs,
-      completeSettleMs: config.completeSettleMs,
-      holdPhrase: config.holdPhrase,
-      falseInterruptionTimeoutMs: config.falseInterruptionTimeoutMs,
-      toolChoice: config.toolChoice satisfies ToolChoice | undefined,
-      builtinTools: config.builtinTools as BuiltinTool[] | undefined,
-      s2s: config.s2s,
-      // `createRuntime` keys the `send_message` builtin off `agent.send`, so
-      // omitting this made a deployed `send: slack()` a silent no-op: the LLM
-      // never saw the tool, so the symptom was a reply that simply didn't send.
-      send: config.send,
-    }),
-  };
-}
-
-/**
- * The deployed agent as an `AgentDef`, *including* its provider descriptors.
- *
- * `toRuntimeAgent` deliberately omits stt/llm/tts because `createSandbox`
- * passes them to `createRuntime` as separate options. Host mode has no such
- * seam — `startHostSession` builds its own runtime from a base agent — so the
- * providers have to ride along, or a pipeline agent would silently fall back
- * to S2S when driven over `?host=1`.
- */
-export function toHostBaseAgent(
-  config: IsolateConfig,
-): Parameters<typeof createRuntime>[0]["agent"] {
-  return {
-    ...toRuntimeAgent(config),
-    ...(config.mode === "pipeline" && config.stt && config.llm && config.tts
-      ? { stt: config.stt, llm: config.llm, tts: config.tts }
-      : {}),
   };
 }
 
@@ -335,9 +265,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     // resolveAllBuiltins) — passed explicitly so the platform's egress policy
     // is visible here rather than only implied by a default.
     fetch: safeFetch,
-    ...(config.mode === "pipeline" && config.stt && config.llm && config.tts
-      ? { stt: config.stt, llm: config.llm, tts: config.tts }
-      : {}),
+    ...pipelineProviderOpts(config),
   });
 
   const sessionSinks = new Map<string, ClientSink>();

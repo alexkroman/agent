@@ -25,7 +25,7 @@ import type { SessionStartOptions, SessionWebSocket } from "@alexkroman1/aai/run
 import { startHostSession } from "@alexkroman1/aai/runtime";
 import { parseBearer } from "./_bearer.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { toHostBaseAgent } from "./sandbox.ts";
+import { toHostBaseAgent } from "./sandbox-agent-config.ts";
 import { verifySlugOwner } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 

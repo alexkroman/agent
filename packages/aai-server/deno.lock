@@ -33,6 +33,7 @@
         "npm:@types/ws@^8.18.1",
         "npm:@vitejs/plugin-react@^6.0.4",
         "npm:ai@^7.0.41",
+        "npm:aws4fetch@^1.0.20",
         "npm:diff@9",
         "npm:hono@^4.12.31",
         "npm:human-id@^4.2.0",
