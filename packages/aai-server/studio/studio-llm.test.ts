@@ -76,3 +76,32 @@ describe("LLM provider selection", () => {
     expect(() => studioModel(keyless)).toThrow(/ANTHROPIC_API_KEY is not set/);
   });
 });
+
+describe("env-only providers", () => {
+  // No curated model list: each needs an explicit STUDIO_LLM_MODEL and is
+  // reachable only via STUDIO_LLM_PROVIDER. One case per registry entry so a
+  // wiring typo in `make`/`models` fails here, not at the first chat request.
+  const ENV_ONLY = [
+    ["openai", "OPENAI_API_KEY"],
+    ["google", "GOOGLE_GENERATIVE_AI_API_KEY"],
+    ["mistral", "MISTRAL_API_KEY"],
+    ["xai", "XAI_API_KEY"],
+    ["groq", "GROQ_API_KEY"],
+    ["gateway", "AI_GATEWAY_API_KEY"],
+  ] as const;
+
+  test.each(ENV_ONLY)("%s builds a descriptor for an explicit model", (provider, envVar) => {
+    const selection = selectStudioLlm(
+      env({ STUDIO_LLM_PROVIDER: provider, STUDIO_LLM_MODEL: "some-model", [envVar]: "k" }),
+    );
+    expect(selection).toMatchObject({ provider, model: "some-model", envVar });
+    expect(selection?.descriptor).toMatchObject({ kind: provider });
+  });
+
+  test.each(ENV_ONLY)("%s without STUDIO_LLM_MODEL is a loud error", (provider, envVar) => {
+    // The empty curated list means there is no default to fall back to.
+    expect(() => selectStudioLlm(env({ STUDIO_LLM_PROVIDER: provider, [envVar]: "k" }))).toThrow(
+      /STUDIO_LLM_MODEL is required/,
+    );
+  });
+});
