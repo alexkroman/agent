@@ -57,8 +57,8 @@ dependencies (lint, test, syncpack, sherif) start immediately while
 build-dependent tasks (typecheck, publint, attw) wait for build.
 
 `pnpm check:local` uses the same script with `--local` flag, running a
-subset: build, typecheck, lint, publint, syncpack, sherif, test — all
-in one turbo call with `--continue` (shows all failures at once).
+subset: build, typecheck, lint, publint, syncpack, sherif, knip, test —
+all in one turbo call with `--continue` (shows all failures at once).
 
 `pnpm check:affected` uses turbo's `--affected` flag to only run tasks
 for packages changed since the default branch.
@@ -936,6 +936,13 @@ catches the most common issues that historically required follow-up commits:
    `Manifest`, etc.), run `pnpm vitest run --project aai-types`
    to verify type contracts haven't regressed. Update `.test-d.ts` files
    if the change is intentional.
+5. **Dependencies orphaned by a deletion**: removing the last consumer of a
+   package leaves the `devDependencies` entry and its lockfile tree behind.
+   `pnpm check:knip` catches this and is in the local subset for that
+   reason — it's the one failure you won't notice while working, because
+   deleting code puts your attention on what goes away, not on what the
+   removal strands. When a PR deletes a directory, expect a dependency to
+   come out with it.
 
 ## Security architecture
 
