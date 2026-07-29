@@ -49,6 +49,35 @@ describe("IsolateConfigSchema — text-only (tts: none)", () => {
   });
 });
 
+describe("IsolateConfigSchema — client transport", () => {
+  const triple = {
+    ...pipelineFields,
+    tts: { kind: "cartesia", options: { voice: "v" } },
+  };
+
+  test("accepts transport: 'sync' with the pipeline triple", () => {
+    const result = IsolateConfigSchema.safeParse({ name: "x", ...triple, transport: "sync" });
+    expect(result.success).toBe(true);
+    expect(result.data?.transport).toBe("sync");
+  });
+
+  test("rejects transport: 'sync' without the triple (sync turns 409 on s2s)", () => {
+    const result = IsolateConfigSchema.safeParse({ name: "x", transport: "sync" });
+    expect(result.success).toBe(false);
+    expect(result.error?.issues[0]?.message).toMatch(/transport: "sync" requires pipeline mode/);
+  });
+
+  test("accepts explicit transport: 'websocket' on an s2s agent", () => {
+    const result = IsolateConfigSchema.safeParse({ name: "x", transport: "websocket" });
+    expect(result.success).toBe(true);
+  });
+
+  test("rejects unknown transport values", () => {
+    const result = IsolateConfigSchema.safeParse({ name: "x", transport: "http" });
+    expect(result.success).toBe(false);
+  });
+});
+
 // `allowedHosts` decides a deployed agent's guest egress and arrives from a
 // tenant's bundle, so the platform re-runs the SDK's pattern rules rather than
 // trusting that the CLI did. The SSRF guard screens each request on top; these

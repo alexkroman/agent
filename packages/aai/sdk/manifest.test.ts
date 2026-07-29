@@ -250,6 +250,43 @@ describe("parseManifest — mode classification", () => {
   });
 });
 
+describe("parseManifest — client transport", () => {
+  const pipelineFields = {
+    stt: assemblyAI({ model: "u3pro-rt" }),
+    llm: anthropic({ model: "claude-haiku-4-5" }),
+    tts: cartesia({ voice: "v" }),
+  };
+
+  test("transport is undefined when not declared", () => {
+    const parsed = parseManifest({ name: "hello" });
+    expect(parsed.transport).toBeUndefined();
+  });
+
+  test("accepts transport: 'sync' in pipeline mode", () => {
+    const parsed = parseManifest({
+      name: "hello",
+      transport: "sync",
+      ...pipelineFields,
+    } as never);
+    expect(parsed.transport).toBe("sync");
+  });
+
+  test("accepts explicit transport: 'websocket' in s2s mode", () => {
+    const parsed = parseManifest({ name: "hello", transport: "websocket" });
+    expect(parsed.transport).toBe("websocket");
+  });
+
+  test("rejects transport: 'sync' in s2s mode (sync turns need the pipeline)", () => {
+    expect(() => parseManifest({ name: "hello", transport: "sync" })).toThrow(
+      /transport: "sync" requires pipeline mode/,
+    );
+  });
+
+  test("rejects unknown transport values", () => {
+    expect(() => parseManifest({ name: "hello", transport: "carrier-pigeon" })).toThrow();
+  });
+});
+
 describe("parseManifest — silence nudge", () => {
   const pipelineFields = {
     stt: assemblyAI({ model: "u3pro-rt" }),

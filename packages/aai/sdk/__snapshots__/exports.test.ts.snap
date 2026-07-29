@@ -94,6 +94,7 @@ exports[`export surface stability > @alexkroman1/aai/manifest export 1`] = `
   "ProviderDescriptorSchema",
   "ToolSchemaSchema",
   "agentToolsToSchemas",
+  "assertClientTransport",
   "assertPipelineTuning",
   "assertProviderTriple",
   "assertSilencePolicy",
@@ -105,7 +106,9 @@ exports[`export surface stability > @alexkroman1/aai/manifest export 1`] = `
 
 exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
 [
+  "CLIENT_CONFIG_PATH",
   "CLIENT_MESSAGE_TYPES",
+  "ClientConfigResponseSchema",
   "ClientEventSchema",
   "ClientMessageSchema",
   "HostConfigMessageSchema",

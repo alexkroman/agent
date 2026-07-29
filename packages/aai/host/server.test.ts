@@ -102,6 +102,36 @@ describe("createServer", () => {
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
     expect(res.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
   });
+
+  test("GET /client-config defaults to the websocket transport", async () => {
+    const { runtime } = makeRuntime({ name: "cfg-agent" });
+    server = createServer({ runtime, name: "cfg-agent", logger: silentLogger });
+    await server.listen(0);
+
+    const res = await fetch(`http://localhost:${server.port}/client-config`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ transport: "websocket", name: "cfg-agent" });
+  });
+
+  test("GET /client-config carries the declared transport and greeting", async () => {
+    const { runtime } = makeRuntime({ name: "sync-agent" });
+    server = createServer({
+      runtime,
+      name: "sync-agent",
+      transport: "sync",
+      greeting: "Hi there!",
+      logger: silentLogger,
+    });
+    await server.listen(0);
+
+    const res = await fetch(`http://localhost:${server.port}/client-config`);
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      transport: "sync",
+      name: "sync-agent",
+      greeting: "Hi there!",
+    });
+  });
 });
 
 describe("createServer static client dir", () => {
@@ -151,5 +181,15 @@ describe("createServer static client dir", () => {
     const base = await listenWithClientDir();
     const res = await fetch(`${base}/nope.js`);
     expect(res.status).toBe(404);
+  });
+
+  test("a client asset can never shadow GET /client-config", async () => {
+    const base = await listenWithClientDir();
+    if (!dir) throw new Error("client dir missing");
+    await fs.writeFile(path.join(dir, "client-config"), "not the endpoint");
+    const res = await fetch(`${base}/client-config`);
+    expect(res.headers.get("Content-Type")).toContain("application/json");
+    const json = (await res.json()) as { transport: string };
+    expect(json.transport).toBe("websocket");
   });
 });

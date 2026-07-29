@@ -49,6 +49,14 @@ describe("AgentConfigSchema", () => {
     expect(AgentConfigSchema.safeParse({ ...base, mode: "hybrid" }).success).toBe(false);
   });
 
+  test.each(["websocket", "sync"] as const)("accepts transport: %s", (transport) => {
+    expect(AgentConfigSchema.safeParse({ ...base, transport }).success).toBe(true);
+  });
+
+  test("rejects unknown transport", () => {
+    expect(AgentConfigSchema.safeParse({ ...base, transport: "http" }).success).toBe(false);
+  });
+
   test.each([["api.example.com"], ["*.example.com"], ["sub.domain.example.co.uk"]])(
     "accepts allowedHosts pattern %s",
     (host) => {
@@ -105,9 +113,21 @@ describe("toAgentConfig", () => {
       kv: desc("memory"),
       vector: desc("in-memory"),
       send: desc("slack"),
+      transport: "sync" as const,
       allowedHosts: ["api.example.com"],
     };
     expect(toAgentConfig(src)).toEqual({ ...src, mode: "pipeline" });
+  });
+
+  test("rejects transport: 'sync' without the pipeline triple", () => {
+    expect(() => toAgentConfig({ ...base, transport: "sync" })).toThrow(
+      /transport: "sync" requires pipeline mode/,
+    );
+  });
+
+  test("accepts explicit transport: 'websocket' in s2s mode", () => {
+    const config = toAgentConfig({ ...base, transport: "websocket" });
+    expect(config.transport).toBe("websocket");
   });
 
   test("carries allowedHosts through to the deploy config", () => {

@@ -3,6 +3,7 @@
 import { createRequire } from "node:module";
 import path from "node:path";
 import { AGENT_CSP, isTextAssetPath } from "@alexkroman1/aai";
+import type { ClientConfigResponse } from "@alexkroman1/aai/protocol";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
 import { createCachedDirReader } from "./_static-files.ts";
@@ -34,6 +35,26 @@ export async function handleAgentHealth(c: AppContext): Promise<Response> {
     throw new HTTPException(404, { message: `Not found: ${slug}` });
   }
   return c.json({ status: "ok", slug });
+}
+
+/**
+ * `GET /:slug/client-config` — pre-connection client config (see
+ * `sdk/client-config.ts` in `@alexkroman1/aai`): the transport the agent
+ * declared, plus name/greeting for the default client's shell. Same auth
+ * posture as the agent page and the WebSocket: none.
+ */
+export async function handleAgentClientConfig(c: AppContext): Promise<Response> {
+  const slug = c.var.slug;
+  const config = await c.env.store.getAgentConfig(slug);
+  if (!config) {
+    throw new HTTPException(404, { message: `Not found: ${slug}` });
+  }
+  const body: ClientConfigResponse = {
+    transport: config.transport ?? "websocket",
+    name: config.name,
+    ...(config.greeting !== undefined ? { greeting: config.greeting } : {}),
+  };
+  return c.json(body);
 }
 
 export async function handleAgentPage(c: AppContext): Promise<Response> {

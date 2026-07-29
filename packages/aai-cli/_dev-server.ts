@@ -216,6 +216,10 @@ export function viteDevConfig(
       strictPort: true,
       proxy: {
         "/health": target,
+        "/client-config": target,
+        // Without this, a custom sync client under `aai dev` POSTs its turns
+        // at Vite and 404s — sync agents only worked deployed.
+        "/sync": target,
         "/websocket": { target, ws: true },
       },
     },
@@ -274,6 +278,10 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       env: hostModeEnv(providerEnv),
       // Host sessions inherit this agent's stt/llm/tts pipeline config.
       hostBaseAgent: agentDef,
+      // Served pre-connection via GET /client-config so the default client
+      // can honor `agent({ transport })` without a custom client.tsx.
+      ...(agentDef.transport !== undefined ? { transport: agentDef.transport } : {}),
+      greeting: agentDef.greeting,
       ...clientDirOpt,
     });
   }

@@ -528,6 +528,25 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   `push-to-talk-translator` (hold-to-record, no VAD — the button is the
   endpoint).
 
+  **Client transport selection** (`agent({ transport })`): `"websocket"`
+  (default) vs `"sync"` decides which transport the *default* browser
+  client uses, so a sync agent needs no custom `client.tsx`. `"sync"` is
+  pipeline-only (`assertClientTransport` in `sdk/providers.ts`, enforced
+  in `parseManifest`, `toAgentConfig`, and `IsolateConfigSchema`). The
+  default client page is byte-identical for every agent and the CSP bars
+  inline scripts, so the choice reaches the browser via a pre-connection
+  endpoint instead: `GET /client-config` (dev server) /
+  `GET /:slug/client-config` (platform, unauthenticated — parity with the
+  page and the WebSocket) returns `{ transport, name, greeting }`
+  (`sdk/client-config.ts`, re-exported from `/protocol`). In `aai-ui`,
+  `client()`'s config tier renders `DefaultRoot`, which resolves the
+  transport (explicit `transport` option, else `fetchClientConfig` — any
+  failure degrades to WebSocket, so older servers keep working) and mounts
+  either the WebSocket shell or `SyncChatView` (stock sync UI: VAD mic,
+  text composer, reply playback). A custom `component` ignores all of it.
+  The `aai dev` Vite proxy forwards `/client-config` *and* `/sync` to the
+  backend — without the latter, custom sync clients 404'd under dev.
+
 - **Text-only mode** (`tts: none()` from `@alexkroman1/aai/tts`) is
   pipeline mode without a synthesis side: speech in (STT → LLM), text out.
   The sentinel descriptor keeps the all-or-none triple rule intact (a

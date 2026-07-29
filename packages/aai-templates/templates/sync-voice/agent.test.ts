@@ -14,6 +14,13 @@ describe("sync-voice template", () => {
     expect(agentDef.tts).toBeDefined();
   });
 
+  test("declares the sync transport so the default client skips the WebSocket", () => {
+    expect(agentDef.transport).toBe("sync");
+    // The field must survive into the deployed config — that's what the
+    // platform's GET /:slug/client-config serves to the default client.
+    expect(toAgentConfig(agentDef).transport).toBe("sync");
+  });
+
   test("providers carry the one-shot capabilities sync mode uses", () => {
     // AssemblyAI is the STT provider with a batch (Sync API) endpoint —
     // audio turns 422 without one.
