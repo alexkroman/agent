@@ -6,10 +6,12 @@ import { AllowedHostsSchema } from "./allowed-hosts.ts";
 import { ProviderDescriptorSchema } from "./manifest.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import {
+  assertClientTransport,
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
   assertTextOnlyTuning,
+  type ClientTransport,
   type KvProvider,
   type LlmProvider,
   type S2sProvider,
@@ -63,6 +65,7 @@ export const AgentConfigSchema = z.object({
   kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
   send: ProviderDescriptorSchema.optional(),
+  transport: z.enum(["websocket", "sync"]).optional(),
   allowedHosts: AllowedHostsSchema.optional(),
 });
 
@@ -94,6 +97,7 @@ interface AgentConfigSource {
   kv?: KvProvider | undefined;
   vector?: VectorProvider | undefined;
   send?: SendProvider | undefined;
+  transport?: ClientTransport | undefined;
   allowedHosts?: readonly string[] | undefined;
 }
 
@@ -120,6 +124,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
   assertPipelineTuning(mode, src);
   assertTextOnlyTuning(src.tts, src);
+  assertClientTransport(mode, src.transport);
   // Runs inside the generated bundle entry too, so the studio's test_agent
   // surfaces a bad TTS language as a load error rather than shipping a mute agent.
   assertAssemblyAITtsLanguage(src.tts);
@@ -147,6 +152,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   if (src.kv !== undefined) config.kv = src.kv;
   if (src.vector !== undefined) config.vector = src.vector;
   if (src.send !== undefined) config.send = src.send;
+  if (src.transport !== undefined) config.transport = src.transport;
   // Copied verbatim, NOT unioned with the send channel's host. The platform
   // derives that itself (`resolveAgentAllowedHosts`) from the validated
   // descriptor, so deriving it here too would be a second place to keep in

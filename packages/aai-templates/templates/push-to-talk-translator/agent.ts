@@ -13,6 +13,11 @@ import { cartesia } from "@alexkroman1/aai/tts";
 // A translator is the ideal one-shot transform agent: every utterance is
 // independent, so the reply is just the translation — no chat, no
 // follow-ups. Change the language pair by editing the systemPrompt.
+//
+// This template keeps a custom client because hold-to-record is custom UX.
+// An agent that just wants the stock sync UI (VAD mic + text input) needs
+// no client.tsx at all — declare `transport: "sync"` and the default
+// client runs HTTP turns itself (see the sync-voice template).
 export default agent({
   name: "push-to-talk-translator",
   greeting: "Hold the button, speak, release — I'll say it in the other language.",

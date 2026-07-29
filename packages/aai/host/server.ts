@@ -15,7 +15,9 @@ import path from "node:path";
 import escapeHtml from "escape-html";
 import { lookup as mimeLookup } from "mime-types";
 import { WebSocketServer } from "ws";
+import { CLIENT_CONFIG_PATH, type ClientConfigResponse } from "../sdk/client-config.ts";
 import { AGENT_CSP, MAX_SYNC_BODY_BYTES, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
+import type { ClientTransport } from "../sdk/providers.ts";
 import { SyncTurnRequestSchema } from "../sdk/sync.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
@@ -54,6 +56,14 @@ type ServerOptions = {
    * the default S2S path. Only prompt/greeting/tools come from the client.
    */
   hostBaseAgent?: AgentDef;
+  /**
+   * Transport the default browser client should use, served pre-connection
+   * via `GET /client-config` (see `sdk/client-config.ts`). Defaults to
+   * `"websocket"` when unset.
+   */
+  transport?: ClientTransport;
+  /** Agent greeting, included in the `GET /client-config` response. */
+  greeting?: string;
 };
 
 /**
@@ -215,6 +225,17 @@ export function createServer(options: ServerOptions): AgentServer {
 
   const defaultHtml = `<!DOCTYPE html><html><body><h1>${escapeHtml(name)}</h1><p>Agent server running.</p></body></html>`;
 
+  // Pre-connection client config: how the default client should talk to
+  // this agent (see sdk/client-config.ts).
+  function sendClientConfig(res: http.ServerResponse): void {
+    const body: ClientConfigResponse = {
+      transport: options.transport ?? "websocket",
+      name,
+      ...(options.greeting !== undefined ? { greeting: options.greeting } : {}),
+    };
+    sendJson(res, 200, body);
+  }
+
   async function handleRequest(
     req: http.IncomingMessage,
     res: http.ServerResponse,
@@ -223,6 +244,13 @@ export function createServer(options: ServerOptions): AgentServer {
   ): Promise<void> {
     if (method === "POST" && url === "/sync") {
       await handleSyncTurn(runtime, req, res);
+      return;
+    }
+
+    // Registered before static serving so a client asset can never shadow
+    // the client-config endpoint.
+    if (method === "GET" && url === `/${CLIENT_CONFIG_PATH}`) {
+      sendClientConfig(res);
       return;
     }
 

@@ -125,6 +125,60 @@ describe("client", () => {
     handle.dispose();
   });
 
+  it("renders the sync shell synchronously for an explicit transport: 'sync'", () => {
+    const fetchSpy = vi.fn();
+    vi.stubGlobal("fetch", fetchSpy);
+    const handle = client({
+      name: "Sync Agent",
+      target: "#app",
+      platformUrl: "http://localhost:3000",
+      transport: "sync",
+    });
+    // The sync shell is up immediately, and the explicit value skips the lookup.
+    expect(container.textContent).toContain("HTTP turns — no WebSocket");
+    expect(container.textContent).toContain("Sync Agent");
+    expect(fetchSpy).not.toHaveBeenCalled();
+    handle.dispose();
+    vi.unstubAllGlobals();
+  });
+
+  it("swaps to the sync shell when GET client-config declares sync", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: RequestInfo | URL) => {
+        expect(String(input)).toBe("http://localhost:3000/client-config");
+        return new Response(
+          JSON.stringify({ transport: "sync", name: "Server Name", greeting: "Hi there!" }),
+          { status: 200, headers: { "Content-Type": "application/json" } },
+        );
+      }),
+    );
+    const handle = client({ target: "#app", platformUrl: "http://localhost:3000" });
+    // Optimistic websocket shell first…
+    expect(container.textContent).toContain("Start Conversation");
+    // …then the declared transport lands.
+    await vi.waitFor(() => {
+      expect(container.textContent).toContain("HTTP turns — no WebSocket");
+    });
+    expect(container.textContent).toContain("Server Name");
+    expect(container.textContent).toContain("Hi there!");
+    handle.dispose();
+    vi.unstubAllGlobals();
+  });
+
+  it("stays on the websocket shell when the lookup fails", async () => {
+    const fetchSpy = vi.fn(async () => {
+      throw new Error("network down");
+    });
+    vi.stubGlobal("fetch", fetchSpy);
+    const handle = client({ name: "Test", target: "#app", platformUrl: "http://localhost:3000" });
+    await vi.waitFor(() => expect(fetchSpy).toHaveBeenCalled());
+    expect(container.textContent).toContain("Start Conversation");
+    expect(container.textContent).not.toContain("HTTP turns");
+    handle.dispose();
+    vi.unstubAllGlobals();
+  });
+
   it("derives platformUrl from location.href when not provided", () => {
     vi.stubGlobal("location", {
       origin: "https://example.com",

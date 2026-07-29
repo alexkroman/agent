@@ -102,6 +102,39 @@ export function assertProviderTriple(
 }
 
 /**
+ * Transport the *default browser client* uses to talk to the agent server.
+ *
+ * - `"websocket"` (default): a live streaming voice session over
+ *   `WS /websocket`.
+ * - `"sync"`: connectionless HTTP turns over `POST /sync` — the browser
+ *   endpoints speech itself (client-side VAD) and each utterance or typed
+ *   message is one request. Pipeline mode only: sync turns are rejected
+ *   with 409 for S2S agents, so declaring it there is a config error.
+ *
+ * This selects how the default client connects; a custom `client.tsx` owns
+ * its own transport and ignores it. Served to the browser pre-connection
+ * via `GET /client-config`.
+ */
+export type ClientTransport = "websocket" | "sync";
+
+/**
+ * Reject `transport: "sync"` outside pipeline mode — the sync turn runner
+ * only exists there (`runSyncTurn` answers 409 for S2S agents), so an S2S
+ * agent declaring it would ship a default client that cannot talk to it.
+ *
+ * Shared by `parseManifest`, `toAgentConfig`, and the server's
+ * `IsolateConfigSchema` — one source of truth for the validation.
+ */
+export function assertClientTransport(
+  mode: SessionMode,
+  transport: ClientTransport | undefined,
+): void {
+  if (transport === "sync" && mode !== "pipeline") {
+    throw new Error('transport: "sync" requires pipeline mode (stt, llm, and tts all set)');
+  }
+}
+
+/**
  * Enforce the silence-nudge config rules. `silenceTimeoutMs` makes the
  * assistant proactively take a turn after that much user silence — only the
  * pipeline transport implements it, so it's rejected in S2S mode rather than

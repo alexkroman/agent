@@ -22,6 +22,15 @@ describe("viteDevConfig", () => {
     expect(proxy["/health"]).toBe("http://localhost:3001");
   });
 
+  test("proxies /sync and /client-config to the backend", () => {
+    const config = viteDevConfig("/proj", 3000, 3001);
+    const proxy = config.server?.proxy as Record<string, unknown>;
+    // Without /sync a custom sync client under `aai dev` 404s its turns;
+    // without /client-config the default client can't learn the transport.
+    expect(proxy["/sync"]).toBe("http://localhost:3001");
+    expect(proxy["/client-config"]).toBe("http://localhost:3001");
+  });
+
   test("uses strictPort so the printed URL is never wrong", () => {
     // Vite would otherwise silently bind port+N when the port is busy while
     // executeDev prints/returns http://localhost:<requested port>.
@@ -46,6 +55,51 @@ describe("startDevServer (real serving path)", () => {
         try {
           const res = await fetch(`http://127.0.0.1:${port}/health`);
           expect(res.ok).toBe(true);
+          // Pre-connection client config: an agent with no `transport` field
+          // serves the websocket default.
+          const cfg = await fetch(`http://127.0.0.1:${port}/client-config`);
+          expect(cfg.ok).toBe(true);
+          expect(await cfg.json()).toMatchObject({
+            transport: "websocket",
+            name: "serve-test-agent",
+          });
+        } finally {
+          await cleanup();
+        }
+      }),
+    );
+  });
+
+  test("serves a declared sync transport at /client-config", { timeout: 30_000 }, async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        // Descriptors are pure data, so inline objects stand in for the
+        // factory calls — nothing connects until a session starts.
+        await writeFile(
+          path.join(dir, "agent.ts"),
+          `export default {
+              name: "sync-serve-agent", systemPrompt: "hi", greeting: "Talk to me.",
+              tools: {}, transport: "sync",
+              stt: { kind: "assemblyai", options: {} },
+              llm: { kind: "anthropic", options: { model: "claude-haiku-4-5" } },
+              tts: { kind: "cartesia", options: { voice: "v" } },
+            };`,
+        );
+        await writeFile(
+          path.join(dir, ".env"),
+          "ASSEMBLYAI_API_KEY=test-key\nANTHROPIC_API_KEY=test-key\nCARTESIA_API_KEY=test-key\n",
+        );
+
+        const port = await getPort();
+        const cleanup = await startDevServer({ cwd: dir, port });
+        try {
+          const res = await fetch(`http://127.0.0.1:${port}/client-config`);
+          expect(res.ok).toBe(true);
+          expect(await res.json()).toEqual({
+            transport: "sync",
+            name: "sync-serve-agent",
+            greeting: "Talk to me.",
+          });
         } finally {
           await cleanup();
         }

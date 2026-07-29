@@ -18,9 +18,11 @@ export {
 export { ProviderDescriptorSchema } from "./manifest.ts";
 export { isTextOnlyTts, NONE_TTS_KIND } from "./providers/tts/none.ts";
 export {
+  assertClientTransport,
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
   assertTextOnlyTuning,
+  type ClientTransport,
   type SessionMode,
 } from "./providers.ts";

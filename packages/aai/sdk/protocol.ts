@@ -17,6 +17,13 @@ import {
   MAX_TRANSCRIPT_CHARS,
 } from "./constants.ts";
 
+// The pre-connection client-config endpoint's wire format is part of the
+// same protocol surface — re-exported so clients import one subpath.
+export {
+  CLIENT_CONFIG_PATH,
+  type ClientConfigResponse,
+  ClientConfigResponseSchema,
+} from "./client-config.ts";
 // The sync-turn HTTP wire format lives beside this module and is part of the
 // same protocol surface — re-exported so clients import one subpath.
 export {

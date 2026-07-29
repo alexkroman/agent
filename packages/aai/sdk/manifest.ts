@@ -12,10 +12,12 @@ import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
 import { sendAllowedHosts } from "./providers/send/open.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import {
+  assertClientTransport,
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
   assertTextOnlyTuning,
+  type ClientTransport,
   type KvProvider,
   type LlmProvider,
   type S2sProvider,
@@ -136,6 +138,11 @@ export type Manifest = {
   /** Outbound send channel descriptor (e.g. Slack). No default. */
   send?: SendProvider | undefined;
   /**
+   * Transport the default browser client uses: `"websocket"` (default,
+   * streaming session) or `"sync"` (HTTP turns; pipeline mode only).
+   */
+  transport?: ClientTransport | undefined;
+  /**
    * Session mode derived from provider fields:
    * - `"s2s"`: speech-to-speech path (default when no stt/llm/tts set, or when `s2s` is set).
    * - `"pipeline"`: pluggable STT → LLM → TTS path (stt + llm + tts all set).
@@ -200,6 +207,7 @@ const ManifestSchema = z.object({
   kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
   send: ProviderDescriptorSchema.optional(),
+  transport: z.enum(["websocket", "sync"]).optional(),
 });
 
 /**
@@ -218,6 +226,7 @@ export function parseManifest(input: unknown): Manifest {
   assertSilencePolicy(mode, parsed.silenceTimeoutMs, parsed.silencePrompt);
   assertPipelineTuning(mode, parsed);
   assertTextOnlyTuning(parsed.tts, parsed);
+  assertClientTransport(mode, parsed.transport);
   assertAssemblyAITtsLanguage(parsed.tts);
   return {
     ...parsed,

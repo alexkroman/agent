@@ -1,22 +1,25 @@
-import "@alexkroman1/aai-ui/styles.css";
-import {
-  client,
-  createSyncSession,
-  type SyncMicrophone,
-  type SyncTurnResult,
-  startSyncMicrophone,
-  useTheme,
-} from "@alexkroman1/aai-ui";
+// Copyright 2026 the AAI authors. MIT license.
+
+/** @jsxImportSource react */
+
+/**
+ * Default chat shell for sync-transport agents (`agent({ transport: "sync" })`).
+ *
+ * No WebSocket anywhere: voice turns are endpointed in the browser (WebRTC
+ * mic + energy VAD via `startSyncMicrophone`) and each utterance — or each
+ * typed message — is one `POST /sync` request through `createSyncSession`.
+ * The conversation history lives client-side and replays with every turn.
+ *
+ * Rendered by `client()` when the agent's `GET /client-config` declares
+ * `transport: "sync"`; also exported for custom clients that want the stock
+ * sync UI with their own chrome around it.
+ */
+
 import { useEffect, useRef, useState } from "react";
-
-// Sync-mode client: no WebSocket anywhere. Voice turns are endpointed in
-// the browser (WebRTC mic + energy VAD) and each utterance — or each typed
-// message — is one `POST /sync` request. The conversation history lives
-// here and is replayed with every turn; the server keeps no session state.
-
-// The page is served at the agent's own path (`/:slug/` deployed, `/` in
-// `aai dev`), so the sync endpoint is one relative hop away.
-const SYNC_URL = new URL("sync", globalThis.location.origin + globalThis.location.pathname).href;
+import { useTheme } from "../context.ts";
+import { type SyncMicrophone, startSyncMicrophone } from "../sync-mic.ts";
+import { createSyncSession, type SyncTurnResult } from "../sync-session.ts";
+import { TEXT_MUTED } from "./_colors.ts";
 
 type Line = { id: number; role: "user" | "assistant"; text: string };
 
@@ -36,7 +39,27 @@ function playReply(ctxRef: { current: AudioContext | null }, turn: SyncTurnResul
   source.start();
 }
 
-function SyncVoiceApp() {
+/**
+ * Sync-transport chat view: mic toggle (client-side VAD), text composer,
+ * message list, and spoken-reply playback — one HTTP request per turn.
+ *
+ * @public
+ */
+export function SyncChatView({
+  syncUrl,
+  title,
+  greeting,
+}: {
+  /** The agent server's sync endpoint, e.g. `https://host/slug/sync`. */
+  syncUrl: string;
+  /** Agent name shown in the header. */
+  title?: string | undefined;
+  /**
+   * Greeting shown as the opening assistant message. Sync turns have no
+   * session start for the server to speak it on, so it is display-only.
+   */
+  greeting?: string | undefined;
+}) {
   const theme = useTheme();
   const [lines, setLines] = useState<Line[]>([]);
   const [draft, setDraft] = useState("");
@@ -48,7 +71,7 @@ function SyncVoiceApp() {
 
   const sessionRef = useRef(
     createSyncSession({
-      url: SYNC_URL,
+      url: syncUrl,
       onTurn: (turn) => {
         setLines((prev) => [
           ...prev,
@@ -108,20 +131,28 @@ function SyncVoiceApp() {
 
   return (
     <div
-      className="flex flex-col h-screen max-w-2xl mx-auto"
+      className="flex flex-col h-screen max-w-2xl mx-auto font-aai"
       style={{ background: theme.bg, color: theme.text }}
     >
       <header
         className="px-4 py-3 border-b flex items-center justify-between shrink-0"
         style={{ borderColor: theme.border }}
       >
-        <h1 className="font-bold">Sync Voice</h1>
+        <h1 className="font-bold">{title ?? "Voice Agent"}</h1>
         <span className="text-xs opacity-60">HTTP turns — no WebSocket</span>
       </header>
 
       <main className="flex-1 overflow-y-auto px-4 py-3 space-y-2">
+        {greeting !== undefined && greeting.length > 0 && (
+          <div
+            className="max-w-[85%] rounded-lg px-3 py-2 text-sm whitespace-pre-wrap"
+            style={{ background: theme.surface, color: theme.text }}
+          >
+            {greeting}
+          </div>
+        )}
         {lines.length === 0 && (
-          <p className="opacity-60 text-sm">
+          <p className="text-sm" style={{ color: TEXT_MUTED }}>
             Turn the mic on and speak — each utterance becomes one HTTP request — or type below.
           </p>
         )}
@@ -187,5 +218,3 @@ function SyncVoiceApp() {
     </div>
   );
 }
-
-client({ component: SyncVoiceApp });

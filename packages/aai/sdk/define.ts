@@ -3,6 +3,7 @@
 import type { z } from "zod";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import type {
+  ClientTransport,
   KvProvider,
   LlmProvider,
   S2sProvider,
@@ -163,6 +164,13 @@ export function agent(def: {
    * Registers the `send_message` builtin and allowlists the channel's host.
    */
   send?: SendProvider;
+  /**
+   * Transport the default browser client uses: `"websocket"` (default) for
+   * a live streaming session, `"sync"` for connectionless HTTP turns
+   * (`POST /sync`, one request per utterance or typed message — pipeline
+   * mode only). Ignored by a custom `client.tsx`.
+   */
+  transport?: ClientTransport;
   /**
    * Hostnames this agent's own tool code may `fetch`. Required for outbound
    * requests from a deployed agent — see {@link AgentDef.allowedHosts}.

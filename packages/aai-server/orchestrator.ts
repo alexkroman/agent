@@ -10,6 +10,7 @@
  * - `GET  /:slug`                 — redirect to /:slug/
  * - `GET  /:slug/`               — agent UI page
  * - `GET  /:slug/health`         — per-agent health check
+ * - `GET  /:slug/client-config`  — pre-connection client config (transport/name/greeting)
  * - `GET  /:slug/assets/:path`   — client static assets
  * - `POST /:slug/deploy`         — owner: re-deploy agent
  * - `DELETE /:slug/`             — owner: delete agent
@@ -58,7 +59,12 @@ import type { BundleStore } from "./store-types.ts";
 import { createStudioRoutes } from "./studio/studio-routes.ts";
 import { handleStudioClientAsset, handleStudioPage } from "./studio/studio-static.ts";
 import { handleSyncTurn } from "./sync-turn-handler.ts";
-import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
+import {
+  handleAgentClientConfig,
+  handleAgentHealth,
+  handleAgentPage,
+  handleClientAsset,
+} from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
 
 export type OrchestratorOpts = {
@@ -255,6 +261,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.post("/sync", syncBodyLimit, (c) => handleSyncTurn(c, c.var.slug, opts.pool));
 
   agents.get("/health", handleAgentHealth);
+  // Pre-connection client config (transport/name/greeting) for the default
+  // client — same auth posture as the page and the WebSocket: none.
+  agents.get("/client-config", handleAgentClientConfig);
   agents.get("/assets/:path{.+}", handleClientAsset);
   // GET /:slug/ stays on the top-level app — Hono's mergePath("/:slug", "/")
   // collapses the trailing slash, breaking the route.

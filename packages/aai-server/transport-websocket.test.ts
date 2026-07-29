@@ -10,11 +10,13 @@ import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey } from "./secrets.ts";
 import {
+  authHeaders,
   counterValue,
   createTestOrchestrator,
   createTestStorage,
   createTestStore,
   deployAgent,
+  deployBody,
   gaugeValue,
   histogramCount,
   TEST_AGENT_CONFIG,
@@ -46,6 +48,52 @@ describe("handleAgentHealth", () => {
     const json = (await res.json()) as { status: string; slug: string };
     expect(json.status).toBe("ok");
     expect(json.slug).toBe("my-agent");
+  });
+});
+
+describe("handleAgentClientConfig", () => {
+  test("returns 404 for non-existent agent", async () => {
+    const { fetch } = await createTestOrchestrator();
+    const res = await fetch("/no-agent/client-config");
+    expect(res.status).toBe(404);
+  });
+
+  test("defaults to the websocket transport for a plain agent", async () => {
+    const { fetch } = await createTestOrchestrator();
+    await deployAgent(fetch, "my-agent");
+    const res = await fetch("/my-agent/client-config");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      transport: "websocket",
+      name: "test-agent",
+      greeting: "",
+    });
+  });
+
+  test("serves the declared sync transport pre-connection", async () => {
+    const { fetch } = await createTestOrchestrator();
+    await fetch("/sync-agent/deploy", {
+      method: "POST",
+      headers: authHeaders(),
+      body: deployBody({
+        agentConfig: {
+          ...TEST_AGENT_CONFIG,
+          greeting: "Hi! Talk to me.",
+          transport: "sync",
+          mode: "pipeline",
+          stt: { kind: "assemblyai", options: {} },
+          llm: { kind: "anthropic", options: { model: "claude-haiku-4-5" } },
+          tts: { kind: "cartesia", options: { voice: "v" } },
+        },
+      }),
+    });
+    const res = await fetch("/sync-agent/client-config");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({
+      transport: "sync",
+      name: "test-agent",
+      greeting: "Hi! Talk to me.",
+    });
   });
 });
 
