@@ -433,6 +433,16 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
 
     onError(code, message, errOpts) {
+      // This used to emit to the client and nowhere else, so a session killed
+      // by an upstream provider — an STT socket hitting a session cap or idle
+      // cutoff, a provider deploy — left the server log showing only the
+      // subsequent close, with the cause reachable solely by whatever the
+      // client chose to do with the frame. `fatal` defaults to true: only an
+      // explicit `fatal: false` is non-terminal, and a terminal error is
+      // exactly the case that has to be answerable from the server's logs.
+      const entry = { sid: opts.id, code, message };
+      if (errOpts?.fatal === false) log.debug("session error", entry);
+      else log.warn("session error (fatal)", entry);
       emit({ type: "error", code, message, ...(errOpts?.fatal === false && { fatal: false }) });
     },
     onSpeechStarted() {
