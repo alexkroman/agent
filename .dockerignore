@@ -2,6 +2,7 @@ node_modules/
 dist/
 .git/
 .aai/
+.studio-build/
 .env
 .env.*
 !.env.example
