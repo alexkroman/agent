@@ -33,6 +33,7 @@ export * from "./runtime-config.ts";
 export * from "./server.ts";
 export * from "./session-core.ts";
 export * from "./ssrf.ts";
+export * from "./sync-turn.ts";
 export * from "./tool-executor.ts";
 export * from "./transports/pipeline-transport.ts";
 export * from "./transports/s2s-transport.ts";

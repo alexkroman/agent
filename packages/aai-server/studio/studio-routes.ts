@@ -10,6 +10,7 @@
  * - `PUT  /studio/projects/:project/file`     — write one file
  * - `DELETE /studio/projects/:project/file`   — delete one file (`?path=`)
  * - `POST /studio/projects/:project/deploy`   — build + deploy the workspace
+ * - `POST /studio/projects/:project/sync`     — sync turn against the published agent
  * - `POST /studio/chat`                       — coding-agent turn (NDJSON stream)
  *
  * Auth: any bearer API key (the platform's self-sovereign key model — same
@@ -17,14 +18,16 @@
  * the key (`studioScope`), so a key only ever sees its own projects.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
+import { errorMessage, MAX_SYNC_BODY_BYTES } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import type { UIMessage } from "ai";
 import { Hono } from "hono";
+import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import type { HonoEnv } from "../context.ts";
 import { authMw } from "../middleware.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
+import { handleSyncTurn } from "../sync-turn-handler.ts";
 import { runStudioChat } from "./studio-agent.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { isStudioLlmConfigured, studioLlmInfo } from "./studio-llm.ts";
@@ -85,6 +88,10 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   // orchestrator holds one set of windows.
   const chatLimiter = createRateLimiter(CHAT_RATE_LIMIT);
   const projectCreateLimiter = createRateLimiter(PROJECT_CREATE_RATE_LIMIT);
+  const syncBodyLimit = bodyLimit({
+    maxSize: MAX_SYNC_BODY_BYTES,
+    onError: (c) => c.json({ error: "Request body too large" }, 413),
+  });
   const rateLimited = (apiKey: string, limiter: RateLimiter): Response | null => {
     const verdict = limiter.check(studioScope(apiKey));
     if (verdict.ok) return null;
@@ -202,6 +209,21 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
       return c.json(result);
     },
   );
+
+  // One connectionless sync turn against the project's *published* agent —
+  // the studio-side door to `POST /:slug/sync`, addressed by project name so
+  // the client never has to track the slug itself. Same semantics as the
+  // preview: it exercises the deployed bundle, not unpublished edits.
+  studio.post("/projects/:project/sync", syncBodyLimit, async (c) => {
+    const scope = studioScope(c.var.apiKey);
+    const project = validateProject(c.req.param("project"));
+    const workspace = await getWorkspace(c.env.storage, scope, project);
+    if (!workspace) return c.json({ error: "Project not found" }, 404);
+    if (!workspace.deployedSlug) {
+      return c.json({ error: "Project has not been published yet" }, 409);
+    }
+    return handleSyncTurn(c, workspace.deployedSlug, options.pool);
+  });
 
   studio.post("/chat", async (c) => {
     const limited = rateLimited(c.var.apiKey, chatLimiter);

@@ -318,8 +318,25 @@ export interface TtsOpenOptions {
   signal: AbortSignal;
 }
 
+/** Options for {@link TtsOpener.synthesizeClip}. */
+export interface SynthesizeClipOptions {
+  /** Sample rate of the returned PCM16 audio, in Hz. */
+  sampleRate: number;
+  apiKey: string;
+  fetch?: typeof globalThis.fetch | undefined;
+  signal?: AbortSignal | undefined;
+}
+
 /** Host-side openable TTS provider — produced by `resolveTts(descriptor)`. */
 export interface TtsOpener {
   readonly name: string;
   open(opts: TtsOpenOptions): Promise<TtsSession>;
+  /**
+   * One-shot synthesis of a complete reply into mono PCM16LE bytes, for
+   * providers with a synchronous HTTP endpoint — Cartesia implements it via
+   * `/tts/bytes`. The mirror of {@link SttOpener.transcribeClip}: sync turns
+   * (`POST /sync`) use it instead of opening a streaming session. Providers
+   * without one omit it; a sync turn then returns a text-only reply.
+   */
+  synthesizeClip?(text: string, opts: SynthesizeClipOptions): Promise<Uint8Array>;
 }

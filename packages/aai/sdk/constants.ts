@@ -242,6 +242,22 @@ export const MAX_MESSAGE_BUFFER_SIZE = 100;
 export const MAX_SYNC_AUDIO_BYTES = 12 * 1024 * 1024;
 
 /**
+ * Cap on prior turns a sync-turn request may replay (`history` in
+ * `SyncTurnRequestSchema`). Bounds request size and LLM prompt growth from
+ * client-supplied history; the runner additionally trims to the agent's
+ * own `maxHistory` window.
+ */
+export const MAX_SYNC_HISTORY_MESSAGES = 1000;
+
+/**
+ * Cap on one `POST /sync` request body. Sized to hold
+ * {@link MAX_SYNC_AUDIO_BYTES} of audio in base64 (4/3 expansion) plus a
+ * full history payload, with headroom — anything bigger belongs on the
+ * streaming path.
+ */
+export const MAX_SYNC_BODY_BYTES = 24 * 1024 * 1024;
+
+/**
  * Chunk size for file-audio transfers (client upload frames and server-side
  * replay into a realtime STT session) — socket-friendly, comfortably under
  * {@link MAX_WS_PAYLOAD_BYTES}. Shared by aai-ui and the host so the two

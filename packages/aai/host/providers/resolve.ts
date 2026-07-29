@@ -65,9 +65,11 @@ import {
 } from "../../sdk/providers/tts/assemblyai.ts";
 import {
   CARTESIA_API_KEY_ENV,
+  CARTESIA_DEFAULT_VOICE,
   CARTESIA_KIND,
   type CartesiaOptions,
 } from "../../sdk/providers/tts/cartesia.ts";
+import { syncSynthesize } from "../../sdk/providers/tts/cartesia-sync.ts";
 import { RIME_API_KEY_ENV, RIME_KIND, type RimeOptions } from "../../sdk/providers/tts/rime.ts";
 import type {
   LlmProvider,
@@ -184,10 +186,26 @@ const STT_REGISTRY: Record<string, OpenerRegistryEntry<SttOpener>> = {
 const TTS_REGISTRY: Record<string, OpenerRegistryEntry<TtsOpener>> = {
   [CARTESIA_KIND]: {
     envVar: CARTESIA_API_KEY_ENV,
-    open: (d) =>
-      lazyOpener(CARTESIA_KIND, async () =>
+    open: (d) => ({
+      ...lazyOpener(CARTESIA_KIND, async () =>
         (await import("./tts/cartesia.ts")).openCartesia(options<CartesiaOptions>(d)),
       ),
+      // One-shot replies (sync turns) go through the bytes endpoint — the
+      // mirror of the AssemblyAI STT entry above. Zero-dep, so no lazy load.
+      synthesizeClip: (text, o) => {
+        const { voice, model, language } = options<CartesiaOptions>(d);
+        return syncSynthesize({
+          text,
+          voice: voice ?? CARTESIA_DEFAULT_VOICE,
+          model,
+          language,
+          sampleRate: o.sampleRate,
+          apiKey: o.apiKey,
+          fetch: o.fetch,
+          signal: o.signal,
+        });
+      },
+    }),
   },
   [RIME_KIND]: {
     envVar: RIME_API_KEY_ENV,

@@ -289,3 +289,50 @@ describe("resolveStt — AssemblyAI transcribeClip capability", () => {
     expect(resolveStt({ kind: "deepgram", options: {} }).opener.transcribeClip).toBeUndefined();
   });
 });
+
+describe("resolveTts — Cartesia synthesizeClip capability", () => {
+  it("posts the reply to the bytes endpoint with the descriptor's voice options", async () => {
+    const pcm = new Uint8Array([1, 2, 3, 4]);
+    const calls: [string, RequestInit][] = [];
+    const fetchFn: typeof globalThis.fetch = async (input, init) => {
+      calls.push([String(input), init as RequestInit]);
+      return new Response(pcm.slice().buffer as ArrayBuffer, { status: 200 });
+    };
+    const { opener, envVar } = resolveTts({
+      kind: "cartesia",
+      options: { voice: "v-9", model: "sonic-3", language: "de" },
+    });
+    expect(envVar).toBe("CARTESIA_API_KEY");
+    expect(opener.synthesizeClip).toBeDefined();
+    const out = await opener.synthesizeClip?.("Guten Tag", {
+      sampleRate: 24_000,
+      apiKey: "ck",
+      fetch: fetchFn,
+    });
+    expect([...(out ?? [])]).toEqual([...pcm]);
+    const [url, init] = calls[0] as [string, RequestInit];
+    expect(url).toContain("/tts/bytes");
+    const body = JSON.parse(init.body as string);
+    expect(body.voice).toEqual({ mode: "id", id: "v-9" });
+    expect(body.model_id).toBe("sonic-3");
+    expect(body.language).toBe("de");
+    expect(body.output_format.sample_rate).toBe(24_000);
+  });
+
+  it("defaults the voice when the descriptor omits it", async () => {
+    let sent: RequestInit | undefined;
+    const fetchFn: typeof globalThis.fetch = async (_input, init) => {
+      sent = init as RequestInit;
+      return new Response(new ArrayBuffer(0), { status: 200 });
+    };
+    const { opener } = resolveTts({ kind: "cartesia", options: {} });
+    await opener.synthesizeClip?.("hi", { sampleRate: 16_000, apiKey: "ck", fetch: fetchFn });
+    const body = JSON.parse(sent?.body as string);
+    expect(typeof body.voice.id).toBe("string");
+    expect(body.voice.id.length).toBeGreaterThan(0);
+  });
+
+  it("other TTS kinds carry no clip capability", () => {
+    expect(resolveTts({ kind: "rime", options: {} }).opener.synthesizeClip).toBeUndefined();
+  });
+});

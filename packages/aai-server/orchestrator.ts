@@ -16,12 +16,15 @@
  * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
  * - `GET/POST /:slug/kv`        — owner: KV store operations
  * - `POST /:slug/vector`         — owner: Vector store operations
+ * - `POST /:slug/sync`           — one connectionless sync turn (unauthenticated,
+ *                                   parity with the WebSocket; pipeline agents only)
  * - `WS   /:slug/websocket`     — WebSocket upgrade for voice sessions
  *
  * Auth: `authMw` validates API key; `ownerMw` verifies slug ownership.
  * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
  */
 
+import { MAX_SYNC_BODY_BYTES } from "@alexkroman1/aai";
 import { KvRequestSchema, VectorRequestSchema } from "@alexkroman1/aai/protocol";
 import type { Vector } from "@alexkroman1/aai/runtime";
 import { prometheus } from "@hono/prometheus";
@@ -54,6 +57,7 @@ import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-
 import type { BundleStore } from "./store-types.ts";
 import { createStudioRoutes } from "./studio/studio-routes.ts";
 import { handleStudioClientAsset, handleStudioPage } from "./studio/studio-static.ts";
+import { handleSyncTurn } from "./sync-turn-handler.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
 
@@ -229,6 +233,14 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     if (!agentConfig) return c.json({ error: "agent not configured" }, 404);
     return handleVector(c, resolveAgentVector(slug, agentConfig, env, c.env.defaultVector));
   });
+
+  // Sync turns are the WebSocket's connectionless sibling and share its auth
+  // posture: none. The body cap bounds the base64 audio + history payload.
+  const syncBodyLimit = bodyLimit({
+    maxSize: MAX_SYNC_BODY_BYTES,
+    onError: (c) => c.json({ error: "Request body too large" }, 413),
+  });
+  agents.post("/sync", syncBodyLimit, (c) => handleSyncTurn(c, c.var.slug, opts.pool));
 
   agents.get("/health", handleAgentHealth);
   agents.get("/assets/:path{.+}", handleClientAsset);
