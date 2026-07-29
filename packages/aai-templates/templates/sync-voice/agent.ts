@@ -5,9 +5,9 @@ import { cartesia } from "@alexkroman1/aai/tts";
 
 // A voice agent driven entirely over sync transports — and no custom client:
 // `transport: "sync"` below makes the *default* browser client skip the
-// WebSocket and run HTTP turns instead. It endpoints speech in the browser
-// (WebRTC mic capture + client-side VAD) and sends each utterance — or each
-// typed message — as one `POST /sync` request. Server-side, every provider
+// WebSocket and run HTTP turns instead: a hands-free conversation that
+// endpoints speech in the browser (WebRTC mic capture + client-side VAD)
+// and sends each utterance as one `POST /sync` request. Server-side, every provider
 // call is one-shot HTTP too: AssemblyAI's Sync API transcribes the clip, the
 // LLM turn runs to completion, and Cartesia's bytes endpoint synthesizes the
 // whole reply.
@@ -20,7 +20,7 @@ import { cartesia } from "@alexkroman1/aai/tts";
 // replies need a TTS provider with one-shot synthesis (Cartesia).
 export default agent({
   name: "sync-voice",
-  greeting: "Hi! Tap the mic and talk to me — or just type.",
+  greeting: "Hi! Start the conversation and just talk to me.",
   systemPrompt:
     "You are a friendly, concise voice assistant. Replies are spoken aloud, " +
     "so keep them short and conversational — one or two sentences unless " +

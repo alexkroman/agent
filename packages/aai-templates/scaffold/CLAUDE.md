@@ -210,8 +210,9 @@ with pipeline mode. Programmatic clients can use `createSyncSession` /
 **Sync transport for the default client:** set `transport: "sync"` on
 `agent()` (pipeline only) and the *default* browser client — no
 `client.tsx` needed — runs sync HTTP turns instead of opening a
-WebSocket: VAD-endpointed mic input, a text composer, and spoken-reply
-playback, one `POST /sync` per turn. The default `"websocket"` keeps the
+WebSocket: a hands-free conversation — one start/end toggle,
+VAD-endpointed mic input, and spoken-reply playback, one `POST /sync` per
+turn. The default `"websocket"` keeps the
 streaming voice session. The server exposes the choice pre-connection at
 `GET /client-config` (`GET /:slug/client-config` deployed); a custom
 `client.tsx` owns its own transport and ignores the field.
