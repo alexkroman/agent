@@ -15,6 +15,8 @@ import {
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
+import { ASSEMBLYAI_KIND } from "../../sdk/providers/stt/assemblyai.ts";
+import { syncTranscribe } from "../../sdk/providers/stt/assemblyai-sync.ts";
 import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
@@ -376,6 +378,36 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     );
   }
 
+  /**
+   * One-shot transcription of an uploaded clip (the Sync API is the
+   * preferred path for short files): transcribe in a single request, then
+   * run the committed text as a normal user turn. A failed transcription is
+   * a turn-level error, not a session teardown.
+   */
+  async function transcribeFileTurn(pcm: Uint8Array, sampleRate: number): Promise<void> {
+    let text: string;
+    try {
+      const result = await syncTranscribe({
+        audio: pcm,
+        contentType: "audio/pcm",
+        sampleRate,
+        channels: 1,
+        apiKey: opts.providerKeys.stt,
+        fetch: opts.fetch,
+        signal: sessionAbort.signal,
+      });
+      text = result.text.trim();
+    } catch (err) {
+      if (!terminated) emitError("stt", errorMessage(err));
+      return;
+    }
+    if (!text || terminated) return;
+    callbacks.onUserTranscript(text);
+    await runTurn(text).catch((err: unknown) => {
+      log.error("Pipeline file turn crashed", { error: errorMessage(err), sid: opts.sid });
+    });
+  }
+
   return {
     async start(): Promise<void> {
       // STT and TTS open concurrently; a failed side (with the session still
@@ -413,6 +445,17 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     sendUserAudio(bytes: Uint8Array): void {
       if (terminated || !audioReady) return;
       providers.stt?.sendAudio(bytesToPcm16(bytes));
+    },
+
+    transcribeFile(pcm: Uint8Array, sampleRate: number): void {
+      if (terminated || !audioReady) return;
+      // The Sync API is AssemblyAI's; other STT providers get the clip
+      // replayed through their realtime socket instead.
+      if (opts.stt.name !== ASSEMBLYAI_KIND) {
+        providers.stt?.sendAudio(bytesToPcm16(pcm));
+        return;
+      }
+      chainTurn(() => transcribeFileTurn(pcm, sampleRate));
     },
 
     // Tool execution stays inside toVercelTools/streamText; results aren't

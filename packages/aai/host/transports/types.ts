@@ -54,6 +54,13 @@ export interface Transport {
   stop(): Promise<void>;
   /** Forward user audio to the provider. */
   sendUserAudio(bytes: Uint8Array): void;
+  /**
+   * Transcribe one uploaded PCM16 clip as a single user turn — the one-shot
+   * path for short files (see `transcribe_file_start`). Transports without a
+   * synchronous transcription backend omit this; the session core then
+   * replays the clip through {@link sendUserAudio}.
+   */
+  transcribeFile?(pcm: Uint8Array, sampleRate: number): void;
   /** Forward a tool result back to the provider's reply stream. */
   sendToolResult(callId: string, result: string): void;
   /** Cancel the currently in-flight reply (barge-in / client cancel). */

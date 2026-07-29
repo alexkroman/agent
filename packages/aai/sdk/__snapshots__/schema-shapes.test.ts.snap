@@ -115,6 +115,14 @@ exports[`protocol schema shapes > ClientMessageSchema option shapes 1`] = `
     "toolCallId",
     "type",
   ],
+  "transcribe_file_end": [
+    "type",
+  ],
+  "transcribe_file_start": [
+    "byteLength",
+    "sampleRate",
+    "type",
+  ],
 }
 `;
 

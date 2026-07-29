@@ -176,6 +176,12 @@ function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: 
     case "tool_result":
       session.onToolResult(result.data.toolCallId, result.data.result, result.data.error);
       break;
+    case "transcribe_file_start":
+      session.onTranscribeFileStart(result.data.sampleRate, result.data.byteLength);
+      break;
+    case "transcribe_file_end":
+      session.onTranscribeFileEnd();
+      break;
     default:
       break;
   }

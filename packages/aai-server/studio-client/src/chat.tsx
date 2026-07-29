@@ -57,11 +57,13 @@ const STARTERS: { label: string; prompt: string }[] = [
     prompt: "A support agent that triages inbound calls",
   },
   {
-    label: "A text-only dictation pipeline (no TTS)",
+    label: "A one-shot dictation transform (no TTS)",
     prompt:
-      "A text-only speech-to-text pipeline that dictates into structured notes — " +
-      "an LLM transform cleans up the transcript, and JavaScript tools compute " +
-      "word counts and action items",
+      "A one-shot speech-to-text transform (text-only, tts: none()): I speak or " +
+      "upload a short audio file and get back structured notes as text — not a " +
+      "chat. An LLM transform turns each dictation independently into clean " +
+      "notes (output only the notes), and JavaScript tools compute word counts " +
+      "and extract action items",
   },
 ];
 

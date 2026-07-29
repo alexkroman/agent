@@ -393,3 +393,67 @@ describe("createSessionCore — history", () => {
     core.onReset();
   });
 });
+
+describe("transcribe_file upload buffering", () => {
+  test("buffers binary frames between start and end, delivering one assembled clip", () => {
+    const { core, transport } = makeCore();
+    const transcribeFile = vi.fn();
+    (transport as { transcribeFile?: Transport["transcribeFile"] }).transcribeFile = transcribeFile;
+
+    core.onTranscribeFileStart(16_000, 6);
+    core.onAudio(new Uint8Array([1, 2, 3]));
+    core.onAudio(new Uint8Array([4, 5, 6]));
+    // Mid-upload frames never reach the realtime audio path.
+    expect(transport.sendUserAudio).not.toHaveBeenCalled();
+
+    core.onTranscribeFileEnd();
+    expect(transcribeFile).toHaveBeenCalledOnce();
+    const [pcm, sampleRate] = transcribeFile.mock.calls[0] as [Uint8Array, number];
+    expect([...pcm]).toEqual([1, 2, 3, 4, 5, 6]);
+    expect(sampleRate).toBe(16_000);
+
+    // After the upload, live audio streams normally again.
+    core.onAudio(new Uint8Array([9]));
+    expect(transport.sendUserAudio).toHaveBeenCalledOnce();
+  });
+
+  test("falls back to replaying through sendUserAudio when the transport has no one-shot path", () => {
+    const { core, transport } = makeCore();
+    core.onTranscribeFileStart(16_000, 4);
+    core.onAudio(new Uint8Array([1, 2, 3, 4]));
+    core.onTranscribeFileEnd();
+    expect(transport.sendUserAudio).toHaveBeenCalledOnce();
+    const replayed = (transport.sendUserAudio as ReturnType<typeof vi.fn>).mock
+      .calls[0]?.[0] as Uint8Array;
+    expect([...replayed]).toEqual([1, 2, 3, 4]);
+  });
+
+  test("bytes past the declared byteLength are dropped", () => {
+    const { core, transport } = makeCore();
+    const transcribeFile = vi.fn();
+    (transport as { transcribeFile?: Transport["transcribeFile"] }).transcribeFile = transcribeFile;
+    core.onTranscribeFileStart(16_000, 2);
+    core.onAudio(new Uint8Array([1, 2]));
+    core.onAudio(new Uint8Array([3, 4])); // over-declared — dropped
+    core.onTranscribeFileEnd();
+    const [pcm] = transcribeFile.mock.calls[0] as [Uint8Array];
+    expect([...pcm]).toEqual([1, 2]);
+  });
+
+  test("an end without a start (or an empty upload) is a no-op", () => {
+    const { core, transport } = makeCore();
+    core.onTranscribeFileEnd();
+    core.onTranscribeFileStart(16_000, 4);
+    core.onTranscribeFileEnd();
+    expect(transport.sendUserAudio).not.toHaveBeenCalled();
+  });
+
+  test("reset discards a half-finished upload", () => {
+    const { core, transport } = makeCore();
+    core.onTranscribeFileStart(16_000, 4);
+    core.onAudio(new Uint8Array([1, 2]));
+    core.onReset();
+    core.onTranscribeFileEnd();
+    expect(transport.sendUserAudio).not.toHaveBeenCalled();
+  });
+});

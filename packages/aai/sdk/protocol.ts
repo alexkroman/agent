@@ -8,7 +8,7 @@
 import { z } from "zod";
 
 import { ToolSchemaSchema } from "./_internal-types.ts";
-import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
+import { MAX_SYNC_AUDIO_BYTES, MAX_TOOL_RESULT_CHARS } from "./constants.ts";
 
 /**
  * Audio codec identifier used in the wire protocol.
@@ -250,6 +250,23 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     result: z.string().max(MAX_TOOL_RESULT_CHARS),
     error: z.string().optional(),
   }),
+  /**
+   * One-shot file transcription: the binary frames between `start` and `end`
+   * are buffered as a single PCM16 clip and transcribed in one request (the
+   * AssemblyAI Sync API when the agent's STT supports it) instead of being
+   * replayed through the realtime socket. Preferred for uploads under two
+   * minutes.
+   */
+  z.object({
+    type: z.literal("transcribe_file_start"),
+    sampleRate: z.number().int().positive(),
+    byteLength: z
+      .number()
+      .int()
+      .positive()
+      .max(MAX_SYNC_AUDIO_BYTES, "audio exceeds the one-shot transcription cap"),
+  }),
+  ev("transcribe_file_end"),
 ]);
 
 /** Client→server text messages (binary frames carry raw PCM16 audio). */

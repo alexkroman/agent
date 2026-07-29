@@ -20,6 +20,13 @@ export const FILE_SEND_CHUNK_BYTES = 32 * 1024;
 export const FILE_SEND_BACKOFF_MS = 50;
 
 /**
+ * Uploads at or below this duration take the one-shot transcription path
+ * (server-side Sync API, 120 s max); longer files stream through the
+ * realtime STT socket.
+ */
+export const MAX_ONE_SHOT_UPLOAD_SECONDS = 120;
+
+/**
  * Current state of the voice agent session.
  *
  * @public

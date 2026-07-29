@@ -158,6 +158,21 @@ transcribes and answers, and streamed text replies. `holdPhrase` is
 rejected with `tts: none()` (it is spoken filler); the other pipeline
 tuning fields work unchanged.
 
+Uploads of **two minutes or less** are transcribed in a single request
+via AssemblyAI's Sync API (`universal-3-5-pro`) — the preferred endpoint
+for short files — rather than replayed through the realtime socket.
+This is platform behavior; the agent code needs nothing extra. Longer
+uploads stream through the agent's realtime STT. (Custom tools can also
+call the Sync API directly with `syncTranscribe` from
+`@alexkroman1/aai/stt`.)
+
+**One-shot transform agents.** Most text-only agents are *transforms*
+(dictation → structured notes, voice memo → summary), not chat: treat
+each utterance or upload as an independent request and reply with only
+the transformed output. Write the systemPrompt accordingly ("Transform
+the user's dictation into X. Output only X, nothing else.") and keep the
+greeting to a one-line instruction — or omit it.
+
 **Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
 assistant proactively take a turn after that much user silence (e.g.
 "Are you still there?"). Customize the injected instruction with

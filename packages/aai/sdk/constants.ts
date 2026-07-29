@@ -187,6 +187,14 @@ export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 
 /**
+ * Cap on one uploaded-audio transcription buffer (`transcribe_file_start`'s
+ * `byteLength`). Sized to the Sync API's 120 s limit at its highest PCM16
+ * mono rate (48 kHz × 2 bytes × 120 s ≈ 11.5 MB) — anything bigger belongs
+ * on the streaming path.
+ */
+export const MAX_SYNC_AUDIO_BYTES = 12 * 1024 * 1024;
+
+/**
  * Cap on unsent bytes buffered in a client session WebSocket before the
  * client is treated as stalled and the connection is closed. TTS synthesis
  * outruns real-time playback, so a slow or wedged client link would otherwise

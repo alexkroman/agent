@@ -9,13 +9,15 @@ const UPLOAD_TRAILING_SILENCE_SECONDS = 1;
  * resample it to mono PCM16 at `targetRate` — the format the server's STT
  * side expects on the wire. Appends a second of silence so the STT
  * provider's endpointing commits the turn instead of waiting for audio that
- * never comes.
+ * never comes. (`trailingSilence: false` skips the padding — the one-shot
+ * transcription path sends a bounded clip and needs no endpointing.)
  *
  * @throws If the browser cannot decode the payload.
  */
 export async function decodeAudioToPcm16(
   data: ArrayBuffer,
   targetRate: number,
+  opts: { trailingSilence?: boolean } = {},
 ): Promise<Int16Array> {
   // decodeAudioData needs a (possibly suspended) realtime context; rendering
   // happens offline so nothing is audible and no user gesture is required.
@@ -29,7 +31,8 @@ export async function decodeAudioToPcm16(
     });
   }
   const speechFrames = Math.ceil(decoded.duration * targetRate);
-  const frames = speechFrames + UPLOAD_TRAILING_SILENCE_SECONDS * targetRate;
+  const padSeconds = (opts.trailingSilence ?? true) ? UPLOAD_TRAILING_SILENCE_SECONDS : 0;
+  const frames = speechFrames + padSeconds * targetRate;
   const offline = new OfflineAudioContext(1, frames, targetRate);
   const source = offline.createBufferSource();
   source.buffer = decoded;

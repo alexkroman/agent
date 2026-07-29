@@ -32,6 +32,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "MAX_HTML_BYTES",
   "MAX_MESSAGE_BUFFER_SIZE",
   "MAX_PAGE_CHARS",
+  "MAX_SYNC_AUDIO_BYTES",
   "MAX_TOOL_RESULT_CHARS",
   "MAX_VALUE_SIZE",
   "MAX_WS_PAYLOAD_BYTES",

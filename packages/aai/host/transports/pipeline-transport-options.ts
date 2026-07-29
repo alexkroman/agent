@@ -103,6 +103,11 @@ export interface PipelineTransportOptions {
   temperature?: number | undefined;
   /** Tool selection policy passed to `streamText`. Defaults to `"auto"`. */
   toolChoice?: ToolChoice | undefined;
+  /**
+   * Fetch implementation for one-shot (Sync API) file transcription.
+   * Defaults to global fetch — override in tests.
+   */
+  fetch?: typeof globalThis.fetch | undefined;
   /** Logger. Defaults to consoleLogger. */
   logger?: Logger | undefined;
   /** Skip the initial greeting (used for session resume). */

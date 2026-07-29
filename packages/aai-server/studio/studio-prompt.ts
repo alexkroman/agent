@@ -117,9 +117,11 @@ export default agent({
   "@alexkroman1/aai/stt", "/llm", "/tts") or none (S2S default).
 - Text-only agent (speech in, text replies, no synthesis): pipeline mode
   with tts: none() from "@alexkroman1/aai/tts". No TTS key needed. The
-  default UI becomes record button + audio-file upload + text replies.
-  Write the systemPrompt for read (not spoken) replies. holdPhrase is
-  invalid with tts: none().
+  default UI becomes record button + audio-file upload + text replies;
+  uploads under two minutes transcribe in one shot via AssemblyAI's Sync
+  API automatically. Most text-only agents are one-shot transforms, not
+  chat: transform each utterance/upload independently and output only
+  the transformed result. holdPhrase is invalid with tts: none().
 - Send channel: send: slack() from "@alexkroman1/aai/send" +
   SLACK_WEBHOOK_URL secret registers a send_message tool that posts to a
   Slack incoming webhook.`;
