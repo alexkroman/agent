@@ -161,6 +161,8 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       const shell = createSessionShell({
         makeStreamError: (msg) => makeSttError("stt_stream_error", msg),
         emitError: (err) => emitter.emit("error", err),
+        // A provider-initiated close ends the transcript stream — see the option doc.
+        cleanCloseIsFatal: true,
         teardown: () => transcriber.close(),
       });
 
