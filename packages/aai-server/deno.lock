@@ -43,7 +43,6 @@
         "npm:react-dom@^19.2.8",
         "npm:react@^19.2.8",
         "npm:tailwindcss@^4.3.2",
-        "npm:testcontainers@^12.0.4",
         "npm:tsdown@~0.22.13",
         "npm:typescript@^7.0.2",
         "npm:unstorage@^1.17.5",

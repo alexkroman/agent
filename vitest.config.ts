@@ -78,8 +78,6 @@ export default defineConfig({
             "sandbox-integration.test.ts",
             "sandbox-lifecycle.test.ts",
             "ws-integration.test.ts",
-            "load/**",
-            "adversarial/**",
             "node_modules",
             "dist",
           ],

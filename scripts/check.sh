@@ -56,9 +56,14 @@ run_ratchets || RATCHET_STATUS=1
 
 if [ "$MODE" = "--local" ]; then
   echo -e "\n${YELLOW}Running local checks (via turbo)${NC}"
+  # check:knip is in the local subset despite being a "full CI" style gate:
+  # it needs no build, costs ~2s, and it is the only thing that catches a
+  # dependency orphaned by a deletion. That failure mode is invisible while
+  # you work (you are thinking about what to remove, not what removal
+  # strands) and expensive to discover at push time.
   if ! pnpm exec turbo run \
     build typecheck lint check:publint \
-    check:syncpack check:sherif \
+    check:syncpack check:sherif check:knip \
     test \
     --continue; then
     echo -e "\n${RED}Some checks failed.${NC}"
