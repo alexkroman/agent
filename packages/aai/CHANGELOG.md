@@ -1,5 +1,12 @@
 # @alexkroman1/aai
 
+## 1.12.0
+
+### Minor Changes
+
+- 83be5b2: Add transport selection to agent(): declare transport: "sync" (pipeline mode only) and the default browser client runs connectionless HTTP turns against POST /sync — VAD mic, text composer, and spoken-reply playback with no custom client.tsx. The transport choice is served pre-connection via the new GET /client-config endpoint (GET /:slug/client-config deployed) with the agent name and greeting; every lookup failure degrades to the WebSocket default. aai-ui exports the new SyncChatView shell plus fetchClientConfig/buildAgentUrl, and the aai dev Vite proxy now forwards /sync and /client-config so sync clients work under dev.
+- bd4405a: Add a `get_page_design` builtin that fetches a webpage's raw HTML and CSS — markup with scripts/comments stripped, `<style>` blocks, and linked stylesheets — so an agent can study or mimic another site's visual design. Every request (page and stylesheets) goes through the SSRF-safe fetch; a blocked or failing stylesheet degrades to a per-sheet error. The studio coding agent now gets the tool alongside `visit_webpage`.
+
 ## 1.11.0
 
 ### Minor Changes
