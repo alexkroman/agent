@@ -68,6 +68,8 @@ type MessageHandlerDeps = {
   conn: ConnState;
   /** Invalidate any in-flight file upload (the upload sender's `discard`). */
   discardUpload: () => void;
+  /** Release the microphone/VoiceIO (the session core's `cleanupAudio`). */
+  cleanupAudio: () => void;
 };
 
 type MessageHandlers = {
@@ -99,7 +101,7 @@ type MessageHandlers = {
  * dedup) that previously lived as closure locals in `createSessionCore`.
  */
 export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers {
-  const { getSnapshot, updateState, conn, discardUpload } = deps;
+  const { getSnapshot, updateState, conn, discardUpload, cleanupAudio } = deps;
 
   /** Incremented on each turn boundary -- stale async callbacks compare against this. */
   let handlerGeneration = 0;
@@ -154,7 +156,9 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   function clearRecoveredError(): void {
     const snap = getSnapshot();
     if (snap.state === "error") {
-      updateState({ state: "disconnected", error: null });
+      // The socket is demonstrably open (we're handling a server event), so
+      // recover to "listening" — "disconnected" would misreport a live session.
+      updateState({ state: "listening", error: null });
     } else if (snap.error !== null) {
       // Lingering non-fatal error banner (fatal: false) — the session kept
       // running, so any later activity clears it.
@@ -169,10 +173,15 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       // the banner but keep the session usable — the server kept running.
       updateState({ error: { code: e.code, message: e.message } });
     } else {
+      // Fatal: the session is over — release the microphone too, or the
+      // capture worklet keeps streaming into a socket the server may hold
+      // open, with the mic indicator lit on a dead session.
+      cleanupAudio();
       updateState({
         state: "error",
         error: { code: e.code, message: e.message },
         running: false,
+        recording: false,
       });
     }
   }
@@ -265,7 +274,9 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   /** Enqueue a PCM16 audio chunk for playback. Transitions state to `"speaking"` on the first chunk. */
   function playAudioChunk(chunk: Uint8Array): void {
     const snap = getSnapshot();
-    if (snap.state === "disconnected" && snap.error !== null) return;
+    // Binary frames bypass clearRecoveredError on purpose — a straggler chunk
+    // must not flip an errored (or error-disconnected) session to "speaking".
+    if (snap.state === "error" || (snap.state === "disconnected" && snap.error !== null)) return;
     if (snap.state !== "speaking") {
       updateState({ state: "speaking" });
     }

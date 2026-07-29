@@ -3,6 +3,7 @@
  * Shared test doubles for the session-core test suites: a mock WebSocket
  * with server-message simulation helpers and a config-message builder.
  */
+import { ClientMessageSchema, lenientParse } from "@alexkroman1/aai/protocol";
 import { vi } from "vitest";
 
 // ─── Mock WebSocket ─────────────────────────────────────────────────────────
@@ -67,6 +68,12 @@ export class MockWebSocket {
     }
   }
 
+  /** Simulate a socket error. Browsers fire "error" with no payload and
+   *  always follow it with "close" — tests must call simulateClose after. */
+  simulateError() {
+    for (const cb of this._listeners.get("error") ?? []) cb(new Event("error"));
+  }
+
   /** Simulate server-initiated close. */
   simulateClose(code = 1000) {
     this.readyState = 3;
@@ -79,6 +86,26 @@ export class MockWebSocket {
 }
 
 export type ConstructorType = import("./types.ts").WebSocketConstructor;
+
+// ─── Outbound protocol contract ─────────────────────────────────────────────
+
+/**
+ * Assert every string frame the session core sent through `socket` is a
+ * valid {@link ClientMessageSchema} message. Binary frames (audio) are
+ * skipped. Throws on the first invalid frame — call at the end of a test to
+ * pin the outbound wire contract without asserting on individual sends.
+ */
+export function assertValidClientFrames(socket: MockWebSocket | null): void {
+  if (!socket) throw new Error("assertValidClientFrames: no socket");
+  for (const call of socket.send.mock.calls) {
+    const data = call[0] as unknown;
+    if (typeof data !== "string") continue;
+    const parsed = lenientParse(ClientMessageSchema, JSON.parse(data));
+    if (!parsed.ok) {
+      throw new Error(`invalid client frame ${data}: ${parsed.error}`);
+    }
+  }
+}
 
 // ─── Helper to build a config JSON string ───────────────────────────────────
 

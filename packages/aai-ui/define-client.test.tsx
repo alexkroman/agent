@@ -92,6 +92,20 @@ describe("client", () => {
     expect(container.childNodes.length).toBe(0);
   });
 
+  it("dispose invokes the session core's Symbol.dispose", () => {
+    const handle = client({
+      name: "Test",
+      target: "#app",
+      platformUrl: "http://localhost:3000",
+    });
+    const core = vi.mocked(createSessionCore).mock.results[0]?.value as {
+      [Symbol.dispose]: ReturnType<typeof vi.fn>;
+    };
+    expect(core[Symbol.dispose]).not.toHaveBeenCalled();
+    handle.dispose();
+    expect(core[Symbol.dispose]).toHaveBeenCalledOnce();
+  });
+
   it("Symbol.dispose aliases dispose", () => {
     const handle = client({
       name: "Test",

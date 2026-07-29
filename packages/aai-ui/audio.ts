@@ -12,6 +12,13 @@ const DONE_POLL_INTERVAL_MS = 1000;
 const DONE_MAX_WAIT_MS = 65_000;
 
 /**
+ * Bounded wait for the capture worklet's 'stopped' ack during close(). The
+ * ack follows the final flush, so waiting for it keeps the tail of speech
+ * from being dropped; the timeout covers a dead worklet.
+ */
+const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
+
+/**
  * Decode an audio file (any container/codec the browser can decode) and
  * resample it to mono PCM16 at `targetRate` — the format the server's STT
  * side expects on the wire. Returns the raw clip; any endpointing padding
@@ -171,21 +178,22 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
   capNode.port.postMessage({ event: "start" });
 
+  let onCaptureStopped: (() => void) | null = null;
+
   // The worklet batches ~MIC_BUFFER_SECONDS of PCM16 at the STT rate and posts
-  // one transferred ArrayBuffer per flush — just forward it.
+  // one transferred ArrayBuffer per flush — just forward it. 'stopped' acks
+  // the final flush during close().
   capNode.port.onmessage = (e: MessageEvent) => {
-    if (e.data.event !== "chunk") return;
-    onMicData(e.data.buffer as ArrayBuffer);
+    if (e.data.event === "chunk") {
+      onMicData(e.data.buffer as ArrayBuffer);
+    } else if (e.data.event === "stopped") {
+      onCaptureStopped?.();
+      onCaptureStopped = null;
+    }
   };
 
   let playNode: AudioWorkletNode | null = null;
   let onPlaybackStop: (() => void) | null = null;
-  // The worklet answers an 'interrupt' with a 'stop' on its next process()
-  // tick. That queued stop belongs to the interrupted turn — set on flush()
-  // so it can't resolve a later turn's done() early. A boolean (not a
-  // counter): consecutive interrupts before the worklet ticks collapse into
-  // a single stop, so counting them would swallow a later real stop.
-  let staleStopPending = false;
   const lifecycle = new AbortController();
 
   // One persistent node per session: the worklet's 60s Float32 buffer is
@@ -200,10 +208,11 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     node.connect(ctx.destination);
     node.port.onmessage = (e: MessageEvent) => {
       if (e.data.event === "stop") {
-        if (staleStopPending) {
-          staleStopPending = false;
-          return;
-        }
+        // An interrupt's stop belongs to a turn flush() already settled —
+        // dropping it here (rather than flagging "the next stop is stale")
+        // means it can never swallow a real drain-stop that was already in
+        // flight when the flush happened, nor settle a later turn early.
+        if (e.data.reason === "interrupt") return;
         onPlaybackStop?.();
         onPlaybackStop = null;
       }
@@ -260,19 +269,28 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
     flush() {
       if (!playNode) return;
-      // The interrupted turn is over: settle its pending done() now, and mark
-      // the stop the worklet will post for this interrupt as stale so it
-      // can't resolve the next turn's done() early.
+      // The interrupted turn is over: settle its pending done() now. The
+      // stop the worklet posts for this interrupt carries reason
+      // 'interrupt' and is dropped by the port handler above.
       onPlaybackStop?.();
       onPlaybackStop = null;
-      staleStopPending = true;
       playNode.port.postMessage({ event: "interrupt" });
     },
 
     async close() {
       if (lifecycle.signal.aborted) return;
       lifecycle.abort();
-      capNode.port.postMessage({ event: "stop" });
+      // Wait (bounded) for the worklet to ack the final flush, so the tail
+      // of speech reaches onMicData before the port is torn down with the
+      // context — otherwise the last ~100ms of an utterance is dropped.
+      await new Promise<void>((resolve) => {
+        const cap = setTimeout(resolve, CAPTURE_STOP_ACK_TIMEOUT_MS);
+        onCaptureStopped = () => {
+          clearTimeout(cap);
+          resolve();
+        };
+        capNode.port.postMessage({ event: "stop" });
+      });
       mic.disconnect();
       capNode.disconnect();
       if (playNode) playNode.disconnect();

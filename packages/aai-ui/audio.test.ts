@@ -44,6 +44,45 @@ describe("decodeAudioToPcm16", () => {
       vi.unstubAllGlobals();
     }
   });
+
+  test("sizes the render context to ceil(duration * targetRate) frames", async () => {
+    const constructed: [number, number, number][] = [];
+    const samples = new Float32Array(8);
+    class FakeOfflineAudioContext {
+      destination = {};
+      constructor(channels: number, frames: number, rate: number) {
+        constructed.push([channels, frames, rate]);
+      }
+      decodeAudioData(_data: ArrayBuffer) {
+        // 0.10003s at 16k is 1600.48 frames — must round up, not truncate.
+        return Promise.resolve({ duration: 0.100_03 });
+      }
+      createBufferSource() {
+        return {
+          buffer: null as unknown,
+          connect(_dest: unknown) {
+            /* noop */
+          },
+          start() {
+            /* noop */
+          },
+        };
+      }
+      startRendering() {
+        return Promise.resolve({ getChannelData: () => samples });
+      }
+    }
+    vi.stubGlobal("OfflineAudioContext", FakeOfflineAudioContext);
+    try {
+      await decodeAudioToPcm16(new ArrayBuffer(4), 16_000);
+      // Throwaway decode context first, then the real render context.
+      expect(constructed[0]).toEqual([1, 1, 16_000]);
+      expect(constructed[1]).toEqual([1, Math.ceil(0.100_03 * 16_000), 16_000]);
+      expect(constructed[1]?.[1]).toBe(1601);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 });
 
 function noop() {
@@ -177,25 +216,48 @@ describe("createVoiceIO", () => {
     await io.close();
   });
 
-  test("a stop queued by flush does not resolve a later done early", async () => {
+  test("an interrupt's stop does not resolve a later done early", async () => {
     const io = await createVoiceIO(voiceOpts());
     io.enqueue(new Int16Array([1, 2, 3]).buffer);
     const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
 
-    // Interrupt the current turn: the worklet will post a 'stop' for it on
-    // its next tick, after this turn's done() has been settled.
+    // Interrupt the current turn: the worklet will post a reason-tagged
+    // 'stop' for it on its next tick, after this turn's done() has settled.
     io.flush();
 
-    // Next turn registers its own done() before the stale stop arrives.
+    // Next turn registers its own done() before the interrupt's stop arrives.
     let resolved = false;
     void io.done().then(() => {
       resolved = true;
     });
-    playNode.port.simulateMessage({ event: "stop" }); // the interrupt's stop
+    playNode.port.simulateMessage({ event: "stop", reason: "interrupt" });
     await Promise.resolve();
     expect(resolved).toBe(false);
 
-    playNode.port.simulateMessage({ event: "stop" }); // this turn's real stop
+    playNode.port.simulateMessage({ event: "stop", reason: "done" });
+    await vi.waitFor(() => expect(resolved).toBe(true));
+    await io.close();
+  });
+
+  test("a real drain-stop already in flight when flush fires is not swallowed", async () => {
+    const io = await createVoiceIO(voiceOpts());
+    io.enqueue(new Int16Array([1, 2, 3]).buffer);
+    const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
+
+    // Barge-in lands exactly at turn completion: the worklet's drain-stop is
+    // already posted when flush() runs. It must not poison the next turn.
+    io.flush();
+    playNode.port.simulateMessage({ event: "stop", reason: "done" }); // in-flight drain-stop: no pending done, no-op
+    playNode.port.simulateMessage({ event: "stop", reason: "interrupt" }); // the interrupt's own stop: dropped
+
+    // The next turn's done() must resolve on its own drain-stop.
+    let resolved = false;
+    void io.done().then(() => {
+      resolved = true;
+    });
+    await Promise.resolve();
+    expect(resolved).toBe(false);
+    playNode.port.simulateMessage({ event: "stop", reason: "done" });
     await vi.waitFor(() => expect(resolved).toBe(true));
     await io.close();
   });
@@ -334,6 +396,90 @@ describe("createVoiceIO", () => {
   test("Symbol.asyncDispose releases the audio resources", async () => {
     const io = await createVoiceIO(voiceOpts());
     await io[Symbol.asyncDispose]();
+    expect(audio.lastContext().closed).toBe(true);
+  });
+
+  test("releases the mic when a parallel init step fails after getUserMedia resolves", async () => {
+    // getUserMedia succeeds and hands out real tracks, but worklet
+    // registration fails: init must still stop every track (no orphaned
+    // "recording" indicator in the browser chrome) and close the context.
+    const tracks = [
+      {
+        stopped: false,
+        stop() {
+          this.stopped = true;
+        },
+      },
+      {
+        stopped: false,
+        stop() {
+          this.stopped = true;
+        },
+      },
+    ];
+    const nav = (globalThis as unknown as Record<string, unknown>).navigator as {
+      mediaDevices: { getUserMedia: unknown };
+    };
+    nav.mediaDevices.getUserMedia = () => Promise.resolve({ getTracks: () => tracks });
+
+    let lastCtx!: MockAudioContext;
+    const g = globalThis as unknown as Record<string, unknown>;
+    g.AudioContext = class extends MockAudioContext {
+      constructor(opts?: { sampleRate?: number }) {
+        super(opts);
+        lastCtx = this;
+        this.audioWorklet.addModule = () => Promise.reject(new Error("module load failed"));
+      }
+    };
+
+    await expect(createVoiceIO(voiceOpts())).rejects.toThrow("module load failed");
+    // Track release rides the streamPromise continuation, so it can land a
+    // microtask after the rejection surfaces.
+    await vi.waitFor(() => {
+      expect(tracks.every((t) => t.stopped)).toBe(true);
+    });
+    expect(lastCtx.closed).toBe(true);
+  });
+
+  test("done() resolves at the 65s hard cap when no stop ever arrives", async () => {
+    vi.useFakeTimers();
+    try {
+      const io = await createVoiceIO(voiceOpts());
+      io.enqueue(new ArrayBuffer(2));
+      // The context stays "running" and the worklet never posts 'stop' —
+      // a silently dead processor. The hard cap must settle done() so
+      // session state can't hang in "speaking" forever.
+      let resolved = false;
+      void io.done().then(() => {
+        resolved = true;
+      });
+      await vi.advanceTimersByTimeAsync(64_000);
+      expect(resolved).toBe(false);
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(resolved).toBe(true);
+      await io.close();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("close waits for the capture stop ack so the flushed mic tail reaches onMicData", async () => {
+    const onMicData = vi.fn((_buf: ArrayBuffer) => {
+      /* noop */
+    });
+    const io = await createVoiceIO(voiceOpts({ onMicData }));
+    const cap = findWorkletNode(audio.workletNodes(), "capture-processor");
+
+    const closing = io.close();
+    // close() posts 'stop' synchronously; the MockMessagePort echoes
+    // 'stopped' on a microtask, so a tail chunk simulated in between mirrors
+    // the worklet's final flush racing teardown — it must still be delivered.
+    expect(cap.port.posted).toContainEqual({ event: "stop" });
+    const tail = new Int16Array([7, 8, 9]).buffer;
+    cap.port.simulateMessage({ event: "chunk", buffer: tail });
+
+    await expect(closing).resolves.toBeUndefined();
+    expect(onMicData).toHaveBeenCalledWith(tail);
     expect(audio.lastContext().closed).toBe(true);
   });
 

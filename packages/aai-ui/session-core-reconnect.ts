@@ -14,7 +14,7 @@ import ReconnectingWebSocket from "partysocket/ws";
  * only to the default socket implementation — an injected
  * `options.WebSocket` (tests) never reconnects on its own.
  */
-export const RECONNECT_OPTIONS = {
+const RECONNECT_OPTIONS = {
   minReconnectionDelay: 1000,
   maxReconnectionDelay: 15_000,
   reconnectionDelayGrowFactor: 2,
@@ -42,9 +42,4 @@ export function reconnectPending(socket: unknown): boolean {
     socket.shouldReconnect &&
     socket.retryCount < RECONNECT_OPTIONS.maxRetries
   );
-}
-
-/** Cancel any still-scheduled retry on a reconnecting socket (no-op otherwise). */
-export function cancelPendingReconnect(socket: unknown): void {
-  if (socket instanceof ReconnectingWebSocket) socket.close();
 }

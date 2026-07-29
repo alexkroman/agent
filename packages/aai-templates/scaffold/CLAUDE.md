@@ -568,9 +568,10 @@ Available from `@alexkroman1/aai-ui`:
 | --- | --- | --- |
 | `StartScreen` | `children, icon?, title?, subtitle?, buttonText?` | Centered start card; renders children after start |
 | `ChatView` | `icon?, title?` | Chat interface (header + messages + controls) |
-| `SidebarLayout` | `sidebar, children, sidebarWidth?, side?` | Two-column layout |
+| `SidebarLayout` | `sidebar, children, sidebarWidth?, sidebarPosition?` | Two-column layout |
 | `MessageList` | — | Messages with auto-scroll, tool calls, transcript |
 | `Controls` | — | Stop/Resume + New Conversation buttons |
+| `TextControls` | — | Record/upload/New Conversation (text-only sessions) |
 | `Button` | — | Styled button |
 
 ## Styling

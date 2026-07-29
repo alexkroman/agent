@@ -134,6 +134,11 @@ export class MockMessagePort {
   posted: unknown[] = [];
   postMessage(data: unknown, _transfer?: Transferable[]) {
     this.posted.push(data);
+    // Mirror the capture worklet's stop→stopped ack so VoiceIO.close()
+    // resolves on the ack instead of waiting out its fallback timeout.
+    if ((data as { event?: string }).event === "stop") {
+      queueMicrotask(() => this.simulateMessage({ event: "stopped" }));
+    }
   }
   simulateMessage(data: unknown) {
     this.onmessage?.(new MessageEvent("message", { data }));

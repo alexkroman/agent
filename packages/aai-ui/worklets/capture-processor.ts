@@ -33,9 +33,12 @@ class CaptureProcessor extends AudioWorkletProcessor {
     this.port.onmessage = (e) => {
       if (e.data.event === 'start') this.recording = true;
       else if (e.data.event === 'stop') {
-        // Final flush so the tail of speech isn't dropped on close.
+        // Final flush so the tail of speech isn't dropped on close, then ack
+        // so the host knows the tail chunk (if any) has been posted and it is
+        // safe to tear the context down.
         this.flush();
         this.recording = false;
+        this.port.postMessage({ event: 'stopped' });
       }
     };
   }

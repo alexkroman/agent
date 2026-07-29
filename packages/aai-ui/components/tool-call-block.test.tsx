@@ -3,7 +3,7 @@
 
 /** @jsxImportSource react */
 
-import { render, screen } from "@testing-library/react";
+import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test } from "vitest";
 import { ThemeProvider } from "../context.ts";
 import type { ToolCallInfo } from "../types.ts";
@@ -51,5 +51,33 @@ describe("ToolCallBlock", () => {
     const { container } = renderBlock(completedToolCall);
     expect(container.innerHTML).not.toContain("tool-shimmer");
     expect(screen.getByText("fetch_json")).toBeDefined();
+  });
+
+  test("clicking a completed call expands the formatted JSON result", () => {
+    renderBlock({ ...completedToolCall, result: '{"answer":42}' });
+    // Collapsed: the result is not in the document yet.
+    expect(screen.queryByText(/"answer"/)).toBeNull();
+
+    fireEvent.click(screen.getByRole("button"));
+
+    // Expanded: pretty-printed JSON with the key and value visible.
+    expect(screen.getByText(/"answer": 42/)).toBeDefined();
+  });
+
+  test('a tool named "constructor" renders its raw name with an empty config', () => {
+    // Regression: a plain-object config lookup would resolve "constructor"
+    // through Object.prototype and treat a Function as display config. With
+    // Object.hasOwn the raw name renders under the default "Tool" eyebrow.
+    renderBlock({
+      callId: "tc_3",
+      name: "constructor",
+      args: {},
+      status: "done",
+      result: "ok",
+      seq: 3,
+      afterMessageId: -1,
+    });
+    expect(screen.getByText("constructor")).toBeDefined();
+    expect(screen.getByText("Tool")).toBeDefined();
   });
 });
