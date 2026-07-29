@@ -154,4 +154,23 @@ describe("production image packaging", () => {
       expect(fs.existsSync(abs), `${name}: ${target} does not exist at ${abs}`).toBe(true);
     }
   });
+
+  test.each(workspaceDeps)("%s: its peer dependencies survive the prod install", (name) => {
+    // The studio bundles these packages into a published client, and the
+    // client build resolves their peers from its build root — a scratch dir
+    // under this package (see studio-workspace-dir.ts), so "resolvable" means
+    // "a dependency of aai-server". The image's final `pnpm install --prod`
+    // prunes devDependencies, so a peer satisfied only by the depending
+    // package's own devDependency (React, in aai-ui) exists locally and is
+    // gone in production: publishing died with "Rolldown failed to resolve
+    // import react/jsx-runtime" while every local build passed.
+    const pkg = readJson(`packages/${dirs.get(name)}/package.json`);
+    const meta = (pkg.peerDependenciesMeta ?? {}) as Record<string, { optional?: boolean }>;
+    const required = Object.keys((pkg.peerDependencies ?? {}) as Record<string, string>).filter(
+      (peer) => !meta[peer]?.optional,
+    );
+    const prodDeps = Object.keys(readJson("packages/aai-server/package.json").dependencies ?? {});
+
+    expect(required.filter((peer) => !prodDeps.includes(peer))).toEqual([]);
+  });
 });

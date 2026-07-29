@@ -415,6 +415,20 @@ voice agents without the CLI:
   `@tailwindcss/vite` (a workspace has no `vite.config.ts`) and passes
   `configFile: false`. No `client.tsx` → `{}` → the agent gets the
   default UI.
+- **`buildClient` dedupes React** (`resolve.dedupe`), because `aai-ui`
+  declares it as a *peer* dependency while the bundler resolves the bare
+  `react/jsx-runtime` inside `aai-ui/dist/**` from *that file's* real path.
+  Locally aai-ui's own devDependency satisfies it; the production image
+  installs prod deps only, so the sole React left is `aai-server`'s — which
+  the build root (the scratch dir under that package) reaches and
+  `packages/aai-ui/dist` does not. Publishing died with *"Rolldown failed to
+  resolve import react/jsx-runtime"* while every local build passed. Two unit
+  tests hold the halves of this: `aai-cli/client-bundler.test.ts` (every
+  non-optional aai-ui peer is deduped) and the peer-dependency case in
+  `dockerfile-packaging.test.ts` (each one is an aai-server *prod* dep, so it
+  survives `--prod`). Same failure shape as the `styles.css` COPY above —
+  anything the studio's client build reaches has to exist, and be
+  resolvable, in the pruned image.
 - **Deployed-agent credentials.** The studio has no secrets UI, so a
   published agent would otherwise start with an empty env — its S2S
   connect sends an empty bearer token (`runtime-transport.ts`:
