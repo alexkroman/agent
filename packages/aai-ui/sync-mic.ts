@@ -28,19 +28,30 @@ import {
 export const DEFAULT_SYNC_MIC_SAMPLE_RATE = 16_000;
 
 /** ~128 ms at 16 kHz: few messages per second, fine-enough VAD granularity. */
-const CAPTURE_BATCH_SAMPLES = 2048;
+export const CAPTURE_BATCH_SAMPLES = 2048;
 
 /**
  * The capture processor: coalesces 128-sample render quanta into
  * {@link CAPTURE_BATCH_SAMPLES} batches and posts them (transferred, so no
  * per-batch copy). Inlined as source because it must be stringified into a
  * blob URL.
+ *
+ * `batch` is held as a field rather than re-read from the posted view:
+ * `postMessage` with a transfer list detaches the buffer, so `out.length` is
+ * 0 by the time the next buffer is allocated. Allocating a zero-length `buf`
+ * from it made `n` 0 forever, so `read` stopped advancing and the render
+ * thread spun inside `process()` posting empty chunks — the mic went
+ * permanently deaf on its first flush.
+ *
+ * Exported for the worklet unit tests (`sync-mic-worklet.test.ts`), which
+ * evaluate this source directly; it is not part of the package surface.
  */
-const CAPTURE_PROCESSOR_SRC = `
+export const CAPTURE_PROCESSOR_SRC = `
 registerProcessor("aai-sync-capture", class extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const batch = (options && options.processorOptions && options.processorOptions.batchSamples) || ${CAPTURE_BATCH_SAMPLES};
+    this.batch = batch;
     this.buf = new Float32Array(batch);
     this.len = 0;
   }
@@ -53,11 +64,13 @@ registerProcessor("aai-sync-capture", class extends AudioWorkletProcessor {
       this.buf.set(ch.subarray(read, read + n), this.len);
       this.len += n;
       read += n;
-      if (this.len === this.buf.length) {
+      if (this.len === this.batch) {
         const out = this.buf;
-        this.port.postMessage({ event: "chunk", samples: out }, [out.buffer]);
-        this.buf = new Float32Array(out.length);
+        // Size the next buffer from this.batch, never from \`out\`: the
+        // transfer below detaches out.buffer, so out.length reads 0 here.
+        this.buf = new Float32Array(this.batch);
         this.len = 0;
+        this.port.postMessage({ event: "chunk", samples: out }, [out.buffer]);
       }
     }
     return true;

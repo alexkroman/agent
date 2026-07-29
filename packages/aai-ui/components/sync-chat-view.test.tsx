@@ -223,6 +223,54 @@ describe("SyncChatView", () => {
     expect(screen.getByText("End conversation")).toBeTruthy();
   });
 
+  test("unmounting releases the mic", async () => {
+    const { handle } = mockMic();
+    const view = renderView();
+    await startConversation();
+
+    view.unmount();
+
+    expect(handle.stop).toHaveBeenCalledOnce();
+  });
+
+  test("unmounting mid-startup still releases the mic", async () => {
+    // The permission prompt is open when the view goes away: the cleanup runs
+    // before startSyncMicrophone resolves, so nothing holds the handle. Left
+    // unstopped it is a hot mic and an AudioContext for the page's lifetime,
+    // still POSTing endpointed utterances from a view that no longer exists.
+    const handle = { speaking: false, stop: vi.fn(async () => undefined) };
+    let grant: (() => void) | null = null;
+    micMock.startSyncMicrophone.mockImplementation(
+      async () =>
+        await new Promise((resolve) => {
+          grant = () => resolve(handle);
+        }),
+    );
+
+    const view = renderView();
+    fireEvent.click(toggleButton());
+    view.unmount();
+    await act(async () => {
+      grant?.();
+    });
+
+    expect(handle.stop).toHaveBeenCalledOnce();
+  });
+
+  test("a turn landing after unmount neither plays nor throws", async () => {
+    const { captured } = mockMic();
+    vi.stubGlobal("AudioContext", FakePlaybackContext);
+    stubTurn({ transcript: "t", reply: "r", audio: "AAAAAA==", sampleRate: 16_000 });
+
+    const view = renderView();
+    await startConversation();
+    view.unmount();
+    await speakUtterance(captured);
+
+    // No AudioContext resurrected for a view that is gone.
+    expect(FakePlaybackContext.started).toBe(0);
+  });
+
   test("a failed turn surfaces the error instead of hanging on thinking", async () => {
     const { captured } = mockMic();
     vi.stubGlobal(

@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Sync-session HTTP client: turn requests, history replay, error paths.
 
+import { DEFAULT_MAX_HISTORY } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import { base64ToPcm16, createSyncSession, pcm16ToBase64 } from "./sync-session.ts";
 
@@ -52,6 +53,28 @@ describe("createSyncSession", () => {
       { role: "assistant", content: "hello!" },
     ]);
     expect(sentBody(fetchFn)).toEqual({ text: "hi", history: [] });
+  });
+
+  test("slides the history window at the server's own limit", async () => {
+    // Unbounded growth is not just memory: every turn replays the whole array,
+    // and past MAX_SYNC_HISTORY_MESSAGES the server rejects the request, so a
+    // long conversation used to break permanently.
+    const fetchFn = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const n = (JSON.parse(init?.body as string) as { history: unknown[] }).history.length;
+      return jsonResponse({ transcript: `q${n}`, reply: `a${n}` });
+    }) as FetchMock;
+    const session = createSyncSession({ url: "http://x/sync", fetch: fetchFn });
+
+    for (let i = 0; i < DEFAULT_MAX_HISTORY; i++) await session.sendText("hi");
+
+    expect(session.history).toHaveLength(DEFAULT_MAX_HISTORY);
+    // The window keeps the most recent turns, not the oldest.
+    expect(session.history.at(-1)).toEqual({
+      role: "assistant",
+      content: `a${DEFAULT_MAX_HISTORY}`,
+    });
+    const lastSent = sentBody(fetchFn, DEFAULT_MAX_HISTORY - 1).history as unknown[];
+    expect(lastSent).toHaveLength(DEFAULT_MAX_HISTORY);
   });
 
   test("replays accumulated history on the next turn", async () => {
