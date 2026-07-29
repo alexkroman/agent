@@ -25,6 +25,7 @@ import {
   safeFetch,
   type Vector,
 } from "@alexkroman1/aai/runtime";
+import { sendAllowedHosts } from "@alexkroman1/aai/send";
 import type { Storage } from "unstorage";
 import { debug } from "./_debug-log.ts";
 import {
@@ -113,6 +114,26 @@ export function createClientSendHandler(sessionSinks: Map<string, ClientSink>) {
   };
 }
 
+/**
+ * Drop the keys whose value is `undefined`, so an unset config field stays
+ * absent on the runtime agent rather than becoming an explicit `undefined`.
+ *
+ * Exists so {@link toRuntimeAgent} can be one flat `key: config.key` block.
+ * The `...(config.x !== undefined ? { x: config.x } : {})` spread per field it
+ * replaces is what let fields go missing unnoticed — `builtinTools` (every
+ * deployed agent silently lost the default cognitive builtins) and then `send`
+ * (a deployed `send: slack()` never registered `send_message`) — because every
+ * field is optional, so an omission is valid TypeScript and invisible in
+ * review. It also kept the function over the cognitive-complexity cap.
+ */
+function defined<T extends object>(fields: T): { [K in keyof T]?: Exclude<T[K], undefined> } {
+  // `Partial<T>` would keep `| undefined` in each value type, which
+  // `exactOptionalPropertyTypes` then rejects against AgentDef's `x?: string`.
+  return Object.fromEntries(Object.entries(fields).filter(([, value]) => value !== undefined)) as {
+    [K in keyof T]?: Exclude<T[K], undefined>;
+  };
+}
+
 /** Map the deploy-time IsolateConfig onto the runtime's agent-definition shape. */
 function toRuntimeAgent(config: IsolateConfig): Parameters<typeof createRuntime>[0]["agent"] {
   return {
@@ -121,23 +142,25 @@ function toRuntimeAgent(config: IsolateConfig): Parameters<typeof createRuntime>
     greeting: config.greeting ?? "",
     maxSteps: config.maxSteps ?? DEFAULT_MAX_STEPS,
     tools: {},
-    ...(config.sttPrompt ? { sttPrompt: config.sttPrompt } : {}),
-    ...(config.idleTimeoutMs !== undefined ? { idleTimeoutMs: config.idleTimeoutMs } : {}),
-    ...(config.silenceTimeoutMs !== undefined ? { silenceTimeoutMs: config.silenceTimeoutMs } : {}),
-    ...(config.silencePrompt !== undefined ? { silencePrompt: config.silencePrompt } : {}),
-    ...(config.minBargeInWords !== undefined ? { minBargeInWords: config.minBargeInWords } : {}),
-    ...(config.interruptionMinDurationMs !== undefined
-      ? { interruptionMinDurationMs: config.interruptionMinDurationMs }
-      : {}),
-    ...(config.endpointSettleMs !== undefined ? { endpointSettleMs: config.endpointSettleMs } : {}),
-    ...(config.completeSettleMs !== undefined ? { completeSettleMs: config.completeSettleMs } : {}),
-    ...(config.holdPhrase !== undefined ? { holdPhrase: config.holdPhrase } : {}),
-    ...(config.falseInterruptionTimeoutMs !== undefined
-      ? { falseInterruptionTimeoutMs: config.falseInterruptionTimeoutMs }
-      : {}),
-    ...(config.toolChoice ? { toolChoice: config.toolChoice satisfies ToolChoice } : {}),
-    ...(config.builtinTools ? { builtinTools: config.builtinTools as BuiltinTool[] } : {}),
-    ...(config.s2s ? { s2s: config.s2s } : {}),
+    ...defined({
+      sttPrompt: config.sttPrompt,
+      idleTimeoutMs: config.idleTimeoutMs,
+      silenceTimeoutMs: config.silenceTimeoutMs,
+      silencePrompt: config.silencePrompt,
+      minBargeInWords: config.minBargeInWords,
+      interruptionMinDurationMs: config.interruptionMinDurationMs,
+      endpointSettleMs: config.endpointSettleMs,
+      completeSettleMs: config.completeSettleMs,
+      holdPhrase: config.holdPhrase,
+      falseInterruptionTimeoutMs: config.falseInterruptionTimeoutMs,
+      toolChoice: config.toolChoice satisfies ToolChoice | undefined,
+      builtinTools: config.builtinTools as BuiltinTool[] | undefined,
+      s2s: config.s2s,
+      // `createRuntime` keys the `send_message` builtin off `agent.send`, so
+      // omitting this made a deployed `send: slack()` a silent no-op: the LLM
+      // never saw the tool, so the symptom was a reply that simply didn't send.
+      send: config.send,
+    }),
   };
 }
 
@@ -194,6 +217,21 @@ export function resolveAgentVector(
   return defaultVector ? defaultVector(slug) : createMemoryVector({ namespace: slug });
 }
 
+/**
+ * The hostnames guest tool code may reach: the agent's own `allowedHosts`
+ * plus the webhook host of any declared send channel — declaring the channel
+ * is the egress opt-in, so an agent's own tool calling `openSender` works
+ * without the author also hand-listing `hooks.slack.com`.
+ *
+ * Derived **host-side from the validated descriptor**, not read from a
+ * bundle-supplied field: the deploy path builds its config with
+ * `toAgentConfig`, which has no `allowedHosts` at all, and a bundle must not
+ * be able to widen its own egress by naming hosts a channel doesn't use.
+ */
+function resolveAgentAllowedHosts(config: Pick<IsolateConfig, "allowedHosts" | "send">): string[] {
+  return [...new Set([...(config.allowedHosts ?? []), ...sendAllowedHosts(config.send)])];
+}
+
 export function createSandbox(opts: SandboxOptions): Sandbox {
   const { workerCode, env, storage, slug } = opts;
 
@@ -212,7 +250,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       kv,
       vector,
       harnessPath,
-      allowedHosts: config.allowedHosts ?? [],
+      allowedHosts: resolveAgentAllowedHosts(config),
     },
     opts.pool,
   );
