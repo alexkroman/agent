@@ -6,6 +6,7 @@
       "!**/node_modules",
       "!**/dist",
       "!**/coverage",
+      "!**/.studio-build",
       "!**/.aai",
       "!**/__snapshots__",
       "!**/scaffold",

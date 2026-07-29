@@ -1,12 +1,9 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
   "ignore": [
-    ".claude/**",
-    "examples/**",
-    ".remember/**"
+    "examples/**"
   ],
   "ignoreBinaries": [
-    "which",
     "safe-chain"
   ],
   "ignoreUnresolved": [
@@ -24,7 +21,6 @@
     ".": {
       "entry": [
         "scripts/*.{mjs,ts}",
-        "vitest.adversarial.config.ts",
         "stryker*.config.mjs"
       ],
       "ignoreDependencies": [
@@ -35,12 +31,6 @@
     "packages/aai": {
       "entry": [
         "host/_test-utils.ts",
-        "host/runtime-barrel.ts",
-        "sdk/providers/stt-barrel.ts",
-        "sdk/providers/tts-barrel.ts",
-        "sdk/providers/llm-barrel.ts",
-        "sdk/providers/kv-barrel.ts",
-        "sdk/providers/vector-barrel.ts",
         "host/integration/**/*.integration.test.ts",
         "**/*.test.ts",
         "**/*.test-d.ts"
@@ -53,17 +43,14 @@
     "packages/aai-ui": {
       "entry": [
         "**/*.test.{ts,tsx}",
-        "_react-test-utils.ts",
-        "default-client.tsx"
+        "_react-test-utils.ts"
       ],
       "includeEntryExports": true
     },
     "packages/aai-cli": {
       "entry": [
         "**/*.test.ts",
-        "_test-utils.ts",
-        "bin.mjs",
-        "types.ts"
+        "_test-utils.ts"
       ]
     },
     "packages/aai-templates": {
@@ -83,7 +70,6 @@
     },
     "packages/aai-studio-client": {
       "entry": [
-        "src/main.tsx",
         "**/*.test.{ts,tsx}"
       ],
       "includeEntryExports": true,
