@@ -41,6 +41,27 @@ export type BuildClientOptions = {
 const DEFAULT_OUT_DIR = ".aai/client";
 
 /**
+ * Packages resolved from the build root rather than from whichever
+ * `node_modules` happens to sit above the importing file.
+ *
+ * `@alexkroman1/aai-ui` declares React as a **peer** dependency — "my consumer
+ * supplies it" — but a bundler resolves the bare `react/jsx-runtime` import
+ * inside `aai-ui/dist/**` from that file's own real path, not from the
+ * consumer's. In the studio's case the two differ: the workspace scratch dir
+ * (the build root, under `aai-server`, which owns the React dependency) is
+ * nowhere above `packages/aai-ui/dist`, and the production image installs prod
+ * deps only, so aai-ui's own devDependency copy of React is pruned there.
+ * The result was a publish that failed with *"Rolldown failed to resolve
+ * import react/jsx-runtime"* while every local build passed.
+ *
+ * Deduping states the peer contract in terms the bundler enforces, and it is
+ * what a React app wants anyway: two copies of React in one bundle break
+ * hooks. Guarded by `client-bundler.test.ts` and, for the half that has to
+ * hold in the image, `aai-server/dockerfile-packaging.test.ts`.
+ */
+const DEDUPED_PEERS = ["react", "react-dom"];
+
+/**
  * Build the client SPA with Vite if `client.tsx` exists.
  * Returns a map of relative file paths to string contents for deploy,
  * or `{}` when the project has no `client.tsx`.
@@ -65,6 +86,7 @@ export async function buildClient(
         logLevel: "silent",
         ...(opts.configFile === false && { configFile: false }),
         ...(opts.plugins && { plugins: opts.plugins }),
+        resolve: { dedupe: DEDUPED_PEERS },
         build: {
           outDir,
           emptyOutDir: true,
