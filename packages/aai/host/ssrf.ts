@@ -16,13 +16,33 @@ import { lookup } from "node:dns/promises";
 import { isIP } from "node:net";
 import bogon from "bogon";
 import pTimeout from "p-timeout";
-import { Agent } from "undici";
+import { Agent, fetch as undiciFetch } from "undici";
 
 const BLOCKED_TLDS = [".internal", ".local", ".localhost"];
 const BLOCKED_HOSTS = new Set(["metadata.google.internal", "instance-data.ec2.internal"]);
 
 /** Thrown when a URL is rejected by SSRF policy (vs. an incidental failure). */
 class SsrfBlockedError extends Error {}
+
+/**
+ * The `fetch` every pinned request must go through — deliberately NOT
+ * `globalThis.fetch`.
+ *
+ * {@link pinnedDispatcher} builds an `Agent` from the `undici` package this
+ * package depends on, while Node's global `fetch` is backed by the undici
+ * bundled into the runtime (`process.versions.undici`) — a different copy, and
+ * usually a different major. undici 8 reworked the dispatch-handler interface,
+ * so handing a v8 `Agent` the v7-style handler Node's internal fetch builds
+ * fails validation with `InvalidArgumentError: invalid onRequestStart method`,
+ * which `fetch` then reports as a bare `TypeError: fetch failed` with the real
+ * reason buried in `cause`. Since a dispatcher is attached to every hostname
+ * request, that breaks all host-side egress at once.
+ *
+ * Pairing the dispatcher with its own package's `fetch` keeps the two on one
+ * undici regardless of what the host runtime bundles. Exported for
+ * `ssrf-dispatcher.test.ts`, which guards the pairing.
+ */
+export const pinnedFetch = undiciFetch as unknown as typeof globalThis.fetch;
 
 export function isPrivateIp(ip: string): boolean {
   return bogon(ip);
@@ -192,4 +212,4 @@ function requestUrl(input: Parameters<typeof globalThis.fetch>[0]): string {
  * credentials are stripped when a redirect leaves the original origin.
  */
 export const safeFetch: typeof globalThis.fetch = (input, init) =>
-  ssrfSafeFetch(requestUrl(input), init ?? {}, globalThis.fetch);
+  ssrfSafeFetch(requestUrl(input), init ?? {}, pinnedFetch);

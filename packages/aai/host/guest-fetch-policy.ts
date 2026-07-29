@@ -35,7 +35,7 @@ import {
   TOOL_FETCH_MAX_RESPONSE_BYTES,
   TOOL_FETCH_TIMEOUT_MS,
 } from "../sdk/constants.ts";
-import { ssrfSafeFetch } from "./ssrf.ts";
+import { pinnedFetch, ssrfSafeFetch } from "./ssrf.ts";
 
 // Re-exported so a consumer never has a reason to reach past this module for
 // the numbers it enforces.
@@ -117,7 +117,10 @@ export function performToolFetch(
     signal?: AbortSignal | undefined;
   },
 ): Promise<Response> {
-  const fetchFn = opts.fetchFn ?? globalThis.fetch;
+  // `pinnedFetch`, not `globalThis.fetch`: `ssrfSafeFetch` attaches a
+  // dispatcher built from this package's undici, and only that package's
+  // `fetch` accepts it. See the note on `pinnedFetch`.
+  const fetchFn = opts.fetchFn ?? pinnedFetch;
   const timeout = AbortSignal.timeout(TOOL_FETCH_TIMEOUT_MS);
   const withTimeout: RequestInit = {
     ...init,
