@@ -63,6 +63,15 @@ const capturedRuntime: { current: import("@alexkroman1/aai/runtime").Runtime | n
   current: null,
 };
 
+/**
+ * The options `createSandbox` handed `createRuntime`. Whether the providers
+ * reached it is the whole question for the pipeline specs below — by the time a
+ * runtime exists the transport choice is already made and invisible.
+ */
+const capturedOpts: {
+  current: Parameters<typeof import("@alexkroman1/aai/runtime").createRuntime>[0] | null;
+} = { current: null };
+
 vi.mock("@alexkroman1/aai/runtime", async (importOriginal) => {
   const orig = await importOriginal<typeof import("@alexkroman1/aai/runtime")>();
   return {
@@ -70,6 +79,7 @@ vi.mock("@alexkroman1/aai/runtime", async (importOriginal) => {
     createRuntime(opts: Parameters<typeof orig.createRuntime>[0]) {
       const runtime = orig.createRuntime(opts);
       capturedRuntime.current = runtime;
+      capturedOpts.current = opts;
       return runtime;
     },
   };
@@ -185,6 +195,76 @@ describe("createSandbox — send channel", () => {
       expect(allowedHosts()).toEqual([]);
       await sandbox.shutdown();
     });
+  });
+});
+
+describe("createSandbox — pipeline providers must never silently become S2S", () => {
+  beforeEach(() => {
+    capturedRuntime.current = null;
+    capturedOpts.current = null;
+    mockCreateSandboxVm.mockClear();
+  });
+
+  const PROVIDERS = {
+    stt: assemblyAI({ model: "universal-3-5-pro" }),
+    llm: anthropic({ model: "claude-haiku-4-5" }),
+    tts: cartesia(),
+  } as const;
+
+  const PROVIDER_ENV = {
+    ASSEMBLYAI_API_KEY: "k",
+    ANTHROPIC_API_KEY: "k",
+    CARTESIA_API_KEY: "k",
+  };
+
+  function forwardedProviders(): { stt: boolean; llm: boolean; tts: boolean } {
+    const opts = capturedOpts.current;
+    if (!opts) throw new Error("createRuntime opts not captured");
+    return {
+      stt: opts.stt !== undefined,
+      llm: opts.llm !== undefined,
+      tts: opts.tts !== undefined,
+    };
+  }
+
+  it("forwards the providers when the config declares mode: pipeline", async () => {
+    const sandbox = createSandbox(
+      makeSandboxOptions({
+        agentConfig: { ...BASE_CONFIG, mode: "pipeline", ...PROVIDERS },
+        env: PROVIDER_ENV,
+      }),
+    );
+
+    expect(forwardedProviders()).toEqual({ stt: true, llm: true, tts: true });
+    await sandbox.shutdown();
+  });
+
+  it("forwards the providers when the config omits mode", async () => {
+    // `mode` is optional in IsolateConfigSchema, so a config can carry all
+    // three descriptors with no `mode` at all. Gating the forward on
+    // `config.mode === "pipeline"` dropped every provider for such a config:
+    // createRuntime then saw an agent with none, resolved S2S, and ran a fully
+    // working S2S session on the agent's own key — with nothing logged to say
+    // the configured STT/LLM/TTS had been ignored. The descriptors are the
+    // source of truth; the schema's superRefine already rejects a `mode` that
+    // disagrees with them.
+    const sandbox = createSandbox(
+      makeSandboxOptions({
+        agentConfig: { ...BASE_CONFIG, ...PROVIDERS },
+        env: PROVIDER_ENV,
+      }),
+    );
+
+    expect(forwardedProviders()).toEqual({ stt: true, llm: true, tts: true });
+    await sandbox.shutdown();
+  });
+
+  it("forwards nothing for a genuine S2S agent", async () => {
+    // S2S stays reachable — it just has to be what the agent actually declared.
+    const sandbox = createSandbox(makeSandboxOptions());
+
+    expect(forwardedProviders()).toEqual({ stt: false, llm: false, tts: false });
+    await sandbox.shutdown();
   });
 });
 

@@ -237,6 +237,9 @@ restrictions apply there.
 - `orchestrator.ts` — HTTP + WebSocket routing
 - `sandbox.ts` — gVisor sandbox management
 - `sandbox-vm.ts` — per-agent sandbox lifecycle (start, teardown)
+- `sandbox-agent-config.ts` — maps the deploy-time `IsolateConfig` onto the
+  runtime's agent definition + provider options (`toRuntimeAgent`,
+  `pipelineProviderOpts`, `toHostBaseAgent`)
 - `sandbox-guest-rpc.ts` — guest→host KV/Vector/fetch RPC schemas + handler registration
 - `sandbox-pool.ts` — pool of pre-warmed Deno harnesses for fast cold starts
 - `sandbox-network.ts` — network proxying for sandbox
@@ -711,7 +714,8 @@ agent needs both wired or the failure is silent:
 
 - **Host side** — `createRuntime` registers the `send_message` builtin only
   when `agent.send` is set (`host/runtime-tools.ts:resolveSendMessage`). The
-  platform builds its agent object with `toRuntimeAgent` (`sandbox.ts`), so
+  platform builds its agent object with `toRuntimeAgent`
+  (`sandbox-agent-config.ts`), so
   that mapper must copy `config.send`; when it didn't, a deployed
   `send: slack()` was a no-op — the tool never entered the LLM's schema
   list, so the symptom was a reply that simply didn't send, with no error
@@ -824,6 +828,27 @@ rather than one conditional spread each. That shape is deliberate: the
 per-field form is how `builtinTools` (deployed agents silently lost the
 default cognitive builtins) and then `send` came to be dropped, since every
 field is optional and an omission is valid TypeScript.
+
+This mapping lives in **`sandbox-agent-config.ts`**, split out of `sandbox.ts`
+because it has its own history of dropping fields, and every such bug presents
+as a *working* agent quietly ignoring part of its own config. The third was the
+provider triple: `pipelineProviderOpts` forwards stt/llm/tts keyed off the
+**descriptors**, never `config.mode`, which is optional in
+`IsolateConfigSchema`. A config carrying all three providers with no `mode` hit
+the old `config.mode === "pipeline"` gate and lost every one of them, so
+`createRuntime` resolved S2S and ran a healthy S2S session on the agent's own
+key — nothing logged, the configured providers simply ignored. The descriptors
+are the safe source because `superRefine` rejects a `mode` that disagrees with
+them.
+
+**Never let S2S be a fallback.** `buildTransport`
+(`host/runtime-transport.ts`) reaches `buildAssemblyS2sTransport` by
+fallthrough, so any path that loses the providers yields a fully functional
+session in the wrong mode. Two rules keep that diagnosable: forward providers
+based on their own presence (above), and `createRuntime` logs
+`"Session mode resolved"` once per runtime with the mode and provider kinds —
+"which transport is this agent on" must be answerable from one log line rather
+than inferred from the shape of the message stream (`S2S <<` prefixes).
 
 ### Data flow
 

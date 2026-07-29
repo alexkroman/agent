@@ -610,6 +610,39 @@ describe("createRuntime — text-only readyConfig", () => {
     ).not.toThrow();
   });
 
+  test("logs the resolved session mode and provider kinds", () => {
+    // A pipeline agent whose providers don't reach the runtime runs a healthy
+    // S2S session instead, so the mode must be readable from one log line
+    // rather than inferred from the shape of the message stream.
+    const logger = makeLogger();
+    createRuntime({
+      agent: textOnlyAgent,
+      env: PROVIDER_KEYS,
+      logger,
+      stt: assemblyAI({ model: "u3pro-rt" }),
+      llm: anthropic({ model: "claude-haiku-4-5" }),
+      tts: cartesia(),
+    });
+    expect(logger.info).toHaveBeenCalledWith(
+      "Session mode resolved",
+      expect.objectContaining({
+        mode: "pipeline",
+        stt: "assemblyai",
+        llm: "anthropic",
+        tts: "cartesia",
+      }),
+    );
+  });
+
+  test("logs s2s mode for an agent that declares no providers", () => {
+    const logger = makeLogger();
+    createRuntime({ agent: textOnlyAgent, env: PROVIDER_KEYS, logger });
+    expect(logger.info).toHaveBeenCalledWith(
+      "Session mode resolved",
+      expect.objectContaining({ mode: "s2s" }),
+    );
+  });
+
   test("still rejects pipeline tuning on a genuine S2S agent", () => {
     // The assertion must keep firing where it is right: no providers anywhere.
     expect(() =>
