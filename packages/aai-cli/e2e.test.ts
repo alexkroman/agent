@@ -106,6 +106,14 @@ describe("pack + build: template workflows", () => {
       // that look like network/proxy trouble; a real dependency-resolution
       // bug in the published packages must still fail.
       if (!isRegistryProxyFailure(err)) throw err;
+      // Also log the full failure — the skip note is truncated and the
+      // install output is captured, so this is the only diagnosis trail.
+      const detail = err instanceof Error ? (err.stack ?? err.message) : String(err);
+      const output = (err as { stderr?: string; stdout?: string }) ?? {};
+      console.warn(
+        `[e2e] install skipped for template ${template}:\n${detail}\n` +
+          `stderr:\n${output.stderr ?? ""}\nstdout:\n${output.stdout ?? ""}`,
+      );
       ctx.skip(`pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`);
     }
     aai(aaiBin, ["test"], projectDir);

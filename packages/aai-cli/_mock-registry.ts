@@ -32,11 +32,29 @@ export interface MockRegistry {
 function writeConfig(configPath: string, port: number): void {
   // Workspace packages are local-only.
   // Everything else proxies to npmjs for third-party deps.
+  //
+  // Uplink hardening against a verdaccio footgun: its defaults mark an
+  // uplink DEAD after 2 failed requests (max_fails) for 5 minutes
+  // (fail_timeout), answering every proxied fetch with an instant 404 while
+  // dead — so two dropped connections would poison the rest of the suite
+  // with ERR_PNPM_FETCH_404 on ordinary packages. Raising max_fails and
+  // shrinking fail_timeout makes a transient failure cost one retried
+  // request instead of the run; the keep-alive agent with capped sockets
+  // avoids connection bursts against the upstream. (The 404s actually seen
+  // under `pnpm check` had a different cause — turbo's strict env mode
+  // stripping the proxy variables; see globalPassThroughEnv in turbo.json.)
   const yaml = `
 storage: ./storage
 uplinks:
   npmjs:
     url: https://registry.npmjs.org/
+    timeout: 60s
+    max_fails: 100
+    fail_timeout: 1s
+    agent_options:
+      keepAlive: true
+      maxSockets: 8
+      maxFreeSockets: 4
 packages:
   "@alexkroman1/*":
     access: $all

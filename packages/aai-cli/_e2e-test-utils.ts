@@ -133,7 +133,15 @@ export function installDeps(registry: MockRegistry, projectDir: string): void {
   // otherwise the registry switch dies with
   // ERR_PNPM_ABORTED_REMOVE_MODULES_DIR_NO_TTY on machines where that inner
   // install succeeded.
-  const installEnv = { ...env, NPM_CONFIG_MINIMUM_RELEASE_AGE: "0", CI: "true" };
+  // FETCH_RETRIES: with the uplink no longer converting transient upstream
+  // failures into definitive 404s (see _mock-registry.ts), pnpm's own retry
+  // machinery can actually absorb a dropped connection under parallel load.
+  const installEnv = {
+    ...env,
+    NPM_CONFIG_MINIMUM_RELEASE_AGE: "0",
+    NPM_CONFIG_FETCH_RETRIES: "5",
+    CI: "true",
+  };
 
   // Output is CAPTURED (not inherited) so an install failure carries the
   // package manager's own error text on the thrown ExecaSyncError — the e2e

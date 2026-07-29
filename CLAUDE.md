@@ -56,6 +56,15 @@ parallelism. Turbo handles the dependency graph — tasks with no
 dependencies (lint, test, syncpack, sherif) start immediately while
 build-dependent tasks (typecheck, publint, attw) wait for build.
 
+Turbo runs tasks in **strict env mode**, so proxy/CA variables
+(`HTTPS_PROXY`, `NO_PROXY`, `NODE_EXTRA_CA_CERTS`, …) are listed in
+`globalPassThroughEnv` in `turbo.json` — passed through to tasks but kept
+out of cache hashes. Without this, any task that makes real network calls
+(the e2e suite's verdaccio→npmjs uplink) silently loses its egress config
+in proxied environments and fails with misleading errors (instant
+`ERR_PNPM_FETCH_404`s) that only reproduce under `turbo run`, never when
+running the underlying script directly.
+
 `pnpm check:local` uses the same script with `--local` flag, running a
 subset: build, typecheck, lint, publint, syncpack, sherif, knip, test —
 all in one turbo call with `--continue` (shows all failures at once).
