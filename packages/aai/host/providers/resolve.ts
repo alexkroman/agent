@@ -36,12 +36,13 @@ import { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "../../sdk/providers/llm/mistr
 import { OPENAI_API_KEY_ENV, OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
 import { XAI_API_KEY_ENV, XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import { OPENAI_REALTIME_KIND } from "../../sdk/providers/s2s/openai-realtime.ts";
-import { SLACK_SEND_KIND, SLACK_WEBHOOK_URL_ENV } from "../../sdk/providers/send/slack.ts";
+import { SEND_CHANNEL_REGISTRY } from "../../sdk/providers/send/open.ts";
 import {
   ASSEMBLYAI_API_KEY_ENV,
   ASSEMBLYAI_KIND,
   type AssemblyAIOptions,
 } from "../../sdk/providers/stt/assemblyai.ts";
+import { syncTranscribe } from "../../sdk/providers/stt/assemblyai-sync.ts";
 import {
   DEEPGRAM_API_KEY_ENV,
   DEEPGRAM_KIND,
@@ -139,10 +140,23 @@ function lazyOpener<Opts, Session>(
 const STT_REGISTRY: Record<string, OpenerRegistryEntry<SttOpener>> = {
   [ASSEMBLYAI_KIND]: {
     envVar: ASSEMBLYAI_API_KEY_ENV,
-    open: (d) =>
-      lazyOpener(ASSEMBLYAI_KIND, async () =>
+    open: (d) => ({
+      ...lazyOpener(ASSEMBLYAI_KIND, async () =>
         (await import("./stt/assemblyai.ts")).openAssemblyAI(options<AssemblyAIOptions>(d)),
       ),
+      // One-shot clips (uploaded files) go through the Sync API — the
+      // preferred endpoint for short audio. Zero-dep, so no lazy load.
+      transcribeClip: (pcm, sampleRate, o) =>
+        syncTranscribe({
+          audio: pcm,
+          contentType: "audio/pcm",
+          sampleRate,
+          channels: 1,
+          apiKey: o.apiKey,
+          fetch: o.fetch,
+          signal: o.signal,
+        }).then((r) => r.text),
+    }),
   },
   [DEEPGRAM_KIND]: {
     envVar: DEEPGRAM_API_KEY_ENV,
@@ -189,17 +203,6 @@ const TTS_REGISTRY: Record<string, OpenerRegistryEntry<TtsOpener>> = {
         (await import("./tts/assemblyai.ts")).openAssemblyAITts(options<AssemblyAITtsOptions>(d)),
       ),
   },
-};
-
-/**
- * Send-channel credential env vars by kind. Senders resolve in the SDK
- * (`sdk/providers/send/open.ts` — they're plain fetch + env, sandbox-safe),
- * so unlike STT/TTS there is no host opener to register; only the credential
- * name lives here, feeding {@link requiredProviderEnvVars} and
- * {@link ALL_PROVIDER_ENV_VARS}.
- */
-const SEND_ENV_REGISTRY: Record<string, { envVar: string }> = {
-  [SLACK_SEND_KIND]: { envVar: SLACK_WEBHOOK_URL_ENV },
 };
 
 /**
@@ -438,7 +441,7 @@ export function requiredProviderEnvVars(agent: {
   add(envVarFor(STT_REGISTRY, agent.stt));
   add(envVarFor(TTS_REGISTRY, agent.tts));
   add(envVarFor(LLM_REGISTRY, agent.llm));
-  add(envVarFor(SEND_ENV_REGISTRY, agent.send));
+  add(envVarFor(SEND_CHANNEL_REGISTRY, agent.send));
 
   // S2S mode: an explicit descriptor selects its vendor, and its *absence*
   // means the default AssemblyAI S2S path (see createTransportFactory).
@@ -467,7 +470,7 @@ export const ALL_PROVIDER_ENV_VARS: readonly string[] = [
     ...Object.values(STT_REGISTRY).map((e) => e.envVar),
     ...Object.values(TTS_REGISTRY).map((e) => e.envVar),
     ...Object.values(LLM_REGISTRY).map((e) => e.envVar),
-    ...Object.values(SEND_ENV_REGISTRY).map((e) => e.envVar),
+    ...Object.values(SEND_CHANNEL_REGISTRY).map((e) => e.envVar),
     // S2S: the default AssemblyAI path and the OpenAI Realtime alternative.
     ASSEMBLYAI_API_KEY_ENV,
     OPENAI_API_KEY_ENV,

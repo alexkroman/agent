@@ -89,23 +89,19 @@ type ToolSetupDeps = {
   stateMap: Map<string, Record<string, unknown>>;
 };
 
+type SendTool = ReturnType<typeof resolveSendBuiltin> | null;
+
 /** Sandbox mode — custom tools are RPC-backed; builtins run host-side. */
 function setupSandboxTools(
   deps: ToolSetupDeps,
   rpcExecuteTool: ExecuteTool,
-  providedSchemas: readonly ToolSchema[],
+  sendTool: SendTool,
 ): ToolSetup {
-  const { agent, opts, env, providerEnv, resolvedKv, resolvedVector, logger } = deps;
+  const { agent, opts, env, resolvedKv, resolvedVector, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const resolved = resolveSandboxBuiltins(agent, opts, builtinFetchOpt);
   const builtinDefs = resolved.defs;
   let toolSchemas = resolved.schemas;
-  const sendTool = resolveSendMessage(
-    agent,
-    providerEnv,
-    opts.fetch ?? safeFetch,
-    new Set(providedSchemas.map((s) => s.name)),
-  );
   if (sendTool) {
     builtinDefs[SEND_MESSAGE_TOOL] = sendTool.def;
     toolSchemas = [...toolSchemas, sendTool.schema];
@@ -145,9 +141,8 @@ function setupSandboxTools(
  * same name as a builtin wins: the builtin is dropped from both dispatch
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
-function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
-  const { agent, opts, env, providerEnv, resolvedKv, resolvedVector, logger, sinkMap, stateMap } =
-    deps;
+function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetup {
+  const { agent, opts, env, resolvedKv, resolvedVector, logger, sinkMap, stateMap } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const customNames = new Set(Object.keys(agent.tools ?? {}));
   const builtinNames = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
@@ -160,7 +155,6 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   };
   const customSchemas = agentToolsToSchemas(agent.tools ?? {});
   const toolSchemas = [...customSchemas, ...builtins.schemas];
-  const sendTool = resolveSendMessage(agent, providerEnv, opts.fetch ?? safeFetch, customNames);
   if (sendTool) {
     allTools[SEND_MESSAGE_TOOL] = sendTool.def;
     toolSchemas.push(sendTool.schema);
@@ -196,7 +190,19 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
 /** Pick the tool path: RPC-backed sandbox mode when overrides are provided. */
 export function setupTools(deps: ToolSetupDeps): ToolSetup {
   const { executeTool, toolSchemas } = deps.opts;
+  // Resolve the send builtin once for either path. Which names are "taken"
+  // differs by mode: relayed schemas in sandbox mode, custom tools otherwise.
+  const takenNames =
+    executeTool && toolSchemas
+      ? new Set(toolSchemas.map((s) => s.name))
+      : new Set(Object.keys(deps.agent.tools ?? {}));
+  const sendTool = resolveSendMessage(
+    deps.agent,
+    deps.providerEnv,
+    deps.opts.fetch ?? safeFetch,
+    takenNames,
+  );
   return executeTool && toolSchemas
-    ? setupSandboxTools(deps, executeTool, toolSchemas)
-    : setupSelfHostedTools(deps);
+    ? setupSandboxTools(deps, executeTool, sendTool)
+    : setupSelfHostedTools(deps, sendTool);
 }

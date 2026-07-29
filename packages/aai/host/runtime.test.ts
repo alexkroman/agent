@@ -7,6 +7,7 @@ import { createStorage } from "unstorage";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
+import { fetchMock } from "../sdk/_test-utils.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
@@ -502,14 +503,11 @@ describe("createRuntime — send channel (send_message builtin)", () => {
   });
 
   test("send_message posts through the sender using the agent env credential", async () => {
-    const fetchFn = vi.fn(
-      async (_input: string | URL | Request, _init?: RequestInit) =>
-        new Response("ok", { status: 200 }),
-    );
+    const fetchFn = fetchMock(() => new Response("ok", { status: 200 }));
     const exec = createRuntime({
       agent: makeAgent({ send }),
       env: { SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/T/B/x" },
-      fetch: fetchFn as unknown as typeof globalThis.fetch,
+      fetch: fetchFn,
     });
     const result = await exec.executeTool("send_message", { text: "hi" }, "s1", []);
     expect(JSON.parse(result)).toEqual({ sent: true, channel: "slack" });

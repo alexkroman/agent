@@ -422,10 +422,13 @@ describe("transcribe_file upload buffering", () => {
     core.onTranscribeFileStart(16_000, 4);
     core.onAudio(new Uint8Array([1, 2, 3, 4]));
     core.onTranscribeFileEnd();
-    expect(transport.sendUserAudio).toHaveBeenCalledOnce();
-    const replayed = (transport.sendUserAudio as ReturnType<typeof vi.fn>).mock
-      .calls[0]?.[0] as Uint8Array;
-    expect([...replayed]).toEqual([1, 2, 3, 4]);
+    const calls = (transport.sendUserAudio as ReturnType<typeof vi.fn>).mock.calls;
+    expect(calls.length).toBeGreaterThan(0);
+    const replayed = calls.flatMap((c) => [...(c[0] as Uint8Array)]);
+    // The clip itself, then one second of endpointing silence at 16 kHz PCM16.
+    expect(replayed.slice(0, 4)).toEqual([1, 2, 3, 4]);
+    expect(replayed.length).toBe(4 + 16_000 * 2);
+    expect(replayed.slice(4).every((b) => b === 0)).toBe(true);
   });
 
   test("bytes past the declared byteLength are dropped", () => {

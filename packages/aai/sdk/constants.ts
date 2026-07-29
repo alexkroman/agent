@@ -195,6 +195,14 @@ export const MAX_MESSAGE_BUFFER_SIZE = 100;
 export const MAX_SYNC_AUDIO_BYTES = 12 * 1024 * 1024;
 
 /**
+ * Chunk size for file-audio transfers (client upload frames and server-side
+ * replay into a realtime STT session) — socket-friendly, comfortably under
+ * {@link MAX_WS_PAYLOAD_BYTES}. Shared by aai-ui and the host so the two
+ * halves of the upload path cannot drift.
+ */
+export const FILE_UPLOAD_CHUNK_BYTES = 32 * 1024;
+
+/**
  * Cap on unsent bytes buffered in a client session WebSocket before the
  * client is treated as stalled and the connection is closed. TTS synthesis
  * outruns real-time playback, so a slow or wedged client link would otherwise

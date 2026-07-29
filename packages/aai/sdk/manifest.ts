@@ -10,7 +10,6 @@ import { z } from "zod";
 import { validateAllowedHostPattern } from "./allowed-hosts.ts";
 import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
 import { sendAllowedHosts } from "./providers/send/open.ts";
-import { isTextOnlyTts } from "./providers/tts/none.ts";
 import {
   assertPipelineTuning,
   assertProviderTriple,
@@ -222,7 +221,7 @@ export function parseManifest(input: unknown): Manifest {
   const mode = assertProviderTriple(parsed.stt, parsed.llm, parsed.tts, parsed.s2s);
   assertSilencePolicy(mode, parsed.silenceTimeoutMs, parsed.silencePrompt);
   assertPipelineTuning(mode, parsed);
-  assertTextOnlyTuning(isTextOnlyTts(parsed.tts), parsed);
+  assertTextOnlyTuning(parsed.tts, parsed);
   return {
     ...parsed,
     systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,

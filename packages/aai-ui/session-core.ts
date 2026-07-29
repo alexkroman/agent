@@ -13,8 +13,9 @@
  * No dependency on React, Preact, or any UI framework.
  */
 
-import { errorMessage, WS_OPEN } from "@alexkroman1/aai";
+import { errorMessage, FILE_UPLOAD_CHUNK_BYTES, WS_OPEN } from "@alexkroman1/aai";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
+import { MAX_SYNC_AUDIO_SECONDS } from "@alexkroman1/aai/stt";
 import {
   CLEARED_SESSION_STATE,
   createMessageHandlers,
@@ -28,8 +29,6 @@ import type {
 } from "./session-core-types.ts";
 import {
   FILE_SEND_BACKOFF_MS,
-  FILE_SEND_CHUNK_BYTES,
-  MAX_ONE_SHOT_UPLOAD_SECONDS,
   MIC_SEND_MAX_BUFFERED_BYTES,
   type WebSocketConstructor,
 } from "./types.ts";
@@ -388,7 +387,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
    *  Unlike live mic frames (dropped under backpressure — stale speech is
    *  worthless), file audio must arrive completely. */
   async function sendBytesReliably(bytes: Uint8Array): Promise<void> {
-    for (let i = 0; i < bytes.byteLength; i += FILE_SEND_CHUNK_BYTES) {
+    for (let i = 0; i < bytes.byteLength; i += FILE_UPLOAD_CHUNK_BYTES) {
       while (
         conn.ws &&
         conn.ws.readyState === WS_OPEN &&
@@ -399,7 +398,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       if (!conn.ws || conn.ws.readyState !== WS_OPEN) {
         throw new Error("sendAudioFile: connection closed mid-send");
       }
-      conn.ws.send(bytes.subarray(i, i + FILE_SEND_CHUNK_BYTES) as unknown as ArrayBuffer);
+      conn.ws.send(bytes.subarray(i, i + FILE_UPLOAD_CHUNK_BYTES) as unknown as ArrayBuffer);
     }
   }
 
@@ -412,14 +411,12 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       throw new Error("sendAudioFile: stop recording before uploading a file");
     }
     const { decodeAudioToPcm16 } = await import("./audio.ts");
+    const clip = await decodeAudioToPcm16(await file.arrayBuffer(), cfg.sampleRate);
     // Short clips take the one-shot path: the server transcribes the whole
     // upload in a single request (AssemblyAI's Sync API — the preferred
     // endpoint for files under two minutes) instead of replaying it through
     // the realtime socket. No endpointing, so no trailing-silence padding.
-    const clip = await decodeAudioToPcm16(await file.arrayBuffer(), cfg.sampleRate, {
-      trailingSilence: false,
-    });
-    if (clip.length / cfg.sampleRate <= MAX_ONE_SHOT_UPLOAD_SECONDS) {
+    if (clip.length / cfg.sampleRate <= MAX_SYNC_AUDIO_SECONDS) {
       const bytes = new Uint8Array(clip.buffer, clip.byteOffset, clip.byteLength);
       sendJson({
         type: "transcribe_file_start",
@@ -431,9 +428,10 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       return;
     }
     // Long uploads stream through the realtime STT path, padded with a second
-    // of silence so the provider's endpointing commits the final turn.
-    const pcm = await decodeAudioToPcm16(await file.arrayBuffer(), cfg.sampleRate);
-    await sendBytesReliably(new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength));
+    // of silence (zeros) so the provider's endpointing commits the final turn.
+    const padded = new Int16Array(clip.length + cfg.sampleRate);
+    padded.set(clip);
+    await sendBytesReliably(new Uint8Array(padded.buffer));
   }
 
   function start(): void {

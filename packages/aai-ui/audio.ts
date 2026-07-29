@@ -1,38 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { MIC_BUFFER_SECONDS } from "./types.ts";
 
-/** Trailing silence appended to uploaded audio so STT endpoints the turn. */
-const UPLOAD_TRAILING_SILENCE_SECONDS = 1;
-
 /**
  * Decode an audio file (any container/codec the browser can decode) and
  * resample it to mono PCM16 at `targetRate` — the format the server's STT
- * side expects on the wire. Appends a second of silence so the STT
- * provider's endpointing commits the turn instead of waiting for audio that
- * never comes. (`trailingSilence: false` skips the padding — the one-shot
- * transcription path sends a bounded clip and needs no endpointing.)
+ * side expects on the wire. Returns the raw clip; any endpointing padding
+ * is the caller's concern (the one-shot upload path needs none).
  *
  * @throws If the browser cannot decode the payload.
  */
 export async function decodeAudioToPcm16(
   data: ArrayBuffer,
   targetRate: number,
-  opts: { trailingSilence?: boolean } = {},
 ): Promise<Int16Array> {
-  // decodeAudioData needs a (possibly suspended) realtime context; rendering
-  // happens offline so nothing is audible and no user gesture is required.
-  const decodeCtx = new AudioContext();
-  let decoded: AudioBuffer;
-  try {
-    decoded = await decodeCtx.decodeAudioData(data);
-  } finally {
-    await decodeCtx.close().catch(() => {
-      /* swallow */
-    });
-  }
-  const speechFrames = Math.ceil(decoded.duration * targetRate);
-  const padSeconds = (opts.trailingSilence ?? true) ? UPLOAD_TRAILING_SILENCE_SECONDS : 0;
-  const frames = speechFrames + padSeconds * targetRate;
+  // Decode on a throwaway 1-frame offline context: decodeAudioData lives on
+  // BaseAudioContext, and an offline context needs no audio-hardware handle
+  // (browsers cap concurrent realtime AudioContexts).
+  const decoded = await new OfflineAudioContext(1, 1, targetRate).decodeAudioData(data);
+  const frames = Math.ceil(decoded.duration * targetRate);
   const offline = new OfflineAudioContext(1, frames, targetRate);
   const source = offline.createBufferSource();
   source.buffer = decoded;

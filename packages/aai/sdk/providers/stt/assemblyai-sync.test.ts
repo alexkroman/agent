@@ -2,7 +2,8 @@
 // Sync API client specs: request shape (endpoint, raw-key auth, model
 // header, multipart parts), PCM validation, and error surfacing.
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
+import { fetchMock, fetchMockJson } from "../../_test-utils.ts";
 import {
   SYNC_TRANSCRIBE_EU_URL,
   SYNC_TRANSCRIBE_MODEL,
@@ -10,19 +11,11 @@ import {
   syncTranscribe,
 } from "./assemblyai-sync.ts";
 
-type FetchArgs = [input: string | URL | Request, init?: RequestInit];
-
-function fetchMock(response: () => Response) {
-  const fn = vi.fn(async (..._args: FetchArgs) => response());
-  return fn as unknown as typeof globalThis.fetch & { mock: { calls: FetchArgs[] } };
-}
-
-const okJson = () =>
-  new Response(JSON.stringify({ text: "hello world", words: [] }), { status: 200 });
+const okFetch = () => fetchMockJson({ text: "hello world", words: [] });
 
 describe("syncTranscribe", () => {
   test("posts multipart WAV to the sync endpoint with raw-key auth and model header", async () => {
-    const fetchFn = fetchMock(okJson);
+    const fetchFn = okFetch();
     const result = await syncTranscribe({
       audio: new Uint8Array([1, 2, 3, 4]),
       apiKey: "test-key",
@@ -44,7 +37,7 @@ describe("syncTranscribe", () => {
   });
 
   test("raw PCM carries sample_rate and channels in the config part", async () => {
-    const fetchFn = fetchMock(okJson);
+    const fetchFn = okFetch();
     await syncTranscribe({
       audio: new Uint8Array(8),
       contentType: "audio/pcm",
@@ -63,7 +56,7 @@ describe("syncTranscribe", () => {
   });
 
   test("audio/pcm without sampleRate/channels is rejected before any request", async () => {
-    const fetchFn = fetchMock(okJson);
+    const fetchFn = okFetch();
     await expect(
       syncTranscribe({
         audio: new Uint8Array(8),
@@ -76,13 +69,13 @@ describe("syncTranscribe", () => {
   });
 
   test("region 'eu' selects the EU endpoint", async () => {
-    const fetchFn = fetchMock(okJson);
+    const fetchFn = okFetch();
     await syncTranscribe({ audio: new Uint8Array(2), apiKey: "k", region: "eu", fetch: fetchFn });
     expect(fetchFn.mock.calls[0]?.[0]).toBe(SYNC_TRANSCRIBE_EU_URL);
   });
 
   test("optional config fields pass through with the API's field names", async () => {
-    const fetchFn = fetchMock(okJson);
+    const fetchFn = okFetch();
     await syncTranscribe({
       audio: new Uint8Array(2),
       apiKey: "k",

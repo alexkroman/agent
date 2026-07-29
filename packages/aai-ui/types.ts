@@ -13,18 +13,8 @@ export const MIC_BUFFER_SECONDS = 0.1;
  */
 export const MIC_SEND_MAX_BUFFERED_BYTES = 64 * 1024;
 
-/** Bytes per WebSocket frame when streaming an uploaded audio file. */
-export const FILE_SEND_CHUNK_BYTES = 32 * 1024;
-
 /** Poll interval while waiting out socket backpressure during a file send. */
 export const FILE_SEND_BACKOFF_MS = 50;
-
-/**
- * Uploads at or below this duration take the one-shot transcription path
- * (server-side Sync API, 120 s max); longer files stream through the
- * realtime STT socket.
- */
-export const MAX_ONE_SHOT_UPLOAD_SECONDS = 120;
 
 /**
  * Current state of the voice agent session.

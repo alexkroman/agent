@@ -13,7 +13,12 @@ import {
   MAX_MESSAGE_BUFFER_SIZE,
   WS_OPEN,
 } from "../sdk/constants.ts";
-import { ClientMessageSchema, type ClientSink, lenientParse } from "../sdk/protocol.ts";
+import {
+  ClientMessageSchema,
+  type ClientSink,
+  lenientParse,
+  type ReadyConfig,
+} from "../sdk/protocol.ts";
 import { errorDetail, errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
@@ -47,13 +52,7 @@ type WsSessionOptions = {
   /** Factory function to create a session for a given ID and client sink. */
   createSession: (sessionId: string, client: ClientSink) => SessionCore;
   /** Protocol config sent to the client immediately on connect. */
-  readyConfig: {
-    audioFormat: "pcm16";
-    sampleRate: number;
-    ttsSampleRate: number;
-    /** False for text-only agents — see ReadyConfigSchema. */
-    audioOut?: boolean | undefined;
-  };
+  readyConfig: ReadyConfig;
   /** Additional key-value pairs included in log messages. */
   logContext?: Record<string, string>;
   /** Callback invoked when the WebSocket connection opens. */

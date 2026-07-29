@@ -24,6 +24,8 @@
  * at bundle load — the exact failure mode that forced this refactor.
  */
 
+import { isTextOnlyTts } from "./providers/tts/none.ts";
+
 /** Unsubscribe callback returned by `.on()` event subscriptions. */
 export type Unsubscribe = () => void;
 
@@ -155,10 +157,10 @@ export type PipelineTuning = {
  * {@link assertPipelineTuning}.
  */
 export function assertTextOnlyTuning(
-  textOnly: boolean,
+  tts: unknown,
   tuning: Pick<PipelineTuning, "holdPhrase">,
 ): void {
-  if (textOnly && tuning.holdPhrase !== undefined) {
+  if (isTextOnlyTts(tts) && tuning.holdPhrase !== undefined) {
     throw new Error("holdPhrase requires a speaking TTS provider (remove it or drop tts: none())");
   }
 }
@@ -249,10 +251,28 @@ export interface SttOpenOptions {
   signal: AbortSignal;
 }
 
+/** Options for {@link SttOpener.transcribeClip}. */
+export interface TranscribeClipOptions {
+  apiKey: string;
+  fetch?: typeof globalThis.fetch | undefined;
+  signal?: AbortSignal | undefined;
+}
+
 /** Host-side openable STT provider — produced by `resolveStt(descriptor)`. */
 export interface SttOpener {
   readonly name: string;
   open(opts: SttOpenOptions): Promise<SttSession>;
+  /**
+   * One-shot transcription of a short PCM16 clip (an uploaded file), for
+   * providers with a synchronous batch endpoint — AssemblyAI implements it
+   * via the Sync API. Providers without one omit it; the pipeline transport
+   * then replays the clip through the realtime session instead.
+   */
+  transcribeClip?(
+    pcm: Uint8Array,
+    sampleRate: number,
+    opts: TranscribeClipOptions,
+  ): Promise<string>;
 }
 
 // -------- TTS openable (host-only) ------------------------------------------

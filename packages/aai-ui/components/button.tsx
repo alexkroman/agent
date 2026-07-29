@@ -83,7 +83,7 @@ export function Button({
   return (
     <button
       type="button"
-      style={variantStyle && { ...variantStyle, ...style }}
+      style={{ ...variantStyle, ...style }}
       className={clsx(
         "inline-flex items-center justify-center appearance-none m-0 w-fit whitespace-nowrap",
         size === "lg" ? "h-11 px-7 text-xs" : "h-9 px-5 text-[11px]",

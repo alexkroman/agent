@@ -2,7 +2,7 @@
 
 /** @jsxImportSource react */
 
-import type { ReactNode } from "react";
+import { memo } from "react";
 import { useTheme } from "../context.ts";
 
 /**
@@ -14,7 +14,7 @@ import { useTheme } from "../context.ts";
  * @param size - Rendered height in px. Defaults to 20.
  * @internal
  */
-export function AaiLogo({ size = 20 }: { size?: number }): ReactNode {
+export const AaiLogo = memo(function AaiLogo({ size = 20 }: { size?: number }) {
   const theme = useTheme();
   return (
     <svg
@@ -74,4 +74,4 @@ export function AaiLogo({ size = 20 }: { size?: number }): ReactNode {
       />
     </svg>
   );
-}
+});

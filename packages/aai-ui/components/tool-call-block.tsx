@@ -8,6 +8,7 @@ import { truncate, tryParseJSON } from "../_utils.ts";
 import { useTheme } from "../context.ts";
 import type { ToolCallInfo } from "../types.ts";
 import { TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
+import { Eyebrow } from "./eyebrow.tsx";
 import { useToolConfig } from "./tool-config-context.ts";
 
 function formatResult(result: string): string {
@@ -90,12 +91,9 @@ export function ToolCallBlock({
         {icon ? (
           <span className="w-4 h-4 shrink-0 text-center leading-4">{icon}</span>
         ) : (
-          <span
-            className="text-[10px] font-medium tracking-[1.2px] uppercase leading-none px-1.5 py-[3px] rounded-aai border shrink-0"
-            style={{ color: TEXT_FAINT, borderColor: theme.border }}
-          >
+          <Eyebrow className="shrink-0" style={{ color: TEXT_FAINT }}>
             Tool
-          </span>
+          </Eyebrow>
         )}
         <span
           className={clsx("font-aai-mono text-[13px] font-medium", isPending && "tool-shimmer")}

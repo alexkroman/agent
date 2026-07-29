@@ -3,18 +3,20 @@
 // and tool-step enforcement. Replaces session.ts + pipeline-session.ts.
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
-import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
+import {
+  DEFAULT_IDLE_TIMEOUT_MS,
+  DEFAULT_MAX_HISTORY,
+  FILE_UPLOAD_CHUNK_BYTES,
+} from "../sdk/constants.ts";
 import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
 import { capToolResult, errorMessage, toolError } from "../sdk/utils.ts";
+import { withTrailingSilence } from "./_pcm.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { Transport } from "./transports/types.ts";
 
 const REPLY_DONE_SLOW_THRESHOLD_MS = 50;
-
-/** Chunk size when replaying an uploaded clip through the realtime audio path. */
-const FILE_REPLAY_CHUNK_BYTES = 32 * 1024;
 
 type PendingTool = { callId: string; result: string };
 
@@ -106,13 +108,10 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   let lastActivityMs = 0;
   let stopped = false;
   /** In-flight file upload (between transcribe_file_start and _end): binary
-   *  frames land here instead of streaming to the transport as mic audio. */
-  let fileUpload: { sampleRate: number; byteLength: number; chunks: Uint8Array[] } | null = null;
-
-  /** Bytes buffered so far for the in-flight upload. */
-  function fileUploadSize(): number {
-    return fileUpload ? fileUpload.chunks.reduce((n, c) => n + c.byteLength, 0) : 0;
-  }
+   *  frames land here instead of streaming to the transport as mic audio.
+   *  Preallocated to the declared (cap-validated) byteLength; `received`
+   *  tracks the fill so the per-frame append stays O(frame). */
+  let fileUpload: { sampleRate: number; buffer: Uint8Array; received: number } | null = null;
 
   function emit(event: ClientEvent): void {
     opts.client.event(event);
@@ -206,8 +205,9 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
         // Mid-upload: this frame is part of the clip, not live mic audio.
         // Frames beyond the declared byteLength are dropped rather than
         // buffered — the declaration was validated against the cap.
-        if (fileUploadSize() + bytes.byteLength <= fileUpload.byteLength) {
-          fileUpload.chunks.push(bytes);
+        if (fileUpload.received + bytes.byteLength <= fileUpload.buffer.byteLength) {
+          fileUpload.buffer.set(bytes, fileUpload.received);
+          fileUpload.received += bytes.byteLength;
         } else {
           log.warn("transcribe_file: dropping bytes past declared byteLength", { sid: opts.id });
         }
@@ -218,28 +218,25 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     onTranscribeFileStart(sampleRate, byteLength) {
       resetIdle();
       // A new upload replaces any half-finished one (client retry).
-      fileUpload = { sampleRate, byteLength, chunks: [] };
+      fileUpload = { sampleRate, buffer: new Uint8Array(byteLength), received: 0 };
     },
     onTranscribeFileEnd() {
       resetIdle();
       const upload = fileUpload;
       fileUpload = null;
-      if (!upload) return;
-      const pcm = new Uint8Array(upload.chunks.reduce((n, c) => n + c.byteLength, 0));
-      let offset = 0;
-      for (const chunk of upload.chunks) {
-        pcm.set(chunk, offset);
-        offset += chunk.byteLength;
-      }
-      if (pcm.byteLength === 0) return;
+      if (!upload || upload.received === 0) return;
+      const pcm = upload.buffer.subarray(0, upload.received);
       if (opts.transport.transcribeFile) {
         opts.transport.transcribeFile(pcm, upload.sampleRate);
         return;
       }
       // No one-shot path on this transport (e.g. S2S): replay the clip
-      // through the realtime audio path in socket-friendly chunks.
-      for (let i = 0; i < pcm.byteLength; i += FILE_REPLAY_CHUNK_BYTES) {
-        opts.transport.sendUserAudio(pcm.subarray(i, i + FILE_REPLAY_CHUNK_BYTES));
+      // through the realtime audio path in socket-friendly chunks, padded
+      // with silence so endpointing commits the final turn (the client
+      // skips padding on this path).
+      const padded = withTrailingSilence(pcm, upload.sampleRate);
+      for (let i = 0; i < padded.byteLength; i += FILE_UPLOAD_CHUNK_BYTES) {
+        opts.transport.sendUserAudio(padded.subarray(i, i + FILE_UPLOAD_CHUNK_BYTES));
       }
     },
     onAudioReady() {

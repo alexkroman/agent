@@ -2,14 +2,13 @@
 
 /** @jsxImportSource react */
 
+import { errorMessage } from "@alexkroman1/aai";
 import clsx from "clsx";
 import { useRef, useState } from "react";
 import { useSessionCore, useSessionSelector } from "../context.ts";
 import { ERROR_COLOR } from "./_colors.ts";
 import { Button } from "./button.tsx";
 import { SessionUrlChips } from "./url-chips.tsx";
-
-const RECORDING_COLOR = ERROR_COLOR;
 
 /**
  * Controls for a text-only session (`tts: none()`): a **record** toggle that
@@ -44,7 +43,7 @@ export function TextControls({ className }: { className?: string | undefined }) 
     core
       .sendAudioFile(file)
       .catch((err: unknown) => {
-        setUploadError(err instanceof Error ? err.message : "Upload failed");
+        setUploadError(errorMessage(err));
       })
       .finally(() => {
         setUploading(false);
@@ -61,12 +60,12 @@ export function TextControls({ className }: { className?: string | undefined }) 
           onClick={toggleRecording}
           disabled={!connected}
           aria-pressed={recording}
-          style={recording ? { background: RECORDING_COLOR } : undefined}
+          style={recording ? { background: ERROR_COLOR } : undefined}
           data-testid="record-button"
         >
           <span
             className={clsx("w-2 h-2 rounded-full mr-2", recording && "animate-pulse")}
-            style={{ background: recording ? "#fff" : RECORDING_COLOR }}
+            style={{ background: recording ? "#fff" : ERROR_COLOR }}
           />
           {recording ? "Stop recording" : "Record"}
         </Button>
@@ -92,7 +91,7 @@ export function TextControls({ className }: { className?: string | undefined }) 
         <SessionUrlChips className="ml-auto max-w-[55%]" />
       </div>
       {uploadError && (
-        <div className="text-[12px]" style={{ color: RECORDING_COLOR }} data-testid="upload-error">
+        <div className="text-[12px]" style={{ color: ERROR_COLOR }} data-testid="upload-error">
           {uploadError}
         </div>
       )}

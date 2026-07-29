@@ -9,20 +9,12 @@ import {
   type ConstructorType,
   lastSocket,
   MockWebSocket,
+  makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 
-function textOnlyConfig(): string {
-  return JSON.stringify({
-    type: "config",
-    audioFormat: "pcm16",
-    sampleRate: 16_000,
-    ttsSampleRate: 24_000,
-    audioOut: false,
-    sessionId: "sess-text",
-  });
-}
+const textOnlyConfig = () => makeConfig(16_000, 24_000, "sess-text", { audioOut: false });
 
 const flush = () => new Promise((r) => setTimeout(r, 10));
 

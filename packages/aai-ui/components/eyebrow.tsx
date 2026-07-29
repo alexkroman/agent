@@ -16,6 +16,7 @@ import { useTheme } from "../context.ts";
 export function Eyebrow({
   children,
   className,
+  style,
   ...rest
 }: {
   children: ReactNode;
@@ -29,7 +30,7 @@ export function Eyebrow({
         "font-aai text-[10px] font-medium tracking-[1.2px] uppercase",
         className,
       )}
-      style={{ borderColor: theme.border, color: theme.text }}
+      style={{ borderColor: theme.border, color: theme.text, ...style }}
       {...rest}
     >
       {children}

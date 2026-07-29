@@ -17,12 +17,8 @@
  */
 
 import type { Sender, SendMessage, SendProvider } from "../../providers.ts";
+import { type FetchLike, httpErrorDetail, resolveFetch } from "../_http.ts";
 import { SLACK_SEND_KIND, SLACK_WEBHOOK_HOST, SLACK_WEBHOOK_URL_ENV } from "./slack.ts";
-
-/** How much of an error response body to surface in thrown errors. */
-const ERROR_BODY_PREVIEW_CHARS = 200;
-
-type FetchLike = typeof globalThis.fetch;
 
 /** Options for {@link openSender}. */
 export type OpenSenderOptions = {
@@ -57,12 +53,35 @@ function openSlack(env: Readonly<Record<string, string>>, fetchFn: FetchLike): S
       if (!resp.ok) {
         // Slack answers webhook errors as short plain text ("invalid_payload",
         // "no_service"...). Never include the URL — it embeds the credential.
-        const detail = (await resp.text().catch(() => "")).slice(0, ERROR_BODY_PREVIEW_CHARS);
+        const detail = await httpErrorDetail(resp);
         throw new Error(`Slack send failed: HTTP ${resp.status}${detail ? ` (${detail})` : ""}`);
       }
     },
   };
 }
+
+/** One registry entry per send-channel kind. */
+type SendChannelEntry = {
+  /** Env var the channel's credential lives in. */
+  readonly envVar: string;
+  /** Hostnames the channel posts to (auto-allowlisted for the guest sandbox). */
+  readonly hosts: readonly string[];
+  readonly open: (env: Readonly<Record<string, string>>, fetchFn: FetchLike) => Sender;
+};
+
+/**
+ * The send-channel registry — env var, egress hosts, and opener live
+ * together, so adding a channel is one entry here (mirroring the STT/TTS/LLM
+ * registries in `host/providers/resolve.ts`, which derive the channel
+ * credential names from this table).
+ */
+export const SEND_CHANNEL_REGISTRY: Record<string, SendChannelEntry> = {
+  [SLACK_SEND_KIND]: {
+    envVar: SLACK_WEBHOOK_URL_ENV,
+    hosts: [SLACK_WEBHOOK_HOST],
+    open: openSlack,
+  },
+};
 
 /**
  * Resolve a {@link SendProvider} descriptor into a live {@link Sender}.
@@ -91,15 +110,14 @@ export function openSender(
   env: Readonly<Record<string, string>>,
   opts?: OpenSenderOptions,
 ): Sender {
-  const fetchFn: FetchLike = opts?.fetch ?? ((input, init) => globalThis.fetch(input, init));
-  switch (descriptor.kind) {
-    case SLACK_SEND_KIND:
-      return openSlack(env, fetchFn);
-    default:
-      throw new Error(
-        `Unknown send provider kind: "${descriptor.kind}". Supported: ${SLACK_SEND_KIND}.`,
-      );
+  const entry = SEND_CHANNEL_REGISTRY[descriptor.kind];
+  if (!entry) {
+    throw new Error(
+      `Unknown send provider kind: "${descriptor.kind}". ` +
+        `Supported: ${Object.keys(SEND_CHANNEL_REGISTRY).join(", ")}.`,
+    );
   }
+  return entry.open(env, resolveFetch(opts?.fetch));
 }
 
 /**
@@ -110,10 +128,5 @@ export function openSender(
  */
 export function sendAllowedHosts(descriptor: SendProvider | undefined): string[] {
   if (!descriptor) return [];
-  switch (descriptor.kind) {
-    case SLACK_SEND_KIND:
-      return [SLACK_WEBHOOK_HOST];
-    default:
-      return [];
-  }
+  return [...(SEND_CHANNEL_REGISTRY[descriptor.kind]?.hosts ?? [])];
 }

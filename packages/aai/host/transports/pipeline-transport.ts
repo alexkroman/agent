@@ -12,15 +12,14 @@ import {
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
   DEFAULT_SILENCE_PROMPT,
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
+  FILE_UPLOAD_CHUNK_BYTES,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
-import { ASSEMBLYAI_KIND } from "../../sdk/providers/stt/assemblyai.ts";
-import { syncTranscribe } from "../../sdk/providers/stt/assemblyai-sync.ts";
-import type { SttError, TtsError } from "../../sdk/providers.ts";
+import type { SttError, SttOpener, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
-import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
+import { bytesToPcm16, pcm16ToBytes, withTrailingSilence } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createEndpointSettler } from "./pipeline-endpointing.ts";
 import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
@@ -379,24 +378,25 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   }
 
   /**
-   * One-shot transcription of an uploaded clip (the Sync API is the
-   * preferred path for short files): transcribe in a single request, then
-   * run the committed text as a normal user turn. A failed transcription is
-   * a turn-level error, not a session teardown.
+   * One-shot transcription of an uploaded clip via the STT provider's batch
+   * capability: transcribe in a single request, then run the committed text
+   * as a normal user turn. A failed transcription is a turn-level error,
+   * not a session teardown.
    */
-  async function transcribeFileTurn(pcm: Uint8Array, sampleRate: number): Promise<void> {
+  async function transcribeFileTurn(
+    transcribeClip: NonNullable<SttOpener["transcribeClip"]>,
+    pcm: Uint8Array,
+    sampleRate: number,
+  ): Promise<void> {
     let text: string;
     try {
-      const result = await syncTranscribe({
-        audio: pcm,
-        contentType: "audio/pcm",
-        sampleRate,
-        channels: 1,
-        apiKey: opts.providerKeys.stt,
-        fetch: opts.fetch,
-        signal: sessionAbort.signal,
-      });
-      text = result.text.trim();
+      text = (
+        await transcribeClip(pcm, sampleRate, {
+          apiKey: opts.providerKeys.stt,
+          fetch: opts.fetch,
+          signal: sessionAbort.signal,
+        })
+      ).trim();
     } catch (err) {
       if (!terminated) emitError("stt", errorMessage(err));
       return;
@@ -449,13 +449,18 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     transcribeFile(pcm: Uint8Array, sampleRate: number): void {
       if (terminated || !audioReady) return;
-      // The Sync API is AssemblyAI's; other STT providers get the clip
-      // replayed through their realtime socket instead.
-      if (opts.stt.name !== ASSEMBLYAI_KIND) {
-        providers.stt?.sendAudio(bytesToPcm16(pcm));
+      const transcribeClip = opts.stt.transcribeClip;
+      if (!transcribeClip) {
+        // No one-shot backend on this provider: replay through its realtime
+        // socket, padded with silence so endpointing commits the final turn
+        // (the client skips padding on the one-shot upload path).
+        const padded = withTrailingSilence(pcm, sampleRate);
+        for (let i = 0; i < padded.byteLength; i += FILE_UPLOAD_CHUNK_BYTES) {
+          providers.stt?.sendAudio(bytesToPcm16(padded.subarray(i, i + FILE_UPLOAD_CHUNK_BYTES)));
+        }
         return;
       }
-      chainTurn(() => transcribeFileTurn(pcm, sampleRate));
+      chainTurn(() => transcribeFileTurn(transcribeClip, pcm, sampleRate));
     },
 
     // Tool execution stays inside toVercelTools/streamText; results aren't

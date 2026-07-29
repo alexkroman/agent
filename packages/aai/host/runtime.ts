@@ -98,20 +98,6 @@ function resolvePipelineProviders(
   };
 }
 
-/**
- * Build the connect-time protocol config. Text-only agents (tts: none())
- * tell the client up front that no audio frames will arrive, so it renders
- * text replies instead of expecting playback.
- */
-function buildRuntimeReadyConfig(
-  s2sConfig: { inputSampleRate: number; outputSampleRate: number },
-  agent: AgentDef,
-): ReadyConfig {
-  return buildReadyConfig(s2sConfig, {
-    ...(isTextOnlyTts(agent.tts) && { audioOut: false }),
-  });
-}
-
 /** Create an in-memory KV store (default for self-hosted). */
 function createLocalKv(): Kv {
   return createUnstorageKv({ storage: createStorage() });
@@ -169,7 +155,12 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const agentConfig = toAgentConfig(agent);
   const sessions = new Map<string, SessionCore>();
   const sinkMap = new Map<string, ClientSink>();
-  const readyConfig: ReadyConfig = buildRuntimeReadyConfig(s2sConfig, agent);
+  // Text-only agents (tts: none()) tell the client up front that no audio
+  // frames will arrive, so it renders text replies instead of playback.
+  const readyConfig: ReadyConfig = buildReadyConfig(
+    s2sConfig,
+    isTextOnlyTts(agent.tts) ? { audioOut: false } : {},
+  );
 
   // Per-session tool state (self-hosted mode only); cleaned up on session end.
   const stateMap = new Map<string, Record<string, unknown>>();

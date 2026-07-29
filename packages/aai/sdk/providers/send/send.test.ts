@@ -3,22 +3,13 @@
 // shape of the webhook POST, and the secrecy rule that the webhook URL (it
 // embeds the credential) never appears in error messages.
 
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
+import { fetchMock } from "../../_test-utils.ts";
 import { openSender, sendAllowedHosts } from "./open.ts";
 import { SLACK_WEBHOOK_HOST, SLACK_WEBHOOK_URL_ENV, slack } from "./slack.ts";
 
 const WEBHOOK_URL = "https://hooks.slack.com/services/T000/B000/secret-token";
 const ENV = { [SLACK_WEBHOOK_URL_ENV]: WEBHOOK_URL };
-
-type FetchMock = typeof globalThis.fetch & {
-  mock: { calls: [input: string | URL | Request, init?: RequestInit][] };
-};
-
-function fetchMock(response: () => Response): FetchMock {
-  return vi.fn(async (_input: string | URL | Request, _init?: RequestInit) =>
-    response(),
-  ) as unknown as FetchMock;
-}
 
 const okFetch = () => fetchMock(() => new Response("ok", { status: 200 }));
 

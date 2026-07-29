@@ -11,6 +11,8 @@
  * API reference: https://assemblyai.com/docs/api-reference/sync-api/transcribe
  */
 
+import { httpErrorDetail, resolveFetch } from "../_http.ts";
+
 /** US (default) Sync API endpoint. */
 export const SYNC_TRANSCRIBE_URL = "https://sync.assemblyai.com/transcribe";
 
@@ -23,9 +25,6 @@ export const SYNC_TRANSCRIBE_MODEL = "universal-3-5-pro";
 /** The Sync API accepts at most this much audio; longer files need the
  *  pre-recorded (async) API or a realtime streaming session. */
 export const MAX_SYNC_AUDIO_SECONDS = 120;
-
-/** Hostname the Sync API lives on (both regional endpoints are subdomains). */
-export const SYNC_TRANSCRIBE_HOST = "sync.assemblyai.com";
 
 /** One transcribed word with its confidence (timestamps when requested). */
 export type SyncTranscriptWord = {
@@ -74,21 +73,13 @@ export type SyncTranscribeOptions = {
 /** Normalize the audio payload into a Blob with the right content type. */
 function toAudioBlob(audio: SyncTranscribeOptions["audio"], contentType: string): Blob {
   if (audio instanceof Blob) return audio;
-  // Copy into a fresh ArrayBuffer-backed view so a SharedArrayBuffer or
-  // offset view can't leak extra bytes into the multipart body.
-  const bytes = audio instanceof Uint8Array ? Uint8Array.from(audio) : new Uint8Array(audio);
-  return new Blob([bytes.buffer], { type: contentType });
-}
-
-/** Best-effort error detail from a failed response's JSON body. */
-async function errorDetail(resp: Response): Promise<string> {
-  return await resp
-    .json()
-    .then((e: unknown) => {
-      const err = e as { message?: string; detail?: string } | null;
-      return err?.message ?? err?.detail ?? "";
-    })
-    .catch(() => "");
+  // One exact-range copy (ArrayBuffer.slice) so an offset view or a
+  // SharedArrayBuffer-backed view becomes a plain, correctly-bounded buffer.
+  const buffer =
+    audio instanceof Uint8Array
+      ? audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength)
+      : audio;
+  return new Blob([buffer as ArrayBuffer], { type: contentType });
 }
 
 function buildConfig(opts: SyncTranscribeOptions): Record<string, unknown> {
@@ -124,7 +115,7 @@ export async function syncTranscribe(opts: SyncTranscribeOptions): Promise<SyncT
   if (contentType === "audio/pcm" && !(opts.sampleRate && opts.channels)) {
     throw new Error("syncTranscribe: audio/pcm requires sampleRate and channels");
   }
-  const fetchFn = opts.fetch ?? ((input, init) => globalThis.fetch(input, init));
+  const fetchFn = resolveFetch(opts.fetch);
   const url = opts.region === "eu" ? SYNC_TRANSCRIBE_EU_URL : SYNC_TRANSCRIBE_URL;
 
   const form = new FormData();
@@ -144,7 +135,7 @@ export async function syncTranscribe(opts: SyncTranscribeOptions): Promise<SyncT
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
   if (!resp.ok) {
-    const detail = await errorDetail(resp);
+    const detail = await httpErrorDetail(resp);
     throw new Error(
       `Sync transcription failed: HTTP ${resp.status}${detail ? ` (${detail})` : ""}`,
     );
