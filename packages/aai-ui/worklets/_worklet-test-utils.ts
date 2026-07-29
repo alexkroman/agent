@@ -29,6 +29,13 @@ export type WorkletHarness = {
   sendMessage(data: unknown): void;
 };
 
+/**
+ * Runaway-loop backstop. A processor that spins inside one `process()` call
+ * would otherwise hang the test run until the suite timeout with no clue why;
+ * this turns it into a named failure at the point of the flood.
+ */
+const MAX_POSTED_MESSAGES = 10_000;
+
 /** Evaluate a worklet source string and instantiate its registered processor. */
 export function instantiateWorklet(
   source: string,
@@ -39,8 +46,21 @@ export function instantiateWorklet(
   class AudioWorkletProcessor {
     port: WorkletPort = {
       onmessage: null,
-      postMessage(data: unknown, _transfer?: unknown[]) {
-        posted.push(data);
+      postMessage(data: unknown, transfer?: unknown[]) {
+        if (posted.length >= MAX_POSTED_MESSAGES) {
+          throw new Error(
+            `worklet posted more than ${MAX_POSTED_MESSAGES} messages — runaway loop`,
+          );
+        }
+        // Honor the transfer list: the real postMessage DETACHES transferred
+        // buffers, so a processor that reads `.length` off a view it just
+        // transferred sees 0. Ignoring the list here made that class of bug
+        // invisible to tests while wedging the audio thread in production.
+        posted.push(
+          transfer && transfer.length > 0
+            ? structuredClone(data, { transfer: transfer as Transferable[] })
+            : data,
+        );
       },
     };
   }

@@ -119,12 +119,16 @@ export function SyncChatView({
   const playbackCtx = useRef<AudioContext | null>(null);
   const mic = useRef<SyncMicrophone | null>(null);
   const toggling = useRef(false);
+  const disposed = useRef(false);
   const anchorRef = useRef<HTMLDivElement>(null);
 
   const sessionRef = useRef(
     createSyncSession({
       url: syncUrl,
       onTurn: (turn) => {
+        // A turn in flight at unmount must not resurrect the audio context
+        // `playReply` lazily creates, nor touch state that no longer renders.
+        if (disposed.current) return;
         setExchanges((prev) => [
           ...prev,
           { id: prev.length, heard: turn.transcript, reply: turn.reply },
@@ -134,6 +138,7 @@ export function SyncChatView({
         playReply(playbackCtx, turn, setAgentSpeaking);
       },
       onError: (err) => {
+        if (disposed.current) return;
         setPending((n) => Math.max(0, n - 1));
         setError(err.message);
       },
@@ -143,8 +148,11 @@ export function SyncChatView({
   // Release the mic and audio context when the component unmounts.
   useEffect(
     () => () => {
+      disposed.current = true;
       void mic.current?.stop();
+      mic.current = null;
       void playbackCtx.current?.close();
+      playbackCtx.current = null;
     },
     [],
   );
@@ -170,7 +178,7 @@ export function SyncChatView({
         await handle.stop();
         return;
       }
-      mic.current = await startSyncMicrophone({
+      const handle = await startSyncMicrophone({
         session: sessionRef.current,
         onSpeechStart: () => setUserSpeaking(true),
         onSpeechEnd: () => {
@@ -179,6 +187,15 @@ export function SyncChatView({
         },
         onError: (err) => setError(err.message),
       });
+      // Unmounting while the permission prompt was open ran the cleanup
+      // before this resolved, so the handle would never be stopped: a hot
+      // mic and an AudioContext held for the page's life, still POSTing
+      // endpointed utterances from a view that no longer exists.
+      if (disposed.current) {
+        await handle.stop();
+        return;
+      }
+      mic.current = handle;
       setLive(true);
       setError(null);
     } catch (err) {

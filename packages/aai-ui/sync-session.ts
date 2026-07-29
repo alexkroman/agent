@@ -15,7 +15,7 @@
  * non-browser clients that bring their own audio.
  */
 
-import { errorMessage, safeJsonParse } from "@alexkroman1/aai";
+import { DEFAULT_MAX_HISTORY, errorMessage, safeJsonParse } from "@alexkroman1/aai";
 import {
   type SyncHistoryMessage,
   type SyncTurnResponse,
@@ -106,6 +106,14 @@ export function createSyncSession(opts: SyncSessionOptions): SyncSession {
       const turn = await parseTurn(resp);
       history.push({ role: "user", content: turn.transcript });
       if (turn.reply.length > 0) history.push({ role: "assistant", content: turn.reply });
+      // Slide the window at the server's own history size. Growing past it
+      // buys nothing — `runSyncTurn` trims to DEFAULT_MAX_HISTORY before the
+      // LLM sees it — while every turn replays the whole array, so an
+      // unbounded client made request bodies grow without limit and, past
+      // MAX_SYNC_HISTORY_MESSAGES, got every later turn rejected outright.
+      if (history.length > DEFAULT_MAX_HISTORY) {
+        history.splice(0, history.length - DEFAULT_MAX_HISTORY);
+      }
       const result: SyncTurnResult = {
         ...turn,
         pcm: turn.audio !== undefined ? base64ToPcm16(turn.audio) : null,

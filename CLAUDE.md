@@ -524,11 +524,35 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   `host/sync-turn.ts` (runner + `SyncTurnError` status mapping),
   `sdk/sync.ts` (wire schemas, exported from `/protocol`),
   `runtime.runSyncTurn` (rejects 409 for S2S agents). In `aai-ui`:
-  `createSyncSession` (HTTP turns, client-held history, turn queue),
+  `createSyncSession` (HTTP turns, client-held history bounded by
+  `DEFAULT_MAX_HISTORY` — the server trims to the same window, and past
+  `MAX_SYNC_HISTORY_MESSAGES` it rejects the request outright, so an
+  unbounded client eventually broke every later turn; plus a turn queue),
   `startSyncMicrophone` (WebRTC `getUserMedia` voice-processing capture
   through an inline data-URI AudioWorklet), `createUtteranceDetector`
   (`sync-vad.ts`, pure energy-VAD state machine — browser-API-free and the
-  reason the mic glue stays thin). On the platform, `POST /:slug/sync`
+  reason the mic glue stays thin).
+
+  **A capture worklet must never re-read a view it just transferred.**
+  `postMessage(msg, [buf])` detaches `buf`, so every view onto it becomes
+  zero-length *immediately*. `sync-mic.ts`'s processor sized its next batch
+  as `new Float32Array(out.length)` after transferring `out.buffer` — that
+  is `0`, which made `n = Math.min(ch.length - read, 0)` zero, so `read`
+  stopped advancing and `process()` spun forever posting empty chunks. Since
+  the VAD drops zero-length frames, the mic went permanently deaf on its
+  first flush and no sync agent ever sent a turn (measured: 1.88M messages
+  in 6s at 100% on the render thread, zero `POST /sync`). The batch size is
+  now a processor field. The WebSocket worklet
+  (`worklets/capture-processor.ts`) transfers a `slice()` copy and keeps its
+  own buffer, which is why it was never affected. Two guards hold this:
+  `instantiateWorklet`'s harness now honors the transfer list
+  (`structuredClone` with `transfer`, which really detaches) and caps posted
+  messages so a runaway loop is a named failure rather than a hang — the
+  harness ignoring `transfer` is precisely what let this ship — and
+  `sync-mic-worklet.test.ts` exercises the processor source, which the mock
+  node in `sync-mic.test.ts` never does.
+
+  On the platform, `POST /:slug/sync`
   (unauthenticated, parity with the agent WebSocket) runs the turn through
   the deployed agent's sandbox — `Sandbox.runSyncTurn` wraps the runtime
   call so the guest's per-session tool state is released after the turn
