@@ -1,5 +1,15 @@
 # @alexkroman1/aai-server
 
+## 1.3.6
+
+### Patch Changes
+
+- Updated dependencies [9ffec74]
+- Updated dependencies [f87ff84]
+  - @alexkroman1/aai@1.15.0
+  - @alexkroman1/aai-cli@1.15.0
+  - @alexkroman1/aai-ui@1.15.0
+
 ## 1.3.5
 
 ### Patch Changes
