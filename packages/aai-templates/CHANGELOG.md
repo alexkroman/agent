@@ -1,5 +1,11 @@
 # aai-templates
 
+## 0.2.2
+
+### Patch Changes
+
+- 7043302: Add a slack-translator template: text-only pipeline (tts: none()) that translates dictated speech to French and posts it to Slack via send: slack().
+
 ## 0.2.1
 
 ### Patch Changes

@@ -1,5 +1,15 @@
 # @alexkroman1/aai
 
+## 1.16.0
+
+### Minor Changes
+
+- 5ea4cba: Keep session sockets warm with a 15s keepalive ping, and log the close code and any fatal session error so a dropped session is diagnosable from the host's own logs
+
+### Patch Changes
+
+- c261662: Pair the SSRF DNS-pinning dispatcher with its own undici at both tool-fetch call sites, fixing `TypeError: fetch failed` on every `fetch` made from an agent's tool code
+
 ## 1.15.0
 
 ### Minor Changes
