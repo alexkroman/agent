@@ -88,6 +88,12 @@ COPY --from=build /app/packages/aai-cli/node_modules/ packages/aai-cli/node_modu
 COPY --from=build /app/packages/aai-server/node_modules/ packages/aai-server/node_modules/
 COPY --from=build /app/packages/aai/dist/ packages/aai/dist/
 COPY --from=build /app/packages/aai-ui/dist/ packages/aai-ui/dist/
+# aai-ui's `./styles.css` export is a package-root file, not a dist artifact
+# (hence its own `files` entry). Every workspace client.tsx imports it by
+# that specifier, so the studio's client build needs it in the image —
+# without it Rolldown fails to resolve the import. Guarded by
+# dockerfile-packaging.test.ts.
+COPY --from=build /app/packages/aai-ui/styles.css packages/aai-ui/
 COPY --from=build /app/packages/aai-cli/dist/ packages/aai-cli/dist/
 COPY --from=build /app/packages/aai-server/dist/ packages/aai-server/dist/
 COPY --from=build /app/packages/aai-studio-client/dist/ packages/aai-studio-client/dist/
