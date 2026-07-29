@@ -13,6 +13,7 @@
  * is no per-request override: the studio runs on the host's configured model.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import {
   convertToModelMessages,
   type LanguageModel,
@@ -78,7 +79,14 @@ async function runTrial(
   try {
     loaded = await sandbox.loadBundle(worker);
   } catch (err) {
-    return `Bundle failed to load in the sandbox: ${err instanceof Error ? err.message : String(err)}`;
+    // Also log host-side. This value is returned to the model as a tool
+    // result, so without a log a failing sandbox leaves nothing in the
+    // server's logs to debug from.
+    console.warn("Studio trial: bundle/load failed", {
+      project: deps.project,
+      error: errorMessage(err),
+    });
+    return `Bundle failed to load in the sandbox: ${errorMessage(err)}`;
   }
   const parsed = IsolateConfigSchema.safeParse(loaded.config);
   if (!parsed.success) {
