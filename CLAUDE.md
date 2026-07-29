@@ -297,6 +297,16 @@ voice agents without the CLI:
     no business posting feedback as the user.
   - `STUDIO_MCP_URLS` overrides the default list; setting it empty disables
     MCP entirely.
+- **Web access** (`studio-web.ts`) exposes the SDK's own `visit_webpage`
+  and `web_search` builtins to the coding agent rather than reimplementing
+  them — which is what buys `safeFetch`, the SSRF guard. A URL here is
+  model-controlled and the studio runs on the platform host, so a
+  hand-rolled `fetch` would be a request-forgery hole aimed at the metadata
+  endpoint. `visit_webpage` needs no key; `web_search` is dropped from the
+  tool set unless the host holds `BRAVE_API_KEY`, since without one it can
+  only return "not set" and waste a turn. The tool context is built from
+  that single variable, never `process.env`, so a coding turn cannot read
+  the host's other credentials.
 - **The coding agent cannot publish.** There is deliberately no deploy
   tool: going live is the user's call, made with the Publish button
   (`POST /studio/projects/:project/deploy`). The prompt states this

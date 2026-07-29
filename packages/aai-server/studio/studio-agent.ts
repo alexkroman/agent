@@ -32,6 +32,7 @@ import { studioModel } from "./studio-llm.ts";
 import { type McpSession, openMcpTools } from "./studio-mcp.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
+import { createWebTools } from "./studio-web.ts";
 import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 
@@ -262,8 +263,9 @@ export async function runStudioChat(
       model: deps.model ?? studioModel(),
       system: studioSystemPrompt(),
       messages: await convertToModelMessages(messages, { ignoreIncompleteToolCalls: true }),
-      // Studio tools last: an MCP server must never shadow write_file.
-      tools: { ...mcp.tools, ...createStudioTools(deps) },
+      // Studio tools last: neither an MCP server nor a web builtin may
+      // shadow write_file.
+      tools: { ...mcp.tools, ...createWebTools(), ...createStudioTools(deps) },
       stopWhen: stepCountIs(MAX_CHAT_STEPS),
       onFinish: disposeSandbox,
       onAbort: disposeSandbox,
