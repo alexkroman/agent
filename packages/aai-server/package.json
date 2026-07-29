@@ -58,7 +58,6 @@
     "@ai-sdk/react": "^4.0.44",
     "@codemirror/lang-javascript": "^6.2.5",
     "@tanstack/react-query": "^5.101.4",
-    "@types/diff": "^8.0.0",
     "@types/json-schema": "^7.0.15",
     "@types/mime-types": "^3.0.1",
     "@types/react": "^19.2.17",

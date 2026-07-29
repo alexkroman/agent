@@ -5,6 +5,7 @@
     "plans/**",
     "docs/superpowers/**",
     ".worktrees/**",
+    ".remember/**",
     "packages/aai-templates/templates/**/system-prompt.md"
   ]
 }

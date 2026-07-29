@@ -152,6 +152,7 @@ describe("createStudioTools", () => {
     expect(Object.keys(tools).sort()).toEqual([
       "delete_file",
       "edit_file",
+      "grep",
       "list_files",
       "read_file",
       "test_agent",

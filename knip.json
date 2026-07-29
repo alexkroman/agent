@@ -1,14 +1,36 @@
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "ignore": [".claude/**", "examples/**"],
-  "ignoreBinaries": ["which", "safe-chain"],
-  "ignoreUnresolved": ["./_jsdom-setup.ts", "./sdk/_test-matchers.ts"],
+  "ignore": [
+    ".claude/**",
+    "examples/**",
+    ".remember/**"
+  ],
+  "ignoreBinaries": [
+    "which",
+    "safe-chain"
+  ],
+  "ignoreUnresolved": [
+    "./_jsdom-setup.ts",
+    "./sdk/_test-matchers.ts"
+  ],
   "ignoreExportsUsedInFile": true,
-  "exclude": ["exports", "types", "optionalPeerDependencies", "duplicates"],
+  "exclude": [
+    "exports",
+    "types",
+    "optionalPeerDependencies",
+    "duplicates"
+  ],
   "workspaces": {
     ".": {
-      "entry": ["scripts/*.{mjs,ts}", "vitest.adversarial.config.ts", "stryker*.config.mjs"],
-      "ignoreDependencies": ["ws", "@stryker-mutator/api"]
+      "entry": [
+        "scripts/*.{mjs,ts}",
+        "vitest.adversarial.config.ts",
+        "stryker*.config.mjs"
+      ],
+      "ignoreDependencies": [
+        "ws",
+        "@stryker-mutator/api"
+      ]
     },
     "packages/aai": {
       "entry": [
@@ -24,22 +46,40 @@
         "**/*.test-d.ts"
       ],
       "includeEntryExports": true,
-      "ignoreDependencies": ["@pinecone-database/pinecone"]
+      "ignoreDependencies": [
+        "@pinecone-database/pinecone"
+      ]
     },
     "packages/aai-ui": {
-      "entry": ["**/*.test.{ts,tsx}", "_react-test-utils.ts", "default-client.tsx"],
+      "entry": [
+        "**/*.test.{ts,tsx}",
+        "_react-test-utils.ts",
+        "default-client.tsx"
+      ],
       "includeEntryExports": true
     },
     "packages/aai-cli": {
-      "entry": ["**/*.test.ts", "_test-utils.ts", "bin.mjs", "types.ts"]
+      "entry": [
+        "**/*.test.ts",
+        "_test-utils.ts",
+        "bin.mjs",
+        "types.ts"
+      ]
     },
     "packages/aai-templates": {
-      "ignore": ["**"]
+      "ignore": [
+        "**"
+      ]
     },
     "packages/aai-server": {
-      "entry": ["**/*.test.ts", "guest/fake-vm.ts"],
+      "entry": [
+        "**/*.test.ts",
+        "guest/fake-vm.ts"
+      ],
       "includeEntryExports": true,
-      "ignoreDependencies": ["@types/json-schema"]
+      "ignoreDependencies": [
+        "@types/json-schema"
+      ]
     }
   }
 }

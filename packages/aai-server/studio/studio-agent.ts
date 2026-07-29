@@ -27,6 +27,7 @@ import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import { bundleWorkspaceWorker } from "./studio-bundle.ts";
 import { applyEdit, StudioEditError } from "./studio-edit.ts";
 import { StudioBuildError } from "./studio-errors.ts";
+import { grepWorkspace, StudioGrepError } from "./studio-grep.ts";
 import { studioModel } from "./studio-llm.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
@@ -132,6 +133,31 @@ export function createStudioTools(deps: StudioChatDeps) {
         const workspace = await getWorkspace(storage, scope, project);
         const content = workspace?.files[path];
         return content === undefined ? `Error: no such file: ${path}` : content;
+      },
+    }),
+    grep: tool({
+      description:
+        "Search file contents across the workspace. Returns `path:line: text` " +
+        "for each match. Cheaper than reading whole files to find where " +
+        "something is defined.",
+      inputSchema: z.object({
+        pattern: z.string().describe("Regex, or plain text when literal is true"),
+        glob: z.string().optional().describe("Only search paths matching this glob, e.g. *.ts"),
+        literal: z.boolean().optional().describe("Match the pattern as plain text"),
+        ignoreCase: z.boolean().optional(),
+        context: z.number().optional().describe("Lines of context around each match"),
+        limit: z.number().optional().describe("Max matches (default 100)"),
+      }),
+      execute: async ({ pattern, ...opts }) => {
+        const workspace = await getWorkspace(storage, scope, project);
+        if (!workspace) return `Error: project ${project} not found`;
+        try {
+          return grepWorkspace(workspace.files, pattern, opts);
+        } catch (err) {
+          // A bad pattern is the agent's to fix, so hand back the reason.
+          if (err instanceof StudioGrepError) return `Error: ${err.message}`;
+          throw err;
+        }
       },
     }),
     edit_file: tool({

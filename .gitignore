@@ -7,6 +7,7 @@ dist/
 .playwright-mcp/
 # Local agent-tooling state, not project content
 .superpowers/
+.remember/
 .env
 .env.*
 !.env.example
