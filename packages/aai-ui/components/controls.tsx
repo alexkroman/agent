@@ -4,8 +4,8 @@
 
 import clsx from "clsx";
 import { useSessionCore, useSessionSelector } from "../context.ts";
-import { ApiUrlChip } from "./api-url-chip.tsx";
 import { Button } from "./button.tsx";
+import { SessionUrlChips } from "./url-chips.tsx";
 
 /**
  * Session control buttons: **Stop / Resume** and **New Conversation**.
@@ -36,7 +36,7 @@ export function Controls({ className }: { className?: string }) {
       <Button variant="ghost" onClick={reset}>
         New Conversation
       </Button>
-      <ApiUrlChip className="ml-auto max-w-[45%]" />
+      <SessionUrlChips className="ml-auto max-w-[60%]" />
     </div>
   );
 }

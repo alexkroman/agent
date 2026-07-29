@@ -149,3 +149,23 @@
     @apply cursor-pointer rounded-md border border-line bg-panel px-3.5 py-2.5 text-left text-[13px] text-fg hover:border-indigo-300 hover:text-indigo;
   }
 }
+
+/* Pending tool call — mirrors aai-ui's .tool-shimmer so the studio and the
+   deployed agent UI animate the same way. */
+@keyframes studio-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+.tool-shimmer {
+  background: linear-gradient(90deg, currentColor 25%, transparent 50%, currentColor 75%);
+  background-size: 200% 100%;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  animation: studio-shimmer 2s infinite;
+}

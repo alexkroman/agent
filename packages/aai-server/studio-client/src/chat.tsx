@@ -77,24 +77,53 @@ function isToolPart(part: { type: string }): boolean {
   return part.type.startsWith("tool-") || part.type === "dynamic-tool";
 }
 
-function ToolRow({ part }: { part: Record<string, unknown> & { type: string } }) {
+/**
+ * One tool invocation, rendered as the same console row the deployed agent UI
+ * uses (`aai-ui`'s ToolCallBlock): outlined TOOL chip, tool name in mono, a
+ * truncated args preview, and a chevron that rotates to expand the result.
+ * The two surfaces show the same thing, so they should read as one component —
+ * only the type scale differs, since the studio is a denser surface.
+ */
+export function ToolRow({ part }: { part: Record<string, unknown> & { type: string } }) {
   const [open, setOpen] = useState(false);
   const name = toolPartName(part as { type: string; toolName?: string });
   const done = part.state === "output-available";
   const output = part.output;
+  const args = part.input == null ? "" : JSON.stringify(part.input);
+  const canExpand = part.input != null || (done && output != null);
+
   return (
-    <div className="my-1 rounded-md border border-line bg-cream px-3 py-2 text-xs">
+    <div className="my-1 overflow-hidden rounded-md border border-line bg-cream">
       <button
         type="button"
-        className="flex w-full cursor-pointer items-center gap-1.5 border-none bg-transparent p-0 text-left font-mono text-xs text-subtle"
-        onClick={() => setOpen((v) => !v)}
+        aria-expanded={canExpand ? open : undefined}
+        disabled={!canExpand}
+        className={`flex w-full appearance-none items-center gap-2 border-none bg-transparent px-3 py-2 text-left select-none ${
+          canExpand ? "cursor-pointer" : ""
+        }`}
+        onClick={() => canExpand && setOpen((v) => !v)}
       >
-        <span className={done ? "text-indigo" : ""}>{done ? "✓" : "⏳"}</span>
-        {name}
-        <span className="ml-auto">{open ? "▾" : "▸"}</span>
+        <span className="shrink-0 rounded-sm border border-line px-1.5 py-[3px] text-[9px] leading-none font-medium tracking-[1.2px] text-subtle uppercase">
+          Tool
+        </span>
+        <span
+          className={`shrink-0 font-mono text-[11px] font-medium text-fg ${done ? "" : "tool-shimmer"}`}
+        >
+          {name}
+        </span>
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-subtle">{args}</span>
+        {canExpand && (
+          <span
+            className={`shrink-0 text-[9px] text-subtle transition-transform duration-150 ${
+              open ? "rotate-90" : ""
+            }`}
+          >
+            ▶
+          </span>
+        )}
       </button>
       {open && (
-        <div className="mt-1 text-subtle">
+        <div className="border-t border-line bg-panel px-3 py-2 text-subtle">
           {part.input != null && (
             <code className="block overflow-x-auto font-mono text-[10px] break-all whitespace-pre-wrap">
               {JSON.stringify(part.input).slice(0, 300)}

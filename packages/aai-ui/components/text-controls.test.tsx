@@ -7,8 +7,8 @@ import { fireEvent, render, screen } from "@testing-library/react";
 import { describe, expect, test, vi } from "vitest";
 import { createMockSessionCore } from "../_react-test-utils.ts";
 import { SessionProvider, ThemeProvider } from "../context.ts";
-import { ApiUrlChip } from "./api-url-chip.tsx";
 import { TextControls } from "./text-controls.tsx";
+import { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./url-chips.tsx";
 
 function renderWithSession(
   ui: React.ReactElement,
@@ -100,5 +100,27 @@ describe("ApiUrlChip", () => {
     fireEvent.click(screen.getByTestId("api-url-chip"));
     expect(writeText).toHaveBeenCalledWith("wss://host/agent/websocket");
     expect(await screen.findByText("Copied")).toBeDefined();
+  });
+});
+
+describe("UiUrlChip", () => {
+  it("shows the page URL without the query string or hash", () => {
+    renderWithSession(<UiUrlChip />, { apiUrl: "wss://host/agent/websocket" });
+    // jsdom's default location; the point is origin + pathname only.
+    expect(screen.getByTestId("ui-url-chip-url").textContent).toBe(
+      `${window.location.origin}${window.location.pathname}`,
+    );
+  });
+});
+
+describe("SessionUrlChips", () => {
+  it("renders both URLs, each with its own label", () => {
+    // A bare pair of URLs is unreadable — the labels are the point.
+    renderWithSession(<SessionUrlChips />, { apiUrl: "wss://host/agent/websocket" });
+    expect(screen.getByTestId("ui-url-chip")).toBeTruthy();
+    expect(screen.getByTestId("api-url-chip")).toBeTruthy();
+    expect(screen.getByTestId("ui-url-chip").textContent).toContain("UI");
+    expect(screen.getByTestId("api-url-chip").textContent).toContain("API");
+    expect(screen.getByTestId("api-url-chip-url").textContent).toBe("wss://host/agent/websocket");
   });
 });

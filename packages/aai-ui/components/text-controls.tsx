@@ -6,8 +6,8 @@ import clsx from "clsx";
 import { useRef, useState } from "react";
 import { useSessionCore, useSessionSelector } from "../context.ts";
 import { ERROR_COLOR } from "./_colors.ts";
-import { ApiUrlChip } from "./api-url-chip.tsx";
 import { Button } from "./button.tsx";
+import { SessionUrlChips } from "./url-chips.tsx";
 
 const RECORDING_COLOR = ERROR_COLOR;
 
@@ -89,7 +89,7 @@ export function TextControls({ className }: { className?: string | undefined }) 
         <Button variant="ghost" onClick={core.reset}>
           New Conversation
         </Button>
-        <ApiUrlChip className="ml-auto max-w-[35%]" />
+        <SessionUrlChips className="ml-auto max-w-[55%]" />
       </div>
       {uploadError && (
         <div className="text-[12px]" style={{ color: RECORDING_COLOR }} data-testid="upload-error">
