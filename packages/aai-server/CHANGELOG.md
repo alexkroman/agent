@@ -1,5 +1,19 @@
 # @alexkroman1/aai-server
 
+## 1.3.5
+
+### Patch Changes
+
+- cf4b51f: Studio chat can switch models per request: the chat body accepts an optional `model` validated against the host-configured provider's own model list (LLM Gateway list, region-filtered), /studio/status advertises the list, and the studio client renders a model picker in the chat header. Providers and keys remain host-owned.
+- Updated dependencies [1c57e05]
+- Updated dependencies [4469856]
+- Updated dependencies [f389673]
+- Updated dependencies [cf4b51f]
+  - @alexkroman1/aai@1.14.0
+  - @alexkroman1/aai-ui@1.14.0
+  - aai-studio-client@0.1.7
+  - @alexkroman1/aai-cli@1.14.0
+
 ## 1.3.4
 
 ### Patch Changes

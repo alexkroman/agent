@@ -1,5 +1,21 @@
 # @alexkroman1/aai-ui
 
+## 1.14.0
+
+### Minor Changes
+
+- f389673: The default sync client is now a hands-free voice agent: `SyncChatView`
+  opens the microphone once via `startSyncMicrophone` and the client-side
+  energy VAD endpoints each utterance automatically — no push-to-talk button.
+  One toggle starts and ends the conversation; `createPttRecorder` remains
+  exported for custom hold-to-record clients.
+
+### Patch Changes
+
+- Updated dependencies [1c57e05]
+- Updated dependencies [4469856]
+  - @alexkroman1/aai@1.14.0
+
 ## 1.13.1
 
 ### Patch Changes

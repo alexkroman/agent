@@ -1,5 +1,12 @@
 # @alexkroman1/aai
 
+## 1.14.0
+
+### Patch Changes
+
+- 1c57e05: Fix deployed pipeline agents rejecting holdPhrase and the other voice tuning fields: validate the runtime config against the effective providers, which the platform passes as options rather than on the agent object
+- 4469856: Fix AssemblyAI streaming TTS lag in pipeline mode: flush per sentence so audio starts mid-reply instead of after the whole turn
+
 ## 1.13.1
 
 ### Patch Changes
