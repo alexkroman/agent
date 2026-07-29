@@ -487,6 +487,19 @@ describe("chat sandbox lifecycle", () => {
     expect(createSandbox).not.toHaveBeenCalled();
   });
 
+  test("a failed provisioning is retried, not cached for the rest of the turn", async () => {
+    // `??=` used to pin the first rejection: one transient spawn failure made
+    // every later test_agent call answer "Sandbox unavailable".
+    const { request, createSandbox } = await chatApp();
+    createSandbox.mockRejectedValueOnce(new Error("spawn failed"));
+    expect((await request()).status).toBe(200);
+    const [deps] = chatMock.mock.calls[0] as unknown[] as [ChatDeps];
+
+    await expect(deps.sandbox()).rejects.toThrow("spawn failed");
+    await expect(deps.sandbox()).resolves.toBeDefined();
+    expect(createSandbox).toHaveBeenCalledTimes(2);
+  });
+
   test("a sandbox provisioned before dispose is disposed exactly once", async () => {
     const { request, createSandbox, dispose } = await chatApp();
     expect((await request()).status).toBe(200);

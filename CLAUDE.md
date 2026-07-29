@@ -321,6 +321,19 @@ voice agents without the CLI:
   is dropped) — but in dev that degradation is silent and reads as a bug, so
   it fails at boot where the cause is obvious. `AAI_DEV_SKIP_KEY_CHECK=1`
   overrides.
+- **Every coding-agent tool runs under a per-call deadline**
+  (`studio-tool-timeout.ts`, `STUDIO_TOOL_TIMEOUT_MS`, default 120s —
+  generous because `test_agent` runs a full Vite build). A hung call (dead
+  sandbox RPC, silent MCP server, stalled web fetch) used to hang the whole
+  turn with the client's tool row shimmering forever; the wrapper resolves
+  it to an error tool result instead. It is a resolution race, not a
+  cancellation — the abandoned work dies with the turn's teardown. The
+  client side of the same problem is the composer's **Stop button**
+  (`chat.tsx`): while a turn streams, send becomes stop; `useChat().stop()`
+  aborts the SSE fetch, the route's `c.req.raw.signal` fires, and
+  `streamText` cancels the LLM call while `disposeSandbox` tears down the
+  sandbox and MCP clients. A failed sandbox provisioning is retried on the
+  next tool call, not cached for the turn (`studio-routes.ts`).
 - **Web access** (`studio-web.ts`) exposes the SDK's own `visit_webpage`
   and `web_search` builtins to the coding agent rather than reimplementing
   them — which is what buys `safeFetch`, the SSRF guard. A URL here is

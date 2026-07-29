@@ -30,6 +30,15 @@ describe("ToolRow", () => {
     expect(html).not.toContain("⏳");
   });
 
+  test("a pending call stops shimmering once the turn is over", () => {
+    // A call abandoned by Stop (or a dropped stream) never reaches
+    // output-available — it must not flash forever.
+    const html = renderToStaticMarkup(
+      <ToolRow part={{ type: "tool-test_agent", state: "input-available" }} active={false} />,
+    );
+    expect(html).not.toContain("tool-shimmer");
+  });
+
   test("a completed call is expandable; one with nothing to show is not", () => {
     const done = render({ type: "tool-x", state: "output-available", output: "result" });
     expect(done).toContain("▶");

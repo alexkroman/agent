@@ -422,6 +422,30 @@ describe("runStudioChat", () => {
     );
   });
 
+  test("a tool call that hangs times out into a tool result instead of hanging the turn", async () => {
+    // Before the deadline wrapper, a dead sandbox RPC or silent MCP server
+    // left the stream open forever — the client's tool row shimmered with no
+    // way out. The turn must finish with an error tool result instead.
+    vi.stubEnv("STUDIO_TOOL_TIMEOUT_MS", "50");
+    const hanging = tool({
+      description: "never settles",
+      inputSchema: z.object({}),
+      execute: () => new Promise<string>(() => undefined),
+    });
+    const deps = await makeDeps({
+      model: fakeModel([{ type: "tool-call", toolCallId: "c1", toolName: "hang", input: "{}" }]),
+      mcp: { tools: { hang: hanging } as never, close: async () => undefined },
+    });
+    const events = await readSseEvents(await runStudioChat(deps, [userMessage("go")]));
+    expect(events).toContainEqual(
+      expect.objectContaining({
+        type: "tool-output-available",
+        output: expect.stringContaining("hang timed out"),
+      }),
+    );
+    expect(events.map((e) => e.type)).toContain("finish");
+  });
+
   test("rejects when the model cannot be created (and disposes)", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     vi.stubEnv("ANTHROPIC_API_KEY", "");

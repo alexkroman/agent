@@ -266,7 +266,13 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
       if (disposed) {
         return Promise.reject(new Error("The chat turn ended before the sandbox was provisioned."));
       }
-      sandboxPromise ??= newSandbox({ pool: options.pool });
+      // A failed provisioning must not be cached: `??=` would pin the
+      // rejection, turning one transient spawn failure into "Sandbox
+      // unavailable" for every later test_agent call in the turn.
+      sandboxPromise ??= newSandbox({ pool: options.pool }).catch((err) => {
+        sandboxPromise = null;
+        throw err;
+      });
       return sandboxPromise;
     };
     const disposeSandbox = async (): Promise<void> => {

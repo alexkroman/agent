@@ -6,7 +6,7 @@
 import type { UIMessage } from "ai";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { ChatPanel, toBlocks } from "./chat.tsx";
+import { ChatPanel, Composer, toBlocks } from "./chat.tsx";
 
 function message(parts: Record<string, unknown>[]): UIMessage {
   return { id: "m1", role: "assistant", parts } as UIMessage;
@@ -81,6 +81,33 @@ const panelProps = {
   onWorkspaceChanged: noop,
   onUnauthorized: noop,
 };
+
+describe("Composer", () => {
+  const composerProps = { disabled: false, placeholder: "p", onSend: noop };
+
+  test("idle: shows an enabled Send button and no Stop", () => {
+    const html = renderToStaticMarkup(<Composer {...composerProps} />);
+    expect(html).toContain('aria-label="Send"');
+    expect(html).not.toContain('aria-label="Stop"');
+  });
+
+  test("while a turn streams, the button becomes an enabled Stop", () => {
+    // The whole point of the stop button: a hung turn used to leave the
+    // composer fully disabled with nothing to click.
+    const html = renderToStaticMarkup(<Composer {...composerProps} busy={true} onStop={noop} />);
+    expect(html).toContain('aria-label="Stop"');
+    expect(html).not.toContain('aria-label="Send"');
+    // The input locks, but the Stop button itself stays clickable.
+    expect(html).toMatch(/<input[^>]*\sdisabled=/);
+    expect(html).not.toMatch(/<button[^>]*\sdisabled=/);
+  });
+
+  test("busy with no stop handler falls back to a disabled Send", () => {
+    const html = renderToStaticMarkup(<Composer {...composerProps} busy={true} />);
+    expect(html).toContain('aria-label="Send"');
+    expect(html).toMatch(/<button[^>]*\sdisabled=/);
+  });
+});
 
 describe("ChatPanel (pre-project)", () => {
   test("shows starters and an enabled composer when the server has an LLM", () => {
