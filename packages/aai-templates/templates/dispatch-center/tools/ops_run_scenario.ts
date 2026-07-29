@@ -1,13 +1,7 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import type { Incident, IncidentType, Severity } from "../shared.ts";
-import {
-  calculateTriageScore,
-  createIncident,
-  getState,
-  recalculateAlertLevel,
-  saveState,
-} from "../shared.ts";
+import { calculateTriageScore, createIncident, dashboardEvent, updateState } from "../shared.ts";
 
 type ScenarioDef = { narrative: string; incidents: Partial<Incident>[] };
 
@@ -131,45 +125,41 @@ export const opsRunScenario = tool({
       .describe("Scenario type to simulate"),
   }),
   async execute(args, ctx) {
-    const state = await getState(ctx.kv);
+    return updateState(
+      ctx.kv,
+      ctx.sessionId,
+      (state) => {
+        // The zod enum guarantees the scenario key exists.
+        const s = scenarios[args.scenario] as ScenarioDef;
 
-    const s = scenarios[args.scenario];
-    if (!s) return { error: "Unknown scenario" };
+        const created: string[] = [];
+        for (const scenarioInc of s.incidents) {
+          const fullInc = createIncident(state, {
+            type: scenarioInc.type || "other",
+            severity: scenarioInc.severity || "moderate",
+            location: scenarioInc.location || "Unknown",
+            description: scenarioInc.description || "",
+            callerName: "Scenario",
+            callerPhone: "N/A",
+            triageScore: calculateTriageScore(
+              scenarioInc.severity || "moderate",
+              scenarioInc.type || "other",
+              0,
+              0,
+            ),
+            timeline: [{ time: Date.now(), event: `SCENARIO: ${scenarioInc.description}` }],
+          });
+          created.push(fullInc.id);
+        }
 
-    const created: string[] = [];
-    for (const scenarioInc of s.incidents) {
-      const fullInc = createIncident(state, {
-        type: scenarioInc.type || "other",
-        severity: scenarioInc.severity || "moderate",
-        location: scenarioInc.location || "Unknown",
-        description: scenarioInc.description || "",
-        callerName: "Scenario",
-        callerPhone: "N/A",
-        triageScore: calculateTriageScore(
-          scenarioInc.severity || "moderate",
-          scenarioInc.type || "other",
-          0,
-          0,
-        ),
-        timeline: [
-          {
-            time: Date.now(),
-            event: `SCENARIO: ${scenarioInc.description}`,
-          },
-        ],
-      });
-      created.push(fullInc.id);
-    }
-
-    recalculateAlertLevel(state);
-    await saveState(ctx.kv, state);
-
-    return {
-      scenario: args.scenario,
-      narrative: s.narrative,
-      incidentsCreated: created,
-      systemAlertLevel: state.alertLevel,
-      message: `SCENARIO ACTIVE: ${s.narrative}. ${created.length} incidents created. Awaiting dispatch orders.`,
-    };
+        return {
+          scenario: args.scenario,
+          narrative: s.narrative,
+          incidentsCreated: created,
+          message: `SCENARIO ACTIVE: ${s.narrative}. ${created.length} incidents created. Awaiting dispatch orders.`,
+        };
+      },
+      (state) => ctx.send("incidents", dashboardEvent(state)),
+    );
   },
 });

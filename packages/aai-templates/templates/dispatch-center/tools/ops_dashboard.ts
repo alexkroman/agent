@@ -1,18 +1,11 @@
 import { tool } from "@alexkroman1/aai";
-import type { Incident } from "../shared.ts";
-import { getState, INCIDENT_INDEX_KEY, incidentKey } from "../shared.ts";
+import { dashboardEvent, getState } from "../shared.ts";
 
 export const opsDashboard = tool({
   description:
     "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
   async execute(_args, ctx) {
-    const state = await getState(ctx.kv);
-
-    // Query KV for persisted incident snapshots via index
-    const incidentIndex = (await ctx.kv.get<string[]>(INCIDENT_INDEX_KEY)) ?? [];
-    const persistedSnapshots = (
-      await Promise.all(incidentIndex.map((id) => ctx.kv.get<Incident>(incidentKey(id))))
-    ).filter((i): i is Incident => i !== null);
+    const state = await getState(ctx.kv, ctx.sessionId);
 
     const activeIncidents = Object.values(state.incidents)
       .filter((i) => i.status !== "resolved")
@@ -33,7 +26,9 @@ export const opsDashboard = tool({
 
     const utilization = Math.round((1 - resourceSummary.available / resourceSummary.total) * 100);
 
-    const result = {
+    ctx.send("incidents", dashboardEvent(state));
+
+    return {
       systemAlertLevel: state.alertLevel,
       mutualAidActive: state.mutualAidRequested,
       resourceUtilization: `${utilization}%`,
@@ -58,15 +53,6 @@ export const opsDashboard = tool({
           type: r.type,
           capabilities: r.capabilities,
         })),
-      persistedIncidentCount: incidentIndex.length,
-      persistedSnapshots: persistedSnapshots.map((i) => ({
-        id: i.id,
-        severity: i.severity,
-        status: i.status,
-      })),
-      state,
     };
-    ctx.send("incidents", result);
-    return result;
   },
 });

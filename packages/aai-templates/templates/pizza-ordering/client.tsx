@@ -63,11 +63,12 @@ function OrderSidebar() {
         total: orderTotal,
       }));
     } else if ("pizzas" in result && Array.isArray(result.pizzas)) {
+      // view_order carries the authoritative list — replace, don't merge.
       const pizzas = result.pizzas as Pizza[];
       const total =
         (result.orderTotal as string) ||
         `$${pizzas.reduce((s, p) => s + pizzaPrice(p), 0).toFixed(2)}`;
-      setOrder((prev) => ({ ...prev, total }));
+      setOrder((prev) => ({ ...prev, pizzas, total }));
     } else if ("orderNumber" in result && result.orderNumber) {
       setOrder((prev) => ({
         ...prev,

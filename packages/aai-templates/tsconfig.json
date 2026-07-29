@@ -12,7 +12,9 @@
   },
   "include": [
     "scaffold/global.d.ts",
+    "templates.test.ts",
     "templates/*/agent.ts",
+    "templates/*/agent.test.ts",
     "templates/*/client.tsx",
     "templates/*/shared.ts",
     "templates/*/tools/*.ts"

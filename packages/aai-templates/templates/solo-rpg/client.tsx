@@ -2,7 +2,7 @@ import "@alexkroman1/aai-ui/styles.css";
 import { ChatView, client, SidebarLayout, StartScreen, useEvent } from "@alexkroman1/aai-ui";
 import { type ReactNode, useState } from "react";
 import type { Clock, Disposition, GameState, NPC, StoryBlueprint } from "./shared.ts";
-import { DEFAULT_STATE, MAX_RESOURCE, MIN_MOMENTUM } from "./shared.ts";
+import { DEFAULT_STATE, GENRES, MAX_RESOURCE, MIN_MOMENTUM } from "./shared.ts";
 
 // ── Color Palette ────────────────────────────────────────────────────────────
 const C = {
@@ -53,21 +53,6 @@ const TIME_LABELS: Record<string, string> = {
   late_evening: "Twilight",
   night: "Night",
   deep_night: "Witching Hour",
-};
-
-const GENRE_LABELS: Record<string, string> = {
-  dark_fantasy: "Dark Fantasy",
-  high_fantasy: "High Fantasy",
-  science_fiction: "Sci-Fi",
-  horror_mystery: "Horror / Mystery",
-  steampunk: "Steampunk",
-  cyberpunk: "Cyberpunk",
-  urban_fantasy: "Urban Fantasy",
-  victorian_crime: "Victorian Crime",
-  historical_roman: "Historical",
-  fairy_tale: "Fairy Tale",
-  slice_of_life_90s: "Slice of Life",
-  outdoor_survival: "Survival",
 };
 
 const PHASE_LABELS: Record<string, string> = {
@@ -516,7 +501,7 @@ function Sidebar({ game }: { game: GameState }) {
                   fontFamily: "sans-serif",
                 }}
               >
-                {GENRE_LABELS[game.settingGenre] || game.settingGenre}
+                {GENRES[game.settingGenre as keyof typeof GENRES] || game.settingGenre}
               </div>
             )}
           </>
@@ -773,14 +758,8 @@ function Sidebar({ game }: { game: GameState }) {
 function SoloRPGApp() {
   const [game, setGame] = useState<GameState>(structuredClone(DEFAULT_STATE));
 
-  const mergeState = (result: Partial<GameState>, prev: GameState): GameState => ({
-    ...prev,
-    ...Object.fromEntries(Object.entries(result).filter(([, v]) => v !== undefined)),
-  });
-
-  useEvent<GameState>("game_state", (state) => {
-    setGame((prev) => mergeState(state, prev));
-  });
+  // The server always sends the complete state object.
+  useEvent<GameState>("game_state", setGame);
 
   return (
     <StartScreen

@@ -27,14 +27,21 @@ export default agent({
         query: z.string().describe("The user's question to search for"),
       }),
       async execute(args) {
-        const q = args.query.toLowerCase();
-        const match = faqs.find(
-          (f) =>
-            f.question.toLowerCase().includes(q) ||
-            q.includes(f.question.toLowerCase()) ||
-            f.answer.toLowerCase().includes(q),
-        );
-        return match ?? { result: "No matching FAQ found." };
+        // Score by word overlap — natural questions rarely match an FAQ
+        // entry as an exact substring.
+        const words = args.query
+          .toLowerCase()
+          .split(/\W+/)
+          .filter((w) => w.length > 2);
+        if (words.length === 0) return { result: "No matching FAQ found." };
+
+        let best: { entry: FaqEntry; score: number } | null = null;
+        for (const entry of faqs) {
+          const text = `${entry.question} ${entry.answer}`.toLowerCase();
+          const score = words.filter((w) => text.includes(w)).length;
+          if (score > 0 && (!best || score > best.score)) best = { entry, score };
+        }
+        return best?.entry ?? { result: "No matching FAQ found." };
       },
     }),
   },

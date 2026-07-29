@@ -2,25 +2,56 @@ import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import systemPrompt from "./system-prompt.md";
 
-type RxCui = { name: string; rxcui: string };
-
-async function resolveRxCui(name: string): Promise<RxCui | null> {
-  let raw: { idGroup?: { rxnormId?: string[] } } | null;
-  try {
-    const resp = await fetch(
-      `https://rxnav.nlm.nih.gov/REST/rxcui.json?name=${encodeURIComponent(name)}`,
-    );
-    raw = resp.ok ? await resp.json() : null;
-  } catch {
-    raw = null;
-  }
-  if (!raw) return null;
-  const id = raw.idGroup?.rxnormId?.[0];
-  return id ? { name, rxcui: id } : null;
-}
-
 function first(arr: string[] | undefined): string | undefined {
   return arr?.[0];
+}
+
+type FdaLabel = Record<string, unknown> & { openfda?: Record<string, string[]> };
+
+/**
+ * Fetch a drug's FDA label (generic OR brand name match) from openFDA.
+ * Returns null when the drug can't be found or the API is unreachable.
+ */
+async function fetchFdaLabel(name: string): Promise<FdaLabel | null> {
+  const q = encodeURIComponent(name.toLowerCase());
+  try {
+    const resp = await fetch(
+      `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${q}"+openfda.brand_name:"${q}"&limit=1`,
+    );
+    if (!resp.ok) return null;
+    const raw = (await resp.json()) as { results?: FdaLabel[] };
+    return raw.results?.[0] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+type DrugInfo = {
+  /** The name the user asked about. */
+  name: string;
+  /** All known names, lowercased — generic + brands — used for cross-matching. */
+  aliases: string[];
+  /** The label's "Drug Interactions" section, lowercased. */
+  interactionsText: string;
+};
+
+function toDrugInfo(name: string, label: FdaLabel): DrugInfo {
+  const openfda = label.openfda ?? {};
+  const generic = openfda.generic_name ?? [];
+  const brands = openfda.brand_name ?? [];
+  const aliases = [...new Set([name, ...generic, ...brands].map((n) => n.toLowerCase()))];
+  const interactionsText = ((label.drug_interactions as string[] | undefined) ?? [])
+    .join(" ")
+    .toLowerCase();
+  return { name, aliases, interactionsText };
+}
+
+/** Pull a short excerpt around the first mention of `alias` in `text`. */
+function excerptAround(text: string, alias: string): string {
+  const idx = text.indexOf(alias);
+  const start = Math.max(0, idx - 100);
+  const end = Math.min(text.length, idx + alias.length + 200);
+  return `${start > 0 ? "…" : ""}${text.slice(start, end)}${end < text.length ? "…" : ""}`;
 }
 
 export default agent({
@@ -33,54 +64,59 @@ export default agent({
   tools: {
     check_drug_interaction: tool({
       description:
-        "Check for known interactions between two or more medications. Resolves drug names via RxNorm and returns interaction details with severity levels.",
+        "Check for interactions between two or more medications using FDA drug label data. Looks up each drug's official label and reports where one drug's Drug Interactions section mentions another. Absence of a mention does not guarantee safety.",
       parameters: z.object({
         drugs: z.string().describe("Comma-separated medication names (e.g. 'ibuprofen, warfarin')"),
       }),
       async execute(args) {
-        const names = args.drugs.split(",").map((d) => d.trim().toLowerCase());
+        const names = args.drugs
+          .split(",")
+          .map((d) => d.trim().toLowerCase())
+          .filter((d) => d.length > 0);
+        if (names.length < 2) {
+          return { error: "Provide at least two medication names to check." };
+        }
 
-        const resolved = (await Promise.all(names.map((n) => resolveRxCui(n)))).filter(
-          (r): r is RxCui => r !== null,
-        );
-
-        if (resolved.length < 2) {
+        const labels = await Promise.all(names.map((n) => fetchFdaLabel(n)));
+        const unresolved = names.filter((_, i) => labels[i] === null);
+        if (unresolved.length > 0) {
+          // Never silently drop a drug from an interaction check — a partial
+          // answer would read as "no interaction" for the missing one.
           return {
-            error: `Could not resolve all drug names. Found: ${
-              resolved.map((r) => r.name).join(", ") || "none"
-            }`,
+            error: `Could not find FDA label data for: ${unresolved.join(", ")}. Check the spelling, or try the generic name.`,
           };
         }
 
-        const rxcuiList = resolved.map((r) => r.rxcui).join("+");
-        let raw: Record<string, unknown>;
-        try {
-          const resp = await fetch(
-            `https://rxnav.nlm.nih.gov/REST/interaction/list.json?rxcuis=${rxcuiList}`,
-          );
-          raw = resp.ok ? await resp.json() : { error: "Interaction lookup failed" };
-        } catch {
-          raw = { error: "Interaction lookup failed" };
+        const drugs: DrugInfo[] = [];
+        for (const [i, name] of names.entries()) {
+          const label = labels[i];
+          if (label) drugs.push(toDrugInfo(name, label));
         }
 
-        if ("error" in raw) return raw;
-
-        type InteractionPair = { description: string; severity: string };
-        type InteractionType = { interactionPair?: InteractionPair[] };
-        type InteractionGroup = { fullInteractionType?: InteractionType[] };
-
-        const groups: InteractionGroup[] =
-          (raw as { fullInteractionTypeGroup?: InteractionGroup[] }).fullInteractionTypeGroup ?? [];
-
-        const interactions = groups
-          .flatMap((g) => g.fullInteractionType ?? [])
-          .flatMap((t) => t.interactionPair ?? [])
-          .map(({ description, severity }) => ({ description, severity }));
+        const interactions: Array<{ drug: string; mentions: string; excerpt: string }> = [];
+        for (const a of drugs) {
+          if (!a.interactionsText) continue;
+          for (const b of drugs) {
+            if (a === b) continue;
+            const hit = b.aliases.find((alias) => a.interactionsText.includes(alias));
+            if (hit) {
+              interactions.push({
+                drug: a.name,
+                mentions: b.name,
+                excerpt: excerptAround(a.interactionsText, hit).slice(0, 400),
+              });
+            }
+          }
+        }
 
         return {
-          drugs: resolved.map(({ name, rxcui }) => ({ name, rxcui })),
+          drugs: names,
           interactions_found: interactions.length,
           interactions: interactions.slice(0, 5),
+          note:
+            interactions.length === 0
+              ? "No cross-mentions found in the FDA label Drug Interactions sections. This does not guarantee the combination is safe — confirm with a pharmacist or doctor."
+              : "Based on FDA label Drug Interactions sections. Confirm with a pharmacist or doctor.",
         };
       },
     }),
@@ -94,29 +130,12 @@ export default agent({
           .describe("Medication name (generic or brand, e.g. 'ibuprofen' or 'Advil')"),
       }),
       async execute(args) {
-        const q = encodeURIComponent(args.name.toLowerCase());
-        let raw: Record<string, unknown> | null;
-        try {
-          const resp = await fetch(
-            `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${q}"+openfda.brand_name:"${q}"&limit=1`,
-          );
-          raw = resp.ok ? await resp.json() : null;
-        } catch {
-          raw = null;
-        }
-
-        if (
-          !(raw && Array.isArray((raw as { results?: unknown[] }).results)) ||
-          ((raw as { results?: unknown[] }).results?.length ?? 0) === 0
-        ) {
+        const drug = await fetchFdaLabel(args.name);
+        if (!drug) {
           return { error: `No FDA data found for: ${args.name}` };
         }
 
-        const drug = (raw as { results: Record<string, unknown>[] }).results[0] as Record<
-          string,
-          unknown
-        >;
-        const openfda = (drug.openfda ?? {}) as Record<string, string[]>;
+        const openfda = drug.openfda ?? {};
         return {
           name: openfda.generic_name?.[0] ?? args.name,
           brand_names: openfda.brand_name ?? [],

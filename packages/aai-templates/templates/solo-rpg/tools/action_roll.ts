@@ -15,7 +15,7 @@ import {
 
 export const actionRoll = tool({
   description:
-    "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action.",
+    "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action. Pure conversation needs no roll.",
   parameters: z.object({
     move: z.enum(MOVES).describe("Which move the player is making"),
     stat: z.enum(["edge", "heart", "iron", "shadow", "wits"]).describe("Which stat to roll"),
@@ -23,22 +23,32 @@ export const actionRoll = tool({
       .enum(["controlled", "risky", "desperate"])
       .describe("How dangerous the situation is"),
     effect: z.enum(["limited", "standard", "great"]).describe("What can realistically be achieved"),
-    purpose: z.string().describe("What the character is attempting"),
-    targetNpcId: z.string().describe("Target NPC id for social moves").optional(),
+    purpose: z.string().max(300).describe("What the character is attempting"),
+    targetNpcId: z.string().max(32).describe("Target NPC id for social moves").optional(),
   }),
   async execute(args, ctx) {
-    const state = await getGameState(ctx.kv);
+    const state = await getGameState(ctx.kv, ctx.sessionId);
     const statValue = state[args.stat];
     const roll = rollAction(args.stat, statValue, args.move);
 
     // Apply consequences
-    const { consequences, clockEvents } = applyConsequences(
+    const { consequences, clockEvents, deltas } = applyConsequences(
       state,
       roll,
       args.position,
       args.effect,
       args.targetNpcId ?? null,
     );
+
+    // Persist the roll (with the exact deltas applied) so burn_momentum can
+    // validate against it and revert it — the model never supplies dice.
+    state.lastRoll = {
+      ...roll,
+      position: args.position,
+      effect: args.effect,
+      targetNpcId: args.targetNpcId ?? null,
+      deltas,
+    };
 
     // Update chaos factor
     updateChaosFactor(state, roll.result);
@@ -52,7 +62,7 @@ export const actionRoll = tool({
     // Can burn momentum?
     const burnTarget = canBurnMomentum(state, roll);
 
-    await saveGameState(ctx.kv, state);
+    await saveGameState(ctx.kv, ctx.sessionId, state);
     ctx.send("game_state", state);
 
     return {

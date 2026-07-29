@@ -5,10 +5,10 @@ import { findIncident, getApplicableProtocols, getState } from "../shared.ts";
 export const incidentGet = tool({
   description: "Get full details on a specific incident including timeline and assigned resources.",
   parameters: z.object({
-    incidentId: z.string().describe("The incident ID"),
+    incidentId: z.string().max(20).describe("The incident ID"),
   }),
   async execute(args, ctx) {
-    const state = await getState(ctx.kv);
+    const state = await getState(ctx.kv, ctx.sessionId);
     const inc = findIncident(state, args.incidentId);
     if ("error" in inc) return inc;
 

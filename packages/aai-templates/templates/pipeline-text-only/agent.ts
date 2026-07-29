@@ -13,7 +13,7 @@ export default agent({
   systemPrompt:
     "You are a helpful assistant. The user speaks to you; your replies are " +
     "read, not heard — answer in clear, well-formatted text.",
-  stt: assemblyAI({ model: "u3pro-rt" }),
+  stt: assemblyAI(), // default model: universal-3-5-pro
   llm: anthropic({ model: "claude-haiku-4-5" }),
   tts: none(),
 });

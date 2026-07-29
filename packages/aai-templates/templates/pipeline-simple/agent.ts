@@ -6,7 +6,7 @@ import { cartesia } from "@alexkroman1/aai/tts";
 export default agent({
   name: "pipeline-simple",
   greeting: "Hi! I'm running in pipeline mode. What can I help with?",
-  stt: assemblyAI({ model: "u3pro-rt" }),
+  stt: assemblyAI(), // default model: universal-3-5-pro
   llm: anthropic({ model: "claude-haiku-4-5" }),
   tts: cartesia(),
 });

@@ -5,6 +5,11 @@ export const MAX_SESSION_LOG = 50;
 export const MOMENTUM_RESET = 2;
 export const MAX_RESOURCE = 5;
 export const MIN_MOMENTUM = -6;
+export const MAX_BOND = 4;
+export const MAX_NPCS = 12;
+export const MAX_CLOCKS = 8;
+export const MIN_CLOCK_SEGMENTS = 2;
+export const MAX_CLOCK_SEGMENTS = 12;
 
 // ── Creativity Seeds ─────────────────────────────────────────────────────────
 const SEED_WORDS = [
@@ -40,9 +45,18 @@ const SEED_WORDS = [
   "coral",
 ];
 
+/** Unbiased Fisher-Yates shuffle. Returns a new array. */
+export function shuffle<T>(arr: readonly T[]): T[] {
+  const out = [...arr];
+  for (let i = out.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [out[i], out[j]] = [out[j]!, out[i]!];
+  }
+  return out;
+}
+
 export function creativitySeed(n = 3): string {
-  const shuffled = [...SEED_WORDS].sort(() => Math.random() - 0.5);
-  return shuffled.slice(0, n).join(" ");
+  return shuffle(SEED_WORDS).slice(0, n).join(" ");
 }
 
 // ── Genres, Tones, Archetypes ────────────────────────────────────────────────
@@ -89,6 +103,8 @@ export const ARCHETYPES = {
 } as const;
 
 // ── Moves ────────────────────────────────────────────────────────────────────
+// Pure conversation ("dialog") is deliberately NOT a rollable move — it has no
+// risk, so the model narrates it without calling action_roll.
 export const MOVES = [
   "face_danger",
   "compel",
@@ -102,7 +118,6 @@ export const MOVES = [
   "test_bond",
   "resupply",
   "world_shaping",
-  "dialog",
 ] as const;
 
 export const COMBAT_MOVES = new Set(["clash", "strike"]);
@@ -121,7 +136,6 @@ export const MOVE_LABELS: Record<string, string> = {
   test_bond: "Test Bond",
   resupply: "Resupply",
   world_shaping: "World Shaping",
-  dialog: "Dialog",
 };
 
 // ── Time Phases ──────────────────────────────────────────────────────────────
@@ -160,10 +174,7 @@ export interface NPC {
   disposition: Disposition;
   bond: number;
   agenda: string;
-  instinct: string;
   status: "active" | "background" | "deceased";
-  aliases: string[];
-  lastMentionScene: number;
 }
 
 // ── Clock Interface ──────────────────────────────────────────────────────────
@@ -174,7 +185,6 @@ export interface Clock {
   segments: number;
   filled: number;
   triggerDescription: string;
-  owner: string;
 }
 
 // ── Story Blueprint ──────────────────────────────────────────────────────────
@@ -186,22 +196,12 @@ export interface StoryAct {
   transitionTrigger: string;
 }
 
-export interface Revelation {
-  id: string;
-  content: string;
-  earliestScene: number;
-  dramaticWeight: "low" | "medium" | "high" | "critical";
-  revealed: boolean;
-}
-
 export interface StoryBlueprint {
   structureType: "3act" | "kishotenketsu";
   centralConflict: string;
   antagonistForce: string;
   thematicThread: string;
   acts: StoryAct[];
-  revelations: Revelation[];
-  possibleEndings: { type: string; description: string }[];
   currentAct: number;
   storyComplete: boolean;
 }
@@ -210,16 +210,45 @@ export interface StoryBlueprint {
 export interface SessionLogEntry {
   scene: number;
   summary: string;
-  richSummary?: string;
   location: string;
-  move?: string;
-  result?: string;
+}
+
+// ── Last Roll (for momentum burn) ────────────────────────────────────────────
+/** Exact state changes a roll applied, recorded so a burn can revert them. */
+export interface ConsequenceDeltas {
+  health: number;
+  spirit: number;
+  supply: number;
+  momentum: number;
+  npcId: string | null;
+  bond: number;
+  dispositionFrom: Disposition | null;
+  dispositionTo: Disposition | null;
+  clockId: string | null;
+  clockTicks: number;
+}
+
+export interface LastRoll {
+  d1: number;
+  d2: number;
+  c1: number;
+  c2: number;
+  statName: string;
+  statValue: number;
+  actionScore: number;
+  result: "STRONG_HIT" | "WEAK_HIT" | "MISS";
+  move: string;
+  match: boolean;
+  position: string;
+  effect: string;
+  targetNpcId: string | null;
+  deltas: ConsequenceDeltas;
 }
 
 // ── Game State ───────────────────────────────────────────────────────────────
 export interface GameState {
   initialized: boolean;
-  phase: "genre" | "tone" | "archetype" | "name" | "details" | "playing";
+  phase: "genre" | "playing";
   settingGenre: string;
   settingTone: string;
   settingArchetype: string;
@@ -243,22 +272,14 @@ export interface GameState {
   currentLocation: string;
   currentSceneContext: string;
   timeOfDay: string;
-  locationHistory: string[];
   chaosFactor: number;
   crisisMode: boolean;
   gameOver: boolean;
   npcs: NPC[];
   clocks: Clock[];
   storyBlueprint: StoryBlueprint | null;
-  chapterNumber: number;
-  campaignHistory: { title: string; summary: string }[];
   sessionLog: SessionLogEntry[];
-  narrationHistory: string[];
-  directorGuidance: {
-    narratorGuidance?: string;
-    pacing?: string;
-    arcNotes?: string;
-  };
+  lastRoll: LastRoll | null;
   kidMode: boolean;
 }
 
@@ -288,35 +309,36 @@ export const DEFAULT_STATE: GameState = {
   currentLocation: "",
   currentSceneContext: "",
   timeOfDay: "",
-  locationHistory: [],
   chaosFactor: 5,
   crisisMode: false,
   gameOver: false,
   npcs: [],
   clocks: [],
   storyBlueprint: null,
-  chapterNumber: 1,
-  campaignHistory: [],
   sessionLog: [],
-  narrationHistory: [],
-  directorGuidance: {},
+  lastRoll: null,
   kidMode: false,
 };
 
 // ── KV helpers ───────────────────────────────────────────────────────────────
-export const GAME_STATE_KEY = "rpg:state";
+// The platform KV store is scoped per AGENT, not per session — every visitor
+// to a deployed agent shares it. All keys therefore embed the sessionId so
+// concurrent players get independent games.
+export function gameStateKey(sessionId: string): string {
+  return `rpg:state:${sessionId}`;
+}
 
-export async function getGameState(kv: Kv): Promise<GameState> {
-  const saved = await kv.get<GameState>(GAME_STATE_KEY);
+export async function getGameState(kv: Kv, sessionId: string): Promise<GameState> {
+  const saved = await kv.get<GameState>(gameStateKey(sessionId));
   return saved ?? structuredClone(DEFAULT_STATE);
 }
 
-export async function saveGameState(kv: Kv, state: GameState): Promise<void> {
-  await kv.set(GAME_STATE_KEY, state);
+export async function saveGameState(kv: Kv, sessionId: string, state: GameState): Promise<void> {
+  await kv.set(gameStateKey(sessionId), state);
 }
 
-export function saveSlotKey(slot?: string): string {
-  return `save:${slot ?? "autosave"}`;
+export function saveSlotKey(sessionId: string, slot?: string): string {
+  return `save:${sessionId}:${slot ?? "autosave"}`;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -328,13 +350,18 @@ export function pick<T>(arr: readonly T[]): T {
   return arr[Math.floor(Math.random() * arr.length)] as T;
 }
 
-export function nextNpcId(npcs: NPC[]): string {
+/**
+ * Next sequential id for `prefix` — a max-scan, so removing an item never
+ * causes a later id collision (unlike a length+1 counter).
+ */
+export function nextSeqId(items: readonly { id: string }[], prefix: string): string {
   let max = 0;
-  for (const n of npcs) {
-    const m = n.id.match(/^npc_(\d+)$/);
+  const re = new RegExp(`^${prefix}_(\\d+)$`);
+  for (const item of items) {
+    const m = item.id.match(re);
     if (m) max = Math.max(max, Number.parseInt(m[1]!, 10));
   }
-  return `npc_${max + 1}`;
+  return `${prefix}_${max + 1}`;
 }
 
 export function makeNpc(opts: {
@@ -343,7 +370,6 @@ export function makeNpc(opts: {
   description?: string | undefined;
   disposition?: Disposition | undefined;
   agenda?: string | undefined;
-  lastMentionScene?: number | undefined;
 }): NPC {
   const disposition = opts.disposition ?? "neutral";
   return {
@@ -353,10 +379,7 @@ export function makeNpc(opts: {
     disposition,
     bond: disposition === "friendly" ? 1 : disposition === "loyal" ? 2 : 0,
     agenda: opts.agenda ?? "",
-    instinct: "",
     status: "active",
-    aliases: [],
-    lastMentionScene: opts.lastMentionScene ?? 0,
   };
 }
 
@@ -379,7 +402,61 @@ export function clockSummary(c: Clock) {
     clockType: c.clockType,
     segments: c.segments,
     filled: c.filled,
+    full: c.filled >= c.segments,
     triggerDescription: c.triggerDescription,
+  };
+}
+
+/**
+ * Single source of truth for the state snapshot returned to the LLM by
+ * setup_character, update_state, and check_state. Includes the player's
+ * content boundaries (contentLines) so they survive past the setup turn.
+ */
+export function stateSummary(state: GameState) {
+  return {
+    initialized: state.initialized,
+    phase: state.phase,
+    settingGenre: state.settingGenre,
+    settingTone: state.settingTone,
+    settingArchetype: state.settingArchetype,
+    settingDescription: state.settingDescription,
+    playerName: state.playerName,
+    characterConcept: state.characterConcept,
+    backstory: state.backstory,
+    playerWishes: state.playerWishes,
+    contentLines: state.contentLines,
+    kidMode: state.kidMode,
+    edge: state.edge,
+    heart: state.heart,
+    iron: state.iron,
+    shadow: state.shadow,
+    wits: state.wits,
+    health: state.health,
+    spirit: state.spirit,
+    supply: state.supply,
+    momentum: state.momentum,
+    maxMomentum: state.maxMomentum,
+    sceneCount: state.sceneCount,
+    currentLocation: state.currentLocation,
+    currentSceneContext: state.currentSceneContext,
+    timeOfDay: state.timeOfDay,
+    chaosFactor: state.chaosFactor,
+    crisisMode: state.crisisMode,
+    gameOver: state.gameOver,
+    npcs: state.npcs.filter((n) => n.status !== "deceased").map(npcSummary),
+    clocks: state.clocks.map(clockSummary),
+    storyBlueprint: state.storyBlueprint
+      ? {
+          structureType: state.storyBlueprint.structureType,
+          currentAct: state.storyBlueprint.currentAct,
+          totalActs: state.storyBlueprint.acts.length,
+          centralConflict: state.storyBlueprint.centralConflict,
+          thematicThread: state.storyBlueprint.thematicThread,
+          storyComplete: state.storyBlueprint.storyComplete,
+          currentPhase: state.storyBlueprint.acts[state.storyBlueprint.currentAct - 1]?.phase,
+        }
+      : null,
+    recentLog: state.sessionLog.slice(-5),
   };
 }
 
@@ -418,15 +495,38 @@ export function checkChaosInterrupt(game: GameState): string | null {
 }
 
 // ── Consequences ─────────────────────────────────────────────────────────────
+function emptyDeltas(): ConsequenceDeltas {
+  return {
+    health: 0,
+    spirit: 0,
+    supply: 0,
+    momentum: 0,
+    npcId: null,
+    bond: 0,
+    dispositionFrom: null,
+    dispositionTo: null,
+    clockId: null,
+    clockTicks: 0,
+  };
+}
+
 function loseResource(
   game: GameState,
   resource: "health" | "spirit" | "supply",
   dmg: number,
   consequences: string[],
+  deltas: ConsequenceDeltas,
 ): void {
   const old = game[resource];
   game[resource] = Math.max(0, game[resource] - dmg);
+  deltas[resource] += game[resource] - old;
   if (game[resource] < old) consequences.push(`${resource} -${old - game[resource]}`);
+}
+
+function changeMomentum(game: GameState, amount: number, deltas: ConsequenceDeltas): void {
+  const old = game.momentum;
+  game.momentum = Math.max(MIN_MOMENTUM, Math.min(game.maxMomentum, game.momentum + amount));
+  deltas.momentum += game.momentum - old;
 }
 
 export function updateCrisisFlags(game: GameState): void {
@@ -442,47 +542,57 @@ export function updateCrisisFlags(game: GameState): void {
 
 export function applyConsequences(
   game: GameState,
-  roll: RollResult,
+  roll: Pick<RollResult, "result" | "move">,
   position: string,
   effect: string,
   targetNpcId: string | null,
-): { consequences: string[]; clockEvents: { clock: string; trigger: string }[] } {
+): {
+  consequences: string[];
+  clockEvents: { clock: string; trigger: string }[];
+  deltas: ConsequenceDeltas;
+} {
   const consequences: string[] = [];
   const clockEvents: { clock: string; trigger: string }[] = [];
+  const deltas = emptyDeltas();
   const target = targetNpcId ? game.npcs.find((n) => n.id === targetNpcId) : null;
 
   if (roll.result === "MISS") {
     if (roll.move === "endure_harm") {
-      loseResource(game, "health", position === "desperate" ? 2 : 1, consequences);
+      loseResource(game, "health", position === "desperate" ? 2 : 1, consequences, deltas);
     } else if (roll.move === "endure_stress") {
-      loseResource(game, "spirit", position === "desperate" ? 2 : 1, consequences);
+      loseResource(game, "spirit", position === "desperate" ? 2 : 1, consequences, deltas);
     } else if (COMBAT_MOVES.has(roll.move)) {
       const dmg = position === "desperate" ? 3 : position === "controlled" ? 1 : 2;
-      loseResource(game, "health", dmg, consequences);
+      loseResource(game, "health", dmg, consequences, deltas);
     } else if (SOCIAL_MOVES.has(roll.move)) {
       if (target) {
         const oldBond = target.bond;
         target.bond = Math.max(0, target.bond - 1);
+        deltas.npcId = target.id;
+        deltas.bond = target.bond - oldBond;
         if (target.bond < oldBond) consequences.push(`${target.name} bond -1`);
       }
-      loseResource(game, "spirit", position === "desperate" ? 2 : 1, consequences);
+      loseResource(game, "spirit", position === "desperate" ? 2 : 1, consequences, deltas);
     } else {
-      loseResource(game, "supply", 1, consequences);
+      loseResource(game, "supply", 1, consequences, deltas);
       if (position === "desperate") {
-        loseResource(game, "health", 2, consequences);
+        loseResource(game, "health", 2, consequences, deltas);
       } else if (position !== "controlled") {
-        loseResource(game, "health", 1, consequences);
+        loseResource(game, "health", 1, consequences, deltas);
       }
     }
 
     const momLoss = position === "desperate" ? 3 : 2;
-    game.momentum = Math.max(MIN_MOMENTUM, game.momentum - momLoss);
+    changeMomentum(game, -momLoss, deltas);
     consequences.push(`momentum -${momLoss}`);
 
     for (const clock of game.clocks) {
       if (clock.clockType === "threat" && clock.filled < clock.segments) {
         const ticks = position === "desperate" ? 2 : 1;
+        const oldFilled = clock.filled;
         clock.filled = Math.min(clock.segments, clock.filled + ticks);
+        deltas.clockId = clock.id;
+        deltas.clockTicks = clock.filled - oldFilled;
         if (clock.filled >= clock.segments) {
           clockEvents.push({ clock: clock.name, trigger: clock.triggerDescription });
         }
@@ -490,15 +600,21 @@ export function applyConsequences(
       }
     }
   } else if (roll.result === "WEAK_HIT") {
-    game.momentum = Math.min(game.maxMomentum, game.momentum + 1);
+    changeMomentum(game, 1, deltas);
     if (roll.move === "make_connection" && target) {
-      target.bond = Math.min(4, target.bond + 1);
+      const oldBond = target.bond;
+      target.bond = Math.min(MAX_BOND, target.bond + 1);
+      deltas.npcId = target.id;
+      deltas.bond = target.bond - oldBond;
     }
   } else {
     const momGain = effect === "great" ? 3 : 2;
-    game.momentum = Math.min(game.maxMomentum, game.momentum + momGain);
+    changeMomentum(game, momGain, deltas);
     if ((roll.move === "make_connection" || roll.move === "compel") && target) {
-      target.bond = Math.min(4, target.bond + 1);
+      const oldBond = target.bond;
+      target.bond = Math.min(MAX_BOND, target.bond + 1);
+      deltas.npcId = target.id;
+      deltas.bond = target.bond - oldBond;
       const shifts: Record<string, Disposition> = {
         hostile: "distrustful",
         distrustful: "neutral",
@@ -506,17 +622,50 @@ export function applyConsequences(
         friendly: "loyal",
       };
       const nextDisposition = shifts[target.disposition];
-      if (nextDisposition) target.disposition = nextDisposition;
+      if (nextDisposition) {
+        deltas.dispositionFrom = target.disposition;
+        deltas.dispositionTo = nextDisposition;
+        target.disposition = nextDisposition;
+      }
     }
   }
 
   updateCrisisFlags(game);
 
-  return { consequences, clockEvents };
+  return { consequences, clockEvents, deltas };
+}
+
+/**
+ * Exactly undo the state changes a roll applied (recorded in its deltas).
+ * Used by burn_momentum before re-applying the upgraded result.
+ */
+export function revertConsequences(game: GameState, deltas: ConsequenceDeltas): void {
+  game.health = Math.max(0, Math.min(MAX_RESOURCE, game.health - deltas.health));
+  game.spirit = Math.max(0, Math.min(MAX_RESOURCE, game.spirit - deltas.spirit));
+  game.supply = Math.max(0, Math.min(MAX_RESOURCE, game.supply - deltas.supply));
+  game.momentum = Math.max(
+    MIN_MOMENTUM,
+    Math.min(game.maxMomentum, game.momentum - deltas.momentum),
+  );
+  if (deltas.npcId) {
+    const npc = game.npcs.find((n) => n.id === deltas.npcId);
+    if (npc) {
+      npc.bond = Math.max(0, Math.min(MAX_BOND, npc.bond - deltas.bond));
+      if (deltas.dispositionFrom) npc.disposition = deltas.dispositionFrom;
+    }
+  }
+  if (deltas.clockId) {
+    const clock = game.clocks.find((c) => c.id === deltas.clockId);
+    if (clock) clock.filled = Math.max(0, clock.filled - deltas.clockTicks);
+  }
+  updateCrisisFlags(game);
 }
 
 // ── Momentum Burn ────────────────────────────────────────────────────────────
-export function canBurnMomentum(game: GameState, roll: RollResult): string | null {
+export function canBurnMomentum(
+  game: GameState,
+  roll: Pick<RollResult, "result" | "c1" | "c2">,
+): "STRONG_HIT" | "WEAK_HIT" | null {
   if (game.momentum <= 0) return null;
   if (roll.result === "MISS" && game.momentum > roll.c1 && game.momentum > roll.c2)
     return "STRONG_HIT";

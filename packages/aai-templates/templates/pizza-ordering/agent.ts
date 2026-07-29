@@ -6,6 +6,12 @@ import systemPrompt from "./system-prompt.md";
 const sizes = z.enum(SIZES);
 const crusts = z.enum(CRUSTS);
 
+// KV is scoped per deployment, not per session — prefix every key with the
+// session ID so concurrent customers each get their own cart.
+const pizzasKey = (sessionId: string) => `pizzas:${sessionId}`;
+const nextIdKey = (sessionId: string) => `nextId:${sessionId}`;
+const customerNameKey = (sessionId: string) => `customerName:${sessionId}`;
+
 export default agent({
   name: "Pizza Palace",
   systemPrompt,
@@ -21,12 +27,12 @@ export default agent({
         toppings: z
           .array(z.string())
           .describe("List of topping names, e.g. ['pepperoni', 'mushrooms']"),
-        quantity: z.number().default(1),
+        quantity: z.number().int().min(1).default(1),
       }),
       async execute(args, ctx) {
         const [storedPizzas, storedNextId] = await Promise.all([
-          ctx.kv.get<Pizza[]>("pizzas"),
-          ctx.kv.get<number>("nextId"),
+          ctx.kv.get<Pizza[]>(pizzasKey(ctx.sessionId)),
+          ctx.kv.get<number>(nextIdKey(ctx.sessionId)),
         ]);
         const pizzas = storedPizzas ?? [];
         const nextId = storedNextId ?? 1;
@@ -36,11 +42,14 @@ export default agent({
           size: args.size,
           crust: args.crust,
           toppings: args.toppings,
-          quantity: args.quantity ?? 1,
+          quantity: args.quantity,
         };
         const updated = [...pizzas, pizza];
 
-        await Promise.all([ctx.kv.set("pizzas", updated), ctx.kv.set("nextId", nextId + 1)]);
+        await Promise.all([
+          ctx.kv.set(pizzasKey(ctx.sessionId), updated),
+          ctx.kv.set(nextIdKey(ctx.sessionId), nextId + 1),
+        ]);
 
         const total = calculateTotal(updated);
         const result = {
@@ -58,16 +67,23 @@ export default agent({
         "Place the final order. Use when the customer confirms they are done and ready to order.",
       async execute(_args, ctx) {
         const [storedPizzas, storedName] = await Promise.all([
-          ctx.kv.get<Pizza[]>("pizzas"),
-          ctx.kv.get<string>("customerName"),
+          ctx.kv.get<Pizza[]>(pizzasKey(ctx.sessionId)),
+          ctx.kv.get<string>(customerNameKey(ctx.sessionId)),
         ]);
         const pizzas = storedPizzas ?? [];
         if (pizzas.length === 0) return { error: "Cannot place an empty order." };
 
-        await ctx.kv.set("orderPlaced", true);
         const customerName = storedName ?? "Guest";
         const total = calculateTotal(pizzas);
         const orderNumber = Math.floor(1000 + Math.random() * 9000);
+
+        // The order is submitted — clear the cart so a follow-up order
+        // starts fresh instead of inheriting these pizzas.
+        await ctx.kv.delete([
+          pizzasKey(ctx.sessionId),
+          nextIdKey(ctx.sessionId),
+          customerNameKey(ctx.sessionId),
+        ]);
 
         const result = {
           orderNumber,
@@ -87,13 +103,13 @@ export default agent({
         pizza_id: z.number().describe("The pizza ID to remove"),
       }),
       async execute(args, ctx) {
-        const pizzas: Pizza[] = (await ctx.kv.get("pizzas")) ?? [];
+        const pizzas: Pizza[] = (await ctx.kv.get(pizzasKey(ctx.sessionId))) ?? [];
         const idx = pizzas.findIndex((p) => p.id === args.pizza_id);
         if (idx === -1) return { error: "Pizza not found in the order." };
 
         const removed = pizzas[idx];
         const remaining = pizzas.filter((_, i) => i !== idx);
-        await ctx.kv.set("pizzas", remaining);
+        await ctx.kv.set(pizzasKey(ctx.sessionId), remaining);
 
         const total = calculateTotal(remaining);
         const result = {
@@ -112,7 +128,7 @@ export default agent({
         name: z.string(),
       }),
       async execute(args, ctx) {
-        await ctx.kv.set("customerName", args.name);
+        await ctx.kv.set(customerNameKey(ctx.sessionId), args.name);
         return { name: args.name };
       },
     }),
@@ -124,22 +140,22 @@ export default agent({
         size: sizes.optional(),
         crust: crusts.optional(),
         toppings: z.array(z.string()).optional(),
-        quantity: z.number().optional(),
+        quantity: z.number().int().min(1).optional(),
       }),
       async execute(args, ctx) {
-        const pizzas: Pizza[] = (await ctx.kv.get("pizzas")) ?? [];
+        const pizzas: Pizza[] = (await ctx.kv.get(pizzasKey(ctx.sessionId))) ?? [];
         const idx = pizzas.findIndex((p) => p.id === args.pizza_id);
         if (idx === -1) return { error: "Pizza not found in the order." };
 
         const pizza: Pizza = { ...pizzas[idx]! };
-        if (args.size) pizza.size = args.size;
-        if (args.crust) pizza.crust = args.crust;
-        if (args.toppings) pizza.toppings = args.toppings;
-        if (args.quantity) pizza.quantity = args.quantity;
+        if (args.size !== undefined) pizza.size = args.size;
+        if (args.crust !== undefined) pizza.crust = args.crust;
+        if (args.toppings !== undefined) pizza.toppings = args.toppings;
+        if (args.quantity !== undefined) pizza.quantity = args.quantity;
 
         const updated = [...pizzas];
         updated[idx] = pizza;
-        await ctx.kv.set("pizzas", updated);
+        await ctx.kv.set(pizzasKey(ctx.sessionId), updated);
 
         const total = calculateTotal(updated);
         const result = {
@@ -154,7 +170,7 @@ export default agent({
     view_order: tool({
       description: "View the current order summary with all pizzas and total price.",
       async execute(_args, ctx) {
-        const pizzas: Pizza[] = (await ctx.kv.get("pizzas")) ?? [];
+        const pizzas: Pizza[] = (await ctx.kv.get(pizzasKey(ctx.sessionId))) ?? [];
         if (pizzas.length === 0) return { message: "The order is empty." };
 
         const total = calculateTotal(pizzas);

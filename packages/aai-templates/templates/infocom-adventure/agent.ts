@@ -1,13 +1,13 @@
 import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { getGameState, saveGameState } from "./shared.ts";
+import { getGameState, resetGameState, saveGameState } from "./shared.ts";
 import systemPrompt from "./system-prompt.md";
 
 export default agent({
-  name: "Infocom Adventure",
+  name: "Cavern Adventure",
   systemPrompt,
   greeting:
-    "Welcome to the great underground empire. You are standing in an open field west of a white house, with a boarded front door. There is a small mailbox here. What would you like to do?",
+    "Welcome, adventurer. You are standing at the mouth of a weathered cave at the edge of a pine forest. A cold wind carries the smell of damp stone up from the darkness below. A rusted lantern hangs from an iron hook beside the entrance. What would you like to do?",
 
   tools: {
     game_state_drop: tool({
@@ -16,9 +16,9 @@ export default agent({
         value: z.string().describe("Item name to drop"),
       }),
       async execute(args, ctx) {
-        const g = await getGameState(ctx.kv);
+        const g = await getGameState(ctx.kv, ctx.sessionId);
         g.inventory = g.inventory.filter((i) => i !== args.value);
-        await saveGameState(ctx.kv, g);
+        await saveGameState(ctx.kv, ctx.sessionId, g);
         return { inventory: g.inventory };
       },
     }),
@@ -29,9 +29,9 @@ export default agent({
         value: z.string().describe("Flag name to set"),
       }),
       async execute(args, ctx) {
-        const g = await getGameState(ctx.kv);
+        const g = await getGameState(ctx.kv, ctx.sessionId);
         g.flags[args.value] = true;
-        await saveGameState(ctx.kv, g);
+        await saveGameState(ctx.kv, ctx.sessionId, g);
         return { flags: g.flags };
       },
     }),
@@ -40,7 +40,7 @@ export default agent({
       description:
         "Read the current game state including inventory, current room, score, moves, flags, and recent history.",
       async execute(_args, ctx) {
-        const g = await getGameState(ctx.kv);
+        const g = await getGameState(ctx.kv, ctx.sessionId);
         return {
           currentRoom: g.currentRoom,
           inventory: g.inventory,
@@ -58,10 +58,10 @@ export default agent({
         value: z.string().describe("Command text to log"),
       }),
       async execute(args, ctx) {
-        const g = await getGameState(ctx.kv);
+        const g = await getGameState(ctx.kv, ctx.sessionId);
         g.history.push(args.value);
         g.moves++;
-        await saveGameState(ctx.kv, g);
+        await saveGameState(ctx.kv, ctx.sessionId, g);
         return { moves: g.moves, recentHistory: g.history.slice(-5) };
       },
     }),
@@ -72,11 +72,20 @@ export default agent({
         value: z.string().describe("Room name to move to"),
       }),
       async execute(args, ctx) {
-        const g = await getGameState(ctx.kv);
+        const g = await getGameState(ctx.kv, ctx.sessionId);
         g.currentRoom = args.value;
         g.moves++;
-        await saveGameState(ctx.kv, g);
+        await saveGameState(ctx.kv, ctx.sessionId, g);
         return { currentRoom: g.currentRoom, moves: g.moves };
+      },
+    }),
+
+    game_state_restart: tool({
+      description:
+        "Reset the game to the beginning: empty inventory, zero score and moves, all flags cleared. Use when the player asks to restart, quit, or start a new game.",
+      async execute(_args, ctx) {
+        const g = await resetGameState(ctx.kv, ctx.sessionId);
+        return { restarted: true, currentRoom: g.currentRoom };
       },
     }),
 
@@ -86,9 +95,9 @@ export default agent({
         value: z.number().describe("Points to add"),
       }),
       async execute(args, ctx) {
-        const g = await getGameState(ctx.kv);
+        const g = await getGameState(ctx.kv, ctx.sessionId);
         g.score += args.value;
-        await saveGameState(ctx.kv, g);
+        await saveGameState(ctx.kv, ctx.sessionId, g);
         return { score: g.score };
       },
     }),
@@ -99,9 +108,9 @@ export default agent({
         value: z.string().describe("Item name to take"),
       }),
       async execute(args, ctx) {
-        const g = await getGameState(ctx.kv);
+        const g = await getGameState(ctx.kv, ctx.sessionId);
         if (!g.inventory.includes(args.value)) g.inventory.push(args.value);
-        await saveGameState(ctx.kv, g);
+        await saveGameState(ctx.kv, ctx.sessionId, g);
         return { inventory: g.inventory };
       },
     }),

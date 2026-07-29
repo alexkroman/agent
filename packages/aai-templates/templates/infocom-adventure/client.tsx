@@ -40,11 +40,11 @@ const CSS = `
 `;
 
 const ASCII_LOGO = `
- ____  ___  ____  _  __
-/__  |/ _ \\|  _ \\| |/ /
-  / /| | | | |_) | ' /
- / / | |_| |  _ <| . \\
-/_/   \\___/|_| \\_\\_|\\_\\
+  ____    _    __     __ _____  ____   _   _
+ / ___|  / \\   \\ \\   / /| ____||  _ \\ | \\ | |
+| |     / _ \\   \\ \\ / / |  _|  | |_) ||  \\| |
+| |___ / ___ \\   \\ V /  | |___ |  _ < | |\\  |
+ \\____/_/   \\_\\   \\_/   |_____||_| \\_\\|_| \\_|
 `;
 
 const CRT_BG = "#000800";
@@ -57,9 +57,13 @@ function InfocomAdventure() {
   const session = useSession();
   const bottom = useRef<HTMLDivElement>(null);
 
+  // Bumps whenever a message lands or the live transcript changes, so the
+  // view follows the conversation instead of scrolling once on mount.
+  const contentVersion = session.messages.length + (session.userTranscript?.length ?? 0);
   useEffect(() => {
+    if (contentVersion < 0) return;
     bottom.current?.scrollIntoView({ behavior: "smooth" });
-  }, []);
+  }, [contentVersion]);
 
   const stateLabel =
     session.state === "listening"
@@ -111,19 +115,13 @@ function InfocomAdventure() {
               {ASCII_LOGO}
             </div>
             <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
-              INFOCOM INTERACTIVE FICTION
+              AN INTERACTIVE FICTION
             </div>
             <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
-              Copyright (c) 1980 Infocom, Inc.
-            </div>
-            <div className="text-[13px] mb-2" style={{ color: GREEN_DIM }}>
-              All rights reserved.
+              In the style of the classic text adventures.
             </div>
             <div className="text-[13px] mt-4" style={{ color: GREEN }}>
               VOICE-ENABLED EDITION
-            </div>
-            <div className="text-[13px] mt-6" style={{ color: GREEN_DIM }}>
-              Release 88 / Serial No. 840726
             </div>
             <button
               type="button"
@@ -171,8 +169,8 @@ function InfocomAdventure() {
             style={{ background: GREEN, color: CRT_BG }}
           >
             <div className="flex gap-6">
-              <span>ZORK I</span>
-              <span>Moves: {msgCount}</span>
+              <span>CAVERN ADVENTURE</span>
+              <span>Turns: {msgCount}</span>
             </div>
             <span>Voice Adventure</span>
           </div>
@@ -208,7 +206,7 @@ function InfocomAdventure() {
                 className="ic-transcript italic"
                 style={{ color: "#007a1e", textShadow: "0 0 5px rgba(0,255,65,0.15)" }}
               >
-                {session.userTranscript || "..."}
+                {session.userTranscript === "" ? "..." : session.userTranscript}
               </div>
             )}
             <div ref={bottom} />
@@ -241,13 +239,17 @@ function InfocomAdventure() {
               >
                 {session.running ? "[P]ause" : "[R]esume"}
               </button>
+              {/* Full reload = new WebSocket = fresh sessionId, so the
+                  session-scoped game state in KV starts over too.
+                  (session.reset() keeps the same sessionId and would
+                  resume the old game.) */}
               <button
                 type="button"
                 className="px-4 py-1 bg-transparent cursor-pointer uppercase tracking-wider font-mono text-[11px]"
                 style={{ color: GREEN_DIM, border: `1px solid ${GREEN_DARK}` }}
-                onClick={session.reset}
+                onClick={() => window.location.reload()}
               >
-                [Q]uit
+                [N]ew Game
               </button>
             </div>
           </div>

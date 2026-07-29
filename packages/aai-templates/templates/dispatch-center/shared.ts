@@ -67,7 +67,6 @@ export interface Incident {
   triageScore: number;
   assignedResources: string[];
   timeline: { time: number; event: string }[];
-  notes: string[];
   createdAt: number;
   updatedAt: number;
   escalationLevel: number;
@@ -80,17 +79,46 @@ export interface DispatchState {
   incidents: Record<string, Incident>;
   resources: Resource[];
   incidentCounter: number;
+  mutualAidCounter: number;
   alertLevel: "green" | "yellow" | "orange" | "red";
   mutualAidRequested: boolean;
 }
 
+/**
+ * Trimmed, non-PII incident view sent to the browser via
+ * `ctx.send("incidents", ...)`. Never include caller name/phone here — events
+ * are broadcast to the connected browser client, which only renders these
+ * fields.
+ */
+export interface IncidentSummary {
+  id: string;
+  severity: Severity;
+  status: Status;
+  location: string;
+}
+
+export function incidentSummary(inc: Incident): IncidentSummary {
+  return { id: inc.id, severity: inc.severity, status: inc.status, location: inc.location };
+}
+
+/** Payload shape for every `ctx.send("incidents", ...)` event. */
+export function dashboardEvent(state: DispatchState): {
+  systemAlertLevel: DispatchState["alertLevel"];
+  incidents: IncidentSummary[];
+} {
+  return {
+    systemAlertLevel: state.alertLevel,
+    incidents: Object.values(state.incidents).map(incidentSummary),
+  };
+}
+
 // ─── KV helpers ──────────────────────────────────────────────────────────────
 
-export const STATE_KEY = "dispatch:state";
-export const INCIDENT_INDEX_KEY = "incident-index";
+const STATE_KEY = "dispatch:state";
 
-export function incidentKey(incidentId: string): string {
-  return `incident:${incidentId}`;
+/** Per-session state key — sessions must not see each other's incidents. */
+export function stateKey(sessionId: string): string {
+  return `${STATE_KEY}:${sessionId}`;
 }
 
 // ─── Resource generation ────────────────────────────────────────────────────
@@ -127,39 +155,84 @@ export function createDefaultState(): DispatchState {
     incidents: {},
     resources: generateResources(),
     incidentCounter: 0,
+    mutualAidCounter: 0,
     alertLevel: "green",
     mutualAidRequested: false,
   };
 }
 
-export async function getState(kv: Kv): Promise<DispatchState> {
-  const saved = await kv.get<DispatchState>(STATE_KEY);
+export async function getState(kv: Kv, sessionId: string): Promise<DispatchState> {
+  const saved = await kv.get<DispatchState>(stateKey(sessionId));
   return saved ?? createDefaultState();
 }
 
-export async function saveState(kv: Kv, state: DispatchState): Promise<void> {
-  await kv.set(STATE_KEY, state);
+async function saveState(kv: Kv, sessionId: string, state: DispatchState): Promise<void> {
+  await kv.set(stateKey(sessionId), state);
 }
 
-export async function saveIncidentSnapshot(kv: Kv, incident: Incident): Promise<void> {
-  const [, index] = await Promise.all([
-    kv.set(incidentKey(incident.id), incident),
-    kv.get<string[]>(INCIDENT_INDEX_KEY),
-  ]);
-  const ids = index ?? [];
-  if (!ids.includes(incident.id)) {
-    ids.push(incident.id);
-    await kv.set(INCIDENT_INDEX_KEY, ids);
+// ─── Serialized state updates ────────────────────────────────────────────────
+
+/**
+ * Growth caps. KV values are capped at 64 KiB and the whole dispatch state
+ * lives in one value, so resolved incidents and long timelines must be
+ * pruned or a long session eventually fails to save at all.
+ */
+const MAX_RESOLVED_KEPT = 10;
+const MAX_TIMELINE_ENTRIES = 50;
+
+function pruneState(state: DispatchState): void {
+  const resolved = Object.values(state.incidents)
+    .filter((i) => i.status === "resolved")
+    .sort((a, b) => b.updatedAt - a.updatedAt);
+  for (const inc of resolved.slice(MAX_RESOLVED_KEPT)) {
+    delete state.incidents[inc.id];
+  }
+  for (const inc of Object.values(state.incidents)) {
+    if (inc.timeline.length > MAX_TIMELINE_ENTRIES) {
+      inc.timeline = inc.timeline.slice(-MAX_TIMELINE_ENTRIES);
+    }
   }
 }
 
-export async function deleteIncidentSnapshot(kv: Kv, incidentId: string): Promise<void> {
-  const [, index] = await Promise.all([
-    kv.delete(incidentKey(incidentId)),
-    kv.get<string[]>(INCIDENT_INDEX_KEY),
-  ]);
-  const updated = (index ?? []).filter((id) => id !== incidentId);
-  await kv.set(INCIDENT_INDEX_KEY, updated);
+const sessionLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * Serialized read-modify-write of the session's dispatch state.
+ *
+ * The LLM loop executes parallel tool calls concurrently, and every mutating
+ * tool rewrites the whole state blob. Without serialization two concurrent
+ * updates each read the same snapshot and the second save silently discards
+ * the first tool's changes (a created incident or a dispatch just vanishes).
+ * This per-session promise chain makes each update see the previous one's
+ * result. It also centralizes the shared bookkeeping every mutating tool
+ * needs: pruning, alert-level recalculation, and the save itself.
+ *
+ * `onSaved` runs after the recalculated state is persisted — the place to
+ * `ctx.send` a dashboard event reflecting the final alert level.
+ */
+export async function updateState<R>(
+  kv: Kv,
+  sessionId: string,
+  mutator: (state: DispatchState) => R | Promise<R>,
+  onSaved?: (state: DispatchState) => void,
+): Promise<R> {
+  const prev = sessionLocks.get(sessionId) ?? Promise.resolve();
+  const run = prev.then(async () => {
+    const state = await getState(kv, sessionId);
+    const result = await mutator(state);
+    pruneState(state);
+    recalculateAlertLevel(state);
+    await saveState(kv, sessionId, state);
+    onSaved?.(state);
+    return result;
+  });
+  // Keep the chain alive across failures, and drop it once idle.
+  const tail = run.catch(() => {});
+  sessionLocks.set(sessionId, tail);
+  tail.then(() => {
+    if (sessionLocks.get(sessionId) === tail) sessionLocks.delete(sessionId);
+  });
+  return run;
 }
 
 // ─── Incident helpers ────────────────────────────────────────────────────────
@@ -180,7 +253,6 @@ export function createIncident(state: DispatchState, overrides: Partial<Incident
     triageScore: 0,
     assignedResources: [],
     timeline: [],
-    notes: [],
     createdAt: time,
     updatedAt: time,
     escalationLevel: 0,
@@ -198,6 +270,27 @@ export function findIncident(
   incidentId: string,
 ): Incident | { error: string } {
   return state.incidents[incidentId] ?? { error: `Incident ${incidentId} not found` };
+}
+
+/** Append a timeline entry and touch `updatedAt`. */
+export function logEvent(inc: Incident, event: string): void {
+  const time = Date.now();
+  inc.timeline.push({ time, event });
+  inc.updatedAt = time;
+}
+
+/**
+ * Status-transition guard. `resolved` is terminal: a resolved incident's
+ * resources have been released (and possibly reassigned), so escalating,
+ * re-resolving, or dispatching to it would corrupt resource assignments.
+ */
+export function assertNotResolved(inc: Incident, action: string): { error: string } | null {
+  if (inc.status === "resolved") {
+    return {
+      error: `Incident ${inc.id} is resolved — cannot ${action}. Create a new incident if the situation has reopened.`,
+    };
+  }
+  return null;
 }
 
 // ─── Triage & scoring ────────────────────────────────────────────────────────
@@ -229,7 +322,7 @@ export function calculateTriageScore(
   let score = SEVERITY_WEIGHTS[severity] * TYPE_MULTIPLIERS[type];
   score += Math.min(casualties * 15, 60);
   score += Math.min(hazards * 10, 30);
-  return Math.round(Math.min(score, 250));
+  return Math.round(Math.max(0, Math.min(score, 250)));
 }
 
 const SEVERITY_KEYWORDS: [Severity, string[]][] = [
@@ -336,14 +429,14 @@ export function recommendType(description: string): IncidentType {
 
 // ─── Protocol engine ─────────────────────────────────────────────────────────
 
-export interface Protocol {
+interface Protocol {
   name: string;
   triggers: { types: IncidentType[]; minSeverity: Severity };
   steps: string[];
   requiredResources: Resource["type"][];
 }
 
-export const PROTOCOLS: Protocol[] = [
+const PROTOCOLS: Protocol[] = [
   {
     name: "Mass Casualty Incident (MCI)",
     triggers: {
@@ -512,7 +605,7 @@ export function recalculateAlertLevel(state: DispatchState): void {
     state.alertLevel = "green";
   }
 
-  if (state.alertLevel === "red" && !state.mutualAidRequested) {
-    state.mutualAidRequested = true;
-  }
+  // Mutual aid tracks system posture: requested at red alert, stood down
+  // when the alert level drops back below red.
+  state.mutualAidRequested = state.alertLevel === "red";
 }

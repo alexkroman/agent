@@ -19,6 +19,10 @@ export default agent({
   greeting:
     "Dispatch Command Center online. Restoring operational state. I'm ready to take incoming calls, manage active incidents, or run dispatch operations. Say 'dashboard' for a full status report. What do we have.",
 
+  // The system prompt instructs the model to use web_search and run_code, so
+  // they must be enabled here — the default builtin set does not include them.
+  builtinTools: ["think", "remember", "recall", "calculate", "web_search", "run_code"],
+
   tools: {
     incident_add_note: incidentAddNote,
     incident_create: incidentCreate,

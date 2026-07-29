@@ -11,7 +11,7 @@ export const resourcesGetAvailable = tool({
       .optional(),
   }),
   async execute(args, ctx) {
-    const state = await getState(ctx.kv);
+    const state = await getState(ctx.kv, ctx.sessionId);
     let resources = state.resources;
     if (args.type && args.type !== "all") {
       resources = resources.filter((r) => r.type === args.type);
