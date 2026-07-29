@@ -105,6 +105,7 @@ describe("type ↔ schema alignment", () => {
       [
         "web_search",
         "visit_webpage",
+        "get_page_design",
         "fetch_json",
         "run_code",
         "think",

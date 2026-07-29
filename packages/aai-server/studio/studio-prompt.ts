@@ -111,6 +111,12 @@ These CLI-specific parts do NOT apply in App Builder:
   id, a provider option, a third-party API you are wiring a tool up to, or
   anything the reference does not cover, look it up rather than inventing an
   answer.
+- **Mimicking a website's design.** When the user wants their agent's UI
+  (client.tsx) to match the look of an existing site, call get_page_design
+  on that site's URL: it returns the real markup plus its CSS (style blocks
+  and linked stylesheets). Pull the palette, fonts, spacing, and border
+  radii from that CSS instead of guessing them — then re-create the look
+  with Tailwind classes; never paste the fetched CSS or markup in verbatim.
 - **Never invent a gateway model id.** The LLM Gateway rejects unknown
   models with a 400 "model not found" that only shows up at runtime. Use one
   of exactly these: ${ASSEMBLYAI_GATEWAY_MODELS.join(", ")}. Prefer
@@ -159,9 +165,10 @@ export default agent({
   allowedHosts (e.g. allowedHosts: ["api.example.com", "*.example.org"]) or
   the request is rejected once published. Bare hostnames only — no
   protocol, path, port, IP literal, or bare "*". The host-side builtins
-  (fetch_json, visit_webpage, web_search) need no entry.
+  (fetch_json, visit_webpage, get_page_design, web_search) need no entry.
 - Built-ins on by default: think, remember, recall, calculate. Opt-in via
-  builtinTools: web_search, visit_webpage, fetch_json, run_code.
+  builtinTools: web_search, visit_webpage, get_page_design, fetch_json,
+  run_code.
 - Pipeline mode: set all three of stt/llm/tts (factories from
   "@alexkroman1/aai/stt", "/llm", "/tts") or none (S2S default).
 - Text-only agent (speech in, text replies, no synthesis): pipeline mode

@@ -437,6 +437,7 @@ set `builtinTools` explicitly (including `[]`) to override.
 | --- | --- | --- |
 | `web_search` | Search the web (Brave) — requires the `BRAVE_API_KEY` secret | `query`, `max_results?` (default 5) |
 | `visit_webpage` | Fetch URL to plain text | `url` |
+| `get_page_design` | Fetch URL's raw HTML + CSS (style blocks and linked stylesheets) to study/mimic a site's design | `url` |
 | `fetch_json` | HTTP GET a JSON API | `url`, `headers?` |
 | `run_code` | Execute JS in sandbox (no net/fs, 5s timeout) | `code` |
 | `think` | Private reasoning scratchpad, no side effects (on by default) | `thought` |
@@ -444,8 +445,9 @@ set `builtinTools` explicitly (including `[]`) to override.
 | `recall` | Read session notes saved with `remember` (on by default) | `key?` |
 | `calculate` | Safe arithmetic evaluator, no code execution (on by default) | `expression` |
 
-The network builtins (`web_search`, `visit_webpage`, `fetch_json`) run
-host-side and reach any public host — they need no `allowedHosts` entry.
+The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
+`fetch_json`) run host-side and reach any public host — they need no
+`allowedHosts` entry.
 
 ## Calling an external API from your own tool code
 

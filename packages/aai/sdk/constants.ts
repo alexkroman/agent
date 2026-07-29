@@ -108,6 +108,12 @@ export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65_536;
 export const LOG_PREVIEW_CHARS = 200;
 export const MAX_PAGE_CHARS = 10_000;
 export const MAX_HTML_BYTES = 200_000;
+/** `get_page_design`: cap on the returned (stripped) HTML markup. */
+export const MAX_DESIGN_HTML_CHARS = 30_000;
+/** `get_page_design`: cap on each returned CSS source (inline blocks / one stylesheet). */
+export const MAX_DESIGN_CSS_CHARS = 20_000;
+/** `get_page_design`: max linked stylesheets fetched per page. */
+export const MAX_DESIGN_STYLESHEETS = 5;
 /** Cap on a `fetch_json` response body — bounds host memory on a hostile URL. */
 export const MAX_JSON_BYTES = 1_000_000;
 export const MAX_VALUE_SIZE = 65_536;

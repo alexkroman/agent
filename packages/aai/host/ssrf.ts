@@ -178,3 +178,18 @@ export async function ssrfSafeFetch(
   }
   throw new Error("Too many redirects");
 }
+
+function requestUrl(input: Parameters<typeof globalThis.fetch>[0]): string {
+  if (typeof input === "string") return input;
+  if (input instanceof URL) return input.href;
+  return input.url;
+}
+
+/**
+ * `globalThis.fetch` wrapped in SSRF validation — the default for every
+ * network builtin. Private/reserved addresses, non-HTTP(S) protocols, and
+ * reserved hostnames are rejected, each redirect hop is re-validated, and
+ * credentials are stripped when a redirect leaves the original origin.
+ */
+export const safeFetch: typeof globalThis.fetch = (input, init) =>
+  ssrfSafeFetch(requestUrl(input), init ?? {}, globalThis.fetch);

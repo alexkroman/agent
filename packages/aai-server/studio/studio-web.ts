@@ -25,7 +25,7 @@ import { jsonSchema, type ToolSet, tool } from "ai";
 import type { z } from "zod";
 
 /** Builtins the coding agent gets. `web_search` is dropped without a key. */
-const WEB_BUILTINS = ["visit_webpage", "web_search"] as const;
+const WEB_BUILTINS = ["visit_webpage", "get_page_design", "web_search"] as const;
 
 /** Agent-env variable backing the SDK's `web_search` builtin (Brave Search). */
 const BRAVE_API_KEY_ENV = "BRAVE_API_KEY";

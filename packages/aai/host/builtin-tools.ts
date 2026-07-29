@@ -5,7 +5,8 @@
  * In self-hosted mode, these run in-process alongside custom tools.
  * In platform mode, they run on the host process outside the sandbox.
  *
- * The network-capable builtins (`web_search`, `visit_webpage`, `fetch_json`)
+ * The network-capable builtins (`web_search`, `visit_webpage`,
+ * `get_page_design`, `fetch_json`)
  * take a fully model-controlled URL, so they default to {@link safeFetch} —
  * SSRF-protected by construction. Callers may inject a different `fetch` for
  * tests, but omitting it can no longer silently yield an unprotected
@@ -27,24 +28,13 @@ import {
 import type { Kv } from "../sdk/kv.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { calculate } from "./_calculate.ts";
-import { ssrfSafeFetch } from "./ssrf.ts";
+import { createGetPageDesign } from "./page-design.ts";
+import { safeFetch } from "./ssrf.ts";
+
+// Re-exported for callers that inject it themselves (runtime-tools, sandbox).
+export { safeFetch } from "./ssrf.ts";
 
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
-
-/**
- * `globalThis.fetch` wrapped in SSRF validation — the default for every
- * network builtin. Private/reserved addresses, non-HTTP(S) protocols, and
- * reserved hostnames are rejected, each redirect hop is re-validated, and
- * credentials are stripped when a redirect leaves the original origin.
- */
-function requestUrl(input: Parameters<typeof globalThis.fetch>[0]): string {
-  if (typeof input === "string") return input;
-  if (input instanceof URL) return input.href;
-  return input.url;
-}
-
-export const safeFetch: typeof globalThis.fetch = (input, init) =>
-  ssrfSafeFetch(requestUrl(input), init ?? {}, globalThis.fetch);
 
 const htmlToText = (html: string): string => convert(html, { wordwrap: false });
 
@@ -439,6 +429,7 @@ const FETCH_BUILTINS: Record<
 > = {
   web_search: createWebSearch,
   visit_webpage: createVisitWebpage,
+  get_page_design: (fetchImpl = safeFetch) => createGetPageDesign(fetchImpl),
   fetch_json: createFetchJson,
 };
 

@@ -50,8 +50,9 @@ export type Manifest = {
   /** Optional prompt hint for the STT engine (improves transcription of domain terms). */
   sttPrompt?: string | undefined;
   /**
-   * Enabled built-in tools (`web_search`, `visit_webpage`, `fetch_json`,
-   * `run_code`, `think`, `remember`, `recall`, `calculate`). Defaults to
+   * Enabled built-in tools (`web_search`, `visit_webpage`, `get_page_design`,
+   * `fetch_json`, `run_code`, `think`, `remember`, `recall`, `calculate`).
+   * Defaults to
    * {@link DEFAULT_BUILTIN_TOOLS} when unset; explicit `[]` disables all.
    */
   builtinTools: string[];
