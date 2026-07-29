@@ -1,5 +1,21 @@
 # @alexkroman1/aai-ui
 
+## 1.10.0
+
+### Minor Changes
+
+- c147d23: aai-ui hardening from a full package review: fix a reconnect race that could double-run audio init (two live mics) by invalidating in-flight init on every retry; make mic denial on the text-only record button non-fatal instead of bricking the session; release the microphone on fatal server errors; keep straggler audio frames from flipping an errored session to speaking; recover error state to listening (not disconnected) on a live socket; honor pre-aborted AbortSignals in connect(); guard cancel() when disconnected; keep running=true when reset() reconnects; preserve the last ~100ms of speech on close via a capture-worklet stop ack; replace the stale-stop flag with reason-tagged playback stops so a barge-in at turn completion can't settle the next turn early; fire useToolCallStart for tool calls whose start/done frames coalesce into one commit; export Controls; widen the React peer range to ^19.0.0; bound server-sent config sample rates and transcript/error message sizes in the protocol schemas; document session IDs as sensitive.
+
+### Patch Changes
+
+- Updated dependencies [3fe3eff]
+- Updated dependencies [5ddca41]
+- Updated dependencies [133642f]
+- Updated dependencies [fec3fa2]
+- Updated dependencies [678556f]
+- Updated dependencies [8a5ee8f]
+  - @alexkroman1/aai@1.10.0
+
 ## 1.9.2
 
 ### Patch Changes

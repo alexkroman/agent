@@ -1,5 +1,36 @@
 # @alexkroman1/aai
 
+## 1.10.0
+
+### Patch Changes
+
+- 3fe3eff: Harden unhandled-error paths across the SDK, CLI, and UI: missing WebSocket/stream/child-process error listeners, floating `void` promises without rejection handlers, unguarded JSON parsing, and event-handler throws that could crash the process or silently wedge a session now fail safely with clear errors.
+- 5ddca41: Fix race conditions and concurrency issues across the stack:
+
+  - **Session registry** (host): reconnect-resume no longer lets an old session's delayed teardown delete the resumed session's registry entries (delete-by-identity); idle timer can no longer re-arm after `stop()`; `remember` serializes its KV read-modify-write; OpenAI Realtime transport no longer double-emits `cancelled`.
+  - **Pipeline transport**: turn epochs gate queued turns so they can't run after `stop()`/`reset()`/`cancelReply()`; interrupted-turn persistence no-ops after `reset()`; the dead-air cover timer is abort-aware; late TTS audio after a barge-in is dropped instead of re-advancing the playback clock; tool-call repair captures its own turn's abort signal; `cancelReply()` resets the endpoint settler.
+  - **AssemblyAI TTS**: `cancel()` now actually cancels — the adapter drops the connection (suppressing stale audio/done/error events) and reconnects, so barge-in works and cancelled text can't splice into the next turn.
+  - **Sandbox platform** (aai-server): slot session releases are identity-bound so a stale release can't idle-evict a redeployed agent's new sandbox mid-call; sessions re-validate the sandbox before starting; a failed sandbox VM start detaches from the slot instead of poisoning it; dead warm-pool harnesses fall back to a cold spawn; gVisor cleanup is properly idempotent.
+  - **Studio**: all workspace mutations run under a per-project keyed lock (no more lost writes from concurrent tool calls or editor saves), and Publish re-reads the workspace instead of writing back a stale pre-build snapshot.
+  - **Browser client** (aai-ui): a stale audio init can no longer unlock a newer one (orphaned live mic); the greeting replay respects turn boundaries; a server-initiated `reset` discards in-flight file uploads; stale playback-stop events can't resolve a later turn's drain early.
+  - **CLI**: `NODE_ENV` preservation around Vite builds is refcounted (concurrent builds can't leak `production` into the process); config writes are atomic (temp+rename); a slug-less first deploy is no longer retried (no duplicate agents); the dev server watcher starts before the initial build, shutdown is idempotent, and restart retries a busy port; `fsKv` writes are atomic.
+
+- 133642f: Log a pipeline LLM stream failure as one compact line with its HTTP status, URL, and provider request id instead of letting the AI SDK dump the raw error object (three nested stack traces plus the whole request body) to the console.
+- fec3fa2: Performance fixes across the SDK, CLI, and UI: incremental esbuild dev-server rebuilds with cold-path fallback, backpressure guards on provider-facing WebSockets, linear OpenAI gateway stream repair with a pass-through fast path, bounded STT partial word scans, selector-granular React subscriptions in ChatView/MessageList, memoized theme and session objects, and instant auto-scroll while transcripts stream.
+- 678556f: Fix voice-agent reliability, security, and correctness across the aai core:
+
+  - OpenAI Realtime: server-VAD barge-in now flushes client playback (was talking over the user).
+  - S2S transport: an unexpected idle close now surfaces an error instead of zombie-ing the session; post-cancel audio is dropped until the next reply.
+  - KV: expireIn is now enforced on all backends (memory/fs/s3), not just Redis; size cap counts bytes not UTF-16 code units.
+  - fsKv: key-traversal guard now rejects ../ escapes (and reads/deletes), plus a key-length bound.
+  - Providers: Soniox/Rime sockets keep a crash-safe error guard through teardown; Rime/AssemblyAI TTS surface abnormal server closes; Cartesia drops in-flight audio past cancel; Soniox flushes a trailing final on quiet.
+  - ws-handler: session-start failure and a createSession throw now send the client an error frame and close instead of hanging or crashing the host.
+  - Pipeline: start() no longer proceeds after a provider-open failure; S2S file-upload replay is paced so audio isn't dropped past the socket buffer.
+  - fetch_json caps response body size; lenientParse flags invalid known-type messages; ws-upgrade handles empty sessionId and '?' in query values; stream-repair drops stale content-length/encoding headers.
+  - Dependencies: bump undici 7→8 (the SSRF-path dispatcher) and nanoevents 9→10, both majors; sweep the ai/@ai-sdk packages to their latest in-range patches; declare fast-check as an aai devDependency (was a phantom dep).
+
+- 8a5ee8f: Replace hand-rolled utilities with established libraries (expr-eval-fork, p-event/p-timeout reuse, env-paths, use-sync-external-store, partysocket, picomatch, generic-pool, json-rpc-2.0, iron-webcrypto, argon2)
+
 ## 1.9.2
 
 ## 1.9.1
