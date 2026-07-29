@@ -22,6 +22,12 @@ export function createUnstorageKv(options: UnstorageKvOptions): Kv {
       // Serialize once: the size check and the stored representation share the
       // same JSON string (unstorage round-trips it back via destr on get).
       const json = JSON.stringify(value);
+      // JSON.stringify returns undefined for undefined/function/symbol —
+      // Kv values are JSON-serialized (see sdk/kv.ts), so reject loudly
+      // instead of throwing a confusing TypeError on `.length` below.
+      if (json === undefined) {
+        throw new TypeError(`Kv.set("${key}"): value is not JSON-serializable`);
+      }
       if (json.length > MAX_VALUE_SIZE) {
         throw new Error(`Value exceeds max size of ${MAX_VALUE_SIZE} bytes`);
       }
@@ -36,7 +42,11 @@ export function createUnstorageKv(options: UnstorageKvOptions): Kv {
     },
 
     close() {
-      void store.dispose();
+      // Best-effort: close() is fire-and-forget by contract, and a dispose
+      // failure on teardown is not actionable — swallow sync and async errors.
+      Promise.resolve()
+        .then(() => store.dispose())
+        .catch(() => undefined);
     },
   };
 }

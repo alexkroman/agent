@@ -9,6 +9,19 @@
  * the contract rather than an incidental detail.
  */
 
+/**
+ * Invoke a timer callback, containing any throw. Timer callbacks run from
+ * the event loop — a throw has no call site to land in and would surface as
+ * an uncaughtException that takes down the process.
+ */
+function invokeElapsed(onElapsed: () => void): void {
+  try {
+    onElapsed();
+  } catch (err) {
+    console.error("[timer] onElapsed callback threw", err);
+  }
+}
+
 export type RestartableTimer = {
   /**
    * (Re)start the timer, replacing any pending run. A non-positive `ms` is a
@@ -42,7 +55,7 @@ export function createRestartableTimer(onElapsed: () => void): RestartableTimer 
       clear();
       timer = setTimeout(() => {
         timer = null;
-        onElapsed();
+        invokeElapsed(onElapsed);
       }, ms);
     },
     clear,
@@ -87,7 +100,7 @@ export function createCoalescingTimer(onElapsed: () => void): RestartableTimer {
     }
     timer = null;
     deadlineMs = 0;
-    onElapsed();
+    invokeElapsed(onElapsed);
   }
 
   return {

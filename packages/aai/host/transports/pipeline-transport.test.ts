@@ -9,7 +9,7 @@ import {
   createFakeTtsProvider,
   type ScriptedPart,
 } from "../_pipeline-test-fakes.ts";
-import { firstCallArg, makeOpts } from "./_pipeline-transport-harness.ts";
+import { firstCallArg, makeCallbacks, makeOpts } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
 // Turn-processing specs (STT final → LLM stream → TTS) live in
@@ -383,6 +383,40 @@ describe("PipelineTransport", () => {
       await t.start();
       // Promise.allSettled opens both concurrently; STT failure then closes TTS.
       expect(tts.last()?.closed.value).toBe(true);
+      await t.stop();
+    });
+  });
+
+  describe("turn chain resilience", () => {
+    test("a crashed turn does not wedge the turn chain (next final still runs)", async () => {
+      // First turn crashes inside runReply (onReplyStarted throws) AND the
+      // crash logger itself throws — the worst case for the turn serializer.
+      // The chain must survive both: a rejected turnPromise would mean no
+      // turn ever runs again.
+      const callbacks = makeCallbacks();
+      (callbacks.onReplyStarted as ReturnType<typeof vi.fn>).mockImplementationOnce(() => {
+        throw new Error("reply sink broken");
+      });
+      const throwingLogger = {
+        info: () => undefined,
+        warn: () => undefined,
+        debug: () => undefined,
+        error: () => {
+          throw new Error("logger broken");
+        },
+      };
+      const { opts, stt } = makeOpts({ logger: throwingLogger }, { callbacks });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("first turn crashes");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(1);
+      });
+      stt.last()?.fireFinal("second turn still runs");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
+        expect(callbacks.onReplyDone).toHaveBeenCalled();
+      });
       await t.stop();
     });
   });

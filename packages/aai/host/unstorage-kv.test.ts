@@ -47,6 +47,22 @@ describe("createUnstorageKv", () => {
     await expect(kv.set("big", big)).rejects.toThrow("exceeds max size");
   });
 
+  test("rejects non-JSON-serializable values with a clear error", async () => {
+    const kv = makeKv();
+    await expect(kv.set("k", undefined)).rejects.toThrow(TypeError);
+    await expect(kv.set("k", () => "nope")).rejects.toThrow("not JSON-serializable");
+  });
+
+  test("close swallows dispose failures", async () => {
+    const storage = createStorage();
+    storage.dispose = () => Promise.reject(new Error("dispose failed"));
+    const kv = createUnstorageKv({ storage });
+    expect(() => kv.close?.()).not.toThrow();
+    // Let the swallowed rejection settle — an unhandled rejection would fail
+    // the test run.
+    await new Promise((r) => setTimeout(r, 0));
+  });
+
   test("set with expireIn passes ttl to driver", async () => {
     const kv = makeKv();
     await kv.set("temp", "val", { expireIn: 10_000 });

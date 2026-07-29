@@ -4,7 +4,7 @@
 import type { ToolSchema } from "../../sdk/_internal-types.ts";
 import { LOG_PREVIEW_CHARS, WS_OPEN } from "../../sdk/constants.ts";
 import type { OpenaiRealtimeOptions } from "../../sdk/providers/s2s/openai-realtime.ts";
-import { safeJsonParse } from "../../sdk/utils.ts";
+import { errorMessage, safeJsonParse } from "../../sdk/utils.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import {
   type CreateHeaderWebSocket,
@@ -126,7 +126,18 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       sendSessionUpdate();
       sendGreeting();
     });
-    sock.addEventListener("message", (ev) => handleMessage(ev.data));
+    sock.addEventListener("message", (ev) => {
+      // handleMessage dispatches into session callbacks; a throw escaping a
+      // ws 'message' handler would be an uncaughtException — surface it via
+      // the session error path instead.
+      try {
+        handleMessage(ev.data);
+      } catch (err) {
+        const msg = errorMessage(err);
+        log.error("OpenAI Realtime message dispatch failed", { error: msg, sid: opts.sid });
+        opts.callbacks.onError("internal", msg);
+      }
+    });
     sock.addEventListener("close", (ev) => {
       const code = ev.code ?? 0;
       // A close before the open (e.g. an auth rejection that closes rather than
@@ -354,7 +365,16 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
         responseCreateQueued = true;
         queueMicrotask(() => {
           responseCreateQueued = false;
-          send({ type: "response.create" });
+          // A throw here has no caller to land in (microtask) — it would
+          // surface as an uncaughtException. Log and swallow.
+          try {
+            send({ type: "response.create" });
+          } catch (err) {
+            log.warn("OpenAI Realtime response.create failed", {
+              error: errorMessage(err),
+              sid: opts.sid,
+            });
+          }
         });
       }
     },
