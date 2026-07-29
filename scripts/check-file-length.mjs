@@ -32,9 +32,15 @@ const ROOT = new URL("..", import.meta.url).pathname;
 const SOURCE_MAX = 500;
 const TEST_MAX = 700;
 
-const allowlist = JSON.parse(
-  readFileSync(join(ROOT, "scripts", "file-length-allowlist.json"), "utf8"),
-);
+let allowlist;
+try {
+  allowlist = JSON.parse(readFileSync(join(ROOT, "scripts", "file-length-allowlist.json"), "utf8"));
+} catch (err) {
+  console.error(
+    `check-file-length: failed to read/parse scripts/file-length-allowlist.json: ${err.message}`,
+  );
+  process.exit(1);
+}
 
 const isTest = (path) => /\.test\.tsx?$|\.test-d\.ts$|_test-utils\.ts$|test-utils\.ts$/.test(path);
 const isExempt = (path) => path.startsWith("packages/aai-templates/templates/");
@@ -64,7 +70,16 @@ const staleAllowlist = [];
 const seen = new Set();
 
 for (const path of files) {
-  const lines = countLines(readFileSync(join(ROOT, path), "utf8"));
+  let text;
+  try {
+    text = readFileSync(join(ROOT, path), "utf8");
+  } catch {
+    // In the git index but missing from the worktree (e.g. deleted without
+    // `git rm` yet) — nothing to measure, so skip rather than crash.
+    console.warn(`check-file-length: skipping ${path} (listed by git but not on disk)`);
+    continue;
+  }
+  const lines = countLines(text);
   const cap = isTest(path) ? TEST_MAX : SOURCE_MAX;
 
   if (path in allowlist) {

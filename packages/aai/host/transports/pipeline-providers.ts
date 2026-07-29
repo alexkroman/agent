@@ -204,8 +204,12 @@ export function createPipelineProviderSessions(
     },
     async close(): Promise<void> {
       // Close both provider sockets concurrently; allSettled swallows
-      // already-closed rejections.
-      await Promise.allSettled([sttSession?.close(), ttsSession?.close()]);
+      // already-closed rejections. Each close runs inside an async thunk so
+      // a synchronously-throwing close() still lands in allSettled instead
+      // of escaping it while the array literal is being built.
+      const closeSide = async (session: { close(): Promise<void> } | null): Promise<void> =>
+        session?.close();
+      await Promise.allSettled([closeSide(sttSession), closeSide(ttsSession)]);
     },
   };
 }

@@ -207,6 +207,25 @@ describe("executeTool", () => {
     vi.useRealTimers();
   });
 
+  test("returns a tool error (not a protocol error) when args fail validation", async () => {
+    // Invalid LLM-supplied args must come back on the { error } tool-result
+    // path so the model can repair them — not as a JSON-RPC protocol error.
+    const agent = makeAgent({
+      strict: {
+        description: "strict",
+        parameters: {
+          parse: () => {
+            throw new Error("Expected string, received number");
+          },
+        },
+        execute: () => "never reached",
+      } as never,
+    });
+    const state = createSessionStateMap();
+    const result = await executeTool(agent, makeReq("strict", { x: 1 }), state);
+    expect(result).toEqual({ error: "Expected string, received number" });
+  });
+
   test("passes parsed args when tool has parameters.parse", async () => {
     const agent = makeAgent({
       echo: {

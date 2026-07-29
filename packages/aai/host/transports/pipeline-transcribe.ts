@@ -85,7 +85,11 @@ export function createFileTranscriber(deps: {
         }
         return;
       }
-      deps.chainTurn(() => transcribeFileTurn(transcribeClip, pcm, sampleRate));
+      // The .catch mirrors every other chainTurn call site: a rejection here
+      // (e.g. a callback throwing) must not poison the turn chain.
+      deps.chainTurn(() =>
+        transcribeFileTurn(transcribeClip, pcm, sampleRate).catch(deps.onTurnCrash),
+      );
     },
     discard(): void {
       epoch++;

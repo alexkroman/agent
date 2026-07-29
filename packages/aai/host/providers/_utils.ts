@@ -53,11 +53,18 @@ export async function waitForOpen(ws: WebSocket): Promise<void> {
 
 /** Invoke `close` when `signal` aborts (immediately if already aborted). */
 export function closeOnAbort(signal: AbortSignal, close: () => Promise<void> | void): void {
+  // Best-effort: a close failure (sync throw or rejection) on an aborting
+  // session is not actionable and must not become an unhandled rejection.
+  const closeQuietly = (): void => {
+    void Promise.resolve()
+      .then(close)
+      .catch(() => undefined);
+  };
   if (signal.aborted) {
-    void close();
+    closeQuietly();
     return;
   }
-  signal.addEventListener("abort", () => void close(), { once: true });
+  signal.addEventListener("abort", closeQuietly, { once: true });
 }
 
 /** Run `connect`, wrapping any failure as `` `${label}: ${action}: <cause>` ``. */
@@ -194,7 +201,13 @@ export function createSessionShell<E extends Error>(opts: {
   };
   const streamError = (message: string): void => {
     if (closed) return;
-    opts.emitError(opts.makeStreamError(message));
+    // emitError fans out to caller-supplied listeners; a throw from one must
+    // not escape a socket 'error'/'close' handler (an uncaughtException).
+    try {
+      opts.emitError(opts.makeStreamError(message));
+    } catch {
+      // Nothing further to report the error to.
+    }
   };
   return {
     isClosed: () => closed,

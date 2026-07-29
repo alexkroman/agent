@@ -11,6 +11,25 @@ import "./styles.css";
 const KEY_STORAGE = "aai-studio-key";
 const queryClient = new QueryClient();
 
+// localStorage access throws in some contexts (Safari private mode, storage
+// blocked by policy) — degrade to a session-only key instead of crashing.
+function readStoredKey(): string {
+  try {
+    return localStorage.getItem(KEY_STORAGE) ?? "";
+  } catch {
+    return "";
+  }
+}
+
+function writeStoredKey(key: string | null): void {
+  try {
+    if (key === null) localStorage.removeItem(KEY_STORAGE);
+    else localStorage.setItem(KEY_STORAGE, key);
+  } catch {
+    // Storage unavailable — the key still lives in component state for this tab.
+  }
+}
+
 function Gate({ onEnter }: { onEnter: (key: string) => void }) {
   const [draft, setDraft] = useState("");
   const enter = () => {
@@ -51,13 +70,13 @@ function Gate({ onEnter }: { onEnter: (key: string) => void }) {
 }
 
 function Root() {
-  const [apiKey, setApiKey] = useState(() => localStorage.getItem(KEY_STORAGE) ?? "");
+  const [apiKey, setApiKey] = useState(readStoredKey);
 
   if (!apiKey) {
     return (
       <Gate
         onEnter={(key) => {
-          localStorage.setItem(KEY_STORAGE, key);
+          writeStoredKey(key);
           setApiKey(key);
         }}
       />
@@ -68,7 +87,7 @@ function Root() {
     <App
       apiKey={apiKey}
       onSignOut={() => {
-        localStorage.removeItem(KEY_STORAGE);
+        writeStoredKey(null);
         setApiKey("");
       }}
     />

@@ -67,7 +67,10 @@ function formatZodIssues(error: z.ZodError | undefined): string {
 
 function stringifyResult(result: unknown): string {
   if (result == null) return "null";
-  return typeof result === "string" ? result : JSON.stringify(result);
+  if (typeof result === "string") return result;
+  // JSON.stringify returns undefined for functions/symbols — fall back to
+  // String() so the provider always gets a string, never `undefined`.
+  return JSON.stringify(result) ?? String(result);
 }
 
 export async function executeToolCall(

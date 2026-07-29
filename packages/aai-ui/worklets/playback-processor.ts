@@ -108,6 +108,10 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   }
 
   process(inputs, outputs) {
+    // No output wired up yet — nothing to render this quantum. Throwing here
+    // would permanently kill the processor (the node is persistent per
+    // session), so guard like the capture processor does.
+    if (!outputs[0] || !outputs[0][0]) return true;
     const out = outputs[0][0];
     if (this.interrupted) {
       out.fill(0);

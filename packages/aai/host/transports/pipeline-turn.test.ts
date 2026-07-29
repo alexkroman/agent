@@ -22,8 +22,10 @@ describe("PipelineTransport — STT → LLM turn", () => {
     stt.last()?.fireFinal("Hello agent");
     await vi.waitFor(() => {
       expect(callbacks.onUserTranscript).toHaveBeenCalledWith("Hello agent");
+      // The reply starts a tick after the transcript (chainTurn defers past a
+      // possibly-rejected predecessor), so poll for it too.
+      expect(callbacks.onReplyStarted).toHaveBeenCalledWith(expect.stringMatching(/^pipeline-/));
     });
-    expect(callbacks.onReplyStarted).toHaveBeenCalledWith(expect.stringMatching(/^pipeline-/));
     await t.stop();
   });
 

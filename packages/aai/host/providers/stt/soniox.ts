@@ -123,20 +123,41 @@ export function openSoniox(opts: SonioxOptions = {}): SttOpener {
             emitter.emit("final", finalBuf.value);
             finalBuf.value = "";
           }
-          ws.close();
+          try {
+            ws.close();
+          } catch {
+            // Socket already broken — still drop the listeners below.
+          }
           // Drop our handlers so their closures (emitter/finalBuf/shell) don't
           // stay reachable via the socket if `ws` outlives this session.
           ws.removeAllListeners();
         },
       });
 
-      await connectOrThrow(
-        "Soniox STT",
-        (msg) => makeSttError("stt_connect_failed", msg),
-        () => waitForOpen(ws),
-      );
+      // Placeholder 'error' listener bound before connecting (see the
+      // cartesia.ts pattern): waitForOpen's own listener is removed once it
+      // settles, and a later socket error with zero listeners is an unhandled
+      // 'error' event that crashes the process.
+      ws.on("error", () => undefined);
 
-      ws.send(JSON.stringify(buildConfigFrame(apiKey, opts, openOpts.sampleRate)));
+      try {
+        await connectOrThrow(
+          "Soniox STT",
+          (msg) => makeSttError("stt_connect_failed", msg),
+          () => waitForOpen(ws),
+        );
+
+        ws.send(JSON.stringify(buildConfigFrame(apiKey, opts, openOpts.sampleRate)));
+      } catch (err) {
+        // Failed connect / config send: close the socket before rethrowing so
+        // it can't linger half-open (late errors land in the placeholder).
+        try {
+          ws.close();
+        } catch {
+          // Socket already broken — nothing left to release.
+        }
+        throw err;
+      }
 
       ws.on("message", (raw: WebSocket.RawData) => {
         if (shell.isClosed()) return;

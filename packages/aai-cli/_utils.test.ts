@@ -3,7 +3,7 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { withTempDir } from "./_test-utils.ts";
-import { fileExists, resolveCwd } from "./_utils.ts";
+import { errorCode, fileExists, readJson, resolveCwd } from "./_utils.ts";
 
 describe("resolveCwd", () => {
   afterEach(() => {
@@ -38,5 +38,49 @@ describe("fileExists", () => {
     await withTempDir(async (dir) => {
       expect(await fileExists(dir)).toBe(true);
     });
+  });
+});
+
+describe("readJson", () => {
+  test("returns null only for a missing file (ENOENT)", async () => {
+    await withTempDir(async (dir) => {
+      expect(await readJson(path.join(dir, "missing.json"))).toBeNull();
+    });
+  });
+
+  test("parses an existing JSON file", async () => {
+    await withTempDir(async (dir) => {
+      const p = path.join(dir, "ok.json");
+      await fs.writeFile(p, '{"a":1}');
+      expect(await readJson(p)).toEqual({ a: 1 });
+    });
+  });
+
+  test("throws (not null) for a corrupt JSON file, naming the file", async () => {
+    await withTempDir(async (dir) => {
+      const p = path.join(dir, "corrupt.json");
+      await fs.writeFile(p, "{ not json");
+      await expect(readJson(p)).rejects.toThrow(`Invalid JSON in ${p}`);
+    });
+  });
+
+  test("rethrows non-ENOENT filesystem errors", async () => {
+    await withTempDir(async (dir) => {
+      // Reading a directory as a file fails with EISDIR, which must propagate.
+      await expect(readJson(dir)).rejects.toThrow();
+    });
+  });
+});
+
+describe("errorCode", () => {
+  test("returns the code of an errno-style error", () => {
+    const err = new Error("boom") as NodeJS.ErrnoException;
+    err.code = "ENOSPC";
+    expect(errorCode(err)).toBe("ENOSPC");
+  });
+
+  test("returns undefined for plain errors and non-errors", () => {
+    expect(errorCode(new Error("boom"))).toBeUndefined();
+    expect(errorCode("boom")).toBeUndefined();
   });
 });

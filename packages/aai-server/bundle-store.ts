@@ -86,12 +86,26 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
   async function readJson(key: string): Promise<unknown | null> {
     const data = await readItem(key);
     if (data == null) return null;
-    return JSON.parse(typeof data === "string" ? data : JSON.stringify(data));
+    if (typeof data !== "string") return data; // driver already parsed it
+    try {
+      return JSON.parse(data);
+    } catch {
+      // Corrupt stored object — treat as missing rather than throwing on
+      // every read of this key (matches getAgentConfig's safeParse posture).
+      console.warn(`Corrupt JSON in stored object ${key}; treating as missing`);
+      return null;
+    }
   }
 
   async function getRawManifest(slug: string): Promise<z.infer<typeof ManifestSchema> | null> {
     const json = await readJson(agentObjectKey(slug, "manifest.json"));
-    return json == null ? null : ManifestSchema.parse(json);
+    if (json == null) return null;
+    const parsed = ManifestSchema.safeParse(json);
+    if (!parsed.success) {
+      console.warn(`Corrupt manifest for agent ${slug}; treating as missing`);
+      return null;
+    }
+    return parsed.data;
   }
 
   async function loadManifest(slug: string): Promise<AgentMetadata | null> {

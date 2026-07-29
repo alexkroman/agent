@@ -124,6 +124,10 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
     const idx = ready.indexOf(handle);
     if (idx === -1) return;
     ready.splice(idx, 1);
+    // The process is dead but its runsc container registration and bundle
+    // dir are not — cleanup releases them (same fire-and-forget shape as
+    // acquire()'s dead-entry path).
+    void handle.cleanup().catch(() => undefined);
     // Do NOT auto-replenish here — if spawns die immediately (e.g. missing
     // Deno binary) it would create a tight fail loop. The next `acquire()`
     // tops up the pool when traffic arrives.

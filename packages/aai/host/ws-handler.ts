@@ -239,12 +239,25 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     messageBuffer.push(event);
   }
 
+  /**
+   * dispatchMessage fans out into session/transport code with no other
+   * try/catch boundary; a throw escaping a ws 'message' handler would be an
+   * uncaughtException that takes down the host. Log-and-drop instead.
+   */
+  function dispatchSafely(data: unknown, s: SessionCore): void {
+    try {
+      dispatchMessage(data, s, log, sid);
+    } catch (err) {
+      log.error("ws: message dispatch failed", { ...ctx, sid, error: errorDetail(err) });
+    }
+  }
+
   function drainBuffer(): void {
     if (!(session && messageBuffer)) return;
     const buf = messageBuffer;
     messageBuffer = null;
     for (const event of buf) {
-      dispatchMessage(event.data, session, log, sid);
+      dispatchSafely(event.data, session);
     }
   }
 
@@ -274,7 +287,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
     // Send config immediately — zero RTT. Include sessionId so the
     // client can reconnect with ?sessionId=<id> to resume a persisted session.
-    ws.send(
+    safeSend(
+      ws,
       JSON.stringify({
         type: "config",
         audioFormat: opts.readyConfig.audioFormat,
@@ -284,6 +298,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         ...(opts.readyConfig.audioOut === false && { audioOut: false }),
         sessionId,
       }),
+      log,
     );
 
     const timeoutMs = opts.sessionStartTimeoutMs ?? DEFAULT_SESSION_START_TIMEOUT_MS;
@@ -331,7 +346,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       bufferMessage(event);
       return;
     }
-    dispatchMessage(event.data, session, log, sid);
+    dispatchSafely(event.data, session);
   });
 
   ws.addEventListener("close", () => {

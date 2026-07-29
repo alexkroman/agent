@@ -434,6 +434,21 @@ async function runSessionAttempt(
       resolve(shouldRetry ? "retry" : "done");
     }
 
+    /** Send tolerantly: the socket can close between a readyState check and
+     *  send(), and a throw here must not take down the session driver. */
+    function safeSend(payload: Uint8Array | string): boolean {
+      if (ws.readyState !== ws.OPEN) return false;
+      try {
+        ws.send(payload);
+        return true;
+      } catch (err) {
+        metrics.errors.push(
+          `ws send failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        return false;
+      }
+    }
+
     ws.on("open", () => {
       metrics.connected = true;
       log("ws open");
@@ -473,7 +488,11 @@ async function runSessionAttempt(
           log(`barge-in [turn ${currentTurn}]`);
           const bufIdx = bufferOrder[currentTurn % bufferOrder.length]!;
           const frames = chunkFrames[bufIdx]!;
-          void sendBargeIn(frames);
+          void sendBargeIn(frames).catch((err: unknown) => {
+            metrics.errors.push(
+              `barge-in failed: ${err instanceof Error ? err.message : String(err)}`,
+            );
+          });
         }
         return;
       }
@@ -494,7 +513,7 @@ async function runSessionAttempt(
           clearTimeout(connectTimer);
           lastEvent = "config";
           log(`config received (sessionId=${metrics.sandboxSessionId || "—"}, ${metrics.connectMs}ms)`);
-          ws.send(JSON.stringify({ type: "audio_ready" }));
+          safeSend(JSON.stringify({ type: "audio_ready" }));
           greetingTimer = setTimeout(() => {
             greetingTimer = null;
             if (!done) markGreetingResolved(`timeout (${cfg.greetingTimeoutMs}ms)`);
@@ -585,8 +604,7 @@ async function runSessionAttempt(
     async function sendBargeIn(frames: Uint8Array[]): Promise<void> {
       const count = Math.min(frames.length, 5);
       for (let i = 0; i < count; i++) {
-        if (done || ws.readyState !== ws.OPEN) return;
-        ws.send(frames[i]!);
+        if (done || !safeSend(frames[i]!)) return;
         await sleep(cfg.chunkMs);
       }
     }
@@ -622,8 +640,7 @@ async function runSessionAttempt(
         lastUserFrameAt = 0;
         for (const frame of frames) {
           if (done) return;
-          if (ws.readyState !== ws.OPEN) return;
-          ws.send(frame);
+          if (!safeSend(frame)) return;
           lastUserFrameAt = Date.now();
           await sleep(cfg.chunkMs);
         }
@@ -644,9 +661,17 @@ async function runSessionAttempt(
           !recordedLatencyThisTurn &&
           ws.readyState === ws.OPEN
         ) {
-          ws.send(silenceFrame);
+          if (!safeSend(silenceFrame)) break;
           await sleep(cfg.chunkMs);
         }
+      } catch (err) {
+        // A rejection here would otherwise escape the `void streamNextTurn()`
+        // call sites unhandled — record it and let the stall/close machinery
+        // drive the retry.
+        metrics.errors.push(
+          `stream turn ${myTurn} failed: ${err instanceof Error ? err.message : String(err)}`,
+        );
+        log(`stream turn ${myTurn} failed`);
       } finally {
         streamInFlight = false;
         if (nextTurnPending && !done) {

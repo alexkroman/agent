@@ -273,7 +273,17 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
         collected.push(...step.response.messages);
         onStepPersisted?.();
       },
+      // Stream errors also surface as `error` parts handled below; the
+      // callback keeps the SDK from routing them anywhere unobserved.
+      onError: ({ error }) => {
+        log.debug("streamText onError", { error: errorMessage(error), sid });
+      },
     });
+    // `result.steps` settles after the stream; the abort/error paths below
+    // return without awaiting it, so observe rejections up front — an
+    // AbortError landing later must not become an unhandled rejection. The
+    // happy path's `await result.steps` still sees the original settlement.
+    void Promise.resolve(result.steps).catch(() => undefined);
     handler = createStreamPartHandler({
       onDelta,
       sendTtsText: ttsText.send,

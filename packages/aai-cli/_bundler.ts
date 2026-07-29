@@ -7,7 +7,7 @@ import type { AgentDef } from "@alexkroman1/aai";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { type CommandResult, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
-import { validateAgentExport } from "./_utils.ts";
+import { errorMessage, validateAgentExport } from "./_utils.ts";
 import { buildClient } from "./client-bundler.ts";
 import { type BuildWorkerOptions, buildWorker } from "./worker-bundler.ts";
 
@@ -61,14 +61,27 @@ export async function buildAgentBundle(
  */
 export async function evalWorkerBundle(code: string, cwd: string): Promise<AgentDef> {
   const evalDir = path.join(cwd, ".aai", "eval");
-  await fs.mkdir(evalDir, { recursive: true });
   // Use a unique filename per invocation to avoid Node's ESM import cache.
   const tmpPath = path.join(
     evalDir,
     `agent-${Date.now()}-${Math.random().toString(36).slice(2)}.mjs`,
   );
   try {
+    await fs.mkdir(evalDir, { recursive: true });
     await fs.writeFile(tmpPath, code);
+  } catch (err) {
+    // A partial write (ENOSPC) must not leave a stray file behind.
+    await fs.rm(tmpPath, { force: true }).catch(() => undefined);
+    // A raw EACCES/ENOSPC here says nothing about what the CLI was doing.
+    throw new Error(
+      `Failed to write the eval bundle under ${evalDir} — is the project directory writable? ` +
+        `(${errorMessage(err)})`,
+      { cause: err },
+    );
+  }
+  try {
+    // Import errors propagate as-is: they carry the agent code's own failure
+    // (syntax error, throwing top-level code), which is the useful message.
     const mod = await import(pathToFileURL(tmpPath).href);
     const agentDef = (mod.default ?? mod) as AgentDef;
 

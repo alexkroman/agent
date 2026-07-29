@@ -31,7 +31,13 @@ for (const entry of readdirSync(PACKAGES_DIR)) {
   }
   if (!stat.isFile()) continue;
 
-  const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
+  let pkg;
+  try {
+    pkg = JSON.parse(readFileSync(pkgJsonPath, "utf8"));
+  } catch (err) {
+    errors.push(`${pkgJsonPath}: could not read/parse: ${err.message}`);
+    continue;
+  }
   if (pkg.private === true) continue;
   if (typeof pkg.name !== "string") {
     errors.push(`${pkgJsonPath}: missing "name" field`);

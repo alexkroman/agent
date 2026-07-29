@@ -80,6 +80,13 @@ export type GvisorSandbox = {
   process: ChildProcess;
   containerId: string;
   cleanup(): Promise<void>;
+  /**
+   * The child's `error` event (spawn failure, EAGAIN) can fire on
+   * process.nextTick — before an awaiting caller gets a chance to attach its
+   * own listener. The listener attached at spawn time buffers it here so the
+   * caller can still observe the failure.
+   */
+  spawnError(): Error | null;
 };
 
 type GvisorSandboxOptions = {
@@ -175,6 +182,30 @@ async function cleanupBundleDir(containerId: string): Promise<void> {
 // ---------------------------------------------------------------------------
 
 /**
+ * Cap on stderr bytes logged per sandbox. Guest stack traces are diagnostic
+ * gold, but a guest looping on writes must not flood the host's logs — past
+ * the cap the pipe keeps draining silently (never stop consuming: an unread
+ * pipe fills its 64 KB buffer and wedges the guest on its next write).
+ */
+const MAX_STDERR_LOG_BYTES = 64 * 1024;
+
+/** Consume and log the runsc child's stderr, bounded by MAX_STDERR_LOG_BYTES. */
+function attachStderrLogger(child: ChildProcess, containerId: string): void {
+  const stderr = child.stderr;
+  if (!stderr) return;
+  stderr.on("error", () => {
+    /* guest died mid-write; child exit handling covers teardown */
+  });
+  let logged = 0;
+  stderr.on("data", (chunk: Buffer) => {
+    if (logged >= MAX_STDERR_LOG_BYTES) return; // keep draining, stop logging
+    logged += chunk.length;
+    const text = chunk.toString("utf8").trimEnd();
+    if (text) console.warn(`[gvisor:${containerId}] stderr: ${text}`);
+  });
+}
+
+/**
  * Creates a gVisor sandbox running the given Deno harness script.
  *
  * Security layers:
@@ -220,6 +251,16 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
       env: {},
     },
   );
+  // Attach synchronously: a spawn `error` fires on process.nextTick, which
+  // runs before the promise continuation that hands this child to
+  // warmFromChild. With no listener that's an uncaughtException that exits
+  // the whole multi-tenant host; buffer it so the caller can observe it.
+  let spawnError: Error | null = null;
+  child.on("error", (err) => {
+    spawnError = err;
+    console.error(`[gvisor:${containerId}] runsc process error: ${err.message}`);
+  });
+  attachStderrLogger(child, containerId);
   const tSpawn = performance.now();
 
   metrics.sandboxSpawnPhase.observe({ phase: "rootfs" }, (tRootfs - t0) / 1000);
@@ -253,5 +294,6 @@ export async function createGvisorSandbox(opts: GvisorSandboxOptions): Promise<G
     process: child,
     containerId,
     cleanup,
+    spawnError: () => spawnError,
   };
 }

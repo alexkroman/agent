@@ -7,6 +7,7 @@ import {
   DEFAULT_IDLE_TIMEOUT_MS,
   DEFAULT_MAX_HISTORY,
   FILE_UPLOAD_CHUNK_BYTES,
+  MAX_SYNC_AUDIO_BYTES,
 } from "../sdk/constants.ts";
 import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.ts";
 import type { Message } from "../sdk/types.ts";
@@ -241,6 +242,16 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
     onTranscribeFileStart(sampleRate, byteLength) {
       resetIdle();
+      // Defense in depth: ws-handler's schema already caps byteLength, but
+      // this is a public entry point — the client-supplied length sizes the
+      // allocation below, so re-validate before trusting it.
+      if (!Number.isInteger(byteLength) || byteLength <= 0 || byteLength > MAX_SYNC_AUDIO_BYTES) {
+        log.warn("transcribe_file_start: invalid byteLength; ignoring", {
+          sid: opts.id,
+          byteLength,
+        });
+        return;
+      }
       // A new upload replaces any half-finished one (client retry).
       fileUpload = { sampleRate, buffer: new Uint8Array(byteLength), received: 0 };
     },
@@ -319,8 +330,24 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
           flushReply(startMs, hadTurnPromise);
         }
       };
-      if (hadTurnPromise) void turnPromise?.then(sendPending);
-      else sendPending();
+      // sendPending writes to the transport, which may be a dying socket — a
+      // throw here must surface as a log, not an unhandled rejection (or a
+      // sync throw out of the transport's event dispatch).
+      const sendPendingSafely = () => {
+        try {
+          sendPending();
+        } catch (err) {
+          log.warn("reply.done dispatch failed", { sid: opts.id, error: errorMessage(err) });
+        }
+      };
+      if (hadTurnPromise) {
+        void turnPromise?.then(sendPendingSafely).catch((err: unknown) => {
+          log.warn("turn promise rejected before reply.done dispatch", {
+            sid: opts.id,
+            error: errorMessage(err),
+          });
+        });
+      } else sendPendingSafely();
     },
 
     onCancelled() {

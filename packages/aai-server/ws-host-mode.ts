@@ -132,14 +132,22 @@ export function startDeployedHostSession(
     startOpts: SessionStartOptions;
   },
 ): void {
-  void opts.store.getEnv(opts.slug).then((agentEnv) => {
-    startHostSession(ws, {
-      env: agentEnv ?? {},
-      baseAgent: toHostBaseAgent(opts.agentConfig),
-      // Ownership was verified at the upgrade; the platform's gate is the
-      // API key, not AAI_ALLOW_HOST (which would be all-or-nothing).
-      allowHost: true,
-      startOpts: opts.startOpts,
+  void opts.store
+    .getEnv(opts.slug)
+    .then((agentEnv) => {
+      startHostSession(ws, {
+        env: agentEnv ?? {},
+        baseAgent: toHostBaseAgent(opts.agentConfig),
+        // Ownership was verified at the upgrade; the platform's gate is the
+        // API key, not AAI_ALLOW_HOST (which would be all-or-nothing).
+        allowHost: true,
+        startOpts: opts.startOpts,
+      });
+    })
+    .catch((err: unknown) => {
+      // A storage blip here would otherwise strand the caller on a silent,
+      // open socket. Close with 1011 so the client sees a real failure.
+      console.error(`Host-mode session start failed for ${opts.slug}:`, err);
+      ws.close?.(1011, "internal error");
     });
-  });
 }

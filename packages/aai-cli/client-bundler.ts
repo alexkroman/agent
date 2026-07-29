@@ -15,12 +15,13 @@
  * are untrusted so any config the workspace *does* contain must be ignored.
  */
 
+import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { isTextAssetPath } from "@alexkroman1/aai";
 import { build, type PluginOption } from "vite";
 import { writeTempHtml } from "./_default-html.ts";
-import { fileExists } from "./_utils.ts";
+import { errorMessage, fileExists } from "./_utils.ts";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
 
 export type BuildClientOptions = {
@@ -77,8 +78,13 @@ export async function buildClient(
 
   const outDir = opts.outDir ?? DEFAULT_OUT_DIR;
   const clientDir = path.join(cwd, outDir);
-  const cleanupHtml = writeTempHtml(cwd);
+  // Assigned inside the try so cleanup runs even if writeTempHtml itself
+  // throws mid-write; until then there is nothing to clean up.
+  let cleanupHtml = () => {
+    /* no-op until writeTempHtml has run */
+  };
   try {
+    cleanupHtml = writeTempHtml(cwd);
     await withPreservedNodeEnv(() =>
       build({
         root: cwd,
@@ -103,7 +109,15 @@ export async function buildClient(
 /** Read a built client directory into an in-memory deploy payload. */
 async function readClientDir(clientDir: string): Promise<Record<string, string>> {
   const files: Record<string, string> = {};
-  const entries = await fs.readdir(clientDir, { recursive: true, withFileTypes: true });
+  let entries: Dirent[];
+  try {
+    entries = await fs.readdir(clientDir, { recursive: true, withFileTypes: true });
+  } catch (err) {
+    // A raw ENOENT on the output dir reads like a CLI bug; say what it means.
+    throw new Error(`Client build produced no output at ${clientDir}: ${errorMessage(err)}`, {
+      cause: err,
+    });
+  }
   await Promise.all(
     entries
       .filter((entry) => entry.isFile())

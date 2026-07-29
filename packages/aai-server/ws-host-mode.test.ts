@@ -1,12 +1,13 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { hashApiKey } from "./secrets.ts";
 import { createTestStore, TEST_AGENT_CONFIG } from "./test-utils.ts";
 import {
   authorizeHostMode,
   bearerToken,
   guardHostModeUpgrade,
+  startDeployedHostSession,
   wantsHostMode,
 } from "./ws-host-mode.ts";
 
@@ -146,5 +147,32 @@ describe("guardHostModeUpgrade", () => {
     expect(ok).toBe(false);
     expect(writes.join("")).toMatch(/^HTTP\/1\.1 401 Unauthorized\r\n/);
     expect(writes.join("")).toContain("Authorization: Bearer");
+  });
+});
+
+describe("startDeployedHostSession", () => {
+  test("a failed env load closes the socket instead of stranding it", async () => {
+    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const close = vi.fn();
+    const ws = {
+      readyState: 1,
+      send: () => undefined,
+      close,
+      addEventListener: () => undefined,
+    };
+    const store = {
+      ...createTestStore(),
+      getEnv: () => Promise.reject(new Error("storage blip")),
+    };
+
+    startDeployedHostSession(ws, {
+      slug: "my-agent",
+      agentConfig: TEST_AGENT_CONFIG,
+      store,
+      startOpts: {},
+    });
+
+    await vi.waitFor(() => expect(close).toHaveBeenCalledWith(1011, "internal error"));
+    errorSpy.mockRestore();
   });
 });

@@ -115,12 +115,27 @@ describe("executeTest", () => {
     expect(result).toEqual({ ok: true, data: { passed: true } });
   });
 
-  test("returns test_failed when vitest exits non-zero", async () => {
+  test("returns test_failed with detail when vitest exits non-zero", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
     execFileSync.mockImplementation(() => {
       throw new Error("exit 1");
     });
     const result = await silenced(() => executeTest(tempDir))(tempDir);
-    expect(result).toEqual({ ok: false, code: "test_failed", error: "Tests failed" });
+    expect(result).toEqual({ ok: false, code: "test_failed", error: "Tests failed: exit 1" });
+  });
+
+  test("returns spawn_failed when the test runner binary is missing", async () => {
+    await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
+    execFileSync.mockImplementation(() => {
+      const err = new Error("spawnSync npx ENOENT") as NodeJS.ErrnoException;
+      err.code = "ENOENT";
+      throw err;
+    });
+    const result = await silenced(() => executeTest(tempDir))(tempDir);
+    expect(result).toEqual({
+      ok: false,
+      code: "spawn_failed",
+      error: "Could not launch the test runner: spawnSync npx ENOENT — is the binary on your PATH?",
+    });
   });
 });

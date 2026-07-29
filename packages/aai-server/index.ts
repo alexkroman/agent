@@ -125,6 +125,17 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
 }
 
 async function main(): Promise<void> {
+  // Register process-level safety nets FIRST — an unhandled rejection or
+  // uncaught exception during startup (storage init, pool pre-warm) must be
+  // logged, not silently subject to Node's defaults.
+  process.on("unhandledRejection", (err) => {
+    console.error("Unhandled rejection:", err);
+  });
+  process.on("uncaughtException", (err) => {
+    console.error("Uncaught exception:", err);
+    process.exit(1);
+  });
+
   const env = process.env;
   assertDevKeys(env);
   initHostCapacityGauges();
@@ -150,13 +161,25 @@ async function main(): Promise<void> {
   const nodeServer = serve({ fetch: app.fetch, port });
   injectWebSocket(nodeServer as import("node:http").Server);
 
+  // Without a listener, a listen failure (e.g. EADDRINUSE) gets Node's
+  // default throw-from-nowhere. Log it usefully and exit.
+  nodeServer.on("error", (err) => {
+    console.error("HTTP server error:", err);
+    process.exit(1);
+  });
+
   await new Promise<void>((resolve) => {
     nodeServer.on("listening", resolve);
   });
 
   console.info(`AAI server listening on http://localhost:${port}`);
 
+  let shuttingDown = false;
   async function shutdown() {
+    // Re-entrancy guard: a second SIGTERM/SIGINT during teardown must not
+    // run sandbox shutdown twice.
+    if (shuttingDown) return;
+    shuttingDown = true;
     console.info("Shutting down...");
     const stops = [...opts.slots.values()].map((slot) => slot.sandbox?.shutdown()).filter(Boolean);
     if (opts.pool) stops.push(opts.pool.shutdown());
@@ -172,14 +195,6 @@ async function main(): Promise<void> {
 
   process.on("SIGINT", () => void shutdown());
   process.on("SIGTERM", () => void shutdown());
-
-  process.on("unhandledRejection", (err) => {
-    console.error("Unhandled rejection:", err);
-  });
-  process.on("uncaughtException", (err) => {
-    console.error("Uncaught exception:", err);
-    process.exit(1);
-  });
 }
 
 main().catch((err: unknown) => {

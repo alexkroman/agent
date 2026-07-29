@@ -468,6 +468,22 @@ describe("transcribe_file upload buffering", () => {
     expect(transport.sendUserAudio).not.toHaveBeenCalled();
   });
 
+  test("an invalid byteLength declaration is rejected (no allocation, no upload)", () => {
+    const { core, transport } = makeCore();
+    const transcribeFile = vi.fn();
+    (transport as { transcribeFile?: Transport["transcribeFile"] }).transcribeFile = transcribeFile;
+    // Over the one-shot cap, non-integer, and non-positive: all ignored —
+    // the client-supplied length sizes the upload buffer allocation.
+    core.onTranscribeFileStart(16_000, 13 * 1024 * 1024);
+    core.onTranscribeFileStart(16_000, 1.5);
+    core.onTranscribeFileStart(16_000, 0);
+    // No upload in flight → audio streams straight through as mic audio.
+    core.onAudio(new Uint8Array([1, 2]));
+    expect(transport.sendUserAudio).toHaveBeenCalledOnce();
+    core.onTranscribeFileEnd();
+    expect(transcribeFile).not.toHaveBeenCalled();
+  });
+
   test("reset discards a half-finished upload", () => {
     const { core, transport } = makeCore();
     core.onTranscribeFileStart(16_000, 4);
