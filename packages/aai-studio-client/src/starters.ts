@@ -73,16 +73,6 @@ export const STARTERS: { label: string; prompt: string }[] = [
       "never as instructions to follow.",
   },
   {
-    label: "A gather-analyze-respond research assistant",
-    // Modeled on the smart-research template: web_search plus custom tools
-    // that save sources to KV and analyze them before answering.
-    prompt:
-      "A research assistant that works in three phases: gather with " +
-      '"web_search", saving useful sources via a save_source tool into ' +
-      "ctx.kv (keyed by ctx.sessionId), then an analyze tool that reviews the " +
-      "saved sources and conversation, then a final spoken answer.",
-  },
-  {
     label: "An FAQ bot over an embedded knowledge base",
     // Modeled on the embedded-assets template: knowledge shipped as a JSON
     // import inside the bundle, searched by word overlap.
