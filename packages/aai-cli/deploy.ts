@@ -7,6 +7,7 @@ import { runDeploy } from "./_deploy.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { fmtUrl, log } from "./_ui.ts";
+import { errorMessage } from "./_utils.ts";
 
 type DeployData = { slug: string; url: string };
 
@@ -27,14 +28,29 @@ export async function executeDeploy(opts: {
   const deployed = await runDeploy({
     url: serverUrl,
     bundle,
-    env: { ...env, ASSEMBLYAI_API_KEY: apiKey },
+    // The login key is a FLOOR, not an override: an ASSEMBLYAI_API_KEY the
+    // user declared in .env deliberately targets a different account and
+    // must win — matching the server's own defaultEnv merge semantics.
+    env: { ASSEMBLYAI_API_KEY: apiKey, ...env },
     ...(slug ? { slug } : {}),
     apiKey,
   });
 
-  await writeProjectConfig(cwd, { slug: deployed.slug, serverUrl });
-
   const agentUrl = `${serverUrl}/${deployed.slug}`;
+
+  // The deploy already succeeded server-side — a failure to record the slug
+  // must not read as a failed deploy (and must surface the slug loudly, or
+  // the next `aai deploy` would mint a fresh slug and orphan this agent).
+  try {
+    await writeProjectConfig(cwd, { slug: deployed.slug, serverUrl });
+  } catch (err) {
+    log.warn(
+      `Deployed as ${deployed.slug}, but couldn't save .aai/project.json: ${errorMessage(err)}\n` +
+        "  Write it manually so future deploys reuse this slug:\n" +
+        `  ${JSON.stringify({ slug: deployed.slug, serverUrl })}`,
+    );
+  }
+
   log.success(`Deployed ${fmtUrl(agentUrl)}`);
 
   return ok({ slug: deployed.slug, url: agentUrl });

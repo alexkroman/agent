@@ -86,11 +86,25 @@ export async function readJson(filePath: string): Promise<unknown> {
  * the same filesystem is atomic, so readers only ever see a complete file.
  * Two concurrent CLI processes can still lose each other's *updates*
  * (last rename wins) — acceptable for these small user-config files.
+ *
+ * `mode` restricts the file's permissions (the rename carries the temp
+ * file's mode to the destination, so an existing world-readable file is
+ * tightened on the next write). The parent directory is created 0o700 in
+ * that case so a fresh config dir never goes through a readable window.
  */
-export async function writeJson(filePath: string, data: unknown): Promise<void> {
-  await fs.mkdir(path.dirname(filePath), { recursive: true });
+export async function writeJson(
+  filePath: string,
+  data: unknown,
+  opts: { mode?: number } = {},
+): Promise<void> {
+  await fs.mkdir(path.dirname(filePath), {
+    recursive: true,
+    ...(opts.mode !== undefined ? { mode: 0o700 } : {}),
+  });
   const tmpPath = `${filePath}.${process.pid}.${Math.random().toString(36).slice(2)}.tmp`;
-  await fs.writeFile(tmpPath, `${JSON.stringify(data, null, 2)}\n`);
+  await fs.writeFile(tmpPath, `${JSON.stringify(data, null, 2)}\n`, {
+    ...(opts.mode !== undefined ? { mode: opts.mode } : {}),
+  });
   try {
     await fs.rename(tmpPath, filePath);
   } catch (err) {

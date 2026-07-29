@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
-import { runDelete } from "./_delete.ts";
+import { runDelete } from "./delete.ts";
 
 const deleteOpts = (fetch: typeof globalThis.fetch, overrides?: Record<string, unknown>) => ({
   url: "http://localhost:3000",
@@ -10,7 +10,7 @@ const deleteOpts = (fetch: typeof globalThis.fetch, overrides?: Record<string, u
   ...overrides,
 });
 
-describe("_delete", () => {
+describe("delete", () => {
   describe("successful delete", () => {
     test("resolves on 200 response", async () => {
       const mockFetch = vi

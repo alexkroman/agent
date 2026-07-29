@@ -11,10 +11,6 @@
     }
   },
   "exports": {
-    "./types": {
-      "@dev/source": "./types.ts",
-      "import": "./dist/types.mjs"
-    },
     "./client-bundler": {
       "@dev/source": "./client-bundler.ts",
       "import": "./dist/client-bundler.mjs"
@@ -42,15 +38,14 @@
     "@clack/prompts": "^1.7.0",
     "chokidar": "^5.0.0",
     "citty": "^0.2.2",
-    "consola": "^3.4.2",
-    "dotenv": "^17.4.2",
     "env-paths": "^4.0.0",
     "esbuild": "^0.28.1",
-    "execa": "^9.6.1",
+    "execa": "^10.0.0",
     "get-port": "^7.2.0",
     "giget": "^3.3.0",
     "ofetch": "^1.5.1",
     "p-debounce": "^5.1.0",
+    "picocolors": "^1.1.1",
     "vite": "^8.1.5",
     "zod": "^4.4.3"
   },

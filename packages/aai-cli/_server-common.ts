@@ -2,7 +2,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { parse as dotenvParse } from "dotenv";
+import { parseEnv } from "node:util";
 
 /**
  * Build the `ctx.env` record that agent tools will see at runtime.
@@ -28,7 +28,9 @@ export async function resolveServerEnv(
   if (cwd) {
     try {
       const content = await fs.readFile(path.join(cwd, ".env"), "utf-8");
-      fileEntries = dotenvParse(content);
+      // Node's built-in dotenv-syntax parser (quotes, comments, multiline) —
+      // replaced the `dotenv` package, whose only use was this one call.
+      fileEntries = parseEnv(content) as Record<string, string>;
     } catch {
       // No .env file — that's fine
     }

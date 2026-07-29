@@ -3,9 +3,9 @@ import { existsSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import * as p from "@clack/prompts";
-import { consola } from "consola";
 import envPaths from "env-paths";
 import { z } from "zod";
+import { CliError } from "./_output.ts";
 import { log, unwrapCancel } from "./_ui.ts";
 import { errorMessage, readJson, writeJson } from "./_utils.ts";
 
@@ -23,7 +23,6 @@ import { errorMessage, readJson, writeJson } from "./_utils.ts";
 const ProjectConfigSchema = z.object({
   slug: z.string(),
   serverUrl: z.string(),
-  sessionId: z.string().optional(),
 });
 
 /**
@@ -43,6 +42,11 @@ function legacyConfigDir(): string {
  * env-paths location while staying backward compatible: an existing config at
  * the legacy path keeps winning so already-authenticated users are not
  * silently logged out. Injectable for tests.
+ *
+ * `AAI_CONFIG_DIR` overrides everything — it exists so tests (and unusual
+ * setups) can redirect ALL global-config reads and writes away from the
+ * user's real config. The test suite's `approveServer` calls used to
+ * permanently pollute `~/.config/aai/config.json` with approved origins.
  */
 export function getConfigDir(
   dirs: { legacy: string; modern: string } = {
@@ -51,6 +55,8 @@ export function getConfigDir(
   },
   exists: (p: string) => boolean = existsSync,
 ): string {
+  const override = process.env.AAI_CONFIG_DIR?.trim();
+  if (override) return override;
   return exists(path.join(dirs.legacy, "config.json")) ? dirs.legacy : dirs.modern;
 }
 
@@ -73,10 +79,9 @@ export async function readProjectConfig(agentDir: string): Promise<ProjectConfig
   }
   if (data === null) return null;
   const parsed = ProjectConfigSchema.safeParse(data);
-  if (!parsed.success) {
-    consola.debug(`Failed to read project config from ${file}:`, parsed.error);
-    return null;
-  }
+  // Schema failure reads as "never deployed" (see the schema doc comment) —
+  // deliberately quiet, since the URL is trust-checked where it is used.
+  if (!parsed.success) return null;
   return parsed.data;
 }
 
@@ -134,7 +139,10 @@ export async function readGlobalConfig(configDir?: string): Promise<GlobalConfig
 }
 
 export async function writeGlobalConfig(configDir: string, data: GlobalConfig): Promise<void> {
-  await writeJson(path.join(configDir, "config.json"), data);
+  // config.json holds the plaintext API key — owner-only, like ~/.aws or
+  // ~/.npmrc. The mode rides the atomic-rename temp file, so an existing
+  // world-readable config from an older CLI is tightened on the next write.
+  await writeJson(path.join(configDir, "config.json"), data, { mode: 0o600 });
 }
 
 /**
@@ -162,6 +170,18 @@ export async function ensureApiKey(configDir?: string): Promise<string> {
   if (envKey) {
     await trySaveApiKey(dir, config, envKey);
     return envKey;
+  }
+
+  // Without a TTY there is nobody to answer the prompt — and worse, the
+  // hidden password prompt would consume piped stdin as keystrokes (e.g.
+  // eating the secret value in `echo "$SECRET" | aai secret put NAME --json`)
+  // and hang, or persist that stray input as the API key. Fail fast instead.
+  if (!process.stdin.isTTY) {
+    throw new CliError(
+      "no_api_key",
+      "No API key configured and no TTY to prompt for one.",
+      "Set the ASSEMBLYAI_API_KEY environment variable, or run `aai` interactively once to save a key.",
+    );
   }
 
   const apiKey = unwrapCancel(await p.password({ message: "Enter your AssemblyAI API key" }));

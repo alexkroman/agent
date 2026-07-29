@@ -147,6 +147,7 @@ describe("apiRequest", () => {
     const data = await apiRequest<{ slug: string }>("https://api.example.com/deploy", {
       apiKey: "my-key",
       action: "deploy",
+      retryDelay: 0,
       fetch,
     });
 

@@ -10,13 +10,13 @@ import fs from "node:fs/promises";
 import path from "node:path";
 import { afterAll, afterEach, beforeAll, describe, expect, test, vi } from "vitest";
 import { writeProjectConfig } from "./_config.ts";
-import { runDelete } from "./_delete.ts";
 import { runDeploy } from "./_deploy.ts";
 import { runInit } from "./_init.ts";
 import type { MockApi } from "./_mock-api.ts";
 import { startMockApi } from "./_mock-api.ts";
 import { makeBundle, silenced, withTempDir, writeFiles } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
+import { runDelete } from "./delete.ts";
 import { executeSecretList, executeSecretPut } from "./secret.ts";
 
 // Mock @clack/prompts to avoid interactive input in tests
@@ -62,19 +62,19 @@ afterAll(async () => {
 // ── Secrets: edge cases ──────────────────────────────────────────────────────
 
 describe("secrets edge cases", () => {
-  test("secret list with no secrets shows empty message", async () => {
+  test("secret list with no secrets returns an empty result", async () => {
     // Ensure no secrets in mock
     for (const key of Object.keys(api.secrets)) delete api.secrets[key];
 
+    let result: Awaited<ReturnType<typeof executeSecretList>> | undefined;
     await withProjectDir(
       silenced(async (dir) => {
-        await executeSecretList(dir, api.url);
+        result = await executeSecretList(dir, api.url);
       }),
     );
 
-    // The function should have made the GET request
-    const listReq = api.requests.find((r) => r.method === "GET");
-    expect(listReq).toBeDefined();
+    // Assert the behavior (an ok, empty list), not just that a GET happened.
+    expect(result).toEqual({ ok: true, data: { secrets: [] } });
   });
 
   test("secret put with empty value throws", async () => {

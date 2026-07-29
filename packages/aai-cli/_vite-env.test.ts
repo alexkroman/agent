@@ -1,6 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { afterEach, describe, expect, test } from "vitest";
+import { describe, expect, test } from "vitest";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
+
+/**
+ * These tests operate on a FAKE env object, never process.env: mutating and
+ * deleting the real NODE_ENV mid-suite is shared-global churn that other
+ * tests (and vitest itself) can observe, and the save/restore afterEach
+ * dance it required was easy to get subtly wrong.
+ */
+type FakeEnv = { NODE_ENV?: string };
 
 /** A promise that resolves only when `release()` is called. */
 function gate(): { promise: Promise<void>; release: () => void } {
@@ -12,42 +20,35 @@ function gate(): { promise: Promise<void>; release: () => void } {
 }
 
 /** Fake Vite build: mimics `build()` setting NODE_ENV, resolving on `done`. */
-function fakeViteBuild(done: Promise<void>): () => Promise<void> {
+function fakeViteBuild(env: FakeEnv, done: Promise<void>): () => Promise<void> {
   return async () => {
-    process.env.NODE_ENV = "production";
+    env.NODE_ENV = "production";
     await done;
   };
 }
 
-const originalNodeEnv = process.env.NODE_ENV;
-
-afterEach(() => {
-  if (originalNodeEnv === undefined) delete process.env.NODE_ENV;
-  else process.env.NODE_ENV = originalNodeEnv;
-});
-
 describe("withPreservedNodeEnv", () => {
   test("restores an unset NODE_ENV after a single build", async () => {
-    delete process.env.NODE_ENV;
-    await withPreservedNodeEnv(fakeViteBuild(Promise.resolve()));
-    expect(process.env.NODE_ENV).toBeUndefined();
+    const env: FakeEnv = {};
+    await withPreservedNodeEnv(fakeViteBuild(env, Promise.resolve()), env);
+    expect(env.NODE_ENV).toBeUndefined();
   });
 
   test("restores a pre-set NODE_ENV after a single build", async () => {
-    process.env.NODE_ENV = "development";
-    await withPreservedNodeEnv(fakeViteBuild(Promise.resolve()));
-    expect(process.env.NODE_ENV).toBe("development");
+    const env: FakeEnv = { NODE_ENV: "development" };
+    await withPreservedNodeEnv(fakeViteBuild(env, Promise.resolve()), env);
+    expect(env.NODE_ENV).toBe("development");
   });
 
   test("restores after failed build", async () => {
-    delete process.env.NODE_ENV;
+    const env: FakeEnv = {};
     await expect(
       withPreservedNodeEnv(async () => {
-        process.env.NODE_ENV = "production";
+        env.NODE_ENV = "production";
         throw new Error("build failed");
-      }),
+      }, env),
     ).rejects.toThrow("build failed");
-    expect(process.env.NODE_ENV).toBeUndefined();
+    expect(env.NODE_ENV).toBeUndefined();
   });
 
   // The regression this guards: two wrapped builds run in parallel
@@ -55,61 +56,61 @@ describe("withPreservedNodeEnv", () => {
   // snapshots the second entrant snapshots the "production" the first
   // build's Vite set, and its restore leaves NODE_ENV=production forever.
   test("two overlapping builds restore an unset NODE_ENV (worker finishes first)", async () => {
-    delete process.env.NODE_ENV;
+    const env: FakeEnv = {};
     const worker = gate();
     const client = gate();
 
-    const workerBuild = withPreservedNodeEnv(fakeViteBuild(worker.promise));
-    const clientBuild = withPreservedNodeEnv(fakeViteBuild(client.promise));
+    const workerBuild = withPreservedNodeEnv(fakeViteBuild(env, worker.promise), env);
+    const clientBuild = withPreservedNodeEnv(fakeViteBuild(env, client.promise), env);
 
     worker.release();
     await workerBuild;
     // Still inside the client build: NODE_ENV must stay as Vite set it so the
     // in-flight build keeps a consistent view.
-    expect(process.env.NODE_ENV).toBe("production");
+    expect(env.NODE_ENV).toBe("production");
 
     client.release();
     await clientBuild;
-    expect(process.env.NODE_ENV).toBeUndefined();
+    expect(env.NODE_ENV).toBeUndefined();
   });
 
   test("two overlapping builds restore an unset NODE_ENV (client finishes first)", async () => {
-    delete process.env.NODE_ENV;
+    const env: FakeEnv = {};
     const worker = gate();
     const client = gate();
 
-    const workerBuild = withPreservedNodeEnv(fakeViteBuild(worker.promise));
-    const clientBuild = withPreservedNodeEnv(fakeViteBuild(client.promise));
+    const workerBuild = withPreservedNodeEnv(fakeViteBuild(env, worker.promise), env);
+    const clientBuild = withPreservedNodeEnv(fakeViteBuild(env, client.promise), env);
 
     client.release();
     await clientBuild;
     worker.release();
     await workerBuild;
 
-    expect(process.env.NODE_ENV).toBeUndefined();
+    expect(env.NODE_ENV).toBeUndefined();
   });
 
   test("two overlapping builds restore a pre-set NODE_ENV", async () => {
-    process.env.NODE_ENV = "development";
+    const env: FakeEnv = { NODE_ENV: "development" };
     const worker = gate();
     const client = gate();
 
-    const workerBuild = withPreservedNodeEnv(fakeViteBuild(worker.promise));
-    const clientBuild = withPreservedNodeEnv(fakeViteBuild(client.promise));
+    const workerBuild = withPreservedNodeEnv(fakeViteBuild(env, worker.promise), env);
+    const clientBuild = withPreservedNodeEnv(fakeViteBuild(env, client.promise), env);
 
     worker.release();
     await workerBuild;
     client.release();
     await clientBuild;
 
-    expect(process.env.NODE_ENV).toBe("development");
+    expect(env.NODE_ENV).toBe("development");
   });
 
   test("sequential wrapped builds each restore independently", async () => {
-    delete process.env.NODE_ENV;
-    await withPreservedNodeEnv(fakeViteBuild(Promise.resolve()));
-    process.env.NODE_ENV = "test";
-    await withPreservedNodeEnv(fakeViteBuild(Promise.resolve()));
-    expect(process.env.NODE_ENV).toBe("test");
+    const env: FakeEnv = {};
+    await withPreservedNodeEnv(fakeViteBuild(env, Promise.resolve()), env);
+    env.NODE_ENV = "staging";
+    await withPreservedNodeEnv(fakeViteBuild(env, Promise.resolve()), env);
+    expect(env.NODE_ENV).toBe("staging");
   });
 });

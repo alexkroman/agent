@@ -37,6 +37,8 @@ function deployOpts(fetch: typeof globalThis.fetch, overrides?: Partial<DeployOp
     env: {},
     slug: "cool-cats-jump",
     apiKey: "test-key",
+    // No real sleeps between mock-fetch retries.
+    retryDelay: 0,
     fetch,
     ...overrides,
   };

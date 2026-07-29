@@ -37,20 +37,19 @@ function stripTrailingSlash(url: string): string {
   return url.replace(/\/+$/, "");
 }
 
-/** Hostnames that are always safe to target — the request never leaves the machine. */
-const LOOPBACK_HOSTNAMES = new Set(["localhost", "127.0.0.1", "::1", "[::1]"]);
-
 /**
- * Whether `origin` may receive a credential without prior user approval:
- * the shipped platform, or anything on this machine.
+ * Whether `origin` may receive a credential without prior user approval.
+ *
+ * Only the shipped platform qualifies. Loopback origins from
+ * `.aai/project.json` used to be implicitly trusted too, but that let a
+ * cloned repo steer a credentialed request (API key + `aai secret` values)
+ * to any process listening on a local port — the exact input class this
+ * trust model exists to gate. Dev mode still targets `DEFAULT_DEV_SERVER`
+ * before the project config is ever consulted, and `--server` approves a
+ * local origin like any other.
  */
 function isImplicitlyTrusted(origin: string): boolean {
-  if (origin === serverOrigin(DEFAULT_SERVER)) return true;
-  try {
-    return LOOPBACK_HOSTNAMES.has(new URL(origin).hostname);
-  } catch {
-    return false;
-  }
+  return origin === serverOrigin(DEFAULT_SERVER);
 }
 
 /**
@@ -117,11 +116,28 @@ export async function resolveDeployTarget(cwd: string, explicitServer?: string) 
   return { config, serverUrl, apiKey };
 }
 
+/**
+ * Slug shape accepted by the platform (kept in sync with `VALID_SLUG_RE` in
+ * aai-server's schemas.ts — the server package is private, so the pattern is
+ * duplicated here). Enforced before a slug is ever interpolated into a URL
+ * path: `.aai/project.json` is repo-controlled, so a hostile
+ * `"slug": "x/../admin"` must not steer a credentialed request to an
+ * arbitrary path on an approved origin.
+ */
+const VALID_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
+
 /** Like resolveDeployTarget, but requires an existing deployment (project config). */
 export async function getServerInfo(cwd: string, explicitServer?: string) {
   const { config, serverUrl, apiKey } = await resolveDeployTarget(cwd, explicitServer);
   if (!config) {
     throw new Error("No .aai/project.json found — run `aai deploy` first");
+  }
+  if (!VALID_SLUG_RE.test(config.slug)) {
+    throw new Error(
+      `Invalid slug in .aai/project.json: ${JSON.stringify(config.slug)}\n` +
+        "  Expected lowercase letters, digits, `-`, `_` (2-64 chars). " +
+        "Fix the file or run `aai deploy` to create a fresh deployment.",
+    );
   }
   return { serverUrl, slug: config.slug, apiKey };
 }

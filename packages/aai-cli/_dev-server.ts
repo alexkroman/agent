@@ -21,13 +21,14 @@ import { type FSWatcher, watch } from "chokidar";
 import getPort, { portNumbers } from "get-port";
 import pDebounce from "p-debounce";
 import type { ViteDevServer } from "vite";
-import { buildWorker, createWorkerEvaluator } from "./_bundler.ts";
+import { createWorkerEvaluator } from "./_bundler.ts";
 import { ensureApiKey } from "./_config.ts";
 import { fallbackHtmlPlugin } from "./_default-html.ts";
 import { createDevWorkerBuilder, isEsbuildBuildFailure } from "./_dev-bundler.ts";
 import { resolveServerEnv } from "./_server-common.ts";
 import { log } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
+import { buildWorker } from "./worker-bundler.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
@@ -193,6 +194,35 @@ export type DevServerOptions = {
 };
 
 /**
+ * Vite dev-server config for the client SPA. Extracted so the proxy wiring
+ * is unit-testable: `/websocket` MUST proxy with `ws: true` or `aai dev`
+ * with a `client.tsx` serves a page whose WebSocket never connects.
+ *
+ * `strictPort` because the reported URL is `http://localhost:<port>` —
+ * without it, Vite silently binds port+N when the port is busy and the
+ * printed/JSON-returned URL points at whatever else was listening.
+ */
+export function viteDevConfig(
+  cwd: string,
+  vitePort: number,
+  backendPort: number,
+): import("vite").InlineConfig {
+  const target = `http://localhost:${backendPort}`;
+  return {
+    root: cwd,
+    plugins: [fallbackHtmlPlugin(cwd)],
+    server: {
+      port: vitePort,
+      strictPort: true,
+      proxy: {
+        "/health": target,
+        "/websocket": { target, ws: true },
+      },
+    },
+  };
+}
+
+/**
  * Start the dev server for a directory-based agent.
  *
  * Returns a cleanup function to shut down the server and watchers.
@@ -294,18 +324,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
 
     if (hasClient) {
       const { createServer: createViteServer } = await import("vite");
-      const target = `http://localhost:${backendPort}`;
-      viteServer = await createViteServer({
-        root: cwd,
-        plugins: [fallbackHtmlPlugin(cwd)],
-        server: {
-          port: vitePort,
-          proxy: {
-            "/health": target,
-            "/websocket": { target, ws: true },
-          },
-        },
-      });
+      viteServer = await createViteServer(viteDevConfig(cwd, vitePort, backendPort));
       await viteServer.listen();
       // Post-listen socket errors would otherwise be an unhandled 'error'
       // event. (The backend AgentServer keeps its own 'error' listener from

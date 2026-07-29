@@ -7,9 +7,16 @@
  * use a fresh pnpm store-dir to avoid stale content-addressable cache hits.
  */
 import fs from "node:fs";
+import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { execaNode, execaSync, type ResultPromise } from "execa";
+
+// This file is ESM ("type": "module") — a bare `require.resolve` only worked
+// because vitest's runtime injects `require`; importing this from a plain
+// Node ESM context (a debug script reproducing an e2e flake) threw
+// `ReferenceError: require is not defined`.
+const require = createRequire(import.meta.url);
 
 export interface MockRegistry {
   /** Local registry URL (http://localhost:<port>) */
@@ -174,6 +181,25 @@ function patchPkgJson(originalPkg: string, pkgJsonPath: string, testVersion: str
   return `${JSON.stringify(pkg, null, 2)}\n`;
 }
 
+/**
+ * Crash-recovery sidecar for the in-place package.json patch below: the
+ * pristine file is copied to `package.json.e2e-backup` before patching, and
+ * an interrupted run (SIGKILL/OOM mid-publish, when `finally` never runs) is
+ * healed on the next run by restoring from the backup before re-patching.
+ */
+function backupPath(pkgJsonPath: string): string {
+  return `${pkgJsonPath}.e2e-backup`;
+}
+
+/** Restore package.json from a stale backup left by a killed run, if any. */
+function recoverFromStaleBackup(pkgJsonPath: string): void {
+  const backup = backupPath(pkgJsonPath);
+  if (fs.existsSync(backup)) {
+    fs.copyFileSync(backup, pkgJsonPath);
+    fs.rmSync(backup, { force: true });
+  }
+}
+
 function publishPackages(
   packagesDir: string,
   packageNames: string[],
@@ -184,9 +210,12 @@ function publishPackages(
   for (const pkgName of packageNames) {
     const pkgPath = path.join(packagesDir, pkgName);
     const pkgJsonPath = path.join(pkgPath, "package.json");
+    recoverFromStaleBackup(pkgJsonPath);
     const originalPkg = fs.readFileSync(pkgJsonPath, "utf-8");
 
-    // Temporarily set a unique version so pnpm never hits a stale cache
+    // Temporarily set a unique version so pnpm never hits a stale cache.
+    // The backup file survives a hard kill; `finally` handles the normal path.
+    fs.writeFileSync(backupPath(pkgJsonPath), originalPkg);
     fs.writeFileSync(pkgJsonPath, patchPkgJson(originalPkg, pkgJsonPath, testVersion));
 
     try {
@@ -199,6 +228,7 @@ function publishPackages(
       });
     } finally {
       fs.writeFileSync(pkgJsonPath, originalPkg);
+      fs.rmSync(backupPath(pkgJsonPath), { force: true });
     }
   }
 }

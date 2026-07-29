@@ -71,19 +71,42 @@ afterAll(async () => {
 
 // --- Pack + build: representative templates ---
 
+/**
+ * Network/proxy failure shapes from the mock registry's npmjs passthrough
+ * (verdaccio maps a failed upstream fetch to a plain 404, so
+ * ERR_PNPM_FETCH_* on a THIRD-PARTY package counts). A fetch failure naming
+ * our own scope is never a proxy flake — those packages live in verdaccio's
+ * local storage, so failing to resolve one means the published packages are
+ * actually broken.
+ */
+function isRegistryProxyFailure(err: unknown): boolean {
+  const msg =
+    err instanceof Error
+      ? `${err.message}\n${(err as { stderr?: string }).stderr ?? ""}\n${(err as { stdout?: string }).stdout ?? ""}`
+      : String(err);
+  if (/@alexkroman1/i.test(msg) && /404|Not Found|ERR_PNPM_FETCH/i.test(msg)) return false;
+  return /ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|ENOTFOUND|407|502|503|504|ERR_PNPM_FETCH|fetch failed|network/i.test(
+    msg,
+  );
+}
+
 describe("pack + build: template workflows", () => {
-  test.concurrent.each(templates)("template %s", async (template) => {
+  test.concurrent.for(templates)("template %s", async (template, ctx) => {
     const projectDir = path.join(tmpDir, template);
 
     // Init + install from mock registry + test + build
     aai(aaiBin, ["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
     try {
       installDeps(registry, projectDir);
-    } catch {
-      // Mock registry proxy to npmjs can fail in restricted environments
-      // (e.g. turbo CI with egress proxies). Skip rather than fail.
-      console.warn(`Skipping template ${template}: pnpm install failed (registry proxy issue)`);
-      return;
+    } catch (err) {
+      // The mock registry's proxy to npmjs can fail in restricted
+      // environments (e.g. turbo CI with egress proxies). Skip VISIBLY —
+      // a silent `return` made the whole suite a green no-op exactly where
+      // registry/exports regressions would surface — and only for failures
+      // that look like network/proxy trouble; a real dependency-resolution
+      // bug in the published packages must still fail.
+      if (!isRegistryProxyFailure(err)) throw err;
+      ctx.skip(`pnpm install failed (registry proxy issue): ${String(err).slice(0, 200)}`);
     }
     aai(aaiBin, ["test"], projectDir);
     aai(aaiBin, ["build", "--skip-tests"], projectDir);
