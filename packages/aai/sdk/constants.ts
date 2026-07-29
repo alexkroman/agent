@@ -310,6 +310,53 @@ export const FILE_UPLOAD_CHUNK_BYTES = 32 * 1024;
 export const MIC_BUFFER_SECONDS = 0.1;
 
 /**
+ * How much TTS audio the playback worklet buffers before a turn starts
+ * speaking. This is the client's whole cushion against uneven chunk arrival,
+ * so raising it trades time-to-first-audio for resilience. Tune it against the
+ * concealment counters the worklet reports on each turn's `stop` (a turn with
+ * `concealmentEvents: 0` never needed the cushion it was given).
+ */
+export const PLAYBACK_JITTER_MS = 400;
+
+/**
+ * How far ahead of real time the server may run when relaying TTS audio to a
+ * client. TTS synthesis outruns playback, so without a ceiling an entire reply
+ * lands in the socket buffer the moment the provider produces it: on a slow
+ * link that is a multi-second queue the server cannot see into, and the only
+ * limit is the {@link MAX_CLIENT_WS_BUFFERED_BYTES} disconnect.
+ *
+ * **Must stay above {@link PLAYBACK_JITTER_MS}.** The lead is the client's only
+ * source of cushion — pacing at exactly real time would leave the playback
+ * worklet unable to ever fill its jitter buffer, which is the failure mode of
+ * a producer-paced/consumer-unbuffered pairing.
+ */
+export const CLIENT_AUDIO_LEAD_MS = 1000;
+
+/**
+ * Refill target after an underrun, deliberately lower than
+ * {@link PLAYBACK_JITTER_MS}: mid-reply, waiting to rebuild the full cushion is
+ * itself a hole in the speech, so the buffer trades some resilience for a
+ * shorter gap. Without a refill step at all, one stall degrades the rest of the
+ * turn into a fragment per render quantum.
+ */
+export const PLAYBACK_REFILL_MS = 200;
+
+/**
+ * How long concealment extrapolates from already-played audio before it has
+ * decayed to silence. Covering a gap with the recent signal (rather than
+ * zeros) is what keeps a stall from sounding like a click; the fade keeps a
+ * long stall from buzzing a looped fragment indefinitely.
+ */
+export const PLAYBACK_CONCEAL_FADE_MS = 40;
+
+/**
+ * Gain at which concealment is treated as silence: the end point of the
+ * {@link PLAYBACK_CONCEAL_FADE_MS} fade, and the threshold that separates
+ * `silentConcealedSamples` from the concealed total.
+ */
+export const PLAYBACK_CONCEAL_FLOOR = 0.001;
+
+/**
  * Client-side backpressure threshold for outbound mic audio. When the
  * WebSocket's `bufferedAmount` exceeds this many bytes (~2s of 16 kHz PCM16),
  * mic frames are dropped instead of queued — for live voice, stale audio

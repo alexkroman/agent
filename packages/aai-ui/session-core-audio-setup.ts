@@ -88,6 +88,13 @@ export async function initAudioCapture(
           console.debug("[aai-ui] sendAudio dropped: connection closed");
         }
       },
+      // Underruns are otherwise completely silent: the session still reports
+      // "speaking" and done() still settles normally, so a reply that came
+      // out in fragments leaves no trace anywhere. Only turns that actually
+      // concealed something reach this callback.
+      onPlaybackStats: (stats) => {
+        console.warn("[aai-ui] playback concealed a gap in this turn", stats);
+      },
       // A worklet processor crash after setup: the audio path is dead even
       // though the socket is fine, so surface it instead of staying in a
       // healthy-looking listening/speaking state forever.

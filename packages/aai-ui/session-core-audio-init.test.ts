@@ -41,14 +41,14 @@ function makeFakeIO(done?: () => Promise<void>): FakeVoiceIO {
 const pendingInits: ((io: FakeVoiceIO) => void)[] = [];
 
 const createVoiceIOMock = vi.fn(
-  () =>
+  (_opts: unknown) =>
     new Promise<FakeVoiceIO>((resolve) => {
       pendingInits.push(resolve);
     }),
 );
 
 vi.mock("./audio.ts", () => ({
-  createVoiceIO: (_opts: unknown) => createVoiceIOMock(),
+  createVoiceIO: (opts: unknown) => createVoiceIOMock(opts),
 }));
 
 describe("initAudioCapture races", () => {
@@ -159,5 +159,52 @@ describe("initAudioCapture races", () => {
     resolveDone();
     await new Promise<void>((r) => setTimeout(r, 0));
     expect(core.getSnapshot().state).toBe("thinking");
+  });
+});
+
+describe("playback concealment reporting", () => {
+  let core: SessionCore;
+
+  beforeEach(() => {
+    resetLastSocket();
+    pendingInits.length = 0;
+    createVoiceIOMock.mockClear();
+    core = createSessionCore({
+      platformUrl: "ws://localhost:3000",
+      WebSocket: MockWebSocket as unknown as ConstructorType,
+    });
+  });
+
+  afterEach(() => {
+    core.disconnect();
+  });
+
+  it("warns when a turn's playback had to conceal a gap", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {
+      /* the warning is the assertion; keep it out of the test output */
+    });
+    try {
+      core.connect();
+      lastSocket?.simulateOpen();
+      lastSocket?.simulateMessage(makeConfig());
+      await vi.waitFor(() => expect(createVoiceIOMock).toHaveBeenCalledTimes(1));
+
+      const opts = createVoiceIOMock.mock.calls[0]?.[0] as {
+        onPlaybackStats?: (s: Record<string, number>) => void;
+      };
+      opts.onPlaybackStats?.({
+        concealedSamples: 960,
+        silentConcealedSamples: 0,
+        concealmentEvents: 3,
+        silentConcealmentEvents: 0,
+      });
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining("concealed"),
+        expect.objectContaining({ concealmentEvents: 3 }),
+      );
+    } finally {
+      warn.mockRestore();
+    }
   });
 });

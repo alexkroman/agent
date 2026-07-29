@@ -1,14 +1,41 @@
 // Playback worklet: receives raw PCM16 LE bytes, handles byte alignment,
-// converts to float32, and plays with a small jitter buffer.
+// converts to float32, and plays through a jitter buffer with hysteresis.
+//
+// The buffer has two states. It fills to `jitterSamples` before a turn starts
+// speaking, and on an underrun it returns to filling — to `refillSamples` this
+// time — rather than playing whatever fragment has arrived. Without that
+// re-arm the cushion is a one-shot budget: once spent, readPos chases writePos
+// for the rest of the turn and every quantum emits a few real samples padded
+// with silence, which is heard as stutter through every word rather than as
+// one pause. Gaps are covered by extrapolating from played audio (see
+// `coverGap`), and every covered sample is counted so a turn can report how
+// much of itself was concealed.
+
+import {
+  PLAYBACK_CONCEAL_FADE_MS,
+  PLAYBACK_CONCEAL_FLOOR,
+  PLAYBACK_JITTER_MS,
+  PLAYBACK_REFILL_MS,
+} from "../types.ts";
 
 const PlaybackProcessorWorklet = `
 class PlaybackProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
-    const rate = options.processorOptions?.sampleRate ?? 24000;
-    // Wait for ~400ms of audio before starting.
-    // If 'done' arrives first (short utterance), start immediately.
-    this.jitterSamples = Math.floor(rate * 0.4);
+    const opts = options.processorOptions || {};
+    const rate = opts.sampleRate ?? 24000;
+    // Fill target for the start of a turn. If 'done' arrives first (short
+    // utterance), start immediately instead of waiting for audio that is
+    // never coming.
+    this.jitterSamples = Math.floor((rate * (opts.jitterMs ?? ${PLAYBACK_JITTER_MS})) / 1000);
+    // Fill target after an underrun — see PLAYBACK_REFILL_MS.
+    this.refillSamples = Math.floor((rate * (opts.refillMs ?? ${PLAYBACK_REFILL_MS})) / 1000);
+    // Concealment source: a ring of the most recently played samples, looped
+    // under a decaying gain to cover a gap. Sized to the fade window, with a
+    // per-sample decay that reaches the floor exactly at its end.
+    this.concealCapacity = Math.max(1, Math.floor((rate * ${PLAYBACK_CONCEAL_FADE_MS}) / 1000));
+    this.concealBuf = new Float32Array(this.concealCapacity);
+    this.concealDecay = Math.exp(Math.log(${PLAYBACK_CONCEAL_FLOOR}) / this.concealCapacity);
     // Float32 ring buffer — 60s at the context sample rate. Allocated once for
     // the node's lifetime; per-turn state resets via resetTurn(). writePos and
     // readPos are absolute (monotonic) sample counts; the buffer is indexed
@@ -40,10 +67,31 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     this.interrupted = false;
     this.isDone = false;
     this.playing = false;
+    // Whether any real audio has been rendered this turn. Separates a turn's
+    // pre-roll (nothing to extrapolate from, and not a defect) from a
+    // mid-turn underrun.
+    this.hasPlayed = false;
+    this.fillTarget = this.jitterSamples;
     // Carry-over byte for split samples across chunks
     this.carry = null;
     this.writePos = 0;
     this.readPos = 0;
+    // Concealment ring state and the current fade position.
+    this.concealLen = 0;
+    this.concealWrite = 0;
+    this.concealPos = 0;
+    this.concealGain = 1;
+    // Episode flags, so a multi-quantum gap counts as one event.
+    this.concealing = false;
+    this.concealedSilence = false;
+    // Reported to the host on 'stop'. A fresh object per turn: the one just
+    // posted must not be mutated by the next turn.
+    this.stats = {
+      concealedSamples: 0,
+      silentConcealedSamples: 0,
+      concealmentEvents: 0,
+      silentConcealmentEvents: 0,
+    };
   }
 
   // End the current turn: notify the host and rearm for the next reply.
@@ -53,8 +101,74 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   // stop belongs to: interrupt-stops are dropped host-side (flush() already
   // settled that turn), so they can never resolve a later turn's done() early.
   stopTurn(reason) {
-    this.port.postMessage({ event: 'stop', reason });
+    this.port.postMessage({ event: 'stop', reason, stats: this.stats });
     this.resetTurn();
+  }
+
+  // Cover a quantum (from \`start\`) where real audio should have been.
+  //
+  // Before the turn's first samples there is nothing to extrapolate from, so
+  // the gap is plain silence and counted as nothing — WebRTC likewise only
+  // counts concealment once playout has begun. After that, loop the retained
+  // tail under a decaying gain: a hard zero-fill is a discontinuity mid-word,
+  // which is the click that makes a brief stall sound like breakage.
+  coverGap(out, start) {
+    if (!this.hasPlayed) {
+      out.fill(0, start);
+      return;
+    }
+    if (!this.concealing) {
+      this.concealing = true;
+      this.concealedSilence = false;
+      this.stats.concealmentEvents++;
+    }
+    const total = out.length - start;
+    const len = this.concealLen;
+    let silent = 0;
+    if (len === 0) {
+      out.fill(0, start);
+      silent = total;
+    } else {
+      let g = this.concealGain;
+      for (let i = start; i < out.length; i++) {
+        if (g < ${PLAYBACK_CONCEAL_FLOOR}) {
+          // The fade has run out: keep counting the gap, but stop looping a
+          // fragment that is now inaudible anyway.
+          out[i] = 0;
+          silent++;
+          continue;
+        }
+        out[i] = this.concealBuf[this.concealPos] * g;
+        this.concealPos = this.concealPos + 1 === len ? 0 : this.concealPos + 1;
+        g *= this.concealDecay;
+      }
+      this.concealGain = g;
+    }
+    this.stats.concealedSamples += total;
+    if (silent > 0) {
+      this.stats.silentConcealedSamples += silent;
+      if (!this.concealedSilence) {
+        this.concealedSilence = true;
+        this.stats.silentConcealmentEvents++;
+      }
+    }
+  }
+
+  // Retain the tail of a rendered quantum as the next gap's concealment
+  // source, and close any episode the real audio just ended.
+  rememberTail(out, n) {
+    const cap = this.concealCapacity;
+    const take = Math.min(n, cap);
+    for (let i = n - take; i < n; i++) {
+      this.concealBuf[this.concealWrite] = out[i];
+      this.concealWrite = this.concealWrite + 1 === cap ? 0 : this.concealWrite + 1;
+    }
+    this.concealLen = Math.min(cap, this.concealLen + take);
+    // Read the loop oldest-first; once the ring is full the write cursor is
+    // the oldest retained sample.
+    this.concealPos = this.concealLen === cap ? this.concealWrite : 0;
+    this.concealing = false;
+    this.concealGain = 1;
   }
 
   ingestBytes(uint8) {
@@ -124,14 +238,27 @@ class PlaybackProcessor extends AudioWorkletProcessor {
 
     const avail = this.writePos - this.readPos;
 
-    // Wait for jitter buffer to fill, unless done (short utterance)
+    // Filling: wait for the target. 'done' short-circuits it — what is
+    // buffered is all there will be, so there is nothing left to wait for.
     if (!this.playing) {
-      if (avail >= this.jitterSamples || this.isDone) {
+      if (avail >= this.fillTarget || this.isDone) {
         this.playing = true;
       } else {
-        out.fill(0);
+        this.coverGap(out, 0);
         return true;
       }
+    }
+
+    // Underrun: this quantum cannot be filled and more audio is still coming.
+    // Go back to filling (at the refill target) and cover the gap, leaving
+    // readPos untouched — the fragment stays buffered and plays intact once
+    // the buffer recovers, instead of being dribbled out a few samples at a
+    // time for the rest of the turn.
+    if (avail < out.length && !this.isDone) {
+      this.playing = false;
+      this.fillTarget = this.refillSamples;
+      this.coverGap(out, 0);
+      return true;
     }
 
     if (avail > 0) {
@@ -142,11 +269,16 @@ class PlaybackProcessor extends AudioWorkletProcessor {
       out.set(this.samples.subarray(start, start + first), 0);
       if (n > first) out.set(this.samples.subarray(0, n - first), first);
       this.readPos += n;
+      // Only reachable with n < out.length on the turn's final partial
+      // quantum (the underrun branch above catches every other case).
       out.fill(0, n);
+      this.hasPlayed = true;
+      this.rememberTail(out, n);
       return true;
     }
 
-    // No data: output silence, end the turn only when done
+    // Drained and done: end the turn. Not reachable mid-turn — an empty
+    // buffer with audio still coming is the underrun branch above.
     out.fill(0);
     if (this.isDone) {
       this.stopTurn('done');

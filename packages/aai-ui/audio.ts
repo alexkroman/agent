@@ -53,6 +53,30 @@ export async function decodeAudioToPcm16(
   return pcm;
 }
 
+/**
+ * How much of one turn's playback was covered by concealment rather than
+ * received audio — the playback worklet's underrun report, in the shape
+ * WebRTC's `inbound-rtp` audio stats use, so the numbers mean the same thing
+ * here as in a `getStats()` dump.
+ *
+ * A turn with `concealmentEvents: 0` never needed its jitter buffer; a turn
+ * with a high `silentConcealedSamples` share starved for longer than
+ * concealment can plausibly cover, which is a bandwidth problem rather than a
+ * buffer-tuning one.
+ *
+ * @public
+ */
+export type PlaybackStats = {
+  /** Samples emitted to cover a gap, including the silent ones. */
+  concealedSamples: number;
+  /** The subset of {@link PlaybackStats.concealedSamples} that were silence. */
+  silentConcealedSamples: number;
+  /** Distinct underrun episodes, however many render quanta each spanned. */
+  concealmentEvents: number;
+  /** Episodes that lasted long enough to decay to silence. */
+  silentConcealmentEvents: number;
+};
+
 /** Configuration for creating a {@link VoiceIO} instance. */
 export type VoiceIOOptions = {
   /** Sample rate in Hz expected by the STT engine (e.g. 16000). */
@@ -71,6 +95,11 @@ export type VoiceIOOptions = {
    * transition out of listening/speaking instead of looking healthy forever.
    */
   onError?: ((err: Error) => void) | undefined;
+  /**
+   * Called at the end of any turn whose playback had to conceal a gap. Never
+   * called for a clean turn, so it can be wired straight to a warning.
+   */
+  onPlaybackStats?: ((stats: PlaybackStats) => void) | undefined;
 };
 
 /**
@@ -111,6 +140,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     playbackWorkletSrc,
     onMicData,
     onError,
+    onPlaybackStats,
   } = opts;
 
   // Use TTS rate for the context — playback fidelity is more perceptible.
@@ -208,6 +238,11 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     node.connect(ctx.destination);
     node.port.onmessage = (e: MessageEvent) => {
       if (e.data.event === "stop") {
+        // Report before the interrupt-drop below: concealment that happened
+        // before a barge-in is real playback trouble, and dropping the stop
+        // must not drop the measurement with it.
+        const stats = e.data.stats as PlaybackStats | undefined;
+        if (stats && stats.concealedSamples > 0) onPlaybackStats?.(stats);
         // An interrupt's stop belongs to a turn flush() already settled —
         // dropping it here (rather than flagging "the next stop is stale")
         // means it can never swallow a real drain-stop that was already in

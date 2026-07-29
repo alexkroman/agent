@@ -44,7 +44,7 @@ describe("playback-processor worklet", () => {
     expect(Array.from(out)).toEqual([0.5, -1, 0.25, 0]);
     // Turn ends on the next render once the buffer has drained.
     render(w, 4);
-    expect(w.posted).toContainEqual({ event: "stop", reason: "done" });
+    expect(w.posted).toContainEqual(expect.objectContaining({ event: "stop", reason: "done" }));
   });
 
   test("odd byte offset (DataView path) produces identical output", () => {
@@ -121,6 +121,99 @@ describe("playback-processor worklet", () => {
     expect(Array.from(out)).toEqual([0, 0, 0, 0]);
     // The reason tag is what lets the host drop interrupt-stops instead of
     // letting them settle a later turn's done().
-    expect(w.posted).toContainEqual({ event: "stop", reason: "interrupt" });
+    expect(w.posted).toContainEqual(
+      expect.objectContaining({ event: "stop", reason: "interrupt" }),
+    );
+  });
+});
+
+/** PCM16 integer -> the float the processor renders. */
+const f = (v: number): number => v / 0x80_00;
+
+/** `count` distinct ascending PCM values starting at `from`. */
+const seq = (from: number, count: number): number[] =>
+  Array.from({ length: count }, (_, i) => from + i);
+
+type StopMessage = { event: string; reason: string; stats: Record<string, number> };
+
+/** The turn-ending message, which carries that turn's concealment counters. */
+const lastStop = (w: WorkletHarness): StopMessage => w.posted.at(-1) as StopMessage;
+
+describe("playback-processor underrun handling", () => {
+  // A 1 kHz context makes the fill targets 20 samples instead of the 9600 a
+  // realistic 24 kHz/400ms pairing needs, so a starve is reachable in-test.
+  const tuned = (): WorkletHarness =>
+    instantiateWorklet(playbackProcessorSource, {
+      sampleRate: 1000,
+      jitterMs: 20,
+      refillMs: 20,
+    });
+
+  test("re-enters buffering after an underrun instead of playing fragments", () => {
+    const w = tuned();
+    writePcm(w, seq(1, 20));
+    expect(Array.from(render(w, 20))).toEqual(seq(1, 20).map(f));
+
+    // The buffer is empty and the turn is not done: this quantum starves.
+    render(w, 4);
+
+    // A write below the refill target must not resume playback...
+    writePcm(w, seq(21, 5));
+    const early = Array.from(render(w, 5));
+    const pending = new Set(seq(21, 5).map(f));
+    expect(early.some((v) => pending.has(v))).toBe(false);
+
+    // ...and when the target is finally met, playback resumes where it left
+    // off: an underrun must never consume or reorder buffered audio.
+    writePcm(w, seq(26, 15));
+    expect(Array.from(render(w, 20))).toEqual(seq(21, 20).map(f));
+  });
+
+  test("conceals an underrun with the tail of played audio instead of hard silence", () => {
+    const w = tuned();
+    writePcm(w, new Array(20).fill(0x40_00));
+    render(w, 20);
+
+    const starved = Array.from(render(w, 4));
+    expect(starved.every((v) => v !== 0)).toBe(true);
+    // Concealment extrapolates from what played; it never gets louder.
+    expect(Math.max(...starved.map(Math.abs))).toBeLessThanOrEqual(f(0x40_00));
+  });
+
+  test("reports concealment counters with the turn's stop message", () => {
+    const w = tuned();
+    writePcm(w, seq(1, 20));
+    render(w, 20);
+    render(w, 4); // one starve episode, 4 samples covered
+
+    w.sendMessage({ event: "done" });
+    render(w, 4); // drained + done -> turn ends
+
+    const stop = lastStop(w);
+    expect(stop.event).toBe("stop");
+    const { stats } = stop;
+    expect(stats.concealmentEvents).toBe(1);
+    expect(stats.concealedSamples).toBe(4);
+  });
+
+  test("a long underrun fades to silence and counts it as silent concealment", () => {
+    const w = tuned();
+    writePcm(w, new Array(20).fill(0x40_00));
+    render(w, 20);
+
+    // Starve well past the fade window.
+    for (let i = 0; i < 60; i++) render(w, 20);
+    expect(Array.from(render(w, 20))).toEqual(new Array(20).fill(0));
+
+    w.sendMessage({ event: "done" });
+    render(w, 4);
+
+    const stop = lastStop(w);
+    expect(stop.event).toBe("stop");
+    const { stats } = stop;
+    expect(stats.silentConcealmentEvents).toBe(1);
+    expect(stats.silentConcealedSamples).toBeGreaterThan(0);
+    // Silent samples are a subset of concealed samples (WebRTC's semantics).
+    expect(stats.silentConcealedSamples).toBeLessThan(stats.concealedSamples);
   });
 });

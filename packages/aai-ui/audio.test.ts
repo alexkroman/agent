@@ -7,7 +7,7 @@ import {
   MockAudioContext,
   voiceOpts,
 } from "./_react-test-utils.ts";
-import { createVoiceIO, decodeAudioToPcm16 } from "./audio.ts";
+import { createVoiceIO, decodeAudioToPcm16, type PlaybackStats } from "./audio.ts";
 
 describe("decodeAudioToPcm16", () => {
   test("decodes, clamps, and converts samples to PCM16", async () => {
@@ -213,6 +213,73 @@ describe("createVoiceIO", () => {
     });
     playNode.port.simulateMessage({ event: "stop" });
     await vi.waitFor(() => expect(resolved).toBe(true));
+    await io.close();
+  });
+
+  test("reports a turn's concealment stats to the caller", async () => {
+    const seen: PlaybackStats[] = [];
+    const io = await createVoiceIO(voiceOpts({ onPlaybackStats: (s) => seen.push(s) }));
+    // The playback node is created lazily on first enqueue.
+    io.enqueue(new Int16Array([1, 2, 3]).buffer);
+    const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
+
+    const stats: PlaybackStats = {
+      concealedSamples: 480,
+      silentConcealedSamples: 120,
+      concealmentEvents: 2,
+      silentConcealmentEvents: 1,
+    };
+    playNode.port.simulateMessage({ event: "stop", reason: "done", stats });
+
+    expect(seen).toEqual([stats]);
+    await io.close();
+  });
+
+  test("does not report stats for a turn that concealed nothing", async () => {
+    const seen: PlaybackStats[] = [];
+    const io = await createVoiceIO(voiceOpts({ onPlaybackStats: (s) => seen.push(s) }));
+    // The playback node is created lazily on first enqueue.
+    io.enqueue(new Int16Array([1, 2, 3]).buffer);
+    const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
+
+    playNode.port.simulateMessage({
+      event: "stop",
+      reason: "done",
+      stats: {
+        concealedSamples: 0,
+        silentConcealedSamples: 0,
+        concealmentEvents: 0,
+        silentConcealmentEvents: 0,
+      },
+    });
+
+    expect(seen).toEqual([]);
+    await io.close();
+  });
+
+  test("reports stats from an interrupted turn, whose stop it otherwise drops", async () => {
+    const seen: PlaybackStats[] = [];
+    const io = await createVoiceIO(voiceOpts({ onPlaybackStats: (s) => seen.push(s) }));
+    // The playback node is created lazily on first enqueue.
+    io.enqueue(new Int16Array([1, 2, 3]).buffer);
+    const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
+
+    // Concealment before a barge-in is real playback trouble; the stop itself
+    // is dropped (it belongs to a turn flush() already settled) but the
+    // measurement must not be dropped with it.
+    playNode.port.simulateMessage({
+      event: "stop",
+      reason: "interrupt",
+      stats: {
+        concealedSamples: 240,
+        silentConcealedSamples: 0,
+        concealmentEvents: 1,
+        silentConcealmentEvents: 0,
+      },
+    });
+
+    expect(seen).toHaveLength(1);
+    expect(seen[0]?.concealedSamples).toBe(240);
     await io.close();
   });
 
