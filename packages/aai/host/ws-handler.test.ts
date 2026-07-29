@@ -332,6 +332,62 @@ describe("wireSessionSocket", () => {
     expect(core.onCancel).toHaveBeenCalledOnce();
   });
 
+  test("pre-ready binary frames are byte-budgeted, not capped at the JSON message count", async () => {
+    const startGate = Promise.withResolvers<void>();
+    const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
+    const ws = openSocket();
+    const logger = makeLogger();
+
+    wireSessionSocket(ws, {
+      sessions: new Map(),
+      createSession: () => core,
+      readyConfig: defaultConfig,
+      logger,
+    });
+
+    // Far more binary frames than the JSON count cap (100) — a whole file
+    // upload arriving before session.start() resolves must survive intact.
+    const frames = 300;
+    for (let i = 0; i < frames; i++) {
+      simulateBinaryFrame(ws, new Uint8Array(1024));
+    }
+    expect(logger.warn).not.toHaveBeenCalled();
+
+    startGate.resolve();
+    await waitForSessionReady(logger);
+    expect(core.onAudio).toHaveBeenCalledTimes(frames);
+  });
+
+  test("pre-ready binary frames past the byte budget are dropped with a warning", async () => {
+    const startGate = Promise.withResolvers<void>();
+    const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
+    const ws = openSocket();
+    const logger = makeLogger();
+
+    wireSessionSocket(ws, {
+      sessions: new Map(),
+      createSession: () => core,
+      readyConfig: defaultConfig,
+      logger,
+    });
+
+    // Budget is MAX_SYNC_AUDIO_BYTES + MAX_WS_PAYLOAD_BYTES = 13 MiB; fill it
+    // with 1 MiB frames, then one more must be dropped (and logged).
+    for (let i = 0; i < 13; i++) {
+      simulateBinaryFrame(ws, new Uint8Array(1024 * 1024));
+    }
+    expect(logger.warn).not.toHaveBeenCalled();
+    simulateBinaryFrame(ws, new Uint8Array(1024 * 1024));
+    expect(logger.warn).toHaveBeenCalledWith(
+      "ws: pre-ready message buffer full; dropping frame",
+      expect.any(Object),
+    );
+
+    startGate.resolve();
+    await waitForSessionReady(logger);
+    expect(core.onAudio).toHaveBeenCalledTimes(13);
+  });
+
   test("messages before session is created (no open yet) are ignored", () => {
     const ws = openSocket(MockWebSocket.CONNECTING);
 

@@ -58,6 +58,25 @@ describe("TextControls", () => {
     expect(sendAudioFile).toHaveBeenCalledWith(file);
   });
 
+  test("record is disabled while an upload is transcribing", async () => {
+    const { session } = renderWithSession(<TextControls />, {
+      state: "listening",
+      audioOut: false,
+    });
+    const uploadGate = Promise.withResolvers<void>();
+    vi.spyOn(session, "sendAudioFile").mockImplementation(() => uploadGate.promise);
+    const input = screen.getByTestId("upload-input") as HTMLInputElement;
+    fireEvent.change(input, {
+      target: { files: [new File(["x"], "x.wav", { type: "audio/wav" })] },
+    });
+    // Mid-upload: the mic must stay off so streams can't interleave.
+    expect(screen.getByTestId("record-button")).toHaveProperty("disabled", true);
+    uploadGate.resolve();
+    await vi.waitFor(() => {
+      expect(screen.getByTestId("record-button")).toHaveProperty("disabled", false);
+    });
+  });
+
   test("a failed upload surfaces its error message", async () => {
     const { session } = renderWithSession(<TextControls />, {
       state: "listening",

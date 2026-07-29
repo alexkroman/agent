@@ -11,6 +11,8 @@ import {
   LOG_PREVIEW_CHARS,
   MAX_CLIENT_WS_BUFFERED_BYTES,
   MAX_MESSAGE_BUFFER_SIZE,
+  MAX_SYNC_AUDIO_BYTES,
+  MAX_WS_PAYLOAD_BYTES,
   WS_OPEN,
 } from "../sdk/constants.ts";
 import {
@@ -207,6 +209,35 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
    *  preventing audio/frames from being dispatched to a half-initialized session. */
   let sessionReady = false;
   let messageBuffer: { data: unknown }[] | null = [];
+  /** Binary bytes currently held in `messageBuffer` (budgeted separately from
+   *  the message-count cap so a whole file upload fits — see bufferMessage). */
+  let bufferedBinaryBytes = 0;
+  /** JSON (non-binary) messages currently held in `messageBuffer`. */
+  let bufferedJsonCount = 0;
+
+  /**
+   * Buffer one pre-ready message. Binary frames budget by bytes (a complete
+   * one-shot upload — up to MAX_SYNC_AUDIO_BYTES plus mic frames — must fit,
+   * or a dropped frame/`transcribe_file_end` breaks the upload framing and
+   * leaves the session's upload buffer absorbing mic audio); JSON messages
+   * keep the small count cap. Drops are logged — silent loss here cost a
+   * long debug once.
+   */
+  function bufferMessage(event: { data: unknown }): void {
+    if (!messageBuffer) return;
+    const size = event.data instanceof Uint8Array ? event.data.byteLength : 0;
+    const overBudget =
+      size > 0
+        ? bufferedBinaryBytes + size > MAX_SYNC_AUDIO_BYTES + MAX_WS_PAYLOAD_BYTES
+        : bufferedJsonCount >= MAX_MESSAGE_BUFFER_SIZE;
+    if (overBudget) {
+      log.warn("ws: pre-ready message buffer full; dropping frame", { sid });
+      return;
+    }
+    if (size > 0) bufferedBinaryBytes += size;
+    else bufferedJsonCount++;
+    messageBuffer.push(event);
+  }
 
   function drainBuffer(): void {
     if (!(session && messageBuffer)) return;
@@ -297,9 +328,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     // Buffer messages until session.start() completes to avoid dispatching
     // to a session whose transport connection isn't established yet.
     if (!sessionReady) {
-      if (messageBuffer && messageBuffer.length < MAX_MESSAGE_BUFFER_SIZE) {
-        messageBuffer.push(event);
-      }
+      bufferMessage(event);
       return;
     }
     dispatchMessage(event.data, session, log, sid);

@@ -58,7 +58,7 @@ export function TextControls({ className }: { className?: string | undefined }) 
         <Button
           variant={recording ? "default" : "secondary"}
           onClick={toggleRecording}
-          disabled={!connected}
+          disabled={!connected || uploading}
           aria-pressed={recording}
           style={recording ? { background: ERROR_COLOR } : undefined}
           data-testid="record-button"

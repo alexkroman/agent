@@ -443,6 +443,23 @@ describe("transcribe_file upload buffering", () => {
     expect([...pcm]).toEqual([1, 2]);
   });
 
+  test("a fully-received upload finalizes without waiting for the end frame", () => {
+    const { core, transport } = makeCore();
+    const transcribeFile = vi.fn();
+    (transport as { transcribeFile?: Transport["transcribeFile"] }).transcribeFile = transcribeFile;
+    core.onTranscribeFileStart(16_000, 4);
+    core.onAudio(new Uint8Array([1, 2, 3, 4]));
+    // Declared byteLength fulfilled — the clip is handed off immediately, so a
+    // dropped end frame can't leave the session absorbing mic audio forever.
+    expect(transcribeFile).toHaveBeenCalledOnce();
+    // The (now redundant) end frame is a no-op, not a second transcription.
+    core.onTranscribeFileEnd();
+    expect(transcribeFile).toHaveBeenCalledOnce();
+    // Live audio flows again.
+    core.onAudio(new Uint8Array([9]));
+    expect(transport.sendUserAudio).toHaveBeenCalledOnce();
+  });
+
   test("an end without a start (or an empty upload) is a no-op", () => {
     const { core, transport } = makeCore();
     core.onTranscribeFileEnd();

@@ -30,7 +30,7 @@ export type TransportCallbacks = {
    * `tool_call_done` event itself after dispatching the tool.
    */
   onToolCallDone?(callId: string, result: string): void;
-  onError(code: SessionErrorCode, message: string): void;
+  onError(code: SessionErrorCode, message: string, opts?: { fatal?: boolean }): void;
   onSpeechStarted(): void;
   onSpeechStopped(): void;
   onSessionReady?(providerSessionId: string): void;

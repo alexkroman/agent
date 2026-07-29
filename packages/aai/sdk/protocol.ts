@@ -8,7 +8,7 @@
 import { z } from "zod";
 
 import { ToolSchemaSchema } from "./_internal-types.ts";
-import { MAX_SYNC_AUDIO_BYTES, MAX_TOOL_RESULT_CHARS } from "./constants.ts";
+import { MAX_AUDIO_SAMPLE_RATE, MAX_SYNC_AUDIO_BYTES, MAX_TOOL_RESULT_CHARS } from "./constants.ts";
 
 /**
  * Audio codec identifier used in the wire protocol.
@@ -167,7 +167,18 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   ev("cancelled"),
   ev("reset"),
   ev("idle_timeout"),
-  z.object({ type: z.literal("error"), code: SessionErrorCodeSchema, message: z.string() }),
+  z.object({
+    type: z.literal("error"),
+    code: SessionErrorCodeSchema,
+    message: z.string(),
+    /**
+     * False for turn-level errors the session survives (e.g. a failed
+     * one-shot transcription): the client should surface the message but
+     * keep the session interactive. Absent means fatal — the historical
+     * semantics, where an error always followed a session teardown.
+     */
+    fatal: z.boolean().optional(),
+  }),
   z.object({
     type: z.literal("custom_event"),
     event: z.string().min(1),
@@ -259,7 +270,10 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
    */
   z.object({
     type: z.literal("transcribe_file_start"),
-    sampleRate: z.number().int().positive(),
+    // Capped: the rate feeds server-side padding allocations
+    // (withTrailingSilence), so an unbounded client value would be an
+    // allocation-size lever. 192 kHz is beyond any real capture rate.
+    sampleRate: z.number().int().positive().max(MAX_AUDIO_SAMPLE_RATE),
     byteLength: z
       .number()
       .int()

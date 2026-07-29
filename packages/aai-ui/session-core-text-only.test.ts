@@ -89,6 +89,47 @@ describe("createSessionCore (text-only)", () => {
     await expect(core.sendAudioFile(new Blob(["x"]))).rejects.toThrow(/not connected/);
   });
 
+  it("sendAudioFile rejects in voice sessions with a mode-specific message", async () => {
+    core.connect();
+    lastSocket?.simulateOpen();
+    lastSocket?.simulateMessage(makeConfig()); // voice config: audioOut stays true
+    await expect(core.sendAudioFile(new Blob(["x"]))).rejects.toThrow(/text-only sessions/);
+  });
+
+  it("a non-fatal error shows a banner but keeps the session usable", () => {
+    core.start(); // sets running — the point is that a non-fatal error leaves it set
+    lastSocket?.simulateOpen();
+    lastSocket?.simulateMessage(textOnlyConfig());
+    lastSocket?.simulateMessage(
+      JSON.stringify({
+        type: "error",
+        code: "stt",
+        message: "Sync transcription failed",
+        fatal: false,
+      }),
+    );
+    const snap = core.getSnapshot();
+    expect(snap.error?.message).toContain("Sync transcription failed");
+    // The turn failed, not the session: still listening, still running.
+    expect(snap.state).toBe("listening");
+    expect(snap.running).toBe(true);
+    // Any later activity clears the stale banner.
+    lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "hi" }));
+    expect(core.getSnapshot().error).toBe(null);
+  });
+
+  it("an error without the fatal flag still ends the session (historical semantics)", () => {
+    core.connect();
+    lastSocket?.simulateOpen();
+    lastSocket?.simulateMessage(textOnlyConfig());
+    lastSocket?.simulateMessage(
+      JSON.stringify({ type: "error", code: "connection", message: "provider gone" }),
+    );
+    const snap = core.getSnapshot();
+    expect(snap.state).toBe("error");
+    expect(snap.running).toBe(false);
+  });
+
   it("disconnect resets recording", () => {
     core.connect();
     lastSocket?.simulateOpen();

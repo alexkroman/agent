@@ -54,6 +54,7 @@ exports[`protocol schema shapes > ClientEventSchema option shapes 1`] = `
   ],
   "error": [
     "code",
+    "fatal",
     "message",
     "type",
   ],
@@ -185,6 +186,7 @@ exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
   ],
   "error": [
     "code",
+    "fatal",
     "message",
     "type",
   ],

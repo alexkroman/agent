@@ -115,8 +115,10 @@ export type SessionCore = {
   /**
    * Decode an audio file (any format the browser can decode), resample it to
    * the session's STT rate, and stream it to the server for transcription.
-   * Resolves once the audio has been handed to the socket. Rejects when no
-   * session is connected or the file cannot be decoded.
+   * Text-only sessions (`tts: none()`) only — voice sessions stream the
+   * microphone instead and reject. Also rejects when no session is connected,
+   * the mic is recording, another upload is in flight, or the file cannot be
+   * decoded. Resolves once the audio has been handed to the socket.
    */
   sendAudioFile(file: Blob): Promise<void>;
   /** Alias for `disconnect` for use with `using`. */

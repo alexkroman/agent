@@ -195,6 +195,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     env: providerEnv,
     s2sConfig,
     pipelineProviders,
+    fetch: opts.fetch,
     createWebSocket,
     createOpenaiRealtimeWebSocket,
     logger,
@@ -279,7 +280,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
               sessionOpts.client.event({ type: "tool_call_done", toolCallId: id, result }),
           }
         : {}),
-      onError: (code, message) => bindCore().onError(code, message),
+      onError: (code, message, errOpts) => bindCore().onError(code, message, errOpts),
       onSpeechStarted: () => bindCore().onSpeechStarted(),
       onSpeechStopped: () => bindCore().onSpeechStopped(),
     };

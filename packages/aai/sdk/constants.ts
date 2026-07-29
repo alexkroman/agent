@@ -203,6 +203,13 @@ export const MAX_SYNC_AUDIO_BYTES = 12 * 1024 * 1024;
 export const FILE_UPLOAD_CHUNK_BYTES = 32 * 1024;
 
 /**
+ * Highest client-declarable audio sample rate (Hz). Bounds the
+ * `transcribe_file_start` schema — the declared rate sizes server-side
+ * silence-padding allocations, so it must not be an unbounded lever.
+ */
+export const MAX_AUDIO_SAMPLE_RATE = 192_000;
+
+/**
  * Cap on unsent bytes buffered in a client session WebSocket before the
  * client is treated as stalled and the connection is closed. TTS synthesis
  * outruns real-time playback, so a slow or wedged client link would otherwise

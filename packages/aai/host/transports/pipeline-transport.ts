@@ -12,14 +12,13 @@ import {
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
   DEFAULT_SILENCE_PROMPT,
   DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
-  FILE_UPLOAD_CHUNK_BYTES,
   MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
 } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
-import type { SttError, SttOpener, TtsError } from "../../sdk/providers.ts";
+import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
 import { errorMessage } from "../../sdk/utils.ts";
-import { bytesToPcm16, pcm16ToBytes, withTrailingSilence } from "../_pcm.ts";
+import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createEndpointSettler } from "./pipeline-endpointing.ts";
 import { createPipelineHistory, persistInterruptedTurn } from "./pipeline-history.ts";
@@ -31,6 +30,7 @@ import {
   flushTtsAndWait,
   consumeLlmStream as runLlmStream,
 } from "./pipeline-stream.ts";
+import { createFileTranscriber } from "./pipeline-transcribe.ts";
 import {
   type PipelineTransportOptions,
   resolvePipelineOptions,
@@ -377,36 +377,23 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     );
   }
 
-  /**
-   * One-shot transcription of an uploaded clip via the STT provider's batch
-   * capability: transcribe in a single request, then run the committed text
-   * as a normal user turn. A failed transcription is a turn-level error,
-   * not a session teardown.
-   */
-  async function transcribeFileTurn(
-    transcribeClip: NonNullable<SttOpener["transcribeClip"]>,
-    pcm: Uint8Array,
-    sampleRate: number,
-  ): Promise<void> {
-    let text: string;
-    try {
-      text = (
-        await transcribeClip(pcm, sampleRate, {
-          apiKey: opts.providerKeys.stt,
-          fetch: opts.fetch,
-          signal: sessionAbort.signal,
-        })
-      ).trim();
-    } catch (err) {
-      if (!terminated) emitError("stt", errorMessage(err));
-      return;
-    }
-    if (!text || terminated) return;
-    callbacks.onUserTranscript(text);
-    await runTurn(text).catch((err: unknown) => {
+  // One-shot uploaded-clip transcription (Transport.transcribeFile) — the
+  // batch-vs-replay choice and the discard-on-reset epoch live in
+  // pipeline-transcribe.ts.
+  const fileTranscriber = createFileTranscriber({
+    transcribeClip: opts.stt.transcribeClip,
+    apiKey: opts.providerKeys.stt,
+    fetchImpl: opts.fetch,
+    signal: sessionAbort.signal,
+    isTerminated: () => terminated,
+    sendRealtimeAudio: (pcm16) => providers.stt?.sendAudio(pcm16),
+    chainTurn,
+    runTurn,
+    callbacks,
+    onTurnCrash: (err) => {
       log.error("Pipeline file turn crashed", { error: errorMessage(err), sid: opts.sid });
-    });
-  }
+    },
+  });
 
   return {
     async start(): Promise<void> {
@@ -449,18 +436,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     transcribeFile(pcm: Uint8Array, sampleRate: number): void {
       if (terminated || !audioReady) return;
-      const transcribeClip = opts.stt.transcribeClip;
-      if (!transcribeClip) {
-        // No one-shot backend on this provider: replay through its realtime
-        // socket, padded with silence so endpointing commits the final turn
-        // (the client skips padding on the one-shot upload path).
-        const padded = withTrailingSilence(pcm, sampleRate);
-        for (let i = 0; i < padded.byteLength; i += FILE_UPLOAD_CHUNK_BYTES) {
-          providers.stt?.sendAudio(bytesToPcm16(padded.subarray(i, i + FILE_UPLOAD_CHUNK_BYTES)));
-        }
-        return;
-      }
-      chainTurn(() => transcribeFileTurn(transcribeClip, pcm, sampleRate));
+      fileTranscriber.transcribeFile(pcm, sampleRate);
     },
 
     // Tool execution stays inside toVercelTools/streamText; results aren't
@@ -470,7 +446,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     cancelReply(): void {
       if (terminated) return;
-      // A client-initiated cancel is intentional — never resume from it.
+      // A client-initiated cancel is intentional — never resume from it,
+      // and discard any one-shot transcription still in flight.
+      fileTranscriber.discard();
       recovery.clear();
       abortInFlightTurn();
       // Silence after a client-initiated cancel should still nudge.
@@ -489,6 +467,9 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     reset(): void {
       // A reset is user activity: restore the resume budget as well.
       recovery.onUserTurn();
+      // A one-shot transcription still in flight belongs to the discarded
+      // conversation — its transcript must not commit into the new one.
+      fileTranscriber.discard();
       speechEdges.reset();
       settler.reset();
       abortInFlightTurn();

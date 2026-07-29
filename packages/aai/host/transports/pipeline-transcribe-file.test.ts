@@ -74,11 +74,55 @@ describe("PipelineTransport.transcribeFile", () => {
     await t.start();
     t.transcribeFile?.(CLIP, 16_000);
     await vi.waitFor(() => {
-      expect(callbacks.onError).toHaveBeenCalledWith("stt", expect.stringContaining("HTTP 400"));
+      expect(callbacks.onError).toHaveBeenCalledWith("stt", expect.stringContaining("HTTP 400"), {
+        fatal: false,
+      });
     });
     // Not terminated: live mic audio still flows.
     t.sendUserAudio(new Uint8Array([1, 2]));
     expect(callbacks.onCancelled).not.toHaveBeenCalled();
+    await t.stop();
+  });
+
+  test("a transcript resolving after reset is discarded (no stale turn)", async () => {
+    const clipGate = Promise.withResolvers<string>();
+    const transcribeClip = vi.fn(() => clipGate.promise);
+    const { opts, callbacks } = makeOpts({
+      stt: clipCapableStt(transcribeClip),
+      providerKeys: { stt: "k" },
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    t.transcribeFile?.(CLIP, 16_000);
+    await vi.waitFor(() => {
+      expect(transcribeClip).toHaveBeenCalled();
+    });
+    // The user resets the conversation while the Sync API call is in flight.
+    t.reset?.();
+    clipGate.resolve("stale transcript from before the reset");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
+    expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
+    await t.stop();
+  });
+
+  test("a transcript resolving after cancelReply is discarded", async () => {
+    const clipGate = Promise.withResolvers<string>();
+    const transcribeClip = vi.fn(() => clipGate.promise);
+    const { opts, callbacks } = makeOpts({
+      stt: clipCapableStt(transcribeClip),
+      providerKeys: { stt: "k" },
+    });
+    const t = createPipelineTransport(opts);
+    await t.start();
+    t.transcribeFile?.(CLIP, 16_000);
+    await vi.waitFor(() => {
+      expect(transcribeClip).toHaveBeenCalled();
+    });
+    t.cancelReply();
+    clipGate.resolve("cancelled clip");
+    await new Promise((r) => setTimeout(r, 20));
+    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
     await t.stop();
   });
 

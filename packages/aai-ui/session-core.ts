@@ -13,9 +13,8 @@
  * No dependency on React, Preact, or any UI framework.
  */
 
-import { errorMessage, FILE_UPLOAD_CHUNK_BYTES, WS_OPEN } from "@alexkroman1/aai";
+import { errorMessage, WS_OPEN } from "@alexkroman1/aai";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
-import { MAX_SYNC_AUDIO_SECONDS } from "@alexkroman1/aai/stt";
 import {
   CLEARED_SESSION_STATE,
   createMessageHandlers,
@@ -27,11 +26,8 @@ import type {
   SessionCoreOptions,
   SessionSnapshot,
 } from "./session-core-types.ts";
-import {
-  FILE_SEND_BACKOFF_MS,
-  MIC_SEND_MAX_BUFFERED_BYTES,
-  type WebSocketConstructor,
-} from "./types.ts";
+import { createUploadSender } from "./session-core-upload.ts";
+import { MIC_SEND_MAX_BUFFERED_BYTES, type WebSocketConstructor } from "./types.ts";
 
 export type {
   CustomEvent,
@@ -219,6 +215,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   let hasConnected = false;
 
   function cleanupAudio(): void {
+    upload.discard();
     conn.audioSetupInFlight = false;
     void conn.voiceIO?.close();
     conn.voiceIO = null;
@@ -250,6 +247,10 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     sendAudio,
     updateState,
   };
+
+  // ─── File uploads ─────────────────────────────────────────────────────────
+
+  const upload = createUploadSender({ conn, getSnapshot, sendJson });
 
   // ─── Message handling ─────────────────────────────────────────────────────
 
@@ -340,7 +341,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         }
         controller.abort();
         cleanupAudio();
-        updateState({ state: "disconnected", running: false });
+        updateState({ state: "disconnected", running: false, recording: false });
       },
       { signal: sig },
     );
@@ -353,6 +354,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   }
 
   function reset(): void {
+    upload.discard();
     conn.voiceIO?.flush();
     if (conn.ws && conn.ws.readyState === WS_OPEN) {
       sendJson({ type: "reset" });
@@ -369,8 +371,15 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   }
 
   function startRecording(): void {
-    // Voice sessions stream the mic for their whole lifetime already.
-    if (currentSnapshot.audioOut || currentSnapshot.recording || conn.audioSetupInFlight) return;
+    // Voice sessions stream the mic for their whole lifetime already; while a
+    // file upload is in flight the mic stays off so the streams can't mix.
+    if (
+      currentSnapshot.audioOut ||
+      currentSnapshot.recording ||
+      conn.audioSetupInFlight ||
+      upload.inFlight()
+    )
+      return;
     const cfg = conn.readyConfig;
     if (!(cfg && conn.ws) || conn.ws.readyState !== WS_OPEN) return;
     // Sets `recording: true` (and error state on mic denial) itself.
@@ -381,57 +390,6 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     if (currentSnapshot.audioOut || !currentSnapshot.recording) return;
     cleanupAudio();
     updateState({ recording: false });
-  }
-
-  /** Stream `bytes` to the socket in chunks, waiting out backpressure.
-   *  Unlike live mic frames (dropped under backpressure — stale speech is
-   *  worthless), file audio must arrive completely. */
-  async function sendBytesReliably(bytes: Uint8Array): Promise<void> {
-    for (let i = 0; i < bytes.byteLength; i += FILE_UPLOAD_CHUNK_BYTES) {
-      while (
-        conn.ws &&
-        conn.ws.readyState === WS_OPEN &&
-        conn.ws.bufferedAmount > MIC_SEND_MAX_BUFFERED_BYTES
-      ) {
-        await new Promise((r) => setTimeout(r, FILE_SEND_BACKOFF_MS));
-      }
-      if (!conn.ws || conn.ws.readyState !== WS_OPEN) {
-        throw new Error("sendAudioFile: connection closed mid-send");
-      }
-      conn.ws.send(bytes.subarray(i, i + FILE_UPLOAD_CHUNK_BYTES) as unknown as ArrayBuffer);
-    }
-  }
-
-  async function sendAudioFile(file: Blob): Promise<void> {
-    const cfg = conn.readyConfig;
-    if (!(cfg && conn.ws) || conn.ws.readyState !== WS_OPEN) {
-      throw new Error("sendAudioFile: session is not connected");
-    }
-    if (currentSnapshot.recording) {
-      throw new Error("sendAudioFile: stop recording before uploading a file");
-    }
-    const { decodeAudioToPcm16 } = await import("./audio.ts");
-    const clip = await decodeAudioToPcm16(await file.arrayBuffer(), cfg.sampleRate);
-    // Short clips take the one-shot path: the server transcribes the whole
-    // upload in a single request (AssemblyAI's Sync API — the preferred
-    // endpoint for files under two minutes) instead of replaying it through
-    // the realtime socket. No endpointing, so no trailing-silence padding.
-    if (clip.length / cfg.sampleRate <= MAX_SYNC_AUDIO_SECONDS) {
-      const bytes = new Uint8Array(clip.buffer, clip.byteOffset, clip.byteLength);
-      sendJson({
-        type: "transcribe_file_start",
-        sampleRate: cfg.sampleRate,
-        byteLength: bytes.byteLength,
-      });
-      await sendBytesReliably(bytes);
-      sendJson({ type: "transcribe_file_end" });
-      return;
-    }
-    // Long uploads stream through the realtime STT path, padded with a second
-    // of silence (zeros) so the provider's endpointing commits the final turn.
-    const padded = new Int16Array(clip.length + cfg.sampleRate);
-    padded.set(clip);
-    await sendBytesReliably(new Uint8Array(padded.buffer));
   }
 
   function start(): void {
@@ -460,7 +418,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     toggle,
     startRecording,
     stopRecording,
-    sendAudioFile,
+    sendAudioFile: upload.sendAudioFile,
     [Symbol.dispose]() {
       disconnect();
     },
