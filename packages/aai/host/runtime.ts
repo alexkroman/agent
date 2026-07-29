@@ -159,7 +159,21 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     ? resolveVector(agent.vector, providerEnv, slug)
     : (vector ?? createLocalVector(slug));
 
-  const agentConfig = toAgentConfig(agent);
+  // Validate against the *effective* providers, not the agent's own fields.
+  // Same seam as `readyConfig` below: the platform never puts providers on the
+  // agent object, it passes them as runtime options (see sandbox.ts
+  // `toRuntimeAgent`). Reading `agent` alone resolved mode "s2s" for every
+  // deployed pipeline agent, so `assertPipelineTuning` rejected all six voice
+  // tuning knobs at session start — a deployed agent with `holdPhrase` died
+  // with "holdPhrase requires pipeline mode (stt, llm, and tts all set)" while
+  // listing all three providers — and left `agentConfig.mode` wrong for
+  // everything downstream that reads it.
+  const agentConfig = toAgentConfig({
+    ...agent,
+    stt: effectiveProviders.stt,
+    llm: effectiveProviders.llm,
+    tts: effectiveProviders.tts,
+  });
   const sessions = new Map<string, SessionCore>();
   const sinkMap = new Map<string, ClientSink>();
   // Text-only agents (tts: none()) tell the client up front that no audio
