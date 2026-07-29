@@ -88,7 +88,7 @@ export function PreviewPane({
       <div className="flex flex-col items-center gap-2.5">
         <span className="eyebrow self-center">Get started</span>
         <h2 className="m-0 text-center font-serif text-[28px] leading-[1.15] font-normal text-balance">
-          Three steps to a live voice agent or workflow
+          Three steps to a voice app
         </h2>
       </div>
       <div className="flex gap-7">
