@@ -14,6 +14,8 @@ export type StudioStatus = {
   llm: boolean;
   provider?: string;
   model?: string;
+  /** Models the chat route accepts for `model` — the picker's options. */
+  models?: string[];
 };
 
 export class ApiError extends Error {

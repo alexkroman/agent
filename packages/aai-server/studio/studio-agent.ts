@@ -9,8 +9,10 @@
  * decides when it goes live via the Publish button (`POST /studio/projects/
  * :project/deploy`).
  *
- * LLM selection lives in `studio-llm.ts` — platform-owned host config. There
- * is no per-request override: the studio runs on the host's configured model.
+ * LLM selection lives in `studio-llm.ts` — platform-owned host config. A
+ * request may pick a model from the configured provider's own list (the
+ * route validates it against `studioLlmModels()` and resolves it into
+ * `deps.model`); it can never pick a provider or supply a key.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
@@ -54,7 +56,10 @@ export type StudioChatDeps = {
   sandbox: () => Promise<StudioSandbox>;
   /** Tears down the session sandbox if one was provisioned. Idempotent. */
   disposeSandbox?: () => Promise<void>;
-  /** Injectable for tests — defaults to the host-env selected provider. */
+  /**
+   * The resolved model for this turn — the route's validated per-request
+   * picker choice, or a test injection. Defaults to the host-env selection.
+   */
   model?: LanguageModel;
   /**
    * Injectable for tests — defaults to the configured MCP servers. A promise
