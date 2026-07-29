@@ -10,6 +10,7 @@ import { useEffect, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
 import type { StudioStatus } from "./api.ts";
 import { Markdown } from "./markdown.tsx";
+import { STARTERS } from "./starters.ts";
 
 type ChatPanelProps = {
   apiKey: string;
@@ -28,50 +29,6 @@ type ChatPanelProps = {
   /** The key was rejected — same global handling as the REST queries. */
   onUnauthorized: () => void;
 };
-
-/**
- * Starter prompts. `label` is the button; `prompt` is what the agent receives
- * — several of these need to name providers and model ids precisely, which is
- * far too much text to put on a button.
- */
-const STARTERS: { label: string; prompt: string }[] = [
-  {
-    label: "Cascaded agent with Assembly STT, Assembly TTS, Gemini Flash Lite",
-    // "Cascaded" is the user-facing name for pipeline mode. Spelled out so the
-    // agent writes a pipeline config rather than defaulting to S2S. STT, LLM,
-    // and TTS all bill to ASSEMBLYAI_API_KEY, which publishing seeds — so this
-    // path needs no secrets from the user.
-    prompt:
-      "Build a cascaded (pipeline-mode) agent: " +
-      'stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt", ' +
-      'llm: the AssemblyAI LLM Gateway with model "gemini-2.5-flash-lite" ' +
-      'from "@alexkroman1/aai/llm", and tts: assemblyAI({ voice: "vera" }) from ' +
-      '"@alexkroman1/aai/tts". The factory is called assemblyAI in all three ' +
-      "subpaths, so alias two of them on import. Make it a friendly " +
-      "general-purpose voice assistant, then run test_agent.",
-  },
-  {
-    label: "A drive-thru agent that takes food orders",
-    prompt: "A drive-thru agent that takes food orders",
-  },
-  {
-    label: "A front-desk agent that books appointments",
-    prompt: "A front-desk agent that books appointments",
-  },
-  {
-    label: "A support agent that triages inbound calls",
-    prompt: "A support agent that triages inbound calls",
-  },
-  {
-    label: "A one-shot dictation transform (no TTS)",
-    prompt:
-      "A one-shot speech-to-text transform (text-only, tts: none()): I speak or " +
-      "upload a short audio file and get back structured notes as text — not a " +
-      "chat. An LLM transform turns each dictation independently into clean " +
-      "notes (output only the notes), and JavaScript tools compute word counts " +
-      "and extract action items",
-  },
-];
 
 function toolPartName(part: { type: string; toolName?: string }): string {
   if (part.type === "dynamic-tool") return part.toolName ?? "tool";
