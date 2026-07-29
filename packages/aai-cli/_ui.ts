@@ -2,6 +2,7 @@
 
 import * as p from "@clack/prompts";
 import { colorize } from "consola/utils";
+import { z } from "zod";
 
 type Log = typeof p.log;
 
@@ -38,11 +39,14 @@ export function fmtUrl(url: string): string {
   return colorize("cyanBright", url);
 }
 
+const PortSchema = z.coerce.number().int().min(0).max(65_535);
+
 /** Parse and validate a port string. Returns the numeric port or throws. */
 export function parsePort(raw: string): number {
-  const port = Number.parseInt(raw, 10);
-  if (Number.isNaN(port) || port < 0 || port > 65_535) {
+  // `Number("")` is 0, so an empty/whitespace string must be rejected up front.
+  const parsed = raw.trim() === "" ? undefined : PortSchema.safeParse(raw);
+  if (!parsed?.success) {
     throw new Error(`Invalid port: ${raw}. Must be a number between 0 and 65535.`);
   }
-  return port;
+  return parsed.data;
 }

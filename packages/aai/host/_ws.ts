@@ -4,6 +4,8 @@
  * that authenticate via custom headers (AssemblyAI S2S, OpenAI Realtime).
  */
 
+import { EventEmitter } from "node:events";
+import { pEvent } from "p-event";
 import WsWebSocket from "ws";
 
 export type HeaderWebSocket = {
@@ -57,23 +59,30 @@ export type WsOpenRace = {
 };
 
 export function createWsOpenRace(): WsOpenRace {
-  const opening = Promise.withResolvers<void>();
+  // p-event owns the deferred: it resolves on the first "open" and rejects
+  // with the Error emitted as "error" (its default rejection event). The race
+  // listens on a private emitter rather than the socket itself because the
+  // consumers own the socket listeners — they construct the rejection Errors
+  // and read `isOpening()` synchronously *during* the close/error dispatch,
+  // before any promise settlement could be observed.
+  const emitter = new EventEmitter();
+  const promise = pEvent(emitter, "open").then(() => undefined);
   let settled = false;
   // The connect rejection is always consumed by the caller's `await`, but if it
   // fails before that await is reached Node would report an unhandled rejection.
-  opening.promise.catch(() => undefined);
+  promise.catch(() => undefined);
   return {
-    promise: opening.promise,
+    promise,
     markOpen(): void {
       if (settled) return;
       settled = true;
-      opening.resolve();
+      emitter.emit("open");
     },
     isOpening: () => !settled,
     fail(err: Error): void {
       if (settled) return;
       settled = true;
-      opening.reject(err);
+      emitter.emit("error", err);
     },
   };
 }

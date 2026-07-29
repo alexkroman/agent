@@ -356,7 +356,7 @@ describe("resolveAllBuiltins defs", () => {
       result: 209.5665,
     });
     const bad = (await defs.calculate?.execute({ expression: "1 +" }, ctx)) as { error: string };
-    expect(bad.error).toMatch(/Unexpected end/);
+    expect(bad.error).toMatch(/unexpected/i);
   });
 
   test("visit_webpage follows redirects without re-validating target", async () => {

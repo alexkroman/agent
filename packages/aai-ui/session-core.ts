@@ -20,6 +20,11 @@ import {
   createMessageHandlers,
   type SessionConfigMessage,
 } from "./session-core-messages.ts";
+import {
+  cancelPendingReconnect,
+  openReconnectingSocket,
+  reconnectPending,
+} from "./session-core-reconnect.ts";
 import type {
   ConnState,
   SessionCore,
@@ -164,9 +169,6 @@ function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): U
  * @public
  */
 export function createSessionCore(options: SessionCoreOptions): SessionCore {
-  const WS: WebSocketConstructor =
-    options.WebSocket ?? (WebSocket as unknown as WebSocketConstructor);
-
   // ─── Internal state (replaces signals) ──────────────────────────────────
 
   let currentSnapshot: SessionSnapshot = {
@@ -310,6 +312,25 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     }
   }
 
+  /**
+   * The WebSocket URL for the *next* connection attempt. Evaluated per
+   * attempt (partysocket takes it as a URL provider), so once the first
+   * `config` arrives, every reconnect — automatic or explicit — carries
+   * `resume=1` and the session resumes instead of starting over.
+   */
+  function currentWsUrl(): string {
+    const resumeId = !hasConnected ? options.resumeSessionId : undefined;
+    return buildWsUrl(options.platformUrl, hasConnected, resumeId).toString();
+  }
+
+  /** Open a socket: an injected constructor as-is (tests), or partysocket's
+   *  reconnecting WebSocket — same interface, plus reconnect-on-close. */
+  function openSocket(): InstanceType<WebSocketConstructor> {
+    if (options.WebSocket) return new options.WebSocket(currentWsUrl());
+    const socket = openReconnectingSocket(currentWsUrl);
+    return socket as unknown as InstanceType<WebSocketConstructor>;
+  }
+
   function connect(opts?: { signal?: AbortSignal }): void {
     updateState({ state: "connecting", error: null });
     teardownConnection();
@@ -324,10 +345,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       });
     }
 
-    const resumeId = !hasConnected ? options.resumeSessionId : undefined;
-    const wsUrl = buildWsUrl(options.platformUrl, hasConnected, resumeId);
-
-    const socket = new WS(wsUrl.toString());
+    const socket = openSocket();
     socket.binaryType = "arraybuffer";
     conn.ws = socket;
 
@@ -367,8 +385,21 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
         if (sig.aborted) {
           return;
         }
-        controller.abort();
         cleanupAudio();
+        if (reconnectPending(socket)) {
+          // partysocket retries with backoff. Keep the listeners attached
+          // and the session logically alive: the URL provider re-derives the
+          // resume URL and `onServerConfig` replays history on the next open.
+          // A socket error here is part of the retry cycle, not terminal —
+          // clear it so a later clean disconnect isn't misreported.
+          socketErrored = false;
+          updateState({ state: "connecting", recording: false });
+          return;
+        }
+        // Terminal: explicit close, or retries exhausted — cancel any
+        // still-scheduled attempt before tearing down.
+        cancelPendingReconnect(socket);
+        controller.abort();
         if (socketErrored) {
           updateState({
             state: "error",

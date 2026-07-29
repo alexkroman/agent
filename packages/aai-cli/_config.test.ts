@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, test, vi } from "vitest";
 import { readProjectConfig, writeProjectConfig } from "./_config.ts";
@@ -57,6 +58,37 @@ describe("readProjectConfig / writeProjectConfig", () => {
       await fsp.mkdir(path.dirname(file), { recursive: true });
       await fsp.writeFile(file, "{ definitely not json");
       await expect(readProjectConfig(dir)).rejects.toThrow(`project.json is corrupted at ${file}`);
+    });
+  });
+});
+
+describe("getConfigDir", () => {
+  test("prefers the legacy dir when a config file already exists there", async () => {
+    await withTempDir(async (dir) => {
+      const { getConfigDir, writeGlobalConfig } = await import("./_config.ts");
+      const legacy = path.join(dir, "legacy");
+      const modern = path.join(dir, "modern");
+      await writeGlobalConfig(legacy, { apiKey: "old-key" });
+      expect(getConfigDir({ legacy, modern })).toBe(legacy);
+    });
+  });
+
+  test("uses the env-paths dir when no legacy config exists", async () => {
+    await withTempDir(async (dir) => {
+      const { getConfigDir } = await import("./_config.ts");
+      const legacy = path.join(dir, "legacy");
+      const modern = path.join(dir, "modern");
+      expect(getConfigDir({ legacy, modern })).toBe(modern);
+    });
+  });
+
+  test("ignores a legacy dir that exists but holds no config.json", async () => {
+    await withTempDir(async (dir) => {
+      const { getConfigDir } = await import("./_config.ts");
+      const legacy = path.join(dir, "legacy");
+      const modern = path.join(dir, "modern");
+      fs.mkdirSync(legacy, { recursive: true });
+      expect(getConfigDir({ legacy, modern })).toBe(modern);
     });
   });
 });

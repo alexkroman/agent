@@ -18,6 +18,7 @@
  * tools this turn" and logs.
  */
 
+import { setTimeout as sleep } from "node:timers/promises";
 import { createMCPClient, type MCPClient } from "@ai-sdk/mcp";
 import { debug } from "../_debug-log.ts";
 
@@ -72,17 +73,21 @@ const noop = async (): Promise<void> => {
 
 const EMPTY: McpSession = { tools: {}, close: noop };
 
+const TIMED_OUT: unique symbol = Symbol("timed out");
+
+/**
+ * Race `work` against a `node:timers/promises` sleep. The abort in `finally`
+ * clears the timer whichever side wins, so vitest sees no open handles; the
+ * losing sleep's AbortError is absorbed by `Promise.race`'s subscription.
+ */
 async function withTimeout<T>(work: Promise<T>, ms: number, label: string): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
+  const cancel = new AbortController();
   try {
-    return await Promise.race([
-      work,
-      new Promise<never>((_, reject) => {
-        timer = setTimeout(() => reject(new Error(`${label} timed out after ${ms}ms`)), ms);
-      }),
-    ]);
+    const result = await Promise.race([work, sleep(ms, TIMED_OUT, { signal: cancel.signal })]);
+    if (result === TIMED_OUT) throw new Error(`${label} timed out after ${ms}ms`);
+    return result;
   } finally {
-    if (timer) clearTimeout(timer);
+    cancel.abort();
   }
 }
 

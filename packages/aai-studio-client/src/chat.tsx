@@ -7,6 +7,7 @@ import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
+import { StickToBottom } from "use-stick-to-bottom";
 import { Markdown } from "./markdown.tsx";
 
 export type LlmStatus = { llm: boolean; provider?: string; model?: string };
@@ -297,8 +298,6 @@ function ProjectChat({
   onInitialPromptSent,
   onWorkspaceChanged,
 }: Omit<ChatPanelProps, "project" | "onStartWithPrompt"> & { project: string }) {
-  const logRef = useRef<HTMLDivElement>(null);
-
   const { messages, sendMessage, status, error } = useChat({
     transport: new DefaultChatTransport({
       api: "/studio/chat",
@@ -306,9 +305,6 @@ function ProjectChat({
       body: () => ({ project }),
     }),
     onFinish: onWorkspaceChanged,
-    onData: () => {
-      logRef.current?.scrollTo({ top: logRef.current.scrollHeight });
-    },
   });
 
   const busy = status === "submitted" || status === "streaming";
@@ -325,21 +321,24 @@ function ProjectChat({
   const send = (text: string) => {
     if (busy || !llmStatus.llm) return;
     void sendMessage({ text });
-    requestAnimationFrame(() => logRef.current?.scrollTo({ top: logRef.current.scrollHeight }));
   };
 
   return (
     <>
-      <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5" ref={logRef}>
-        {messages.length === 0 && !initialPrompt && (
-          <EmptyStateBody llm={llmStatus.llm} onPick={send} />
-        )}
-        {messages.map((message) => (
-          <MessageView key={message.id} message={message} />
-        ))}
-        {error && <div className="text-[13px] text-err">{error.message}</div>}
-        {busy && <div className="text-[13px] text-subtle italic">Working…</div>}
-      </div>
+      {/* StickToBottom follows streamed output but releases when the user
+          scrolls up to read, re-engaging once they return to the bottom. */}
+      <StickToBottom className="min-h-0 flex-1" initial="instant" resize="smooth">
+        <StickToBottom.Content className="flex flex-col gap-4 px-6 py-5">
+          {messages.length === 0 && !initialPrompt && (
+            <EmptyStateBody llm={llmStatus.llm} onPick={send} />
+          )}
+          {messages.map((message) => (
+            <MessageView key={message.id} message={message} />
+          ))}
+          {error && <div className="text-[13px] text-err">{error.message}</div>}
+          {busy && <div className="text-[13px] text-subtle italic">Working…</div>}
+        </StickToBottom.Content>
+      </StickToBottom>
       <Composer
         disabled={busy || !llmStatus.llm}
         placeholder="Describe your agent or workflow…"

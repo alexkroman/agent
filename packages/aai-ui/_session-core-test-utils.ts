@@ -53,14 +53,17 @@ export class MockWebSocket {
   /** Simulate the WebSocket opening. */
   simulateOpen() {
     this.readyState = 1;
-    for (const cb of this._listeners.get("open") ?? []) cb();
+    // Real Event instances: partysocket (wrapping this mock as its
+    // transport) clones the events it re-dispatches, so a bare `cb()`
+    // with no event object would blow up inside its clone helper.
+    for (const cb of this._listeners.get("open") ?? []) cb(new Event("open"));
   }
 
   /** Simulate receiving a message from the server (text JSON, binary ArrayBuffer, or Uint8Array). */
   simulateMessage(data: string | Uint8Array | ArrayBuffer) {
     const payload = data instanceof Uint8Array ? data.buffer : data;
     for (const cb of this._listeners.get("message") ?? []) {
-      cb({ data: payload });
+      cb(new MessageEvent("message", { data: payload }));
     }
   }
 
@@ -68,7 +71,9 @@ export class MockWebSocket {
   simulateClose(code = 1000) {
     this.readyState = 3;
     for (const cb of this._listeners.get("close") ?? []) {
-      cb({ code, reason: "" });
+      // jsdom has no global CloseEvent; a plain Event with the close fields
+      // satisfies both session-core and partysocket's event cloning.
+      cb(Object.assign(new Event("close"), { code, reason: "" }));
     }
   }
 }

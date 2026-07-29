@@ -12,9 +12,9 @@ import {
   TEST_AGENT_CONFIG,
 } from "./test-utils.ts";
 
-test("hashApiKey produces PBKDF2 format and verifies", async () => {
+test("hashApiKey produces argon2 PHC format and verifies", async () => {
   const hash = await hashApiKey("test-key");
-  expect(hash).toMatch(/^pbkdf2:600000:/);
+  expect(hash).toMatch(/^\$argon2id\$/);
   expect(await verifyApiKeyHash("test-key", hash)).toBe(true);
   expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
 });

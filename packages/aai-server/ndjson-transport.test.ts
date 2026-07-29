@@ -46,7 +46,7 @@ describe("createNdjsonConnection", () => {
     const resultPromise = conn.sendRequest("ping", { foo: "bar" });
 
     // Wait for request to be written
-    await vi.waitFor(() => writtenLines.length > 0);
+    await vi.waitFor(() => expect(writtenLines.length).toBeGreaterThan(0));
 
     const sent = JSON.parse(writtenLines.at(0) ?? "");
     expect(sent.jsonrpc).toBe("2.0");
@@ -96,7 +96,7 @@ describe("createNdjsonConnection", () => {
     conn.listen();
 
     const resultPromise = conn.sendRequest("ok", undefined, 1000);
-    await vi.waitFor(() => writtenLines.length > 0);
+    await vi.waitFor(() => expect(writtenLines.length).toBeGreaterThan(0));
     const sent = JSON.parse(writtenLines.at(0) ?? "");
     writeMessage(readable, { jsonrpc: "2.0", id: sent.id, result: "done" });
 
@@ -111,7 +111,7 @@ describe("createNdjsonConnection", () => {
 
     const resultPromise = conn.sendRequest("fail");
 
-    await vi.waitFor(() => writtenLines.length > 0);
+    await vi.waitFor(() => expect(writtenLines.length).toBeGreaterThan(0));
     const sent = JSON.parse(writtenLines.at(0) ?? "");
 
     writeMessage(readable, {
@@ -142,7 +142,7 @@ describe("createNdjsonConnection", () => {
     writeMessage(readable, { jsonrpc: "2.0", id: 42, method: "kv/get", params: { key: "x" } });
 
     // Host should write back a response
-    await vi.waitFor(() => writtenLines.length > 0);
+    await vi.waitFor(() => expect(writtenLines.length).toBeGreaterThan(0));
 
     const response = JSON.parse(writtenLines.at(0) ?? "");
     expect(response.jsonrpc).toBe("2.0");
@@ -161,7 +161,7 @@ describe("createNdjsonConnection", () => {
 
     writeMessage(readable, { jsonrpc: "2.0", id: 7, method: "boom", params: {} });
 
-    await vi.waitFor(() => writtenLines.length > 0);
+    await vi.waitFor(() => expect(writtenLines.length).toBeGreaterThan(0));
 
     const response = JSON.parse(writtenLines.at(0) ?? "");
     expect(response.jsonrpc).toBe("2.0");
@@ -337,7 +337,7 @@ describe("createNdjsonConnection", () => {
     conn.listen();
 
     const p = conn.sendRequest("test");
-    await vi.waitFor(() => writtenLines.length > 0);
+    await vi.waitFor(() => expect(writtenLines.length).toBeGreaterThan(0));
     const sent = JSON.parse(writtenLines.at(0) ?? "");
 
     // Send malformed response (string id) — should be ignored
@@ -353,7 +353,7 @@ describe("createNdjsonConnection", () => {
     conn.listen();
 
     const p = conn.sendRequest("test");
-    await vi.waitFor(() => writtenLines.length > 0);
+    await vi.waitFor(() => expect(writtenLines.length).toBeGreaterThan(0));
     const sent = JSON.parse(writtenLines.at(0) ?? "");
 
     // Missing jsonrpc field — should be ignored
@@ -374,7 +374,7 @@ describe("createNdjsonConnection", () => {
 
     // Valid request
     writeMessage(readable, { jsonrpc: "2.0", id: 100, method: "valid", params: {} });
-    await vi.waitFor(() => writtenLines.length > 0);
+    await vi.waitFor(() => expect(writtenLines.length).toBeGreaterThan(0));
 
     const response = JSON.parse(writtenLines.at(0) ?? "");
     expect(response.id).toBe(100);

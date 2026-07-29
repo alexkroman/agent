@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { AGENT_CSP, isTextAssetPath } from "@alexkroman1/aai";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
+import { createCachedDirReader } from "./_static-files.ts";
 import type { AppContext } from "./context.ts";
 import { SafePathSchema } from "./schemas.ts";
 
@@ -19,23 +19,12 @@ function getDefaultClientDir(): string {
   return _defaultClientDir;
 }
 
-// Misses are NOT cached: during parallel build+test runs (turbo) the file may
-// be written after the first read, and caching null would permanently shadow it.
-const defaultClientCache = new Map<string, string>();
+// Cached, containment-checked reads over aai-ui's built default client.
+const readDefaultClient = createCachedDirReader(getDefaultClientDir);
 
 async function readDefaultClientFile(relPath: string): Promise<string | null> {
-  const cached = defaultClientCache.get(relPath);
-  if (cached !== undefined) return cached;
-  const baseDir = getDefaultClientDir();
-  const fullPath = path.join(baseDir, relPath);
-  if (!fullPath.startsWith(baseDir)) return null;
-  try {
-    const content = await readFile(fullPath, "utf-8");
-    defaultClientCache.set(relPath, content);
-    return content;
-  } catch {
-    return null;
-  }
+  const content = await readDefaultClient(relPath);
+  return content === null ? null : content.toString("utf-8");
 }
 
 export async function handleAgentHealth(c: AppContext): Promise<Response> {

@@ -23,6 +23,7 @@
 
 import type { SessionStartOptions, SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { startHostSession } from "@alexkroman1/aai/runtime";
+import { parseBearer } from "./_bearer.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { toHostBaseAgent } from "./sandbox.ts";
 import { verifySlugOwner } from "./secrets.ts";
@@ -47,8 +48,7 @@ export function wantsHostMode(rawUrl: string): boolean {
  */
 export function bearerToken(headers: Record<string, string | string[] | undefined>): string {
   const raw = headers[AUTH_HEADER];
-  const value = Array.isArray(raw) ? raw[0] : raw;
-  return value?.startsWith("Bearer ") ? value.slice(7) : "";
+  return parseBearer(Array.isArray(raw) ? raw[0] : raw);
 }
 
 export type HostModeAuth = { allowed: true } | { allowed: false; code: number; reason: string };

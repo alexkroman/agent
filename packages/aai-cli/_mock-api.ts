@@ -5,6 +5,7 @@
  * (deploy, delete, secrets). Records all requests for assertion.
  */
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
+import { buffer } from "node:stream/consumers";
 import { gunzipSync } from "node:zlib";
 
 export interface RecordedRequest {
@@ -43,28 +44,15 @@ export async function startMockApi(): Promise<MockApi> {
     );
   }
 
-  function readBody(req: IncomingMessage): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const chunks: Buffer[] = [];
-      req.on("data", (chunk: Buffer) => {
-        chunks.push(chunk);
-      });
-      // Settle on failure paths too — a socket error or client abort must not
-      // leave the handler (and the test awaiting it) hanging forever.
-      req.on("error", reject);
-      req.on("aborted", () => reject(new Error("request aborted")));
-      req.on("end", () => {
-        try {
-          const raw = Buffer.concat(chunks);
-          // Mirror the platform server: transparently inflate gzipped uploads
-          // (the CLI compresses deploy bodies). gunzipSync throws on garbage.
-          const inflated = req.headers["content-encoding"] === "gzip" ? gunzipSync(raw) : raw;
-          resolve(inflated.toString("utf-8"));
-        } catch (err) {
-          reject(err instanceof Error ? err : new Error(String(err)));
-        }
-      });
-    });
+  async function readBody(req: IncomingMessage): Promise<string> {
+    // buffer() settles on failure paths too — a socket error or client abort
+    // destroys the stream and rejects, so the handler (and the test awaiting
+    // it) can never hang. gunzipSync throws on garbage, rejecting likewise.
+    const raw = await buffer(req);
+    // Mirror the platform server: transparently inflate gzipped uploads
+    // (the CLI compresses deploy bodies).
+    const inflated = req.headers["content-encoding"] === "gzip" ? gunzipSync(raw) : raw;
+    return inflated.toString("utf-8");
   }
 
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: mock server routes are intentionally flat

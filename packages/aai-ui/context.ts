@@ -4,12 +4,11 @@ import {
   createContext,
   createElement,
   type ReactNode,
-  useCallback,
   useContext,
   useEffect,
-  useRef,
   useSyncExternalStore,
 } from "react";
+import { useSyncExternalStoreWithSelector } from "use-sync-external-store/shim/with-selector";
 import type { SessionCore, SessionSnapshot } from "./session-core.ts";
 import type { ClientTheme } from "./types.ts";
 
@@ -93,22 +92,16 @@ export function useSessionSelector<T>(
   isEqual: (a: T, b: T) => boolean = Object.is,
 ): T {
   const core = useSessionCore();
-  const selectorRef = useRef(selector);
-  selectorRef.current = selector;
-  const isEqualRef = useRef(isEqual);
-  isEqualRef.current = isEqual;
-  // Cache the last selection so getSelection returns a referentially stable
-  // value when the selected slice is unchanged — useSyncExternalStore uses
-  // Object.is on the returned value to decide whether to re-render.
-  const cacheRef = useRef<{ hasValue: false } | { hasValue: true; value: T }>({ hasValue: false });
-  const getSelection = useCallback((): T => {
-    const next = selectorRef.current(core.getSnapshot());
-    const cache = cacheRef.current;
-    if (cache.hasValue && isEqualRef.current(cache.value, next)) return cache.value;
-    cacheRef.current = { hasValue: true, value: next };
-    return next;
-  }, [core]);
-  return useSyncExternalStore(core.subscribe, getSelection);
+  // React's own shim handles the selection cache: the selected value stays
+  // referentially stable while `isEqual` says it's unchanged, so only a
+  // changed slice triggers a re-render.
+  return useSyncExternalStoreWithSelector(
+    core.subscribe,
+    core.getSnapshot,
+    core.getSnapshot,
+    selector,
+    isEqual,
+  );
 }
 
 const ThemeCtx = createContext<Required<ClientTheme>>(DEFAULT_THEME);

@@ -75,83 +75,57 @@ function countOccurrences(haystack: string, needle: string): number {
   return haystack.split(needle).length - 1;
 }
 
-/** Running position while walking the diff parts. */
-type Cursor = { old: number; new: number; width: number; out: string[] };
-
 const gutter = (n: number, width: number): string => String(n).padStart(width, " ");
 
-/** Emit every line of an added/removed part. */
-function emitChange(lines: string[], added: boolean, cur: Cursor): void {
-  for (const line of lines) {
-    cur.out.push(`${added ? "+" : "-"}${gutter(added ? cur.new : cur.old, cur.width)} ${line}`);
-    if (added) cur.new += 1;
-    else cur.old += 1;
-  }
-}
-
-/** Emit an unchanged part, trimmed to `context` lines nearest the change(s). */
-function emitContext(
-  lines: string[],
-  cur: Cursor,
-  edges: { after: boolean; before: boolean },
-  context: number,
-): void {
-  if (!(edges.after || edges.before)) {
-    cur.old += lines.length;
-    cur.new += lines.length;
-    return;
-  }
-  // Touching a change on the left keeps the head; on the right, the tail.
-  const keep = edges.after ? lines.slice(0, context) : lines.slice(-context);
-  const trimmedBefore = edges.after ? 0 : lines.length - keep.length;
-  const trimmedAfter = edges.after ? lines.length - keep.length : 0;
-
-  if (trimmedBefore > 0) {
-    cur.out.push(` ${" ".repeat(cur.width)} …`);
-    cur.old += trimmedBefore;
-    cur.new += trimmedBefore;
-  }
-  for (const line of keep) {
-    cur.out.push(` ${gutter(cur.old, cur.width)} ${line}`);
-    cur.old += 1;
-    cur.new += 1;
-  }
-  if (trimmedAfter > 0) {
-    cur.out.push(` ${" ".repeat(cur.width)} …`);
-    cur.old += trimmedAfter;
-    cur.new += trimmedAfter;
-  }
+/** Line count as a diff sees it: a trailing newline does not add a line. */
+function countLines(text: string): number {
+  const lines = text.split("\n");
+  if (lines.at(-1) === "") lines.pop();
+  return lines.length;
 }
 
 /**
  * A unified diff with line numbers, trimmed to `context` lines around each
  * change — the agent gets to see what it actually did, and so does anyone
  * reading the tool row.
+ *
+ * Hunk grouping and context trimming come from the `diff` package's
+ * `structuredPatch`; only the presentation (line-number gutters, `…` elision
+ * between hunks) is ours.
  */
 export function formatDiff(before: string, after: string, context = 3): string {
-  const parts = Diff.diffLines(before, after);
+  const { hunks } = Diff.structuredPatch("", "", before, after, undefined, undefined, { context });
   const width = String(Math.max(before.split("\n").length, after.split("\n").length)).length;
-  const cur: Cursor = { old: 1, new: 1, width, out: [] };
+  const elision = ` ${" ".repeat(width)} …`;
+  const out: string[] = [];
 
-  parts.forEach((part, i) => {
-    const lines = part.value.split("\n");
-    if (lines.at(-1) === "") lines.pop();
-    if (part.added || part.removed) {
-      emitChange(lines, Boolean(part.added), cur);
-      return;
+  hunks.forEach((hunk, i) => {
+    // Elide what structuredPatch trimmed: before the first hunk when it does
+    // not start at line 1, and between hunks (a gap is why they are separate).
+    if (i > 0 || hunk.oldStart > 1) out.push(elision);
+    let oldLine = hunk.oldStart;
+    let newLine = hunk.newStart;
+    for (const line of hunk.lines) {
+      const tag = line[0];
+      const text = line.slice(1);
+      if (tag === "\\") continue; // "No newline at end of file" marker
+      if (tag === "+") {
+        out.push(`+${gutter(newLine, width)} ${text}`);
+        newLine += 1;
+      } else if (tag === "-") {
+        out.push(`-${gutter(oldLine, width)} ${text}`);
+        oldLine += 1;
+      } else {
+        out.push(` ${gutter(oldLine, width)} ${text}`);
+        oldLine += 1;
+        newLine += 1;
+      }
     }
-    emitContext(
-      lines,
-      cur,
-      {
-        after: Boolean(parts[i - 1]?.added || parts[i - 1]?.removed),
-        before: Boolean(parts[i + 1]?.added || parts[i + 1]?.removed),
-      },
-      context,
-    );
   });
 
-  return cur.out.join("\n");
+  const last = hunks.at(-1);
+  if (last && last.oldStart + last.oldLines - 1 < countLines(before)) out.push(elision);
+  return out.join("\n");
 }
 
 export type EditResult = { content: string; diff: string };

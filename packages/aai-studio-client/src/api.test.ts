@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
-import { describe, expect, test } from "vitest";
-import { parseSecrets } from "./api.ts";
+import { afterEach, describe, expect, test, vi } from "vitest";
+import { ApiError, api, parseSecrets } from "./api.ts";
 
 describe("parseSecrets", () => {
   test("parses KEY=value lines", () => {
@@ -24,15 +24,117 @@ describe("parseSecrets", () => {
     expect(parseSecrets("export A=1")).toEqual({ A: "1" });
   });
 
-  test("keeps '=' and '#' inside a value", () => {
-    // Base64 and URLs routinely contain '='; only a *leading* '#' is a comment.
-    expect(parseSecrets("A=b=c==\nB=https://x/y#frag")).toEqual({
+  test("keeps '=' inside a value; '#' needs quoting (.env comment syntax)", () => {
+    // Base64 and URLs routinely contain '='. An unquoted '#' starts an
+    // inline comment in .env syntax — quoting the value keeps it literal.
+    expect(parseSecrets('A=b=c==\nB=https://x/y#frag\nC="https://x/y#frag"')).toEqual({
       A: "b=c==",
-      B: "https://x/y#frag",
+      B: "https://x/y",
+      C: "https://x/y#frag",
+    });
+  });
+
+  test("keeps multi-line quoted values intact (PEM keys, JSON)", () => {
+    // The whole point of real .env parsing: a pasted PEM key or
+    // service-account JSON spans lines inside one quoted value.
+    const pem = "-----BEGIN KEY-----\nabc\ndef\n-----END KEY-----";
+    expect(parseSecrets(`A="${pem}"\nB=1`)).toEqual({ A: pem, B: "1" });
+  });
+
+  test("expands \\n escapes in double-quoted values only", () => {
+    expect(parseSecrets("A=\"line1\\nline2\"\nB='raw\\nvalue'")).toEqual({
+      A: "line1\nline2",
+      B: "raw\\nvalue",
     });
   });
 
   test("skips lines with no key", () => {
     expect(parseSecrets("=novalue\njusttext\nA=1")).toEqual({ A: "1" });
+  });
+});
+
+function jsonResponse(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), {
+    status,
+    headers: { "Content-Type": "application/json" },
+  });
+}
+
+function stubFetch(makeResponse: () => Response) {
+  // A Response body is single-use, so mint a fresh one per call.
+  const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(makeResponse()));
+  vi.stubGlobal("fetch", fetchMock);
+  return fetchMock;
+}
+
+describe("api", () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  test("sends the bearer key and parses the response", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ projects: ["a", "b"] }));
+    await expect(api.listProjects("sk-123")).resolves.toEqual(["a", "b"]);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/studio/projects");
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer sk-123");
+  });
+
+  test("POST bodies are JSON with Content-Type set", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ name: "p", files: {} }));
+    await api.createProject("k", "p");
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.method).toBe("POST");
+    expect(init.body).toBe(JSON.stringify({ name: "p" }));
+    expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
+  });
+
+  test("project and path segments are URL-encoded", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ ok: true }));
+    await api.deleteFile("k", "my project", "src/a b.ts");
+    const [url] = fetchMock.mock.calls[0] as [string];
+    expect(url).toBe("/studio/projects/my%20project/file?path=src%2Fa%20b.ts");
+  });
+
+  test("getProject / writeFile / deleteProject / deploy hit their routes", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ ok: true, slug: "s", url: "u", files: {} }));
+    await api.getProject("k", "p");
+    await api.writeFile("k", "p", "agent.ts", "code");
+    await api.deleteProject("k", "p");
+    await api.deploy("k", "p", { A: "1" });
+    const calls = fetchMock.mock.calls.map((c) => {
+      const [url, init] = c as [string, RequestInit | undefined];
+      return `${init?.method ?? "GET"} ${url}`;
+    });
+    expect(calls).toEqual([
+      "GET /studio/projects/p",
+      "PUT /studio/projects/p/file",
+      "DELETE /studio/projects/p",
+      "POST /studio/projects/p/deploy",
+    ]);
+  });
+
+  test("status is unauthenticated and returns the body", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ llm: true, provider: "assemblyai" }));
+    await expect(api.status()).resolves.toEqual({ llm: true, provider: "assemblyai" });
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit | undefined];
+    expect(url).toBe("/studio/status");
+    expect(init).toBeUndefined();
+  });
+
+  test("non-OK responses throw ApiError with the server's error message", async () => {
+    stubFetch(() => jsonResponse({ error: "no such project" }, 404));
+    const err = await api.getProject("k", "p").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(404);
+    expect((err as ApiError).message).toBe("no such project");
+  });
+
+  test("non-JSON error bodies fall back to the status message", async () => {
+    stubFetch(() => new Response("<html>gateway timeout</html>", { status: 502 }));
+    const err = await api.listProjects("k").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).status).toBe(502);
+    expect((err as ApiError).message).toBe("Request failed (502)");
   });
 });

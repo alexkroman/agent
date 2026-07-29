@@ -44,6 +44,7 @@
     "citty": "^0.2.2",
     "consola": "^3.4.2",
     "dotenv": "^17.4.2",
+    "env-paths": "^4.0.0",
     "execa": "^9.6.1",
     "get-port": "^7.2.0",
     "giget": "^3.3.0",
@@ -54,7 +55,6 @@
   },
   "devDependencies": {
     "playwright": "^1.61.1",
-    "tree-kill": "^1.2.2",
     "tsdown": "^0.22.13",
     "verdaccio": "^6.8.0",
     "vitest": "^4.1.10"

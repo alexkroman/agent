@@ -8,17 +8,17 @@ import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { silenced } from "./_test-utils.ts";
 import { executeTest, resolveVitestCommand, runVitest } from "./test.ts";
 
-const execFileSync = vi.hoisted(() => vi.fn());
-vi.mock("node:child_process", async (importOriginal) => {
-  const orig = await importOriginal<typeof import("node:child_process")>();
-  return { ...orig, execFileSync };
+const execaSync = vi.hoisted(() => vi.fn());
+vi.mock("execa", async (importOriginal) => {
+  const orig = await importOriginal<typeof import("execa")>();
+  return { ...orig, execaSync };
 });
 
 let tempDir: string;
 
 beforeEach(async () => {
   tempDir = await mkdtemp(path.join(tmpdir(), "aai-test-"));
-  execFileSync.mockReset();
+  execaSync.mockReset();
 });
 
 afterEach(async () => {
@@ -40,7 +40,7 @@ describe("aai test", () => {
   test("runs vitest against agent.test.ts with type stripping enabled", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
     expect(runVitest(tempDir)).toBe(true);
-    const [, args, opts] = execFileSync.mock.calls[0] as [
+    const [, args, opts] = execaSync.mock.calls[0] as [
       string,
       string[],
       { cwd: string; env: Record<string, string> },
@@ -64,7 +64,7 @@ describe("aai test", () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
 
     expect(runVitest(tempDir)).toBe(true);
-    const [cmd, args] = execFileSync.mock.calls[0] as [string, string[]];
+    const [cmd, args] = execaSync.mock.calls[0] as [string, string[]];
     // No npx: the local bin JS runs with the current Node executable.
     expect(cmd).toBe(process.execPath);
     expect(args[0]?.endsWith(path.join("node_modules", "vitest", "vitest.mjs"))).toBe(true);
@@ -98,7 +98,7 @@ describe("aai test", () => {
   test("falls back to agent.test.js when no .ts test exists", async () => {
     await writeFile(path.join(tempDir, "agent.test.js"), "// test file");
     expect(runVitest(tempDir)).toBe(true);
-    expect(execFileSync.mock.calls[0]?.[1]).toContain("agent.test.js");
+    expect(execaSync.mock.calls[0]?.[1]).toContain("agent.test.js");
   });
 });
 
@@ -106,7 +106,7 @@ describe("executeTest", () => {
   test("returns skipped result when no test file exists", async () => {
     const result = await silenced(() => executeTest(tempDir))(tempDir);
     expect(result).toEqual({ ok: true, data: { passed: true, skipped: true } });
-    expect(execFileSync).not.toHaveBeenCalled();
+    expect(execaSync).not.toHaveBeenCalled();
   });
 
   test("returns passed result when vitest succeeds", async () => {
@@ -117,7 +117,7 @@ describe("executeTest", () => {
 
   test("returns test_failed with detail when vitest exits non-zero", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
-    execFileSync.mockImplementation(() => {
+    execaSync.mockImplementation(() => {
       throw new Error("exit 1");
     });
     const result = await silenced(() => executeTest(tempDir))(tempDir);
@@ -126,7 +126,7 @@ describe("executeTest", () => {
 
   test("returns spawn_failed when the test runner binary is missing", async () => {
     await writeFile(path.join(tempDir, "agent.test.ts"), "// test file");
-    execFileSync.mockImplementation(() => {
+    execaSync.mockImplementation(() => {
       const err = new Error("spawnSync npx ENOENT") as NodeJS.ErrnoException;
       err.code = "ENOENT";
       throw err;

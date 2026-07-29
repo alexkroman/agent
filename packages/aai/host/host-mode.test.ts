@@ -195,7 +195,8 @@ describe("createRelayExecuteTool", () => {
       toolCallId: "x",
       signal: controller.signal,
     });
-    const settled = expect(p).rejects.toThrow(/cancelled/);
+    // p-timeout rejects with the signal's abort reason.
+    const settled = expect(p).rejects.toThrow(/aborted/i);
     controller.abort();
     await settled;
 

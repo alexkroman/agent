@@ -3,10 +3,10 @@
  * `aai test` — run agent tests via vitest.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { execaSync } from "execa";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
 import { errorCode, errorMessage } from "./_utils.ts";
@@ -58,19 +58,20 @@ export function runVitest(cwd: string): boolean {
   if (!testFile) return false;
 
   const { cmd, args } = resolveVitestCommand(cwd);
-  execFileSync(cmd, [...args, "run", "--root", ".", testFile], {
+  // execa extends process.env by default, so only the override is passed.
+  execaSync(cmd, [...args, "run", "--root", ".", testFile], {
     cwd,
     stdio: "inherit",
-    env: { ...process.env, NODE_OPTIONS: "--experimental-strip-types" },
+    env: { NODE_OPTIONS: "--experimental-strip-types" },
   });
 
   return true;
 }
 
 /**
- * Classify a {@link runVitest} failure. execFileSync throws an ENOENT-coded
+ * Classify a {@link runVitest} failure. execaSync throws an ENOENT-coded
  * error when the binary itself couldn't be spawned (infrastructure problem)
- * and a status-coded error when vitest ran and the tests failed.
+ * and an exit-code error when vitest ran and the tests failed.
  */
 export function classifyVitestError(err: unknown): {
   code: "spawn_failed" | "test_failed";

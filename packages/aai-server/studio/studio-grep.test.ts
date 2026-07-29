@@ -50,6 +50,16 @@ describe("grepWorkspace", () => {
     expect(out).not.toContain("notes.md");
   });
 
+  test("globs use picomatch semantics: ** spans segments, * stays in one", () => {
+    const nested = { ...FILES, "lib/util.ts": "export const rollDiceHelper = 1;\n" };
+    // `*` must not cross a `/` …
+    expect(grepWorkspace(nested, "rollDice", { glob: "*.ts" })).not.toContain("lib/util.ts");
+    // … while `**/*.ts` matches both nested files and top-level ones.
+    const out = grepWorkspace(nested, "rollDice", { glob: "**/*.ts" });
+    expect(out).toContain("lib/util.ts:1:");
+    expect(out).toContain("agent.ts:2:");
+  });
+
   test("context lines are marked with a dash, matches with a colon", () => {
     const out = grepWorkspace(FILES, "const rollDice", { context: 1 });
     expect(out).toContain("agent.ts-1- ");

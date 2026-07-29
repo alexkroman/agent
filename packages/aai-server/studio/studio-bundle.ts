@@ -23,6 +23,7 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
+import { stripVTControlCharacters } from "node:util";
 import { buildWorker } from "@alexkroman1/aai-cli/worker-bundler";
 import type { PluginOption } from "vite";
 import { MAX_WORKER_SIZE } from "../constants.ts";
@@ -153,20 +154,15 @@ function formatBuildError(err: unknown, dir: string): string {
 }
 
 /**
- * ANSI SGR sequences. Built from a char code rather than written as a literal
- * escape so the pattern carries no control character.
- */
-const ANSI_SGR = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, "g");
-
-/**
- * Strip scratch-dir paths and ANSI colour codes from a diagnostic.
+ * Strip scratch-dir paths and ANSI escape codes from a diagnostic.
  *
  * Rollup reports paths relative to `process.cwd()` while Vite's own errors
  * carry absolute ones, so both spellings of the scratch dir are removed.
+ * ANSI/VT sequences go via `node:util`'s own stripper.
  */
 export function scrub(message: string, dir: string): string {
   const forms = [dir, path.relative(process.cwd(), dir)].filter(Boolean);
-  let out = message.replace(ANSI_SGR, "");
+  let out = stripVTControlCharacters(message);
   for (const form of forms) {
     out = out.split(`${form}${path.sep}`).join("").split(form).join(".");
   }

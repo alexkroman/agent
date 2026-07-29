@@ -13,6 +13,7 @@
  * defined".
  */
 
+import picomatch from "picomatch";
 import { MAX_STUDIO_FILES } from "./studio-schemas.ts";
 
 /** Matches returned before the result is capped. */
@@ -41,27 +42,11 @@ export class StudioGrepError extends Error {}
 const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
- * Translate a glob to a RegExp. Supports `*` (within a segment), `**`
- * (across segments), and `?`. Enough for `*.ts` / `**\/*.test.ts`, which is
- * all a flat workspace needs.
+ * Glob matching via picomatch — full bash-style semantics (`*` within a
+ * segment, `**` across segments, `?`, braces, extglobs). `dot: true` because
+ * workspace files like `.env` must match `*` the way `path:` output implies.
  */
-function globToRegExp(glob: string): RegExp {
-  let out = "";
-  for (let i = 0; i < glob.length; i += 1) {
-    const c = glob[i];
-    if (c === "*") {
-      if (glob[i + 1] === "*") {
-        out += ".*";
-        i += 1;
-        if (glob[i + 1] === "/") i += 1;
-      } else {
-        out += "[^/]*";
-      }
-    } else if (c === "?") out += "[^/]";
-    else out += escapeRegex(c ?? "");
-  }
-  return new RegExp(`^${out}$`);
-}
+const globMatcher = (glob: string): ((path: string) => boolean) => picomatch(glob, { dot: true });
 
 function buildMatcher(pattern: string, opts: GrepOptions): RegExp {
   const source = opts.literal ? escapeRegex(pattern) : pattern;
@@ -123,7 +108,7 @@ export function grepWorkspace(
 ): string {
   if (pattern.length === 0) throw new StudioGrepError("pattern must not be empty");
   const matcher = buildMatcher(pattern, opts);
-  const pathFilter = opts.glob ? globToRegExp(opts.glob) : null;
+  const pathFilter = opts.glob ? globMatcher(opts.glob) : null;
   const limit = Math.max(1, Math.min(opts.limit ?? DEFAULT_LIMIT, MAX_STUDIO_FILES * 100));
   const context = Math.max(0, opts.context ?? 0);
 
@@ -131,7 +116,7 @@ export function grepWorkspace(
   let found = 0;
   for (const path of Object.keys(files).sort()) {
     if (found >= limit) break;
-    if (pathFilter && !pathFilter.test(path)) continue;
+    if (pathFilter && !pathFilter(path)) continue;
     found += grepFile(path, files[path] ?? "", matcher, context, limit - found, out);
   }
 

@@ -3,7 +3,17 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import { type CSSProperties, type ReactNode, useEffect, useMemo, useRef } from "react";
+import {
+  type CSSProperties,
+  memo,
+  type ReactNode,
+  type RefObject,
+  type UIEvent,
+  useCallback,
+  useEffect,
+  useMemo,
+  useRef,
+} from "react";
 import { useSession, useTheme } from "../context.ts";
 import type { ChatMessage, ToolCallInfo } from "../types.ts";
 import { primaryTint, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
@@ -66,8 +76,15 @@ function UserBubble({
 
 type RowTheme = { text: string; border: string; primary: string; surface: string };
 
-/** Renders a single chat message: labeled agent prose, or a user bubble. */
-function MessageBubble({
+/**
+ * Renders a single chat message: labeled agent prose, or a user bubble.
+ *
+ * Memoized so appending one message re-renders one row, not the whole capped
+ * list: message objects and the theme are referentially stable across
+ * snapshots, and rows are keyed on stable ids (`ChatMessage.id`) that survive
+ * the sliding 200-message window.
+ */
+const MessageBubble = memo(function MessageBubble({
   message,
   theme,
 }: {
@@ -97,27 +114,45 @@ function MessageBubble({
       </div>
     </div>
   );
-}
+});
 
 /**
- * Smooth-scroll to the anchor whenever the content version advances.
+ * How close to the bottom (px) the container must be for auto-scroll to stay
+ * engaged. Generous enough that an in-flight smooth scroll doesn't unpin.
+ */
+const NEAR_BOTTOM_PX = 96;
+
+/**
+ * Smooth-scroll to the anchor whenever the content version advances — but
+ * only while the container is pinned near the bottom. A user who scrolled up
+ * to read history isn't yanked back down by streaming updates; scrolling back
+ * to the bottom re-engages the auto-scroll.
  *
  * The scroll runs inside `requestAnimationFrame` and is deduped per frame:
  * several snapshot updates in one frame (transcript + message + tool call)
  * trigger a single scroll after layout instead of one forced layout each.
  */
-function useAutoScroll(contentVersion: number) {
-  const ref = useRef<HTMLDivElement>(null);
+function useAutoScroll(contentVersion: number): {
+  anchorRef: RefObject<HTMLDivElement | null>;
+  onScroll: (event: UIEvent<HTMLDivElement>) => void;
+} {
+  const anchorRef = useRef<HTMLDivElement>(null);
+  const pinnedRef = useRef(true);
   const scheduledRef = useRef(false);
+  const onScroll = useCallback((event: UIEvent<HTMLDivElement>) => {
+    const el = event.currentTarget;
+    pinnedRef.current = el.scrollTop + el.clientHeight >= el.scrollHeight - NEAR_BOTTOM_PX;
+  }, []);
   useEffect(() => {
-    if (contentVersion === 0 || scheduledRef.current) return;
+    if (contentVersion === 0 || scheduledRef.current || !pinnedRef.current) return;
     scheduledRef.current = true;
     requestAnimationFrame(() => {
       scheduledRef.current = false;
-      ref.current?.scrollIntoView({ behavior: "smooth", block: "end" });
+      if (!pinnedRef.current) return;
+      anchorRef.current?.scrollIntoView({ behavior: "smooth", block: "end" });
     });
   }, [contentVersion]);
-  return ref;
+  return { anchorRef, onScroll };
 }
 
 /**
@@ -152,46 +187,6 @@ function interleave(
   return items;
 }
 
-type RowCacheEntry = { data: object; theme: RowTheme; element: ReactNode };
-
-/**
- * Build the interleaved row elements, reusing each row's element object across
- * renders while its inputs are unchanged. Returning the identical element
- * reference lets React bail out of re-rendering that row entirely — the same
- * effect as wrapping the row components in `memo()` — so appending one message
- * re-renders one row, not the whole capped list. Rows are keyed on stable ids
- * (`ChatMessage.id`, `ToolCallInfo.callId`), which survive the sliding
- * 200-message window; message and tool-call objects are referentially stable
- * across snapshots, making the identity checks below sufficient.
- */
-function useChatItems(
-  messages: readonly ChatMessage[],
-  toolCalls: readonly ToolCallInfo[],
-  theme: RowTheme,
-): ReactNode[] {
-  const cacheRef = useRef<Map<string, RowCacheEntry>>(new Map());
-  return useMemo(() => {
-    const prev = cacheRef.current;
-    const next = new Map<string, RowCacheEntry>();
-    const rowFor = (key: string, data: object, make: () => ReactNode): ReactNode => {
-      const hit = prev.get(key);
-      const element = hit && hit.data === data && hit.theme === theme ? hit.element : make();
-      next.set(key, { data, theme, element });
-      return element;
-    };
-    const items = interleave(
-      messages,
-      toolCalls,
-      (msg) =>
-        rowFor(`m${msg.id}`, msg, () => <MessageBubble key={msg.id} message={msg} theme={theme} />),
-      (tc) => rowFor(`t${tc.callId}`, tc, () => <ToolCallBlock key={tc.callId} toolCall={tc} />),
-    );
-    // Entries not re-added above belong to rows that slid out — dropped here.
-    cacheRef.current = next;
-    return items;
-  }, [messages, toolCalls, theme]);
-}
-
 /**
  * Scrollable list of all chat messages, tool-call blocks, live transcript,
  * streaming agent utterance, and a thinking indicator.
@@ -224,15 +219,28 @@ export function MessageList({ className }: { className?: string }) {
 
   const { messages, toolCalls, userTranscript, agentTranscript } = session;
 
-  const scrollRef = useAutoScroll(session.contentVersion);
+  const { anchorRef, onScroll } = useAutoScroll(session.contentVersion);
 
-  const items = useChatItems(messages, toolCalls, theme);
+  // Memoized rows: `MessageBubble` and `ToolCallBlock` are memo()-wrapped and
+  // their inputs are referentially stable across snapshots, so appending one
+  // message re-renders one row, not the whole capped list.
+  const items = useMemo(
+    () =>
+      interleave(
+        messages,
+        toolCalls,
+        (msg) => <MessageBubble key={msg.id} message={msg} theme={theme} />,
+        (tc) => <ToolCallBlock key={tc.callId} toolCall={tc} />,
+      ),
+    [messages, toolCalls, theme],
+  );
 
   return (
     <div
       role="log"
       className={clsx("flex-1 overflow-y-auto [scrollbar-width:none]", className)}
       style={{ background: theme.surface }}
+      onScroll={onScroll}
     >
       <div className="flex flex-col gap-4 p-7">
         {items}
@@ -245,7 +253,7 @@ export function MessageList({ className }: { className?: string }) {
           </UserBubble>
         )}
         {showThinking && <ThinkingDots />}
-        <div ref={scrollRef} />
+        <div ref={anchorRef} />
       </div>
     </div>
   );

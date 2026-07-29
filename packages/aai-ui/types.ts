@@ -108,8 +108,11 @@ export type VoiceSessionOptions = {
    */
   resumeSessionId?: string | undefined;
   /**
-   * WebSocket constructor override. Defaults to the native `WebSocket`.
-   * Primarily useful for testing with a mock WebSocket.
+   * WebSocket constructor override. Primarily useful for testing with a mock
+   * WebSocket. When omitted, the session uses a reconnecting WebSocket
+   * (partysocket) that retries with exponential backoff after an unexpected
+   * close and resumes the session; an injected constructor is used as-is and
+   * never reconnects on its own.
    */
   WebSocket?: WebSocketConstructor | undefined;
 };

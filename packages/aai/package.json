@@ -82,6 +82,7 @@
     "assemblyai": "^4.36.4",
     "bogon": "^1.3.0",
     "escape-html": "^1.0.3",
+    "expr-eval-fork": "^3.0.3",
     "html-to-text": "^10.0.0",
     "mime-types": "^3.0.2",
     "nanoevents": "^9.1.0",

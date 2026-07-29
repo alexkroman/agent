@@ -288,6 +288,77 @@ describe("createSessionCore", () => {
     });
   });
 
+  // ─── Automatic reconnection (partysocket default socket) ───────────────
+
+  describe("automatic reconnection", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+      // No `WebSocket` option → the core uses partysocket's reconnecting
+      // socket, which falls back to the global WebSocket as its transport.
+      vi.stubGlobal("WebSocket", MockWebSocket);
+      core = createSessionCore({ platformUrl: "ws://localhost:3000" });
+    });
+
+    afterEach(() => {
+      core.disconnect();
+      vi.useRealTimers();
+      vi.unstubAllGlobals();
+    });
+
+    it("server-initiated close reconnects with the resume URL and replays history", async () => {
+      core.connect();
+      // partysocket opens the underlying socket asynchronously (0ms timer).
+      await vi.advanceTimersByTimeAsync(0);
+      const first = lastSocket;
+      expect(first).not.toBeNull();
+      expect(first?.url).not.toContain("resume");
+
+      first?.simulateOpen();
+      // audioOut:false keeps the handshake synchronous (no mic/worklet setup).
+      first?.simulateMessage(makeConfig(16_000, 24_000, "sess-1", { audioOut: false }));
+      first?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "Hello" }));
+      expect(core.getSnapshot().messages).toHaveLength(1);
+
+      // Unexpected close: the session surfaces "connecting" (not
+      // "disconnected") while partysocket waits out the backoff.
+      first?.simulateClose();
+      expect(core.getSnapshot().state).toBe("connecting");
+
+      // First retry fires after the minimum backoff delay.
+      await vi.advanceTimersByTimeAsync(1000);
+      const second = lastSocket;
+      expect(second).not.toBe(first);
+      expect(second?.url).toContain("resume=1");
+
+      second?.simulateOpen();
+      expect(core.getSnapshot().state).toBe("ready");
+      second?.simulateMessage(makeConfig(16_000, 24_000, "sess-1", { audioOut: false }));
+      const historyCall = (second?.send.mock.calls ?? []).find(
+        (c) => typeof c[0] === "string" && JSON.parse(c[0] as string).type === "history",
+      );
+      expect(historyCall).toBeDefined();
+      expect(JSON.parse(historyCall?.[0] as string).messages).toEqual([
+        { role: "user", content: "Hello" },
+      ]);
+    });
+
+    it("user disconnect does not reconnect", async () => {
+      core.connect();
+      await vi.advanceTimersByTimeAsync(0);
+      const first = lastSocket;
+      first?.simulateOpen();
+
+      core.disconnect();
+      expect(core.getSnapshot().state).toBe("disconnected");
+
+      // No retry ever fires, no matter how long we wait.
+      resetLastSocket();
+      await vi.advanceTimersByTimeAsync(120_000);
+      expect(lastSocket).toBeNull();
+      expect(core.getSnapshot().state).toBe("disconnected");
+    });
+  });
+
   // ─── Multiple rapid connects (generation counter) ─────────────────────
 
   describe("rapid reconnect (generation counter)", () => {

@@ -13,6 +13,7 @@ import type { ClientEvent, ClientSink, SessionErrorCode } from "../sdk/protocol.
 import type { Message } from "../sdk/types.ts";
 import { capToolResult, errorMessage, toolError } from "../sdk/utils.ts";
 import { withTrailingSilence } from "./_pcm.ts";
+import { createCoalescingTimer } from "./_timer.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { Transport } from "./transports/types.ts";
@@ -105,8 +106,6 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   let reply: ReplyState = emptyReply();
   let history: Message[] = [];
   let turnPromise: Promise<void> | null = null;
-  let idleTimer: NodeJS.Timeout | null = null;
-  let lastActivityMs = 0;
   let stopped = false;
   /** In-flight file upload (between transcribe_file_start and _end): binary
    *  frames land here instead of streaming to the transport as mic audio.
@@ -138,25 +137,17 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     opts.client.event(event);
   }
 
-  function onIdleDeadline(): void {
-    const remaining = lastActivityMs + idleMs - Date.now();
-    if (remaining > 0) {
-      // Activity arrived since the timer was armed — sleep out the remainder.
-      idleTimer = setTimeout(onIdleDeadline, remaining);
-      return;
-    }
-    idleTimer = null;
+  // Re-armed at audio-frame rate, so the coalescing timer matters: it records
+  // the deadline and keeps one long-lived timer instead of re-arming a
+  // 5-minute timeout on every chunk.
+  const idleTimer = createCoalescingTimer(() => {
     log.info("session idle timeout", { sid: opts.id });
     emit({ type: "idle_timeout" });
-  }
+  });
 
-  // Called at audio-frame rate, so it must stay cheap: record the activity
-  // timestamp and keep one long-lived timer instead of re-arming a 5-minute
-  // timeout on every chunk.
   function resetIdle(): void {
     if (stopped || idleMs <= 0) return;
-    lastActivityMs = Date.now();
-    if (idleTimer === null) idleTimer = setTimeout(onIdleDeadline, idleMs);
+    idleTimer.arm(idleMs);
   }
 
   function pushMessages(...msgs: Message[]): void {
@@ -207,10 +198,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     async stop() {
       if (stopped) return;
       stopped = true;
-      if (idleTimer) {
-        clearTimeout(idleTimer);
-        idleTimer = null;
-      }
+      idleTimer.clear();
       // Cancel in-flight tools so the drain below settles promptly instead
       // of holding the session (and provider sockets) open for up to the
       // full tool timeout after a disconnect.
