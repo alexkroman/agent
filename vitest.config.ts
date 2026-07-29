@@ -75,6 +75,8 @@ export default defineConfig({
           exclude: [
             "docker-build.test.ts",
             "fake-vm-integration*.test.ts",
+            // LLM-in-the-loop evals: pnpm --filter aai-server test:evals
+            "studio/studio-eval.test.ts",
             "sandbox-integration.test.ts",
             "sandbox-lifecycle.test.ts",
             "ws-integration.test.ts",
