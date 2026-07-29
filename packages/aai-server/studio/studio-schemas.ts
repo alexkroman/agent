@@ -114,6 +114,13 @@ export const UiMessageSchema = z
 export const ChatBodySchema = z.object({
   project: ProjectNameSchema,
   messages: z.array(UiMessageSchema).min(1).max(MAX_STUDIO_CHAT_MESSAGES),
+  /**
+   * Per-request model choice. Shape-checked here; the chat route validates
+   * membership in `studioLlmModels()` (the host-configured provider's known
+   * models) before anything streams — a client can pick among those models
+   * but can never name a provider or supply a key.
+   */
+  model: z.string().min(1).max(100).optional(),
 });
 
 /** Env/secrets to merge into the agent's stored env at deploy time. */

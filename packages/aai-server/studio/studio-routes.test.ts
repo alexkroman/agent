@@ -13,6 +13,7 @@ import {
   type TestFetch,
 } from "../test-utils.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
+import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
 import { createStudioRoutes } from "./studio-routes.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
 import { putWorkspace, studioScope } from "./studio-workspace.ts";
@@ -101,6 +102,7 @@ describe("studio page + routing", () => {
       llm: true,
       provider: "assemblyai",
       model: "gpt-5.5",
+      models: [...ASSEMBLYAI_GATEWAY_MODELS],
     });
   });
 
@@ -394,6 +396,38 @@ describe("deploy + chat endpoints", () => {
     expect(messages).toHaveLength(1);
   });
 
+  test("chat accepts a model from the configured provider's list", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
+    await createProject(fetch);
+    const res = await authFetch(fetch, "/studio/chat", {
+      body: { ...chatBody(), model: "claude-opus-4-7" },
+    });
+    expect(res.status).toBe(200);
+    const [deps] = chatMock.mock.calls[0] as unknown[] as [{ model?: { modelId?: string } }];
+    expect(deps.model?.modelId).toBe("claude-opus-4-7");
+  });
+
+  test("chat without a model leaves the host default in charge", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
+    await createProject(fetch);
+    expect((await authFetch(fetch, "/studio/chat", { body: chatBody() })).status).toBe(200);
+    const [deps] = chatMock.mock.calls[0] as unknown[] as [{ model?: unknown }];
+    expect(deps.model).toBeUndefined();
+  });
+
+  test("chat rejects a model off the provider's list with a 400", async () => {
+    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
+    await createProject(fetch);
+    const res = await authFetch(fetch, "/studio/chat", {
+      body: { ...chatBody(), model: "gpt-999-turbo-pro" },
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string; models: string[] };
+    expect(body.error).toContain("Unknown model");
+    expect(body.models).toEqual([...ASSEMBLYAI_GATEWAY_MODELS]);
+    expect(chatMock).not.toHaveBeenCalled();
+  });
+
   test("chat is rate limited per scope with a Retry-After", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
     await createProject(fetch);
@@ -419,20 +453,32 @@ describe("deploy + chat endpoints", () => {
     expect(limited.headers.get("Retry-After")).toMatch(/^\d+$/);
   });
 
-  test("a client-supplied provider/model is ignored, not honoured", async () => {
-    // The picker is gone: the studio runs on the host's configured model, and
-    // a hand-crafted request must not be able to pick a different one.
+  test("a client-supplied provider is ignored; the model stays provider-bound", async () => {
+    // Only the model is negotiable, and only within the host-configured
+    // provider's list: a hand-crafted request naming a provider (ignored) and
+    // a model from a *different* provider's catalogue must be refused, not
+    // routed there.
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     vi.stubEnv("STUDIO_LLM_PROVIDER", "");
     vi.stubEnv("STUDIO_LLM_MODEL", "");
     await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/chat", {
+    const crossProvider = await authFetch(fetch, "/studio/chat", {
       body: { ...chatBody(), provider: "assemblyai", model: "gpt-4.1" },
     });
+    expect(crossProvider.status).toBe(400);
+    expect(chatMock).not.toHaveBeenCalled();
+    // Same request with a model the configured (Anthropic) provider serves:
+    // the stray provider field is ignored and the turn runs on Anthropic.
+    const res = await authFetch(fetch, "/studio/chat", {
+      body: { ...chatBody(), provider: "assemblyai", model: "claude-opus-5" },
+    });
     expect(res.status).toBe(200);
-    const [deps] = chatMock.mock.calls[0] as unknown[] as [Record<string, unknown>];
+    const [deps] = chatMock.mock.calls[0] as unknown[] as [
+      Record<string, unknown> & { model?: { modelId?: string } },
+    ];
     expect(deps).not.toHaveProperty("llm");
+    expect(deps.model?.modelId).toBe("claude-opus-5");
   });
 });
 

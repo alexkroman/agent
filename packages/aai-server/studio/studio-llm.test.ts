@@ -1,12 +1,15 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Studio chat LLM selection — host-env defaults and overrides. There is no
-// browser-side choice: the studio runs on whatever the host is configured for.
+// Studio chat LLM selection — host-env defaults and overrides. The provider
+// is host-configured; a request may switch models within that provider's own
+// list (studioLlmModels), never beyond it.
 
 import { describe, expect, test } from "vitest";
 import {
+  ASSEMBLYAI_GATEWAY_MODELS,
   isStudioLlmConfigured,
   selectStudioLlm,
   studioLlmInfo,
+  studioLlmModels,
   studioModel,
 } from "./studio-llm.ts";
 
@@ -25,7 +28,11 @@ describe("LLM provider selection", () => {
   test("prefers the AssemblyAI LLM Gateway when its key is present", () => {
     const both = env({ ASSEMBLYAI_API_KEY: "k", ANTHROPIC_API_KEY: "k2" });
     expect(selectStudioLlm(both)).toMatchObject({ provider: "assemblyai", model: "gpt-5.5" });
-    expect(studioLlmInfo(both)).toEqual({ provider: "assemblyai", model: "gpt-5.5" });
+    expect(studioLlmInfo(both)).toEqual({
+      provider: "assemblyai",
+      model: "gpt-5.5",
+      models: [...ASSEMBLYAI_GATEWAY_MODELS],
+    });
     expect((studioModel(both) as { modelId: string }).modelId).toBe("gpt-5.5");
   });
 
@@ -74,6 +81,65 @@ describe("LLM provider selection", () => {
     const keyless = env({ STUDIO_LLM_PROVIDER: "anthropic" });
     expect(isStudioLlmConfigured(keyless)).toBe(false);
     expect(() => studioModel(keyless)).toThrow(/ANTHROPIC_API_KEY is not set/);
+  });
+});
+
+describe("per-request model switching", () => {
+  const gatewayEnv = env({ ASSEMBLYAI_API_KEY: "k" });
+
+  test("studioLlmModels lists the gateway models when configured", () => {
+    expect(studioLlmModels(gatewayEnv)).toEqual([...ASSEMBLYAI_GATEWAY_MODELS]);
+    expect(studioLlmInfo(gatewayEnv)).toMatchObject({
+      provider: "assemblyai",
+      model: "gpt-5.5",
+      models: [...ASSEMBLYAI_GATEWAY_MODELS],
+    });
+  });
+
+  test("studioLlmModels is empty when unconfigured or misconfigured", () => {
+    expect(studioLlmModels(env({}))).toEqual([]);
+    // Provider selected but its key missing: nothing is runnable.
+    expect(studioLlmModels(env({ STUDIO_LLM_PROVIDER: "anthropic" }))).toEqual([]);
+    // selectStudioLlm would throw; the list degrades to empty instead.
+    expect(studioLlmModels(env({ STUDIO_LLM_PROVIDER: "nope" }))).toEqual([]);
+  });
+
+  test("an explicit STUDIO_LLM_MODEL leads the list without duplicating it", () => {
+    const pinned = env({ ASSEMBLYAI_API_KEY: "k", STUDIO_LLM_MODEL: "custom-model" });
+    expect(studioLlmModels(pinned)).toEqual(["custom-model", ...ASSEMBLYAI_GATEWAY_MODELS]);
+    const pinnedToListed = env({ ASSEMBLYAI_API_KEY: "k", STUDIO_LLM_MODEL: "gpt-5" });
+    const models = studioLlmModels(pinnedToListed);
+    expect(models[0]).toBe("gpt-5");
+    expect(models.filter((m) => m === "gpt-5")).toHaveLength(1);
+  });
+
+  test("a valid override switches the model on the same provider", () => {
+    expect(selectStudioLlm(gatewayEnv, "claude-opus-4-7")).toMatchObject({
+      provider: "assemblyai",
+      model: "claude-opus-4-7",
+    });
+    expect((studioModel(gatewayEnv, "claude-opus-4-7") as { modelId: string }).modelId).toBe(
+      "claude-opus-4-7",
+    );
+  });
+
+  test("an override off the provider's list is a loud error", () => {
+    expect(() => selectStudioLlm(gatewayEnv, "made-up-model")).toThrow(/not available/);
+    expect(() => studioModel(gatewayEnv, "made-up-model")).toThrow(/not available/);
+  });
+
+  test("EU region filters the list and refuses US-only overrides", () => {
+    const eu = env({ ASSEMBLYAI_API_KEY: "k", STUDIO_LLM_REGION: "eu" });
+    const models = studioLlmModels(eu);
+    expect(models[0]).toBe("claude-sonnet-4-6");
+    expect(models).not.toContain("gpt-5.5");
+    expect(() => selectStudioLlm(eu, "gpt-5.5")).toThrow(/not available/);
+  });
+
+  test("overriding with the configured default is always accepted", () => {
+    // Even an off-list explicit STUDIO_LLM_MODEL can be re-stated.
+    const pinned = env({ ASSEMBLYAI_API_KEY: "k", STUDIO_LLM_MODEL: "custom-model" });
+    expect(selectStudioLlm(pinned, "custom-model")).toMatchObject({ model: "custom-model" });
   });
 });
 
