@@ -42,11 +42,50 @@ describe("applyEdit", () => {
     expect(content).toContain('name: "Renamed"');
   });
 
+  test("a fuzzy match rewrites only the matched region, byte-for-byte", () => {
+    // Line 1 carries an em dash, curly quotes, and trailing whitespace; the
+    // edit fuzzy-matches line 5 (straight quotes in the needle vs curly in
+    // the file). Splicing into the normalized haystack used to silently
+    // rewrite line 1's unicode — and diff normalized-vs-normalized hid it.
+    const line1 = "// “Header” — with unicode   ";
+    const file = `${line1}\na\nb\nc\nname: “My Agent”\n`;
+    const { content, diff } = applyEdit("f.ts", file, 'name: "My Agent"', 'name: "Renamed"');
+    expect(content.split("\n")[0]).toBe(line1);
+    expect(content).toContain('name: "Renamed"');
+    // The diff must show only the changed line 5 region, never line 1.
+    expect(diff).toContain("Renamed");
+    expect(diff).not.toContain("Header");
+  });
+
+  test("a fuzzy match keeps trailing whitespace outside the needle", () => {
+    // The stripped trailing spaces sit after the matched region; they belong
+    // to the file, not to the edit.
+    const file = "value: “x”   \nrest\n";
+    const { content } = applyEdit("f.ts", file, 'value: "x"', 'value: "y"');
+    expect(content).toBe('value: "y"   \nrest\n');
+  });
+
   test("preserves CRLF line endings", () => {
     const crlf = 'a\r\nname: "My Agent"\r\nb\r\n';
     const { content } = applyEdit("f.ts", crlf, '"My Agent"', '"Other"');
     expect(content).toContain("\r\n");
     expect(content).not.toMatch(/[^\r]\n/);
+  });
+
+  test("a mixed-endings file keeps its majority ending", () => {
+    // First-newline sniffing would have homogenized this CRLF-majority file
+    // to LF just because an LF line came first.
+    const mixed = 'x: 1\na\r\nname: "My Agent"\r\nb\r\n';
+    const { content } = applyEdit("f.ts", mixed, '"My Agent"', '"Other"');
+    expect(content).toContain('"Other"');
+    expect(content.match(/\r\n/g)).toHaveLength(4);
+    expect(content).not.toMatch(/[^\r]\n/);
+  });
+
+  test("an LF-majority file with a stray CRLF stays LF", () => {
+    const mixed = 'a\r\nb\nname: "My Agent"\nc\n';
+    const { content } = applyEdit("f.ts", mixed, '"My Agent"', '"Other"');
+    expect(content).not.toContain("\r");
   });
 
   test("preserves a leading BOM", () => {

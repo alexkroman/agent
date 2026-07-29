@@ -76,6 +76,14 @@ describe("workspace CRUD", () => {
     await storage.setItem("studio/s/scalar", "42");
     expect(await getWorkspace(storage, "s", "corrupt")).toBeNull();
     expect(await getWorkspace(storage, "s", "scalar")).toBeNull();
+    // `typeof null === "object"` — these used to pass the shape check and
+    // blow up downstream as TypeErrors (500s) instead of a clean 404.
+    await storage.setItem("studio/s/null-files", JSON.stringify({ files: null, updatedAt: 1 }));
+    await storage.setItem("studio/s/array-files", JSON.stringify({ files: [], updatedAt: 1 }));
+    await storage.setItem("studio/s/array-doc", JSON.stringify([{ files: {} }]));
+    expect(await getWorkspace(storage, "s", "null-files")).toBeNull();
+    expect(await getWorkspace(storage, "s", "array-files")).toBeNull();
+    expect(await getWorkspace(storage, "s", "array-doc")).toBeNull();
   });
 
   test("rejects path traversal in file names", async () => {

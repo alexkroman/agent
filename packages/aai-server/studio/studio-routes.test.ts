@@ -2,9 +2,20 @@
 // Studio HTTP surface, exercised through the full orchestrator (routing
 // order vs the /:slug routes matters and is covered here).
 
+import { Hono } from "hono";
 import { beforeEach, describe, expect, test, vi } from "vitest";
-import { authFetch, createTestOrchestrator, type TestFetch } from "../test-utils.ts";
+import type { HonoEnv } from "../context.ts";
+import {
+  authFetch,
+  authHeaders,
+  createTestOrchestrator,
+  createTestStorage,
+  type TestFetch,
+} from "../test-utils.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
+import { createStudioRoutes } from "./studio-routes.ts";
+import type { StudioSandbox } from "./studio-sandbox.ts";
+import { putWorkspace, studioScope } from "./studio-workspace.ts";
 
 const deployMock = vi.fn(
   async (..._args: unknown[]): Promise<StudioDeployResult> => ({
@@ -383,6 +394,31 @@ describe("deploy + chat endpoints", () => {
     expect(messages).toHaveLength(1);
   });
 
+  test("chat is rate limited per scope with a Retry-After", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    await createProject(fetch);
+    for (let i = 0; i < 30; i += 1) {
+      expect((await authFetch(fetch, "/studio/chat", { body: chatBody() })).status).toBe(200);
+    }
+    const limited = await authFetch(fetch, "/studio/chat", { body: chatBody() });
+    expect(limited.status).toBe(429);
+    expect(((await limited.json()) as { error: string }).error).toContain("Rate limit");
+    expect(limited.headers.get("Retry-After")).toMatch(/^\d+$/);
+    // Another scope is unaffected (its project doesn't exist → 404, not 429).
+    expect((await authFetch(fetch, "/studio/chat", { body: chatBody(), key: "key2" })).status).toBe(
+      404,
+    );
+  });
+
+  test("project creation is rate limited per scope", async () => {
+    for (let i = 0; i < 60; i += 1) {
+      expect((await createProject(fetch, `proj-${i}`)).status).toBe(201);
+    }
+    const limited = await createProject(fetch, "one-too-many");
+    expect(limited.status).toBe(429);
+    expect(limited.headers.get("Retry-After")).toMatch(/^\d+$/);
+  });
+
   test("a client-supplied provider/model is ignored, not honoured", async () => {
     // The picker is gone: the studio runs on the host's configured model, and
     // a hand-crafted request must not be able to pick a different one.
@@ -397,5 +433,70 @@ describe("deploy + chat endpoints", () => {
     expect(res.status).toBe(200);
     const [deps] = chatMock.mock.calls[0] as unknown[] as [Record<string, unknown>];
     expect(deps).not.toHaveProperty("llm");
+  });
+});
+
+describe("chat sandbox lifecycle", () => {
+  type ChatDeps = {
+    sandbox: () => Promise<StudioSandbox>;
+    disposeSandbox: () => Promise<void>;
+  };
+
+  /** Studio routes with an observable fake sandbox factory, plus one project. */
+  async function chatApp() {
+    vi.stubEnv("STUDIO_MCP_URLS", "");
+    const dispose = vi.fn(async (): Promise<void> => undefined);
+    const createSandbox = vi.fn(
+      async (): Promise<StudioSandbox> => ({
+        loadBundle: async () => ({}),
+        executeTool: async () => "ok",
+        dispose,
+      }),
+    );
+    const storage = createTestStorage();
+    await putWorkspace(storage, studioScope("key1"), "proj", { files: { "agent.ts": "x" } });
+    const app = new Hono<HonoEnv>().route(
+      "/studio",
+      createStudioRoutes({ createSandbox, llmConfigured: () => true }),
+    );
+    const bindings = { storage } as unknown as HonoEnv["Bindings"];
+    const request = () =>
+      app.request(
+        "/studio/chat",
+        { method: "POST", headers: authHeaders(), body: JSON.stringify(chatBody()) },
+        bindings,
+      );
+    return { request, createSandbox, dispose };
+  }
+
+  beforeEach(() => {
+    chatMock.mockClear();
+  });
+
+  test("a dispose that ran before lazy provisioning blocks it — no leaked sandbox", async () => {
+    // The abort race: runStudioChat's teardown fires while sandboxPromise is
+    // still null (test_agent is mid Vite build), then the tool asks for the
+    // sandbox. Provisioning one now would leak a gVisor/Deno process nothing
+    // ever disposes.
+    const { request, createSandbox } = await chatApp();
+    expect((await request()).status).toBe(200);
+    const [deps] = chatMock.mock.calls[0] as unknown[] as [ChatDeps];
+
+    await deps.disposeSandbox();
+    await expect(deps.sandbox()).rejects.toThrow(/turn ended/);
+    expect(createSandbox).not.toHaveBeenCalled();
+  });
+
+  test("a sandbox provisioned before dispose is disposed exactly once", async () => {
+    const { request, createSandbox, dispose } = await chatApp();
+    expect((await request()).status).toBe(200);
+    const [deps] = chatMock.mock.calls[0] as unknown[] as [ChatDeps];
+
+    await deps.sandbox();
+    // Repeat calls reuse the one sandbox.
+    await deps.sandbox();
+    expect(createSandbox).toHaveBeenCalledTimes(1);
+    await deps.disposeSandbox();
+    expect(dispose).toHaveBeenCalledTimes(1);
   });
 });

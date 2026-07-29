@@ -12,13 +12,19 @@ type FakeClient = {
 };
 const clients: FakeClient[] = [];
 /** Per-URL behavior for the next openMcpTools call. */
-const behavior = new Map<string, { tools?: Record<string, unknown>; toolsError?: Error }>();
+const behavior = new Map<
+  string,
+  { tools?: Record<string, unknown>; toolsError?: Error; connectDelayMs?: number }
+>();
 
 type FakeDefinitions = { tools: { name: string; description: string | undefined }[] };
 
 vi.mock("@ai-sdk/mcp", () => ({
   createMCPClient: vi.fn(async ({ transport }: { transport: { url: string } }) => {
     const spec = behavior.get(transport.url) ?? {};
+    if (spec.connectDelayMs) {
+      await new Promise((resolve) => setTimeout(resolve, spec.connectDelayMs));
+    }
     const client: FakeClient = {
       // The wire shape: `tools/list` returns definitions...
       listTools: vi.fn(async (): Promise<FakeDefinitions> => {
@@ -79,6 +85,26 @@ describe("openMcpTools (connected)", () => {
     expect(clients[0]?.close).toHaveBeenCalledTimes(1);
     await session.close();
   });
+
+  test("a connect that resolves after the timeout is closed, not leaked", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // Slower than CONNECT_TIMEOUT_MS (2s): the turn gives up on MCP, but the
+    // abandoned connect still resolves — its client must be closed rather
+    // than leaking one HTTP client per turn while the docs server is slow.
+    behavior.set("https://slow/mcp", {
+      connectDelayMs: 2300,
+      tools: { search_docs: { description: "d" } },
+    });
+    const session = await openMcpTools(env({ STUDIO_MCP_URLS: "https://slow/mcp" }));
+    expect(session.tools).toEqual({});
+    await vi.waitFor(
+      () => {
+        expect(clients[0]?.close).toHaveBeenCalledTimes(1);
+      },
+      { timeout: 2000 },
+    );
+    await session.close();
+  }, 10_000);
 
   test("the tool listing is cached across turns; tool objects are rebuilt per turn", async () => {
     behavior.set("https://docs/mcp", { tools: { search_docs: { description: "d" } } });

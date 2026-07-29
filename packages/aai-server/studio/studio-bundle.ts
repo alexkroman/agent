@@ -35,9 +35,9 @@ export { StudioBuildError } from "./studio-errors.ts";
 const ALLOWED_PACKAGES = ["@alexkroman1/aai", "zod"];
 
 /** Generated entry filename, written into the scratch dir alongside agent.ts. */
-export const WRAPPER_ENTRY_FILE = "__aai-entry.ts";
+const WRAPPER_ENTRY_FILE = "__aai-entry.ts";
 
-export const WRAPPER_ENTRY = `import def from "./agent.ts";
+const WRAPPER_ENTRY = `import def from "./agent.ts";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 export default def;
 export const __aaiConfig = {
@@ -64,7 +64,7 @@ function isAllowedPackage(spec: string): boolean {
  * `@alexkroman1/aai`'s own dependencies resolve from `node_modules` and must
  * pass through untouched.
  */
-export function allowlistPlugin(dir: string): PluginOption {
+function allowlistPlugin(dir: string): PluginOption {
   const prefix = `${dir}${path.sep}`;
   const inWorkspace = (id: string | undefined): id is string =>
     id?.startsWith(prefix) === true && !id.includes(`${path.sep}node_modules${path.sep}`);
@@ -160,7 +160,7 @@ function formatBuildError(err: unknown, dir: string): string {
  * carry absolute ones, so both spellings of the scratch dir are removed.
  * ANSI/VT sequences go via `node:util`'s own stripper.
  */
-export function scrub(message: string, dir: string): string {
+function scrub(message: string, dir: string): string {
   const forms = [dir, path.relative(process.cwd(), dir)].filter(Boolean);
   let out = stripVTControlCharacters(message);
   for (const form of forms) {

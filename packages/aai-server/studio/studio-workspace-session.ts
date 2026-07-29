@@ -17,6 +17,7 @@
  * editor save racing each other was always last-write-wins.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import type { Storage } from "unstorage";
 import { getWorkspace, putWorkspace, type StudioWorkspace } from "./studio-workspace.ts";
 import { withWorkspaceLock } from "./studio-workspace-lock.ts";
@@ -67,7 +68,7 @@ export function createWorkspaceSession(
           snapshot = Promise.resolve(doc);
           return message;
         } catch (err) {
-          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+          return `Error: ${errorMessage(err)}`;
         }
       });
     },

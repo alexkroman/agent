@@ -73,22 +73,50 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
   const spawn = opts.spawn ?? spawnWarmHarness;
   const harnessPath = opts.harnessPath ?? resolveHarnessPath();
 
-  let warm: WarmHarness | null = (await opts.pool?.acquire()) ?? null;
-  if (!warm) {
-    warm = await spawn({ harnessPath, slug: "studio-session" });
-  }
-  const live = warm;
-
   // Scratch KV/Vector so trial tool runs behave realistically (ctx.kv works)
   // without reaching any tenant data. No allowedHosts — guest fetch is off.
-  registerGuestRpcHandlers(live.conn, {
-    kv: scratchKv(),
-    vector: createMemoryVector({ namespace: TRIAL_SESSION_ID }),
-  });
-  live.conn.listen();
+  const wire = (warm: WarmHarness): WarmHarness => {
+    registerGuestRpcHandlers(warm.conn, {
+      kv: scratchKv(),
+      vector: createMemoryVector({ namespace: TRIAL_SESSION_ID }),
+    });
+    warm.conn.listen();
+    return warm;
+  };
+
+  const pooled: WarmHarness | null = (await opts.pool?.acquire()) ?? null;
+  let live = wire(pooled ?? (await spawn({ harnessPath, slug: "studio-session" })));
+  /** False only while `live` is still the pooled harness. */
+  let freshlySpawned = pooled === null;
 
   let disposed = false;
   const inFlight = new Set<Promise<unknown>>();
+
+  /**
+   * A pooled harness can die between the pool's alive() check and its first
+   * use here — the same race `createSandboxVm` falls back to a cold spawn
+   * for. One-shot: dispose the dead pooled harness and retry `op` on a fresh
+   * spawn, which either works or surfaces the real error.
+   */
+  async function withPooledRetry<T>(op: () => Promise<T>): Promise<T> {
+    try {
+      return await op();
+    } catch (err) {
+      if (freshlySpawned || disposed) throw err;
+      freshlySpawned = true;
+      console.warn("Studio sandbox: pooled harness failed; retrying on a fresh spawn", {
+        error: errorMessage(err),
+      });
+      try {
+        live.conn.dispose();
+        await live.cleanup();
+      } catch {
+        /* best-effort teardown of the dead harness */
+      }
+      live = wire(await spawn({ harnessPath, slug: "studio-session" }));
+      return await op();
+    }
+  }
 
   /**
    * Runs one guest request, keeping `dispose()` from yanking the connection
@@ -115,24 +143,28 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
 
   return {
     loadBundle(code: string) {
-      return track(async () => {
-        const result = await live.conn.sendRequest<{ ok: boolean; config?: unknown }>(
-          "bundle/load",
-          { code, env: {} },
-        );
-        return { ...(result?.config !== undefined && { config: result.config }) };
-      });
+      return track(() =>
+        withPooledRetry(async () => {
+          const result = await live.conn.sendRequest<{ ok: boolean; config?: unknown }>(
+            "bundle/load",
+            { code, env: {} },
+          );
+          return { ...(result?.config !== undefined && { config: result.config }) };
+        }),
+      );
     },
 
     executeTool(name: string, args: Record<string, unknown>) {
-      return track(async () => {
-        const response = await live.conn.sendRequest<{ result?: string; error?: string }>(
-          "tool/execute",
-          { name, args, sessionId: TRIAL_SESSION_ID, messages: [] },
-        );
-        if (response?.error) return `Tool error: ${response.error}`;
-        return response?.result ?? "(no result)";
-      });
+      return track(() =>
+        withPooledRetry(async () => {
+          const response = await live.conn.sendRequest<{ result?: string; error?: string }>(
+            "tool/execute",
+            { name, args, sessionId: TRIAL_SESSION_ID, messages: [] },
+          );
+          if (response?.error) return `Tool error: ${response.error}`;
+          return response?.result ?? "(no result)";
+        }),
+      );
     },
 
     async dispose() {

@@ -17,18 +17,24 @@
  * the key (`studioScope`), so a key only ever sees its own projects.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import type { UIMessage } from "ai";
 import { Hono } from "hono";
-import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
-import { parseBearer } from "../_bearer.ts";
 import type { HonoEnv } from "../context.ts";
+import { authMw } from "../middleware.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
 import { runStudioChat } from "./studio-agent.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { isStudioLlmConfigured, studioLlmInfo } from "./studio-llm.ts";
 import { openMcpTools } from "./studio-mcp.ts";
+import {
+  CHAT_RATE_LIMIT,
+  createRateLimiter,
+  PROJECT_CREATE_RATE_LIMIT,
+  type RateLimiter,
+} from "./studio-rate-limit.ts";
 import { createStudioSandbox, type StudioSandbox } from "./studio-sandbox.ts";
 import {
   ChatBodySchema,
@@ -60,20 +66,6 @@ export type StudioRouteOptions = {
   createSandbox?: typeof createStudioSandbox;
 };
 
-/**
- * Bearer auth for studio routes. Unlike `authMw` this skips the ~100ms
- * PBKDF2 key hash — workspace scoping needs only the deterministic
- * `studioScope`, and the deploy path derives the ownership hash itself.
- */
-const studioAuthMw = createMiddleware<HonoEnv>(async (c, next) => {
-  const apiKey = parseBearer(c.req.header("Authorization"));
-  if (!apiKey) {
-    throw new HTTPException(401, { message: "Missing Authorization header (Bearer <API_KEY>)" });
-  }
-  c.set("apiKey", apiKey);
-  await next();
-});
-
 function validateProject(name: string | undefined): string {
   const parsed = ProjectNameSchema.safeParse(name);
   if (!parsed.success) throw new HTTPException(400, { message: "Invalid project name" });
@@ -87,6 +79,21 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
 
   const studio = new Hono<HonoEnv>();
 
+  // Per-scope fixed-window limits (see studio-rate-limit.ts): any non-empty
+  // bearer authenticates here, so without these the chat route is an
+  // unmetered LLM proxy on platform-owned keys. Per router instance — one
+  // orchestrator holds one set of windows.
+  const chatLimiter = createRateLimiter(CHAT_RATE_LIMIT);
+  const projectCreateLimiter = createRateLimiter(PROJECT_CREATE_RATE_LIMIT);
+  const rateLimited = (apiKey: string, limiter: RateLimiter): Response | null => {
+    const verdict = limiter.check(studioScope(apiKey));
+    if (verdict.ok) return null;
+    return Response.json(
+      { error: "Rate limit exceeded — try again later" },
+      { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } },
+    );
+  };
+
   // `GET /studio` (no trailing path) — send the browser to the studio page.
   studio.get("/", (c) => c.redirect("/", 302));
 
@@ -94,9 +101,12 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     c.json({ llm: llmConfigured(), ...(llmConfigured() && studioLlmInfo()) }),
   );
 
-  studio.use("/projects", studioAuthMw);
-  studio.use("/projects/*", studioAuthMw);
-  studio.use("/chat", studioAuthMw);
+  // Bearer auth without slug ownership: workspace scoping needs only the
+  // deterministic `studioScope`, and the deploy path derives the ownership
+  // hash itself.
+  studio.use("/projects", authMw);
+  studio.use("/projects/*", authMw);
+  studio.use("/chat", authMw);
 
   studio.get("/projects", async (c) => {
     const scope = studioScope(c.var.apiKey);
@@ -104,6 +114,8 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   });
 
   studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
+    const limited = rateLimited(c.var.apiKey, projectCreateLimiter);
+    if (limited) return limited;
     const scope = studioScope(c.var.apiKey);
     const { name } = c.req.valid("json");
     // Exists-check and create are one atomic step: two concurrent creates
@@ -154,7 +166,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
           files: { ...workspace.files, [path]: content },
         });
       } catch (err) {
-        return c.json({ error: err instanceof Error ? err.message : String(err) }, 400);
+        return c.json({ error: errorMessage(err) }, 400);
       }
       return c.json({ ok: true });
     });
@@ -192,6 +204,8 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   );
 
   studio.post("/chat", async (c) => {
+    const limited = rateLimited(c.var.apiKey, chatLimiter);
+    if (limited) return limited;
     if (!llmConfigured()) {
       return c.json(
         {
@@ -208,7 +222,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     // parsed. The raw text length is measured directly (Content-Length can
     // lie) and bounds everything the parse below can produce.
     const raw = await c.req.text();
-    if (raw.length > MAX_STUDIO_CHAT_BYTES) {
+    // Byte length, not `raw.length`: the cap is in bytes and non-ASCII
+    // content is up to 3x its UTF-16 code-unit count in UTF-8.
+    if (Buffer.byteLength(raw) > MAX_STUDIO_CHAT_BYTES) {
       return c.json({ error: "Conversation too large" }, 400);
     }
     let json: unknown;
@@ -238,12 +254,23 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     // code-executing tool call (test_agent / deploy config extraction) via
     // the same warm-pool/spawn path deployed agents use. runStudioChat
     // disposes it when the stream settles.
+    //
+    // The `disposed` flag closes an abort race: a chat abort can run
+    // disposeSandbox while sandboxPromise is still null (test_agent spends
+    // seconds in the Vite build before asking for the sandbox), and a
+    // provisioning that started afterwards would be a leaked gVisor/Deno
+    // process nothing ever disposes.
     let sandboxPromise: Promise<StudioSandbox> | null = null;
+    let disposed = false;
     const sandbox = (): Promise<StudioSandbox> => {
+      if (disposed) {
+        return Promise.reject(new Error("The chat turn ended before the sandbox was provisioned."));
+      }
       sandboxPromise ??= newSandbox({ pool: options.pool });
       return sandboxPromise;
     };
     const disposeSandbox = async (): Promise<void> => {
+      disposed = true;
       if (!sandboxPromise) return;
       const live = await sandboxPromise.catch(() => null);
       await live?.dispose();

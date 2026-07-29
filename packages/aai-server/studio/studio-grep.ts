@@ -13,6 +13,7 @@
  * defined".
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import picomatch from "picomatch";
 import { MAX_STUDIO_FILES } from "./studio-schemas.ts";
 
@@ -54,7 +55,7 @@ function buildMatcher(pattern: string, opts: GrepOptions): RegExp {
     return new RegExp(source, opts.ignoreCase ? "i" : "");
   } catch (err) {
     throw new StudioGrepError(
-      `Invalid regex ${JSON.stringify(pattern)}: ${err instanceof Error ? err.message : String(err)}. ` +
+      `Invalid regex ${JSON.stringify(pattern)}: ${errorMessage(err)}. ` +
         "Pass literal: true to search for it as plain text.",
       { cause: err },
     );

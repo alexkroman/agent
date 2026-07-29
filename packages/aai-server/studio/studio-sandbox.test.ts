@@ -84,6 +84,56 @@ describe("createStudioSandbox", () => {
     await sandbox.dispose();
   });
 
+  test("a pooled harness that died before first use falls back to a fresh spawn", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    // The pooled harness passed the pool's alive() check but its transport is
+    // already dead — the same race createSandboxVm handles with a cold spawn.
+    const { conn: deadConn } = createTestConn();
+    deadConn.dispose();
+    const deadCleanup = vi.fn().mockResolvedValue(undefined);
+    const pool = {
+      acquire: vi.fn(async (): Promise<WarmHarness | null> => makeWarm(deadConn, deadCleanup)),
+    };
+    const fixture = makeFixture({ load: { ok: true, config: { name: "A" } } });
+    const sandbox = await createStudioSandbox({
+      pool: pool as never,
+      harnessPath: "/tmp/h.mjs",
+      spawn: fixture.spawn,
+    });
+
+    // First request hits the dead pooled transport, then retries once fresh.
+    expect(await sandbox.loadBundle("export default {};")).toEqual({ config: { name: "A" } });
+    expect(fixture.spawn).toHaveBeenCalledTimes(1);
+    expect(deadCleanup).toHaveBeenCalledTimes(1);
+
+    await sandbox.dispose();
+    expect(fixture.cleanup).toHaveBeenCalledTimes(1);
+  });
+
+  test("the fallback is one-shot: a fresh spawn's failure surfaces", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const { conn: deadConn } = createTestConn();
+    deadConn.dispose();
+    const pool = {
+      acquire: vi.fn(
+        async (): Promise<WarmHarness | null> =>
+          makeWarm(deadConn, vi.fn().mockResolvedValue(undefined)),
+      ),
+    };
+    // The retry's fresh harness is dead too — no second retry.
+    const { conn: alsoDead } = createTestConn();
+    alsoDead.dispose();
+    const spawn = vi.fn(async () => makeWarm(alsoDead, vi.fn().mockResolvedValue(undefined)));
+    const sandbox = await createStudioSandbox({
+      pool: pool as never,
+      harnessPath: "/tmp/h.mjs",
+      spawn,
+    });
+    await expect(sandbox.loadBundle("export default {};")).rejects.toThrow(/disposed/i);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    await sandbox.dispose();
+  });
+
   test("executeTool returns results and formats guest errors", async () => {
     const okFixture = makeFixture({ tool: { result: "rolled 6" } });
     const sandbox = await createStudioSandbox({

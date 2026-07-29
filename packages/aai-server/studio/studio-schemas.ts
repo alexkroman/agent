@@ -44,7 +44,7 @@ const MAX_TYPED_PROJECT_NAME = 100;
  * `decamelize: false` keeps "MyAgent" as one word instead of "my-agent": the
  * name is an identifier the user typed, not a symbol to be prettified.
  */
-export function slugifyProjectName(input: string): string {
+function slugifyProjectName(input: string): string {
   return slugifyLib(input, { decamelize: false }).slice(0, 64).replace(/-+$/g, "");
 }
 
@@ -116,11 +116,7 @@ export const ChatBodySchema = z.object({
   messages: z.array(UiMessageSchema).min(1).max(MAX_STUDIO_CHAT_MESSAGES),
 });
 
-export type ChatBody = z.infer<typeof ChatBodySchema>;
-
 /** Env/secrets to merge into the agent's stored env at deploy time. */
 export const StudioDeployBodySchema = z.object({
   env: z.record(z.string(), z.string()).optional(),
 });
-
-export type StudioDeployBody = z.infer<typeof StudioDeployBodySchema>;

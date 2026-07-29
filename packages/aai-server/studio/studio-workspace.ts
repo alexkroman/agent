@@ -80,7 +80,7 @@ function projectKey(scope: string, project: string): string {
 }
 
 /** Validate a workspace-relative file path; throws on traversal/absolute paths. */
-export function assertSafeFilePath(path: string): string {
+function assertSafeFilePath(path: string): string {
   const parsed = SafePathSchema.safeParse(path);
   if (!parsed.success) throw new Error(`Invalid file path: ${path}`);
   return parsed.data;
@@ -113,7 +113,10 @@ export async function getWorkspace(
   if (raw == null) return null;
   try {
     const doc = typeof raw === "string" ? JSON.parse(raw) : raw;
-    if (!doc || typeof doc !== "object" || typeof doc.files !== "object") return null;
+    // `typeof null === "object"`: a doc with `files: null` (or an array) must
+    // read as "no workspace", not surface as TypeErrors downstream.
+    if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
+    if (!doc.files || typeof doc.files !== "object" || Array.isArray(doc.files)) return null;
     return doc as StudioWorkspace;
   } catch {
     return null;

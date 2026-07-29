@@ -6,6 +6,7 @@
  * the coding agent (and the UI) can show — and fix — them.
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import { ASSEMBLYAI_API_KEY_ENV } from "@alexkroman1/aai/stt";
 import type { Storage } from "unstorage";
 import { resolveHarnessPath } from "../constants.ts";
@@ -110,8 +111,7 @@ export async function deployStudioProject(
   try {
     rawConfig = await inspect(worker);
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return { ok: false, error: `Agent bundle failed to load: ${message}` };
+    return { ok: false, error: `Agent bundle failed to load: ${errorMessage(err)}` };
   }
 
   const parsed = IsolateConfigSchema.safeParse(rawConfig);
