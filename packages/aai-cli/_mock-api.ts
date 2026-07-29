@@ -44,17 +44,25 @@ export async function startMockApi(): Promise<MockApi> {
   }
 
   function readBody(req: IncomingMessage): Promise<string> {
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       const chunks: Buffer[] = [];
       req.on("data", (chunk: Buffer) => {
         chunks.push(chunk);
       });
+      // Settle on failure paths too — a socket error or client abort must not
+      // leave the handler (and the test awaiting it) hanging forever.
+      req.on("error", reject);
+      req.on("aborted", () => reject(new Error("request aborted")));
       req.on("end", () => {
-        const raw = Buffer.concat(chunks);
-        // Mirror the platform server: transparently inflate gzipped uploads
-        // (the CLI compresses deploy bodies).
-        const inflated = req.headers["content-encoding"] === "gzip" ? gunzipSync(raw) : raw;
-        resolve(inflated.toString("utf-8"));
+        try {
+          const raw = Buffer.concat(chunks);
+          // Mirror the platform server: transparently inflate gzipped uploads
+          // (the CLI compresses deploy bodies). gunzipSync throws on garbage.
+          const inflated = req.headers["content-encoding"] === "gzip" ? gunzipSync(raw) : raw;
+          resolve(inflated.toString("utf-8"));
+        } catch (err) {
+          reject(err instanceof Error ? err : new Error(String(err)));
+        }
       });
     });
   }
@@ -137,8 +145,11 @@ export async function startMockApi(): Promise<MockApi> {
   }
 
   const server: Server = createServer((req, res) => {
+    // Bad JSON in a route body (JSON.parse throws) lands here as a 500.
     handler(req, res).catch((err) => {
-      res.writeHead(500);
+      // Headers may already be out when the failure hit mid-response;
+      // writeHead would then throw ERR_HTTP_HEADERS_SENT and crash the test.
+      if (!res.headersSent) res.writeHead(500);
       res.end(String(err));
     });
   });

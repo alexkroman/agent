@@ -25,9 +25,16 @@ export function errorDetail(err: unknown): string {
   return err instanceof Error ? (err.stack ?? err.message) : String(err);
 }
 
+/** The `code` of a Node errno-style error (`"ENOENT"`, `"EPIPE"`, …), or undefined. */
+export function errorCode(err: unknown): string | undefined {
+  return err instanceof Error && "code" in err && typeof err.code === "string"
+    ? err.code
+    : undefined;
+}
+
 /** True when `err` is a filesystem EEXIST error (target already exists). */
 export function isEexist(err: unknown): boolean {
-  return err instanceof Error && "code" in err && err.code === "EEXIST";
+  return errorCode(err) === "EEXIST";
 }
 
 /** Validate that a module's default export is a valid agent definition. Throws if invalid. */
@@ -47,12 +54,25 @@ export async function fileExists(p: string): Promise<boolean> {
   }
 }
 
-/** Read and parse a JSON file. Returns null if the file is missing or malformed. */
+/**
+ * Read and parse a JSON file. Returns null only when the file does not exist
+ * (ENOENT — the "optional file" case). A file that exists but cannot be read
+ * (EACCES, …) or parsed throws instead: treating a corrupted file as absent
+ * hides real problems — e.g. a corrupted `.aai/project.json` would silently
+ * deploy under a NEW slug, orphaning the live deployment.
+ */
 export async function readJson(filePath: string): Promise<unknown> {
+  let raw: string;
   try {
-    return JSON.parse(await fs.readFile(filePath, "utf-8"));
-  } catch {
-    return null;
+    raw = await fs.readFile(filePath, "utf-8");
+  } catch (err) {
+    if (errorCode(err) === "ENOENT") return null;
+    throw err;
+  }
+  try {
+    return JSON.parse(raw);
+  } catch (err) {
+    throw new Error(`Invalid JSON in ${filePath}: ${errorMessage(err)}`, { cause: err });
   }
 }
 

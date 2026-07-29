@@ -103,6 +103,18 @@ describe("downloadAndMergeTemplate", () => {
     });
   });
 
+  test("reports a corrupt/incomplete templates root instead of raw ENOENT", async () => {
+    await withTempDir(async (dir) => {
+      // A root with no templates/ directory — what a broken download leaves.
+      const emptyRoot = path.join(dir, "empty-root");
+      await fs.mkdir(emptyRoot, { recursive: true });
+      vi.stubEnv("AAI_TEMPLATES_DIR", emptyRoot);
+      await expect(downloadAndMergeTemplate("simple", path.join(dir, "out"))).rejects.toThrow(
+        "Templates directory is missing or unreadable",
+      );
+    });
+  });
+
   test("handles template with no scaffold directory", async () => {
     await withTempDir(async (dir) => {
       // Create a root with templates but no scaffold
