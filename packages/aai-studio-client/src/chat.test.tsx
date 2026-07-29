@@ -145,4 +145,20 @@ describe("ChatPanel (pre-project)", () => {
     expect(html).toContain("Chat is disabled");
     expect(html).not.toContain("Try one of these");
   });
+
+  test("shows the host-configured model as a header chip", () => {
+    const html = renderToStaticMarkup(
+      <ChatPanel
+        {...panelProps}
+        llmStatus={{ llm: true, provider: "assemblyai", model: "gpt-5.5" }}
+      />,
+    );
+    expect(html).toContain("gpt-5.5");
+    expect(html).toContain("Model: gpt-5.5 (assemblyai)");
+  });
+
+  test("no model in the status means no chip", () => {
+    const html = renderToStaticMarkup(<ChatPanel {...panelProps} llmStatus={{ llm: false }} />);
+    expect(html).not.toContain("Model:");
+  });
 });
