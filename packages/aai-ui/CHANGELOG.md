@@ -1,5 +1,84 @@
 # @alexkroman1/aai-ui
 
+## 1.9.0
+
+### Minor Changes
+
+- d718fe9: Redesign the default UI to the AssemblyAI design system (website refresh): warm cream default theme with deep-indigo primary, editorial serif headings, outlined eyebrow labels, rectangular ALL-CAPS buttons, the AssemblyAI wordmark, labeled agent prose with indigo-tinted user bubbles, and console-style expandable TOOL rows. The theme remains fully overridable via client({ theme }) and custom client.tsx.
+- d718fe9: Show the session's UI and API URLs as a labeled pair (SessionUrlChips) instead of the API endpoint alone.
+
+### Patch Changes
+
+- 968c917: Internal cleanup of aai-ui: shared tint constants and JSON/truncate helpers, consolidated tool-call hook scaffolding, single-buffer mic batching, parallel audio setup, reusable resample buffer, and removal of the unused playback-progress machinery
+- d718fe9: Default agent UI: paint html/body from the theme background so a cream theme no longer sits in a black letterbox on wide viewports.
+- Updated dependencies [0235618]
+- Updated dependencies [4758dfc]
+- Updated dependencies [0f72bef]
+- Updated dependencies [bc62b75]
+- Updated dependencies [7e67c24]
+- Updated dependencies [8817f3f]
+- Updated dependencies [394867e]
+- Updated dependencies [8004ff8]
+- Updated dependencies [262f1e7]
+- Updated dependencies [257a372]
+- Updated dependencies [0bdb115]
+- Updated dependencies [578a840]
+- Updated dependencies [c5a5351]
+- Updated dependencies [0235618]
+- Updated dependencies [0235618]
+- Updated dependencies [a252842]
+- Updated dependencies [bbb9d73]
+- Updated dependencies [257a372]
+- Updated dependencies [d718fe9]
+- Updated dependencies [a413caf]
+- Updated dependencies [d718fe9]
+- Updated dependencies [2898f21]
+- Updated dependencies [882e7d9]
+- Updated dependencies [e2ee4fd]
+- Updated dependencies [9750db7]
+- Updated dependencies [0d024e0]
+- Updated dependencies [cb2821c]
+- Updated dependencies [9aed108]
+- Updated dependencies [257a372]
+- Updated dependencies [d718fe9]
+- Updated dependencies [ab38293]
+- Updated dependencies [257a372]
+- Updated dependencies [d718fe9]
+- Updated dependencies [860bb7d]
+- Updated dependencies [82f8253]
+- Updated dependencies [d718fe9]
+- Updated dependencies [7240ce5]
+- Updated dependencies [f22b0f4]
+- Updated dependencies [0bb1a20]
+- Updated dependencies [7d4a193]
+- Updated dependencies [5bf4d41]
+- Updated dependencies [ad295be]
+- Updated dependencies [d22d9f8]
+- Updated dependencies [8f2093b]
+- Updated dependencies [296a874]
+- Updated dependencies [752af3d]
+- Updated dependencies [38f02fa]
+- Updated dependencies [d718fe9]
+- Updated dependencies [d718fe9]
+- Updated dependencies [82f8253]
+- Updated dependencies [257a372]
+- Updated dependencies [d718fe9]
+- Updated dependencies [d718fe9]
+- Updated dependencies [2fd1078]
+- Updated dependencies [711edeb]
+- Updated dependencies [fd5a54e]
+- Updated dependencies [a413caf]
+- Updated dependencies [3db093f]
+- Updated dependencies [0c57887]
+- Updated dependencies [79e51cb]
+- Updated dependencies [d718fe9]
+- Updated dependencies [0235618]
+- Updated dependencies [cf56703]
+- Updated dependencies [115a88e]
+- Updated dependencies [d718fe9]
+- Updated dependencies [d718fe9]
+  - @alexkroman1/aai@1.9.0
+
 ## 1.8.3
 
 ### Patch Changes
