@@ -237,7 +237,10 @@ restrictions apply there.
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
-- `bundle-store.ts` — agent bundle storage (S3/memory)
+- `bundle-store.ts` — agent bundle storage (S3/memory). Redeploy
+  (`putAgent`) replaces the bundle objects but **preserves** the agent's
+  platform-default KV data under `agentKvPrefix`; only `deleteAgent`
+  (the delete route) wipes KV.
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
 - `kv-handler.ts` — KV store HTTP API
@@ -348,16 +351,12 @@ voice agents without the CLI:
   default falls to `claude-sonnet-4-6`. Ordering the one
   `ASSEMBLYAI_GATEWAY_MODELS` array is what sets both defaults: the first
   entry surviving the region filter wins.
-- **Model picker.** `GET /studio/models` (auth required — the list reveals
-  which provider keys the host holds) returns `studioLlmOptions()`: the
-  host default plus every provider whose key is present, with the models
-  curated for it. `POST /studio/chat` takes an optional `provider`/`model`
-  pair; the route validates it with `resolveStudioSelection` and answers
-  400 rather than letting `studioModel` throw mid-stream. **A client can
-  never name an arbitrary provider/model and never supplies a key.**
-  Only `assemblyai` (the full gateway model list) and `anthropic` carry
-  curated models; the other providers stay env-only and appear in the
-  picker only while `STUDIO_LLM_PROVIDER` selects them.
+- **No per-request model selection.** The provider/model pair is resolved
+  once from host env (`studio-llm.ts`); `POST /studio/chat` accepts no
+  `provider`/`model` fields and there is no `GET /studio/models` endpoint.
+  **A client can never name an arbitrary provider/model and never supplies
+  a key.** If a picker is ever added, the route must validate the selection
+  against host-held keys before streaming and keep the no-client-keys rule.
 - **Session sandboxes run the agent's code work on production infra**:
   each chat request lazily provisions one sandbox (`studio-sandbox.ts`)
   through the same warm-pool/`spawnWarmHarness` path deployed agents use
@@ -978,8 +977,10 @@ Key properties:
   The agent cannot see the host filesystem.
 - **cgroup limits**: 64 MB memory, 32 PIDs per sandbox.
 - **Deno guest**: the agent's ESM bundle is loaded directly by Deno.
-  Deno's permission model provides defense-in-depth: the harness runs
-  with `--allow-env --no-prompt` and no net/fs/run permissions.
+  Deno's permission model provides defense-in-depth: in production
+  (gVisor, `oci-spec.ts`) the harness runs with `--no-prompt` and **no**
+  `--allow-*` flags at all; the dev-mode child-process fallbacks
+  (`sandbox-vm.ts`, `guest/fake-vm.ts`) add `--allow-env`.
 - **Dev mode (macOS)**: gVisor unavailable; sandbox falls back to a plain
   child process with no isolation.
 

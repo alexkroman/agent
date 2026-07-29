@@ -11,6 +11,7 @@ import { createMemoryVector, createPineconeVector, type Vector } from "@alexkrom
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
 import s3Driver from "unstorage/drivers/s3";
+import { assertDevKeys, isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
 import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
@@ -21,50 +22,9 @@ import { createSlotCache, registerSlotsForGauges } from "./sandbox-slots.ts";
 import { spawnWarmHarness } from "./sandbox-vm.ts";
 import { importMasterKey } from "./secrets.ts";
 
-function requireEnv<const K extends string>(
-  env: NodeJS.ProcessEnv,
-  keys: readonly K[],
-): { [P in K]: string } {
-  const missing = keys.filter((k) => !env[k]);
-  if (missing.length > 0) {
-    throw new Error(`Missing required environment variables: ${missing.join(", ")}`);
-  }
-  return Object.fromEntries(keys.map((k) => [k, env[k]])) as { [P in K]: string };
-}
-
-function isLocalDev(env: NodeJS.ProcessEnv): boolean {
-  return env.AAI_LOCAL_DEV === "1" || !env.BUCKET_NAME;
-}
-
-/**
- * Keys a local dev run needs to exercise the studio end to end.
- *
- * `ASSEMBLYAI_API_KEY` drives the chat LLM (and is seeded into every agent
- * published from the studio); `BRAVE_API_KEY` backs the coding agent's
- * `web_search`. Both are optional in production — the studio degrades
- * (chat 503s, web_search is dropped from the tool set) — but in dev that
- * degradation is silent and easy to mistake for a bug, so fail at boot
- * where the cause is obvious instead of ten minutes into a session.
- */
-const DEV_REQUIRED_KEYS = ["ASSEMBLYAI_API_KEY", "BRAVE_API_KEY"] as const;
-
-function assertDevKeys(env: NodeJS.ProcessEnv): void {
-  if (!isLocalDev(env) || env.AAI_DEV_SKIP_KEY_CHECK === "1") return;
-  const missing = DEV_REQUIRED_KEYS.filter((key) => !env[key]);
-  if (missing.length === 0) return;
-  const it = missing.length === 1 ? "it" : "them";
-  throw new Error(
-    `Local dev is missing ${missing.join(" and ")}. Set ${it} in ` +
-      "packages/aai-server/.env (or the shell) before `pnpm dev:aai-server`, " +
-      "or set AAI_DEV_SKIP_KEY_CHECK=1 to start without.",
-  );
-}
-
 function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
-  const raw = env.SANDBOX_POOL_SIZE;
-  if (!raw) return null;
-  const size = Number.parseInt(raw, 10);
-  if (!Number.isFinite(size) || size < 1) return null;
+  const size = resolvePoolSize(env.SANDBOX_POOL_SIZE);
+  if (size === null) return null;
   const harnessPath = resolveHarnessPath(env);
   console.info(`Sandbox pool: pre-warming ${size} Deno harness(es)`, { harnessPath });
   metrics.warmPoolTarget.set(size);
@@ -157,7 +117,7 @@ async function main(): Promise<void> {
     }
   }
 
-  const { app, injectWebSocket } = createOrchestrator(opts);
+  const { app, injectWebSocket, closeActiveSockets } = createOrchestrator(opts);
   const nodeServer = serve({ fetch: app.fetch, port });
   injectWebSocket(nodeServer as import("node:http").Server);
 
@@ -181,6 +141,10 @@ async function main(): Promise<void> {
     if (shuttingDown) return;
     shuttingDown = true;
     console.info("Shutting down...");
+    // Close client WebSockets first: `nodeServer.close()` only waits for
+    // connections to end, it never ends them, so open sessions would ride
+    // out the whole fallback timeout on every SIGTERM under load.
+    closeActiveSockets();
     const stops = [...opts.slots.values()].map((slot) => slot.sandbox?.shutdown()).filter(Boolean);
     if (opts.pool) stops.push(opts.pool.shutdown());
     const results = await Promise.allSettled(stops);
@@ -190,7 +154,13 @@ async function main(): Promise<void> {
       }
     }
     nodeServer.close(() => process.exit(0));
-    setTimeout(() => process.exit(1), 3000).unref();
+    // Sandboxes are already down by here; a straggling connection is not a
+    // failed shutdown, so the fallback exits 0 (it used to exit 1, flagging
+    // every busy SIGTERM as a crash).
+    setTimeout(() => {
+      console.warn("Shutdown timed out waiting for connections to close; exiting");
+      process.exit(0);
+    }, 3000).unref();
   }
 
   process.on("SIGINT", () => void shutdown());

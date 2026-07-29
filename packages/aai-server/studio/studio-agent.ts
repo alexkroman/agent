@@ -82,7 +82,7 @@ async function trialToolRun(
     // A stream abort disposes the sandbox mid round-trip; the pending RPC
     // rejects ("Connection disposed"). Answer as tool-result text rather
     // than letting the rejection rattle through the AI SDK tool machinery.
-    return `Tool run failed: ${err instanceof Error ? err.message : String(err)}`;
+    return `Tool run failed: ${errorMessage(err)}`;
   }
 }
 
@@ -108,7 +108,14 @@ async function runTrial(
     }
     putCachedBuild(hash, { worker });
   }
-  const sandbox = await deps.sandbox();
+  let sandbox: StudioSandbox;
+  try {
+    sandbox = await deps.sandbox();
+  } catch (err) {
+    // Provisioning refused (e.g. the turn was aborted and its sandbox
+    // lifecycle already torn down) — answer as tool-result text.
+    return `Sandbox unavailable: ${errorMessage(err)}`;
+  }
   let loaded: { config?: unknown };
   try {
     loaded = await sandbox.loadBundle(worker);
@@ -318,7 +325,7 @@ export async function runStudioChat(
     return result.toUIMessageStreamResponse({
       onError: (error) => {
         disposeSandbox();
-        return error instanceof Error ? error.message : String(error);
+        return errorMessage(error);
       },
     });
   } catch (err) {

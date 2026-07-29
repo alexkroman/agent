@@ -2,13 +2,11 @@
 /**
  * Studio chat LLM selection.
  *
- * The model is chosen from **platform-owned host configuration** (never
- * tenant env) via the SDK's own provider descriptors + `resolveLlm`, so the
- * studio can run on any pipeline-mode LLM provider. Host env sets the
- * default; the browser may override it per request, but only within
- * `studioLlmOptions()` — the providers whose key the host actually holds and
- * the models curated for them. A client can never name an arbitrary
- * provider/model and can never supply a key.
+ * The model is chosen entirely from **platform-owned host configuration**
+ * (never tenant env, never the request) via the SDK's own provider
+ * descriptors + `resolveLlm`, so the studio can run on any pipeline-mode LLM
+ * provider. There is no per-request override: a client can never name a
+ * provider or model and can never supply a key.
  *
  * Defaults: the AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set,
  * else Anthropic direct (`ANTHROPIC_API_KEY`). `STUDIO_LLM_PROVIDER` /
@@ -40,14 +38,11 @@ import type { LanguageModel } from "ai";
 
 type StudioLlmEntry = {
   envVar: string;
-  /** Human-readable group label for the model picker. */
-  label: string;
   /**
-   * Models offered in the picker, most capable first. The first entry is the
-   * default when `STUDIO_LLM_MODEL` is unset; an empty list means this
-   * provider is env-only (it requires an explicit `STUDIO_LLM_MODEL` and is
-   * offered in the picker only while it is the host-selected default).
-   * Takes env because gateway availability is region-dependent.
+   * Known models, most capable first. The first entry is the default when
+   * `STUDIO_LLM_MODEL` is unset; an empty list means this provider requires
+   * an explicit `STUDIO_LLM_MODEL`. Takes env because gateway availability
+   * is region-dependent.
    */
   models: (env: NodeJS.ProcessEnv) => readonly string[];
   make: (model: string, env: NodeJS.ProcessEnv) => LlmProvider;
@@ -127,50 +122,44 @@ const ANTHROPIC_MODELS = [
 /**
  * Providers the studio chat can run on. All pipeline-mode LLM providers are
  * wired so `STUDIO_LLM_PROVIDER` reaches any of them; the two the platform
- * is expected to hold keys for carry curated model lists for the picker.
+ * is expected to hold keys for carry known-model lists so they work without
+ * an explicit `STUDIO_LLM_MODEL`.
  */
 const STUDIO_LLM_PROVIDERS: Record<string, StudioLlmEntry> = {
   assemblyai: {
     envVar: ASSEMBLYAI_LLM_API_KEY_ENV,
-    label: "AssemblyAI LLM Gateway",
     models: (env) => (isEuGateway(env) ? ASSEMBLYAI_GATEWAY_EU_MODELS : ASSEMBLYAI_GATEWAY_MODELS),
     make: (model, env) =>
       assemblyAI({ model, ...(isEuGateway(env) ? { region: "eu" as const } : {}) }),
   },
   anthropic: {
     envVar: ANTHROPIC_API_KEY_ENV,
-    label: "Anthropic",
     models: () => ANTHROPIC_MODELS,
     make: (model) => anthropic({ model }),
   },
   openai: {
     envVar: OPENAI_API_KEY_ENV,
-    label: "OpenAI",
     models: () => [],
     make: (model) => openai({ model }),
   },
   google: {
     envVar: GOOGLE_API_KEY_ENV,
-    label: "Google",
     models: () => [],
     make: (model) => google({ model }),
   },
   mistral: {
     envVar: MISTRAL_API_KEY_ENV,
-    label: "Mistral",
     models: () => [],
     make: (model) => mistral({ model }),
   },
-  xai: { envVar: XAI_API_KEY_ENV, label: "xAI", models: () => [], make: (model) => xai({ model }) },
+  xai: { envVar: XAI_API_KEY_ENV, models: () => [], make: (model) => xai({ model }) },
   groq: {
     envVar: GROQ_API_KEY_ENV,
-    label: "Groq",
     models: () => [],
     make: (model) => groq({ model }),
   },
   gateway: {
     envVar: GATEWAY_API_KEY_ENV,
-    label: "Vercel AI Gateway",
     models: () => [],
     make: (model) => gateway({ model }),
   },
@@ -186,7 +175,7 @@ export type StudioLlmSelection = {
   envVar: string;
 };
 
-/** A provider the browser may pick, with the models it may pick from. */
+/** The host-configured provider/model, or null when no key selects one. */
 export function selectStudioLlm(env: NodeJS.ProcessEnv = process.env): StudioLlmSelection | null {
   const explicit = env.STUDIO_LLM_PROVIDER?.toLowerCase();
   let provider: string | undefined;
@@ -234,11 +223,7 @@ export function studioLlmInfo(
   return { provider: selection.provider, model: selection.model };
 }
 
-/**
- * Everything the browser is allowed to choose between: providers whose key
- * the host holds and that have curated models, plus the host-selected
- * default (so an env-only provider still shows the model it is running).
- */
+/** Resolve the host-configured selection to a live `LanguageModel`. */
 export function studioModel(env: NodeJS.ProcessEnv = process.env): LanguageModel {
   const selection = selectStudioLlm(env);
   if (!selection) {

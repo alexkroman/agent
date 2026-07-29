@@ -19,13 +19,21 @@ import * as Diff from "diff";
 /** Thrown when an edit cannot be applied; the message goes back to the agent. */
 export class StudioEditError extends Error {}
 
-export type LineEnding = "\r\n" | "\n";
+type LineEnding = "\r\n" | "\n";
 
-export function detectLineEnding(content: string): LineEnding {
-  const crlf = content.indexOf("\r\n");
-  const lf = content.indexOf("\n");
-  if (lf === -1 || crlf === -1) return "\n";
-  return crlf < lf ? "\r\n" : "\n";
+/**
+ * Majority line ending. Counted rather than sniffed from the first newline:
+ * a mixed-endings file is rewritten in whichever ending dominates instead of
+ * whatever its first line happened to use. Ties fall to `"\n"`.
+ */
+function detectLineEnding(content: string): LineEnding {
+  let crlf = 0;
+  let lf = 0;
+  for (let i = content.indexOf("\n"); i !== -1; i = content.indexOf("\n", i + 1)) {
+    if (content[i - 1] === "\r") crlf += 1;
+    else lf += 1;
+  }
+  return crlf > lf ? "\r\n" : "\n";
 }
 
 const toLF = (text: string): string => text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
@@ -33,40 +41,95 @@ const toLF = (text: string): string => text.replace(/\r\n/g, "\n").replace(/\r/g
 const restoreEndings = (text: string, ending: LineEnding): string =>
   ending === "\r\n" ? text.replace(/\n/g, "\r\n") : text;
 
+/** Per-character replacements a model reliably gets wrong when quoting source. */
+const CHAR_REPLACEMENTS: ReadonlyArray<readonly [RegExp, string]> = [
+  [/[‘’‚‛]/, "'"],
+  [/[“”„‟]/, '"'],
+  [/[‐‑‒–—―−]/, "-"],
+  [/[  -   　]/, " "],
+];
+
+function normalizeChar(ch: string): string {
+  for (const [pattern, replacement] of CHAR_REPLACEMENTS) {
+    if (pattern.test(ch)) return replacement;
+  }
+  return ch;
+}
+
+type NormalizedText = {
+  normalized: string;
+  /** `map[i]` = index in the original text of the char `normalized[i]` came from. */
+  map: number[];
+};
+
 /**
  * Normalize away the differences a model reliably gets wrong when quoting
  * source back at us: trailing whitespace, smart quotes, unicode dashes, and
  * exotic spaces. Matching on this form turns "close enough" into a match
  * instead of a failed edit the agent then retries blindly.
+ *
+ * Index-preserving: replacements are per-char and trailing-whitespace strips
+ * are deletions, so every normalized char maps back to exactly one original
+ * char. That map is what lets a fuzzy match splice into the *original* text
+ * instead of silently rewriting every smart quote in the file (see findText).
  */
-export function normalizeForFuzzyMatch(text: string): string {
-  return text
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .join("\n")
-    .replace(/[‘’‚‛]/g, "'")
-    .replace(/[“”„‟]/g, '"')
-    .replace(/[‐‑‒–—―−]/g, "-")
-    .replace(/[  -   　]/g, " ");
+function normalizeWithMap(text: string): NormalizedText {
+  const out: string[] = [];
+  const map: number[] = [];
+  let offset = 0;
+  const lines = text.split("\n");
+  lines.forEach((line, lineIndex) => {
+    const trimmed = line.trimEnd();
+    for (let i = 0; i < trimmed.length; i += 1) {
+      out.push(normalizeChar(trimmed.charAt(i)));
+      map.push(offset + i);
+    }
+    if (lineIndex < lines.length - 1) {
+      out.push("\n");
+      map.push(offset + line.length);
+    }
+    offset += line.length + 1;
+  });
+  return { normalized: out.join(""), map };
+}
+
+function normalizeForFuzzyMatch(text: string): string {
+  return normalizeWithMap(text).normalized;
 }
 
 type Match = {
-  index: number;
-  length: number;
-  /** Exact match works on the original text; fuzzy works on the normalized form. */
-  haystack: string;
+  /** Replacement region in the original text: `[start, end)`. */
+  start: number;
+  end: number;
+  /** The space the match was found in — for the ambiguity count only. */
+  occurrenceHaystack: string;
+  occurrenceNeedle: string;
 };
 
 /** Locate `needle` in `haystack`, exact first then fuzzy. */
 function findText(haystack: string, needle: string): Match | null {
   const exact = haystack.indexOf(needle);
-  if (exact !== -1) return { index: exact, length: needle.length, haystack };
+  if (exact !== -1) {
+    return {
+      start: exact,
+      end: exact + needle.length,
+      occurrenceHaystack: haystack,
+      occurrenceNeedle: needle,
+    };
+  }
 
-  const fuzzyHaystack = normalizeForFuzzyMatch(haystack);
+  const { normalized, map } = normalizeWithMap(haystack);
   const fuzzyNeedle = normalizeForFuzzyMatch(needle);
-  const fuzzy = fuzzyHaystack.indexOf(fuzzyNeedle);
+  if (fuzzyNeedle.length === 0) return null;
+  const fuzzy = normalized.indexOf(fuzzyNeedle);
   if (fuzzy === -1) return null;
-  return { index: fuzzy, length: fuzzyNeedle.length, haystack: fuzzyHaystack };
+  // Map the fuzzy match back into the original text, so the edit splices into
+  // the file as written — everything outside the matched region keeps its
+  // smart quotes and trailing whitespace byte-for-byte. End is one past the
+  // last matched char, so trailing whitespace the needle never covered stays.
+  const start = map[fuzzy] as number;
+  const end = (map[fuzzy + fuzzyNeedle.length - 1] as number) + 1;
+  return { start, end, occurrenceHaystack: normalized, occurrenceNeedle: fuzzyNeedle };
 }
 
 /** Count non-overlapping occurrences, in the same space the match was found in. */
@@ -93,7 +156,7 @@ function countLines(text: string): number {
  * `structuredPatch`; only the presentation (line-number gutters, `…` elision
  * between hunks) is ours.
  */
-export function formatDiff(before: string, after: string, context = 3): string {
+function formatDiff(before: string, after: string, context = 3): string {
   const { hunks } = Diff.structuredPatch("", "", before, after, undefined, undefined, { context });
   const width = String(Math.max(before.split("\n").length, after.split("\n").length)).length;
   const elision = ` ${" ".repeat(width)} …`;
@@ -163,10 +226,7 @@ export function applyEdit(
     );
   }
 
-  const occurrences = countOccurrences(
-    match.haystack,
-    match.haystack === normalized ? from : normalizeForFuzzyMatch(from),
-  );
+  const occurrences = countOccurrences(match.occurrenceHaystack, match.occurrenceNeedle);
   if (occurrences > 1) {
     throw new StudioEditError(
       `Found ${occurrences} occurrences of that text in ${path}. It must be unique — ` +
@@ -174,14 +234,16 @@ export function applyEdit(
     );
   }
 
-  const updated =
-    match.haystack.slice(0, match.index) + to + match.haystack.slice(match.index + match.length);
-  if (updated === match.haystack) {
+  // Spliced into the original content in both the exact and the fuzzy case,
+  // and diffed original-vs-updated — only the matched region ever changes,
+  // and the diff shows exactly the bytes that did.
+  const updated = normalized.slice(0, match.start) + to + normalized.slice(match.end);
+  if (updated === normalized) {
     throw new StudioEditError(`No change: the replacement is identical to the original in ${path}`);
   }
 
   return {
     content: bom + restoreEndings(updated, ending),
-    diff: formatDiff(match.haystack, updated),
+    diff: formatDiff(normalized, updated),
   };
 }

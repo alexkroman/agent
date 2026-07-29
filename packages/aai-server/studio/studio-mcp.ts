@@ -137,17 +137,23 @@ async function withTimeout<T>(work: Promise<T>, ms: number, label: string): Prom
 /** Connect to one server and list its tools, or return null if anything fails. */
 async function connectOne(url: string): Promise<{ client: MCPClient; tools: McpTools } | null> {
   try {
-    const client = await withTimeout(
-      createMCPClient({
-        transport: { type: "http", url },
-        clientName: "aai-studio",
-        // A notification arriving after the turn ends must not reach an
-        // unhandled rejection and take the server down.
-        onUncaughtError: (error) => debug("Studio MCP error", { url, error }),
-      }),
-      CONNECT_TIMEOUT_MS,
-      `MCP connect (${url})`,
-    );
+    const connecting = createMCPClient({
+      transport: { type: "http", url },
+      clientName: "aai-studio",
+      // A notification arriving after the turn ends must not reach an
+      // unhandled rejection and take the server down.
+      onUncaughtError: (error) => debug("Studio MCP error", { url, error }),
+    });
+    let client: MCPClient;
+    try {
+      client = await withTimeout(connecting, CONNECT_TIMEOUT_MS, `MCP connect (${url})`);
+    } catch (err) {
+      // A timed-out connect can still resolve later; close that late client
+      // instead of leaking one HTTP client per turn while the server is slow.
+      // Mirrors the listTools cleanup below.
+      connecting.then((late) => late.close()).catch(() => undefined);
+      throw err;
+    }
     try {
       // The listing is cacheable across turns; the client is not (each tool's
       // `execute` calls back through the client it was built on, and this

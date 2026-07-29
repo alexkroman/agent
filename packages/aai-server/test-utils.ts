@@ -11,8 +11,6 @@ import { createSlotCache } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 import type { BundleStore } from "./store-types.ts";
 
-export { createSlotCache } from "./sandbox-slots.ts";
-
 // ── Metric-reading helpers (canonical versions for tests) ───────────────
 
 // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed

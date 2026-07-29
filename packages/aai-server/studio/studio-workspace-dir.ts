@@ -14,11 +14,42 @@
 import { randomUUID } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
+import { isPathInside } from "../_static-files.ts";
 import { SafePathSchema } from "../schemas.ts";
 import { StudioBuildError } from "./studio-errors.ts";
 
 /** Scratch root for materialized workspaces (see module doc for placement). */
 const BUILD_ROOT = path.resolve(import.meta.dirname, "..", ".studio-build");
+
+/**
+ * Scratch dirs older than this are leaked by a dead process. Age-gated
+ * rather than "everything under the root" because BUILD_ROOT is shared:
+ * another process (parallel test workers, a rolling deploy) may have a
+ * build in flight this instant.
+ */
+const STALE_BUILD_DIR_MS = 60 * 60 * 1000;
+
+/**
+ * Once-per-process, best-effort sweep of BUILD_ROOT on first use: scratch
+ * dirs are removed in a `finally`, but a crashed process leaks its in-flight
+ * dirs permanently. Must never fail a build, hence the swallowed rejection.
+ */
+let sweepPromise: Promise<void> | null = null;
+function sweepStaleBuildDirs(): Promise<void> {
+  sweepPromise ??= (async () => {
+    const cutoff = Date.now() - STALE_BUILD_DIR_MS;
+    const entries = await fs.readdir(BUILD_ROOT);
+    await Promise.all(
+      entries.map(async (name) => {
+        const entry = path.join(BUILD_ROOT, name);
+        if ((await fs.stat(entry)).mtimeMs < cutoff) {
+          await fs.rm(entry, { recursive: true, force: true });
+        }
+      }),
+    );
+  })().catch(() => undefined);
+  return sweepPromise;
+}
 
 /**
  * Write `files` to a fresh scratch directory, run `fn` against it, and remove
@@ -28,6 +59,7 @@ export async function withWorkspaceDir<T>(
   files: Record<string, string>,
   fn: (dir: string) => Promise<T>,
 ): Promise<T> {
+  await sweepStaleBuildDirs();
   const dir = path.join(BUILD_ROOT, randomUUID());
   try {
     await materialize(dir, files);
@@ -51,7 +83,9 @@ async function materialize(dir: string, files: Record<string, string>): Promise<
       const parsed = SafePathSchema.safeParse(rel);
       if (!parsed.success) throw new StudioBuildError(`Unsafe workspace path: ${rel}`);
       const abs = path.join(dir, parsed.data);
-      if (!abs.startsWith(`${dir}${path.sep}`)) {
+      // Separator-safe containment (never a bare startsWith) — and strictly
+      // inside: a key resolving to the scratch dir itself is not a file.
+      if (abs === dir || !isPathInside(dir, abs)) {
         throw new StudioBuildError(`Unsafe workspace path: ${rel}`);
       }
       await fs.mkdir(path.dirname(abs), { recursive: true });

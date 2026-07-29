@@ -34,11 +34,13 @@ vi.mock("node:child_process", async (importOriginal) => {
   return { ...orig, spawn: mocks.spawn, execFile: mocks.execFile };
 });
 
-type FakeChild = EventEmitter & { exitCode: number | null };
+type FakeChild = EventEmitter & { exitCode: number | null; signalCode: string | null };
 
 function makeFakeChild(exitCode: number | null = 0): FakeChild {
   const child = new EventEmitter() as FakeChild;
   child.exitCode = exitCode;
+  // Matches real ChildProcess: null until the child is killed by a signal.
+  child.signalCode = null;
   return child;
 }
 
@@ -147,6 +149,48 @@ describe("prepareRootfs", () => {
     const { libMounts } = await prepareRootfs("/srv/harness.mjs");
     expect(libMounts.map((m) => m.destination)).toEqual(["/lib", "/usr/lib"]);
     expect(libMounts.every((m) => m.options.includes("ro"))).toBe(true);
+  });
+});
+
+describe("waitForChildExit", () => {
+  it("resolves immediately for a child already killed by a signal", async () => {
+    // Real spawn (the module-level mock is bypassed): a SIGKILLed child has
+    // exitCode null + signalCode set and its `exit` event already fired, so
+    // waiting for `exit` again would burn the whole timeout.
+    const { spawn: realSpawn } =
+      await vi.importActual<typeof import("node:child_process")>("node:child_process");
+    const { waitForChildExit } = await loadGvisor();
+
+    const child = realSpawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"]);
+    await new Promise((resolve) => child.once("spawn", resolve));
+    child.kill("SIGKILL");
+    await new Promise((resolve) => child.once("exit", resolve));
+    expect(child.exitCode).toBeNull();
+    expect(child.signalCode).toBe("SIGKILL");
+
+    const t0 = Date.now();
+    await expect(waitForChildExit(child, 5000)).resolves.toBe(true);
+    expect(Date.now() - t0).toBeLessThan(1000);
+  });
+
+  it("resolves immediately for a child that exited normally", async () => {
+    const { waitForChildExit } = await loadGvisor();
+    const child = makeFakeChild(0);
+    await expect(
+      waitForChildExit(child as unknown as import("node:child_process").ChildProcess, 5000),
+    ).resolves.toBe(true);
+  });
+
+  it("resolves false when the child never exits within the timeout", async () => {
+    vi.useFakeTimers();
+    const { waitForChildExit } = await loadGvisor();
+    const child = makeFakeChild(null);
+    const done = waitForChildExit(
+      child as unknown as import("node:child_process").ChildProcess,
+      1000,
+    );
+    await vi.advanceTimersByTimeAsync(1000);
+    await expect(done).resolves.toBe(false);
   });
 });
 
