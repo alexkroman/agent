@@ -5,14 +5,17 @@ export default defineConfig({
   ...sharedConfig,
   test: {
     restoreMocks: true,
-    // Components are unit-tested via react-dom/server (no jsdom needed) —
-    // see markdown.test.tsx.
+    // Most tests render via react-dom/server in node; interaction tests
+    // (app.test.tsx, code-view.test.tsx) opt into jsdom with a per-file
+    // `@vitest-environment` pragma.
     include: ["**/*.test.{ts,tsx}"],
     exclude: ["node_modules", "dist"],
     coverage: {
-      // The pane wiring (app/chat/code-view/preview) runs in the browser and
-      // is exercised via the served shell in aai-server's studio-routes
-      // tests; only the node-testable modules are held to a floor.
+      // The pane components are browser-heavy (CodeMirror, useChat
+      // streaming, the live iframe) and only their extracted logic
+      // (toBlocks, useFileDraft, the 401 wiring) is tested here — so they
+      // are excluded from the *floors*, which govern the fully
+      // node-testable modules. The behavior tests still run either way.
       exclude: [
         ...sharedCoverageExclude,
         "src/main.tsx",
@@ -24,8 +27,8 @@ export default defineConfig({
       ],
       // Ratchet: floors only move up. Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
-      // Actuals (2026-07): lines ~53%, branches ~72%, functions ~43%, statements ~52%.
-      thresholds: { lines: 84, functions: 77, branches: 85, statements: 85 },
+      // Actuals (2026-07): lines ~88%, functions ~84%, branches ~92%, statements ~89%.
+      thresholds: { lines: 85, functions: 80, branches: 89, statements: 86 },
     },
   },
 });

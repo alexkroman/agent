@@ -88,7 +88,8 @@ export default defineConfig({
         test: {
           name: "aai-studio-client",
           root: "packages/aai-studio-client",
-          // Components are unit-tested via react-dom/server (no jsdom needed).
+          // Node by default (react-dom/server); interaction tests opt into
+          // jsdom via a per-file `@vitest-environment` pragma.
           include: ["**/*.test.{ts,tsx}"],
           exclude: ["node_modules", "dist"],
         },

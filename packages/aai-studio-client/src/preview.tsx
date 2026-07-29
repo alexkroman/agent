@@ -67,6 +67,10 @@ export function PreviewPane({
             </button>
           </div>
         )}
+        {/* Same-origin and unsandboxed on purpose: `sandbox` without
+            allow-same-origin blocks getUserMedia, the pane's whole point.
+            Only the user's own published agent is ever framed here — see
+            the key-storage threat notes in main.tsx. */}
         <iframe
           key={`${deployedSlug}-${nonce}`}
           src={`/${deployedSlug}/`}

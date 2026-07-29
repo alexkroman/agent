@@ -7,9 +7,56 @@
 import { javascript } from "@codemirror/lang-javascript";
 import CodeMirror from "@uiw/react-codemirror";
 import clsx from "clsx";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 const extensions = [javascript({ typescript: true })];
+
+/**
+ * Buffer state for one open file: external (agent) updates are adopted
+ * unless the user has unsaved edits, in which case `conflict` flags that a
+ * save would overwrite the server's newer version. Exported for tests —
+ * this is the one place user work can be lost.
+ */
+export function useFileDraft(serverContent: string): {
+  draft: string;
+  dirty: boolean;
+  /** The file changed on the server while the user had unsaved edits. */
+  conflict: boolean;
+  edit: (value: string) => void;
+  /** The draft was written to the server — it is the new baseline. */
+  markSaved: () => void;
+} {
+  const [draft, setDraft] = useState(serverContent);
+  const [dirty, setDirty] = useState(false);
+  const [conflict, setConflict] = useState(false);
+  const [lastServer, setLastServer] = useState(serverContent);
+
+  // "Adjust state during render" (React docs pattern) — no effect needed.
+  if (serverContent !== lastServer) {
+    setLastServer(serverContent);
+    if (dirty) {
+      setConflict(true);
+    } else {
+      setDraft(serverContent);
+      setConflict(false);
+    }
+  }
+
+  return {
+    draft,
+    dirty,
+    conflict,
+    edit: (value) => {
+      setDraft(value);
+      setDirty(true);
+    },
+    markSaved: () => {
+      // Saving is the user's explicit choice — overwrite acknowledged.
+      setDirty(false);
+      setConflict(false);
+    },
+  };
+}
 
 type FileBufferProps = {
   path: string | null;
@@ -17,33 +64,29 @@ type FileBufferProps = {
   onSave: (path: string, content: string) => Promise<void>;
 };
 
-/**
- * One open file. Mounted with `key={path}` so switching files resets the
- * buffer; external (agent) updates are adopted during render unless the
- * user has unsaved edits.
- */
+/** One open file. Mounted with `key={path}` so switching files resets the buffer. */
 function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
-  const [draft, setDraft] = useState(serverContent);
-  const [dirty, setDirty] = useState(false);
-  const [lastServer, setLastServer] = useState(serverContent);
+  const { draft, dirty, conflict, edit, markSaved } = useFileDraft(serverContent);
   const [saveState, setSaveState] = useState("");
+  const saveStateTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
 
-  // "Adjust state during render" (React docs pattern) — no effect needed.
-  if (serverContent !== lastServer) {
-    setLastServer(serverContent);
-    if (!dirty) setDraft(serverContent);
-  }
+  // One live timer at a time, and none after unmount.
+  const flashSaveState = (text: string) => {
+    setSaveState(text);
+    clearTimeout(saveStateTimer.current);
+    saveStateTimer.current = setTimeout(() => setSaveState(""), 1500);
+  };
+  useEffect(() => () => clearTimeout(saveStateTimer.current), []);
 
   const save = async () => {
     if (!path) return;
     try {
       await onSave(path, draft);
-      setDirty(false);
-      setSaveState("saved");
+      markSaved();
+      flashSaveState("saved");
     } catch (err) {
-      setSaveState(err instanceof Error ? err.message : "save failed");
+      flashSaveState(err instanceof Error ? err.message : "save failed");
     }
-    setTimeout(() => setSaveState(""), 1500);
   };
 
   return (
@@ -51,10 +94,7 @@ function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
       <div className="min-h-0 flex-1 overflow-auto">
         <CodeMirror
           value={draft}
-          onChange={(value) => {
-            setDraft(value);
-            setDirty(true);
-          }}
+          onChange={edit}
           extensions={extensions}
           editable={path != null}
           height="100%"
@@ -75,6 +115,11 @@ function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
           {path ?? ""}
           {dirty ? " •" : ""}
         </span>
+        {conflict && (
+          <span className="text-xs text-err">
+            changed on the server — saving will overwrite the agent's version
+          </span>
+        )}
         <span className="text-xs text-subtle">{saveState}</span>
       </div>
     </div>

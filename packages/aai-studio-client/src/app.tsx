@@ -5,12 +5,15 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import clsx from "clsx";
-import { useEffect, useState } from "react";
+import { lazy, Suspense, useEffect, useState } from "react";
 import { ApiError, api, type ProjectData, parseSecrets, type StudioStatus } from "./api.ts";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 import { ChatPanel } from "./chat.tsx";
-import { CodeView } from "./code-view.tsx";
 import { PreviewPane } from "./preview.tsx";
+
+// CodeMirror is the bulk of the bundle and only the Code tab needs it — the
+// default (Live) path shouldn't pay for it.
+const CodeView = lazy(() => import("./code-view.tsx").then((m) => ({ default: m.CodeView })));
 
 type AppProps = { apiKey: string; onSignOut: () => void };
 
@@ -232,11 +235,12 @@ export function App({ apiKey, onSignOut }: AppProps) {
     setCurrentFile(entry);
   }, [files, currentFile]);
 
+  // Refresh server state after agent turns / saves. Deliberately does NOT
+  // bump previewNonce: only Publish can change what the live iframe shows,
+  // and a reload there kills any in-progress voice session.
   const invalidateWorkspace = () => {
     void queryClient.invalidateQueries({ queryKey: ["project", project] });
     void queryClient.invalidateQueries({ queryKey: ["projects"] });
-    // The agent may have redeployed — reload the live preview.
-    setPreviewNonce((n) => n + 1);
   };
 
   const createProject = useMutation({
@@ -266,6 +270,8 @@ export function App({ apiKey, onSignOut }: AppProps) {
     mutationFn: () => api.deploy(apiKey, project as string, parseSecrets(secrets)),
     onSuccess: () => {
       invalidateWorkspace();
+      // The published agent changed — reload the live iframe.
+      setPreviewNonce((n) => n + 1);
       setPublishOpen(false);
       setTab("preview");
     },
@@ -279,6 +285,10 @@ export function App({ apiKey, onSignOut }: AppProps) {
   // Guided start: typing into the chat before any project exists creates
   // one automatically and forwards the prompt once the panel mounts.
   const startWithPrompt = (prompt: string) => {
+    // The composer disables while pending; this guard covers the same-tick
+    // race (Enter twice before the re-render) so one prompt never creates
+    // two projects.
+    if (createProject.isPending) return;
     setPendingPrompt(prompt);
     createProject.mutate(generatedProjectName());
   };
@@ -333,11 +343,13 @@ export function App({ apiKey, onSignOut }: AppProps) {
           key={project ?? "no-project"}
           apiKey={apiKey}
           project={project}
-          llmStatus={status.data ?? { llm: false }}
+          llmStatus={status.data}
+          creating={createProject.isPending}
           initialPrompt={pendingPrompt}
           onInitialPromptSent={() => setPendingPrompt(null)}
           onStartWithPrompt={startWithPrompt}
           onWorkspaceChanged={invalidateWorkspace}
+          onUnauthorized={onSignOut}
         />
         {tab === "preview" ? (
           <PreviewPane
@@ -349,14 +361,18 @@ export function App({ apiKey, onSignOut }: AppProps) {
             onPublish={() => setPublishOpen(true)}
           />
         ) : (
-          <CodeView
-            files={files}
-            currentFile={currentFile}
-            onSelectFile={setCurrentFile}
-            onSave={async (path, content) => {
-              await saveFile.mutateAsync({ path, content });
-            }}
-          />
+          <Suspense
+            fallback={<div className="flex flex-1 items-center justify-center text-subtle" />}
+          >
+            <CodeView
+              files={files}
+              currentFile={currentFile}
+              onSelectFile={setCurrentFile}
+              onSave={async (path, content) => {
+                await saveFile.mutateAsync({ path, content });
+              }}
+            />
+          </Suspense>
         )}
       </main>
     </div>
