@@ -5,8 +5,27 @@
  * One HTTP request, transcript back in the response: the preferred path for
  * short (under two minutes) audio files, versus opening a realtime streaming
  * session and replaying the file through it. Zero dependencies (plain
- * `fetch` + `FormData`), so it runs on the host, in Deno, and in the guest
- * sandbox alike.
+ * `fetch`), so it runs on the host, in Deno, and in the guest sandbox alike.
+ *
+ * **The multipart body is encoded by hand rather than with `FormData`**, and
+ * that is load-bearing. `RuntimeOptions.fetch` decides which `fetch` gets the
+ * body, and on the platform that is `safeFetch` → `pinnedFetch`, undici 8 from
+ * `@alexkroman1/aai`'s own dependencies — while `globalThis.FormData` belongs
+ * to the undici bundled into Node (`process.versions.undici`, v7). undici 8's
+ * `extractBody` gates its multipart branch on an `instanceof` against its own
+ * `FormData` class, so a foreign one misses every branch and is stringified:
+ * the request went out as `Content-Type: text/plain` with the 17-byte body
+ * `[object FormData]`, the API answered 415 ("request must be
+ * multipart/form-data with an `audio` part"), and the browser saw
+ * `Sync turn failed: HTTP 502`. Every sync turn was broken.
+ *
+ * A `Uint8Array` body plus an explicit `Content-Type` has no class identity to
+ * disagree about, so it encodes identically on every `fetch` implementation.
+ * A `Blob` body is brand-checked the same way, so neither it nor `FormData`
+ * may come back as the request body (a `Blob` *input* is fine — it is read to
+ * bytes before it reaches `fetch`).
+ * Guarded by `host/sync-transcribe-wire.test.ts`, which posts through the real
+ * pinned undici; specs that inject a fake fetch cannot see this class of bug.
  *
  * API reference: https://assemblyai.com/docs/api-reference/sync-api/transcribe
  */
@@ -70,16 +89,49 @@ export type SyncTranscribeOptions = {
   signal?: AbortSignal | undefined;
 };
 
-/** Normalize the audio payload into a Blob with the right content type. */
-function toAudioBlob(audio: SyncTranscribeOptions["audio"], contentType: string): Blob {
-  if (audio instanceof Blob) return audio;
-  // One exact-range copy (ArrayBuffer.slice) so an offset view or a
-  // SharedArrayBuffer-backed view becomes a plain, correctly-bounded buffer.
-  const buffer =
-    audio instanceof Uint8Array
-      ? audio.buffer.slice(audio.byteOffset, audio.byteOffset + audio.byteLength)
-      : audio;
-  return new Blob([buffer as ArrayBuffer], { type: contentType });
+/** Normalize the audio payload to bytes. An offset or SharedArrayBuffer-backed
+ *  view needs no copy — the assembled body copies out of it by its own bounds. */
+async function toAudioBytes(audio: SyncTranscribeOptions["audio"]): Promise<Uint8Array> {
+  if (audio instanceof Uint8Array) return audio;
+  if (audio instanceof ArrayBuffer) return new Uint8Array(audio);
+  return new Uint8Array(await audio.arrayBuffer());
+}
+
+/** A boundary long and random enough that no payload can contain it. */
+function randomBoundary(): string {
+  const bytes = new Uint8Array(16);
+  crypto.getRandomValues(bytes);
+  return `----aai-${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}`;
+}
+
+/**
+ * Encode a `multipart/form-data` body: the binary `audio` part, then the
+ * optional `config` part. Byte-for-byte what a spec-conformant `FormData`
+ * encoder emits (see the module doc for why we do it ourselves).
+ */
+function encodeMultipart(
+  boundary: string,
+  audio: { bytes: Uint8Array; filename: string; contentType: string },
+  config: string | undefined,
+  // `Uint8Array<ArrayBuffer>`, not the default `ArrayBufferLike`: only a
+  // non-shared buffer is a valid `BodyInit`.
+): Uint8Array<ArrayBuffer> {
+  const encoder = new TextEncoder();
+  const head = encoder.encode(
+    `--${boundary}\r\nContent-Disposition: form-data; name="audio"; ` +
+      `filename="${audio.filename}"\r\nContent-Type: ${audio.contentType}\r\n\r\n`,
+  );
+  const configPart =
+    config === undefined
+      ? ""
+      : `--${boundary}\r\nContent-Disposition: form-data; name="config"\r\n\r\n${config}\r\n`;
+  const tail = encoder.encode(`\r\n${configPart}--${boundary}--\r\n`);
+
+  const body = new Uint8Array(head.length + audio.bytes.length + tail.length);
+  body.set(head, 0);
+  body.set(audio.bytes, head.length);
+  body.set(tail, head.length + audio.bytes.length);
+  return body;
 }
 
 function buildConfig(opts: SyncTranscribeOptions): Record<string, unknown> {
@@ -118,20 +170,28 @@ export async function syncTranscribe(opts: SyncTranscribeOptions): Promise<SyncT
   const fetchFn = resolveFetch(opts.fetch);
   const url = opts.region === "eu" ? SYNC_TRANSCRIBE_EU_URL : SYNC_TRANSCRIBE_URL;
 
-  const form = new FormData();
-  form.append(
-    "audio",
-    toAudioBlob(opts.audio, contentType),
-    contentType === "audio/wav" ? "audio.wav" : "audio.pcm",
-  );
   const config = buildConfig(opts);
-  if (Object.keys(config).length > 0) form.append("config", JSON.stringify(config));
+  const boundary = randomBoundary();
+  const body = encodeMultipart(
+    boundary,
+    {
+      bytes: await toAudioBytes(opts.audio),
+      filename: contentType === "audio/wav" ? "audio.wav" : "audio.pcm",
+      contentType,
+    },
+    Object.keys(config).length > 0 ? JSON.stringify(config) : undefined,
+  );
 
   const resp = await fetchFn(url, {
     method: "POST",
-    // The Sync API authenticates with the raw key, not `Bearer`.
-    headers: { Authorization: opts.apiKey, "X-AAI-Model": SYNC_TRANSCRIBE_MODEL },
-    body: form,
+    headers: {
+      // The Sync API authenticates with the raw key, not `Bearer`.
+      Authorization: opts.apiKey,
+      "X-AAI-Model": SYNC_TRANSCRIBE_MODEL,
+      // Set explicitly: nothing infers a boundary for a byte-array body.
+      "Content-Type": `multipart/form-data; boundary=${boundary}`,
+    },
+    body,
     ...(opts.signal ? { signal: opts.signal } : {}),
   });
   if (!resp.ok) {
