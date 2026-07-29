@@ -607,6 +607,42 @@ Provider factories are imported from the `@alexkroman1/aai/kv` and
 `@alexkroman1/aai/vector` subpath exports (both resolve to `sdk/providers/`
 so they carry no Node.js dependencies and are safe in sandboxed environments).
 
+### Send channels (`send: slack()`)
+
+An agent's outbound channel has **two independent sides**, and a deployed
+agent needs both wired or the failure is silent:
+
+- **Host side** — `createRuntime` registers the `send_message` builtin only
+  when `agent.send` is set (`host/runtime-tools.ts:resolveSendMessage`). The
+  platform builds its agent object with `toRuntimeAgent` (`sandbox.ts`), so
+  that mapper must copy `config.send`; when it didn't, a deployed
+  `send: slack()` was a no-op — the tool never entered the LLM's schema
+  list, so the symptom was a reply that simply didn't send, with no error
+  anywhere. The builtin executes host-side with `safeFetch` and resolves
+  `SLACK_WEBHOOK_URL` from the agent env *per send*, so a missing secret is
+  a tool error mid-conversation rather than a session-start failure.
+- **Guest side** — tool code calling `openSender(slack(), ctx.env)` posts
+  through the sandbox's proxied `fetch`, which the host validates against
+  `allowedHosts`. `resolveAgentAllowedHosts` (`sandbox.ts`) derives the
+  channel's webhook host from the *validated descriptor* host-side rather
+  than trusting a bundle-supplied field — note `toAgentConfig` has no
+  `allowedHosts` at all, so the deploy path cannot carry one, and
+  `parseManifest`'s union (`sdk/manifest.ts`) has no live consumer. Getting
+  this wrong disables guest fetch **entirely**, not just Slack:
+  `registerGuestRpcHandlers` registers no `fetch/request` handler for an
+  empty list.
+
+Both sides are covered by `packages/aai-server/sandbox-send.test.ts`. When
+adding a channel kind, the registry entry in `sdk/providers/send/open.ts`
+(env var + hosts + opener) is the only place that needs the hostname —
+everything above derives from it.
+
+`toRuntimeAgent` copies ~14 optional fields through a `defined({...})` helper
+rather than one conditional spread each. That shape is deliberate: the
+per-field form is how `builtinTools` (deployed agents silently lost the
+default cognitive builtins) and then `send` came to be dropped, since every
+field is optional and an omission is valid TypeScript.
+
 ### Data flow
 
 Audio path depends on the session mode (see above):
