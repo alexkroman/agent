@@ -34,7 +34,6 @@
     "aai-studio-client": "workspace:*",
     "ai": "^7.0.35",
     "diff": "^9.0.0",
-    "generic-pool": "^3.9.0",
     "hono": "^4.12.31",
     "human-id": "^4.2.0",
     "iron-webcrypto": "^2.0.0",
@@ -54,7 +53,6 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@types/generic-pool": "^3.8.3",
     "@types/json-schema": "^7.0.15",
     "@types/mime-types": "^3.0.1",
     "@types/picomatch": "^4.0.3",
