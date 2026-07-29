@@ -56,6 +56,7 @@ export const AgentConfigSchema = z.object({
   endpointSettleMs: z.number().int().nonnegative().optional(),
   completeSettleMs: z.number().int().nonnegative().optional(),
   holdPhrase: z.string().optional(),
+  errorPhrase: z.string().optional(),
   falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
@@ -89,6 +90,7 @@ interface AgentConfigSource {
   endpointSettleMs?: number | undefined;
   completeSettleMs?: number | undefined;
   holdPhrase?: string | undefined;
+  errorPhrase?: string | undefined;
   falseInterruptionTimeoutMs?: number | undefined;
   stt?: SttProvider | undefined;
   llm?: LlmProvider | undefined;
@@ -111,6 +113,7 @@ function pipelineTuningConfig(src: AgentConfigSource): Partial<AgentConfig> {
     ...(src.endpointSettleMs !== undefined ? { endpointSettleMs: src.endpointSettleMs } : {}),
     ...(src.completeSettleMs !== undefined ? { completeSettleMs: src.completeSettleMs } : {}),
     ...(src.holdPhrase !== undefined ? { holdPhrase: src.holdPhrase } : {}),
+    ...(src.errorPhrase !== undefined ? { errorPhrase: src.errorPhrase } : {}),
     ...(src.falseInterruptionTimeoutMs !== undefined
       ? { falseInterruptionTimeoutMs: src.falseInterruptionTimeoutMs }
       : {}),

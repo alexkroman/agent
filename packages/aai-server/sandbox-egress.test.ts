@@ -301,6 +301,28 @@ describe("createSandbox — pipeline voice tuning", () => {
     await sandbox.shutdown();
   });
 
+  it("forwards holdPhrase and errorPhrase to the runtime agent", async () => {
+    // Both are spoken filler, so a dropped one is silence — the failure mode
+    // this whole file exists for. `errorPhrase` is the newest field through
+    // `toRuntimeAgent`, which makes it the most likely to go missing.
+    const sandbox = createSandbox(
+      makeSandboxOptions({
+        agentConfig: {
+          ...PIPELINE_CONFIG,
+          holdPhrase: "I'll look that up now.",
+          errorPhrase: "My brain went offline.",
+        },
+        env: { ASSEMBLYAI_API_KEY: "k", ANTHROPIC_API_KEY: "k", CARTESIA_API_KEY: "k" },
+      }),
+    );
+
+    expect(capturedOpts.current?.agent).toMatchObject({
+      holdPhrase: "I'll look that up now.",
+      errorPhrase: "My brain went offline.",
+    });
+    await sandbox.shutdown();
+  });
+
   it("starts a deployed pipeline agent that sets the endpointing knobs", async () => {
     const sandbox = createSandbox(
       makeSandboxOptions({

@@ -182,7 +182,8 @@ boundary** — this split is critical for sandbox security:
   `runtime-transport.ts` (transport selection/construction for the runtime),
   `tool-executor.ts`, `session-core.ts`, `s2s.ts`, `ws-handler.ts`,
   `transports/` (S2S / pipeline / OpenAI Realtime `Transport`
-  implementations), `to-vercel-tools.ts`,
+  implementations, including `pipeline-turn-outcome.ts` — the three ways a
+  pipeline turn ends: interrupted by barge-in, failed, or spoken), `to-vercel-tools.ts`,
   `providers/` (STT/TTS openers + descriptor→instance resolvers),
   `builtin-tools.ts`, `unstorage-kv.ts`.
 
@@ -990,6 +991,7 @@ defaults that affect agent behavior:
 | Deepgram `endpointing` | 100 (`DEFAULT_DEEPGRAM_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Provider endpointing serializes with the transport settle windows, so it stays low; override via `deepgram({ endpointing })`. |
 | `endpointSettleMs` | 1500 (`DEFAULT_ENDPOINT_SETTLE_MS`) | `constants.ts` | Pipeline only: wait after an STT final before committing the turn, aggregating disfluent multi-final utterances. `completeSettleMs` (500) is the shorter window for clearly-complete finals. 0 disables. |
 | `holdPhrase` | `"One moment."` (`DEFAULT_HOLD_PHRASE`) | `pipeline-stream.ts` | Pipeline only: spoken when a turn opens with a tool call and no speech. `""` disables. |
+| `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. Unlike `holdPhrase` it is **allowed** with `tts: none()` — an error is meaningful as text. `""` disables. |
 | dead-air cover | 2000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream.ts` | Pipeline only: tool execution that sends nothing to TTS for this long gets a `DEAD_AIR_COVER_PHRASES` filler — unlike `holdPhrase` this is time-based, so it still fires after the model has spoken, and repeats across a tool chain with the wait doubling each time. `holdPhrase: ""` disables both. |
 | `falseInterruptionTimeoutMs` | 2000 (`DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS`) | `constants.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn (`DEFAULT_FALSE_INTERRUPTION_PROMPT`) after this window. 0 disables. |
 | `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. |

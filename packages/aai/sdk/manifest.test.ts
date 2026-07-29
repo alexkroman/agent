@@ -363,6 +363,7 @@ describe("parseManifest — pipeline voice tuning", () => {
       endpointSettleMs: 800,
       completeSettleMs: 200,
       holdPhrase: "Just a sec.",
+      errorPhrase: "My brain went offline.",
       falseInterruptionTimeoutMs: 1500,
     } as never);
     expect(m.minBargeInWords).toBe(3);
@@ -370,6 +371,7 @@ describe("parseManifest — pipeline voice tuning", () => {
     expect(m.endpointSettleMs).toBe(800);
     expect(m.completeSettleMs).toBe(200);
     expect(m.holdPhrase).toBe("Just a sec.");
+    expect(m.errorPhrase).toBe("My brain went offline.");
     expect(m.falseInterruptionTimeoutMs).toBe(1500);
   });
 
@@ -380,10 +382,12 @@ describe("parseManifest — pipeline voice tuning", () => {
       endpointSettleMs: 0,
       completeSettleMs: 0,
       holdPhrase: "",
+      errorPhrase: "",
       falseInterruptionTimeoutMs: 0,
     } as never);
     expect(m.endpointSettleMs).toBe(0);
     expect(m.holdPhrase).toBe("");
+    expect(m.errorPhrase).toBe("");
     expect(m.falseInterruptionTimeoutMs).toBe(0);
   });
 
@@ -393,6 +397,7 @@ describe("parseManifest — pipeline voice tuning", () => {
     ["endpointSettleMs", 800],
     ["completeSettleMs", 200],
     ["holdPhrase", "One sec."],
+    ["errorPhrase", "Something broke."],
     ["falseInterruptionTimeoutMs", 1500],
   ])("rejects %s in s2s mode", (field, value) => {
     expect(() => parseManifest({ name: "x", [field]: value })).toThrow(
@@ -506,6 +511,18 @@ describe("parseManifest — text-only (tts: none())", () => {
         llm: textOnlyFields.llm,
       } as never),
     ).toThrow(/stt, llm, and tts must be set together/);
+  });
+
+  test("accepts errorPhrase with tts: none()", () => {
+    // Deliberately unlike holdPhrase: that is synthesized dead-air filler and
+    // meaningless without audio, whereas a failed turn otherwise produces no
+    // reply at all — "something went wrong" is as useful in text as in speech.
+    const m = parseManifest({
+      name: "x",
+      ...textOnlyFields,
+      errorPhrase: "I hit an error.",
+    } as never);
+    expect(m.errorPhrase).toBe("I hit an error.");
   });
 
   test("rejects holdPhrase with tts: none()", () => {
