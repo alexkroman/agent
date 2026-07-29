@@ -524,7 +524,7 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   (`session/end`, message-delta cache), and the studio exposes
   `POST /studio/projects/:project/sync` (bearer-auth'd) against a project's
   *published* slug; both share `sync-turn-handler.ts`. Templates:
-  `sync-voice` (VAD mic + text, all sync transports) and
+  `sync-voice` (hands-free VAD mic via the default client) and
   `push-to-talk-translator` (hold-to-record, no VAD — the button is the
   endpoint).
 
@@ -542,11 +542,13 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   `client()`'s config tier renders `DefaultRoot`, which resolves the
   transport (explicit `transport` option, else `fetchClientConfig` — any
   failure degrades to WebSocket, so older servers keep working) and mounts
-  either the WebSocket shell or `SyncChatView` (stock sync UI: push-to-talk
-  button on `createPttRecorder` — no VAD, the button is the endpointing —
-  transcript/reply output, a chip showing the `/sync` endpoint each
-  utterance is POSTed to, reply playback; styled as the same console as
-  `ChatView`). A custom `component` ignores all of it.
+  either the WebSocket shell or `SyncChatView` (stock sync UI: a hands-free
+  voice agent — one start/end toggle opens the mic via
+  `startSyncMicrophone`, and the energy VAD endpoints each utterance
+  automatically — transcript/reply output, a chip showing the `/sync`
+  endpoint each utterance is POSTed to, reply playback; styled as the same
+  console as `ChatView`. `createPttRecorder` remains exported for custom
+  hold-to-record clients). A custom `component` ignores all of it.
   The `aai dev` Vite proxy forwards `/client-config` *and* `/sync` to the
   backend — without the latter, custom sync clients 404'd under dev.
 

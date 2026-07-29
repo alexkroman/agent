@@ -3,32 +3,50 @@
 
 /** @jsxImportSource react */
 
-import { fireEvent, render, screen } from "@testing-library/react";
+import { act, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ThemeProvider } from "../context.ts";
+import type { SyncMicrophoneOptions } from "../sync-mic.ts";
 import { SyncChatView } from "./sync-chat-view.tsx";
 
-// The PTT recorder wraps getUserMedia + an AudioWorklet — mocked wholesale;
-// what matters here is press → stop() PCM → one POST /sync → rendered output.
+// The VAD microphone wraps getUserMedia + an AudioWorklet — mocked wholesale;
+// what matters here is toggle → endpointed utterance → one POST /sync →
+// rendered output. Utterances are simulated by driving the options the view
+// hands to startSyncMicrophone (speech callbacks + the session's sendPcm16),
+// exactly what the real mic does per endpointed utterance.
 const micMock = vi.hoisted(() => ({
-  createPttRecorder: vi.fn(),
+  startSyncMicrophone: vi.fn(),
   DEFAULT_SYNC_MIC_SAMPLE_RATE: 16_000,
 }));
 vi.mock("../sync-mic.ts", () => micMock);
 
-/** A full second of speech — comfortably past the button-fumble guard. */
+/** A second of speech, as the VAD would hand it over. */
 const SPEECH = new Int16Array(16_000);
-/** A blip shorter than the quarter-second guard. */
-const FUMBLE = new Int16Array(1000);
 
-function mockRecorder(pcm: Int16Array = SPEECH) {
-  const recorder = {
-    start: vi.fn(async () => undefined),
-    stop: vi.fn(async () => pcm),
-    close: vi.fn(async () => undefined),
-  };
-  micMock.createPttRecorder.mockReturnValue(recorder);
-  return recorder;
+function mockMic() {
+  const handle = { speaking: false, stop: vi.fn(async () => undefined) };
+  const captured: { opts: SyncMicrophoneOptions | null } = { opts: null };
+  micMock.startSyncMicrophone.mockImplementation(async (opts: SyncMicrophoneOptions) => {
+    captured.opts = opts;
+    return handle;
+  });
+  return { handle, captured };
+}
+
+/** Drive one VAD-endpointed utterance through the captured mic options. */
+async function speakUtterance(
+  captured: { opts: SyncMicrophoneOptions | null },
+  pcm: Int16Array = SPEECH,
+): Promise<void> {
+  const opts = captured.opts;
+  if (!opts) throw new Error("mic not started");
+  await act(async () => {
+    opts.onSpeechStart?.();
+    opts.onSpeechEnd?.();
+    await opts.session.sendPcm16(pcm, 16_000).catch(() => {
+      // surfaced via onError
+    });
+  });
 }
 
 /** Minimal AudioContext stand-in for the reply-playback path. */
@@ -41,6 +59,7 @@ class FakePlaybackContext {
   createBufferSource() {
     return {
       buffer: null as unknown,
+      onended: null as (() => void) | null,
       connect: () => undefined,
       start: () => {
         FakePlaybackContext.started++;
@@ -60,8 +79,14 @@ function renderView(props?: { title?: string; greeting?: string }) {
   );
 }
 
-function pttButton(): HTMLElement {
-  return screen.getByTitle("Hold to record — release to send");
+function toggleButton(): HTMLElement {
+  return screen.getByTitle("Start or end the conversation");
+}
+
+async function startConversation(): Promise<void> {
+  fireEvent.click(toggleButton());
+  // findByText throws if the live label never appears.
+  await screen.findByText("End conversation");
 }
 
 function stubTurn(body: Record<string, unknown>) {
@@ -78,15 +103,15 @@ function stubTurn(body: Record<string, unknown>) {
 
 afterEach(() => {
   vi.unstubAllGlobals();
-  micMock.createPttRecorder.mockReset();
+  micMock.startSyncMicrophone.mockReset();
   FakePlaybackContext.started = 0;
 });
 
 describe("SyncChatView", () => {
   test("shows the title and the greeting", () => {
-    renderView({ title: "My Sync Agent", greeting: "Hold the button to talk to me." });
+    renderView({ title: "My Sync Agent", greeting: "Start the conversation and talk to me." });
     expect(screen.getByText("My Sync Agent")).toBeTruthy();
-    expect(screen.getByText("Hold the button to talk to me.")).toBeTruthy();
+    expect(screen.getByText("Start the conversation and talk to me.")).toBeTruthy();
   });
 
   test("falls back to a generic title", () => {
@@ -99,18 +124,16 @@ describe("SyncChatView", () => {
     expect(screen.getByTestId("sync-url-chip-url").textContent).toBe("http://localhost:3000/sync");
   });
 
-  test("hold-and-release sends one POST /sync and renders heard + reply", async () => {
-    const recorder = mockRecorder();
+  test("an endpointed utterance sends one POST /sync and renders heard + reply", async () => {
+    const { captured } = mockMic();
     const fetchSpy = stubTurn({ transcript: "what time is it", reply: "It is noon." });
 
     renderView();
-    fireEvent.pointerDown(pttButton());
-    expect(await screen.findByText("Release to send")).toBeTruthy();
-    fireEvent.pointerUp(pttButton());
+    await startConversation();
+    await speakUtterance(captured);
 
     expect(await screen.findByText("It is noon.")).toBeTruthy();
     expect(screen.getByText("what time is it")).toBeTruthy();
-    expect(recorder.stop).toHaveBeenCalledOnce();
     expect(fetchSpy).toHaveBeenCalledWith(
       "http://localhost:3000/sync",
       expect.objectContaining({ method: "POST" }),
@@ -121,83 +144,95 @@ describe("SyncChatView", () => {
     expect(body.sampleRate).toBe(16_000);
   });
 
-  test("a sub-quarter-second press is dropped without a request", async () => {
-    mockRecorder(FUMBLE);
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
+  test("the mic stays open across turns — a second utterance needs no button", async () => {
+    const { captured } = mockMic();
+    const fetchSpy = stubTurn({ transcript: "again", reply: "Sure." });
 
     renderView();
-    fireEvent.pointerDown(pttButton());
-    expect(await screen.findByText("Release to send")).toBeTruthy();
-    fireEvent.pointerUp(pttButton());
+    await startConversation();
+    await speakUtterance(captured);
+    await speakUtterance(captured);
 
-    expect(await screen.findByText("Hold to talk")).toBeTruthy();
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(micMock.startSyncMicrophone).toHaveBeenCalledOnce();
+  });
+
+  test("ending the conversation stops the mic", async () => {
+    const { handle } = mockMic();
+    renderView();
+    await startConversation();
+
+    fireEvent.click(toggleButton());
+    expect(await screen.findByText("Start conversation")).toBeTruthy();
+    expect(handle.stop).toHaveBeenCalledOnce();
   });
 
   test("a spoken reply plays through an AudioContext", async () => {
-    mockRecorder();
+    const { captured } = mockMic();
     vi.stubGlobal("AudioContext", FakePlaybackContext);
     // "AAAAAA==" is 4 bytes of PCM16 silence — 2 samples.
     stubTurn({ transcript: "t", reply: "r", audio: "AAAAAA==", sampleRate: 16_000 });
 
     renderView();
-    fireEvent.pointerDown(pttButton());
-    expect(await screen.findByText("Release to send")).toBeTruthy();
-    fireEvent.pointerUp(pttButton());
+    await startConversation();
+    await speakUtterance(captured);
 
     expect(await screen.findByText("r")).toBeTruthy();
     expect(FakePlaybackContext.started).toBe(1);
   });
 
   test("a TTS failure surfaces while the text reply stays intact", async () => {
-    mockRecorder();
+    const { captured } = mockMic();
     stubTurn({ transcript: "t", reply: "r", ttsError: "no voice" });
 
     renderView();
-    fireEvent.pointerDown(pttButton());
-    expect(await screen.findByText("Release to send")).toBeTruthy();
-    fireEvent.pointerUp(pttButton());
+    await startConversation();
+    await speakUtterance(captured);
 
     expect(await screen.findByText("TTS unavailable: no voice")).toBeTruthy();
     expect(screen.getByText("r")).toBeTruthy();
   });
 
   test("a denied mic permission surfaces as an error", async () => {
-    micMock.createPttRecorder.mockReturnValue({
-      start: vi.fn(async () => {
-        throw new Error("permission denied");
-      }),
-      stop: vi.fn(),
-      close: vi.fn(),
-    });
+    micMock.startSyncMicrophone.mockRejectedValue(new Error("permission denied"));
     renderView();
-    fireEvent.pointerDown(pttButton());
+    fireEvent.click(toggleButton());
     expect(await screen.findByText("permission denied")).toBeTruthy();
+    // The conversation never went live.
+    expect(screen.getByText("Start conversation")).toBeTruthy();
   });
 
   test("a non-Error mic failure is stringified", async () => {
-    micMock.createPttRecorder.mockReturnValue({
-      // Rejecting with a bare string exercises the non-Error path.
-      start: vi.fn().mockRejectedValue("nope"),
-      stop: vi.fn(),
-      close: vi.fn(),
-    });
+    // Rejecting with a bare string exercises the non-Error path.
+    micMock.startSyncMicrophone.mockRejectedValue("nope");
     renderView();
-    fireEvent.pointerDown(pttButton());
+    fireEvent.click(toggleButton());
     expect(await screen.findByText("nope")).toBeTruthy();
   });
 
-  test("a failed turn surfaces the error instead of hanging on busy", async () => {
-    mockRecorder();
+  test("a mid-conversation capture error surfaces without ending the session", async () => {
+    const { captured } = mockMic();
+    renderView();
+    await startConversation();
+
+    act(() => {
+      captured.opts?.onError?.(new Error("worklet crashed"));
+    });
+
+    expect(await screen.findByText("worklet crashed")).toBeTruthy();
+    expect(screen.getByText("End conversation")).toBeTruthy();
+  });
+
+  test("a failed turn surfaces the error instead of hanging on thinking", async () => {
+    const { captured } = mockMic();
     vi.stubGlobal(
       "fetch",
       vi.fn(async () => new Response(JSON.stringify({ error: "kaput" }), { status: 500 })),
     );
     renderView();
-    fireEvent.pointerDown(pttButton());
-    expect(await screen.findByText("Release to send")).toBeTruthy();
-    fireEvent.pointerUp(pttButton());
+    await startConversation();
+    await speakUtterance(captured);
     expect(await screen.findByText(/Sync turn failed: HTTP 500/)).toBeTruthy();
+    expect(screen.queryByTestId("thinking")).toBeNull();
   });
 });
