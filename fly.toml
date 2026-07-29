@@ -27,16 +27,22 @@ primary_region = 'sjc'
     # spawning Deno harnesses — 2s was tight enough to fail a machine that was
     # merely busy, which ejects it from rotation.
     timeout = "5s"
-    # The listener does not open until the sandbox rootfs is prepared (see
-    # index.ts), so a check before that is guaranteed to fail and is pure noise:
-    # every machine of every deploy logged "Health check has failed" at T+1s.
-    # Sized to cover a normal boot; deliberately NOT sized to cover the old
-    # ~34s worst case, because Fly does not document whether the proxy routes
-    # to a machine mid-grace-period — a long window risks trading a logged
-    # error for a silent one. The fix for a slow boot is a faster boot
-    # (gvisor.ts hard-links Deno instead of copying 130 MB), not a wider
-    # blindfold.
-    grace_period = "15s"
+    # Sized to clear a real cold boot with headroom: the listener does not bind
+    # until `prepareRootfs` finishes (~32s), and the check passes ~42s after
+    # init. 15s did not cover that; 60s does.
+    #
+    # Be clear about what this buys, because it was measured rather than
+    # assumed: going 5s → 15s changed nothing about the "Health check has
+    # failed" line. Machine d894075b3d7038 booted v347 with grace_period 15s
+    # (confirmed against the Machines API) and still reported the failure 1s
+    # after init — same second as under 5s. Whatever emits that line reports the
+    # check's not-yet-passing state at machine start; it is not an attempt this
+    # window suppresses. So this keeps a slow boot from counting against the
+    # machine, and that is all. Silencing the line would mean binding the port
+    # before the sandbox rootfs is ready, which would advertise a machine that
+    # cannot start a session for another ~24s — the line is reporting something
+    # true, so it is left alone deliberately.
+    grace_period = "60s"
     method = "GET"
     path = "/health"
 
