@@ -425,6 +425,26 @@ voice agents without the CLI:
   uses a throwaway one (`describeBundle` in `sandbox-vm.ts`). The LLM
   orchestration itself stays host-side — the guest has no network device
   by design.
+- **Builds never run in the server's process.** Every studio build executes
+  the build entry (`studio/studio-build-entry.ts`, wire contract in
+  `studio-build-protocol.ts`) out of process, selected by
+  `studio-build-runner.ts`: in production `STUDIO_BUILD_BACKEND=modal` (set
+  by `modal_deploy.py`'s image env) ships the build to the `studio_build`
+  Modal Function — same image, separate container, **no secrets attached** —
+  while dev/tests default to spawning the same entry as a local child
+  process (`subprocess` backend). Vite/Rollup over untrusted workspace trees
+  therefore never competes with live voice sessions for the web container's
+  CPU, and never runs in the process holding platform credentials; it also
+  moots the `withPreservedNodeEnv` hazard for studio builds, since the
+  `NODE_ENV` mutation dies with the build process. There is deliberately
+  **no in-process build path and no fallback between backends** — a failed
+  backend is a failed build, loudly. Compile errors cross the process
+  boundary as classified wire data and are rethrown host-side as
+  `StudioBuildError`, so the coding agent still gets a message it can act
+  on. `STUDIO_BUILD_TIMEOUT_MS` bounds each build (default 180s; the
+  subprocess is killed on the deadline), and
+  `STUDIO_BUILD_MODAL_APP`/`STUDIO_BUILD_MODAL_FUNCTION`/
+  `STUDIO_BUILD_ENTRY_PATH` override the backend wiring.
 - **Builds run through the CLI's bundlers, not copies of them.**
   `withWorkspaceDir` (`studio-workspace-dir.ts`) materializes the
   workspace to one scratch dir and both builds read it. The scratch dir

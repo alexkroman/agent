@@ -14,11 +14,10 @@ import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
 import { describeBundle } from "../sandbox-vm.ts";
 import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
-import { bundleWorkspaceWorker } from "./studio-bundle.ts";
-import { buildWorkspaceClient } from "./studio-client-build.ts";
+import type { StudioBuildRunner } from "./studio-build-protocol.ts";
+import { resolveStudioBuildRunner } from "./studio-build-runner.ts";
 import { StudioBuildError } from "./studio-errors.ts";
 import { currentFilesHash, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
-import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 import { withWorkspaceLock } from "./studio-workspace-lock.ts";
 import type { WorkspaceStore } from "./workspace-store.ts";
 
@@ -30,12 +29,14 @@ export type StudioDeployDeps = DeployDeps & {
   workspaces: WorkspaceStore;
   /** Warm harness pool — config extraction acquires from it when present. */
   pool?: SandboxPool | undefined;
-  /** Injectable for tests — defaults to the CLI's Vite worker build. */
-  bundle?: (dir: string) => Promise<string>;
+  /**
+   * Injectable for tests — defaults to the env-selected out-of-process build
+   * runner (a local build subprocess in dev, the Modal build worker in
+   * production; see `studio-build-runner.ts`).
+   */
+  build?: StudioBuildRunner;
   /** Injectable for tests — defaults to sandboxed `describeBundle`. */
   inspect?: (workerCode: string) => Promise<unknown>;
-  /** Injectable for tests — defaults to the CLI's Vite client build. */
-  buildClient?: (dir: string) => Promise<Record<string, string>>;
 };
 
 export type StudioDeployParams = {
@@ -61,23 +62,23 @@ async function buildArtifacts(
   files: Record<string, string>,
   hash: string,
 ): Promise<{ worker: string; clientFiles: Record<string, string> }> {
-  const bundle = deps.bundle ?? bundleWorkspaceWorker;
-  const buildClient = deps.buildClient ?? buildWorkspaceClient;
+  const build = deps.build ?? resolveStudioBuildRunner();
   const cached = getCachedBuild(hash);
-  let worker: string;
-  let clientFiles: Record<string, string>;
-  if (cached?.worker !== undefined && cached.clientFiles !== undefined) {
-    worker = cached.worker;
-    clientFiles = cached.clientFiles;
-  } else if (cached?.worker !== undefined) {
-    worker = cached.worker;
-    clientFiles = await withWorkspaceDir(files, buildClient);
-  } else {
-    // One materialize feeds both builds — they read the same scratch dir and
-    // are otherwise independent.
-    [worker, clientFiles] = await withWorkspaceDir(files, (dir) =>
-      Promise.all([bundle(dir), buildClient(dir)]),
-    );
+  let worker = cached?.worker;
+  let clientFiles = cached?.clientFiles;
+  if (worker === undefined || clientFiles === undefined) {
+    // One runner call builds whatever the cache is missing — one materialize
+    // feeds both Vite passes (and on the Modal backend, one remote hop).
+    const built = await build({
+      files,
+      worker: worker === undefined,
+      client: clientFiles === undefined,
+    });
+    worker ??= built.worker;
+    clientFiles ??= built.clientFiles;
+  }
+  if (worker === undefined || clientFiles === undefined) {
+    throw new Error("Build runner returned incomplete artifacts");
   }
   putCachedBuild(hash, { worker, clientFiles });
   return { worker, clientFiles };

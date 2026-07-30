@@ -5,6 +5,7 @@ import { createSlotCache } from "../sandbox-slots.ts";
 import { hashApiKey } from "../secrets.ts";
 import { createTestStore, TEST_AGENT_CONFIG } from "../test-utils.ts";
 import { clearStudioBuildCache, putCachedBuild } from "./studio-build-cache.ts";
+import type { StudioBuildRequest, StudioBuildResult } from "./studio-build-protocol.ts";
 import { StudioBuildError } from "./studio-bundle.ts";
 import { deployStudioProject, type StudioDeployDeps } from "./studio-deploy.ts";
 import {
@@ -25,14 +26,29 @@ beforeEach(() => {
   clearStudioBuildCache();
 });
 
+/**
+ * Fake build runner honoring the runner contract: each artifact is present
+ * iff the request asked for it. Per-target bodies are overridable.
+ */
+function fakeBuild(overrides: {
+  worker?: () => Promise<string>;
+  client?: () => Promise<Record<string, string>>;
+}): (req: StudioBuildRequest) => Promise<StudioBuildResult> {
+  const worker = overrides.worker ?? (async () => "export default {};");
+  const client = overrides.client ?? (async (): Promise<Record<string, string>> => ({}));
+  return async (req) => ({
+    ...(req.worker && { worker: await worker() }),
+    ...(req.client && { clientFiles: await client() }),
+  });
+}
+
 function makeDeps(overrides: Partial<StudioDeployDeps> = {}): StudioDeployDeps {
   return {
     store: createTestStore(),
     slots: createSlotCache(),
     workspaces: createMemoryWorkspaceStore(),
-    bundle: async () => "export default {};",
+    build: fakeBuild({}),
     inspect: async () => TEST_AGENT_CONFIG,
-    buildClient: async () => ({}),
     ...overrides,
   };
 }
@@ -75,7 +91,7 @@ describe("deployStudioProject", () => {
 
   test("ships the built client.tsx as the agent's clientFiles", async () => {
     const built = { "index.html": "<html>custom</html>", "assets/index-abc.js": "//js" };
-    const deps = makeDeps({ buildClient: async () => built });
+    const deps = makeDeps({ build: fakeBuild({ client: async () => built }) });
     await seedProject(deps, "p1");
     const result = await deployStudioProject(deps, {
       apiKey: "key1",
@@ -88,7 +104,7 @@ describe("deployStudioProject", () => {
   });
 
   test("a workspace with no client.tsx deploys no clientFiles (default UI)", async () => {
-    const deps = makeDeps({ buildClient: async () => ({}) });
+    const deps = makeDeps({ build: fakeBuild({ client: async () => ({}) }) });
     await seedProject(deps, "p1");
     await deployStudioProject(deps, { apiKey: "key1", scope: SCOPE, project: "p1" });
     expect(await deps.store.getClientFile("p1", "index.html")).toBeNull();
@@ -96,9 +112,11 @@ describe("deployStudioProject", () => {
 
   test("surfaces client build errors as messages (agent can self-correct)", async () => {
     const deps = makeDeps({
-      buildClient: async () => {
-        throw new StudioBuildError("Client build failed:\nclient.tsx:3: oops");
-      },
+      build: fakeBuild({
+        client: async () => {
+          throw new StudioBuildError("Client build failed:\nclient.tsx:3: oops");
+        },
+      }),
     });
     await seedProject(deps, "p1");
     const result = await deployStudioProject(deps, {
@@ -173,13 +191,15 @@ describe("deployStudioProject", () => {
     const deps = makeDeps();
     // Simulate an edit landing while the multi-second build runs: the final
     // metadata write must merge onto the current files, not the snapshot.
-    deps.bundle = async () => {
-      await mutateWorkspace(deps.workspaces, SCOPE, "p1", (ws) => ({
-        ...ws,
-        files: { "agent.ts": "export default {}", "mid-build.ts": "added while building" },
-      }));
-      return "export default {};";
-    };
+    deps.build = fakeBuild({
+      worker: async () => {
+        await mutateWorkspace(deps.workspaces, SCOPE, "p1", (ws) => ({
+          ...ws,
+          files: { "agent.ts": "export default {}", "mid-build.ts": "added while building" },
+        }));
+        return "export default {};";
+      },
+    });
     await seedProject(deps, "p1");
     const result = await deployStudioProject(deps, {
       apiKey: "key1",
@@ -197,10 +217,12 @@ describe("deployStudioProject", () => {
 
   test("a project deleted during the build is not resurrected", async () => {
     const deps = makeDeps();
-    deps.bundle = async () => {
-      await deleteWorkspace(deps.workspaces, SCOPE, "p1");
-      return "export default {};";
-    };
+    deps.build = fakeBuild({
+      worker: async () => {
+        await deleteWorkspace(deps.workspaces, SCOPE, "p1");
+        return "export default {};";
+      },
+    });
     await seedProject(deps, "p1");
     const result = await deployStudioProject(deps, {
       apiKey: "key1",
@@ -224,9 +246,11 @@ describe("deployStudioProject", () => {
 
   test("surfaces build errors as messages (agent can self-correct)", async () => {
     const deps = makeDeps({
-      bundle: async () => {
-        throw new StudioBuildError("Build failed:\nagent.ts:1: oops");
-      },
+      build: fakeBuild({
+        worker: async () => {
+          throw new StudioBuildError("Build failed:\nagent.ts:1: oops");
+        },
+      }),
     });
     await seedProject(deps, "p1");
     const result = await deployStudioProject(deps, {
@@ -237,8 +261,8 @@ describe("deployStudioProject", () => {
     expect(result).toMatchObject({ ok: false, error: expect.stringContaining("oops") });
   });
 
-  test("uses the real worker bundler by default (build error, no sandbox needed)", async () => {
-    const { bundle: _omit, ...deps } = makeDeps(); // fall through to bundleWorkspace
+  test("uses the real build subprocess by default (build error, no sandbox needed)", async () => {
+    const { build: _omit, ...deps } = makeDeps(); // fall through to the env-selected runner
     await createWorkspace(deps.workspaces, SCOPE, "broken", {
       files: { "agent.ts": "const nope = {" },
     });
@@ -283,9 +307,8 @@ describe("deployStudioProject", () => {
   });
 
   test("a repeat publish of unchanged files skips both builds", async () => {
-    const bundle = vi.fn(async () => "export default {};");
-    const buildClient = vi.fn(async () => ({}));
-    const deps = makeDeps({ bundle, buildClient });
+    const build = vi.fn(fakeBuild({}));
+    const deps = makeDeps({ build });
     await seedProject(deps, "p1");
     expect((await deployStudioProject(deps, { apiKey: "k", scope: SCOPE, project: "p1" })).ok).toBe(
       true,
@@ -294,14 +317,18 @@ describe("deployStudioProject", () => {
       true,
     );
     // Content-hash keyed cache: the second publish built nothing.
-    expect(bundle).toHaveBeenCalledTimes(1);
-    expect(buildClient).toHaveBeenCalledTimes(1);
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(build).toHaveBeenCalledWith(expect.objectContaining({ worker: true, client: true }));
   });
 
   test("a worker cached by test_agent leaves only the client build to publish", async () => {
-    const bundle = vi.fn(async () => "should not run");
-    const buildClient = vi.fn(async () => ({ "index.html": "<html>built</html>" }));
-    const deps = makeDeps({ bundle, buildClient });
+    const build = vi.fn(
+      fakeBuild({
+        worker: async () => "should not run",
+        client: async () => ({ "index.html": "<html>built</html>" }),
+      }),
+    );
+    const deps = makeDeps({ build });
     await seedProject(deps, "p1");
     const workspace = await getWorkspace(deps.workspaces, SCOPE, "p1");
     // Simulate the chat turn's test_agent build of the same content.
@@ -309,8 +336,9 @@ describe("deployStudioProject", () => {
 
     const result = await deployStudioProject(deps, { apiKey: "k", scope: SCOPE, project: "p1" });
     expect(result.ok).toBe(true);
-    expect(bundle).not.toHaveBeenCalled();
-    expect(buildClient).toHaveBeenCalledTimes(1);
+    // One runner call, asked for the client half only.
+    expect(build).toHaveBeenCalledTimes(1);
+    expect(build).toHaveBeenCalledWith(expect.objectContaining({ worker: false, client: true }));
     expect(await deps.store.getWorkerCode("p1")).toBe("from-test-agent");
     expect(await deps.store.getClientFile("p1", "index.html")).toBe("<html>built</html>");
   });
