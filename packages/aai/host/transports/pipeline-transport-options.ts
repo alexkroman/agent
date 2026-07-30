@@ -21,6 +21,7 @@ import {
 import type { SttOpener, TtsOpener } from "../../sdk/providers.ts";
 import type { ToolChoice } from "../../sdk/types.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
+import type { PipelineTurnRunner } from "./pipeline-turn-runner.ts";
 import type { TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
 /** Configuration for `createPipelineTransport`. */
@@ -29,8 +30,18 @@ export interface PipelineTransportOptions {
   sid: string;
   /** STT opener (resolved from an SttProvider descriptor). */
   stt: SttOpener;
-  /** LLM provider (Vercel AI SDK LanguageModel). */
-  llm: LanguageModel;
+  /**
+   * LLM provider (Vercel AI SDK LanguageModel), or null when `turnRunner`
+   * sources the reply instead (the eve integration). Exactly one of the two
+   * must be set — see {@link resolvePipelineOptions}.
+   */
+  llm: LanguageModel | null;
+  /**
+   * Pluggable turn source replacing the default `streamText` loop — see
+   * `pipeline-turn-runner.ts`. When set, `llm` must be null: the runner owns
+   * the reply stream and the transport's other voice machinery is unchanged.
+   */
+  turnRunner?: PipelineTurnRunner | undefined;
   /**
    * TTS opener (resolved from a TtsProvider descriptor), or null for a
    * text-only agent (`tts: none()`): no synthesis, replies stream as text.
@@ -147,8 +158,22 @@ export interface ResolvedPipelineOptions {
   executeTool: ExecuteTool;
 }
 
+/**
+ * Exactly one reply source. Both set is ambiguity, not redundancy — the llm
+ * would be silently ignored; neither set has no way to produce a turn.
+ */
+function assertReplySource(opts: PipelineTransportOptions): void {
+  if (opts.turnRunner && opts.llm !== null) {
+    throw new Error("PipelineTransportOptions: set llm: null when turnRunner is provided.");
+  }
+  if (!opts.turnRunner && opts.llm === null) {
+    throw new Error("PipelineTransportOptions: an llm is required without a turnRunner.");
+  }
+}
+
 /** Apply the documented default for every defaultable option. */
 export function resolvePipelineOptions(opts: PipelineTransportOptions): ResolvedPipelineOptions {
+  assertReplySource(opts);
   return {
     log: opts.logger ?? consoleLogger,
     sttSampleRate: opts.sttSampleRate ?? DEFAULT_STT_SAMPLE_RATE,

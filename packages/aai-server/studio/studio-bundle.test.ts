@@ -132,28 +132,6 @@ export default { name: String(typeof readFileSync) };`,
     expect(code).toContain("node:fs");
   }, 30_000);
 
-  test("composes instructions.md, tools/ and skills/ convention files", async () => {
-    // The conventions plugin lives in the CLI's buildWorker (see
-    // aai-cli/_conventions.ts); this pins that the studio path inherits it —
-    // the wrapper entry's `./agent.ts` import must see the composed
-    // definition or __aaiConfig would extract a config missing every
-    // convention file.
-    const code = await bundleWorkspace({
-      "agent.ts": `import { agent } from "@alexkroman1/aai";
-export default agent({ name: "Conventions Studio Agent" });`,
-      "instructions.md": "Answer as a pirate.",
-      "tools/lookup.ts": `import { tool } from "@alexkroman1/aai";
-export default tool({ description: "Look something up", execute: () => "found-it" });`,
-      "skills/file-expenses.md": `---
-description: How to file expenses
----
-Step 1: open the portal.`,
-    });
-    expect(code).toContain("Answer as a pirate.");
-    expect(code).toContain("found-it");
-    expect(code).toContain("Step 1: open the portal.");
-  }, 30_000);
-
   test("rejects a workspace without agent.ts", async () => {
     await expect(bundleWorkspace({})).rejects.toThrow(StudioBuildError);
     await expect(bundleWorkspace({})).rejects.toThrow(/no agent\.ts/);

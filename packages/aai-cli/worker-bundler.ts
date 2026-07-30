@@ -22,12 +22,6 @@
 
 import path from "node:path";
 import { build, type PluginOption, type Rollup } from "vite";
-import {
-  CONVENTIONS_ENTRY_ID,
-  discoverConventions,
-  generateConventionsEntry,
-  redirectsToAgentEntry,
-} from "./_conventions.ts";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
 
 /** Options for worker bundling. */
@@ -60,25 +54,6 @@ const rawMdPlugin: PluginOption = {
 };
 
 /**
- * Redirect every resolution of `agent.ts` to a generated entry that merges
- * the directory's convention files (`instructions.md`, `tools/`, `skills/`)
- * into the definition — see `_conventions.ts` for why the *import* is
- * redirected rather than the build input swapped.
- */
-export function conventionsPlugin(agentPath: string, entryCode: string): PluginOption {
-  return {
-    name: "aai-conventions",
-    enforce: "pre",
-    resolveId(source: string, importer: string | undefined) {
-      return redirectsToAgentEntry(source, importer, agentPath) ? CONVENTIONS_ENTRY_ID : null;
-    },
-    load(id: string) {
-      return id === CONVENTIONS_ENTRY_ID ? entryCode : null;
-    },
-  };
-}
-
-/**
  * Bundle agent.ts into a single ESM string for the sandbox worker.
  *
  * Zod is bundled in — zod 4's `Function()` usage is wrapped in try/catch
@@ -88,18 +63,12 @@ export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): P
   const entry = opts.entry ?? "agent.ts";
   const agentEntry = path.isAbsolute(entry) ? entry : path.join(cwd, entry);
 
-  const agentPath = path.join(cwd, "agent.ts");
-  const conventions = await discoverConventions(cwd);
-  const conventionPlugins = conventions
-    ? [conventionsPlugin(agentPath, generateConventionsEntry(agentPath, conventions))]
-    : [];
-
   const result = await withPreservedNodeEnv(() =>
     build({
       root: cwd,
       logLevel: "silent",
       ...(opts.configFile === false && { configFile: false }),
-      plugins: [rawMdPlugin, ...conventionPlugins, ...(opts.plugins ?? [])],
+      plugins: [rawMdPlugin, ...(opts.plugins ?? [])],
       build: {
         lib: { entry: agentEntry, formats: ["es"], fileName: "worker" },
         target: "node20",

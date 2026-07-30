@@ -15,13 +15,7 @@ import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
-import { createToolCallRepair } from "./pipeline-repair.ts";
-import {
-  createPlaybackClock,
-  flushTtsAndWait,
-  type LlmStreamResult,
-  consumeLlmStream as runLlmStream,
-} from "./pipeline-stream.ts";
+import { createPlaybackClock, flushTtsAndWait } from "./pipeline-stream.ts";
 import { createFileTranscriber } from "./pipeline-transcribe.ts";
 import {
   type PipelineTransportOptions,
@@ -29,6 +23,7 @@ import {
 } from "./pipeline-transport-options.ts";
 import { createTurnGate, linkAbort } from "./pipeline-turn-gate.ts";
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
+import { createTurnSource } from "./pipeline-turn-source.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
 import type { Transport } from "./types.ts";
 
@@ -248,34 +243,21 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     sendTtsText,
   });
 
-  const consumeLlmStream = (
-    ctl: AbortController,
-    onDelta: (delta: string) => void,
-    onStepPersisted?: () => void,
-  ): Promise<LlmStreamResult> =>
-    runLlmStream({
-      llm: opts.llm,
-      systemPrompt,
-      messages: history.llm,
-      tools,
-      toolChoice,
-      temperature: opts.temperature,
-      // Built per turn so the repair holds THIS turn's signal. Reading the
-      // mutable `turnController` at repair time raced barge-in: nulled, the
-      // repair ran unsignalled (an orphaned billed call); replaced, it held
-      // the NEXT turn's signal.
-      repairToolCall: createToolCallRepair(opts.llm, log, () => ctl.signal),
-      maxSteps,
-      holdPhrase,
-      sendTtsText,
-      callbacks,
-      emitError,
-      log,
-      sid: opts.sid,
-      ctl,
-      onDelta,
-      onStepPersisted,
-    });
+  // Reply source for each turn: the local streamText loop, or the pluggable
+  // turnRunner (the eve integration) — see pipeline-turn-source.ts.
+  const consumeLlmStream = createTurnSource({
+    opts,
+    systemPrompt,
+    llmMessages: () => history.llm,
+    tools,
+    toolChoice,
+    maxSteps,
+    holdPhrase,
+    sendTtsText,
+    callbacks,
+    emitError,
+    log,
+  });
 
   /** Per-turn TTS drain — see flushTtsAndWait in pipeline-stream.ts. */
   function drainTts(signal: AbortSignal): Promise<void> {
@@ -332,9 +314,14 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       const onDelta = (delta: string): void => {
         accumulated += delta;
       };
-      const { messages: responseMessages, failed } = await consumeLlmStream(ctl, onDelta, () => {
-        persistedLen = accumulated.length;
-      });
+      const { messages: responseMessages, failed } = await consumeLlmStream(
+        userText,
+        ctl,
+        onDelta,
+        () => {
+          persistedLen = accumulated.length;
+        },
+      );
 
       if (ctl.signal.aborted) {
         outcome.persistBargeIn({

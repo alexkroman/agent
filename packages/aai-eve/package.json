@@ -1,0 +1,30 @@
+{
+  "name": "@alexkroman1/aai-eve",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Voice channel for Vercel eve agents, built on the aai voice stack (STT/TTS providers, barge-in, audio pacing).",
+  "exports": {
+    ".": "./index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:coverage": "vitest run --coverage",
+    "typecheck": "tsc --noEmit",
+    "lint": "biome check ."
+  },
+  "dependencies": {
+    "@alexkroman1/aai": "workspace:*"
+  },
+  "peerDependencies": {
+    "eve": ">=0.28.0 <1"
+  },
+  "devDependencies": {
+    "eve": "0.28.0",
+    "typescript": "^7.0.2",
+    "vitest": "^4.1.10"
+  },
+  "engines": {
+    "node": ">=24"
+  }
+}

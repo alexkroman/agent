@@ -1,5 +1,13 @@
 # CLAUDE.md
 
+> **Migration in progress:** AAI is moving onto Vercel **eve** as its agent
+> framework, keeping the voice stack as eve extensions. Read
+> `MIGRATION-EVE.md` first — it holds the target architecture, what has
+> already shipped (the pipeline transport's `turnRunner` seam,
+> `createEveTurnRunner`, `packages/aai-eve`'s `voiceChannel()`), and the
+> staged deletion map for subsystems eve replaces. Don't grow the
+> subsystems marked deletable there.
+
 ## Overview
 
 AAI is a voice agent development kit. Users define agents as directories

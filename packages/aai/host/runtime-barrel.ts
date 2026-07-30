@@ -13,6 +13,15 @@
 // imports in environments without dev deps installed (e.g. the deployed
 // platform server). It is consumed directly by sibling test files.
 
+// Opener-layer provider types, for host applications that build transports
+// directly (e.g. the eve voice channel package).
+export type {
+  SttOpener,
+  SttSession,
+  TtsOpener,
+  TtsSession,
+  Unsubscribe,
+} from "../sdk/providers.ts";
 export type { Vector, VectorMatch, VectorQueryOptions } from "../sdk/vector.ts";
 export * from "./builtin-tools.ts";
 export * from "./generate.ts";
@@ -26,7 +35,16 @@ export * from "./providers/host-env.ts";
 // dev server to check credentials before starting; `resolveLlm` lets host
 // applications (e.g. the platform server's browser studio) turn an LLM
 // descriptor into a Vercel AI SDK model without duplicating provider wiring.
-export { requiredProviderEnvVars, resolveLlm } from "./providers/resolve.ts";
+export {
+  type ResolvedOpener,
+  registerSttKind,
+  registerTtsKind,
+  requiredProviderEnvVars,
+  resolveApiKey,
+  resolveLlm,
+  resolveStt,
+  resolveTts,
+} from "./providers/resolve.ts";
 export * from "./providers/resolve-kv.ts";
 export * from "./providers/resolve-vector.ts";
 export * from "./runtime.ts";
@@ -36,7 +54,9 @@ export * from "./session-core.ts";
 export * from "./ssrf.ts";
 export * from "./sync-turn.ts";
 export * from "./tool-executor.ts";
+export * from "./transports/eve-turn-runner.ts";
 export * from "./transports/pipeline-transport.ts";
+export * from "./transports/pipeline-turn-runner.ts";
 export * from "./transports/s2s-transport.ts";
 export * from "./transports/types.ts";
 export * from "./unstorage-kv.ts";
