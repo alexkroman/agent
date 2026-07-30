@@ -15,6 +15,7 @@ dist/
 tmp/
 .claude/*
 !.claude/settings.json
+!.claude/hooks/
 !.claude/plans/
 .tsbuildinfo/
 coverage/
