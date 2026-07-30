@@ -9,10 +9,11 @@ Agent guest sandboxes are ALSO Modal Sandboxes (see modal-sandbox.ts), created
 by the server at runtime under the ``aai-server`` Modal App using the
 ``MODAL_TOKEN_ID``/``MODAL_TOKEN_SECRET`` from the ``aai-server`` Secret.
 
-Deploy:
+Deploy (from the repo root, with the Python `modal` CLI authed via
+`modal token new`):
 
-    pnpm --filter aai-server deploy:modal
-    # equivalent to: modal deploy packages/aai-server/modal_deploy.py
+    modal deploy packages/aai-server/modal_deploy.py
+    # or: pnpm --filter aai-server deploy:modal (same command via pnpm)
 
 Required Modal Secret named ``aai-server`` with (at least):
 
