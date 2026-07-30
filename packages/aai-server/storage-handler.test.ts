@@ -5,7 +5,6 @@ import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
 import { createTestOrchestrator, deployAgent } from "./test-utils.ts";
 
 const META: AppDbMeta = {
-  schema: "app_0123456789abcdef",
   role: "app_0123456789abcdef",
   password: "f".repeat(32),
 };

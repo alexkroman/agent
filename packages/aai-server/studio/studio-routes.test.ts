@@ -535,7 +535,7 @@ describe("chat sandbox lifecycle", () => {
 // ── Storage routes (per-app database on the published agent) ─────────────
 
 describe("studio storage routes", () => {
-  const META = { schema: "app_0123456789abcdef", role: "app_0123456789abcdef", password: "f" };
+  const META = { role: "app_0123456789abcdef", password: "f" };
 
   async function storageApp(opts: { deployed?: boolean } = {}) {
     const appDb = {

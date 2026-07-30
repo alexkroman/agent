@@ -45,14 +45,13 @@ export async function executeStorageEnable(
   cwd: string,
   server: string | undefined,
 ): Promise<CommandResult<StorageStatusData>> {
-  const { slug } = await storageRequest<{ ok: true; enabled: boolean }>(
-    cwd,
-    { method: "POST" },
-    server,
-  );
+  const {
+    data: { enabled },
+    slug,
+  } = await storageRequest<{ ok: true; enabled: boolean }>(cwd, { method: "POST" }, server);
   log.success(`Storage enabled for ${slug}`);
   log.info("Tool code can now use ctx.db.query(sql, params).");
-  return ok({ slug, enabled: true });
+  return ok({ slug, enabled });
 }
 
 export type StorageDisableOpts = {
@@ -91,11 +90,10 @@ export async function executeStorageDisable(
     }
   }
 
-  const { slug } = await storageRequest<{ ok: true; enabled: boolean }>(
-    cwd,
-    { method: "DELETE" },
-    opts.server,
-  );
+  const {
+    data: { enabled },
+    slug,
+  } = await storageRequest<{ ok: true; enabled: boolean }>(cwd, { method: "DELETE" }, opts.server);
   log.success(`Storage disabled for ${slug} — database schema and data dropped`);
-  return ok({ slug, enabled: false });
+  return ok({ slug, enabled });
 }

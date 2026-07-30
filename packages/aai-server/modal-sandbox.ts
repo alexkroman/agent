@@ -166,10 +166,8 @@ export function isModalConfigured(): boolean {
 let contextPromise: Promise<ModalSpawnContext> | null = null;
 
 async function buildContext(): Promise<ModalSpawnContext> {
+  if (!isModalConfigured()) throw modalRequiredError();
   const client = modalClient();
-  if (!(client.profile.tokenId && client.profile.tokenSecret)) {
-    throw modalRequiredError();
-  }
   const appName = process.env.MODAL_APP_NAME ?? DEFAULT_MODAL_APP_NAME;
   const app = await client.apps.fromName(appName, { createIfMissing: true });
   const image = client.images.fromRegistry(

@@ -26,8 +26,6 @@ Required Modal Secret named ``aai-server`` with (at least):
   ``BRAVE_API_KEY``, ``SANDBOX_POOL_SIZE``
 """
 
-import os
-import shlex
 import subprocess
 from pathlib import Path
 
@@ -96,5 +94,4 @@ app = modal.App("aai-server-web")
 @modal.concurrent(max_inputs=200)
 @modal.web_server(port=PORT, startup_timeout=180)
 def server() -> None:
-    cmd = "node packages/aai-server/dist/index.mjs"
-    subprocess.Popen(shlex.split(cmd), cwd="/app", env=os.environ.copy())
+    subprocess.Popen(["node", "packages/aai-server/dist/index.mjs"], cwd="/app")

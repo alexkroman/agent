@@ -266,7 +266,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     ...(opts.appDb && { appDb: opts.appDb }),
     defaultVector: opts.defaultVector,
   };
-  const sandboxOpts = { ...bindings, ...(opts.pool && { pool: opts.pool }) };
+  // resolveSandbox takes the bindings minus `storage` (bundle data lives in
+  // the BundleStore; `storage` is the studio's workspace store).
+  const { storage: _workspaceStorage, ...sandboxBindings } = bindings;
+  const sandboxOpts = { ...sandboxBindings, ...(opts.pool && { pool: opts.pool }) };
 
   const original = app.fetch.bind(app);
   app.fetch = (req: Request, env?: Record<string, unknown>) =>

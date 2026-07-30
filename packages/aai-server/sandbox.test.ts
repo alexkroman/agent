@@ -10,7 +10,7 @@ import { createClientSendHandler } from "./client-send.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, createSlotCache, resolveSandbox, type SandboxOptions } from "./sandbox.ts";
-import { createTestStorage, createTestStore } from "./test-utils.ts";
+import { createTestStore } from "./test-utils.ts";
 
 // ── Mock sandbox-vm ──────────────────────────────────────────────────────────
 // vi.mock factory is hoisted, so we cannot reference top-level variables.
@@ -600,7 +600,7 @@ describe("createSandbox", () => {
         credential_hashes: ["hash"],
         agentConfig: TEST_AGENT_CONFIG,
       });
-      return { slots: createSlotCache(), store, storage: createTestStorage() };
+      return { slots: createSlotCache(), store };
     }
 
     it("detaches the resident sandbox when its VM fails to start", async () => {

@@ -111,13 +111,13 @@ export const ONE_SHOT =
 export const TEMPLATE_CASES: TemplateCase[] = [
   {
     template: "pizza-ordering",
-    shape: "custom tools mutating ctx.kv, keyed by ctx.sessionId",
+    shape: "custom tools mutating per-session ctx.state",
     prompt:
       "A pizza-ordering voice agent for Pizza Palace. Give it tools to add a " +
       "pizza (size, crust, toppings, quantity), remove one, list the current " +
       "order with a running total, and place the order. Keep the cart in " +
-      "ctx.kv, prefixing every key with ctx.sessionId so concurrent customers " +
-      "each get their own cart." +
+      "ctx.state — the per-session scratch, so concurrent customers each get " +
+      "their own cart." +
       ONE_SHOT,
   },
   {
@@ -222,7 +222,8 @@ export const TEMPLATE_CASES: TemplateCase[] = [
       "a Zod schema for a list of typed actions — quote, order, followup, notify — " +
       "each carrying the assumptions made about it. Then give it one tool per " +
       "action type to execute them: file a quote, order a part, schedule a " +
-      "follow-up, each writing a record to ctx.kv and returning that record's id. " +
+      "follow-up, each writing a record to the app database via " +
+      "ctx.db.query(sql, params) and returning that record's id. " +
       'Declare send: slack() from "@alexkroman1/aai/send" so notify actions go out ' +
       "through send_message. The speech is disfluent, so act on my final intent, " +
       "never invent a value I did not state (skip that action and name what was " +
@@ -320,7 +321,7 @@ export const UNCOVERED: Record<string, string> = {
   "personal-finance": "same shape as web-researcher (network builtins, no custom tools)",
   "health-assistant": "same shape as pizza-ordering (custom tools) plus egress, covered there",
   "night-owl": "same shape as embedded-assets (in-bundle data behind a tool)",
-  "infocom-adventure": "same shape as pizza-ordering (kv state keyed by sessionId)",
-  "solo-rpg": "same shape as pizza-ordering (kv state keyed by sessionId)",
-  "dispatch-center": "same shape as pizza-ordering (kv state keyed by sessionId)",
+  "infocom-adventure": "same shape as pizza-ordering (per-session ctx.state)",
+  "solo-rpg": "same shape as pizza-ordering (per-session ctx.state)",
+  "dispatch-center": "same shape as pizza-ordering (per-session ctx.state)",
 };

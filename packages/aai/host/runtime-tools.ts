@@ -193,10 +193,6 @@ function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetu
   // what the platform actually restricts.
   installToolFetchGuard();
   const allowedHosts = agent.allowedHosts ?? [];
-  // db traffic is a TCP socket, not fetch, so the guard never sees it — the
-  // exemption is kept anyway for parity with vector (and any future
-  // HTTP-backed Db implementation).
-  const db = resolvedDb ? exemptFromToolEgress(resolvedDb) : undefined;
   const vector = exemptFromToolEgress(resolvedVector);
   const generate = setupGenerate(deps);
 
@@ -210,7 +206,9 @@ function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetu
         env: frozenEnv,
         state: getState(sessionId ?? ""),
         sessionId: sessionId ?? "",
-        db,
+        // db traffic is a TCP socket, not fetch, so the egress guard never
+        // sees it — no exemption wrapper needed (unlike HTTP-backed vector).
+        db: resolvedDb,
         vector,
         messages,
         generate,

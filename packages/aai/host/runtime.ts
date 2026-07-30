@@ -145,8 +145,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const ownedDb =
     !opts.db && providerEnv.DATABASE_URL
       ? createPostgresDb({ url: providerEnv.DATABASE_URL })
-      : null;
-  const resolvedDb = opts.db ?? ownedDb ?? undefined;
+      : undefined;
+  const resolvedDb = opts.db ?? ownedDb;
   const resolvedVector = agent.vector
     ? resolveVector(agent.vector, providerEnv, slug)
     : (vector ?? createLocalVector(slug));

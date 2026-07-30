@@ -43,7 +43,7 @@ export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled:
     const meta = await appDb.provision(slug);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
     await restartSlotSandbox(env.slots, slug, "storage enable");
-    console.info("Storage enabled", { slug, schema: meta.schema });
+    console.info("Storage enabled", { slug, role: meta.role });
     return { enabled: true as const };
   });
 }

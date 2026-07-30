@@ -213,16 +213,17 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     },
   );
 
-  // Resolve a project's *published* slug (or the error response when it has
-  // none). Unpublished project → 409: both routes below operate on the
+  // Resolve a project's *published* slug, throwing the HTTPException the
+  // shared error handler renders as `{ error: message }` with the same
+  // status. Unpublished project → 409: the routes below operate on the
   // deployed agent, so Publish comes first.
-  const publishedSlug = async (c: Context<HonoEnv>): Promise<string | Response> => {
+  const publishedSlug = async (c: Context<HonoEnv>): Promise<string> => {
     const scope = studioScope(c.var.apiKey);
     const project = validateProject(c.req.param("project"));
     const workspace = await getWorkspace(c.env.storage, scope, project);
-    if (!workspace) return c.json({ error: "Project not found" }, 404);
+    if (!workspace) throw new HTTPException(404, { message: "Project not found" });
     if (!workspace.deployedSlug) {
-      return c.json({ error: "Project has not been published yet" }, 409);
+      throw new HTTPException(409, { message: "Project has not been published yet" });
     }
     return workspace.deployedSlug;
   };
@@ -233,7 +234,6 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   // preview: it exercises the deployed bundle, not unpublished edits.
   studio.post("/projects/:project/sync", syncBodyLimit, async (c) => {
     const slug = await publishedSlug(c);
-    if (slug instanceof Response) return slug;
     return handleSyncTurn(c, slug, options.pool);
   });
 
@@ -243,20 +243,17 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
 
   studio.get("/projects/:project/storage", async (c) => {
     const slug = await publishedSlug(c);
-    if (slug instanceof Response) return slug;
     return c.json(await storageStatus(c.env, slug));
   });
 
   studio.post("/projects/:project/storage", async (c) => {
     const slug = await publishedSlug(c);
-    if (slug instanceof Response) return slug;
     const { enabled } = await enableStorage(c.env, slug);
     return c.json({ ok: true, enabled });
   });
 
   studio.delete("/projects/:project/storage", async (c) => {
     const slug = await publishedSlug(c);
-    if (slug instanceof Response) return slug;
     const { enabled } = await disableStorage(c.env, slug);
     return c.json({ ok: true, enabled });
   });

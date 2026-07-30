@@ -15,9 +15,11 @@ import { createHash, randomBytes } from "node:crypto";
 import { type CloseableDb, createPostgresDb } from "@alexkroman1/aai/runtime";
 import type { SqlExec } from "./secret-store.ts";
 
-/** Provisioned credentials for one app's database, stored as `app-db:<slug>`. */
+/**
+ * Provisioned credentials for one app's database, stored as `app-db:<slug>`.
+ * The role name doubles as the schema name (one `app_<hex>` identifier).
+ */
 export type AppDbMeta = {
-  schema: string;
   role: string;
   password: string;
 };
@@ -26,7 +28,6 @@ export type AppDbMeta = {
 const APP_DB_POOL_MAX = 2;
 
 const IDENTIFIER_RE = /^app_[a-f0-9]{16}$/;
-const PASSWORD_RE = /^[a-f0-9]{32}$/;
 
 /** Deterministic schema/role identifier for one app slug. */
 export function appDbIdentifier(slug: string): string {
@@ -51,7 +52,6 @@ function assertIdentifier(id: string): string {
 export async function provisionAppDatabase(sql: SqlExec, slug: string): Promise<AppDbMeta> {
   const id = assertIdentifier(appDbIdentifier(slug));
   const password = randomBytes(16).toString("hex");
-  if (!PASSWORD_RE.test(password)) throw new Error("Invalid generated password");
 
   // One multi-statement batch (no bind params — identifiers/password are
   // shape-asserted above): DDL cannot take placeholders, and a single round
@@ -73,7 +73,7 @@ alter role "${id}" set search_path = "${id}";
 alter role "${id}" set statement_timeout = '10s'`,
   );
 
-  return { schema: id, role: id, password };
+  return { role: id, password };
 }
 
 /** Drop one app's schema (with all its data) and its role. Idempotent. */
@@ -121,13 +121,8 @@ export function parseAppDbMeta(raw: string | null): AppDbMeta | null {
   if (raw === null) return null;
   try {
     const value = JSON.parse(raw) as Partial<AppDbMeta> | null;
-    if (
-      value &&
-      typeof value.schema === "string" &&
-      typeof value.role === "string" &&
-      typeof value.password === "string"
-    ) {
-      return { schema: value.schema, role: value.role, password: value.password };
+    if (value && typeof value.role === "string" && typeof value.password === "string") {
+      return { role: value.role, password: value.password };
     }
   } catch {
     // fall through

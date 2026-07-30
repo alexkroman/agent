@@ -2,7 +2,10 @@
 
 import { describe, expect, test, vi } from "vitest";
 import { createMockToolContext } from "./_test-utils.ts";
-import { resolveAllBuiltins, SESSION_NOTES_TTL_MS } from "./builtin-tools.ts";
+import { resolveAllBuiltins } from "./builtin-tools.ts";
+
+/** Mirrors the module-private SESSION_NOTES_TTL_MS in builtin-tools.ts. */
+const SESSION_NOTES_TTL_MS = 86_400_000;
 
 /**
  * Invoke the host-side run_code def. run_code no longer executes on the host —

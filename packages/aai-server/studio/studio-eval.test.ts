@@ -317,9 +317,10 @@ const RUBRIC: Record<(typeof RUBRIC_IDS)[number], string> = {
     "outer agent loop to infer. A different helper, schema, or prompt wording is " +
     "fine. If the reference makes no such call, pass.",
   state:
-    "If the reference persists state in `ctx.kv`, the generated agent does too, with " +
-    "the same scoping — per-session keys built from `ctx.sessionId` where the " +
-    "reference does that. If the reference keeps no persistent state, pass.",
+    "If the reference keeps state, the generated agent does too, with the same " +
+    "backing and scoping — per-session scratch in `ctx.state` where the reference " +
+    "uses it, durable records via `ctx.db.query` where the reference persists to " +
+    "the app database. If the reference keeps no state, pass.",
   assets:
     "Data or prompt content the reference keeps in a separate imported file exists " +
     "in the generated workspace and is actually populated (a seeded knowledge base, " +

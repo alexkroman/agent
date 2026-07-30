@@ -34,7 +34,6 @@ describe("provisionAppDatabase", () => {
     const meta = await provisionAppDatabase(sql, "my-agent");
     const id = appDbIdentifier("my-agent");
 
-    expect(meta.schema).toBe(id);
     expect(meta.role).toBe(id);
     expect(meta.password).toMatch(/^[a-f0-9]{32}$/);
 
@@ -75,10 +74,9 @@ describe("deprovisionAppDatabase", () => {
 
 describe("openAppDb", () => {
   test("builds a role-credentialed URL on the admin host/port/db", () => {
-    const meta = { schema: "app_ab12", role: "app_ab12cd34ef567890", password: "0".repeat(32) };
     // openAppDb only rewrites credentials; connection is lazy so this never dials.
     const db = openAppDb(
-      { ...meta, role: appDbIdentifier("x"), schema: appDbIdentifier("x") },
+      { role: appDbIdentifier("x"), password: "0".repeat(32) },
       "postgres://postgres:admin-secret@db.example.supabase.co:6543/postgres",
     );
     expect(typeof db.query).toBe("function");
@@ -102,10 +100,12 @@ describe("createAppDatabases", () => {
 
 describe("parseAppDbMeta", () => {
   test("parses a valid record and rejects malformed ones", () => {
-    const meta = { schema: "app_x", role: "app_x", password: "p" };
+    const meta = { role: "app_x", password: "p" };
     expect(parseAppDbMeta(JSON.stringify(meta))).toEqual(meta);
+    // A legacy record's extra `schema` field is ignored, not preserved.
+    expect(parseAppDbMeta(JSON.stringify({ ...meta, schema: "app_x" }))).toEqual(meta);
     expect(parseAppDbMeta(null)).toBeNull();
     expect(parseAppDbMeta("not json")).toBeNull();
-    expect(parseAppDbMeta(JSON.stringify({ schema: "s" }))).toBeNull();
+    expect(parseAppDbMeta(JSON.stringify({ role: "r" }))).toBeNull();
   });
 });

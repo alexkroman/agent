@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Agent sandbox backed by remote Modal Sandboxes
- * (macOS dev mode).
+ * Agent sandbox backed by remote Modal Sandboxes.
  *
  * The host runs `createRuntime()` with VM-backed `executeTool`, giving it
  * the same session/S2S/WebSocket handling as self-hosted mode without
@@ -27,7 +26,6 @@ import {
   type Vector,
 } from "@alexkroman1/aai/runtime";
 import { sendAllowedHosts } from "@alexkroman1/aai/send";
-import type { Storage } from "unstorage";
 import { debug } from "./_debug-log.ts";
 import {
   createMessageDeltaTracker,
@@ -359,7 +357,6 @@ function readAppDbMeta(slug: string, opts: ResolveAppDbOpts) {
 type ResolveSandboxOpts = {
   slots: import("./sandbox-slots.ts").SlotCache;
   store: BundleStore;
-  storage: Storage;
   /** Named secret storage — read for the app's `app-db:` credentials. */
   secrets?: SecretStore;
   /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */

@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: Deploy aai-server to Fly.io
+        description: Deploy aai-server to Modal
         type: boolean
         default: false
 
