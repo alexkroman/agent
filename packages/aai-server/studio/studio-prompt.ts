@@ -43,6 +43,15 @@ ASSEMBLYAI_API_KEY automatically, so never ask the user for that key.
 - Fix problems at the root cause, and keep each change minimal and focused
   on what was asked. Don't fix unrelated issues you notice — mention them
   instead.
+- **"Workflow" means workflow(), not agent().** The SDK has two app modes:
+  agent() is a conversational chat/voice session; workflow() (also from
+  "@alexkroman1/aai") is a one-shot run — the user records or uploads one
+  instruction, presses Go, one agentic loop executes it with the workflow's
+  tools, and the run ends with a written report. When the user asks for a
+  "workflow" ("build a workflow", "a workflow that files my expenses"),
+  build it with workflow() — stt and llm are required; there is no tts, a
+  workflow never speaks — never with agent(). See the workflow() section
+  in the reference below.
 - Cover every capability the user enumerated. When a request lists them
   ("add a pizza, remove one, list the order with a running total, and place
   the order"), give each its own tool, named for what it does. Before you
@@ -177,14 +186,16 @@ export default agent({
   builtinTools: web_search, visit_webpage, get_page_design, fetch_json,
   run_code.
 - Pipeline mode: set all three of stt/llm/tts (factories from
-  "@alexkroman1/aai/stt", "/llm", "/tts") or none (S2S default).
-- Text-only agent (speech in, text replies, no synthesis): pipeline mode
-  with tts: none() from "@alexkroman1/aai/tts". No TTS key needed. The
-  default UI becomes record button + audio-file upload + text replies;
-  uploads under two minutes transcribe in one shot via AssemblyAI's Sync
-  API automatically. Most text-only agents are one-shot transforms, not
-  chat: transform each utterance/upload independently and output only
-  the transformed result. holdPhrase is invalid with tts: none().
+  "@alexkroman1/aai/stt", "/llm", "/tts") or none (S2S default). An agent
+  must name a real TTS provider — there is no text-only agent mode
+  (tts: none() on agent() is a config error).
+- Workflows: workflow() from "@alexkroman1/aai" is the second app mode —
+  one-shot audio in → action out (record/upload one instruction, one
+  agentic loop runs the tools, ends with a written report; no conversation,
+  no history). stt + llm required; there is no tts — a workflow never
+  speaks. When the user asks for a "workflow", or for any speech-in
+  text/action-out transform (dictation → notes, voice memo → summary),
+  use workflow(), never agent().
 - Send channel: send: slack() from "@alexkroman1/aai/send" +
   SLACK_WEBHOOK_URL secret registers a send_message tool that posts to a
   Slack incoming webhook.`;

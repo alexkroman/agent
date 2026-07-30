@@ -170,18 +170,7 @@ export const TEMPLATE_CASES: TemplateCase[] = [
       ONE_SHOT,
   },
   {
-    template: "pipeline-text-only",
-    shape: "text-only mode — tts: none()",
-    prompt:
-      "A one-shot speech-to-text transform (text-only, tts: none()): I speak or " +
-      "upload a short audio file and get back structured notes as text — not a " +
-      "chat. An LLM transform turns each dictation independently into clean " +
-      "notes (output only the notes), and JavaScript tools compute word counts " +
-      "and extract action items." +
-      ONE_SHOT,
-  },
-  {
-    template: "slack-translator",
+    template: "slack-translator-workflow",
     shape: "workflow kind (audio in, action out) plus an outbound send channel (send: slack())",
     expectedSend: "slack",
     expectedKind: "workflow",
@@ -207,7 +196,7 @@ export const TEMPLATE_CASES: TemplateCase[] = [
       ONE_SHOT,
   },
   {
-    template: "voice-debrief",
+    template: "debrief-workflow",
     shape:
       "workflow kind whose first step is an LLM call inside a tool " +
       "(generateStructured over ctx.generate) feeding one executor tool per action type",

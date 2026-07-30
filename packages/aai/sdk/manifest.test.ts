@@ -453,8 +453,9 @@ describe("assertProviderTriple with s2s", () => {
   });
 });
 
-describe("parseManifest — text-only (tts: none())", () => {
+describe("parseManifest — text-only output (workflows only)", () => {
   const textOnlyFields = {
+    kind: "workflow" as const,
     stt: assemblyAI({ model: "u3pro-rt" }),
     llm: anthropic({ model: "claude-haiku-4-5" }),
     tts: none(),
@@ -470,10 +471,17 @@ describe("parseManifest — text-only (tts: none())", () => {
     expect(() =>
       parseManifest({
         name: "x",
+        kind: "workflow",
         stt: textOnlyFields.stt,
         llm: textOnlyFields.llm,
       } as never),
     ).toThrow(/stt, llm, and tts must be set together/);
+  });
+
+  test("rejects tts: none() on an agent — there is no text-only agent mode", () => {
+    expect(() => parseManifest({ name: "x", ...textOnlyFields, kind: undefined } as never)).toThrow(
+      /only valid for workflows/,
+    );
   });
 
   test("accepts errorPhrase with tts: none()", () => {

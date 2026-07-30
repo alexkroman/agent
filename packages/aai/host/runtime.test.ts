@@ -548,13 +548,16 @@ describe("createRuntime — text-only readyConfig", () => {
     ANTHROPIC_API_KEY: "k",
     CARTESIA_API_KEY: "k",
   };
-  const textOnlyAgent = {
+  const baseAgent = {
     name: "Notes",
     systemPrompt: "x",
     greeting: "",
     maxSteps: 1,
     tools: {},
   };
+  // Text-only output is workflow-only — an agent with tts: none() is a
+  // config error, so the text-only fixtures carry the workflow kind.
+  const textOnlyAgent = { ...baseAgent, kind: "workflow" as const };
 
   test("tts: none() on the agent declares audioOut: false", () => {
     const runtime = createRuntime({
@@ -601,7 +604,7 @@ describe("createRuntime — text-only readyConfig", () => {
     // `aai dev`, which does hand over the descriptors, worked fine.
     expect(() =>
       createRuntime({
-        agent: { ...textOnlyAgent, ...tuning },
+        agent: { ...baseAgent, ...tuning },
         env: PROVIDER_KEYS,
         stt: assemblyAI({ model: "u3pro-rt" }),
         llm: anthropic({ model: "claude-haiku-4-5" }),
@@ -616,7 +619,7 @@ describe("createRuntime — text-only readyConfig", () => {
     // rather than inferred from the shape of the message stream.
     const logger = makeLogger();
     createRuntime({
-      agent: textOnlyAgent,
+      agent: baseAgent,
       env: PROVIDER_KEYS,
       logger,
       stt: assemblyAI({ model: "u3pro-rt" }),
@@ -636,7 +639,7 @@ describe("createRuntime — text-only readyConfig", () => {
 
   test("logs s2s mode for an agent that declares no providers", () => {
     const logger = makeLogger();
-    createRuntime({ agent: textOnlyAgent, env: PROVIDER_KEYS, logger });
+    createRuntime({ agent: baseAgent, env: PROVIDER_KEYS, logger });
     expect(logger.info).toHaveBeenCalledWith(
       "Session mode resolved",
       expect.objectContaining({ mode: "s2s" }),
@@ -647,7 +650,7 @@ describe("createRuntime — text-only readyConfig", () => {
     // The assertion must keep firing where it is right: no providers anywhere.
     expect(() =>
       createRuntime({
-        agent: { ...textOnlyAgent, holdPhrase: "One moment." },
+        agent: { ...baseAgent, holdPhrase: "One moment." },
         env: PROVIDER_KEYS,
       }),
     ).toThrow(/holdPhrase requires pipeline mode/);
@@ -655,7 +658,7 @@ describe("createRuntime — text-only readyConfig", () => {
 
   test("a speaking agent leaves audioOut alone", () => {
     const runtime = createRuntime({
-      agent: textOnlyAgent,
+      agent: baseAgent,
       env: PROVIDER_KEYS,
       stt: assemblyAI({ model: "u3pro-rt" }),
       llm: anthropic({ model: "claude-haiku-4-5" }),

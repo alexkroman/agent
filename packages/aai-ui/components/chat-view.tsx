@@ -8,7 +8,6 @@ import type { AgentState } from "../types.ts";
 import { ConsoleShell } from "./console-shell.tsx";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";
-import { TextControls } from "./text-controls.tsx";
 
 // States whose indicator dot pulses (the agent is actively in the exchange).
 const PULSING_STATES: ReadonlySet<AgentState> = new Set(["listening", "speaking"]);
@@ -48,7 +47,6 @@ export function ChatView({
   // that cascades into every child below.
   const state = useSessionSelector((s) => s.state);
   const error = useSessionSelector((s) => s.error);
-  const audioOut = useSessionSelector((s) => s.audioOut);
 
   return (
     <ConsoleShell
@@ -58,9 +56,7 @@ export function ChatView({
       pulsing={PULSING_STATES.has(state)}
       error={error?.message}
       className={className}
-      // Text-only sessions (tts: none()) get record/upload controls; the
-      // server's config message decides, so the same default UI serves both.
-      footer={audioOut ? <Controls /> : <TextControls />}
+      footer={<Controls />}
     >
       <MessageList />
     </ConsoleShell>

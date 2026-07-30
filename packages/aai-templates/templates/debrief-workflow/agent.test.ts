@@ -37,7 +37,7 @@ function makeCtx(
   };
 }
 
-describe("voice-debrief template", () => {
+describe("debrief-workflow template", () => {
   test("config passes manifest validation", () => {
     // Same conversion `aai build`/`aai deploy` run — catches a workflow
     // config that violates the kind rules (assertAgentKind).

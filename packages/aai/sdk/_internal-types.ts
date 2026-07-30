@@ -129,7 +129,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
   assertPipelineTuning(mode, src);
   assertTextOnlyTuning(src.tts, src);
-  assertAgentKind(mode, src.kind);
+  assertAgentKind(mode, src.kind, src.tts);
   // Runs inside the generated bundle entry too, so the studio's test_agent
   // surfaces a bad TTS language as a load error rather than shipping a mute agent.
   assertAssemblyAITtsLanguage(src.tts);

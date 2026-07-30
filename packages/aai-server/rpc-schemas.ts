@@ -73,7 +73,7 @@ export const IsolateConfigSchema = z
       assertSilencePolicy(mode, cfg.silenceTimeoutMs, cfg.silencePrompt);
       assertPipelineTuning(mode, cfg);
       assertTextOnlyTuning(cfg.tts, cfg);
-      assertAgentKind(mode, cfg.kind);
+      assertAgentKind(mode, cfg.kind, cfg.tts);
     } catch (err) {
       fail(errorMessage(err));
     }

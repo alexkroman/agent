@@ -65,17 +65,37 @@ export function assertProviderTriple(
 export type AgentKind = "agent" | "workflow";
 
 /**
- * Enforce the workflow-kind config rule: a workflow is one sync turn over
- * an STT→LLM pipeline, so it requires pipeline mode (the `workflow()`
- * helper guarantees it; this catches hand-rolled manifests).
+ * Enforce the app-kind config rules — which kind may carry which TTS:
+ *
+ * - A workflow is one sync turn over an STT→LLM pipeline, so it requires
+ *   pipeline mode, and it **never speaks**: its `tts` must be the text-only
+ *   sentinel (the `workflow()` helper sets it; this catches hand-rolled
+ *   manifests carrying a real TTS provider).
+ * - An agent is a voice conversation, so `tts: none()` is rejected — there
+ *   is no text-only agent mode. Speech-in/action-out apps are workflows.
  *
  * Shared by `parseManifest`, `toAgentConfig`, and the server's
  * `IsolateConfigSchema` — one source of truth for the validation.
  */
-export function assertAgentKind(mode: SessionMode, kind: AgentKind | undefined): void {
-  if (kind !== "workflow") return;
-  if (mode !== "pipeline") {
-    throw new Error('kind: "workflow" requires pipeline mode (stt, llm, and tts all set)');
+export function assertAgentKind(
+  mode: SessionMode,
+  kind: AgentKind | undefined,
+  tts: unknown,
+): void {
+  if (kind === "workflow") {
+    if (mode !== "pipeline") {
+      throw new Error('kind: "workflow" requires pipeline mode (stt, llm, and tts all set)');
+    }
+    if (!isTextOnlyTts(tts)) {
+      throw new Error("a workflow never speaks: tts must be none() (omit it — workflow() sets it)");
+    }
+    return;
+  }
+  if (isTextOnlyTts(tts)) {
+    throw new Error(
+      "tts: none() is only valid for workflows — an agent is a voice conversation; " +
+        "use workflow() for speech-in, action-out apps",
+    );
   }
 }
 

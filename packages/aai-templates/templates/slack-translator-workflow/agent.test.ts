@@ -3,7 +3,7 @@ import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 
-describe("slack-translator template", () => {
+describe("slack-translator-workflow template", () => {
   test("config passes manifest validation", () => {
     // Same conversion `aai build`/`aai deploy` run. This is what catches a
     // workflow config that violates the kind rules (assertAgentKind) or a

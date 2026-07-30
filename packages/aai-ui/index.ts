@@ -12,7 +12,6 @@ export { Controls } from "./components/controls.tsx";
 export { MessageList } from "./components/message-list.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
 export { StartScreen } from "./components/start-screen.tsx";
-export { TextControls } from "./components/text-controls.tsx";
 export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 // Tool config (for component-tier custom UIs)
 export { ToolConfigContext } from "./components/tool-config-context.ts";
