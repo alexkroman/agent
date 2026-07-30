@@ -10,6 +10,7 @@
 import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
+import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
@@ -61,8 +62,9 @@ type ToolSetup = {
 type ToolSetupDeps = {
   agent: AgentDef;
   opts: RuntimeOptions;
-  env: Record<string, string>;
-  providerEnv: Record<string, string>;
+  /** Becomes `ctx.env` (frozen) — agent-owned only, see sdk/env-types.ts. */
+  env: AgentEnv;
+  providerEnv: ProviderEnv;
   /** ctx.db when storage is enabled; undefined makes ctx.db access throw. */
   resolvedDb: Db | undefined;
   resolvedVector: Vector;

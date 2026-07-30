@@ -1,8 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, test } from "vitest";
+import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { AgentConfigSchema, agentToolsToSchemas, toAgentConfig } from "./_internal-types.ts";
-import type { ToolDef } from "./types.ts";
+import {
+  type AgentConfig,
+  AgentConfigSchema,
+  agentToolsToSchemas,
+  type HostOnlyAgentField,
+  toAgentConfig,
+} from "./_internal-types.ts";
+import type { AgentDef, ToolDef } from "./types.ts";
+
+// The single subtraction the config-mapping design rests on: every AgentDef
+// field must be either serializable (present in AgentConfigSchema) or named
+// in HOST_ONLY_AGENT_FIELDS. A field added to AgentDef alone fails here
+// instead of silently vanishing at the serialization boundary.
+test("every AgentDef field is serialized or explicitly host-only", () => {
+  type Dropped = Exclude<keyof AgentDef, keyof AgentConfig | HostOnlyAgentField>;
+  expectTypeOf<Dropped>().toEqualTypeOf<never>();
+});
 
 test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
   const noop = async () => {

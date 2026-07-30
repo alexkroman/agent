@@ -33,7 +33,7 @@ import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-databas
 import { createClientSendHandler } from "./client-send.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
-import { pipelineProviderOpts, toRuntimeAgent } from "./sandbox-agent-config.ts";
+import { toRuntimeAgent } from "./sandbox-agent-config.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { attachSandbox, setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
@@ -188,6 +188,10 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   // deploy path builds its config with `toAgentConfig`, not `parseManifest`,
   // and only the latter fills in DEFAULT_BUILTIN_TOOLS.
   const agentRuntime = createRuntime({
+    // The config's provider descriptors (stt/llm/tts/s2s) ride on the agent
+    // object itself; createRuntime resolves them from there (see
+    // sandbox-agent-config.ts for why that keys off descriptor presence, not
+    // the optional `mode` field).
     agent: toRuntimeAgent(config),
     env,
     executeTool,
@@ -198,7 +202,6 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     // resolveAllBuiltins) — passed explicitly so the platform's egress policy
     // is visible here rather than only implied by a default.
     fetch: safeFetch,
-    ...pipelineProviderOpts(config),
   });
 
   const sessionSinks = new Map<string, ClientSink>();

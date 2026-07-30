@@ -34,6 +34,7 @@ import { debug } from "./_debug-log.ts";
 import { HARNESS_HEARTBEAT_INTERVAL_MS } from "./guest/limits.ts";
 import { metrics } from "./metrics.ts";
 import { createNdjsonConnection } from "./ndjson-transport.ts";
+import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 
 // ── Structural Modal types ───────────────────────────────────────────────────
@@ -344,7 +345,7 @@ function warmFromModal(sb: ModalSandboxLike, proc: ModalProcLike): WarmHarness {
   });
   void drainStderr(proc.stderr, sb.sandboxId);
 
-  const conn = createNdjsonConnection(stdout, stdin);
+  const conn = createNdjsonConnection<GuestRpcSchema>(stdout, stdin);
 
   // Host-liveness heartbeat: the guest's orphan watchdog exits the harness
   // after HARNESS_ORPHAN_TIMEOUT_MS without stdin traffic, so every live

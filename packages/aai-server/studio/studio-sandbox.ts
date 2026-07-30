@@ -22,6 +22,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { resolveHarnessPath } from "../constants.ts";
+import type { BundleLoadResult } from "../rpc-schemas.ts";
 import { registerGuestRpcHandlers } from "../sandbox-guest-rpc.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
 import { spawnWarmHarness, type WarmHarness } from "../sandbox-vm.ts";
@@ -131,10 +132,12 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
     loadBundle(code: string) {
       return track(() =>
         withPooledRetry(async () => {
-          const result = await live.conn.sendRequest<{ ok: boolean; config?: unknown }>(
-            "bundle/load",
-            { code, env: {} },
-          );
+          // Guest-asserted wire data; the caller validates `config` with
+          // IsolateConfigSchema (see BundleLoadResult in rpc-schemas.ts).
+          const result = (await live.conn.sendRequest("bundle/load", {
+            code,
+            env: {},
+          })) as BundleLoadResult | undefined;
           return { ...(result?.config !== undefined && { config: result.config }) };
         }),
       );
@@ -143,10 +146,12 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
     executeTool(name: string, args: Record<string, unknown>) {
       return track(() =>
         withPooledRetry(async () => {
-          const response = await live.conn.sendRequest<{ result?: string; error?: string }>(
-            "tool/execute",
-            { name, args, sessionId: TRIAL_SESSION_ID, messages: [] },
-          );
+          const response = (await live.conn.sendRequest("tool/execute", {
+            name,
+            args,
+            sessionId: TRIAL_SESSION_ID,
+            messages: [],
+          })) as { result?: string; error?: string } | undefined;
           if (response?.error) return `Tool error: ${response.error}`;
           return response?.result ?? "(no result)";
         }),

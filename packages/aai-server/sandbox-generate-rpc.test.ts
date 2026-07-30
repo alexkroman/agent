@@ -11,12 +11,12 @@
 
 import type { HostGenerateFn } from "@alexkroman1/aai/runtime";
 import { describe, expect, it, vi } from "vitest";
-import type { NdjsonConnection } from "./ndjson-transport.ts";
+import type { GuestConnection } from "./rpc-schemas.ts";
 import { registerGuestRpcHandlers } from "./sandbox-guest-rpc.ts";
 
 type Handler = (params: unknown) => Promise<unknown>;
 
-function fakeConn(): { conn: NdjsonConnection; handlers: Map<string, Handler> } {
+function fakeConn(): { conn: GuestConnection; handlers: Map<string, Handler> } {
   const handlers = new Map<string, Handler>();
   const conn = {
     sendRequest: vi.fn(),
@@ -27,7 +27,7 @@ function fakeConn(): { conn: NdjsonConnection; handlers: Map<string, Handler> } 
     onNotification: vi.fn(),
     listen: vi.fn(),
     dispose: vi.fn(),
-  } as unknown as NdjsonConnection;
+  } as unknown as GuestConnection;
   return { conn, handlers };
 }
 
