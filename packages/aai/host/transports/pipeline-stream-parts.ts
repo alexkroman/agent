@@ -14,7 +14,7 @@ import {
   DEFAULT_HOLD_PHRASE,
 } from "../../sdk/constants.ts";
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
-import { capToolResult, errorMessage } from "../../sdk/utils.ts";
+import { capToolResult, errorMessage, toArgsRecord } from "../../sdk/utils.ts";
 import { createRestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
 
@@ -247,8 +247,9 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         // again, nothing reaches TTS on its own.
         armCover();
         // Observability only — actual execution happens inline via toVercelTools.
-        const input = (part.input ?? {}) as Record<string, unknown>;
-        onToolCall(part.toolCallId ?? "", part.toolName ?? "", input);
+        // An invalid tool call carries raw-string input; coerce it so the
+        // `tool_call` frame stays schema-valid (a non-record args drops it).
+        onToolCall(part.toolCallId ?? "", part.toolName ?? "", toArgsRecord(part.input));
         return;
       }
       case "tool-result":

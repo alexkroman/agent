@@ -25,12 +25,13 @@ import type { AgentConfig, ExecuteTool, ToolSchema } from "../sdk/_internal-type
 import { DEFAULT_MAX_HISTORY, DEFAULT_MAX_STEPS } from "../sdk/constants.ts";
 import type { SyncToolCall, SyncTurnRequest, SyncTurnResponse } from "../sdk/sync.ts";
 import type { Message } from "../sdk/types.ts";
-import { capToolResult, errorMessage } from "../sdk/utils.ts";
+import { capToolResult, errorMessage, toArgsRecord, toolError } from "../sdk/utils.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import { resolveApiKey } from "./providers/resolve.ts";
 import type { Logger } from "./runtime-config.ts";
 import type { ResolvedPipelineProviders } from "./runtime-transport.ts";
 import { toVercelTools } from "./to-vercel-tools.ts";
+import { createToolCallRepair } from "./transports/pipeline-repair.ts";
 
 /**
  * A sync-turn failure with the HTTP status it should answer with:
@@ -77,6 +78,7 @@ type ToolStreamPart = {
   readonly input?: unknown;
   readonly output?: unknown;
   readonly result?: unknown;
+  readonly error?: unknown;
 };
 
 /**
@@ -96,7 +98,10 @@ function createToolCallCollector(): {
     const call: SyncToolCall = {
       toolCallId: part.toolCallId ?? "",
       toolName: part.toolName ?? "",
-      args: (part.input ?? {}) as Record<string, unknown>,
+      // Invalid tool calls reach the stream with raw-string input — coerced
+      // here because one non-record `args` fails the client's parse of the
+      // ENTIRE response ("malformed server response"), killing the turn.
+      args: toArgsRecord(part.input),
     };
     toolCalls.push(call);
     if (call.toolCallId) byId.set(call.toolCallId, call);
@@ -109,11 +114,20 @@ function createToolCallCollector(): {
     call.result = capToolResult(typeof raw === "string" ? raw : JSON.stringify(raw));
   }
 
+  function onToolError(part: ToolStreamPart): void {
+    const call = byId.get(part.toolCallId ?? "");
+    if (!call) return;
+    // A failed call (including an invalid one the repair couldn't fix) would
+    // otherwise dangle with no result in the run record.
+    call.result = capToolResult(toolError(errorMessage(part.error)));
+  }
+
   return {
     toolCalls,
     handle(part) {
       if (part.type === "tool-call") onToolCall(part);
       else if (part.type === "tool-result") onToolResult(part);
+      else if (part.type === "tool-error") onToolError(part);
     },
   };
 }
@@ -133,6 +147,10 @@ export function createSyncTurnRunner(
 ): (req: SyncTurnRequest, sessionId?: string) => Promise<SyncTurnResponse> {
   const { agentConfig, providers, env, toolSchemas, executeTool, logger } = deps;
   const maxSteps = agentConfig.maxSteps ?? DEFAULT_MAX_STEPS;
+  // Same repair the pipeline transport runs: malformed tool arguments are
+  // regenerated against the tool's schema instead of failing the call. No
+  // abort signal — a sync turn has no barge-in; it runs to completion.
+  const repairToolCall = createToolCallRepair(providers.llm, logger);
 
   async function transcribe(req: SyncTurnRequest): Promise<string> {
     if (req.text !== undefined) return req.text;
@@ -185,6 +203,7 @@ export function createSyncTurnRunner(
         system: deps.systemPrompt(),
         messages: modelMessages,
         ...(toolSchemas.length > 0 ? { tools, toolChoice: agentConfig.toolChoice ?? "auto" } : {}),
+        experimental_repairToolCall: repairToolCall,
         stopWhen: stepCountIs(maxSteps),
       });
       for await (const part of result.fullStream) {

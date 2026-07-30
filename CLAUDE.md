@@ -600,7 +600,19 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   server-side (tools execute exactly as on the pipeline path), TTS via
   `TtsOpener.synthesizeClip` (Cartesia `/tts/bytes`; providers without it
   degrade to a text-only reply, a synthesis *failure* degrades to
-  `ttsError` alongside the intact text reply). Key files:
+  `ttsError` alongside the intact text reply).
+
+  **Tool-call args must be coerced before they hit a wire schema.** The AI
+  SDK surfaces an unparsable/unknown tool call as a `tool-call` stream part
+  whose `input` is the *raw argument string*, not a parsed object. Both
+  `tool_call` (WebSocket) and `toolCalls[]` (sync) require a record for
+  `args` — and on the sync path one bad call fails the client's parse of the
+  **entire** response ("Sync turn failed: malformed server response"),
+  killing the workflow run. Every emitter therefore routes args through
+  `toArgsRecord` (`sdk/utils.ts`; non-records become `{}`), the sync runner
+  passes the same `experimental_repairToolCall` the pipeline transport uses,
+  and a failed/invalid call is recorded with an error `result` rather than
+  left dangling. Key files:
   `host/sync-turn.ts` (runner + `SyncTurnError` status mapping),
   `sdk/sync.ts` (wire schemas, exported from `/protocol`),
   `runtime.runSyncTurn` (rejects 409 for S2S agents). In `aai-ui`:
