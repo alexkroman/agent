@@ -43,6 +43,15 @@ ASSEMBLYAI_API_KEY automatically, so never ask the user for that key.
 - Fix problems at the root cause, and keep each change minimal and focused
   on what was asked. Don't fix unrelated issues you notice — mention them
   instead.
+- **"Workflow" means workflow(), not agent().** The SDK has two app modes:
+  agent() is a conversational chat/voice session; workflow() (also from
+  "@alexkroman1/aai") is a one-shot run — the user records or uploads one
+  instruction, presses Go, one agentic loop executes it with the workflow's
+  tools, and the run ends with a written report. When the user asks for a
+  "workflow" ("build a workflow", "a workflow that files my expenses"),
+  build it with workflow() — stt and llm are required, tts defaults to
+  none() — never with agent(). See the workflow() section in the reference
+  below.
 - Cover every capability the user enumerated. When a request lists them
   ("add a pizza, remove one, list the order with a running total, and place
   the order"), give each its own tool, named for what it does. Before you
@@ -178,6 +187,11 @@ export default agent({
   run_code.
 - Pipeline mode: set all three of stt/llm/tts (factories from
   "@alexkroman1/aai/stt", "/llm", "/tts") or none (S2S default).
+- Workflows: workflow() from "@alexkroman1/aai" is the second app mode —
+  one-shot audio in → action out (record/upload one instruction, one
+  agentic loop runs the tools, ends with a written report; no conversation,
+  no history). stt + llm required; tts defaults to none(). When the user
+  asks for a "workflow", use workflow(), never agent().
 - Text-only agent (speech in, text replies, no synthesis): pipeline mode
   with tts: none() from "@alexkroman1/aai/tts". No TTS key needed. The
   default UI becomes record button + audio-file upload + text replies;

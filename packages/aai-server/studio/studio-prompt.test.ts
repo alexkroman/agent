@@ -47,6 +47,9 @@ describe("studioSystemPrompt", () => {
     // Working-style rules: implement with tools instead of pasting code
     // into chat, and respect edits the user makes in the code editor.
     expect(prompt).toContain("Act, don't propose");
+    // A "workflow" request must produce workflow(), not a conversational
+    // agent() — the mode-selection rule lives in the preamble.
+    expect(prompt).toContain('"Workflow" means workflow(), not agent()');
     expect(prompt).toContain("treat changes you didn't make as");
     expect(prompt).not.toContain("deploy_agent");
     expect(prompt).toContain("no `aai` CLI");
@@ -64,6 +67,8 @@ describe("studioSystemPrompt", () => {
     const prompt = composeStudioPrompt(null);
     expect(prompt).toContain("AssemblyAI App Builder coding agent");
     expect(prompt).toContain("agent() essentials");
+    // The fallback guide must still cover the workflow() app mode.
+    expect(prompt).toContain("use workflow(), never agent()");
     expect(prompt).not.toContain("## `agent()` API"); // scaffold-only heading
   });
 });
