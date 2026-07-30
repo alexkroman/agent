@@ -78,7 +78,9 @@
  * `done`, so a segment's completion leaking through would advance the
  * orchestrator while audio is still streaming — and, since the end-of-turn
  * flush may have nothing to send, "last" cannot simply mean "the final flush's
- * ack" either. `outstandingFlushes` + `turnClosed` together are the condition.
+ * ack" either. That bookkeeping — including the `is_final`+`FlushDone`
+ * double-acknowledgement dedup that would otherwise end the turn mid-reply —
+ * lives in `assemblyai-turn.ts` (`createTurnTracker`).
  *
  * **Cancel.** The protocol has no discard/cancel frame, so a mid-turn
  * `cancel()` drops the whole connection and reconnects: text Generate'd but
@@ -121,6 +123,7 @@ import {
   requireApiKey,
   waitForOpen,
 } from "../_utils.ts";
+import { createTurnTracker, type SynthesisAck } from "./assemblyai-turn.ts";
 
 export interface AssemblyAITtsSession extends TtsSession {
   /** @internal Test-only: exposes the underlying raw WebSocket. */
@@ -222,7 +225,7 @@ function buildUrl(
 function handleMessage(
   raw: WebSocket.Data,
   emitter: Emitter<TtsEvents>,
-  onSynthesisComplete: () => void,
+  onSynthesisComplete: (ack: SynthesisAck) => void,
   streamError: (message: string) => void,
 ): void {
   const msg = safeJsonParse(typeof raw === "string" ? raw : raw.toString()) as
@@ -237,11 +240,11 @@ function handleMessage(
         if (pcm.length > 0) emitter.emit("audio", pcm);
       }
       // Older servers flag the final frame; the live one uses FlushDone.
-      if (msg.is_final) onSynthesisComplete();
+      if (msg.is_final) onSynthesisComplete("is_final");
       return;
     }
     case "FlushDone":
-      onSynthesisComplete();
+      onSynthesisComplete("flush_done");
       return;
     case "Error":
       streamError(`AssemblyAI TTS ${errorDetail(msg)}`);
@@ -289,19 +292,12 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       }
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
-      let doneEmitted = true; // no turn in flight until the first sendText
       // Non-null while a post-cancel replacement socket is connecting: frames
       // queue here and flush to it on open, preserving order.
       let queued: Record<string, unknown>[] | null = null;
       // Accepted text not yet sent: `Generate` goes out only paired with a
       // `Flush`, so the server never holds unsynthesized text.
       let buffered = "";
-      // Flushes awaiting acknowledgement. The server answers in order on one
-      // socket, so a count is enough to know when the turn's audio is complete.
-      let outstandingFlushes = 0;
-      // `flush()` was called for the current turn: the pipeline has no more
-      // text, so the last outstanding acknowledgement ends the turn.
-      let turnClosed = false;
 
       /** Detach + politely close a socket without emitting anything for it. */
       const dropSocket = (socket: WebSocket): void =>
@@ -315,30 +311,17 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
         teardown: () => dropSocket(ws),
       });
 
-      const emitDoneOnce = () => {
-        if (doneEmitted || shell.isClosed()) return;
-        doneEmitted = true;
+      // Flush/acknowledgement bookkeeping — which ack ends the turn, and the
+      // is_final+FlushDone pair dedup — lives in assemblyai-turn.ts.
+      const turn = createTurnTracker(() => {
+        if (shell.isClosed()) return;
         // The turn is over, so text still held here belongs to nothing. Keeping
         // it would splice it into the next turn's first segment.
         buffered = "";
         emitter.emit("done");
-      };
+      });
 
-      /**
-       * A `FlushDone` (or an `Audio` frame flagged `is_final`) arrived. The turn
-       * ends when its last flush is acknowledged — see the module doc.
-       */
-      const onSynthesisComplete = (): void => {
-        if (outstandingFlushes === 0) {
-          // Nothing was pending, so this is an unsolicited completion (a server
-          // that flags frames rather than sending FlushDone, or a stray ack).
-          // Treat it as the turn ending, as this adapter always has.
-          emitDoneOnce();
-          return;
-        }
-        outstandingFlushes -= 1;
-        if (outstandingFlushes === 0 && turnClosed) emitDoneOnce();
-      };
+      const onSynthesisComplete = (ack: SynthesisAck): void => turn.onAck(ack);
 
       const attach = (socket: WebSocket): void => {
         socket.on("message", (raw: WebSocket.Data) => {
@@ -350,7 +333,7 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           if (shell.isClosed()) return;
           // Unexpected server-side close: release the turn so the pipeline
           // doesn't wait for an utterance that will never complete.
-          emitDoneOnce();
+          turn.forceDone();
           // A non-normal close (idle kick, 1011, deploy) leaves the session
           // alive but every later `send` silently dropped by the readyState
           // guard — surface it so the session fails loudly rather than going
@@ -410,12 +393,8 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
       const session: AssemblyAITtsSession = {
         sendText(text: string) {
           if (text.length === 0 || shell.isClosed()) return;
-          if (doneEmitted) {
-            // First text of a new turn — nothing from the last one carries over.
-            doneEmitted = false;
-            turnClosed = false;
-            outstandingFlushes = 0;
-          }
+          // First text of a new turn — nothing from the last one carries over.
+          turn.onTurnText();
           buffered += text;
           // Synthesize each complete sentence as it lands rather than waiting
           // for the end of the turn — see the module doc.
@@ -423,40 +402,35 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           if (!split) return;
           buffered = split.tail;
           if (send({ type: "Generate", text: split.head }) && send({ type: "Flush" })) {
-            outstandingFlushes += 1;
+            turn.onFlushSent();
           }
         },
 
         flush() {
           if (shell.isClosed()) return;
-          turnClosed = true;
           if (buffered.length > 0) {
             const text = buffered;
             buffered = "";
             if (send({ type: "Generate", text }) && send({ type: "Flush" })) {
-              outstandingFlushes += 1;
+              turn.onFlushSent();
             }
-            return;
           }
-          // Nothing left to synthesize. Every segment already acknowledged means
-          // the turn's audio is complete; otherwise the last outstanding
-          // acknowledgement ends it. Either way, do NOT send an empty Flush —
-          // see the module doc.
-          if (outstandingFlushes === 0) emitDoneOnce();
+          // Nothing left to synthesize past this point. Every segment already
+          // acknowledged means the turn's audio is complete; otherwise the last
+          // outstanding acknowledgement ends it. Either way, do NOT send an
+          // empty Flush — see the module doc.
+          turn.closeTurn();
         },
 
         cancel() {
           if (shell.isClosed()) return;
-          const turnInFlight = !doneEmitted;
           // The cancelled turn's flushes are abandoned: either the socket is
           // dropped below (its late frames unobservable) or the queued frames
           // are discarded, so no acknowledgement for them will ever arrive.
-          buffered = "";
-          outstandingFlushes = 0;
-          turnClosed = false;
-          // Emit `done` synchronously — the orchestrator's state machine
+          // `done` is emitted synchronously — the orchestrator's state machine
           // advances on it, and barge-in must not be microtask-deferred.
-          emitDoneOnce();
+          buffered = "";
+          const turnInFlight = turn.cancel();
           // Idempotent: nothing sent since the last done means nothing is
           // buffered server-side and no audio is in flight.
           if (!turnInFlight) return;

@@ -443,6 +443,39 @@ describe("AssemblyAI TTS adapter", () => {
       expect(done).toBe(0);
     });
 
+    test("an is_final AND its FlushDone count as one acknowledgement", async () => {
+      // A server may signal a synthesis's completion both ways. Counting the
+      // pair twice reads the surplus FlushDone as unsolicited and ends the
+      // turn mid-reply — done fires while later sentences are still
+      // synthesizing, audio_done overtakes their audio, and the buffered text
+      // below ("And the rest") is dropped: the voice cuts off before the
+      // reply finishes. Exhaustive ack-pairing cases: assemblyai-turn.test.ts.
+      const { session, ws } = await openSession();
+      let done = 0;
+      session.on("done", () => {
+        done += 1;
+      });
+
+      session.sendText("First sentence here. ");
+      session.sendText("And the rest");
+      ws._msg({ type: "Audio", audio: pcmBase64([1]), is_final: true }); // segment's final frame
+      ws._msg({ type: "FlushDone" }); // same flush, acked again
+      expect(done).toBe(0);
+
+      session.sendText(" of the reply. ");
+      session.flush(); // end of turn — "And the rest of the reply. " must go out
+      expect(ws._frames()).toContainEqual({
+        type: "Generate",
+        text: "And the rest of the reply. ",
+      });
+      expect(done).toBe(0);
+
+      ws._msg({ type: "Audio", audio: pcmBase64([2]), is_final: true });
+      expect(done).toBe(1); // exactly once, on the LAST flush's acknowledgement
+      ws._msg({ type: "FlushDone" });
+      expect(done).toBe(1);
+    });
+
     test("cancel clears pending segment state so the next turn ends normally", async () => {
       const { session } = await openSession();
       let done = 0;
