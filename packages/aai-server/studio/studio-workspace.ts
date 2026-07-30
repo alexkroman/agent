@@ -3,27 +3,35 @@
  * Studio project workspaces — the server-side file trees the browser coding
  * agent reads and writes before an agent is built and deployed.
  *
- * Each workspace is one JSON document in the platform `Storage` under
- * `studio/{scope}/{project}`. Workspaces are small (a handful of source
- * files), so a single document keeps reads/writes atomic per project and
- * avoids per-file key encoding.
+ * Each workspace is one row in the {@link WorkspaceStore} (Postgres in
+ * production, memory in dev/tests — see `workspace-store.ts`). Workspaces
+ * are small (a handful of source files), so a single document keeps
+ * reads/writes atomic per project and avoids per-file key encoding.
+ *
+ * Concurrency: every write is versioned. `createWorkspace` conflicts when
+ * the project already exists; `mutateWorkspace` is the read-modify-write
+ * for everything else — it re-reads and re-applies the mutation once when a
+ * versioned put loses a race. In-process writers are still serialized by
+ * `studio-workspace-lock.ts` (the AI SDK runs one step's tool calls
+ * concurrently), so the single retry only has to absorb cross-replica
+ * races, which the lock cannot see.
  */
 
 import { createHash } from "node:crypto";
-import type { Storage } from "unstorage";
 import { SafePathSchema } from "../schemas.ts";
 import {
   MAX_STUDIO_FILE_BYTES,
   MAX_STUDIO_FILES,
   MAX_STUDIO_WORKSPACE_BYTES,
 } from "./studio-schemas.ts";
+import { WorkspaceConflictError, type WorkspaceStore } from "./workspace-store.ts";
 
 export type StudioWorkspace = {
   files: Record<string, string>;
   /**
-   * `filesHash` of `files`, stamped by `putWorkspace` on every write so reads
-   * (project GET, deploy) never recompute it. Optional because documents
-   * written before the field existed lack it — readers fall back to computing.
+   * `filesHash` of `files`, stamped on every write so reads (project GET,
+   * deploy) never recompute it. Optional because documents written before
+   * the field existed lack it — readers fall back to computing.
    */
   hash?: string;
   /** Slug of the last successful deploy — redeploys reuse it. */
@@ -38,6 +46,9 @@ export type StudioWorkspace = {
   deployedHash?: string;
   updatedAt: number;
 };
+
+/** What writers supply — `hash` and `updatedAt` are stamped on write. */
+export type WorkspaceInput = Omit<StudioWorkspace, "updatedAt" | "hash">;
 
 /** Stable content hash of a workspace's files. Key order never matters. */
 export function filesHash(files: Record<string, string>): string {
@@ -75,10 +86,6 @@ export function studioScope(apiKey: string): string {
   return createHash("sha256").update(`studio:${apiKey}`).digest("base64url");
 }
 
-function projectKey(scope: string, project: string): string {
-  return `studio/${scope}/${project}`;
-}
-
 /** Validate a workspace-relative file path; throws on traversal/absolute paths. */
 function assertSafeFilePath(path: string): string {
   const parsed = SafePathSchema.safeParse(path);
@@ -104,57 +111,97 @@ export function assertWorkspaceLimits(files: Record<string, string>): void {
   }
 }
 
+/** Shape-check a stored document; anything malformed reads as "no workspace". */
+function parseWorkspace(doc: unknown): StudioWorkspace | null {
+  // `typeof null === "object"`: a doc with `files: null` (or an array) must
+  // read as "no workspace", not surface as TypeErrors downstream.
+  if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
+  const files = (doc as { files?: unknown }).files;
+  if (!files || typeof files !== "object" || Array.isArray(files)) return null;
+  return doc as StudioWorkspace;
+}
+
+/**
+ * Validate paths/limits and stamp `hash` + `updatedAt`. The hash is always
+ * recomputed here — never trusted from the caller, who typically spreads a
+ * stale document around a `files` replacement.
+ */
+function stampWorkspace(workspace: WorkspaceInput): StudioWorkspace {
+  for (const path of Object.keys(workspace.files)) assertSafeFilePath(path);
+  assertWorkspaceLimits(workspace.files);
+  return { ...workspace, hash: filesHash(workspace.files), updatedAt: Date.now() };
+}
+
 export async function getWorkspace(
-  storage: Storage,
+  store: WorkspaceStore,
   scope: string,
   project: string,
 ): Promise<StudioWorkspace | null> {
-  const raw = await storage.getItem<string>(projectKey(scope, project));
-  if (raw == null) return null;
-  try {
-    const doc = typeof raw === "string" ? JSON.parse(raw) : raw;
-    // `typeof null === "object"`: a doc with `files: null` (or an array) must
-    // read as "no workspace", not surface as TypeErrors downstream.
-    if (!doc || typeof doc !== "object" || Array.isArray(doc)) return null;
-    if (!doc.files || typeof doc.files !== "object" || Array.isArray(doc.files)) return null;
-    return doc as StudioWorkspace;
-  } catch {
-    return null;
-  }
+  const record = await store.get(scope, project);
+  return record ? parseWorkspace(record.doc) : null;
 }
 
-export async function putWorkspace(
-  storage: Storage,
+/**
+ * Create a new workspace. Atomic at the store: two concurrent creates
+ * cannot both succeed, so the loser can never reset the winner's files.
+ *
+ * @throws {WorkspaceConflictError} when the project already exists.
+ */
+export async function createWorkspace(
+  store: WorkspaceStore,
   scope: string,
   project: string,
-  workspace: Omit<StudioWorkspace, "updatedAt" | "hash">,
+  workspace: WorkspaceInput,
 ): Promise<StudioWorkspace> {
-  for (const path of Object.keys(workspace.files)) assertSafeFilePath(path);
-  assertWorkspaceLimits(workspace.files);
-  // The hash is always recomputed here — never trusted from the caller, who
-  // typically spreads a stale document around a `files` replacement.
-  const doc: StudioWorkspace = {
-    ...workspace,
-    hash: filesHash(workspace.files),
-    updatedAt: Date.now(),
-  };
-  await storage.setItem(projectKey(scope, project), JSON.stringify(doc));
+  const doc = stampWorkspace(workspace);
+  await store.put(scope, project, doc, null);
   return doc;
 }
 
+/**
+ * Versioned read-modify-write. `mutate` receives the current document and
+ * returns the replacement (or `null` to decline writing — the current
+ * document is returned unchanged). Resolves `null` when the project does
+ * not exist; a deleted project is never resurrected, because the versioned
+ * put only replaces an existing row.
+ *
+ * On a version conflict — a concurrent writer on another replica, since
+ * local writers are serialized by the workspace lock — the mutation is
+ * re-derived against a fresh read exactly once; a second conflict
+ * propagates as {@link WorkspaceConflictError}.
+ */
+export async function mutateWorkspace(
+  store: WorkspaceStore,
+  scope: string,
+  project: string,
+  mutate: (current: StudioWorkspace) => WorkspaceInput | null | Promise<WorkspaceInput | null>,
+): Promise<StudioWorkspace | null> {
+  for (let attempt = 0; ; attempt += 1) {
+    const record = await store.get(scope, project);
+    const current = record ? parseWorkspace(record.doc) : null;
+    if (!(record && current)) return null;
+    const next = await mutate(current);
+    if (next === null) return current;
+    const doc = stampWorkspace(next);
+    try {
+      await store.put(scope, project, doc, record.version);
+      return doc;
+    } catch (err) {
+      if (!(err instanceof WorkspaceConflictError) || attempt > 0) throw err;
+      // Lost a cross-replica race: re-read and re-apply once.
+    }
+  }
+}
+
 export async function deleteWorkspace(
-  storage: Storage,
+  store: WorkspaceStore,
   scope: string,
   project: string,
 ): Promise<void> {
-  await storage.removeItem(projectKey(scope, project));
+  await store.delete(scope, project);
 }
 
-/** List project names in a scope, newest key order not guaranteed — sorted. */
-export async function listProjects(storage: Storage, scope: string): Promise<string[]> {
-  const keys = await storage.getKeys(`studio/${scope}/`);
-  return keys
-    .map((key) => key.split(":").at(-1) ?? "")
-    .filter((name) => name.length > 0)
-    .sort((a, b) => a.localeCompare(b));
+/** List project names in a scope, sorted. */
+export function listProjects(store: WorkspaceStore, scope: string): Promise<string[]> {
+  return store.list(scope);
 }

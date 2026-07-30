@@ -304,11 +304,18 @@ browser-based coding agent (TypeScript agent loop on the Vercel AI SDK,
 the same `streamText` stack pipeline mode uses) that builds and deploys
 voice agents without the CLI:
 
-- **Workspaces** are small server-side file trees stored one JSON doc per
-  project under `studio/{scope}/{project}` in the platform `Storage`.
-  `scope` is a *deterministic* SHA-256 of the caller's API key
-  (`studioScope`) — unlike the salted PBKDF2 ownership hashes, it must be
-  stable so a browser session can find its projects again.
+- **Workspaces** are small server-side file trees stored one row per
+  project in Postgres (`aai_platform.studio_workspaces`, over the same
+  platform `SqlExec` Vault uses; in-memory store in dev/tests —
+  `studio/workspace-store.ts`, same two-implementation pattern as
+  `SecretStore`). Blob `Storage` serves only deploy artifacts. Rows carry an
+  optimistic `version`: writes go through `createWorkspace` /
+  `mutateWorkspace` (`studio-workspace.ts`), which retry a conflicted write
+  once — the in-process keyed lock (`studio-workspace-lock.ts`) still
+  serializes local writers, so a conflict means another replica. `scope` is
+  a *deterministic* SHA-256 of the caller's API key (`studioScope`) — unlike
+  the salted PBKDF2 ownership hashes, it must be stable so a browser session
+  can find its projects again.
 - **Chat** (`POST /studio/chat`) runs one agent turn with file tools
   (list/read/write/edit/delete/grep) plus `test_agent`, streamed as the AI SDK **UI
   message stream** (SSE) that the client's `useChat` consumes directly.

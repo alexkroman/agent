@@ -23,7 +23,6 @@ import {
   tool,
   type UIMessage,
 } from "ai";
-import type { Storage } from "unstorage";
 import { z } from "zod";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
@@ -40,11 +39,12 @@ import { createWebTools } from "./studio-web.ts";
 import { currentFilesHash } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 import { createWorkspaceSession, type WorkspaceSession } from "./studio-workspace-session.ts";
+import type { WorkspaceStore } from "./workspace-store.ts";
 
 const MAX_CHAT_STEPS = 16;
 
 export type StudioChatDeps = {
-  storage: Storage;
+  workspaces: WorkspaceStore;
   scope: string;
   project: string;
   /**
@@ -163,7 +163,7 @@ async function runTrial(
  */
 export function createStudioTools(
   deps: StudioChatDeps,
-  workspaces: WorkspaceSession = createWorkspaceSession(deps.storage, deps.scope, deps.project),
+  workspaces: WorkspaceSession = createWorkspaceSession(deps.workspaces, deps.scope, deps.project),
 ) {
   const { project } = deps;
   const withFiles = workspaces.update;

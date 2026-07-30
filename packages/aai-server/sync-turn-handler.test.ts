@@ -9,8 +9,9 @@ import { describe, expect, test, vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache, type Sandbox } from "./sandbox.ts";
 import { attachSandbox, setSlot } from "./sandbox-slots.ts";
-import { putWorkspace, studioScope } from "./studio/studio-workspace.ts";
-import { authHeaders, createTestStorage, createTestStore, type TestFetch } from "./test-utils.ts";
+import { createWorkspace, studioScope } from "./studio/studio-workspace.ts";
+import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
+import { authHeaders, createTestStore, type TestFetch } from "./test-utils.ts";
 
 function createFakeSandbox(
   runSyncTurn: Sandbox["runSyncTurn"] = vi.fn(async () => ({ transcript: "hi", reply: "hello" })),
@@ -26,13 +27,13 @@ function createFakeSandbox(
 async function createSyncOrchestrator(sandbox?: Sandbox): Promise<{ fetch: TestFetch }> {
   const { createMemoryVector } = await import("@alexkroman1/aai/runtime");
   const slots = createSlotCache();
-  const storage = createTestStorage();
+  const workspaces = createMemoryWorkspaceStore();
   if (sandbox) {
     const slot = { slug: "my-agent", keyHash: "h" };
     setSlot(slots, slot);
     attachSandbox(slots, slot, sandbox);
     // The studio route resolves the project's published slug to the same slot.
-    await putWorkspace(storage, studioScope("key1"), "proj", {
+    await createWorkspace(workspaces, studioScope("key1"), "proj", {
       files: { "agent.ts": "export default {}" },
       deployedSlug: "my-agent",
     });
@@ -40,7 +41,7 @@ async function createSyncOrchestrator(sandbox?: Sandbox): Promise<{ fetch: TestF
   const { app } = createOrchestrator({
     slots,
     store: createTestStore(),
-    storage,
+    workspaces,
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   return { fetch: async (input, init) => app.request(input, init) };
@@ -147,14 +148,14 @@ describe("POST /studio/projects/:project/sync", () => {
 
   test("unpublished project answers 409", async () => {
     const { fetch } = await createSyncOrchestrator(createFakeSandbox());
-    const storage = createTestStorage();
+    const workspaces = createMemoryWorkspaceStore();
     // A fresh orchestrator whose workspace has no deployedSlug.
     const { createMemoryVector } = await import("@alexkroman1/aai/runtime");
-    await putWorkspace(storage, studioScope("key1"), "draft", { files: {} });
+    await createWorkspace(workspaces, studioScope("key1"), "draft", { files: {} });
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store: createTestStore(),
-      storage,
+      workspaces,
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
     const res = await app.request("/studio/projects/draft/sync", {

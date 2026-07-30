@@ -4,20 +4,15 @@ import { describe, expect, test } from "vitest";
 import { requireOwner } from "./middleware.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import {
-  createTestOrchestrator,
-  createTestStorage,
-  createTestStore,
-  deployAgent,
-} from "./test-utils.ts";
+import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
+import { createTestOrchestrator, createTestStore, deployAgent } from "./test-utils.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
   const store = createTestStore();
-  const storage = createTestStorage();
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    storage,
+    workspaces: createMemoryWorkspaceStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const res = await app.fetch(new Request("http://localhost/health"));
@@ -27,11 +22,10 @@ test("orchestrator adds Cross-Origin-Isolation headers", async () => {
 
 test("orchestrator returns 401 on deploy without auth", async () => {
   const store = createTestStore();
-  const storage = createTestStorage();
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    storage,
+    workspaces: createMemoryWorkspaceStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const res = await app.fetch(new Request("http://localhost/my-agent/deploy", { method: "POST" }));

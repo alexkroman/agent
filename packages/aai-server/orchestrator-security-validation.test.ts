@@ -9,12 +9,8 @@ import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import {
-  createTestOrchestrator,
-  createTestStorage,
-  createTestStore,
-  deployAgent,
-} from "./test-utils.ts";
+import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
+import { createTestOrchestrator, createTestStore, deployAgent } from "./test-utils.ts";
 
 // ── Slug Validation & Path Traversal ───────────────────────────────────
 
@@ -84,11 +80,10 @@ describe("slug validation prevents path traversal", () => {
 describe("security headers on all response types", () => {
   test("health endpoint includes security headers", async () => {
     const store = createTestStore();
-    const storage = createTestStorage();
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      storage,
+      workspaces: createMemoryWorkspaceStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
     const res = await app.fetch(new Request("http://localhost/health"));
@@ -102,11 +97,10 @@ describe("security headers on all response types", () => {
 
   test("404 responses include security headers", async () => {
     const store = createTestStore();
-    const storage = createTestStorage();
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      storage,
+      workspaces: createMemoryWorkspaceStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
     const res = await app.fetch(new Request("http://localhost/nonexistent"));
@@ -137,11 +131,10 @@ describe("security headers on all response types", () => {
 
   test("CORS headers restrict allowed origins when configured", async () => {
     const store = createTestStore();
-    const storage = createTestStorage();
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      storage,
+      workspaces: createMemoryWorkspaceStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
       allowedOrigins: ["https://trusted.example.com"],
     });
@@ -167,11 +160,10 @@ describe("security headers on all response types", () => {
 
   test("CORS rejects cross-origin when no origins configured", async () => {
     const store = createTestStore();
-    const storage = createTestStorage();
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      storage,
+      workspaces: createMemoryWorkspaceStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
 

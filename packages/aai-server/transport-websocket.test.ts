@@ -9,12 +9,12 @@ import { createOrchestrator } from "./orchestrator.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey } from "./secrets.ts";
+import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
 import {
   authHeaders,
   counterTotal,
   counterValue,
   createTestOrchestrator,
-  createTestStorage,
   createTestStore,
   deployAgent,
   deployBody,
@@ -193,7 +193,6 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
     });
   }
   const store = createTestStore();
-  const storage = createTestStorage();
   // Seed an agent config so resolveUpgrade can read the mode label.
   await store.putAgent({
     slug,
@@ -207,7 +206,7 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
   const { injectWebSocket } = createOrchestrator({
     slots,
     store,
-    storage,
+    workspaces: createMemoryWorkspaceStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),
   });

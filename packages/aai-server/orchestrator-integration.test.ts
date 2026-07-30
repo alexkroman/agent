@@ -20,10 +20,11 @@ async function createRealOrchestrator() {
   const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
   const { createSlotCache } = await import("./sandbox-slots.ts");
   const { createMemoryVector } = await import("@alexkroman1/aai/runtime");
+  const { createMemoryWorkspaceStore } = await import("./studio/workspace-store.ts");
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    storage,
+    workspaces: createMemoryWorkspaceStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);

@@ -6,17 +6,12 @@ import { Hono } from "hono";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { HonoEnv } from "../context.ts";
 import { createMemorySecretStore } from "../secret-store.ts";
-import {
-  authFetch,
-  authHeaders,
-  createTestOrchestrator,
-  createTestStorage,
-  type TestFetch,
-} from "../test-utils.ts";
+import { authFetch, authHeaders, createTestOrchestrator, type TestFetch } from "../test-utils.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
 import { createStudioRoutes } from "./studio-routes.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
-import { putWorkspace, studioScope } from "./studio-workspace.ts";
+import { createWorkspace, studioScope } from "./studio-workspace.ts";
+import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 const deployMock = vi.fn(
   async (..._args: unknown[]): Promise<StudioDeployResult> => ({
@@ -471,13 +466,13 @@ describe("chat sandbox lifecycle", () => {
         dispose,
       }),
     );
-    const storage = createTestStorage();
-    await putWorkspace(storage, studioScope("key1"), "proj", { files: { "agent.ts": "x" } });
+    const workspaces = createMemoryWorkspaceStore();
+    await createWorkspace(workspaces, studioScope("key1"), "proj", { files: { "agent.ts": "x" } });
     const app = new Hono<HonoEnv>().route(
       "/studio",
       createStudioRoutes({ createSandbox, llmConfigured: () => true }),
     );
-    const bindings = { storage } as unknown as HonoEnv["Bindings"];
+    const bindings = { workspaces } as unknown as HonoEnv["Bindings"];
     const request = () =>
       app.request(
         "/studio/chat",
@@ -546,8 +541,8 @@ describe("studio storage routes", () => {
       },
     };
     const secrets = createMemorySecretStore();
-    const { fetch, storage } = await createTestOrchestrator({ secrets, appDb });
-    await putWorkspace(storage, studioScope("key1"), "proj", {
+    const { fetch, workspaces } = await createTestOrchestrator({ secrets, appDb });
+    await createWorkspace(workspaces, studioScope("key1"), "proj", {
       files: { "agent.ts": "x" },
       ...(opts.deployed !== false && { deployedSlug: "proj" }),
     });
@@ -598,8 +593,8 @@ describe("studio storage routes", () => {
 
   test("enable without SUPABASE_DB_URL configured → 503", async () => {
     const secrets = createMemorySecretStore();
-    const { fetch, storage } = await createTestOrchestrator({ secrets });
-    await putWorkspace(storage, studioScope("key1"), "proj", {
+    const { fetch, workspaces } = await createTestOrchestrator({ secrets });
+    await createWorkspace(workspaces, studioScope("key1"), "proj", {
       files: { "agent.ts": "x" },
       deployedSlug: "proj",
     });

@@ -34,6 +34,11 @@ import {
   type SecretStore,
   type SqlExec,
 } from "./secret-store.ts";
+import {
+  createMemoryWorkspaceStore,
+  createPgWorkspaceStore,
+  type WorkspaceStore,
+} from "./studio/workspace-store.ts";
 
 function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
   const size = resolvePoolSize(env.SANDBOX_POOL_SIZE);
@@ -69,13 +74,15 @@ function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createStorage> 
 }
 
 /**
- * Platform Postgres surface: Supabase Vault for secrets and per-app database
- * provisioning, both over `SUPABASE_DB_URL` (service-role connection string).
- * Required in production; local dev falls back to an in-memory secret store
- * (and no per-app databases unless SUPABASE_DB_URL is set).
+ * Platform Postgres surface: Supabase Vault for secrets, studio workspaces,
+ * and per-app database provisioning, all over `SUPABASE_DB_URL`
+ * (service-role connection string). Required in production; local dev falls
+ * back to in-memory secret and workspace stores (and no per-app databases
+ * unless SUPABASE_DB_URL is set).
  */
 function buildPlatformDb(env: NodeJS.ProcessEnv): {
   secrets: SecretStore;
+  workspaces: WorkspaceStore;
   appDb?: AppDatabases;
 } {
   const url = env.SUPABASE_DB_URL;
@@ -83,15 +90,19 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
     if (!isLocalDev(env)) {
       requireEnv(env, ["SUPABASE_DB_URL"]); // throws with the standard message
     }
-    console.info("Local dev mode: in-memory secret store; per-app databases disabled");
-    return { secrets: createMemorySecretStore() };
+    console.info(
+      "Local dev mode: in-memory secret + studio workspace stores; per-app databases disabled",
+    );
+    return { secrets: createMemorySecretStore(), workspaces: createMemoryWorkspaceStore() };
   }
   // The pool lives for the process; connections drain when the process exits
   // (no explicit close() hook on the shutdown path today).
   const admin = createPostgresDb({ url, max: 4 });
   const exec: SqlExec = (query, params) => admin.query(query, params);
+  const localDev = isLocalDev(env);
   return {
-    secrets: isLocalDev(env) ? createMemorySecretStore() : createVaultSecretStore(exec),
+    secrets: localDev ? createMemorySecretStore() : createVaultSecretStore(exec),
+    workspaces: localDev ? createMemoryWorkspaceStore() : createPgWorkspaceStore(exec),
     appDb: createAppDatabases({ url, sql: exec }),
   };
 }
@@ -107,14 +118,16 @@ function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
 
 function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
   const storage = buildStorage(env);
-  const { secrets, appDb } = buildPlatformDb(env);
+  const { secrets, workspaces, appDb } = buildPlatformDb(env);
   const slots = createSlotCache();
   registerSlotsForGauges(slots);
   const pool = buildPool(env);
   return {
     slots,
+    // Blob storage serves deploy artifacts only (bundles/client files);
+    // studio workspaces live in Postgres via `workspaces`.
     store: createBundleStore(storage, { secrets }),
-    storage,
+    workspaces,
     secrets,
     defaultVector: buildDefaultVector(env),
     ...(appDb && { appDb }),

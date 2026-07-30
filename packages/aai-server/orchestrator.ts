@@ -34,7 +34,6 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
-import type { Storage } from "unstorage";
 import type { AppDatabases } from "./app-database.ts";
 import { handleAgentClientConfig } from "./client-config-handler.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
@@ -60,6 +59,7 @@ import {
 import type { BundleStore } from "./store-types.ts";
 import { createStudioRoutes } from "./studio/studio-routes.ts";
 import { handleStudioClientAsset, handleStudioPage } from "./studio/studio-static.ts";
+import type { WorkspaceStore } from "./studio/workspace-store.ts";
 import { handleSyncTurn } from "./sync-turn-handler.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
@@ -67,7 +67,8 @@ import { handleVector } from "./vector-handler.ts";
 export type OrchestratorOpts = {
   slots: SlotCache;
   store: BundleStore;
-  storage: Storage;
+  /** Studio project workspaces (Postgres in production, memory in dev/tests). */
+  workspaces: WorkspaceStore;
   /** Named secret storage (Supabase Vault in production, memory in tests). */
   secrets?: SecretStore;
   /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
@@ -259,16 +260,16 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const bindings = {
     slots: opts.slots,
     store: opts.store,
-    storage: opts.storage,
+    workspaces: opts.workspaces,
     // Tests build orchestrators without a secret store; default to memory so
     // the storage-status route (and anything else reading secrets) works.
     secrets: opts.secrets ?? createMemorySecretStore(),
     ...(opts.appDb && { appDb: opts.appDb }),
     defaultVector: opts.defaultVector,
   };
-  // resolveSandbox takes the bindings minus `storage` (bundle data lives in
-  // the BundleStore; `storage` is the studio's workspace store).
-  const { storage: _workspaceStorage, ...sandboxBindings } = bindings;
+  // resolveSandbox takes the bindings minus `workspaces` (bundle data lives
+  // in the BundleStore; `workspaces` is the studio's workspace store).
+  const { workspaces: _studioWorkspaces, ...sandboxBindings } = bindings;
   const sandboxOpts = { ...sandboxBindings, ...(opts.pool && { pool: opts.pool }) };
 
   const original = app.fetch.bind(app);

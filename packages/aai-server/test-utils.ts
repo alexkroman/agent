@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
-import { createStorage, type Storage } from "unstorage";
 import { registry } from "./metrics.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
@@ -9,6 +8,7 @@ import { createSlotCache } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
+import { createMemoryWorkspaceStore, type WorkspaceStore } from "./studio/workspace-store.ts";
 
 // ── Metric-reading helpers (canonical versions for tests) ───────────────
 
@@ -163,10 +163,6 @@ export function createTestStore(secrets?: SecretStore): BundleStore {
   };
 }
 
-export function createTestStorage(): Storage {
-  return createStorage();
-}
-
 export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {
   return {
     slug: "test-agent",
@@ -207,19 +203,19 @@ export async function createTestOrchestrator(
 ): Promise<{
   fetch: TestFetch;
   store: BundleStore;
-  storage: Storage;
+  workspaces: WorkspaceStore;
 }> {
   const store = createTestStore(overrides.secrets);
-  const storage = createTestStorage();
+  const workspaces = createMemoryWorkspaceStore();
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    storage,
+    workspaces,
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     ...overrides,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
-  return { fetch, store, storage };
+  return { fetch, store, workspaces };
 }
 
 /** Standard auth + JSON headers for test requests. */

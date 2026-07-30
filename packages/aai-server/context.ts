@@ -11,17 +11,18 @@
 
 import type { Vector } from "@alexkroman1/aai/runtime";
 import type { Context } from "hono";
-import type { Storage } from "unstorage";
 import type { AppDatabases } from "./app-database.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
+import type { WorkspaceStore } from "./studio/workspace-store.ts";
 
 export type HonoEnv = {
   Bindings: {
     slots: SlotCache;
     store: BundleStore;
-    storage: Storage;
+    /** Studio project workspaces (Postgres in production, memory in dev/tests). */
+    workspaces: WorkspaceStore;
     /** Named secret storage (Supabase Vault in production). */
     secrets: SecretStore;
     /** Per-app database provisioning. Absent when SUPABASE_DB_URL is unset. */

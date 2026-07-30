@@ -56,7 +56,6 @@ import { z } from "zod";
 import { resolveHarnessPath } from "../constants.ts";
 import { isModalConfigured } from "../modal-sandbox.ts";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
-import { createTestStorage } from "../test-utils.ts";
 import {
   ONE_SHOT,
   readTemplate,
@@ -74,8 +73,9 @@ import { StudioBuildError } from "./studio-errors.ts";
 import { isStudioLlmConfigured, studioLlmInfo, studioModel } from "./studio-llm.ts";
 import { createStudioSandbox, type StudioSandbox } from "./studio-sandbox.ts";
 import { starterFiles } from "./studio-template.ts";
-import { filesHash, getWorkspace, putWorkspace } from "./studio-workspace.ts";
+import { createWorkspace, filesHash, getWorkspace } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
+import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 const SCOPE = "eval-scope";
 
@@ -154,12 +154,12 @@ const studioHarness = createHarness<string, StudioEvalOutput>({
   name: "studio-coding-agent",
   run: async ({ input, setArtifact }) => {
     const project = `eval-${++runCounter}`;
-    const storage = createTestStorage();
-    await putWorkspace(storage, SCOPE, project, { files: starterFiles() });
+    const workspaces = createMemoryWorkspaceStore();
+    await createWorkspace(workspaces, SCOPE, project, { files: starterFiles() });
 
     let sandbox: StudioSandbox | undefined;
     const deps: StudioChatDeps = {
-      storage,
+      workspaces,
       scope: SCOPE,
       project,
       sandbox: async () => {
@@ -178,7 +178,7 @@ const studioHarness = createHarness<string, StudioEvalOutput>({
     };
 
     const events = await readSseEvents(await runStudioChat(deps, [userMessage(input)]));
-    const workspace = await getWorkspace(storage, SCOPE, project);
+    const workspace = await getWorkspace(workspaces, SCOPE, project);
     const errors = events.filter((e) => e.type === "error").map((e) => String(e.errorText));
     // Fail loudly on an errored turn. Judging the leftover workspace would be
     // a false pass — the untouched starter files build just fine.

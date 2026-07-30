@@ -3,22 +3,16 @@ import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { expect, test, vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import {
-  createTestStorage,
-  createTestStore,
-  deployAgent,
-  makeSlot,
-  type TestFetch,
-} from "./test-utils.ts";
+import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
+import { createTestStore, deployAgent, makeSlot, type TestFetch } from "./test-utils.ts";
 
 async function setup() {
   const store = createTestStore();
-  const storage = createTestStorage();
   const slots = createSlotCache();
   const { app } = createOrchestrator({
     slots,
     store,
-    storage,
+    workspaces: createMemoryWorkspaceStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);

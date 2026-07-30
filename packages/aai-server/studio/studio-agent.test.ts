@@ -3,10 +3,10 @@
 import { type LanguageModel, tool, type UIMessage } from "ai";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
-import { createTestStorage } from "../test-utils.ts";
 import { createStudioTools, runStudioChat, type StudioChatDeps } from "./studio-agent.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
-import { getWorkspace, putWorkspace } from "./studio-workspace.ts";
+import { createWorkspace, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
+import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 const SCOPE = "scope";
 const PROJECT = "proj";
@@ -40,13 +40,13 @@ function fakeSandbox(overrides: Partial<StudioSandbox> = {}): StudioSandbox {
 async function makeDeps(
   overrides: Partial<StudioChatDeps> = {},
 ): Promise<StudioChatDeps & { sandboxInstance: StudioSandbox }> {
-  const storage = createTestStorage();
-  await putWorkspace(storage, SCOPE, PROJECT, {
+  const workspaces = createMemoryWorkspaceStore();
+  await createWorkspace(workspaces, SCOPE, PROJECT, {
     files: { "agent.ts": VALID_AGENT_TS, "notes.md": "hello" },
   });
   const sandboxInstance = fakeSandbox();
   return {
-    storage,
+    workspaces,
     scope: SCOPE,
     project: PROJECT,
     sandbox: async () => sandboxInstance,
@@ -126,7 +126,7 @@ describe("createStudioTools", () => {
       toolOpts(),
     );
     expect(out).toMatch(/Wrote new\.ts/);
-    const ws = await getWorkspace(deps.storage, SCOPE, PROJECT);
+    const ws = await getWorkspace(deps.workspaces, SCOPE, PROJECT);
     expect(ws?.files["new.ts"]).toBe("export const x = 1;");
   });
 
@@ -148,7 +148,7 @@ describe("createStudioTools", () => {
       tools.write_file.execute?.({ path: "a.ts", content: "a" }, toolOpts()),
       tools.write_file.execute?.({ path: "b.ts", content: "b" }, toolOpts()),
     ]);
-    const ws = await getWorkspace(deps.storage, SCOPE, PROJECT);
+    const ws = await getWorkspace(deps.workspaces, SCOPE, PROJECT);
     expect(ws?.files["a.ts"]).toBe("a");
     expect(ws?.files["b.ts"]).toBe("b");
   });
@@ -179,24 +179,24 @@ describe("createStudioTools", () => {
   });
 
   test("file tools share one workspace read per turn", async () => {
-    // The per-turn snapshot: read tools cost one storage GET total, not one
+    // The per-turn snapshot: read tools cost one store GET total, not one
     // each — the old per-call reads were ~30 round trips on a 16-step turn.
     const deps = await makeDeps();
-    const getItem = vi.spyOn(deps.storage, "getItem");
+    const get = vi.spyOn(deps.workspaces, "get");
     const tools = createStudioTools(deps);
     await tools.list_files.execute?.({}, toolOpts());
     await tools.read_file.execute?.({ path: "notes.md" }, toolOpts());
     await tools.grep.execute?.({ pattern: "hello" }, toolOpts());
-    expect(getItem).toHaveBeenCalledTimes(1);
+    expect(get).toHaveBeenCalledTimes(1);
   });
 
-  test("reads after a write see the new content without another storage read", async () => {
+  test("reads after a write see the new content without another store read", async () => {
     const deps = await makeDeps();
     const tools = createStudioTools(deps);
     await tools.write_file.execute?.({ path: "notes.md", content: "updated" }, toolOpts());
-    const getItem = vi.spyOn(deps.storage, "getItem");
+    const get = vi.spyOn(deps.workspaces, "get");
     expect(await tools.read_file.execute?.({ path: "notes.md" }, toolOpts())).toBe("updated");
-    expect(getItem).not.toHaveBeenCalled();
+    expect(get).not.toHaveBeenCalled();
   });
 
   test("tools error cleanly when the project is missing", async () => {
@@ -238,7 +238,10 @@ describe("test_agent tool (sandboxed trial runs)", () => {
 
   test("returns build errors without touching the sandbox", async () => {
     const deps = await makeDeps();
-    await putWorkspace(deps.storage, SCOPE, PROJECT, { files: { "agent.ts": "const x = {" } });
+    await mutateWorkspace(deps.workspaces, SCOPE, PROJECT, (ws) => ({
+      ...ws,
+      files: { "agent.ts": "const x = {" },
+    }));
     const tools = createStudioTools(deps);
     expect(await tools.test_agent.execute?.({}, toolOpts())).toContain("Build failed");
     expect(deps.sandboxInstance.loadBundle).not.toHaveBeenCalled();

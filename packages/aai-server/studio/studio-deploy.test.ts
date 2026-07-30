@@ -3,17 +3,19 @@
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createSlotCache } from "../sandbox-slots.ts";
 import { hashApiKey } from "../secrets.ts";
-import { createTestStorage, createTestStore, TEST_AGENT_CONFIG } from "../test-utils.ts";
+import { createTestStore, TEST_AGENT_CONFIG } from "../test-utils.ts";
 import { clearStudioBuildCache, putCachedBuild } from "./studio-build-cache.ts";
 import { StudioBuildError } from "./studio-bundle.ts";
 import { deployStudioProject, type StudioDeployDeps } from "./studio-deploy.ts";
 import {
+  createWorkspace,
   deleteWorkspace,
   filesHash,
   getWorkspace,
   hasUnpublishedChanges,
-  putWorkspace,
+  mutateWorkspace,
 } from "./studio-workspace.ts";
+import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 const SCOPE = "test-scope";
 
@@ -27,7 +29,7 @@ function makeDeps(overrides: Partial<StudioDeployDeps> = {}): StudioDeployDeps {
   return {
     store: createTestStore(),
     slots: createSlotCache(),
-    storage: createTestStorage(),
+    workspaces: createMemoryWorkspaceStore(),
     bundle: async () => "export default {};",
     inspect: async () => TEST_AGENT_CONFIG,
     buildClient: async () => ({}),
@@ -36,7 +38,7 @@ function makeDeps(overrides: Partial<StudioDeployDeps> = {}): StudioDeployDeps {
 }
 
 async function seedProject(deps: StudioDeployDeps, project: string, deployedSlug?: string) {
-  await putWorkspace(deps.storage, SCOPE, project, {
+  await createWorkspace(deps.workspaces, SCOPE, project, {
     files: { "agent.ts": "export default {}" },
     ...(deployedSlug && { deployedSlug }),
   });
@@ -54,7 +56,7 @@ describe("deployStudioProject", () => {
     expect(result).toEqual({ ok: true, slug: "my-agent", url: "/my-agent/" });
     expect(await deps.store.getWorkerCode("my-agent")).toBe("export default {};");
     expect(await deps.store.getAgentConfig("my-agent")).toMatchObject({ name: "test-agent" });
-    const ws = await getWorkspace(deps.storage, SCOPE, "my-agent");
+    const ws = await getWorkspace(deps.workspaces, SCOPE, "my-agent");
     expect(ws?.deployedSlug).toBe("my-agent");
   });
 
@@ -172,9 +174,10 @@ describe("deployStudioProject", () => {
     // Simulate an edit landing while the multi-second build runs: the final
     // metadata write must merge onto the current files, not the snapshot.
     deps.bundle = async () => {
-      await putWorkspace(deps.storage, SCOPE, "p1", {
+      await mutateWorkspace(deps.workspaces, SCOPE, "p1", (ws) => ({
+        ...ws,
         files: { "agent.ts": "export default {}", "mid-build.ts": "added while building" },
-      });
+      }));
       return "export default {};";
     };
     await seedProject(deps, "p1");
@@ -184,7 +187,7 @@ describe("deployStudioProject", () => {
       project: "p1",
     });
     expect(result).toMatchObject({ ok: true, slug: "p1" });
-    const ws = await getWorkspace(deps.storage, SCOPE, "p1");
+    const ws = await getWorkspace(deps.workspaces, SCOPE, "p1");
     expect(ws?.files["mid-build.ts"]).toBe("added while building");
     expect(ws?.deployedSlug).toBe("p1");
     // The hash is of the snapshot actually built, so the mid-build edit
@@ -195,7 +198,7 @@ describe("deployStudioProject", () => {
   test("a project deleted during the build is not resurrected", async () => {
     const deps = makeDeps();
     deps.bundle = async () => {
-      await deleteWorkspace(deps.storage, SCOPE, "p1");
+      await deleteWorkspace(deps.workspaces, SCOPE, "p1");
       return "export default {};";
     };
     await seedProject(deps, "p1");
@@ -206,7 +209,7 @@ describe("deployStudioProject", () => {
     });
     // The agent still deployed — only the workspace metadata write is skipped.
     expect(result).toMatchObject({ ok: true, slug: "p1" });
-    expect(await getWorkspace(deps.storage, SCOPE, "p1")).toBeNull();
+    expect(await getWorkspace(deps.workspaces, SCOPE, "p1")).toBeNull();
   });
 
   test("returns an error for a missing project", async () => {
@@ -236,7 +239,7 @@ describe("deployStudioProject", () => {
 
   test("uses the real worker bundler by default (build error, no sandbox needed)", async () => {
     const { bundle: _omit, ...deps } = makeDeps(); // fall through to bundleWorkspace
-    await putWorkspace(deps.storage, SCOPE, "broken", {
+    await createWorkspace(deps.workspaces, SCOPE, "broken", {
       files: { "agent.ts": "const nope = {" },
     });
     const result = await deployStudioProject(deps, {
@@ -300,7 +303,7 @@ describe("deployStudioProject", () => {
     const buildClient = vi.fn(async () => ({ "index.html": "<html>built</html>" }));
     const deps = makeDeps({ bundle, buildClient });
     await seedProject(deps, "p1");
-    const workspace = await getWorkspace(deps.storage, SCOPE, "p1");
+    const workspace = await getWorkspace(deps.workspaces, SCOPE, "p1");
     // Simulate the chat turn's test_agent build of the same content.
     putCachedBuild(filesHash(workspace?.files ?? {}), { worker: "from-test-agent" });
 
@@ -315,10 +318,10 @@ describe("deployStudioProject", () => {
   test("reuses the workspace's stored hash for deployedHash", async () => {
     const deps = makeDeps();
     await seedProject(deps, "p1");
-    const before = await getWorkspace(deps.storage, SCOPE, "p1");
+    const before = await getWorkspace(deps.workspaces, SCOPE, "p1");
     expect(before?.hash).toBeDefined();
     await deployStudioProject(deps, { apiKey: "k", scope: SCOPE, project: "p1" });
-    const after = await getWorkspace(deps.storage, SCOPE, "p1");
+    const after = await getWorkspace(deps.workspaces, SCOPE, "p1");
     expect(after?.deployedHash).toBe(before?.hash);
     expect(after?.deployedHash).toBe(filesHash(before?.files ?? {}));
   });

@@ -8,7 +8,6 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { ASSEMBLYAI_API_KEY_ENV } from "@alexkroman1/aai/stt";
-import type { Storage } from "unstorage";
 import { resolveHarnessPath } from "../constants.ts";
 import { type DeployDeps, deployAgentBundle } from "../deploy.ts";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
@@ -18,16 +17,17 @@ import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
 import { bundleWorkspaceWorker } from "./studio-bundle.ts";
 import { buildWorkspaceClient } from "./studio-client-build.ts";
 import { StudioBuildError } from "./studio-errors.ts";
-import { currentFilesHash, getWorkspace, putWorkspace } from "./studio-workspace.ts";
+import { currentFilesHash, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 import { withWorkspaceLock } from "./studio-workspace-lock.ts";
+import type { WorkspaceStore } from "./workspace-store.ts";
 
 export type StudioDeployResult =
   | { ok: true; slug: string; url: string }
   | { ok: false; error: string };
 
 export type StudioDeployDeps = DeployDeps & {
-  storage: Storage;
+  workspaces: WorkspaceStore;
   /** Warm harness pool — config extraction acquires from it when present. */
   pool?: SandboxPool | undefined;
   /** Injectable for tests — defaults to the CLI's Vite worker build. */
@@ -87,7 +87,7 @@ export async function deployStudioProject(
   deps: StudioDeployDeps,
   params: StudioDeployParams,
 ): Promise<StudioDeployResult> {
-  const workspace = await getWorkspace(deps.storage, params.scope, params.project);
+  const workspace = await getWorkspace(deps.workspaces, params.scope, params.project);
   if (!workspace) return { ok: false, error: `Project not found: ${params.project}` };
 
   // Computed once and reused for the build cache and `deployedHash` below.
@@ -150,16 +150,15 @@ export async function deployStudioProject(
   // the builds above take seconds, and writing the pre-build `files`
   // snapshot back would silently revert anything edited meanwhile. `hash`
   // is of the snapshot that was actually built, so mid-build edits still
-  // show as unpublished.
-  await withWorkspaceLock(params.scope, params.project, async () => {
-    const current = await getWorkspace(deps.storage, params.scope, params.project);
-    // Deleted mid-deploy: don't resurrect the project just to record a slug.
-    if (!current) return;
-    await putWorkspace(deps.storage, params.scope, params.project, {
+  // show as unpublished. Deleted mid-deploy → mutateWorkspace finds no row
+  // and never resurrects the project just to record a slug; the metadata
+  // stamp is re-derivable, so a cross-replica conflict retries cleanly.
+  await withWorkspaceLock(params.scope, params.project, () =>
+    mutateWorkspace(deps.workspaces, params.scope, params.project, (current) => ({
       ...current,
       deployedSlug: outcome.slug,
       deployedHash: hash,
-    });
-  });
+    })),
+  );
   return { ok: true, slug: outcome.slug, url: `/${outcome.slug}/` };
 }
