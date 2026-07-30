@@ -261,6 +261,9 @@ const UNCOVERED: Record<string, string> = {
   "solo-rpg": "same shape as pizza-ordering (kv state keyed by sessionId)",
   "dispatch-center": "same shape as pizza-ordering (kv state keyed by sessionId)",
   "sync-voice": "sync mode is a transport, not an agent shape the codegen picks",
+  "voice-debrief":
+    "workflow kind + send channel is covered by slack-translator; the ctx.generate/" +
+    "generateStructured extraction step has no one-shot parity rubric yet",
   "push-to-talk-translator": "client-side capture concern; agent.ts is pipeline-simple's shape",
 };
 
