@@ -9,7 +9,7 @@ agent gets ears, a mouth, and real-time turn-taking.
 
 ## Architecture
 
-```
+```text
 browser (aai-ui client, unchanged)
    │  aai client protocol: JSON events + raw PCM16 over one WebSocket
    ▼
@@ -69,7 +69,7 @@ rows are **kept** by design.
 | `send: slack()` channel | eve `channels/slack` | after apps migrate |
 | Sync turns (`POST /sync`) + workflow app kind | eve `mode: "task"` runs | after workflow surface moves |
 | gVisor sandbox stack (aai-server) | eve sandbox backends (or a gVisor `SandboxBackend` — see open questions) | after platform decision |
-| CLI `deploy`/`delete`/`secret` + platform server | `eve deploy` / self-hosted Nitro | after platform decision |
+| CLI internals (bundlers, dev server, deploy/secret plumbing) + platform server | **the `aai` CLI stays as the customer-facing surface** and becomes an abstraction over eve commands — customers never run the eve CLI. `aai init` scaffolds an eve project with the voice channel preconfigured; `aai dev` wraps `eve dev`; `aai deploy` wraps `eve deploy`/`eve build && eve start`; `aai secret` manages the eve app's env. Only the *internals* (worker bundlers, gVisor deploy pipeline) are deletable | after the eve project scaffold lands |
 | Studio coding-agent loop (`studio-agent.ts`, `studio-llm.ts`, `studio-mcp.ts`) | **the studio agent becomes an eve agent** (below) | next phase |
 | STT/TTS providers, pipeline transport voice machinery, SessionCore, ws-handler, audio pacer, SSRF, aai-ui client | — | **kept: this is the product** |
 | S2S mode (AssemblyAI speech-to-speech) | — | **kept**, but it bypasses any agent loop (STT+LLM+TTS in one provider socket); it becomes a `voiceChannel` mode that never calls into eve |
@@ -86,13 +86,33 @@ eve's chat-sdk channel + `eve/react` client. HITL approvals and the
 no-self-publish rule map to eve's approval flow. The studio *builds* stop
 producing gVisor bundles and start producing eve projects.
 
+## Latency spike results (2026-07-30, eve 0.28, `eve dev`, Node 24, local world)
+
+Measured with a paced fake `LanguageModel` (100 deltas at 20 ms) inside a
+real eve app, arrival-stamped through `getEventStream` from a bench
+channel route — so the numbers are pure eve overhead, no model variance:
+
+| Metric | Result |
+| --- | --- |
+| Per-delta stream overhead | **p50 3 ms, p90 4–5 ms, max 12–22 ms** |
+| New-session start → first delta (warm) | ~230–240 ms |
+| Second turn (deliver on parked session) → first delta | **~265 ms** |
+
+**Verdict: the event stream itself is effectively free for voice; the cost
+is per-turn workflow start/resume (~250 ms before the model's first delta
+is visible).** Real-world TTFA through eve ≈ model TTFT + ~250 ms + TTS
+first-chunk — roughly 250 ms worse than the local loop. Not disqualifying,
+but worth optimizing (eve's park/resume path) before deleting the local
+`streamText` loop; the turn-runner seam keeps both options open. Numbers
+are dev-mode/disk-world — re-measure on the production setup. The
+end-to-end run against the AssemblyAI LLM Gateway still needs this
+environment's egress policy to allow `llm-gateway.assemblyai.com`.
+
 ## Open questions (validate before the big deletions)
 
-1. **Delta latency through eve's durable event stream.** Voice needs
-   ~350 ms to first audio; every `message.appended` is durably stamped.
-   Measure with a real eve app + LLM key (half-day spike; this environment
-   has no model key). If the stream adds too much latency, the runner's
-   seam still stands — the fallback is the kept local loop.
+1. **Per-turn resume overhead** (see spike results above): can eve's
+   deliver→resume path get materially under ~250 ms, or does the voice
+   channel need the local loop for latency-critical deployments?
 2. **Multi-tenant platform.** Eve's model is agent = app = deployment.
    AAI's managed platform (many tenant agents in one server, no-network
    gVisor guests, credential separation) has no eve equivalent. Either the
