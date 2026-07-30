@@ -48,7 +48,7 @@ export type StudioChatDeps = {
   scope: string;
   project: string;
   /**
-   * Lazy handle to this chat session's sandbox — the same warm-pool/gVisor
+   * Lazy handle to this chat session's sandbox — the same warm-pool/Modal
    * infrastructure deployed agents run in. Used by test_agent, and reused by
    * the deploy route for config extraction. Provisioned on first use.
    */
@@ -268,7 +268,7 @@ export function createStudioTools(
     test_agent: tool({
       description:
         "Build the workspace and load it into a sandbox running the exact " +
-        "production runtime (gVisor + Deno, no network/filesystem). Reports " +
+        "production runtime (Modal sandbox + Deno, no network/filesystem). Reports " +
         "build errors, load errors, and the extracted agent config. Pass " +
         "`tool` and `args` to also invoke one of the agent's tools with " +
         "sample arguments and see its result. Secrets are NOT available in " +

@@ -151,15 +151,18 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.onError(createErrorHandler());
   app.use("*", prometheusMiddleware);
 
-  // 503 while draining is what pulls the machine out of fly-proxy's rotation,
-  // so new traffic goes to a machine that is staying up. Without it the drain
-  // would keep accepting the very sessions it is waiting to finish.
+  // 503 while draining is what pulls the replica out of the platform
+  // proxy's rotation, so new traffic goes to a replica that is staying up.
+  // Without it the drain would keep accepting the very sessions it is
+  // waiting to finish.
   app.get("/health", (c) =>
     opts.isDraining?.() ? c.json({ status: "draining" }, 503) : c.json({ status: "ok" }),
   );
 
-  // Internal-only: Fly's private network doesn't add X-Forwarded-For;
-  // public edge always does — treat XFF presence as "external request".
+  // Internal-only: any request through the public edge carries
+  // X-Forwarded-For (Modal's proxy always sets it) — treat XFF presence as
+  // "external request". Fail-closed: with no private scrape path, /metrics
+  // is simply unreachable from outside.
   app.get("/metrics", async (c) => {
     if (c.req.header("X-Forwarded-For")) return c.notFound();
     const text = await serialize();

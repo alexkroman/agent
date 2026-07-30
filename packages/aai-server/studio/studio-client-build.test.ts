@@ -44,7 +44,7 @@ describe("buildWorkspaceClient", () => {
 
   test("leaves process.env.NODE_ENV alone", async () => {
     // See the matching worker-build test: Vite sets NODE_ENV=production when
-    // unset, which in a dev server process makes the sandbox demand gVisor.
+    // unset, which flips a dev server process into production behavior.
     const saved = process.env.NODE_ENV;
     delete process.env.NODE_ENV;
     try {

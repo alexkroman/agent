@@ -117,7 +117,7 @@ export async function guardHostModeUpgrade(opts: {
 /**
  * Begin a host-mode session on a deployed agent.
  *
- * Runs in this process rather than the gVisor sandbox: host mode replaces the
+ * Runs in this process rather than the guest sandbox: host mode replaces the
  * agent's tools with ones relayed back to the caller, so there is no tenant
  * code to isolate. The credentials and provider pipeline are still the
  * deployed agent's — which is the point, and why ownership was checked before

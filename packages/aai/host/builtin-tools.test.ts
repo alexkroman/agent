@@ -57,7 +57,7 @@ describe("resolveAllBuiltins defs", () => {
 
   // ─── run_code (host-side guard) ─────────────────────────────────────────
   // run_code executes untrusted JS and now runs ONLY inside the guest sandbox
-  // (gVisor/Deno) — see deno-harness.test.ts for execution coverage. The
+  // (Modal/Deno) — see deno-harness.test.ts for execution coverage. The
   // host-side def must never evaluate code; it returns an error instead.
 
   test("run_code is registered with schema and guidance", () => {

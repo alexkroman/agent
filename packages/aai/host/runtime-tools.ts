@@ -130,7 +130,7 @@ function setupSandboxTools(
   const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
     // Handle builtins on the host (where SSRF-safe fetch lives) — EXCEPT
     // sandbox-only builtins (see SANDBOX_ONLY_BUILTINS), which execute
-    // untrusted JS and must run inside the guest sandbox (gVisor/Deno),
+    // untrusted JS and must run inside the guest sandbox (Modal/Deno),
     // never on the host. They are delegated via RPC like custom tools;
     // the guest harness runs them directly.
     if (builtinDefs[name] && !SANDBOX_ONLY_BUILTINS.has(name)) {

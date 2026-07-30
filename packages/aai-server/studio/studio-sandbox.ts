@@ -6,7 +6,7 @@
  * extracting its config, and trial-running its tools — happens inside a
  * sandbox provisioned through the exact same machinery as deployed agents:
  * the orchestrator's warm pool when available, otherwise
- * `spawnWarmHarness` (gVisor on Linux, dev child process elsewhere). The
+ * `spawnWarmHarness` (a remote Modal Sandbox). The
  * host never evaluates workspace code.
  *
  * Unlike a deployed agent's sandbox, a studio session sandbox:

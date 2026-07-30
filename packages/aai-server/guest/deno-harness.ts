@@ -5,7 +5,7 @@
  * Deno guest-side harness entrypoint.
  *
  * Reads NDJSON from stdin, dispatches JSON-RPC 2.0 messages, and writes
- * NDJSON responses to stdout. Designed to run inside a gVisor sandbox.
+ * NDJSON responses to stdout. Designed to run inside a Modal Sandbox.
  *
  * Protocol overview:
  * - Host -> guest: bundle/load, tool/execute, shutdown
@@ -135,7 +135,7 @@ export function createSessionStateMap(initState?: () => Record<string, unknown>)
 /**
  * Execute agent-supplied JavaScript for the `run_code` builtin.
  *
- * `run_code` runs HERE, inside the Deno guest, not on the host. The gVisor
+ * `run_code` runs HERE, inside the Deno guest, not on the host. The Modal
  * sandbox plus Deno's permission model (`--no-prompt`, no net/fs/run) ARE the
  * security boundary, so we deliberately do NOT attempt in-process `node:vm`
  * isolation — that was never a real boundary and was escapable via the host

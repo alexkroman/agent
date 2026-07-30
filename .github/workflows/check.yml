@@ -99,10 +99,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
-      - uses: denoland/setup-deno@v2
-        if: matrix.package == 'aai-server'
-        with:
-          deno-version: v2.x
       - id: workspace-cache
         uses: actions/cache/restore@v6
         with:
@@ -133,9 +129,6 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: ${{ matrix.node }}
-      - uses: denoland/setup-deno@v2
-        with:
-          deno-version: v2.x
       - id: workspace-cache
         uses: actions/cache/restore@v6
         with:
@@ -149,27 +142,6 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm exec turbo run build
       - run: pnpm exec turbo run check:integration
-
-  # Full build + test run inside a Docker container with gVisor (runsc)
-  # available — sandbox tests exercise the production isolation path
-  # instead of the fake-vm fallback. --privileged is required for runsc.
-  docker-test:
-    needs: setup
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v7
-      - name: Build test image
-        run: docker build -f Dockerfile.test -t aai-test .
-      - name: Run unit tests
-        run: docker run --rm --privileged -e CI=true aai-test pnpm test
-      - name: Run integration tests
-        run: docker run --rm --privileged -e CI=true aai-test pnpm test:integration
-      - name: Run gVisor integration tests
-        run: >-
-          docker run --rm --privileged -e CI=true
-          -e VITEST_PROFILE=gvisor
-          -e "VITEST_INCLUDE=packages/aai-server/gvisor-integration*.test.ts"
-          aai-test pnpm vitest run -c vitest.slow.config.ts
 
   e2e:
     needs: setup
@@ -211,11 +183,11 @@ jobs:
   ci:
     runs-on: ubuntu-latest
     if: always()
-    needs: [lint-typecheck-and-checks, test, integration, e2e, docker-test]
+    needs: [lint-typecheck-and-checks, test, integration, e2e]
     steps:
       - name: Check results
         run: |
-          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }} ${{ needs.docker-test.result }}"
+          results="${{ needs.lint-typecheck-and-checks.result }} ${{ needs.test.result }} ${{ needs.integration.result }} ${{ needs.e2e.result }}"
           for r in $results; do
             if [ "$r" != "success" ] && [ "$r" != "skipped" ]; then
               echo "CI failed: one or more jobs did not succeed"

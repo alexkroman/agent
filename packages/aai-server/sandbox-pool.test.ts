@@ -176,7 +176,7 @@ describe("createSandboxPool", () => {
     await waitForReady(pool, 1);
 
     // Dies while idle in the pool (e.g. OOM-killed at the cgroup limit) —
-    // eviction must also release the runsc registration + bundle dir.
+    // eviction must also terminate the backing Modal sandbox.
     w1.__die();
 
     expect(pool.readySize()).toBe(0);

@@ -147,8 +147,8 @@ export default { name: String(typeof readFileSync) };`,
     // Vite's build() sets NODE_ENV=production when it is unset. In a
     // `pnpm dev:aai-server` process that is exactly the case, so the first
     // studio build used to flip the whole server to "production" for the rest
-    // of its life — after which describeBundle refuses to run without gVisor
-    // ("gVisor (runsc) is required in production but not found on PATH").
+    // of its life — production-only checks (Modal credentials, storage env)
+    // then start failing on a dev machine.
     const saved = process.env.NODE_ENV;
     delete process.env.NODE_ENV;
     try {

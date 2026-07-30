@@ -24,7 +24,7 @@ pnpm check:affected      # Only check packages affected by changes since main
 | Tier | Command | Scope | Timeout |
 | --- | --- | --- | --- |
 | Unit | `pnpm test` | Fast, mocked, co-located | 5s |
-| Integration | `pnpm test:integration` | Real subsystems (Deno sandboxes, HTTP servers) | 30s |
+| Integration | `pnpm test:integration` | Real subsystems (HTTP servers, WebSockets) | 30s |
 | E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
 | Templates | `pnpm test:templates` | Template agent example tests | 5s |
 | Evals | `pnpm --filter aai-server test:evals` | LLM-in-the-loop studio codegen evals (vitest-evals) | 300s |
@@ -192,7 +192,7 @@ boundary** — this split is critical for sandbox security:
 moving `host/` → `sdk/` requires removing all Node.js imports first.
 
 The guest harness (`guest/deno-harness.ts`) runs Deno inside each
-gVisor sandbox, loading the agent's ESM bundle directly — no import
+Modal Sandbox, loading the agent's ESM bundle directly — no import
 restrictions apply there.
 
 ### Key files
@@ -239,7 +239,7 @@ restrictions apply there.
 #### packages/aai-server/
 
 - `orchestrator.ts` — HTTP + WebSocket routing
-- `sandbox.ts` — gVisor sandbox management
+- `sandbox.ts` — agent sandbox management
 - `sandbox-vm.ts` — per-agent sandbox lifecycle (start, teardown)
 - `sandbox-agent-config.ts` — maps the deploy-time `IsolateConfig` onto the
   runtime's agent definition + provider options (`toRuntimeAgent`,
@@ -248,9 +248,12 @@ restrictions apply there.
 - `sandbox-pool.ts` — pool of pre-warmed Deno harnesses for fast cold starts
 - `sandbox-network.ts` — network proxying for sandbox
 - `sandbox-slots.ts` — slot allocation for concurrent sessions
-- `gvisor.ts` — gVisor (runsc) OCI runtime integration
-- `guest/deno-harness.ts` — Deno guest entry point (runs inside gVisor sandbox)
-- `guest/fake-vm.ts` — lightweight fake-VM fallback for macOS dev mode
+- `modal-sandbox.ts` — Modal Sandbox backend: creates remote sandboxes via
+  the `modal` SDK, writes the harness, execs Deno, adapts web streams to the
+  NDJSON transport
+- `guest/deno-harness.ts` — Deno guest entry point (runs inside a Modal Sandbox)
+- `modal_deploy.py` — Modal deployment of the server itself (`@modal.web_server`
+  wrapping the node process); `pnpm --filter aai-server deploy:modal`
 - `ndjson-transport.ts` — NDJSON-over-stdio transport for host↔guest RPC
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
@@ -392,7 +395,7 @@ voice agents without the CLI:
 - **Session sandboxes run the agent's code work on production infra**:
   each chat request lazily provisions one sandbox (`studio-sandbox.ts`)
   through the same warm-pool/`spawnWarmHarness` path deployed agents use
-  (gVisor in production). `test_agent` builds the workspace, loads the
+  (a remote Modal Sandbox). `test_agent` builds the workspace, loads the
   bundle there (repeat `bundle/load` replaces it), validates the config,
   and can trial-run one of the agent's tools via `tool/execute` against a
   scratch KV/Vector — no tenant data, no secrets in the guest. Deploy
@@ -434,10 +437,10 @@ voice agents without the CLI:
   effect on the calling process. Both CLI bundlers therefore wrap the
   build in `withPreservedNodeEnv` (`aai-cli/_vite-env.ts`), which
   snapshots and restores it. Without that, the first studio build in a
-  `pnpm dev:aai-server` process flips the server to "production" and
-  every later deploy dies with *"gVisor (runsc) is required in production
-  but not found on PATH"*; `aai dev`, which rebuilds on every file change,
-  has the same problem. Keep any new Vite invocation inside that wrapper.
+  `pnpm dev:aai-server` process flips the server to "production", where
+  strict credential and storage checks break every later deploy; `aai dev`,
+  which rebuilds on every file change, has the same problem. Keep any new
+  Vite invocation inside that wrapper.
 - **Client build** (`studio-client-build.ts`) handles a workspace
   `client.tsx`, built by `buildClient` from
   `@alexkroman1/aai-cli/client-bundler` — the same Vite pass
@@ -449,17 +452,15 @@ voice agents without the CLI:
 - **`buildClient` dedupes React** (`resolve.dedupe`), because `aai-ui`
   declares it as a *peer* dependency while the bundler resolves the bare
   `react/jsx-runtime` inside `aai-ui/dist/**` from *that file's* real path.
-  Locally aai-ui's own devDependency satisfies it; the production image
-  installs prod deps only, so the sole React left is `aai-server`'s — which
-  the build root (the scratch dir under that package) reaches and
+  Locally aai-ui's own devDependency satisfies it; a pruned production
+  install can leave `aai-server`'s copy as the only React — which the build
+  root (the scratch dir under that package) reaches and
   `packages/aai-ui/dist` does not. Publishing died with *"Rolldown failed to
-  resolve import react/jsx-runtime"* while every local build passed. Two unit
-  tests hold the halves of this: `aai-cli/client-bundler.test.ts` (every
-  non-optional aai-ui peer is deduped) and the peer-dependency case in
-  `dockerfile-packaging.test.ts` (each one is an aai-server *prod* dep, so it
-  survives `--prod`). Same failure shape as the `styles.css` COPY above —
-  anything the studio's client build reaches has to exist, and be
-  resolvable, in the pruned image.
+  resolve import react/jsx-runtime"* while every local build passed.
+  `aai-cli/client-bundler.test.ts` guards this (every non-optional aai-ui
+  peer is deduped). The Modal image installs the full workspace (dev deps
+  included), so the old pruned-image packaging tests are gone with the
+  Dockerfile.
 - **Deployed-agent credentials.** The studio has no secrets UI, so a
   published agent would otherwise start with an empty env — its S2S
   connect sends an empty bearer token (`runtime-transport.ts`:
@@ -877,8 +878,8 @@ literals, bare `*`, and `.internal`/`.local`/`.localhost` TLDs are refused.
 
 ### Dev/prod parity for tool fetches
 
-An agent's tool code runs in two very different places — a gVisor guest with
-no network device on the platform, the plain Node host process under
+An agent's tool code runs in two very different places — a network-blocked
+Modal/Deno guest on the platform, the plain Node host process under
 `aai dev` — and the policy governing its `fetch` must not differ, or the
 first time a developer learns about a limit is a production incident.
 
@@ -914,24 +915,21 @@ exemptions, both matching what the platform actually restricts:
 allowed in `host/` — the biome override was package-wide, with a
 guest-VM-availability rationale that never applied to host-only code.
 
-**Guest permissions match too.** The dev sandbox spawn
-(`sandbox-vm.ts:devSandboxSpawnArgs`, `guest/fake-vm.ts`) passes
-`--no-prompt` and nothing else, exactly like production's OCI spec. It used
-to add `--allow-env` and `--allow-read`, which the harness never needs (the
-bundle arrives over RPC and loads from a `blob:` URL; sibling harness
-modules are static imports) — so agent code touching `Deno.env` or the
-filesystem worked on a macOS dev box and failed once deployed.
+**Guest permissions are identical everywhere** — dev and production run
+the same Modal spawn (`modal-sandbox.ts`), which passes `--no-prompt` and
+nothing else. The harness needs no Deno grants: the bundle arrives over RPC
+and loads from a `blob:` URL, and sibling harness modules are bundled in.
 
 **Known remaining asymmetries**, none closable without larger work:
 
 | Divergence | Direction | Why it stands |
 | --- | --- | --- |
 | `aai dev` runs tools in **Node**, production in **Deno** with no permissions | works in dev, fails in prod | `process.env`, `node:fs`, `child_process` are all reachable locally. Closing it means running dev tool code in a Deno sandbox — a dev-server redesign, not a tweak. |
-| cgroup limits (64 MB, 32 PIDs) and `--max-heap-size` | works in dev, fails in prod | A memory-hungry tool OOMs only when deployed. Enforcing locally would need a container. |
+| Modal memory/CPU limits (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) | works in dev, fails in prod | `aai dev` runs tools in the host process with no caps; a memory-hungry tool OOMs only when deployed. |
 | `run_code` | fails in dev, works in prod | The host-side guard refuses rather than evaluating in-process. Fail-closed, so harmless. |
 | `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. The prod failure is a loud auth error at session start. |
 | KV/Vector defaults (memory vs Tigris/Pinecone), KV prefix `""` vs `kv:{hash}:{slug}:` | prod is stricter | Data doesn't persist across dev restarts; prod is the more isolated side. |
-| gVisor unavailable on macOS | prod is stricter | Platform capability, documented under "gVisor notes". |
+| Platform sandboxes need Modal credentials | prod is stricter | `aai dev` runs tools in-process; the platform (any machine with `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`) spawns real Modal sandboxes — see "Modal sandbox notes". |
 
 **`agent()` re-declares its parameter shape inline** rather than deriving it
 from `AgentDef`, and returns `{...defaults, ...def}`. A field added to
@@ -1249,8 +1247,7 @@ Tests can behave differently based on environment variables set in
 package.json scripts (not always obvious from test code alone):
 
 - `VITEST_PROFILE` — switches timeout/retry profiles in
-  `vitest.slow.config.ts`: `integration` (30s), `e2e` (300s),
-  `docker` (600s), `gvisor` (30s)
+  `vitest.slow.config.ts`: `integration` (30s), `e2e` (300s)
 - `VITEST_INCLUDE` — filters which test files to include
 - `VITEST_POOL` — can override pool strategy at runtime
 - `AAI_TEST_PM` — package manager the e2e suite installs the scaffolded
@@ -1429,17 +1426,21 @@ bumped automatically.
   fails (new deps added on the branch).
 - Never edit `pnpm-lock.yaml` directly — always use `pnpm install`.
 
-### gVisor notes
+### Modal sandbox notes
 
-- gVisor integration tests run via: `./packages/aai-server/guest/docker-test.sh`
-- That script uses the repo-wide test image (`Dockerfile.test`, which ships
-  runsc) — the same image CI's `docker-test` job builds to run unit,
-  integration, and gVisor tests in a container. One image, no drift.
-- No KVM required — uses systrap platform (works on Fly.io, any Linux)
-- Docker needs `--security-opt seccomp=unconfined` (or `--privileged`) for gVisor
-- On macOS (dev), gVisor is unavailable; sandbox falls back to a plain child
-  process with no isolation. This is expected — the security boundary only
-  applies in Linux production deployments.
+- Guest sandboxes are **remote Modal Sandboxes** (`modal-sandbox.ts`) on every
+  platform — macOS dev boxes and production alike. There is no local
+  child-process or gVisor fallback; without `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`
+  (or a `~/.modal.toml` profile) sandbox creation fails loudly.
+- The guest image defaults to `denoland/deno:latest`; pin via
+  `MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
+  Modal App sandboxes are created under (default `aai-server`).
+- Sandboxes are created with `blockNetwork: true` and a bounded lifetime
+  (`SANDBOX_TIMEOUT_SECS`, default 4h). Memory/CPU caps come from
+  `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT`.
+- The server itself deploys to Modal too (`modal_deploy.py`,
+  `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
+  Fly.io deployment anymore.
 
 ### Updating CLAUDE.md
 
@@ -1488,59 +1489,61 @@ catches the most common issues that historically required follow-up commits:
 
 ## Security architecture
 
-### gVisor sandbox isolation
+### Modal sandbox isolation
 
-Each agent session runs in its own **gVisor sandbox** (runsc OCI runtime).
-The guest runs a Deno process executing the bundled agent code
-(`guest/deno-harness.ts`). Host↔guest communication is via NDJSON over
-stdio.
+Each agent session runs in its own **Modal Sandbox** — a remote, isolated
+container on Modal's infrastructure (`modal-sandbox.ts`). The guest runs a
+Deno process executing the bundled agent code (`guest/deno-harness.ts`).
+Host↔guest communication is NDJSON over the exec'd process's stdio streams
+(Modal's command router).
 
 Key properties:
 
-- **Userspace kernel**: gVisor Sentry intercepts all syscalls in systrap mode.
-  No KVM required — works on Fly.io, any Linux.
-- **No shared memory between agents**: separate Sentry per sandbox.
-- **Minimal rootfs**: only the Deno binary and harness are visible.
-  The agent cannot see the host filesystem.
-- **cgroup limits**: 64 MB memory, 32 PIDs per sandbox.
+- **Remote isolation**: each sandbox is its own container on Modal — no
+  shared kernel surface with the platform host, no shared state between
+  agents.
+- **No guest network**: sandboxes are created with `blockNetwork: true`;
+  all external calls proxy through host-side RPC.
+- **Minimal filesystem**: the guest sees the Deno image plus the harness
+  file written into it — never the host filesystem.
+- **Resource limits**: Modal per-sandbox memory/CPU caps
+  (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) and a bounded lifetime
+  (`SANDBOX_TIMEOUT_SECS`, default 4h).
 - **Deno guest**: the agent's ESM bundle is loaded directly by Deno.
-  Deno's permission model provides defense-in-depth: in production
-  (gVisor, `oci-spec.ts`) the harness runs with `--no-prompt` and **no**
-  `--allow-*` flags at all; the dev-mode child-process fallbacks
-  (`sandbox-vm.ts`, `guest/fake-vm.ts`) add `--allow-env`.
-- **Dev mode (macOS)**: gVisor unavailable; sandbox falls back to a plain
-  child process with no isolation.
+  Deno's permission model provides defense-in-depth: the harness runs with
+  `--no-prompt` and **no** `--allow-*` flags at all, in dev and prod alike.
 
 ### Warm sandbox pool
 
 The server can pre-spawn a pool of "warm" Deno harnesses (process running,
 NDJSON wired, no bundle loaded) so first-session cold starts skip the
-slow `spawn → JIT init → gVisor bootstrap` path. On acquire, the
+slow `Modal sandbox create → Deno JIT init` path. On acquire, the
 harness is finalized for the requesting agent by registering KV/fetch
 handlers and sending `bundle/load` — a single round-trip.
 
 - **Enable**: set `SANDBOX_POOL_SIZE` to a positive integer (max 16).
   Disabled when unset.
-- **Files**: `sandbox-pool.ts` (pool), `sandbox-vm.ts:spawnWarmHarness`
-  (backend-agnostic spawn), `configureSandbox` (per-agent finalization).
-- **Security**: the pool spawns harnesses with the same OCI spec / dev
-  config as on-demand sandboxes. Bundle code and agent env vars are
-  injected per-acquire — no agent secrets enter a warm process.
+- **Files**: `sandbox-pool.ts` (pool), `sandbox-vm.ts:spawnWarmHarness` /
+  `modal-sandbox.ts:spawnModalWarm` (spawn), `configureSandbox` (per-agent
+  finalization).
+- **Security**: the pool spawns harnesses with the same Modal sandbox
+  parameters as on-demand sandboxes. Bundle code and agent env vars are
+  injected per-acquire — no agent secrets enter a warm sandbox.
 - **Failure mode**: if the pool is empty or returns a dead harness,
   `createSandboxVm` falls back to a fresh spawn (the pre-pool path).
 
 ### Platform sandbox (aai-server)
 
-Agent code runs in **per-agent gVisor sandboxes**. Key files:
-`packages/aai-server/sandbox.ts`, `sandbox-vm.ts`, `gvisor.ts`,
+Agent code runs in **per-agent Modal Sandboxes**. Key files:
+`packages/aai-server/sandbox.ts`, `sandbox-vm.ts`, `modal-sandbox.ts`,
 `guest/deno-harness.ts`, `ndjson-transport.ts`.
 
 **Isolation layers:**
 
-- **Filesystem**: minimal rootfs with only Deno binary + harness. No host
+- **Filesystem**: the Deno image plus the harness file. No host
   filesystem access.
-- **Network**: no network device in sandbox. All external calls proxy through host.
-- **Memory**: cgroup limits (64 MB per sandbox). Separate Sentry per sandbox.
+- **Network**: `blockNetwork: true` — all external calls proxy through host.
+- **Memory/CPU**: Modal per-sandbox limits; separate container per sandbox.
 - **Env vars**: agent env is delivered to the guest via the `bundle/load`
   RPC params, never as process environment variables. Platform secrets
   stay host-side.
@@ -1589,7 +1592,7 @@ stored env at sandbox creation time and kept host-side only.
 
 **`run_code` built-in tool (aai/builtin-tools.ts):**
 
-- Executes **only inside the guest sandbox** (gVisor/Deno): it is listed in
+- Executes **only inside the guest sandbox** (Modal/Deno): it is listed in
   `SANDBOX_ONLY_BUILTINS`, so the platform runtime delegates it over RPC to
   `deno-harness`, which runs it there. The old host-side `node:vm` execution
   was removed — `node:vm` is not a security boundary.
@@ -1718,7 +1721,7 @@ Details worth keeping:
   the socket; a bare RST is indistinguishable from a network fault.
 - **Unknown slug and forbidden slug return the same thing**, so a non-owner
   gets no existence oracle.
-- **Runs in the server process, not the gVisor sandbox.** Host mode replaces
+- **Runs in the server process, not the guest sandbox.** Host mode replaces
   the agent's tools with ones relayed to the caller, so there is no tenant
   code to isolate. `toHostBaseAgent` carries the provider descriptors on the
   agent object (unlike `toRuntimeAgent`, which omits them because
@@ -1781,11 +1784,10 @@ TTY before implicitly deploying.
 
 ### Testing security boundaries
 
-- `gvisor-integration.test.ts` — sandbox isolation e2e: network, filesystem,
-  process, env isolation inside gVisor sandboxes. No KVM required.
-  Run via: `./packages/aai-server/guest/docker-test.sh`
-- `sandbox-integration.test.ts` — sandbox lifecycle and slot management e2e.
-  Run: `pnpm --filter aai-server test:integration`
+- `modal-sandbox.test.ts` — Modal spawn flow against an injected fake
+  context: blockNetwork, harness delivery, exec permissions, teardown on
+  failure. (Isolation itself — network, filesystem, memory — is enforced by
+  Modal's sandbox boundary, not host code.)
 - `builtin-tools.test.ts` — `run_code` sandbox security boundaries
   (network, filesystem, process, env, constructor chain bypass,
   cross-invocation isolation).

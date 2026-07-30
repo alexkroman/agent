@@ -2,7 +2,7 @@
 /**
  * `allowedHosts` enforcement for **self-hosted** tool code (`aai dev`).
  *
- * On the platform, an agent's own tool code runs in a gVisor guest with no
+ * On the platform, an agent's own tool code runs in a sandboxed Deno guest with no
  * network device: its `fetch` is RPC-proxied to the host, which rejects any
  * hostname outside the agent's `allowedHosts`. Self-hosted runs have no
  * sandbox, so tool code reached the real `globalThis.fetch` unchecked — an

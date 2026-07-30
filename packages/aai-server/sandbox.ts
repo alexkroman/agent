@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Agent sandbox backed by gVisor OCI containers (Linux) or child processes
+ * Agent sandbox backed by remote Modal Sandboxes
  * (macOS dev mode).
  *
  * The host runs `createRuntime()` with VM-backed `executeTool`, giving it
@@ -401,7 +401,7 @@ export async function resolveSandbox(
   if (resident?.sandbox) return resident.sandbox as Sandbox;
 
   // Serialize per-slug so concurrent cold upgrades don't each spawn a
-  // sandbox (duplicate gVisor containers, one orphaned) and so a session
+  // sandbox (duplicate Modal sandboxes, one orphaned) and so a session
   // never attaches a sandbox built from pre-deploy code while a deploy is
   // mutating the same slot (deploy/delete/secret all take this lock too).
   return withSlugLock(slug, async () => {

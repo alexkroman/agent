@@ -280,7 +280,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     // The `disposed` flag closes an abort race: a chat abort can run
     // disposeSandbox while sandboxPromise is still null (test_agent spends
     // seconds in the Vite build before asking for the sandbox), and a
-    // provisioning that started afterwards would be a leaked gVisor/Deno
+    // provisioning that started afterwards would be a leaked Modal/Deno
     // process nothing ever disposes.
     let sandboxPromise: Promise<StudioSandbox> | null = null;
     let disposed = false;

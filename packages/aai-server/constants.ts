@@ -20,9 +20,10 @@ export const MAX_WORKER_SIZE = 10_000_000;
 /**
  * How long shutdown waits for live sessions to end before force-closing them.
  *
- * Must stay below `kill_timeout` in fly.toml (currently 150s) with room for
- * sandbox teardown afterwards, or Fly SIGKILLs the process mid-drain and the
- * wait accomplishes nothing. Override with `SHUTDOWN_DRAIN_MS`.
+ * Must stay below the platform's container stop grace period (Modal's
+ * `scaledown_window` in modal_deploy.py) with room for sandbox teardown
+ * afterwards, or the process is SIGKILLed mid-drain and the wait
+ * accomplishes nothing. Override with `SHUTDOWN_DRAIN_MS`.
  */
 export const DEFAULT_SHUTDOWN_DRAIN_MS = 120_000;
 

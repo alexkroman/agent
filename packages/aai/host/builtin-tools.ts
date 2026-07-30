@@ -223,7 +223,7 @@ const runCodeParams = z.object({
  * The run_code tool definition (schema + guidance only).
  *
  * run_code executes untrusted JavaScript and is ONLY ever run inside the guest
- * sandbox (gVisor/Deno): in platform mode the runtime delegates it over RPC to
+ * sandbox (Modal/Deno): in platform mode the runtime delegates it over RPC to
  * `deno-harness`, which runs it there. This host-side `execute` is a guard for
  * the self-hosted path (`aai dev`), which has no sandbox — it refuses rather
  * than evaluating attacker-influenceable code in the host process. (The old
@@ -414,7 +414,7 @@ type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
 
 /**
  * Builtins that execute untrusted code and must ONLY run inside the guest
- * sandbox (gVisor/Deno), never on the host. The runtime's sandbox-mode
+ * sandbox (Modal/Deno), never on the host. The runtime's sandbox-mode
  * dispatcher consults this to delegate them over RPC like custom tools.
  */
 export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string> = new Set(["run_code"]);

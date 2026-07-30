@@ -47,7 +47,6 @@
  * exported under the conditions" error that reads like generated-code trouble.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { generateObject, type UIMessage } from "ai";
 import { describe, expect, test } from "vitest";
@@ -55,6 +54,7 @@ import type { TranscriptEvent } from "vitest-evals";
 import { createHarness, createJudge, describeEval } from "vitest-evals";
 import { z } from "zod";
 import { resolveHarnessPath } from "../constants.ts";
+import { isModalConfigured } from "../modal-sandbox.ts";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import { createTestStorage } from "../test-utils.ts";
 import {
@@ -81,17 +81,8 @@ const SCOPE = "eval-scope";
 
 const llmReady = isStudioLlmConfigured(process.env);
 
-function isDenoAvailable(): boolean {
-  try {
-    execFileSync("deno", ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** The sandbox judge needs Deno plus the built guest harness. */
-const canSandbox = isDenoAvailable() && existsSync(resolveHarnessPath());
+/** The sandbox judge needs Modal credentials plus the built guest harness. */
+const canSandbox = isModalConfigured() && existsSync(resolveHarnessPath());
 
 type StudioEvalOutput = {
   /** Workspace files as the agent left them after its one turn. */
@@ -172,7 +163,7 @@ const studioHarness = createHarness<string, StudioEvalOutput>({
       scope: SCOPE,
       project,
       sandbox: async () => {
-        if (!canSandbox) throw new Error("no Deno/guest harness in this environment");
+        if (!canSandbox) throw new Error("no Modal credentials/guest harness in this environment");
         sandbox ??= await createStudioSandbox();
         return sandbox;
       },

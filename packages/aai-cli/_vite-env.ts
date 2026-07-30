@@ -11,9 +11,8 @@
  * - `aai dev` rebuilds on every file change, so the first rebuild would flip
  *   the dev server into production mode.
  * - The platform studio builds inside the server process, where flipping
- *   NODE_ENV makes the sandbox demand gVisor ("gVisor (runsc) is required in
- *   production but not found on PATH") and refuse every subsequent deploy on a
- *   dev machine.
+ *   NODE_ENV switches the server into production behavior (strict credential
+ *   and storage checks) and breaks every subsequent deploy on a dev machine.
  *
  * Snapshot and restore rather than pinning a value: callers that legitimately
  * run with NODE_ENV=production must keep it.

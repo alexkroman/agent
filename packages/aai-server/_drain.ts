@@ -8,10 +8,10 @@
  * every conversation in flight is cut mid-sentence and the client reconnects
  * into a fresh session with no history.
  *
- * The wait is bounded because Fly force-kills the process `kill_timeout`
- * seconds after the stop signal — a drain longer than that window is not a
+ * The wait is bounded because the platform force-kills the process a grace
+ * period after the stop signal — a drain longer than that window is not a
  * drain, it is a SIGKILL with extra steps. Keep `SHUTDOWN_DRAIN_MS` below
- * `kill_timeout` in fly.toml, with slack for sandbox teardown after it.
+ * the container stop grace period, with slack for sandbox teardown after it.
  */
 
 import { performance } from "node:perf_hooks";

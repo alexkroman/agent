@@ -813,7 +813,7 @@ Common mistakes when working in aai projects:
   points. See "Voice rules" above.
 - **`fetch` to private IPs is blocked** (SSRF protection). Use public URLs.
 - **`run_code` only executes on the deployed platform.** It runs inside the
-  platform's gVisor/Deno sandbox; the self-hosted `aai dev` server has no
+  platform's Modal/Deno sandbox; the self-hosted `aai dev` server has no
   sandbox, so there `run_code` refuses with an error result. Deploy to test
   it end-to-end, or use the `calculate` builtin for simple arithmetic in dev.
 - **KV is per-deployment.** A new slug = fresh namespace. Don't expect

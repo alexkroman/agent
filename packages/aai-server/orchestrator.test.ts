@@ -14,7 +14,7 @@ test("returns health check", async () => {
   expect(await res.json()).toMatchObject({ status: "ok" });
 });
 
-test("health fails while draining so fly-proxy stops routing here", async () => {
+test("health fails while draining so the platform proxy stops routing here", async () => {
   let draining = false;
   const { fetch } = await createTestOrchestrator({ isDraining: () => draining });
   expect((await fetch("/health")).status).toBe(200);

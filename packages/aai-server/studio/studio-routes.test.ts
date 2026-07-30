@@ -493,7 +493,7 @@ describe("chat sandbox lifecycle", () => {
   test("a dispose that ran before lazy provisioning blocks it — no leaked sandbox", async () => {
     // The abort race: runStudioChat's teardown fires while sandboxPromise is
     // still null (test_agent is mid Vite build), then the tool asks for the
-    // sandbox. Provisioning one now would leak a gVisor/Deno process nothing
+    // sandbox. Provisioning one now would leak a Modal sandbox nothing
     // ever disposes.
     const { request, createSandbox } = await chatApp();
     expect((await request()).status).toBe(200);

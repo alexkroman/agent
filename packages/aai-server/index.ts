@@ -6,7 +6,6 @@
  * a Node.js HTTP server with WebSocket upgrade support via `ws`.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import { createMemoryVector, createPineconeVector, type Vector } from "@alexkroman1/aai/runtime";
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
@@ -14,8 +13,8 @@ import { assertDevKeys, isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize 
 import { waitForIdle } from "./_drain.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
-import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
 import { initHostCapacityGauges, metrics } from "./metrics.ts";
+import { isModalConfigured, modalRequiredError } from "./modal-sandbox.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { createS3Storage } from "./s3-storage.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
@@ -100,27 +99,28 @@ async function main(): Promise<void> {
   initHostCapacityGauges();
   const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
 
-  // Flipped by `shutdown()` before anything is torn down: it fails /health so
-  // fly-proxy stops routing here, and refuses new WebSocket upgrades. Both are
-  // needed for the drain below to converge — otherwise the machine keeps
-  // accepting the sessions it is waiting to finish.
+  // Flipped by `shutdown()` before anything is torn down: it fails /health
+  // so the platform's proxy stops routing here, and refuses new WebSocket
+  // upgrades. Both are needed for the drain below to converge — otherwise the
+  // replica keeps accepting the sessions it is waiting to finish.
   let draining = false;
   const opts: OrchestratorOpts = {
     ...(await buildOpts(env)),
     isDraining: () => draining,
   };
 
-  // Pay the rootfs prep cost (deno binary copy, lib mount points) up
-  // front, before the HTTP listener is exposed to traffic. Without this,
-  // the first sandbox spawn does the ~125 MB sync copy on the request
-  // path and blocks the event loop long enough to fail healthchecks.
-  if (isGvisorAvailable()) {
-    try {
-      await prepareRootfs(resolveHarnessPath(env));
-    } catch (err) {
-      console.warn("Rootfs prep failed at boot; will retry lazily on first spawn", {
-        error: errorMessage(err),
-      });
+  // Sandboxes run on Modal — fail at boot when credentials are missing, where
+  // the cause is obvious, instead of on the first session's spawn. Local dev
+  // only warns so the studio's non-sandbox surfaces (editor, static routes)
+  // stay usable without Modal credentials.
+  if (!isModalConfigured()) {
+    if (isLocalDev(env)) {
+      console.warn(
+        "[sandbox] WARNING: Modal credentials not configured " +
+          "(MODAL_TOKEN_ID/MODAL_TOKEN_SECRET). Sandbox creation will fail.",
+      );
+    } else {
+      throw modalRequiredError();
     }
   }
 
@@ -163,8 +163,8 @@ async function main(): Promise<void> {
     });
     if (!drained) {
       // Deliberately loud: this is a call that got cut, and the deadline is
-      // only correct if it is rarely hit. Fly SIGKILLs at kill_timeout, so
-      // waiting past it is not an option.
+      // only correct if it is rarely hit. The platform SIGKILLs when the stop
+      // grace period lapses, so waiting past it is not an option.
       console.warn("Drain deadline reached; closing sessions still in flight", { remaining });
     }
 
