@@ -20,7 +20,7 @@
 
 import { errorMessage, MAX_SYNC_BODY_BYTES } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
-import type { LanguageModel, UIMessage } from "ai";
+import type { UIMessage } from "ai";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
@@ -30,12 +30,7 @@ import type { SandboxPool } from "../sandbox-pool.ts";
 import { handleSyncTurn } from "../sync-turn-handler.ts";
 import { runStudioChat } from "./studio-agent.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
-import {
-  isStudioLlmConfigured,
-  studioLlmInfo,
-  studioLlmModels,
-  studioModel,
-} from "./studio-llm.ts";
+import { isStudioLlmConfigured, studioLlmInfo } from "./studio-llm.ts";
 import { openMcpTools } from "./studio-mcp.ts";
 import {
   CHAT_RATE_LIMIT,
@@ -73,27 +68,6 @@ export type StudioRouteOptions = {
   /** Test seam: swap session-sandbox provisioning. */
   createSandbox?: typeof createStudioSandbox;
 };
-
-/**
- * Resolve the chat body's optional `model` (the picker's choice). Request
- * input, so it is accepted only when on `studioLlmModels()` — the
- * host-configured provider's own list, every entry of which runs on the same
- * host-held key. No field means the host default (`model` stays absent).
- */
-function resolveRequestedModel(
-  requested: string | undefined,
-): { model?: LanguageModel } | { reject: Response } {
-  if (requested === undefined) return {};
-  if (!studioLlmModels().includes(requested)) {
-    return {
-      reject: Response.json(
-        { error: `Unknown model "${requested}"`, models: studioLlmModels() },
-        { status: 400 },
-      ),
-    };
-  }
-  return { model: studioModel(process.env, requested) };
-}
 
 function validateProject(name: string | undefined): string {
   const parsed = ProjectNameSchema.safeParse(name);
@@ -286,13 +260,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
       return c.json({ error: "Invalid chat body", issues: body.error.issues }, 400);
     }
     const scope = studioScope(c.var.apiKey);
-    const { project, messages, model } = body.data;
-
-    // Refuse an off-list model before anything streams (or the MCP connect
-    // below starts). Resolved here (not in runStudioChat) so `model` stays
-    // the plain injectable seam it already is.
-    const requestedModel = resolveRequestedModel(model);
-    if ("reject" in requestedModel) return requestedModel.reject;
+    const { project, messages } = body.data;
 
     // Start the MCP connect now so it overlaps the workspace fetch below and
     // runStudioChat's prompt assembly. Never rejects — failure degrades to no
@@ -345,7 +313,6 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
         disposeSandbox,
         mcp,
         abortSignal: c.req.raw.signal,
-        ...requestedModel,
       },
       // Structurally validated by UiMessageSchema; part-level validation
       // happens in convertToModelMessages.

@@ -10,9 +10,8 @@
  * :project/deploy`).
  *
  * LLM selection lives in `studio-llm.ts` — platform-owned host config. A
- * request may pick a model from the configured provider's own list (the
- * route validates it against `studioLlmModels()` and resolves it into
- * `deps.model`); it can never pick a provider or supply a key.
+ * request can never pick a provider or model or supply a key; every turn
+ * runs on the host-configured default.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
@@ -56,10 +55,7 @@ export type StudioChatDeps = {
   sandbox: () => Promise<StudioSandbox>;
   /** Tears down the session sandbox if one was provisioned. Idempotent. */
   disposeSandbox?: () => Promise<void>;
-  /**
-   * The resolved model for this turn — the route's validated per-request
-   * picker choice, or a test injection. Defaults to the host-env selection.
-   */
+  /** Test injection seam. Defaults to the host-env selection. */
   model?: LanguageModel;
   /**
    * Injectable for tests — defaults to the configured MCP servers. A promise
