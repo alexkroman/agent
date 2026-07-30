@@ -1336,16 +1336,26 @@ bumped automatically.
 - Sandboxes are created with `blockNetwork: true` and a bounded lifetime
   (`SANDBOX_TIMEOUT_SECS`, default 4h). Memory/CPU caps come from
   `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT`.
-- **Orphan cleanup is Modal's `idleTimeoutMs`, not host code**
-  (`SANDBOX_IDLE_TIMEOUT_SECS`, default 15 min). A host that dies without
-  running `shutdown()`'s teardown (crash, OOM, SIGKILL past the drain
-  deadline) strands its remote sandboxes with no record of them — but host
-  death closes the exec'd harness's stdin, the harness exits on that EOF,
-  and a sandbox with no running exec goes idle to Modal, which terminates
-  it after this window instead of billing until the 4h lifetime cap. A
-  healthy sandbox always has the harness exec running, so its idle timer
-  never starts — host-side eviction (`sandbox-slots.ts`) stays the
-  authority on session-aware idleness (Modal can't see sessions).
+- **Orphan cleanup is heartbeat + watchdog + Modal's `idleTimeoutMs`, not
+  host code** (`SANDBOX_IDLE_TIMEOUT_SECS`, default 15 min). A host that dies
+  without running `shutdown()`'s teardown (crash, OOM, SIGKILL past the drain
+  deadline, a scaledown that never reaches the node process) strands its
+  remote sandboxes with no record of them. The original design relied on
+  stdin EOF alone ("host death closes the exec'd harness's stdin, the harness
+  exits, the sandbox goes idle") — in production that chain did not hold:
+  EOF is not reliably delivered to the exec when the host dies, and even
+  when it is, a loaded bundle's own timers could keep Deno's event loop (and
+  therefore the exec, and therefore the sandbox) alive to the 4h lifetime
+  cap. Orphan detection is now the guest's own job: the host pings every
+  harness (`ping` notification each `HARNESS_HEARTBEAT_INTERVAL_MS`, wired in
+  `modal-sandbox.ts:warmFromModal` so pooled/resident/studio harnesses are
+  all covered), the harness self-exits after `HARNESS_ORPHAN_TIMEOUT_MS` of
+  host silence and hard-exits (`Deno.exit`) on stdin EOF
+  (`guest/deno-harness.ts`, constants in `guest/limits.ts`). Once the exec
+  has exited, Modal's `idleTimeoutMs` terminates the sandbox. A healthy
+  sandbox always has the harness exec running and its host pinging, so its
+  idle timer never starts — host-side eviction (`sandbox-slots.ts`) stays
+  the authority on session-aware idleness (Modal can't see sessions).
 - The server itself deploys to Modal too (`modal_deploy.py`,
   `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
   Fly.io deployment anymore.
