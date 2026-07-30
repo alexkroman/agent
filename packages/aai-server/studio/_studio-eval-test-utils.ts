@@ -234,6 +234,81 @@ export const TEMPLATE_CASES: TemplateCase[] = [
 ];
 
 /**
+ * Words that give the answer away. A shape case is void if its prompt contains
+ * any of them — see {@link SHAPE_CASES}.
+ */
+export const SHAPE_GIVEAWAYS = ["workflow", "agent(", "kind:", "mode:", "tts", "one-shot"];
+
+export type ShapeCase = {
+  /** Test name; also the label in the failure message. */
+  name: string;
+  /**
+   * A terse, user-level ask that names no API. `TEMPLATE_CASES` prompts are
+   * deliberately over-specified so the parity rubric grades one thing at a
+   * time; these are the opposite, and must stay that way.
+   */
+  prompt: string;
+  /** The app kind the request implies. */
+  expectedKind: "agent" | "workflow";
+};
+
+/**
+ * Does the studio pick the right app shape when the user *doesn't* say?
+ *
+ * Both `TEMPLATE_CASES` workflow prompts spell the answer out — "it must be
+ * `export default workflow({ ... })` with workflow() from ...". That is right
+ * for parity grading (an unnamed provider or mode gets graded against the
+ * reference's, so naming them isolates the dimension under test) but it means
+ * `expectedKind` only ever measured instruction-following. So did the studio
+ * prompt's own rule, which keys on the user saying the word "workflow".
+ *
+ * Shape *discovery* had no coverage, and was broken: asked for a one-shot
+ * voice debrief in a user's own words — which never contain "workflow" — the
+ * studio produced `export default agent(...)` plus a hand-rolled
+ * `const workflow = (c) => ({ ...c, mode: "workflow" })`.
+ *
+ * Two rules keep these honest:
+ *
+ * - **The prompt may not name the API.** Enforced by a non-LLM guard against
+ *   {@link SHAPE_GIVEAWAYS}. Without it, the natural fix for a flaky case is
+ *   to add a hint — which is exactly how this coverage went missing.
+ * - **Both directions are covered.** A prompt that oversells `workflow()`
+ *   fails conversational agents just as badly, and a one-sided eval would
+ *   call that a pass.
+ */
+export const SHAPE_CASES: ShapeCase[] = [
+  {
+    name: "one clip in, actions out",
+    // The user's own words, from the report that surfaced this. Nothing here
+    // names a mode; "I ramble into my phone once and it files everything" is
+    // the whole signal, and it is the signal a real user gives.
+    expectedKind: "workflow",
+    prompt:
+      "I'm an electrician. At the end of the day I want to ramble into my " +
+      "phone once about the jobs I worked, and have it file everything I " +
+      "mentioned: update each job's status, log my hours per job, record the " +
+      "materials I used and anything to reorder, create the follow-up tasks " +
+      "for the office, and flag any safety or code issues. Then tell me what " +
+      "it filed and what still needs a human." +
+      ONE_SHOT,
+  },
+  {
+    name: "back-and-forth conversation",
+    // The other direction. Getting this wrong is the same class of error as
+    // the case above, pointed the other way: the user talks *with* this one,
+    // and a history-less single run cannot hold a booking conversation.
+    expectedKind: "agent",
+    prompt:
+      "A voice receptionist for my dental office that callers talk to: it " +
+      "greets them, asks what they need, looks up their next appointment, " +
+      "reschedules it if they want, and answers questions about our hours " +
+      "and location. It should keep the conversation going until they're " +
+      "done, asking for whatever it still needs." +
+      ONE_SHOT,
+  },
+];
+
+/**
  * Templates with no eval case, and why. Keeping the reason here (rather than
  * just omitting them) is what makes the coverage guard in `studio-eval.test.ts`
  * useful: adding a template forces a decision instead of silently going

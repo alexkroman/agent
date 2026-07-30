@@ -23,6 +23,14 @@
  * rather than imported — `aai-server` and `aai-studio-client` talk over HTTP
  * only, with no code imports in either direction.
  *
+ * `SHAPE_CASES` cover the one thing those can't. A parity prompt names the
+ * mode, the providers, and the imports so the rubric grades one dimension at a
+ * time — which means `expectedKind` only ever tested instruction-following. A
+ * shape case is a terse user-level ask that names no API at all, so choosing
+ * `agent()` vs `workflow()` is the measurement. Graded on the built worker's
+ * reported kind, in both directions, with a guard test keeping the answer out
+ * of the prompts.
+ *
  * Requires a real LLM key (`ASSEMBLYAI_API_KEY` or `ANTHROPIC_API_KEY`, or
  * `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL`); the whole suite skips without
  * one, so `pnpm test` stays hermetic. MCP is stubbed out — the eval measures
@@ -53,6 +61,8 @@ import {
   ONE_SHOT,
   readTemplate,
   renderFiles,
+  SHAPE_CASES,
+  SHAPE_GIVEAWAYS,
   TEMPLATE_CASES,
   TEMPLATES_DIR,
   UNCOVERED,
@@ -478,8 +488,63 @@ describeEval(
         await expect(result).toSatisfyJudge(TemplateParityJudge, { template, threshold: 0.8 });
       });
     }
+
+    // Shape *discovery*: the prompt describes what the user wants and never
+    // names an API, so picking agent() vs workflow() is the thing under test.
+    // No parity judge — there is no reference workspace, only a right shape.
+    for (const { name, prompt, expectedKind } of SHAPE_CASES) {
+      it(`picks the right app shape: ${name} → ${expectedKind}()`, async ({ run }) => {
+        const result = await run(prompt);
+        const agentTs = result.output.files["agent.ts"];
+        expect(agentTs, "no agent.ts in the workspace").toBeTruthy();
+        // Deterministic and sandbox-free, so this half runs everywhere. It is
+        // a necessary condition rather than the real check, but it catches the
+        // failure this case exists for: a local `const workflow = (config) =>
+        // ({ ...config, mode: "workflow" })` shim in place of the import. Such
+        // a workspace builds and loads — it just isn't a workflow — so the
+        // source is where it shows.
+        if (expectedKind === "workflow") {
+          expect(
+            agentTs,
+            "agent.ts defines its own workflow helper instead of importing one",
+          ).not.toMatch(/(?:const|let|var|function)\s+workflow\b/);
+          expect(agentTs, "agent.ts never imports workflow from the SDK").toMatch(
+            /import\s*\{[^}]*\bworkflow\b[^}]*\}\s*from\s*["']@alexkroman1\/aai["']/,
+          );
+        }
+        // The authoritative check: the app kind the built worker reports.
+        if (canSandbox) {
+          await expect(result).toSatisfyJudge(SandboxLoadJudge, { threshold: 1, expectedKind });
+        }
+      });
+    }
   },
 );
+
+/**
+ * Non-LLM guard: a shape case must not leak its own answer.
+ *
+ * These are the only cases measuring whether the studio *discovers* the app
+ * shape, and the tempting fix for a flaky one is to add "use workflow()" to
+ * the prompt — which silently converts it into an instruction-following case
+ * indistinguishable from the `TEMPLATE_CASES` it was written to complement.
+ * Over-specifying the workflow prompts is how this coverage went missing
+ * before; this makes doing it again a test failure.
+ */
+describe("shape-discovery prompts", () => {
+  test("name no API, so the shape has to be inferred", () => {
+    const leaks = SHAPE_CASES.flatMap(({ name, prompt }) =>
+      SHAPE_GIVEAWAYS.filter((word) => prompt.toLowerCase().includes(word)).map(
+        (word) => `${name}: "${word}"`,
+      ),
+    );
+    expect(leaks, "these prompts give the answer away; describe the use case instead").toEqual([]);
+  });
+
+  test("cover both shapes, so the rule can't just always pick one", () => {
+    expect(new Set(SHAPE_CASES.map((c) => c.expectedKind))).toEqual(new Set(["agent", "workflow"]));
+  });
+});
 
 /**
  * Cheap, LLM-free guard: every template is either evaluated or explicitly

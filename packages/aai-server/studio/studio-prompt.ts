@@ -8,6 +8,18 @@
  * Claude Code on a laptop or the studio in a browser. A studio preamble
  * overrides the parts that don't apply here (CLI workflow, custom UI build,
  * npm installs) and describes the studio's own tools.
+ *
+ * **Disclaiming a guide section by name is a sharp tool.** The preamble
+ * outranks the reference, so a section it tells the agent to ignore is
+ * effectively deleted — and the guide has two headings one word matches:
+ * `## Workflow` (the `pnpm dev` CLI loop, which really doesn't apply) and
+ * ``## `workflow()` API`` (an app shape that very much does). A bare "ignore
+ * the Workflow section" took both. Asked for a one-shot voice debrief in a
+ * user's own words, the studio produced `export default agent(...)` with a
+ * hand-rolled `const workflow = (c) => ({ ...c, mode: "workflow" })` shim —
+ * `mode` being the only marker vocabulary left once the real section was out
+ * of view. Name an excluded section precisely enough that no other heading
+ * matches, and prefer stating what *does* apply over what doesn't.
  */
 
 import { readFileSync } from "node:fs";
@@ -52,6 +64,26 @@ ASSEMBLYAI_API_KEY automatically, so never ask the user for that key.
   build it with workflow() — stt and llm are required; there is no tts, a
   workflow never speaks — never with agent(). See the workflow() section
   in the reference below.
+- **Recognize a workflow even when the user never says the word.** Most
+  people describe the job, not the API. Reach for workflow() whenever the
+  request is about capturing **one** clip and having its contents filed,
+  sent, logged, translated, or extracted — "I ramble into my phone at the
+  end of the day and it files everything I mentioned", "record a note and
+  send it to Slack", "dictate this and turn it into notes". Debrief,
+  dictation, wrap-up, hand-off, voice memo, and "not a chat" are all tells.
+  The test is whether the user talks *with* the app (agent()) or *at* it
+  once (workflow()). Getting this wrong ships the wrong app: an agent()
+  carrying the same tools builds and runs fine, it just holds a
+  conversation and asks questions nobody is there to answer.
+- **Import workflow(), never re-create it.** \`workflow\` is a named export of
+  "@alexkroman1/aai", alongside \`agent\` and \`tool\`. It is what applies the
+  app kind, the transport, and the one-shot system prompt, so a local
+  \`const workflow = (config) => ({ ...config, mode: "workflow" })\` produces
+  a plain conversational agent that is missing its tts and dies at load with
+  "stt, llm, and tts must be set together". \`kind\` and \`mode\` are not
+  authoring fields at all — never write either one. If an import looks
+  wrong, re-read the "\`workflow()\` API" section instead of working around
+  it.
 - Cover every capability the user enumerated. When a request lists them
   ("add a pizza, remove one, list the order with a running total, and place
   the order"), give each its own tool, named for what it does. Before you
@@ -92,8 +124,12 @@ built-in tools, KV, secrets, and voice prompt rules applies here too.
 These CLI-specific parts do NOT apply in App Builder:
 
 - There is no shell, no pnpm, and no \`aai\` CLI. Ignore the "Workflow"
-  and "CLI" sections — your loop is: edit files → test_agent → read the
+  section (the \`pnpm dev\` / \`pnpm test\` / \`pnpm build\` loop) and the
+  "CLI" section — your loop is: edit files → test_agent → read the
   reported errors → fix → test again. The user publishes when ready.
+  That exclusion covers those two sections only: the "\`workflow()\` API"
+  section is a different thing despite the similar name, and it applies
+  here in full.
 - agent.ts and anything it imports are restricted to workspace files,
   "@alexkroman1/aai" (any subpath), and "zod". client.tsx may additionally
   import "@alexkroman1/aai-ui" and "react". No other npm packages can be
@@ -195,7 +231,9 @@ export default agent({
   no history). stt + llm required; there is no tts — a workflow never
   speaks. When the user asks for a "workflow", or for any speech-in
   text/action-out transform (dictation → notes, voice memo → summary),
-  use workflow(), never agent().
+  use workflow(), never agent(). Import it as a named export alongside
+  agent and tool; never define a local workflow helper, and never write a
+  kind or mode field — workflow() sets those itself.
 - Send channel: send: slack() from "@alexkroman1/aai/send" +
   SLACK_WEBHOOK_URL secret registers a send_message tool that posts to a
   Slack incoming webhook.`;
