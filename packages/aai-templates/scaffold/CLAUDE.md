@@ -78,7 +78,6 @@ export default agent({
   completeSettleMs?: number;                 // pipeline only — shorter wait for clearly-complete finals (default 500)
   holdPhrase?: string;                       // pipeline only — spoken before a silent tool-call turn (default "One moment."; "" disables)
   falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
-  send?: SendProvider;                       // outbound send channel (e.g. slack()) — registers the send_message tool
   allowedHosts?: string[];                   // hostnames your own tool code may fetch (required once deployed)
   state?: () => Record<string, unknown>;     // per-session mutable state, exposed as ctx.state
 });
@@ -101,75 +100,6 @@ import { agent } from "@alexkroman1/aai";
 import systemPrompt from "./system-prompt.md";
 export default agent({ name: "My Agent", systemPrompt });
 ```
-
-## `workflow()` API — audio in, action out
-
-The SDK's second app mode, alongside `agent()`. An agent is a conversation;
-a **workflow** is a one-shot run: the user records one instruction (push to
-talk) or uploads an audio file, presses Go, one agentic loop transcribes and
-executes it with the workflow's tools, and the run ends with a written
-report. No conversation, no history between runs.
-
-**When the user asks for a "workflow", build it with `workflow()`, never
-`agent()`** — the word names this app mode, not a conversational agent
-that happens to run a multi-step task.
-
-```ts
-import { workflow, tool } from "@alexkroman1/aai";
-import { assemblyAI } from "@alexkroman1/aai/stt";
-import { anthropic } from "@alexkroman1/aai/llm";
-import { z } from "zod";
-
-export default workflow({
-  name: "Expense Filer",
-  stt: assemblyAI({ model: "u3pro-rt" }),   // required
-  llm: anthropic({ model: "claude-sonnet-5" }), // required
-  // no tts — a workflow never speaks; the run report is text
-  tools: {
-    file_expense: tool({
-      description: "File one expense",
-      parameters: z.object({ amount: z.number(), memo: z.string() }),
-      async execute({ amount, memo }, ctx) {
-        // Persist via ctx.db (needs storage enabled — see Database section).
-        await ctx.db.query("insert into expenses (amount, memo) values ($1, $2)", [amount, memo]);
-        return { filed: true, amount, memo };
-      },
-    }),
-  },
-});
-```
-
-Differences from `agent()`:
-
-- Always a pipeline (`stt` + `llm` required); runs over the sync transport —
-  each run is one history-less `POST /sync`.
-- Never speaks: there is no `tts` parameter (`workflow()` sets the internal
-  `none()` sentinel). The run report is written output, not audio.
-- Its own default system prompt: one-shot semantics (never ask clarifying
-  questions, state assumptions, finish every action, end with a run report).
-  A custom `systemPrompt` is layered on top of that contract.
-- The default client renders the run surface (hold-to-talk / upload + Go and
-  the run report) instead of a chat.
-
-`workflow` is a named export of `@alexkroman1/aai`, alongside `agent` and
-`tool`, and calling it is the only way to declare this shape — it is what
-supplies the `kind` marker, the transport, and the `none()` TTS sentinel.
-So:
-
-- **Don't write `kind` or `mode` yourself.** Neither is an authoring field.
-  `mode` in particular is *derived* (`"pipeline" | "s2s"`, from which
-  providers you set), so setting it does nothing at all.
-- **Don't define your own `workflow` helper.** A hand-rolled
-  `const workflow = (config) => ({ ...config, mode: "workflow" })` is a
-  conversational `agent()` with two of the three provider fields set, so it
-  fails at load with *"stt, llm, and tts must be set together"*. If the
-  import looks wrong, fix the import.
-
-Recognizing the shape matters more than the word: most requests describe the
-job rather than the API. One clip in, things filed / sent / logged /
-translated out — a debrief, a dictation, a wrap-up, a voice memo — is a
-workflow even if "workflow" is never said. If the user talks *with* it, it's
-an `agent()`.
 
 ## Pipeline mode
 
@@ -206,10 +136,7 @@ Tools, the database, `ctx`, and the UI all behave identically across modes.
 Only the audio + LLM transport differs.
 
 **There is no text-only agent mode.** An agent is a voice conversation —
-`tts: none()` on `agent()` is rejected at parse time. Speech-in,
-text/action-out apps (dictation transforms, voice memos → notes, one-shot
-instructions) are **workflows**: use `workflow()`, whose runs end with a
-written report and which never speaks. See the `workflow()` section above.
+every pipeline agent must declare a real TTS provider.
 
 **Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
 assistant proactively take a turn after that much user silence (e.g.
@@ -229,23 +156,6 @@ before committing the turn (aggregating disfluent multi-final utterances).
 `falseInterruptionTimeoutMs` resumes an interrupted reply when a barge-in
 turns out to be noise (no user turn commits within the window).
 
-**Sync turns (pipeline only):** every pipeline agent also answers
-`POST /sync` — one complete conversational turn per HTTP request, with no
-WebSocket on either leg. The body carries `{ text }` *or*
-`{ audio, sampleRate }` (base64 mono PCM16 of one utterance, endpointed
-client-side) plus `history` (prior `{ role, content }` turns — the server
-keeps no session state); the response returns `{ transcript, reply }` and,
-when the TTS provider supports one-shot synthesis (Cartesia), base64
-`audio`. Audio input needs an STT provider with a batch endpoint
-(AssemblyAI); text input works with any. Tools, the database, and `ctx`
-behave exactly as in a voice session. Nothing in agent code opts in — it comes
-with pipeline mode. Programmatic clients can use `createSyncSession` /
-`createPttRecorder` (WebRTC push-to-talk capture) from
-`@alexkroman1/aai-ui`. The *default* browser client always uses the
-WebSocket session for agents; workflows (`workflow()`) get the one-shot
-run surface over `POST /sync` automatically — there is no per-agent
-transport switch.
-
 ## Providers
 
 Provider SDKs are **optional peer dependencies**. Install only the SDKs
@@ -264,9 +174,8 @@ All STT factories accept `{ model?: string, ... }`. Bare calls
 (`deepgram()`, `soniox()`, etc.) use the default model.
 
 `assemblyAI` accepts an optional `region: "eu"` for EU data residency —
-it routes both streaming and sync transcription (workflow runs / `POST
-/sync`) to AssemblyAI's EU endpoints. EU-region API keys require it; the
-US endpoints reject them. Example:
+it routes streaming transcription to AssemblyAI's EU endpoints. EU-region
+API keys require it; the US endpoints reject them. Example:
 `assemblyAI({ model: "universal-3-5-pro", region: "eu" })`.
 
 ### LLM — `@alexkroman1/aai/llm`
@@ -351,47 +260,6 @@ Anything else fails at session start. Because the factory is named
 **Rime quirk:** language uses ISO 639-3 three-letter codes (e.g. `"eng"`
 not `"en"`).
 
-`none()` (no env var) is the workflow sentinel — a workflow never speaks,
-and `workflow()` sets it automatically. It is rejected on `agent()`.
-
-### Send channels — `@alexkroman1/aai/send`
-
-An outbound channel the agent can post to. Declaring one registers a
-`send_message` builtin tool (the LLM can call it when asked to send,
-post, or notify) and allowlists the channel's host for tool code.
-
-| Factory | Destination                    | Env var (the secret)  |
-| ------- | ------------------------------ | --------------------- |
-| `slack` | Slack incoming webhook (POST)  | `SLACK_WEBHOOK_URL`   |
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { slack } from "@alexkroman1/aai/send";
-
-export default agent({
-  name: "My Agent",
-  send: slack(), // + SLACK_WEBHOOK_URL secret → send_message tool works
-});
-```
-
-A string message posts as Slack's `{ text }`; custom tools can send any
-webhook body (blocks, attachments) programmatically:
-
-```ts
-import { openSender, slack } from "@alexkroman1/aai/send";
-
-execute: async ({ summary }, ctx) => {
-  await openSender(slack(), ctx.env).send(
-    { blocks: [{ type: "section", text: { type: "mrkdwn", text: summary } }] },
-    { signal: ctx.signal },
-  );
-  return "posted";
-};
-```
-
-The webhook URL **is** the credential — keep it in the env
-(`SLACK_WEBHOOK_URL`), never in code or descriptor options.
-
 Set provider keys the same way as any secret: `.env` for local dev,
 `aai secret put` for production.
 
@@ -425,9 +293,9 @@ runs one LLM generation on the host. It defaults to the agent's pipeline
 `llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) to use another
 provider whose API key is in the agent's secrets — that's also how S2S
 agents use it. `schema` must be a **plain JSON Schema object** (use
-`z.toJSONSchema(...)`, or the workflow helpers below), never a Zod schema.
+`z.toJSONSchema(...)`, or the pattern helpers below), never a Zod schema.
 
-### Workflow patterns — `@alexkroman1/aai/patterns`
+### Pattern combinators — `@alexkroman1/aai/patterns`
 
 Multi-step LLM orchestration inside a tool, as pure helpers over
 `ctx.generate`:
@@ -565,8 +433,7 @@ export default agent({
 Patterns are bare hostnames with an optional single leading `*.` wildcard.
 No protocol, path, port, IP literal, bare `*`, or `.internal`/`.local`
 TLD — those are rejected at deploy time, and requests are SSRF-screened
-regardless of what you list. A declared `send:` channel's host is added for
-you.
+regardless of what you list.
 
 `aai dev` enforces the same rules as production — an undeclared host fails
 locally too, rather than working until you deploy. The same limits apply in
@@ -837,8 +704,7 @@ Common mistakes when working in aai projects:
   only what the model needs.
 - **Pipeline mode requires all three of `stt` / `llm` / `tts`.** Partial
   configs are rejected at parse time. Use S2S (omit all three) if you
-  don't need provider control. An agent must name a real TTS provider —
-  `tts: none()` is workflow-only, and `workflow()` sets it for you.
+  don't need provider control.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
 - **Don't use `useEffect` + `toolCalls` to derive state.** Use

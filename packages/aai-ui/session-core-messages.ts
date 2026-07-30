@@ -56,8 +56,6 @@ function appendCapped<T>(list: readonly T[], item: T, cap: number): T[] {
 export type SessionConfigMessage = {
   sampleRate: number;
   ttsSampleRate: number;
-  /** False for text-only agents (`tts: none()`) — see ReadyConfigSchema. */
-  audioOut?: boolean | undefined;
   sid?: string | undefined;
 };
 
@@ -66,8 +64,6 @@ type MessageHandlerDeps = {
   getSnapshot: () => SessionSnapshot;
   updateState: (partial: Partial<SessionSnapshot>) => void;
   conn: ConnState;
-  /** Invalidate any in-flight file upload (the upload sender's `discard`). */
-  discardUpload: () => void;
   /** Release the microphone/VoiceIO (the session core's `cleanupAudio`). */
   cleanupAudio: () => void;
 };
@@ -101,7 +97,7 @@ type MessageHandlers = {
  * dedup) that previously lived as closure locals in `createSessionCore`.
  */
 export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers {
-  const { getSnapshot, updateState, conn, discardUpload, cleanupAudio } = deps;
+  const { getSnapshot, updateState, conn, cleanupAudio } = deps;
 
   /** Incremented on each turn boundary -- stale async callbacks compare against this. */
   let handlerGeneration = 0;
@@ -255,10 +251,6 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         break;
       case "reset": {
         handlerGeneration++;
-        // A server-initiated reset invalidates any in-flight upload too —
-        // otherwise a long clip keeps streaming stale audio into the
-        // freshly-reset conversation.
-        discardUpload();
         conn.voiceIO?.flush();
         updateState({ ...CLEARED_SESSION_STATE, state: "listening" });
         break;
@@ -356,7 +348,6 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       return {
         sampleRate: msg.sampleRate,
         ttsSampleRate: msg.ttsSampleRate,
-        audioOut: msg.audioOut,
         sid: msg.sessionId,
       };
     }

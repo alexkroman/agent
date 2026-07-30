@@ -6,8 +6,7 @@
  * Split out of `sandbox.ts` because this seam has its own history of dropping
  * fields silently, and every one of those bugs presented as a *working* agent
  * that quietly ignored part of its own config: `builtinTools` (deployed agents
- * lost the default cognitive builtins), `send` (a deployed `send: slack()`
- * never registered `send_message`), and the provider triple (see
+ * lost the default cognitive builtins) and the provider triple (see
  * {@link pipelineProviderOpts}). Keeping the mapping in one small module makes
  * the full set of forwarded fields reviewable at a glance.
  */
@@ -27,8 +26,7 @@ type RuntimeAgent = Parameters<typeof createRuntime>[0]["agent"];
  * Exists so {@link toRuntimeAgent} can be one flat `key: config.key` block.
  * The `...(config.x !== undefined ? { x: config.x } : {})` spread per field it
  * replaces is what let fields go missing unnoticed — `builtinTools` (every
- * deployed agent silently lost the default cognitive builtins) and then `send`
- * (a deployed `send: slack()` never registered `send_message`) — because every
+ * deployed agent silently lost the default cognitive builtins) — because every
  * field is optional, so an omission is valid TypeScript and invisible in
  * review. It also kept the function over the cognitive-complexity cap.
  */
@@ -60,18 +58,9 @@ export function toRuntimeAgent(config: IsolateConfig): RuntimeAgent {
       holdPhrase: config.holdPhrase,
       errorPhrase: config.errorPhrase,
       falseInterruptionTimeoutMs: config.falseInterruptionTimeoutMs,
-      // The two app modes speak from different default prompts and rules
-      // (see sdk/system-prompt.ts) — dropping this would run a deployed
-      // workflow on the conversational agent prompt, so it would ask
-      // clarifying questions nobody can answer.
-      kind: config.kind,
       toolChoice: config.toolChoice satisfies ToolChoice | undefined,
       builtinTools: config.builtinTools as BuiltinTool[] | undefined,
       s2s: config.s2s,
-      // `createRuntime` keys the `send_message` builtin off `agent.send`, so
-      // omitting this made a deployed `send: slack()` a silent no-op: the LLM
-      // never saw the tool, so the symptom was a reply that simply didn't send.
-      send: config.send,
     }),
   };
 }

@@ -50,8 +50,7 @@ export type BuildTransportArgs = {
 export type ResolvedPipelineProviders = {
   stt: ResolvedOpener<SttOpener>;
   llm: LanguageModel;
-  /** Null for text-only agents (`tts: none()`): no synthesis, no TTS key. */
-  tts: ResolvedOpener<TtsOpener> | null;
+  tts: ResolvedOpener<TtsOpener>;
 };
 
 /** Runtime-scoped state the transport builders close over. */
@@ -64,9 +63,6 @@ export interface TransportFactoryDeps {
   s2sConfig: S2SConfig;
   /** Non-null exactly when the session mode is pipeline. */
   pipelineProviders: ResolvedPipelineProviders | null;
-  /** Fetch override (see {@link RuntimeOptions.fetch}) — reaches the pipeline
-   *  transport's one-shot Sync API transcription path. */
-  fetch: RuntimeOptions["fetch"];
   createWebSocket: RuntimeOptions["createWebSocket"];
   createOpenaiRealtimeWebSocket: RuntimeOptions["createOpenaiRealtimeWebSocket"];
   logger: Logger;
@@ -88,7 +84,6 @@ export function createTransportFactory(
     env,
     s2sConfig,
     pipelineProviders,
-    fetch: fetchImpl,
     createWebSocket,
     createOpenaiRealtimeWebSocket,
     logger,
@@ -103,7 +98,7 @@ export function createTransportFactory(
       sid: sessionOpts.id,
       stt: providers.stt.opener,
       llm: providers.llm,
-      tts: providers.tts?.opener ?? null,
+      tts: providers.tts.opener,
       callbacks,
       sessionConfig: {
         systemPrompt,
@@ -113,9 +108,8 @@ export function createTransportFactory(
       executeTool,
       providerKeys: {
         stt: resolveApiKey(providers.stt.envVar, env),
-        ...(providers.tts && { tts: resolveApiKey(providers.tts.envVar, env) }),
+        tts: resolveApiKey(providers.tts.envVar, env),
       },
-      fetch: fetchImpl,
       sttSampleRate: s2sConfig.inputSampleRate,
       ttsSampleRate: s2sConfig.outputSampleRate,
       maxSteps: agentConfig.maxSteps,

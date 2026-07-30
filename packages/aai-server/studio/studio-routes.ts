@@ -11,7 +11,6 @@
  * - `PUT  /studio/projects/:project/file`     — write one file
  * - `DELETE /studio/projects/:project/file`   — delete one file (`?path=`)
  * - `POST /studio/projects/:project/deploy`   — build + deploy the workspace
- * - `POST /studio/projects/:project/sync`     — sync turn against the published agent
  * - `GET/POST/DELETE /studio/projects/:project/storage` — per-app database
  *   storage on the published agent (409 until published)
  * - `POST /studio/chat`                       — coding-agent turn (NDJSON stream)
@@ -21,17 +20,15 @@
  * the key (`studioScope`), so a key only ever sees its own projects.
  */
 
-import { errorMessage, MAX_SYNC_BODY_BYTES } from "@alexkroman1/aai";
+import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import type { UIMessage } from "ai";
 import { type Context, Hono } from "hono";
-import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import type { HonoEnv } from "../context.ts";
 import { authMw } from "../middleware.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
 import { disableStorage, enableStorage, storageStatus } from "../storage-handler.ts";
-import { handleSyncTurn } from "../sync-turn-handler.ts";
 import { runStudioChat } from "./studio-agent.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { isStudioLlmConfigured, studioLlmInfo } from "./studio-llm.ts";
@@ -94,10 +91,6 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   // orchestrator holds one set of windows.
   const chatLimiter = createRateLimiter(CHAT_RATE_LIMIT);
   const projectCreateLimiter = createRateLimiter(PROJECT_CREATE_RATE_LIMIT);
-  const syncBodyLimit = bodyLimit({
-    maxSize: MAX_SYNC_BODY_BYTES,
-    onError: (c) => c.json({ error: "Request body too large" }, 413),
-  });
   const rateLimited = (apiKey: string, limiter: RateLimiter): Response | null => {
     const verdict = limiter.check(studioScope(apiKey));
     if (verdict.ok) return null;
@@ -260,18 +253,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     return workspace.deployedSlug;
   };
 
-  // One connectionless sync turn against the project's *published* agent —
-  // the studio-side door to `POST /:slug/sync`, addressed by project name so
-  // the client never has to track the slug itself. Same semantics as the
-  // preview: it exercises the deployed bundle, not unpublished edits.
-  studio.post("/projects/:project/sync", syncBodyLimit, async (c) => {
-    const slug = await publishedSlug(c);
-    return handleSyncTurn(c, slug, options.pool);
-  });
-
   // Storage (per-app database) for the project's *published* agent —
-  // resolved by project name like the sync route, delegating to the same
-  // core the owner `/:slug/storage` routes use.
+  // resolved by project name, delegating to the same core the owner
+  // `/:slug/storage` routes use.
 
   studio.get("/projects/:project/storage", async (c) => {
     const slug = await publishedSlug(c);

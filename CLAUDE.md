@@ -151,7 +151,6 @@ Subpath exports consumed by sibling packages and user agents:
 - `./stt` — pipeline-mode STT provider factories (e.g. `assemblyAI`)
 - `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
 - `./vector` — Vector provider factories (`pinecone`, `inMemoryVector`)
-- `./send` — Send-channel factories + resolver (`slack`, `openSender`)
 
 #### `aai-ui` (UI)
 
@@ -228,10 +227,7 @@ restrictions apply there.
 - `default-client.tsx` / `build-default-client.ts` — the default UI shipped
   to agents with no `client.tsx`, and its build step
 - `types.ts` — UI type definitions
-- `sync-session.ts` / `sync-mic.ts` — `POST /sync` turn client and
-  push-to-talk capture, the plumbing under the workflow run surface
-- `components/` — UI components (console-shell — the shared chrome both
-  chat-view and workflow-view compose, chat-view, workflow-view, controls,
+- `components/` — UI components (console-shell, chat-view, controls,
   message-list, start-screen, sidebar-layout, tool-call-block, button,
   aai-logo, tool-config-context)
 
@@ -525,52 +521,7 @@ voice agents without the CLI:
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
   the deploy core.
 
-### App modes: agents and workflows
-
-The SDK defines two kinds of app, marked by `AgentDef.kind`
-(`"agent"` default | `"workflow"`, type `AgentKind` in `sdk/config-rules.ts`):
-
-- **Agents** (`agent()`) are conversational chat/voice interfaces — an open
-  WebSocket session the user talks with turn by turn. Everything under
-  "Session modes" below applies.
-- **Workflows** (`workflow()` in `sdk/define.ts`) are **audio in → action
-  out**: the user records one instruction (push to talk) or uploads an audio
-  file, presses Go, one agentic loop transcribes and executes it with the
-  workflow's tools, and the run ends with a written report. No conversation,
-  no history between runs. A workflow is always a **pipeline** (`stt` + `llm`
-  required) and **never speaks**: `workflow()` has no `tts` parameter and
-  always sets the internal `none()` sentinel; each run is one history-less
-  `POST /sync`. `assertAgentKind` (`sdk/config-rules.ts`) enforces both
-  kind rules — workflow ⇒ pipeline + `none()` tts, agent ⇒ a real TTS
-  (there is **no text-only agent mode**) — in `parseManifest`,
-  `toAgentConfig`, and the server's `IsolateConfigSchema`. **`workflow()`
-  is the only author-facing way to set
-  the kind** — `agent()` deliberately doesn't accept a `kind` parameter
-  (`define.test-d.ts` pins the exclusion), so a workflow can't be hand-rolled
-  without its defaults.
-
-The two modes speak from **different default system prompts**
-(`sdk/agent-defaults.ts`): agents get the conversational customer-service
-prompt; workflows get `DEFAULT_WORKFLOW_SYSTEM_PROMPT` (one-shot semantics —
-never ask clarifying questions, state assumptions, end with a run report).
-`buildSystemPrompt` (`sdk/system-prompt.ts`) keys the base prompt off
-`config.kind` and skips the spoken tool preamble + voice output rules for
-workflows, so `toRuntimeAgent` **must** copy `config.kind` (it does — the
-usual dropped-field failure would run a deployed workflow on the
-conversational prompt, asking questions nobody can answer).
-
-The marker reaches the browser via `GET /client-config` (`kind`, default
-`"agent"` for older servers); `client()`'s `DefaultRoot` renders
-`WorkflowView` (aai-ui) for workflows — hold-to-talk (`createPttRecorder`) /
-audio upload (`decodeAudioToPcm16`) staging one clip, a Go button, and the
-run record: the transcript plus the tool calls the run executed
-(`SyncTurnResponse.toolCalls`, collected by `runSyncTurn` from the
-stream's tool-call/tool-result parts). Deliberately **no greeting and no
-assistant prose** — a workflow is an execution surface, not a chat, so the
-reply text stays on the wire (it is still the LLM's run report) but the
-default view never renders it.
-
-### `ctx.generate` and workflow patterns (`@alexkroman1/aai/patterns`)
+### `ctx.generate` and pattern combinators (`@alexkroman1/aai/patterns`)
 
 Tool `execute` code gets one-shot LLM generation via `ctx.generate` — a
 **host capability like `ctx.db`**: the guest has no network, so the platform
@@ -594,8 +545,8 @@ dispatch), `orchestrate` (plan → workers → synthesize), and
 `evaluatorOptimizer` (generate → judge → retry with feedback) — plus
 `generateStructured`, which converts Zod → JSON Schema caller-side and
 re-validates the result. The subpath was renamed from
-`@alexkroman1/aai/workflow`, which collided with the `workflow()` app kind
-despite being unrelated to it.
+`@alexkroman1/aai/workflow` (a name that collided with a since-removed
+`workflow()` app kind).
 
 ### Session modes
 
@@ -618,112 +569,43 @@ Each agent runs in one of two session modes, selected at parse time by
 Partial provider configs are rejected at parse time — `parseManifest()`
 requires either zero or all three of `stt`/`llm`/`tts`.
 
-- **Sync turns** (pipeline agents only) are a connectionless *transport*,
-  not a third session mode: `POST /sync` on the self-hosted server runs one
-  complete conversational turn per HTTP request with **no WebSockets on
-  either leg** — not browser→server, not server→providers. It is the
-  substrate workflow runs execute on, and remains available as a
-  programmatic API for pipeline agents (there is deliberately **no
-  per-agent client-transport switch** anymore — the default browser client
-  always uses the WebSocket session for agents, and the workflow surface
-  for workflows). The caller endpoints speech itself and sends one
-  utterance (base64 PCM16) or
-  committed text plus the conversation history (the server holds no session
-  state between turns); the response carries the transcript, the reply, and
-  the spoken reply when available. Provider calls are all one-shot HTTP:
-  STT via `SttOpener.transcribeClip` (AssemblyAI Sync API — providers
-  without it 422 on audio input), the LLM loop via `streamText` drained
-  server-side (tools execute exactly as on the pipeline path), TTS via
-  `TtsOpener.synthesizeClip` (Cartesia `/tts/bytes`; providers without it
-  degrade to a text-only reply, a synthesis *failure* degrades to
-  `ttsError` alongside the intact text reply).
-
-  **Tool-call args must be coerced before they hit a wire schema.** The AI
+- **Tool-call args must be coerced before they hit a wire schema.** The AI
   SDK surfaces an unparsable/unknown tool call as a `tool-call` stream part
-  whose `input` is the *raw argument string*, not a parsed object. Both
-  `tool_call` (WebSocket) and `toolCalls[]` (sync) require a record for
-  `args` — and on the sync path one bad call fails the client's parse of the
-  **entire** response ("Sync turn failed: malformed server response"),
-  killing the workflow run. Every emitter therefore routes args through
-  `toArgsRecord` (`sdk/utils.ts`; non-records become `{}`), the sync runner
-  passes the same `experimental_repairToolCall` the pipeline transport uses,
-  and a failed/invalid call is recorded with an error `result` rather than
-  left dangling. Key files:
-  `host/sync-turn.ts` (runner + `SyncTurnError` status mapping),
-  `sdk/sync.ts` (wire schemas, exported from `/protocol`),
-  `runtime.runSyncTurn` (rejects 409 for S2S agents). In `aai-ui`:
-  `createSyncSession` (HTTP turns, client-held history bounded by
-  `DEFAULT_MAX_HISTORY` — the server trims to the same window, and past
-  `MAX_SYNC_HISTORY_MESSAGES` it rejects the request outright, so an
-  unbounded client eventually broke every later turn; plus a turn queue)
-  and `createPttRecorder` (`sync-mic.ts`, WebRTC push-to-talk capture —
-  the button is the endpointing).
+  whose `input` is the *raw argument string*, not a parsed object. The
+  WebSocket `tool_call` event requires a record for `args`, so every emitter
+  routes args through `toArgsRecord` (`sdk/utils.ts`; non-records become
+  `{}`), and a failed/invalid call is recorded with an error `result` rather
+  than left dangling.
 
-  **There is exactly one capture worklet** (`worklets/capture-processor.ts`),
-  shared by the WebSocket mic and the push-to-talk recorder. `sync-mic.ts`
-  used to inline a second Float32-batching processor, which re-read a view it
-  had just transferred: `postMessage(msg, [buf])` detaches `buf`, so sizing
-  the next batch as `new Float32Array(out.length)` after transferring
-  `out.buffer` yields `0`, `read` stopped advancing, and `process()` spun
-  forever posting empty chunks — the mic went permanently deaf on its first
-  flush (measured: 1.88M messages in 6s at 100% on the render thread, zero
-  `POST /sync`). The shared processor flushes a `slice()` copy and keeps its
-  own buffer, so the hazard is structurally gone; the PTT path also gets the
-  processor's start/stop gating (no pre-press audio in a clip), its
-  stop → flush → `stopped`-ack protocol (no fixed sleep, no dropped tail),
-  and the dead-mic probe for free. Two guards remain load-bearing:
+- **The capture worklet** (`worklets/capture-processor.ts`) is the single
+  mic-capture processor. It flushes a `slice()` copy and keeps its own
+  buffer (re-reading a just-transferred view is how a mic once went
+  permanently deaf), with start/stop gating, a stop → flush → `stopped`-ack
+  protocol, and the dead-mic probe. Two guards remain load-bearing:
   `instantiateWorklet`'s harness honors the transfer list (`structuredClone`
   with `transfer`, which really detaches) and caps posted messages so a
   runaway loop is a named failure rather than a hang, and
-  `worklets/capture-processor.test.ts` exercises the processor source, which
-  the mock node in `sync-mic.test.ts` never does.
+  `worklets/capture-processor.test.ts` exercises the processor source.
 
-  On the platform, `POST /:slug/sync`
-  (unauthenticated, parity with the agent WebSocket) runs the turn through
-  the deployed agent's sandbox — `Sandbox.runSyncTurn` wraps the runtime
-  call so the guest's per-session tool state is released after the turn
-  (`session/end`, message-delta cache), and the studio exposes
-  `POST /studio/projects/:project/sync` (bearer-auth'd) against a project's
-  *published* slug; both share `sync-turn-handler.ts`.
-
-  **App-kind selection for the default client**: the default client page is
+- **Pre-connection client config**: the default client page is
   byte-identical for every agent and the CSP bars inline scripts, so the
-  kind reaches the browser via a pre-connection endpoint:
-  `GET /client-config` (dev server) / `GET /:slug/client-config` (platform,
-  unauthenticated — parity with the page and the WebSocket) returns
-  `{ kind, name, greeting }` (`sdk/client-config.ts`, re-exported from
+  agent's display name and greeting reach the browser via a pre-connection
+  endpoint: `GET /client-config` (dev server) / `GET /:slug/client-config`
+  (platform, unauthenticated — parity with the page and the WebSocket)
+  returns `{ name, greeting }` (`sdk/client-config.ts`, re-exported from
   `/protocol`). **Every server builds the body through one helper**,
-  `buildClientConfig` — two servers once derived a workflow's fields
-  differently, masked only by the client's check ordering; the platform's
-  handler lives in `aai-server/client-config-handler.ts`. In `aai-ui`,
-  `client()`'s config tier renders `DefaultRoot`, which fetches the config
-  (any failure degrades to the agent kind, so older servers keep working)
-  and mounts the chat shell or `WorkflowView`; the chat shell uses the
-  server-declared `name` unless `client({ name })` overrides it. A custom
-  `component` ignores all of it.
-  The `aai dev` Vite proxy forwards `/client-config` *and* `/sync` to the
-  backend — without the latter, custom sync clients 404'd under dev.
+  `buildClientConfig`; the platform's handler lives in
+  `aai-server/client-config-handler.ts`. In `aai-ui`, `client()`'s config
+  tier renders `DefaultRoot`, which fetches the config (any failure degrades
+  to the empty default, so older servers keep working) and mounts the chat
+  shell; the shell uses the server-declared `name` unless `client({ name })`
+  overrides it. A custom `component` ignores all of it. The `aai dev` Vite
+  proxy forwards `/client-config` to the backend.
 
-- **Text-only output is workflow-only** — there is no text-only *agent*
-  mode. The `none()` sentinel (`sdk/providers/tts/none.ts`) is what
-  `workflow()` always sets as its `tts`: it keeps the all-or-none triple
-  rule intact (a *forgotten* `tts` stays a loud error) while
-  `isTextOnlyTts()` flags the mode wherever it matters: the runtime
-  resolves `tts: null` (no opener, no TTS credential —
-  `requiredProviderEnvVars` skips it since `none` has no registry entry),
-  the pipeline transport skips the TTS side entirely (`openTtsSide` fires
-  `onAudioReady` immediately; `flushTtsAndWait` early-returns;
-  `holdPhrase` is forced off and rejected at config time via
-  `assertTextOnlyTuning`), and the `config` protocol message stamps
-  `audioOut: false` so the client skips the playback pipeline.
-  `assertAgentKind` rejects `tts: none()` on an agent and a real TTS on a
-  workflow, in `parseManifest`, `toAgentConfig`, and the server's
-  `IsolateConfigSchema`. `SessionCore` keeps the audioOut-aware plumbing
-  (`startRecording()`/`stopRecording()`, `sendAudioFile()`) for
-  programmatic clients, but the default `ChatView` always renders the
-  voice `Controls` — the former `TextControls` UI is gone. The snapshot's
-  `apiUrl` field carries the programmatic WebSocket endpoint, shown by
-  `ApiUrlChip` in every mode.
+- **There is no text-only mode.** Every pipeline agent declares a real TTS
+  provider, and the default `ChatView` always renders the voice `Controls`.
+  The snapshot's `apiUrl` field carries the programmatic WebSocket endpoint,
+  shown by `ApiUrlChip`.
 
 Reference providers shipped today:
 
@@ -872,35 +754,6 @@ in-memory per-session).
 resolved with the agent's env), else the platform default applies. Both
 `ctx.db` and `ctx.vector` reach the guest as host-proxied RPC
 (`db/query`, `vector/*`).
-
-### Send channels (`send: slack()`)
-
-An agent's outbound channel has **two independent sides**, and a deployed
-agent needs both wired or the failure is silent:
-
-- **Host side** — `createRuntime` registers the `send_message` builtin only
-  when `agent.send` is set (`host/runtime-tools.ts:resolveSendMessage`). The
-  platform builds its agent object with `toRuntimeAgent`
-  (`sandbox-agent-config.ts`), so
-  that mapper must copy `config.send`; when it didn't, a deployed
-  `send: slack()` was a no-op — the tool never entered the LLM's schema
-  list, so the symptom was a reply that simply didn't send, with no error
-  anywhere. The builtin executes host-side with `safeFetch` and resolves
-  `SLACK_WEBHOOK_URL` from the agent env *per send*, so a missing secret is
-  a tool error mid-conversation rather than a session-start failure.
-- **Guest side** — tool code calling `openSender(slack(), ctx.env)` posts
-  through the sandbox's proxied `fetch`, which the host validates against
-  `allowedHosts`. `resolveAgentAllowedHosts` (`sandbox.ts`) unions the
-  agent's declared hosts with the channel's webhook host, derived from the
-  *validated descriptor* host-side rather than trusting a bundle-supplied
-  field. Getting this wrong disables guest fetch **entirely**, not just
-  Slack: `registerGuestRpcHandlers` registers no `fetch/request` handler for
-  an empty list.
-
-Both sides are covered by `packages/aai-server/sandbox-egress.test.ts`. When
-adding a channel kind, the registry entry in `sdk/providers/send/open.ts`
-(env var + hosts + opener) is the only place that needs the hostname —
-everything above derives from it.
 
 ### Guest egress (`allowedHosts`)
 
@@ -1218,8 +1071,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `gateway`) |
 | `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
-| `@alexkroman1/aai/send` | `sdk/providers/send-barrel.ts` | Send-channel factories + resolver (`slack`, `openSender`, `Sender`) |
-| `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox. Renamed from `./workflow` (which collided with the `workflow()` app kind) |
+| `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox |
 
 ### Default values and magic numbers
 
@@ -1239,7 +1091,7 @@ defaults that affect agent behavior:
 | Deepgram `endpointing` | 100 (`DEFAULT_DEEPGRAM_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Provider endpointing serializes with the transport settle windows, so it stays low; override via `deepgram({ endpointing })`. |
 | `endpointSettleMs` | 1500 (`DEFAULT_ENDPOINT_SETTLE_MS`) | `constants.ts` | Pipeline only: wait after an STT final before committing the turn, aggregating disfluent multi-final utterances. `completeSettleMs` (500) is the shorter window for clearly-complete finals. 0 disables. |
 | `holdPhrase` | `"One moment."` (`DEFAULT_HOLD_PHRASE`) | `pipeline-stream.ts` | Pipeline only: spoken when a turn opens with a tool call and no speech. `""` disables. |
-| `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. Unlike `holdPhrase` it is **allowed** with `tts: none()` — an error is meaningful as text. `""` disables. |
+| `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. `""` disables. |
 | dead-air cover | 2000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream.ts` | Pipeline only: tool execution that sends nothing to TTS for this long gets a `DEAD_AIR_COVER_PHRASES` filler — unlike `holdPhrase` this is time-based, so it still fires after the model has spoken, and repeats across a tool chain with the wait doubling each time. `holdPhrase: ""` disables both. |
 | `falseInterruptionTimeoutMs` | 2000 (`DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS`) | `constants.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn (`DEFAULT_FALSE_INTERRUPTION_PROMPT`) after this window. 0 disables. |
 | `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. |
@@ -1718,23 +1570,12 @@ stored env at sandbox creation time and kept host-side only.
   `instanceof` against **its own** class, so a `globalThis.FormData` (an
   instance of Node's *internal* undici's class) matches no branch, falls
   through to the string conversion, and goes out as `Content-Type: text/plain`
-  with the 17-byte body `[object FormData]`. AssemblyAI's Sync API answered
-  `415 Unsupported Media Type` and the browser saw `Sync turn failed: HTTP
-  502` — **every sync turn was broken**, on the platform and under `aai dev`
-  alike, since `syncTranscribe` is handed `RuntimeOptions.fetch`.
-  `assemblyai-sync.ts` therefore encodes the multipart body by hand into a
-  `Uint8Array` and sets `Content-Type` itself: a `BufferSource` is a realm
-  intrinsic with no per-copy class to disagree about, so it encodes identically
-  on every `fetch`. That module is in `sdk/`, which must stay Node-free, so
-  importing undici's own `FormData` was never an option.
+  with the 17-byte body `[object FormData]` — the server answers
+  `415 Unsupported Media Type` and the caller sees an opaque HTTP failure.
 
   The rule that generalizes: **never hand a `FormData`, `Blob`, `File`,
   `Headers`, or `Request` to a `fetch` that might not be the one your realm's
-  global came from** — pass bytes. And the guard has to send real bytes over a
-  real socket: the sdk specs inject a fake fetch and assert on the body
-  *object*, which is exactly why this shipped. `host/sync-transcribe-wire.test.ts`
-  posts through the actual `pinnedFetch` to a loopback server and reads what
-  arrived.
+  global came from** — pass bytes.
 - The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
   `fetch_json`) take a
   model-controlled URL and **default** to this via `safeFetch` in

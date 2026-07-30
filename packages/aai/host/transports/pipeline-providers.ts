@@ -22,10 +22,10 @@ export interface PipelineProviderOptions {
   sid: string;
   /** STT opener (resolved from an SttProvider descriptor). */
   stt: SttOpener;
-  /** TTS opener, or null for a text-only agent (no synthesis side at all). */
-  tts: TtsOpener | null;
-  /** Provider-specific API keys. `tts` is absent for text-only agents. */
-  providerKeys: { stt: string; tts?: string | undefined };
+  /** TTS opener (resolved from a TtsProvider descriptor). */
+  tts: TtsOpener;
+  /** Provider-specific API keys. */
+  providerKeys: { stt: string; tts: string };
   /** STT audio input sample rate (PCM16, Hz). */
   sttSampleRate: number;
   /** TTS audio output sample rate (PCM16, Hz). */
@@ -46,7 +46,7 @@ export interface PipelineProviderOptions {
   };
   /**
    * Fires the moment TTS is live — lets the greeting start without waiting
-   * on STT. Text-only sessions (null TTS) fire it immediately on open().
+   * on STT.
    */
   onAudioReady: () => void;
   emitError: (code: SessionErrorCode, message: string) => void;
@@ -137,24 +137,13 @@ export function createPipelineProviderSessions(
   // lands, so first greeting audio isn't gated on the slower connect
   // (usually STT). The trade: if the other side then fails, the caller's
   // teardown cuts a just-started greeting short instead of never starting it.
-  /**
-   * Text-only sessions have no synthesis side to open: report ready
-   * immediately (the greeting is emitted as text) and succeed.
-   */
   function openTtsSide(): Promise<"ok" | "failed"> {
-    const tts = opts.tts;
-    if (tts === null) {
-      opts.onAudioReady();
-      return Promise.resolve("ok");
-    }
     return openSide(
       "tts",
       () =>
-        tts.open({
+        opts.tts.open({
           sampleRate: opts.ttsSampleRate,
-          // Never absent when a TTS opener exists (both come from the same
-          // resolved provider), but the type is optional for text-only.
-          apiKey: opts.providerKeys.tts ?? "",
+          apiKey: opts.providerKeys.tts,
           signal: opts.signal,
         }),
       adoptTts,

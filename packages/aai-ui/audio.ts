@@ -27,32 +27,6 @@ export function floatToPcm16(samples: Float32Array): Int16Array {
 }
 
 /**
- * Decode an audio file (any container/codec the browser can decode) and
- * resample it to mono PCM16 at `targetRate` — the format the server's STT
- * side expects on the wire. Returns the raw clip; any endpointing padding
- * is the caller's concern (the one-shot upload path needs none).
- *
- * @throws If the browser cannot decode the payload.
- */
-export async function decodeAudioToPcm16(
-  data: ArrayBuffer,
-  targetRate: number,
-): Promise<Int16Array> {
-  // Decode on a throwaway 1-frame offline context: decodeAudioData lives on
-  // BaseAudioContext, and an offline context needs no audio-hardware handle
-  // (browsers cap concurrent realtime AudioContexts).
-  const decoded = await new OfflineAudioContext(1, 1, targetRate).decodeAudioData(data);
-  const frames = Math.ceil(decoded.duration * targetRate);
-  const offline = new OfflineAudioContext(1, frames, targetRate);
-  const source = offline.createBufferSource();
-  source.buffer = decoded;
-  source.connect(offline.destination);
-  source.start();
-  const rendered = await offline.startRendering();
-  return floatToPcm16(rendered.getChannelData(0));
-}
-
-/**
  * How much of one turn's playback was covered by concealment rather than
  * received audio — the playback worklet's underrun report, in the shape
  * WebRTC's `inbound-rtp` audio stats use, so the numbers mean the same thing
