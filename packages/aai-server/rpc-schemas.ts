@@ -9,11 +9,9 @@
 
 import { AllowedHostsSchema, DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
 import {
-  assertAgentKind,
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
-  assertTextOnlyTuning,
   ProviderDescriptorSchema,
   ToolSchemaSchema,
 } from "@alexkroman1/aai/manifest";
@@ -57,8 +55,6 @@ export const IsolateConfigSchema = z
     s2s: ProviderDescriptorSchema.optional(),
     mode: z.enum(["s2s", "pipeline"]).optional(),
     vector: ProviderDescriptorSchema.optional(),
-    send: ProviderDescriptorSchema.optional(),
-    kind: z.enum(["agent", "workflow"]).optional(),
   })
   .superRefine((cfg, ctx) => {
     function fail(message: string): void {
@@ -71,8 +67,6 @@ export const IsolateConfigSchema = z
       }
       assertSilencePolicy(mode, cfg.silenceTimeoutMs, cfg.silencePrompt);
       assertPipelineTuning(mode, cfg);
-      assertTextOnlyTuning(cfg.tts, cfg);
-      assertAgentKind(mode, cfg.kind, cfg.tts);
     } catch (err) {
       fail(errorMessage(err));
     }

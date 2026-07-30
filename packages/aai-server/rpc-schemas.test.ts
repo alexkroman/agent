@@ -11,57 +11,14 @@ const pipelineFields = {
   llm: { kind: "anthropic", options: { model: "claude-haiku-4-5" } },
 };
 
-describe("IsolateConfigSchema — text-only (tts: none)", () => {
-  test("accepts a text-only pipeline config on a workflow", () => {
-    const result = IsolateConfigSchema.safeParse({
-      name: "x",
-      kind: "workflow",
-      ...pipelineFields,
-      tts: { kind: "none", options: {} },
-    });
-    expect(result.success).toBe(true);
-  });
-
-  test("rejects tts: none on an agent — text-only output is workflow-only", () => {
-    const result = IsolateConfigSchema.safeParse({
-      name: "x",
-      ...pipelineFields,
-      tts: { kind: "none", options: {} },
-    });
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toMatch(/only valid for workflows/);
-  });
-
-  test("rejects a workflow carrying a speaking TTS provider", () => {
-    const result = IsolateConfigSchema.safeParse({
-      name: "x",
-      kind: "workflow",
-      ...pipelineFields,
-      tts: { kind: "cartesia", options: { voice: "v" } },
-    });
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toMatch(/never speaks/);
-  });
-
-  test("rejects holdPhrase alongside tts: none", () => {
-    const result = IsolateConfigSchema.safeParse({
-      name: "x",
-      kind: "workflow",
-      ...pipelineFields,
-      tts: { kind: "none", options: {} },
-      holdPhrase: "One sec.",
-    });
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toMatch(/holdPhrase requires a speaking TTS provider/);
-  });
-
-  test("still rejects an incomplete triple (none must be explicit)", () => {
+describe("IsolateConfigSchema — provider triple", () => {
+  test("rejects an incomplete triple", () => {
     const result = IsolateConfigSchema.safeParse({ name: "x", ...pipelineFields });
     expect(result.success).toBe(false);
     expect(result.error?.issues[0]?.message).toMatch(/stt, llm, and tts must be set together/);
   });
 
-  test("holdPhrase stays valid with a speaking TTS provider", () => {
+  test("holdPhrase is valid with a complete pipeline triple", () => {
     const result = IsolateConfigSchema.safeParse({
       name: "x",
       ...pipelineFields,
@@ -96,7 +53,7 @@ describe("IsolateConfigSchema — allowedHosts", () => {
     expect(result.data?.allowedHosts).toEqual([]);
   });
 
-  test.each([["api.example.com"], ["*.example.com"], ["hooks.slack.com"]])("accepts %s", (host) => {
+  test.each([["api.example.com"], ["*.example.com"], ["api.other.com"]])("accepts %s", (host) => {
     expect(parse([host]).success).toBe(true);
   });
 

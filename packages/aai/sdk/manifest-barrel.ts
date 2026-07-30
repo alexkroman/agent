@@ -16,13 +16,9 @@ export {
   toAgentConfig,
 } from "./_internal-types.ts";
 export {
-  type AgentKind,
-  assertAgentKind,
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
-  assertTextOnlyTuning,
   type SessionMode,
 } from "./config-rules.ts";
 export { ProviderDescriptorSchema } from "./manifest.ts";
-export { isTextOnlyTts, NONE_TTS_KIND } from "./providers/tts/none.ts";

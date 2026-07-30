@@ -2,11 +2,9 @@
 
 import type { z } from "zod";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
-import { none } from "./providers/tts/none.ts";
 import type {
   LlmProvider,
   S2sProvider,
-  SendProvider,
   SttProvider,
   TtsProvider,
   VectorProvider,
@@ -16,8 +14,6 @@ import {
   type BuiltinTool,
   DEFAULT_GREETING,
   DEFAULT_SYSTEM_PROMPT,
-  DEFAULT_WORKFLOW_GREETING,
-  DEFAULT_WORKFLOW_SYSTEM_PROMPT,
   type ToolChoice,
   type ToolContext,
   type ToolDef,
@@ -166,11 +162,6 @@ export function agent(def: {
   /** Pluggable Vector backend. Falls back to platform default when omitted. */
   vector?: VectorProvider;
   /**
-   * Outbound send channel (e.g. `slack()` from `@alexkroman1/aai/send`).
-   * Registers the `send_message` builtin and allowlists the channel's host.
-   */
-  send?: SendProvider;
-  /**
    * Hostnames this agent's own tool code may `fetch`. Required for outbound
    * requests from a deployed agent — see {@link AgentDef.allowedHosts}.
    */
@@ -184,88 +175,5 @@ export function agent(def: {
     maxSteps: DEFAULT_MAX_STEPS,
     tools: {},
     ...def,
-  };
-}
-
-/**
- * Define a workflow — the SDK's second mode, alongside `agent()`.
- *
- * Where an agent is a conversational chat/voice interface, a workflow is
- * **audio in, action out**: the user records one instruction (push to talk)
- * or uploads an audio file, presses go, a single agentic loop transcribes
- * it and executes the actions with the workflow's tools, and the run ends
- * with a written report. There is no conversation and no history between
- * runs.
- *
- * Compared to `agent()`:
- * - `stt` and `llm` are **required** (a workflow is always a pipeline);
- *   there is no `tts` — a workflow never speaks. Its output is actions
- *   plus a written report.
- * - The default system prompt is {@link DEFAULT_WORKFLOW_SYSTEM_PROMPT} —
- *   one-shot execution semantics (no clarifying questions, report the
- *   outcome) instead of the conversational agent default.
- * - The default client renders the workflow surface (record / upload + go)
- *   over the connectionless sync transport instead of a chat session.
- *
- * @example
- * ```ts
- * import { workflow, tool } from "@alexkroman1/aai";
- * import { assemblyAI } from "@alexkroman1/aai/stt";
- * import { anthropic } from "@alexkroman1/aai/llm";
- * import { z } from "zod";
- *
- * export default workflow({
- *   name: "Expense Filer",
- *   stt: assemblyAI({ model: "u3pro-rt" }),
- *   llm: anthropic({ model: "claude-sonnet-5" }),
- *   tools: {
- *     file_expense: tool({
- *       description: "File one expense",
- *       parameters: z.object({ amount: z.number(), memo: z.string() }),
- *       execute: async ({ amount, memo }, ctx) => {
- *         await ctx.db.query("insert into expenses (amount, memo) values ($1, $2)", [
- *           amount,
- *           memo,
- *         ]);
- *         return { filed: true, amount, memo };
- *       },
- *     }),
- *   },
- * });
- * ```
- *
- * @public
- */
-export function workflow(def: {
-  name: string;
-  /** Instructions for the run. Defaults to {@link DEFAULT_WORKFLOW_SYSTEM_PROMPT}. */
-  systemPrompt?: string;
-  /** Idle-state instruction line shown by the default client. */
-  greeting?: string;
-  tools?: Record<string, ToolDef>;
-  builtinTools?: BuiltinTool[];
-  /** Max tool calls per run. Defaults to {@link DEFAULT_MAX_STEPS}. */
-  maxSteps?: number;
-  toolChoice?: ToolChoice;
-  sttPrompt?: string;
-  /** STT provider that transcribes the recorded/uploaded audio. Required. */
-  stt: SttProvider;
-  /** LLM that runs the agentic loop over the transcript. Required. */
-  llm: LlmProvider;
-  vector?: VectorProvider;
-  send?: SendProvider;
-  allowedHosts?: string[];
-  /** Per-run mutable state factory, exposed to tools as `ctx.state`. */
-  state?: () => Record<string, unknown>;
-}): AgentDef {
-  return {
-    systemPrompt: DEFAULT_WORKFLOW_SYSTEM_PROMPT,
-    greeting: DEFAULT_WORKFLOW_GREETING,
-    maxSteps: DEFAULT_MAX_STEPS,
-    tools: {},
-    ...def,
-    // A workflow never speaks — tts is not a parameter, always the sentinel.
-    tts: none(),
-    kind: "workflow",
   };
 }

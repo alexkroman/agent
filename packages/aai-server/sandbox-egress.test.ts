@@ -1,21 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * What a deployed agent may reach on the network, end to end through
- * `createSandbox` — the agent's declared `allowedHosts` plus its `send:`
- * channel's webhook host.
- *
- * The channel has two sides and each was dropped between the deploy config
- * and the thing that reads it:
- *
- * - **Host side** — the `send_message` builtin, which `createRuntime`
- *   registers only when `agent.send` is set. `toRuntimeAgent` did not copy
- *   `config.send`, so a deployed `send: slack()` was a silent no-op: the tool
- *   never reached the LLM's schema list, so the symptom was a reply that
- *   simply didn't send, indistinguishable from the model ignoring the prompt.
- * - **Guest side** — tool code calling `openSender` posts through the
- *   sandbox's proxied fetch, which the host validates against `allowedHosts`.
- *   Nothing derived the channel's webhook host, and `registerGuestRpcHandlers`
- *   registers no fetch handler at all for an empty list.
+ * `createSandbox` — the agent's declared `allowedHosts` — plus the
+ * provider-forwarding seams that historically dropped config fields.
  *
  * Lives apart from `sandbox.test.ts` (which is near the 700-line test cap)
  * with its own mock scaffolding: these need the *returned* runtime, not the
@@ -23,7 +10,6 @@
  */
 
 import { anthropic } from "@alexkroman1/aai/llm";
-import { slack } from "@alexkroman1/aai/send";
 import { assemblyAI } from "@alexkroman1/aai/stt";
 import { cartesia } from "@alexkroman1/aai/tts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -94,8 +80,6 @@ const BASE_CONFIG: IsolateConfig = {
   allowedHosts: [],
 };
 
-const SEND_CONFIG: IsolateConfig = { ...BASE_CONFIG, send: slack() };
-
 function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions {
   return {
     workerCode: 'export default { name: "test" };',
@@ -106,13 +90,7 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
   };
 }
 
-function toolNames(): string[] {
-  const runtime = capturedRuntime.current;
-  if (!runtime) throw new Error("runtime not captured");
-  return runtime.toolSchemas.map((s) => s.name);
-}
-
-describe("createSandbox — send channel", () => {
+describe("createSandbox — guest egress", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     capturedRuntime.current = null;
@@ -120,79 +98,29 @@ describe("createSandbox — send channel", () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
 
-  describe("host side: the send_message builtin", () => {
-    it("is registered when the config declares a channel", async () => {
-      const sandbox = createSandbox(makeSandboxOptions({ agentConfig: SEND_CONFIG }));
+  function allowedHosts(): string[] {
+    const call = mockCreateSandboxVm.mock.calls[0]?.[0] as { allowedHosts: string[] } | undefined;
+    if (!call) throw new Error("createSandboxVm not called");
+    return call.allowedHosts;
+  }
 
-      expect(toolNames()).toContain("send_message");
-      await sandbox.shutdown();
-    });
+  it("passes the agent's declared hosts through to the guest RPC layer", async () => {
+    const sandbox = createSandbox(
+      makeSandboxOptions({
+        agentConfig: { ...BASE_CONFIG, allowedHosts: ["api.example.com", "*.example.org"] },
+      }),
+    );
 
-    it("is absent when the config declares no channel", async () => {
-      const sandbox = createSandbox(makeSandboxOptions());
-
-      expect(toolNames()).not.toContain("send_message");
-      await sandbox.shutdown();
-    });
-
-    it("resolves its credential from the agent env", async () => {
-      const sandbox = createSandbox(makeSandboxOptions({ agentConfig: SEND_CONFIG }));
-      const runtime = capturedRuntime.current;
-      if (!runtime) throw new Error("runtime not captured");
-
-      // This agent's env holds no webhook URL. Naming the missing variable
-      // proves the builtin resolved against the agent env and ran, rather
-      // than failing some earlier way.
-      const result = await runtime.executeTool("send_message", { text: "hi" }, "s1", []);
-
-      expect(result).toContain("SLACK_WEBHOOK_URL");
-      await sandbox.shutdown();
-    });
+    expect(allowedHosts()).toEqual(["api.example.com", "*.example.org"]);
+    await sandbox.shutdown();
   });
 
-  describe("guest side: egress for guest tool code", () => {
-    function allowedHosts(): string[] {
-      const call = mockCreateSandboxVm.mock.calls[0]?.[0] as { allowedHosts: string[] } | undefined;
-      if (!call) throw new Error("createSandboxVm not called");
-      return call.allowedHosts;
-    }
+  it("passes no hosts when the agent declares none", async () => {
+    const sandbox = createSandbox(makeSandboxOptions());
 
-    it("passes the agent's declared hosts through to the guest RPC layer", async () => {
-      const sandbox = createSandbox(
-        makeSandboxOptions({
-          agentConfig: { ...BASE_CONFIG, allowedHosts: ["api.example.com", "*.example.org"] },
-        }),
-      );
-
-      expect(allowedHosts()).toEqual(["api.example.com", "*.example.org"]);
-      await sandbox.shutdown();
-    });
-
-    it("allowlists the channel's webhook host", async () => {
-      const sandbox = createSandbox(makeSandboxOptions({ agentConfig: SEND_CONFIG }));
-
-      expect(allowedHosts()).toEqual(["hooks.slack.com"]);
-      await sandbox.shutdown();
-    });
-
-    it("unions the channel host with the config's own hosts, without duplicates", async () => {
-      const sandbox = createSandbox(
-        makeSandboxOptions({
-          agentConfig: { ...SEND_CONFIG, allowedHosts: ["api.example.com", "hooks.slack.com"] },
-        }),
-      );
-
-      expect(allowedHosts()).toEqual(["api.example.com", "hooks.slack.com"]);
-      await sandbox.shutdown();
-    });
-
-    it("adds no hosts when the agent declares no channel", async () => {
-      const sandbox = createSandbox(makeSandboxOptions());
-
-      // Must stay empty: a non-empty list is what turns guest fetch on at all.
-      expect(allowedHosts()).toEqual([]);
-      await sandbox.shutdown();
-    });
+    // Must stay empty: a non-empty list is what turns guest fetch on at all.
+    expect(allowedHosts()).toEqual([]);
+    await sandbox.shutdown();
   });
 });
 

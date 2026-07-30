@@ -114,7 +114,7 @@ describe("ChatPanel (pre-project)", () => {
   test("shows starters and an enabled composer when the server has an LLM", () => {
     const html = renderToStaticMarkup(<ChatPanel {...panelProps} llmStatus={{ llm: true }} />);
     expect(html).toContain("Try one of these");
-    expect(html).toContain("Describe your agent or workflow…");
+    expect(html).toContain("Describe your agent…");
     // The `disabled` attribute — Tailwind `disabled:` variant classes also
     // contain the word, so match the attribute shape.
     expect(html).not.toMatch(/<input[^>]*\sdisabled=/);

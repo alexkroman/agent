@@ -5,12 +5,11 @@
 import { type ComponentType, createElement, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
-import { buildAgentUrl, type ClientConfigResponse, fetchClientConfig } from "./client-config.ts";
+import { type ClientConfigResponse, fetchClientConfig } from "./client-config.ts";
 import { ChatView } from "./components/chat-view.tsx";
 import { SidebarLayout } from "./components/sidebar-layout.tsx";
 import { StartScreen } from "./components/start-screen.tsx";
 import { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-config-context.ts";
-import { WorkflowView } from "./components/workflow-view.tsx";
 import { SessionProvider, ThemeProvider } from "./context.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import type { ClientTheme, WebSocketConstructor } from "./types.ts";
@@ -129,13 +128,11 @@ function DefaultShell({
 }
 
 /**
- * Config-tier root: resolves the app kind via the server's
- * `GET client-config` and renders the chat shell or the workflow surface.
- *
- * The chat shell renders immediately — optimistically — while the lookup is
- * in flight, then swaps if the agent is a workflow. That keeps mounting
- * synchronous and keeps agents on servers without the endpoint (every
- * lookup failure resolves to the agent kind) exactly as before.
+ * Config-tier root: fetches the server-declared display name via
+ * `GET client-config` and renders the chat shell. The shell renders
+ * immediately — optimistically — while the lookup is in flight; servers
+ * without the endpoint (every lookup failure resolves to the empty default)
+ * work exactly as before.
  */
 function DefaultRoot({
   platformUrl,
@@ -160,18 +157,6 @@ function DefaultRoot({
     };
   }, [platformUrl]);
 
-  // The workflow app mode gets the one-shot run surface (hold-to-talk /
-  // upload + Go over one history-less sync request per run) rather than a
-  // conversation shell. Deliberately no greeting — a workflow run surface
-  // shows only the transcript and the tool calls, never agent prose.
-  if (resolved?.kind === "workflow") {
-    return (
-      <WorkflowView
-        syncUrl={buildAgentUrl(platformUrl, "sync").href}
-        title={name ?? resolved.name}
-      />
-    );
-  }
   // An explicit client({ name }) wins; otherwise use the server-declared name.
   return (
     <DefaultShell name={name ?? resolved?.name} Sidebar={Sidebar} sidebarWidth={sidebarWidth} />

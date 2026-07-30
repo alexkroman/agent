@@ -31,11 +31,8 @@ export interface PipelineTransportOptions {
   stt: SttOpener;
   /** LLM provider (Vercel AI SDK LanguageModel). */
   llm: LanguageModel;
-  /**
-   * TTS opener (resolved from a TtsProvider descriptor), or null for a
-   * text-only agent (`tts: none()`): no synthesis, replies stream as text.
-   */
-  tts: TtsOpener | null;
+  /** TTS opener (resolved from a TtsProvider descriptor). */
+  tts: TtsOpener;
   /** Transport-level callbacks into SessionCore. */
   callbacks: TransportCallbacks;
   /** Session config: systemPrompt, greeting, tools, history. */
@@ -44,10 +41,10 @@ export interface PipelineTransportOptions {
   toolSchemas?: readonly ToolSchema[];
   /** Agent's tool-execution function. */
   executeTool?: ExecuteTool;
-  /** Provider-specific API keys. `tts` is absent for text-only agents. */
+  /** Provider-specific API keys. */
   providerKeys: {
     stt: string;
-    tts?: string | undefined;
+    tts: string;
   };
   /** STT audio input sample rate (PCM16, Hz). Defaults to DEFAULT_STT_SAMPLE_RATE. */
   sttSampleRate?: number | undefined;
@@ -109,11 +106,6 @@ export interface PipelineTransportOptions {
   temperature?: number | undefined;
   /** Tool selection policy passed to `streamText`. Defaults to `"auto"`. */
   toolChoice?: ToolChoice | undefined;
-  /**
-   * Fetch implementation for one-shot (Sync API) file transcription.
-   * Defaults to global fetch — override in tests.
-   */
-  fetch?: typeof globalThis.fetch | undefined;
   /** Logger. Defaults to consoleLogger. */
   logger?: Logger | undefined;
   /** Skip the initial greeting (used for session resume). */
@@ -158,13 +150,7 @@ export function resolvePipelineOptions(opts: PipelineTransportOptions): Resolved
     interruptionMinDurationMs: opts.interruptionMinDurationMs ?? 0,
     endpointSettleMs: opts.endpointSettleMs ?? DEFAULT_ENDPOINT_SETTLE_MS,
     completeSettleMs: opts.completeSettleMs ?? DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
-    // The hold phrase is synthesized filler — with no TTS it would leak into
-    // the text reply, so text-only sessions force it off. (An explicit
-    // holdPhrase with tts: none() is already rejected at config time.)
-    holdPhrase: opts.tts === null ? "" : (opts.holdPhrase ?? DEFAULT_HOLD_PHRASE),
-    // Unlike holdPhrase, NOT forced off for text-only: a failed turn otherwise
-    // produces no reply at all, and "something went wrong" is as useful in text
-    // as in speech.
+    holdPhrase: opts.holdPhrase ?? DEFAULT_HOLD_PHRASE,
     errorPhrase: opts.errorPhrase ?? DEFAULT_ERROR_PHRASE,
     falseInterruptionTimeoutMs:
       opts.falseInterruptionTimeoutMs ?? DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,

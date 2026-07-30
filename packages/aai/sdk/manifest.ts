@@ -9,32 +9,21 @@
 import { z } from "zod";
 import { AllowedHostsSchema } from "./allowed-hosts.ts";
 import {
-  type AgentKind,
-  assertAgentKind,
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
-  assertTextOnlyTuning,
   type SessionMode,
 } from "./config-rules.ts";
 import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
-import { sendAllowedHosts } from "./providers/send/open.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import type {
   LlmProvider,
   S2sProvider,
-  SendProvider,
   SttProvider,
   TtsProvider,
   VectorProvider,
 } from "./providers.ts";
-import {
-  BuiltinToolSchema,
-  DEFAULT_GREETING,
-  DEFAULT_SYSTEM_PROMPT,
-  DEFAULT_WORKFLOW_GREETING,
-  DEFAULT_WORKFLOW_SYSTEM_PROMPT,
-} from "./types.ts";
+import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 /**
  * Tool definition as it appears in the serialized manifest JSON.
@@ -145,14 +134,6 @@ export type Manifest = {
   s2s?: S2sProvider | undefined;
   /** Pluggable Vector backend descriptor. Falls back to platform default when omitted. */
   vector?: VectorProvider | undefined;
-  /** Outbound send channel descriptor (e.g. Slack). No default. */
-  send?: SendProvider | undefined;
-  /**
-   * The app's mode: `"agent"` (default) is a conversational interface;
-   * `"workflow"` is audio in → action out — one recorded or uploaded
-   * instruction runs a single agentic loop (one `POST /sync` turn) and ends.
-   */
-  kind?: AgentKind | undefined;
   /**
    * Session mode derived from provider fields:
    * - `"s2s"`: speech-to-speech path (default when no stt/llm/tts set, or when `s2s` is set).
@@ -218,8 +199,6 @@ const ManifestSchema = z.object({
   tts: ProviderDescriptorSchema.optional(),
   s2s: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
-  send: ProviderDescriptorSchema.optional(),
-  kind: z.enum(["agent", "workflow"]).optional(),
 });
 
 /**
@@ -237,23 +216,16 @@ export function parseManifest(input: unknown): Manifest {
   const mode = assertProviderTriple(parsed.stt, parsed.llm, parsed.tts, parsed.s2s);
   assertSilencePolicy(mode, parsed.silenceTimeoutMs, parsed.silencePrompt);
   assertPipelineTuning(mode, parsed);
-  assertTextOnlyTuning(parsed.tts, parsed);
-  assertAgentKind(mode, parsed.kind, parsed.tts);
   assertAssemblyAITtsLanguage(parsed.tts);
-  const isWorkflow = parsed.kind === "workflow";
   return {
     ...parsed,
-    systemPrompt:
-      parsed.systemPrompt ?? (isWorkflow ? DEFAULT_WORKFLOW_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT),
-    greeting: parsed.greeting ?? (isWorkflow ? DEFAULT_WORKFLOW_GREETING : DEFAULT_GREETING),
+    systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
+    greeting: parsed.greeting ?? DEFAULT_GREETING,
     builtinTools: parsed.builtinTools ?? [...DEFAULT_BUILTIN_TOOLS],
     maxSteps: parsed.maxSteps ?? DEFAULT_MAX_STEPS,
     toolChoice: parsed.toolChoice ?? "auto",
     tools: parsed.tools ?? {},
-    // Declaring a send channel is the egress opt-in for its webhook host:
-    // guest tool code posts through the sandbox fetch proxy, which checks
-    // this list, so the channel works without hand-listing the host.
-    allowedHosts: [...new Set([...(parsed.allowedHosts ?? []), ...sendAllowedHosts(parsed.send)])],
+    allowedHosts: parsed.allowedHosts ?? [],
     mode,
   };
 }

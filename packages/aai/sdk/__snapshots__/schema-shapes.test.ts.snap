@@ -12,14 +12,12 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "holdPhrase",
   "idleTimeoutMs",
   "interruptionMinDurationMs",
-  "kind",
   "llm",
   "maxSteps",
   "minBargeInWords",
   "mode",
   "name",
   "s2s",
-  "send",
   "silencePrompt",
   "silenceTimeoutMs",
   "stt",
@@ -118,21 +116,12 @@ exports[`protocol schema shapes > ClientMessageSchema option shapes 1`] = `
     "toolCallId",
     "type",
   ],
-  "transcribe_file_end": [
-    "type",
-  ],
-  "transcribe_file_start": [
-    "byteLength",
-    "sampleRate",
-    "type",
-  ],
 }
 `;
 
 exports[`protocol schema shapes > ReadyConfigSchema shape 1`] = `
 [
   "audioFormat",
-  "audioOut",
   "sampleRate",
   "ttsSampleRate",
 ]
@@ -152,7 +141,6 @@ exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
   ],
   "config": [
     "audioFormat",
-    "audioOut",
     "sampleRate",
     "sessionId",
     "ttsSampleRate",

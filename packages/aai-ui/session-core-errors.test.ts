@@ -17,8 +17,6 @@ import {
 } from "./_session-core-test-utils.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 
-const textOnlyConfig = () => makeConfig(16_000, 24_000, "sess-err", { audioOut: false });
-
 const fatalError = () =>
   JSON.stringify({ type: "error", code: "internal", message: "provider died" });
 
@@ -64,15 +62,27 @@ describe("session-core error handling", () => {
   // ─── Terminal close state ─────────────────────────────────────────────────
 
   describe("terminal close state", () => {
-    it("a clean close retires a lingering non-fatal error banner", () => {
+    let audio: { restore: () => void };
+
+    beforeEach(() => {
+      audio = installAudioMocks();
+    });
+
+    afterEach(() => {
+      audio.restore();
+    });
+
+    it("a clean close retires a lingering non-fatal error banner", async () => {
       core.connect();
       lastSocket?.simulateOpen();
-      lastSocket?.simulateMessage(textOnlyConfig());
+      lastSocket?.simulateMessage(makeConfig());
+      await vi.waitFor(() => {
+        expect(core.getSnapshot().recording).toBe(true);
+      });
       lastSocket?.simulateMessage(
         JSON.stringify({ type: "error", code: "stt", message: "one turn failed", fatal: false }),
       );
       expect(core.getSnapshot().error?.code).toBe("stt");
-      expect(core.getSnapshot().state).toBe("listening");
 
       lastSocket?.simulateClose();
       const snap = core.getSnapshot();
@@ -80,10 +90,13 @@ describe("session-core error handling", () => {
       expect(snap.error).toBe(null);
     });
 
-    it("a close after a fatal error preserves the error state", () => {
+    it("a close after a fatal error preserves the error state", async () => {
       core.connect();
       lastSocket?.simulateOpen();
-      lastSocket?.simulateMessage(textOnlyConfig());
+      lastSocket?.simulateMessage(makeConfig());
+      await vi.waitFor(() => {
+        expect(core.getSnapshot().recording).toBe(true);
+      });
       lastSocket?.simulateMessage(fatalError());
       expect(core.getSnapshot().state).toBe("error");
 
@@ -209,30 +222,6 @@ describe("session-core error handling", () => {
       await vi.waitFor(() => {
         expect(track.stopped).toBe(true);
       });
-    });
-
-    it("mic denial on the text-only record button is a banner, not a session end", async () => {
-      navigator.mediaDevices.getUserMedia = () =>
-        Promise.reject(new Error("Permission denied")) as Promise<MediaStream>;
-
-      core.connect();
-      lastSocket?.simulateOpen();
-      lastSocket?.simulateMessage(textOnlyConfig());
-      expect(core.getSnapshot().state).toBe("listening");
-
-      core.startRecording();
-      await vi.waitFor(() => {
-        expect(core.getSnapshot().error?.code).toBe("audio");
-      });
-      const snap = core.getSnapshot();
-      // Non-fatal: the session keeps its state and stays usable.
-      expect(snap.state).toBe("listening");
-      expect(snap.recording).toBe(false);
-
-      // Later server activity clears the stale banner.
-      lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "hi" }));
-      expect(core.getSnapshot().error).toBe(null);
-      expect(core.getSnapshot().state).toBe("listening");
     });
   });
 });

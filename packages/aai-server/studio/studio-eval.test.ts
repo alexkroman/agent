@@ -23,14 +23,6 @@
  * rather than imported — `aai-server` and `aai-studio-client` talk over HTTP
  * only, with no code imports in either direction.
  *
- * `SHAPE_CASES` cover the one thing those can't. A parity prompt names the
- * mode, the providers, and the imports so the rubric grades one dimension at a
- * time — which means `expectedKind` only ever tested instruction-following. A
- * shape case is a terse user-level ask that names no API at all, so choosing
- * `agent()` vs `workflow()` is the measurement. Graded on the built worker's
- * reported kind, in both directions, with a guard test keeping the answer out
- * of the prompts.
- *
  * Requires a real LLM key (`ASSEMBLYAI_API_KEY` or `ANTHROPIC_API_KEY`, or
  * `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL`); the whole suite skips without
  * one, so `pnpm test` stays hermetic. MCP is stubbed out — the eval measures
@@ -60,8 +52,6 @@ import {
   ONE_SHOT,
   readTemplate,
   renderFiles,
-  SHAPE_CASES,
-  SHAPE_GIVEAWAYS,
   TEMPLATE_CASES,
   TEMPLATES_DIR,
   UNCOVERED,
@@ -225,59 +215,39 @@ const WorkerBuildJudge = createJudge<string, StudioEvalOutput>(
 /**
  * Score 1 when the built worker loads in a real studio sandbox and reports a
  * valid agent config — the "actually works" gate. Optionally requires the
- * config to expose specific tool names, or to declare a send channel.
+ * config to expose specific tool names.
  */
-const SandboxLoadJudge = createJudge<
-  string,
-  StudioEvalOutput,
-  { expectedTools?: string[]; expectedSend?: string; expectedKind?: "agent" | "workflow" }
->("SandboxLoadJudge", async ({ output, expectedTools, expectedSend, expectedKind }) => {
-  const worker = await buildWorker(output.files);
-  const sandbox = await createStudioSandbox();
-  try {
-    const loaded = await sandbox.loadBundle(worker);
-    const parsed = IsolateConfigSchema.safeParse(loaded.config);
-    if (!parsed.success) {
-      const issues = parsed.error.issues.map((i) => i.message).join("; ");
-      return { score: 0, metadata: { rationale: `invalid agent config: ${issues}` } };
-    }
-    // `kind` is absent for an `agent()` config and "workflow" for a
-    // `workflow()` one, so the default reads as the app the code actually is.
-    const kind = parsed.data.kind ?? "agent";
-    if (expectedKind !== undefined && kind !== expectedKind) {
+const SandboxLoadJudge = createJudge<string, StudioEvalOutput, { expectedTools?: string[] }>(
+  "SandboxLoadJudge",
+  async ({ output, expectedTools }) => {
+    const worker = await buildWorker(output.files);
+    const sandbox = await createStudioSandbox();
+    try {
+      const loaded = await sandbox.loadBundle(worker);
+      const parsed = IsolateConfigSchema.safeParse(loaded.config);
+      if (!parsed.success) {
+        const issues = parsed.error.issues.map((i) => i.message).join("; ");
+        return { score: 0, metadata: { rationale: `invalid agent config: ${issues}` } };
+      }
+      const tools = parsed.data.toolSchemas.map((schema) => schema.name);
+      const missing = (expectedTools ?? []).filter((name) => !tools.includes(name));
+      if (missing.length > 0) {
+        return {
+          score: 0,
+          metadata: { rationale: `missing expected tools: ${missing.join(", ")}`, tools },
+        };
+      }
       return {
-        score: 0,
-        metadata: { rationale: `expected \`export default ${expectedKind}()\`, got ${kind}()` },
+        score: 1,
+        metadata: { rationale: `loaded agent "${parsed.data.name}"`, tools },
       };
+    } catch (err) {
+      return { score: 0, metadata: { rationale: `bundle failed to load: ${String(err)}` } };
+    } finally {
+      await sandbox.dispose();
     }
-    const tools = parsed.data.toolSchemas.map((schema) => schema.name);
-    const missing = (expectedTools ?? []).filter((name) => !tools.includes(name));
-    if (missing.length > 0) {
-      return {
-        score: 0,
-        metadata: { rationale: `missing expected tools: ${missing.join(", ")}`, tools },
-      };
-    }
-    // A send channel is a config field, not a tool name, so unlike
-    // `expectedTools` there is no "the generated name may differ" caveat —
-    // and its absence is silent, since the agent still builds and runs.
-    if (expectedSend !== undefined && parsed.data.send?.kind !== expectedSend) {
-      const got = parsed.data.send === undefined ? "none" : `"${parsed.data.send.kind}"`;
-      return {
-        score: 0,
-        metadata: { rationale: `expected send channel "${expectedSend}", got ${got}`, tools },
-      };
-    }
-    return {
-      score: 1,
-      metadata: { rationale: `loaded agent "${parsed.data.name}"`, tools },
-    };
-  } catch (err) {
-    return { score: 0, metadata: { rationale: `bundle failed to load: ${String(err)}` } };
-  } finally {
-    await sandbox.dispose();
-  }
-});
+  },
+);
 
 /**
  * The parity rubric. Ids are stable so a failure means the same thing across
@@ -288,22 +258,14 @@ const RUBRIC_IDS = ["mode", "capabilities", "generation", "state", "assets", "pe
 
 const RUBRIC: Record<(typeof RUBRIC_IDS)[number], string> = {
   mode:
-    "App kind and session mode match the reference. App kind first: a reference " +
-    "whose default export is `workflow({ ... })` (a one-shot run — audio in, " +
-    "actions out, a written run report) must be met with `export default " +
-    "workflow(...)` too, never `agent(...)`, and vice versa. Then session mode: " +
-    "S2S mode declares none of stt/llm/tts; " +
-    "pipeline mode declares all three; text-only mode is pipeline with `tts: none()`; " +
-    "a workflow requires stt and llm and leaves tts unset. " +
+    "Session mode matches the reference: S2S mode declares none of stt/llm/tts; " +
+    "pipeline mode declares all three. " +
     "Additionally, if the user prompt named specific providers, models, or voices, " +
     "those are the ones used.",
   capabilities:
     "Every capability the reference offers is reachable in the generated agent — " +
     "as a custom tool or a `builtinTools` entry. Judge by function, not by name: " +
-    "`add_pizza` and `add_item` are the same capability. A capability the " +
-    "reference gets by *declaring* a channel rather than writing a tool counts " +
-    "too — `send: slack()` is what registers the framework's `send_message` " +
-    "tool, so an agent expected to send messages must declare it. This " +
+    "`add_pizza` and `add_item` are the same capability. This " +
     "criterion is about coverage ONLY: extra tools, and extra builtins " +
     "(including the framework defaults think/remember/recall/calculate), are " +
     "never a failure. Fail only when a capability the reference has cannot be " +
@@ -454,23 +416,15 @@ describeEval(
 
     // The template cases are all from-scratch rewrites of the starter
     // workspace, graded against the hand-written template of the same shape.
-    for (const { template, prompt, expectedSend, expectedKind } of TEMPLATE_CASES) {
+    for (const { template, prompt } of TEMPLATE_CASES) {
       it(`builds the ${template} shape`, async ({ run }) => {
         const result = await run(prompt);
         expect(Object.keys(result.output.files)).toContain("agent.ts");
         if (canSandbox) {
           // No `expectedTools` here: generated tool names legitimately differ
           // from the template's, and capability coverage is the parity judge's
-          // job. This is the "loads and self-describes" gate, plus the app kind
-          // and send channel where a case declares them.
-          await expect(result).toSatisfyJudge(SandboxLoadJudge, {
-            threshold: 1,
-            // Spread rather than passing the fields directly: under
-            // exactOptionalPropertyTypes an explicit `undefined` is not the
-            // same as an absent optional property.
-            ...(expectedSend === undefined ? {} : { expectedSend }),
-            ...(expectedKind === undefined ? {} : { expectedKind }),
-          });
+          // job. This is the "loads and self-describes" gate.
+          await expect(result).toSatisfyJudge(SandboxLoadJudge, { threshold: 1 });
         }
         // 0.8 of a 6-criterion rubric: at most one criterion may miss. Runs
         // mostly score 1.00; the slack absorbs residual tension between a
@@ -480,63 +434,8 @@ describeEval(
         await expect(result).toSatisfyJudge(TemplateParityJudge, { template, threshold: 0.8 });
       });
     }
-
-    // Shape *discovery*: the prompt describes what the user wants and never
-    // names an API, so picking agent() vs workflow() is the thing under test.
-    // No parity judge — there is no reference workspace, only a right shape.
-    for (const { name, prompt, expectedKind } of SHAPE_CASES) {
-      it(`picks the right app shape: ${name} → ${expectedKind}()`, async ({ run }) => {
-        const result = await run(prompt);
-        const agentTs = result.output.files["agent.ts"];
-        expect(agentTs, "no agent.ts in the workspace").toBeTruthy();
-        // Deterministic and sandbox-free, so this half runs everywhere. It is
-        // a necessary condition rather than the real check, but it catches the
-        // failure this case exists for: a local `const workflow = (config) =>
-        // ({ ...config, mode: "workflow" })` shim in place of the import. Such
-        // a workspace builds and loads — it just isn't a workflow — so the
-        // source is where it shows.
-        if (expectedKind === "workflow") {
-          expect(
-            agentTs,
-            "agent.ts defines its own workflow helper instead of importing one",
-          ).not.toMatch(/(?:const|let|var|function)\s+workflow\b/);
-          expect(agentTs, "agent.ts never imports workflow from the SDK").toMatch(
-            /import\s*\{[^}]*\bworkflow\b[^}]*\}\s*from\s*["']@alexkroman1\/aai["']/,
-          );
-        }
-        // The authoritative check: the app kind the built worker reports.
-        if (canSandbox) {
-          await expect(result).toSatisfyJudge(SandboxLoadJudge, { threshold: 1, expectedKind });
-        }
-      });
-    }
   },
 );
-
-/**
- * Non-LLM guard: a shape case must not leak its own answer.
- *
- * These are the only cases measuring whether the studio *discovers* the app
- * shape, and the tempting fix for a flaky one is to add "use workflow()" to
- * the prompt — which silently converts it into an instruction-following case
- * indistinguishable from the `TEMPLATE_CASES` it was written to complement.
- * Over-specifying the workflow prompts is how this coverage went missing
- * before; this makes doing it again a test failure.
- */
-describe("shape-discovery prompts", () => {
-  test("name no API, so the shape has to be inferred", () => {
-    const leaks = SHAPE_CASES.flatMap(({ name, prompt }) =>
-      SHAPE_GIVEAWAYS.filter((word) => prompt.toLowerCase().includes(word)).map(
-        (word) => `${name}: "${word}"`,
-      ),
-    );
-    expect(leaks, "these prompts give the answer away; describe the use case instead").toEqual([]);
-  });
-
-  test("cover both shapes, so the rule can't just always pick one", () => {
-    expect(new Set(SHAPE_CASES.map((c) => c.expectedKind))).toEqual(new Set(["agent", "workflow"]));
-  });
-});
 
 /**
  * Cheap, LLM-free guard: every template is either evaluated or explicitly

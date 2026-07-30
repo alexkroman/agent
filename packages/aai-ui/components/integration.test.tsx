@@ -355,7 +355,7 @@ describe("MessageList: auto-scroll guard", () => {
 
 describe("ChatView: narrow subscriptions", () => {
   test("does not re-render on snapshot changes no rendered component reads", () => {
-    const core = createMockSessionCore({ started: true, state: "listening", audioOut: true });
+    const core = createMockSessionCore({ started: true, state: "listening" });
     let commits = 0;
     render(
       <ThemeProvider>

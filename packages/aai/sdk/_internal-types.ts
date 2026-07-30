@@ -3,20 +3,12 @@
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
 import { AllowedHostsSchema } from "./allowed-hosts.ts";
-import {
-  type AgentKind,
-  assertAgentKind,
-  assertPipelineTuning,
-  assertProviderTriple,
-  assertSilencePolicy,
-  assertTextOnlyTuning,
-} from "./config-rules.ts";
+import { assertPipelineTuning, assertProviderTriple, assertSilencePolicy } from "./config-rules.ts";
 import { ProviderDescriptorSchema } from "./manifest.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import type {
   LlmProvider,
   S2sProvider,
-  SendProvider,
   SttProvider,
   TtsProvider,
   VectorProvider,
@@ -65,8 +57,6 @@ export const AgentConfigSchema = z.object({
   s2s: ProviderDescriptorSchema.optional(),
   mode: z.enum(["s2s", "pipeline"]).optional(),
   vector: ProviderDescriptorSchema.optional(),
-  send: ProviderDescriptorSchema.optional(),
-  kind: z.enum(["agent", "workflow"]).optional(),
   allowedHosts: AllowedHostsSchema.optional(),
 });
 
@@ -97,8 +87,6 @@ interface AgentConfigSource {
   tts?: TtsProvider | undefined;
   s2s?: S2sProvider | undefined;
   vector?: VectorProvider | undefined;
-  send?: SendProvider | undefined;
-  kind?: AgentKind | undefined;
   allowedHosts?: readonly string[] | undefined;
 }
 
@@ -125,8 +113,6 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s);
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
   assertPipelineTuning(mode, src);
-  assertTextOnlyTuning(src.tts, src);
-  assertAgentKind(mode, src.kind, src.tts);
   // Runs inside the generated bundle entry too, so the studio's test_agent
   // surfaces a bad TTS language as a load error rather than shipping a mute agent.
   assertAssemblyAITtsLanguage(src.tts);
@@ -152,12 +138,6 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   }
   if (src.s2s !== undefined) config.s2s = src.s2s;
   if (src.vector !== undefined) config.vector = src.vector;
-  if (src.send !== undefined) config.send = src.send;
-  if (src.kind !== undefined) config.kind = src.kind;
-  // Copied verbatim, NOT unioned with the send channel's host. The platform
-  // derives that itself (`resolveAgentAllowedHosts`) from the validated
-  // descriptor, so deriving it here too would be a second place to keep in
-  // sync — and the server's is the one a bundle cannot bypass.
   if (src.allowedHosts !== undefined) config.allowedHosts = [...src.allowedHosts];
   return config;
 }

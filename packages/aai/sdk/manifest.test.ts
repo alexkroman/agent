@@ -8,7 +8,6 @@ import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAI } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
-import { isTextOnlyTts, none } from "./providers/tts/none.ts";
 import { pinecone } from "./providers/vector/pinecone.ts";
 
 describe("parseManifest", () => {
@@ -446,77 +445,7 @@ describe("assertProviderTriple with s2s", () => {
   });
 });
 
-describe("parseManifest — text-only output (workflows only)", () => {
-  const textOnlyFields = {
-    kind: "workflow" as const,
-    stt: assemblyAI({ model: "u3pro-rt" }),
-    llm: anthropic({ model: "claude-haiku-4-5" }),
-    tts: none(),
-  };
-
-  test("tts: none() completes the triple ⇒ mode: 'pipeline'", () => {
-    const m = parseManifest({ name: "x", ...textOnlyFields } as never);
-    expect(m.mode).toBe("pipeline");
-    expect(isTextOnlyTts(m.tts)).toBe(true);
-  });
-
-  test("stt + llm without tts still throws (none() must be explicit)", () => {
-    expect(() =>
-      parseManifest({
-        name: "x",
-        kind: "workflow",
-        stt: textOnlyFields.stt,
-        llm: textOnlyFields.llm,
-      } as never),
-    ).toThrow(/stt, llm, and tts must be set together/);
-  });
-
-  test("rejects tts: none() on an agent — there is no text-only agent mode", () => {
-    expect(() => parseManifest({ name: "x", ...textOnlyFields, kind: undefined } as never)).toThrow(
-      /only valid for workflows/,
-    );
-  });
-
-  test("accepts errorPhrase with tts: none()", () => {
-    // Deliberately unlike holdPhrase: that is synthesized dead-air filler and
-    // meaningless without audio, whereas a failed turn otherwise produces no
-    // reply at all — "something went wrong" is as useful in text as in speech.
-    const m = parseManifest({
-      name: "x",
-      ...textOnlyFields,
-      errorPhrase: "I hit an error.",
-    } as never);
-    expect(m.errorPhrase).toBe("I hit an error.");
-  });
-
-  test("rejects holdPhrase with tts: none()", () => {
-    expect(() =>
-      parseManifest({ name: "x", ...textOnlyFields, holdPhrase: "One sec." } as never),
-    ).toThrow(/holdPhrase requires a speaking TTS provider/);
-  });
-
-  test("accepts the other pipeline tuning fields with tts: none()", () => {
-    const m = parseManifest({
-      name: "x",
-      ...textOnlyFields,
-      minBargeInWords: 3,
-      endpointSettleMs: 800,
-      silenceTimeoutMs: 15_000,
-    } as never);
-    expect(m.minBargeInWords).toBe(3);
-    expect(m.endpointSettleMs).toBe(800);
-    expect(m.silenceTimeoutMs).toBe(15_000);
-  });
-
-  test("toAgentConfig carries the none descriptor and rejects holdPhrase", () => {
-    const base = { name: "x", systemPrompt: "p", greeting: "g", ...textOnlyFields };
-    const config = toAgentConfig(base);
-    expect(isTextOnlyTts(config.tts)).toBe(true);
-    expect(() => toAgentConfig({ ...base, holdPhrase: "Hm." })).toThrow(
-      /holdPhrase requires a speaking TTS provider/,
-    );
-  });
-
+describe("parseManifest — AssemblyAI TTS language validation", () => {
   test("rejects an unsupported AssemblyAI TTS language at parse time", () => {
     // The service refuses a bad `language` in-band, after the socket opens, so
     // without this the only signal is a mute session in production. Parse time
@@ -545,55 +474,5 @@ describe("parseManifest — text-only output (workflows only)", () => {
       } as never);
       expect(m.tts?.options.language).toBe(language);
     }
-  });
-
-  test("isTextOnlyTts is null-safe and rejects real providers", () => {
-    expect(isTextOnlyTts(undefined)).toBe(false);
-    expect(isTextOnlyTts(null)).toBe(false);
-    expect(isTextOnlyTts(cartesia({ voice: "v" }))).toBe(false);
-    expect(isTextOnlyTts(none())).toBe(true);
-  });
-});
-
-describe("parseManifest — send channel", () => {
-  const send = { kind: "slack", options: {} };
-
-  test("send is carried through parseManifest and toAgentConfig", () => {
-    const m = parseManifest({ name: "x", send } as never);
-    expect(m.send).toEqual(send);
-    const config = toAgentConfig({ name: "x", systemPrompt: "p", greeting: "g", send });
-    expect(config.send).toEqual(send);
-  });
-
-  test("declaring a send channel unions its host into allowedHosts", () => {
-    const m = parseManifest({ name: "x", send } as never);
-    expect(m.allowedHosts).toContain("hooks.slack.com");
-  });
-
-  test("the auto-added host deduplicates against an explicit entry", () => {
-    const m = parseManifest({
-      name: "x",
-      send,
-      allowedHosts: ["hooks.slack.com", "api.example.com"],
-    } as never);
-    expect(m.allowedHosts.filter((h) => h === "hooks.slack.com")).toHaveLength(1);
-    expect(m.allowedHosts).toContain("api.example.com");
-  });
-
-  test("no send channel leaves allowedHosts untouched", () => {
-    expect(parseManifest({ name: "x" }).allowedHosts).toEqual([]);
-  });
-
-  test("send is orthogonal to session mode", () => {
-    expect(parseManifest({ name: "x", send } as never).mode).toBe("s2s");
-    const m = parseManifest({
-      name: "x",
-      stt: assemblyAI({ model: "u3pro-rt" }),
-      llm: anthropic({ model: "claude-haiku-4-5" }),
-      tts: cartesia({ voice: "v" }),
-      send,
-    } as never);
-    expect(m.mode).toBe("pipeline");
-    expect(m.send).toEqual(send);
   });
 });

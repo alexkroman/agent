@@ -22,12 +22,10 @@ describe("viteDevConfig", () => {
     expect(proxy["/health"]).toBe("http://localhost:3001");
   });
 
-  test("proxies /sync and /client-config to the backend", () => {
+  test("proxies /client-config to the backend", () => {
     const config = viteDevConfig("/proj", 3000, 3001);
     const proxy = config.server?.proxy as Record<string, unknown>;
-    // Without /sync a custom sync client under `aai dev` 404s its turns;
-    // without /client-config the default client can't learn the transport.
-    expect(proxy["/sync"]).toBe("http://localhost:3001");
+    // Without /client-config the default client can't learn the agent name.
     expect(proxy["/client-config"]).toBe("http://localhost:3001");
   });
 
@@ -55,49 +53,11 @@ describe("startDevServer (real serving path)", () => {
         try {
           const res = await fetch(`http://127.0.0.1:${port}/health`);
           expect(res.ok).toBe(true);
-          // Pre-connection client config: a plain agent serves the agent kind.
+          // Pre-connection client config: the agent's display name.
           const cfg = await fetch(`http://127.0.0.1:${port}/client-config`);
           expect(cfg.ok).toBe(true);
           expect(await cfg.json()).toMatchObject({
-            kind: "agent",
             name: "serve-test-agent",
-          });
-        } finally {
-          await cleanup();
-        }
-      }),
-    );
-  });
-
-  test("serves a declared workflow kind at /client-config", { timeout: 30_000 }, async () => {
-    await withTempDir(
-      silenced(async (dir) => {
-        // Descriptors are pure data, so inline objects stand in for the
-        // factory calls — nothing connects until a session starts.
-        await writeFile(
-          path.join(dir, "agent.ts"),
-          `export default {
-              name: "wf-serve-agent", systemPrompt: "hi", greeting: "Talk to me.",
-              tools: {}, kind: "workflow",
-              stt: { kind: "assemblyai", options: {} },
-              llm: { kind: "anthropic", options: { model: "claude-haiku-4-5" } },
-              tts: { kind: "none", options: {} },
-            };`,
-        );
-        await writeFile(
-          path.join(dir, ".env"),
-          "ASSEMBLYAI_API_KEY=test-key\nANTHROPIC_API_KEY=test-key\n",
-        );
-
-        const port = await getPort();
-        const cleanup = await startDevServer({ cwd: dir, port });
-        try {
-          const res = await fetch(`http://127.0.0.1:${port}/client-config`);
-          expect(res.ok).toBe(true);
-          expect(await res.json()).toEqual({
-            kind: "workflow",
-            name: "wf-serve-agent",
-            greeting: "Talk to me.",
           });
         } finally {
           await cleanup();
