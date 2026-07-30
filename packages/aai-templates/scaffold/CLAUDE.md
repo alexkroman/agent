@@ -263,6 +263,12 @@ for the providers you actually use.
 All STT factories accept `{ model?: string, ... }`. Bare calls
 (`deepgram()`, `soniox()`, etc.) use the default model.
 
+`assemblyAI` accepts an optional `region: "eu"` for EU data residency —
+it routes both streaming and sync transcription (workflow runs / `POST
+/sync`) to AssemblyAI's EU endpoints. EU-region API keys require it; the
+US endpoints reject them. Example:
+`assemblyAI({ model: "universal-3-5-pro", region: "eu" })`.
+
 ### LLM — `@alexkroman1/aai/llm`
 
 | Factory     | SDK package           | Env var                          |

@@ -287,6 +287,22 @@ describe("resolveStt — AssemblyAI transcribeClip capability", () => {
     expect(body).toContain('{"sample_rate":16000,"channels":1}');
   });
 
+  it("routes the clip to the EU Sync endpoint when the descriptor sets region: 'eu'", async () => {
+    const fetchFn = fetchMockJson({ text: "hallo", words: [] });
+    const { opener } = resolveStt({ kind: "assemblyai", options: { region: "eu" } });
+    await opener.transcribeClip?.(new Uint8Array([1, 0]), 16_000, { apiKey: "k", fetch: fetchFn });
+    const [url] = fetchFn.mock.calls[0] ?? [];
+    expect(String(url)).toBe("https://sync.eu.assemblyai.com/transcribe");
+  });
+
+  it("defaults to the US Sync endpoint when the descriptor has no region", async () => {
+    const fetchFn = fetchMockJson({ text: "hello", words: [] });
+    const { opener } = resolveStt({ kind: "assemblyai", options: {} });
+    await opener.transcribeClip?.(new Uint8Array([1, 0]), 16_000, { apiKey: "k", fetch: fetchFn });
+    const [url] = fetchFn.mock.calls[0] ?? [];
+    expect(String(url)).toBe("https://sync.assemblyai.com/transcribe");
+  });
+
   it("other STT kinds carry no clip capability", () => {
     expect(resolveStt({ kind: "deepgram", options: {} }).opener.transcribeClip).toBeUndefined();
   });

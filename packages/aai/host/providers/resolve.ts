@@ -154,6 +154,9 @@ const STT_REGISTRY: Record<string, OpenerRegistryEntry<SttOpener>> = {
           sampleRate,
           channels: 1,
           apiKey: o.apiKey,
+          // EU data residency: same descriptor knob that steers the
+          // streaming socket, so both transcription paths move together.
+          region: options<AssemblyAIOptions>(d).region,
           fetch: o.fetch,
           signal: o.signal,
         }).then((r) => r.text),

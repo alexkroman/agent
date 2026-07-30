@@ -10,6 +10,7 @@ import {
 } from "../../../sdk/constants.ts";
 import {
   ASSEMBLYAI_API_KEY_ENV,
+  ASSEMBLYAI_STREAMING_EU_URL,
   type AssemblyAIOptions,
 } from "../../../sdk/providers/stt/assemblyai.ts";
 import {
@@ -125,6 +126,46 @@ function normalizeAgentContext(text: string): string | undefined {
   return text.length > AGENT_CONTEXT_MAX_CHARS ? text.slice(-AGENT_CONTEXT_MAX_CHARS) : text;
 }
 
+/**
+ * Assemble the SDK's transcriber params from the descriptor options and the
+ * per-session open options. Built as a loose record and cast once at the call
+ * site: the SDK's param type is a strict string-literal union and, under
+ * exactOptionalPropertyTypes, does not accept our widened `string` option
+ * types via conditional spreads.
+ */
+function buildTranscriberParams(
+  opts: AssemblyAIOptions,
+  openOpts: SttOpenOptions,
+): { params: Record<string, unknown>; agentContextCapable: boolean } {
+  const speechModel = resolveSpeechModel(opts.model ?? "universal-3-5-pro");
+  const agentContextCapable = supportsAgentContext(speechModel);
+  const initialAgentContext = agentContextCapable
+    ? normalizeAgentContext(openOpts.agentContext ?? "")
+    : undefined;
+  // Voice focus (noise suppression); defaults to near-field. "off"/"" disables.
+  const requestedVoiceFocus = opts.voiceFocus ?? "near-field";
+  const voiceFocus = requestedVoiceFocus === "off" ? "" : requestedVoiceFocus;
+  const params: Record<string, unknown> = {
+    sampleRate: openOpts.sampleRate,
+    speechModel,
+    // Always set: the SDK's 1000 ms default covers socket open *plus* the
+    // server's `Begin`, and a healthy handshake can exceed it — see the
+    // connect-budget note in sdk/constants.ts. `??` (not `||`) so an
+    // explicit 0 survives as "no deadline".
+    connectTimeout: opts.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
+    maxConnectionRetries: opts.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
+    connectionRetryDelay: STT_CONNECT_RETRY_DELAY_MS,
+  };
+  // EU data residency: point the SDK's streaming socket at the EU host.
+  // The US default is left to the SDK (its default already carries the
+  // versioned path), so only the EU case names an endpoint here.
+  if (opts.region === "eu") params.websocketBaseUrl = ASSEMBLYAI_STREAMING_EU_URL;
+  if (openOpts.sttPrompt) params.prompt = openOpts.sttPrompt;
+  if (initialAgentContext !== undefined) params.agentContext = initialAgentContext;
+  if (voiceFocus) params.voiceFocus = voiceFocus;
+  return { params, agentContextCapable };
+}
+
 export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
   return {
     name: "assemblyai",
@@ -137,33 +178,10 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       );
 
       const client = new AssemblyAI({ apiKey });
-      const speechModel = resolveSpeechModel(opts.model ?? "universal-3-5-pro");
-      const agentContextCapable = supportsAgentContext(speechModel);
-      const initialAgentContext = agentContextCapable
-        ? normalizeAgentContext(openOpts.agentContext ?? "")
-        : undefined;
-      // Voice focus (noise suppression); defaults to near-field. "off"/"" disables.
-      const requestedVoiceFocus = opts.voiceFocus ?? "near-field";
-      const voiceFocus = requestedVoiceFocus === "off" ? "" : requestedVoiceFocus;
-      // Build params as a loose record and cast once: the SDK's param type is a
-      // strict string-literal union and, under exactOptionalPropertyTypes, does
-      // not accept our widened `string` option types via conditional spreads.
-      const transcriberParams: Record<string, unknown> = {
-        sampleRate: openOpts.sampleRate,
-        speechModel,
-        // Always set: the SDK's 1000 ms default covers socket open *plus* the
-        // server's `Begin`, and a healthy handshake can exceed it — see the
-        // connect-budget note in sdk/constants.ts. `??` (not `||`) so an
-        // explicit 0 survives as "no deadline".
-        connectTimeout: opts.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
-        maxConnectionRetries: opts.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
-        connectionRetryDelay: STT_CONNECT_RETRY_DELAY_MS,
-      };
-      if (openOpts.sttPrompt) transcriberParams.prompt = openOpts.sttPrompt;
-      if (initialAgentContext !== undefined) {
-        transcriberParams.agentContext = initialAgentContext;
-      }
-      if (voiceFocus) transcriberParams.voiceFocus = voiceFocus;
+      const { params: transcriberParams, agentContextCapable } = buildTranscriberParams(
+        opts,
+        openOpts,
+      );
       const transcriber = client.streaming.transcriber(
         transcriberParams as Parameters<typeof client.streaming.transcriber>[0],
       );
