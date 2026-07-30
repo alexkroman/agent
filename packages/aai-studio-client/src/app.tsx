@@ -225,15 +225,23 @@ export function App({ apiKey, onSignOut }: AppProps) {
     if (workspace.error instanceof ApiError && workspace.error.status === 401) onSignOut();
   }, [workspace.error, onSignOut]);
 
-  // Persisted chat history, restored once per project open. `useChat` owns
-  // the live conversation after hydration (the server rewrites the row when
-  // each turn settles), so the fetched snapshot never goes stale in a way a
-  // refetch could fix — hence staleTime: Infinity and no invalidation.
+  // Persisted chat history, re-fetched on every project open. `useChat`
+  // owns the live conversation after hydration, but the server rewrites the
+  // row as each turn settles — so a cached snapshot goes stale the moment a
+  // turn completes, and switching back to a project must re-ask the server
+  // or it re-hydrates from the pre-turn cache and drops the newest turns.
+  // ProjectChat reads its seed once at mount, so a cached array served
+  // before the refetch resolves would hydrate stale and the fresh result
+  // would be ignored — gcTime: 0 evicts the cache on switch-away instead,
+  // making every open a fresh fetch behind the loading pane. Focus
+  // refetches are pointless for the same reason the cache is.
   const chat = useQuery<UIMessage[]>({
     queryKey: ["chat", project],
     queryFn: () => api.getChat(apiKey, project as string),
     enabled: project != null,
-    staleTime: Number.POSITIVE_INFINITY,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
   });
 
   useEffect(() => {
