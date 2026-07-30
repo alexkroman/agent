@@ -19,19 +19,17 @@ afterEach(() => {
   mocks.restore();
 });
 
-function voicedChunk(samples = 2048): Float32Array {
-  return new Float32Array(samples).fill(0.5);
+/** One PCM16 batch as the shared capture worklet posts it. */
+function voicedChunk(samples = 2048): ArrayBuffer {
+  return new Int16Array(samples).fill(0x20_00).buffer;
 }
 
 function captureNode(): MockAudioWorkletNode {
-  return findWorkletNode(mocks.workletNodes(), "aai-sync-capture");
+  return findWorkletNode(mocks.workletNodes(), "capture-processor");
 }
 
-function emitChunk(samples: Float32Array): void {
-  const node = captureNode();
-  (
-    node as unknown as { onmessage?: unknown; port: { onmessage: (e: MessageEvent) => void } }
-  ).port.onmessage(new MessageEvent("message", { data: { event: "chunk", samples } }));
+function emitChunk(buffer: ArrayBuffer): void {
+  captureNode().port.simulateMessage({ event: "chunk", buffer });
 }
 
 describe("voice capture constraints", () => {
@@ -54,7 +52,7 @@ describe("voice capture constraints", () => {
 });
 
 describe("createPttRecorder", () => {
-  test("registers the inline worklet module as a blob URL", async () => {
+  test("loads the shared capture worklet as a blob URL", async () => {
     const recorder = createPttRecorder();
     await recorder.start();
     expect(mocks.lastContext().audioWorklet.modules).toContain(CAPTURE_WORKLET_MODULE_URL);
@@ -62,6 +60,16 @@ describe("createPttRecorder", () => {
     expect(CAPTURE_WORKLET_MODULE_URL.startsWith("blob:")).toBe(true);
     expect(captureNode()).toBeDefined();
     await recorder.close();
+  });
+
+  test("drives the worklet's start/stop protocol", async () => {
+    const recorder = createPttRecorder();
+    await recorder.start();
+    expect(captureNode().port.posted).toContainEqual({ event: "start" });
+    await recorder.stop();
+    // The stop waits for the worklet's 'stopped' ack (the mock port mirrors
+    // it), so the final flush's chunk can never be torn away mid-post.
+    expect(captureNode().port.posted).toContainEqual({ event: "stop" });
   });
 
   test("records exactly between start() and stop(), across presses", async () => {
@@ -73,9 +81,9 @@ describe("createPttRecorder", () => {
     const first = await recorder.stop();
     expect(first.length).toBe(2 * 2048);
 
-    // Frames outside a press are dropped…
+    // A stray chunk between presses is cleared by the next start(): the next
+    // press starts clean on the same open mic.
     emitChunk(voicedChunk());
-    // …and the next press starts clean on the same open mic.
     await recorder.start();
     emitChunk(voicedChunk());
     const second = await recorder.stop();
@@ -92,6 +100,14 @@ describe("createPttRecorder", () => {
     nav.mediaDevices.getUserMedia = () => Promise.reject(new Error("denied"));
     await expect(createPttRecorder().start()).rejects.toThrow("denied");
     expect(mocks.lastContext().closed).toBe(true);
+  });
+
+  test("start() after close() refuses instead of reopening a mic nothing can release", async () => {
+    const recorder = createPttRecorder();
+    await recorder.start();
+    await recorder.stop();
+    await recorder.close();
+    await expect(recorder.start()).rejects.toThrow("closed");
   });
 });
 

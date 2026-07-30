@@ -12,18 +12,21 @@
 // much of itself was concealed.
 
 import {
+  DEFAULT_TTS_SAMPLE_RATE,
+  PLAYBACK_BUFFER_SECONDS,
   PLAYBACK_CONCEAL_FADE_MS,
   PLAYBACK_CONCEAL_FLOOR,
   PLAYBACK_JITTER_MS,
   PLAYBACK_REFILL_MS,
 } from "../types.ts";
+import { workletModuleUrl } from "./_module-url.ts";
 
 const PlaybackProcessorWorklet = `
 class PlaybackProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const opts = options.processorOptions || {};
-    const rate = opts.sampleRate ?? 24000;
+    const rate = opts.sampleRate ?? ${DEFAULT_TTS_SAMPLE_RATE};
     // Fill target for the start of a turn. If 'done' arrives first (short
     // utterance), start immediately instead of waiting for audio that is
     // never coming.
@@ -36,12 +39,12 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     this.concealCapacity = Math.max(1, Math.floor((rate * ${PLAYBACK_CONCEAL_FADE_MS}) / 1000));
     this.concealBuf = new Float32Array(this.concealCapacity);
     this.concealDecay = Math.exp(Math.log(${PLAYBACK_CONCEAL_FLOOR}) / this.concealCapacity);
-    // Float32 ring buffer — 60s at the context sample rate. Allocated once for
-    // the node's lifetime; per-turn state resets via resetTurn(). writePos and
-    // readPos are absolute (monotonic) sample counts; the buffer is indexed
-    // modulo capacity so a reply longer than 60s keeps playing instead of
-    // writing past the end and going silent.
-    this.capacity = rate * 60;
+    // Float32 ring buffer — PLAYBACK_BUFFER_SECONDS at the context sample
+    // rate. Allocated once for the node's lifetime; per-turn state resets via
+    // resetTurn(). writePos and readPos are absolute (monotonic) sample
+    // counts; the buffer is indexed modulo capacity so a longer reply keeps
+    // playing instead of writing past the end and going silent.
+    this.capacity = rate * ${PLAYBACK_BUFFER_SECONDS};
     this.samples = new Float32Array(this.capacity);
     // Platform endianness probe: the wire format is PCM16 little-endian, so
     // the Int16Array fast path in ingestBytes is only valid on LE hosts
@@ -159,10 +162,13 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   rememberTail(out, n) {
     const cap = this.concealCapacity;
     const take = Math.min(n, cap);
-    for (let i = n - take; i < n; i++) {
-      this.concealBuf[this.concealWrite] = out[i];
-      this.concealWrite = this.concealWrite + 1 === cap ? 0 : this.concealWrite + 1;
-    }
+    // Bulk copies (this runs on every cleanly rendered quantum): the tail is
+    // one contiguous source run, landing in at most two ring runs.
+    const tail = out.subarray(n - take, n);
+    const first = Math.min(take, cap - this.concealWrite);
+    this.concealBuf.set(tail.subarray(0, first), this.concealWrite);
+    if (take > first) this.concealBuf.set(tail.subarray(first), 0);
+    this.concealWrite = (this.concealWrite + take) % cap;
     this.concealLen = Math.min(cap, this.concealLen + take);
     // Read the loop oldest-first; once the ring is full the write cursor is
     // the oldest retained sample.
@@ -293,8 +299,4 @@ registerProcessor('playback-processor', PlaybackProcessor);
 /** Raw worklet source — exported so tests can evaluate the processor directly. */
 export const playbackProcessorSource = PlaybackProcessorWorklet;
 
-const script = new Blob([PlaybackProcessorWorklet], {
-  type: "application/javascript",
-});
-const src = URL.createObjectURL(script);
-export default src;
+export default workletModuleUrl(PlaybackProcessorWorklet);

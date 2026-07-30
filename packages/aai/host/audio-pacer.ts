@@ -111,6 +111,15 @@ export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
     timer = null;
   }
 
+  // Shared by clear() and stop(): drop everything held and reset the lead.
+  // The turn is over on both ends — audio already sent was discarded
+  // client-side, so none of it is still playing.
+  function reset(): void {
+    queue.length = 0;
+    cancelTimer();
+    playoutMs = 0;
+  }
+
   return {
     push(chunk) {
       if (stopped || chunk.byteLength === 0) return;
@@ -127,18 +136,12 @@ export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
     },
 
     clear() {
-      queue.length = 0;
-      cancelTimer();
-      // The turn is over on both ends: audio already sent was discarded
-      // client-side, so none of it is still playing and the lead is gone.
-      playoutMs = 0;
+      reset();
     },
 
     stop() {
       stopped = true;
-      queue.length = 0;
-      cancelTimer();
-      playoutMs = 0;
+      reset();
     },
   };
 }
