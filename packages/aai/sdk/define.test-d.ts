@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expectTypeOf, test } from "vitest";
-import { agent } from "./define.ts";
+import { agent, type workflow } from "./define.ts";
 import type { LlmProvider, SendProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { AgentDef } from "./types.ts";
 
@@ -47,4 +47,15 @@ test("agent() without stt/llm/tts is still legal (s2s mode)", () => {
   expectTypeOf(def.stt).toEqualTypeOf<SttProvider | undefined>();
   expectTypeOf(def.llm).toEqualTypeOf<LlmProvider | undefined>();
   expectTypeOf(def.tts).toEqualTypeOf<TtsProvider | undefined>();
+});
+
+/**
+ * A workflow never speaks: `workflow()` deliberately has no `tts`
+ * parameter (it always sets the internal `none()` sentinel), so
+ * `workflow({ tts })` stays a TS2353 excess-property error rather than a
+ * runtime config rejection.
+ */
+test("workflow() does not accept a tts parameter", () => {
+  type WorkflowParamKeys = keyof Parameters<typeof workflow>[0];
+  expectTypeOf<Extract<WorkflowParamKeys, "tts">>().toEqualTypeOf<never>();
 });

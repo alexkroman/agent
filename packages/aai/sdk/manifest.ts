@@ -242,7 +242,7 @@ export function parseManifest(input: unknown): Manifest {
   assertSilencePolicy(mode, parsed.silenceTimeoutMs, parsed.silencePrompt);
   assertPipelineTuning(mode, parsed);
   assertTextOnlyTuning(parsed.tts, parsed);
-  assertAgentKind(mode, parsed.kind);
+  assertAgentKind(mode, parsed.kind, parsed.tts);
   assertAssemblyAITtsLanguage(parsed.tts);
   const isWorkflow = parsed.kind === "workflow";
   return {

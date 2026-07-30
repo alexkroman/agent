@@ -202,8 +202,8 @@ export function agent(def: {
  *
  * Compared to `agent()`:
  * - `stt` and `llm` are **required** (a workflow is always a pipeline);
- *   `tts` is optional and defaults to `none()` — the output is a report,
- *   not speech.
+ *   there is no `tts` — a workflow never speaks. Its output is actions
+ *   plus a written report.
  * - The default system prompt is {@link DEFAULT_WORKFLOW_SYSTEM_PROMPT} —
  *   one-shot execution semantics (no clarifying questions, report the
  *   outcome) instead of the conversational agent default.
@@ -252,11 +252,6 @@ export function workflow(def: {
   stt: SttProvider;
   /** LLM that runs the agentic loop over the transcript. Required. */
   llm: LlmProvider;
-  /**
-   * TTS provider for the run report. Defaults to `none()` — a workflow's
-   * output is actions plus a written report, so most need no voice.
-   */
-  tts?: TtsProvider;
   kv?: KvProvider;
   vector?: VectorProvider;
   send?: SendProvider;
@@ -270,7 +265,8 @@ export function workflow(def: {
     maxSteps: DEFAULT_MAX_STEPS,
     tools: {},
     ...def,
-    tts: def.tts ?? none(),
+    // A workflow never speaks — tts is not a parameter, always the sentinel.
+    tts: none(),
     kind: "workflow",
   };
 }

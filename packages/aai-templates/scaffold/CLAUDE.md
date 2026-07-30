@@ -124,7 +124,7 @@ export default workflow({
   name: "Expense Filer",
   stt: assemblyAI({ model: "u3pro-rt" }),   // required
   llm: anthropic({ model: "claude-sonnet-5" }), // required
-  // tts is optional — defaults to none(): the output is a report, not speech
+  // no tts — a workflow never speaks; the run report is text
   tools: {
     file_expense: tool({
       description: "File one expense",
@@ -142,6 +142,8 @@ Differences from `agent()`:
 
 - Always a pipeline (`stt` + `llm` required); runs over the sync transport —
   each run is one history-less `POST /sync`.
+- Never speaks: there is no `tts` parameter (`workflow()` sets the internal
+  `none()` sentinel). The run report is written output, not audio.
 - Its own default system prompt: one-shot semantics (never ask clarifying
   questions, state assumptions, finish every action, end with a run report).
   A custom `systemPrompt` is layered on top of that contract.
@@ -182,44 +184,11 @@ export default agent({
 Tools, KV, `ctx`, and the UI all behave identically across modes. Only
 the audio + LLM transport differs.
 
-**Text-only mode (`tts: none()`):** pipeline mode without synthesis —
-speech in (STT → LLM), text out. Use it for transcription assistants,
-dictation, or any agent whose replies are read rather than heard:
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { assemblyAI } from "@alexkroman1/aai/stt";
-import { anthropic } from "@alexkroman1/aai/llm";
-import { none } from "@alexkroman1/aai/tts";
-
-export default agent({
-  name: "My Agent",
-  stt: assemblyAI({ model: "universal-3-5-pro" }),
-  llm: anthropic({ model: "claude-haiku-4-5" }),
-  tts: none(), // explicit — stt/llm without tts is still a config error
-});
-```
-
-No TTS key is needed. The default UI switches to a text layout: a record
-button (mic is opt-in, not always-on), an audio-file upload button that
-transcribes and answers, and streamed text replies. `holdPhrase` is
-rejected with `tts: none()` (it is spoken filler); the other pipeline
-tuning fields work unchanged.
-
-Uploads of **two minutes or less** are transcribed in a single request
-via AssemblyAI's Sync API (`universal-3-5-pro`) — the preferred endpoint
-for short files — rather than replayed through the realtime socket.
-This is platform behavior; the agent code needs nothing extra. Longer
-uploads stream through the agent's realtime STT. (Custom tools can also
-call the Sync API directly with `syncTranscribe` from
-`@alexkroman1/aai/stt`.)
-
-**One-shot transform agents.** Most text-only agents are *transforms*
-(dictation → structured notes, voice memo → summary), not chat: treat
-each utterance or upload as an independent request and reply with only
-the transformed output. Write the systemPrompt accordingly ("Transform
-the user's dictation into X. Output only X, nothing else.") and keep the
-greeting to a one-line instruction — or omit it.
+**There is no text-only agent mode.** An agent is a voice conversation —
+`tts: none()` on `agent()` is rejected at parse time. Speech-in,
+text/action-out apps (dictation transforms, voice memos → notes, one-shot
+instructions) are **workflows**: use `workflow()`, whose runs end with a
+written report and which never speaks. See the `workflow()` section above.
 
 **Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
 assistant proactively take a turn after that much user silence (e.g.
@@ -355,8 +324,8 @@ Anything else fails at session start. Because the factory is named
 **Rime quirk:** language uses ISO 639-3 three-letter codes (e.g. `"eng"`
 not `"en"`).
 
-`none()` (no env var) declares a **text-only** agent — see "Text-only
-mode" above.
+`none()` (no env var) is the workflow sentinel — a workflow never speaks,
+and `workflow()` sets it automatically. It is rejected on `agent()`.
 
 ### Send channels — `@alexkroman1/aai/send`
 
@@ -725,7 +694,6 @@ Available from `@alexkroman1/aai-ui`:
 | `SidebarLayout` | `sidebar, children, sidebarWidth?, sidebarPosition?` | Two-column layout |
 | `MessageList` | — | Messages with auto-scroll, tool calls, transcript |
 | `Controls` | — | Stop/Resume + New Conversation buttons |
-| `TextControls` | — | Record/upload/New Conversation (text-only sessions) |
 | `Button` | — | Styled button |
 
 ## Styling
@@ -787,8 +755,8 @@ Common mistakes when working in aai projects:
   only what the model needs.
 - **Pipeline mode requires all three of `stt` / `llm` / `tts`.** Partial
   configs are rejected at parse time. Use S2S (omit all three) if you
-  don't need provider control, or `tts: none()` for a text-only agent —
-  never just leave `tts` off.
+  don't need provider control. An agent must name a real TTS provider —
+  `tts: none()` is workflow-only, and `workflow()` sets it for you.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
 - **Don't use `useEffect` + `toolCalls` to derive state.** Use

@@ -13,7 +13,6 @@ exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
   "SessionUrlChips",
   "SidebarLayout",
   "StartScreen",
-  "TextControls",
   "ThemeProvider",
   "ToolConfigContext",
   "UiUrlChip",

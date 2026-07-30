@@ -502,10 +502,12 @@ The SDK defines two kinds of app, marked by `AgentDef.kind`
   file, presses Go, one agentic loop transcribes and executes it with the
   workflow's tools, and the run ends with a written report. No conversation,
   no history between runs. A workflow is always a **pipeline** (`stt` + `llm`
-  required; `tts` defaults to `none()`); each run is one history-less
-  `POST /sync`. `assertAgentKind` (`sdk/config-rules.ts`) enforces the
-  pipeline rule in `parseManifest`, `toAgentConfig`, and the server's
-  `IsolateConfigSchema`. **`workflow()` is the only author-facing way to set
+  required) and **never speaks**: `workflow()` has no `tts` parameter and
+  always sets the internal `none()` sentinel; each run is one history-less
+  `POST /sync`. `assertAgentKind` (`sdk/config-rules.ts`) enforces both
+  kind rules — workflow ⇒ pipeline + `none()` tts, agent ⇒ a real TTS
+  (there is **no text-only agent mode**) — in `parseManifest`,
+  `toAgentConfig`, and the server's `IsolateConfigSchema`. **`workflow()` is the only author-facing way to set
   the kind** — `agent()` deliberately doesn't accept a `kind` parameter
   (`define.test-d.ts` pins the exclusion), so a workflow can't be hand-rolled
   without its defaults.
@@ -653,25 +655,26 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   The `aai dev` Vite proxy forwards `/client-config` *and* `/sync` to the
   backend — without the latter, custom sync clients 404'd under dev.
 
-- **Text-only mode** (`tts: none()` from `@alexkroman1/aai/tts`) is
-  pipeline mode without a synthesis side: speech in (STT → LLM), text out.
-  The sentinel descriptor keeps the all-or-none triple rule intact (a
-  *forgotten* `tts` stays a loud error) while `isTextOnlyTts()` flags the
-  mode wherever it matters: the runtime resolves `tts: null` (no opener,
-  no TTS credential — `requiredProviderEnvVars` skips it since `none` has
-  no registry entry), the pipeline transport skips the TTS side entirely
-  (`openTtsSide` fires `onAudioReady` immediately; `flushTtsAndWait`
-  early-returns; `holdPhrase` is forced off and rejected at config time
-  via `assertTextOnlyTuning` — enforced in `parseManifest`,
-  `toAgentConfig`, and the server's `IsolateConfigSchema`), and the
-  `config` protocol message stamps `audioOut: false` so the client skips
-  the playback pipeline. In `aai-ui`, a text-only session makes the mic
-  opt-in (`startRecording()`/`stopRecording()` on `SessionCore`), adds
-  `sendAudioFile()` (decode → resample → PCM16 stream with trailing
-  silence for endpointing), and the default `ChatView` swaps `Controls`
-  for `TextControls` (record + upload + text replies). The snapshot's
+- **Text-only output is workflow-only** — there is no text-only *agent*
+  mode. The `none()` sentinel (`sdk/providers/tts/none.ts`) is what
+  `workflow()` always sets as its `tts`: it keeps the all-or-none triple
+  rule intact (a *forgotten* `tts` stays a loud error) while
+  `isTextOnlyTts()` flags the mode wherever it matters: the runtime
+  resolves `tts: null` (no opener, no TTS credential —
+  `requiredProviderEnvVars` skips it since `none` has no registry entry),
+  the pipeline transport skips the TTS side entirely (`openTtsSide` fires
+  `onAudioReady` immediately; `flushTtsAndWait` early-returns;
+  `holdPhrase` is forced off and rejected at config time via
+  `assertTextOnlyTuning`), and the `config` protocol message stamps
+  `audioOut: false` so the client skips the playback pipeline.
+  `assertAgentKind` rejects `tts: none()` on an agent and a real TTS on a
+  workflow, in `parseManifest`, `toAgentConfig`, and the server's
+  `IsolateConfigSchema`. `SessionCore` keeps the audioOut-aware plumbing
+  (`startRecording()`/`stopRecording()`, `sendAudioFile()`) for
+  programmatic clients, but the default `ChatView` always renders the
+  voice `Controls` — the former `TextControls` UI is gone. The snapshot's
   `apiUrl` field carries the programmatic WebSocket endpoint, shown by
-  `ApiUrlChip` in every mode. Template: `pipeline-text-only`.
+  `ApiUrlChip` in every mode.
 
 Reference providers shipped today:
 

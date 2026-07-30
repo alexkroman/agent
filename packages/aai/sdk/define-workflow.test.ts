@@ -27,18 +27,17 @@ describe("workflow()", () => {
     expect(def.greeting).toBe(DEFAULT_WORKFLOW_GREETING);
   });
 
-  it("keeps a custom system prompt, greeting, and a real TTS provider", () => {
+  it("keeps a custom system prompt and greeting", () => {
     const def = workflow({
       name: "Filer",
       stt,
       llm,
-      tts,
       systemPrompt: "File expenses.",
       greeting: "Speak your expense.",
     });
     expect(def.systemPrompt).toBe("File expenses.");
     expect(def.greeting).toBe("Speak your expense.");
-    expect(def.tts).toBe(tts);
+    expect(isTextOnlyTts(def.tts)).toBe(true);
   });
 
   it("passes toAgentConfig validation as a pipeline config", () => {
@@ -53,9 +52,27 @@ describe("kind rules in parseManifest / toAgentConfig", () => {
   });
 
   it("fills the workflow defaults for a bare workflow manifest", () => {
-    const manifest = parseManifest({ name: "w", kind: "workflow", stt, llm, tts });
+    const manifest = parseManifest({
+      name: "w",
+      kind: "workflow",
+      stt,
+      llm,
+      tts: { kind: "none", options: {} },
+    });
     expect(manifest.systemPrompt).toBe(DEFAULT_WORKFLOW_SYSTEM_PROMPT);
     expect(manifest.greeting).toBe(DEFAULT_WORKFLOW_GREETING);
+  });
+
+  it("rejects a workflow manifest carrying a real TTS provider", () => {
+    expect(() => parseManifest({ name: "w", kind: "workflow", stt, llm, tts })).toThrow(
+      /never speaks/,
+    );
+  });
+
+  it("rejects tts: none() on an agent manifest — no text-only agents", () => {
+    expect(() =>
+      parseManifest({ name: "a", stt, llm, tts: { kind: "none", options: {} } }),
+    ).toThrow(/only valid for workflows/);
   });
 
   it("leaves agent-kind defaults untouched", () => {

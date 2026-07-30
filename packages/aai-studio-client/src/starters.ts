@@ -132,14 +132,4 @@ export const STARTERS: { label: string; prompt: string }[] = [
       "spooky, funny), then picks from a curated in-code catalog via a tool " +
       "— no web access. Give it a warm night-owl persona.",
   },
-  {
-    label: "A one-shot dictation transform (no TTS)",
-    // Modeled on the pipeline-text-only template.
-    prompt:
-      "A one-shot speech-to-text transform (text-only, tts: none()): I speak or " +
-      "upload a short audio file and get back structured notes as text — not a " +
-      "chat. An LLM transform turns each dictation independently into clean " +
-      "notes (output only the notes), and JavaScript tools compute word counts " +
-      "and extract action items",
-  },
 ];
