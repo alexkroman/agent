@@ -21,7 +21,7 @@
     "push-dashboards": "node --conditions=@dev/source grafana/push-dashboards.ts"
   },
   "dependencies": {
-    "@ai-sdk/mcp": "^2.0.18",
+    "@ai-sdk/mcp": "^2.0.19",
     "@alexkroman1/aai": "workspace:*",
     "@alexkroman1/aai-cli": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
@@ -31,9 +31,9 @@
     "@node-rs/argon2": "^2.0.2",
     "@sindresorhus/slugify": "^3.0.0",
     "@tailwindcss/vite": "^4.3.3",
-    "@vitejs/plugin-react": "^6.0.4",
+    "@vitejs/plugin-react": "^6.0.5",
     "aai-studio-client": "workspace:*",
-    "ai": "^7.0.41",
+    "ai": "^7.0.42",
     "aws4fetch": "^1.0.20",
     "diff": "^9.0.0",
     "hono": "^4.12.31",
