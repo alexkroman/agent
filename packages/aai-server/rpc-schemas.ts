@@ -9,10 +9,10 @@
 
 import { AllowedHostsSchema, DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
 import {
+  AgentConfigSchema,
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
-  ProviderDescriptorSchema,
   ToolSchemaSchema,
 } from "@alexkroman1/aai/manifest";
 import { z } from "zod";
@@ -20,57 +20,54 @@ import { z } from "zod";
 export { ToolSchemaSchema } from "@alexkroman1/aai/manifest";
 
 /**
- * Validated independently from `AgentConfig` (sdk/_internal-types.ts) so the
- * host↔guest wire format can evolve separately from the in-process type.
+ * The host↔guest wire format for an agent's config — the canonical
+ * `AgentConfigSchema` (sdk/_internal-types.ts) plus the wire-only
+ * `toolSchemas`, with a handful of explicit overrides. Deriving via
+ * `.extend` (rather than re-declaring the field list) is what makes a new
+ * `AgentConfig` field flow through the server by default: the old
+ * hand-copied schema was one of the three shapes where an omission was
+ * valid TypeScript and a silently dropped field.
+ *
+ * Every override below either loosens a rule (a *stored* bundle from an
+ * older CLI must keep loading — see sandbox-compat.test.ts) or supplies a
+ * wire default; none may drop a field.
  */
-export const IsolateConfigSchema = z
-  .object({
-    name: z.string(),
-    systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
-    greeting: z.string().optional(),
-    sttPrompt: z.string().optional(),
-    silenceTimeoutMs: z.number().positive().optional(),
-    silencePrompt: z.string().optional(),
-    minBargeInWords: z.number().int().min(1).optional(),
-    interruptionMinDurationMs: z.number().int().nonnegative().optional(),
-    endpointSettleMs: z.number().int().nonnegative().optional(),
-    completeSettleMs: z.number().int().nonnegative().optional(),
-    holdPhrase: z.string().optional(),
-    errorPhrase: z.string().optional(),
-    falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
-    maxSteps: z.number().optional(),
-    idleTimeoutMs: z.number().int().nonnegative().optional(),
-    toolChoice: z.enum(["auto", "required"]).optional(),
-    builtinTools: z.array(z.string()).optional(),
-    toolSchemas: z.array(ToolSchemaSchema).default([]),
-    // Re-validated host-side, not trusted: this list arrives from a tenant's
-    // bundle and decides that agent's guest egress, so the platform applies
-    // the same pattern rules the SDK does rather than assuming the CLI ran
-    // them. Rejects protocols, paths, ports, IP literals, bare `*`, and
-    // private TLDs; the SSRF guard still screens every request on top.
-    allowedHosts: AllowedHostsSchema.default([]),
-    stt: ProviderDescriptorSchema.optional(),
-    llm: ProviderDescriptorSchema.optional(),
-    tts: ProviderDescriptorSchema.optional(),
-    s2s: ProviderDescriptorSchema.optional(),
-    mode: z.enum(["s2s", "pipeline"]).optional(),
-    vector: ProviderDescriptorSchema.optional(),
-  })
-  .superRefine((cfg, ctx) => {
-    function fail(message: string): void {
-      ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+export const IsolateConfigSchema = AgentConfigSchema.extend({
+  // Wire tolerance: older stored configs predate author-time strictness.
+  name: z.string(),
+  maxSteps: z.number().optional(),
+  // Plain strings, not the BuiltinTool enum: a stored bundle may name a
+  // builtin this build no longer knows, and that must not stop the agent
+  // from loading (unknown names are ignored at resolution).
+  builtinTools: z.array(z.string()).optional(),
+  // The base schema now defaults these too; the wire keeps its own spellings
+  // so platform behavior stays put: a stored config without a greeting speaks
+  // none (toRuntimeAgent falls back to ""), never the SDK default phrase.
+  systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
+  greeting: z.string().optional(),
+  // Re-validated host-side, not trusted: this list arrives from a tenant's
+  // bundle and decides that agent's guest egress, so the platform applies
+  // the same pattern rules the SDK does rather than assuming the CLI ran
+  // them. Rejects protocols, paths, ports, IP literals, bare `*`, and
+  // private TLDs; the SSRF guard still screens every request on top.
+  allowedHosts: AllowedHostsSchema.default([]),
+  // Wire-only: the agent's custom tool schemas ride alongside the config.
+  toolSchemas: z.array(ToolSchemaSchema).default([]),
+}).superRefine((cfg, ctx) => {
+  function fail(message: string): void {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message });
+  }
+  try {
+    const mode = assertProviderTriple(cfg.stt, cfg.llm, cfg.tts, cfg.s2s);
+    if (cfg.mode === "pipeline" && mode !== "pipeline") {
+      fail("mode='pipeline' requires stt, llm, and tts to be set");
     }
-    try {
-      const mode = assertProviderTriple(cfg.stt, cfg.llm, cfg.tts, cfg.s2s);
-      if (cfg.mode === "pipeline" && mode !== "pipeline") {
-        fail("mode='pipeline' requires stt, llm, and tts to be set");
-      }
-      assertSilencePolicy(mode, cfg.silenceTimeoutMs, cfg.silencePrompt);
-      assertPipelineTuning(mode, cfg);
-    } catch (err) {
-      fail(errorMessage(err));
-    }
-  });
+    assertSilencePolicy(mode, cfg.silenceTimeoutMs, cfg.silencePrompt);
+    assertPipelineTuning(mode, cfg);
+  } catch (err) {
+    fail(errorMessage(err));
+  }
+});
 
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
 

@@ -144,12 +144,14 @@ describe("createSandbox — pipeline providers must never silently become S2S", 
   };
 
   function forwardedProviders(): { stt: boolean; llm: boolean; tts: boolean } {
-    const opts = capturedOpts.current;
-    if (!opts) throw new Error("createRuntime opts not captured");
+    // The descriptors ride on the runtime agent (the config passes through
+    // toRuntimeAgent unchanged); createRuntime resolves `opts.stt ?? agent.stt`.
+    const agent = capturedOpts.current?.agent;
+    if (!agent) throw new Error("createRuntime opts not captured");
     return {
-      stt: opts.stt !== undefined,
-      llm: opts.llm !== undefined,
-      tts: opts.tts !== undefined,
+      stt: agent.stt !== undefined,
+      llm: agent.llm !== undefined,
+      tts: agent.tts !== undefined,
     };
   }
 
@@ -200,13 +202,14 @@ describe("createSandbox — pipeline voice tuning", () => {
     mockCreateSandboxVm.mockClear();
   });
 
-  // The other half of the same drop: `toRuntimeAgent` copies the six pipeline
-  // tuning fields but deliberately NOT stt/llm/tts, which `createSandbox`
-  // passes to `createRuntime` as options instead. `createRuntime` validated the
-  // agent object alone, so mode resolved to "s2s" and `assertPipelineTuning`
-  // rejected every one of those fields — a deployed pipeline agent setting
-  // `holdPhrase` failed at session start with "holdPhrase requires pipeline
-  // mode (stt, llm, and tts all set)" while listing all three providers.
+  // The other half of the same drop: when the providers were passed to
+  // `createRuntime` as options rather than on the agent, `createRuntime`
+  // validated the agent object alone, so mode resolved to "s2s" and
+  // `assertPipelineTuning` rejected every tuning field — a deployed pipeline
+  // agent setting `holdPhrase` failed at session start with "holdPhrase
+  // requires pipeline mode (stt, llm, and tts all set)" while listing all
+  // three providers. The config now flows through `toRuntimeAgent` unchanged,
+  // tuning fields and providers together.
   const PIPELINE_CONFIG: IsolateConfig = {
     ...BASE_CONFIG,
     mode: "pipeline",

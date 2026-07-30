@@ -236,9 +236,9 @@ restrictions apply there.
 - `orchestrator.ts` — HTTP + WebSocket routing
 - `sandbox.ts` — agent sandbox management
 - `sandbox-vm.ts` — per-agent sandbox lifecycle (start, teardown)
-- `sandbox-agent-config.ts` — maps the deploy-time `IsolateConfig` onto the
-  runtime's agent definition + provider options (`toRuntimeAgent`,
-  `pipelineProviderOpts`, `toHostBaseAgent`)
+- `sandbox-agent-config.ts` — the deploy-time `IsolateConfig` → runtime-agent
+  boundary: `toRuntimeAgent` passes the config through unchanged minus the
+  `WIRE_ONLY_CONFIG_FIELDS` deny-list (see "One canonical config schema")
 - `sandbox-guest-rpc.ts` — guest→host db/Vector/fetch RPC schemas + handler registration
 - `sandbox-pool.ts` — pool of pre-warmed Deno harnesses for fast cold starts
 - `sandbox-network.ts` — network proxying for sandbox
@@ -831,31 +831,50 @@ and loads from a `blob:` URL, and sibling harness modules are bundled in.
 | `ctx.db` backing (BYO `DATABASE_URL` in dev vs platform-provisioned schema+role) | prod is stricter | Dev connects wherever the developer points it; prod pins search_path + statement_timeout on a per-app role. |
 | Platform sandboxes need Modal credentials | prod is stricter | `aai dev` runs tools in-process; the platform (any machine with `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`) spawns real Modal sandboxes — see "Modal sandbox notes". |
 
-**`agent()` re-declares its parameter shape inline** rather than deriving it
-from `AgentDef`, and returns `{...defaults, ...def}`. A field added to
-`AgentDef` alone therefore *works at runtime* while being a TS2353
-excess-property error for the author — and neither bundler typechecks, so
-nothing catches it. `send` and `state` both shipped in that state.
-`define.test-d.ts` now asserts
-`Exclude<keyof AgentDef, keyof Parameters<typeof agent>[0]>` is `never`.
+**One canonical config schema, deny-list boundaries.** The dropped-field bug
+family (`builtinTools` — deployed agents silently lost the default cognitive
+builtins; `send`; the provider triple; `allowedHosts`) all came from
+allow-list mappers re-declaring the config field list, where every field is
+optional and an omission is valid TypeScript. Every such bug presents as a
+*working* agent quietly ignoring part of its own config. The design is now
+inverted — one canonical serializable schema flows CLI → server → runtime
+unchanged, and each boundary subtracts an explicit deny-list instead of
+copying fields:
 
-`toRuntimeAgent` copies ~14 optional fields through a `defined({...})` helper
-rather than one conditional spread each. That shape is deliberate: the
-per-field form is how `builtinTools` (deployed agents silently lost the
-default cognitive builtins) and then `send` came to be dropped, since every
-field is optional and an omission is valid TypeScript.
+- **`AgentConfigSchema`** (`sdk/_internal-types.ts`) is the canonical shape.
+  `toAgentConfig` strips `HOST_ONLY_AGENT_FIELDS` (`tools`, `state`) plus
+  undefined values and validates through the schema — no per-field copies.
+  `_internal-types.test.ts` asserts the one subtraction:
+  `Exclude<keyof AgentDef, keyof AgentConfig | HostOnlyAgentField>` is `never`.
+- **`agent()`** derives its parameter shape from `AgentDef`
+  (`AgentParams` = `Omit` + `Partial<Pick>` of the defaulted fields) instead
+  of re-declaring it inline — the inline form is how `send` and `state`
+  shipped as runtime-working but excess-property errors for authors
+  (neither bundler typechecks user code). `define.test-d.ts` locks this.
+- **`IsolateConfigSchema`** (`aai-server/rpc-schemas.ts`) is
+  `AgentConfigSchema.extend({...})` — the extensions are wire-tolerance
+  loosenings (a stored bundle from an older CLI must keep loading), wire
+  defaults, and the wire-only `toolSchemas`; none may drop a field.
+- **`toRuntimeAgent`** (`aai-server/sandbox-agent-config.ts`) passes the
+  whole config through minus `WIRE_ONLY_CONFIG_FIELDS` (`toolSchemas`,
+  `mode`). The provider descriptors ride on the runtime agent itself
+  (`createRuntime` resolves `opts.stt ?? agent.stt`), keyed off the
+  descriptors' own presence — never `config.mode`, which is optional: a
+  config carrying all three providers with no `mode` once hit a
+  `config.mode === "pipeline"` gate and lost every one of them, so
+  `createRuntime` resolved S2S and ran a healthy S2S session on the agent's
+  own key, nothing logged. `superRefine` rejects a `mode` that disagrees
+  with the descriptors. Host mode (`ws-host-mode.ts`) uses the same
+  function, so a pipeline agent driven over `?host=1` stays pipeline.
+  `rpc-schemas.test.ts` asserts both subtractions:
+  `Exclude<keyof AgentConfig, keyof IsolateConfig>` and
+  `Exclude<keyof IsolateConfig, keyof AgentDef | WireOnlyConfigField>` are
+  `never`.
 
-This mapping lives in **`sandbox-agent-config.ts`**, split out of `sandbox.ts`
-because it has its own history of dropping fields, and every such bug presents
-as a *working* agent quietly ignoring part of its own config. The third was the
-provider triple: `pipelineProviderOpts` forwards stt/llm/tts keyed off the
-**descriptors**, never `config.mode`, which is optional in
-`IsolateConfigSchema`. A config carrying all three providers with no `mode` hit
-the old `config.mode === "pipeline"` gate and lost every one of them, so
-`createRuntime` resolved S2S and ran a healthy S2S session on the agent's own
-key — nothing logged, the configured providers simply ignored. The descriptors
-are the safe source because `superRefine` rejects a `mode` that disagrees with
-them.
+A new serializable agent field therefore needs exactly two edits — `AgentDef`
+(docs + type) and `AgentConfigSchema` (shape) — and the type guards fail
+loudly if either half is missing; no mapper edits, and the field reaches the
+server, the wire, and the runtime by default.
 
 **Never let S2S be a fallback.** `buildTransport`
 (`host/runtime-transport.ts`) reaches `buildAssemblyS2sTransport` by
@@ -1623,10 +1642,10 @@ Details worth keeping:
   gets no existence oracle.
 - **Runs in the server process, not the guest sandbox.** Host mode replaces
   the agent's tools with ones relayed to the caller, so there is no tenant
-  code to isolate. `toHostBaseAgent` carries the provider descriptors on the
-  agent object (unlike `toRuntimeAgent`, which omits them because
-  `createSandbox` passes them as options) — otherwise a pipeline agent would
-  silently fall back to S2S when driven over `?host=1`.
+  code to isolate. It builds its base agent with the same `toRuntimeAgent`
+  the sandbox path uses, which keeps the provider descriptors on the agent
+  object — otherwise a pipeline agent would silently fall back to S2S when
+  driven over `?host=1`.
 - Plain connections are untouched and stay unauthenticated.
 
 ### Self-hosted server defaults (`aai/host/server.ts`)

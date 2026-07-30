@@ -7,11 +7,11 @@ import type { AgentDef } from "./types.ts";
 /**
  * Every `AgentDef` field must be declarable through `agent()`.
  *
- * `agent()` re-declares its parameter shape inline and returns `{...defaults,
- * ...def}`, so a field added to `AgentDef` alone still *works* at runtime
- * while being a TS2353 excess-property error for the author — and the CLI and
- * studio bundlers don't typecheck, so nothing catches it. `state` shipped
- * that way.
+ * `AgentParams` is now *derived* from `AgentDef` (Omit + Partial<Pick>), so
+ * this holds by construction — the test stays as a regression lock against
+ * anyone reintroducing an inline re-declaration, which is how `state` once
+ * shipped as a runtime-working but excess-property-error field (the CLI and
+ * studio bundlers don't typecheck user code, so nothing caught it).
  */
 test("agent() accepts every AgentDef field", () => {
   type MissingFromParam = Exclude<keyof AgentDef, keyof Parameters<typeof agent>[0]>;

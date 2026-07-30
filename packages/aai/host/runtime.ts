@@ -147,12 +147,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     : (vector ?? createLocalVector(slug));
 
   // Validate against the *effective* providers, not the agent's own fields.
-  // Same seam as `readyConfig` below: the platform never puts providers on the
-  // agent object, it passes them as runtime options (see sandbox.ts
-  // `toRuntimeAgent`). Reading `agent` alone resolved mode "s2s" for every
-  // deployed pipeline agent, so `assertPipelineTuning` rejected all six voice
-  // tuning knobs at session start — a deployed agent with `holdPhrase` died
-  // with "holdPhrase requires pipeline mode (stt, llm, and tts all set)" while
+  // Providers may arrive as runtime options rather than on the agent object,
+  // and reading `agent` alone once resolved mode "s2s" for every deployed
+  // pipeline agent, so `assertPipelineTuning` rejected all six voice tuning
+  // knobs at session start — a deployed agent with `holdPhrase` died with
+  // "holdPhrase requires pipeline mode (stt, llm, and tts all set)" while
   // listing all three providers — and left `agentConfig.mode` wrong for
   // everything downstream that reads it.
   const agentConfig = toAgentConfig({
@@ -164,7 +163,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
 
   // Report the resolved mode once per runtime. A pipeline agent whose providers
   // fail to reach the runtime does not error — it runs a perfectly healthy S2S
-  // session instead (see sandbox.ts `pipelineProviderOpts` for how that
+  // session instead (see aai-server's sandbox-agent-config.ts for how that
   // happened), so "which transport is this agent on" has to be answerable from
   // one log line rather than inferred from the shape of the message stream.
   logger.info("Session mode resolved", {
