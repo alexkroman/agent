@@ -8,6 +8,7 @@
  * barge-in must discard what is held.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { CLIENT_AUDIO_LEAD_MS, PACER_BURST_MS, PLAYBACK_JITTER_MS } from "../sdk/constants.ts";
 import { createAudioPacer } from "./audio-pacer.ts";
 
 const SAMPLE_RATE = 24_000;
@@ -38,6 +39,13 @@ describe("createAudioPacer", () => {
 
   afterEach(() => {
     vi.useRealTimers();
+  });
+
+  test("the burst dip leaves the client's jitter cushion intact", () => {
+    // The burst wake lets the lead sag to CLIENT_AUDIO_LEAD_MS -
+    // PACER_BURST_MS; that dip is cushion the client temporarily doesn't
+    // have, so it must stay above the playback worklet's jitter target.
+    expect(CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS).toBeGreaterThan(PLAYBACK_JITTER_MS);
   });
 
   test("sends audio immediately while the lead is unmet", () => {

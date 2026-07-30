@@ -4,32 +4,25 @@
  *
  * Captures voice through `getUserMedia` under
  * {@link VOICE_CAPTURE_CONSTRAINTS} — echo cancellation only — and runs the
- * same capture worklet the WebSocket path uses
- * (`worklets/capture-processor.ts`): one processor, one transfer idiom, one
- * start → stop → flush → 'stopped'-ack protocol. The caller's button is the
- * endpointing; each recording becomes one `POST /sync` run. No WebSocket
- * anywhere on the path.
+ * same capture worklet as the WebSocket mic, through the shared
+ * {@link createCaptureNode} wiring: one processor, one protocol. The
+ * caller's button is the endpointing; each recording becomes one
+ * `POST /sync` run. No WebSocket anywhere on the path.
  */
 
-import { assertGranted, releaseStreamOnFailure } from "./audio.ts";
 import {
-  CAPTURE_STOP_ACK_TIMEOUT_MS,
-  DEFAULT_STT_SAMPLE_RATE,
-  MIC_BUFFER_SECONDS,
-  VOICE_CAPTURE_CONSTRAINTS,
-} from "./types.ts";
+  assertGranted,
+  type CaptureNode,
+  createCaptureNode,
+  releaseStreamOnFailure,
+} from "./audio.ts";
+import { DEFAULT_STT_SAMPLE_RATE, VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
 import captureWorkletUrl from "./worklets/capture-processor.ts";
-
-export { floatToPcm16 } from "./audio.ts";
 
 /** Default capture rate — what the STT providers expect. */
 export const DEFAULT_SYNC_MIC_SAMPLE_RATE = DEFAULT_STT_SAMPLE_RATE;
 
-/**
- * Blob-URL module for the capture processor (no served asset). Satisfies the
- * agent page's `script-src blob:` CSP, which rejects data-URI modules. The
- * same module the WebSocket capture path loads.
- */
+/** The shared capture worklet's blob-URL module (CSP rationale: `worklets/_module-url.ts`). */
 export const CAPTURE_WORKLET_MODULE_URL = captureWorkletUrl;
 
 /** Hold-to-record handle returned by {@link createPttRecorder}. */
@@ -55,9 +48,8 @@ export type PttRecorder = {
 export function createPttRecorder(sampleRate = DEFAULT_SYNC_MIC_SAMPLE_RATE): PttRecorder {
   let ctx: AudioContext | null = null;
   let stream: MediaStream | null = null;
-  let node: AudioWorkletNode | null = null;
+  let capture: CaptureNode | null = null;
   let chunks: Int16Array[] = [];
-  let onStopped: (() => void) | null = null;
   /** In-flight stop(), so a rapid re-press serializes behind it. */
   let pendingStop: Promise<Int16Array> | null = null;
   let closed = false;
@@ -89,40 +81,20 @@ export function createPttRecorder(sampleRate = DEFAULT_SYNC_MIC_SAMPLE_RATE): Pt
       });
       throw err;
     }
-    const workletNode = new AudioWorkletNode(audioCtx, "capture-processor", {
-      channelCount: 1,
-      channelCountMode: "explicit",
-      processorOptions: { sampleRate, bufferSeconds: MIC_BUFFER_SECONDS },
+    const node = createCaptureNode(audioCtx, (buffer) => {
+      chunks.push(new Int16Array(buffer));
     });
-    // The worklet gates accumulation on its own start/stop protocol, so
-    // chunks only ever arrive for the current press; 'stopped' acks the
-    // final flush so stop() can settle without dropping the tail.
-    workletNode.port.onmessage = (e: MessageEvent) => {
-      const data = e.data as { event?: string; buffer?: ArrayBuffer };
-      if (data.event === "chunk" && data.buffer) {
-        chunks.push(new Int16Array(data.buffer));
-      } else if (data.event === "stopped") {
-        onStopped?.();
-        onStopped = null;
-      }
-    };
-    audioCtx.createMediaStreamSource(stream).connect(workletNode);
+    audioCtx.createMediaStreamSource(stream).connect(node.node);
     ctx = audioCtx;
-    node = workletNode;
+    capture = node;
   }
 
   async function drainStop(): Promise<Int16Array> {
-    // Bounded wait for the ack that follows the worklet's final flush, so the
-    // tail of the utterance reaches `chunks` first; the timeout covers a dead
-    // worklet.
-    await new Promise<void>((resolve) => {
-      const cap = setTimeout(resolve, CAPTURE_STOP_ACK_TIMEOUT_MS);
-      onStopped = () => {
-        clearTimeout(cap);
-        resolve();
-      };
-      node?.port.postMessage({ event: "stop" });
-    });
+    // stop() with no completed start(): nothing was ever recorded, and no
+    // 'stopped' ack will come — return immediately instead of waiting out
+    // the ack timeout.
+    if (!capture) return new Int16Array(0);
+    await capture.stop();
     const total = chunks.reduce((n, c) => n + c.length, 0);
     const pcm = new Int16Array(total);
     let offset = 0;
@@ -144,8 +116,10 @@ export function createPttRecorder(sampleRate = DEFAULT_SYNC_MIC_SAMPLE_RATE): Pt
         });
       }
       await ensureOpen();
+      // Discard any tail chunk a dead-worklet ack timeout left behind — the
+      // worklet gates accumulation, so on every healthy path this is empty.
       chunks = [];
-      node?.port.postMessage({ event: "start" });
+      capture?.start();
     },
     stop() {
       const done = drainStop().finally(() => {
@@ -156,13 +130,13 @@ export function createPttRecorder(sampleRate = DEFAULT_SYNC_MIC_SAMPLE_RATE): Pt
     },
     async close() {
       closed = true;
-      node?.disconnect();
+      capture?.node.disconnect();
       if (stream) for (const t of stream.getTracks()) t.stop();
       await ctx?.close().catch(() => {
         /* already closed */
       });
       ctx = null;
-      node = null;
+      capture = null;
       stream = null;
     },
   };

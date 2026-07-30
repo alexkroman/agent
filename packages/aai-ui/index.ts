@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+export { floatToPcm16 } from "./audio.ts";
 // Pre-connection client-config lookup (app-kind selection)
 export {
   buildAgentUrl,
@@ -42,14 +43,12 @@ export type {
 } from "./session-core.ts";
 // Session core (for advanced use)
 export { createSessionCore } from "./session-core.ts";
-
 // Workflow run plumbing (one HTTP turn per run over POST /sync, WebRTC
 // push-to-talk mic — no WebSocket)
 export {
   CAPTURE_WORKLET_MODULE_URL,
   createPttRecorder,
   DEFAULT_SYNC_MIC_SAMPLE_RATE,
-  floatToPcm16,
   type PttRecorder,
 } from "./sync-mic.ts";
 export {

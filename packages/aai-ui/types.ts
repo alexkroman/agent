@@ -8,7 +8,6 @@ import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 export {
   CAPTURE_STOP_ACK_TIMEOUT_MS,
   DEFAULT_STT_SAMPLE_RATE,
-  DEFAULT_TTS_SAMPLE_RATE,
   FILE_SEND_BACKOFF_MS,
   MIC_BUFFER_SECONDS,
   MIC_SEND_MAX_BUFFERED_BYTES,

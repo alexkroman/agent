@@ -7,7 +7,8 @@ import {
   installAudioMocks,
   type MockAudioWorkletNode,
 } from "./_react-test-utils.ts";
-import { CAPTURE_WORKLET_MODULE_URL, createPttRecorder, floatToPcm16 } from "./sync-mic.ts";
+import { floatToPcm16 } from "./audio.ts";
+import { CAPTURE_WORKLET_MODULE_URL, createPttRecorder } from "./sync-mic.ts";
 
 let mocks: ReturnType<typeof installAudioMocks>;
 

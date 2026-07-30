@@ -12,7 +12,6 @@
 // much of itself was concealed.
 
 import {
-  DEFAULT_TTS_SAMPLE_RATE,
   PLAYBACK_BUFFER_SECONDS,
   PLAYBACK_CONCEAL_FADE_MS,
   PLAYBACK_CONCEAL_FLOOR,
@@ -26,7 +25,10 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   constructor(options) {
     super();
     const opts = options.processorOptions || {};
-    const rate = opts.sampleRate ?? ${DEFAULT_TTS_SAMPLE_RATE};
+    // The node's context IS the playback context (audio.ts asserts its rate),
+    // so the worklet-global sampleRate is authoritative; the option exists
+    // for the node-less test harness.
+    const rate = opts.sampleRate ?? sampleRate;
     // Fill target for the start of a turn. If 'done' arrives first (short
     // utterance), start immediately instead of waiting for audio that is
     // never coming.
@@ -54,19 +56,15 @@ class PlaybackProcessor extends AudioWorkletProcessor {
 
     this.port.onmessage = (e) => {
       const d = e.data;
-      // A pending interrupt must be applied BEFORE ingesting the next turn's
-      // messages: it is normally consumed by the next process() call, but
-      // 'write'/'done' frames for the following reply can coalesce into the
-      // same inter-quantum gap (main-thread jank batches the cancel and the
-      // new turn into one task), and resetTurn() would then wipe audio and
-      // the done flag that belong to the new turn.
-      if (this.interrupted && (d.event === 'write' || d.event === 'done')) {
-        this.stopTurn('interrupt');
-      }
       if (d.event === 'write') {
         this.ingestBytes(d.buffer);
       } else if (d.event === 'interrupt') {
-        this.interrupted = true;
+        // Applied eagerly, not deferred to the next process(): onmessage and
+        // process() never interleave (one audio thread), and a deferred
+        // interrupt would let 'write'/'done' frames for the NEXT turn
+        // coalesce in ahead of it and be wiped by the reset along with the
+        // cancelled turn's audio.
+        this.stopTurn('interrupt');
       } else if (d.event === 'done') {
         this.isDone = true;
       }
@@ -76,7 +74,6 @@ class PlaybackProcessor extends AudioWorkletProcessor {
   // Reset per-turn state so the node is reusable across replies without
   // reallocating the sample buffer or re-instantiating the worklet.
   resetTurn() {
-    this.interrupted = false;
     this.isDone = false;
     this.playing = false;
     // Whether any real audio has been rendered this turn. Separates a turn's
@@ -137,7 +134,10 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     const total = out.length - start;
     const len = this.concealLen;
     let silent = 0;
-    if (len === 0) {
+    // Second condition: once the fade has decayed to the floor, every sample
+    // the loop would emit is 0 anyway — bulk-fill instead of running 128
+    // branchy iterations per quantum for the whole tail of a long stall.
+    if (len === 0 || this.concealGain < ${PLAYBACK_CONCEAL_FLOOR}) {
       out.fill(0, start);
       silent = total;
     } else {
@@ -245,12 +245,6 @@ class PlaybackProcessor extends AudioWorkletProcessor {
     // session), so guard like the capture processor does.
     if (!outputs[0] || !outputs[0][0]) return true;
     const out = outputs[0][0];
-    if (this.interrupted) {
-      out.fill(0);
-      this.stopTurn('interrupt');
-      return true;
-    }
-
     const avail = this.writePos - this.readPos;
 
     // Filling: wait for the target. 'done' short-circuits it — what is
