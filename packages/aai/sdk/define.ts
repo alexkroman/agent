@@ -4,7 +4,6 @@ import type { z } from "zod";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { none } from "./providers/tts/none.ts";
 import type {
-  KvProvider,
   LlmProvider,
   S2sProvider,
   SendProvider,
@@ -164,8 +163,6 @@ export function agent(def: {
    * pipeline triple.
    */
   s2s?: S2sProvider;
-  /** Pluggable KV backend. Falls back to platform default when omitted. */
-  kv?: KvProvider;
   /** Pluggable Vector backend. Falls back to platform default when omitted. */
   vector?: VectorProvider;
   /**
@@ -226,7 +223,10 @@ export function agent(def: {
  *       description: "File one expense",
  *       parameters: z.object({ amount: z.number(), memo: z.string() }),
  *       execute: async ({ amount, memo }, ctx) => {
- *         await ctx.kv.set(`expense:${Date.now()}`, { amount, memo });
+ *         await ctx.db.query("insert into expenses (amount, memo) values ($1, $2)", [
+ *           amount,
+ *           memo,
+ *         ]);
  *         return { filed: true, amount, memo };
  *       },
  *     }),
@@ -252,7 +252,6 @@ export function workflow(def: {
   stt: SttProvider;
   /** LLM that runs the agentic loop over the transcript. Required. */
   llm: LlmProvider;
-  kv?: KvProvider;
   vector?: VectorProvider;
   send?: SendProvider;
   allowedHosts?: string[];

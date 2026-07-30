@@ -2,19 +2,19 @@
 //
 // Host RPC + I/O layer for the Deno guest harness.
 //
-// Owns NDJSON stdout writing, the host request/response proxy (kv/*,
-// vector/*), the proxied `fetch` implementation, and the KV/Vector adapters
+// Owns NDJSON stdout writing, the host request/response proxy (db/query,
+// vector/*), the proxied `fetch` implementation, and the db/Vector adapters
 // handed to tool contexts. Split out of `deno-harness.ts`, which keeps the
 // dispatch loop and tool execution. ZERO workspace imports — bundled into the
 // self-contained guest artifact.
 
 import { Buffer } from "node:buffer";
 import type {
+  DbAdapter,
   GenerateAdapter,
   GenerateResult,
   JsonRpcMessage,
   JsonRpcNotification,
-  KvAdapter,
   VectorAdapter,
   VectorMatch,
 } from "./harness-types.ts";
@@ -105,7 +105,7 @@ let hostRequestId = 1;
  * Timeout for a guest→host request — mirrors the host side's
  * DEFAULT_REQUEST_TIMEOUT_MS (ndjson-transport.ts). A host that never
  * replies (crashed mid-RPC, pipe wedged) must not leave a tool call awaiting
- * a KV/Vector response forever.
+ * a db/Vector response forever.
  */
 const HOST_REQUEST_TIMEOUT_MS = 30_000;
 
@@ -288,23 +288,17 @@ export function sendToClient(sessionId: string, event: string, data: unknown): P
 
 // The adapters are stateless views over hostRequest, so a single module-level
 // instance serves every tool call.
-/** Kv adapter handed to tool contexts. */
-export const kvAdapter: KvAdapter = {
-  // The host's kv/get handler returns the stored value directly as the RPC
-  // result (see configureSandbox), not wrapped in { value } — return it as-is.
-  get: async <T = unknown>(key: string) =>
-    ((await hostRequest("kv/get", { key })) ?? null) as T | null,
-  set: async (key: string, value: unknown, options?: { expireIn?: number }) => {
-    await hostRequest("kv/set", {
-      key,
-      value,
-      ...(options?.expireIn !== undefined ? { expireIn: options.expireIn } : {}),
-    });
-  },
-  delete: async (keys: string | string[]): Promise<void> => {
-    const keyArray = Array.isArray(keys) ? keys : [keys];
-    await Promise.all(keyArray.map((key) => hostRequest("kv/del", { key })));
-  },
+/**
+ * Db adapter handed to tool contexts (when storage is enabled) — proxies
+ * `ctx.db.query` to the host's db/query handler, which runs it against the
+ * app's provisioned database. The RPC result is the rows array directly.
+ */
+export const dbAdapter: DbAdapter = {
+  query: async <T = Record<string, unknown>>(sql: string, params?: unknown[]) =>
+    (await hostRequest("db/query", {
+      sql,
+      ...(params !== undefined ? { params } : {}),
+    })) as T[],
 };
 
 /** Vector adapter handed to tool contexts. */

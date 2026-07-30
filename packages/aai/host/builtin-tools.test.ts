@@ -1,9 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
-import type { Kv } from "../sdk/kv.ts";
 import { createMockToolContext } from "./_test-utils.ts";
 import { resolveAllBuiltins } from "./builtin-tools.ts";
+
+/** Mirrors the module-private SESSION_NOTES_TTL_MS in builtin-tools.ts. */
+const SESSION_NOTES_TTL_MS = 86_400_000;
 
 /**
  * Invoke the host-side run_code def. run_code no longer executes on the host —
@@ -57,7 +59,7 @@ describe("resolveAllBuiltins defs", () => {
 
   // ─── run_code (host-side guard) ─────────────────────────────────────────
   // run_code executes untrusted JS and now runs ONLY inside the guest sandbox
-  // (gVisor/Deno) — see deno-harness.test.ts for execution coverage. The
+  // (Modal/Deno) — see deno-harness.test.ts for execution coverage. The
   // host-side def must never evaluate code; it returns an error instead.
 
   test("run_code is registered with schema and guidance", () => {
@@ -281,11 +283,11 @@ describe("resolveAllBuiltins defs", () => {
 
   // ─── think ─────────────────────────────────────────────────────────────
 
-  test("think is a no-op that returns ok and never touches kv or fetch", async () => {
+  test("think is a no-op that returns ok and never touches db or fetch", async () => {
     const { defs, schemas, guidance } = resolveAllBuiltins(["think"]);
     expect(schemas.map((s) => s.name)).toContain("think");
     expect(guidance.some((g) => g.includes("think"))).toBe(true);
-    // kv/vector are throwing stubs in the mock context — a no-op must not touch them.
+    // db/vector are throwing stubs in the mock context — a no-op must not touch them.
     const result = await defs.think?.execute(
       { thought: "check the policy first" },
       createMockToolContext(),
@@ -294,24 +296,13 @@ describe("resolveAllBuiltins defs", () => {
   });
 
   // ─── remember / recall ─────────────────────────────────────────────────
-
-  function memoryKv(): Kv {
-    const store = new Map<string, unknown>();
-    return {
-      get: async <T>(key: string) => (store.get(key) as T) ?? null,
-      set: async (key: string, val: unknown) => {
-        store.set(key, val);
-      },
-      delete: async (keys: string | string[]) => {
-        for (const k of Array.isArray(keys) ? keys : [keys]) store.delete(k);
-      },
-    };
-  }
+  //
+  // The notes store is module-level (per host process), so each test uses
+  // session ids unique to it — there is no per-test store to construct.
 
   test("remember stores notes per session and recall reads them back", async () => {
-    const kv = memoryKv();
     const { defs } = resolveAllBuiltins(["remember", "recall"]);
-    const ctx = createMockToolContext({ kv, sessionId: "s1" });
+    const ctx = createMockToolContext({ sessionId: "notes-basic" });
 
     await defs.remember?.execute({ key: "user_id", value: "usr_123" }, ctx);
     const saved = await defs.remember?.execute({ key: "res_code", value: "BOB12" }, ctx);
@@ -334,10 +325,9 @@ describe("resolveAllBuiltins defs", () => {
   });
 
   test("remember overwrites a key and notes are isolated per session", async () => {
-    const kv = memoryKv();
     const { defs } = resolveAllBuiltins(["remember", "recall"]);
-    const s1 = createMockToolContext({ kv, sessionId: "s1" });
-    const s2 = createMockToolContext({ kv, sessionId: "s2" });
+    const s1 = createMockToolContext({ sessionId: "notes-iso-1" });
+    const s2 = createMockToolContext({ sessionId: "notes-iso-2" });
 
     await defs.remember?.execute({ key: "zip", value: "19122" }, s1);
     await defs.remember?.execute({ key: "zip", value: "94103" }, s1);
@@ -345,14 +335,13 @@ describe("resolveAllBuiltins defs", () => {
     expect(await defs.recall?.execute({}, s2)).toEqual({ notes: {} });
   });
 
-  test("two concurrent remember calls both persist (read-modify-write is serialized)", async () => {
-    const kv = memoryKv();
+  test("two concurrent remember calls both persist", async () => {
     const { defs } = resolveAllBuiltins(["remember", "recall"]);
-    const ctx = createMockToolContext({ kv, sessionId: "s1" });
+    const ctx = createMockToolContext({ sessionId: "notes-concurrent" });
 
     // One LLM step's tool calls execute concurrently (pipeline streamText runs
-    // them in parallel) — both remembers start before either finishes writing.
-    // Without serialization both read the same snapshot and one note is lost.
+    // them in parallel). Map updates are synchronous, so no per-key lock is
+    // needed for both writes to land.
     await Promise.all([
       defs.remember?.execute({ key: "user_id", value: "usr_1" }, ctx),
       defs.remember?.execute({ key: "res_code", value: "BOB12" }, ctx),
@@ -363,23 +352,21 @@ describe("resolveAllBuiltins defs", () => {
     });
   });
 
-  test("a failed remember does not wedge later remembers on the same session", async () => {
-    const kv = memoryKv();
-    let failNext = true;
-    const set = kv.set.bind(kv);
-    kv.set = async (key, val, opts) => {
-      if (failNext) {
-        failNext = false;
-        throw new Error("kv down");
-      }
-      await set(key, val, opts);
-    };
-    const { defs } = resolveAllBuiltins(["remember", "recall"]);
-    const ctx = createMockToolContext({ kv, sessionId: "s1" });
+  test("notes expire after the session-notes TTL", async () => {
+    vi.useFakeTimers();
+    try {
+      const { defs } = resolveAllBuiltins(["remember", "recall"]);
+      const ctx = createMockToolContext({ sessionId: "notes-ttl" });
 
-    await expect(defs.remember?.execute({ key: "a", value: "1" }, ctx)).rejects.toThrow("kv down");
-    await defs.remember?.execute({ key: "b", value: "2" }, ctx);
-    expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: { b: "2" } });
+      await defs.remember?.execute({ key: "user_id", value: "usr_123" }, ctx);
+      vi.advanceTimersByTime(SESSION_NOTES_TTL_MS - 1);
+      expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: { user_id: "usr_123" } });
+
+      vi.advanceTimersByTime(2);
+      expect(await defs.recall?.execute({}, ctx)).toEqual({ notes: {} });
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   // ─── calculate ─────────────────────────────────────────────────────────

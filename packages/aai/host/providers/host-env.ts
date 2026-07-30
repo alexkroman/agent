@@ -5,7 +5,7 @@
  * `resolveApiKey` reads only the agent's own env, so nothing a provider can
  * authenticate with is ever inherited implicitly from the host process. That
  * is the behavior the managed platform needs: its `process.env` holds the
- * platform's own bucket and vector credentials under the same names a tenant
+ * platform's own vector credentials under the same names a tenant
  * descriptor would resolve.
  *
  * Self-hosted runs (`aai dev`) have the opposite expectation — the host env
@@ -16,24 +16,16 @@
  * the resolvers.
  */
 
-import { REDIS_KV_URL_ENV } from "../../sdk/providers/kv/redis.ts";
-import { S3_KV_ACCESS_KEY_ID_ENV, S3_KV_SECRET_ACCESS_KEY_ENV } from "../../sdk/providers/kv/s3.ts";
 import { PINECONE_API_KEY_ENV } from "../../sdk/providers/vector/pinecone.ts";
 import { ALL_PROVIDER_ENV_VARS } from "./resolve.ts";
 
 /**
  * Every env var name a provider descriptor may resolve a credential from:
- * the registry-derived STT/TTS/LLM/S2S set, plus the KV and Vector providers
+ * the registry-derived STT/TTS/LLM/S2S set, plus the Vector providers
  * (which resolve their credentials outside those registries).
  */
 export const PROVIDER_CREDENTIAL_ENVS: readonly string[] = [
-  ...new Set([
-    ...ALL_PROVIDER_ENV_VARS,
-    S3_KV_ACCESS_KEY_ID_ENV,
-    S3_KV_SECRET_ACCESS_KEY_ENV,
-    REDIS_KV_URL_ENV,
-    PINECONE_API_KEY_ENV,
-  ]),
+  ...new Set([...ALL_PROVIDER_ENV_VARS, PINECONE_API_KEY_ENV]),
 ];
 
 /**

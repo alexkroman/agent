@@ -27,7 +27,7 @@ export const actionRoll = tool({
     targetNpcId: z.string().max(32).describe("Target NPC id for social moves").optional(),
   }),
   async execute(args, ctx) {
-    const state = await getGameState(ctx.kv, ctx.sessionId);
+    const state = getGameState(ctx);
     const statValue = state[args.stat];
     const roll = rollAction(args.stat, statValue, args.move);
 
@@ -62,7 +62,7 @@ export const actionRoll = tool({
     // Can burn momentum?
     const burnTarget = canBurnMomentum(state, roll);
 
-    await saveGameState(ctx.kv, ctx.sessionId, state);
+    saveGameState(ctx, state);
     ctx.send("game_state", state);
 
     return {

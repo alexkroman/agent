@@ -240,7 +240,7 @@ function InfocomAdventure() {
                 {session.running ? "[P]ause" : "[R]esume"}
               </button>
               {/* Full reload = new WebSocket = fresh sessionId, so the
-                  session-scoped game state in KV starts over too.
+                  session-scoped game state starts over too.
                   (session.reset() keeps the same sessionId and would
                   resume the old game.) */}
               <button

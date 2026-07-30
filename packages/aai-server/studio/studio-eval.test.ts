@@ -47,7 +47,6 @@
  * exported under the conditions" error that reads like generated-code trouble.
  */
 
-import { execFileSync } from "node:child_process";
 import { existsSync, readdirSync } from "node:fs";
 import { generateObject, type UIMessage } from "ai";
 import { describe, expect, test } from "vitest";
@@ -55,8 +54,8 @@ import type { TranscriptEvent } from "vitest-evals";
 import { createHarness, createJudge, describeEval } from "vitest-evals";
 import { z } from "zod";
 import { resolveHarnessPath } from "../constants.ts";
+import { isModalConfigured } from "../modal-sandbox.ts";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
-import { createTestStorage } from "../test-utils.ts";
 import {
   ONE_SHOT,
   readTemplate,
@@ -74,24 +73,16 @@ import { StudioBuildError } from "./studio-errors.ts";
 import { isStudioLlmConfigured, studioLlmInfo, studioModel } from "./studio-llm.ts";
 import { createStudioSandbox, type StudioSandbox } from "./studio-sandbox.ts";
 import { starterFiles } from "./studio-template.ts";
-import { filesHash, getWorkspace, putWorkspace } from "./studio-workspace.ts";
+import { createWorkspace, filesHash, getWorkspace } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
+import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 const SCOPE = "eval-scope";
 
 const llmReady = isStudioLlmConfigured(process.env);
 
-function isDenoAvailable(): boolean {
-  try {
-    execFileSync("deno", ["--version"], { stdio: "ignore" });
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-/** The sandbox judge needs Deno plus the built guest harness. */
-const canSandbox = isDenoAvailable() && existsSync(resolveHarnessPath());
+/** The sandbox judge needs Modal credentials plus the built guest harness. */
+const canSandbox = isModalConfigured() && existsSync(resolveHarnessPath());
 
 type StudioEvalOutput = {
   /** Workspace files as the agent left them after its one turn. */
@@ -163,16 +154,16 @@ const studioHarness = createHarness<string, StudioEvalOutput>({
   name: "studio-coding-agent",
   run: async ({ input, setArtifact }) => {
     const project = `eval-${++runCounter}`;
-    const storage = createTestStorage();
-    await putWorkspace(storage, SCOPE, project, { files: starterFiles() });
+    const workspaces = createMemoryWorkspaceStore();
+    await createWorkspace(workspaces, SCOPE, project, { files: starterFiles() });
 
     let sandbox: StudioSandbox | undefined;
     const deps: StudioChatDeps = {
-      storage,
+      workspaces,
       scope: SCOPE,
       project,
       sandbox: async () => {
-        if (!canSandbox) throw new Error("no Deno/guest harness in this environment");
+        if (!canSandbox) throw new Error("no Modal credentials/guest harness in this environment");
         sandbox ??= await createStudioSandbox();
         return sandbox;
       },
@@ -187,7 +178,7 @@ const studioHarness = createHarness<string, StudioEvalOutput>({
     };
 
     const events = await readSseEvents(await runStudioChat(deps, [userMessage(input)]));
-    const workspace = await getWorkspace(storage, SCOPE, project);
+    const workspace = await getWorkspace(workspaces, SCOPE, project);
     const errors = events.filter((e) => e.type === "error").map((e) => String(e.errorText));
     // Fail loudly on an errored turn. Judging the leftover workspace would be
     // a false pass — the untouched starter files build just fine.
@@ -326,9 +317,10 @@ const RUBRIC: Record<(typeof RUBRIC_IDS)[number], string> = {
     "outer agent loop to infer. A different helper, schema, or prompt wording is " +
     "fine. If the reference makes no such call, pass.",
   state:
-    "If the reference persists state in `ctx.kv`, the generated agent does too, with " +
-    "the same scoping — per-session keys built from `ctx.sessionId` where the " +
-    "reference does that. If the reference keeps no persistent state, pass.",
+    "If the reference keeps state, the generated agent does too, with the same " +
+    "backing and scoping — per-session scratch in `ctx.state` where the reference " +
+    "uses it, durable records via `ctx.db.query` where the reference persists to " +
+    "the app database. If the reference keeps no state, pass.",
   assets:
     "Data or prompt content the reference keeps in a separate imported file exists " +
     "in the generated workspace and is actually populated (a seeded knowledge base, " +

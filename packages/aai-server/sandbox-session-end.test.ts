@@ -13,7 +13,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
-import { createTestStorage } from "./test-utils.ts";
 
 // vi.mock factories are hoisted, so the mocks live in vi.hoisted.
 const { mockConn, mockCreateSandboxVm } = vi.hoisted(() => {
@@ -71,7 +70,6 @@ function makeSandboxOptions(): SandboxOptions {
   return {
     workerCode: 'export default { name: "test" };',
     env: { AAI_ENV_TEST: "1" },
-    storage: createTestStorage(),
     slug: "test-agent",
     agentConfig: TEST_AGENT_CONFIG,
   };

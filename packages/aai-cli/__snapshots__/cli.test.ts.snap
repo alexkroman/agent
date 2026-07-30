@@ -2,15 +2,16 @@
 
 exports[`cli usage snapshots > aai --help 1`] = `
 "Voice agent development kit (aai vX.X.X)
-USAGE aai init|dev|test|build|deploy|delete|secret
+USAGE aai init|dev|test|build|deploy|delete|secret|storage
 COMMANDS
-    init    Scaffold a new agent project
-     dev    Start a local development server
-    test    Run agent tests
-   build    Bundle agent without deploying
-  deploy    Bundle and deploy to production
-  delete    Remove a deployed agent
-  secret    Manage agent secrets
+     init    Scaffold a new agent project
+      dev    Start a local development server
+     test    Run agent tests
+    build    Bundle agent without deploying
+   deploy    Bundle and deploy to production
+   delete    Remove a deployed agent
+   secret    Manage agent secrets
+  storage    Manage the agent's database (storage)
 Use aai <command> --help for more information about a command."
 `;
 
@@ -94,6 +95,47 @@ exports[`cli usage snapshots > aai secret put --help 1`] = `
 USAGE put [OPTIONS] <NAME>
 ARGUMENTS
   NAME    Secret name (Required)
+OPTIONS
+  -s, --server=<server>    Platform server URL
+                 --json    Output JSON (auto-detected in non-TTY)"
+`;
+
+exports[`cli usage snapshots > aai storage --help 1`] = `
+"Manage the agent's database (storage) (storage)
+USAGE storage status|enable|disable
+COMMANDS
+   status    Show whether storage is enabled
+   enable    Enable the agent's database (storage)
+  disable    Disable storage (DROPS the database schema and all its data)
+Use storage <command> --help for more information about a command."
+`;
+
+exports[`cli usage snapshots > aai storage disable --help 1`] = `
+"Disable storage (DROPS the database schema and all its data) (disable)
+USAGE disable [OPTIONS] [DIR]
+ARGUMENTS
+  DIR    Project directory
+OPTIONS
+            -f, --force    Skip confirmation prompt
+  -s, --server=<server>    Platform server URL
+                 --json    Output JSON (auto-detected in non-TTY)"
+`;
+
+exports[`cli usage snapshots > aai storage enable --help 1`] = `
+"Enable the agent's database (storage) (enable)
+USAGE enable [OPTIONS] [DIR]
+ARGUMENTS
+  DIR    Project directory
+OPTIONS
+  -s, --server=<server>    Platform server URL
+                 --json    Output JSON (auto-detected in non-TTY)"
+`;
+
+exports[`cli usage snapshots > aai storage status --help 1`] = `
+"Show whether storage is enabled (status)
+USAGE status [OPTIONS] [DIR]
+ARGUMENTS
+  DIR    Project directory
 OPTIONS
   -s, --server=<server>    Platform server URL
                  --json    Output JSON (auto-detected in non-TTY)"

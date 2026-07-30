@@ -5,10 +5,9 @@
 
 import type { z } from "zod";
 import type { AgentKind } from "./config-rules.ts";
+import type { Db } from "./db.ts";
 import type { GenerateOptions, GenerateResult } from "./generate.ts";
-import type { Kv } from "./kv.ts";
 import type {
-  KvProvider,
   LlmProvider,
   S2sProvider,
   SendProvider,
@@ -80,7 +79,7 @@ export type Message = {
 /**
  * Context passed to tool `execute` functions.
  *
- * Provides access to the session environment, state, KV store, and
+ * Provides access to the session environment, state, database, and
  * conversation history from within a tool's execute handler.
  *
  * @typeParam S - The shape of per-session state created by the agent's
@@ -92,11 +91,11 @@ export type Message = {
  * import { z } from "zod";
  *
  * const myTool: ToolDef = {
- *   description: "Look up a value from the KV store",
- *   parameters: z.object({ key: z.string() }),
- *   execute: async ({ key }, ctx) => {
- *     const value = await ctx.kv.get(key);
- *     return { key, value };
+ *   description: "Look up a note from the database",
+ *   parameters: z.object({ id: z.string() }),
+ *   execute: async ({ id }, ctx) => {
+ *     const rows = await ctx.db.query("select body from notes where id = $1", [id]);
+ *     return { id, note: rows[0] ?? null };
  *   },
  * };
  * ```
@@ -108,12 +107,16 @@ export type ToolContext<S = Record<string, unknown>> = {
   env: Readonly<Record<string, string>>;
   /** Mutable per-session state created by the agent's `state` factory. */
   state: S;
-  /** Key-value store scoped to this agent deployment. */
-  kv: Kv;
+  /**
+   * SQL database scoped to this app. Available when storage is enabled
+   * (`aai storage enable`, or the Storage toggle in the studio); accessing
+   * it otherwise throws.
+   */
+  db: Db;
   /** Vector store scoped to this agent deployment. */
   vector: Vector;
   /**
-   * One-shot LLM generation, executed on the host (like `kv`/`vector`).
+   * One-shot LLM generation, executed on the host (like `db`/`vector`).
    * Defaults to the agent's pipeline `llm`; pass `llm` in the options to use
    * another provider (its API key must be in the agent's env). Throws when
    * no LLM is configured or named. Powers the `@alexkroman1/aai/patterns`
@@ -339,8 +342,6 @@ export type AgentDef<S = Record<string, unknown>> = {
    * pipeline triple.
    */
   s2s?: S2sProvider;
-  /** Pluggable KV backend. Falls back to platform default when omitted. */
-  kv?: KvProvider;
   /** Pluggable Vector backend. Falls back to platform default when omitted. */
   vector?: VectorProvider;
   /**

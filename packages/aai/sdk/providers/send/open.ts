@@ -8,7 +8,7 @@
  *
  * - **Host** (self-hosted `aai dev`, host-side builtins): the runtime passes
  *   its SSRF-guarded fetch.
- * - **Guest sandbox** (custom tool code in gVisor/Deno): `globalThis.fetch`
+ * - **Guest sandbox** (custom tool code in the Modal/Deno sandbox): `globalThis.fetch`
  *   is the harness's RPC-proxied fetch, validated host-side against the
  *   agent's `allowedHosts` (which auto-includes the channel's host — see
  *   {@link sendAllowedHosts}) and SSRF rules.

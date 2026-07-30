@@ -109,17 +109,17 @@ describe("warm pool metrics", () => {
 
 describe("upstream metrics", () => {
   it("counts upstream calls by upstream/op/status", async () => {
-    metrics.upstreamCall.inc({ upstream: "tigris", op: "getBundle", status: "ok" });
-    metrics.upstreamCall.inc({ upstream: "tigris", op: "getBundle", status: "error" });
+    metrics.upstreamCall.inc({ upstream: "storage", op: "getBundle", status: "ok" });
+    metrics.upstreamCall.inc({ upstream: "storage", op: "getBundle", status: "error" });
     const text = await serialize();
     expect(text).toMatch(
-      /aai_upstream_call_total\{[^}]*upstream="tigris"[^}]*op="getBundle"[^}]*status="ok"[^}]*\} 1/,
+      /aai_upstream_call_total\{[^}]*upstream="storage"[^}]*op="getBundle"[^}]*status="ok"[^}]*\} 1/,
     );
     expect(text).toMatch(/aai_upstream_call_total\{[^}]*status="error"[^}]*\} 1/);
   });
 
   it("observes upstream latency", async () => {
-    metrics.upstreamCallSeconds.observe({ upstream: "tigris", op: "getBundle" }, 0.05);
+    metrics.upstreamCallSeconds.observe({ upstream: "storage", op: "getBundle" }, 0.05);
     const text = await serialize();
     expect(text).toContain("aai_upstream_call_seconds_bucket");
   });

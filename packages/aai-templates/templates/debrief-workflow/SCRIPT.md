@@ -24,7 +24,7 @@ Four actions extracted from one clip, then executed and reported:
 
 | Action | Tool | Expected outcome |
 | --- | --- | --- |
-| Quote the Hendersons ~$1,800 for a water heater replacement | `file_quote` | Filed to KV with a record id; **assumption reported**: "around eighteen hundred" → 1800 |
+| Quote the Hendersons ~$1,800 for a water heater replacement | `file_quote` | Filed to the app database with a record id; **assumption reported**: "around eighteen hundred" → 1800 |
 | Order a 50-gallon water heater | `order_part` | Ordered, linked to the Hendersons; may assume the model from "same as the Miller job" |
 | Follow-up with the Hendersons | `schedule_followup` | Scheduled for **Thursday morning** — the Wednesday false start must be dropped, not scheduled |
 | Message Mike about Oak Street | `send_message` (Slack) | One message sent: Oak Street slips a day, Friday instead of Thursday |

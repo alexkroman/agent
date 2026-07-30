@@ -21,26 +21,6 @@ export const SafePathSchema = z
   .refine((p) => !p.startsWith("/"), "Path must be relative")
   .refine((p) => !p.startsWith(".."), "Path must not traverse above root");
 
-/**
- * Safe KV key: non-empty, no path traversal. The agent prefix
- * (`agents/${slug}/kv`) uses `/` as the namespace separator, so `/`, `\`,
- * `..`, and null bytes are rejected. `:` is allowed — a common Redis-style
- * delimiter for hierarchical keys (e.g. `incident:INC-0001`).
- *
- * This is the single key grammar for BOTH boundaries that accept KV keys:
- * the owner HTTP routes (`GET`/`POST /:slug/kv`) and the guest→host RPC
- * (sandbox-guest-rpc.ts, which currently restates the same rules — keep the
- * two in lockstep so a key written on one side is always reachable from the
- * other).
- */
-export const SafeKvKeySchema = z
-  .string()
-  .min(1)
-  .refine((k) => !k.includes("\0"), "Key must not contain null bytes")
-  .refine((k) => !k.includes("/"), "Key must not contain /")
-  .refine((k) => !k.includes("\\"), "Key must not contain \\")
-  .refine((k) => !k.includes(".."), "Key must not contain ..");
-
 // The slug contract (shape + reserved names) lives in the shared SDK so the
 // CLI validates against the exact rules this server enforces.
 export { RESERVED_SLUGS, VALID_SLUG_RE } from "@alexkroman1/aai";

@@ -243,7 +243,7 @@ describe("executeTool", () => {
     expect(result).toEqual({ result: '{"parsed":true,"x":1}' });
   });
 
-  // ── run_code (executes in-guest; gVisor/Deno is the boundary) ────────────
+  // ── run_code (executes in-guest; Modal/Deno is the boundary) ─────────────
 
   test("run_code executes and captures console output", async () => {
     const state = createSessionStateMap();

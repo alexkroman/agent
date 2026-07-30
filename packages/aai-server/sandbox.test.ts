@@ -6,16 +6,11 @@ import type { ClientEvent, ClientSink } from "@alexkroman1/aai/protocol";
 import { assemblyAI } from "@alexkroman1/aai/stt";
 import { cartesia } from "@alexkroman1/aai/tts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createClientSendHandler } from "./client-send.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import {
-  createClientSendHandler,
-  createSandbox,
-  createSlotCache,
-  resolveSandbox,
-  type SandboxOptions,
-} from "./sandbox.ts";
-import { createTestStorage, createTestStore } from "./test-utils.ts";
+import { createSandbox, createSlotCache, resolveSandbox, type SandboxOptions } from "./sandbox.ts";
+import { createTestStore } from "./test-utils.ts";
 
 // ── Mock sandbox-vm ──────────────────────────────────────────────────────────
 // vi.mock factory is hoisted, so we cannot reference top-level variables.
@@ -84,7 +79,6 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
   return {
     workerCode: 'export default { name: "test" };',
     env: { AAI_ENV_TEST: "1" },
-    storage: createTestStorage(),
     slug: "test-agent",
     agentConfig: TEST_AGENT_CONFIG,
     ...overrides,
@@ -125,7 +119,6 @@ describe("createSandbox", () => {
         slug: "test-agent",
         workerCode: opts.workerCode,
         env: opts.env,
-        kv: expect.objectContaining({ get: expect.any(Function), set: expect.any(Function) }),
         vector: expect.objectContaining({
           upsert: expect.any(Function),
           query: expect.any(Function),
@@ -233,7 +226,7 @@ describe("createSandbox", () => {
     }
   });
 
-  it("passes resolved kv and vector to createSandboxVm for given slug", async () => {
+  it("passes resolved vector to createSandboxVm for given slug", async () => {
     const { createSandboxVm } = await import("./sandbox-vm.ts");
 
     const sandbox = createSandbox(makeSandboxOptions({ slug: "my-custom-agent" }));
@@ -241,7 +234,6 @@ describe("createSandbox", () => {
     expect(createSandboxVm).toHaveBeenCalledWith(
       expect.objectContaining({
         slug: "my-custom-agent",
-        kv: expect.objectContaining({ get: expect.any(Function), set: expect.any(Function) }),
         vector: expect.objectContaining({
           upsert: expect.any(Function),
           query: expect.any(Function),
@@ -608,7 +600,7 @@ describe("createSandbox", () => {
         credential_hashes: ["hash"],
         agentConfig: TEST_AGENT_CONFIG,
       });
-      return { slots: createSlotCache(), store, storage: createTestStorage() };
+      return { slots: createSlotCache(), store };
     }
 
     it("detaches the resident sandbox when its VM fails to start", async () => {

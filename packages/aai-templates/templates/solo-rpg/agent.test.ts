@@ -1,4 +1,4 @@
-import type { Kv, ToolContext } from "@alexkroman1/aai";
+import type { Db, ToolContext } from "@alexkroman1/aai";
 import { describe, expect, test, vi } from "vitest";
 import {
   applyConsequences,
@@ -14,32 +14,43 @@ import {
 import { actionRoll } from "./tools/action_roll.ts";
 import { burnMomentum } from "./tools/burn_momentum.ts";
 import { checkState } from "./tools/check_state.ts";
+import { loadGame } from "./tools/load_game.ts";
 import { saveGame } from "./tools/save_game.ts";
 import { setupCharacter } from "./tools/setup_character.ts";
 import { updateState } from "./tools/update_state.ts";
 
 // ── Test doubles ─────────────────────────────────────────────────────────────
 
-function makeKv(): Kv {
-  const store = new Map<string, unknown>();
-  return {
-    async get<T>(key: string): Promise<T | null> {
-      return store.has(key) ? (structuredClone(store.get(key)) as T) : null;
-    },
-    async set(key: string, value: unknown): Promise<void> {
-      store.set(key, structuredClone(value));
-    },
-    async delete(keys: string | string[]): Promise<void> {
-      for (const k of Array.isArray(keys) ? keys : [keys]) store.delete(k);
+/**
+ * Map-backed fake of the app database, implementing exactly the three SQL
+ * statements the shared save-slot helpers emit (create table / select /
+ * upsert). Values are stored parsed, the way a postgres driver returns jsonb.
+ */
+function makeDb(): { db: Db; rows: Map<string, unknown> } {
+  const rows = new Map<string, unknown>();
+  const db: Db = {
+    async query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+      if (sql.startsWith("create table if not exists app_state")) return [];
+      if (sql.startsWith("select value from app_state")) {
+        const key = params[0] as string;
+        return rows.has(key) ? ([{ value: structuredClone(rows.get(key)) }] as T[]) : [];
+      }
+      if (sql.startsWith("insert into app_state")) {
+        const [key, json] = params as [string, string];
+        rows.set(key, JSON.parse(json)); // $2::jsonb — parsed like postgres would
+        return [];
+      }
+      throw new Error(`unexpected SQL in test: ${sql}`);
     },
   };
+  return { db, rows };
 }
 
-function makeCtx(kv: Kv = makeKv(), sessionId = "session-a"): ToolContext {
+function makeCtx(sessionId = "session-a", db: Db = makeDb().db): ToolContext {
   return {
     env: {},
     state: {},
-    kv,
+    db,
     vector: {} as ToolContext["vector"],
     generate: () => Promise.reject(new Error("generate not available in tests")),
     messages: [],
@@ -88,25 +99,24 @@ function playingState(): GameState {
 
 describe("setup_character", () => {
   test("running setup twice starts fresh: no duplicate ids, no stale resources, truthful return", async () => {
-    const kv = makeKv();
-    const ctx = makeCtx(kv);
+    const ctx = makeCtx();
 
     await setupCharacter.execute(SETUP_ARGS, ctx);
 
     // Simulate a played, damaged game between setups.
-    const played = await getGameState(kv, ctx.sessionId);
+    const played = getGameState(ctx);
     played.health = 1;
     played.momentum = -4;
     played.chaosFactor = 8;
     played.sceneCount = 42;
-    await saveGameState(kv, ctx.sessionId, played);
+    saveGameState(ctx, played);
 
     const result = (await setupCharacter.execute(
       { ...SETUP_ARGS, playerName: "Luna" },
       ctx,
     )) as Record<string, unknown>;
 
-    const state = await getGameState(kv, ctx.sessionId);
+    const state = getGameState(ctx);
     expect(state.npcs).toHaveLength(1);
     expect(state.npcs[0]?.id).toBe("npc_1");
     expect(state.clocks).toHaveLength(1);
@@ -128,7 +138,7 @@ describe("setup_character", () => {
   test("stats are a permutation of [3,2,2,1,1] with the archetype's stat at 3", async () => {
     const ctx = makeCtx();
     await setupCharacter.execute(SETUP_ARGS, ctx);
-    const state = await getGameState(ctx.kv, ctx.sessionId);
+    const state = getGameState(ctx);
     const stats = [state.edge, state.heart, state.iron, state.shadow, state.wits];
     expect([...stats].sort()).toEqual([1, 1, 2, 2, 3]);
     // investigator biases wits (index 4) to the high stat
@@ -136,9 +146,9 @@ describe("setup_character", () => {
   });
 
   test("game state is scoped per session — a second session sees a fresh game", async () => {
-    const kv = makeKv();
-    await setupCharacter.execute(SETUP_ARGS, makeCtx(kv, "session-a"));
-    const other = (await checkState.execute({} as never, makeCtx(kv, "session-b"))) as {
+    await setupCharacter.execute(SETUP_ARGS, makeCtx("session-a"));
+    // ctx.state is per-session by construction — a new session, a new game.
+    const other = (await checkState.execute({} as never, makeCtx("session-b"))) as {
       initialized: boolean;
     };
     expect(other.initialized).toBe(false);
@@ -220,7 +230,7 @@ describe("applyConsequences MISS matrix", () => {
 // ── burn_momentum ────────────────────────────────────────────────────────────
 
 describe("burn_momentum", () => {
-  async function seedRolledState(momentum: number, kv: Kv, ctx: ToolContext) {
+  function seedRolledState(momentum: number, ctx: ToolContext) {
     const state = playingState();
     // A MISS was applied: health -2, momentum -2, clock +1.
     state.health = 3;
@@ -253,19 +263,18 @@ describe("burn_momentum", () => {
         clockTicks: 1,
       },
     };
-    await saveGameState(kv, ctx.sessionId, state);
+    saveGameState(ctx, state);
   }
 
   test("a legal burn reverts the miss's consequences, upgrades, and resets momentum", async () => {
-    const kv = makeKv();
-    const ctx = makeCtx(kv);
-    await seedRolledState(8, kv, ctx); // 8 beats both dice (3, 5)
+    const ctx = makeCtx();
+    seedRolledState(8, ctx); // 8 beats both dice (3, 5)
 
     const result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
     expect(result.burned).toBe(true);
     expect(result.newResultCode).toBe("STRONG_HIT");
 
-    const state = await getGameState(kv, ctx.sessionId);
+    const state = getGameState(ctx);
     expect(state.health).toBe(5); // -2 reverted
     expect(state.clocks[0]?.filled).toBe(0); // tick reverted
     expect(state.momentum).toBe(2); // reset, overriding the strong hit's gain
@@ -273,44 +282,41 @@ describe("burn_momentum", () => {
   });
 
   test("momentum beating only one die upgrades a MISS to WEAK_HIT", async () => {
-    const kv = makeKv();
-    const ctx = makeCtx(kv);
-    await seedRolledState(4, kv, ctx); // beats 3, not 5
+    const ctx = makeCtx();
+    seedRolledState(4, ctx); // beats 3, not 5
     const result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
     expect(result.newResultCode).toBe("WEAK_HIT");
   });
 
   test("burn is refused with no stored roll, insufficient momentum, or a strong hit", async () => {
-    const kv = makeKv();
-    const ctx = makeCtx(kv);
+    const ctx = makeCtx();
 
     // No roll yet
     let result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
     expect(result.error).toMatch(/No recent action roll/);
 
     // Momentum too low to beat either die
-    await seedRolledState(2, kv, ctx);
+    seedRolledState(2, ctx);
     result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
     expect(result.error).toMatch(/not high enough/);
 
     // Strong hits cannot be upgraded
-    await seedRolledState(8, kv, ctx);
-    const state = await getGameState(kv, ctx.sessionId);
+    seedRolledState(8, ctx);
+    const state = getGameState(ctx);
     state.lastRoll!.result = "STRONG_HIT";
-    await saveGameState(kv, ctx.sessionId, state);
+    saveGameState(ctx, state);
     result = (await burnMomentum.execute({} as never, ctx)) as Record<string, unknown>;
     expect(result.error).toMatch(/already a Strong Hit/);
   });
 
   test("action_roll persists the roll so burn needs no dice arguments", async () => {
-    const kv = makeKv();
-    const ctx = makeCtx(kv);
-    await saveGameState(kv, ctx.sessionId, playingState());
+    const ctx = makeCtx();
+    saveGameState(ctx, playingState());
     await actionRoll.execute(
       { move: "clash", stat: "iron", position: "risky", effect: "standard", purpose: "attack" },
       ctx,
     );
-    const state = await getGameState(kv, ctx.sessionId);
+    const state = getGameState(ctx);
     expect(state.lastRoll).not.toBeNull();
     expect(state.lastRoll?.move).toBe("clash");
     expect(state.lastRoll?.deltas).toBeDefined();
@@ -361,26 +367,24 @@ describe("rollAction", () => {
 
 describe("update_state", () => {
   test("clock ids never collide after a removal (max-scan, not length+1)", async () => {
-    const kv = makeKv();
-    const ctx = makeCtx(kv);
-    await saveGameState(kv, ctx.sessionId, playingState()); // has clock_1
+    const ctx = makeCtx();
+    saveGameState(ctx, playingState()); // has clock_1
 
     await updateState.execute({ addClockName: "Second" }, ctx); // clock_2
     await updateState.execute({ removeClockName: "Doom" }, ctx); // removes clock_1
     await updateState.execute({ addClockName: "Third" }, ctx);
 
-    const state = await getGameState(kv, ctx.sessionId);
+    const state = getGameState(ctx);
     const ids = state.clocks.map((c) => c.id);
     expect(new Set(ids).size).toBe(ids.length);
     expect(ids).toEqual(["clock_2", "clock_3"]);
   });
 
   test("advancing a clock to full reports its trigger event", async () => {
-    const kv = makeKv();
-    const ctx = makeCtx(kv);
+    const ctx = makeCtx();
     const state = playingState();
     state.clocks[0]!.filled = 3; // 3 of 4
-    await saveGameState(kv, ctx.sessionId, state);
+    saveGameState(ctx, state);
 
     const result = (await updateState.execute({ advanceClockName: "Doom" }, ctx)) as {
       clockEvents: { clock: string; trigger: string }[];
@@ -389,19 +393,18 @@ describe("update_state", () => {
   });
 
   test("NPC count is capped at MAX_NPCS with a warning", async () => {
-    const kv = makeKv();
-    const ctx = makeCtx(kv);
+    const ctx = makeCtx();
     const state = playingState();
     while (state.npcs.length < MAX_NPCS) {
       state.npcs.push(makeNpc({ id: `npc_${state.npcs.length + 1}`, name: "Extra" }));
     }
-    await saveGameState(kv, ctx.sessionId, state);
+    saveGameState(ctx, state);
 
     const result = (await updateState.execute({ addNpcName: "One Too Many" }, ctx)) as {
       warnings?: string[];
     };
     expect(result.warnings?.[0]).toMatch(/NPC limit/);
-    const after = await getGameState(kv, ctx.sessionId);
+    const after = getGameState(ctx);
     expect(after.npcs).toHaveLength(MAX_NPCS);
   });
 
@@ -421,5 +424,55 @@ describe("update_state", () => {
     expect(() => slotParams.parse({ slot: "../../etc" })).toThrow();
     expect(() => slotParams.parse({ slot: "a".repeat(40) })).toThrow();
     expect(slotParams.parse({ slot: "chapter-2" })).toBeTruthy();
+  });
+});
+
+// ── save_game / load_game: cross-session persistence via ctx.db ──────────────
+
+describe("save_game / load_game", () => {
+  test("a save made in one session loads in a later session", async () => {
+    const { db, rows } = makeDb();
+
+    // Session A plays and saves.
+    const sessionA = makeCtx("session-a", db);
+    const played = playingState();
+    played.playerName = "Kael";
+    played.sceneCount = 7;
+    saveGameState(sessionA, played);
+    const saved = (await saveGame.execute({ slot: "chapter-2" }, sessionA)) as Record<
+      string,
+      unknown
+    >;
+    expect(saved.saved).toBe(true);
+    expect(saved.slot).toBe("chapter-2");
+    expect(rows.get("save:chapter-2")).toMatchObject({ playerName: "Kael", sceneCount: 7 });
+
+    // Session B (fresh ctx.state, same app db) resumes it.
+    const sessionB = makeCtx("session-b", db);
+    const loaded = (await loadGame.execute({ slot: "chapter-2" }, sessionB)) as Record<
+      string,
+      unknown
+    >;
+    expect(loaded.loaded).toBe(true);
+    expect(loaded.playerName).toBe("Kael");
+    expect(loaded.sceneCount).toBe(7);
+    expect(getGameState(sessionB).playerName).toBe("Kael");
+  });
+
+  test("loading a missing slot reports an error instead of resetting the game", async () => {
+    const ctx = makeCtx();
+    const result = (await loadGame.execute({ slot: "nope" }, ctx)) as { error?: string };
+    expect(result.error).toMatch(/No save found/);
+  });
+
+  test("saving twice to one slot upserts — the newer save wins", async () => {
+    const { db, rows } = makeDb();
+    const ctx = makeCtx("session-a", db);
+    saveGameState(ctx, playingState());
+    await saveGame.execute({}, ctx); // autosave
+    getGameState(ctx).sceneCount = 9;
+    await saveGame.execute({}, ctx);
+    expect(rows.size).toBe(1);
+    expect(rows.get("save:autosave")).toMatchObject({ sceneCount: 9 });
   });
 });

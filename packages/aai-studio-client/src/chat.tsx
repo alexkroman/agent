@@ -15,6 +15,12 @@ import { STARTERS } from "./starters.ts";
 type ChatPanelProps = {
   apiKey: string;
   project: string | null;
+  /**
+   * The project's persisted conversation, restored on open. `undefined`
+   * while the fetch is in flight — the panel shows a loading state instead
+   * of flashing an empty "new chat" composer that hydration then replaces.
+   */
+  chatHistory: UIMessage[] | undefined;
   /** Undefined while `/studio/status` is loading or unreachable. */
   llmStatus: StudioStatus | undefined;
   /** A project is being created for the guided-start flow. */
@@ -288,17 +294,23 @@ function EmptyStateBody({
   );
 }
 
-/** The live chat, mounted only when a project exists. */
+/**
+ * The live chat, mounted only when a project exists AND its persisted
+ * history has resolved — `useChat` reads `initialMessages` once at mount,
+ * so hydrating later would silently drop the restored conversation.
+ */
 function ProjectChat({
   apiKey,
   project,
+  initialMessages,
   llmStatus,
   initialPrompt,
   onInitialPromptSent,
   onWorkspaceChanged,
   onUnauthorized,
-}: Omit<ChatPanelProps, "project" | "onStartWithPrompt" | "creating"> & {
+}: Omit<ChatPanelProps, "project" | "chatHistory" | "onStartWithPrompt" | "creating"> & {
   project: string;
+  initialMessages: UIMessage[];
 }) {
   // Keep the latest callback out of the transport, which is created once.
   const unauthorizedRef = useRef(onUnauthorized);
@@ -322,6 +334,7 @@ function ProjectChat({
 
   const { messages, sendMessage, status, error, stop } = useChat({
     transport,
+    messages: initialMessages,
     onFinish: onWorkspaceChanged,
   });
 
@@ -384,17 +397,26 @@ export function ChatPanel(props: ChatPanelProps) {
       <div className="flex items-center justify-between gap-2 px-6 pt-5">
         <span className="eyebrow">Agent</span>
       </div>
-      {props.project ? (
+      {props.project && props.chatHistory === undefined && (
+        // History still loading: hold the panel rather than flashing an
+        // empty "new chat" that the restored conversation then replaces.
+        <div className="flex flex-1 items-center px-6 py-5">
+          <p className="m-0 text-[13px] text-subtle italic">Loading conversation…</p>
+        </div>
+      )}
+      {props.project && props.chatHistory !== undefined && (
         <ProjectChat
           apiKey={props.apiKey}
           project={props.project}
+          initialMessages={props.chatHistory}
           llmStatus={props.llmStatus}
           initialPrompt={props.initialPrompt}
           onInitialPromptSent={props.onInitialPromptSent}
           onWorkspaceChanged={props.onWorkspaceChanged}
           onUnauthorized={props.onUnauthorized}
         />
-      ) : (
+      )}
+      {!props.project && (
         <>
           <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
             <EmptyStateBody

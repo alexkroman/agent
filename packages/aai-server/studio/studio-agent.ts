@@ -23,7 +23,6 @@ import {
   tool,
   type UIMessage,
 } from "ai";
-import type { Storage } from "unstorage";
 import { z } from "zod";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
@@ -40,15 +39,16 @@ import { createWebTools } from "./studio-web.ts";
 import { currentFilesHash } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 import { createWorkspaceSession, type WorkspaceSession } from "./studio-workspace-session.ts";
+import type { WorkspaceStore } from "./workspace-store.ts";
 
 const MAX_CHAT_STEPS = 16;
 
 export type StudioChatDeps = {
-  storage: Storage;
+  workspaces: WorkspaceStore;
   scope: string;
   project: string;
   /**
-   * Lazy handle to this chat session's sandbox — the same warm-pool/gVisor
+   * Lazy handle to this chat session's sandbox — the same warm-pool/Modal
    * infrastructure deployed agents run in. Used by test_agent, and reused by
    * the deploy route for config extraction. Provisioned on first use.
    */
@@ -69,6 +69,13 @@ export type StudioChatDeps = {
    * race the sandbox/MCP teardown.
    */
   abortSignal?: AbortSignal;
+  /**
+   * Persist the full updated conversation when the UI stream settles (the
+   * request's messages plus the assistant's response). The route wires this
+   * to the project's `ChatStore` row; a failure is logged, never fatal —
+   * losing one snapshot must not cost the user their reply.
+   */
+  persistMessages?: (messages: UIMessage[]) => Promise<void>;
 };
 
 /** Invoke one agent tool in the sandbox, reporting failures as text. */
@@ -163,7 +170,7 @@ async function runTrial(
  */
 export function createStudioTools(
   deps: StudioChatDeps,
-  workspaces: WorkspaceSession = createWorkspaceSession(deps.storage, deps.scope, deps.project),
+  workspaces: WorkspaceSession = createWorkspaceSession(deps.workspaces, deps.scope, deps.project),
 ) {
   const { project } = deps;
   const withFiles = workspaces.update;
@@ -268,11 +275,11 @@ export function createStudioTools(
     test_agent: tool({
       description:
         "Build the workspace and load it into a sandbox running the exact " +
-        "production runtime (gVisor + Deno, no network/filesystem). Reports " +
+        "production runtime (Modal sandbox + Deno, no network/filesystem). Reports " +
         "build errors, load errors, and the extracted agent config. Pass " +
         "`tool` and `args` to also invoke one of the agent's tools with " +
         "sample arguments and see its result. Secrets are NOT available in " +
-        "test runs (ctx.env is empty); KV is a scratch store.",
+        "test runs (ctx.env is empty); ctx.db is unavailable (storage disabled).",
       inputSchema: z.object({
         tool: z.string().optional().describe("Name of an agent tool to invoke after loading"),
         args: z
@@ -333,6 +340,22 @@ export async function runStudioChat(
       onError: disposeSandbox,
     });
     return result.toUIMessageStreamResponse({
+      // `originalMessages` switches the stream to persistence mode: its
+      // onFinish reports the full updated conversation (request messages +
+      // the assistant response). It fires on normal finish AND on client
+      // abort (`isAborted`), so an aborted turn still persists the user
+      // message plus whatever assistant output settled; a turn that dies
+      // before the stream starts persists nothing — the client resends the
+      // full history next turn anyway.
+      originalMessages: messages,
+      onFinish: ({ messages: updated }) => {
+        void deps.persistMessages?.(updated).catch((err: unknown) => {
+          console.warn("Studio chat: failed to persist conversation", {
+            project: deps.project,
+            error: errorMessage(err),
+          });
+        });
+      },
       onError: (error) => {
         disposeSandbox();
         return errorMessage(error);

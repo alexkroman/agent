@@ -225,9 +225,9 @@ export const oracle = tool({
     }
 
     if (args.type === "chaos_check") {
-      const state = await getGameState(ctx.kv, ctx.sessionId);
+      const state = getGameState(ctx);
       const interrupt = checkChaosInterrupt(state);
-      await saveGameState(ctx.kv, ctx.sessionId, state);
+      saveGameState(ctx, state);
       ctx.send("game_state", state);
       return {
         type: "chaos_check",

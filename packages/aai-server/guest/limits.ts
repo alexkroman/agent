@@ -22,3 +22,13 @@ export const RUN_CODE_TIMEOUT_MS = 5000;
  * `TOOL_EXECUTION_TIMEOUT_MS` — same asserted-not-imported arrangement.
  */
 export const TOOL_TIMEOUT_MS = 30_000;
+
+/**
+ * Error for a `ctx.db` access while storage is disabled. Mirrors the SDK's
+ * `STORAGE_DISABLED_MESSAGE` — same asserted-not-imported arrangement, so
+ * `aai dev` and the platform read identically.
+ */
+export const STORAGE_DISABLED_MESSAGE =
+  "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
+  "the Storage toggle in the studio; under `aai dev`, set DATABASE_URL in the " +
+  "project .env.";

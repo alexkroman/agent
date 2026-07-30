@@ -78,7 +78,7 @@ const SANDBOX_SPAWN_PHASE_BUCKETS = [
 
 const sandboxSpawnPhase = new client.Histogram({
   name: "aai_sandbox_spawn_phase_seconds",
-  help: "Time spent in each phase of gVisor sandbox spawn (rootfs, bundle_dir, spawn, total).",
+  help: "Time spent in each phase of Modal sandbox spawn (create, harness, exec, total).",
   labelNames: ["phase"] as const,
   buckets: SANDBOX_SPAWN_PHASE_BUCKETS,
   registers: [registry],

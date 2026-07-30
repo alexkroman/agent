@@ -3,16 +3,15 @@
  * Integration tests for the SDK public API surface.
  *
  * These test the connected flow as a consumer would use it:
- * AgentDef → tools → direct executor → KV in tool context.
+ * AgentDef → tools → direct executor → db in tool context.
  */
 
-import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
+import type { Db } from "../sdk/db.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { createRuntime } from "./runtime.ts";
-import { createUnstorageKv } from "./unstorage-kv.ts";
 
 describe("SDK integration: AgentDef → tool execution", () => {
   test("AgentDef + tools + executeToolCall round-trip", async () => {
@@ -35,10 +34,23 @@ describe("SDK integration: AgentDef → tool execution", () => {
     expect(result).toBe("Hello, Alice!");
   });
 
-  test("tool with KV access works end-to-end", async () => {
-    const kv = createUnstorageKv({ storage: createStorage() });
+  test("tool with db access works end-to-end", async () => {
+    const store = new Map<string, string>();
+    // Fake Db that speaks the one-method contract; injected the way the
+    // platform injects the app's real Postgres-backed Db.
+    const db: Db = {
+      query: async <T>(sql: string, params?: unknown[]): Promise<T[]> => {
+        const [key, value] = (params ?? []) as [string, string?];
+        if (sql.startsWith("insert")) {
+          store.set(key, value ?? "");
+          return [] as T[];
+        }
+        const found = store.get(key);
+        return (found === undefined ? [] : [{ value: found }]) as T[];
+      },
+    };
     const agent: AgentDef = {
-      name: "kv-agent",
+      name: "db-agent",
       systemPrompt: "Be helpful.",
       greeting: "Hello!",
       maxSteps: 5,
@@ -47,7 +59,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
           description: "Save a value",
           parameters: z.object({ key: z.string(), value: z.string() }),
           execute: async ({ key, value }: { key: string; value: string }, ctx) => {
-            await ctx.kv.set(key, value);
+            await ctx.db.query("insert into vals (key, value) values ($1, $2)", [key, value]);
             return "saved";
           },
         },
@@ -55,14 +67,17 @@ describe("SDK integration: AgentDef → tool execution", () => {
           description: "Load a value",
           parameters: z.object({ key: z.string() }),
           execute: async ({ key }: { key: string }, ctx) => {
-            const val = await ctx.kv.get<string>(key);
-            return val ?? "not found";
+            const rows = await ctx.db.query<{ value: string }>(
+              "select value from vals where key = $1",
+              [key],
+            );
+            return rows[0]?.value ?? "not found";
           },
         },
       },
     };
 
-    const exec = createRuntime({ agent, env: {}, kv });
+    const exec = createRuntime({ agent, env: {}, db });
     await exec.executeTool("save", { key: "color", value: "blue" }, "s1", []);
     const result = await exec.executeTool("load", { key: "color" }, "s1", []);
     expect(result).toBe("blue");

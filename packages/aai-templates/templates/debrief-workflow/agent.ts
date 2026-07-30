@@ -1,4 +1,4 @@
-import { tool, workflow } from "@alexkroman1/aai";
+import { type ToolContext, tool, workflow } from "@alexkroman1/aai";
 import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
 import { generateStructured } from "@alexkroman1/aai/patterns";
 import { slack } from "@alexkroman1/aai/send";
@@ -13,13 +13,17 @@ import { z } from "zod";
 //
 //   transcript → extract_actions (generateStructured over ctx.generate turns
 //   the disfluent ramble into TYPED actions, each carrying its assumptions)
-//   → the loop executes each action with the matching tool (ctx.kv for
+//   → the loop executes each action with the matching tool (ctx.db for
 //   records, send_message for the Slack notification) → the run report
 //   lists exactly what was filed, what was assumed, and what was skipped.
 //
 // This is the workflow app mode end to end: no conversation, no clarifying
 // questions (missing values become skips with a reason, fuzzy values become
 // stated assumptions), and the report is the audit trail.
+//
+// Filed records persist in the app's SQL database, so this workflow requires
+// storage: `aai storage enable` (or the Storage toggle in the studio); under
+// `aai dev`, set DATABASE_URL in .env.
 
 /** One typed action extracted from the debrief. Flat with optional fields —
  *  a discriminated union would be prettier in TS, but this shape converts to
@@ -68,15 +72,39 @@ const extractActions = tool({
   },
 });
 
-/** Persist one record under a per-run key and hand back its id, so the run
- *  report can cite what was filed. */
+const ENSURE_RECORDS = `create table if not exists app_state (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+)`;
+
+// Memoized per process (a workflow run's tools share one sandbox); a failure
+// clears the memo so the next call retries instead of caching the error.
+let ensureP: Promise<unknown> | null = null;
+function ensureTable(ctx: Pick<ToolContext, "db">): Promise<unknown> {
+  ensureP ??= ctx.db.query(ENSURE_RECORDS).catch((err) => {
+    ensureP = null;
+    throw err;
+  });
+  return ensureP;
+}
+
+/** Persist one record under a fresh id and hand it back, so the run report
+ *  can cite what was filed. The value is serialized and cast with `::jsonb`
+ *  so the write is driver-agnostic about object parameters; reads come back
+ *  from the postgres driver already parsed. */
 async function fileRecord(
-  ctx: { kv: { set(key: string, value: unknown): Promise<void> } },
+  ctx: Pick<ToolContext, "db">,
   kind: string,
   record: Record<string, unknown>,
 ): Promise<{ id: string }> {
   const id = `${kind}:${Date.now().toString(36)}${Math.floor(Math.random() * 1e4)}`;
-  await ctx.kv.set(id, { ...record, filedAt: new Date().toISOString() });
+  await ensureTable(ctx);
+  await ctx.db.query(
+    "insert into app_state (key, value, updated_at) values ($1, $2::jsonb, now()) " +
+      "on conflict (key) do update set value = excluded.value, updated_at = now()",
+    [id, JSON.stringify({ ...record, filedAt: new Date().toISOString() })],
+  );
   return { id };
 }
 

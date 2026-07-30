@@ -148,7 +148,7 @@ ASSEMBLYAI_API_KEY automatically, so never ask the user for that key.
 
 The framework reference that follows is the CLAUDE.md shipped to CLI
 projects. Everything about agent.ts, agent(), tool(), ctx, providers,
-built-in tools, KV, secrets, and voice prompt rules applies here too.
+built-in tools, storage, secrets, and voice prompt rules applies here too.
 These CLI-specific parts do NOT apply in App Builder:
 
 - There is no shell, no pnpm, and no \`aai\` CLI. Ignore the "Workflow"
@@ -242,7 +242,7 @@ export default agent({
 - Replies are spoken aloud: short sentences, no bullets/formatting, 1-3
   sentence answers, no exclamation points.
 - Tool execute functions run sandboxed (no fs/subprocess; fetch is
-  SSRF-proxied) and MUST return a value. ctx gives env, kv, messages,
+  SSRF-proxied) and MUST return a value. ctx gives env, db, messages,
   sessionId, send().
 - A tool that calls an external API with fetch MUST list its hostname in
   allowedHosts (e.g. allowedHosts: ["api.example.com", "*.example.org"]) or

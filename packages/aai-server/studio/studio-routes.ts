@@ -6,11 +6,14 @@
  * - `GET  /studio/projects`                   — list the caller's projects
  * - `POST /studio/projects`                   — create a project (starter files)
  * - `GET  /studio/projects/:project`          — files + deployed slug
- * - `DELETE /studio/projects/:project`        — delete a project
+ * - `GET  /studio/projects/:project/chat`     — persisted chat history
+ * - `DELETE /studio/projects/:project`        — delete a project (and its chat)
  * - `PUT  /studio/projects/:project/file`     — write one file
  * - `DELETE /studio/projects/:project/file`   — delete one file (`?path=`)
  * - `POST /studio/projects/:project/deploy`   — build + deploy the workspace
  * - `POST /studio/projects/:project/sync`     — sync turn against the published agent
+ * - `GET/POST/DELETE /studio/projects/:project/storage` — per-app database
+ *   storage on the published agent (409 until published)
  * - `POST /studio/chat`                       — coding-agent turn (NDJSON stream)
  *
  * Auth: any bearer API key (the platform's self-sovereign key model — same
@@ -21,12 +24,13 @@
 import { errorMessage, MAX_SYNC_BODY_BYTES } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import type { UIMessage } from "ai";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import type { HonoEnv } from "../context.ts";
 import { authMw } from "../middleware.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
+import { disableStorage, enableStorage, storageStatus } from "../storage-handler.ts";
 import { handleSyncTurn } from "../sync-turn-handler.ts";
 import { runStudioChat } from "./studio-agent.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
@@ -49,14 +53,16 @@ import {
 } from "./studio-schemas.ts";
 import { starterFiles } from "./studio-template.ts";
 import {
+  createWorkspace,
   deleteWorkspace,
   getWorkspace,
   hasUnpublishedChanges,
   listProjects,
-  putWorkspace,
+  mutateWorkspace,
   studioScope,
 } from "./studio-workspace.ts";
 import { withWorkspaceLock } from "./studio-workspace-lock.ts";
+import { WorkspaceConflictError } from "./workspace-store.ts";
 
 export type StudioRouteOptions = {
   /** Warm harness pool shared with deployed-agent sandboxes. */
@@ -117,7 +123,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
 
   studio.get("/projects", async (c) => {
     const scope = studioScope(c.var.apiKey);
-    return c.json({ projects: await listProjects(c.env.storage, scope) });
+    return c.json({ projects: await listProjects(c.env.workspaces, scope) });
   });
 
   studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
@@ -125,21 +131,26 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     if (limited) return limited;
     const scope = studioScope(c.var.apiKey);
     const { name } = c.req.valid("json");
-    // Exists-check and create are one atomic step: two concurrent creates
-    // must not both pass the check and have the loser reset the winner.
-    return withWorkspaceLock(scope, name, async () => {
-      if (await getWorkspace(c.env.storage, scope, name)) {
+    // Creation is atomic at the store (versioned insert): two concurrent
+    // creates — even on different replicas — cannot both succeed, so the
+    // loser can never reset the winner's files. No lock needed here.
+    try {
+      const workspace = await createWorkspace(c.env.workspaces, scope, name, {
+        files: starterFiles(),
+      });
+      return c.json({ name, files: workspace.files }, 201);
+    } catch (err) {
+      if (err instanceof WorkspaceConflictError) {
         return c.json({ error: "Project already exists" }, 409);
       }
-      const workspace = await putWorkspace(c.env.storage, scope, name, { files: starterFiles() });
-      return c.json({ name, files: workspace.files }, 201);
-    });
+      throw err;
+    }
   });
 
   studio.get("/projects/:project", async (c) => {
     const scope = studioScope(c.var.apiKey);
     const project = validateProject(c.req.param("project"));
-    const workspace = await getWorkspace(c.env.storage, scope, project);
+    const workspace = await getWorkspace(c.env.workspaces, scope, project);
     if (!workspace) return c.json({ error: "Project not found" }, 404);
     return c.json({
       files: workspace.files,
@@ -149,12 +160,25 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     });
   });
 
+  // Persisted chat history for the project — written server-side when a chat
+  // turn's stream settles, restored by the client on project open.
+  studio.get("/projects/:project/chat", async (c) => {
+    const scope = studioScope(c.var.apiKey);
+    const project = validateProject(c.req.param("project"));
+    if (!(await getWorkspace(c.env.workspaces, scope, project))) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+    const messages = await c.env.chats.getChat(scope, project);
+    return c.json({ messages: messages ?? [] });
+  });
+
   studio.delete("/projects/:project", async (c) => {
     const scope = studioScope(c.var.apiKey);
     const project = validateProject(c.req.param("project"));
-    // Locked so an in-flight read-modify-write cannot resurrect the project
-    // by writing back a snapshot taken before the delete.
-    await withWorkspaceLock(scope, project, () => deleteWorkspace(c.env.storage, scope, project));
+    // No lock needed: a racing versioned write cannot resurrect the project —
+    // `mutateWorkspace` only ever replaces an existing row.
+    await deleteWorkspace(c.env.workspaces, scope, project);
+    await c.env.chats.deleteChat(scope, project);
     return c.json({ ok: true });
   });
 
@@ -163,15 +187,15 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     const project = validateProject(c.req.param("project"));
     const { path, content } = c.req.valid("json");
     // Locked read-modify-write: an editor PUT racing a chat turn must not
-    // drop either edit.
+    // drop either edit. Cross-replica races are absorbed by the versioned
+    // retry inside mutateWorkspace — the edit re-derives cleanly.
     return withWorkspaceLock(scope, project, async () => {
-      const workspace = await getWorkspace(c.env.storage, scope, project);
-      if (!workspace) return c.json({ error: "Project not found" }, 404);
       try {
-        await putWorkspace(c.env.storage, scope, project, {
-          ...workspace,
-          files: { ...workspace.files, [path]: content },
-        });
+        const workspace = await mutateWorkspace(c.env.workspaces, scope, project, (current) => ({
+          ...current,
+          files: { ...current.files, [path]: content },
+        }));
+        if (!workspace) return c.json({ error: "Project not found" }, 404);
       } catch (err) {
         return c.json({ error: errorMessage(err) }, 400);
       }
@@ -185,11 +209,17 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     const path = c.req.query("path");
     if (!path) return c.json({ error: "Missing path query parameter" }, 400);
     return withWorkspaceLock(scope, project, async () => {
-      const workspace = await getWorkspace(c.env.storage, scope, project);
-      if (!workspace?.files[path]) return c.json({ error: "File not found" }, 404);
-      const files = { ...workspace.files };
-      delete files[path];
-      await putWorkspace(c.env.storage, scope, project, { ...workspace, files });
+      let deleted = false;
+      const workspace = await mutateWorkspace(c.env.workspaces, scope, project, (current) => {
+        // Reset per attempt: a conflict retry re-derives from a fresh read.
+        deleted = false;
+        if (!current.files[path]) return null;
+        deleted = true;
+        const files = { ...current.files };
+        delete files[path];
+        return { ...current, files };
+      });
+      if (!(workspace && deleted)) return c.json({ error: "File not found" }, 404);
       return c.json({ ok: true });
     });
   });
@@ -202,7 +232,12 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
       const project = validateProject(c.req.param("project"));
       const { env } = c.req.valid("json");
       const result = await deploy(
-        { store: c.env.store, slots: c.env.slots, storage: c.env.storage, pool: options.pool },
+        {
+          store: c.env.store,
+          slots: c.env.slots,
+          workspaces: c.env.workspaces,
+          pool: options.pool,
+        },
         { apiKey: c.var.apiKey, scope, project, env },
       );
       if (!result.ok) return c.json({ error: result.error }, 400);
@@ -210,19 +245,49 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     },
   );
 
+  // Resolve a project's *published* slug, throwing the HTTPException the
+  // shared error handler renders as `{ error: message }` with the same
+  // status. Unpublished project → 409: the routes below operate on the
+  // deployed agent, so Publish comes first.
+  const publishedSlug = async (c: Context<HonoEnv>): Promise<string> => {
+    const scope = studioScope(c.var.apiKey);
+    const project = validateProject(c.req.param("project"));
+    const workspace = await getWorkspace(c.env.workspaces, scope, project);
+    if (!workspace) throw new HTTPException(404, { message: "Project not found" });
+    if (!workspace.deployedSlug) {
+      throw new HTTPException(409, { message: "Project has not been published yet" });
+    }
+    return workspace.deployedSlug;
+  };
+
   // One connectionless sync turn against the project's *published* agent —
   // the studio-side door to `POST /:slug/sync`, addressed by project name so
   // the client never has to track the slug itself. Same semantics as the
   // preview: it exercises the deployed bundle, not unpublished edits.
   studio.post("/projects/:project/sync", syncBodyLimit, async (c) => {
-    const scope = studioScope(c.var.apiKey);
-    const project = validateProject(c.req.param("project"));
-    const workspace = await getWorkspace(c.env.storage, scope, project);
-    if (!workspace) return c.json({ error: "Project not found" }, 404);
-    if (!workspace.deployedSlug) {
-      return c.json({ error: "Project has not been published yet" }, 409);
-    }
-    return handleSyncTurn(c, workspace.deployedSlug, options.pool);
+    const slug = await publishedSlug(c);
+    return handleSyncTurn(c, slug, options.pool);
+  });
+
+  // Storage (per-app database) for the project's *published* agent —
+  // resolved by project name like the sync route, delegating to the same
+  // core the owner `/:slug/storage` routes use.
+
+  studio.get("/projects/:project/storage", async (c) => {
+    const slug = await publishedSlug(c);
+    return c.json(await storageStatus(c.env, slug));
+  });
+
+  studio.post("/projects/:project/storage", async (c) => {
+    const slug = await publishedSlug(c);
+    const { enabled } = await enableStorage(c.env, slug);
+    return c.json({ ok: true, enabled });
+  });
+
+  studio.delete("/projects/:project/storage", async (c) => {
+    const slug = await publishedSlug(c);
+    const { enabled } = await disableStorage(c.env, slug);
+    return c.json({ ok: true, enabled });
   });
 
   studio.post("/chat", async (c) => {
@@ -267,7 +332,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     // MCP tools. Closed by runStudioChat when the stream settles, or right
     // here on the early-return path.
     const mcp = openMcpTools();
-    if (!(await getWorkspace(c.env.storage, scope, project))) {
+    if (!(await getWorkspace(c.env.workspaces, scope, project))) {
       void mcp.then((session) => session.close());
       return c.json({ error: "Project not found" }, 404);
     }
@@ -280,7 +345,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     // The `disposed` flag closes an abort race: a chat abort can run
     // disposeSandbox while sandboxPromise is still null (test_agent spends
     // seconds in the Vite build before asking for the sandbox), and a
-    // provisioning that started afterwards would be a leaked gVisor/Deno
+    // provisioning that started afterwards would be a leaked Modal/Deno
     // process nothing ever disposes.
     let sandboxPromise: Promise<StudioSandbox> | null = null;
     let disposed = false;
@@ -304,15 +369,20 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
       await live?.dispose();
     };
 
+    // Persist the settled conversation into the project's chat row, so
+    // reopening the project restores the history. Bound here (not in
+    // runStudioChat) so the agent module never depends on the ChatStore.
+    const chats = c.env.chats;
     return runStudioChat(
       {
-        storage: c.env.storage,
+        workspaces: c.env.workspaces,
         scope,
         project,
         sandbox,
         disposeSandbox,
         mcp,
         abortSignal: c.req.raw.signal,
+        persistMessages: (updated) => chats.putChat(scope, project, updated),
       },
       // Structurally validated by UiMessageSchema; part-level validation
       // happens in convertToModelMessages.

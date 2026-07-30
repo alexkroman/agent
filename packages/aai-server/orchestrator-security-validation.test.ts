@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Orchestrator security tests: slug validation / path traversal,
- * security headers and CORS, KV prefix isolation, and WebSocket URL
+ * security headers and CORS, and WebSocket URL
  * validation. Cross-agent tenant-isolation tests live in
  * orchestrator-security.test.ts.
  */
@@ -9,12 +9,9 @@ import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import {
-  createTestOrchestrator,
-  createTestStorage,
-  createTestStore,
-  deployAgent,
-} from "./test-utils.ts";
+import { createMemoryChatStore } from "./studio/chat-store.ts";
+import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
+import { createTestOrchestrator, createTestStore, deployAgent } from "./test-utils.ts";
 
 // ── Slug Validation & Path Traversal ───────────────────────────────────
 
@@ -84,11 +81,11 @@ describe("slug validation prevents path traversal", () => {
 describe("security headers on all response types", () => {
   test("health endpoint includes security headers", async () => {
     const store = createTestStore();
-    const storage = createTestStorage();
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      storage,
+      workspaces: createMemoryWorkspaceStore(),
+      chats: createMemoryChatStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
     const res = await app.fetch(new Request("http://localhost/health"));
@@ -102,11 +99,11 @@ describe("security headers on all response types", () => {
 
   test("404 responses include security headers", async () => {
     const store = createTestStore();
-    const storage = createTestStorage();
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      storage,
+      workspaces: createMemoryWorkspaceStore(),
+      chats: createMemoryChatStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
     const res = await app.fetch(new Request("http://localhost/nonexistent"));
@@ -137,11 +134,11 @@ describe("security headers on all response types", () => {
 
   test("CORS headers restrict allowed origins when configured", async () => {
     const store = createTestStore();
-    const storage = createTestStorage();
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      storage,
+      workspaces: createMemoryWorkspaceStore(),
+      chats: createMemoryChatStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
       allowedOrigins: ["https://trusted.example.com"],
     });
@@ -167,11 +164,11 @@ describe("security headers on all response types", () => {
 
   test("CORS rejects cross-origin when no origins configured", async () => {
     const store = createTestStore();
-    const storage = createTestStorage();
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      storage,
+      workspaces: createMemoryWorkspaceStore(),
+      chats: createMemoryChatStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
 
@@ -183,37 +180,6 @@ describe("security headers on all response types", () => {
     // No allowedOrigins configured means reject cross-origin requests
     const acao = res.headers.get("Access-Control-Allow-Origin");
     expect(acao).not.toBe("https://any-site.com");
-  });
-});
-
-// ── Harness Auth Token ─────────────────────────────────────────────────
-
-describe("harness auth token enforcement", () => {
-  test("sandbox KV prefix includes slug for isolation", () => {
-    // Verify the KV prefix pattern used in sandbox.ts
-    const slug = "my-agent";
-    const prefix = `agents/${slug}/kv`;
-    expect(prefix).toBe("agents/my-agent/kv");
-
-    // Different slug produces different prefix
-    const otherPrefix = "agents/other-agent/kv";
-    expect(prefix).not.toBe(otherPrefix);
-  });
-
-  test("KV prefix prevents cross-agent data access", () => {
-    // Simulate what happens when two agents have overlapping key names
-    const agentAPrefix = "agents/agent-a/kv";
-    const agentBPrefix = "agents/agent-b/kv";
-
-    const keyName = "shared-key";
-    const agentAFullKey = `${agentAPrefix}:${keyName}`;
-    const agentBFullKey = `${agentBPrefix}:${keyName}`;
-
-    // Even with the same key name, full keys are different
-    expect(agentAFullKey).not.toBe(agentBFullKey);
-    // Neither is a prefix of the other
-    expect(agentAFullKey.startsWith(agentBPrefix)).toBe(false);
-    expect(agentBFullKey.startsWith(agentAPrefix)).toBe(false);
   });
 });
 

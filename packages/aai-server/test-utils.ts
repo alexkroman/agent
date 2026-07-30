@@ -1,15 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { Kv } from "@alexkroman1/aai";
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
-import { createStorage, type Storage } from "unstorage";
-import { vi } from "vitest";
 import { registry } from "./metrics.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
+import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
+import { type ChatStore, createMemoryChatStore } from "./studio/chat-store.ts";
+import { createMemoryWorkspaceStore, type WorkspaceStore } from "./studio/workspace-store.ts";
 
 // ── Metric-reading helpers (canonical versions for tests) ───────────────
 
@@ -73,24 +73,14 @@ export function histogramCount(name: string, labels?: Record<string, string>): n
   return entries.find((e) => entryMatches(e, labels))?.count ?? 0;
 }
 
-/** In-memory mock KV store backed by a Map. All methods are vi.fn() spies. */
-export function createMockKv(): Kv {
-  const store = new Map<string, unknown>();
-  return {
-    get: vi.fn(async (key: string) => store.get(key) ?? null) as Kv["get"],
-    set: vi.fn(async (key: string, value: unknown) => {
-      store.set(key, value);
-    }),
-    delete: vi.fn(async (key: string) => {
-      store.delete(key);
-    }),
-  };
-}
-
 export const VALID_ENV: Record<string, string> = {};
 
-/** Sync in-memory BundleStore for tests. No encryption — stores env as plain JSON. */
-export function createTestStore(): BundleStore {
+/**
+ * Sync in-memory BundleStore for tests. No encryption — stores env as plain
+ * JSON. When a SecretStore is passed, `deleteAgent` sweeps the agent's secret
+ * names like the real store does (the delete route relies on that contract).
+ */
+export function createTestStore(secrets?: SecretStore): BundleStore {
   const objects = new Map<string, string>();
 
   function objectKey(slug: string, file: string): string {
@@ -143,9 +133,10 @@ export function createTestStore(): BundleStore {
       return Promise.resolve(objects.get(objectKey(slug, `client/${filePath}`)) ?? null);
     },
 
-    deleteAgent(slug) {
+    async deleteAgent(slug) {
       deleteByPrefix(`agents/${slug}/`);
-      return Promise.resolve();
+      await secrets?.delete(agentEnvSecretName(slug));
+      await secrets?.delete(appDbSecretName(slug));
     },
 
     getEnv(slug) {
@@ -171,10 +162,6 @@ export function createTestStore(): BundleStore {
       }
     },
   };
-}
-
-export function createTestStorage(): Storage {
-  return createStorage();
 }
 
 export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {
@@ -217,19 +204,22 @@ export async function createTestOrchestrator(
 ): Promise<{
   fetch: TestFetch;
   store: BundleStore;
-  storage: Storage;
+  workspaces: WorkspaceStore;
+  chats: ChatStore;
 }> {
-  const store = createTestStore();
-  const storage = createTestStorage();
+  const store = createTestStore(overrides.secrets);
+  const workspaces = createMemoryWorkspaceStore();
+  const chats = createMemoryChatStore();
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    storage,
+    workspaces,
+    chats,
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     ...overrides,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
-  return { fetch, store, storage };
+  return { fetch, store, workspaces, chats };
 }
 
 /** Standard auth + JSON headers for test requests. */

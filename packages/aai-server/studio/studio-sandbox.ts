@@ -6,18 +6,19 @@
  * extracting its config, and trial-running its tools — happens inside a
  * sandbox provisioned through the exact same machinery as deployed agents:
  * the orchestrator's warm pool when available, otherwise
- * `spawnWarmHarness` (gVisor on Linux, dev child process elsewhere). The
+ * `spawnWarmHarness` (a remote Modal Sandbox). The
  * host never evaluates workspace code.
  *
  * Unlike a deployed agent's sandbox, a studio session sandbox:
  * - starts with no bundle and can re-`loadBundle` repeatedly (the harness
  *   replaces the loaded agent), giving the coding agent a build → load →
  *   try loop against the production runtime;
- * - is wired to a scratch in-memory KV/Vector — trial tool runs never
- *   touch platform data, and no tenant secrets enter the guest.
+ * - is wired to a scratch in-memory Vector and NO app database — trial tool
+ *   runs never touch platform data, and no tenant secrets enter the guest.
+ *   A trial run that touches ctx.db gets the self-explanatory
+ *   storage-not-enabled error.
  */
 
-import type { Kv } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { resolveHarnessPath } from "../constants.ts";
@@ -54,30 +55,15 @@ export type StudioSandboxOptions = {
   spawn?: typeof spawnWarmHarness;
 };
 
-function scratchKv(): Kv {
-  const map = new Map<string, unknown>();
-  return {
-    get: (key) => Promise.resolve((map.get(key) as never) ?? null),
-    set: (key, value) => {
-      map.set(key, value);
-      return Promise.resolve();
-    },
-    delete: (keys) => {
-      for (const key of Array.isArray(keys) ? keys : [keys]) map.delete(key);
-      return Promise.resolve();
-    },
-  };
-}
-
 export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Promise<StudioSandbox> {
   const spawn = opts.spawn ?? spawnWarmHarness;
   const harnessPath = opts.harnessPath ?? resolveHarnessPath();
 
-  // Scratch KV/Vector so trial tool runs behave realistically (ctx.kv works)
-  // without reaching any tenant data. No allowedHosts — guest fetch is off.
+  // Scratch Vector so trial tool runs behave realistically (ctx.vector works)
+  // without reaching any tenant data. No db (ctx.db throws the
+  // storage-not-enabled error) and no allowedHosts — guest fetch is off.
   const wire = (warm: WarmHarness): WarmHarness => {
     registerGuestRpcHandlers(warm.conn, {
-      kv: scratchKv(),
       vector: createMemoryVector({ namespace: TRIAL_SESSION_ID }),
     });
     warm.conn.listen();

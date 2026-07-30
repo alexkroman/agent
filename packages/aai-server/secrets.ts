@@ -1,22 +1,22 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Credential hashing (argon2 for new hashes, PBKDF2 legacy verify) and
-// envelope encryption (iron-webcrypto for new writes, HKDF + AES-256-GCM
-// legacy decrypt). Both stored formats are self-describing, so records
-// written by older servers keep working — never delete a legacy read path.
+// Credential hashing (argon2 for new hashes, PBKDF2 legacy verify). Both
+// stored hash formats are self-describing, so records written by older
+// servers keep verifying.
+//
+// The envelope-encryption layer that used to live here (master key + iron /
+// AES-GCM env blobs) is gone: agent env records now live in Supabase Vault
+// via `secret-store.ts`. That was a clean-break migration — there is
+// deliberately no legacy decrypt path.
 
 import { createHash, timingSafeEqual } from "node:crypto";
 import { hash as argon2Hash, verify as argon2Verify } from "@node-rs/argon2";
-import { defaults as ironDefaults, seal as ironSeal, unseal as ironUnseal } from "iron-webcrypto";
 import { TtlCache } from "./_ttl-cache.ts";
-import { fromBase64Url, toBase64Url } from "./base64url.ts";
-import { MAX_ENV_SIZE } from "./constants.ts";
-import { EnvSchema } from "./schemas.ts";
+import { fromBase64Url } from "./base64url.ts";
 import type { BundleStore } from "./store-types.ts";
 
 // ─── Hashing & Authentication ───────────────────────────────────────────────
 
 const enc = new TextEncoder();
-const dec = new TextDecoder();
 
 // Legacy PBKDF2 parameters — verify-only. New hashes are argon2id.
 const PBKDF2_HASH = "SHA-256";
@@ -145,147 +145,4 @@ export async function verifySlugOwner(
   }
 
   return { status: "forbidden" };
-}
-
-// ─── Credential Encryption ───────────────────────────────────────────────────
-
-/** Legacy envelope: HKDF + AES-256-GCM, decrypt-only. */
-const ENV_VERSION_LEGACY = 0x01;
-/** Current envelope: iron-webcrypto sealed string. */
-const ENV_VERSION_IRON = 0x02;
-const ENV_SALT_BYTES = 16;
-const ENV_IV_BYTES = 12;
-
-export type MasterKey = CryptoKey;
-
-/**
- * Import a master secret as HKDF key material.
- * Called once at server startup; the returned key is passed to
- * `encryptEnv` / `decryptEnv` for per-call key derivation.
- */
-export async function importMasterKey(secret: string): Promise<MasterKey> {
-  return crypto.subtle.importKey("raw", enc.encode(secret), "HKDF", false, [
-    "deriveKey",
-    "deriveBits",
-  ]);
-}
-
-/**
- * Derive a per-encryption AES-256-GCM key from the master key,
- * a random salt, and the agent slug (legacy v1 envelopes only).
- */
-async function deriveEnvKey(
-  masterKey: MasterKey,
-  salt: Uint8Array<ArrayBuffer>,
-  slug: string,
-): Promise<CryptoKey> {
-  return crypto.subtle.deriveKey(
-    {
-      name: "HKDF",
-      hash: "SHA-256",
-      salt,
-      info: enc.encode(slug),
-    },
-    masterKey,
-    { name: "AES-GCM", length: 256 },
-    false,
-    ["encrypt", "decrypt"],
-  );
-}
-
-/**
- * Derive the iron seal/unseal password for one agent. Iron has no AAD
- * parameter, so the slug binding the legacy format got from AES-GCM AAD is
- * carried by mixing the slug into the password instead: HKDF-SHA256 over
- * the master key with the slug in `info` yields a per-slug high-entropy
- * password, so a blob sealed for one slug fails integrity for any other.
- * Iron then applies its own random salt/IV/HMAC framing on top.
- */
-async function deriveIronPassword(masterKey: MasterKey, slug: string): Promise<string> {
-  const bits = await crypto.subtle.deriveBits(
-    {
-      name: "HKDF",
-      hash: "SHA-256",
-      salt: new Uint8Array(0),
-      info: enc.encode(`aai-env-iron:${slug}`),
-    },
-    masterKey,
-    256,
-  );
-  return toBase64Url(new Uint8Array(bits));
-}
-
-/**
- * Encrypt an env record with iron-webcrypto. Produces:
- * `version (0x02) || utf8(iron sealed string)` encoded as base64url.
- * Iron handles salt, IV, integrity (HMAC), and framing; the slug is bound
- * via the derived password (see `deriveIronPassword`).
- *
- * Throws if the serialized env exceeds MAX_ENV_SIZE (64 KB).
- */
-export async function encryptEnv(
-  masterKey: MasterKey,
-  opts: { env: Record<string, string>; slug: string },
-): Promise<string> {
-  const plaintext = enc.encode(JSON.stringify(opts.env));
-  if (plaintext.byteLength > MAX_ENV_SIZE) {
-    throw new Error(
-      `Env blob size (${plaintext.byteLength} bytes) exceeds maximum (${MAX_ENV_SIZE} bytes)`,
-    );
-  }
-
-  const password = await deriveIronPassword(masterKey, opts.slug);
-  const sealed = await ironSeal(opts.env, password, ironDefaults);
-
-  const sealedBytes = enc.encode(sealed);
-  const result = new Uint8Array(1 + sealedBytes.byteLength);
-  result[0] = ENV_VERSION_IRON;
-  result.set(sealedBytes, 1);
-  return toBase64Url(result);
-}
-
-/**
- * Decrypt a legacy v1 env blob:
- * `version (0x01) || salt (16) || IV (12) || AES-256-GCM ciphertext`,
- * with the slug as AES-GCM additional authenticated data. Production has
- * blobs in this format — keep this path working forever.
- */
-async function decryptEnvLegacy(
-  masterKey: MasterKey,
-  data: Uint8Array,
-  slug: string,
-): Promise<Record<string, string>> {
-  const salt = new Uint8Array(data.slice(1, 1 + ENV_SALT_BYTES));
-  const iv = new Uint8Array(data.slice(1 + ENV_SALT_BYTES, 1 + ENV_SALT_BYTES + ENV_IV_BYTES));
-  const ciphertext = new Uint8Array(data.slice(1 + ENV_SALT_BYTES + ENV_IV_BYTES));
-
-  const key = await deriveEnvKey(masterKey, salt, slug);
-  const plaintext = await crypto.subtle.decrypt(
-    { name: "AES-GCM", iv, additionalData: enc.encode(slug) },
-    key,
-    ciphertext,
-  );
-  return EnvSchema.parse(JSON.parse(dec.decode(plaintext)));
-}
-
-/**
- * Decrypt an env blob. Reads the version byte and dispatches accordingly.
- */
-export async function decryptEnv(
-  masterKey: MasterKey,
-  opts: { encrypted: string; slug: string },
-): Promise<Record<string, string>> {
-  const data = fromBase64Url(opts.encrypted);
-
-  const version = data[0];
-  if (version === ENV_VERSION_LEGACY) {
-    return decryptEnvLegacy(masterKey, data, opts.slug);
-  }
-  if (version === ENV_VERSION_IRON) {
-    const password = await deriveIronPassword(masterKey, opts.slug);
-    const sealed = dec.decode(data.slice(1));
-    const unsealed = await ironUnseal(sealed, password, ironDefaults);
-    return EnvSchema.parse(unsealed);
-  }
-  throw new Error(`Unknown env encryption version: ${version}`);
 }

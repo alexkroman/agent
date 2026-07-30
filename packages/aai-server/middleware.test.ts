@@ -4,20 +4,17 @@ import { describe, expect, test } from "vitest";
 import { requireOwner } from "./middleware.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import {
-  createTestOrchestrator,
-  createTestStorage,
-  createTestStore,
-  deployAgent,
-} from "./test-utils.ts";
+import { createMemoryChatStore } from "./studio/chat-store.ts";
+import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
+import { createTestOrchestrator, createTestStore, deployAgent } from "./test-utils.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
   const store = createTestStore();
-  const storage = createTestStorage();
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    storage,
+    workspaces: createMemoryWorkspaceStore(),
+    chats: createMemoryChatStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const res = await app.fetch(new Request("http://localhost/health"));
@@ -27,11 +24,11 @@ test("orchestrator adds Cross-Origin-Isolation headers", async () => {
 
 test("orchestrator returns 401 on deploy without auth", async () => {
   const store = createTestStore();
-  const storage = createTestStorage();
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    storage,
+    workspaces: createMemoryWorkspaceStore(),
+    chats: createMemoryChatStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const res = await app.fetch(new Request("http://localhost/my-agent/deploy", { method: "POST" }));
@@ -108,31 +105,22 @@ describe("requireOwner unclaimed-slug paths", () => {
   });
 });
 
-describe("requireOwner on KV endpoint", () => {
-  test("returns 401 without auth on KV endpoint", async () => {
+describe("requireOwner on storage endpoint", () => {
+  test("returns 401 without auth on storage endpoint", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent");
-    const res = await fetch("/my-agent/kv", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "get", key: "test" }),
-    });
+    const res = await fetch("/my-agent/storage", { method: "GET" });
     expect(res.status).toBe(401);
   });
 
-  test("accepts valid owner API key on KV endpoint", async () => {
+  test("accepts valid owner API key on storage endpoint", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent");
-    const res = await fetch("/my-agent/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "get", key: "test" }),
+    const res = await fetch("/my-agent/storage", {
+      method: "GET",
+      headers: { Authorization: "Bearer key1" },
     });
     expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enabled: false });
   });
 });

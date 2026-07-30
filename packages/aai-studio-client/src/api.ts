@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 // REST helpers for the studio's project/file/deploy endpoints.
 
+import type { UIMessage } from "ai";
 import { parse } from "dotenv";
 
 export type ProjectData = {
@@ -9,6 +10,8 @@ export type ProjectData = {
   /** Workspace has edits the running agent does not have yet. */
   unpublished?: boolean;
 };
+
+export type StorageStatus = { enabled: boolean };
 
 export type StudioStatus = {
   llm: boolean;
@@ -91,6 +94,24 @@ export const api = {
       `/projects/${encodeURIComponent(project)}/file?path=${encodeURIComponent(path)}`,
       { method: "DELETE" },
     ),
+
+  getChat: (key: string, project: string) =>
+    request<{ messages: UIMessage[] }>(key, `/projects/${encodeURIComponent(project)}/chat`).then(
+      (r) => r.messages,
+    ),
+
+  getStorage: (key: string, project: string) =>
+    request<StorageStatus>(key, `/projects/${encodeURIComponent(project)}/storage`),
+
+  enableStorage: (key: string, project: string) =>
+    request<{ ok: true; enabled: true }>(key, `/projects/${encodeURIComponent(project)}/storage`, {
+      method: "POST",
+    }),
+
+  disableStorage: (key: string, project: string) =>
+    request<{ ok: true; enabled: false }>(key, `/projects/${encodeURIComponent(project)}/storage`, {
+      method: "DELETE",
+    }),
 
   deploy: (key: string, project: string, env: Record<string, string>) =>
     request<{ ok: true; slug: string; url: string }>(

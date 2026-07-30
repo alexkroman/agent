@@ -1,4 +1,4 @@
-import type { Kv, ToolContext } from "@alexkroman1/aai";
+import type { ToolContext } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import { getState } from "./shared.ts";
 import { incidentCreate } from "./tools/incident_create.ts";
@@ -8,40 +8,19 @@ import { incidentUpdateStatus } from "./tools/incident_update_status.ts";
 import { resourcesDispatch } from "./tools/resources_dispatch.ts";
 import { resourcesUpdateStatus } from "./tools/resources_update_status.ts";
 
-/**
- * Map-backed Kv stub. Values are structuredClone'd on both set and get so
- * each read returns an independent snapshot, like a real (serializing) KV
- * store — without this, shared object references would mask lost updates
- * and the concurrency test below would pass even without serialization.
- */
-function makeKv(): Kv {
-  const store = new Map<string, unknown>();
-  return {
-    get: async <T>(key: string): Promise<T | null> =>
-      store.has(key) ? (structuredClone(store.get(key)) as T) : null,
-    set: async (key: string, value: unknown): Promise<void> => {
-      store.set(key, structuredClone(value));
-    },
-    delete: async (keys: string | string[]): Promise<void> => {
-      for (const k of Array.isArray(keys) ? keys : [keys]) store.delete(k);
-    },
-  };
-}
-
 let sessionCounter = 0;
 
-function makeCtx(): { ctx: ToolContext; kv: Kv; sessionId: string } {
-  const kv = makeKv();
+/** ToolContext stub — the dispatch board lives in ctx.state, one per session. */
+function makeCtx(): { ctx: ToolContext } {
   const sessionId = `test-session-${++sessionCounter}`;
   const ctx = {
-    kv,
     sessionId,
     send: () => {},
     env: {},
     state: {},
     messages: [],
   } as unknown as ToolContext;
-  return { ctx, kv, sessionId };
+  return { ctx };
 }
 
 async function createIncidentFor(
@@ -57,7 +36,7 @@ async function createIncidentFor(
 
 describe("dispatch-center template", () => {
   test("resolving an incident does not yank a reassigned unit off its new incident", async () => {
-    const { ctx, kv, sessionId } = makeCtx();
+    const { ctx } = makeCtx();
 
     const inc1 = await createIncidentFor(ctx);
     await resourcesDispatch.execute({ incidentId: inc1, callsigns: ["Medic-1"] }, ctx);
@@ -70,7 +49,7 @@ describe("dispatch-center template", () => {
     // Resolving the first incident must not touch Medic-1 anymore.
     await incidentUpdateStatus.execute({ incidentId: inc1, status: "resolved" }, ctx);
 
-    const state = await getState(kv, sessionId);
+    const state = getState(ctx);
     const medic1 = state.resources.find((r) => r.callsign === "Medic-1");
     expect(medic1?.status).toBe("dispatched");
     expect(medic1?.assignedIncident).toBe(inc2);
@@ -92,17 +71,18 @@ describe("dispatch-center template", () => {
   });
 
   test("concurrent tool calls are serialized — no lost updates", async () => {
-    const { ctx, kv, sessionId } = makeCtx();
+    const { ctx } = makeCtx();
 
-    // Parallel tool calls in one LLM turn run concurrently. Without the
-    // per-session mutex both would read the same snapshot and one incident
-    // would silently vanish on save.
+    // Parallel tool calls in one LLM turn run concurrently. The per-session
+    // mutex in updateState makes each one run against the previous one's
+    // finished state, so neither incident's changes are half-applied when
+    // the other's mutator runs.
     const [a, b] = (await Promise.all([
       incidentCreate.execute({ location: "1 First St", description: "gas leak" }, ctx),
       incidentCreate.execute({ location: "2 Second St", description: "vehicle crash" }, ctx),
     ])) as { incidentId: string }[];
 
-    const state = await getState(kv, sessionId);
+    const state = getState(ctx);
     expect(a?.incidentId).not.toBe(b?.incidentId);
     expect(state.incidentCounter).toBe(2);
     expect(Object.keys(state.incidents)).toHaveLength(2);
@@ -129,7 +109,7 @@ describe("dispatch-center template", () => {
   });
 
   test("mutual-aid units get unique ids and callsigns across escalations", async () => {
-    const { ctx, kv, sessionId } = makeCtx();
+    const { ctx } = makeCtx();
     const incidentId = await createIncidentFor(ctx);
 
     await incidentEscalate.execute(
@@ -141,7 +121,7 @@ describe("dispatch-center template", () => {
       ctx,
     );
 
-    const state = await getState(kv, sessionId);
+    const state = getState(ctx);
     const mutualAid = state.resources.filter((r) => r.id.startsWith("MA-"));
     expect(mutualAid).toHaveLength(4);
     expect(new Set(mutualAid.map((r) => r.id)).size).toBe(4);

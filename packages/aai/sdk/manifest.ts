@@ -21,7 +21,6 @@ import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
 import { sendAllowedHosts } from "./providers/send/open.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import type {
-  KvProvider,
   LlmProvider,
   S2sProvider,
   SendProvider,
@@ -144,8 +143,6 @@ export type Manifest = {
    * pipeline triple.
    */
   s2s?: S2sProvider | undefined;
-  /** Pluggable KV backend descriptor. Falls back to platform default when omitted. */
-  kv?: KvProvider | undefined;
   /** Pluggable Vector backend descriptor. Falls back to platform default when omitted. */
   vector?: VectorProvider | undefined;
   /** Outbound send channel descriptor (e.g. Slack). No default. */
@@ -220,7 +217,6 @@ const ManifestSchema = z.object({
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
   s2s: ProviderDescriptorSchema.optional(),
-  kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
   send: ProviderDescriptorSchema.optional(),
   kind: z.enum(["agent", "workflow"]).optional(),

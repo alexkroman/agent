@@ -32,8 +32,7 @@ export const incidentCreate = tool({
   }),
   async execute(args, ctx) {
     return updateState(
-      ctx.kv,
-      ctx.sessionId,
+      ctx,
       (state) => {
         const recSeverity = recommendSeverity(args.description);
         const recType = recommendType(args.description);

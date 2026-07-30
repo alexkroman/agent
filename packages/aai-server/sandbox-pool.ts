@@ -3,13 +3,13 @@
  * Pool of pre-warmed Deno harness processes for faster cold starts.
  *
  * Inspired by Val Town: keep N idle Deno processes already past the slow
- * "spawn + JIT init + gVisor bootstrap" path. When a session needs a
+ * "Modal sandbox create + Deno JIT init" path. When a session needs a
  * sandbox, acquire a warm one from the pool and immediately send
  * `bundle/load` — skipping ~most of the cold-start latency.
  *
  * A warm harness is a spawned Deno process whose NDJSON connection is
  * wired to its stdio but which has not yet:
- * - had request handlers registered (KV / fetch)
+ * - had request handlers registered (db / fetch)
  * - had `listen()` called
  * - received the agent's bundle
  *
@@ -124,9 +124,9 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
     const idx = ready.indexOf(handle);
     if (idx === -1) return;
     ready.splice(idx, 1);
-    // The process is dead but its runsc container registration and bundle
-    // dir are not — cleanup releases them (same fire-and-forget shape as
-    // acquire()'s dead-entry path).
+    // The guest process is dead but the Modal sandbox may not be —
+    // cleanup terminates it (same fire-and-forget shape as acquire()'s
+    // dead-entry path).
     void handle.cleanup().catch(() => undefined);
     // Do NOT auto-replenish here — if spawns die immediately (e.g. missing
     // Deno binary) it would create a tight fail loop. The next `acquire()`

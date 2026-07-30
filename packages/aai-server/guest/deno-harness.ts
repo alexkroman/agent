@@ -5,11 +5,11 @@
  * Deno guest-side harness entrypoint.
  *
  * Reads NDJSON from stdin, dispatches JSON-RPC 2.0 messages, and writes
- * NDJSON responses to stdout. Designed to run inside a gVisor sandbox.
+ * NDJSON responses to stdout. Designed to run inside a Modal Sandbox.
  *
  * Protocol overview:
  * - Host -> guest: bundle/load, tool/execute, shutdown
- * - Guest -> host: kv/get, kv/set, kv/del (proxied KV requests)
+ * - Guest -> host: db/query (proxied ctx.db queries), vector/* (proxied Vector)
  * - Guest -> host: fetch/request (proxied fetch via RPC)
  * - Host -> guest: fetch/response-start, fetch/response-chunk,
  *                  fetch/response-end, fetch/response-error (streamed response)
@@ -29,11 +29,11 @@ import {
   type SessionMessagesCache,
 } from "./harness-messages.ts";
 import {
+  dbAdapter,
   errMsg,
   generateAdapter,
   handleFetchNotification,
   handleHostResponse,
-  kvAdapter,
   rejectAllPendingHostRequests,
   sendError,
   sendResponse,
@@ -50,14 +50,14 @@ import type {
   Message,
   ToolContext,
 } from "./harness-types.ts";
-import { RUN_CODE_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./limits.ts";
+import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "./limits.ts";
 
 // Re-export the host-RPC surface so existing consumers/tests can keep
 // importing it from `./deno-harness.ts`.
 export {
+  dbAdapter,
   generateAdapter,
   handleHostResponse,
-  kvAdapter,
   pendingHostRequests,
   sendError,
   sendResponse,
@@ -104,6 +104,14 @@ export class TextLineStream extends TransformStream<string, string> {
 
 let _bundleEnv: Readonly<Record<string, string>> = Object.freeze({});
 
+/**
+ * Whether storage (ctx.db) is enabled for the loaded bundle — set by the
+ * `storageEnabled` bundle/load param. Off means a ctx.db access throws the
+ * same guidance the SDK's tool-executor gives (see the getter in
+ * `executeTool`), so `aai dev` and the platform read identically.
+ */
+let _storageEnabled = false;
+
 // ---- Session state ----------------------------------------------------------
 
 /**
@@ -135,7 +143,7 @@ export function createSessionStateMap(initState?: () => Record<string, unknown>)
 /**
  * Execute agent-supplied JavaScript for the `run_code` builtin.
  *
- * `run_code` runs HERE, inside the Deno guest, not on the host. The gVisor
+ * `run_code` runs HERE, inside the Deno guest, not on the host. The Modal
  * sandbox plus Deno's permission model (`--no-prompt`, no net/fs/run) ARE the
  * security boundary, so we deliberately do NOT attempt in-process `node:vm`
  * isolation — that was never a real boundary and was escapable via the host
@@ -229,7 +237,12 @@ export async function executeTool(
   const ctx: ToolContext = {
     env: _bundleEnv,
     state: sessionState.get(req.sessionId),
-    kv: kvAdapter,
+    // Lazy getter: only an actual ctx.db access should fail when storage is
+    // disabled — constructing the context must not.
+    get db() {
+      if (!_storageEnabled) throw new Error(STORAGE_DISABLED_MESSAGE);
+      return dbAdapter;
+    },
     vector: vectorAdapter,
     generate: generateAdapter,
     messages,
@@ -298,8 +311,10 @@ async function importBundleModule(code: string): Promise<Record<string, unknown>
 async function loadBundle(
   code: string,
   env: Record<string, string>,
+  storageEnabled: boolean,
 ): Promise<{ agent: AgentDef; config?: unknown }> {
   _bundleEnv = Object.freeze({ ...env });
+  _storageEnabled = storageEnabled;
 
   const mod = await importBundleModule(code);
   const agent = (mod.default ?? mod) as AgentDef;
@@ -329,8 +344,16 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
         await sendError(req.id, -32_602, "bundle/load requires { code: string, env: {} }");
         break;
       }
-      const params = req.params as { code: string; env: Record<string, string> };
-      const loaded = await loadBundle(params.code, params.env ?? {});
+      const params = req.params as {
+        code: string;
+        env: Record<string, string>;
+        storageEnabled?: boolean;
+      };
+      const loaded = await loadBundle(
+        params.code,
+        params.env ?? {},
+        params.storageEnabled === true,
+      );
       state.agent = loaded.agent;
       state.sessionState = createSessionStateMap(
         typeof state.agent.state === "function" ? state.agent.state : undefined,
@@ -381,7 +404,7 @@ export function handleNotification(notif: JsonRpcNotification, state: HarnessSta
 }
 
 export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void {
-  // Incoming response to a host RPC request we sent (kv/*, vector/*, etc.)
+  // Incoming response to a host RPC request we sent (db/query, vector/*, etc.)
   if ("id" in msg && !("method" in msg)) {
     handleHostResponse(msg as JsonRpcResponse);
     return;

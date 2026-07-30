@@ -4,8 +4,6 @@ import { sharedConfig } from "./vitest.shared.ts";
 const profiles = {
 	integration: { timeout: 30_000, hookTimeout: 30_000, retry: 2 },
 	e2e: { timeout: 300_000, hookTimeout: 300_000, retry: 0 },
-	docker: { timeout: 600_000, hookTimeout: 120_000, retry: 0 },
-	gvisor: { timeout: 30_000, hookTimeout: 15_000, retry: 0 },
 } as const;
 
 const profileKey = (process.env.VITEST_PROFILE ?? "integration") as keyof typeof profiles;

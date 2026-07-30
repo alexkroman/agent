@@ -2,26 +2,44 @@
 /**
  * Node.js entry point for the AAI platform server.
  *
- * Creates the Hono orchestrator backed by Tigris S3 via unstorage and starts
- * a Node.js HTTP server with WebSocket upgrade support via `ws`.
+ * Creates the Hono orchestrator backed by Supabase Storage (S3-compatible)
+ * via unstorage — with agent secrets in Supabase Vault and per-app databases
+ * in Supabase Postgres — and starts a Node.js HTTP server with WebSocket
+ * upgrade support via `ws`.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
-import { createMemoryVector, createPineconeVector, type Vector } from "@alexkroman1/aai/runtime";
+import {
+  createMemoryVector,
+  createPineconeVector,
+  createPostgresDb,
+  type Vector,
+} from "@alexkroman1/aai/runtime";
 import { serve } from "@hono/node-server";
 import { createStorage } from "unstorage";
 import { assertDevKeys, isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize } from "./_boot.ts";
 import { waitForIdle } from "./_drain.ts";
+import { type AppDatabases, createAppDatabases } from "./app-database.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
-import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
 import { initHostCapacityGauges, metrics } from "./metrics.ts";
+import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { createS3Storage } from "./s3-storage.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import { createSlotCache, registerSlotsForGauges } from "./sandbox-slots.ts";
 import { spawnWarmHarness } from "./sandbox-vm.ts";
-import { importMasterKey } from "./secrets.ts";
+import {
+  createMemorySecretStore,
+  createVaultSecretStore,
+  type SecretStore,
+  type SqlExec,
+} from "./secret-store.ts";
+import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./studio/chat-store.ts";
+import {
+  createMemoryWorkspaceStore,
+  createPgWorkspaceStore,
+  type WorkspaceStore,
+} from "./studio/workspace-store.ts";
 
 function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
   const size = resolvePoolSize(env.SANDBOX_POOL_SIZE);
@@ -35,28 +53,65 @@ function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
   });
 }
 
-function buildStorage(env: NodeJS.ProcessEnv): {
-  storage: ReturnType<typeof createStorage>;
-  secret: string;
-} {
+function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createStorage> {
   if (isLocalDev(env)) {
     console.info("Local dev mode: unstorage memory driver for all storage");
-    return { storage: createStorage(), secret: "local-dev-secret" };
+    return createStorage();
   }
   const required = requireEnv(env, [
-    "BUCKET_NAME",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "KV_SCOPE_SECRET",
+    "SUPABASE_S3_ENDPOINT",
+    "SUPABASE_S3_ACCESS_KEY_ID",
+    "SUPABASE_S3_SECRET_ACCESS_KEY",
+    "SUPABASE_STORAGE_BUCKET",
   ]);
-  const storage = createS3Storage({
-    bucket: required.BUCKET_NAME,
-    endpoint: env.AWS_ENDPOINT_URL_S3 ?? "https://fly.storage.tigris.dev",
-    region: "auto",
-    accessKeyId: required.AWS_ACCESS_KEY_ID,
-    secretAccessKey: required.AWS_SECRET_ACCESS_KEY,
+  return createS3Storage({
+    bucket: required.SUPABASE_STORAGE_BUCKET,
+    endpoint: required.SUPABASE_S3_ENDPOINT,
+    // Supabase's S3-compatible endpoint expects the project's region string.
+    region: env.SUPABASE_S3_REGION ?? "us-east-1",
+    accessKeyId: required.SUPABASE_S3_ACCESS_KEY_ID,
+    secretAccessKey: required.SUPABASE_S3_SECRET_ACCESS_KEY,
   });
-  return { storage, secret: required.KV_SCOPE_SECRET };
+}
+
+/**
+ * Platform Postgres surface: Supabase Vault for secrets, studio workspaces,
+ * and per-app database provisioning, all over `SUPABASE_DB_URL`
+ * (service-role connection string). Required in production; local dev falls
+ * back to in-memory secret and workspace stores (and no per-app databases
+ * unless SUPABASE_DB_URL is set).
+ */
+function buildPlatformDb(env: NodeJS.ProcessEnv): {
+  secrets: SecretStore;
+  workspaces: WorkspaceStore;
+  chats: ChatStore;
+  appDb?: AppDatabases;
+} {
+  const url = env.SUPABASE_DB_URL;
+  if (!url) {
+    if (!isLocalDev(env)) {
+      requireEnv(env, ["SUPABASE_DB_URL"]); // throws with the standard message
+    }
+    console.info(
+      "Local dev mode: in-memory secret + studio workspace/chat stores; per-app databases disabled",
+    );
+    return {
+      secrets: createMemorySecretStore(),
+      workspaces: createMemoryWorkspaceStore(),
+      chats: createMemoryChatStore(),
+    };
+  }
+  // The pool lives for the process; connections drain when the process exits
+  // (no explicit close() hook on the shutdown path today).
+  const admin = createPostgresDb({ url, max: 4 });
+  const exec: SqlExec = (query, params) => admin.query(query, params);
+  const localDev = isLocalDev(env);
+  return {
+    secrets: localDev ? createMemorySecretStore() : createVaultSecretStore(exec),
+    workspaces: localDev ? createMemoryWorkspaceStore() : createPgWorkspaceStore(exec),
+    chats: localDev ? createMemoryChatStore() : createPgChatStore(exec),
+    appDb: createAppDatabases({ url, sql: exec }),
+  };
 }
 
 function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
@@ -68,17 +123,22 @@ function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
   return (slug) => createPineconeVector({ apiKey, index, namespace: slug });
 }
 
-async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
-  const { storage, secret } = buildStorage(env);
-  const masterKey = await importMasterKey(secret);
+function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
+  const storage = buildStorage(env);
+  const { secrets, workspaces, chats, appDb } = buildPlatformDb(env);
   const slots = createSlotCache();
   registerSlotsForGauges(slots);
   const pool = buildPool(env);
   return {
     slots,
-    store: createBundleStore(storage, { masterKey }),
-    storage,
+    // Blob storage serves deploy artifacts only (bundles/client files);
+    // studio workspaces and chats live in Postgres via `workspaces`/`chats`.
+    store: createBundleStore(storage, { secrets }),
+    workspaces,
+    chats,
+    secrets,
     defaultVector: buildDefaultVector(env),
+    ...(appDb && { appDb }),
     ...(pool && { pool }),
   };
 }
@@ -100,28 +160,33 @@ async function main(): Promise<void> {
   initHostCapacityGauges();
   const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
 
-  // Flipped by `shutdown()` before anything is torn down: it fails /health so
-  // fly-proxy stops routing here, and refuses new WebSocket upgrades. Both are
-  // needed for the drain below to converge — otherwise the machine keeps
-  // accepting the sessions it is waiting to finish.
+  // Flipped by `shutdown()` before anything is torn down: it fails /health
+  // so the platform's proxy stops routing here, and refuses new WebSocket
+  // upgrades. Both are needed for the drain below to converge — otherwise the
+  // replica keeps accepting the sessions it is waiting to finish.
   let draining = false;
   const opts: OrchestratorOpts = {
-    ...(await buildOpts(env)),
+    ...buildOpts(env),
     isDraining: () => draining,
   };
 
-  // Pay the rootfs prep cost (deno binary copy, lib mount points) up
-  // front, before the HTTP listener is exposed to traffic. Without this,
-  // the first sandbox spawn does the ~125 MB sync copy on the request
-  // path and blocks the event loop long enough to fail healthchecks.
-  if (isGvisorAvailable()) {
-    try {
-      await prepareRootfs(resolveHarnessPath(env));
-    } catch (err) {
-      console.warn("Rootfs prep failed at boot; will retry lazily on first spawn", {
-        error: errorMessage(err),
-      });
+  // Sandboxes run on Modal — fail at boot when credentials are missing, where
+  // the cause is obvious, instead of on the first session's spawn. Local dev
+  // only warns so the studio's non-sandbox surfaces (editor, static routes)
+  // stay usable without Modal credentials.
+  if (!isModalConfigured()) {
+    if (isLocalDev(env)) {
+      console.warn(
+        "[sandbox] WARNING: Modal credentials not configured " +
+          "(MODAL_TOKEN_ID/MODAL_TOKEN_SECRET). Sandbox creation will fail.",
+      );
+    } else {
+      throw modalRequiredError();
     }
+  } else {
+    // Resolve the Modal app/image context now (fire-and-forget) so the gRPC
+    // round trip doesn't land on the first session's cold start.
+    prewarmModal();
   }
 
   const { app, injectWebSocket, closeActiveSockets, activeSessionCount } = createOrchestrator(opts);
@@ -163,8 +228,8 @@ async function main(): Promise<void> {
     });
     if (!drained) {
       // Deliberately loud: this is a call that got cut, and the deadline is
-      // only correct if it is rarely hit. Fly SIGKILLs at kill_timeout, so
-      // waiting past it is not an option.
+      // only correct if it is rarely hit. The platform SIGKILLs when the stop
+      // grace period lapses, so waiting past it is not an option.
       console.warn("Drain deadline reached; closing sessions still in flight", { remaining });
     }
 

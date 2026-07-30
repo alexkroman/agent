@@ -2,7 +2,7 @@
 /**
  * aai — shared fundamentals with no Node.js dependencies.
  *
- * Types, KV interface, utils, and constants used across
+ * Types, Db interface, utils, and constants used across
  * aai-cli, aai-server, and aai-ui.
  */
 
@@ -10,9 +10,9 @@
 
 export * from "./sdk/allowed-hosts.ts";
 export * from "./sdk/constants.ts";
+export * from "./sdk/db.ts";
 export * from "./sdk/define.ts";
 export * from "./sdk/generate.ts";
-export * from "./sdk/kv.ts";
 export * from "./sdk/types.ts";
 export * from "./sdk/utils.ts";
 export * from "./sdk/ws-upgrade.ts";

@@ -14,7 +14,6 @@ import {
 import { ProviderDescriptorSchema } from "./manifest.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import type {
-  KvProvider,
   LlmProvider,
   S2sProvider,
   SendProvider,
@@ -65,7 +64,6 @@ export const AgentConfigSchema = z.object({
   tts: ProviderDescriptorSchema.optional(),
   s2s: ProviderDescriptorSchema.optional(),
   mode: z.enum(["s2s", "pipeline"]).optional(),
-  kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
   send: ProviderDescriptorSchema.optional(),
   kind: z.enum(["agent", "workflow"]).optional(),
@@ -98,7 +96,6 @@ interface AgentConfigSource {
   llm?: LlmProvider | undefined;
   tts?: TtsProvider | undefined;
   s2s?: S2sProvider | undefined;
-  kv?: KvProvider | undefined;
   vector?: VectorProvider | undefined;
   send?: SendProvider | undefined;
   kind?: AgentKind | undefined;
@@ -154,7 +151,6 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
     config.tts = src.tts;
   }
   if (src.s2s !== undefined) config.s2s = src.s2s;
-  if (src.kv !== undefined) config.kv = src.kv;
   if (src.vector !== undefined) config.vector = src.vector;
   if (src.send !== undefined) config.send = src.send;
   if (src.kind !== undefined) config.kind = src.kind;

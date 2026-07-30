@@ -55,7 +55,7 @@ export const updateState = tool({
     logEntry: z.string().max(500).describe("Short log entry for this scene").optional(),
   }),
   async execute(args, ctx) {
-    const state = await getGameState(ctx.kv, ctx.sessionId);
+    const state = getGameState(ctx);
     const warnings: string[] = [];
     const clockEvents: { clock: string; trigger: string }[] = [];
 
@@ -160,7 +160,7 @@ export const updateState = tool({
     // Crisis check
     updateCrisisFlags(state);
 
-    await saveGameState(ctx.kv, ctx.sessionId, state);
+    saveGameState(ctx, state);
     ctx.send("game_state", state);
 
     return {

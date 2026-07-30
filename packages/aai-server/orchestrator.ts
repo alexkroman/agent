@@ -15,7 +15,7 @@
  * - `POST /:slug/deploy`         — owner: re-deploy agent
  * - `DELETE /:slug/`             — owner: delete agent
  * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
- * - `GET/POST /:slug/kv`        — owner: KV store operations
+ * - `GET/POST/DELETE /:slug/storage` — owner: per-app database storage
  * - `POST /:slug/vector`         — owner: Vector store operations
  * - `POST /:slug/sync`           — one connectionless sync turn (unauthenticated,
  *                                   parity with the WebSocket; pipeline agents only)
@@ -26,7 +26,7 @@
  */
 
 import { MAX_SYNC_BODY_BYTES } from "@alexkroman1/aai";
-import { KvRequestSchema, VectorRequestSchema } from "@alexkroman1/aai/protocol";
+import { VectorRequestSchema } from "@alexkroman1/aai/protocol";
 import type { Vector } from "@alexkroman1/aai/runtime";
 import { prometheus } from "@hono/prometheus";
 import { zValidator } from "@hono/zod-validator";
@@ -34,31 +34,33 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
-import type { Storage } from "unstorage";
+import type { AppDatabases } from "./app-database.ts";
 import { handleAgentClientConfig } from "./client-config-handler.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
-import { handleKv } from "./kv-handler.ts";
 import { registry, serialize } from "./metrics.ts";
 import { authMw, existingOwnerMw, ownerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { resolveAgentKv, resolveAgentVector } from "./sandbox.ts";
+import { resolveAgentVector } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
-import {
-  DeployBodySchema,
-  SafeKvKeySchema,
-  SecretUpdatesSchema,
-  VALID_SLUG_RE,
-} from "./schemas.ts";
+import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
+import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
+import {
+  handleStorageDisable,
+  handleStorageEnable,
+  handleStorageStatus,
+} from "./storage-handler.ts";
 import type { BundleStore } from "./store-types.ts";
+import type { ChatStore } from "./studio/chat-store.ts";
 import { createStudioRoutes } from "./studio/studio-routes.ts";
 import { handleStudioClientAsset, handleStudioPage } from "./studio/studio-static.ts";
+import type { WorkspaceStore } from "./studio/workspace-store.ts";
 import { handleSyncTurn } from "./sync-turn-handler.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
@@ -66,7 +68,14 @@ import { handleVector } from "./vector-handler.ts";
 export type OrchestratorOpts = {
   slots: SlotCache;
   store: BundleStore;
-  storage: Storage;
+  /** Studio project workspaces (Postgres in production, memory in dev/tests). */
+  workspaces: WorkspaceStore;
+  /** Studio project chat histories (Postgres in production, memory in dev/tests). */
+  chats: ChatStore;
+  /** Named secret storage (Supabase Vault in production, memory in tests). */
+  secrets?: SecretStore;
+  /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
+  appDb?: AppDatabases;
   /** Factory that creates the server-default Vector for a given slug. */
   defaultVector: (slug: string) => Vector;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
@@ -151,15 +160,18 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.onError(createErrorHandler());
   app.use("*", prometheusMiddleware);
 
-  // 503 while draining is what pulls the machine out of fly-proxy's rotation,
-  // so new traffic goes to a machine that is staying up. Without it the drain
-  // would keep accepting the very sessions it is waiting to finish.
+  // 503 while draining is what pulls the replica out of the platform
+  // proxy's rotation, so new traffic goes to a replica that is staying up.
+  // Without it the drain would keep accepting the very sessions it is
+  // waiting to finish.
   app.get("/health", (c) =>
     opts.isDraining?.() ? c.json({ status: "draining" }, 503) : c.json({ status: "ok" }),
   );
 
-  // Internal-only: Fly's private network doesn't add X-Forwarded-For;
-  // public edge always does — treat XFF presence as "external request".
+  // Internal-only: any request through the public edge carries
+  // X-Forwarded-For (Modal's proxy always sets it) — treat XFF presence as
+  // "external request". Fail-closed: with no private scrape path, /metrics
+  // is simply unreachable from outside.
   app.get("/metrics", async (c) => {
     if (c.req.header("X-Forwarded-For")) return c.notFound();
     const text = await serialize();
@@ -219,28 +231,10 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.get("/secret", existingOwnerMw, handleSecretList);
   agents.put("/secret", existingOwnerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);
   agents.delete("/secret/:key", existingOwnerMw, handleSecretDelete);
-  agents.post("/kv", existingOwnerMw, zValidator("json", KvRequestSchema), async (c) => {
-    // Enforce the same key grammar as the guest RPC (sandbox-guest-rpc.ts):
-    // a key accepted here but unreachable from ctx.kv (or vice versa) is a
-    // silent data split.
-    const parsedKey = SafeKvKeySchema.safeParse(c.req.valid("json").key);
-    if (!parsedKey.success) return c.json({ error: "Invalid KV key" }, 400);
-    const { agentConfig, env } = await loadAgentConfig(c, c.var.slug);
-    // Missing config → 404, consistent with GET. Falling back to the
-    // platform-default backend here would silently ignore a declared `kv:`.
-    if (!agentConfig) return c.json({ error: "agent not configured" }, 404);
-    return handleKv(c, resolveAgentKv(c.env.storage, c.var.slug, agentConfig, env));
-  });
-  agents.get("/kv", existingOwnerMw, async (c) => {
-    const key = c.req.query("key");
-    if (!key) return c.json({ error: "Missing key query parameter" }, 400);
-    if (!SafeKvKeySchema.safeParse(key).success) return c.json({ error: "Invalid KV key" }, 400);
-    const { agentConfig, env } = await loadAgentConfig(c, c.var.slug);
-    if (!agentConfig) return c.json({ error: "agent not configured" }, 404);
-    const value = await resolveAgentKv(c.env.storage, c.var.slug, agentConfig, env).get(key);
-    if (value === null) return c.json({ error: "key not found" }, 404);
-    return c.json(value);
-  });
+  // Per-app database storage — same auth posture as the secret routes.
+  agents.get("/storage", existingOwnerMw, handleStorageStatus);
+  agents.post("/storage", existingOwnerMw, handleStorageEnable);
+  agents.delete("/storage", existingOwnerMw, handleStorageDisable);
   agents.post("/vector", existingOwnerMw, zValidator("json", VectorRequestSchema), async (c) => {
     const slug = c.var.slug;
     const { agentConfig, env } = await loadAgentConfig(c, slug);
@@ -269,10 +263,18 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const bindings = {
     slots: opts.slots,
     store: opts.store,
-    storage: opts.storage,
+    workspaces: opts.workspaces,
+    chats: opts.chats,
+    // Tests build orchestrators without a secret store; default to memory so
+    // the storage-status route (and anything else reading secrets) works.
+    secrets: opts.secrets ?? createMemorySecretStore(),
+    ...(opts.appDb && { appDb: opts.appDb }),
     defaultVector: opts.defaultVector,
   };
-  const sandboxOpts = { ...bindings, ...(opts.pool && { pool: opts.pool }) };
+  // resolveSandbox takes the bindings minus the studio stores (bundle data
+  // lives in the BundleStore; `workspaces`/`chats` are studio-only).
+  const { workspaces: _studioWorkspaces, chats: _studioChats, ...sandboxBindings } = bindings;
+  const sandboxOpts = { ...sandboxBindings, ...(opts.pool && { pool: opts.pool }) };
 
   const original = app.fetch.bind(app);
   app.fetch = (req: Request, env?: Record<string, unknown>) =>

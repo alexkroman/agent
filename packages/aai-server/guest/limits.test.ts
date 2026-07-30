@@ -3,7 +3,11 @@
 // so it cannot import the SDK constants it mirrors. These assertions are what
 // stops the two sides drifting: they are the reason the duplication is safe.
 
-import { TOOL_EXECUTION_TIMEOUT_MS, TOOL_FETCH_MAX_REQUEST_BODY_BYTES } from "@alexkroman1/aai";
+import {
+  STORAGE_DISABLED_MESSAGE,
+  TOOL_EXECUTION_TIMEOUT_MS,
+  TOOL_FETCH_MAX_REQUEST_BODY_BYTES,
+} from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import * as limits from "./limits.ts";
 
@@ -18,6 +22,12 @@ describe("guest limits mirror the SDK constants", () => {
     // self-hosted mode run. A guest that rejected at a *different* size would
     // report the wrong limit to the tool author.
     expect(limits.MAX_REQUEST_BODY_BYTES).toBe(TOOL_FETCH_MAX_REQUEST_BODY_BYTES);
+  });
+
+  test("storage-disabled message", () => {
+    // Dev (SDK tool-executor) and prod (guest harness) must throw the exact
+    // same guidance when tool code touches ctx.db with storage off.
+    expect(limits.STORAGE_DISABLED_MESSAGE).toBe(STORAGE_DISABLED_MESSAGE);
   });
 
   test("limits.ts stays import-free so it can be bundled into the guest", async () => {

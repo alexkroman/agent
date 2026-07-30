@@ -9,11 +9,9 @@
 
 import { randomUUID } from "node:crypto";
 import pTimeout, { TimeoutError } from "p-timeout";
-import { createStorage } from "unstorage";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
 import { assertProviderTriple, type SessionMode } from "../sdk/config-rules.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
-import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
 import { isTextOnlyTts } from "../sdk/providers/tts/none.ts";
@@ -23,8 +21,8 @@ import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { createMemoryVector } from "./memory-vector.ts";
+import { createPostgresDb } from "./postgres-db.ts";
 import { descriptorKind, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
-import { resolveKv } from "./providers/resolve-kv.ts";
 import { resolveVector } from "./providers/resolve-vector.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
@@ -38,7 +36,6 @@ import { createSessionCore, type SessionCore } from "./session-core.ts";
 import { createStateSweeps } from "./session-state-sweeps.ts";
 import { createSyncTurnRunner, SyncTurnError } from "./sync-turn.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
-import { createUnstorageKv } from "./unstorage-kv.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 export type {
@@ -97,11 +94,6 @@ function resolvePipelineProviders(
   };
 }
 
-/** Create an in-memory KV store (default for self-hosted). */
-function createLocalKv(): Kv {
-  return createUnstorageKv({ storage: createStorage() });
-}
-
 /** Create an in-memory Vector store (default for self-hosted). */
 function createLocalVector(slug: string): Vector {
   return createMemoryVector({ namespace: slug });
@@ -123,7 +115,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const {
     agent,
     env,
-    kv,
     vector,
     createWebSocket,
     createOpenaiRealtimeWebSocket,
@@ -143,14 +134,19 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Credentials resolve from `providerEnv` (defaults to `env`); `env` alone is
   // what agent tool code sees as `ctx.env`. See RuntimeOptions.providerEnv.
   const providerEnv = opts.providerEnv ?? env;
-  // Lazy default: only construct the local unstorage KV when neither the
-  // agent manifest nor the caller supplied one — a declared `kv:` descriptor
-  // would otherwise shadow (and waste) an eagerly-built instance.
-  const resolvedKv = agent.kv ? resolveKv(agent.kv, providerEnv, "") : (kv ?? createLocalKv());
-  // The runtime owns (and must close) the KV only when it built it — from a
-  // declared `kv:` descriptor (e.g. redisKv → a live connection) or the local
-  // fallback. A caller-injected `kv` stays the caller's to dispose.
-  const ownsKv = agent.kv !== undefined || kv === undefined;
+  // ctx.db: a caller-injected Db wins (the platform passes one when storage
+  // is enabled for the app); otherwise a DATABASE_URL in the provider env
+  // (self-hosted `aai dev` reads the project .env) connects one here.
+  // Neither means ctx.db access throws (see tool-executor.ts).
+  // The runtime owns — and must close on dispose — only the connection it
+  // opened itself; an injected Db stays the caller's to dispose. Without the
+  // close, `aai dev` (which rebuilds the runtime on every file save) strands
+  // the previous pool on each reload.
+  const ownedDb =
+    !opts.db && providerEnv.DATABASE_URL
+      ? createPostgresDb({ url: providerEnv.DATABASE_URL })
+      : undefined;
+  const resolvedDb = opts.db ?? ownedDb;
   const resolvedVector = agent.vector
     ? resolveVector(agent.vector, providerEnv, slug)
     : (vector ?? createLocalVector(slug));
@@ -213,7 +209,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     opts,
     env,
     providerEnv,
-    resolvedKv,
+    resolvedDb,
     resolvedVector,
     logger,
     sinkMap,
@@ -447,10 +443,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     stateMap.clear();
     // Pending grace-window sweeps have nothing left to reclaim.
     stateSweeps.clear();
-    // Release a runtime-owned KV (e.g. redisKv's connection). Without this,
-    // `aai dev` — which rebuilds the runtime on every file save — strands the
-    // previous connection on each reload.
-    if (ownsKv) resolvedKv.close?.();
+    // Release a runtime-owned DB pool (see the resolution comment above).
+    // Fire-and-forget: releaseResources is sync and a drain failure on a
+    // dying pool is not actionable.
+    void ownedDb?.close().catch(() => undefined);
   }
 
   async function shutdown(): Promise<void> {

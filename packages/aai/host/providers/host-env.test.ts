@@ -14,9 +14,9 @@ describe("resolveApiKey", () => {
     expect(resolveApiKey("ANTHROPIC_API_KEY", {})).toBe("");
   });
 
-  // The platform host process holds its own AWS/Pinecone credentials under
+  // The platform host process holds its own Pinecone credentials under
   // exactly these names. Falling back to process.env would hand them to any
-  // tenant that declared s3Kv/pinecone and supplied no credential of its own.
+  // tenant that declared pinecone and supplied no credential of its own.
   test("does not fall back to the host process environment", () => {
     const key = "AAI_TEST_FALLBACK_KEY";
     process.env[key] = "platform-secret";
@@ -75,15 +75,15 @@ describe("withHostCredentialFallback", () => {
     const merged = withHostCredentialFallback(
       {},
       {
+        PINECONE_API_KEY: "pinecone-secret",
         AWS_SECRET_ACCESS_KEY: "aws-secret",
-        KV_SCOPE_SECRET: "platform-master-key",
         BUCKET_NAME: "platform-bucket",
         PATH: "/usr/bin",
       },
     );
-    expect(merged.AWS_SECRET_ACCESS_KEY).toBe("aws-secret");
+    expect(merged.PINECONE_API_KEY).toBe("pinecone-secret");
     // Not provider credentials — must not leak into ctx.env.
-    expect(merged.KV_SCOPE_SECRET).toBeUndefined();
+    expect(merged.AWS_SECRET_ACCESS_KEY).toBeUndefined();
     expect(merged.BUCKET_NAME).toBeUndefined();
     expect(merged.PATH).toBeUndefined();
   });
@@ -102,7 +102,7 @@ describe("withHostCredentialFallback", () => {
   // Derived from the provider registries, so a new provider is covered without
   // touching this list. These assertions catch the derivation breaking, not the
   // list going stale.
-  test("covers STT, TTS, LLM, S2S, KV and Vector credential names", () => {
+  test("covers STT, TTS, LLM, S2S and Vector credential names", () => {
     for (const name of [
       "ASSEMBLYAI_API_KEY", // STT + default S2S
       "DEEPGRAM_API_KEY",
@@ -117,9 +117,6 @@ describe("withHostCredentialFallback", () => {
       "XAI_API_KEY",
       "GROQ_API_KEY",
       "AI_GATEWAY_API_KEY",
-      "AWS_ACCESS_KEY_ID", // s3Kv
-      "AWS_SECRET_ACCESS_KEY",
-      "REDIS_URL", // redisKv
       "PINECONE_API_KEY", // pinecone vector
     ]) {
       expect(PROVIDER_CREDENTIAL_ENVS).toContain(name);
