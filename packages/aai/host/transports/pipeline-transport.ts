@@ -83,6 +83,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // just-flushed client; reopened by the next turn's first TTS text, which
   // always precedes that turn's audio.
   let ttsAudioOpen = true;
+  // Has the in-flight turn put any audio on the wire yet? Barge-in gates on
+  // this: a turn that has not spoken cannot be spoken over, and aborting it
+  // would discard the reply mid-computation only to restart a slower one — a
+  // user re-prompting into the silence would starve the reply indefinitely.
+  // Cleared when a turn starts and when one is aborted, so it always describes
+  // the current turn rather than a previous one's audio.
+  let turnSpoke = false;
   // Pipeline transport owns its conversation memory (SessionCore does not in
   // pipeline mode): a text view (client/resume/tool-context) and a
   // ModelMessage view (what the LLM sees, incl. tool calls/results).
@@ -113,6 +120,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
     isTurnInFlight: () => turnController !== null,
+    hasTurnSpoken: () => turnSpoke,
     isPlaybackPending: () => playbackClock.pending(),
     abortInFlightTurn: () => abortInFlightTurn(),
     runChainedTurn,
@@ -138,6 +146,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       onTtsError: (err) => onProviderError("tts", err),
       onTtsAudio: (pcm) => {
         if (!ttsAudioOpen) return;
+        turnSpoke = true;
         playbackClock.onChunk(pcm);
         callbacks.onAudioChunk(pcm16ToBytes(pcm));
       },
@@ -183,6 +192,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     turnController = null;
     providers.tts?.cancel();
     ttsAudioOpen = false;
+    turnSpoke = false;
     // Every abort path ends with the client flushing its playback buffer
     // (`cancelled` for barge-in/client cancel, `reset` for reset, teardown
     // for terminate), so the estimated-playback clock restarts from zero.
@@ -292,6 +302,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // session instead of running against closed providers.
     const unlink = linkAbort(sessionAbort.signal, ctl);
     turnController = ctl;
+    turnSpoke = false;
 
     try {
       const spoke = await body(ctl);

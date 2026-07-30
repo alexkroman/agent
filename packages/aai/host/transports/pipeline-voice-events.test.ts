@@ -100,6 +100,8 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
+      // Barge-in requires the agent to be audibly speaking, not merely mid-turn.
+      tts.last()?.fireAudio(new Int16Array(2400));
 
       // Noise transcribed as a partial — never followed by a final.
       stt.last()?.firePartial("uh what");
@@ -134,6 +136,8 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
+      // Barge-in requires the agent to be audibly speaking, not merely mid-turn.
+      tts.last()?.fireAudio(new Int16Array(2400));
 
       stt.last()?.firePartial("wait actually");
       expect(callbacks.onCancelled).toHaveBeenCalled();
@@ -160,6 +164,8 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
+      // Barge-in requires the agent to be audibly speaking, not merely mid-turn.
+      tts.last()?.fireAudio(new Int16Array(2400));
 
       stt.last()?.firePartial("uh what");
       expect(callbacks.onCancelled).toHaveBeenCalled();
@@ -207,6 +213,8 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
+      // Barge-in requires the agent to be audibly speaking, not merely mid-turn.
+      tts.last()?.fireAudio(new Int16Array(2400));
 
       // Barge in, then keep speaking well past the recovery window. Providers
       // that only emit a final at end-of-turn (AssemblyAI) produce exactly this
@@ -243,6 +251,8 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
+      // Barge-in requires the agent to be audibly speaking, not merely mid-turn.
+      tts.last()?.fireAudio(new Int16Array(2400));
 
       stt.last()?.firePartial("stop please");
       // The client's `cancelled` handler clears userTranscript, so the interim
@@ -267,6 +277,8 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
+      // Barge-in requires the agent to be audibly speaking, not merely mid-turn.
+      tts.last()?.fireAudio(new Int16Array(2400));
 
       t.cancelReply();
       await new Promise((r) => setTimeout(r, 80));
