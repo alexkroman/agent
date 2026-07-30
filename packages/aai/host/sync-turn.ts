@@ -23,9 +23,9 @@ import { randomUUID } from "node:crypto";
 import { type ModelMessage, stepCountIs, streamText } from "ai";
 import type { AgentConfig, ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
 import { DEFAULT_MAX_HISTORY, DEFAULT_MAX_STEPS } from "../sdk/constants.ts";
-import type { SyncTurnRequest, SyncTurnResponse } from "../sdk/sync.ts";
+import type { SyncToolCall, SyncTurnRequest, SyncTurnResponse } from "../sdk/sync.ts";
 import type { Message } from "../sdk/types.ts";
-import { errorMessage } from "../sdk/utils.ts";
+import { capToolResult, errorMessage } from "../sdk/utils.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import { resolveApiKey } from "./providers/resolve.ts";
 import type { Logger } from "./runtime-config.ts";
@@ -67,6 +67,55 @@ export type SyncTurnDeps = {
 function trimHistory(history: SyncTurnRequest["history"], max: number): Message[] {
   const kept = history.length > max ? history.slice(history.length - max) : history;
   return kept.map((m) => ({ role: m.role, content: m.content }));
+}
+
+/** The stream-part fields the tool-call collector reads (see `StreamPart`). */
+type ToolStreamPart = {
+  readonly type: string;
+  readonly toolCallId?: string;
+  readonly toolName?: string;
+  readonly input?: unknown;
+  readonly output?: unknown;
+  readonly result?: unknown;
+};
+
+/**
+ * Accumulates the turn's tool invocations from `fullStream` parts, in call
+ * order — run-style clients (the workflow view) render these instead of the
+ * reply prose. Same `output`/`result` fallback the pipeline path uses; the
+ * field name differs across AI SDK versions.
+ */
+function createToolCallCollector(): {
+  toolCalls: SyncToolCall[];
+  handle: (part: ToolStreamPart) => void;
+} {
+  const toolCalls: SyncToolCall[] = [];
+  const byId = new Map<string, SyncToolCall>();
+
+  function onToolCall(part: ToolStreamPart): void {
+    const call: SyncToolCall = {
+      toolCallId: part.toolCallId ?? "",
+      toolName: part.toolName ?? "",
+      args: (part.input ?? {}) as Record<string, unknown>,
+    };
+    toolCalls.push(call);
+    if (call.toolCallId) byId.set(call.toolCallId, call);
+  }
+
+  function onToolResult(part: ToolStreamPart): void {
+    const call = byId.get(part.toolCallId ?? "");
+    if (!call) return;
+    const raw = part.output ?? part.result ?? "";
+    call.result = capToolResult(typeof raw === "string" ? raw : JSON.stringify(raw));
+  }
+
+  return {
+    toolCalls,
+    handle(part) {
+      if (part.type === "tool-call") onToolCall(part);
+      else if (part.type === "tool-result") onToolResult(part);
+    },
+  };
 }
 
 /**
@@ -117,7 +166,7 @@ export function createSyncTurnRunner(
     history: Message[],
     transcript: string,
     sessionId: string,
-  ): Promise<string> {
+  ): Promise<{ text: string; toolCalls: SyncToolCall[] }> {
     const messages: Message[] = [...history, { role: "user", content: transcript }];
     const modelMessages: ModelMessage[] = messages.map((m) => ({
       role: m.role === "assistant" ? "assistant" : "user",
@@ -129,6 +178,7 @@ export function createSyncTurnRunner(
       messages: () => messages,
     });
     let text = "";
+    const collector = createToolCallCollector();
     try {
       const result = streamText({
         model: providers.llm,
@@ -142,11 +192,12 @@ export function createSyncTurnRunner(
         // streamText surfaces provider failures as stream parts, not
         // rejections — rethrow so a dead turn is an error, not "".
         else if (part.type === "error") throw part.error;
+        else collector.handle(part);
       }
     } catch (err) {
       throw new SyncTurnError(`LLM turn failed: ${errorMessage(err)}`, { status: 502, cause: err });
     }
-    return text.trim();
+    return { text: text.trim(), toolCalls: collector.toolCalls };
   }
 
   async function synthesize(
@@ -181,8 +232,8 @@ export function createSyncTurnRunner(
       throw new SyncTurnError("transcription produced no speech", { status: 422 });
     }
     const history = trimHistory(req.history, DEFAULT_MAX_HISTORY);
-    const reply = await runLlm(history, transcript, sessionId);
+    const { text: reply, toolCalls } = await runLlm(history, transcript, sessionId);
     const spoken = await synthesize(reply);
-    return { transcript, reply, ...spoken };
+    return { transcript, reply, toolCalls, ...spoken };
   };
 }

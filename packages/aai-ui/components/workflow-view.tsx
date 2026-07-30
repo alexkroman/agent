@@ -11,8 +11,11 @@
  * one instruction, press **Go**, and the whole clip goes out as a single
  * `POST /sync` request with **no history** — the server transcribes it, the
  * agentic loop executes the actions with the workflow's tools, and the view
- * shows the transcript and the run report. Each run is independent; staging
- * a new clip clears the last result.
+ * shows what was heard and the tool calls that ran. Deliberately **no
+ * greeting and no assistant prose** — a workflow is an execution surface,
+ * not a chat, so the record of a run is the transcript plus the actions
+ * taken. Each run is independent; staging a new clip clears the last
+ * result.
  *
  * Built from the same console pieces as the chat shells ({@link Eyebrow},
  * {@link Button}, {@link UrlChip}) so the two app modes share one visual
@@ -27,20 +30,39 @@ import { decodeAudioToPcm16 } from "../audio.ts";
 import { useTheme } from "../context.ts";
 import { createPttRecorder, DEFAULT_SYNC_MIC_SAMPLE_RATE, type PttRecorder } from "../sync-mic.ts";
 import { createSyncSession, type SyncTurnResult } from "../sync-session.ts";
-import type { AgentState } from "../types.ts";
+import type { AgentState, ToolCallInfo } from "../types.ts";
 import { ERROR_COLOR, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Button } from "./button.tsx";
 import { stateColor } from "./chat-view.tsx";
 import { Eyebrow } from "./eyebrow.tsx";
 import { ThinkingDots } from "./message-list.tsx";
+import { ToolCallBlock } from "./tool-call-block.tsx";
 import { UrlChip } from "./url-chips.tsx";
 
 /** One staged instruction clip, ready to run. */
 type StagedClip = { pcm: Int16Array; sampleRate: number; source: "recording" | string };
 
-/** One finished run: what was heard and the run report. */
-type RunResult = { heard: string; report: string };
+/** One finished run: what was heard and the tool calls that executed. */
+type RunResult = { heard: string; toolCalls: ToolCallInfo[] };
+
+/**
+ * The sync response's completed tool records, as the shared
+ * {@link ToolCallBlock} rows render them. A sync turn only reports once it
+ * has fully run, so every call is `done`; the synthetic fallback id keeps
+ * render keys stable when a provider omits `toolCallId`.
+ */
+function toToolCallInfo(turn: SyncTurnResult): ToolCallInfo[] {
+  return (turn.toolCalls ?? []).map((call, i) => ({
+    callId: call.toolCallId.length > 0 ? call.toolCallId : `run-call-${i}`,
+    name: call.toolName,
+    args: call.args,
+    status: "done",
+    result: call.result,
+    seq: i,
+    afterMessageId: -1,
+  }));
+}
 
 function clipSeconds(clip: StagedClip): number {
   return clip.pcm.length / clip.sampleRate;
@@ -63,12 +85,10 @@ function workflowState(opts: {
 
 /** The output card's body: instruction line, staged clip, then the run result. */
 function RunCard({
-  greeting,
   clip,
   running,
   result,
 }: {
-  greeting?: string | undefined;
   clip: StagedClip | null;
   running: boolean;
   result: RunResult | null;
@@ -76,15 +96,10 @@ function RunCard({
   const theme = useTheme();
   return (
     <div className="flex flex-col gap-5 p-7">
-      {greeting !== undefined && greeting.length > 0 && (
-        <p className="text-[15px] leading-[23px]" style={{ color: theme.text }}>
-          {greeting}
-        </p>
-      )}
       {clip === null && result === null && !running && (
         <p className="text-sm" style={{ color: TEXT_MUTED }}>
           Hold to talk or upload an audio file, then press Go. The whole clip runs as one
-          instruction — actions are executed and the run report appears here.
+          instruction — the actions it executed appear here.
         </p>
       )}
       {clip && !running && (
@@ -106,21 +121,26 @@ function RunCard({
           >
             Heard
           </span>
-          <p className="text-[15px] leading-[22px]" style={{ color: TEXT_MUTED }}>
+          <p className="text-[15px] leading-[22px]" style={{ color: theme.text }}>
             {result.heard}
           </p>
           <span
             className="text-[10px] font-medium tracking-[1.2px] uppercase leading-none mt-1.5"
             style={{ color: TEXT_FAINT }}
           >
-            Run report
+            Actions
           </span>
-          <p
-            className="whitespace-pre-wrap wrap-break-word text-[15px] font-normal leading-[23px]"
-            style={{ color: theme.text }}
-          >
-            {result.report}
-          </p>
+          {result.toolCalls.length === 0 ? (
+            <p className="text-sm" style={{ color: TEXT_MUTED }}>
+              No actions were taken.
+            </p>
+          ) : (
+            <div className="flex flex-col gap-2" data-testid="run-tool-calls">
+              {result.toolCalls.map((call) => (
+                <ToolCallBlock key={call.callId} toolCall={call} />
+              ))}
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -129,21 +149,19 @@ function RunCard({
 
 /**
  * Workflow run surface: push-to-talk or audio upload stages one instruction
- * clip; **Go** runs it as a single sync turn and shows the run report.
+ * clip; **Go** runs it as a single sync turn and shows what was heard plus
+ * the tool calls that executed — no greeting, no assistant messages.
  *
  * @public
  */
 export function WorkflowView({
   syncUrl,
   title,
-  greeting,
 }: {
   /** The workflow server's sync endpoint, e.g. `https://host/slug/sync`. */
   syncUrl: string;
   /** Workflow name shown in the header. */
   title?: string | undefined;
-  /** Idle-state instruction line shown on the card. */
-  greeting?: string | undefined;
 }) {
   const theme = useTheme();
   const [clip, setClip] = useState<StagedClip | null>(null);
@@ -227,7 +245,7 @@ export function WorkflowView({
     if (disposed.current) return;
     setRunning(false);
     if ("turn" in outcome) {
-      setResult({ heard: outcome.turn.transcript, report: outcome.turn.reply });
+      setResult({ heard: outcome.turn.transcript, toolCalls: toToolCallInfo(outcome.turn) });
       setClip(null);
     } else {
       // The clip survives a failed run so the user can just press Go again.
@@ -287,7 +305,7 @@ export function WorkflowView({
         }}
       >
         <div role="log" className="flex-1 overflow-y-auto [scrollbar-width:none]">
-          <RunCard greeting={greeting} clip={clip} running={running} result={result} />
+          <RunCard clip={clip} running={running} result={result} />
         </div>
       </div>
       {/* Controls: hold-to-talk, upload, Go, and where the run is sent */}

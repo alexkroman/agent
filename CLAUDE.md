@@ -518,7 +518,12 @@ The marker reaches the browser via `GET /client-config` (`kind`, default
 `"agent"` for older servers); `client()`'s `DefaultRoot` renders
 `WorkflowView` (aai-ui) for workflows — hold-to-talk (`createPttRecorder`) /
 audio upload (`decodeAudioToPcm16`) staging one clip, a Go button, and the
-transcript + run report.
+run record: the transcript plus the tool calls the run executed
+(`SyncTurnResponse.toolCalls`, collected by `runSyncTurn` from the
+stream's tool-call/tool-result parts). Deliberately **no greeting and no
+assistant prose** — a workflow is an execution surface, not a chat, so the
+reply text stays on the wire (it is still the LLM's run report) but the
+default view never renders it.
 
 ### `ctx.generate` and workflow combinators (`@alexkroman1/aai/workflow`)
 

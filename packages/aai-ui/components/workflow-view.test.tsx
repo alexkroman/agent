@@ -10,7 +10,7 @@ import { WorkflowView } from "./workflow-view.tsx";
 
 // The recorder wraps getUserMedia + an AudioWorklet — mocked wholesale; what
 // matters here is hold → staged clip → Go → ONE history-less sync request →
-// rendered run report.
+// rendered transcript + tool calls (and never any assistant prose).
 const micMock = vi.hoisted(() => ({
   createPttRecorder: vi.fn(),
   DEFAULT_SYNC_MIC_SAMPLE_RATE: 16_000,
@@ -49,7 +49,7 @@ function mockRecorder(pcm: Int16Array = SPEECH) {
 function renderView() {
   return render(
     <ThemeProvider value={undefined}>
-      <WorkflowView syncUrl="http://host/wf/sync" title="Expense Filer" greeting="Speak it." />
+      <WorkflowView syncUrl="http://host/wf/sync" title="Expense Filer" />
     </ThemeProvider>,
   );
 }
@@ -70,10 +70,9 @@ afterEach(() => {
 });
 
 describe("WorkflowView", () => {
-  test("renders the run surface idle state", () => {
+  test("renders the run surface idle state, with no greeting", () => {
     renderView();
     expect(screen.getByText("Expense Filer")).toBeTruthy();
-    expect(screen.getByText("Speak it.")).toBeTruthy();
     expect(screen.getByText(/Hold to talk or upload an audio file/)).toBeTruthy();
     expect((screen.getByTestId("workflow-go") as HTMLButtonElement).disabled).toBe(true);
   });
@@ -87,11 +86,19 @@ describe("WorkflowView", () => {
     expect((screen.getByTestId("workflow-go") as HTMLButtonElement).disabled).toBe(false);
   });
 
-  test("Go runs the staged clip as one history-less turn and shows the report", async () => {
+  test("Go runs the staged clip as one history-less turn and shows transcript + tool calls", async () => {
     mockRecorder();
     sessionMock.session.sendPcm16.mockResolvedValue({
       transcript: "file a 12 dollar lunch",
       reply: "Filed one expense: $12, lunch.",
+      toolCalls: [
+        {
+          toolCallId: "tc-1",
+          toolName: "file_expense",
+          args: { amount: 12, memo: "lunch" },
+          result: '{"ok":true}',
+        },
+      ],
       pcm: null,
     });
     renderView();
@@ -104,9 +111,30 @@ describe("WorkflowView", () => {
     expect(sessionMock.session.sendPcm16).toHaveBeenCalledWith(SPEECH, 16_000);
     const result = screen.getByTestId("run-result");
     expect(result.textContent).toContain("file a 12 dollar lunch");
-    expect(result.textContent).toContain("Filed one expense: $12, lunch.");
+    expect(screen.getByTestId("run-tool-calls").textContent).toContain("file_expense");
+    // No assistant prose, ever — the run is transcript + actions only.
+    expect(result.textContent).not.toContain("Filed one expense: $12, lunch.");
     // The staged clip is consumed; Go disarms until a new clip is staged.
     expect((screen.getByTestId("workflow-go") as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test("a run that made no tool calls says so instead of showing the reply", async () => {
+    mockRecorder();
+    sessionMock.session.sendPcm16.mockResolvedValue({
+      transcript: "do nothing",
+      reply: "Nothing to do.",
+      toolCalls: [],
+      pcm: null,
+    });
+    renderView();
+    await holdAndRelease();
+    await act(async () => {
+      fireEvent.click(screen.getByTestId("workflow-go"));
+    });
+    const result = screen.getByTestId("run-result");
+    expect(result.textContent).toContain("do nothing");
+    expect(result.textContent).toContain("No actions were taken.");
+    expect(result.textContent).not.toContain("Nothing to do.");
   });
 
   test("uploading an audio file stages a decoded clip", async () => {

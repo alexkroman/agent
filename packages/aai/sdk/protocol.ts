@@ -29,6 +29,8 @@ export {
 export {
   type SyncHistoryMessage,
   SyncHistoryMessageSchema,
+  type SyncToolCall,
+  SyncToolCallSchema,
   type SyncTurnRequest,
   SyncTurnRequestSchema,
   type SyncTurnResponse,

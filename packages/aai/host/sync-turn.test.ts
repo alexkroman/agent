@@ -181,6 +181,16 @@ describe("createSyncTurnRunner", () => {
       expect.any(Array),
       expect.any(Object),
     );
+    // The response reports the run's tool calls so run-style clients (the
+    // workflow view) can show the actions instead of the reply prose.
+    expect(res.toolCalls).toEqual([
+      { toolCallId: "c1", toolName: "lookup", args: {}, result: '{"ok":true}' },
+    ]);
+  });
+
+  test("a turn with no tool calls reports an empty toolCalls list", async () => {
+    const res = await createSyncTurnRunner(makeDeps())(textReq());
+    expect(res.toolCalls).toEqual([]);
   });
 
   test("replays client history to the model, trimmed to the window", async () => {
