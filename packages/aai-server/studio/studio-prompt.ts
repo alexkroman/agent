@@ -25,6 +25,30 @@
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
+import { sdkSpecifiers } from "./studio-sdk-exports.ts";
+
+/**
+ * The importable-subpath rule, read from the SDK's own exports map so it can't
+ * describe a package the build doesn't use. Omitted entirely when the map
+ * can't be read — a truncated "these are the only ones:" with no list would be
+ * worse than saying nothing.
+ *
+ * `/patterns` is called out by name because `/workflow` *was* its name until
+ * the combinators moved, so it sits in the model's priors and in any docs
+ * snapshot predating the rename; a bare list doesn't correct a wrong belief
+ * the way a contradiction does.
+ */
+const SDK_SUBPATH_RULE = (() => {
+  const specs = sdkSpecifiers();
+  if (specs.length === 0) return "";
+  return `- **Never invent an SDK subpath.** These are the only importable ones, and a
+  wrong guess is a build error, not a fallback:
+  ${specs.join(", ")}
+  The workflow-pattern combinators (sequential, parallel, route, orchestrate,
+  evaluatorOptimizer, generateStructured) live in "@alexkroman1/aai/patterns" —
+  **not** "@alexkroman1/aai/workflow", which does not exist. The workflow()
+  helper itself is a named export of the root "@alexkroman1/aai".`;
+})();
 
 const STUDIO_PREAMBLE = `You are the AssemblyAI App Builder coding agent. You help the user build and deploy \
 voice agents and voice workflows for the AAI platform, working on a small \
@@ -134,6 +158,7 @@ These CLI-specific parts do NOT apply in App Builder:
   "@alexkroman1/aai" (any subpath), and "zod". client.tsx may additionally
   import "@alexkroman1/aai-ui" and "react". No other npm packages can be
   installed.
+${SDK_SUBPATH_RULE}
 - Custom client UI *is* supported: add a client.tsx (plus any helper files
   it imports, e.g. shared.ts) and publishing builds it with Vite, React,
   and Tailwind, exactly as the CLI does. Start it with

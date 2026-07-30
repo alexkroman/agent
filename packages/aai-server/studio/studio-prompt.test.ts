@@ -77,6 +77,18 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("`kind` and `mode` are not authoring fields at all");
   });
 
+  test("lists the SDK's real subpaths and corrects the /workflow guess", () => {
+    const prompt = studioSystemPrompt().replace(/\s+/g, " ");
+    expect(prompt).toContain("Never invent an SDK subpath");
+    // Interpolated from the package's own exports map, so it can't drift.
+    // "patterns" appears nowhere in the preamble literal, only in that list.
+    expect(prompt).toContain("@alexkroman1/aai/patterns");
+    // The combinators' subpath was renamed from /workflow, so the old name is
+    // in the model's priors and in any pre-rename docs snapshot. A list alone
+    // doesn't dislodge a wrong belief; the contradiction is stated outright.
+    expect(prompt).toContain('**not** "@alexkroman1/aai/workflow", which does not exist');
+  });
+
   test("excludes the CLI Workflow section without taking the workflow() API with it", () => {
     const guide = loadScaffoldGuide();
     // Two headings in the guide match the word the preamble excludes. The
