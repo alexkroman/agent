@@ -24,6 +24,7 @@ import {
   type ReadyConfig,
 } from "../sdk/protocol.ts";
 import { errorDetail, errorMessage, safeJsonParse } from "../sdk/utils.ts";
+import { createAudioPacer } from "./audio-pacer.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -124,21 +125,41 @@ const WS_CLOSE_INTERNAL = 1011;
  * Session events are sent as JSON text frames; audio chunks are sent as raw
  * PCM16 binary frames.
  *
- * Audio backpressure: TTS synthesis outruns real-time playback, so a slow or
- * stalled client link accumulates unsent bytes in the socket buffer. Before
- * each audio chunk the sink checks `bufferedAmount`; past
- * {@link MAX_CLIENT_WS_BUFFERED_BYTES} (~87 s of 24 kHz PCM16) the client is
- * unrecoverably behind — the sink logs once and closes the connection, which
- * runs the normal session teardown. The client may reconnect and resume via
- * its sessionId. Sockets without `bufferedAmount` skip the guard.
+ * Audio pacing: TTS synthesis outruns real-time playback, so audio goes out
+ * through an {@link createAudioPacer} at a bounded lead rather than the instant
+ * a provider frame arrives — otherwise a whole reply lands in the socket buffer
+ * at once and a slow link turns that into seconds of invisible queue. The pacer
+ * owns two ordering rules that follow from holding audio back: `audio_done` is
+ * queued behind it (an early turn boundary truncates the reply client-side),
+ * and a `cancelled`/`reset` event discards it (the client flushes its own
+ * buffer on those, so held audio would arrive as an orphan fragment).
+ *
+ * Audio backpressure: the pacer keeps the socket buffer small in the ordinary
+ * case, so `bufferedAmount` past {@link MAX_CLIENT_WS_BUFFERED_BYTES} (~87 s of
+ * 24 kHz PCM16) now means a genuinely stalled link — the sink logs once and
+ * closes the connection, which runs the normal session teardown. The client may
+ * reconnect and resume via its sessionId. Sockets without `bufferedAmount` skip
+ * the guard.
  */
-function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
+function createClientSink(
+  ws: SessionWebSocket,
+  log: Logger,
+  ttsSampleRate: number,
+): { client: ClientSink; stopPacing: () => void } {
   let closedForBackpressure = false;
-  return {
+  const pacer = createAudioPacer({
+    sendAudio: (chunk) => safeSend(ws, chunk, log),
+    sendDone: () => safeSend(ws, AUDIO_DONE_FRAME, log),
+    sampleRate: ttsSampleRate,
+  });
+  const client: ClientSink = {
     get open() {
       return ws.readyState === WS_OPEN;
     },
     event(e) {
+      // Both events tell the client to drop its playback buffer, so whatever
+      // this turn still has queued here is dead audio.
+      if (e.type === "cancelled" || e.type === "reset") pacer.clear();
       safeSend(ws, JSON.stringify(e), log);
     },
     playAudioChunk(chunk) {
@@ -158,12 +179,13 @@ function createClientSink(ws: SessionWebSocket, log: Logger): ClientSink {
         }
         return;
       }
-      safeSend(ws, chunk, log);
+      pacer.push(chunk);
     },
     playAudioDone() {
-      safeSend(ws, AUDIO_DONE_FRAME, log);
+      pacer.pushDone();
     },
   };
+  return { client, stopPacing: pacer.stop };
 }
 
 function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: string): void {
@@ -230,6 +252,10 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   const ctx = opts.logContext ?? {};
 
   let session: SessionCore | null = null;
+  /** Releases the audio pacer's pending timer; set when the sink is created.
+   *  Without it a paced send could fire against a closed socket, and the timer
+   *  would outlive the session. */
+  let stopPacingCurrent: (() => void) | null = null;
   /** Keepalive ping timer, armed on open and cleared on close. */
   let keepalive: ReturnType<typeof setInterval> | null = null;
   /** Set to true once session.start() resolves. Messages arriving before
@@ -351,7 +377,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     log.info("Session connected", { ...ctx, sid });
     startKeepalive();
 
-    const client = createClientSink(ws, log);
+    const { client, stopPacing } = createClientSink(ws, log, opts.readyConfig.ttsSampleRate);
+    stopPacingCurrent = stopPacing;
     // createSession runs synchronously from the 'open'/handleUpgrade callback;
     // a throw here (e.g. buildTransport rejecting an unregistered transport
     // kind on a programmatically-built agent) would escape as an
@@ -441,6 +468,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
 
   ws.addEventListener("close", (ev) => {
     stopKeepalive();
+    stopPacingCurrent?.();
+    stopPacingCurrent = null;
     // A provider cutting its upstream socket, a proxy dropping the connection,
     // and a client hanging up all produced the same bare "Session
     // disconnected" line, which left a dead session undiagnosable from the

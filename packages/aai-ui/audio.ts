@@ -53,6 +53,30 @@ export async function decodeAudioToPcm16(
   return pcm;
 }
 
+/**
+ * How much of one turn's playback was covered by concealment rather than
+ * received audio — the playback worklet's underrun report, in the shape
+ * WebRTC's `inbound-rtp` audio stats use, so the numbers mean the same thing
+ * here as in a `getStats()` dump.
+ *
+ * A turn with `concealmentEvents: 0` never needed its jitter buffer; a turn
+ * with a high `silentConcealedSamples` share starved for longer than
+ * concealment can plausibly cover, which is a bandwidth problem rather than a
+ * buffer-tuning one.
+ *
+ * @public
+ */
+export type PlaybackStats = {
+  /** Samples emitted to cover a gap, including the silent ones. */
+  concealedSamples: number;
+  /** The subset of {@link PlaybackStats.concealedSamples} that were silence. */
+  silentConcealedSamples: number;
+  /** Distinct underrun episodes, however many render quanta each spanned. */
+  concealmentEvents: number;
+  /** Episodes that lasted long enough to decay to silence. */
+  silentConcealmentEvents: number;
+};
+
 /** Configuration for creating a {@link VoiceIO} instance. */
 export type VoiceIOOptions = {
   /** Sample rate in Hz expected by the STT engine (e.g. 16000). */
@@ -71,6 +95,17 @@ export type VoiceIOOptions = {
    * transition out of listening/speaking instead of looking healthy forever.
    */
   onError?: ((err: Error) => void) | undefined;
+  /**
+   * Called at the end of any turn whose playback had to conceal a gap. Never
+   * called for a clean turn, so it can be wired straight to a warning.
+   */
+  onPlaybackStats?: ((stats: PlaybackStats) => void) | undefined;
+  /**
+   * Called once if the microphone delivers nothing but digital silence for
+   * the first {@link MIC_SILENCE_PROBE_MS} of capture — a muted or wrong input
+   * device, which otherwise looks exactly like a user who hasn't spoken.
+   */
+  onMicSilent?: (() => void) | undefined;
 };
 
 /**
@@ -92,12 +127,23 @@ export type VoiceIO = AsyncDisposable & {
   close(): Promise<void>;
 };
 
+/** Throw unless the browser honored a requested context sample rate. */
+function assertGranted(granted: number, requested: number, side: string): void {
+  if (granted === requested) return;
+  throw new Error(
+    `Browser refused the ${side} sample rate: asked for ${requested} Hz, got ${granted} Hz`,
+  );
+}
+
 /**
  * Create a {@link VoiceIO} instance that captures microphone audio and
  * plays back TTS audio using the Web Audio API.
  *
- * The AudioContext runs at the TTS sample rate for playback fidelity.
- * Captured audio is resampled to the STT rate when the rates differ.
+ * Playback runs on a context at the TTS sample rate for fidelity, and capture
+ * on its own context at the STT rate so the *browser* performs the rate
+ * conversion — its resampler is band-limited, while the worklet's fallback is
+ * a linear interpolation that folds everything above the new Nyquist back into
+ * the band as aliasing. The two collapse into one context when the rates match.
  *
  * @param opts - Voice I/O configuration options.
  * @returns A promise that resolves to a {@link VoiceIO} handle.
@@ -111,15 +157,34 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     playbackWorkletSrc,
     onMicData,
     onError,
+    onPlaybackStats,
+    onMicSilent,
   } = opts;
 
-  // Use TTS rate for the context — playback fidelity is more perceptible.
-  // Capture path resamples to STT rate if they differ.
-  const contextRate = ttsSampleRate;
   const ctx = new AudioContext({
-    sampleRate: contextRate,
+    sampleRate: ttsSampleRate,
     latencyHint: "playback",
   });
+  // One context can only run at one rate, so capture gets its own when it
+  // needs a different one — the point being to let the browser resample the
+  // mic stream, since its resampler is band-limited. `latencyHint:
+  // "interactive"` because this side is barge-in sensitive, unlike playback.
+  const sharesContext = sttSampleRate === ttsSampleRate;
+  const capCtx = sharesContext
+    ? ctx
+    : new AudioContext({ sampleRate: sttSampleRate, latencyHint: "interactive" });
+
+  // Release every context this call created, whether one or two.
+  async function closeContexts(): Promise<void> {
+    const contexts = sharesContext ? [ctx] : [ctx, capCtx];
+    await Promise.all(
+      contexts.map((c) =>
+        c.close().catch((err: unknown) => {
+          console.warn("AudioContext close failed:", err);
+        }),
+      ),
+    );
+  }
 
   // Mic permission, context resume, and worklet registration are independent —
   // run them concurrently so a slow permission prompt doesn't serialize setup.
@@ -141,9 +206,18 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     [stream] = await Promise.all([
       streamPromise,
       ctx.resume(),
-      ctx.audioWorklet.addModule(captureWorkletSrc),
+      capCtx.resume(),
+      capCtx.audioWorklet.addModule(captureWorkletSrc),
       ctx.audioWorklet.addModule(playbackWorkletSrc),
     ]);
+    // The requested rates are not advisory: capture audio is sent to a socket
+    // that declared sttSampleRate, and playback writes PCM at ttsSampleRate
+    // into the context verbatim, so a context running at some other rate
+    // garbles one side or the other. Fail here rather than resample in the
+    // worklet — that would alias — or stream audio that only sounds like
+    // speech to the wrong decoder.
+    assertGranted(capCtx.sampleRate, sttSampleRate, "capture");
+    assertGranted(ctx.sampleRate, ttsSampleRate, "playback");
   } catch (err: unknown) {
     // If the mic was (or later gets) granted while another step failed,
     // release it; if getUserMedia itself rejected, the catch is a no-op.
@@ -154,17 +228,15 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       .catch(() => {
         /* rejected with the same error */
       });
-    await ctx.close().catch((err) => {
-      console.warn("AudioContext close failed:", err);
-    });
+    await closeContexts();
     throw err;
   }
 
-  const mic = ctx.createMediaStreamSource(stream);
-  const capNode = new AudioWorkletNode(ctx, "capture-processor", {
+  const mic = capCtx.createMediaStreamSource(stream);
+  const capNode = new AudioWorkletNode(capCtx, "capture-processor", {
     channelCount: 1,
     channelCountMode: "explicit",
-    processorOptions: { contextRate, sttSampleRate, bufferSeconds: MIC_BUFFER_SECONDS },
+    processorOptions: { sampleRate: sttSampleRate, bufferSeconds: MIC_BUFFER_SECONDS },
   });
   mic.connect(capNode);
 
@@ -186,6 +258,8 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   capNode.port.onmessage = (e: MessageEvent) => {
     if (e.data.event === "chunk") {
       onMicData(e.data.buffer as ArrayBuffer);
+    } else if (e.data.event === "silent") {
+      onMicSilent?.();
     } else if (e.data.event === "stopped") {
       onCaptureStopped?.();
       onCaptureStopped = null;
@@ -203,11 +277,16 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   function ensurePlayNode(): AudioWorkletNode {
     if (playNode) return playNode;
     const node = new AudioWorkletNode(ctx, "playback-processor", {
-      processorOptions: { sampleRate: contextRate },
+      processorOptions: { sampleRate: ctx.sampleRate },
     });
     node.connect(ctx.destination);
     node.port.onmessage = (e: MessageEvent) => {
       if (e.data.event === "stop") {
+        // Report before the interrupt-drop below: concealment that happened
+        // before a barge-in is real playback trouble, and dropping the stop
+        // must not drop the measurement with it.
+        const stats = e.data.stats as PlaybackStats | undefined;
+        if (stats && stats.concealedSamples > 0) onPlaybackStats?.(stats);
         // An interrupt's stop belongs to a turn flush() already settled —
         // dropping it here (rather than flagging "the next stop is stale")
         // means it can never swallow a real drain-stop that was already in
@@ -295,9 +374,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
       capNode.disconnect();
       if (playNode) playNode.disconnect();
       for (const t of stream.getTracks()) t.stop();
-      await ctx.close().catch(() => {
-        /* swallow */
-      });
+      await closeContexts();
     },
 
     async [Symbol.asyncDispose]() {
