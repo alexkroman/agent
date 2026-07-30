@@ -11,7 +11,57 @@ import { createPipelineTransport } from "./pipeline-transport.ts";
 
 describe("PipelineTransport", () => {
   describe("barge-in", () => {
-    test("partial STT event during an in-flight turn triggers cancel and onCancelled", async () => {
+    test("partial STT event while the agent is speaking triggers cancel and onCancelled", async () => {
+      const script = inFlightReplyScript();
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script, delayMs: 20 }),
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("hi there");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+      // The turn must have SPOKEN, not merely started: barge-in gates on audio
+      // having been emitted, so text reaching TTS is not enough.
+      tts.last()?.fireAudio(new Int16Array(2400));
+
+      stt.last()?.firePartial("wait stop"); // ≥2 words → interrupts at the default threshold
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+      expect(tts.last()?.cancel).toHaveBeenCalled();
+      await t.stop();
+    });
+
+    test("partial STT before the turn has emitted audio does NOT cancel", async () => {
+      // The agent is still preparing its reply — nothing is being said over, so
+      // there is nothing to interrupt. Aborting here would discard the whole
+      // in-flight turn and restart a strictly slower one, so a user who keeps
+      // re-prompting into the silence ("hello? any update?") could starve the
+      // reply forever: every restart outlives the next re-prompt.
+      const script = inFlightReplyScript();
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script, delayMs: 20 }),
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("hi there");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+      // No fireAudio: the turn is in flight but has not spoken a single chunk.
+
+      stt.last()?.firePartial("hello are you there");
+      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(tts.last()?.cancel).not.toHaveBeenCalled();
+      await t.stop();
+    });
+
+    test("final STT before the turn has emitted audio defers instead of aborting", async () => {
+      // The re-prompt is still answered — it commits a transcript and chains a
+      // turn behind the running one (the same deferral path a below-threshold
+      // utterance already takes) rather than cancelling the reply in progress.
       const script = inFlightReplyScript();
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script, delayMs: 20 }),
@@ -24,9 +74,43 @@ describe("PipelineTransport", () => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
 
-      stt.last()?.firePartial("wait stop"); // ≥2 words → interrupts at the default threshold
-      expect(callbacks.onCancelled).toHaveBeenCalled();
-      expect(tts.last()?.cancel).toHaveBeenCalled();
+      stt.last()?.fireFinal("hello any update");
+      await vi.waitFor(() => {
+        expect(callbacks.onUserTranscript).toHaveBeenCalledWith("hello any update");
+      });
+      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      expect(tts.last()?.cancel).not.toHaveBeenCalled();
+      await t.stop();
+    });
+
+    test("a reply that has not spoken yet survives repeated re-prompts and still lands", async () => {
+      // The livelock this gate exists to prevent: a caller re-prompting into the
+      // silence of a slow reply ("hello? any update?") used to abort and restart
+      // the turn on every utterance. Each restart redid the work on a longer
+      // history, so it outlived the next re-prompt and the reply never landed.
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({
+          script: Array.from({ length: 20 }, (_, i) => ({ type: "text" as const, text: `p${i} ` })),
+          delayMs: 10,
+        }),
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("what is my balance");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+
+      // Two re-prompts land while the reply is still being computed.
+      stt.last()?.fireFinal("hello any update");
+      stt.last()?.fireFinal("are you still there");
+
+      expect(callbacks.onCancelled).not.toHaveBeenCalled();
+      // The reply still finishes rather than being starved by the re-prompts.
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalled();
+      });
       await t.stop();
     });
 
@@ -131,6 +215,7 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
+      tts.last()?.fireAudio(new Int16Array(2400)); // the agent is now speaking
 
       stt.last()?.firePartial("wait now"); // two words — meets threshold
       expect(callbacks.onCancelled).toHaveBeenCalled();
@@ -151,6 +236,7 @@ describe("PipelineTransport", () => {
       await vi.waitFor(() => {
         expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
       });
+      tts.last()?.fireAudio(new Int16Array(2400)); // the agent is now speaking
 
       // A one-word FINAL arrives while the agent is speaking — below threshold.
       stt.last()?.fireFinal("yeah");

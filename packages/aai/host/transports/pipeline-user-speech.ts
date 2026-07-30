@@ -179,14 +179,16 @@ export interface SttEventHandlers {
  * Split out of the transport so the barge-in policy — which is all threshold
  * and ordering rules rather than turn orchestration — reads on its own. The
  * transport's mutable turn state arrives as the `isTurnInFlight` /
- * `isPlaybackPending` predicates rather than as captured variables, so this
- * module never needs to know how a turn is represented.
+ * `hasTurnSpoken` / `isPlaybackPending` predicates rather than as captured
+ * variables, so this module never needs to know how a turn is represented.
  */
 export function createSttEventHandlers(deps: {
   /** True once the transport terminated — every inbound event is then dropped. */
   isTerminated: () => boolean;
   /** True while a turn is in flight server-side (an abortable reply exists). */
   isTurnInFlight: () => boolean;
+  /** True once the in-flight turn has put audio on the wire. */
+  hasTurnSpoken: () => boolean;
   /** True while forwarded audio may still be playing client-side. */
   isPlaybackPending: () => boolean;
   /** Abort the in-flight turn and cancel TTS playback. */
@@ -208,12 +210,30 @@ export function createSttEventHandlers(deps: {
 }): SttEventHandlers {
   const { speechEdges, recovery, settler, nudger, callbacks, log } = deps;
 
-  /** Is the agent currently holding the floor (server-side turn or client audio)? */
-  const agentHasFloor = (): boolean => deps.isTurnInFlight() || deps.isPlaybackPending();
+  /**
+   * Is the agent actually speaking right now — audio already emitted for the
+   * in-flight turn, or forwarded audio still playing out client-side?
+   *
+   * Deliberately not "a turn is in flight". A turn that has yet to emit audio
+   * cannot be spoken over, so a barge-in has nothing to stop; all it would do
+   * is discard the reply mid-computation and restart a strictly slower one (the
+   * abandoned work redone on top of a longer history). A user re-prompting into
+   * that silence on any regular cadence would then starve the reply
+   * indefinitely, every restart outliving the next re-prompt. Utterances
+   * arriving before the agent speaks take the deferral path instead: the
+   * settler buffers them and they are answered as a chained turn once the reply
+   * in progress lands.
+   *
+   * Once a turn has spoken it keeps the floor for the rest of its run, so a
+   * mid-reply TTS stall (playback draining while more text is still streaming)
+   * does not silently reopen the pre-audio window.
+   */
+  const agentIsSpeaking = (): boolean =>
+    deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken());
 
   /** Should this interim transcript interrupt the agent right now? */
   function partialTriggersBargeIn(words: number): boolean {
-    if (!agentHasFloor()) return false;
+    if (!agentIsSpeaking()) return false;
     if (words < deps.minBargeInWords) return false;
     // Duration gate (interim-only): require sustained speech since the
     // utterance's first partial before cutting the agent off. A committed
@@ -280,11 +300,12 @@ export function createSttEventHandlers(deps: {
       speechEdges.speechStarted();
       // The turn that follows (via the settler) re-arms the nudge on completion.
       nudger.onUserTurn();
-      // Interrupt the agent's in-flight reply only for a clearly-intentional
-      // (>= threshold) utterance. A shorter one does NOT interrupt — it is
-      // buffered and answered once the reply finishes (chainTurn defers it),
-      // so short answers ("yes", a ZIP) spoken over the agent aren't lost.
-      if (agentHasFloor() && hasMinWords(trimmed, deps.minBargeInWords)) {
+      // Interrupt the agent's reply only when it is actually speaking and the
+      // utterance is clearly intentional (>= threshold). Anything else does NOT
+      // interrupt — it is buffered and answered once the reply finishes
+      // (chainTurn defers it), so neither short answers ("yes", a ZIP) spoken
+      // over the agent nor re-prompts into a not-yet-spoken reply are lost.
+      if (agentIsSpeaking() && hasMinWords(trimmed, deps.minBargeInWords)) {
         log.info("Pipeline replacing in-flight turn", { sid: deps.sid });
         deps.abortInFlightTurn();
         callbacks.onCancelled();
@@ -341,6 +362,8 @@ export function createUserActivity(deps: {
   /** False once the transport terminated or the session aborted (nudger gate). */
   isSessionActive(): boolean;
   isTurnInFlight(): boolean;
+  /** True once the in-flight turn has put audio on the wire. */
+  hasTurnSpoken(): boolean;
   isPlaybackPending(): boolean;
   abortInFlightTurn(): void;
   /** Chain `runTurn(text)` behind the active turn, logging crashes as `crashLabel`. */
@@ -402,6 +425,7 @@ export function createUserActivity(deps: {
   const sttEvents = createSttEventHandlers({
     isTerminated: deps.isTerminated,
     isTurnInFlight: deps.isTurnInFlight,
+    hasTurnSpoken: deps.hasTurnSpoken,
     isPlaybackPending: deps.isPlaybackPending,
     abortInFlightTurn: deps.abortInFlightTurn,
     speechEdges,

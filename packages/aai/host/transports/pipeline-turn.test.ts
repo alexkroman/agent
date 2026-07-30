@@ -344,6 +344,7 @@ describe("interrupted-speech persistence", () => {
     await vi.waitFor(() => {
       expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
     });
+    tts.last()?.fireAudio(new Int16Array(2400)); // speaking → interruptible
     stt.last()?.firePartial("stop");
 
     // The interrupted transcript is surfaced with interrupted=true.
@@ -366,13 +367,16 @@ describe("interrupted-speech persistence", () => {
     await t.stop();
   });
 
-  test("barge-in before any text is generated persists nothing", async () => {
-    // `streamScript` awaits `delayMs` BEFORE the first delta, so a barge-in
+  test("an abort before any text is generated persists nothing", async () => {
+    // `streamScript` awaits `delayMs` BEFORE the first delta, so an abort
     // inside that window leaves `accumulated` empty — the guard's no-op case.
     // (Note: a tool-first turn would NOT work here — the guaranteed hold
     // phrase "One moment." feeds onDelta/accumulated, so it would persist.)
+    //
+    // Aborted via cancelReply() rather than a barge-in: with no text there is
+    // no audio either, and barge-in now requires the agent to be audibly
+    // speaking, so a client stop is the only path that reaches this window.
     const { opts, stt, callbacks } = makeOpts({
-      minBargeInWords: 1, // pin so the one-word "stop" barge-in fires (default is now 2)
       llm: createFakeLanguageModel({
         steps: [[{ type: "text", text: "Hello there." }], [{ type: "text", text: "Sure." }]],
         delayMs: 50,
@@ -383,13 +387,10 @@ describe("interrupted-speech persistence", () => {
     const llm = opts.llm as unknown as { calls: Array<{ prompt?: unknown }> };
 
     stt.last()?.fireFinal("hi");
-    // Barge in during the pre-first-delta delay (default threshold = 1 word).
+    // Abort during the pre-first-delta delay.
     await new Promise((r) => setTimeout(r, 10));
-    stt.last()?.firePartial("stop");
+    t.cancelReply();
 
-    await vi.waitFor(() => {
-      expect(callbacks.onCancelled).toHaveBeenCalled();
-    });
     // No text accumulated → no interrupted transcript surfaced.
     expect(callbacks.onAgentTranscript).not.toHaveBeenCalledWith(expect.anything(), true);
 
@@ -427,6 +428,7 @@ describe("interrupted-speech persistence", () => {
     await vi.waitFor(() => {
       expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
     });
+    tts.last()?.fireAudio(new Int16Array(2400)); // speaking → interruptible
     const callsAfterTurn1 = llm.calls.length;
 
     // Replace via a >=3-word final (above threshold → interrupts).
@@ -452,7 +454,7 @@ describe("interrupted-speech persistence", () => {
     // tool call that had already succeeded (and its result) vanished from LLM
     // history — the next turn would repeat the call or claim the lookup failed.
     const executeTool = vi.fn(async () => "result-payload-42");
-    const { opts, stt, callbacks } = makeOpts({
+    const { opts, stt, tts, callbacks } = makeOpts({
       minBargeInWords: 1,
       llm: createFakeLanguageModel({
         steps: [
@@ -482,6 +484,9 @@ describe("interrupted-speech persistence", () => {
       expect(executeTool).toHaveBeenCalled();
       expect(llm.calls.length).toBeGreaterThanOrEqual(2);
     });
+    // The hold phrase has been spoken by this point in production, so the turn
+    // holds the floor and is interruptible.
+    tts.last()?.fireAudio(new Int16Array(2400));
     stt.last()?.firePartial("stop");
     await vi.waitFor(() => {
       expect(callbacks.onCancelled).toHaveBeenCalled();
@@ -527,6 +532,7 @@ describe("interrupted-speech persistence", () => {
     await vi.waitFor(() => {
       expect(tts.last()?.textChunks.join("")).toContain("One moment.");
     });
+    tts.last()?.fireAudio(new Int16Array(2400)); // hold phrase audible → interruptible
     stt.last()?.firePartial("stop");
 
     await vi.waitFor(() => {
