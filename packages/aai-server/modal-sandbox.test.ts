@@ -19,6 +19,7 @@ import {
   parseSandboxLimitsFromEnv,
   spawnModalWarm,
 } from "./modal-sandbox.ts";
+import type { NdjsonConnection } from "./ndjson-transport.ts";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -170,7 +171,10 @@ describe("warmFromModal", () => {
     const warm = _internals.warmFromModal(sb, fake.proc);
     warm.conn.listen();
 
-    const pending = warm.conn.sendRequest<{ pong: boolean }>("ping", { n: 1 });
+    // "ping" is a transport-level probe, not a guest method — widen past the
+    // typed method map for this plumbing test.
+    const untyped = warm.conn as NdjsonConnection;
+    const pending = untyped.sendRequest("ping", { n: 1 }) as Promise<{ pong: boolean }>;
     await vi.waitFor(() => {
       if (!fake.stdinText().includes('"ping"')) throw new Error("request not written yet");
     });
@@ -228,7 +232,7 @@ describe("warmFromModal", () => {
     const fake = makeFakeProc();
     const warm = _internals.warmFromModal(makeFakeSandbox(fake), fake.proc);
     warm.conn.listen();
-    const pending = warm.conn.sendRequest("ping");
+    const pending = (warm.conn as NdjsonConnection).sendRequest("ping");
     await vi.waitFor(() => {
       if (!fake.stdinText().includes('"ping"')) throw new Error("request not written yet");
     });

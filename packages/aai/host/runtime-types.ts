@@ -8,6 +8,7 @@
 
 import type { ToolSchema } from "../sdk/_internal-types.ts";
 import type { Db } from "../sdk/db.ts";
+import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { ClientSink, ReadyConfig } from "../sdk/protocol.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
 import type { AgentDef } from "../sdk/types.ts";
@@ -53,7 +54,13 @@ export type AgentRuntime = {
 export type RuntimeOptions = {
   // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
   agent: AgentDef<any>;
-  env: Record<string, string>;
+  /**
+   * The agent's own env — what tool code sees as `ctx.env`. Typed
+   * {@link AgentEnv}: a `withHostCredentialFallback` result (which may carry
+   * host/shell credentials) is a compile error here — pass it as
+   * {@link RuntimeOptions.providerEnv} instead.
+   */
+  env: AgentEnv;
   /**
    * Environment used to resolve provider credentials (STT/TTS/LLM/Vector).
    * Defaults to {@link RuntimeOptions.env}.
@@ -64,7 +71,7 @@ export type RuntimeOptions = {
    * do not exist in production. The platform passes neither — it resolves
    * everything from the agent's own stored env.
    */
-  providerEnv?: Record<string, string> | undefined;
+  providerEnv?: ProviderEnv | undefined;
   /**
    * SQL database exposed to tool code as `ctx.db`. When omitted, the runtime
    * connects one itself from `DATABASE_URL` in the provider env (self-hosted

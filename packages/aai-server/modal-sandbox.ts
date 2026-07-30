@@ -33,6 +33,7 @@ import { ModalClient, type SandboxCreateParams } from "modal";
 import { debug } from "./_debug-log.ts";
 import { metrics } from "./metrics.ts";
 import { createNdjsonConnection } from "./ndjson-transport.ts";
+import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 
 // ── Structural Modal types ───────────────────────────────────────────────────
@@ -332,7 +333,7 @@ function warmFromModal(sb: ModalSandboxLike, proc: ModalProcLike): WarmHarness {
   });
   void drainStderr(proc.stderr, sb.sandboxId);
 
-  const conn = createNdjsonConnection(stdout, stdin);
+  const conn = createNdjsonConnection<GuestRpcSchema>(stdout, stdin);
 
   const exitListeners: (() => void)[] = [];
   let dead = false;

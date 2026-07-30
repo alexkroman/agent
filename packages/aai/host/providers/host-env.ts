@@ -16,6 +16,7 @@
  * the resolvers.
  */
 
+import type { HostCredentialEnv } from "../../sdk/env-types.ts";
 import { PINECONE_API_KEY_ENV } from "../../sdk/providers/vector/pinecone.ts";
 import { ALL_PROVIDER_ENV_VARS } from "./resolve.ts";
 
@@ -36,16 +37,21 @@ export const PROVIDER_CREDENTIAL_ENVS: readonly string[] = [
  * `aai secret put` value is never overridden by the shell. Only names in
  * {@link PROVIDER_CREDENTIAL_ENVS} are copied, so unrelated host variables
  * never reach `ctx.env`. `process.env` is not mutated.
+ *
+ * The return type is the {@link HostCredentialEnv} brand — this is the one
+ * function that mints it. The result satisfies `RuntimeOptions.providerEnv`
+ * but not `RuntimeOptions.env`, so host credentials cannot silently become
+ * `ctx.env` (see sdk/env-types.ts).
  */
 export function withHostCredentialFallback(
   env: Record<string, string>,
   hostEnv: Record<string, string | undefined> = process.env,
-): Record<string, string> {
-  const merged = { ...env };
+): HostCredentialEnv {
+  const merged: Record<string, string> = { ...env };
   for (const name of PROVIDER_CREDENTIAL_ENVS) {
     if (merged[name] !== undefined) continue;
     const value = hostEnv[name];
     if (value !== undefined && value !== "") merged[name] = value;
   }
-  return merged;
+  return merged as HostCredentialEnv;
 }

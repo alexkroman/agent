@@ -21,6 +21,7 @@ import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
 import { createGateway, type LanguageModel } from "ai";
+import type { ProviderEnv } from "../../sdk/env-types.ts";
 import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import {
   ASSEMBLYAI_LLM_API_KEY_ENV,
@@ -91,7 +92,7 @@ import { requireApiKey } from "./_utils.ts";
  * decides what a provider can authenticate with; see
  * `withHostCredentialFallback` for the self-hosted opt-in.
  */
-export function resolveApiKey(envVar: string, env: Record<string, string>): string {
+export function resolveApiKey(envVar: string, env: ProviderEnv): string {
   return env[envVar] ?? "";
 }
 

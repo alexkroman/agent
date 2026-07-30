@@ -12,6 +12,7 @@
  */
 
 import { generateObject, generateText, jsonSchema, type LanguageModel } from "ai";
+import type { ProviderEnv } from "../sdk/env-types.ts";
 import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
 import { resolveLlm } from "./providers/resolve.ts";
@@ -35,7 +36,7 @@ export type CreateGenerateFnOptions = {
    */
   llm?: LlmProvider | undefined;
   /** Env the provider credential resolves from (agent env / providerEnv). */
-  env: Record<string, string>;
+  env: ProviderEnv;
 };
 
 function isDescriptor(value: unknown): value is LlmProvider {

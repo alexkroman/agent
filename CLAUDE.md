@@ -249,7 +249,12 @@ restrictions apply there.
 - `guest/deno-harness.ts` — Deno guest entry point (runs inside a Modal Sandbox)
 - `modal_deploy.py` — Modal deployment of the server itself (`@modal.web_server`
   wrapping the node process); `pnpm --filter aai-server deploy:modal`
-- `ndjson-transport.ts` — NDJSON-over-stdio transport for host↔guest RPC
+- `ndjson-transport.ts` — NDJSON-over-stdio transport for host↔guest RPC.
+  Connections are typed by a per-direction method map (`RpcSchema`); the
+  sandbox link's concrete map is `GuestRpcSchema` in `rpc-schemas.ts`, so
+  method names and outgoing request params are compile-checked at every
+  call site while results/incoming params stay `unknown` (untrusted wire
+  data — Zod at the receiving site is the contract)
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
@@ -1511,6 +1516,16 @@ stored env at sandbox creation time and kept host-side only.
   `RuntimeOptions.providerEnv`, **not** `env` — credentials must not land in
   `ctx.env`, both so agent code can't read them and so dev keeps parity with
   production in what `ctx.env` contains.
+
+  The providerEnv-not-env rule is **type-enforced** via the branded env
+  records in `sdk/env-types.ts`: `withHostCredentialFallback` is the only
+  minter of `HostCredentialEnv`, which satisfies
+  `RuntimeOptions.providerEnv` (`ProviderEnv`) but is a compile error for
+  `RuntimeOptions.env` (`AgentEnv`) and everything else that becomes
+  `ctx.env`. Plain records stay assignable to both, so only the dangerous
+  flow needs ceremony; `env-types.test-d.ts` locks the assignability matrix.
+  The brand is advisory against *deliberate* re-annotation — the point is
+  that leaking host credentials into `ctx.env` can no longer be silent.
 
 **Cross-agent isolation:**
 

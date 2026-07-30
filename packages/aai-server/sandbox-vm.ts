@@ -19,14 +19,14 @@ import {
   type SandboxInitPath,
 } from "./metrics.ts";
 import { spawnModalWarm } from "./modal-sandbox.ts";
-import type { NdjsonConnection } from "./ndjson-transport.ts";
+import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
 import { registerGuestRpcHandlers } from "./sandbox-guest-rpc.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
 export type SandboxHandle = {
-  conn: NdjsonConnection;
+  conn: GuestConnection;
   shutdown(): Promise<void>;
 };
 
@@ -40,7 +40,7 @@ export type SandboxHandle = {
  * call it after handlers are registered.
  */
 export type WarmHarness = {
-  conn: NdjsonConnection;
+  conn: GuestConnection;
   cleanup: () => Promise<void>;
   /** True while the underlying guest process is alive. */
   alive: () => boolean;
@@ -151,9 +151,6 @@ export async function spawnWarmHarness(opts: {
 
 // ── Bundle inspection ────────────────────────────────────────────────────────
 
-/** Response shape of `bundle/load` when the bundle self-describes its config. */
-type BundleLoadResult = { ok: boolean; config?: unknown };
-
 /**
  * Load a worker bundle in a throwaway sandbox and return the agent config the
  * bundle extracted about itself (its `__aaiConfig` export — see the guest
@@ -180,13 +177,15 @@ export async function describeBundle(
     // instead of wedging the load until the RPC timeout.
     registerGuestRpcHandlers(warm.conn, {});
     warm.conn.listen();
-    const result = await warm.conn.sendRequest<BundleLoadResult>("bundle/load", {
+    // The reply is guest-asserted wire data (see BundleLoadResult); the
+    // caller validates `config` with IsolateConfigSchema.
+    const result = (await warm.conn.sendRequest("bundle/load", {
       code: opts.workerCode,
       env: {},
       // Explicit even though the guest schema defaults it: every in-repo
       // sender states its storage intent.
       storageEnabled: false,
-    });
+    })) as BundleLoadResult | undefined;
     return result?.config;
   } finally {
     void warm.conn.sendNotification("shutdown");

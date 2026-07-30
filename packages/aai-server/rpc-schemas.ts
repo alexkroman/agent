@@ -7,6 +7,7 @@
  * evolve independently.
  */
 
+import type { Message } from "@alexkroman1/aai";
 import { AllowedHostsSchema, DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
 import {
   AgentConfigSchema,
@@ -16,6 +17,14 @@ import {
   ToolSchemaSchema,
 } from "@alexkroman1/aai/manifest";
 import { z } from "zod";
+import type { MessagesMode } from "./guest/harness-messages.ts";
+import type { NdjsonConnection } from "./ndjson-transport.ts";
+import type {
+  FetchResponseChunk,
+  FetchResponseEnd,
+  FetchResponseError,
+  FetchResponseStart,
+} from "./sandbox-fetch.ts";
 
 export { ToolSchemaSchema } from "@alexkroman1/aai/manifest";
 
@@ -89,3 +98,77 @@ export const ToolCallResponseSchema = z.object({
   // optional so old and new sides interoperate.
   state: z.record(z.string(), z.unknown()).optional(),
 });
+
+// ── Typed method map for the host↔guest NDJSON link ─────────────────────────
+
+/** Params of the host→guest `bundle/load` request. */
+export type BundleLoadParams = {
+  code: string;
+  env: Record<string, string>;
+  /**
+   * Whether ctx.db is live (proxied over db/query) or should throw the
+   * storage-not-enabled guidance. The guest schema defaults it to false;
+   * senders that know their intent state it explicitly.
+   */
+  storageEnabled?: boolean;
+};
+
+/** Params of the host→guest `tool/execute` request. */
+export type ToolExecuteParams = {
+  name: string;
+  args: Readonly<Record<string, unknown>>;
+  sessionId: string;
+  /** Conversation history — full or a delta, per `messagesMode`. */
+  messages: readonly Message[];
+  messagesMode?: MessagesMode;
+  messagesBase?: number;
+};
+
+/**
+ * The host's view of the sandbox NDJSON link (see `RpcSchema` in
+ * ndjson-transport.ts for why method names and outgoing params are typed
+ * while results and incoming params stay `unknown`: the guest is untrusted,
+ * so everything it sends is validated with Zod at the receiving site —
+ * `ToolCallResponseSchema`, `DbQueryParamsSchema`, and the schemas in
+ * sandbox-guest-rpc.ts).
+ *
+ * This map and the guest harness must agree; the harness is deliberately
+ * self-contained (inline types, no imports from here), so the wire contract
+ * is pinned by `sandbox-compat.test.ts` fixtures rather than shared types.
+ */
+export type GuestRpcSchema = {
+  requestsOut: {
+    "bundle/load": { params: BundleLoadParams; result: unknown };
+    "tool/execute": { params: ToolExecuteParams; result: unknown };
+  };
+  requestsIn: {
+    "db/query": { params: unknown; result: unknown };
+    "vector/upsert": { params: unknown; result: unknown };
+    "vector/query": { params: unknown; result: unknown };
+    "vector/delete": { params: unknown; result: unknown };
+    "llm/generate": { params: unknown; result: unknown };
+    "fetch/request": { params: unknown; result: { id: string } };
+  };
+  notificationsOut: {
+    "session/end": { sessionId: string };
+    shutdown: undefined;
+    "fetch/response-start": FetchResponseStart;
+    "fetch/response-chunk": FetchResponseChunk;
+    "fetch/response-end": FetchResponseEnd;
+    "fetch/response-error": FetchResponseError;
+  };
+  notificationsIn: {
+    "client/send": unknown;
+  };
+};
+
+/** An NDJSON connection to a guest sandbox, typed with the guest method map. */
+export type GuestConnection = NdjsonConnection<GuestRpcSchema>;
+
+/**
+ * Response shape of `bundle/load` when the bundle self-describes its config
+ * (its `__aaiConfig` export — see the guest harness). Guest-asserted wire
+ * data: callers reading `config` must treat it as unknown and validate
+ * (`IsolateConfigSchema`).
+ */
+export type BundleLoadResult = { ok: boolean; config?: unknown };
