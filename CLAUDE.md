@@ -259,6 +259,15 @@ restrictions apply there.
   (`putAgent`) replaces the bundle objects but **preserves** the agent's
   platform-default KV data under `agentKvPrefix`; only `deleteAgent`
   (the delete route) wipes KV.
+- `kv-storage.ts` — backing store for the platform-default KV. Upstash
+  Redis (`UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`, via
+  unstorage's upstash driver) when configured, else the main storage —
+  the KV data class is hot, tiny, TTL'd, and on the speech path, which
+  is why it gets Redis while bundles/workspaces stay on S3. The
+  `kvStorage` binding is threaded separately from `storage` (KV routes,
+  sandbox, sync turns); KV consumers must never read `c.env.storage`.
+  `wipeAgentKv` runs on agent delete (the bucket prefix sweep cannot
+  reach Redis-held keys); redeploys never call it.
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
 - `kv-handler.ts` — KV store HTTP API
@@ -822,8 +831,9 @@ voices on AssemblyAI's S2S API:
 
 Each session resolves its `Kv` and `Vector` instances at start. If `agent.ts`
 declares `kv:` / `vector:`, the descriptor resolves with the agent's env (BYO
-Redis, BYO Pinecone, etc.). If omitted, the platform default is used: Tigris S3
-for KV, Pinecone (or in-memory) for Vector.
+Redis, BYO Pinecone, etc.). If omitted, the platform default is used: Upstash
+Redis when configured, falling back to Tigris S3, for KV (see
+`aai-server/kv-storage.ts`); Pinecone (or in-memory) for Vector.
 
 Both are available to tool `execute` functions via `ctx.kv` and `ctx.vector`
 (see `ToolContext` in `packages/aai/sdk/types.ts`).

@@ -15,6 +15,7 @@ import { waitForIdle } from "./_drain.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
 import { isGvisorAvailable, prepareRootfs } from "./gvisor.ts";
+import { createUpstashKvStorage } from "./kv-storage.ts";
 import { initHostCapacityGauges, metrics } from "./metrics.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { createS3Storage } from "./s3-storage.ts";
@@ -59,6 +60,27 @@ function buildStorage(env: NodeJS.ProcessEnv): {
   return { storage, secret: required.KV_SCOPE_SECRET };
 }
 
+/**
+ * Backing store for the platform-default KV: Upstash Redis when configured,
+ * else the main storage (S3 in production, memory in local dev). One log
+ * line at boot so "which backend is the default KV on" is answerable from
+ * the logs, not inferred from op latency.
+ */
+function buildKvStorage(
+  env: NodeJS.ProcessEnv,
+  fallback: ReturnType<typeof createStorage>,
+): ReturnType<typeof createStorage> {
+  const upstash = createUpstashKvStorage(env);
+  if (upstash) {
+    console.info("Platform-default KV: Upstash Redis");
+    return upstash;
+  }
+  console.info(
+    "Platform-default KV: main storage (set UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN to use Upstash Redis)",
+  );
+  return fallback;
+}
+
 function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
   if (isLocalDev(env) || !env.PINECONE_API_KEY || !env.PINECONE_INDEX) {
     return (slug) => createMemoryVector({ namespace: slug });
@@ -78,6 +100,7 @@ async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
     slots,
     store: createBundleStore(storage, { masterKey }),
     storage,
+    kvStorage: buildKvStorage(env, storage),
     defaultVector: buildDefaultVector(env),
     ...(pool && { pool }),
   };

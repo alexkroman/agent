@@ -84,7 +84,7 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
   return {
     workerCode: 'export default { name: "test" };',
     env: { AAI_ENV_TEST: "1" },
-    storage: createTestStorage(),
+    kvStorage: createTestStorage(),
     slug: "test-agent",
     agentConfig: TEST_AGENT_CONFIG,
     ...overrides,
@@ -608,7 +608,7 @@ describe("createSandbox", () => {
         credential_hashes: ["hash"],
         agentConfig: TEST_AGENT_CONFIG,
       });
-      return { slots: createSlotCache(), store, storage: createTestStorage() };
+      return { slots: createSlotCache(), store, kvStorage: createTestStorage() };
     }
 
     it("detaches the resident sandbox when its VM fails to start", async () => {

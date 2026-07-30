@@ -65,7 +65,8 @@ export type { AgentMetadata } from "./schemas.ts";
 export type SandboxOptions = {
   workerCode: string;
   env: Record<string, string>;
-  storage: Storage;
+  /** Backing store for the platform-default KV (see kv-storage.ts). */
+  kvStorage: Storage;
   slug: string;
   /** Pre-extracted agent config from CLI build. */
   agentConfig: IsolateConfig;
@@ -135,14 +136,14 @@ export function createClientSendHandler(sessionSinks: Map<string, ClientSink>) {
  * owner HTTP KV routes.
  */
 export function resolveAgentKv(
-  storage: Storage,
+  kvStorage: Storage,
   slug: string,
   config: Pick<IsolateConfig, "kv"> | null,
   env: Record<string, string>,
 ): Kv {
   return config?.kv
     ? resolveKv(config.kv, env, agentKvPrefix(slug))
-    : createUnstorageKv({ storage, prefix: agentKvPrefix(slug) });
+    : createUnstorageKv({ storage: kvStorage, prefix: agentKvPrefix(slug) });
 }
 
 /**
@@ -175,13 +176,13 @@ function resolveAgentAllowedHosts(config: Pick<IsolateConfig, "allowedHosts" | "
 }
 
 export function createSandbox(opts: SandboxOptions): Sandbox {
-  const { workerCode, env, storage, slug } = opts;
+  const { workerCode, env, kvStorage, slug } = opts;
 
   const config = opts.agentConfig;
 
   const harnessPath = resolveHarnessPath();
 
-  const kv: Kv = resolveAgentKv(storage, slug, config, env);
+  const kv: Kv = resolveAgentKv(kvStorage, slug, config, env);
   const vector: Vector = resolveAgentVector(slug, config, env, opts.defaultVector);
 
   const vmReady = createSandboxVm(
@@ -353,12 +354,13 @@ export async function resolveSandbox(
   opts: {
     slots: import("./sandbox-slots.ts").SlotCache;
     store: BundleStore;
-    storage: Storage;
+    /** Backing store for the platform-default KV (see kv-storage.ts). */
+    kvStorage: Storage;
     pool?: SandboxPool;
     defaultVector?: (slug: string) => Vector;
   },
 ): Promise<Sandbox | null> {
-  const { slots, store, storage, pool } = opts;
+  const { slots, store, kvStorage, pool } = opts;
 
   // Fast path: a resident sandbox needs no locking.
   const resident = slots.get(slug);
@@ -403,7 +405,7 @@ export async function resolveSandbox(
     const sandbox = createSandbox({
       workerCode,
       env,
-      storage,
+      kvStorage,
       slug,
       agentConfig,
       ...(pool && { pool }),

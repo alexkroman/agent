@@ -67,6 +67,11 @@ export type OrchestratorOpts = {
   slots: SlotCache;
   store: BundleStore;
   storage: Storage;
+  /**
+   * Backing store for the platform-default KV (Upstash Redis when
+   * configured). Defaults to `storage`.
+   */
+  kvStorage?: Storage;
   /** Factory that creates the server-default Vector for a given slug. */
   defaultVector: (slug: string) => Vector;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
@@ -229,7 +234,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // Missing config → 404, consistent with GET. Falling back to the
     // platform-default backend here would silently ignore a declared `kv:`.
     if (!agentConfig) return c.json({ error: "agent not configured" }, 404);
-    return handleKv(c, resolveAgentKv(c.env.storage, c.var.slug, agentConfig, env));
+    return handleKv(c, resolveAgentKv(c.env.kvStorage, c.var.slug, agentConfig, env));
   });
   agents.get("/kv", existingOwnerMw, async (c) => {
     const key = c.req.query("key");
@@ -237,7 +242,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     if (!SafeKvKeySchema.safeParse(key).success) return c.json({ error: "Invalid KV key" }, 400);
     const { agentConfig, env } = await loadAgentConfig(c, c.var.slug);
     if (!agentConfig) return c.json({ error: "agent not configured" }, 404);
-    const value = await resolveAgentKv(c.env.storage, c.var.slug, agentConfig, env).get(key);
+    const value = await resolveAgentKv(c.env.kvStorage, c.var.slug, agentConfig, env).get(key);
     if (value === null) return c.json({ error: "key not found" }, 404);
     return c.json(value);
   });
@@ -270,6 +275,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     slots: opts.slots,
     store: opts.store,
     storage: opts.storage,
+    kvStorage: opts.kvStorage ?? opts.storage,
     defaultVector: opts.defaultVector,
   };
   const sandboxOpts = { ...bindings, ...(opts.pool && { pool: opts.pool }) };

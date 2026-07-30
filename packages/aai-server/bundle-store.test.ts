@@ -2,7 +2,7 @@
 import { createStorage } from "unstorage";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ByteBudgetTtlCache, createBundleStore } from "./bundle-store.ts";
-import { agentObjectKey } from "./constants.ts";
+import { agentKvPrefix, agentObjectKey } from "./constants.ts";
 import { importMasterKey } from "./secrets.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
@@ -47,6 +47,34 @@ describe("bundle store (unstorage)", () => {
     const second = await store.getManifest("test-agent");
     expect(second).not.toBeNull();
     expect(second?.slug).toBe("test-agent");
+  });
+
+  test("putAgent preserves platform-default KV data; deleteAgent wipes it", async () => {
+    const storage = createStorage();
+    const masterKey = await importMasterKey("test-secret");
+    const store = createBundleStore(storage, { masterKey });
+
+    const bundle = {
+      slug: "test-agent",
+      env: {},
+      worker: "console.log('v1');",
+      clientFiles: { "stale.js": "old" },
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    };
+    await store.putAgent(bundle);
+    await storage.setItem(`${agentKvPrefix("test-agent")}/notes`, JSON.stringify({ a: 1 }));
+
+    // Redeploy: bundle objects are swept and replaced, KV survives.
+    await store.putAgent({ ...bundle, worker: "console.log('v2');", clientFiles: {} });
+    expect(await storage.getItem(`${agentKvPrefix("test-agent")}/notes`)).not.toBeNull();
+    expect(await storage.getItem(agentObjectKey("test-agent", "client/stale.js"))).toBeNull();
+    expect(await store.getWorkerCode("test-agent")).toBe("console.log('v2');");
+
+    // Delete: everything goes, KV included.
+    await store.deleteAgent("test-agent");
+    expect(await storage.getItem(`${agentKvPrefix("test-agent")}/notes`)).toBeNull();
+    expect(await store.getWorkerCode("test-agent")).toBeNull();
   });
 
   test("getManifest returns null for non-existent agent", async () => {

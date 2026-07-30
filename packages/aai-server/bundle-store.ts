@@ -7,7 +7,7 @@ import { z } from "zod";
 import { createKeyedLock } from "./_keyed-lock.ts";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
-import { agentObjectKey, agentPrefix } from "./constants.ts";
+import { agentKvPrefix, agentObjectKey, agentPrefix } from "./constants.ts";
 import { metrics, observeDurationWithStatus } from "./metrics.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { withLock } from "./sandbox-slots.ts";
@@ -145,9 +145,17 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     clientFileCache.deletePrefix(`${agentPrefix(slug)}/`);
   }
 
-  async function deleteByPrefix(prefix: string): Promise<void> {
+  async function deleteByPrefix(prefix: string, keep?: (key: string) => boolean): Promise<void> {
     const keys = await storage.getKeys(prefix);
-    await Promise.all(keys.map((k) => storage.removeItem(k)));
+    await Promise.all(keys.filter((k) => !keep?.(k)).map((k) => storage.removeItem(k)));
+  }
+
+  // unstorage returns keys in normalized `:`-separated form, so the KV
+  // prefix must be compared in the same form. The trailing separator keeps
+  // `agents:x:kv:…` from matching a hypothetical `agents:x:kvish` file.
+  function isAgentKvKey(slug: string): (key: string) => boolean {
+    const kvPrefix = `${agentKvPrefix(slug).replaceAll("/", ":")}:`;
+    return (key) => key.startsWith(kvPrefix);
   }
 
   function readItem(key: string): Promise<string | null> {
@@ -209,9 +217,10 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
       return instrumentTigris("putAgent", async () => {
         invalidate(bundle.slug);
         try {
-          // Note: this sweep covers the whole agent prefix, including the
-          // agent's platform-default KV data (see constants.ts).
-          await deleteByPrefix(agentPrefix(bundle.slug));
+          // Clear stale bundle objects (old client assets, etc.) but KEEP
+          // the agent's platform-default KV data — a redeploy must not wipe
+          // remembered state. Only deleteAgent sweeps the KV prefix.
+          await deleteByPrefix(agentPrefix(bundle.slug), isAgentKvKey(bundle.slug));
         } catch (err) {
           console.warn(
             `Failed to delete old agent files for ${bundle.slug}, proceeding with overwrite: ${errorMessage(err)}`,

@@ -20,6 +20,13 @@ export type HonoEnv = {
     slots: SlotCache;
     store: BundleStore;
     storage: Storage;
+    /**
+     * Backing store for the platform-default KV. Upstash Redis when
+     * configured, else the same instance as `storage` (see kv-storage.ts).
+     * KV consumers must use this, never `storage` — the two differ in
+     * production.
+     */
+    kvStorage: Storage;
     defaultVector: (slug: string) => Vector;
   };
   Variables: {

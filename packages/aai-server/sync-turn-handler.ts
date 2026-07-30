@@ -44,7 +44,7 @@ export async function handleSyncTurn(
   const sandbox = await resolve(slug, {
     slots: c.env.slots,
     store: c.env.store,
-    storage: c.env.storage,
+    kvStorage: c.env.kvStorage,
     defaultVector: c.env.defaultVector,
     ...(pool && { pool }),
   });

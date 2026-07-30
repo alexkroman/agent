@@ -31,6 +31,7 @@
     "@node-rs/argon2": "^2.0.2",
     "@sindresorhus/slugify": "^3.0.0",
     "@tailwindcss/vite": "^4.3.3",
+    "@upstash/redis": "^1.37.0",
     "@vitejs/plugin-react": "^6.0.4",
     "aai-studio-client": "workspace:*",
     "ai": "^7.0.41",

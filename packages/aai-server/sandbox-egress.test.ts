@@ -101,7 +101,7 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
   return {
     workerCode: 'export default { name: "test" };',
     env: { AAI_ENV_TEST: "1" },
-    storage: createTestStorage(),
+    kvStorage: createTestStorage(),
     slug: "test-agent",
     agentConfig: BASE_CONFIG,
     ...overrides,
