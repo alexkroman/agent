@@ -276,6 +276,11 @@ const myTool = tool({
 });
 ```
 
+**If `execute` calls `fetch`, declare the hostname in the agent's
+`allowedHosts` in the same change** — an undeclared host is rejected at
+runtime (a blocked request, not a build error), in `aai dev` and deployed
+alike. See "Calling an external API from your own tool code" below.
+
 ### `ctx` (ToolContext)
 
 ```ts
