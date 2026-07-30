@@ -11,7 +11,8 @@
 //
 // It also probes once for a dead microphone (see MIC_SILENCE_PROBE_MS).
 
-import { MIC_SILENCE_PROBE_MS } from "../types.ts";
+import { MIC_BUFFER_SECONDS, MIC_SILENCE_PROBE_MS } from "../types.ts";
+import { workletModuleUrl } from "./_module-url.ts";
 
 const CaptureProcessorWorklet = `
 class CaptureProcessor extends AudioWorkletProcessor {
@@ -25,7 +26,7 @@ class CaptureProcessor extends AudioWorkletProcessor {
     // Int16 accumulation buffer: flushed to the main thread as one transferred
     // ArrayBuffer once ~bufferSeconds of samples are batched. Sized 2x the
     // flush target so a whole render quantum always fits before flushing.
-    this.targetSamples = Math.max(1, Math.round(this.rate * (opts.bufferSeconds || 0.1)));
+    this.targetSamples = Math.max(1, Math.round(this.rate * (opts.bufferSeconds || ${MIC_BUFFER_SECONDS})));
     this.pending = new Int16Array(this.targetSamples * 2);
     this.pendingLen = 0;
     // Dead-mic probe: samples left to inspect before concluding the device
@@ -107,8 +108,4 @@ registerProcessor('capture-processor', CaptureProcessor);
 /** Raw worklet source — exported so tests can evaluate the processor directly. */
 export const captureProcessorSource = CaptureProcessorWorklet;
 
-const script = new Blob([CaptureProcessorWorklet], {
-  type: "application/javascript",
-});
-const src = URL.createObjectURL(script);
-export default src;
+export default workletModuleUrl(CaptureProcessorWorklet);

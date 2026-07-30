@@ -177,6 +177,12 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       // capture worklet keeps streaming into a socket the server may hold
       // open, with the mic indicator lit on a dead session.
       cleanupAudio();
+      // Invalidate any audio init still awaiting getUserMedia (same reason
+      // the reconnect close-handler bumps the generation): the server may
+      // hold the socket open briefly after a fatal frame, and a late mic
+      // grant would otherwise pass the same-generation guard, assign a live
+      // VoiceIO, and flip the state back to "listening" over this error.
+      conn.generation++;
       updateState({
         state: "error",
         error: { code: e.code, message: e.message },

@@ -133,12 +133,9 @@ describe("createVoiceIO", () => {
     const playNodeCtxRates = audio.contexts().map((c) => c.sampleRate);
     expect(playNodeCtxRates).toContain(16_000);
     expect(playNodeCtxRates).toContain(24_000);
+    // The worklet gets no rate option: the context it runs on is already at
+    // the STT rate (asserted), and it reads its global sampleRate.
     expect(capNode.ctx.sampleRate).toBe(16_000);
-
-    // The worklet is told one rate because it converts nothing: the context
-    // it runs on is already at the STT rate.
-    const opts = capNode.options as { processorOptions?: Record<string, unknown> };
-    expect(opts.processorOptions?.sampleRate).toBe(16_000);
     await io.close();
   });
 
@@ -225,14 +222,6 @@ describe("createVoiceIO", () => {
     const firstCall = onMicData.mock.calls[0] as [ArrayBuffer];
     expect(firstCall[0].byteLength).toBe(3200);
     expect(new Int16Array(firstCall[0])[0]).toBe(16_384);
-    await io.close();
-  });
-
-  test("capture worklet receives bufferSeconds in processorOptions", async () => {
-    const io = await createVoiceIO(voiceOpts());
-    const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");
-    const opts = capNode.options as { processorOptions?: Record<string, unknown> };
-    expect(opts.processorOptions?.bufferSeconds).toBe(0.1);
     await io.close();
   });
 

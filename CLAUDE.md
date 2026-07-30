@@ -613,27 +613,27 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   `DEFAULT_MAX_HISTORY` — the server trims to the same window, and past
   `MAX_SYNC_HISTORY_MESSAGES` it rejects the request outright, so an
   unbounded client eventually broke every later turn; plus a turn queue)
-  and `createPttRecorder` (`sync-mic.ts`, WebRTC push-to-talk capture
-  through an inline blob-URL AudioWorklet — the button is the endpointing).
+  and `createPttRecorder` (`sync-mic.ts`, WebRTC push-to-talk capture —
+  the button is the endpointing).
 
-  **A capture worklet must never re-read a view it just transferred.**
-  `postMessage(msg, [buf])` detaches `buf`, so every view onto it becomes
-  zero-length *immediately*. `sync-mic.ts`'s processor sized its next batch
-  as `new Float32Array(out.length)` after transferring `out.buffer` — that
-  is `0`, which made `n = Math.min(ch.length - read, 0)` zero, so `read`
-  stopped advancing and `process()` spun forever posting empty chunks —
-  the mic went permanently deaf on its
-  first flush (measured: 1.88M messages
-  in 6s at 100% on the render thread, zero `POST /sync`). The batch size is
-  now a processor field. The WebSocket worklet
-  (`worklets/capture-processor.ts`) transfers a `slice()` copy and keeps its
-  own buffer, which is why it was never affected. Two guards hold this:
-  `instantiateWorklet`'s harness now honors the transfer list
-  (`structuredClone` with `transfer`, which really detaches) and caps posted
-  messages so a runaway loop is a named failure rather than a hang — the
-  harness ignoring `transfer` is precisely what let this ship — and
-  `sync-mic-worklet.test.ts` exercises the processor source, which the mock
-  node in `sync-mic.test.ts` never does.
+  **There is exactly one capture worklet** (`worklets/capture-processor.ts`),
+  shared by the WebSocket mic and the push-to-talk recorder. `sync-mic.ts`
+  used to inline a second Float32-batching processor, which re-read a view it
+  had just transferred: `postMessage(msg, [buf])` detaches `buf`, so sizing
+  the next batch as `new Float32Array(out.length)` after transferring
+  `out.buffer` yields `0`, `read` stopped advancing, and `process()` spun
+  forever posting empty chunks — the mic went permanently deaf on its first
+  flush (measured: 1.88M messages in 6s at 100% on the render thread, zero
+  `POST /sync`). The shared processor flushes a `slice()` copy and keeps its
+  own buffer, so the hazard is structurally gone; the PTT path also gets the
+  processor's start/stop gating (no pre-press audio in a clip), its
+  stop → flush → `stopped`-ack protocol (no fixed sleep, no dropped tail),
+  and the dead-mic probe for free. Two guards remain load-bearing:
+  `instantiateWorklet`'s harness honors the transfer list (`structuredClone`
+  with `transfer`, which really detaches) and caps posted messages so a
+  runaway loop is a named failure rather than a hang, and
+  `worklets/capture-processor.test.ts` exercises the processor source, which
+  the mock node in `sync-mic.test.ts` never does.
 
   On the platform, `POST /:slug/sync`
   (unauthenticated, parity with the agent WebSocket) runs the turn through
@@ -1179,7 +1179,9 @@ of subpath exports in `aai/package.json`:
 
 ### Default values and magic numbers
 
-All numeric constants live in `packages/aai/sdk/constants.ts`. Key
+All numeric constants live in `packages/aai/sdk/constants.ts` (client-audio
+budgets are split into `sdk/client-audio-constants.ts` for file-length reasons
+and re-exported from `constants.ts`, so the import path is unchanged). Key
 defaults that affect agent behavior:
 
 | Default | Value | Where applied | Notes |
