@@ -9,6 +9,7 @@ import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
+import { createMemoryChatStore } from "./studio/chat-store.ts";
 import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
 import { createTestOrchestrator, createTestStore, deployAgent } from "./test-utils.ts";
 
@@ -84,6 +85,7 @@ describe("security headers on all response types", () => {
       slots: createSlotCache(),
       store,
       workspaces: createMemoryWorkspaceStore(),
+      chats: createMemoryChatStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
     const res = await app.fetch(new Request("http://localhost/health"));
@@ -101,6 +103,7 @@ describe("security headers on all response types", () => {
       slots: createSlotCache(),
       store,
       workspaces: createMemoryWorkspaceStore(),
+      chats: createMemoryChatStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
     const res = await app.fetch(new Request("http://localhost/nonexistent"));
@@ -135,6 +138,7 @@ describe("security headers on all response types", () => {
       slots: createSlotCache(),
       store,
       workspaces: createMemoryWorkspaceStore(),
+      chats: createMemoryChatStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
       allowedOrigins: ["https://trusted.example.com"],
     });
@@ -164,6 +168,7 @@ describe("security headers on all response types", () => {
       slots: createSlotCache(),
       store,
       workspaces: createMemoryWorkspaceStore(),
+      chats: createMemoryChatStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
 

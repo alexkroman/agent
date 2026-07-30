@@ -4,6 +4,7 @@
 // owns all server state, invalidated after agent turns / publishes.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { UIMessage } from "ai";
 import clsx from "clsx";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ApiError, api, type ProjectData, parseSecrets, type StudioStatus } from "./api.ts";
@@ -224,6 +225,21 @@ export function App({ apiKey, onSignOut }: AppProps) {
     if (workspace.error instanceof ApiError && workspace.error.status === 401) onSignOut();
   }, [workspace.error, onSignOut]);
 
+  // Persisted chat history, restored once per project open. `useChat` owns
+  // the live conversation after hydration (the server rewrites the row when
+  // each turn settles), so the fetched snapshot never goes stale in a way a
+  // refetch could fix — hence staleTime: Infinity and no invalidation.
+  const chat = useQuery<UIMessage[]>({
+    queryKey: ["chat", project],
+    queryFn: () => api.getChat(apiKey, project as string),
+    enabled: project != null,
+    staleTime: Number.POSITIVE_INFINITY,
+  });
+
+  useEffect(() => {
+    if (chat.error instanceof ApiError && chat.error.status === 401) onSignOut();
+  }, [chat.error, onSignOut]);
+
   // Default to the first project once the list arrives.
   useEffect(() => {
     if (!project && projects.data?.[0]) setProject(projects.data[0]);
@@ -353,6 +369,10 @@ export function App({ apiKey, onSignOut }: AppProps) {
           key={project ?? "no-project"}
           apiKey={apiKey}
           project={project}
+          // undefined = still loading (the panel must not flash "new chat");
+          // a failed fetch degrades to an empty history rather than wedging
+          // the panel in its loading state.
+          chatHistory={chat.data ?? (chat.isError ? [] : undefined)}
           llmStatus={status.data}
           creating={createProject.isPending}
           initialPrompt={pendingPrompt}

@@ -9,6 +9,7 @@ import { createOrchestrator } from "./orchestrator.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey } from "./secrets.ts";
+import { createMemoryChatStore } from "./studio/chat-store.ts";
 import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
 import {
   authHeaders,
@@ -207,6 +208,7 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
     slots,
     store,
     workspaces: createMemoryWorkspaceStore(),
+    chats: createMemoryChatStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),
   });

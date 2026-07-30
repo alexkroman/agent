@@ -15,6 +15,7 @@ import type { AppDatabases } from "./app-database.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
+import type { ChatStore } from "./studio/chat-store.ts";
 import type { WorkspaceStore } from "./studio/workspace-store.ts";
 
 export type HonoEnv = {
@@ -23,6 +24,8 @@ export type HonoEnv = {
     store: BundleStore;
     /** Studio project workspaces (Postgres in production, memory in dev/tests). */
     workspaces: WorkspaceStore;
+    /** Studio project chat histories (Postgres in production, memory in dev/tests). */
+    chats: ChatStore;
     /** Named secret storage (Supabase Vault in production). */
     secrets: SecretStore;
     /** Per-app database provisioning. Absent when SUPABASE_DB_URL is unset. */

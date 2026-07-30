@@ -34,6 +34,7 @@ import {
   type SecretStore,
   type SqlExec,
 } from "./secret-store.ts";
+import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./studio/chat-store.ts";
 import {
   createMemoryWorkspaceStore,
   createPgWorkspaceStore,
@@ -83,6 +84,7 @@ function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createStorage> 
 function buildPlatformDb(env: NodeJS.ProcessEnv): {
   secrets: SecretStore;
   workspaces: WorkspaceStore;
+  chats: ChatStore;
   appDb?: AppDatabases;
 } {
   const url = env.SUPABASE_DB_URL;
@@ -91,9 +93,13 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
       requireEnv(env, ["SUPABASE_DB_URL"]); // throws with the standard message
     }
     console.info(
-      "Local dev mode: in-memory secret + studio workspace stores; per-app databases disabled",
+      "Local dev mode: in-memory secret + studio workspace/chat stores; per-app databases disabled",
     );
-    return { secrets: createMemorySecretStore(), workspaces: createMemoryWorkspaceStore() };
+    return {
+      secrets: createMemorySecretStore(),
+      workspaces: createMemoryWorkspaceStore(),
+      chats: createMemoryChatStore(),
+    };
   }
   // The pool lives for the process; connections drain when the process exits
   // (no explicit close() hook on the shutdown path today).
@@ -103,6 +109,7 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
   return {
     secrets: localDev ? createMemorySecretStore() : createVaultSecretStore(exec),
     workspaces: localDev ? createMemoryWorkspaceStore() : createPgWorkspaceStore(exec),
+    chats: localDev ? createMemoryChatStore() : createPgChatStore(exec),
     appDb: createAppDatabases({ url, sql: exec }),
   };
 }
@@ -118,16 +125,17 @@ function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
 
 function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
   const storage = buildStorage(env);
-  const { secrets, workspaces, appDb } = buildPlatformDb(env);
+  const { secrets, workspaces, chats, appDb } = buildPlatformDb(env);
   const slots = createSlotCache();
   registerSlotsForGauges(slots);
   const pool = buildPool(env);
   return {
     slots,
     // Blob storage serves deploy artifacts only (bundles/client files);
-    // studio workspaces live in Postgres via `workspaces`.
+    // studio workspaces and chats live in Postgres via `workspaces`/`chats`.
     store: createBundleStore(storage, { secrets }),
     workspaces,
+    chats,
     secrets,
     defaultVector: buildDefaultVector(env),
     ...(appDb && { appDb }),

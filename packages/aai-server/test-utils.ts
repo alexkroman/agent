@@ -8,6 +8,7 @@ import { createSlotCache } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
+import { type ChatStore, createMemoryChatStore } from "./studio/chat-store.ts";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "./studio/workspace-store.ts";
 
 // ── Metric-reading helpers (canonical versions for tests) ───────────────
@@ -204,18 +205,21 @@ export async function createTestOrchestrator(
   fetch: TestFetch;
   store: BundleStore;
   workspaces: WorkspaceStore;
+  chats: ChatStore;
 }> {
   const store = createTestStore(overrides.secrets);
   const workspaces = createMemoryWorkspaceStore();
+  const chats = createMemoryChatStore();
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
     workspaces,
+    chats,
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     ...overrides,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
-  return { fetch, store, workspaces };
+  return { fetch, store, workspaces, chats };
 }
 
 /** Standard auth + JSON headers for test requests. */

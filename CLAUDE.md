@@ -321,7 +321,14 @@ voice agents without the CLI:
   message stream** (SSE) that the client's `useChat` consumes directly.
   The system prompt embeds the same `aai-templates/scaffold/CLAUDE.md` the
   CLI ships to user projects (`studio-prompt.ts`) plus studio-specific
-  overrides.
+  overrides. Conversations persist per project in
+  `aai_platform.studio_chats` (`studio/chat-store.ts` — plain upsert, no
+  version column: one writer surface, always the full snapshot), written
+  server-side when the turn's UI stream settles (finish *and* client abort;
+  `originalMessages`/`onFinish` in `runStudioChat`) and restored on project
+  open via `GET /studio/projects/:project/chat`. Rows are capped at
+  `MAX_STUDIO_CHAT_STORE_BYTES` (512 KB) by trimming whole messages from
+  the front; project delete removes the chat row.
 - **Docs MCP** (`studio-mcp.ts`). The system prompt embeds a *snapshot* of
   the scaffold guide, so anything outside it — a voice, a newly added
   gateway model, a provider option — was previously a guess. The agent now

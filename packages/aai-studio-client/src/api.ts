@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 // REST helpers for the studio's project/file/deploy endpoints.
 
+import type { UIMessage } from "ai";
 import { parse } from "dotenv";
 
 export type ProjectData = {
@@ -92,6 +93,11 @@ export const api = {
       key,
       `/projects/${encodeURIComponent(project)}/file?path=${encodeURIComponent(path)}`,
       { method: "DELETE" },
+    ),
+
+  getChat: (key: string, project: string) =>
+    request<{ messages: UIMessage[] }>(key, `/projects/${encodeURIComponent(project)}/chat`).then(
+      (r) => r.messages,
     ),
 
   getStorage: (key: string, project: string) =>

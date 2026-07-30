@@ -6,7 +6,8 @@
  * - `GET  /studio/projects`                   — list the caller's projects
  * - `POST /studio/projects`                   — create a project (starter files)
  * - `GET  /studio/projects/:project`          — files + deployed slug
- * - `DELETE /studio/projects/:project`        — delete a project
+ * - `GET  /studio/projects/:project/chat`     — persisted chat history
+ * - `DELETE /studio/projects/:project`        — delete a project (and its chat)
  * - `PUT  /studio/projects/:project/file`     — write one file
  * - `DELETE /studio/projects/:project/file`   — delete one file (`?path=`)
  * - `POST /studio/projects/:project/deploy`   — build + deploy the workspace
@@ -159,12 +160,25 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     });
   });
 
+  // Persisted chat history for the project — written server-side when a chat
+  // turn's stream settles, restored by the client on project open.
+  studio.get("/projects/:project/chat", async (c) => {
+    const scope = studioScope(c.var.apiKey);
+    const project = validateProject(c.req.param("project"));
+    if (!(await getWorkspace(c.env.workspaces, scope, project))) {
+      return c.json({ error: "Project not found" }, 404);
+    }
+    const messages = await c.env.chats.getChat(scope, project);
+    return c.json({ messages: messages ?? [] });
+  });
+
   studio.delete("/projects/:project", async (c) => {
     const scope = studioScope(c.var.apiKey);
     const project = validateProject(c.req.param("project"));
     // No lock needed: a racing versioned write cannot resurrect the project —
     // `mutateWorkspace` only ever replaces an existing row.
     await deleteWorkspace(c.env.workspaces, scope, project);
+    await c.env.chats.deleteChat(scope, project);
     return c.json({ ok: true });
   });
 
@@ -355,6 +369,10 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
       await live?.dispose();
     };
 
+    // Persist the settled conversation into the project's chat row, so
+    // reopening the project restores the history. Bound here (not in
+    // runStudioChat) so the agent module never depends on the ChatStore.
+    const chats = c.env.chats;
     return runStudioChat(
       {
         workspaces: c.env.workspaces,
@@ -364,6 +382,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
         disposeSandbox,
         mcp,
         abortSignal: c.req.raw.signal,
+        persistMessages: (updated) => chats.putChat(scope, project, updated),
       },
       // Structurally validated by UiMessageSchema; part-level validation
       // happens in convertToModelMessages.

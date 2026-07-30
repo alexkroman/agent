@@ -9,6 +9,7 @@ import { describe, expect, test, vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache, type Sandbox } from "./sandbox.ts";
 import { attachSandbox, setSlot } from "./sandbox-slots.ts";
+import { createMemoryChatStore } from "./studio/chat-store.ts";
 import { createWorkspace, studioScope } from "./studio/studio-workspace.ts";
 import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
 import { authHeaders, createTestStore, type TestFetch } from "./test-utils.ts";
@@ -42,6 +43,7 @@ async function createSyncOrchestrator(sandbox?: Sandbox): Promise<{ fetch: TestF
     slots,
     store: createTestStore(),
     workspaces,
+    chats: createMemoryChatStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   return { fetch: async (input, init) => app.request(input, init) };
@@ -156,6 +158,7 @@ describe("POST /studio/projects/:project/sync", () => {
       slots: createSlotCache(),
       store: createTestStore(),
       workspaces,
+      chats: createMemoryChatStore(),
       defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
     const res = await app.request("/studio/projects/draft/sync", {

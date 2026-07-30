@@ -449,6 +449,48 @@ describe("runStudioChat", () => {
     expect(events.map((e) => e.type)).toContain("finish");
   });
 
+  test("persists the settled conversation — request messages plus the reply", async () => {
+    const persistMessages = vi.fn(async (_messages: UIMessage[]): Promise<void> => undefined);
+    const deps = await makeDeps({
+      model: fakeModel([
+        { type: "text-delta", id: "t1", delta: "Hello " },
+        { type: "text-delta", id: "t1", delta: "world" },
+      ]),
+      persistMessages,
+    });
+    await readSseEvents(await runStudioChat(deps, [userMessage("hi")]));
+    await vi.waitFor(() => {
+      expect(persistMessages).toHaveBeenCalledTimes(1);
+    });
+    const [updated] = persistMessages.mock.calls[0] as [UIMessage[]];
+    // The full conversation: the original user message followed by the
+    // assistant response the stream produced.
+    expect(updated[0]).toMatchObject({ id: "m1", role: "user" });
+    const reply = updated.at(-1);
+    expect(reply?.role).toBe("assistant");
+    const text = reply?.parts.map((part) => (part.type === "text" ? part.text : "")).join("");
+    expect(text).toBe("Hello world");
+  });
+
+  test("a failed persist is logged, never fatal to the stream", async () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    const deps = await makeDeps({
+      model: fakeModel([{ type: "text-delta", id: "t1", delta: "ok" }]),
+      persistMessages: vi.fn(async () => {
+        throw new Error("chat row unavailable");
+      }),
+    });
+    const events = await readSseEvents(await runStudioChat(deps, [userMessage("hi")]));
+    expect(events.map((e) => e.type)).toContain("finish");
+    await vi.waitFor(() => {
+      expect(warn).toHaveBeenCalledWith(
+        "Studio chat: failed to persist conversation",
+        expect.objectContaining({ error: "chat row unavailable" }),
+      );
+    });
+    warn.mockRestore();
+  });
+
   test("rejects when the model cannot be created (and disposes)", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     vi.stubEnv("ANTHROPIC_API_KEY", "");

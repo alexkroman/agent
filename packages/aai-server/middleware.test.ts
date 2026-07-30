@@ -4,6 +4,7 @@ import { describe, expect, test } from "vitest";
 import { requireOwner } from "./middleware.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
+import { createMemoryChatStore } from "./studio/chat-store.ts";
 import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
 import { createTestOrchestrator, createTestStore, deployAgent } from "./test-utils.ts";
 
@@ -13,6 +14,7 @@ test("orchestrator adds Cross-Origin-Isolation headers", async () => {
     slots: createSlotCache(),
     store,
     workspaces: createMemoryWorkspaceStore(),
+    chats: createMemoryChatStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const res = await app.fetch(new Request("http://localhost/health"));
@@ -26,6 +28,7 @@ test("orchestrator returns 401 on deploy without auth", async () => {
     slots: createSlotCache(),
     store,
     workspaces: createMemoryWorkspaceStore(),
+    chats: createMemoryChatStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const res = await app.fetch(new Request("http://localhost/my-agent/deploy", { method: "POST" }));

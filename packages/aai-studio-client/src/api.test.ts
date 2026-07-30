@@ -114,6 +114,16 @@ describe("api", () => {
     ]);
   });
 
+  test("getChat hits the chat route with the bearer key and unwraps messages", async () => {
+    const history = [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] }];
+    const fetchMock = stubFetch(() => jsonResponse({ messages: history }));
+    await expect(api.getChat("sk-123", "my project")).resolves.toEqual(history);
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/studio/projects/my%20project/chat");
+    expect(init.method ?? "GET").toBe("GET");
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer sk-123");
+  });
+
   test("storage endpoints hit their routes with the right methods", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ ok: true, enabled: true }));
     await api.getStorage("k", "p");

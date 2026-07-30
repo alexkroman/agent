@@ -7,6 +7,7 @@ import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { HonoEnv } from "../context.ts";
 import { createMemorySecretStore } from "../secret-store.ts";
 import { authFetch, authHeaders, createTestOrchestrator, type TestFetch } from "../test-utils.ts";
+import { createMemoryChatStore } from "./chat-store.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
 import { createStudioRoutes } from "./studio-routes.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
@@ -263,6 +264,70 @@ describe("project CRUD", () => {
   });
 });
 
+describe("chat history routes", () => {
+  const HISTORY = [
+    { id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] },
+    { id: "m2", role: "assistant", parts: [{ type: "text", text: "hello" }] },
+  ];
+
+  test("GET chat is bearer-auth'd and 404s for a missing project", async () => {
+    const { fetch } = await createTestOrchestrator();
+    expect((await fetch("/studio/projects/proj/chat")).status).toBe(401);
+    expect((await authFetch(fetch, "/studio/projects/ghost/chat", { method: "GET" })).status).toBe(
+      404,
+    );
+  });
+
+  test("a project with no chat yet returns an empty message list", async () => {
+    const { fetch } = await createTestOrchestrator();
+    await createProject(fetch);
+    const res = await authFetch(fetch, "/studio/projects/proj/chat", { method: "GET" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ messages: [] });
+  });
+
+  test("a persisted conversation round-trips through the route", async () => {
+    const { fetch, chats } = await createTestOrchestrator();
+    await createProject(fetch);
+    await chats.putChat(studioScope("key1"), "proj", HISTORY);
+    const res = await authFetch(fetch, "/studio/projects/proj/chat", { method: "GET" });
+    expect(await res.json()).toEqual({ messages: HISTORY });
+  });
+
+  test("chats are namespaced per key — another key's project 404s", async () => {
+    const { fetch, chats } = await createTestOrchestrator();
+    await createProject(fetch);
+    await chats.putChat(studioScope("key1"), "proj", HISTORY);
+    expect(
+      (await authFetch(fetch, "/studio/projects/proj/chat", { method: "GET", key: "key2" })).status,
+    ).toBe(404);
+  });
+
+  test("deleting the project deletes its chat row too", async () => {
+    const { fetch, chats } = await createTestOrchestrator();
+    await createProject(fetch);
+    const scope = studioScope("key1");
+    await chats.putChat(scope, "proj", HISTORY);
+    await authFetch(fetch, "/studio/projects/proj", { method: "DELETE" });
+    expect(await chats.getChat(scope, "proj")).toBeNull();
+  });
+
+  test("the chat route hands runStudioChat a persist hook writing to the chat store", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    vi.stubEnv("STUDIO_MCP_URLS", "");
+    chatMock.mockClear();
+    const { fetch, chats } = await createTestOrchestrator();
+    await createProject(fetch);
+    await authFetch(fetch, "/studio/chat", { body: chatBody() });
+    const [deps] = chatMock.mock.calls[0] as unknown[] as [
+      { persistMessages: (messages: unknown[]) => Promise<void> },
+    ];
+    expect(typeof deps.persistMessages).toBe("function");
+    await deps.persistMessages(HISTORY);
+    expect(await chats.getChat(studioScope("key1"), "proj")).toEqual(HISTORY);
+  });
+});
+
 describe("deploy + chat endpoints", () => {
   let fetch: TestFetch;
   beforeEach(async () => {
@@ -472,7 +537,10 @@ describe("chat sandbox lifecycle", () => {
       "/studio",
       createStudioRoutes({ createSandbox, llmConfigured: () => true }),
     );
-    const bindings = { workspaces } as unknown as HonoEnv["Bindings"];
+    const bindings = {
+      workspaces,
+      chats: createMemoryChatStore(),
+    } as unknown as HonoEnv["Bindings"];
     const request = () =>
       app.request(
         "/studio/chat",

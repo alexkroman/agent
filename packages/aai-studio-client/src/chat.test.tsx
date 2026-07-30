@@ -74,6 +74,7 @@ const noop = (): void => undefined;
 const panelProps = {
   apiKey: "k",
   project: null,
+  chatHistory: undefined,
   creating: false,
   initialPrompt: null,
   onInitialPromptSent: noop,

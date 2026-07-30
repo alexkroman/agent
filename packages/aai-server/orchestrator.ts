@@ -57,6 +57,7 @@ import {
   handleStorageStatus,
 } from "./storage-handler.ts";
 import type { BundleStore } from "./store-types.ts";
+import type { ChatStore } from "./studio/chat-store.ts";
 import { createStudioRoutes } from "./studio/studio-routes.ts";
 import { handleStudioClientAsset, handleStudioPage } from "./studio/studio-static.ts";
 import type { WorkspaceStore } from "./studio/workspace-store.ts";
@@ -69,6 +70,8 @@ export type OrchestratorOpts = {
   store: BundleStore;
   /** Studio project workspaces (Postgres in production, memory in dev/tests). */
   workspaces: WorkspaceStore;
+  /** Studio project chat histories (Postgres in production, memory in dev/tests). */
+  chats: ChatStore;
   /** Named secret storage (Supabase Vault in production, memory in tests). */
   secrets?: SecretStore;
   /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
@@ -261,15 +264,16 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     slots: opts.slots,
     store: opts.store,
     workspaces: opts.workspaces,
+    chats: opts.chats,
     // Tests build orchestrators without a secret store; default to memory so
     // the storage-status route (and anything else reading secrets) works.
     secrets: opts.secrets ?? createMemorySecretStore(),
     ...(opts.appDb && { appDb: opts.appDb }),
     defaultVector: opts.defaultVector,
   };
-  // resolveSandbox takes the bindings minus `workspaces` (bundle data lives
-  // in the BundleStore; `workspaces` is the studio's workspace store).
-  const { workspaces: _studioWorkspaces, ...sandboxBindings } = bindings;
+  // resolveSandbox takes the bindings minus the studio stores (bundle data
+  // lives in the BundleStore; `workspaces`/`chats` are studio-only).
+  const { workspaces: _studioWorkspaces, chats: _studioChats, ...sandboxBindings } = bindings;
   const sandboxOpts = { ...sandboxBindings, ...(opts.pool && { pool: opts.pool }) };
 
   const original = app.fetch.bind(app);
