@@ -20,6 +20,7 @@ import {
   MAX_AUDIO_SAMPLE_RATE,
   MAX_SYNC_AUDIO_BYTES,
   MAX_SYNC_HISTORY_MESSAGES,
+  MAX_TOOL_RESULT_CHARS,
   MAX_TRANSCRIPT_CHARS,
 } from "./constants.ts";
 
@@ -73,6 +74,24 @@ export const SyncTurnRequestSchema = z
 export type SyncTurnRequest = z.infer<typeof SyncTurnRequestSchema>;
 
 /**
+ * One tool invocation the turn's agentic loop made — the WebSocket
+ * protocol's `tool_call` + `tool_call_done` pair collapsed into a single
+ * completed record, since a sync turn is only reported once it has fully
+ * run. Run-style clients (the default workflow view) render the run as
+ * these records rather than as assistant prose.
+ */
+export const SyncToolCallSchema = z.object({
+  toolCallId: z.string(),
+  toolName: z.string(),
+  args: z.record(z.string(), z.unknown()),
+  /** The tool's result, capped like `tool_call_done`. Absent if it never resolved. */
+  result: z.string().max(MAX_TOOL_RESULT_CHARS).optional(),
+});
+
+/** One tool invocation carried in a sync-turn response. */
+export type SyncToolCall = z.infer<typeof SyncToolCallSchema>;
+
+/**
  * Response of `POST /sync`. `audio` (base64 mono PCM16LE at `sampleRate`)
  * is present only when the agent's TTS provider supports one-shot
  * synthesis and it succeeded; a synthesis failure surfaces in `ttsError`
@@ -89,6 +108,8 @@ export const SyncTurnResponseSchema = z.object({
   sampleRate: z.number().int().positive().optional(),
   /** Set when TTS synthesis failed; the text `reply` is still complete. */
   ttsError: z.string().optional(),
+  /** Tool invocations the turn made, in call order. Absent from older servers. */
+  toolCalls: z.array(SyncToolCallSchema).optional(),
 });
 
 /** Parsed response of `POST /sync`. */

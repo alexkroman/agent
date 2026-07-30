@@ -136,6 +136,7 @@ exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
   "ServerMessageSchema",
   "SessionErrorCodeSchema",
   "SyncHistoryMessageSchema",
+  "SyncToolCallSchema",
   "SyncTurnRequestSchema",
   "SyncTurnResponseSchema",
   "VectorDeleteSchema",

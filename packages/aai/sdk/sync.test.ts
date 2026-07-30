@@ -65,4 +65,28 @@ describe("SyncTurnResponseSchema", () => {
   test("rejects a response missing the reply", () => {
     expect(SyncTurnResponseSchema.safeParse({ transcript: "t" }).success).toBe(false);
   });
+
+  test("accepts the turn's tool calls, with and without results", () => {
+    const parsed = SyncTurnResponseSchema.parse({
+      transcript: "t",
+      reply: "r",
+      toolCalls: [
+        { toolCallId: "c1", toolName: "lookup", args: { q: "x" }, result: "42" },
+        { toolCallId: "c2", toolName: "save", args: {} },
+      ],
+    });
+    expect(parsed.toolCalls).toHaveLength(2);
+    // Optional on the wire — older servers omit it entirely.
+    expect(SyncTurnResponseSchema.parse({ transcript: "t", reply: "r" }).toolCalls).toBeUndefined();
+  });
+
+  test("rejects a malformed tool-call record", () => {
+    expect(
+      SyncTurnResponseSchema.safeParse({
+        transcript: "t",
+        reply: "r",
+        toolCalls: [{ toolName: "lookup", args: {} }],
+      }).success,
+    ).toBe(false);
+  });
 });

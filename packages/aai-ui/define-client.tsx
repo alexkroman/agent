@@ -181,13 +181,13 @@ function DefaultRoot({
 
   // The workflow app mode gets the one-shot run surface (hold-to-talk /
   // upload + Go over one history-less sync request per run) rather than a
-  // conversation shell.
+  // conversation shell. Deliberately no greeting — a workflow run surface
+  // shows only the transcript and the tool calls, never agent prose.
   if (resolved?.kind === "workflow") {
     return (
       <WorkflowView
         syncUrl={buildAgentUrl(platformUrl, "sync").href}
         title={name ?? resolved.name}
-        greeting={resolved.greeting}
       />
     );
   }
