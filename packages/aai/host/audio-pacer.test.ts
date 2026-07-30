@@ -57,15 +57,21 @@ describe("createAudioPacer", () => {
     pacer.stop();
   });
 
-  test("releases held audio as the lead drains", () => {
+  test("releases held audio in bursts as the lead drains", () => {
     const { pacer, audio } = makePacer();
     pushChunks(pacer, 15);
     expect(audio).toHaveLength(11);
 
+    // Burst release: nothing goes out until the lead has drained
+    // PACER_BURST_MS below the ceiling, then the drained span's worth of
+    // frames goes out in one wakeup — not one timer fire per frame.
     vi.advanceTimersByTime(100);
-    expect(audio).toHaveLength(12);
+    expect(audio).toHaveLength(11);
 
-    vi.advanceTimersByTime(300);
+    vi.advanceTimersByTime(200);
+    expect(audio.length).toBeGreaterThanOrEqual(13);
+
+    vi.advanceTimersByTime(600);
     expect(audio).toHaveLength(15);
     pacer.stop();
   });
@@ -79,7 +85,7 @@ describe("createAudioPacer", () => {
     // treat the turn as finished and drop the rest of the reply.
     expect(dones).toHaveLength(0);
 
-    vi.advanceTimersByTime(400);
+    vi.advanceTimersByTime(900);
     expect(audio).toHaveLength(15);
     expect(dones).toHaveLength(1);
     pacer.stop();

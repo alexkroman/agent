@@ -57,6 +57,11 @@ export async function initAudioCapture(
     conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN;
   const reportAudioFailure = (message: string): void => {
     if (fatal) {
+      // The session is over — release the mic/VoiceIO too. Without this a
+      // playback-worklet crash leaves the healthy capture worklet streaming
+      // into the still-open socket, with the mic indicator lit on a session
+      // the UI shows as dead.
+      deps.cleanupAudio();
       deps.updateState({
         state: "error",
         error: { code: "audio", message },

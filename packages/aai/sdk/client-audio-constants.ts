@@ -47,6 +47,16 @@ export const PLAYBACK_JITTER_MS = 400;
 export const CLIENT_AUDIO_LEAD_MS = 1000;
 
 /**
+ * How far the pacer lets the lead drain below {@link CLIENT_AUDIO_LEAD_MS}
+ * before waking to top it up, releasing the drained span's worth of frames
+ * per wakeup instead of one frame per timer fire (~50 wakeups/second per
+ * speaking session at typical TTS frame sizes). **`CLIENT_AUDIO_LEAD_MS -
+ * PACER_BURST_MS` must stay above {@link PLAYBACK_JITTER_MS}** — the dip is
+ * cushion the client temporarily doesn't have.
+ */
+export const PACER_BURST_MS = 200;
+
+/**
  * Refill target after an underrun, deliberately lower than
  * {@link PLAYBACK_JITTER_MS}: mid-reply, waiting to rebuild the full cushion is
  * itself a hole in the speech, so the buffer trades some resilience for a

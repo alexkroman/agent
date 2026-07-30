@@ -54,6 +54,15 @@ class PlaybackProcessor extends AudioWorkletProcessor {
 
     this.port.onmessage = (e) => {
       const d = e.data;
+      // A pending interrupt must be applied BEFORE ingesting the next turn's
+      // messages: it is normally consumed by the next process() call, but
+      // 'write'/'done' frames for the following reply can coalesce into the
+      // same inter-quantum gap (main-thread jank batches the cancel and the
+      // new turn into one task), and resetTurn() would then wipe audio and
+      // the done flag that belong to the new turn.
+      if (this.interrupted && (d.event === 'write' || d.event === 'done')) {
+        this.stopTurn('interrupt');
+      }
       if (d.event === 'write') {
         this.ingestBytes(d.buffer);
       } else if (d.event === 'interrupt') {

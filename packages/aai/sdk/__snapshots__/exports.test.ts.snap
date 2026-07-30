@@ -61,6 +61,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "MIC_BUFFER_SECONDS",
   "MIC_SEND_MAX_BUFFERED_BYTES",
   "MIC_SILENCE_PROBE_MS",
+  "PACER_BURST_MS",
   "PIPELINE_FLUSH_TIMEOUT_MS",
   "PIPELINE_PLAYBACK_GRACE_MS",
   "PLAYBACK_BUFFER_SECONDS",
