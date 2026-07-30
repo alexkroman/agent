@@ -293,30 +293,23 @@ function ProjectChat({
   apiKey,
   project,
   llmStatus,
-  model,
   initialPrompt,
   onInitialPromptSent,
   onWorkspaceChanged,
   onUnauthorized,
 }: Omit<ChatPanelProps, "project" | "onStartWithPrompt" | "creating"> & {
   project: string;
-  /** Picker choice; null runs on the server's default model. */
-  model: string | null;
 }) {
   // Keep the latest callback out of the transport, which is created once.
   const unauthorizedRef = useRef(onUnauthorized);
   unauthorizedRef.current = onUnauthorized;
-  // Same for the model: the picker can change mid-conversation and the next
-  // turn should use the new choice without rebuilding the transport.
-  const modelRef = useRef(model);
-  modelRef.current = model;
 
   const [transport] = useState(
     () =>
       new DefaultChatTransport({
         api: "/studio/chat",
         headers: { Authorization: `Bearer ${apiKey}` },
-        body: () => ({ project, ...(modelRef.current && { model: modelRef.current }) }),
+        body: () => ({ project }),
         // A rejected key gets the same global handling as the REST queries
         // (app.tsx) — useChat only surfaces a generic Error otherwise.
         fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -385,74 +378,17 @@ function ProjectChat({
   );
 }
 
-/**
- * The header's model control. One switchable model (or none advertised) →
- * the read-only chip; more → a select that swaps the model for the *next*
- * turn. The options come verbatim from `/studio/status`, which serves
- * exactly the list the chat route accepts, so the picker can never offer a
- * model the server would refuse. Exported for tests.
- */
-export function ModelPicker({
-  status,
-  value,
-  onChange,
-}: {
-  status: StudioStatus | undefined;
-  /** Picked model; null means the server's default. */
-  value: string | null;
-  onChange: (model: string | null) => void;
-}) {
-  if (!status?.model) return null;
-  const models = status.models ?? [];
-  const title = status.provider
-    ? `Model: ${value ?? status.model} (${status.provider})`
-    : `Model: ${value ?? status.model}`;
-  if (models.length <= 1) {
-    return (
-      <span
-        title={title}
-        className="min-w-0 truncate rounded-sm border border-line px-1.5 py-[3px] font-mono text-[10px] leading-none text-subtle"
-      >
-        {status.model}
-      </span>
-    );
-  }
-  return (
-    <select
-      aria-label="Model"
-      title={title}
-      className="min-w-0 max-w-[170px] cursor-pointer truncate rounded-sm border border-line bg-transparent px-1 py-[2px] font-mono text-[10px] leading-none text-subtle"
-      value={value ?? status.model}
-      // The default maps back to null so an untouched (or reset) picker sends
-      // no `model` field at all — byte-identical to the pre-picker request.
-      onChange={(e) => onChange(e.target.value === status.model ? null : e.target.value)}
-    >
-      {models.map((m) => (
-        <option key={m} value={m}>
-          {m}
-        </option>
-      ))}
-    </select>
-  );
-}
-
 export function ChatPanel(props: ChatPanelProps) {
-  // null = run on the server's default model. Lives here (not in
-  // ProjectChat) so a choice made before the first project exists survives
-  // the guided-start mount.
-  const [model, setModel] = useState<string | null>(null);
   return (
     <div className="flex w-[360px] flex-none flex-col border-r border-line bg-panel">
       <div className="flex items-center justify-between gap-2 px-6 pt-5">
         <span className="eyebrow">Agent</span>
-        <ModelPicker status={props.llmStatus} value={model} onChange={setModel} />
       </div>
       {props.project ? (
         <ProjectChat
           apiKey={props.apiKey}
           project={props.project}
           llmStatus={props.llmStatus}
-          model={model}
           initialPrompt={props.initialPrompt}
           onInitialPromptSent={props.onInitialPromptSent}
           onWorkspaceChanged={props.onWorkspaceChanged}
