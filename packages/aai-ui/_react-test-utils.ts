@@ -223,6 +223,8 @@ export type AudioMockContext = {
   /** Every context constructed, in order. */
   contexts: () => MockAudioContext[];
   workletNodes: () => MockAudioWorkletNode[];
+  /** Constraints passed to the last getUserMedia call. */
+  lastAudioConstraints: () => MediaTrackConstraints | undefined;
 };
 
 /** Options for {@link installAudioMocks}. */
@@ -247,6 +249,7 @@ export function installAudioMocks(
   let _lastContext: MockAudioContext;
   const _contexts: MockAudioContext[] = [];
   const _workletNodes: MockAudioWorkletNode[] = [];
+  let _lastAudioConstraints: MediaTrackConstraints | undefined;
 
   g.AudioContext = class extends MockAudioContext {
     constructor(opts?: { sampleRate?: number }) {
@@ -267,8 +270,9 @@ export function installAudioMocks(
 
   if (nav && !nav.mediaDevices) nav.mediaDevices = {};
   if (nav?.mediaDevices) {
-    nav.mediaDevices.getUserMedia = () =>
-      Promise.resolve({
+    nav.mediaDevices.getUserMedia = (constraints?: MediaStreamConstraints) => {
+      _lastAudioConstraints = constraints?.audio as MediaTrackConstraints | undefined;
+      return Promise.resolve({
         getTracks: () => [
           {
             stopped: false,
@@ -278,12 +282,14 @@ export function installAudioMocks(
           },
         ],
       });
+    };
   }
 
   return {
     lastContext: () => _lastContext,
     contexts: () => _contexts,
     workletNodes: () => _workletNodes,
+    lastAudioConstraints: () => _lastAudioConstraints,
     restore() {
       globalThis.AudioContext = origAudioContext;
       globalThis.AudioWorkletNode = origAudioWorkletNode;

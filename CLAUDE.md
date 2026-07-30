@@ -959,6 +959,19 @@ because a context at another rate either ships audio to a socket that declared
 a different rate or plays PCM at the wrong speed — a loud failure beats
 either.
 
+**Capture is raw voice, echo cancellation aside.** All four `getUserMedia`
+call sites (the WebSocket mic, `startSyncMicrophone`, `createPttRecorder`, and
+the `push-to-talk-translator` template) share one exported
+`VOICE_CAPTURE_CONSTRAINTS`, because four copies of the object drifted apart
+trivially. `autoGainControl`, `noiseSuppression`, and `voiceIsolation` are all
+**off**: each rewrites the signal before STT and the sync path's energy VAD see
+it — AGC continuously retargets level, so it rides the noise floor up through
+silence and leaves an energy threshold calibrated against nothing, while
+suppression and isolation discard signal and can gate a quiet room to *exact*
+zeros, which is also what a dead mic looks like. `echoCancellation` stays on:
+the mic is open while the agent speaks (barge-in needs it), so without AEC the
+agent hears itself and interrupts its own reply.
+
 **A dead microphone is detected once per session.** An OS-muted or wrong input
 device delivers digital silence, which from every other vantage point is
 identical to a user who has not spoken: socket up, session listening, no turn

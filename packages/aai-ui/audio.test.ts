@@ -170,6 +170,21 @@ describe("createVoiceIO", () => {
     expect(audio.contexts().every((c) => c.closed)).toBe(true);
   });
 
+  test("captures raw voice: no gain control, noise suppression, or isolation", async () => {
+    // These processors are all off deliberately. Each one rewrites the signal
+    // before STT (and before the sync path's energy VAD) sees it: AGC rides
+    // the noise floor up during silence, and suppression/isolation can gate a
+    // quiet room to exact zeros. Echo cancellation stays on — the mic is open
+    // while the agent speaks, so without it the agent hears itself.
+    const io = await createVoiceIO(voiceOpts());
+    const constraints = audio.lastAudioConstraints() as Record<string, unknown>;
+    expect(constraints.autoGainControl).toBe(false);
+    expect(constraints.noiseSuppression).toBe(false);
+    expect(constraints.voiceIsolation).toBe(false);
+    expect(constraints.echoCancellation).toBe(true);
+    await io.close();
+  });
+
   test("creates capture node with channelCount: 1", async () => {
     const io = await createVoiceIO(voiceOpts());
     const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");

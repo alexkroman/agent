@@ -68,7 +68,6 @@ export {
   type UtteranceDetector,
   type UtteranceDetectorOptions,
 } from "./sync-vad.ts";
-
 // Types
 export type {
   AgentState,
@@ -80,3 +79,6 @@ export type {
   VoiceSessionOptions,
   WebSocketConstructor,
 } from "./types.ts";
+// Capture constraints, exported so a custom client that opens its own
+// microphone gets the same signal the built-in paths do.
+export { VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";

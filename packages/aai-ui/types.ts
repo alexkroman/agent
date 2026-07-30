@@ -17,6 +17,35 @@ export {
 } from "@alexkroman1/aai";
 
 /**
+ * `getUserMedia` audio constraints for every capture path in this package.
+ *
+ * Defined once because four copies of this object drifted apart trivially, and
+ * the flags are not cosmetic — each one rewrites the signal before STT (and
+ * before the sync path's energy VAD) ever sees it:
+ *
+ * - **`autoGainControl: false`** — AGC continuously retargets level, which
+ *   means riding the noise floor up through silence. An energy VAD calibrated
+ *   against a moving floor is calibrated against nothing.
+ * - **`noiseSuppression: false`** / **`voiceIsolation: false`** — both discard
+ *   signal to make speech sound cleaner to a human, and both can gate a quiet
+ *   room to *exact* zeros, which is also what a dead microphone looks like
+ *   (see `MIC_SILENCE_PROBE_MS`).
+ * - **`echoCancellation: true`** — this one stays on. The mic is open while
+ *   the agent speaks (barge-in needs it), so without AEC the agent hears
+ *   itself and interrupts its own reply.
+ *
+ * Cast because `voiceIsolation` is newer than TypeScript's DOM lib.
+ *
+ * @public
+ */
+export const VOICE_CAPTURE_CONSTRAINTS = {
+  echoCancellation: true,
+  noiseSuppression: false,
+  autoGainControl: false,
+  voiceIsolation: false,
+} as MediaTrackConstraints;
+
+/**
  * Current state of the voice agent session.
  *
  * @public

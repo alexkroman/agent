@@ -2,9 +2,10 @@
 /**
  * WebRTC microphone capture for sync mode.
  *
- * Captures voice through `getUserMedia` with the WebRTC voice-processing
- * constraints (echo cancellation, noise suppression, auto gain — the
- * processing that makes the energy VAD in `sync-vad.ts` reliable), runs an
+ * Captures voice through `getUserMedia` under
+ * {@link VOICE_CAPTURE_CONSTRAINTS} — echo cancellation only, since the rest
+ * of the browser's voice-processing chain moves levels around underneath the
+ * energy VAD in `sync-vad.ts` — runs an
  * AudioWorklet that batches raw frames to the main thread, feeds them
  * through the utterance detector, and hands each completed utterance to
  * the sync session as one HTTP turn. No WebSocket anywhere on the path.
@@ -23,6 +24,7 @@ import {
   type UtteranceDetector,
   type UtteranceDetectorOptions,
 } from "./sync-vad.ts";
+import { VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
 
 /** Default capture rate — what the STT providers expect. */
 export const DEFAULT_SYNC_MIC_SAMPLE_RATE = 16_000;
@@ -150,7 +152,7 @@ export function createPttRecorder(sampleRate = DEFAULT_SYNC_MIC_SAMPLE_RATE): Pt
   async function ensureOpen(): Promise<void> {
     if (ctx) return;
     const streamPromise = navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: VOICE_CAPTURE_CONSTRAINTS,
     });
     const audioCtx = new AudioContext({ sampleRate, latencyHint: "interactive" });
     try {
@@ -235,14 +237,11 @@ export async function startSyncMicrophone(opts: SyncMicrophoneOptions): Promise<
     opts.onError?.(err instanceof Error ? err : new Error(errorMessage(err)));
   };
 
-  // WebRTC voice capture: the browser's voice-processing pipeline cleans the
-  // signal before the energy VAD ever sees it.
+  // Raw voice capture, echo cancellation aside — see
+  // VOICE_CAPTURE_CONSTRAINTS for why the rest of the browser's
+  // voice-processing chain is off.
   const streamPromise = navigator.mediaDevices.getUserMedia({
-    audio: {
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-    },
+    audio: VOICE_CAPTURE_CONSTRAINTS,
   });
   const ctx = new AudioContext({ sampleRate, latencyHint: "interactive" });
   let stream: MediaStream;
