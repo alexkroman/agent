@@ -27,6 +27,7 @@ Required Modal Secret named ``aai-server`` with (at least):
   ``BRAVE_API_KEY``, ``SANDBOX_POOL_SIZE``
 """
 
+import os
 import subprocess
 from pathlib import Path
 
@@ -95,4 +96,12 @@ app = modal.App("aai-server-web")
 @modal.concurrent(max_inputs=200)
 @modal.web_server(port=PORT, startup_timeout=180)
 def server() -> None:
-    subprocess.Popen(["node", "packages/aai-server/dist/index.mjs"], cwd="/app")
+    env = os.environ.copy()
+    # Modal injects MODAL_SERVER_URL into its containers pointing at an
+    # internal Unix socket (/run/modal.sock) for the Python task runtime.
+    # The node server's `modal` JS SDK prefers that variable over the public
+    # API endpoint, so every guest-sandbox spawn would try to gRPC a socket
+    # that doesn't serve it ("connect ENOENT /run/modal.sock"). Strip it so
+    # the SDK uses api.modal.com with the tokens from the aai-server Secret.
+    env.pop("MODAL_SERVER_URL", None)
+    subprocess.Popen(["node", "packages/aai-server/dist/index.mjs"], cwd="/app", env=env)
