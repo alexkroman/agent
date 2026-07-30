@@ -44,9 +44,8 @@ describe("voice-debrief template", () => {
     expect(() => toAgentConfig(agentDef)).not.toThrow();
   });
 
-  test("is a workflow over the sync transport, text-only by default", () => {
+  test("is a workflow, text-only by default", () => {
     expect(agentDef.kind).toBe("workflow");
-    expect(agentDef.transport).toBe("sync");
     // tts omitted → none(): the output is the run report, not speech.
     expect(agentDef.tts?.kind).toBe("none");
     expect(toAgentConfig(agentDef)).toMatchObject({ kind: "workflow", mode: "pipeline" });

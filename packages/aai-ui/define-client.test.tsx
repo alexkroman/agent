@@ -125,48 +125,47 @@ describe("client", () => {
     handle.dispose();
   });
 
-  it("renders the sync shell synchronously for an explicit transport: 'sync'", () => {
-    const fetchSpy = vi.fn();
-    vi.stubGlobal("fetch", fetchSpy);
-    const handle = client({
-      name: "Sync Agent",
-      target: "#app",
-      platformUrl: "http://localhost:3000",
-      transport: "sync",
-    });
-    // The sync shell is up immediately, and the explicit value skips the lookup.
-    expect(container.querySelector('[data-testid="sync-url-chip"]')).toBeTruthy();
-    expect(container.textContent).toContain("Sync Agent");
-    expect(fetchSpy).not.toHaveBeenCalled();
-    handle.dispose();
-    vi.unstubAllGlobals();
-  });
-
-  it("swaps to the sync shell when GET client-config declares sync", async () => {
+  it("swaps to the workflow surface when GET client-config declares a workflow", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(async (input: RequestInfo | URL) => {
         expect(String(input)).toBe("http://localhost:3000/client-config");
-        return new Response(
-          JSON.stringify({ transport: "sync", name: "Server Name", greeting: "Hi there!" }),
-          { status: 200, headers: { "Content-Type": "application/json" } },
-        );
+        return new Response(JSON.stringify({ kind: "workflow", name: "Server Name" }), {
+          status: 200,
+          headers: { "Content-Type": "application/json" },
+        });
       }),
     );
     const handle = client({ target: "#app", platformUrl: "http://localhost:3000" });
-    // Optimistic websocket shell first…
+    // Optimistic chat shell first…
     expect(container.textContent).toContain("Start Conversation");
-    // …then the declared transport lands (the sync shell's endpoint chip).
+    // …then the declared kind lands (the run surface's endpoint chip).
     await vi.waitFor(() => {
       expect(container.querySelector('[data-testid="sync-url-chip"]')).toBeTruthy();
     });
     expect(container.textContent).toContain("Server Name");
-    expect(container.textContent).toContain("Hi there!");
     handle.dispose();
     vi.unstubAllGlobals();
   });
 
-  it("stays on the websocket shell when the lookup fails", async () => {
+  it("uses the server-declared name on the chat shell when none is passed", async () => {
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(
+        async () =>
+          new Response(JSON.stringify({ kind: "agent", name: "Server Name" }), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+      ),
+    );
+    const handle = client({ target: "#app", platformUrl: "http://localhost:3000" });
+    await vi.waitFor(() => expect(container.textContent).toContain("Server Name"));
+    handle.dispose();
+    vi.unstubAllGlobals();
+  });
+
+  it("stays on the chat shell when the lookup fails", async () => {
     const fetchSpy = vi.fn(async () => {
       throw new Error("network down");
     });

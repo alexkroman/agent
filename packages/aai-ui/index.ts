@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-// Pre-connection client-config lookup (transport selection)
+// Pre-connection client-config lookup (app-kind selection)
 export {
   buildAgentUrl,
   type ClientConfigResponse,
@@ -12,7 +12,6 @@ export { Controls } from "./components/controls.tsx";
 export { MessageList } from "./components/message-list.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
 export { StartScreen } from "./components/start-screen.tsx";
-export { SyncChatView } from "./components/sync-chat-view.tsx";
 export { TextControls } from "./components/text-controls.tsx";
 export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 // Tool config (for component-tier custom UIs)
@@ -45,16 +44,14 @@ export type {
 // Session core (for advanced use)
 export { createSessionCore } from "./session-core.ts";
 
-// Sync mode (HTTP turns, WebRTC mic + client-side VAD — no WebSocket)
+// Workflow run plumbing (one HTTP turn per run over POST /sync, WebRTC
+// push-to-talk mic — no WebSocket)
 export {
   CAPTURE_WORKLET_MODULE_URL,
   createPttRecorder,
   DEFAULT_SYNC_MIC_SAMPLE_RATE,
   floatToPcm16,
   type PttRecorder,
-  type SyncMicrophone,
-  type SyncMicrophoneOptions,
-  startSyncMicrophone,
 } from "./sync-mic.ts";
 export {
   base64ToPcm16,
@@ -64,11 +61,6 @@ export {
   type SyncSessionOptions,
   type SyncTurnResult,
 } from "./sync-session.ts";
-export {
-  createUtteranceDetector,
-  type UtteranceDetector,
-  type UtteranceDetectorOptions,
-} from "./sync-vad.ts";
 // Types
 export type {
   AgentState,

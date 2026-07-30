@@ -5,7 +5,10 @@ import type { LlmProvider, SendProvider, SttProvider, TtsProvider } from "./prov
 import type { AgentDef } from "./types.ts";
 
 /**
- * Every `AgentDef` field must be declarable through `agent()`.
+ * Every `AgentDef` field must be declarable through `agent()` — except
+ * `kind`, which is deliberately excluded: `workflow()` is the only
+ * author-facing way to make a workflow, so `agent({ kind: "workflow" })`
+ * stays a type error instead of a second, defaults-free path to one.
  *
  * `agent()` re-declares its parameter shape inline and returns `{...defaults,
  * ...def}`, so a field added to `AgentDef` alone still *works* at runtime
@@ -13,9 +16,9 @@ import type { AgentDef } from "./types.ts";
  * studio bundlers don't typecheck, so nothing catches it. `send` and `state`
  * both shipped that way.
  */
-test("agent() accepts every AgentDef field", () => {
+test("agent() accepts every AgentDef field except the internal kind marker", () => {
   type MissingFromParam = Exclude<keyof AgentDef, keyof Parameters<typeof agent>[0]>;
-  expectTypeOf<MissingFromParam>().toEqualTypeOf<never>();
+  expectTypeOf<MissingFromParam>().toEqualTypeOf<"kind">();
 });
 
 test("agent() accepts send and allowedHosts", () => {

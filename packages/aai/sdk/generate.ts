@@ -35,7 +35,7 @@ export type GenerateOptions = {
    * to the schema and the result's `object` carries the parsed value.
    * Pass a plain JSON Schema object (e.g. via Zod v4's `z.toJSONSchema`),
    * not a Zod schema — the options must serialize across the sandbox RPC
-   * boundary. The `@alexkroman1/aai/workflow` helpers accept Zod and
+   * boundary. The `@alexkroman1/aai/patterns` helpers accept Zod and
    * convert for you.
    */
   schema?: Record<string, unknown>;
@@ -55,6 +55,6 @@ export type GenerateResult = {
 
 /**
  * One-shot LLM generation. The signature of `ctx.generate` and the sole
- * dependency of the `@alexkroman1/aai/workflow` combinators.
+ * dependency of the `@alexkroman1/aai/patterns` combinators.
  */
 export type GenerateFn = (options: GenerateOptions) => Promise<GenerateResult>;

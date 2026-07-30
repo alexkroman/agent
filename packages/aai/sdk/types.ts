@@ -4,11 +4,10 @@
  */
 
 import type { z } from "zod";
+import type { AgentKind } from "./config-rules.ts";
 import type { GenerateOptions, GenerateResult } from "./generate.ts";
 import type { Kv } from "./kv.ts";
 import type {
-  AgentKind,
-  ClientTransport,
   KvProvider,
   LlmProvider,
   S2sProvider,
@@ -117,7 +116,7 @@ export type ToolContext<S = Record<string, unknown>> = {
    * One-shot LLM generation, executed on the host (like `kv`/`vector`).
    * Defaults to the agent's pipeline `llm`; pass `llm` in the options to use
    * another provider (its API key must be in the agent's env). Throws when
-   * no LLM is configured or named. Powers the `@alexkroman1/aai/workflow`
+   * no LLM is configured or named. Powers the `@alexkroman1/aai/patterns`
    * combinators (sequential, parallel, route, orchestrate,
    * evaluatorOptimizer).
    */
@@ -242,8 +241,9 @@ export type AgentDef<S = Record<string, unknown>> = {
   /**
    * The app's mode: `"agent"` (default) is a conversational chat/voice
    * interface; `"workflow"` is audio in → action out — one push-to-talk or
-   * uploaded instruction runs a single agentic loop and ends. Set by the
-   * `workflow()` helper; requires pipeline mode and the sync transport.
+   * uploaded instruction runs a single agentic loop (one `POST /sync` turn)
+   * and ends. Set only by the `workflow()` helper — `agent()` deliberately
+   * doesn't accept it; requires pipeline mode.
    */
   kind?: AgentKind;
   systemPrompt: string;
@@ -350,16 +350,6 @@ export type AgentDef<S = Record<string, unknown>> = {
    * means the agent has no outbound channel.
    */
   send?: SendProvider;
-  /**
-   * Transport the default browser client uses. `"websocket"` (default)
-   * streams a live voice session; `"sync"` makes the default client run
-   * connectionless HTTP turns against `POST /sync` — speech is endpointed
-   * in the browser and each utterance or typed message is one request.
-   *
-   * Pipeline mode only (sync turns 409 on S2S agents). A custom
-   * `client.tsx` chooses its own transport and ignores this field.
-   */
-  transport?: ClientTransport;
   /**
    * Hostnames this agent's own tool code may `fetch` — required for any
    * outbound request from a tool's `execute`, in both `aai dev` and

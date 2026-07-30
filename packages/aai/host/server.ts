@@ -15,9 +15,9 @@ import path from "node:path";
 import escapeHtml from "escape-html";
 import { lookup as mimeLookup } from "mime-types";
 import { WebSocketServer } from "ws";
-import { CLIENT_CONFIG_PATH, type ClientConfigResponse } from "../sdk/client-config.ts";
+import { buildClientConfig, CLIENT_CONFIG_PATH } from "../sdk/client-config.ts";
+import type { AgentKind } from "../sdk/config-rules.ts";
 import { AGENT_CSP, MAX_SYNC_BODY_BYTES, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
-import type { AgentKind, ClientTransport } from "../sdk/providers.ts";
 import { SyncTurnRequestSchema } from "../sdk/sync.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
@@ -56,12 +56,6 @@ type ServerOptions = {
    * the default S2S path. Only prompt/greeting/tools come from the client.
    */
   hostBaseAgent?: AgentDef;
-  /**
-   * Transport the default browser client should use, served pre-connection
-   * via `GET /client-config` (see `sdk/client-config.ts`). Defaults to
-   * `"websocket"` when unset.
-   */
-  transport?: ClientTransport;
   /**
    * The app's mode (`"agent"` | `"workflow"`), included in the
    * `GET /client-config` response so the default client renders the matching
@@ -234,13 +228,7 @@ export function createServer(options: ServerOptions): AgentServer {
   // Pre-connection client config: how the default client should talk to
   // this agent (see sdk/client-config.ts).
   function sendClientConfig(res: http.ServerResponse): void {
-    const body: ClientConfigResponse = {
-      transport: options.transport ?? "websocket",
-      kind: options.kind ?? "agent",
-      name,
-      ...(options.greeting !== undefined ? { greeting: options.greeting } : {}),
-    };
-    sendJson(res, 200, body);
+    sendJson(res, 200, buildClientConfig({ kind: options.kind, name, greeting: options.greeting }));
   }
 
   async function handleRequest(

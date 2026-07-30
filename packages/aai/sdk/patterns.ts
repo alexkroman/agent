@@ -19,7 +19,7 @@
  * @example
  * ```ts
  * import { tool } from "@alexkroman1/aai";
- * import { sequential } from "@alexkroman1/aai/workflow";
+ * import { sequential } from "@alexkroman1/aai/patterns";
  * import { z } from "zod";
  *
  * const marketingCopy = tool({

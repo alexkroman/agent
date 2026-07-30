@@ -279,8 +279,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // Host sessions inherit this agent's stt/llm/tts pipeline config.
       hostBaseAgent: agentDef,
       // Served pre-connection via GET /client-config so the default client
-      // can honor `agent({ transport })` without a custom client.tsx.
-      ...(agentDef.transport !== undefined ? { transport: agentDef.transport } : {}),
+      // can render the workflow surface without a custom client.tsx.
       ...(agentDef.kind !== undefined ? { kind: agentDef.kind } : {}),
       greeting: agentDef.greeting,
       ...clientDirOpt,

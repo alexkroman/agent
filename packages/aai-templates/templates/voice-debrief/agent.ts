@@ -1,8 +1,8 @@
 import { tool, workflow } from "@alexkroman1/aai";
 import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { generateStructured } from "@alexkroman1/aai/patterns";
 import { slack } from "@alexkroman1/aai/send";
 import { assemblyAI } from "@alexkroman1/aai/stt";
-import { generateStructured } from "@alexkroman1/aai/workflow";
 import { z } from "zod";
 
 // End-of-day voice debrief: one rambling clip in, several verified actions

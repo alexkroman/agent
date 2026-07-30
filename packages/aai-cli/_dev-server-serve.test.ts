@@ -55,12 +55,11 @@ describe("startDevServer (real serving path)", () => {
         try {
           const res = await fetch(`http://127.0.0.1:${port}/health`);
           expect(res.ok).toBe(true);
-          // Pre-connection client config: an agent with no `transport` field
-          // serves the websocket default.
+          // Pre-connection client config: a plain agent serves the agent kind.
           const cfg = await fetch(`http://127.0.0.1:${port}/client-config`);
           expect(cfg.ok).toBe(true);
           expect(await cfg.json()).toMatchObject({
-            transport: "websocket",
+            kind: "agent",
             name: "serve-test-agent",
           });
         } finally {
@@ -70,7 +69,7 @@ describe("startDevServer (real serving path)", () => {
     );
   });
 
-  test("serves a declared sync transport at /client-config", { timeout: 30_000 }, async () => {
+  test("serves a declared workflow kind at /client-config", { timeout: 30_000 }, async () => {
     await withTempDir(
       silenced(async (dir) => {
         // Descriptors are pure data, so inline objects stand in for the
@@ -78,16 +77,16 @@ describe("startDevServer (real serving path)", () => {
         await writeFile(
           path.join(dir, "agent.ts"),
           `export default {
-              name: "sync-serve-agent", systemPrompt: "hi", greeting: "Talk to me.",
-              tools: {}, transport: "sync",
+              name: "wf-serve-agent", systemPrompt: "hi", greeting: "Talk to me.",
+              tools: {}, kind: "workflow",
               stt: { kind: "assemblyai", options: {} },
               llm: { kind: "anthropic", options: { model: "claude-haiku-4-5" } },
-              tts: { kind: "cartesia", options: { voice: "v" } },
+              tts: { kind: "none", options: {} },
             };`,
         );
         await writeFile(
           path.join(dir, ".env"),
-          "ASSEMBLYAI_API_KEY=test-key\nANTHROPIC_API_KEY=test-key\nCARTESIA_API_KEY=test-key\n",
+          "ASSEMBLYAI_API_KEY=test-key\nANTHROPIC_API_KEY=test-key\n",
         );
 
         const port = await getPort();
@@ -96,9 +95,8 @@ describe("startDevServer (real serving path)", () => {
           const res = await fetch(`http://127.0.0.1:${port}/client-config`);
           expect(res.ok).toBe(true);
           expect(await res.json()).toEqual({
-            transport: "sync",
-            kind: "agent",
-            name: "sync-serve-agent",
+            kind: "workflow",
+            name: "wf-serve-agent",
             greeting: "Talk to me.",
           });
         } finally {

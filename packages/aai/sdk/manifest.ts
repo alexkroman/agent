@@ -8,26 +8,26 @@
 
 import { z } from "zod";
 import { AllowedHostsSchema } from "./allowed-hosts.ts";
-import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
-import { sendAllowedHosts } from "./providers/send/open.ts";
-import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import {
   type AgentKind,
   assertAgentKind,
-  assertClientTransport,
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
   assertTextOnlyTuning,
-  type ClientTransport,
-  type KvProvider,
-  type LlmProvider,
-  type S2sProvider,
-  type SendProvider,
   type SessionMode,
-  type SttProvider,
-  type TtsProvider,
-  type VectorProvider,
+} from "./config-rules.ts";
+import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
+import { sendAllowedHosts } from "./providers/send/open.ts";
+import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
+import type {
+  KvProvider,
+  LlmProvider,
+  S2sProvider,
+  SendProvider,
+  SttProvider,
+  TtsProvider,
+  VectorProvider,
 } from "./providers.ts";
 import {
   BuiltinToolSchema,
@@ -151,14 +151,9 @@ export type Manifest = {
   /** Outbound send channel descriptor (e.g. Slack). No default. */
   send?: SendProvider | undefined;
   /**
-   * Transport the default browser client uses: `"websocket"` (default,
-   * streaming session) or `"sync"` (HTTP turns; pipeline mode only).
-   */
-  transport?: ClientTransport | undefined;
-  /**
    * The app's mode: `"agent"` (default) is a conversational interface;
    * `"workflow"` is audio in → action out — one recorded or uploaded
-   * instruction runs a single agentic loop over the sync transport and ends.
+   * instruction runs a single agentic loop (one `POST /sync` turn) and ends.
    */
   kind?: AgentKind | undefined;
   /**
@@ -228,7 +223,6 @@ const ManifestSchema = z.object({
   kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
   send: ProviderDescriptorSchema.optional(),
-  transport: z.enum(["websocket", "sync"]).optional(),
   kind: z.enum(["agent", "workflow"]).optional(),
 });
 
@@ -248,15 +242,11 @@ export function parseManifest(input: unknown): Manifest {
   assertSilencePolicy(mode, parsed.silenceTimeoutMs, parsed.silencePrompt);
   assertPipelineTuning(mode, parsed);
   assertTextOnlyTuning(parsed.tts, parsed);
-  assertClientTransport(mode, parsed.transport);
-  assertAgentKind(mode, parsed.kind, parsed.transport);
+  assertAgentKind(mode, parsed.kind);
   assertAssemblyAITtsLanguage(parsed.tts);
   const isWorkflow = parsed.kind === "workflow";
   return {
     ...parsed,
-    // A workflow's default client runs sync turns; fill the transport so a
-    // hand-rolled manifest doesn't ship a chat WebSocket client by omission.
-    ...(isWorkflow ? { transport: parsed.transport ?? "sync" } : {}),
     systemPrompt:
       parsed.systemPrompt ?? (isWorkflow ? DEFAULT_WORKFLOW_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT),
     greeting: parsed.greeting ?? (isWorkflow ? DEFAULT_WORKFLOW_GREETING : DEFAULT_GREETING),

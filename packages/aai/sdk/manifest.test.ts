@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fc from "fast-check";
 import { describe, expect, expectTypeOf, test } from "vitest";
+import { assertProviderTriple } from "./config-rules.ts";
 import { type Manifest, parseManifest } from "./manifest.ts";
 import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
 import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
@@ -10,7 +11,6 @@ import { assemblyAI } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 import { isTextOnlyTts, none } from "./providers/tts/none.ts";
 import { pinecone } from "./providers/vector/pinecone.ts";
-import { assertProviderTriple } from "./providers.ts";
 
 describe("parseManifest", () => {
   test("minimal manifest requires only name", () => {
@@ -247,43 +247,6 @@ describe("parseManifest — mode classification", () => {
         tts: stubTts,
       } as never),
     ).toThrow(/stt, llm, and tts must be set together/);
-  });
-});
-
-describe("parseManifest — client transport", () => {
-  const pipelineFields = {
-    stt: assemblyAI({ model: "u3pro-rt" }),
-    llm: anthropic({ model: "claude-haiku-4-5" }),
-    tts: cartesia({ voice: "v" }),
-  };
-
-  test("transport is undefined when not declared", () => {
-    const parsed = parseManifest({ name: "hello" });
-    expect(parsed.transport).toBeUndefined();
-  });
-
-  test("accepts transport: 'sync' in pipeline mode", () => {
-    const parsed = parseManifest({
-      name: "hello",
-      transport: "sync",
-      ...pipelineFields,
-    } as never);
-    expect(parsed.transport).toBe("sync");
-  });
-
-  test("accepts explicit transport: 'websocket' in s2s mode", () => {
-    const parsed = parseManifest({ name: "hello", transport: "websocket" });
-    expect(parsed.transport).toBe("websocket");
-  });
-
-  test("rejects transport: 'sync' in s2s mode (sync turns need the pipeline)", () => {
-    expect(() => parseManifest({ name: "hello", transport: "sync" })).toThrow(
-      /transport: "sync" requires pipeline mode/,
-    );
-  });
-
-  test("rejects unknown transport values", () => {
-    expect(() => parseManifest({ name: "hello", transport: "carrier-pigeon" })).toThrow();
   });
 });
 

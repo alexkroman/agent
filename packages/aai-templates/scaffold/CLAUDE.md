@@ -246,18 +246,11 @@ when the TTS provider supports one-shot synthesis (Cartesia), base64
 (AssemblyAI); text input works with any. Tools, KV, and `ctx` behave
 exactly as in a voice session. Nothing in agent code opts in — it comes
 with pipeline mode. Programmatic clients can use `createSyncSession` /
-`startSyncMicrophone` (WebRTC mic capture + client-side VAD) from
-`@alexkroman1/aai-ui`.
-
-**Sync transport for the default client:** set `transport: "sync"` on
-`agent()` (pipeline only) and the *default* browser client — no
-`client.tsx` needed — runs sync HTTP turns instead of opening a
-WebSocket: a hands-free conversation — one start/end toggle,
-VAD-endpointed mic input, and spoken-reply playback, one `POST /sync` per
-turn. The default `"websocket"` keeps the
-streaming voice session. The server exposes the choice pre-connection at
-`GET /client-config` (`GET /:slug/client-config` deployed); a custom
-`client.tsx` owns its own transport and ignores the field.
+`createPttRecorder` (WebRTC push-to-talk capture) from
+`@alexkroman1/aai-ui`. The *default* browser client always uses the
+WebSocket session for agents; workflows (`workflow()`) get the one-shot
+run surface over `POST /sync` automatically — there is no per-agent
+transport switch.
 
 ## Providers
 
@@ -433,7 +426,7 @@ provider whose API key is in the agent's secrets — that's also how S2S
 agents use it. `schema` must be a **plain JSON Schema object** (use
 `z.toJSONSchema(...)`, or the workflow helpers below), never a Zod schema.
 
-### Workflow patterns — `@alexkroman1/aai/workflow`
+### Workflow patterns — `@alexkroman1/aai/patterns`
 
 Multi-step LLM orchestration inside a tool, as pure helpers over
 `ctx.generate`:
@@ -442,7 +435,7 @@ Multi-step LLM orchestration inside a tool, as pure helpers over
 import {
   sequential, parallel, route, orchestrate, evaluatorOptimizer,
   generateStructured,
-} from "@alexkroman1/aai/workflow";
+} from "@alexkroman1/aai/patterns";
 
 // Chain: each step sees the previous output
 const { output } = await sequential(ctx.generate, [

@@ -10,7 +10,7 @@
  * - `GET  /:slug`                 — redirect to /:slug/
  * - `GET  /:slug/`               — agent UI page
  * - `GET  /:slug/health`         — per-agent health check
- * - `GET  /:slug/client-config`  — pre-connection client config (transport/name/greeting)
+ * - `GET  /:slug/client-config`  — pre-connection client config (kind/name/greeting)
  * - `GET  /:slug/assets/:path`   — client static assets
  * - `POST /:slug/deploy`         — owner: re-deploy agent
  * - `DELETE /:slug/`             — owner: delete agent
@@ -35,6 +35,7 @@ import { bodyLimit } from "hono/body-limit";
 import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { Storage } from "unstorage";
+import { handleAgentClientConfig } from "./client-config-handler.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
@@ -59,12 +60,7 @@ import type { BundleStore } from "./store-types.ts";
 import { createStudioRoutes } from "./studio/studio-routes.ts";
 import { handleStudioClientAsset, handleStudioPage } from "./studio/studio-static.ts";
 import { handleSyncTurn } from "./sync-turn-handler.ts";
-import {
-  handleAgentClientConfig,
-  handleAgentHealth,
-  handleAgentPage,
-  handleClientAsset,
-} from "./transport-websocket.ts";
+import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
 
 export type OrchestratorOpts = {

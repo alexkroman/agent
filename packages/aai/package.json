@@ -58,10 +58,10 @@
       "types": "./dist/sdk/providers/send-barrel.d.ts",
       "import": "./dist/sdk/providers/send-barrel.js"
     },
-    "./workflow": {
-      "@dev/source": "./sdk/workflow.ts",
-      "types": "./dist/sdk/workflow.d.ts",
-      "import": "./dist/sdk/workflow.js"
+    "./patterns": {
+      "@dev/source": "./sdk/patterns.ts",
+      "types": "./dist/sdk/patterns.d.ts",
+      "import": "./dist/sdk/patterns.js"
     },
     "./s2s": {
       "@dev/source": "./sdk/providers/s2s-barrel.ts",

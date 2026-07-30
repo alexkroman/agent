@@ -9,7 +9,6 @@ import { buildAgentUrl, type ClientConfigResponse, fetchClientConfig } from "./c
 import { ChatView } from "./components/chat-view.tsx";
 import { SidebarLayout } from "./components/sidebar-layout.tsx";
 import { StartScreen } from "./components/start-screen.tsx";
-import { SyncChatView } from "./components/sync-chat-view.tsx";
 import { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-config-context.ts";
 import { WorkflowView } from "./components/workflow-view.tsx";
 import { SessionProvider, ThemeProvider } from "./context.ts";
@@ -36,15 +35,6 @@ type BaseOptions = {
   resumeSessionId?: string;
   /** WebSocket constructor override. Passed through to session options. */
   WebSocket?: WebSocketConstructor;
-  /**
-   * Transport the UI talks over. Unset (the default) asks the server via
-   * `GET client-config`, so `agent({ transport })` decides — an agent that
-   * declared `transport: "sync"` gets the sync shell (HTTP turns, no
-   * WebSocket) with no custom client needed. An explicit value here skips
-   * the lookup. Only the config tier branches on it; a custom `component`
-   * owns its own transport.
-   */
-  transport?: "websocket" | "sync";
 };
 
 /**
@@ -139,37 +129,28 @@ function DefaultShell({
 }
 
 /**
- * Config-tier root: resolves the transport (explicit option, else the
- * server's `GET client-config`) and renders the WebSocket shell or the
- * sync shell.
+ * Config-tier root: resolves the app kind via the server's
+ * `GET client-config` and renders the chat shell or the workflow surface.
  *
- * The WebSocket shell renders immediately — optimistically — while the
- * lookup is in flight, then swaps if the agent declared `"sync"`. That
- * keeps mounting synchronous, keeps agents on servers without the endpoint
- * (every lookup failure resolves to `"websocket"`) exactly as before, and
- * the worst-case race — Start clicked on a sync agent before the lookup
- * lands — still yields a working session: sync agents answer WebSocket
- * sessions too.
+ * The chat shell renders immediately — optimistically — while the lookup is
+ * in flight, then swaps if the agent is a workflow. That keeps mounting
+ * synchronous and keeps agents on servers without the endpoint (every
+ * lookup failure resolves to the agent kind) exactly as before.
  */
 function DefaultRoot({
   platformUrl,
-  transport,
   name,
   Sidebar,
   sidebarWidth,
 }: {
   platformUrl: string;
-  transport?: "websocket" | "sync" | undefined;
   name?: string | undefined;
   Sidebar?: ComponentType | undefined;
   sidebarWidth?: string | undefined;
 }) {
-  const [resolved, setResolved] = useState<ClientConfigResponse | null>(
-    transport !== undefined ? { transport, kind: "agent" } : null,
-  );
+  const [resolved, setResolved] = useState<ClientConfigResponse | null>(null);
 
   useEffect(() => {
-    if (transport !== undefined) return;
     let cancelled = false;
     void fetchClientConfig(platformUrl).then((cfg) => {
       if (!cancelled) setResolved(cfg);
@@ -177,7 +158,7 @@ function DefaultRoot({
     return () => {
       cancelled = true;
     };
-  }, [platformUrl, transport]);
+  }, [platformUrl]);
 
   // The workflow app mode gets the one-shot run surface (hold-to-talk /
   // upload + Go over one history-less sync request per run) rather than a
@@ -191,16 +172,10 @@ function DefaultRoot({
       />
     );
   }
-  if (resolved?.transport === "sync") {
-    return (
-      <SyncChatView
-        syncUrl={buildAgentUrl(platformUrl, "sync").href}
-        title={name ?? resolved.name}
-        greeting={resolved.greeting}
-      />
-    );
-  }
-  return <DefaultShell name={name} Sidebar={Sidebar} sidebarWidth={sidebarWidth} />;
+  // An explicit client({ name }) wins; otherwise use the server-declared name.
+  return (
+    <DefaultShell name={name ?? resolved?.name} Sidebar={Sidebar} sidebarWidth={sidebarWidth} />
+  );
 }
 
 // ─── client ──────────────────────────────────────────────────────────────────
@@ -251,7 +226,6 @@ export function client(config: ClientConfig): ClientHandle {
     ? createElement(config.component)
     : createElement(DefaultRoot, {
         platformUrl,
-        transport: config.transport,
         name: config.name,
         Sidebar: config.sidebar,
         sidebarWidth: config.sidebarWidth,

@@ -11,13 +11,12 @@ describe("slack-translator template", () => {
     expect(() => toAgentConfig(agentDef)).not.toThrow();
   });
 
-  test("is a workflow over the sync transport", () => {
-    // workflow() stamps both; losing either would render the chat shell and
+  test("is a workflow", () => {
+    // workflow() stamps the kind; losing it would render the chat shell and
     // run the conversational default prompt on a definition with no
     // conversation to have.
     expect(agentDef.kind).toBe("workflow");
-    expect(agentDef.transport).toBe("sync");
-    expect(toAgentConfig(agentDef)).toMatchObject({ kind: "workflow", transport: "sync" });
+    expect(toAgentConfig(agentDef)).toMatchObject({ kind: "workflow" });
   });
 
   test("is text-only pipeline mode", () => {

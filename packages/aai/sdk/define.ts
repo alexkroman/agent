@@ -4,8 +4,6 @@ import type { z } from "zod";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
 import { none } from "./providers/tts/none.ts";
 import type {
-  AgentKind,
-  ClientTransport,
   KvProvider,
   LlmProvider,
   S2sProvider,
@@ -86,12 +84,6 @@ export function tool<P extends z.ZodObject<z.ZodRawShape>>(def: {
  */
 export function agent(def: {
   name: string;
-  /**
-   * The app's mode: `"agent"` (default) for a conversational interface,
-   * `"workflow"` for audio in → action out. Prefer the `workflow()` helper
-   * over setting this by hand — it applies the workflow defaults too.
-   */
-  kind?: AgentKind;
   systemPrompt?: string;
   greeting?: string;
   tools?: Record<string, ToolDef>;
@@ -181,13 +173,6 @@ export function agent(def: {
    * Registers the `send_message` builtin and allowlists the channel's host.
    */
   send?: SendProvider;
-  /**
-   * Transport the default browser client uses: `"websocket"` (default) for
-   * a live streaming session, `"sync"` for connectionless HTTP turns
-   * (`POST /sync`, one request per utterance or typed message — pipeline
-   * mode only). Ignored by a custom `client.tsx`.
-   */
-  transport?: ClientTransport;
   /**
    * Hostnames this agent's own tool code may `fetch`. Required for outbound
    * requests from a deployed agent — see {@link AgentDef.allowedHosts}.
@@ -287,6 +272,5 @@ export function workflow(def: {
     ...def,
     tts: def.tts ?? none(),
     kind: "workflow",
-    transport: "sync",
   };
 }
