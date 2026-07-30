@@ -1464,6 +1464,16 @@ bumped automatically.
 - Sandboxes are created with `blockNetwork: true` and a bounded lifetime
   (`SANDBOX_TIMEOUT_SECS`, default 4h). Memory/CPU caps come from
   `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT`.
+- **Orphan cleanup is Modal's `idleTimeoutMs`, not host code**
+  (`SANDBOX_IDLE_TIMEOUT_SECS`, default 15 min). A host that dies without
+  running `shutdown()`'s teardown (crash, OOM, SIGKILL past the drain
+  deadline) strands its remote sandboxes with no record of them — but host
+  death closes the exec'd harness's stdin, the harness exits on that EOF,
+  and a sandbox with no running exec goes idle to Modal, which terminates
+  it after this window instead of billing until the 4h lifetime cap. A
+  healthy sandbox always has the harness exec running, so its idle timer
+  never starts — host-side eviction (`sandbox-slots.ts`) stays the
+  authority on session-aware idleness (Modal can't see sessions).
 - The server itself deploys to Modal too (`modal_deploy.py`,
   `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
   Fly.io deployment anymore.
