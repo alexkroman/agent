@@ -1,5 +1,38 @@
 # @alexkroman1/aai-server
 
+## 2.0.0
+
+### Major Changes
+
+- e17fdc4: Remove the text-only agent mode: an agent is always a voice conversation, and a workflow never speaks.
+
+  - `agent()` with `tts: none()` is now rejected at parse time (parseManifest, toAgentConfig, and the platform's IsolateConfigSchema) — speech-in, text/action-out apps are workflows.
+  - `workflow()` no longer accepts a `tts` parameter; it always sets the internal `none()` sentinel.
+  - aai-ui: `TextControls` is removed and `ChatView` always renders the voice `Controls`. `SessionCore`'s programmatic audioOut-aware APIs (`startRecording`, `sendAudioFile`) remain.
+  - The `pipeline-text-only` template and the studio's text-only starter are removed.
+
+### Minor Changes
+
+- 4051d7a: Two app modes — agents and workflows: new workflow() definition (audio in, action out: push-to-talk or uploaded audio runs one agentic loop over the sync transport with its own workflow system prompt, rendered by the default client's new run surface), plus ctx.generate (host-executed one-shot LLM generation for tool code, proxied out of the sandbox via the llm/generate guest RPC) and the @alexkroman1/aai/workflow combinators: sequential, parallel, route, orchestrate, evaluatorOptimizer.
+
+### Patch Changes
+
+- e17fdc4: Studio prompt: a "workflow" request builds workflow(), not agent()
+- Updated dependencies [377ecd3]
+- Updated dependencies [e17fdc4]
+- Updated dependencies [e17fdc4]
+- Updated dependencies [4051d7a]
+- Updated dependencies [6047231]
+- Updated dependencies [7fc476d]
+- Updated dependencies [41b5dad]
+- Updated dependencies [ed4f2e7]
+- Updated dependencies [89a032d]
+- Updated dependencies [158d5d5]
+  - @alexkroman1/aai@2.0.0
+  - aai-studio-client@0.1.8
+  - @alexkroman1/aai-ui@2.0.0
+  - @alexkroman1/aai-cli@2.0.0
+
 ## 1.3.7
 
 ### Patch Changes
