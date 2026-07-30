@@ -146,6 +146,18 @@ describe("createSyncSession", () => {
     await expect(session.sendText("hi")).rejects.toThrow("malformed server response");
   });
 
+  test("malformed server response names the offending field", async () => {
+    const fetchFn = fetchReturning({
+      transcript: "t",
+      reply: "r",
+      toolCalls: [{ toolCallId: "c1", toolName: "lookup", args: "not a record" }],
+    });
+    const session = createSyncSession({ url: "http://x/sync", fetch: fetchFn });
+    await expect(session.sendText("hi")).rejects.toThrow(
+      /malformed server response \(toolCalls\.0\.args:/,
+    );
+  });
+
   test("unawaited turns serialize so history reaches the second request", async () => {
     let release1: ((r: Response) => void) | undefined;
     const fetchFn = vi

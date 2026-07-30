@@ -93,6 +93,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "matchesAllowedHost",
   "parseWsUpgradeParams",
   "safeJsonParse",
+  "toArgsRecord",
   "tool",
   "toolError",
   "validateAllowedHostPattern",
@@ -215,6 +216,7 @@ exports[`export surface stability > @alexkroman1/aai/utils export 1`] = `
   "errorMessage",
   "isTextAssetPath",
   "safeJsonParse",
+  "toArgsRecord",
   "toolError",
 ]
 `;

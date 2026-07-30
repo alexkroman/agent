@@ -5,7 +5,7 @@
 import { describe, expect, test, vi } from "vitest";
 import { DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
 import type { SttOpener, TtsOpener } from "../sdk/providers.ts";
-import type { SyncTurnRequest } from "../sdk/sync.ts";
+import { type SyncTurnRequest, SyncTurnResponseSchema } from "../sdk/sync.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import { createFakeLanguageModel, type ScriptedPart } from "./_pipeline-test-fakes.ts";
 import { makeConfig, silentLogger } from "./_test-utils.ts";
@@ -186,6 +186,39 @@ describe("createSyncTurnRunner", () => {
     expect(res.toolCalls).toEqual([
       { toolCallId: "c1", toolName: "lookup", args: {}, result: '{"ok":true}' },
     ]);
+  });
+
+  test("an invalid tool call degrades to empty args — the response stays schema-valid", async () => {
+    // The model emits unparsable tool arguments and the repair can't fix them
+    // (the fake model has no doGenerate), so streamText surfaces a `tool-call`
+    // part whose input is the RAW STRING. Shipped verbatim, that one call made
+    // the client reject the whole response ("malformed server response") and
+    // killed the workflow run.
+    const executeTool = vi.fn(async () => "{}");
+    const deps = makeDeps({
+      executeTool,
+      script: [
+        [{ type: "tool-call", toolCallId: "c1", toolName: "lookup", input: "{broken json" }],
+        [{ type: "text", text: "recovered" }],
+      ],
+      toolSchemas: [
+        {
+          type: "function",
+          name: "lookup",
+          description: "look something up",
+          parameters: { type: "object", properties: {} },
+        },
+      ],
+    });
+    const res = await createSyncTurnRunner(deps)(textReq());
+    expect(res.reply).toBe("recovered");
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(res.toolCalls).toHaveLength(1);
+    expect(res.toolCalls?.[0]).toMatchObject({ toolCallId: "c1", toolName: "lookup", args: {} });
+    // The failure is still visible in the run record, not a dangling call.
+    expect(res.toolCalls?.[0]?.result).toContain("error");
+    // The regression this guards: the wire schema must accept the response.
+    expect(SyncTurnResponseSchema.safeParse(res).success).toBe(true);
   });
 
   test("a turn with no tool calls reports an empty toolCalls list", async () => {

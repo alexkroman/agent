@@ -92,7 +92,13 @@ export function createSyncSession(opts: SyncSessionOptions): SyncSession {
       );
     }
     const parsed = SyncTurnResponseSchema.safeParse(await resp.json());
-    if (!parsed.success) throw new Error("Sync turn failed: malformed server response");
+    if (!parsed.success) {
+      // Name the first offending field — "malformed server response" alone
+      // gives a bug report nothing to go on.
+      const issue = parsed.error.issues[0];
+      const detail = issue ? ` (${issue.path.join(".") || "body"}: ${issue.message})` : "";
+      throw new Error(`Sync turn failed: malformed server response${detail}`);
+    }
     return parsed.data;
   }
 
