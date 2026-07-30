@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
 import {
+  appDbConnectionUrl,
   appDbIdentifier,
   createAppDatabases,
   deprovisionAppDatabase,
@@ -69,6 +70,31 @@ describe("deprovisionAppDatabase", () => {
       `drop schema if exists "${id}" cascade`,
       `drop role if exists "${id}"`,
     ]);
+  });
+});
+
+describe("appDbConnectionUrl", () => {
+  const meta = { role: appDbIdentifier("x"), password: "0".repeat(32) };
+
+  test("carries the pooler tenant suffix from the admin username onto the app role", () => {
+    // Supavisor identifies the tenant by the `.suffix` on the username; a
+    // bare role gets "(ENOIDENTIFIER) no tenant identifier provided".
+    const url = new URL(
+      appDbConnectionUrl(
+        meta,
+        "postgres://postgres.projref:admin-secret@aws-0-us-east-1.pooler.supabase.com:5432/postgres",
+      ),
+    );
+    expect(decodeURIComponent(url.username)).toBe(`${meta.role}.projref`);
+    expect(url.hostname).toBe("aws-0-us-east-1.pooler.supabase.com");
+  });
+
+  test("leaves the role bare for direct (non-pooler) admin usernames", () => {
+    const url = new URL(
+      appDbConnectionUrl(meta, "postgres://postgres:admin-secret@db.example.com:5432/postgres"),
+    );
+    expect(decodeURIComponent(url.username)).toBe(meta.role);
+    expect(decodeURIComponent(url.password)).toBe(meta.password);
   });
 });
 

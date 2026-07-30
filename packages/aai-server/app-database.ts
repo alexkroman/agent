@@ -87,12 +87,25 @@ export async function deprovisionAppDatabase(sql: SqlExec, slug: string): Promis
  * Open a `Db` handle for one provisioned app: the admin URL's host/port/
  * database with the app role's own credentials. The role's `search_path`
  * pins queries to the app schema; `statement_timeout` bounds runaway SQL.
+ *
+ * When the admin URL goes through Supabase's pooler (Supavisor), its
+ * username carries the tenant as a suffix — `postgres.<project-ref>` — and
+ * every connection MUST repeat that suffix or the pooler rejects it with
+ * "(ENOIDENTIFIER) no tenant identifier provided". The pooler hostname is
+ * shared across projects, so SNI cannot identify the tenant; the username
+ * is the only channel. Carry the admin suffix onto the app role.
  */
-export function openAppDb(meta: AppDbMeta, adminUrl: string): CloseableDb {
+export function appDbConnectionUrl(meta: AppDbMeta, adminUrl: string): string {
   const url = new URL(adminUrl);
-  url.username = encodeURIComponent(meta.role);
+  const adminUser = decodeURIComponent(url.username);
+  const tenantSuffix = adminUser.includes(".") ? adminUser.slice(adminUser.indexOf(".")) : "";
+  url.username = encodeURIComponent(meta.role + tenantSuffix);
   url.password = encodeURIComponent(meta.password);
-  return createPostgresDb({ url: url.toString(), max: APP_DB_POOL_MAX });
+  return url.toString();
+}
+
+export function openAppDb(meta: AppDbMeta, adminUrl: string): CloseableDb {
+  return createPostgresDb({ url: appDbConnectionUrl(meta, adminUrl), max: APP_DB_POOL_MAX });
 }
 
 // ── Bound manager ────────────────────────────────────────────────────────────
