@@ -11,6 +11,7 @@ import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   _internals,
+  DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
   type ModalProcLike,
   type ModalSandboxLike,
@@ -138,6 +139,18 @@ describe("parseSandboxLimitsFromEnv", () => {
     );
   });
 
+  it("parses SANDBOX_IDLE_TIMEOUT_SECS into milliseconds, clamped to [60, 86400] secs", () => {
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_IDLE_TIMEOUT_SECS: "600" }).idleTimeoutMs).toBe(
+      600_000,
+    );
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_IDLE_TIMEOUT_SECS: "1" }).idleTimeoutMs).toBe(
+      60_000,
+    );
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_IDLE_TIMEOUT_SECS: "999999" }).idleTimeoutMs).toBe(
+      86_400_000,
+    );
+  });
+
   it("ignores non-numeric and undefined values", () => {
     expect(
       parseSandboxLimitsFromEnv({
@@ -246,6 +259,7 @@ describe("spawnModalWarm", () => {
       command: ["sleep", "infinity"],
       blockNetwork: true,
       timeoutMs: DEFAULT_SANDBOX_TIMEOUT_MS,
+      idleTimeoutMs: DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
       tags: { service: "aai-guest", slug: "my-agent" },
     });
     expect([...sb.writtenFiles.values()]).toEqual(["// the harness code"]);
@@ -258,6 +272,28 @@ describe("spawnModalWarm", () => {
     expect(params).toMatchObject({ mode: "binary", stdout: "pipe", stderr: "pipe" });
     expect(warm.alive()).toBe(true);
     await warm.cleanup();
+  });
+
+  it("honors SANDBOX_IDLE_TIMEOUT_SECS over the default idle timeout", async () => {
+    vi.stubEnv("SANDBOX_IDLE_TIMEOUT_SECS", "600");
+    try {
+      const fake = makeFakeProc();
+      const sb = makeFakeSandbox(fake);
+      const createParams: unknown[] = [];
+      const ctx: ModalSpawnContext = {
+        createSandbox: async (params) => {
+          createParams.push(params);
+          return sb;
+        },
+      };
+      const harnessPath = await makeHarnessFile();
+
+      const warm = await spawnModalWarm({ harnessPath }, ctx);
+      expect(createParams[0]).toMatchObject({ idleTimeoutMs: 600_000 });
+      await warm.cleanup();
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("terminates the sandbox when harness setup fails, and wraps the error", async () => {

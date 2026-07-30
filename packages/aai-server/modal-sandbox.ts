@@ -88,6 +88,23 @@ const HARNESS_REMOTE_PATH = "/tmp/harness.mjs";
  */
 export const DEFAULT_SANDBOX_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
+/**
+ * Default Modal-side idle termination (Modal `idleTimeoutMs`). This is the
+ * orphan cleanup: if this server process dies without running its shutdown
+ * teardown (crash, OOM, SIGKILL past the drain deadline), the in-memory slot
+ * cache is gone and nothing host-side will ever terminate the remote
+ * sandboxes. But host death closes the exec'd harness's stdin, the harness
+ * exits on that EOF (`guest/deno-harness.ts`), and a sandbox with no running
+ * exec is idle to Modal — so orphans self-terminate after this window
+ * instead of billing until the 4h lifetime cap.
+ *
+ * A *healthy* resident sandbox always has the harness exec running, so its
+ * idle timer never starts; host-side eviction (`sandbox-slots.ts`) remains
+ * the authority on session-aware idleness. Override with
+ * `SANDBOX_IDLE_TIMEOUT_SECS`.
+ */
+export const DEFAULT_SANDBOX_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
 export type ModalSandboxLimits = {
   /** Hard memory cap in MiB (Modal `memoryLimitMiB`). */
   memoryLimitMiB?: number;
@@ -95,6 +112,9 @@ export type ModalSandboxLimits = {
   cpuLimit?: number;
   /** Max sandbox lifetime in ms (Modal `timeoutMs`). */
   timeoutMs?: number;
+  /** Modal-side idle termination in ms (Modal `idleTimeoutMs`) — see
+   * {@link DEFAULT_SANDBOX_IDLE_TIMEOUT_MS} for why this exists. */
+  idleTimeoutMs?: number;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -114,6 +134,7 @@ const LIMIT_SPECS: readonly [
   ["SANDBOX_MEMORY_LIMIT_MB", "memoryLimitMiB", 128, 4096, 1],
   ["SANDBOX_CPU_LIMIT", "cpuLimit", 0.125, 16, 1],
   ["SANDBOX_TIMEOUT_SECS", "timeoutMs", 300, 86_400, 1000],
+  ["SANDBOX_IDLE_TIMEOUT_SECS", "idleTimeoutMs", 60, 86_400, 1000],
 ];
 
 /**
@@ -387,6 +408,7 @@ export async function spawnModalWarm(
     // The guest has no network by design — all egress is host-proxied RPC.
     blockNetwork: true,
     timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
+    idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
     ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
     ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
     tags: { service: "aai-guest", slug: opts.slug ?? "pool" },
