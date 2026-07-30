@@ -110,7 +110,7 @@ describe("createServer", () => {
 
     const res = await fetch(`http://localhost:${server.port}/client-config`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ transport: "websocket", name: "cfg-agent" });
+    expect(await res.json()).toEqual({ transport: "websocket", kind: "agent", name: "cfg-agent" });
   });
 
   test("GET /client-config carries the declared transport and greeting", async () => {
@@ -128,6 +128,7 @@ describe("createServer", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       transport: "sync",
+      kind: "agent",
       name: "sync-agent",
       greeting: "Hi there!",
     });

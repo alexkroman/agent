@@ -17,7 +17,7 @@ import { lookup as mimeLookup } from "mime-types";
 import { WebSocketServer } from "ws";
 import { CLIENT_CONFIG_PATH, type ClientConfigResponse } from "../sdk/client-config.ts";
 import { AGENT_CSP, MAX_SYNC_BODY_BYTES, MAX_WS_PAYLOAD_BYTES } from "../sdk/constants.ts";
-import type { ClientTransport } from "../sdk/providers.ts";
+import type { AgentKind, ClientTransport } from "../sdk/providers.ts";
 import { SyncTurnRequestSchema } from "../sdk/sync.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
@@ -62,6 +62,12 @@ type ServerOptions = {
    * `"websocket"` when unset.
    */
   transport?: ClientTransport;
+  /**
+   * The app's mode (`"agent"` | `"workflow"`), included in the
+   * `GET /client-config` response so the default client renders the matching
+   * surface. Defaults to `"agent"` when unset.
+   */
+  kind?: AgentKind;
   /** Agent greeting, included in the `GET /client-config` response. */
   greeting?: string;
 };
@@ -230,6 +236,7 @@ export function createServer(options: ServerOptions): AgentServer {
   function sendClientConfig(res: http.ServerResponse): void {
     const body: ClientConfigResponse = {
       transport: options.transport ?? "websocket",
+      kind: options.kind ?? "agent",
       name,
       ...(options.greeting !== undefined ? { greeting: options.greeting } : {}),
     };

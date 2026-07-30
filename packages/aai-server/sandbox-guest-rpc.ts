@@ -15,7 +15,7 @@ import {
   VectorQuerySchema,
   VectorUpsertSchema,
 } from "@alexkroman1/aai/protocol";
-import type { Vector } from "@alexkroman1/aai/runtime";
+import type { HostGenerateFn, Vector } from "@alexkroman1/aai/runtime";
 import { z } from "zod";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
@@ -77,6 +77,26 @@ const FetchRequestParamsSchema = z.object({
   body: z.string().nullable(),
 });
 
+// ── Generate param schema for guest → host validation ───────────────────────
+
+/**
+ * Params for the llm/generate RPC — the wire form of the SDK's
+ * `GenerateOptions` (sdk/generate.ts). The descriptor is validated for shape
+ * only; `resolveLlm` (inside the host generate fn) is the authority on known
+ * kinds, and credentials resolve from the agent's own env, so a guest naming
+ * a provider can never reach beyond keys the tenant already holds. `schema`
+ * must be plain JSON Schema — a Zod schema doesn't survive NDJSON and is
+ * rejected guest-side with guidance (see guest/harness-rpc.ts).
+ */
+const GenerateParamsSchema = z.object({
+  prompt: z.string().min(1).max(200_000),
+  system: z.string().max(100_000).optional(),
+  llm: z.object({ kind: z.string().min(1), options: z.record(z.string(), z.unknown()) }).optional(),
+  schema: z.record(z.string(), z.unknown()).optional(),
+  temperature: z.number().finite().optional(),
+  maxOutputTokens: z.number().int().positive().optional(),
+});
+
 // ── Handler registration ─────────────────────────────────────────────────────
 
 export type GuestRpcOptions = {
@@ -84,6 +104,8 @@ export type GuestRpcOptions = {
   kv?: Kv | undefined;
   /** Resolved Vector instance (enables vector/* RPC handlers when set). */
   vector?: Vector | undefined;
+  /** Host generate fn (enables the llm/generate RPC handler when set). */
+  generate?: HostGenerateFn | undefined;
   allowedHosts?: string[] | undefined;
 };
 
@@ -131,6 +153,23 @@ export function registerGuestRpcHandlers(conn: NdjsonConnection, opts: GuestRpcO
     conn.onRequest("vector/delete", async (raw: unknown) => {
       const p = VectorDeleteParamsSchema.parse(raw);
       await vector.delete(p.ids);
+    });
+  }
+
+  // Host serves guest ctx.generate requests — one-shot LLM calls on the
+  // agent's own providers/credentials (params validated with Zod).
+  if (opts.generate) {
+    const generate = opts.generate;
+    conn.onRequest("llm/generate", async (raw: unknown) => {
+      const p = GenerateParamsSchema.parse(raw);
+      return await generate({
+        prompt: p.prompt,
+        ...(p.system !== undefined ? { system: p.system } : {}),
+        ...(p.llm !== undefined ? { llm: p.llm } : {}),
+        ...(p.schema !== undefined ? { schema: p.schema } : {}),
+        ...(p.temperature !== undefined ? { temperature: p.temperature } : {}),
+        ...(p.maxOutputTokens !== undefined ? { maxOutputTokens: p.maxOutputTokens } : {}),
+      });
     });
   }
 

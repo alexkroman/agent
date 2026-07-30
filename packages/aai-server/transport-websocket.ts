@@ -50,7 +50,10 @@ export async function handleAgentClientConfig(c: AppContext): Promise<Response> 
     throw new HTTPException(404, { message: `Not found: ${slug}` });
   }
   const body: ClientConfigResponse = {
-    transport: config.transport ?? "websocket",
+    // A workflow's default surface runs sync turns even if an older stored
+    // config predates the transport fill-in at parse time.
+    transport: config.transport ?? (config.kind === "workflow" ? "sync" : "websocket"),
+    kind: config.kind ?? "agent",
     name: config.name,
     ...(config.greeting !== undefined ? { greeting: config.greeting } : {}),
   };

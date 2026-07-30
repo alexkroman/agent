@@ -10,10 +10,12 @@ import pTimeout from "p-timeout";
 import type { z } from "zod";
 import { EMPTY_PARAMS } from "../sdk/_internal-types.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
+import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
+import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 
 export type { ExecuteTool } from "../sdk/_internal-types.ts";
@@ -30,6 +32,8 @@ type ExecuteToolCallOptions = {
   kv?: Kv | undefined;
   vector?: Vector | undefined;
   messages?: readonly Message[] | undefined;
+  /** Host LLM generation (ctx.generate); absent contexts throw on use. */
+  generate?: HostGenerateFn | undefined;
   logger?: Logger | undefined;
   send?: ((event: string, data: unknown) => void) | undefined;
   /** Turn-scoped cancellation: unblocks the await (and is exposed to the tool
@@ -38,7 +42,7 @@ type ExecuteToolCallOptions = {
 };
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, kv, vector, messages, sessionId, send, signal } = opts;
+  const { env, state, kv, vector, messages, sessionId, send, signal, generate } = opts;
   return {
     env,
     state: state ?? {},
@@ -50,6 +54,14 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
     get vector(): Vector {
       if (!vector) throw new Error("Vector not available");
       return vector;
+    },
+    generate(genOpts: GenerateOptions): Promise<GenerateResult> {
+      if (!generate) {
+        return Promise.reject(new Error("generate is not available in this execution context"));
+      }
+      // The issuing turn's signal cancels an in-flight generation the same
+      // way it unblocks the tool await.
+      return generate(genOpts, signal !== undefined ? { signal } : {});
     },
     messages: messages ?? [],
     sessionId: sessionId ?? "",

@@ -15,6 +15,7 @@
 
 export type { Vector, VectorMatch, VectorQueryOptions } from "../sdk/vector.ts";
 export * from "./builtin-tools.ts";
+export * from "./generate.ts";
 export * from "./guest-fetch-policy.ts";
 export * from "./host-mode.ts";
 export { createMemoryVector } from "./memory-vector.ts";

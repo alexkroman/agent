@@ -60,6 +60,9 @@ function toolContext(env: NodeJS.ProcessEnv): ToolContext {
     state: {},
     kv: scratchKv(),
     vector: createMemoryVector({ namespace: SESSION_ID }),
+    // The web builtins never call ctx.generate; the studio's own LLM loop is
+    // the generation surface for a coding turn.
+    generate: () => Promise.reject(new Error("generate is not available in studio web tools")),
     messages: [],
     sessionId: SESSION_ID,
     send: () => {

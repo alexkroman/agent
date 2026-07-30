@@ -41,6 +41,7 @@ function makeCtx(kv: Kv = makeKv(), sessionId = "session-a"): ToolContext {
     state: {},
     kv,
     vector: {} as ToolContext["vector"],
+    generate: () => Promise.reject(new Error("generate not available in tests")),
     messages: [],
     sessionId,
     send: vi.fn(),

@@ -22,6 +22,7 @@ import {
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import {
   type AgentRuntime,
+  createGenerateFn,
   createMemoryVector,
   createRuntime,
   createUnstorageKv,
@@ -190,6 +191,10 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       env,
       kv,
       vector,
+      // Guest ctx.generate: one-shot LLM calls on the agent's own pipeline
+      // descriptor (per-call overrides allowed), credentials strictly from
+      // the agent env — never platform-owned keys.
+      generate: createGenerateFn({ llm: config.llm, env }),
       harnessPath,
       allowedHosts: resolveAgentAllowedHosts(config),
     },

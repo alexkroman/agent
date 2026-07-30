@@ -97,6 +97,7 @@ describe("startDevServer (real serving path)", () => {
           expect(res.ok).toBe(true);
           expect(await res.json()).toEqual({
             transport: "sync",
+            kind: "agent",
             name: "sync-serve-agent",
             greeting: "Talk to me.",
           });

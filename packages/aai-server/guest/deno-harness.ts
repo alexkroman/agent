@@ -30,6 +30,7 @@ import {
 } from "./harness-messages.ts";
 import {
   errMsg,
+  generateAdapter,
   handleFetchNotification,
   handleHostResponse,
   kvAdapter,
@@ -54,6 +55,7 @@ import { RUN_CODE_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./limits.ts";
 // Re-export the host-RPC surface so existing consumers/tests can keep
 // importing it from `./deno-harness.ts`.
 export {
+  generateAdapter,
   handleHostResponse,
   kvAdapter,
   pendingHostRequests,
@@ -229,6 +231,7 @@ export async function executeTool(
     state: sessionState.get(req.sessionId),
     kv: kvAdapter,
     vector: vectorAdapter,
+    generate: generateAdapter,
     messages,
     sessionId: req.sessionId,
     send: (event, data) => void sendToClient(req.sessionId, event, data),

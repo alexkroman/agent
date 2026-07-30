@@ -102,6 +102,48 @@ import systemPrompt from "./system-prompt.md";
 export default agent({ name: "My Agent", systemPrompt });
 ```
 
+## `workflow()` API — audio in, action out
+
+The SDK's second app mode, alongside `agent()`. An agent is a conversation;
+a **workflow** is a one-shot run: the user records one instruction (push to
+talk) or uploads an audio file, presses Go, one agentic loop transcribes and
+executes it with the workflow's tools, and the run ends with a written
+report. No conversation, no history between runs.
+
+```ts
+import { workflow, tool } from "@alexkroman1/aai";
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { anthropic } from "@alexkroman1/aai/llm";
+import { z } from "zod";
+
+export default workflow({
+  name: "Expense Filer",
+  stt: assemblyAI({ model: "u3pro-rt" }),   // required
+  llm: anthropic({ model: "claude-sonnet-5" }), // required
+  // tts is optional — defaults to none(): the output is a report, not speech
+  tools: {
+    file_expense: tool({
+      description: "File one expense",
+      parameters: z.object({ amount: z.number(), memo: z.string() }),
+      async execute({ amount, memo }, ctx) {
+        await ctx.kv.set(`expense:${Date.now()}`, { amount, memo });
+        return { filed: true, amount, memo };
+      },
+    }),
+  },
+});
+```
+
+Differences from `agent()`:
+
+- Always a pipeline (`stt` + `llm` required); runs over the sync transport —
+  each run is one history-less `POST /sync`.
+- Its own default system prompt: one-shot semantics (never ask clarifying
+  questions, state assumptions, finish every action, end with a run report).
+  A custom `systemPrompt` is layered on top of that contract.
+- The default client renders the run surface (hold-to-talk / upload + Go and
+  the run report) instead of a chat.
+
 ## Pipeline mode
 
 By default an agent runs in **S2S mode**: AssemblyAI's speech-to-speech
@@ -381,6 +423,58 @@ ctx.kv: Kv                                     // persistent KV store (see KV se
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
 ctx.sessionId: string                          // unique session ID
 ctx.send(event: string, data: unknown): void   // push custom event to browser client
+ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
+```
+
+`ctx.generate({ prompt, system?, llm?, schema?, temperature?, maxOutputTokens? })`
+runs one LLM generation on the host. It defaults to the agent's pipeline
+`llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) to use another
+provider whose API key is in the agent's secrets — that's also how S2S
+agents use it. `schema` must be a **plain JSON Schema object** (use
+`z.toJSONSchema(...)`, or the workflow helpers below), never a Zod schema.
+
+### Workflow patterns — `@alexkroman1/aai/workflow`
+
+Multi-step LLM orchestration inside a tool, as pure helpers over
+`ctx.generate`:
+
+```ts
+import {
+  sequential, parallel, route, orchestrate, evaluatorOptimizer,
+  generateStructured,
+} from "@alexkroman1/aai/workflow";
+
+// Chain: each step sees the previous output
+const { output } = await sequential(ctx.generate, [
+  `Draft marketing copy for: ${product}`,
+  (draft) => `Tighten this to under 100 words:\n${draft}`,
+]);
+
+// Independent tasks in parallel (keyed results)
+const reviews = await parallel(ctx.generate, {
+  security: `Review for security issues:\n${code}`,
+  perf: `Review for performance issues:\n${code}`,
+});
+
+// Classify, then dispatch to the matching handler
+const routed = await route(ctx.generate, {
+  input: query,
+  routes: {
+    refund: { description: "Refund requests", handler: (q) => `...${q}` },
+    other: { description: "Everything else", handler: "..." },
+  },
+});
+
+// Plan → parallel workers → synthesize
+const report = await orchestrate(ctx.generate, { task: "..." });
+
+// Generate → judge → retry with feedback (default 3 attempts)
+const refined = await evaluatorOptimizer(ctx.generate, {
+  task: "...", criteria: "Plain text, under 200 words, cites a tool result",
+});
+
+// Typed structured output (Zod in, parsed object out)
+const parsed = await generateStructured(ctx.generate, z.object({ n: z.number() }), "…");
 ```
 
 ### Inline tool example

@@ -66,6 +66,7 @@ describe("handleAgentClientConfig", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       transport: "websocket",
+      kind: "agent",
       name: "test-agent",
       greeting: "",
     });
@@ -92,6 +93,7 @@ describe("handleAgentClientConfig", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       transport: "sync",
+      kind: "agent",
       name: "test-agent",
       greeting: "Hi! Talk to me.",
     });

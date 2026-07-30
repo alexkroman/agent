@@ -12,6 +12,8 @@ import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
 import { sendAllowedHosts } from "./providers/send/open.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import {
+  type AgentKind,
+  assertAgentKind,
   assertClientTransport,
   assertPipelineTuning,
   assertProviderTriple,
@@ -27,7 +29,13 @@ import {
   type TtsProvider,
   type VectorProvider,
 } from "./providers.ts";
-import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
+import {
+  BuiltinToolSchema,
+  DEFAULT_GREETING,
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_WORKFLOW_GREETING,
+  DEFAULT_WORKFLOW_SYSTEM_PROMPT,
+} from "./types.ts";
 
 /**
  * Tool definition as it appears in the serialized manifest JSON.
@@ -148,6 +156,12 @@ export type Manifest = {
    */
   transport?: ClientTransport | undefined;
   /**
+   * The app's mode: `"agent"` (default) is a conversational interface;
+   * `"workflow"` is audio in → action out — one recorded or uploaded
+   * instruction runs a single agentic loop over the sync transport and ends.
+   */
+  kind?: AgentKind | undefined;
+  /**
    * Session mode derived from provider fields:
    * - `"s2s"`: speech-to-speech path (default when no stt/llm/tts set, or when `s2s` is set).
    * - `"pipeline"`: pluggable STT → LLM → TTS path (stt + llm + tts all set).
@@ -215,6 +229,7 @@ const ManifestSchema = z.object({
   vector: ProviderDescriptorSchema.optional(),
   send: ProviderDescriptorSchema.optional(),
   transport: z.enum(["websocket", "sync"]).optional(),
+  kind: z.enum(["agent", "workflow"]).optional(),
 });
 
 /**
@@ -234,11 +249,17 @@ export function parseManifest(input: unknown): Manifest {
   assertPipelineTuning(mode, parsed);
   assertTextOnlyTuning(parsed.tts, parsed);
   assertClientTransport(mode, parsed.transport);
+  assertAgentKind(mode, parsed.kind, parsed.transport);
   assertAssemblyAITtsLanguage(parsed.tts);
+  const isWorkflow = parsed.kind === "workflow";
   return {
     ...parsed,
-    systemPrompt: parsed.systemPrompt ?? DEFAULT_SYSTEM_PROMPT,
-    greeting: parsed.greeting ?? DEFAULT_GREETING,
+    // A workflow's default client runs sync turns; fill the transport so a
+    // hand-rolled manifest doesn't ship a chat WebSocket client by omission.
+    ...(isWorkflow ? { transport: parsed.transport ?? "sync" } : {}),
+    systemPrompt:
+      parsed.systemPrompt ?? (isWorkflow ? DEFAULT_WORKFLOW_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT),
+    greeting: parsed.greeting ?? (isWorkflow ? DEFAULT_WORKFLOW_GREETING : DEFAULT_GREETING),
     builtinTools: parsed.builtinTools ?? [...DEFAULT_BUILTIN_TOOLS],
     maxSteps: parsed.maxSteps ?? DEFAULT_MAX_STEPS,
     toolChoice: parsed.toolChoice ?? "auto",

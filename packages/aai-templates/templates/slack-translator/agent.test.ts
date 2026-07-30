@@ -5,14 +5,24 @@ import agentDef from "./agent.ts";
 
 describe("slack-translator template", () => {
   test("config passes manifest validation", () => {
-    // Same conversion `aai build`/`aai deploy` run. Text-only mode rejects
-    // holdPhrase-style tuning (assertTextOnlyTuning), so this is what catches
-    // a `tts: none()` config that pairs with an illegal knob.
+    // Same conversion `aai build`/`aai deploy` run. This is what catches a
+    // workflow config that violates the kind rules (assertAgentKind) or a
+    // text-only config that pairs with an illegal knob (assertTextOnlyTuning).
     expect(() => toAgentConfig(agentDef)).not.toThrow();
   });
 
+  test("is a workflow over the sync transport", () => {
+    // workflow() stamps both; losing either would render the chat shell and
+    // run the conversational default prompt on a definition with no
+    // conversation to have.
+    expect(agentDef.kind).toBe("workflow");
+    expect(agentDef.transport).toBe("sync");
+    expect(toAgentConfig(agentDef)).toMatchObject({ kind: "workflow", transport: "sync" });
+  });
+
   test("is text-only pipeline mode", () => {
-    // tts: none() still counts toward the all-or-none stt/llm/tts rule.
+    // tts defaults to none() for workflows and still counts toward the
+    // all-or-none stt/llm/tts rule.
     expect(agentDef.stt?.kind).toBe("assemblyai");
     expect(agentDef.llm?.kind).toBe("assemblyai");
     expect(agentDef.tts?.kind).toBe("none");
@@ -20,7 +30,7 @@ describe("slack-translator template", () => {
 
   test("declares Slack as the send channel", () => {
     // `send` is what makes the runtime register the host-side send_message
-    // builtin — without it the agent has no way to reach Slack at all, and
+    // builtin — without it the workflow has no way to reach Slack at all, and
     // the failure is a silently missing tool rather than an error.
     expect(agentDef.send?.kind).toBe("slack");
   });

@@ -221,27 +221,27 @@ const TEMPLATE_CASES: TemplateCase[] = [
   },
   {
     template: "slack-translator",
-    shape: "text-only pipeline plus an outbound send channel (send: slack())",
+    shape: "workflow kind (audio in, action out) plus an outbound send channel (send: slack())",
     expectedSend: "slack",
     // The user-level ask is "record my audio, translate to french, and send to
-    // slack". Expanded here in the style of the other cases for the two things
+    // slack". Expanded here in the style of the other cases for the things
     // the terse form leaves ambiguous and the parity rubric grades strictly:
-    // the session mode (nothing in "record my audio" implies `tts: none()`)
-    // and provider identity (unnamed providers get graded against the
+    // the app mode (the reference is a `workflow()`, not a chat agent) and
+    // provider identity (unnamed providers get graded against the
     // reference's, which is why the pipeline-simple case above names its own).
     prompt:
-      "Record my audio, translate it to French, and send it to Slack. Make it " +
-      "text-only — the reply belongs in Slack, not in the speaker: " +
-      'stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt", ' +
-      'llm: the AssemblyAI LLM Gateway with model "gemini-2.5-flash-lite" from ' +
-      '"@alexkroman1/aai/llm" (both factories are called assemblyAI, so alias ' +
-      'one on import), and tts: none() from "@alexkroman1/aai/tts". Declare ' +
-      'send: slack() from "@alexkroman1/aai/send" so the agent gets the ' +
-      "send_message tool, and add a prepare_french_translation tool that " +
-      "records the original transcript and the final French text before it " +
-      "sends. It should treat every recording as text to translate rather than " +
-      "a question, send only the French translation to Slack, then confirm in " +
-      "one short English sentence." +
+      "Record my audio, translate it to French, and send it to Slack — as a " +
+      'one-shot run, not a chat: use workflow() from "@alexkroman1/aai" ' +
+      "(audio in, action out; leave tts unset so it defaults to none()). " +
+      'stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt" ' +
+      'and llm: the AssemblyAI LLM Gateway with model "gemini-2.5-flash-lite" ' +
+      'from "@alexkroman1/aai/llm" (both factories are called assemblyAI, so ' +
+      'alias one on import). Declare send: slack() from "@alexkroman1/aai/send" ' +
+      "so it gets the send_message tool, and add a prepare_french_translation " +
+      "tool that records the original transcript and the final French text " +
+      "before it sends. Every recording is text to translate rather than a " +
+      "question; send only the French translation to Slack, and the run " +
+      "report should be one short English confirmation." +
       ONE_SHOT,
   },
 ];
@@ -261,6 +261,9 @@ const UNCOVERED: Record<string, string> = {
   "solo-rpg": "same shape as pizza-ordering (kv state keyed by sessionId)",
   "dispatch-center": "same shape as pizza-ordering (kv state keyed by sessionId)",
   "sync-voice": "sync mode is a transport, not an agent shape the codegen picks",
+  "voice-debrief":
+    "workflow kind + send channel is covered by slack-translator; the ctx.generate/" +
+    "generateStructured extraction step has no one-shot parity rubric yet",
   "push-to-talk-translator": "client-side capture concern; agent.ts is pipeline-simple's shape",
 };
 
