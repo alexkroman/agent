@@ -4,6 +4,7 @@
 // Realtime). Tool-execution specs live in runtime.test.ts.
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { SESSION_RESUME_GRACE_MS } from "../sdk/constants.ts";
 import { openaiRealtime } from "../sdk/providers/s2s/openai-realtime.ts";
 import type { S2sProvider } from "../sdk/providers.ts";
 import {
@@ -185,6 +186,81 @@ describe("createRuntime createSession", () => {
       event: "ping",
       data: { n: 2 },
     });
+  });
+
+  test("resume after the old session fully stopped keeps ctx.state (grace window)", async () => {
+    const agent = makeAgent({
+      state: () => ({ counter: 0 }),
+      tools: {
+        increment: {
+          description: "Bump state",
+          execute: (_args, ctx) => {
+            const state = ctx.state as { counter: number };
+            state.counter++;
+            return String(state.counter);
+          },
+        },
+      },
+    });
+    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+
+    const oldSession = runtime.createSession({
+      id: "resume-2",
+      agent: agent.name,
+      client: makeClientSink(),
+    });
+    await runtime.executeTool("increment", {}, "resume-2", []);
+
+    // The common resume shape: the old session's stop settles BEFORE the
+    // client reconnects (backoff starts at 1s). ctx.state must survive the
+    // gap — the grace-window sweep, not the stop, reclaims it.
+    await oldSession.stop();
+
+    runtime.createSession({ id: "resume-2", agent: agent.name, client: makeClientSink() });
+    const result = await runtime.executeTool("increment", {}, "resume-2", []);
+    expect(result).toBe("2");
+  });
+
+  test("unresumed session state is reclaimed after the grace window", async () => {
+    // Only fake the timeout APIs: the tool executor yields via setImmediate,
+    // which must keep running for executeTool to settle.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
+    try {
+      const stateFactory = vi.fn(() => ({ counter: 0 }));
+      const agent = makeAgent({
+        state: stateFactory,
+        tools: {
+          increment: {
+            description: "Bump state",
+            execute: (_args, ctx) => {
+              const state = ctx.state as { counter: number };
+              state.counter++;
+              return String(state.counter);
+            },
+          },
+        },
+      });
+      const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+
+      const session = runtime.createSession({
+        id: "expire-1",
+        agent: agent.name,
+        client: makeClientSink(),
+      });
+      await runtime.executeTool("increment", {}, "expire-1", []);
+      await session.stop();
+
+      // No resume arrives — after the grace window the state is gone and a
+      // later session under the same id starts fresh.
+      await vi.advanceTimersByTimeAsync(SESSION_RESUME_GRACE_MS + 1);
+
+      runtime.createSession({ id: "expire-1", agent: agent.name, client: makeClientSink() });
+      const result = await runtime.executeTool("increment", {}, "expire-1", []);
+      expect(result).toBe("1");
+      expect(stateFactory).toHaveBeenCalledTimes(2);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("createSession passes skipGreeting option", () => {
