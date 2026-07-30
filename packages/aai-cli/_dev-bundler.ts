@@ -34,6 +34,12 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import type { Plugin } from "rolldown";
+import {
+  CONVENTIONS_ENTRY_ID,
+  discoverConventions,
+  generateConventionsEntry,
+  redirectsToAgentEntry,
+} from "./_conventions.ts";
 
 const RAW_NAMESPACE = "\0aai-raw:";
 
@@ -74,6 +80,23 @@ const mdPlugin: Plugin = {
 };
 
 /**
+ * Rolldown side of `worker-bundler.ts`'s `conventionsPlugin`: redirect
+ * `agent.ts` to the generated entry composing the directory's convention
+ * files (`instructions.md`, `tools/`, `skills/` — see `_conventions.ts`).
+ */
+function devConventionsPlugin(agentPath: string, entryCode: string): Plugin {
+  return {
+    name: "aai-conventions",
+    resolveId(source, importer) {
+      return redirectsToAgentEntry(source, importer, agentPath) ? CONVENTIONS_ENTRY_ID : null;
+    },
+    load(id) {
+      return id === CONVENTIONS_ENTRY_ID ? entryCode : null;
+    },
+  };
+}
+
+/**
  * True for bundler build failures — compile/resolve errors in the code being
  * built (Rolldown aggregates its diagnostics onto an `errors` array, the same
  * shape esbuild used). Anything else coming out of `build()` is a
@@ -106,12 +129,20 @@ export function createDevWorkerBuilder(cwd: string): DevWorkerBuilder {
   return {
     async build(): Promise<string> {
       const { rolldown } = await import("rolldown");
+      const agentPath = path.join(cwd, "agent.ts");
+      // Re-discovered on every build: convention files can appear or vanish
+      // between saves, and the watcher restart that triggered this build is
+      // exactly when that has to be picked up (buildWorker parity).
+      const conventions = await discoverConventions(cwd);
+      const conventionPlugins = conventions
+        ? [devConventionsPlugin(agentPath, generateConventionsEntry(agentPath, conventions))]
+        : [];
       const bundle = await rolldown({
-        input: path.join(cwd, "agent.ts"),
+        input: agentPath,
         cwd,
         platform: "node",
         logLevel: "silent",
-        plugins: [rawSuffixPlugin, mdPlugin],
+        plugins: [...conventionPlugins, rawSuffixPlugin, mdPlugin],
       });
       try {
         const result = await bundle.generate({ format: "esm", minify: false });

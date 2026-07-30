@@ -24,5 +24,10 @@ export {
   assertTextOnlyTuning,
   type SessionMode,
 } from "./config-rules.ts";
+export {
+  type AgentConventions,
+  applyAgentConventions,
+  SKILL_TOOL_PREFIX,
+} from "./conventions.ts";
 export { ProviderDescriptorSchema } from "./manifest.ts";
 export { isTextOnlyTts, NONE_TTS_KIND } from "./providers/tts/none.ts";
