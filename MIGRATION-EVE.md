@@ -92,21 +92,29 @@ Measured with a paced fake `LanguageModel` (100 deltas at 20 ms) inside a
 real eve app, arrival-stamped through `getEventStream` from a bench
 channel route — so the numbers are pure eve overhead, no model variance:
 
-| Metric | Result |
-| --- | --- |
-| Per-delta stream overhead | **p50 3 ms, p90 4–5 ms, max 12–22 ms** |
-| New-session start → first delta (warm) | ~230–240 ms |
-| Second turn (deliver on parked session) → first delta | **~265 ms** |
+| Metric | `eve dev` | `eve build && eve start` | local loop (current) |
+| --- | --- | --- | --- |
+| Per-delta stream overhead | p50 3 ms, max ~20 ms | same | n/a (in-process) |
+| Committed turn → first delta | ~160–250 ms | **~110–150 ms** | **~8 ms** |
 
-**Verdict: the event stream itself is effectively free for voice; the cost
-is per-turn workflow start/resume (~250 ms before the model's first delta
-is visible).** Real-world TTFA through eve ≈ model TTFT + ~250 ms + TTS
-first-chunk — roughly 250 ms worse than the local loop. Not disqualifying,
-but worth optimizing (eve's park/resume path) before deleting the local
-`streamText` loop; the turn-runner seam keeps both options open. Numbers
-are dev-mode/disk-world — re-measure on the production setup. The
-end-to-end run against the AssemblyAI LLM Gateway still needs this
-environment's egress policy to allow `llm-gateway.assemblyai.com`.
+Stage decomposition (one continuously-open stream, 8 turns): `send()`
+resolves in 5–20 ms; **the entire remaining cost sits between the runtime
+accepting the delivery and `turn.started`** — eve's park→resume path
+(durable run-state rehydration + step re-entry + queue dispatch on the
+local world). Once the turn starts, `step.started` and the first delta
+follow within 2–4 ms. No single large scheduler tick was found in the
+workflow internals (timers there are ~10 ms scale), so the latency is
+aggregate durability work, not a config knob we missed.
+
+**Verdict: the event stream itself is effectively free for voice; eve's
+per-turn resume adds ~110–140 ms (production self-host) on top of model
+TTFT versus ~8 ms for the local loop.** Not disqualifying, but a real,
+per-reply tax — worth raising upstream (an in-memory world with async
+persistence would likely close most of it) and worth keeping the local
+`streamText` loop behind the turn-runner seam for latency-critical
+deployments until it shrinks. The end-to-end run against the AssemblyAI
+LLM Gateway still needs this environment's egress policy to allow
+`llm-gateway.assemblyai.com`.
 
 ## Open questions (validate before the big deletions)
 
