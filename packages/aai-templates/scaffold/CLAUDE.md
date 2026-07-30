@@ -110,6 +110,10 @@ talk) or uploads an audio file, presses Go, one agentic loop transcribes and
 executes it with the workflow's tools, and the run ends with a written
 report. No conversation, no history between runs.
 
+**When the user asks for a "workflow", build it with `workflow()`, never
+`agent()`** — the word names this app mode, not a conversational agent
+that happens to run a multi-step task.
+
 ```ts
 import { workflow, tool } from "@alexkroman1/aai";
 import { assemblyAI } from "@alexkroman1/aai/stt";

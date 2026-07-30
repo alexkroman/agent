@@ -181,7 +181,7 @@ export const TEMPLATE_CASES: TemplateCase[] = [
       ONE_SHOT,
   },
   {
-    template: "slack-translator",
+    template: "slack-translator-workflow",
     shape: "workflow kind (audio in, action out) plus an outbound send channel (send: slack())",
     expectedSend: "slack",
     expectedKind: "workflow",
@@ -207,7 +207,7 @@ export const TEMPLATE_CASES: TemplateCase[] = [
       ONE_SHOT,
   },
   {
-    template: "voice-debrief",
+    template: "debrief-workflow",
     shape:
       "workflow kind whose first step is an LLM call inside a tool " +
       "(generateStructured over ctx.generate) feeding one executor tool per action type",
