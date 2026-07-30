@@ -243,6 +243,7 @@ describe("spawnModalWarm", () => {
 
     expect(createParams).toHaveLength(1);
     expect(createParams[0]).toMatchObject({
+      command: ["sleep", "infinity"],
       blockNetwork: true,
       timeoutMs: DEFAULT_SANDBOX_TIMEOUT_MS,
       tags: { service: "aai-guest", slug: "my-agent" },

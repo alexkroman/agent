@@ -377,6 +377,13 @@ export async function spawnModalWarm(
 
   const t0 = performance.now();
   const sb = await context.createSandbox({
+    // Explicit idle entrypoint. Without a command Modal falls back to the
+    // image's default process, and denoland/deno's docker-entrypoint.sh
+    // treats its arguments as Deno subcommands — the container exits
+    // immediately and every later filesystem/exec call reports "Sandbox may
+    // have already shut down". `sleep infinity` is inert under both
+    // entrypoint interpretations.
+    command: ["sleep", "infinity"],
     // The guest has no network by design — all egress is host-proxied RPC.
     blockNetwork: true,
     timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
