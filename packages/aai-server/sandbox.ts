@@ -17,6 +17,7 @@ import {
   errorMessage,
   MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_CLIENT_EVENT_PAYLOAD_BYTES,
+  SESSION_RESUME_GRACE_MS,
   toolError,
 } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
@@ -275,6 +276,35 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   const sessionSinks = new Map<string, ClientSink>();
 
+  // Deferred guest `session/end` notifications, keyed by session id. The
+  // guest's session state (ctx.state, message cache) is keyed by that id, and
+  // a disconnected client may resume it (`?sessionId=<id>`) — sending
+  // session/end the moment the socket closed wiped the guest's ctx.state
+  // before any resume could land, so every resumed session ran the agent with
+  // fresh state. Mirror of the SDK runtime's grace-window state sweep.
+  const pendingSessionEnds = new Map<string, NodeJS.Timeout>();
+
+  function scheduleSessionEnd(sessionId: string): void {
+    cancelSessionEnd(sessionId);
+    const timer = setTimeout(() => {
+      pendingSessionEnds.delete(sessionId);
+      vmReady
+        .then((handle) => handle.conn.sendNotification("session/end", { sessionId }))
+        .catch(() => {
+          // VM failed to start — session/end notification is best-effort
+        });
+    }, SESSION_RESUME_GRACE_MS);
+    timer.unref?.();
+    pendingSessionEnds.set(sessionId, timer);
+  }
+
+  function cancelSessionEnd(sessionId: string): void {
+    const timer = pendingSessionEnds.get(sessionId);
+    if (timer === undefined) return;
+    clearTimeout(timer);
+    pendingSessionEnds.delete(sessionId);
+  }
+
   vmReady
     .then((handle) => {
       handle.conn.onNotification("client/send", createClientSendHandler(sessionSinks));
@@ -289,6 +319,9 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   async function shutdownSandbox(): Promise<void> {
     sessionSinks.clear();
+    // The guest process is going down with us — nothing left to notify.
+    for (const timer of pendingSessionEnds.values()) clearTimeout(timer);
+    pendingSessionEnds.clear();
     try {
       const handle = await vmReady;
       await handle.shutdown();
@@ -306,17 +339,20 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     originalStartSession(ws, {
       ...opts,
       onSinkCreated(sessionId, sink) {
+        // A resume under this id keeps its guest-side session state — cancel
+        // the deferred session/end the previous connection scheduled.
+        cancelSessionEnd(sessionId);
         sessionSinks.set(sessionId, sink);
         opts?.onSinkCreated?.(sessionId, sink);
       },
       onSessionEnd(sessionId) {
         sessionSinks.delete(sessionId);
+        // Reset the delta tracker eagerly — the next call (resumed or not)
+        // just pays one full-history send. The guest's session state, by
+        // contrast, is unrecoverable once freed, so its release waits out
+        // the resume grace window.
         messageTracker.reset(sessionId);
-        vmReady
-          .then((handle) => handle.conn.sendNotification("session/end", { sessionId }))
-          .catch(() => {
-            // VM failed to start — session/end notification is best-effort
-          });
+        scheduleSessionEnd(sessionId);
         opts?.onSessionEnd?.(sessionId);
       },
     });

@@ -232,15 +232,27 @@ describe("createSessionCore", () => {
       expect(lastSocket?.url).toContain("sessionId=prev-session");
     });
 
-    it("adds resume=1 on reconnect (not first connect)", () => {
+    it("reconnects with the server-issued sessionId (not first connect)", () => {
       core.connect();
       lastSocket?.simulateOpen();
-      // Send a config to mark hasConnected=true
+      // Config carries the server's sessionId — the resume key.
       lastSocket?.simulateMessage(makeConfig());
       // Disconnect and reconnect
       core.disconnect();
       core.connect();
+      expect(lastSocket?.url).toContain("sessionId=sess-123");
+      expect(lastSocket?.url).not.toContain("resume=1");
+    });
+
+    it("falls back to resume=1 on reconnect when config carried no sessionId", () => {
+      core.connect();
+      lastSocket?.simulateOpen();
+      // Older servers may omit sessionId — greeting suppression still applies.
+      lastSocket?.simulateMessage(makeConfig(16_000, 24_000, ""));
+      core.disconnect();
+      core.connect();
       expect(lastSocket?.url).toContain("resume=1");
+      expect(lastSocket?.url).not.toContain("sessionId=");
     });
 
     it("first connect has no resume param", () => {
@@ -332,7 +344,10 @@ describe("createSessionCore", () => {
       await vi.advanceTimersByTimeAsync(1000);
       const second = lastSocket;
       expect(second).not.toBe(first);
-      expect(second?.url).toContain("resume=1");
+      // The retry URL carries the sessionId from the first config, so the
+      // server resumes the same session (and its ctx.state) rather than
+      // minting a new one.
+      expect(second?.url).toContain("sessionId=sess-1");
 
       second?.simulateOpen();
       expect(core.getSnapshot().state).toBe("ready");

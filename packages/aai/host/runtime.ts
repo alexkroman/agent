@@ -35,6 +35,7 @@ import {
 } from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
+import { createStateSweeps } from "./session-state-sweeps.ts";
 import { createSyncTurnRunner, SyncTurnError } from "./sync-turn.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
 import { createUnstorageKv } from "./unstorage-kv.ts";
@@ -202,8 +203,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     isTextOnlyTts(effectiveProviders.tts) ? { audioOut: false } : {},
   );
 
-  // Per-session tool state (self-hosted mode only); cleaned up on session end.
+  // Per-session tool state (self-hosted mode only); cleaned up on session
+  // end, but only after the resume grace window — see session-state-sweeps.ts.
   const stateMap = new Map<string, Record<string, unknown>>();
+  const stateSweeps = createStateSweeps(stateMap);
 
   const { executeTool, toolSchemas, toolGuidance } = setupTools({
     agent,
@@ -298,6 +301,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   };
 
   function createSession(sessionOpts: TransportSessionOpts): SessionCore {
+    // A resume under this id (same key, new socket) reclaims its tool state —
+    // cancel the sweep the previous session's stop() scheduled.
+    stateSweeps.cancel(sessionOpts.id);
     sinkMap.set(sessionOpts.id, sessionOpts.client);
 
     const isPipeline = Boolean(pipelineProviders);
@@ -391,7 +397,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       } finally {
         if (sinkMap.get(sessionOpts.id) === sessionOpts.client) {
           sinkMap.delete(sessionOpts.id);
-          stateMap.delete(sessionOpts.id);
+          // Tool state outlives the socket: keep it for the resume grace
+          // window so a `?sessionId=<id>` reconnect finds its ctx.state.
+          stateSweeps.schedule(sessionOpts.id);
         }
       }
     };
@@ -437,6 +445,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // cleanup (its sink-identity check fails against the cleared map), so clear
     // it here too or timed-out sessions leak their tool state permanently.
     stateMap.clear();
+    // Pending grace-window sweeps have nothing left to reclaim.
+    stateSweeps.clear();
     // Release a runtime-owned KV (e.g. redisKv's connection). Without this,
     // `aai dev` — which rebuilds the runtime on every file save — strands the
     // previous connection on each reload.

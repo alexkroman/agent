@@ -113,6 +113,15 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   };
   let connectionController: AbortController | null = null;
   let hasConnected = false;
+  /**
+   * The session ID to resume: seeded from `options.resumeSessionId`, then
+   * kept current from every `config` frame. Reconnect URLs carry it as
+   * `?sessionId=<id>` so the server re-registers the SAME session id —
+   * that key is what per-session tool state (`ctx.state`) lives under, so
+   * a reconnect that omits it gets a fresh session with none of the
+   * agent's context, greeting suppression aside.
+   */
+  let sessionId: string | undefined = options.resumeSessionId;
 
   function cleanupAudio(): void {
     upload.discard();
@@ -180,7 +189,10 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   /** React to the server's `config` message: record it, set up the audio
    *  path for the session's mode, and replay history on reconnect. */
   function onServerConfig(config: SessionConfigMessage): void {
-    if (config.sid) options.onSessionId?.(config.sid);
+    if (config.sid) {
+      sessionId = config.sid;
+      options.onSessionId?.(config.sid);
+    }
     const isReconnect = hasConnected;
     hasConnected = true;
     conn.readyConfig = { sampleRate: config.sampleRate, ttsSampleRate: config.ttsSampleRate };
@@ -210,11 +222,12 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
    * The WebSocket URL for the *next* connection attempt. Evaluated per
    * attempt (partysocket takes it as a URL provider), so once the first
    * `config` arrives, every reconnect — automatic or explicit — carries
-   * `resume=1` and the session resumes instead of starting over.
+   * `?sessionId=<id>` and the server resumes the SAME session (id, tool
+   * state) instead of minting a new one. `resume=1` remains only as the
+   * greeting-suppression fallback for a server whose config carried no id.
    */
   function currentWsUrl(): string {
-    const resumeId = !hasConnected ? options.resumeSessionId : undefined;
-    return buildWsUrl(options.platformUrl, hasConnected, resumeId).toString();
+    return buildWsUrl(options.platformUrl, hasConnected, sessionId).toString();
   }
 
   /** Open a socket: an injected constructor as-is (tests), or partysocket's
