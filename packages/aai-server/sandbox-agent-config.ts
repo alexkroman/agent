@@ -60,6 +60,11 @@ export function toRuntimeAgent(config: IsolateConfig): RuntimeAgent {
       holdPhrase: config.holdPhrase,
       errorPhrase: config.errorPhrase,
       falseInterruptionTimeoutMs: config.falseInterruptionTimeoutMs,
+      // The two app modes speak from different default prompts and rules
+      // (see sdk/system-prompt.ts) — dropping this would run a deployed
+      // workflow on the conversational agent prompt, so it would ask
+      // clarifying questions nobody can answer.
+      kind: config.kind,
       toolChoice: config.toolChoice satisfies ToolChoice | undefined,
       builtinTools: config.builtinTools as BuiltinTool[] | undefined,
       s2s: config.s2s,

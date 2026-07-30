@@ -9,6 +9,7 @@
 
 import { AllowedHostsSchema, DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
 import {
+  assertAgentKind,
   assertClientTransport,
   assertPipelineTuning,
   assertProviderTriple,
@@ -60,6 +61,7 @@ export const IsolateConfigSchema = z
     vector: ProviderDescriptorSchema.optional(),
     send: ProviderDescriptorSchema.optional(),
     transport: z.enum(["websocket", "sync"]).optional(),
+    kind: z.enum(["agent", "workflow"]).optional(),
   })
   .superRefine((cfg, ctx) => {
     function fail(message: string): void {
@@ -74,6 +76,7 @@ export const IsolateConfigSchema = z
       assertPipelineTuning(mode, cfg);
       assertTextOnlyTuning(cfg.tts, cfg);
       assertClientTransport(mode, cfg.transport);
+      assertAgentKind(mode, cfg.kind, cfg.transport);
     } catch (err) {
       fail(errorMessage(err));
     }

@@ -29,6 +29,8 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "DEFAULT_STT_SAMPLE_RATE",
   "DEFAULT_SYSTEM_PROMPT",
   "DEFAULT_TTS_SAMPLE_RATE",
+  "DEFAULT_WORKFLOW_GREETING",
+  "DEFAULT_WORKFLOW_SYSTEM_PROMPT",
   "FETCH_TIMEOUT_MS",
   "FILE_SEND_BACKOFF_MS",
   "FILE_UPLOAD_CHUNK_BYTES",
@@ -94,6 +96,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "tool",
   "toolError",
   "validateAllowedHostPattern",
+  "workflow",
 ]
 `;
 
@@ -105,6 +108,7 @@ exports[`export surface stability > @alexkroman1/aai/manifest export 1`] = `
   "ProviderDescriptorSchema",
   "ToolSchemaSchema",
   "agentToolsToSchemas",
+  "assertAgentKind",
   "assertClientTransport",
   "assertPipelineTuning",
   "assertProviderTriple",
@@ -160,6 +164,7 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "checkToolFetch",
   "consoleLogger",
   "createConsoleLogger",
+  "createGenerateFn",
   "createMemoryVector",
   "createPineconeVector",
   "createPipelineTransport",

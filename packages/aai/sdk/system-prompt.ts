@@ -4,7 +4,7 @@
  */
 
 import type { AgentConfig } from "./_internal-types.ts";
-import { DEFAULT_SYSTEM_PROMPT } from "./types.ts";
+import { DEFAULT_SYSTEM_PROMPT, DEFAULT_WORKFLOW_SYSTEM_PROMPT } from "./types.ts";
 
 const DATE_FORMAT_OPTIONS: Intl.DateTimeFormatOptions = {
   weekday: "long",
@@ -51,12 +51,19 @@ export function buildSystemPrompt(
   config: AgentConfig,
   opts: { hasTools: boolean; voice?: boolean; toolGuidance?: readonly string[] | undefined },
 ): string {
-  const hasCustomPrompt = config.systemPrompt && config.systemPrompt !== DEFAULT_SYSTEM_PROMPT;
+  // The two app modes speak from different defaults: an agent runs the
+  // conversational customer-service prompt; a workflow runs the one-shot
+  // execute-and-report prompt. Everything conversational below (the spoken
+  // tool preamble, the voice output rules) is skipped for workflows — there
+  // is no caller to keep engaged and the output is a written run report.
+  const isWorkflow = config.kind === "workflow";
+  const basePrompt = isWorkflow ? DEFAULT_WORKFLOW_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT;
+  const hasCustomPrompt = config.systemPrompt && config.systemPrompt !== basePrompt;
   const agentInstructions = hasCustomPrompt
-    ? `\n\nAgent-Specific Instructions:\n${config.systemPrompt}`
+    ? `\n\n${isWorkflow ? "Workflow" : "Agent"}-Specific Instructions:\n${config.systemPrompt}`
     : "";
 
-  const toolPreamble = opts.hasTools ? TOOL_PREAMBLE : "";
+  const toolPreamble = opts.hasTools && !isWorkflow ? TOOL_PREAMBLE : "";
 
   const guidance =
     opts.toolGuidance && opts.toolGuidance.length > 0
@@ -66,11 +73,11 @@ export function buildSystemPrompt(
   const today = new Date().toLocaleDateString("en-US", DATE_FORMAT_OPTIONS);
 
   return (
-    DEFAULT_SYSTEM_PROMPT +
+    basePrompt +
     `\n\nToday's date is ${today}.` +
     agentInstructions +
     toolPreamble +
     guidance +
-    (opts.voice ? VOICE_RULES : "")
+    (opts.voice && !isWorkflow ? VOICE_RULES : "")
   );
 }

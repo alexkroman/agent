@@ -18,6 +18,7 @@ import { toolError } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { resolveSendBuiltin, SEND_MESSAGE_TOOL } from "./builtin-send.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS, safeFetch } from "./builtin-tools.ts";
+import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import { exemptFromToolEgress, installToolFetchGuard, runInToolEgress } from "./tool-egress.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
@@ -92,6 +93,22 @@ type ToolSetupDeps = {
 
 type SendTool = ReturnType<typeof resolveSendBuiltin> | null;
 
+/**
+ * Build the ctx.generate implementation for this runtime: the agent's
+ * effective LLM descriptor (platform passes it as a runtime option, `aai dev`
+ * reads the agent's own field) with credentials from `providerEnv` — the same
+ * env KV/Vector descriptors resolve from. Provider HTTP traffic is exempt
+ * from the tool-egress guard like ctx.kv/ctx.vector: the call executes on the
+ * host (over RPC in production), so `allowedHosts` never applies to it.
+ */
+function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
+  const generate = createGenerateFn({
+    llm: deps.opts.llm ?? deps.agent.llm,
+    env: deps.providerEnv,
+  });
+  return exemptFromToolEgress({ generate }).generate;
+}
+
 /** Sandbox mode — custom tools are RPC-backed; builtins run host-side. */
 function setupSandboxTools(
   deps: ToolSetupDeps,
@@ -100,6 +117,7 @@ function setupSandboxTools(
 ): ToolSetup {
   const { agent, opts, env, resolvedKv, resolvedVector, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
+  const generate = setupGenerate(deps);
   const resolved = resolveSandboxBuiltins(agent, opts, builtinFetchOpt);
   const builtinDefs = resolved.defs;
   let toolSchemas = resolved.schemas;
@@ -124,6 +142,7 @@ function setupSandboxTools(
         kv: resolvedKv,
         vector: resolvedVector,
         messages,
+        generate,
         logger,
         signal: callOpts?.signal,
       });
@@ -175,6 +194,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetu
   const allowedHosts = agent.allowedHosts ?? [];
   const kv = exemptFromToolEgress(resolvedKv);
   const vector = exemptFromToolEgress(resolvedVector);
+  const generate = setupGenerate(deps);
 
   const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
     const tool = allTools[name];
@@ -189,6 +209,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetu
         kv,
         vector,
         messages,
+        generate,
         logger,
         send: sink ? (event, data) => sink.event({ type: "custom_event", event, data }) : undefined,
         // Turn cancellation (barge-in/reset/stop) unblocks the tool await.

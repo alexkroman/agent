@@ -281,6 +281,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
       // Served pre-connection via GET /client-config so the default client
       // can honor `agent({ transport })` without a custom client.tsx.
       ...(agentDef.transport !== undefined ? { transport: agentDef.transport } : {}),
+      ...(agentDef.kind !== undefined ? { kind: agentDef.kind } : {}),
       greeting: agentDef.greeting,
       ...clientDirOpt,
     });

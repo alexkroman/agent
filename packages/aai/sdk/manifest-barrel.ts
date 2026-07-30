@@ -18,6 +18,8 @@ export {
 export { ProviderDescriptorSchema } from "./manifest.ts";
 export { isTextOnlyTts, NONE_TTS_KIND } from "./providers/tts/none.ts";
 export {
+  type AgentKind,
+  assertAgentKind,
   assertClientTransport,
   assertPipelineTuning,
   assertProviderTriple,

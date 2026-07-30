@@ -28,6 +28,12 @@ export const CLIENT_CONFIG_PATH = "client-config";
  */
 export const ClientConfigResponseSchema = z.object({
   transport: z.enum(["websocket", "sync"]).default("websocket"),
+  /**
+   * The app's mode: `"agent"` renders the conversational shell, `"workflow"`
+   * the one-shot record/upload + go surface. Defaults to `"agent"` so older
+   * servers keep today's behavior.
+   */
+  kind: z.enum(["agent", "workflow"]).default("agent"),
   /** Agent display name, for the default client's header/start screen. */
   name: z.string().optional(),
   /**

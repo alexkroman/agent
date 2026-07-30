@@ -40,11 +40,30 @@ export type VectorAdapter = {
   delete(ids: string | string[]): Promise<void>;
 };
 
+// Mirrors the SDK's GenerateOptions/GenerateResult (sdk/generate.ts) —
+// JSON-serializable by design, proxied to the host as the llm/generate RPC.
+export type GenerateOptions = {
+  prompt: string;
+  system?: string;
+  llm?: { kind: string; options: Record<string, unknown> };
+  schema?: Record<string, unknown>;
+  temperature?: number;
+  maxOutputTokens?: number;
+};
+
+export type GenerateResult = {
+  text: string;
+  object?: unknown;
+};
+
+export type GenerateAdapter = (options: GenerateOptions) => Promise<GenerateResult>;
+
 export type ToolContext = {
   env: Readonly<Record<string, string>>;
   state: Record<string, unknown>;
   kv: KvAdapter;
   vector: VectorAdapter;
+  generate: GenerateAdapter;
   sessionId: string;
   messages: readonly Message[];
   send(event: string, data: unknown): void;

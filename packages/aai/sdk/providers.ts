@@ -135,6 +135,40 @@ export function assertClientTransport(
 }
 
 /**
+ * What kind of app this definition is — the two modes of the SDK.
+ *
+ * - `"agent"` (default): a conversational chat/voice interface — an open
+ *   session the user talks with turn by turn.
+ * - `"workflow"`: audio in, action out — one push-to-talk or uploaded
+ *   instruction runs a single agentic loop to completion and the run ends.
+ *   Built by the `workflow()` helper; runs over the connectionless sync
+ *   transport with no conversation history.
+ */
+export type AgentKind = "agent" | "workflow";
+
+/**
+ * Enforce the workflow-kind config rules: a workflow is one sync turn over
+ * an STT→LLM pipeline, so it requires pipeline mode and the sync transport
+ * (the `workflow()` helper sets both; this catches hand-rolled configs).
+ *
+ * Shared by `parseManifest`, `toAgentConfig`, and the server's
+ * `IsolateConfigSchema` — one source of truth for the validation.
+ */
+export function assertAgentKind(
+  mode: SessionMode,
+  kind: AgentKind | undefined,
+  transport: ClientTransport | undefined,
+): void {
+  if (kind !== "workflow") return;
+  if (mode !== "pipeline") {
+    throw new Error('kind: "workflow" requires pipeline mode (stt, llm, and tts all set)');
+  }
+  if (transport !== undefined && transport !== "sync") {
+    throw new Error('kind: "workflow" requires transport: "sync" (or leaving transport unset)');
+  }
+}
+
+/**
  * Enforce the silence-nudge config rules. `silenceTimeoutMs` makes the
  * assistant proactively take a turn after that much user silence — only the
  * pipeline transport implements it, so it's rejected in S2S mode rather than

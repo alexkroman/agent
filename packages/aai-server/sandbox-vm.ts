@@ -11,7 +11,7 @@ import { type ChildProcess, spawn } from "node:child_process";
 import { performance } from "node:perf_hooks";
 import type { Kv } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
-import type { Vector } from "@alexkroman1/aai/runtime";
+import type { HostGenerateFn, Vector } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
 import { createGvisorSandbox, isGvisorAvailable, waitForChildExit } from "./gvisor.ts";
 import {
@@ -59,6 +59,8 @@ export type SandboxVmOptions = {
   kv?: Kv;
   /** Resolved Vector instance (enables vector/* RPC handlers when set). */
   vector?: Vector;
+  /** Host generate fn (enables the llm/generate RPC handler when set). */
+  generate?: HostGenerateFn;
   allowedHosts?: string[];
 };
 

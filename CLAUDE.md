@@ -486,6 +486,65 @@ voice agents without the CLI:
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
   the deploy core.
 
+### App modes: agents and workflows
+
+The SDK defines two kinds of app, marked by `AgentDef.kind`
+(`"agent"` default | `"workflow"`, type `AgentKind` in `sdk/providers.ts`):
+
+- **Agents** (`agent()`) are conversational chat/voice interfaces — an open
+  session the user talks with turn by turn. Everything under "Session modes"
+  below applies.
+- **Workflows** (`workflow()` in `sdk/define.ts`) are **audio in → action
+  out**: the user records one instruction (push to talk) or uploads an audio
+  file, presses Go, one agentic loop transcribes and executes it with the
+  workflow's tools, and the run ends with a written report. No conversation,
+  no history between runs. A workflow is always a **pipeline** (`stt` + `llm`
+  required; `tts` defaults to `none()`) running over the **sync transport**
+  — each run is one history-less `POST /sync`. `assertAgentKind`
+  (`sdk/providers.ts`) enforces both, in `parseManifest`, `toAgentConfig`,
+  and the server's `IsolateConfigSchema`.
+
+The two modes speak from **different default system prompts**
+(`sdk/agent-defaults.ts`): agents get the conversational customer-service
+prompt; workflows get `DEFAULT_WORKFLOW_SYSTEM_PROMPT` (one-shot semantics —
+never ask clarifying questions, state assumptions, end with a run report).
+`buildSystemPrompt` (`sdk/system-prompt.ts`) keys the base prompt off
+`config.kind` and skips the spoken tool preamble + voice output rules for
+workflows, so `toRuntimeAgent` **must** copy `config.kind` (it does — the
+usual dropped-field failure would run a deployed workflow on the
+conversational prompt, asking questions nobody can answer).
+
+The marker reaches the browser via `GET /client-config` (`kind`, default
+`"agent"` for older servers); `client()`'s `DefaultRoot` renders
+`WorkflowView` (aai-ui) for workflows — hold-to-talk (`createPttRecorder`) /
+audio upload (`decodeAudioToPcm16`) staging one clip, a Go button, and the
+transcript + run report.
+
+### `ctx.generate` and workflow combinators (`@alexkroman1/aai/workflow`)
+
+Tool `execute` code gets one-shot LLM generation via `ctx.generate` — a
+**host capability like `ctx.kv`**: the guest has no network, so the platform
+proxies it over the `llm/generate` guest RPC (`sandbox-guest-rpc.ts` +
+`guest/harness-rpc.ts:generateAdapter`), while `aai dev` runs it in-process.
+One implementation, `createGenerateFn` (`host/generate.ts`, exported from
+`/runtime`): descriptors resolve through the same `resolveLlm` registry as
+the pipeline model, credentials from the agent env only. Defaults to the
+agent's own pipeline `llm`; a per-call `llm` descriptor works for S2S agents
+holding that provider's key. In self-hosted mode the fn is exempted from the
+tool-egress fetch guard (like kv/vector) — provider traffic is
+infrastructure, not agent egress.
+
+`GenerateOptions.schema` is **plain JSON Schema, never a Zod schema** — the
+options must survive the NDJSON RPC boundary, and both implementations
+reject Zod schemas so dev and prod cannot drift. The typed ergonomics live
+in `sdk/workflow.ts` (subpath `@alexkroman1/aai/workflow`, Node-free): the
+five Vercel-AI-SDK workflow patterns as pure combinators over a
+`GenerateFn` — `sequential` (chains), `parallel`, `route` (classify +
+dispatch), `orchestrate` (plan → workers → synthesize), and
+`evaluatorOptimizer` (generate → judge → retry with feedback) — plus
+`generateStructured`, which converts Zod → JSON Schema caller-side and
+re-validates the result.
+
 ### Session modes
 
 Each agent runs in one of two session modes, selected at parse time by
@@ -1101,6 +1160,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/kv` | `sdk/providers/kv-barrel.ts` | KV provider factories + types (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
 | `@alexkroman1/aai/send` | `sdk/providers/send-barrel.ts` | Send-channel factories + resolver (`slack`, `openSender`, `Sender`) |
+| `@alexkroman1/aai/workflow` | `sdk/workflow.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox |
 
 ### Default values and magic numbers
 

@@ -23,6 +23,7 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     state: {},
     kv: {} as never,
     vector: {} as never,
+    generate: () => Promise.reject(new Error("generate not mocked")),
     messages: [],
     sessionId: "test-session",
     send: vi.fn(),

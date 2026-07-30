@@ -31,6 +31,7 @@ describe("fetchClientConfig", () => {
     );
     await expect(fetchClientConfig("http://h/a/", fetchFn)).resolves.toEqual({
       transport: "sync",
+      kind: "agent",
       name: "a",
       greeting: "hi",
     });
@@ -48,6 +49,7 @@ describe("fetchClientConfig", () => {
     const fetchFn = vi.fn(async () => jsonResponse({ error: "Not found" }, 404));
     await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({
       transport: "websocket",
+      kind: "agent",
     });
   });
 
@@ -55,6 +57,7 @@ describe("fetchClientConfig", () => {
     const fetchFn = vi.fn(async () => jsonResponse({ transport: "carrier-pigeon" }));
     await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({
       transport: "websocket",
+      kind: "agent",
     });
   });
 
@@ -64,6 +67,7 @@ describe("fetchClientConfig", () => {
     });
     await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({
       transport: "websocket",
+      kind: "agent",
     });
   });
 
@@ -71,6 +75,7 @@ describe("fetchClientConfig", () => {
     const fetchFn = vi.fn(async () => new Response("<html>oops</html>", { status: 200 }));
     await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({
       transport: "websocket",
+      kind: "agent",
     });
   });
 });

@@ -23,7 +23,7 @@ export function buildAgentUrl(platformUrl: string, endpointPath: string): URL {
   return new URL(endpointPath, platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
 }
 
-const WEBSOCKET_DEFAULT: ClientConfigResponse = { transport: "websocket" };
+const WEBSOCKET_DEFAULT: ClientConfigResponse = { transport: "websocket", kind: "agent" };
 
 /** Fetch the agent's client config; any failure yields the WebSocket default. */
 export async function fetchClientConfig(

@@ -19,6 +19,7 @@ export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 export { ToolConfigContext } from "./components/tool-config-context.ts";
 // Components
 export { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./components/url-chips.tsx";
+export { WorkflowView } from "./components/workflow-view.tsx";
 export type { Session } from "./context.ts";
 // Context & hooks
 export {

@@ -4,8 +4,10 @@
  */
 
 import type { z } from "zod";
+import type { GenerateOptions, GenerateResult } from "./generate.ts";
 import type { Kv } from "./kv.ts";
 import type {
+  AgentKind,
   ClientTransport,
   KvProvider,
   LlmProvider,
@@ -111,6 +113,15 @@ export type ToolContext<S = Record<string, unknown>> = {
   kv: Kv;
   /** Vector store scoped to this agent deployment. */
   vector: Vector;
+  /**
+   * One-shot LLM generation, executed on the host (like `kv`/`vector`).
+   * Defaults to the agent's pipeline `llm`; pass `llm` in the options to use
+   * another provider (its API key must be in the agent's env). Throws when
+   * no LLM is configured or named. Powers the `@alexkroman1/aai/workflow`
+   * combinators (sequential, parallel, route, orchestrate,
+   * evaluatorOptimizer).
+   */
+  generate(options: GenerateOptions): Promise<GenerateResult>;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
   /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */
@@ -209,7 +220,12 @@ export type ToolDef<
  */
 export type ToolResultMap<T extends Record<string, unknown> = Record<string, unknown>> = T;
 
-export { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
+export {
+  DEFAULT_GREETING,
+  DEFAULT_SYSTEM_PROMPT,
+  DEFAULT_WORKFLOW_GREETING,
+  DEFAULT_WORKFLOW_SYSTEM_PROMPT,
+} from "./agent-defaults.ts";
 
 /**
  * Fully resolved agent definition.
@@ -223,6 +239,13 @@ export { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
  */
 export type AgentDef<S = Record<string, unknown>> = {
   name: string;
+  /**
+   * The app's mode: `"agent"` (default) is a conversational chat/voice
+   * interface; `"workflow"` is audio in → action out — one push-to-talk or
+   * uploaded instruction runs a single agentic loop and ends. Set by the
+   * `workflow()` helper; requires pipeline mode and the sync transport.
+   */
+  kind?: AgentKind;
   systemPrompt: string;
   greeting: string;
   sttPrompt?: string;

@@ -38,6 +38,7 @@ function makeCtx(kv: Kv, sessionId = "session-a") {
     state: {},
     kv,
     vector: noopVector,
+    generate: () => Promise.reject(new Error("generate not available in tests")),
     messages: [],
     sessionId,
     send: (event, data) => {

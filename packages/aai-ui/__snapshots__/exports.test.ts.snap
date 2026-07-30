@@ -19,6 +19,7 @@ exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
   "ToolConfigContext",
   "UiUrlChip",
   "VOICE_CAPTURE_CONSTRAINTS",
+  "WorkflowView",
   "base64ToPcm16",
   "buildAgentUrl",
   "client",

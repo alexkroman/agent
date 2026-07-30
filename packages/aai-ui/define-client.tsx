@@ -11,6 +11,7 @@ import { SidebarLayout } from "./components/sidebar-layout.tsx";
 import { StartScreen } from "./components/start-screen.tsx";
 import { SyncChatView } from "./components/sync-chat-view.tsx";
 import { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-config-context.ts";
+import { WorkflowView } from "./components/workflow-view.tsx";
 import { SessionProvider, ThemeProvider } from "./context.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
 import type { ClientTheme, WebSocketConstructor } from "./types.ts";
@@ -164,7 +165,7 @@ function DefaultRoot({
   sidebarWidth?: string | undefined;
 }) {
   const [resolved, setResolved] = useState<ClientConfigResponse | null>(
-    transport !== undefined ? { transport } : null,
+    transport !== undefined ? { transport, kind: "agent" } : null,
   );
 
   useEffect(() => {
@@ -178,6 +179,18 @@ function DefaultRoot({
     };
   }, [platformUrl, transport]);
 
+  // The workflow app mode gets the one-shot run surface (hold-to-talk /
+  // upload + Go over one history-less sync request per run) rather than a
+  // conversation shell.
+  if (resolved?.kind === "workflow") {
+    return (
+      <WorkflowView
+        syncUrl={buildAgentUrl(platformUrl, "sync").href}
+        title={name ?? resolved.name}
+        greeting={resolved.greeting}
+      />
+    );
+  }
   if (resolved?.transport === "sync") {
     return (
       <SyncChatView

@@ -10,6 +10,8 @@
 
 import { Buffer } from "node:buffer";
 import type {
+  GenerateAdapter,
+  GenerateResult,
   JsonRpcMessage,
   JsonRpcNotification,
   KvAdapter,
@@ -322,6 +324,23 @@ export const vectorAdapter: VectorAdapter = {
     return result;
   },
   delete: (ids) => hostRequest("vector/delete", { ids }) as Promise<void>,
+};
+
+/**
+ * Generate adapter handed to tool contexts — proxies `ctx.generate` to the
+ * host's llm/generate handler. `schema` must already be plain JSON Schema
+ * (the SDK's workflow helpers convert Zod schemas caller-side); a Zod schema
+ * cannot cross the NDJSON boundary, so it is rejected here with the same
+ * guidance the host gives.
+ */
+export const generateAdapter: GenerateAdapter = async (options) => {
+  if (typeof (options.schema as { safeParse?: unknown } | undefined)?.safeParse === "function") {
+    throw new Error(
+      "generate: `schema` must be a plain JSON Schema object, not a Zod schema — " +
+        "convert with z.toJSONSchema(), or use the @alexkroman1/aai/workflow helpers.",
+    );
+  }
+  return (await hostRequest("llm/generate", { ...options })) as GenerateResult;
 };
 
 // ---- Host response dispatch -------------------------------------------------
