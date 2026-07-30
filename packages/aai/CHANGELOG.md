@@ -1,5 +1,52 @@
 # @alexkroman1/aai
 
+## 2.0.0
+
+### Major Changes
+
+- e17fdc4: Remove the text-only agent mode: an agent is always a voice conversation, and a workflow never speaks.
+
+  - `agent()` with `tts: none()` is now rejected at parse time (parseManifest, toAgentConfig, and the platform's IsolateConfigSchema) — speech-in, text/action-out apps are workflows.
+  - `workflow()` no longer accepts a `tts` parameter; it always sets the internal `none()` sentinel.
+  - aai-ui: `TextControls` is removed and `ChatView` always renders the voice `Controls`. `SessionCore`'s programmatic audioOut-aware APIs (`startRecording`, `sendAudioFile`) remain.
+  - The `pipeline-text-only` template and the studio's text-only starter are removed.
+
+- 6047231: Remove the per-agent sync client transport and simplify the app model to two
+  kinds: **agents** (WebSocket chat/voice sessions) and **workflows** (one-shot
+  `POST /sync` runs).
+
+  Breaking changes:
+
+  - `agent({ transport })` is removed. The default browser client always uses
+    the WebSocket session for agents; workflows automatically get the run
+    surface. `POST /sync` remains available as a programmatic API for pipeline
+    agents.
+  - `agent({ kind })` is removed — `workflow()` is the only way to define a
+    workflow.
+  - `ClientTransport` and `assertClientTransport` are removed; `assertAgentKind`
+    no longer takes a transport argument.
+  - `GET /client-config` no longer returns a `transport` field (`kind` decides
+    the surface); older responses still parse — the extra field is ignored.
+  - aai-ui: `SyncChatView`, `startSyncMicrophone`, `createUtteranceDetector`,
+    and their option types are removed. `createSyncSession` and
+    `createPttRecorder` stay (they power `WorkflowView`). The chat shell now
+    uses the server-declared agent name when `client({ name })` is not passed.
+  - Templates `sync-voice` and `push-to-talk-translator` are removed.
+  - The `@alexkroman1/aai/workflow` subpath (pattern combinators) is renamed to
+    `@alexkroman1/aai/patterns`; the old subpath is removed.
+
+### Minor Changes
+
+- 377ecd3: Re-arm the playback jitter buffer on underrun and conceal gaps instead of zero-filling them, report per-turn concealment counters in WebRTC's shape, pace server audio at a bounded lead, capture through an AudioContext at the STT rate (no worklet resampling), and detect a microphone that only ever delivers silence.
+- 4051d7a: Two app modes — agents and workflows: new workflow() definition (audio in, action out: push-to-talk or uploaded audio runs one agentic loop over the sync transport with its own workflow system prompt, rendered by the default client's new run surface), plus ctx.generate (host-executed one-shot LLM generation for tool code, proxied out of the sandbox via the llm/generate guest RPC) and the @alexkroman1/aai/workflow combinators: sequential, parallel, route, orchestrate, evaluatorOptimizer.
+- 158d5d5: Workflow default UI is now a pure execution surface: sync turn responses carry the turn's tool calls (SyncTurnResponse.toolCalls), and WorkflowView renders the transcript plus those tool calls with no greeting and no assistant messages.
+
+### Patch Changes
+
+- 7fc476d: Fix every sync turn failing with HTTP 415: the AssemblyAI Sync API request body is now hand-encoded multipart bytes, because a globalThis.FormData is stringified rather than encoded by the pinned undici the host fetch comes from.
+- ed4f2e7: STT: stop inheriting the assemblyai SDK's 1000 ms streaming connect deadline, which covers socket open plus the server's Begin and failed healthy handshakes. The AssemblyAI STT opener now pins connectTimeout/maxConnectionRetries/connectionRetryDelay from STT*CONNECT*\* constants (2500 ms, 2 retries, 500 ms), overridable per agent via assemblyAI({ connectTimeoutMs, maxConnectRetries }).
+- 89a032d: Pipeline barge-in now requires the agent to be audibly speaking rather than merely mid-turn. A reply that has not yet emitted audio cannot be spoken over, so an utterance arriving in that window is buffered and answered as a chained turn instead of aborting the reply in progress. Previously any utterance during a slow reply restarted the turn, and since each restart redid the work on a longer history it outlived the next re-prompt — a caller saying "hello? any update?" into the silence could starve the reply indefinitely. Once a turn has spoken it keeps the floor for the rest of its run, so a mid-reply TTS stall does not reopen the window.
+
 ## 1.16.0
 
 ### Minor Changes
