@@ -152,6 +152,10 @@ export type GuestRpcSchema = {
   notificationsOut: {
     "session/end": { sessionId: string };
     shutdown: undefined;
+    // Host-liveness heartbeat (modal-sandbox.ts). The guest deliberately has
+    // no `ping` handler — any inbound line feeds its orphan watchdog — but the
+    // method still belongs in the contract, or sending it doesn't typecheck.
+    ping: undefined;
     "fetch/response-start": FetchResponseStart;
     "fetch/response-chunk": FetchResponseChunk;
     "fetch/response-end": FetchResponseEnd;
