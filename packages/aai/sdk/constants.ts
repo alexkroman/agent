@@ -310,6 +310,19 @@ export const FILE_UPLOAD_CHUNK_BYTES = 32 * 1024;
 export const MIC_BUFFER_SECONDS = 0.1;
 
 /**
+ * Window the capture worklet watches, once per session, to decide the
+ * microphone is dead. A device muted at the OS level or an input that is not
+ * really a microphone delivers digital silence, which is otherwise
+ * indistinguishable from a user who has not spoken — the session looks healthy
+ * and simply never responds.
+ *
+ * Exact zeros are the signal (a live mic in a quiet room still carries a noise
+ * floor), and the probe disarms on the first nonzero sample, so it costs
+ * nothing after the first second and cannot fire mid-session.
+ */
+export const MIC_SILENCE_PROBE_MS = 1500;
+
+/**
  * How much TTS audio the playback worklet buffers before a turn starts
  * speaking. This is the client's whole cushion against uneven chunk arrival,
  * so raising it trades time-to-first-audio for resilience. Tune it against the

@@ -11,34 +11,6 @@ function chunks(posted: unknown[]): ChunkMessage[] {
   return posted.filter((p): p is ChunkMessage => (p as ChunkMessage).event === "chunk");
 }
 
-/** Concatenate every posted chunk into one Int16Array, in order. */
-function allSamples(posted: unknown[]): Int16Array {
-  const parts = chunks(posted).map((c) => new Int16Array(c.buffer));
-  const out = new Int16Array(parts.reduce((n, p) => n + p.length, 0));
-  let offset = 0;
-  for (const p of parts) {
-    out.set(p, offset);
-    offset += p.length;
-  }
-  return out;
-}
-
-/** Invert the worklet's asymmetric Int16 encoding back to float. */
-function toFloat(v: number): number {
-  return v < 0 ? v / 0x80_00 : v / 0x7f_ff;
-}
-
-/** Feed a linear ramp (value = index / scale) through the processor. */
-function feedRamp(w: ReturnType<typeof instantiateWorklet>, quanta: number, scale: number): number {
-  let idx = 0;
-  for (let q = 0; q < quanta; q++) {
-    const input = new Float32Array(128);
-    for (let i = 0; i < 128; i++) input[i] = idx++ / scale;
-    w.instance.process([[input]], []);
-  }
-  return idx;
-}
-
 function quantum(value: number, length = 128): Float32Array[][] {
   const input = new Float32Array(length);
   input.fill(value);
@@ -57,8 +29,7 @@ describe("capture-processor worklet", () => {
   test("batches quanta and posts one buffer per flush interval", () => {
     // No resample; target = 16000 * 0.016 = 256 samples = two 128-sample quanta.
     const w = instantiateWorklet(captureProcessorSource, {
-      contextRate: 16_000,
-      sttSampleRate: 16_000,
+      sampleRate: 16_000,
       bufferSeconds: 0.016,
     });
     w.sendMessage({ event: "start" });
@@ -77,8 +48,7 @@ describe("capture-processor worklet", () => {
 
   test("clamps out-of-range samples and preserves negative scaling", () => {
     const w = instantiateWorklet(captureProcessorSource, {
-      contextRate: 16_000,
-      sttSampleRate: 16_000,
+      sampleRate: 16_000,
       bufferSeconds: 0.008, // 128 samples: flush every quantum
     });
     w.sendMessage({ event: "start" });
@@ -98,8 +68,7 @@ describe("capture-processor worklet", () => {
 
   test("flushes the partial batch on stop", () => {
     const w = instantiateWorklet(captureProcessorSource, {
-      contextRate: 16_000,
-      sttSampleRate: 16_000,
+      sampleRate: 16_000,
       bufferSeconds: 0.1, // 1600-sample target: one quantum stays buffered
     });
     w.sendMessage({ event: "start" });
@@ -116,75 +85,9 @@ describe("capture-processor worklet", () => {
     expect(chunks(w.posted)).toHaveLength(1);
   });
 
-  test("resamples to the STT rate before batching", () => {
-    // 48k -> 16k: each 128-sample quantum yields ~42-43 output samples.
-    const w = instantiateWorklet(captureProcessorSource, {
-      contextRate: 48_000,
-      sttSampleRate: 16_000,
-      bufferSeconds: 0.008, // 128-sample target at 16k = ~3 quanta
-    });
-    w.sendMessage({ event: "start" });
-    for (let i = 0; i < 4; i++) w.instance.process(quantum(0.5), []);
-
-    const posted = chunks(w.posted);
-    expect(posted).toHaveLength(1);
-    const pcm = new Int16Array(posted[0]?.buffer ?? new ArrayBuffer(0));
-    // 4 quanta * 128 / 3 ≈ 170 output samples, flushed once 128 was reached.
-    expect(pcm.length).toBeGreaterThanOrEqual(128);
-    expect(pcm.length).toBeLessThan(200);
-    // Constant signal resamples to the same constant.
-    expect(pcm[10]).toBe(Math.floor(0.5 * 0x7f_ff));
-  });
-
-  test("resampling a ramp at 48k→16k preserves values and the sample clock", () => {
-    const w = instantiateWorklet(captureProcessorSource, {
-      contextRate: 48_000,
-      sttSampleRate: 16_000,
-      bufferSeconds: 1, // 16000-sample target: nothing flushes until stop
-    });
-    w.sendMessage({ event: "start" });
-    const total = feedRamp(w, 30, 4096); // 3840 input samples
-    w.sendMessage({ event: "stop" }); // flush the tail
-
-    const pcm = allSamples(w.posted);
-    // Integer ratio 3: exactly one output per 3 inputs, no drift across the
-    // 30 block boundaries.
-    expect(Math.abs(pcm.length - total / 3)).toBeLessThanOrEqual(1);
-    // Output k sits at input position k*3 — linear interpolation of a linear
-    // ramp is exact, so only Int16 quantization error remains.
-    let maxErr = 0;
-    for (let k = 0; k < pcm.length; k++) {
-      const expected = (k * 3) / 4096;
-      maxErr = Math.max(maxErr, Math.abs(toFloat(pcm[k] ?? 0) - expected));
-    }
-    expect(maxErr).toBeLessThanOrEqual(1e-4);
-  });
-
-  test("non-integer ratio 44.1k→16k keeps count and values on the ideal clock", () => {
-    const ratio = 44_100 / 16_000; // 2.75625
-    const w = instantiateWorklet(captureProcessorSource, {
-      contextRate: 44_100,
-      sttSampleRate: 16_000,
-      bufferSeconds: 1,
-    });
-    w.sendMessage({ event: "start" });
-    const total = feedRamp(w, 40, 6144); // 5120 input samples
-    w.sendMessage({ event: "stop" });
-
-    const pcm = allSamples(w.posted);
-    expect(Math.abs(pcm.length - (total * 16_000) / 44_100)).toBeLessThanOrEqual(2);
-    let maxErr = 0;
-    for (let k = 0; k < pcm.length; k++) {
-      const expected = (k * ratio) / 6144;
-      maxErr = Math.max(maxErr, Math.abs(toFloat(pcm[k] ?? 0) - expected));
-    }
-    expect(maxErr).toBeLessThanOrEqual(1e-4);
-  });
-
   test("stop posts the tail flush chunk before the stopped ack", () => {
     const w = instantiateWorklet(captureProcessorSource, {
-      contextRate: 16_000,
-      sttSampleRate: 16_000,
+      sampleRate: 16_000,
       bufferSeconds: 0.1, // 1600-sample target: one quantum stays buffered
     });
     w.sendMessage({ event: "start" });
@@ -206,8 +109,7 @@ describe("capture-processor worklet", () => {
     input.set(values);
 
     const cap = instantiateWorklet(captureProcessorSource, {
-      contextRate: 16_000,
-      sttSampleRate: 16_000,
+      sampleRate: 16_000,
       bufferSeconds: 0.008, // 128 samples: flush every quantum
     });
     cap.sendMessage({ event: "start" });
@@ -232,11 +134,68 @@ describe("capture-processor worklet", () => {
 
   test("does not record before start", () => {
     const w = instantiateWorklet(captureProcessorSource, {
-      contextRate: 16_000,
-      sttSampleRate: 16_000,
+      sampleRate: 16_000,
       bufferSeconds: 0.008,
     });
     w.instance.process(quantum(0.5), []);
     expect(chunks(w.posted)).toHaveLength(0);
+  });
+});
+
+/**
+ * Dead-mic probe. A device muted at the OS level, or simply the wrong input,
+ * delivers digital silence — indistinguishable from a user who has not spoken
+ * yet, so a broken setup looks like a working session nobody is talking to.
+ */
+describe("capture-processor dead-mic probe", () => {
+  /** 128 samples/quantum at 16 kHz = 8ms, so 16 quanta is one 128ms window. */
+  const probe = (): ReturnType<typeof instantiateWorklet> =>
+    instantiateWorklet(captureProcessorSource, {
+      sampleRate: 16_000,
+      bufferSeconds: 0.016,
+      silenceProbeMs: 128,
+    });
+
+  const silentReports = (posted: unknown[]): unknown[] =>
+    posted.filter((p) => (p as { event: string }).event === "silent");
+
+  test("reports a microphone that produces only digital silence", () => {
+    const w = probe();
+    w.sendMessage({ event: "start" });
+
+    for (let q = 0; q < 16; q++) w.instance.process(quantum(0), []);
+
+    expect(silentReports(w.posted)).toHaveLength(1);
+  });
+
+  test("stays quiet for a microphone that produces signal", () => {
+    const w = probe();
+    w.sendMessage({ event: "start" });
+
+    // A device that starts with a few empty quanta is normal; one real sample
+    // is enough to prove the input is live.
+    w.instance.process(quantum(0), []);
+    w.instance.process(quantum(0.01), []);
+    for (let q = 0; q < 30; q++) w.instance.process(quantum(0), []);
+
+    expect(silentReports(w.posted)).toHaveLength(0);
+  });
+
+  test("reports at most once for one dead microphone", () => {
+    const w = probe();
+    w.sendMessage({ event: "start" });
+
+    for (let q = 0; q < 100; q++) w.instance.process(quantum(0), []);
+
+    expect(silentReports(w.posted)).toHaveLength(1);
+  });
+
+  test("does not probe before recording starts", () => {
+    const w = probe();
+
+    // No 'start': the mic is not expected to be producing anything yet.
+    for (let q = 0; q < 40; q++) w.instance.process(quantum(0), []);
+
+    expect(silentReports(w.posted)).toHaveLength(0);
   });
 });

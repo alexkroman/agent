@@ -95,6 +95,14 @@ export async function initAudioCapture(
       onPlaybackStats: (stats) => {
         console.warn("[aai-ui] playback concealed a gap in this turn", stats);
       },
+      // A dead input device looks identical to a quiet user from every other
+      // vantage point: the socket is up, the session is listening, and no
+      // turn ever commits.
+      onMicSilent: () => {
+        console.warn(
+          "[aai-ui] microphone is delivering only silence — check the selected input device",
+        );
+      },
       // A worklet processor crash after setup: the audio path is dead even
       // though the socket is fine, so surface it instead of staying in a
       // healthy-looking listening/speaking state forever.

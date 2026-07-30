@@ -169,7 +169,11 @@ export class MockAudioWorkletNode {
   connected: MockAudioNode[] = [];
   name: string;
   options: unknown;
-  constructor(_ctx: MockAudioContext, name: string, options?: unknown) {
+  /** The context this node was constructed on — capture and playback use
+   *  separate contexts, so tests need to tell them apart. */
+  ctx: MockAudioContext;
+  constructor(ctx: MockAudioContext, name: string, options?: unknown) {
+    this.ctx = ctx;
     this.name = name;
     this.options = options;
   }
@@ -216,24 +220,41 @@ export class MockAudioContext {
 
 export type AudioMockContext = {
   lastContext: () => MockAudioContext;
+  /** Every context constructed, in order. */
+  contexts: () => MockAudioContext[];
   workletNodes: () => MockAudioWorkletNode[];
+};
+
+/** Options for {@link installAudioMocks}. */
+export type AudioMockOptions = {
+  /**
+   * Report this rate from every context regardless of what was requested,
+   * standing in for a browser that ignores the `sampleRate` hint.
+   */
+  forceSampleRate?: number;
 };
 
 const g = globalThis as unknown as Record<string, unknown>;
 
-export function installAudioMocks(): AudioMockContext & { restore: () => void } {
+export function installAudioMocks(
+  mockOpts: AudioMockOptions = {},
+): AudioMockContext & { restore: () => void } {
   const origAudioContext = globalThis.AudioContext;
   const origAudioWorkletNode = globalThis.AudioWorkletNode;
   const nav = g.navigator as { mediaDevices?: { getUserMedia?: unknown } } | undefined;
   const origGetUserMedia = nav?.mediaDevices?.getUserMedia;
 
   let _lastContext: MockAudioContext;
+  const _contexts: MockAudioContext[] = [];
   const _workletNodes: MockAudioWorkletNode[] = [];
 
   g.AudioContext = class extends MockAudioContext {
     constructor(opts?: { sampleRate?: number }) {
-      super(opts);
+      super(
+        mockOpts.forceSampleRate === undefined ? opts : { sampleRate: mockOpts.forceSampleRate },
+      );
       _lastContext = this;
+      _contexts.push(this);
     }
   };
 
@@ -261,6 +282,7 @@ export function installAudioMocks(): AudioMockContext & { restore: () => void } 
 
   return {
     lastContext: () => _lastContext,
+    contexts: () => _contexts,
     workletNodes: () => _workletNodes,
     restore() {
       globalThis.AudioContext = origAudioContext;

@@ -108,16 +108,66 @@ describe("createVoiceIO", () => {
     await io.close();
   });
 
-  test("uses TTS sample rate for the AudioContext", async () => {
+  test("plays back on a context at the TTS sample rate", async () => {
     const io = await createVoiceIO(voiceOpts());
-    expect(audio.lastContext().sampleRate).toBe(24_000);
+    io.enqueue(new Int16Array([1, 2, 3]).buffer);
+    const playNode = findWorkletNode(audio.workletNodes(), "playback-processor");
+    expect(playNode.ctx.sampleRate).toBe(24_000);
     await io.close();
   });
 
-  test("loads both worklet modules in parallel", async () => {
+  test("loads each worklet module on the context that runs it", async () => {
     const io = await createVoiceIO(voiceOpts());
-    expect(audio.lastContext().audioWorklet.modules.length).toBe(2);
+    const loaded = audio.contexts().flatMap((c) => c.audioWorklet.modules);
+    expect(loaded).toEqual(expect.arrayContaining(["cap", "play"]));
     await io.close();
+  });
+
+  test("captures through its own context at the STT sample rate", async () => {
+    // The browser's resampler is properly band-limited; the worklet's is a
+    // linear interpolation, so the conversion belongs to the browser whenever
+    // it will do it.
+    const io = await createVoiceIO(voiceOpts({ sttSampleRate: 16_000, ttsSampleRate: 24_000 }));
+
+    const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");
+    const playNodeCtxRates = audio.contexts().map((c) => c.sampleRate);
+    expect(playNodeCtxRates).toContain(16_000);
+    expect(playNodeCtxRates).toContain(24_000);
+    expect(capNode.ctx.sampleRate).toBe(16_000);
+
+    // The worklet is told one rate because it converts nothing: the context
+    // it runs on is already at the STT rate.
+    const opts = capNode.options as { processorOptions?: Record<string, unknown> };
+    expect(opts.processorOptions?.sampleRate).toBe(16_000);
+    await io.close();
+  });
+
+  test("fails when the browser will not give a context the requested rate", async () => {
+    // Sending 48 kHz audio to a socket that declared 16 kHz garbles it, and
+    // silently resampling in the worklet would alias. Neither is worth
+    // shipping over a clear failure.
+    const forced = installAudioMocks({ forceSampleRate: 48_000 });
+    try {
+      await expect(
+        createVoiceIO(voiceOpts({ sttSampleRate: 16_000, ttsSampleRate: 24_000 })),
+      ).rejects.toThrow(/sample rate/i);
+      // The failed init must not leave contexts or mic tracks behind.
+      expect(forced.contexts().every((c) => c.closed)).toBe(true);
+    } finally {
+      forced.restore();
+    }
+  });
+
+  test("reuses a single context when the capture and playback rates match", async () => {
+    const io = await createVoiceIO(voiceOpts({ sttSampleRate: 24_000, ttsSampleRate: 24_000 }));
+    expect(audio.contexts()).toHaveLength(1);
+    await io.close();
+  });
+
+  test("closes both contexts", async () => {
+    const io = await createVoiceIO(voiceOpts({ sttSampleRate: 16_000, ttsSampleRate: 24_000 }));
+    await io.close();
+    expect(audio.contexts().every((c) => c.closed)).toBe(true);
   });
 
   test("creates capture node with channelCount: 1", async () => {
@@ -283,6 +333,17 @@ describe("createVoiceIO", () => {
     await io.close();
   });
 
+  test("forwards the capture worklet's dead-mic report", async () => {
+    const silent = vi.fn();
+    const io = await createVoiceIO(voiceOpts({ onMicSilent: silent }));
+    const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");
+
+    capNode.port.simulateMessage({ event: "silent" });
+
+    expect(silent).toHaveBeenCalledTimes(1);
+    await io.close();
+  });
+
   test("an interrupt's stop does not resolve a later done early", async () => {
     const io = await createVoiceIO(voiceOpts());
     io.enqueue(new Int16Array([1, 2, 3]).buffer);
@@ -381,10 +442,11 @@ describe("createVoiceIO", () => {
     await io.close();
   });
 
-  test("done() resolves immediately when the context is not running", async () => {
+  test("done() resolves immediately when the playback context is not running", async () => {
     const io = await createVoiceIO(voiceOpts());
     io.enqueue(new ArrayBuffer(2));
-    audio.lastContext().state = "suspended";
+    // Capture runs on its own context; done() waits on the playback one.
+    findWorkletNode(audio.workletNodes(), "playback-processor").ctx.state = "suspended";
     await expect(io.done()).resolves.toBeUndefined();
     await io.close();
   });
@@ -400,14 +462,14 @@ describe("createVoiceIO", () => {
     await io.close();
   });
 
-  test("done() settles via the poll when the context suspends mid-wait", async () => {
+  test("done() settles via the poll when the playback context suspends mid-wait", async () => {
     vi.useFakeTimers();
     try {
       const io = await createVoiceIO(voiceOpts());
       io.enqueue(new ArrayBuffer(2));
       const done = io.done();
       // No stop message arrives; the context suspends (backgrounded tab).
-      audio.lastContext().state = "suspended";
+      findWorkletNode(audio.workletNodes(), "playback-processor").ctx.state = "suspended";
       await vi.advanceTimersByTimeAsync(1100);
       await expect(done).resolves.toBeUndefined();
       await io.close();

@@ -57,6 +57,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "MAX_WS_PAYLOAD_BYTES",
   "MIC_BUFFER_SECONDS",
   "MIC_SEND_MAX_BUFFERED_BYTES",
+  "MIC_SILENCE_PROBE_MS",
   "PIPELINE_FLUSH_TIMEOUT_MS",
   "PIPELINE_PLAYBACK_GRACE_MS",
   "PLAYBACK_CONCEAL_FADE_MS",

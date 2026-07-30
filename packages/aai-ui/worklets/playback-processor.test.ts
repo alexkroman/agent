@@ -134,7 +134,16 @@ const f = (v: number): number => v / 0x80_00;
 const seq = (from: number, count: number): number[] =>
   Array.from({ length: count }, (_, i) => from + i);
 
-type StopMessage = { event: string; reason: string; stats: Record<string, number> };
+type StopMessage = {
+  event: string;
+  reason: string;
+  stats: {
+    concealedSamples: number;
+    silentConcealedSamples: number;
+    concealmentEvents: number;
+    silentConcealmentEvents: number;
+  };
+};
 
 /** The turn-ending message, which carries that turn's concealment counters. */
 const lastStop = (w: WorkletHarness): StopMessage => w.posted.at(-1) as StopMessage;
