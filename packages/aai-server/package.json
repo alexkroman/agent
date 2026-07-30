@@ -16,8 +16,7 @@
     "test:integration": "VITEST_INCLUDE=orchestrator-integration.test.ts,ws-integration.test.ts vitest run -c ../../vitest.slow.config.ts",
     "check:integration": "pnpm run test:integration",
     "deploy:modal": "modal deploy modal_deploy.py",
-    "test:evals": "VITEST_PROFILE=e2e VITEST_INCLUDE=studio/studio-eval.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "push-dashboards": "node --conditions=@dev/source grafana/push-dashboards.ts"
+    "test:evals": "VITEST_PROFILE=e2e VITEST_INCLUDE=studio/studio-eval.test.ts vitest run -c ../../vitest.slow.config.ts"
   },
   "dependencies": {
     "@ai-sdk/mcp": "^2.0.18",

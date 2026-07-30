@@ -266,7 +266,7 @@ restrictions apply there.
 - `secret-handler.ts` — secret management
 - `kv-handler.ts` — KV store HTTP API
 - `metrics.ts` — Prometheus metrics registry and definitions; mounted at
-  `/metrics` (internal-only). Dashboards live in `grafana/`.
+  `/metrics` (internal-only).
 - `studio/` — the browser studio server side (see "Browser studio"):
   `studio-routes.ts` (HTTP surface), `studio-agent.ts` (coding-agent LLM
   loop + tools), `studio-llm.ts` (provider/model selection + the picker's
