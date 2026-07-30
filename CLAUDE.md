@@ -1469,6 +1469,29 @@ stored env at sandbox creation time and kept host-side only.
   stubbed global. Note the dispatcher only attaches for *hostname* URLs, and
   SSRF rejects loopback, so a `skipSsrf` + `127.0.0.1` spec cannot exercise
   the pairing — which is precisely how both call sites stayed green.
+
+  **The request *body* crosses the same seam, and `FormData` does not survive
+  it.** undici 8's `extractBody` brand-checks each body type with an
+  `instanceof` against **its own** class, so a `globalThis.FormData` (an
+  instance of Node's *internal* undici's class) matches no branch, falls
+  through to the string conversion, and goes out as `Content-Type: text/plain`
+  with the 17-byte body `[object FormData]`. AssemblyAI's Sync API answered
+  `415 Unsupported Media Type` and the browser saw `Sync turn failed: HTTP
+  502` — **every sync turn was broken**, on the platform and under `aai dev`
+  alike, since `syncTranscribe` is handed `RuntimeOptions.fetch`.
+  `assemblyai-sync.ts` therefore encodes the multipart body by hand into a
+  `Uint8Array` and sets `Content-Type` itself: a `BufferSource` is a realm
+  intrinsic with no per-copy class to disagree about, so it encodes identically
+  on every `fetch`. That module is in `sdk/`, which must stay Node-free, so
+  importing undici's own `FormData` was never an option.
+
+  The rule that generalizes: **never hand a `FormData`, `Blob`, `File`,
+  `Headers`, or `Request` to a `fetch` that might not be the one your realm's
+  global came from** — pass bytes. And the guard has to send real bytes over a
+  real socket: the sdk specs inject a fake fetch and assert on the body
+  *object*, which is exactly why this shipped. `host/sync-transcribe-wire.test.ts`
+  posts through the actual `pinnedFetch` to a loopback server and reads what
+  arrived.
 - The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
   `fetch_json`) take a
   model-controlled URL and **default** to this via `safeFetch` in

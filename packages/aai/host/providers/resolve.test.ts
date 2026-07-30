@@ -281,8 +281,10 @@ describe("resolveStt — AssemblyAI transcribeClip capability", () => {
     expect(text).toBe("hello from sync");
     const [url, init] = fetchFn.mock.calls[0] ?? [];
     expect(String(url)).toContain("sync");
-    const form = init?.body as FormData;
-    expect(JSON.parse(form.get("config") as string)).toEqual({ sample_rate: 16_000, channels: 1 });
+    // Hand-encoded multipart bytes, not a FormData — see the module doc on
+    // `assemblyai-sync.ts` for why the body must carry no class identity.
+    const body = Buffer.from(init?.body as Uint8Array).toString("latin1");
+    expect(body).toContain('{"sample_rate":16000,"channels":1}');
   });
 
   it("other STT kinds carry no clip capability", () => {
