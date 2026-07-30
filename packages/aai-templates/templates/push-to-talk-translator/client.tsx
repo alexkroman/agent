@@ -7,6 +7,7 @@ import {
   floatToPcm16,
   type SyncTurnResult,
   useTheme,
+  VOICE_CAPTURE_CONSTRAINTS,
 } from "@alexkroman1/aai-ui";
 import { useEffect, useRef, useState } from "react";
 
@@ -38,7 +39,7 @@ function createPttRecorder(): PttRecorder {
   async function ensureOpen(): Promise<void> {
     if (ctx) return;
     const streamPromise = navigator.mediaDevices.getUserMedia({
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+      audio: VOICE_CAPTURE_CONSTRAINTS,
     });
     const audioCtx = new AudioContext({ sampleRate: SAMPLE_RATE, latencyHint: "interactive" });
     try {

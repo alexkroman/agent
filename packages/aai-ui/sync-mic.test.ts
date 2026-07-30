@@ -136,6 +136,30 @@ describe("startSyncMicrophone", () => {
   });
 });
 
+describe("voice capture constraints", () => {
+  // The signal reaches an energy VAD here, so browser processing that moves
+  // levels around (AGC) or gates a quiet room to exact zeros (suppression,
+  // isolation) is off. Echo cancellation stays on.
+  const RAW_VOICE = {
+    autoGainControl: false,
+    noiseSuppression: false,
+    voiceIsolation: false,
+    echoCancellation: true,
+  };
+
+  test("startSyncMicrophone captures raw voice", async () => {
+    await start();
+    expect(mocks.lastAudioConstraints()).toMatchObject(RAW_VOICE);
+  });
+
+  test("createPttRecorder captures raw voice", async () => {
+    const recorder = createPttRecorder();
+    await recorder.start();
+    expect(mocks.lastAudioConstraints()).toMatchObject(RAW_VOICE);
+    await recorder.stop();
+  });
+});
+
 describe("createPttRecorder", () => {
   test("records exactly between start() and stop(), across presses", async () => {
     const recorder = createPttRecorder();

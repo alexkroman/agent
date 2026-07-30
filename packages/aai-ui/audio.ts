@@ -1,5 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { MIC_BUFFER_SECONDS } from "./types.ts";
+import { MIC_BUFFER_SECONDS, VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
 
 /** How often {@link VoiceIO.done} checks that the AudioContext is still rendering. */
 const DONE_POLL_INTERVAL_MS = 1000;
@@ -111,9 +111,9 @@ export type VoiceIOOptions = {
 /**
  * Audio I/O interface for voice capture and playback.
  *
- * Manages microphone capture via an AudioWorklet, resampling to the STT
- * sample rate, and TTS audio playback through a second AudioWorklet. Implements
- * {@link AsyncDisposable} for resource cleanup.
+ * Manages microphone capture via an AudioWorklet and TTS audio playback
+ * through a second AudioWorklet. Implements {@link AsyncDisposable} for
+ * resource cleanup.
  */
 export type VoiceIO = AsyncDisposable & {
   /** Enqueue a PCM16 audio buffer for playback through the TTS pipeline. */
@@ -141,9 +141,10 @@ function assertGranted(granted: number, requested: number, side: string): void {
  *
  * Playback runs on a context at the TTS sample rate for fidelity, and capture
  * on its own context at the STT rate so the *browser* performs the rate
- * conversion — its resampler is band-limited, while the worklet's fallback is
- * a linear interpolation that folds everything above the new Nyquist back into
- * the band as aliasing. The two collapse into one context when the rates match.
+ * conversion with its band-limited resampler. The two collapse into one
+ * context when the rates match. A browser that declines either requested rate
+ * fails init rather than falling back to converting in the worklet, which
+ * would alias.
  *
  * @param opts - Voice I/O configuration options.
  * @returns A promise that resolves to a {@link VoiceIO} handle.
@@ -189,13 +190,7 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   // Mic permission, context resume, and worklet registration are independent —
   // run them concurrently so a slow permission prompt doesn't serialize setup.
   const streamPromise = navigator.mediaDevices.getUserMedia({
-    audio: {
-      deviceId: { ideal: "default" },
-      echoCancellation: true,
-      noiseSuppression: true,
-      autoGainControl: true,
-      voiceIsolation: true,
-    } as MediaTrackConstraints,
+    audio: { deviceId: { ideal: "default" }, ...VOICE_CAPTURE_CONSTRAINTS },
   });
 
   // A single Promise.all so the first rejection (typically getUserMedia
