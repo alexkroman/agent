@@ -41,12 +41,12 @@
     "env-paths": "^4.0.0",
     "execa": "^10.0.0",
     "get-port": "^7.2.0",
-    "giget": "^3.3.0",
+    "giget": "^3.3.1",
     "ofetch": "^1.5.1",
     "p-debounce": "^5.1.0",
     "picocolors": "^1.1.1",
-    "rolldown": "~1.1.4",
-    "vite": "^8.1.5",
+    "rolldown": "~1.2.1",
+    "vite": "^8.2.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
