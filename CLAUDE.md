@@ -507,7 +507,8 @@ The SDK defines two kinds of app, marked by `AgentDef.kind`
   `POST /sync`. `assertAgentKind` (`sdk/config-rules.ts`) enforces both
   kind rules — workflow ⇒ pipeline + `none()` tts, agent ⇒ a real TTS
   (there is **no text-only agent mode**) — in `parseManifest`,
-  `toAgentConfig`, and the server's `IsolateConfigSchema`. **`workflow()` is the only author-facing way to set
+  `toAgentConfig`, and the server's `IsolateConfigSchema`. **`workflow()`
+  is the only author-facing way to set
   the kind** — `agent()` deliberately doesn't accept a `kind` parameter
   (`define.test-d.ts` pins the exclusion), so a workflow can't be hand-rolled
   without its defaults.
