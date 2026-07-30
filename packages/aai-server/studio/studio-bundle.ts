@@ -28,6 +28,7 @@ import { buildWorker } from "@alexkroman1/aai-cli/worker-bundler";
 import type { PluginOption } from "vite";
 import { MAX_WORKER_SIZE } from "../constants.ts";
 import { StudioBuildError } from "./studio-errors.ts";
+import { isKnownSdkSpecifier, SDK_PACKAGE, sdkSpecifiers } from "./studio-sdk-exports.ts";
 
 export { StudioBuildError } from "./studio-errors.ts";
 
@@ -92,7 +93,20 @@ function allowlistPlugin(dir: string): PluginOption {
         return null; // inside the workspace — let Vite resolve it
       }
       if (source.startsWith("node:")) return { id: source, external: true };
-      if (isAllowedPackage(source)) return null;
+      if (isAllowedPackage(source)) {
+        // Allowed *package*, but the subpath still has to exist. Vite would
+        // otherwise report rolldown's "is not exported under the conditions"
+        // error, which names the package.json rather than any valid subpath —
+        // nothing the coding agent can act on, so it guesses again. Naming the
+        // real ones is what lets it fix its own import.
+        if (!isKnownSdkSpecifier(source)) {
+          throw new StudioBuildError(
+            `Cannot import "${source}": ${SDK_PACKAGE} has no such subpath. ` +
+              `Available: ${sdkSpecifiers().join(", ")}`,
+          );
+        }
+        return null;
+      }
       throw new StudioBuildError(
         `Cannot import "${source}": studio agents may only import ` +
           `workspace files, ${ALLOWED_PACKAGES.join(", ")}`,

@@ -150,6 +150,26 @@ Differences from `agent()`:
 - The default client renders the run surface (hold-to-talk / upload + Go and
   the run report) instead of a chat.
 
+`workflow` is a named export of `@alexkroman1/aai`, alongside `agent` and
+`tool`, and calling it is the only way to declare this shape — it is what
+supplies the `kind` marker, the transport, and the `none()` TTS sentinel.
+So:
+
+- **Don't write `kind` or `mode` yourself.** Neither is an authoring field.
+  `mode` in particular is *derived* (`"pipeline" | "s2s"`, from which
+  providers you set), so setting it does nothing at all.
+- **Don't define your own `workflow` helper.** A hand-rolled
+  `const workflow = (config) => ({ ...config, mode: "workflow" })` is a
+  conversational `agent()` with two of the three provider fields set, so it
+  fails at load with *"stt, llm, and tts must be set together"*. If the
+  import looks wrong, fix the import.
+
+Recognizing the shape matters more than the word: most requests describe the
+job rather than the API. One clip in, things filed / sent / logged /
+translated out — a debrief, a dictation, a wrap-up, a voice memo — is a
+workflow even if "workflow" is never said. If the user talks *with* it, it's
+an `agent()`.
+
 ## Pipeline mode
 
 By default an agent runs in **S2S mode**: AssemblyAI's speech-to-speech

@@ -93,6 +93,37 @@ export default { name: pad("x", 3) };`,
     ).rejects.toThrow(/Cannot import "left-pad"/);
   }, 30_000);
 
+  test("names the valid subpaths when an SDK subpath does not exist", async () => {
+    // `/workflow` was the combinators' real subpath until they moved to
+    // `/patterns`, so it's a guess the model makes on its own. Left to Vite it
+    // failed with rolldown's "is not exported under the conditions […] see
+    // exports field in /…/package.json" — which points the agent at a file it
+    // cannot read and names no alternative, so it guesses again instead of
+    // fixing the import.
+    const err = await bundleWorkspace({
+      "agent.ts": `import { sequential } from "@alexkroman1/aai/workflow";
+export default { name: String(typeof sequential) };`,
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(StudioBuildError);
+    const message = (err as Error).message;
+    expect(message).toContain('Cannot import "@alexkroman1/aai/workflow"');
+    expect(message).toContain("has no such subpath");
+    // The actionable half: the correct subpath is in the message.
+    expect(message).toContain("@alexkroman1/aai/patterns");
+    // And the root entry, since `workflow()` itself lives there.
+    expect(message).toContain("@alexkroman1/aai,");
+  }, 30_000);
+
+  test("accepts every subpath the SDK really exports", async () => {
+    const code = await bundleWorkspace({
+      "agent.ts": `import { sequential } from "@alexkroman1/aai/patterns";
+import { workflow } from "@alexkroman1/aai";
+export default { name: String(typeof sequential) + String(typeof workflow) };`,
+    });
+    expect(code).toBeTruthy();
+  }, 30_000);
+
   test("leaves node: builtins external (CLI-build parity; guest denies at runtime)", async () => {
     const code = await bundleWorkspace({
       "agent.ts": `import { readFileSync } from "node:fs";

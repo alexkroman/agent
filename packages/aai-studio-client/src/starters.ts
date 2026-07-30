@@ -132,4 +132,27 @@ export const STARTERS: { label: string; prompt: string }[] = [
       "spooky, funny), then picks from a curated in-code catalog via a tool " +
       "— no web access. Give it a warm night-owl persona.",
   },
+  {
+    label: "An end-of-day voice debrief that files everything you mention",
+    // Modeled on the debrief-workflow template, and the only starter that
+    // builds the workflow() shape rather than agent(). workflow() is named
+    // outright: the shape is the whole point of the starter, and an agent()
+    // with the same tools would be the wrong app. (Discovering the shape from
+    // a terse ask is a different question, covered by the server's
+    // SHAPE_CASES evals rather than by a starter.)
+    prompt:
+      "An end-of-day voice debrief: I ramble one clip about a day of field " +
+      "work and it files everything I mentioned. Build it as a workflow — " +
+      "`export default workflow({ ... })` with workflow() from " +
+      '"@alexkroman1/aai", stt: assemblyAI({ model: "universal-3-5-pro" }) ' +
+      'from "@alexkroman1/aai/stt", and llm: the AssemblyAI LLM Gateway with ' +
+      'model "gemini-2.5-flash-lite" from "@alexkroman1/aai/llm" (both ' +
+      "factories are called assemblyAI, so alias one on import). Start with " +
+      "one tool that calls the LLM on the whole transcript to pull out the " +
+      "structured actions, then give each kind of action its own tool that " +
+      "records it to KV — job status updates, time entries, materials used, " +
+      "follow-up tasks, and safety issues. End the run with a short written " +
+      "report of what was filed and what still needs a human, then run " +
+      "test_agent.",
+  },
 ];
