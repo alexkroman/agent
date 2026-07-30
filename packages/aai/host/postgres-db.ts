@@ -10,6 +10,7 @@
 
 import postgres from "postgres";
 import type { Db } from "../sdk/db.ts";
+import { MAX_DB_RESULT_ROWS } from "../sdk/db.ts";
 
 /** Options for {@link createPostgresDb}. */
 export type CreatePostgresDbOptions = {
@@ -41,6 +42,14 @@ export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
       // the caller-facing contract at `unknown[]` and lets the driver reject
       // non-serializable values at runtime.
       const rows = await sql.unsafe(query, (params ?? []) as postgres.ParameterOrJSON<never>[]);
+      // Throw rather than truncate: a silently sliced result set is
+      // indistinguishable from a complete one. One enforcement point keeps
+      // `aai dev` and the platform's `db/query` RPC identical.
+      if (rows.length > MAX_DB_RESULT_ROWS) {
+        throw new Error(
+          `query returned more than ${MAX_DB_RESULT_ROWS} rows; add a LIMIT (paginate with LIMIT/OFFSET)`,
+        );
+      }
       return [...rows] as T[];
     },
     async close(): Promise<void> {

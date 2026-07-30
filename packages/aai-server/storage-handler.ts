@@ -15,10 +15,9 @@
 
 import { HTTPException } from "hono/http-exception";
 import type { AppDatabases } from "./app-database.ts";
-import { appDbSecretName } from "./bundle-store.ts";
 import type { AppContext } from "./context.ts";
-import { type SlotCache, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
-import type { SecretStore } from "./secret-store.ts";
+import { restartSlotSandbox, type SlotCache, withSlugLock } from "./sandbox-slots.ts";
+import { appDbSecretName, type SecretStore } from "./secret-store.ts";
 
 /** What the storage core needs from the server bindings. */
 export type StorageEnv = {
@@ -29,14 +28,6 @@ export type StorageEnv = {
 
 const UNCONFIGURED_MESSAGE =
   "Storage is not configured on this server (SUPABASE_DB_URL is not set)";
-
-async function restartSandbox(env: StorageEnv, slug: string, reason: string): Promise<void> {
-  const slot = env.slots.get(slug);
-  if (slot?.sandbox) {
-    console.info(`Restarting sandbox for ${reason}`, { slug });
-    await terminateSlot(slot);
-  }
-}
 
 /** Is storage enabled (credentials provisioned) for this app? */
 export async function storageStatus(env: StorageEnv, slug: string): Promise<{ enabled: boolean }> {
@@ -51,7 +42,7 @@ export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled:
   return withSlugLock(slug, async () => {
     const meta = await appDb.provision(slug);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
-    await restartSandbox(env, slug, "storage enable");
+    await restartSlotSandbox(env.slots, slug, "storage enable");
     console.info("Storage enabled", { slug, schema: meta.schema });
     return { enabled: true as const };
   });
@@ -64,7 +55,7 @@ export function disableStorage(env: StorageEnv, slug: string): Promise<{ enabled
   return withSlugLock(slug, async () => {
     await appDb.deprovision(slug);
     await env.secrets.delete(appDbSecretName(slug));
-    await restartSandbox(env, slug, "storage disable");
+    await restartSlotSandbox(env.slots, slug, "storage disable");
     console.info("Storage disabled", { slug });
     return { enabled: false as const };
   });

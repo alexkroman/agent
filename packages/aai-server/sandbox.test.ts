@@ -6,15 +6,10 @@ import type { ClientEvent, ClientSink } from "@alexkroman1/aai/protocol";
 import { assemblyAI } from "@alexkroman1/aai/stt";
 import { cartesia } from "@alexkroman1/aai/tts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { createClientSendHandler } from "./client-send.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import {
-  createClientSendHandler,
-  createSandbox,
-  createSlotCache,
-  resolveSandbox,
-  type SandboxOptions,
-} from "./sandbox.ts";
+import { createSandbox, createSlotCache, resolveSandbox, type SandboxOptions } from "./sandbox.ts";
 import { createTestStorage, createTestStore } from "./test-utils.ts";
 
 // ── Mock sandbox-vm ──────────────────────────────────────────────────────────

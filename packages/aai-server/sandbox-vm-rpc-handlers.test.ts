@@ -9,6 +9,7 @@
 
 import type { PassThrough } from "node:stream";
 import type { Db } from "@alexkroman1/aai";
+import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   autorespondBundleLoad,
@@ -19,7 +20,6 @@ import {
   waitForResponseId,
 } from "./_sandbox-vm-test-utils.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
-import { MAX_DB_RESULT_ROWS } from "./sandbox-guest-rpc.ts";
 import { _internals } from "./sandbox-vm.ts";
 
 // ── Vector RPC handler tests ──────────────────────────────────────────────────
@@ -352,9 +352,11 @@ describe("db/query handler via injected Db", () => {
     handle.conn.dispose();
   });
 
-  it("db/query caps the returned rows at MAX_DB_RESULT_ROWS", async () => {
-    const rows = Array.from({ length: MAX_DB_RESULT_ROWS + 50 }, (_, i) => ({ i }));
-    const handle = await configure({ query: vi.fn().mockResolvedValue(rows) });
+  it("db/query surfaces the row-cap throw from the Db handle as an RPC error", async () => {
+    // The cap itself lives in createPostgresDb (which openAppDb builds the
+    // handle from) — the handler forwards its throw instead of truncating.
+    const capError = new Error(`query returned more than ${MAX_DB_RESULT_ROWS} rows; add a LIMIT`);
+    const handle = await configure({ query: vi.fn().mockRejectedValue(capError) });
 
     const reqId = 603;
     hostReadable.push(
@@ -369,8 +371,8 @@ describe("db/query handler via injected Db", () => {
     await waitForResponseId(writtenLines, reqId);
 
     const response = findResponseById(writtenLines, reqId);
-    expect(response).toBeDefined();
-    expect((response as { result: unknown[] }).result.length).toBe(MAX_DB_RESULT_ROWS);
+    expect(response?.error).toBeDefined();
+    expect(JSON.stringify(response?.error)).toContain("add a LIMIT");
     handle.conn.dispose();
   });
 

@@ -5,6 +5,7 @@
  * TextLineStream / session state / executeTool tests live in
  * deno-harness.test.ts.
  */
+import { STORAGE_DISABLED_MESSAGE } from "@alexkroman1/aai";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 
 // ── Deno global shim ──────────────────────────────────────────────────────
@@ -144,11 +145,7 @@ describe("handleRequest", () => {
       result: { error: string };
     };
     // Must match the SDK tool-executor's message exactly so dev and prod agree.
-    expect(reply.result.error).toBe(
-      "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
-        "the Storage toggle in the studio; under `aai dev`, set DATABASE_URL in the " +
-        "project .env.",
-    );
+    expect(reply.result.error).toBe(STORAGE_DISABLED_MESSAGE);
   });
 
   test("ctx.db proxies db/query to the host when storage is enabled", async () => {

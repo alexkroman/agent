@@ -50,7 +50,7 @@ import type {
   Message,
   ToolContext,
 } from "./harness-types.ts";
-import { RUN_CODE_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./limits.ts";
+import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "./limits.ts";
 
 // Re-export the host-RPC surface so existing consumers/tests can keep
 // importing it from `./deno-harness.ts`.
@@ -111,11 +111,6 @@ let _bundleEnv: Readonly<Record<string, string>> = Object.freeze({});
  * `executeTool`), so `aai dev` and the platform read identically.
  */
 let _storageEnabled = false;
-
-const STORAGE_DISABLED_MESSAGE =
-  "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
-  "the Storage toggle in the studio; under `aai dev`, set DATABASE_URL in the " +
-  "project .env.";
 
 // ---- Session state ----------------------------------------------------------
 

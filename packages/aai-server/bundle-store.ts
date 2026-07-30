@@ -16,25 +16,15 @@ import { z } from "zod";
 import { createKeyedLock } from "./_keyed-lock.ts";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
-import { agentObjectKey, agentPrefix } from "./constants.ts";
+import { agentObjectKey, agentPrefix, MAX_ENV_SIZE } from "./constants.ts";
 import { metrics, observeDurationWithStatus } from "./metrics.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { withLock } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema, EnvSchema } from "./schemas.ts";
-import type { SecretStore } from "./secret-store.ts";
+import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
 export type { BundleStore } from "./store-types.ts";
-
-/** SecretStore name for one agent's env record. */
-export function agentEnvSecretName(slug: string): string {
-  return `agent-env:${slug}`;
-}
-
-/** SecretStore name for one app's provisioned database credentials. */
-export function appDbSecretName(slug: string): string {
-  return `app-db:${slug}`;
-}
 
 const ManifestSchema = z.object({
   slug: z.string(),
@@ -219,11 +209,23 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
   }
 
   async function loadManifest(slug: string): Promise<AgentMetadata | null> {
-    const raw = await getRawManifest(slug);
+    // Independent reads (S3 manifest, Vault env) — fetch both concurrently;
+    // the env result is irrelevant when the manifest is missing.
+    const [raw, env] = await Promise.all([getRawManifest(slug), loadEnv(slug)]);
     if (!raw) return null;
-    const env = await loadEnv(slug);
     const parsed = AgentMetadataSchema.safeParse({ ...raw, env });
     return parsed.success ? parsed.data : null;
+  }
+
+  /** Serialize + size-check + write one agent's env record to the SecretStore. */
+  async function writeEnv(slug: string, env: Record<string, string>): Promise<void> {
+    const serialized = JSON.stringify(env);
+    if (serialized.length > MAX_ENV_SIZE) {
+      throw new Error(
+        `Agent env for ${slug} exceeds the ${MAX_ENV_SIZE}-byte limit (${serialized.length} bytes)`,
+      );
+    }
+    await secrets.put(agentEnvSecretName(slug), serialized);
   }
 
   async function getManifestCached(slug: string): Promise<AgentMetadata | null> {
@@ -254,7 +256,7 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
         // (deleteByPrefix already cleared the prefix; the trailing
         // invalidate handles cache races), so run them concurrently.
         await Promise.all([
-          secrets.put(agentEnvSecretName(bundle.slug), JSON.stringify(bundle.env)),
+          writeEnv(bundle.slug, bundle.env),
           storage.setItem(agentObjectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest)),
           storage.setItem(agentObjectKey(bundle.slug, "worker.js"), bundle.worker),
           ...Object.entries(bundle.clientFiles).map(([filePath, content]) =>
@@ -320,9 +322,9 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
         withLock(manifestLock, slug, async () => {
           // The manifest existence check keeps putEnv's contract: env for an
           // unknown agent is an error, not a silent secret write.
-          const raw = await getRawManifest(slug);
-          if (!raw) throw new Error(`Agent ${slug} not found`);
-          await secrets.put(agentEnvSecretName(slug), JSON.stringify(env));
+          const manifest = await getManifestCached(slug);
+          if (!manifest) throw new Error(`Agent ${slug} not found`);
+          await writeEnv(slug, env);
           manifestCache.delete(slug);
         }),
       );

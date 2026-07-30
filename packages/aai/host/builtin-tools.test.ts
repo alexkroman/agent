@@ -1,9 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
-import { SESSION_NOTES_TTL_MS } from "../sdk/constants.ts";
 import { createMockToolContext } from "./_test-utils.ts";
-import { resolveAllBuiltins } from "./builtin-tools.ts";
+import { resolveAllBuiltins, SESSION_NOTES_TTL_MS } from "./builtin-tools.ts";
 
 /**
  * Invoke the host-side run_code def. run_code no longer executes on the host —

@@ -7,6 +7,7 @@ import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
+import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
 // ── Metric-reading helpers (canonical versions for tests) ───────────────
@@ -73,8 +74,12 @@ export function histogramCount(name: string, labels?: Record<string, string>): n
 
 export const VALID_ENV: Record<string, string> = {};
 
-/** Sync in-memory BundleStore for tests. No encryption — stores env as plain JSON. */
-export function createTestStore(): BundleStore {
+/**
+ * Sync in-memory BundleStore for tests. No encryption — stores env as plain
+ * JSON. When a SecretStore is passed, `deleteAgent` sweeps the agent's secret
+ * names like the real store does (the delete route relies on that contract).
+ */
+export function createTestStore(secrets?: SecretStore): BundleStore {
   const objects = new Map<string, string>();
 
   function objectKey(slug: string, file: string): string {
@@ -127,9 +132,10 @@ export function createTestStore(): BundleStore {
       return Promise.resolve(objects.get(objectKey(slug, `client/${filePath}`)) ?? null);
     },
 
-    deleteAgent(slug) {
+    async deleteAgent(slug) {
       deleteByPrefix(`agents/${slug}/`);
-      return Promise.resolve();
+      await secrets?.delete(agentEnvSecretName(slug));
+      await secrets?.delete(appDbSecretName(slug));
     },
 
     getEnv(slug) {
@@ -203,7 +209,7 @@ export async function createTestOrchestrator(
   store: BundleStore;
   storage: Storage;
 }> {
-  const store = createTestStore();
+  const store = createTestStore(overrides.secrets);
   const storage = createTestStorage();
   const { app } = createOrchestrator({
     slots: createSlotCache(),

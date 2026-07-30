@@ -6,10 +6,20 @@
  * on read through the `vault.decrypted_secrets` view) over the platform's
  * `SUPABASE_DB_URL` connection. Local dev and tests use an in-memory store.
  *
- * Naming convention (owned by callers):
+ * Naming convention (helpers below):
  * - `agent-env:<slug>` — an agent's env/secret record, JSON-serialized
  * - `app-db:<slug>`    — an app's provisioned database credentials, JSON
  */
+
+/** SecretStore name for one agent's env record. */
+export function agentEnvSecretName(slug: string): string {
+  return `agent-env:${slug}`;
+}
+
+/** SecretStore name for one app's provisioned database credentials. */
+export function appDbSecretName(slug: string): string {
+  return `app-db:${slug}`;
+}
 
 /** Minimal SQL executor: one parameterized statement, resolves with rows. */
 export type SqlExec = (query: string, params?: unknown[]) => Promise<Record<string, unknown>[]>;

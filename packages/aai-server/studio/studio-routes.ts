@@ -213,25 +213,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     },
   );
 
-  // One connectionless sync turn against the project's *published* agent —
-  // the studio-side door to `POST /:slug/sync`, addressed by project name so
-  // the client never has to track the slug itself. Same semantics as the
-  // preview: it exercises the deployed bundle, not unpublished edits.
-  studio.post("/projects/:project/sync", syncBodyLimit, async (c) => {
-    const scope = studioScope(c.var.apiKey);
-    const project = validateProject(c.req.param("project"));
-    const workspace = await getWorkspace(c.env.storage, scope, project);
-    if (!workspace) return c.json({ error: "Project not found" }, 404);
-    if (!workspace.deployedSlug) {
-      return c.json({ error: "Project has not been published yet" }, 409);
-    }
-    return handleSyncTurn(c, workspace.deployedSlug, options.pool);
-  });
-
-  // Storage (per-app database) for the project's *published* agent —
-  // resolved by project name like the sync route, delegating to the same
-  // core the owner `/:slug/storage` routes use. Unpublished project → 409:
-  // storage attaches to a deployed slug, so Publish comes first.
+  // Resolve a project's *published* slug (or the error response when it has
+  // none). Unpublished project → 409: both routes below operate on the
+  // deployed agent, so Publish comes first.
   const publishedSlug = async (c: Context<HonoEnv>): Promise<string | Response> => {
     const scope = studioScope(c.var.apiKey);
     const project = validateProject(c.req.param("project"));
@@ -242,6 +226,20 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     }
     return workspace.deployedSlug;
   };
+
+  // One connectionless sync turn against the project's *published* agent —
+  // the studio-side door to `POST /:slug/sync`, addressed by project name so
+  // the client never has to track the slug itself. Same semantics as the
+  // preview: it exercises the deployed bundle, not unpublished edits.
+  studio.post("/projects/:project/sync", syncBodyLimit, async (c) => {
+    const slug = await publishedSlug(c);
+    if (slug instanceof Response) return slug;
+    return handleSyncTurn(c, slug, options.pool);
+  });
+
+  // Storage (per-app database) for the project's *published* agent —
+  // resolved by project name like the sync route, delegating to the same
+  // core the owner `/:slug/storage` routes use.
 
   studio.get("/projects/:project/storage", async (c) => {
     const slug = await publishedSlug(c);

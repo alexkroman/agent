@@ -11,6 +11,7 @@ import type { z } from "zod";
 import { EMPTY_PARAMS } from "../sdk/_internal-types.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
+import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
@@ -49,11 +50,7 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
     ...(signal !== undefined ? { signal } : {}),
     get db(): Db {
       if (!db) {
-        throw new Error(
-          "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
-            "the Storage toggle in the studio; under `aai dev`, set DATABASE_URL in the " +
-            "project .env.",
-        );
+        throw new Error(STORAGE_DISABLED_MESSAGE);
       }
       return db;
     },

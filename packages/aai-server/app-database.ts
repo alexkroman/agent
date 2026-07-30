@@ -53,16 +53,25 @@ export async function provisionAppDatabase(sql: SqlExec, slug: string): Promise<
   const password = randomBytes(16).toString("hex");
   if (!PASSWORD_RE.test(password)) throw new Error("Invalid generated password");
 
-  await sql(`create schema if not exists "${id}"`);
-  const existing = await sql("select 1 from pg_roles where rolname = $1", [id]);
-  if (existing.length > 0) {
-    await sql(`alter role "${id}" with login password '${password}'`);
-  } else {
-    await sql(`create role "${id}" with login password '${password}'`);
-  }
-  await sql(`grant usage, create on schema "${id}" to "${id}"`);
-  await sql(`alter role "${id}" set search_path = "${id}"`);
-  await sql(`alter role "${id}" set statement_timeout = '10s'`);
+  // One multi-statement batch (no bind params — identifiers/password are
+  // shape-asserted above): DDL cannot take placeholders, and a single round
+  // trip replaces what used to be ~6 sequential ones. The `do $$` block is
+  // the create-or-alter branch for the role.
+  await sql(
+    `create schema if not exists "${id}";
+do $$
+begin
+  if exists (select 1 from pg_roles where rolname = '${id}') then
+    alter role "${id}" with login password '${password}';
+  else
+    create role "${id}" with login password '${password}';
+  end if;
+end
+$$;
+grant usage, create on schema "${id}" to "${id}";
+alter role "${id}" set search_path = "${id}";
+alter role "${id}" set statement_timeout = '10s'`,
+  );
 
   return { schema: id, role: id, password };
 }

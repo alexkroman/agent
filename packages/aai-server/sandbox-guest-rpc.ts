@@ -22,15 +22,6 @@ import type { NdjsonConnection } from "./ndjson-transport.ts";
 import { DbQueryParamsSchema } from "./rpc-schemas.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
 
-// ── Db result cap ────────────────────────────────────────────────────────────
-
-/**
- * Max rows one `db/query` RPC returns to the guest. A runaway `select *`
- * must not stream an unbounded result set through the NDJSON pipe (and the
- * guest's memory); callers paginate with LIMIT/OFFSET past this.
- */
-export const MAX_DB_RESULT_ROWS = 1000;
-
 // ── Vector param schemas for guest → host validation ────────────────────────
 
 // Derived from the wire schemas rather than restated: the RPC params are those
@@ -99,13 +90,14 @@ export type GuestRpcOptions = {
 export function registerGuestRpcHandlers(conn: NdjsonConnection, opts: GuestRpcOptions): void {
   // Host serves guest ctx.db queries against the app's provisioned database
   // (params validated with Zod). JSON-serializability of row values is the
-  // caller's problem — non-serializable values fail the NDJSON write.
+  // caller's problem — non-serializable values fail the NDJSON write. The
+  // row cap (MAX_DB_RESULT_ROWS) is enforced inside `createPostgresDb`,
+  // which this db handle comes from (openAppDb) — not re-checked here.
   if (opts.db) {
     const db = opts.db;
     conn.onRequest("db/query", async (raw: unknown) => {
       const p = DbQueryParamsSchema.parse(raw);
-      const rows = await db.query(p.sql, p.params);
-      return rows.length > MAX_DB_RESULT_ROWS ? rows.slice(0, MAX_DB_RESULT_ROWS) : rows;
+      return await db.query(p.sql, p.params);
     });
   }
 

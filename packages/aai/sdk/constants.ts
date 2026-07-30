@@ -106,14 +106,6 @@ export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [
   "calculate",
 ];
 
-/**
- * TTL for a session's `remember`/`recall` notes in the in-process store.
- * Notes are scoped to one voice session, which is bounded by the idle
- * timeout — a generous TTL only guarantees abandoned sessions' notes don't
- * accumulate in the host process.
- */
-export const SESSION_NOTES_TTL_MS = 86_400_000;
-
 export const MAX_TOOL_RESULT_CHARS = 4000;
 /**
  * Wire cap on a single transcript event's text (matches the per-message

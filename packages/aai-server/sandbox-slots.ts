@@ -93,6 +93,22 @@ export async function terminateSlot(slot: AgentSlot): Promise<void> {
   await detachAndShutdown(slot, "terminate", "Failed to shut down sandbox");
 }
 
+/**
+ * Terminate `slug`'s sandbox (if resident) so the next session picks up new
+ * config — used by the secret and storage handlers after a mutation.
+ */
+export async function restartSlotSandbox(
+  slots: SlotCache,
+  slug: string,
+  reason: string,
+): Promise<void> {
+  const slot = slots.get(slug);
+  if (slot?.sandbox) {
+    console.info(`Restarting sandbox for ${reason}`, { slug });
+    await terminateSlot(slot);
+  }
+}
+
 export function setSlot(slots: SlotCache, slot: AgentSlot): void {
   slots.set(slot.slug, slot);
 }

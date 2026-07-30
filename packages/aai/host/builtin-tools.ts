@@ -23,7 +23,6 @@ import {
   MAX_HTML_BYTES,
   MAX_JSON_BYTES,
   MAX_PAGE_CHARS,
-  SESSION_NOTES_TTL_MS,
 } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { calculate } from "./_calculate.ts";
@@ -298,6 +297,13 @@ type NotesEntry = { notes: Record<string, string>; expiresAt: number };
 const sessionNotes = new Map<string, NotesEntry>();
 
 /** Hard cap on tracked sessions; oldest entries are evicted past it. */
+/**
+ * TTL for a session's `remember`/`recall` notes in the in-process store.
+ * Notes are scoped to one voice session, which is bounded by the idle
+ * timeout — a generous TTL only guarantees abandoned sessions' notes don't
+ * accumulate in the host process.
+ */
+export const SESSION_NOTES_TTL_MS = 86_400_000;
 const MAX_SESSION_NOTES_ENTRIES = 10_000;
 
 function liveNotesEntry(sessionId: string): NotesEntry | undefined {

@@ -2,7 +2,7 @@
 import { createStorage } from "unstorage";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ByteBudgetTtlCache, createBundleStore } from "./bundle-store.ts";
-import { agentObjectKey } from "./constants.ts";
+import { agentObjectKey, MAX_ENV_SIZE } from "./constants.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
@@ -79,6 +79,35 @@ describe("bundle store (unstorage)", () => {
 
     await expect(store.getManifest("bad-agent")).resolves.toBeNull();
     warnSpy.mockRestore();
+  });
+
+  test("env writes over MAX_ENV_SIZE are rejected on both write paths", async () => {
+    const storage = createStorage();
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+    const oversized = { BIG: "x".repeat(MAX_ENV_SIZE) };
+
+    await expect(
+      store.putAgent({
+        slug: "test-agent",
+        env: oversized,
+        worker: "console.log('w');",
+        clientFiles: {},
+        credential_hashes: ["hash1"],
+        agentConfig: TEST_AGENT_CONFIG,
+      }),
+    ).rejects.toThrow(/exceeds the .*limit/);
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { OK: "1" },
+      worker: "console.log('w');",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+    await expect(store.putEnv("test-agent", oversized)).rejects.toThrow(/exceeds the .*limit/);
+    // The rejected write must not have clobbered the stored env.
+    await expect(store.getEnv("test-agent")).resolves.toEqual({ OK: "1" });
   });
 
   test("concurrent putEnv calls do not lose updates", async () => {

@@ -582,6 +582,8 @@ ctx.db.query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Prom
 One parameterized statement per call, `$1, $2…` placeholders — never
 interpolate values into the SQL string. The rows come back as plain objects;
 `jsonb` columns are returned already parsed (no `JSON.parse` needed).
+A query returning more than 1000 rows throws — always bound reads with
+`LIMIT` (paginate with `LIMIT`/`OFFSET`).
 
 **Storage must be enabled** or accessing `ctx.db` throws:
 

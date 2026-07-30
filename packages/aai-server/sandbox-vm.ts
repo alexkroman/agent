@@ -183,6 +183,9 @@ export async function describeBundle(
     const result = await warm.conn.sendRequest<BundleLoadResult>("bundle/load", {
       code: opts.workerCode,
       env: {},
+      // Explicit even though the guest schema defaults it: every in-repo
+      // sender states its storage intent.
+      storageEnabled: false,
     });
     return result?.config;
   } finally {

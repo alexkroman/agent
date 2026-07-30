@@ -29,8 +29,8 @@ describe("appDbIdentifier", () => {
 });
 
 describe("provisionAppDatabase", () => {
-  test("creates schema + fresh role with grants, search_path, and statement_timeout", async () => {
-    const { sql, calls } = captureSql(() => []); // role does not exist
+  test("creates schema + role with grants, search_path, and statement_timeout in one batch", async () => {
+    const { sql, calls } = captureSql();
     const meta = await provisionAppDatabase(sql, "my-agent");
     const id = appDbIdentifier("my-agent");
 
@@ -38,30 +38,19 @@ describe("provisionAppDatabase", () => {
     expect(meta.role).toBe(id);
     expect(meta.password).toMatch(/^[a-f0-9]{32}$/);
 
-    expect(calls.map((c) => c.query)).toEqual([
-      `create schema if not exists "${id}"`,
-      "select 1 from pg_roles where rolname = $1",
-      `create role "${id}" with login password '${meta.password}'`,
-      `grant usage, create on schema "${id}" to "${id}"`,
-      `alter role "${id}" set search_path = "${id}"`,
-      `alter role "${id}" set statement_timeout = '10s'`,
-    ]);
-    // The existence check is parameterized, not interpolated.
-    expect(calls[1]?.params).toEqual([id]);
-  });
-
-  test("alters the existing role (idempotent re-provision rotates the password)", async () => {
-    const { sql, calls } = captureSql((query) =>
-      query.startsWith("select 1 from pg_roles") ? [{ "?column?": 1 }] : [],
-    );
-    const meta = await provisionAppDatabase(sql, "my-agent");
-    const id = appDbIdentifier("my-agent");
-    expect(calls.map((c) => c.query)).toContain(
-      `alter role "${id}" with login password '${meta.password}'`,
-    );
-    expect(calls.map((c) => c.query)).not.toContain(
-      `create role "${id}" with login password '${meta.password}'`,
-    );
+    // A single multi-statement round trip, no bind params.
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    expect(call?.params).toBeUndefined();
+    const query = call?.query ?? "";
+    expect(query).toContain(`create schema if not exists "${id}"`);
+    // Create-or-alter branches on role existence server-side in a do-block.
+    expect(query).toContain(`select 1 from pg_roles where rolname = '${id}'`);
+    expect(query).toContain(`alter role "${id}" with login password '${meta.password}'`);
+    expect(query).toContain(`create role "${id}" with login password '${meta.password}'`);
+    expect(query).toContain(`grant usage, create on schema "${id}" to "${id}"`);
+    expect(query).toContain(`alter role "${id}" set search_path = "${id}"`);
+    expect(query).toContain(`alter role "${id}" set statement_timeout = '10s'`);
   });
 
   test("two provisions issue distinct random passwords", async () => {

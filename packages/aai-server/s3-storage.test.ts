@@ -47,8 +47,10 @@ describe("createS3Storage getKeys", () => {
 
     expect(requests).toHaveLength(1);
     const url = requests[0] as URL;
-    expect(url.origin).toBe("https://example.supabase.co/storage/v1/s3");
-    expect(url.pathname).toBe("/test-bucket");
+    expect(url.origin).toBe("https://example.supabase.co");
+    // A path-ful endpoint (Supabase's S3-compatible API) must keep its base
+    // path — the bucket is appended, not resolved against the origin.
+    expect(url.pathname).toBe("/storage/v1/s3/test-bucket");
     expect(url.searchParams.get("list-type")).toBe("2");
     // unstorage normalizes the base to `studio:scope-a:`; the driver must
     // convert it back to a `/`-separated S3 prefix with the trailing slash

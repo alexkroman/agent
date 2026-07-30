@@ -60,16 +60,20 @@ export interface OrderState {
 
 type StateSlot = { order?: OrderState };
 
+function emptyOrder(): OrderState {
+  return { pizzas: [], nextId: 1, customerName: null };
+}
+
 /** The session's live cart. Mutations to the returned object stick — it is
  *  the object stored in `ctx.state`. */
 export function getOrder(ctx: ToolContext): OrderState {
   const slot = ctx.state as StateSlot;
-  slot.order ??= { pizzas: [], nextId: 1, customerName: null };
+  slot.order ??= emptyOrder();
   return slot.order;
 }
 
 /** Clear the cart after checkout so a follow-up order starts fresh. */
 export function resetOrder(ctx: ToolContext): void {
   const slot = ctx.state as StateSlot;
-  slot.order = { pizzas: [], nextId: 1, customerName: null };
+  slot.order = emptyOrder();
 }

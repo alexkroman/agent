@@ -8,9 +8,13 @@
  * upgrade support via `ws`.
  */
 
-import { createMemoryVector, createPineconeVector, type Vector } from "@alexkroman1/aai/runtime";
+import {
+  createMemoryVector,
+  createPineconeVector,
+  createPostgresDb,
+  type Vector,
+} from "@alexkroman1/aai/runtime";
 import { serve } from "@hono/node-server";
-import postgres from "postgres";
 import { createStorage } from "unstorage";
 import { assertDevKeys, isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize } from "./_boot.ts";
 import { waitForIdle } from "./_drain.ts";
@@ -18,7 +22,7 @@ import { type AppDatabases, createAppDatabases } from "./app-database.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
 import { initHostCapacityGauges, metrics } from "./metrics.ts";
-import { isModalConfigured, modalRequiredError } from "./modal-sandbox.ts";
+import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { createS3Storage } from "./s3-storage.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
@@ -82,10 +86,10 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
     console.info("Local dev mode: in-memory secret store; per-app databases disabled");
     return { secrets: createMemorySecretStore() };
   }
-  // `prepare: false` keeps the client compatible with transaction-mode
-  // poolers (Supavisor / PgBouncer) in front of the Supabase database.
-  const sql = postgres(url, { max: 4, prepare: false });
-  const exec: SqlExec = async (query, params) => [...(await sql.unsafe(query, params as never))];
+  // The pool lives for the process; connections drain when the process exits
+  // (no explicit close() hook on the shutdown path today).
+  const admin = createPostgresDb({ url, max: 4 });
+  const exec: SqlExec = (query, params) => admin.query(query, params);
   return {
     secrets: isLocalDev(env) ? createMemorySecretStore() : createVaultSecretStore(exec),
     appDb: createAppDatabases({ url, sql: exec }),
@@ -158,6 +162,10 @@ async function main(): Promise<void> {
     } else {
       throw modalRequiredError();
     }
+  } else {
+    // Resolve the Modal app/image context now (fire-and-forget) so the gRPC
+    // round trip doesn't land on the first session's cold start.
+    prewarmModal();
   }
 
   const { app, injectWebSocket, closeActiveSockets, activeSessionCount } = createOrchestrator(opts);

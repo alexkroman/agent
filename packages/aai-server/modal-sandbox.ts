@@ -101,21 +101,34 @@ function clamp(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
 
+// Table form on purpose: with one copy-pasted block per variable, mismatched
+// clamp bounds are invisible in review — the table makes each row's
+// env var → field, [min, max] clamp, and unit scale line up for comparison.
+const LIMIT_SPECS: readonly [
+  envVar: string,
+  key: keyof ModalSandboxLimits,
+  min: number,
+  max: number,
+  scale: number,
+][] = [
+  ["SANDBOX_MEMORY_LIMIT_MB", "memoryLimitMiB", 128, 4096, 1],
+  ["SANDBOX_CPU_LIMIT", "cpuLimit", 0.125, 16, 1],
+  ["SANDBOX_TIMEOUT_SECS", "timeoutMs", 300, 86_400, 1000],
+];
+
 /**
  * Parses operator sandbox limit overrides from environment variables.
  * Unset or non-numeric vars are ignored (Modal defaults / our default
- * lifetime apply).
+ * lifetime apply). Values are clamped, then scaled to the field's unit.
  */
 export function parseSandboxLimitsFromEnv(
   env: Record<string, string | undefined>,
 ): ModalSandboxLimits {
   const limits: ModalSandboxLimits = {};
-  const memory = Number(env.SANDBOX_MEMORY_LIMIT_MB);
-  if (Number.isFinite(memory)) limits.memoryLimitMiB = clamp(memory, 128, 4096);
-  const cpu = Number(env.SANDBOX_CPU_LIMIT);
-  if (Number.isFinite(cpu)) limits.cpuLimit = clamp(cpu, 0.125, 16);
-  const timeoutSecs = Number(env.SANDBOX_TIMEOUT_SECS);
-  if (Number.isFinite(timeoutSecs)) limits.timeoutMs = clamp(timeoutSecs, 300, 86_400) * 1000;
+  for (const [envVar, key, min, max, scale] of LIMIT_SPECS) {
+    const value = Number(env[envVar]);
+    if (Number.isFinite(value)) limits[key] = clamp(value, min, max) * scale;
+  }
   return limits;
 }
 
@@ -128,10 +141,20 @@ export function modalRequiredError(): Error {
   );
 }
 
+// One ModalClient per process — construction only resolves credentials
+// (env vars / ~/.modal.toml), so `isModalConfigured` and `buildContext`
+// share the instance.
+let clientMemo: ModalClient | null = null;
+
+function modalClient(): ModalClient {
+  clientMemo ??= new ModalClient();
+  return clientMemo;
+}
+
 /** True when the Modal SDK can resolve credentials (env vars or ~/.modal.toml). */
 export function isModalConfigured(): boolean {
   try {
-    const client = new ModalClient();
+    const client = modalClient();
     return Boolean(client.profile.tokenId && client.profile.tokenSecret);
   } catch {
     return false;
@@ -143,7 +166,7 @@ export function isModalConfigured(): boolean {
 let contextPromise: Promise<ModalSpawnContext> | null = null;
 
 async function buildContext(): Promise<ModalSpawnContext> {
-  const client = new ModalClient();
+  const client = modalClient();
   if (!(client.profile.tokenId && client.profile.tokenSecret)) {
     throw modalRequiredError();
   }
@@ -168,6 +191,17 @@ function modalContext(): Promise<ModalSpawnContext> {
     throw err;
   });
   return contextPromise;
+}
+
+/**
+ * Fire-and-forget warm-up of the memoized Modal context (app lookup/creation
+ * is a gRPC round trip that would otherwise land on the first session's cold
+ * start). A failure only warns — the next spawn retries via the memo reset.
+ */
+export function prewarmModal(): void {
+  void modalContext().catch((err: unknown) => {
+    console.warn(`Modal context prewarm failed: ${errorMessage(err)}`);
+  });
 }
 
 // ── Harness code cache ───────────────────────────────────────────────────────
@@ -337,8 +371,10 @@ export async function spawnModalWarm(
   opts: { harnessPath: string; slug?: string },
   ctx?: ModalSpawnContext,
 ): Promise<WarmHarness> {
-  const code = await harnessCode(opts.harnessPath);
-  const context = ctx ?? (await modalContext());
+  const [code, context] = await Promise.all([
+    harnessCode(opts.harnessPath),
+    ctx ? Promise.resolve(ctx) : modalContext(),
+  ]);
   const limits = parseSandboxLimitsFromEnv(process.env);
 
   const t0 = performance.now();
@@ -393,6 +429,7 @@ export const _internals = {
   drainStderr,
   resetModalContext(): void {
     contextPromise = null;
+    clientMemo = null;
     harnessCache.clear();
   },
 };

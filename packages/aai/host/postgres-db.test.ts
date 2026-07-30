@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, test, vi } from "vitest";
+import { MAX_DB_RESULT_ROWS } from "../sdk/db.ts";
 import { createPostgresDb } from "./postgres-db.ts";
 
 // Shape-only tests: the `postgres` module is mocked so no connection is ever
@@ -46,6 +47,22 @@ describe("createPostgresDb", () => {
     const db = createPostgresDb({ url: "postgres://db.example/app" });
     await db.query("select 1");
     expect(unsafeMock).toHaveBeenCalledExactlyOnceWith("select 1", []);
+  });
+
+  test("query throws (never truncates) past MAX_DB_RESULT_ROWS", async () => {
+    unsafeMock.mockResolvedValueOnce(
+      Array.from({ length: MAX_DB_RESULT_ROWS + 1 }, (_, i) => ({ i })),
+    );
+    const db = createPostgresDb({ url: "postgres://db.example/app" });
+    await expect(db.query("select * from big")).rejects.toThrow(
+      `query returned more than ${MAX_DB_RESULT_ROWS} rows; add a LIMIT`,
+    );
+  });
+
+  test("query resolves exactly MAX_DB_RESULT_ROWS rows without throwing", async () => {
+    unsafeMock.mockResolvedValueOnce(Array.from({ length: MAX_DB_RESULT_ROWS }, (_, i) => ({ i })));
+    const db = createPostgresDb({ url: "postgres://db.example/app" });
+    await expect(db.query("select * from big")).resolves.toHaveLength(MAX_DB_RESULT_ROWS);
   });
 
   test("query rejects when the driver rejects", async () => {

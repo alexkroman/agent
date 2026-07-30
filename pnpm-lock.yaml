@@ -310,9 +310,6 @@ importers:
       picomatch:
         specifier: ^4.0.5
         version: 4.0.5
-      postgres:
-        specifier: ^3.4.9
-        version: 3.4.9
       prom-client:
         specifier: ^15.1.3
         version: 15.1.3
