@@ -19,6 +19,10 @@ describe("loadScaffoldGuide", () => {
     // Markers proving it is the real CLI authoring guide, not a copy.
     expect(guide).toContain("## `agent()` API");
     expect(guide).toContain("AssemblyAI LLM");
+    // Concrete design rules for client.tsx live in the guide (one source of
+    // truth for CLI and studio) — the studio preamble points at this heading
+    // by name, so a rename here would silently break that reference.
+    expect(guide).toContain("### Design guidelines");
   });
 
   test("returns null for a missing path", () => {
@@ -51,6 +55,14 @@ describe("studioSystemPrompt", () => {
     // agent() — the mode-selection rule lives in the preamble.
     expect(prompt).toContain('"Workflow" means workflow(), not agent()');
     expect(prompt).toContain("treat changes you didn't make as");
+    // Context-gathering discipline: parallel independent tool calls, and
+    // don't pick an edit site off the first grep hit. Hard-wrapped prose,
+    // so assert against a whitespace-normalized copy.
+    const flat = prompt.replace(/\s+/g, " ");
+    expect(flat).toContain("don't stop at the first match");
+    // Custom UI gets concrete design constraints, not just "look nice" —
+    // the preamble names the guide section that carries the full rules.
+    expect(flat).toContain('"Design guidelines" section of the reference');
     expect(prompt).not.toContain("deploy_agent");
     expect(prompt).toContain("no `aai` CLI");
     // The full scaffold reference follows.
@@ -119,6 +131,9 @@ describe("studioSystemPrompt", () => {
     // ...including the rule against re-creating the helper, since this path
     // is the *only* guide the agent gets when the scaffold isn't on disk.
     expect(prompt).toContain("never define a local workflow helper");
+    // The preamble points at a "Design guidelines" section; the fallback is
+    // the only guide on this path, so it must carry one of its own.
+    expect(prompt).toContain("## Design guidelines (client.tsx)");
     expect(prompt).not.toContain("## `agent()` API"); // scaffold-only heading
   });
 });

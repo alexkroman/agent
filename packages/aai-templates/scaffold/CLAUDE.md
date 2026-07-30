@@ -726,6 +726,29 @@ Available from `@alexkroman1/aai-ui`:
   `--color-aai-*`, `--radius-aai`, `--font-aai`.
 - Always import `"@alexkroman1/aai-ui/styles.css"` at the top of `client.tsx`.
 
+### Design guidelines
+
+A custom UI should look deliberate, not like boilerplate. When building or
+restyling a `client.tsx`:
+
+- **Color:** pick one primary brand color, 2-3 neutrals (white/grays/black
+  variants), and at most 1-2 accents — 3-5 colors total. Avoid gradients
+  unless asked. If you override an element's background color, also set its
+  text color so contrast holds.
+- **Typography:** at most 2 font families — one for headings, one for body.
+  Body text 14px or larger with a relaxed line height (`leading-relaxed`).
+- **Layout:** design mobile-first, then enhance with responsive prefixes
+  (`md:`, `lg:`). Prefer flexbox (`flex items-center justify-between`);
+  use grid only for genuinely two-dimensional layouts; avoid absolute
+  positioning unless nothing else works.
+- **Tailwind:** stay on the spacing scale (`p-4`, never `p-[16px]`), use
+  `gap-*` between siblings rather than per-child margins, and wrap headings
+  and key copy in `text-balance` or `text-pretty`.
+- **Accessibility:** semantic elements (`main`, `header`, `button`), alt
+  text on meaningful images, `sr-only` labels on icon-only buttons.
+- **No filler:** no emojis as icons, no decorative gradient blobs or
+  abstract placeholder shapes, no lorem-ipsum-looking content.
+
 ## Secrets
 
 Never hardcode secrets in agent code.

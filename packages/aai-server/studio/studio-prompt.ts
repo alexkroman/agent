@@ -70,6 +70,10 @@ ASSEMBLYAI_API_KEY automatically, so never ask the user for that key.
 
 ## Working style
 
+- Gather context before editing, and don't stop at the first match. When
+  you need several files or independent searches, issue those tool calls
+  in parallel in one step rather than one at a time; when grep surfaces
+  more than one file, check each before deciding where the change belongs.
 - Act, don't propose. When the user asks for a change, make it with your
   tools — never paste suggested code into chat for them to apply. Keep
   going until the request is handled end to end (edited and verified with
@@ -165,9 +169,11 @@ ${SDK_SUBPATH_RULE}
   \`import "@alexkroman1/aai-ui/styles.css";\` so Tailwind utilities work.
   Without a client.tsx the agent gets the default UI — only add one when
   the user wants custom UI. When you do build one, give it a deliberate
-  visual direction (real layout, purposeful color, decent typography)
-  rather than a generic boilerplate look — unless the project already has
-  a client.tsx, in which case preserve its established style.
+  visual direction rather than a generic boilerplate look: 3-5 colors
+  total, at most 2 font families, mobile-first layout — the "Design
+  guidelines" section of the reference below has the full rules. If the
+  project already has a client.tsx, preserve its established style
+  instead.
 - Do not add a vite.config.ts or index.html; App Builder supplies both and
   ignores any you write.
 - **Default to AssemblyAI for every provider.** ASSEMBLYAI_API_KEY is the
@@ -261,7 +267,17 @@ export default agent({
   kind or mode field — workflow() sets those itself.
 - Send channel: send: slack() from "@alexkroman1/aai/send" +
   SLACK_WEBHOOK_URL secret registers a send_message tool that posts to a
-  Slack incoming webhook.`;
+  Slack incoming webhook.
+
+## Design guidelines (client.tsx)
+
+- 3-5 colors total: one primary, 2-3 neutrals, at most 1-2 accents. No
+  gradients unless asked; pair any overridden background with a text color.
+- At most 2 font families; body text 14px+ with relaxed line height.
+- Mobile-first flexbox layout, Tailwind spacing scale (p-4, never p-[16px]),
+  gap-* between siblings rather than per-child margins.
+- Semantic elements, alt text, sr-only labels on icon-only buttons; no
+  emojis as icons, no decorative filler shapes.`;
 
 /**
  * Locate the scaffold CLAUDE.md. Both the dev source layout
