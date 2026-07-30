@@ -383,19 +383,12 @@ voice agents without the CLI:
   default falls to `claude-sonnet-4-6`. Ordering the one
   `ASSEMBLYAI_GATEWAY_MODELS` array is what sets both defaults: the first
   entry surviving the region filter wins.
-- **Per-request model switching, provider-bound.** The *provider* is still
-  resolved once from host env (`studio-llm.ts`), but `POST /studio/chat`
-  accepts an optional `model` that must be on `studioLlmModels()` — the
-  configured provider's own known-model list (gateway list region-filtered,
-  plus any explicit `STUDIO_LLM_MODEL`), every entry of which runs on the
-  same host-held key. The route rejects anything else with a 400 *before*
-  streaming, so nothing new is reachable — only the choice among models the
-  host could already run. `GET /studio/status` returns the list as `models`
-  and the client's header picker (`ModelPicker` in `chat.tsx`) renders
-  exactly that, sending no `model` field while the default is selected.
-  **A client can never name a provider and never supplies a key** — keep it
-  that way: any widening of the accepted set must stay validated against
-  host-held keys.
+- **No per-request model switching.** `POST /studio/chat` accepts no
+  `model` field (a stray one is stripped by the body schema, never
+  honored): every turn runs on the host-configured default —
+  `gpt-5.5` on the gateway. **A client can never name a provider or a
+  model and never supplies a key** — keep it that way: reintroducing any
+  request-side choice must stay validated against host-held keys.
 - **Session sandboxes run the agent's code work on production infra**:
   each chat request lazily provisions one sandbox (`studio-sandbox.ts`)
   through the same warm-pool/`spawnWarmHarness` path deployed agents use
