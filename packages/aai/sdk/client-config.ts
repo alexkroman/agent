@@ -3,12 +3,11 @@
  * Pre-connection client-config wire format.
  *
  * `GET /client-config` (dev server) / `GET /:slug/client-config` (platform)
- * tells a browser client how to talk to the agent *before* any connection
- * exists — most importantly which transport the agent declared
- * (`agent({ transport })`). The default client fetches this on load and
- * picks the WebSocket session or the sync (HTTP-turn) shell accordingly;
- * without it, a sync-transport agent would need a custom `client.tsx` just
- * to avoid opening a WebSocket.
+ * tells a browser client what kind of app the agent is *before* any
+ * connection exists (`kind`: conversational agent vs one-shot workflow).
+ * The default client fetches this on load and renders the chat shell or the
+ * workflow run surface accordingly; without it, a workflow would need a
+ * custom `client.tsx` just to avoid opening a chat WebSocket.
  *
  * Unauthenticated by design — parity with the agent page, the WebSocket
  * upgrade, and `POST /sync`, and it only reveals what the page itself shows.
@@ -17,17 +16,16 @@
 
 import { z } from "zod";
 import { MAX_TRANSCRIPT_CHARS } from "./constants.ts";
+import type { AgentKind } from "./providers.ts";
 
 /** Relative path of the client-config endpoint under an agent's base URL. */
 export const CLIENT_CONFIG_PATH = "client-config";
 
 /**
- * Body of `GET /client-config`. `transport` defaults to `"websocket"` so a
- * response from an older server (or a hand-rolled one) that omits the field
- * keeps today's behavior.
+ * Body of `GET /client-config`. Unknown fields are stripped, so a response
+ * from an older server (which also sent a `transport` field) still parses.
  */
 export const ClientConfigResponseSchema = z.object({
-  transport: z.enum(["websocket", "sync"]).default("websocket"),
   /**
    * The app's mode: `"agent"` renders the conversational shell, `"workflow"`
    * the one-shot record/upload + go surface. Defaults to `"agent"` so older
@@ -37,12 +35,33 @@ export const ClientConfigResponseSchema = z.object({
   /** Agent display name, for the default client's header/start screen. */
   name: z.string().optional(),
   /**
-   * The agent's greeting. A sync client has no session start for the server
-   * to speak it on, so the default sync shell shows it as the opening
-   * assistant message instead.
+   * The agent's greeting. The workflow surface has no session start for the
+   * server to speak it on, so the default shell shows it as the idle-state
+   * instruction line instead.
    */
   greeting: z.string().max(MAX_TRANSCRIPT_CHARS).optional(),
 });
 
 /** Parsed body of `GET /client-config`. */
 export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
+
+/**
+ * Build the `GET /client-config` response body from an agent-shaped config.
+ *
+ * The one place the wire defaults are applied — every server that serves the
+ * endpoint (self-hosted `host/server.ts`, the platform's per-slug handler,
+ * the CLI dev server) goes through this, so a surface rule can't drift
+ * between them (two of them once disagreed on how a workflow's fields were
+ * derived, masked only by the client's check ordering).
+ */
+export function buildClientConfig(src: {
+  kind?: AgentKind | undefined;
+  name?: string | undefined;
+  greeting?: string | undefined;
+}): ClientConfigResponse {
+  return {
+    kind: src.kind ?? "agent",
+    ...(src.name !== undefined ? { name: src.name } : {}),
+    ...(src.greeting !== undefined ? { greeting: src.greeting } : {}),
+  };
+}

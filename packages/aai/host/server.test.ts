@@ -103,22 +103,22 @@ describe("createServer", () => {
     expect(res.headers.get("X-Frame-Options")).toBe("SAMEORIGIN");
   });
 
-  test("GET /client-config defaults to the websocket transport", async () => {
+  test("GET /client-config defaults to the agent kind", async () => {
     const { runtime } = makeRuntime({ name: "cfg-agent" });
     server = createServer({ runtime, name: "cfg-agent", logger: silentLogger });
     await server.listen(0);
 
     const res = await fetch(`http://localhost:${server.port}/client-config`);
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ transport: "websocket", kind: "agent", name: "cfg-agent" });
+    expect(await res.json()).toEqual({ kind: "agent", name: "cfg-agent" });
   });
 
-  test("GET /client-config carries the declared transport and greeting", async () => {
-    const { runtime } = makeRuntime({ name: "sync-agent" });
+  test("GET /client-config carries the declared kind and greeting", async () => {
+    const { runtime } = makeRuntime({ name: "wf-agent" });
     server = createServer({
       runtime,
-      name: "sync-agent",
-      transport: "sync",
+      name: "wf-agent",
+      kind: "workflow",
       greeting: "Hi there!",
       logger: silentLogger,
     });
@@ -127,9 +127,8 @@ describe("createServer", () => {
     const res = await fetch(`http://localhost:${server.port}/client-config`);
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      transport: "sync",
-      kind: "agent",
-      name: "sync-agent",
+      kind: "workflow",
+      name: "wf-agent",
       greeting: "Hi there!",
     });
   });
@@ -190,7 +189,7 @@ describe("createServer static client dir", () => {
     await fs.writeFile(path.join(dir, "client-config"), "not the endpoint");
     const res = await fetch(`${base}/client-config`);
     expect(res.headers.get("Content-Type")).toContain("application/json");
-    const json = (await res.json()) as { transport: string };
-    expect(json.transport).toBe("websocket");
+    const json = (await res.json()) as { kind: string };
+    expect(json.kind).toBe("agent");
   });
 });

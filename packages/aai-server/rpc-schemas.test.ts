@@ -49,32 +49,14 @@ describe("IsolateConfigSchema — text-only (tts: none)", () => {
   });
 });
 
-describe("IsolateConfigSchema — client transport", () => {
-  const triple = {
-    ...pipelineFields,
-    tts: { kind: "cartesia", options: { voice: "v" } },
-  };
-
-  test("accepts transport: 'sync' with the pipeline triple", () => {
-    const result = IsolateConfigSchema.safeParse({ name: "x", ...triple, transport: "sync" });
-    expect(result.success).toBe(true);
-    expect(result.data?.transport).toBe("sync");
-  });
-
-  test("rejects transport: 'sync' without the triple (sync turns 409 on s2s)", () => {
+describe("IsolateConfigSchema — removed transport field", () => {
+  test("strips a legacy transport field from an older stored config", () => {
+    // Configs deployed before the per-agent client transport was removed
+    // still carry `transport` in storage; the schema must ignore it rather
+    // than reject the whole agent.
     const result = IsolateConfigSchema.safeParse({ name: "x", transport: "sync" });
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toMatch(/transport: "sync" requires pipeline mode/);
-  });
-
-  test("accepts explicit transport: 'websocket' on an s2s agent", () => {
-    const result = IsolateConfigSchema.safeParse({ name: "x", transport: "websocket" });
     expect(result.success).toBe(true);
-  });
-
-  test("rejects unknown transport values", () => {
-    const result = IsolateConfigSchema.safeParse({ name: "x", transport: "http" });
-    expect(result.success).toBe(false);
+    expect(result.data).not.toHaveProperty("transport");
   });
 });
 

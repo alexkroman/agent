@@ -229,7 +229,7 @@ export const TEMPLATE_CASES: TemplateCase[] = [
       '"gemini-2.5-flash-lite" from "@alexkroman1/aai/llm" (both factories are ' +
       "called assemblyAI, so alias one on import). Step one is an extract_actions " +
       "tool, called once with the ENTIRE transcript: inside it use " +
-      'generateStructured from "@alexkroman1/aai/workflow" over ctx.generate with ' +
+      'generateStructured from "@alexkroman1/aai/patterns" over ctx.generate with ' +
       "a Zod schema for a list of typed actions — quote, order, followup, notify — " +
       "each carrying the assumptions made about it. Then give it one tool per " +
       "action type to execute them: file a quote, order a part, schedule a " +
@@ -259,6 +259,4 @@ export const UNCOVERED: Record<string, string> = {
   "infocom-adventure": "same shape as pizza-ordering (kv state keyed by sessionId)",
   "solo-rpg": "same shape as pizza-ordering (kv state keyed by sessionId)",
   "dispatch-center": "same shape as pizza-ordering (kv state keyed by sessionId)",
-  "sync-voice": "sync mode is a transport, not an agent shape the codegen picks",
-  "push-to-talk-translator": "client-side capture concern; agent.ts is pipeline-simple's shape",
 };

@@ -109,7 +109,6 @@ exports[`export surface stability > @alexkroman1/aai/manifest export 1`] = `
   "ToolSchemaSchema",
   "agentToolsToSchemas",
   "assertAgentKind",
-  "assertClientTransport",
   "assertPipelineTuning",
   "assertProviderTriple",
   "assertSilencePolicy",
@@ -143,6 +142,7 @@ exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
   "VectorQuerySchema",
   "VectorRequestSchema",
   "VectorUpsertSchema",
+  "buildClientConfig",
   "buildReadyConfig",
   "lenientParse",
 ]

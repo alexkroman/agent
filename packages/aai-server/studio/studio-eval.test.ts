@@ -34,7 +34,7 @@
  * Build `@alexkroman1/aai` too (`pnpm --filter @alexkroman1/aai build`): the
  * worker build resolves a workspace's SDK imports through the package's
  * `import` condition, i.e. `dist/`, never `@dev/source`. A stale dist makes a
- * newly added subpath (`@alexkroman1/aai/workflow`) unresolvable and every
+ * newly added subpath (`@alexkroman1/aai/patterns`) unresolvable and every
  * case that imports it fails `WorkerBuildJudge` — with a rolldown "not
  * exported under the conditions" error that reads like generated-code trouble.
  */
@@ -309,7 +309,7 @@ const RUBRIC: Record<(typeof RUBRIC_IDS)[number], string> = {
     "reached at all.",
   generation:
     "If the reference calls the LLM from inside a tool — `ctx.generate`, or a helper " +
-    "over it from `@alexkroman1/aai/workflow` (`generateStructured`, `sequential`, " +
+    "over it from `@alexkroman1/aai/patterns` (`generateStructured`, `sequential`, " +
     "`route`, `orchestrate`, …) — the generated agent has an equivalent step, " +
     "producing the same kind of result: a structured/typed extraction where the " +
     "reference gets one, not raw text the caller has to parse, and not left to the " +

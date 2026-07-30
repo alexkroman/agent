@@ -20,11 +20,9 @@ export { isTextOnlyTts, NONE_TTS_KIND } from "./providers/tts/none.ts";
 export {
   type AgentKind,
   assertAgentKind,
-  assertClientTransport,
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
   assertTextOnlyTuning,
-  type ClientTransport,
   type SessionMode,
 } from "./providers.ts";

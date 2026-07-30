@@ -20,6 +20,7 @@ import {
 // The pre-connection client-config endpoint's wire format is part of the
 // same protocol surface — re-exported so clients import one subpath.
 export {
+  buildClientConfig,
   CLIENT_CONFIG_PATH,
   type ClientConfigResponse,
   ClientConfigResponseSchema,

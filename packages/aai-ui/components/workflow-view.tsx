@@ -6,7 +6,7 @@
  * Default shell for workflows (`workflow()` definitions) — the SDK's
  * audio-in / action-out mode.
  *
- * Where {@link SyncChatView} is a hands-free *conversation*, this surface is
+ * Where {@link ChatView} is a *conversation*, this surface is
  * a one-shot *run*: hold the talk button (or upload an audio file) to stage
  * one instruction, press **Go**, and the whole clip goes out as a single
  * `POST /sync` request with **no history** — the server transcribes it, the
@@ -17,9 +17,9 @@
  * taken. Each run is independent; staging a new clip clears the last
  * result.
  *
- * Built from the same console pieces as the chat shells ({@link Eyebrow},
- * {@link Button}, {@link UrlChip}) so the two app modes share one visual
- * language. Rendered by `client()` when `GET /client-config` declares
+ * Built on the same {@link ConsoleShell} chrome as the chat shell, so the
+ * two app modes share one visual language by construction. Rendered by
+ * `client()` when `GET /client-config` declares
  * `kind: "workflow"`; exported for custom clients that want the stock run
  * surface with their own chrome.
  */
@@ -32,10 +32,8 @@ import { createPttRecorder, DEFAULT_SYNC_MIC_SAMPLE_RATE, type PttRecorder } fro
 import { createSyncSession, type SyncTurnResult } from "../sync-session.ts";
 import type { AgentState, ToolCallInfo } from "../types.ts";
 import { ERROR_COLOR, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
-import { AaiLogo } from "./aai-logo.tsx";
 import { Button } from "./button.tsx";
-import { stateColor } from "./chat-view.tsx";
-import { Eyebrow } from "./eyebrow.tsx";
+import { ConsoleShell } from "./console-shell.tsx";
 import { ThinkingDots } from "./message-list.tsx";
 import { ToolCallBlock } from "./tool-call-block.tsx";
 import { UrlChip } from "./url-chips.tsx";
@@ -163,7 +161,6 @@ export function WorkflowView({
   /** Workflow name shown in the header. */
   title?: string | undefined;
 }) {
-  const theme = useTheme();
   const [clip, setClip] = useState<StagedClip | null>(null);
   const [result, setResult] = useState<RunResult | null>(null);
   const [recording, setRecording] = useState(false);
@@ -255,117 +252,79 @@ export function WorkflowView({
 
   const state = workflowState({ error, recording, running });
 
-  return (
-    <div
-      className="flex flex-col h-screen w-full max-w-190 mx-auto box-border px-6 py-8 gap-5 font-aai text-sm"
-      style={{ background: theme.bg, color: theme.text }}
-    >
-      {/* Header: brand left, run status right */}
-      <div className="flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-3 min-w-0">
-          <AaiLogo size={22} />
-          <span
-            className="font-aai-serif text-[22px] leading-[1.2] font-normal truncate"
-            style={{ color: theme.text }}
-          >
-            {title ?? "Workflow"}
-          </span>
-        </div>
-        <Eyebrow className="shrink-0" data-state={state}>
-          <span
-            className="w-[7px] h-[7px] rounded-full"
-            style={{
-              background: stateColor(state, theme.primary),
-              animation: recording || running ? "aai-pulse 1.6s ease-in-out infinite" : "none",
-            }}
-          />
-          {state}
-        </Eyebrow>
-      </div>
-      {/* Error banner */}
-      {error && (
-        <div
-          className="px-3.5 py-2.5 rounded-aai border text-[13px] leading-[130%] shrink-0"
-          style={{
-            borderColor: "rgba(179,38,30,0.35)",
-            background: "rgba(179,38,30,0.06)",
-            color: ERROR_COLOR,
-          }}
-        >
-          {error}
-        </div>
-      )}
-      {/* Output card: instruction line, staged clip, then the run result */}
-      <div
-        className="flex flex-col flex-1 min-h-0 border rounded-lg overflow-hidden"
-        style={{
-          background: theme.surface,
-          borderColor: theme.border,
-          boxShadow: "0 1px 3px 0 rgb(20 18 12 / 0.06)",
-        }}
+  // Controls: hold-to-talk, upload, Go, and where the run is sent.
+  const controls = (
+    <div className="flex items-center gap-2 shrink-0">
+      <Button
+        size="lg"
+        variant={recording ? "default" : "secondary"}
+        className="select-none touch-none"
+        style={recording ? { background: ERROR_COLOR, borderColor: "transparent" } : undefined}
+        disabled={running}
+        onPointerDown={() => void holdStart()}
+        onPointerUp={() => void holdEnd()}
+        onPointerLeave={() => void holdEnd()}
+        aria-pressed={recording}
+        title="Hold to record your instructions"
       >
-        <div role="log" className="flex-1 overflow-y-auto [scrollbar-width:none]">
-          <RunCard clip={clip} running={running} result={result} />
-        </div>
-      </div>
-      {/* Controls: hold-to-talk, upload, Go, and where the run is sent */}
-      <div className="flex items-center gap-2 shrink-0">
-        <Button
-          size="lg"
-          variant={recording ? "default" : "secondary"}
-          className="select-none touch-none"
-          style={recording ? { background: ERROR_COLOR, borderColor: "transparent" } : undefined}
-          disabled={running}
-          onPointerDown={() => void holdStart()}
-          onPointerUp={() => void holdEnd()}
-          onPointerLeave={() => void holdEnd()}
-          aria-pressed={recording}
-          title="Hold to record your instructions"
-        >
-          <span
-            className={clsx("w-2 h-2 rounded-full mr-2", recording && "animate-pulse")}
-            style={{ background: recording ? "#fff" : ERROR_COLOR }}
-          />
-          {recording ? "Release to stage" : "Hold to talk"}
-        </Button>
-        <input
-          ref={fileInput}
-          type="file"
-          accept="audio/*"
-          className="hidden"
-          data-testid="workflow-file-input"
-          onChange={(e) => {
-            const file = e.target.files?.[0];
-            e.target.value = "";
-            if (file) void stageFile(file);
-          }}
+        <span
+          className={clsx("w-2 h-2 rounded-full mr-2", recording && "animate-pulse")}
+          style={{ background: recording ? "#fff" : ERROR_COLOR }}
         />
-        <Button
-          size="lg"
-          variant="secondary"
-          disabled={running || recording}
-          onClick={() => fileInput.current?.click()}
-          title="Upload an audio file of your instructions"
-        >
-          Upload audio
-        </Button>
-        <Button
-          size="lg"
-          disabled={!clip || running || recording}
-          onClick={() => void go()}
-          data-testid="workflow-go"
-          title="Run the staged instructions"
-        >
-          {running ? "Running…" : "Go"}
-        </Button>
-        <UrlChip
-          label="Run"
-          url={syncUrl}
-          hint="Each run is one POST to this endpoint"
-          testId="sync-url-chip"
-          className="ml-auto min-w-0 max-w-[40%]"
-        />
-      </div>
+        {recording ? "Release to stage" : "Hold to talk"}
+      </Button>
+      <input
+        ref={fileInput}
+        type="file"
+        accept="audio/*"
+        className="hidden"
+        data-testid="workflow-file-input"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          e.target.value = "";
+          if (file) void stageFile(file);
+        }}
+      />
+      <Button
+        size="lg"
+        variant="secondary"
+        disabled={running || recording}
+        onClick={() => fileInput.current?.click()}
+        title="Upload an audio file of your instructions"
+      >
+        Upload audio
+      </Button>
+      <Button
+        size="lg"
+        disabled={!clip || running || recording}
+        onClick={() => void go()}
+        data-testid="workflow-go"
+        title="Run the staged instructions"
+      >
+        {running ? "Running…" : "Go"}
+      </Button>
+      <UrlChip
+        label="Run"
+        url={syncUrl}
+        hint="Each run is one POST to this endpoint"
+        testId="sync-url-chip"
+        className="ml-auto min-w-0 max-w-[40%]"
+      />
     </div>
+  );
+
+  return (
+    <ConsoleShell
+      title={title ?? "Workflow"}
+      state={state}
+      pulsing={recording || running}
+      error={error}
+      footer={controls}
+    >
+      {/* Output card: instruction line, staged clip, then the run result */}
+      <div role="log" className="flex-1 overflow-y-auto [scrollbar-width:none]">
+        <RunCard clip={clip} running={running} result={result} />
+      </div>
+    </ConsoleShell>
   );
 }

@@ -229,9 +229,12 @@ restrictions apply there.
 - `default-client.tsx` / `build-default-client.ts` — the default UI shipped
   to agents with no `client.tsx`, and its build step
 - `types.ts` — UI type definitions
-- `components/` — UI components (chat-view, controls, message-list,
-  start-screen, sidebar-layout, tool-call-block, button, aai-logo,
-  tool-config-context)
+- `sync-session.ts` / `sync-mic.ts` — `POST /sync` turn client and
+  push-to-talk capture, the plumbing under the workflow run surface
+- `components/` — UI components (console-shell — the shared chrome both
+  chat-view and workflow-view compose, chat-view, workflow-view, controls,
+  message-list, start-screen, sidebar-layout, tool-call-block, button,
+  aai-logo, tool-config-context)
 
 #### packages/aai-server/
 
@@ -489,20 +492,24 @@ voice agents without the CLI:
 ### App modes: agents and workflows
 
 The SDK defines two kinds of app, marked by `AgentDef.kind`
-(`"agent"` default | `"workflow"`, type `AgentKind` in `sdk/providers.ts`):
+(`"agent"` default | `"workflow"`, type `AgentKind` in `sdk/config-rules.ts`,
+re-exported from `sdk/providers.ts`):
 
 - **Agents** (`agent()`) are conversational chat/voice interfaces — an open
-  session the user talks with turn by turn. Everything under "Session modes"
-  below applies.
+  WebSocket session the user talks with turn by turn. Everything under
+  "Session modes" below applies.
 - **Workflows** (`workflow()` in `sdk/define.ts`) are **audio in → action
   out**: the user records one instruction (push to talk) or uploads an audio
   file, presses Go, one agentic loop transcribes and executes it with the
   workflow's tools, and the run ends with a written report. No conversation,
   no history between runs. A workflow is always a **pipeline** (`stt` + `llm`
-  required; `tts` defaults to `none()`) running over the **sync transport**
-  — each run is one history-less `POST /sync`. `assertAgentKind`
-  (`sdk/providers.ts`) enforces both, in `parseManifest`, `toAgentConfig`,
-  and the server's `IsolateConfigSchema`.
+  required; `tts` defaults to `none()`); each run is one history-less
+  `POST /sync`. `assertAgentKind` (`sdk/config-rules.ts`) enforces the
+  pipeline rule in `parseManifest`, `toAgentConfig`, and the server's
+  `IsolateConfigSchema`. **`workflow()` is the only author-facing way to set
+  the kind** — `agent()` deliberately doesn't accept a `kind` parameter
+  (`define.test-d.ts` pins the exclusion), so a workflow can't be hand-rolled
+  without its defaults.
 
 The two modes speak from **different default system prompts**
 (`sdk/agent-defaults.ts`): agents get the conversational customer-service
@@ -525,7 +532,7 @@ assistant prose** — a workflow is an execution surface, not a chat, so the
 reply text stays on the wire (it is still the LLM's run report) but the
 default view never renders it.
 
-### `ctx.generate` and workflow combinators (`@alexkroman1/aai/workflow`)
+### `ctx.generate` and workflow patterns (`@alexkroman1/aai/patterns`)
 
 Tool `execute` code gets one-shot LLM generation via `ctx.generate` — a
 **host capability like `ctx.kv`**: the guest has no network, so the platform
@@ -542,13 +549,16 @@ infrastructure, not agent egress.
 `GenerateOptions.schema` is **plain JSON Schema, never a Zod schema** — the
 options must survive the NDJSON RPC boundary, and both implementations
 reject Zod schemas so dev and prod cannot drift. The typed ergonomics live
-in `sdk/workflow.ts` (subpath `@alexkroman1/aai/workflow`, Node-free): the
+in `sdk/patterns.ts` (subpath `@alexkroman1/aai/patterns`, Node-free): the
 five Vercel-AI-SDK workflow patterns as pure combinators over a
 `GenerateFn` — `sequential` (chains), `parallel`, `route` (classify +
 dispatch), `orchestrate` (plan → workers → synthesize), and
 `evaluatorOptimizer` (generate → judge → retry with feedback) — plus
 `generateStructured`, which converts Zod → JSON Schema caller-side and
-re-validates the result.
+re-validates the result. The subpath was renamed from
+`@alexkroman1/aai/workflow`, which collided with the `workflow()` app kind
+despite being unrelated to it; `sdk/workflow.ts` remains as a deprecated
+re-export for one release cycle.
 
 ### Session modes
 
@@ -571,11 +581,16 @@ Each agent runs in one of two session modes, selected at parse time by
 Partial provider configs are rejected at parse time — `parseManifest()`
 requires either zero or all three of `stt`/`llm`/`tts`.
 
-- **Sync mode** (pipeline agents only) is a connectionless *transport*, not
-  a third session mode: `POST /sync` on the self-hosted server runs one
+- **Sync turns** (pipeline agents only) are a connectionless *transport*,
+  not a third session mode: `POST /sync` on the self-hosted server runs one
   complete conversational turn per HTTP request with **no WebSockets on
-  either leg** — not browser→server, not server→providers. The client
-  endpoints speech itself and sends one utterance (base64 PCM16) or
+  either leg** — not browser→server, not server→providers. It is the
+  substrate workflow runs execute on, and remains available as a
+  programmatic API for pipeline agents (there is deliberately **no
+  per-agent client-transport switch** anymore — the default browser client
+  always uses the WebSocket session for agents, and the workflow surface
+  for workflows). The caller endpoints speech itself and sends one
+  utterance (base64 PCM16) or
   committed text plus the conversation history (the server holds no session
   state between turns); the response carries the transcript, the reply, and
   the spoken reply when available. Provider calls are all one-shot HTTP:
@@ -591,20 +606,18 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   `createSyncSession` (HTTP turns, client-held history bounded by
   `DEFAULT_MAX_HISTORY` — the server trims to the same window, and past
   `MAX_SYNC_HISTORY_MESSAGES` it rejects the request outright, so an
-  unbounded client eventually broke every later turn; plus a turn queue),
-  `startSyncMicrophone` (WebRTC `getUserMedia` voice-processing capture
-  through an inline data-URI AudioWorklet), `createUtteranceDetector`
-  (`sync-vad.ts`, pure energy-VAD state machine — browser-API-free and the
-  reason the mic glue stays thin).
+  unbounded client eventually broke every later turn; plus a turn queue)
+  and `createPttRecorder` (`sync-mic.ts`, WebRTC push-to-talk capture
+  through an inline blob-URL AudioWorklet — the button is the endpointing).
 
   **A capture worklet must never re-read a view it just transferred.**
   `postMessage(msg, [buf])` detaches `buf`, so every view onto it becomes
   zero-length *immediately*. `sync-mic.ts`'s processor sized its next batch
   as `new Float32Array(out.length)` after transferring `out.buffer` — that
   is `0`, which made `n = Math.min(ch.length - read, 0)` zero, so `read`
-  stopped advancing and `process()` spun forever posting empty chunks. Since
-  the VAD drops zero-length frames, the mic went permanently deaf on its
-  first flush and no sync agent ever sent a turn (measured: 1.88M messages
+  stopped advancing and `process()` spun forever posting empty chunks —
+  the mic went permanently deaf on its
+  first flush (measured: 1.88M messages
   in 6s at 100% on the render thread, zero `POST /sync`). The batch size is
   now a processor field. The WebSocket worklet
   (`worklets/capture-processor.ts`) transfers a `slice()` copy and keeps its
@@ -622,32 +635,23 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   call so the guest's per-session tool state is released after the turn
   (`session/end`, message-delta cache), and the studio exposes
   `POST /studio/projects/:project/sync` (bearer-auth'd) against a project's
-  *published* slug; both share `sync-turn-handler.ts`. Templates:
-  `sync-voice` (hands-free VAD mic via the default client) and
-  `push-to-talk-translator` (hold-to-record, no VAD — the button is the
-  endpoint).
+  *published* slug; both share `sync-turn-handler.ts`.
 
-  **Client transport selection** (`agent({ transport })`): `"websocket"`
-  (default) vs `"sync"` decides which transport the *default* browser
-  client uses, so a sync agent needs no custom `client.tsx`. `"sync"` is
-  pipeline-only (`assertClientTransport` in `sdk/providers.ts`, enforced
-  in `parseManifest`, `toAgentConfig`, and `IsolateConfigSchema`). The
-  default client page is byte-identical for every agent and the CSP bars
-  inline scripts, so the choice reaches the browser via a pre-connection
-  endpoint instead: `GET /client-config` (dev server) /
-  `GET /:slug/client-config` (platform, unauthenticated — parity with the
-  page and the WebSocket) returns `{ transport, name, greeting }`
-  (`sdk/client-config.ts`, re-exported from `/protocol`). In `aai-ui`,
-  `client()`'s config tier renders `DefaultRoot`, which resolves the
-  transport (explicit `transport` option, else `fetchClientConfig` — any
-  failure degrades to WebSocket, so older servers keep working) and mounts
-  either the WebSocket shell or `SyncChatView` (stock sync UI: a hands-free
-  voice agent — one start/end toggle opens the mic via
-  `startSyncMicrophone`, and the energy VAD endpoints each utterance
-  automatically — transcript/reply output, a chip showing the `/sync`
-  endpoint each utterance is POSTed to, reply playback; styled as the same
-  console as `ChatView`. `createPttRecorder` remains exported for custom
-  hold-to-record clients). A custom `component` ignores all of it.
+  **App-kind selection for the default client**: the default client page is
+  byte-identical for every agent and the CSP bars inline scripts, so the
+  kind reaches the browser via a pre-connection endpoint:
+  `GET /client-config` (dev server) / `GET /:slug/client-config` (platform,
+  unauthenticated — parity with the page and the WebSocket) returns
+  `{ kind, name, greeting }` (`sdk/client-config.ts`, re-exported from
+  `/protocol`). **Every server builds the body through one helper**,
+  `buildClientConfig` — two servers once derived a workflow's fields
+  differently, masked only by the client's check ordering; the platform's
+  handler lives in `aai-server/client-config-handler.ts`. In `aai-ui`,
+  `client()`'s config tier renders `DefaultRoot`, which fetches the config
+  (any failure degrades to the agent kind, so older servers keep working)
+  and mounts the chat shell or `WorkflowView`; the chat shell uses the
+  server-declared `name` unless `client({ name })` overrides it. A custom
+  `component` ignores all of it.
   The `aai dev` Vite proxy forwards `/client-config` *and* `/sync` to the
   backend — without the latter, custom sync clients 404'd under dev.
 
@@ -1041,14 +1045,13 @@ because a context at another rate either ships audio to a socket that declared
 a different rate or plays PCM at the wrong speed — a loud failure beats
 either.
 
-**Capture is raw voice, echo cancellation aside.** All four `getUserMedia`
-call sites (the WebSocket mic, `startSyncMicrophone`, `createPttRecorder`, and
-the `push-to-talk-translator` template) share one exported
-`VOICE_CAPTURE_CONSTRAINTS`, because four copies of the object drifted apart
+**Capture is raw voice, echo cancellation aside.** Both `getUserMedia`
+call sites (the WebSocket mic and `createPttRecorder`) share one exported
+`VOICE_CAPTURE_CONSTRAINTS`, because copies of the object drifted apart
 trivially. `autoGainControl`, `noiseSuppression`, and `voiceIsolation` are all
-**off**: each rewrites the signal before STT and the sync path's energy VAD see
+**off**: each rewrites the signal before STT sees
 it — AGC continuously retargets level, so it rides the noise floor up through
-silence and leaves an energy threshold calibrated against nothing, while
+silence, while
 suppression and isolation discard signal and can gate a quiet room to *exact*
 zeros, which is also what a dead mic looks like. `echoCancellation` stays on:
 the mic is open while the agent speaks (barge-in needs it), so without AEC the
@@ -1165,7 +1168,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/kv` | `sdk/providers/kv-barrel.ts` | KV provider factories + types (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
 | `@alexkroman1/aai/send` | `sdk/providers/send-barrel.ts` | Send-channel factories + resolver (`slack`, `openSender`, `Sender`) |
-| `@alexkroman1/aai/workflow` | `sdk/workflow.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox |
+| `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox. `./workflow` remains as a deprecated re-export (renamed away from the `workflow()` app-kind collision) |
 
 ### Default values and magic numbers
 

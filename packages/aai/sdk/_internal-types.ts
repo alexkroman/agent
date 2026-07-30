@@ -8,12 +8,10 @@ import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import {
   type AgentKind,
   assertAgentKind,
-  assertClientTransport,
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
   assertTextOnlyTuning,
-  type ClientTransport,
   type KvProvider,
   type LlmProvider,
   type S2sProvider,
@@ -68,7 +66,6 @@ export const AgentConfigSchema = z.object({
   kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
   send: ProviderDescriptorSchema.optional(),
-  transport: z.enum(["websocket", "sync"]).optional(),
   kind: z.enum(["agent", "workflow"]).optional(),
   allowedHosts: AllowedHostsSchema.optional(),
 });
@@ -102,7 +99,6 @@ interface AgentConfigSource {
   kv?: KvProvider | undefined;
   vector?: VectorProvider | undefined;
   send?: SendProvider | undefined;
-  transport?: ClientTransport | undefined;
   kind?: AgentKind | undefined;
   allowedHosts?: readonly string[] | undefined;
 }
@@ -124,18 +120,6 @@ function pipelineTuningConfig(src: AgentConfigSource): Partial<AgentConfig> {
   };
 }
 
-/**
- * The client-surface fields: the declared transport (or the sync transport a
- * workflow kind implies) and the app kind itself.
- */
-function clientSurfaceConfig(src: AgentConfigSource): Partial<AgentConfig> {
-  const transport = src.transport ?? (src.kind === "workflow" ? "sync" : undefined);
-  return {
-    ...(transport !== undefined ? { transport } : {}),
-    ...(src.kind !== undefined ? { kind: src.kind } : {}),
-  };
-}
-
 export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   // `assertProviderTriple` enforces that stt/llm/tts are all-or-nothing so the
   // server can trust the resolved mode.
@@ -143,8 +127,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
   assertPipelineTuning(mode, src);
   assertTextOnlyTuning(src.tts, src);
-  assertClientTransport(mode, src.transport);
-  assertAgentKind(mode, src.kind, src.transport);
+  assertAgentKind(mode, src.kind);
   // Runs inside the generated bundle entry too, so the studio's test_agent
   // surfaces a bad TTS language as a load error rather than shipping a mute agent.
   assertAssemblyAITtsLanguage(src.tts);
@@ -172,7 +155,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   if (src.kv !== undefined) config.kv = src.kv;
   if (src.vector !== undefined) config.vector = src.vector;
   if (src.send !== undefined) config.send = src.send;
-  Object.assign(config, clientSurfaceConfig(src));
+  if (src.kind !== undefined) config.kind = src.kind;
   // Copied verbatim, NOT unioned with the send channel's host. The platform
   // derives that itself (`resolveAgentAllowedHosts`) from the validated
   // descriptor, so deriving it here too would be a second place to keep in

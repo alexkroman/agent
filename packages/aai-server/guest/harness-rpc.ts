@@ -337,7 +337,7 @@ export const generateAdapter: GenerateAdapter = async (options) => {
   if (typeof (options.schema as { safeParse?: unknown } | undefined)?.safeParse === "function") {
     throw new Error(
       "generate: `schema` must be a plain JSON Schema object, not a Zod schema — " +
-        "convert with z.toJSONSchema(), or use the @alexkroman1/aai/workflow helpers.",
+        "convert with z.toJSONSchema(), or use the @alexkroman1/aai/patterns helpers.",
     );
   }
   return (await hostRequest("llm/generate", { ...options })) as GenerateResult;

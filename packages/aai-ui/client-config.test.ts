@@ -27,55 +27,50 @@ describe("buildAgentUrl", () => {
 describe("fetchClientConfig", () => {
   it("returns the parsed config", async () => {
     const fetchFn = vi.fn(async () =>
-      jsonResponse({ transport: "sync", name: "a", greeting: "hi" }),
+      jsonResponse({ kind: "workflow", name: "a", greeting: "hi" }),
     );
     await expect(fetchClientConfig("http://h/a/", fetchFn)).resolves.toEqual({
-      transport: "sync",
-      kind: "agent",
+      kind: "workflow",
       name: "a",
       greeting: "hi",
     });
     expect(fetchFn).toHaveBeenCalledWith("http://h/a/client-config");
   });
 
-  it("defaults a missing transport field to websocket", async () => {
+  it("defaults a missing kind field to agent", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ name: "a" }));
     await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toMatchObject({
-      transport: "websocket",
+      kind: "agent",
     });
   });
 
-  it("degrades to websocket on a 404 (older server without the endpoint)", async () => {
+  it("ignores the legacy transport field from an older server", async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({ transport: "sync", name: "a" }));
+    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({
+      kind: "agent",
+      name: "a",
+    });
+  });
+
+  it("degrades to the agent default on a 404 (older server without the endpoint)", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ error: "Not found" }, 404));
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({
-      transport: "websocket",
-      kind: "agent",
-    });
+    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ kind: "agent" });
   });
 
-  it("degrades to websocket on a malformed body", async () => {
-    const fetchFn = vi.fn(async () => jsonResponse({ transport: "carrier-pigeon" }));
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({
-      transport: "websocket",
-      kind: "agent",
-    });
+  it("degrades to the agent default on a malformed body", async () => {
+    const fetchFn = vi.fn(async () => jsonResponse({ kind: "carrier-pigeon" }));
+    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ kind: "agent" });
   });
 
-  it("degrades to websocket on a network error", async () => {
+  it("degrades to the agent default on a network error", async () => {
     const fetchFn = vi.fn(async () => {
       throw new Error("boom");
     });
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({
-      transport: "websocket",
-      kind: "agent",
-    });
+    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ kind: "agent" });
   });
 
-  it("degrades to websocket on non-JSON output", async () => {
+  it("degrades to the agent default on non-JSON output", async () => {
     const fetchFn = vi.fn(async () => new Response("<html>oops</html>", { status: 200 }));
-    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({
-      transport: "websocket",
-      kind: "agent",
-    });
+    await expect(fetchClientConfig("http://h/", fetchFn)).resolves.toEqual({ kind: "agent" });
   });
 });

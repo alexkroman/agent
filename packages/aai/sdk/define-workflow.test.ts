@@ -19,10 +19,9 @@ const llm = { kind: "anthropic", options: { model: "m" } };
 const tts = { kind: "cartesia", options: { voice: "v" } };
 
 describe("workflow()", () => {
-  it("marks the definition as a sync-transport workflow with text-only output", () => {
+  it("marks the definition as a workflow with text-only output", () => {
     const def = workflow({ name: "Filer", stt, llm });
     expect(def.kind).toBe("workflow");
-    expect(def.transport).toBe("sync");
     expect(isTextOnlyTts(def.tts)).toBe(true);
     expect(def.systemPrompt).toBe(DEFAULT_WORKFLOW_SYSTEM_PROMPT);
     expect(def.greeting).toBe(DEFAULT_WORKFLOW_GREETING);
@@ -42,9 +41,9 @@ describe("workflow()", () => {
     expect(def.tts).toBe(tts);
   });
 
-  it("passes toAgentConfig validation as a pipeline sync config", () => {
+  it("passes toAgentConfig validation as a pipeline config", () => {
     const config = toAgentConfig(workflow({ name: "Filer", stt, llm }));
-    expect(config).toMatchObject({ kind: "workflow", transport: "sync", mode: "pipeline" });
+    expect(config).toMatchObject({ kind: "workflow", mode: "pipeline" });
   });
 });
 
@@ -53,15 +52,8 @@ describe("kind rules in parseManifest / toAgentConfig", () => {
     expect(() => parseManifest({ name: "w", kind: "workflow" })).toThrow(/pipeline mode/);
   });
 
-  it("rejects a workflow with the websocket transport", () => {
-    expect(() =>
-      parseManifest({ name: "w", kind: "workflow", stt, llm, tts, transport: "websocket" }),
-    ).toThrow(/transport: "sync"/);
-  });
-
-  it("fills sync transport and the workflow defaults for a bare workflow manifest", () => {
+  it("fills the workflow defaults for a bare workflow manifest", () => {
     const manifest = parseManifest({ name: "w", kind: "workflow", stt, llm, tts });
-    expect(manifest.transport).toBe("sync");
     expect(manifest.systemPrompt).toBe(DEFAULT_WORKFLOW_SYSTEM_PROMPT);
     expect(manifest.greeting).toBe(DEFAULT_WORKFLOW_GREETING);
   });
@@ -69,7 +61,6 @@ describe("kind rules in parseManifest / toAgentConfig", () => {
   it("leaves agent-kind defaults untouched", () => {
     const manifest = parseManifest({ name: "a" });
     expect(manifest.kind).toBeUndefined();
-    expect(manifest.transport).toBeUndefined();
     expect(manifest.systemPrompt).not.toBe(DEFAULT_WORKFLOW_SYSTEM_PROMPT);
   });
 });

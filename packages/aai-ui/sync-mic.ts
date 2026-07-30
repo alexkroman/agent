@@ -1,29 +1,20 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * WebRTC microphone capture for sync mode.
+ * WebRTC push-to-talk capture for the workflow run surface.
  *
  * Captures voice through `getUserMedia` under
- * {@link VOICE_CAPTURE_CONSTRAINTS} — echo cancellation only, since the rest
- * of the browser's voice-processing chain moves levels around underneath the
- * energy VAD in `sync-vad.ts` — runs an
- * AudioWorklet that batches raw frames to the main thread, feeds them
- * through the utterance detector, and hands each completed utterance to
- * the sync session as one HTTP turn. No WebSocket anywhere on the path.
+ * {@link VOICE_CAPTURE_CONSTRAINTS} — echo cancellation only — and runs an
+ * AudioWorklet that batches raw frames to the main thread; the caller's
+ * button is the endpointing. Each recording becomes one `POST /sync` run.
+ * No WebSocket anywhere on the path.
  *
  * The worklet module ships inline as a blob URL (same pattern as the
- * WebSocket path's worklets), so sync mode needs no separately-served
+ * WebSocket path's worklets), so this path needs no separately-served
  * processor file. A blob URL rather than a data URI because the agent
  * page's CSP allows `script-src blob:` but not `data:` — a data-URI
  * module fails `addModule` with "Unable to load a worklet's module".
  */
 
-import { errorMessage } from "@alexkroman1/aai";
-import type { SyncSession } from "./sync-session.ts";
-import {
-  createUtteranceDetector,
-  type UtteranceDetector,
-  type UtteranceDetectorOptions,
-} from "./sync-vad.ts";
 import { VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
 
 /** Default capture rate — what the STT providers expect. */
@@ -99,30 +90,6 @@ export function floatToPcm16(samples: Float32Array): Int16Array {
   return pcm;
 }
 
-/** Configuration for {@link startSyncMicrophone}. */
-export type SyncMicrophoneOptions = {
-  /** The session each completed utterance is sent through. */
-  session: Pick<SyncSession, "sendPcm16">;
-  /** Capture/STT sample rate. Defaults to {@link DEFAULT_SYNC_MIC_SAMPLE_RATE}. */
-  sampleRate?: number | undefined;
-  /** VAD tuning overrides (see {@link UtteranceDetectorOptions}). */
-  vad?: Omit<UtteranceDetectorOptions, "sampleRate"> | undefined;
-  /** Speech onset confirmed — a turn will follow once the user pauses. */
-  onSpeechStart?: (() => void) | undefined;
-  /** An utterance was endpointed and its turn dispatched. */
-  onSpeechEnd?: (() => void) | undefined;
-  /** Capture or turn failure (the mic keeps running unless stopped). */
-  onError?: ((err: Error) => void) | undefined;
-};
-
-/** Live microphone handle returned by {@link startSyncMicrophone}. */
-export type SyncMicrophone = {
-  /** True while the detector is inside an utterance. */
-  readonly speaking: boolean;
-  /** Release the mic, the AudioContext, and flush a trailing utterance. */
-  stop(): Promise<void>;
-};
-
 /** Hold-to-record handle returned by {@link createPttRecorder}. */
 export type PttRecorder = {
   /** Open the mic (first call) and start collecting frames. */
@@ -134,11 +101,10 @@ export type PttRecorder = {
 };
 
 /**
- * Push-to-talk recorder on the same WebRTC capture pipeline as
- * {@link startSyncMicrophone} — `getUserMedia` voice processing feeding the
- * capture worklet — minus the VAD: the caller's button is the endpointing.
- * Recording runs exactly between `start()` and `stop()`; the mic stays open
- * across presses until `close()`.
+ * Push-to-talk recorder: `getUserMedia` voice capture feeding the capture
+ * worklet, with the caller's button as the endpointing. Recording runs
+ * exactly between `start()` and `stop()`; the mic stays open across presses
+ * until `close()`.
  *
  * @public
  */
@@ -221,98 +187,6 @@ export function createPttRecorder(sampleRate = DEFAULT_SYNC_MIC_SAMPLE_RATE): Pt
       ctx = null;
       node = null;
       stream = null;
-    },
-  };
-}
-
-/**
- * Open the microphone and stream endpointed utterances into a sync session.
- *
- * @throws If microphone access is denied or worklet registration fails.
- */
-export async function startSyncMicrophone(opts: SyncMicrophoneOptions): Promise<SyncMicrophone> {
-  const sampleRate = opts.sampleRate ?? DEFAULT_SYNC_MIC_SAMPLE_RATE;
-  const detector: UtteranceDetector = createUtteranceDetector({ sampleRate, ...opts.vad });
-  const fail = (err: unknown): void => {
-    opts.onError?.(err instanceof Error ? err : new Error(errorMessage(err)));
-  };
-
-  // Raw voice capture, echo cancellation aside — see
-  // VOICE_CAPTURE_CONSTRAINTS for why the rest of the browser's
-  // voice-processing chain is off.
-  const streamPromise = navigator.mediaDevices.getUserMedia({
-    audio: VOICE_CAPTURE_CONSTRAINTS,
-  });
-  const ctx = new AudioContext({ sampleRate, latencyHint: "interactive" });
-  let stream: MediaStream;
-  try {
-    [stream] = await Promise.all([
-      streamPromise,
-      ctx.resume(),
-      ctx.audioWorklet.addModule(CAPTURE_WORKLET_MODULE_URL),
-    ]);
-  } catch (err) {
-    // Release the mic if it was granted while another step failed.
-    void streamPromise
-      .then((s) => {
-        for (const t of s.getTracks()) t.stop();
-      })
-      .catch(() => {
-        /* rejected with the same error */
-      });
-    await ctx.close().catch(() => {
-      /* already closing */
-    });
-    throw err;
-  }
-
-  const mic = ctx.createMediaStreamSource(stream);
-  const node = new AudioWorkletNode(ctx, "aai-sync-capture", {
-    channelCount: 1,
-    channelCountMode: "explicit",
-    processorOptions: { batchSamples: CAPTURE_BATCH_SAMPLES },
-  });
-  mic.connect(node);
-
-  let stopped = false;
-  let wasSpeaking = false;
-
-  function dispatch(utterance: Int16Array | null): void {
-    if (!utterance) return;
-    opts.onSpeechEnd?.();
-    opts.session.sendPcm16(utterance, sampleRate).catch(fail);
-  }
-
-  function handleFrame(samples: Float32Array): void {
-    if (stopped) return;
-    dispatch(detector.push(floatToPcm16(samples)));
-    if (detector.speaking && !wasSpeaking) opts.onSpeechStart?.();
-    wasSpeaking = detector.speaking;
-  }
-
-  node.port.onmessage = (e: MessageEvent) => {
-    const data = e.data as { event?: string; samples?: Float32Array };
-    if (data.event === "chunk" && data.samples) handleFrame(data.samples);
-  };
-  // A processor exception permanently kills the worklet — no further audio
-  // will ever arrive. Surface it rather than staying silently deaf.
-  node.onprocessorerror = () => fail(new Error("Sync capture worklet crashed"));
-
-  return {
-    get speaking() {
-      return detector.speaking;
-    },
-    async stop() {
-      if (stopped) return;
-      stopped = true;
-      // A trailing utterance the hangover never closed still counts.
-      dispatch(detector.flush());
-      mic.disconnect();
-      node.disconnect();
-      for (const t of stream.getTracks()) t.stop();
-      await ctx.close().catch(() => {
-        /* already closed */
-      });
     },
   };
 }
