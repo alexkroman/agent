@@ -30,6 +30,20 @@ describe("guest limits mirror the SDK constants", () => {
     expect(limits.STORAGE_DISABLED_MESSAGE).toBe(STORAGE_DISABLED_MESSAGE);
   });
 
+  test("heartbeat cadence leaves generous slack under the orphan timeout", () => {
+    // The host pings each harness every HARNESS_HEARTBEAT_INTERVAL_MS and the
+    // guest exits after HARNESS_ORPHAN_TIMEOUT_MS of silence. If the interval
+    // ever crept up to (or past) the timeout, a briefly stalled host event
+    // loop would kill every healthy guest at once — keep >= 3 missed
+    // heartbeats of slack.
+    expect(limits.HARNESS_ORPHAN_TIMEOUT_MS).toBeGreaterThanOrEqual(
+      limits.HARNESS_HEARTBEAT_INTERVAL_MS * 3,
+    );
+    // The watchdog poll bounds detection latency; it must be able to fire
+    // multiple times within one timeout window.
+    expect(limits.HARNESS_ORPHAN_POLL_MS).toBeLessThanOrEqual(limits.HARNESS_ORPHAN_TIMEOUT_MS / 2);
+  });
+
   test("limits.ts stays import-free so it can be bundled into the guest", async () => {
     const source = await import("node:fs/promises").then((fs) =>
       fs.readFile(new URL("./limits.ts", import.meta.url), "utf8"),

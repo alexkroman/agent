@@ -9,6 +9,7 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HARNESS_HEARTBEAT_INTERVAL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./guest/limits.ts";
 import {
   _internals,
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
@@ -257,6 +258,7 @@ describe("spawnModalWarm", () => {
     expect(createParams).toHaveLength(1);
     expect(createParams[0]).toMatchObject({
       command: ["sleep", "infinity"],
+      env: { TINI_SUBREAPER: "1" },
       blockNetwork: true,
       timeoutMs: DEFAULT_SANDBOX_TIMEOUT_MS,
       idleTimeoutMs: DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
@@ -293,6 +295,38 @@ describe("spawnModalWarm", () => {
       await warm.cleanup();
     } finally {
       vi.unstubAllEnvs();
+    }
+  });
+
+  it("heartbeats the harness on an interval and stops after cleanup", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = makeFakeProc();
+      const sb = makeFakeSandbox(fake);
+      const ctx: ModalSpawnContext = { createSandbox: async () => sb };
+      const harnessPath = await makeHarnessFile();
+
+      const warm = await spawnModalWarm({ harnessPath }, ctx);
+      expect(fake.stdinText()).not.toContain('"ping"');
+
+      // The guest's orphan watchdog kills the harness after
+      // HARNESS_ORPHAN_TIMEOUT_MS of silence, so over that window a healthy
+      // host must have pinged several times.
+      await vi.advanceTimersByTimeAsync(HARNESS_ORPHAN_TIMEOUT_MS);
+      const pings = fake.stdinText().match(/"ping"/g) ?? [];
+      expect(pings.length).toBeGreaterThanOrEqual(2);
+      expect(pings.length).toBe(
+        Math.floor(HARNESS_ORPHAN_TIMEOUT_MS / HARNESS_HEARTBEAT_INTERVAL_MS),
+      );
+
+      // Teardown must stop the heartbeat — a cleared harness with a live
+      // interval would tick forever (and write into a disposed stream).
+      await warm.cleanup();
+      const after = (fake.stdinText().match(/"ping"/g) ?? []).length;
+      await vi.advanceTimersByTimeAsync(HARNESS_HEARTBEAT_INTERVAL_MS * 3);
+      expect((fake.stdinText().match(/"ping"/g) ?? []).length).toBe(after);
+    } finally {
+      vi.useRealTimers();
     }
   });
 
