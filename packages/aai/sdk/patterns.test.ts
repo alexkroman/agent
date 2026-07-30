@@ -14,7 +14,7 @@ import {
   parallel,
   route,
   sequential,
-} from "./workflow.ts";
+} from "./patterns.ts";
 
 /**
  * Fake GenerateFn: records every call and answers from a queue (or a

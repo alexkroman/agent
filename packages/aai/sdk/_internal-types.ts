@@ -3,8 +3,6 @@
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
 import { AllowedHostsSchema } from "./allowed-hosts.ts";
-import { ProviderDescriptorSchema } from "./manifest.ts";
-import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import {
   type AgentKind,
   assertAgentKind,
@@ -12,13 +10,17 @@ import {
   assertProviderTriple,
   assertSilencePolicy,
   assertTextOnlyTuning,
-  type KvProvider,
-  type LlmProvider,
-  type S2sProvider,
-  type SendProvider,
-  type SttProvider,
-  type TtsProvider,
-  type VectorProvider,
+} from "./config-rules.ts";
+import { ProviderDescriptorSchema } from "./manifest.ts";
+import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
+import type {
+  KvProvider,
+  LlmProvider,
+  S2sProvider,
+  SendProvider,
+  SttProvider,
+  TtsProvider,
+  VectorProvider,
 } from "./providers.ts";
 import type { Message } from "./types.ts";
 import { BuiltinToolSchema, ToolChoiceSchema, type ToolDef } from "./types.ts";

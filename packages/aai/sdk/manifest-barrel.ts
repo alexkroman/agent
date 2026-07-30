@@ -15,8 +15,6 @@ export {
   ToolSchemaSchema,
   toAgentConfig,
 } from "./_internal-types.ts";
-export { ProviderDescriptorSchema } from "./manifest.ts";
-export { isTextOnlyTts, NONE_TTS_KIND } from "./providers/tts/none.ts";
 export {
   type AgentKind,
   assertAgentKind,
@@ -25,4 +23,6 @@ export {
   assertSilencePolicy,
   assertTextOnlyTuning,
   type SessionMode,
-} from "./providers.ts";
+} from "./config-rules.ts";
+export { ProviderDescriptorSchema } from "./manifest.ts";
+export { isTextOnlyTts, NONE_TTS_KIND } from "./providers/tts/none.ts";

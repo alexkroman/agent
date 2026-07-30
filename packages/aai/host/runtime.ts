@@ -11,18 +11,13 @@ import { randomUUID } from "node:crypto";
 import pTimeout, { TimeoutError } from "p-timeout";
 import { createStorage } from "unstorage";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
+import { assertProviderTriple, type SessionMode } from "../sdk/config-rules.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
 import { isTextOnlyTts } from "../sdk/providers/tts/none.ts";
-import {
-  assertProviderTriple,
-  type LlmProvider,
-  type SessionMode,
-  type SttProvider,
-  type TtsProvider,
-} from "../sdk/providers.ts";
+import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";

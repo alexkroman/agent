@@ -10,10 +10,6 @@ import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";
 import { TextControls } from "./text-controls.tsx";
 
-// Re-exported for compatibility: this helper lived here before the shared
-// console shell was extracted.
-export { stateColor } from "./console-shell.tsx";
-
 // States whose indicator dot pulses (the agent is actively in the exchange).
 const PULSING_STATES: ReadonlySet<AgentState> = new Set(["listening", "speaking"]);
 

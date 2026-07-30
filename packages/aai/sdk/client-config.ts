@@ -15,8 +15,8 @@
  */
 
 import { z } from "zod";
+import type { AgentKind } from "./config-rules.ts";
 import { MAX_TRANSCRIPT_CHARS } from "./constants.ts";
-import type { AgentKind } from "./providers.ts";
 
 /** Relative path of the client-config endpoint under an agent's base URL. */
 export const CLIENT_CONFIG_PATH = "client-config";

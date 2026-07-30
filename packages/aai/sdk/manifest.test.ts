@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import fc from "fast-check";
 import { describe, expect, expectTypeOf, test } from "vitest";
+import { assertProviderTriple } from "./config-rules.ts";
 import { type Manifest, parseManifest } from "./manifest.ts";
 import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
 import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
@@ -10,7 +11,6 @@ import { assemblyAI } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 import { isTextOnlyTts, none } from "./providers/tts/none.ts";
 import { pinecone } from "./providers/vector/pinecone.ts";
-import { assertProviderTriple } from "./providers.ts";
 
 describe("parseManifest", () => {
   test("minimal manifest requires only name", () => {

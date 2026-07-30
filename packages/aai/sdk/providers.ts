@@ -24,20 +24,6 @@
  * at bundle load — the exact failure mode that forced this refactor.
  */
 
-// Re-exported for compatibility: the config rules lived here before they
-// were split into their own module (they are about agent shape, not
-// providers). Import from `./config-rules.ts` in new code.
-export {
-  type AgentKind,
-  assertAgentKind,
-  assertPipelineTuning,
-  assertProviderTriple,
-  assertSilencePolicy,
-  assertTextOnlyTuning,
-  type PipelineTuning,
-  type SessionMode,
-} from "./config-rules.ts";
-
 /** Unsubscribe callback returned by `.on()` event subscriptions. */
 export type Unsubscribe = () => void;
 

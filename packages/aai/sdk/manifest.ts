@@ -8,9 +8,6 @@
 
 import { z } from "zod";
 import { AllowedHostsSchema } from "./allowed-hosts.ts";
-import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
-import { sendAllowedHosts } from "./providers/send/open.ts";
-import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import {
   type AgentKind,
   assertAgentKind,
@@ -18,14 +15,19 @@ import {
   assertProviderTriple,
   assertSilencePolicy,
   assertTextOnlyTuning,
-  type KvProvider,
-  type LlmProvider,
-  type S2sProvider,
-  type SendProvider,
   type SessionMode,
-  type SttProvider,
-  type TtsProvider,
-  type VectorProvider,
+} from "./config-rules.ts";
+import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
+import { sendAllowedHosts } from "./providers/send/open.ts";
+import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
+import type {
+  KvProvider,
+  LlmProvider,
+  S2sProvider,
+  SendProvider,
+  SttProvider,
+  TtsProvider,
+  VectorProvider,
 } from "./providers.ts";
 import {
   BuiltinToolSchema,

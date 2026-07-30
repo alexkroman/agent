@@ -25,5 +25,4 @@ Breaking changes:
   uses the server-declared agent name when `client({ name })` is not passed.
 - Templates `sync-voice` and `push-to-talk-translator` are removed.
 - The `@alexkroman1/aai/workflow` subpath (pattern combinators) is renamed to
-  `@alexkroman1/aai/patterns`; the old subpath remains as a deprecated
-  re-export for one release cycle.
+  `@alexkroman1/aai/patterns`; the old subpath is removed.

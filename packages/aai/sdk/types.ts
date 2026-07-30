@@ -4,10 +4,10 @@
  */
 
 import type { z } from "zod";
+import type { AgentKind } from "./config-rules.ts";
 import type { GenerateOptions, GenerateResult } from "./generate.ts";
 import type { Kv } from "./kv.ts";
 import type {
-  AgentKind,
   KvProvider,
   LlmProvider,
   S2sProvider,

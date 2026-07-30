@@ -492,8 +492,7 @@ voice agents without the CLI:
 ### App modes: agents and workflows
 
 The SDK defines two kinds of app, marked by `AgentDef.kind`
-(`"agent"` default | `"workflow"`, type `AgentKind` in `sdk/config-rules.ts`,
-re-exported from `sdk/providers.ts`):
+(`"agent"` default | `"workflow"`, type `AgentKind` in `sdk/config-rules.ts`):
 
 - **Agents** (`agent()`) are conversational chat/voice interfaces — an open
   WebSocket session the user talks with turn by turn. Everything under
@@ -557,8 +556,7 @@ dispatch), `orchestrate` (plan → workers → synthesize), and
 `generateStructured`, which converts Zod → JSON Schema caller-side and
 re-validates the result. The subpath was renamed from
 `@alexkroman1/aai/workflow`, which collided with the `workflow()` app kind
-despite being unrelated to it; `sdk/workflow.ts` remains as a deprecated
-re-export for one release cycle.
+despite being unrelated to it.
 
 ### Session modes
 
@@ -1168,7 +1166,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/kv` | `sdk/providers/kv-barrel.ts` | KV provider factories + types (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
 | `@alexkroman1/aai/send` | `sdk/providers/send-barrel.ts` | Send-channel factories + resolver (`slack`, `openSender`, `Sender`) |
-| `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox. `./workflow` remains as a deprecated re-export (renamed away from the `workflow()` app-kind collision) |
+| `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox. Renamed from `./workflow` (which collided with the `workflow()` app kind) |
 
 ### Default values and magic numbers
 
