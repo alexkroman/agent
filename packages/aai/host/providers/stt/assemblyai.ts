@@ -2,7 +2,12 @@
 
 import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
-import { STT_FRAME_FLOOR_MS } from "../../../sdk/constants.ts";
+import {
+  STT_CONNECT_MAX_RETRIES,
+  STT_CONNECT_RETRY_DELAY_MS,
+  STT_CONNECT_TIMEOUT_MS,
+  STT_FRAME_FLOOR_MS,
+} from "../../../sdk/constants.ts";
 import {
   ASSEMBLYAI_API_KEY_ENV,
   type AssemblyAIOptions,
@@ -146,6 +151,13 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       const transcriberParams: Record<string, unknown> = {
         sampleRate: openOpts.sampleRate,
         speechModel,
+        // Always set: the SDK's 1000 ms default covers socket open *plus* the
+        // server's `Begin`, and a healthy handshake can exceed it — see the
+        // connect-budget note in sdk/constants.ts. `??` (not `||`) so an
+        // explicit 0 survives as "no deadline".
+        connectTimeout: opts.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
+        maxConnectionRetries: opts.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
+        connectionRetryDelay: STT_CONNECT_RETRY_DELAY_MS,
       };
       if (openOpts.sttPrompt) transcriberParams.prompt = openOpts.sttPrompt;
       if (initialAgentContext !== undefined) {

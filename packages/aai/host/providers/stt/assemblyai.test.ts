@@ -6,6 +6,12 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { TurnEvent } from "assemblyai";
 import { describe, expect, test, vi } from "vitest";
+import {
+  DEFAULT_SESSION_START_TIMEOUT_MS,
+  STT_CONNECT_MAX_RETRIES,
+  STT_CONNECT_RETRY_DELAY_MS,
+  STT_CONNECT_TIMEOUT_MS,
+} from "../../../sdk/constants.ts";
 import { flush } from "../../_test-utils.ts";
 import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
 
@@ -205,6 +211,45 @@ describe("assemblyAI STT adapter — voice focus", () => {
     expect(offFake.params.voiceFocus).toBeUndefined();
     expect("voiceFocus" in offFake.params).toBe(false);
     await off.close();
+  });
+});
+
+describe("assemblyAI STT adapter — connect budget", () => {
+  test("overrides the SDK's 1000 ms connect deadline and pins the retry policy", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+
+    // The SDK default is 1000 ms for socket-open *plus* the server's `Begin`,
+    // which a healthy connect can exceed; never inherit it.
+    expect(fake.params.connectTimeout).toBe(STT_CONNECT_TIMEOUT_MS);
+    expect(fake.params.connectTimeout).not.toBe(1000);
+    expect(fake.params.maxConnectionRetries).toBe(STT_CONNECT_MAX_RETRIES);
+    expect(fake.params.connectionRetryDelay).toBe(STT_CONNECT_RETRY_DELAY_MS);
+
+    await session.close();
+  });
+
+  test("worst-case connect budget fits inside the session-start deadline", () => {
+    // The STT open runs inside session.start(); a larger budget could only
+    // surface as the less specific "session.start() timed out".
+    const attempts = STT_CONNECT_MAX_RETRIES + 1;
+    const worstCaseMs =
+      attempts * STT_CONNECT_TIMEOUT_MS + STT_CONNECT_MAX_RETRIES * STT_CONNECT_RETRY_DELAY_MS;
+    expect(worstCaseMs).toBeLessThan(DEFAULT_SESSION_START_TIMEOUT_MS);
+  });
+
+  test("forwards explicit connect overrides, including 0 to disable", async () => {
+    const slow = await openSession({ connectTimeoutMs: 9000, maxConnectRetries: 0 });
+    const slowFake = slow._transcriber as unknown as FakeTranscriber;
+    expect(slowFake.params.connectTimeout).toBe(9000);
+    expect(slowFake.params.maxConnectionRetries).toBe(0);
+    await slow.close();
+
+    // 0 is the SDK's "no deadline" value — it must survive as 0, not fall
+    // back to the default via `??`-on-falsy.
+    const unbounded = await openSession({ connectTimeoutMs: 0 });
+    expect((unbounded._transcriber as unknown as FakeTranscriber).params.connectTimeout).toBe(0);
+    await unbounded.close();
   });
 });
 

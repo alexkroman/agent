@@ -434,6 +434,32 @@ export const STT_FRAME_TARGET_MS = 100;
 export const STT_FRAME_MAX_MS = 1000;
 export const STT_FRAME_FLOOR_MS = 50;
 
+/**
+ * Streaming STT connect budget — one attempt's deadline, how many extra
+ * attempts follow a transient failure, and the wait between them.
+ *
+ * The `assemblyai` SDK defaults to a **1000 ms** per-attempt deadline, and it
+ * covers far more than a socket open: the timer is armed before the WebSocket
+ * is constructed and only cleared when the server's `Begin` message arrives,
+ * so DNS + TCP + TLS + upgrade + the service's own session-start latency all
+ * have to fit. A handshake that measures ~50 ms of network still blew that
+ * budget in practice — a slow `Begin` or a momentarily blocked host event loop
+ * is enough, since this is a wall-clock `setTimeout` rather than an I/O
+ * deadline. Every attempt then failed the same way and the session died with a
+ * fatal `stt_connect_failed`, which reads as an outage and is not one.
+ *
+ * All three are pinned rather than left to the SDK so the worst case is
+ * arithmetic we own and can hold against
+ * {@link DEFAULT_SESSION_START_TIMEOUT_MS} — the STT open runs inside
+ * `session.start()`, so a connect budget larger than that deadline can only
+ * ever surface as the less specific "session.start() timed out". With these
+ * values: 3 attempts x 2500 ms + 2 x 500 ms = 8500 ms < 10000 ms. Raising any
+ * of them means re-checking that sum (`assemblyai.test.ts` asserts it).
+ */
+export const STT_CONNECT_TIMEOUT_MS = 2500;
+export const STT_CONNECT_MAX_RETRIES = 2;
+export const STT_CONNECT_RETRY_DELAY_MS = 500;
+
 export const WS_OPEN = 1;
 
 /**

@@ -614,6 +614,24 @@ Reference providers shipped today:
   - `deepgram({ model: "nova-3" })` — `DEEPGRAM_API_KEY`
   - `elevenlabs({ model: "scribe_v2_realtime" })` — `ELEVENLABS_API_KEY`
   - `soniox({ model: "stt-rt-v3" })` — `SONIOX_API_KEY`
+
+  **Never inherit the `assemblyai` SDK's connect deadline.** Its default
+  `connectTimeout` is **1000 ms** and covers far more than a socket open: the
+  timer is armed before the WebSocket is constructed and only cleared when the
+  server's `Begin` message arrives, so DNS + TCP + TLS + upgrade + the
+  service's session-start latency all have to fit. A link measuring ~50 ms to
+  TLS still blew it — a slow `Begin`, or a host event loop briefly blocked
+  (this is a wall-clock `setTimeout`, not an I/O deadline), is enough. All
+  three attempts then failed identically and the session died on a fatal
+  `stt_connect_failed`, which reads as a provider outage and is not one.
+  `host/providers/stt/assemblyai.ts` therefore always sets
+  `connectTimeout`/`maxConnectionRetries`/`connectionRetryDelay` from
+  `STT_CONNECT_*` in `sdk/constants.ts`, overridable per agent via
+  `assemblyAI({ connectTimeoutMs, maxConnectRetries })`. The retry policy is
+  pinned rather than left to the SDK so the worst-case open time is arithmetic
+  we own: it runs inside `session.start()`, so a budget exceeding
+  `DEFAULT_SESSION_START_TIMEOUT_MS` could only surface as the less specific
+  "session.start() timed out". `assemblyai.test.ts` asserts that sum.
 - **LLM**: one of the typed factories below — each returns a pure
   descriptor; the `@ai-sdk/*` package is only imported by the host-side
   resolver (`host/providers/resolve.ts`), never by the agent bundle:

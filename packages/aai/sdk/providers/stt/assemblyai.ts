@@ -30,6 +30,24 @@ export interface AssemblyAIOptions {
    * close-mic / phone audio. Set to `""` (or `"off"`) to disable.
    */
   voiceFocus?: "near-field" | "far-field" | "off" | string;
+  /**
+   * Deadline for one streaming connect attempt — socket open *and* the
+   * server's `Begin` message. Defaults to `STT_CONNECT_TIMEOUT_MS`
+   * (2500 ms), overriding the SDK's own 1000 ms, which a healthy handshake
+   * can exceed. `0` waits indefinitely.
+   */
+  connectTimeoutMs?: number;
+  /**
+   * Extra connect attempts after a transient failure (timeout, network drop,
+   * unexpected close); permanent failures such as auth are never retried.
+   * Defaults to `STT_CONNECT_MAX_RETRIES` (2). `0` disables retries.
+   *
+   * Raising either knob widens the worst-case open time
+   * (`(1 + retries) * connectTimeoutMs` plus the retry delays), which has to
+   * stay under `DEFAULT_SESSION_START_TIMEOUT_MS` — see the connect-budget
+   * note in `sdk/constants.ts`.
+   */
+  maxConnectRetries?: number;
 }
 
 export type AssemblyAIProvider = SttProvider & {
