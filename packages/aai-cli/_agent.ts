@@ -11,7 +11,7 @@ import {
   serverOrigin,
 } from "./_config.ts";
 
-export const DEFAULT_SERVER = "https://aai-agent.fly.dev";
+export const DEFAULT_SERVER = "https://alexkroman--aai-server-web-server.modal.run";
 export const DEFAULT_DEV_SERVER = "http://localhost:8080";
 
 let _cachedMonorepoRoot: string | null | undefined;

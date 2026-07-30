@@ -14,7 +14,7 @@ vi.mock("./_config.ts", async (importOriginal) => {
 });
 
 test("DEFAULT_SERVER", () => {
-  expect(DEFAULT_SERVER).toBe("https://aai-agent.fly.dev");
+  expect(DEFAULT_SERVER).toBe("https://alexkroman--aai-server-web-server.modal.run");
 });
 
 describe("resolveServerUrl", () => {
