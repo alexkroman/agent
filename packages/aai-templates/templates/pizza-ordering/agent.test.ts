@@ -1,4 +1,4 @@
-import type { Kv, ToolContext, ToolDef } from "@alexkroman1/aai";
+import type { Db, ToolContext, ToolDef } from "@alexkroman1/aai";
 import type { Vector } from "@alexkroman1/aai/vector";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
@@ -6,21 +6,10 @@ import { calculateTotal, type Pizza, pizzaPrice } from "./shared.ts";
 
 // ─── Test doubles ────────────────────────────────────────────────────────────
 
-/** Map-backed Kv matching the SDK contract (get/set/delete). */
-function makeKv(): Kv {
-  const store = new Map<string, unknown>();
-  return {
-    async get<T>(key: string): Promise<T | null> {
-      return store.has(key) ? (store.get(key) as T) : null;
-    },
-    async set(key: string, value: unknown): Promise<void> {
-      store.set(key, value);
-    },
-    async delete(keys: string | string[]): Promise<void> {
-      for (const key of Array.isArray(keys) ? keys : [keys]) store.delete(key);
-    },
-  };
-}
+/** This template keeps its cart in ctx.state — the db must never be touched. */
+const noDb: Db = {
+  query: () => Promise.reject(new Error("db not used by this template")),
+};
 
 const noopVector: Vector = {
   async upsert() {},
@@ -30,13 +19,14 @@ const noopVector: Vector = {
   async delete() {},
 };
 
-/** ToolContext stub: shared kv, fixed sessionId, and captured ctx.send events. */
-function makeCtx(kv: Kv, sessionId = "session-a") {
+/** ToolContext stub: per-session ctx.state, and captured ctx.send events.
+ *  Each stub is one session — the cart is session-scoped by construction. */
+function makeCtx(sessionId = "session-a") {
   const sent: Array<{ event: string; data: unknown }> = [];
   const ctx: ToolContext = {
     env: {},
     state: {},
-    kv,
+    db: noDb,
     vector: noopVector,
     generate: () => Promise.reject(new Error("generate not available in tests")),
     messages: [],
@@ -113,9 +103,8 @@ describe("pricing (shared.ts)", () => {
 // ─── 2. Tool flow round-trip ─────────────────────────────────────────────────
 
 describe("tool flow (add → update → remove → place_order)", () => {
-  test("full ordering round-trip keeps KV, totals, and IDs consistent", async () => {
-    const kv = makeKv();
-    const { ctx } = makeCtx(kv);
+  test("full ordering round-trip keeps state, totals, and IDs consistent", async () => {
+    const { ctx } = makeCtx();
 
     // Empty order guards
     expect(await run("view_order", {}, ctx)).toEqual({ message: "The order is empty." });
@@ -177,9 +166,9 @@ describe("tool flow (add → update → remove → place_order)", () => {
   });
 
   test("carts are scoped per session — two sessions never share pizzas or names", async () => {
-    const kv = makeKv(); // one deployment-wide KV
-    const { ctx: sessionA } = makeCtx(kv, "session-a");
-    const { ctx: sessionB } = makeCtx(kv, "session-b");
+    // ctx.state is per-session by construction — each session has its own.
+    const { ctx: sessionA } = makeCtx("session-a");
+    const { ctx: sessionB } = makeCtx("session-b");
 
     await run(
       "add_pizza",
@@ -222,8 +211,7 @@ function matchedBranch(data: Record<string, unknown>): string {
 
 describe('"order" event contract', () => {
   test("each mutating tool emits exactly one event, matching its client branch", async () => {
-    const kv = makeKv();
-    const { ctx, sent } = makeCtx(kv);
+    const { ctx, sent } = makeCtx();
 
     await run(
       "add_pizza",
@@ -242,8 +230,7 @@ describe('"order" event contract', () => {
   });
 
   test("place_order's `pizzas` is a count, not an array — it must not hit the view branch", async () => {
-    const kv = makeKv();
-    const { ctx, sent } = makeCtx(kv);
+    const { ctx, sent } = makeCtx();
     await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, ctx);
     await run("place_order", {}, ctx);
 
@@ -260,8 +247,7 @@ describe('"order" event contract', () => {
   });
 
   test("view_order items carry every field the sidebar renders", async () => {
-    const kv = makeKv();
-    const { ctx, sent } = makeCtx(kv);
+    const { ctx, sent } = makeCtx();
     await run(
       "add_pizza",
       { size: "large", crust: "stuffed", toppings: ["pepperoni", "extra_cheese"], quantity: 2 },

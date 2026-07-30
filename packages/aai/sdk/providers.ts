@@ -51,9 +51,6 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>>;
 /** Descriptor for an S2S provider. Returned by factories like `openaiRealtime(...)`. */
 export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>>;
 
-/** Descriptor for a KV backend. Returned by factories like `redisKv()`. */
-export type KvProvider = ProviderDescriptor<string, Record<string, unknown>>;
-
 /** Descriptor for an outbound send channel. Returned by factories like `slack()`. */
 export type SendProvider = ProviderDescriptor<string, Record<string, unknown>>;
 

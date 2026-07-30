@@ -11,8 +11,7 @@ export const resourcesUpdateStatus = tool({
   }),
   async execute(args, ctx) {
     return updateState(
-      ctx.kv,
-      ctx.sessionId,
+      ctx,
       (state) => {
         const resource = state.resources.find(
           (r) => r.callsign.toLowerCase() === args.callsign.toLowerCase(),

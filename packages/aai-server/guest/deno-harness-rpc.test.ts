@@ -119,6 +119,92 @@ describe("handleRequest", () => {
     expect(getWrittenLines()).toEqual([{ jsonrpc: "2.0", id: 4, result: { ok: true } }]);
   });
 
+  test("ctx.db throws storage-not-enabled guidance when bundle/load says disabled", async () => {
+    writtenBytes.length = 0;
+    const state = { agent: null, sessionState: null, sessionMessages: null };
+    const code =
+      'export default { name: "t", tools: { use_db: { description: "d", ' +
+      'execute: async (_args, ctx) => JSON.stringify(await ctx.db.query("select 1")) } } };';
+    // No storageEnabled param → disabled (also what older hosts send).
+    await handleRequest(
+      { jsonrpc: "2.0", id: 40, method: "bundle/load", params: { code, env: {} } },
+      state,
+    );
+    writtenBytes.length = 0;
+    await handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 41,
+        method: "tool/execute",
+        params: { name: "use_db", args: {}, sessionId: "s1", messages: [] },
+      },
+      state,
+    );
+    const reply = getWrittenLines().find((m) => (m as { id?: number }).id === 41) as {
+      result: { error: string };
+    };
+    // Must match the SDK tool-executor's message exactly so dev and prod agree.
+    expect(reply.result.error).toBe(
+      "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
+        "the Storage toggle in the studio; under `aai dev`, set DATABASE_URL in the " +
+        "project .env.",
+    );
+  });
+
+  test("ctx.db proxies db/query to the host when storage is enabled", async () => {
+    writtenBytes.length = 0;
+    const state = { agent: null, sessionState: null, sessionMessages: null };
+    const code =
+      'export default { name: "t", tools: { use_db: { description: "d", ' +
+      'execute: async (_args, ctx) => JSON.stringify(await ctx.db.query("select body from notes", [7])) } } };';
+    await handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 42,
+        method: "bundle/load",
+        params: { code, env: {}, storageEnabled: true },
+      },
+      state,
+    );
+    writtenBytes.length = 0;
+    const done = handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 43,
+        method: "tool/execute",
+        params: { name: "use_db", args: {}, sessionId: "s1", messages: [] },
+      },
+      state,
+    );
+    // The tool call is now awaiting the proxied db/query — answer it.
+    await vi.waitFor(() => {
+      expect(getWrittenLines().some((m) => (m as { method?: string }).method === "db/query")).toBe(
+        true,
+      );
+    });
+    const dbReq = getWrittenLines().find(
+      (m) => (m as { method?: string }).method === "db/query",
+    ) as { id: number; params: unknown };
+    expect(dbReq.params).toEqual({ sql: "select body from notes", params: [7] });
+    handleHostResponse({ id: dbReq.id, result: [{ body: "hello" }] });
+    await done;
+
+    const reply = getWrittenLines().find((m) => (m as { id?: number }).id === 43) as {
+      result: { result: string };
+    };
+    expect(reply.result.result).toBe(JSON.stringify([{ body: "hello" }]));
+    // Reset the flag for later tests: reload a bundle without storage.
+    await handleRequest(
+      {
+        jsonrpc: "2.0",
+        id: 44,
+        method: "bundle/load",
+        params: { code: 'export default { name: "p", tools: {} };', env: {} },
+      },
+      state,
+    );
+  });
+
   test("bundle/load returns the bundle's self-described __aaiConfig", async () => {
     writtenBytes.length = 0;
     const state = { agent: null, sessionState: null, sessionMessages: null };

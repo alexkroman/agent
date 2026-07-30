@@ -12,7 +12,9 @@
 import type { Vector } from "@alexkroman1/aai/runtime";
 import type { Context } from "hono";
 import type { Storage } from "unstorage";
+import type { AppDatabases } from "./app-database.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
+import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
 export type HonoEnv = {
@@ -20,6 +22,10 @@ export type HonoEnv = {
     slots: SlotCache;
     store: BundleStore;
     storage: Storage;
+    /** Named secret storage (Supabase Vault in production). */
+    secrets: SecretStore;
+    /** Per-app database provisioning. Absent when SUPABASE_DB_URL is unset. */
+    appDb?: AppDatabases;
     defaultVector: (slug: string) => Vector;
   };
   Variables: {

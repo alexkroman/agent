@@ -9,7 +9,7 @@
  *
  * A warm harness is a spawned Deno process whose NDJSON connection is
  * wired to its stdio but which has not yet:
- * - had request handlers registered (KV / fetch)
+ * - had request handlers registered (db / fetch)
  * - had `listen()` called
  * - received the agent's bundle
  *

@@ -131,7 +131,7 @@ describe("createNdjsonConnection", () => {
   it("dispatches incoming request to registered handler and sends response", async () => {
     const conn = createNdjsonConnection(readable, writable);
 
-    conn.onRequest("kv/get", async (params: unknown) => {
+    conn.onRequest("db/query", async (params: unknown) => {
       const p = params as { key: string };
       return { value: `got:${p.key}` };
     });
@@ -139,7 +139,7 @@ describe("createNdjsonConnection", () => {
     conn.listen();
 
     // Guest sends a request to the host
-    writeMessage(readable, { jsonrpc: "2.0", id: 42, method: "kv/get", params: { key: "x" } });
+    writeMessage(readable, { jsonrpc: "2.0", id: 42, method: "db/query", params: { key: "x" } });
 
     // Host should write back a response
     await vi.waitFor(() => expect(writtenLines.length).toBeGreaterThan(0));

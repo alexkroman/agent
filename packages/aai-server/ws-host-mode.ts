@@ -15,7 +15,7 @@
  *   *unauthenticated* — anyone with the URL can talk to it. Allowing prompt
  *   and tool overrides on that same footing would turn every deployed agent
  *   into an open LLM proxy billed to its owner. So overrides require proving
- *   ownership of the slug, the same check `/:slug/secret` and `/:slug/kv`
+ *   ownership of the slug, the same check `/:slug/secret` and `/:slug/storage`
  *   already use. An env flag would be all-or-nothing across tenants.
  *
  * Plain (non-host) connections are untouched and stay unauthenticated.

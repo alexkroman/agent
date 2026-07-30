@@ -2,12 +2,13 @@
 /**
  * Tests for sandbox VM configuration and init metrics.
  *
- * The vector/* and kv/* RPC handler tests live in
+ * The vector/* and db/query RPC handler tests live in
  * sandbox-vm-rpc-handlers.test.ts; the Modal spawn backend is covered by
  * modal-sandbox.test.ts; shared helpers live in _sandbox-vm-test-utils.ts.
  */
 
 import type { PassThrough } from "node:stream";
+import type { Db } from "@alexkroman1/aai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   autorespondBundleLoad,
@@ -21,7 +22,14 @@ import {
 import { registry } from "./metrics.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import { _internals, createSandboxVm, describeBundle, type WarmHarness } from "./sandbox-vm.ts";
-import { counterValue, createMockKv, histogramCount } from "./test-utils.ts";
+import { counterValue, histogramCount } from "./test-utils.ts";
+
+/** In-memory mock Db whose query fn is a spy. */
+function createMockDb(rows: Record<string, unknown>[] = []) {
+  const query = vi.fn().mockResolvedValue(rows);
+  const db: Db = { query };
+  return { db, query };
+}
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
@@ -60,95 +68,55 @@ describe("configureSandbox", () => {
     expect(bundleReq.params).toEqual({
       code: opts.workerCode,
       env: opts.env,
+      storageEnabled: false,
     });
 
     detach();
   });
 
-  it("registers kv/get handler that reads from Kv", async () => {
-    const kv = createMockKv();
-    await kv.set("existing", "hello");
+  it("registers db/query handler that queries the app db", async () => {
+    const { db, query } = createMockDb([{ body: "hello" }]);
 
-    const opts = baseOpts({ kv });
+    const opts = baseOpts({ db });
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
     const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     detach();
 
-    // Simulate guest sending kv/get request for the pre-populated key
-    const getReqId = 100;
+    // bundle/load advertises storage as enabled when a db is bound.
+    const bundleReq = writtenLines
+      .map((l) => JSON.parse(l))
+      .find((m: { method?: string }) => m.method === "bundle/load");
+    expect(bundleReq.params.storageEnabled).toBe(true);
+
+    // Simulate guest sending a db/query request
+    const reqId = 100;
     hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: getReqId, method: "kv/get", params: { key: "existing" } })}\n`,
+      `${JSON.stringify({ jsonrpc: "2.0", id: reqId, method: "db/query", params: { sql: "select body from notes where id = $1", params: [7] } })}\n`,
     );
 
-    await waitForResponseId(writtenLines, getReqId);
+    await waitForResponseId(writtenLines, reqId);
 
-    const getResponse = findResponseById(writtenLines, getReqId);
-    expect(getResponse).toBeDefined();
-    expect(getResponse?.result).toBe("hello");
+    const response = findResponseById(writtenLines, reqId);
+    expect(response?.result).toEqual([{ body: "hello" }]);
+    expect(query).toHaveBeenCalledWith("select body from notes where id = $1", [7]);
 
     handle.conn.dispose();
   });
 
-  it("kv/set handler stores values in Kv", async () => {
-    const kv = createMockKv();
-    const opts = baseOpts({ kv });
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
-
-    // Simulate guest sending kv/set
-    const setReqId = 200;
-    hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: setReqId, method: "kv/set", params: { key: "newkey", value: 42 } })}\n`,
-    );
-
-    await waitForResponseId(writtenLines, setReqId);
-
-    // Verify Kv was updated
-    expect(kv.set).toHaveBeenCalledWith("newkey", 42);
-
-    handle.conn.dispose();
-  });
-
-  it("kv/del handler removes items from Kv", async () => {
-    const kv = createMockKv();
-    const opts = baseOpts({ kv });
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
-
-    // Send kv/del request
-    const delReqId = 300;
-    hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: delReqId, method: "kv/del", params: { key: "delkey" } })}\n`,
-    );
-
-    await waitForResponseId(writtenLines, delReqId);
-
-    // Verify the item was removed
-    expect(kv.delete).toHaveBeenCalledWith("delkey");
-
-    handle.conn.dispose();
-  });
-
-  it("does not register KV handlers when kv is not provided", async () => {
-    const opts = baseOpts(); // no kv
+  it("does not register the db handler when db is not provided", async () => {
+    const opts = baseOpts(); // no db
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
     await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     detach();
 
-    // Try sending a kv/get -- should get "Method not found" error response
+    // Try sending a db/query -- should get "Method not found" error response
     const reqId = 400;
     hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: reqId, method: "kv/get", params: { key: "x" } })}\n`,
+      `${JSON.stringify({ jsonrpc: "2.0", id: reqId, method: "db/query", params: { sql: "select 1" } })}\n`,
     );
 
     await waitForResponseId(writtenLines, reqId);

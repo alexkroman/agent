@@ -1,6 +1,6 @@
 // ─── Types ───────────────────────────────────────────────────────────────────
 
-import type { Kv } from "@alexkroman1/aai";
+import type { ToolContext } from "@alexkroman1/aai";
 
 export const SEVERITIES = ["critical", "urgent", "moderate", "minor"] as const;
 export type Severity = (typeof SEVERITIES)[number];
@@ -112,14 +112,12 @@ export function dashboardEvent(state: DispatchState): {
   };
 }
 
-// ─── KV helpers ──────────────────────────────────────────────────────────────
+// ─── State helpers ───────────────────────────────────────────────────────────
+// The dispatch board lives in `ctx.state`, the agent's per-session mutable
+// state — sessions must not see each other's incidents, and ctx.state gives
+// that isolation by construction. Nothing here needs to outlive the session.
 
-const STATE_KEY = "dispatch:state";
-
-/** Per-session state key — sessions must not see each other's incidents. */
-export function stateKey(sessionId: string): string {
-  return `${STATE_KEY}:${sessionId}`;
-}
+type StateSlot = { dispatch?: DispatchState };
 
 // ─── Resource generation ────────────────────────────────────────────────────
 
@@ -161,21 +159,20 @@ export function createDefaultState(): DispatchState {
   };
 }
 
-export async function getState(kv: Kv, sessionId: string): Promise<DispatchState> {
-  const saved = await kv.get<DispatchState>(stateKey(sessionId));
-  return saved ?? createDefaultState();
-}
-
-async function saveState(kv: Kv, sessionId: string, state: DispatchState): Promise<void> {
-  await kv.set(stateKey(sessionId), state);
+/** The session's live dispatch state. Mutations to the returned object
+ *  stick — it is the object stored in `ctx.state`. */
+export function getState(ctx: ToolContext): DispatchState {
+  const slot = ctx.state as StateSlot;
+  slot.dispatch ??= createDefaultState();
+  return slot.dispatch;
 }
 
 // ─── Serialized state updates ────────────────────────────────────────────────
 
 /**
- * Growth caps. KV values are capped at 64 KiB and the whole dispatch state
- * lives in one value, so resolved incidents and long timelines must be
- * pruned or a long session eventually fails to save at all.
+ * Growth caps. The whole dispatch state is one object whose summaries feed
+ * both the LLM and the dashboard event, so resolved incidents and long
+ * timelines must be pruned or a long session's payloads grow without bound.
  */
 const MAX_RESOLVED_KEPT = 10;
 const MAX_TIMELINE_ENTRIES = 50;
@@ -197,40 +194,38 @@ function pruneState(state: DispatchState): void {
 const sessionLocks = new Map<string, Promise<unknown>>();
 
 /**
- * Serialized read-modify-write of the session's dispatch state.
+ * Serialized update of the session's dispatch state.
  *
- * The LLM loop executes parallel tool calls concurrently, and every mutating
- * tool rewrites the whole state blob. Without serialization two concurrent
- * updates each read the same snapshot and the second save silently discards
- * the first tool's changes (a created incident or a dispatch just vanishes).
- * This per-session promise chain makes each update see the previous one's
- * result. It also centralizes the shared bookkeeping every mutating tool
- * needs: pruning, alert-level recalculation, and the save itself.
+ * The LLM loop executes parallel tool calls concurrently. The state lives in
+ * `ctx.state` now (one shared object, no snapshot/save round-trip), but a
+ * mutator may be async, and two interleaving async mutators can each observe
+ * the other's half-applied changes. This per-session promise chain makes
+ * each update run against the previous one's finished result. It also
+ * centralizes the shared bookkeeping every mutating tool needs: pruning and
+ * alert-level recalculation.
  *
- * `onSaved` runs after the recalculated state is persisted — the place to
+ * `onSaved` runs after the recalculated state settles — the place to
  * `ctx.send` a dashboard event reflecting the final alert level.
  */
 export async function updateState<R>(
-  kv: Kv,
-  sessionId: string,
+  ctx: ToolContext,
   mutator: (state: DispatchState) => R | Promise<R>,
   onSaved?: (state: DispatchState) => void,
 ): Promise<R> {
-  const prev = sessionLocks.get(sessionId) ?? Promise.resolve();
+  const prev = sessionLocks.get(ctx.sessionId) ?? Promise.resolve();
   const run = prev.then(async () => {
-    const state = await getState(kv, sessionId);
+    const state = getState(ctx);
     const result = await mutator(state);
     pruneState(state);
     recalculateAlertLevel(state);
-    await saveState(kv, sessionId, state);
     onSaved?.(state);
     return result;
   });
   // Keep the chain alive across failures, and drop it once idle.
   const tail = run.catch(() => {});
-  sessionLocks.set(sessionId, tail);
+  sessionLocks.set(ctx.sessionId, tail);
   tail.then(() => {
-    if (sessionLocks.get(sessionId) === tail) sessionLocks.delete(sessionId);
+    if (sessionLocks.get(ctx.sessionId) === tail) sessionLocks.delete(ctx.sessionId);
   });
   return run;
 }

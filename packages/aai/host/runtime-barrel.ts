@@ -20,6 +20,7 @@ export * from "./guest-fetch-policy.ts";
 export * from "./host-mode.ts";
 export { createMemoryVector } from "./memory-vector.ts";
 export * from "./pinecone-vector.ts";
+export * from "./postgres-db.ts";
 export * from "./providers/host-env.ts";
 // Narrow named exports rather than `export *`: the rest of resolve.ts is
 // internal descriptor plumbing. `requiredProviderEnvVars` is used by the CLI
@@ -27,7 +28,6 @@ export * from "./providers/host-env.ts";
 // applications (e.g. the platform server's browser studio) turn an LLM
 // descriptor into a Vercel AI SDK model without duplicating provider wiring.
 export { requiredProviderEnvVars, resolveLlm } from "./providers/resolve.ts";
-export * from "./providers/resolve-kv.ts";
 export * from "./providers/resolve-vector.ts";
 export * from "./runtime.ts";
 export * from "./runtime-config.ts";
@@ -39,5 +39,4 @@ export * from "./tool-executor.ts";
 export * from "./transports/pipeline-transport.ts";
 export * from "./transports/s2s-transport.ts";
 export * from "./transports/types.ts";
-export * from "./unstorage-kv.ts";
 export * from "./ws-handler.ts";

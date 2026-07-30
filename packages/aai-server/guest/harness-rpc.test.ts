@@ -22,9 +22,9 @@ const writtenBytes: Uint8Array[] = [];
 // installs the proxied `globalThis.fetch` (forks pool isolates this file).
 const rpc = await import("./harness-rpc.ts");
 const {
+  dbAdapter,
   handleFetchNotification,
   handleHostResponse,
-  kvAdapter,
   pendingFetches,
   pendingHostRequests,
   sendError,
@@ -163,23 +163,23 @@ describe("NDJSON writing", () => {
 });
 
 describe("host RPC round-trip", () => {
-  // hostRequest is module-private; exercise it through the KV adapter.
+  // hostRequest is module-private; exercise it through the db adapter.
   test("writes a JSON-RPC request and resolves with the host result", async () => {
-    const promise = kvAdapter.get("a");
+    const promise = dbAdapter.query("select 1");
     await flush();
     const msg = lastMessage();
-    expect(msg.method).toBe("kv/get");
-    expect(msg.params).toEqual({ key: "a" });
-    respondToLastRequest("value");
-    await expect(promise).resolves.toBe("value");
+    expect(msg.method).toBe("db/query");
+    expect(msg.params).toEqual({ sql: "select 1" });
+    respondToLastRequest([{ "?column?": 1 }]);
+    await expect(promise).resolves.toEqual([{ "?column?": 1 }]);
   });
 
   test("rejects when the host returns an error", async () => {
-    const promise = kvAdapter.get("a");
+    const promise = dbAdapter.query("select 1");
     await flush();
     const { id } = lastMessage();
-    handleHostResponse({ id: id as number, error: { code: 1, message: "kv down" } });
-    await expect(promise).rejects.toThrow("kv down");
+    handleHostResponse({ id: id as number, error: { code: 1, message: "db down" } });
+    await expect(promise).rejects.toThrow("db down");
   });
 
   test("ignores responses with no matching pending request", () => {
@@ -189,7 +189,7 @@ describe("host RPC round-trip", () => {
   test("times out a host request that never gets a response", async () => {
     vi.useFakeTimers();
     try {
-      const promise = kvAdapter.get("wedged");
+      const promise = dbAdapter.query("select pg_sleep(9999)");
       const rejection = expect(promise).rejects.toThrow(/timed out after 30000ms/);
       vi.advanceTimersByTime(30_000);
       await rejection;
@@ -200,7 +200,7 @@ describe("host RPC round-trip", () => {
   });
 
   test("rejectAllPendingHostRequests fails pending requests and proxied fetches", async () => {
-    const kvPromise = kvAdapter.get("a");
+    const dbPromise = dbAdapter.query("select 1");
     const fetchPromise = fetch("https://api.test/pending");
     await flush();
     expect(pendingHostRequests.size).toBeGreaterThan(0);
@@ -208,7 +208,7 @@ describe("host RPC round-trip", () => {
 
     rpc.rejectAllPendingHostRequests("Connection closed");
 
-    await expect(kvPromise).rejects.toThrow("Connection closed");
+    await expect(dbPromise).rejects.toThrow("Connection closed");
     await expect(fetchPromise).rejects.toThrow(/fetch failed: Connection closed/);
     expect(pendingHostRequests.size).toBe(0);
     expect(pendingFetches.size).toBe(0);
@@ -350,51 +350,24 @@ describe("proxied fetch", () => {
   });
 });
 
-describe("kvAdapter", () => {
-  test("get resolves the host result and maps undefined to null", async () => {
-    const kv = kvAdapter;
-    const p1 = kv.get("present");
+describe("dbAdapter", () => {
+  test("query forwards sql and params, resolving the rows array", async () => {
+    const p1 = dbAdapter.query("select * from notes where id = $1", [7]);
     await flush();
-    respondToLastRequest("stored");
-    await expect(p1).resolves.toBe("stored");
-
-    const p2 = kv.get("missing");
-    await flush();
-    respondToLastRequest(undefined);
-    await expect(p2).resolves.toBeNull();
+    expect(lastMessage()).toMatchObject({
+      method: "db/query",
+      params: { sql: "select * from notes where id = $1", params: [7] },
+    });
+    respondToLastRequest([{ id: 7 }]);
+    await expect(p1).resolves.toEqual([{ id: 7 }]);
   });
 
-  test("set forwards expireIn only when provided", async () => {
-    const kv = kvAdapter;
-    const p1 = kv.set("a", 1, { expireIn: 60 });
+  test("query omits params when not provided", async () => {
+    const p = dbAdapter.query("select 1");
     await flush();
-    expect(lastMessage().params).toEqual({ key: "a", value: 1, expireIn: 60 });
-    respondToLastRequest(null);
-    await p1;
-
-    const p2 = kv.set("b", 2);
-    await flush();
-    expect(lastMessage().params).toEqual({ key: "b", value: 2 });
-    respondToLastRequest(null);
-    await p2;
-  });
-
-  test("delete accepts a single key or an array of keys", async () => {
-    const kv = kvAdapter;
-    const p1 = kv.delete("solo");
-    await flush();
-    expect(lastMessage()).toMatchObject({ method: "kv/del", params: { key: "solo" } });
-    respondToLastRequest(null);
-    await p1;
-
-    const p2 = kv.delete(["a", "b"]);
-    await flush();
-    const delMessages = getWrittenMessages().filter((m) => m.method === "kv/del");
-    expect(delMessages.map((m) => m.params?.key)).toEqual(["solo", "a", "b"]);
-    for (const m of delMessages.slice(1)) {
-      handleHostResponse({ id: m.id as number, result: null });
-    }
-    await expect(p2).resolves.toBeUndefined();
+    expect(lastMessage().params).toEqual({ sql: "select 1" });
+    respondToLastRequest([]);
+    await expect(p).resolves.toEqual([]);
   });
 });
 

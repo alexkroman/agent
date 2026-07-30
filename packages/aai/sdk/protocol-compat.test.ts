@@ -15,12 +15,7 @@ import {
   DEFAULT_TTS_SAMPLE_RATE,
   MAX_TOOL_RESULT_CHARS,
 } from "./constants.ts";
-import {
-  ClientMessageSchema,
-  KvRequestSchema,
-  ServerMessageSchema,
-  SessionErrorCodeSchema,
-} from "./protocol.ts";
+import { ClientMessageSchema, ServerMessageSchema, SessionErrorCodeSchema } from "./protocol.ts";
 
 const FIXTURE_DIR = join(import.meta.dirname, "compat-fixtures");
 
@@ -28,7 +23,6 @@ type Fixture = {
   version: number;
   ServerMessage: Record<string, unknown>[];
   ClientMessage: Record<string, unknown>[];
-  KvRequest: Record<string, unknown>[];
   constants: {
     DEFAULT_STT_SAMPLE_RATE: number;
     DEFAULT_TTS_SAMPLE_RATE: number;
@@ -97,12 +91,6 @@ describe.each(fixtureFiles)("compat fixture: %s", (filename) => {
       schema: ClientMessageSchema,
       messages: fixture.ClientMessage,
       discriminant: "type",
-    },
-    {
-      label: "KvRequest",
-      schema: KvRequestSchema,
-      messages: fixture.KvRequest,
-      discriminant: "op",
     },
   ];
 

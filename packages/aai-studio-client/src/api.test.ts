@@ -114,6 +114,25 @@ describe("api", () => {
     ]);
   });
 
+  test("storage endpoints hit their routes with the right methods", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ ok: true, enabled: true }));
+    await api.getStorage("k", "p");
+    await api.enableStorage("k", "p");
+    await api.disableStorage("k", "p");
+    const calls = fetchMock.mock.calls.map((c) => {
+      const [url, init] = c as [string, RequestInit | undefined];
+      return `${init?.method ?? "GET"} ${url}`;
+    });
+    expect(calls).toEqual([
+      "GET /studio/projects/p/storage",
+      "POST /studio/projects/p/storage",
+      "DELETE /studio/projects/p/storage",
+    ]);
+    // Bearer-authenticated like the other project routes.
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(new Headers(init.headers).get("Authorization")).toBe("Bearer k");
+  });
+
   test("status is unauthenticated and returns the body", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ llm: true, provider: "assemblyai" }));
     await expect(api.status()).resolves.toEqual({ llm: true, provider: "assemblyai" });

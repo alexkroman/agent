@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Production storage: unstorage's S3 driver with a working `getKeys`.
+ * Production storage: unstorage's S3 driver (generic SigV4 — Supabase
+ * Storage's S3-compatible endpoint in production) with a working `getKeys`.
  *
  * The stock driver's `getKeys` lists the WHOLE bucket — it never sends a
  * `prefix` parameter — and reads only the first ListObjects page (S3 caps a
@@ -8,9 +9,9 @@
  * unstorage core then filters the returned keys by prefix client-side, so
  * once the bucket holds >1000 objects, keys that sort past the first page
  * simply vanish from every listing. Concretely: `studio/…` project keys sort
- * after `agents/…` bundles and `kv/…` data, so the studio project picker
- * went empty in production while every project document was still stored —
- * and the KV wipe on agent delete (`deleteByPrefix`) silently stopped short.
+ * after `agents/…` bundles, so the studio project picker went empty in
+ * production while every project document was still stored — and the
+ * bundle sweep on agent delete (`deleteByPrefix`) silently stopped short.
  *
  * This module keeps the stock driver for everything else and replaces only
  * `getKeys` with a signed ListObjectsV2 loop that passes the prefix and

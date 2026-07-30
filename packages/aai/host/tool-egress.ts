@@ -19,11 +19,11 @@
  *   `SANDBOX_ONLY_BUILTINS`), where `allowedHosts` never applies to them.
  *   Subjecting them to it here would invent a restriction production doesn't
  *   have — the opposite of the parity this module exists for.
- * - **`ctx.kv` / `ctx.vector` are exempt** via {@link exemptFromToolEgress}.
+ * - **`ctx.db` / `ctx.vector` are exempt** via {@link exemptFromToolEgress}.
  *   In the guest these are their own RPC methods, not `fetch`, so a tool can
- *   use them without declaring any host. A BYO `s3Kv`/`pinecone` provider
- *   talks HTTP from inside the tool's async scope, and without the exemption
- *   its storage endpoint would need listing in `allowedHosts` — a restriction
+ *   use them without declaring any host. A BYO `pinecone` provider talks
+ *   HTTP from inside the tool's async scope, and without the exemption its
+ *   storage endpoint would need listing in `allowedHosts` — a restriction
  *   production does not impose.
  *
  * Scoping is per async context rather than per process because the host is
@@ -135,7 +135,7 @@ export function runInToolEgress<T>(allowedHosts: readonly string[], fn: () => T)
 }
 
 /**
- * Wrap an SDK-provided object (`Kv`, `Vector`) so its methods run outside any
+ * Wrap an SDK-provided object (`Db`, `Vector`) so its methods run outside any
  * tool-egress scope — their HTTP traffic is infrastructure the platform serves
  * over RPC, not agent-controlled egress.
  */

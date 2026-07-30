@@ -1,5 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Bundle store backed by unstorage (S3-compatible storage via Tigris, R2, etc.).
+// Bundle store backed by unstorage (S3-compatible storage — Supabase Storage
+// in production) plus a SecretStore for agent env records.
+//
+// Env storage is a clean break from the old design: the manifest used to
+// carry the env as a master-key-encrypted blob (iron / AES-GCM envelopes).
+// Env records now live in the injected SecretStore (Supabase Vault in
+// production) under `agent-env:<slug>`, JSON-serialized, and the manifest
+// keeps only slug + credential_hashes. There is deliberately NO legacy
+// decrypt path — this migration supersedes the old "never delete a legacy
+// read path" rule for env blobs.
 
 import { errorMessage } from "@alexkroman1/aai";
 import type { Storage } from "unstorage";
@@ -11,20 +20,29 @@ import { agentObjectKey, agentPrefix } from "./constants.ts";
 import { metrics, observeDurationWithStatus } from "./metrics.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { withLock } from "./sandbox-slots.ts";
-import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
-import { decryptEnv, encryptEnv, type MasterKey } from "./secrets.ts";
+import { type AgentMetadata, AgentMetadataSchema, EnvSchema } from "./schemas.ts";
+import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
 export type { BundleStore } from "./store-types.ts";
 
+/** SecretStore name for one agent's env record. */
+export function agentEnvSecretName(slug: string): string {
+  return `agent-env:${slug}`;
+}
+
+/** SecretStore name for one app's provisioned database credentials. */
+export function appDbSecretName(slug: string): string {
+  return `app-db:${slug}`;
+}
+
 const ManifestSchema = z.object({
   slug: z.string(),
-  env: z.string(),
   credential_hashes: z.array(z.string()).optional(),
 });
 
-// Decrypting + Zod-parsing the manifest takes ~15-20ms per call, and the
-// same slug is read on every WebSocket upgrade, health check, KV request,
+// Fetching the env record + Zod-parsing the manifest costs a round trip per
+// call, and the same slug is read on every WebSocket upgrade, health check,
 // and asset fetch. TTL bounds staleness for multi-replica deployments
 // where another replica may have mutated the underlying storage.
 const STORE_CACHE_TTL_MS = 60_000;
@@ -114,17 +132,17 @@ export class ByteBudgetTtlCache<V> {
   }
 }
 
-async function instrumentTigris<T>(op: string, fn: () => Promise<T>): Promise<T> {
+async function instrumentStorage<T>(op: string, fn: () => Promise<T>): Promise<T> {
   return observeDurationWithStatus(
     metrics.upstreamCallSeconds,
     metrics.upstreamCall,
-    { upstream: "tigris", op },
+    { upstream: "storage", op },
     fn,
   );
 }
 
-export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey }): BundleStore {
-  const { masterKey } = opts;
+export function createBundleStore(storage: Storage, opts: { secrets: SecretStore }): BundleStore {
+  const { secrets } = opts;
 
   const manifestLock = createKeyedLock();
 
@@ -188,10 +206,22 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     return parsed.data;
   }
 
+  /** Read + parse the agent's env record from the SecretStore. */
+  async function loadEnv(slug: string): Promise<Record<string, string>> {
+    const raw = await secrets.get(agentEnvSecretName(slug));
+    if (raw === null) return {};
+    try {
+      return EnvSchema.parse(JSON.parse(raw));
+    } catch {
+      console.warn(`Corrupt env record for agent ${slug}; treating as empty`);
+      return {};
+    }
+  }
+
   async function loadManifest(slug: string): Promise<AgentMetadata | null> {
     const raw = await getRawManifest(slug);
     if (!raw) return null;
-    const env = await decryptEnv(masterKey, { encrypted: raw.env, slug });
+    const env = await loadEnv(slug);
     const parsed = AgentMetadataSchema.safeParse({ ...raw, env });
     return parsed.success ? parsed.data : null;
   }
@@ -206,11 +236,9 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
 
   return {
     putAgent(bundle) {
-      return instrumentTigris("putAgent", async () => {
+      return instrumentStorage("putAgent", async () => {
         invalidate(bundle.slug);
         try {
-          // Note: this sweep covers the whole agent prefix, including the
-          // agent's platform-default KV data (see constants.ts).
           await deleteByPrefix(agentPrefix(bundle.slug));
         } catch (err) {
           console.warn(
@@ -220,13 +248,13 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
 
         const manifest = {
           slug: bundle.slug,
-          env: await encryptEnv(masterKey, { env: bundle.env, slug: bundle.slug }),
           credential_hashes: bundle.credential_hashes,
         };
         // All writes go to distinct keys with no ordering requirement
         // (deleteByPrefix already cleared the prefix; the trailing
         // invalidate handles cache races), so run them concurrently.
         await Promise.all([
+          secrets.put(agentEnvSecretName(bundle.slug), JSON.stringify(bundle.env)),
           storage.setItem(agentObjectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest)),
           storage.setItem(agentObjectKey(bundle.slug, "worker.js"), bundle.worker),
           ...Object.entries(bundle.clientFiles).map(([filePath, content]) =>
@@ -244,11 +272,11 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     },
 
     getManifest(slug) {
-      return instrumentTigris("getManifest", () => getManifestCached(slug));
+      return instrumentStorage("getManifest", () => getManifestCached(slug));
     },
 
     getWorkerCode(slug) {
-      return instrumentTigris("getWorkerCode", async () => {
+      return instrumentStorage("getWorkerCode", async () => {
         const cached = workerCodeCache.get(slug);
         if (cached !== undefined) return cached;
         const value = await readItem(agentObjectKey(slug, "worker.js"));
@@ -258,7 +286,7 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     },
 
     getClientFile(slug, filePath) {
-      return instrumentTigris("getClientFile", async () => {
+      return instrumentStorage("getClientFile", async () => {
         const key = agentObjectKey(slug, `client/${filePath}`);
         const cached = clientFileCache.get(key);
         if (cached !== undefined) return cached;
@@ -269,34 +297,39 @@ export function createBundleStore(storage: Storage, opts: { masterKey: MasterKey
     },
 
     deleteAgent(slug) {
-      return instrumentTigris("deleteAgent", async () => {
+      return instrumentStorage("deleteAgent", async () => {
         invalidate(slug);
-        await deleteByPrefix(agentPrefix(slug));
+        await Promise.all([
+          deleteByPrefix(agentPrefix(slug)),
+          // Delete-only sweep of this agent's SecretStore entries. The
+          // app-db credentials go too; the caller (delete route) is
+          // responsible for deprovisioning the database itself first.
+          secrets.delete(agentEnvSecretName(slug)),
+          secrets.delete(appDbSecretName(slug)),
+        ]);
         invalidate(slug);
       });
     },
 
     getEnv(slug) {
-      return instrumentTigris("getEnv", async () => (await getManifestCached(slug))?.env ?? null);
+      return instrumentStorage("getEnv", async () => (await getManifestCached(slug))?.env ?? null);
     },
 
     putEnv(slug, env) {
-      return instrumentTigris("putEnv", () =>
+      return instrumentStorage("putEnv", () =>
         withLock(manifestLock, slug, async () => {
+          // The manifest existence check keeps putEnv's contract: env for an
+          // unknown agent is an error, not a silent secret write.
           const raw = await getRawManifest(slug);
           if (!raw) throw new Error(`Agent ${slug} not found`);
-          const updated = {
-            ...raw,
-            env: await encryptEnv(masterKey, { env, slug }),
-          };
-          await storage.setItem(agentObjectKey(slug, "manifest.json"), JSON.stringify(updated));
+          await secrets.put(agentEnvSecretName(slug), JSON.stringify(env));
           manifestCache.delete(slug);
         }),
       );
     },
 
     getAgentConfig(slug) {
-      return instrumentTigris("getAgentConfig", async () => {
+      return instrumentStorage("getAgentConfig", async () => {
         const cached = configCache.get(slug);
         if (cached !== undefined) return cached;
         const json = await readJson(agentObjectKey(slug, "config.json"));

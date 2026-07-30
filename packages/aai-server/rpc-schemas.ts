@@ -56,7 +56,6 @@ export const IsolateConfigSchema = z
     tts: ProviderDescriptorSchema.optional(),
     s2s: ProviderDescriptorSchema.optional(),
     mode: z.enum(["s2s", "pipeline"]).optional(),
-    kv: ProviderDescriptorSchema.optional(),
     vector: ProviderDescriptorSchema.optional(),
     send: ProviderDescriptorSchema.optional(),
     kind: z.enum(["agent", "workflow"]).optional(),
@@ -80,6 +79,16 @@ export const IsolateConfigSchema = z
   });
 
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
+
+/**
+ * Params for the guest→host `db/query` RPC — one parameterized SQL statement
+ * run against the app's provisioned database (ctx.db). Result is the rows
+ * array, capped host-side (see sandbox-guest-rpc.ts).
+ */
+export const DbQueryParamsSchema = z.object({
+  sql: z.string().min(1),
+  params: z.array(z.unknown()).optional(),
+});
 
 export const ToolCallResponseSchema = z.object({
   result: z.string(),

@@ -8,7 +8,7 @@ import pRetry from "p-retry";
  * Node/undici error codes we treat as transient in addition to the standard
  * `TypeError: fetch failed` wrapper that `is-network-error` recognizes.
  * These surface outside that wrapper (e.g. body-phase socket failures) from
- * fetch() against Tigris / S3-compatible endpoints on Fly.
+ * fetch() against S3-compatible endpoints (Supabase Storage).
  */
 const TRANSIENT_ERROR_CODES = new Set([
   "ECONNRESET",

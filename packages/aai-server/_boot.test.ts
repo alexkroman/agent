@@ -8,15 +8,17 @@ import { DEFAULT_SHUTDOWN_DRAIN_MS } from "./constants.ts";
 
 describe("isLocalDev", () => {
   test("true when AAI_LOCAL_DEV=1", () => {
-    expect(isLocalDev({ AAI_LOCAL_DEV: "1", BUCKET_NAME: "b" })).toBe(true);
+    expect(isLocalDev({ AAI_LOCAL_DEV: "1", SUPABASE_S3_ENDPOINT: "https://x" })).toBe(true);
   });
 
-  test("true when BUCKET_NAME is unset", () => {
+  test("true when SUPABASE_S3_ENDPOINT is unset", () => {
     expect(isLocalDev({})).toBe(true);
   });
 
-  test("false when BUCKET_NAME is set and AAI_LOCAL_DEV is not 1", () => {
-    expect(isLocalDev({ BUCKET_NAME: "prod-bucket" })).toBe(false);
+  test("false when SUPABASE_S3_ENDPOINT is set and AAI_LOCAL_DEV is not 1", () => {
+    expect(isLocalDev({ SUPABASE_S3_ENDPOINT: "https://ref.supabase.co/storage/v1/s3" })).toBe(
+      false,
+    );
   });
 });
 
@@ -65,8 +67,10 @@ describe("assertDevKeys", () => {
     expect(() => assertDevKeys({ AAI_DEV_SKIP_KEY_CHECK: "1" })).not.toThrow();
   });
 
-  test("non-dev (BUCKET_NAME set) never throws", () => {
-    expect(() => assertDevKeys({ BUCKET_NAME: "prod-bucket" })).not.toThrow();
+  test("non-dev (SUPABASE_S3_ENDPOINT set) never throws", () => {
+    expect(() =>
+      assertDevKeys({ SUPABASE_S3_ENDPOINT: "https://ref.supabase.co/storage/v1/s3" }),
+    ).not.toThrow();
   });
 });
 

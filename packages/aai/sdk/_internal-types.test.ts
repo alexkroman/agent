@@ -108,7 +108,6 @@ describe("toAgentConfig", () => {
       stt: desc("assemblyai"),
       llm: desc("anthropic"),
       tts: desc("cartesia"),
-      kv: desc("memory"),
       vector: desc("in-memory"),
       send: desc("slack"),
       allowedHosts: ["api.example.com"],

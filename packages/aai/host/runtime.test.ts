@@ -3,12 +3,12 @@
 // tool plumbing (including sandbox mode), and executeToolCall. Session
 // lifecycle/routing specs live in runtime-lifecycle.test.ts.
 
-import { createStorage } from "unstorage";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
 import { fetchMock } from "../sdk/_test-utils.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
+import type { Db } from "../sdk/db.ts";
 import { anthropic } from "../sdk/providers/llm/anthropic.ts";
 import { assemblyAI } from "../sdk/providers/stt/assemblyai.ts";
 import { cartesia } from "../sdk/providers/tts/cartesia.ts";
@@ -18,7 +18,6 @@ import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 import { executeToolCall } from "./tool-executor.ts";
-import { createUnstorageKv } from "./unstorage-kv.ts";
 
 function makeLogger() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
@@ -84,19 +83,23 @@ describe("createRuntime", () => {
     expect(await exec.executeTool("add", { a: 3, b: 4 }, "s1", [])).toBe("7");
   });
 
-  test("executeTool passes KV to tool context", async () => {
-    const kv = createUnstorageKv({ storage: createStorage() });
-    await kv.set("key1", "value1");
+  test("executeTool passes db to tool context", async () => {
+    const db: Db = {
+      query: async <T>() => [{ value: "value1" }] as T[],
+    };
     const agent = makeAgent({
       tools: {
-        read_kv: {
-          description: "Read from KV",
-          execute: async (_args, ctx) => (await ctx.kv.get<string>("key1")) ?? "missing",
+        read_db: {
+          description: "Read from the database",
+          execute: async (_args, ctx) => {
+            const rows = await ctx.db.query<{ value: string }>("select value from t");
+            return rows[0]?.value ?? "missing";
+          },
         },
       },
     });
-    const exec = createRuntime({ agent, env: {}, kv });
-    expect(await exec.executeTool("read_kv", {}, "s1", [])).toBe("value1");
+    const exec = createRuntime({ agent, env: {}, db });
+    expect(await exec.executeTool("read_db", {}, "s1", [])).toBe("value1");
   });
 
   // providerEnv exists so a self-hosted caller can feed shell-exported
@@ -335,18 +338,18 @@ describe("executeToolCall", () => {
     }
   });
 
-  test("throws KV not available when kv is not provided and tool accesses it", async () => {
+  test("throws storage-not-enabled when db is not provided and tool accesses it", async () => {
     const tool: ToolDef = {
-      description: "Access KV",
+      description: "Access the database",
       execute: async (_args, ctx) => {
-        await ctx.kv.get("key");
+        await ctx.db.query("select 1");
         return "ok";
       },
     };
     const logger = makeLogger();
-    const result = await executeToolCall("kvTool", {}, { tool, env: {}, logger });
+    const result = await executeToolCall("dbTool", {}, { tool, env: {}, logger });
     expect(result).toContain("error");
-    expect(result).toContain("KV not available");
+    expect(result).toContain("Storage is not enabled for this app");
   });
 
   test("uses default empty state when state not provided", async () => {

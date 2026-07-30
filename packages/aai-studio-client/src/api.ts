@@ -10,6 +10,8 @@ export type ProjectData = {
   unpublished?: boolean;
 };
 
+export type StorageStatus = { enabled: boolean };
+
 export type StudioStatus = {
   llm: boolean;
   provider?: string;
@@ -91,6 +93,19 @@ export const api = {
       `/projects/${encodeURIComponent(project)}/file?path=${encodeURIComponent(path)}`,
       { method: "DELETE" },
     ),
+
+  getStorage: (key: string, project: string) =>
+    request<StorageStatus>(key, `/projects/${encodeURIComponent(project)}/storage`),
+
+  enableStorage: (key: string, project: string) =>
+    request<{ ok: true; enabled: true }>(key, `/projects/${encodeURIComponent(project)}/storage`, {
+      method: "POST",
+    }),
+
+  disableStorage: (key: string, project: string) =>
+    request<{ ok: true; enabled: false }>(key, `/projects/${encodeURIComponent(project)}/storage`, {
+      method: "DELETE",
+    }),
 
   deploy: (key: string, project: string, env: Record<string, string>) =>
     request<{ ok: true; slug: string; url: string }>(

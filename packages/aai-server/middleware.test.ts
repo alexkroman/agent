@@ -108,31 +108,22 @@ describe("requireOwner unclaimed-slug paths", () => {
   });
 });
 
-describe("requireOwner on KV endpoint", () => {
-  test("returns 401 without auth on KV endpoint", async () => {
+describe("requireOwner on storage endpoint", () => {
+  test("returns 401 without auth on storage endpoint", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent");
-    const res = await fetch("/my-agent/kv", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "get", key: "test" }),
-    });
+    const res = await fetch("/my-agent/storage", { method: "GET" });
     expect(res.status).toBe(401);
   });
 
-  test("accepts valid owner API key on KV endpoint", async () => {
+  test("accepts valid owner API key on storage endpoint", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent");
-    const res = await fetch("/my-agent/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "get", key: "test" }),
+    const res = await fetch("/my-agent/storage", {
+      method: "GET",
+      headers: { Authorization: "Bearer key1" },
     });
     expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ enabled: false });
   });
 });

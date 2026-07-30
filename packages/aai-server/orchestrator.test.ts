@@ -92,14 +92,13 @@ test("deploy can redeploy same slug", async () => {
   expect(res.status).toBe(200);
 });
 
-test("kv write on an unclaimed (undeployed) slug is rejected", async () => {
+test("storage enable on an unclaimed (undeployed) slug is rejected", async () => {
   const { fetch } = await createTestOrchestrator();
   // No agent deployed at this slug → unclaimed. An authenticated caller must
-  // not be able to pre-seed KV state that the eventual owner would inherit.
-  const res = await fetch("/never-deployed/kv", {
+  // not be able to provision storage the eventual owner would inherit.
+  const res = await fetch("/never-deployed/storage", {
     method: "POST",
     headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-    body: JSON.stringify({ op: "set", key: "k", value: "v" }),
   });
   expect(res.status).toBe(404);
 });
@@ -215,59 +214,12 @@ test("client asset falls back to octet-stream for unknown extension", async () =
   expect(res.headers.get("Content-Type")).toBe("application/octet-stream");
 });
 
-function kvReq(slug: string, apiKey: string, body: Record<string, unknown>): [string, RequestInit] {
-  return [
-    `/${slug}/kv`,
-    {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify(body),
-    },
-  ];
-}
-
-test("kv set and get round-trip", async () => {
-  const { fetch } = await createTestOrchestrator();
-  await deployAgent(fetch, "my-agent");
-  const setRes = await fetch(...kvReq("my-agent", "key1", { op: "set", key: "k1", value: "v1" }));
-  expect(await setRes.json()).toMatchObject({ result: "OK" });
-  const getRes = await fetch(...kvReq("my-agent", "key1", { op: "get", key: "k1" }));
-  expect(await getRes.json()).toMatchObject({ result: "v1" });
-});
-
-test("kv GET returns {error} bodies for missing config and missing key", async () => {
+test("vector POST returns 404 when the agent config is missing", async () => {
   const { fetch, store } = await createTestOrchestrator();
   await deployAgent(fetch, "my-agent");
-
-  // Missing key → 404 with a real error body (was a bare `null`).
-  const missingKey = await fetch("/my-agent/kv?key=nope", {
-    headers: { Authorization: "Bearer key1" },
-  });
-  expect(missingKey.status).toBe(404);
-  expect(await missingKey.json()).toEqual({ error: "key not found" });
-
-  // Missing agent config → 404 too, with a distinct error.
+  // Simulate an agent whose config.json is gone: POST must 404, not silently
+  // fall back to the platform-default backend.
   store.getAgentConfig = () => Promise.resolve(null);
-  const missingConfig = await fetch("/my-agent/kv?key=nope", {
-    headers: { Authorization: "Bearer key1" },
-  });
-  expect(missingConfig.status).toBe(404);
-  expect(await missingConfig.json()).toEqual({ error: "agent not configured" });
-});
-
-test("kv and vector POST return 404 when the agent config is missing", async () => {
-  const { fetch, store } = await createTestOrchestrator();
-  await deployAgent(fetch, "my-agent");
-  // Simulate an agent whose config.json is gone: POST must 404 like GET
-  // does, not silently fall back to the platform-default backend.
-  store.getAgentConfig = () => Promise.resolve(null);
-
-  const kvRes = await fetch(...kvReq("my-agent", "key1", { op: "set", key: "k", value: "v" }));
-  expect(kvRes.status).toBe(404);
-  expect(await kvRes.json()).toEqual({ error: "agent not configured" });
 
   const vecRes = await fetch("/my-agent/vector", {
     method: "POST",
@@ -275,37 +227,6 @@ test("kv and vector POST return 404 when the agent config is missing", async () 
     body: JSON.stringify({ op: "query", text: "hello" }),
   });
   expect(vecRes.status).toBe(404);
-});
-
-test("kv routes reject keys outside the guest RPC key grammar with 400", async () => {
-  const { fetch } = await createTestOrchestrator();
-  await deployAgent(fetch, "my-agent");
-
-  // Keys the guest RPC (SafeKvKeySchema) would refuse must be refused over
-  // HTTP too — otherwise a key set here is unreachable from ctx.kv.
-  for (const key of ["a/b", "a\\b", "..", "a..b"]) {
-    const post = await fetch(...kvReq("my-agent", "key1", { op: "set", key, value: "v" }));
-    expect(post.status).toBe(400);
-    expect(await post.json()).toEqual({ error: "Invalid KV key" });
-
-    const get = await fetch(`/my-agent/kv?key=${encodeURIComponent(key)}`, {
-      headers: { Authorization: "Bearer key1" },
-    });
-    expect(get.status).toBe(400);
-  }
-
-  // Redis-style keys with ':' stay accepted.
-  const ok = await fetch(...kvReq("my-agent", "key1", { op: "set", key: "incident:1", value: 1 }));
-  expect(ok.status).toBe(200);
-});
-
-test("kv scope isolation", async () => {
-  const { fetch } = await createTestOrchestrator();
-  await deployAgent(fetch, "agent-aa", "key1");
-  await deployAgent(fetch, "agent-bb", "key1");
-  await fetch(...kvReq("agent-aa", "key1", { op: "set", key: "secret", value: "a-data" }));
-  const res = await fetch(...kvReq("agent-bb", "key1", { op: "get", key: "secret" }));
-  expect(await res.json()).toMatchObject({ result: null });
 });
 
 describe("/metrics endpoint", () => {

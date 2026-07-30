@@ -278,6 +278,75 @@ const secret = defineCommand({
   subCommands: { put: secretPut, delete: secretDelete, list: secretList },
 });
 
+/** Resolve the working directory for a storage subcommand's optional [dir]. */
+function resolveStorageCwd(dir: string | undefined): string {
+  const cwd = resolveCwd();
+  return dir ? path.resolve(cwd, dir) : cwd;
+}
+
+const storageDir = {
+  type: "positional",
+  description: "Project directory",
+  required: false,
+} as const;
+
+const storageStatus = defineCommand({
+  meta: { name: "status", description: "Show whether storage is enabled" },
+  args: {
+    dir: storageDir,
+    server: sharedArgs.server,
+    json: sharedArgs.json,
+  },
+  async run({ args }) {
+    await runCommand(args, async () => {
+      const { executeStorageStatus } = await import("./storage.ts");
+      return executeStorageStatus(resolveStorageCwd(args.dir), args.server);
+    });
+  },
+});
+
+const storageEnable = defineCommand({
+  meta: { name: "enable", description: "Enable the agent's database (storage)" },
+  args: {
+    dir: storageDir,
+    server: sharedArgs.server,
+    json: sharedArgs.json,
+  },
+  async run({ args }) {
+    await runCommand(args, async () => {
+      const { executeStorageEnable } = await import("./storage.ts");
+      return executeStorageEnable(resolveStorageCwd(args.dir), args.server);
+    });
+  },
+});
+
+const storageDisable = defineCommand({
+  meta: {
+    name: "disable",
+    description: "Disable storage (DROPS the database schema and all its data)",
+  },
+  args: {
+    dir: storageDir,
+    force: { type: "boolean", alias: "f", description: "Skip confirmation prompt" },
+    server: sharedArgs.server,
+    json: sharedArgs.json,
+  },
+  async run({ args }) {
+    await runCommand(args, async () => {
+      const { executeStorageDisable } = await import("./storage.ts");
+      return executeStorageDisable(resolveStorageCwd(args.dir), {
+        server: args.server,
+        force: args.force,
+      });
+    });
+  },
+});
+
+const storage = defineCommand({
+  meta: { name: "storage", description: "Manage the agent's database (storage)" },
+  subCommands: { status: storageStatus, enable: storageEnable, disable: storageDisable },
+});
+
 export const mainCommand = defineCommand({
   meta: { name: "aai", version: VERSION, description: "Voice agent development kit" },
   subCommands: {
@@ -288,6 +357,7 @@ export const mainCommand = defineCommand({
     deploy,
     delete: del,
     secret,
+    storage,
   },
 });
 

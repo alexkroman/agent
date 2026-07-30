@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Converts agent {@link ToolSchema}[] to Vercel AI SDK tools, delegating
- * `execute` to the agent's {@link ExecuteTool} so validation, KV, hooks,
- * and timeouts remain the single source of truth for tool behavior.
+ * `execute` to the agent's {@link ExecuteTool} so validation, tool context,
+ * hooks, and timeouts remain the single source of truth for tool behavior.
  */
 
 import { jsonSchema, type Tool, type ToolExecutionOptions, tool } from "ai";

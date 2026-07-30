@@ -17,7 +17,7 @@ describe("cli", () => {
   test("main command has expected subcommands", () => {
     const subs = mainCommand.subCommands as Record<string, unknown>;
     expect(subs).toBeDefined();
-    for (const cmd of ["init", "dev", "test", "build", "deploy", "delete", "secret"]) {
+    for (const cmd of ["init", "dev", "test", "build", "deploy", "delete", "secret", "storage"]) {
       expect(subs[cmd]).toBeDefined();
     }
   });
@@ -47,6 +47,17 @@ describe("cli", () => {
     expect(secretCmd?.subCommands?.put).toBeDefined();
     expect(secretCmd?.subCommands?.delete).toBeDefined();
     expect(secretCmd?.subCommands?.list).toBeDefined();
+  });
+
+  test("storage subcommand has nested subcommands", () => {
+    const subs = mainCommand.subCommands as Record<
+      string,
+      { subCommands?: Record<string, unknown> }
+    >;
+    const storageCmd = subs.storage;
+    expect(storageCmd?.subCommands?.status).toBeDefined();
+    expect(storageCmd?.subCommands?.enable).toBeDefined();
+    expect(storageCmd?.subCommands?.disable).toBeDefined();
   });
 });
 
@@ -78,6 +89,20 @@ describe("cli usage snapshots", () => {
 
   test.each(["put", "delete", "list"])("aai secret %s --help", async (name) => {
     const usage = await renderUsage(secretSub(name));
+    expect(normalize(usage)).toMatchSnapshot();
+  });
+
+  test("aai storage --help", async () => {
+    const usage = await renderUsage(sub("storage"));
+    expect(normalize(usage)).toMatchSnapshot();
+  });
+
+  const storageSub = (name: string) =>
+    (sub("storage") as { subCommands: Record<string, Parameters<typeof renderUsage>[0]> })
+      .subCommands[name] as Parameters<typeof renderUsage>[0];
+
+  test.each(["status", "enable", "disable"])("aai storage %s --help", async (name) => {
+    const usage = await renderUsage(storageSub(name));
     expect(normalize(usage)).toMatchSnapshot();
   });
 });

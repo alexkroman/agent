@@ -206,24 +206,26 @@ describe("createStudioSandbox", () => {
     expect(fixture.writtenLines.some((l) => l.includes('"shutdown"'))).toBe(true);
   });
 
-  test("registers scratch KV handlers so trial tool runs can use ctx.kv", async () => {
+  test("registers scratch vector handlers but no db handler", async () => {
     const fixture = makeFixture();
     const sandbox = await createStudioSandbox({
       harnessPath: "/tmp/h.mjs",
       spawn: fixture.spawn,
     });
-    // Simulate the guest issuing kv/set then kv/get.
+    // Vector works against a scratch in-memory store.
     fixture.hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: 900, method: "kv/set", params: { key: "a", value: 1 } })}\n`,
+      `${JSON.stringify({ jsonrpc: "2.0", id: 900, method: "vector/upsert", params: { id: "d1", text: "hello" } })}\n`,
     );
+    // No app db in a trial sandbox — db/query is not a registered method.
     fixture.hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: 901, method: "kv/get", params: { key: "a" } })}\n`,
+      `${JSON.stringify({ jsonrpc: "2.0", id: 901, method: "db/query", params: { sql: "select 1" } })}\n`,
     );
     await vi.waitFor(() => {
-      const reply = fixture.writtenLines
-        .map((l) => JSON.parse(l))
-        .find((m: { id?: number }) => m.id === 901);
-      expect(reply?.result).toBe(1);
+      const replies = fixture.writtenLines.map((l) => JSON.parse(l));
+      const upsert = replies.find((m: { id?: number }) => m.id === 900);
+      expect(upsert?.error).toBeUndefined();
+      const db = replies.find((m: { id?: number }) => m.id === 901);
+      expect(db?.error?.message).toContain("Method not found");
     });
     await sandbox.dispose();
   });

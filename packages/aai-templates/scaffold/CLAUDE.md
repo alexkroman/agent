@@ -130,7 +130,8 @@ export default workflow({
       description: "File one expense",
       parameters: z.object({ amount: z.number(), memo: z.string() }),
       async execute({ amount, memo }, ctx) {
-        await ctx.kv.set(`expense:${Date.now()}`, { amount, memo });
+        // Persist via ctx.db (needs storage enabled — see Database section).
+        await ctx.db.query("insert into expenses (amount, memo) values ($1, $2)", [amount, memo]);
         return { filed: true, amount, memo };
       },
     }),
@@ -201,8 +202,8 @@ export default agent({
 });
 ```
 
-Tools, KV, `ctx`, and the UI all behave identically across modes. Only
-the audio + LLM transport differs.
+Tools, the database, `ctx`, and the UI all behave identically across modes.
+Only the audio + LLM transport differs.
 
 **There is no text-only agent mode.** An agent is a voice conversation —
 `tts: none()` on `agent()` is rejected at parse time. Speech-in,
@@ -236,8 +237,8 @@ client-side) plus `history` (prior `{ role, content }` turns — the server
 keeps no session state); the response returns `{ transcript, reply }` and,
 when the TTS provider supports one-shot synthesis (Cartesia), base64
 `audio`. Audio input needs an STT provider with a batch endpoint
-(AssemblyAI); text input works with any. Tools, KV, and `ctx` behave
-exactly as in a voice session. Nothing in agent code opts in — it comes
+(AssemblyAI); text input works with any. Tools, the database, and `ctx`
+behave exactly as in a voice session. Nothing in agent code opts in — it comes
 with pipeline mode. Programmatic clients can use `createSyncSession` /
 `createPttRecorder` (WebRTC push-to-talk capture) from
 `@alexkroman1/aai-ui`. The *default* browser client always uses the
@@ -405,7 +406,8 @@ const myTool = tool({
 
 ```ts
 ctx.env: Readonly<Record<string, string>>     // secrets from .env / aai secret put
-ctx.kv: Kv                                     // persistent KV store (see KV section)
+ctx.state: S                                   // per-session mutable state (agent's `state` factory)
+ctx.db: Db                                     // SQL database, needs storage enabled (see Database section)
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
 ctx.sessionId: string                          // unique session ID
 ctx.send(event: string, data: unknown): void   // push custom event to browser client
@@ -568,20 +570,49 @@ and private/loopback addresses are always blocked.
 If a plain `GET` returning JSON is all you need, `fetch_json` is simpler and
 needs no declaration.
 
-## KV API
+## Database API — `ctx.db`
 
-Persistent key-value store scoped per agent deployment. Access via `ctx.kv`.
+Persistent SQL storage scoped per app, backed by the app's own Postgres
+schema. Access via `ctx.db`:
 
 ```ts
-ctx.kv.get<T>(key: string): Promise<T | null>
-ctx.kv.set(key: string, value: unknown, opts?: { expireIn?: number }): Promise<void>
-ctx.kv.delete(keys: string | string[]): Promise<void>
+ctx.db.query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>
 ```
 
-- Values are JSON-serialized. Max value size: 64 KB.
-- Use colon-prefixed keys: `"user:123"`, `"save:game"`.
-- Scoped per deployment. New slug = fresh namespace.
-- No key enumeration — maintain your own index key if needed.
+One parameterized statement per call, `$1, $2…` placeholders — never
+interpolate values into the SQL string. The rows come back as plain objects;
+`jsonb` columns are returned already parsed (no `JSON.parse` needed).
+
+**Storage must be enabled** or accessing `ctx.db` throws:
+
+- CLI: `aai storage enable`
+- Studio: the Storage toggle
+- `aai dev`: set `DATABASE_URL` in the project `.env`
+
+Create tables lazily from tool code and upsert with `on conflict`:
+
+```ts
+await ctx.db.query(`create table if not exists app_state (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+)`);
+await ctx.db.query(
+  "insert into app_state (key, value, updated_at) values ($1, $2::jsonb, now()) " +
+    "on conflict (key) do update set value = excluded.value, updated_at = now()",
+  ["user:123", JSON.stringify({ name: "Alex" })],
+);
+const rows = await ctx.db.query<{ value: { name: string } }>(
+  "select value from app_state where key = $1",
+  ["user:123"],
+);
+```
+
+Use `ctx.db` for data that must outlive the session (saves, filed records,
+user profiles). For scratch that only the current session needs, prefer
+`ctx.state` (per-session mutable state — no storage required); the
+`remember`/`recall` builtins likewise remain for session-scoped notes the
+LLM manages itself.
 
 ## Custom UI — `client()`
 
@@ -816,8 +847,12 @@ Common mistakes when working in aai projects:
   platform's Modal/Deno sandbox; the self-hosted `aai dev` server has no
   sandbox, so there `run_code` refuses with an error result. Deploy to test
   it end-to-end, or use the `calculate` builtin for simple arithmetic in dev.
-- **KV is per-deployment.** A new slug = fresh namespace. Don't expect
-  data to survive `aai delete` + `aai deploy` with a different name.
+- **`ctx.db` throws until storage is enabled.** Enable it with
+  `aai storage enable` (CLI), the Storage toggle (studio), or `DATABASE_URL`
+  in `.env` (`aai dev`) before shipping tools that persist data.
+- **The database is per-app.** Rows are shared by every session of one
+  deployment — key them yourself if sessions must not see each other's data
+  (or keep session-scoped data in `ctx.state`).
 - **Rime language codes are ISO 639-3** (3-letter, e.g. `"eng"`), not
   ISO 639-1 (`"en"`).
 
@@ -832,6 +867,5 @@ Common mistakes when working in aai projects:
 - Tool execution timeout: 30 seconds
 - `maxSteps` limits tool calls per turn (default 10) — increase for
   multi-tool workflows
-- KV reads return `null` after redeployment with a new slug
 - Tool returns `undefined` if execute function has no return statement —
   always return a value

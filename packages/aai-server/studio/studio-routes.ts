@@ -11,6 +11,8 @@
  * - `DELETE /studio/projects/:project/file`   — delete one file (`?path=`)
  * - `POST /studio/projects/:project/deploy`   — build + deploy the workspace
  * - `POST /studio/projects/:project/sync`     — sync turn against the published agent
+ * - `GET/POST/DELETE /studio/projects/:project/storage` — per-app database
+ *   storage on the published agent (409 until published)
  * - `POST /studio/chat`                       — coding-agent turn (NDJSON stream)
  *
  * Auth: any bearer API key (the platform's self-sovereign key model — same
@@ -21,12 +23,13 @@
 import { errorMessage, MAX_SYNC_BODY_BYTES } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import type { UIMessage } from "ai";
-import { Hono } from "hono";
+import { type Context, Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { HTTPException } from "hono/http-exception";
 import type { HonoEnv } from "../context.ts";
 import { authMw } from "../middleware.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
+import { disableStorage, enableStorage, storageStatus } from "../storage-handler.ts";
 import { handleSyncTurn } from "../sync-turn-handler.ts";
 import { runStudioChat } from "./studio-agent.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
@@ -223,6 +226,41 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
       return c.json({ error: "Project has not been published yet" }, 409);
     }
     return handleSyncTurn(c, workspace.deployedSlug, options.pool);
+  });
+
+  // Storage (per-app database) for the project's *published* agent —
+  // resolved by project name like the sync route, delegating to the same
+  // core the owner `/:slug/storage` routes use. Unpublished project → 409:
+  // storage attaches to a deployed slug, so Publish comes first.
+  const publishedSlug = async (c: Context<HonoEnv>): Promise<string | Response> => {
+    const scope = studioScope(c.var.apiKey);
+    const project = validateProject(c.req.param("project"));
+    const workspace = await getWorkspace(c.env.storage, scope, project);
+    if (!workspace) return c.json({ error: "Project not found" }, 404);
+    if (!workspace.deployedSlug) {
+      return c.json({ error: "Project has not been published yet" }, 409);
+    }
+    return workspace.deployedSlug;
+  };
+
+  studio.get("/projects/:project/storage", async (c) => {
+    const slug = await publishedSlug(c);
+    if (slug instanceof Response) return slug;
+    return c.json(await storageStatus(c.env, slug));
+  });
+
+  studio.post("/projects/:project/storage", async (c) => {
+    const slug = await publishedSlug(c);
+    if (slug instanceof Response) return slug;
+    const { enabled } = await enableStorage(c.env, slug);
+    return c.json({ ok: true, enabled });
+  });
+
+  studio.delete("/projects/:project/storage", async (c) => {
+    const slug = await publishedSlug(c);
+    if (slug instanceof Response) return slug;
+    const { enabled } = await disableStorage(c.env, slug);
+    return c.json({ ok: true, enabled });
   });
 
   studio.post("/chat", async (c) => {

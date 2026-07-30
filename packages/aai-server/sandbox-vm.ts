@@ -8,7 +8,7 @@
  */
 
 import { performance } from "node:perf_hooks";
-import type { Kv } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
 import type { HostGenerateFn, Vector } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
@@ -36,7 +36,7 @@ export type SandboxHandle = {
  * bundle/load. Used by the sandbox pool for warm starts.
  *
  * `listen()` has not been called on the connection yet — the per-agent
- * configuration step (KV/fetch handler registration + bundle/load) will
+ * configuration step (db/fetch handler registration + bundle/load) will
  * call it after handlers are registered.
  */
 export type WarmHarness = {
@@ -53,8 +53,11 @@ export type SandboxVmOptions = {
   workerCode: string;
   env: Record<string, string>;
   harnessPath: string;
-  /** Resolved Kv instance (enables kv/* RPC handlers when set). */
-  kv?: Kv;
+  /**
+   * App database handle (enables the db/query RPC handler and tells the
+   * guest storage is enabled, so ctx.db resolves instead of throwing).
+   */
+  db?: Db;
   /** Resolved Vector instance (enables vector/* RPC handlers when set). */
   vector?: Vector;
   /** Host generate fn (enables the llm/generate RPC handler when set). */
@@ -70,7 +73,7 @@ type WarmHarnessSource = {
 // ── Shared setup ─────────────────────────────────────────────────────────────
 
 /**
- * Finalize a warm harness for a specific agent: register host-side KV/fetch
+ * Finalize a warm harness for a specific agent: register host-side db/fetch
  * handlers, start listening on the connection, and send bundle/load. Returns
  * the configured SandboxHandle.
  *
@@ -82,7 +85,7 @@ type WarmHarnessSource = {
 async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Promise<SandboxHandle> {
   const { conn } = warm;
 
-  // Host serves guest KV/Vector/fetch requests — see sandbox-guest-rpc.ts.
+  // Host serves guest db/Vector/fetch requests — see sandbox-guest-rpc.ts.
   registerGuestRpcHandlers(conn, opts);
 
   conn.listen();
@@ -95,6 +98,9 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
     await conn.sendRequest("bundle/load", {
       code: opts.workerCode,
       env: opts.env,
+      // Tells the guest whether ctx.db is live (proxied over db/query) or
+      // should throw the storage-not-enabled guidance.
+      storageEnabled: opts.db !== undefined,
     });
   } catch (err) {
     // bundle/load can now time out (a bundle whose top level never resolves).
@@ -169,7 +175,7 @@ export async function describeBundle(
     (await opts.pool?.acquire()) ??
     (await spawn({ harnessPath: opts.harnessPath, slug: "studio-inspect" }));
   try {
-    // Register the standard guest-RPC handlers (with no KV/Vector bound) so a
+    // Register the standard guest-RPC handlers (with no db/Vector bound) so a
     // bundle whose top level issues a guest→host request gets an error reply
     // instead of wedging the load until the RPC timeout.
     registerGuestRpcHandlers(warm.conn, {});

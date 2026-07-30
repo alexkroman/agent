@@ -1,32 +1,37 @@
-import type { GenerateOptions, Kv, ToolContext } from "@alexkroman1/aai";
+import type { Db, GenerateOptions, ToolContext } from "@alexkroman1/aai";
 import { toAgentConfig } from "@alexkroman1/aai/manifest";
 import { describe, expect, test, vi } from "vitest";
 import agentDef from "./agent.ts";
 
-function makeKv(): { kv: Kv; store: Map<string, unknown> } {
+/**
+ * Map-backed fake of the app database, implementing exactly the two SQL
+ * statements fileRecord emits (create table / upsert). Values are stored
+ * parsed, the way a postgres driver returns jsonb.
+ */
+function makeDb(): { db: Db; store: Map<string, unknown> } {
   const store = new Map<string, unknown>();
-  const kv: Kv = {
-    async get<T>(key: string) {
-      return (store.get(key) as T) ?? null;
-    },
-    async set(key, value) {
-      store.set(key, value);
-    },
-    async delete(keys) {
-      for (const k of Array.isArray(keys) ? keys : [keys]) store.delete(k);
+  const db: Db = {
+    async query<T>(sql: string, params: unknown[] = []): Promise<T[]> {
+      if (sql.startsWith("create table if not exists app_state")) return [];
+      if (sql.startsWith("insert into app_state")) {
+        const [key, json] = params as [string, string];
+        store.set(key, JSON.parse(json)); // $2::jsonb — parsed like postgres would
+        return [];
+      }
+      throw new Error(`unexpected SQL in test: ${sql}`);
     },
   };
-  return { kv, store };
+  return { db, store };
 }
 
 function makeCtx(
   overrides: Partial<ToolContext> = {},
 ): ToolContext & { store: Map<string, unknown> } {
-  const { kv, store } = makeKv();
+  const { db, store } = makeDb();
   return {
     env: {},
     state: {},
-    kv,
+    db,
     vector: {} as ToolContext["vector"],
     generate: () => Promise.reject(new Error("generate not mocked")),
     messages: [],
@@ -100,7 +105,7 @@ describe("debrief-workflow template", () => {
     ).rejects.toThrow();
   });
 
-  test("file_quote, order_part, and schedule_followup persist records to ctx.kv", async () => {
+  test("file_quote, order_part, and schedule_followup persist records to ctx.db", async () => {
     const ctx = makeCtx();
 
     const quote = (await agentDef.tools?.file_quote?.execute(
@@ -119,7 +124,7 @@ describe("debrief-workflow template", () => {
     expect(quote.filed).toBe(true);
     expect(order.ordered).toBe(true);
     expect(followup.scheduled).toBe(true);
-    // Each record landed in KV under its returned id, with a filed timestamp.
+    // Each record landed in the database under its returned id, with a filed timestamp.
     for (const { id } of [quote, order, followup]) {
       expect(ctx.store.get(id)).toMatchObject({ filedAt: expect.any(String) });
     }

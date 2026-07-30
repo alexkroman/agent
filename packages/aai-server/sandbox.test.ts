@@ -84,7 +84,6 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
   return {
     workerCode: 'export default { name: "test" };',
     env: { AAI_ENV_TEST: "1" },
-    storage: createTestStorage(),
     slug: "test-agent",
     agentConfig: TEST_AGENT_CONFIG,
     ...overrides,
@@ -125,7 +124,6 @@ describe("createSandbox", () => {
         slug: "test-agent",
         workerCode: opts.workerCode,
         env: opts.env,
-        kv: expect.objectContaining({ get: expect.any(Function), set: expect.any(Function) }),
         vector: expect.objectContaining({
           upsert: expect.any(Function),
           query: expect.any(Function),
@@ -233,7 +231,7 @@ describe("createSandbox", () => {
     }
   });
 
-  it("passes resolved kv and vector to createSandboxVm for given slug", async () => {
+  it("passes resolved vector to createSandboxVm for given slug", async () => {
     const { createSandboxVm } = await import("./sandbox-vm.ts");
 
     const sandbox = createSandbox(makeSandboxOptions({ slug: "my-custom-agent" }));
@@ -241,7 +239,6 @@ describe("createSandbox", () => {
     expect(createSandboxVm).toHaveBeenCalledWith(
       expect.objectContaining({
         slug: "my-custom-agent",
-        kv: expect.objectContaining({ get: expect.any(Function), set: expect.any(Function) }),
         vector: expect.objectContaining({
           upsert: expect.any(Function),
           query: expect.any(Function),

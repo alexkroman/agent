@@ -48,11 +48,6 @@
       "types": "./dist/sdk/providers/vector-barrel.d.ts",
       "import": "./dist/sdk/providers/vector-barrel.js"
     },
-    "./kv": {
-      "@dev/source": "./sdk/providers/kv-barrel.ts",
-      "types": "./dist/sdk/providers/kv-barrel.d.ts",
-      "import": "./dist/sdk/providers/kv-barrel.js"
-    },
     "./send": {
       "@dev/source": "./sdk/providers/send-barrel.ts",
       "types": "./dist/sdk/providers/send-barrel.d.ts",
@@ -98,8 +93,8 @@
     "nanoevents": "^10.0.0",
     "p-event": "^7.1.0",
     "p-timeout": "^7.0.1",
+    "postgres": "^3.4.9",
     "undici": "^8.9.0",
-    "unstorage": "^1.17.5",
     "ws": "^8.21.1",
     "zod": "^4.4.3"
   },

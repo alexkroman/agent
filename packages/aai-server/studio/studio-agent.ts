@@ -272,7 +272,7 @@ export function createStudioTools(
         "build errors, load errors, and the extracted agent config. Pass " +
         "`tool` and `args` to also invoke one of the agent's tools with " +
         "sample arguments and see its result. Secrets are NOT available in " +
-        "test runs (ctx.env is empty); KV is a scratch store.",
+        "test runs (ctx.env is empty); ctx.db is unavailable (storage disabled).",
       inputSchema: z.object({
         tool: z.string().optional().describe("Name of an agent tool to invoke after loading"),
         args: z

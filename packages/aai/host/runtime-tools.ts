@@ -10,7 +10,7 @@
 
 import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
-import type { Kv } from "../sdk/kv.ts";
+import type { Db } from "../sdk/db.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { openSender } from "../sdk/providers/send/open.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
@@ -83,7 +83,8 @@ type ToolSetupDeps = {
   opts: RuntimeOptions;
   env: Record<string, string>;
   providerEnv: Record<string, string>;
-  resolvedKv: Kv;
+  /** ctx.db when storage is enabled; undefined makes ctx.db access throw. */
+  resolvedDb: Db | undefined;
   resolvedVector: Vector;
   logger: NonNullable<RuntimeOptions["logger"]>;
   sinkMap: Map<string, ClientSink>;
@@ -97,8 +98,8 @@ type SendTool = ReturnType<typeof resolveSendBuiltin> | null;
  * Build the ctx.generate implementation for this runtime: the agent's
  * effective LLM descriptor (platform passes it as a runtime option, `aai dev`
  * reads the agent's own field) with credentials from `providerEnv` — the same
- * env KV/Vector descriptors resolve from. Provider HTTP traffic is exempt
- * from the tool-egress guard like ctx.kv/ctx.vector: the call executes on the
+ * env Vector descriptors resolve from. Provider HTTP traffic is exempt
+ * from the tool-egress guard like ctx.db/ctx.vector: the call executes on the
  * host (over RPC in production), so `allowedHosts` never applies to it.
  */
 function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
@@ -115,7 +116,7 @@ function setupSandboxTools(
   rpcExecuteTool: ExecuteTool,
   sendTool: SendTool,
 ): ToolSetup {
-  const { agent, opts, env, resolvedKv, resolvedVector, logger } = deps;
+  const { agent, opts, env, resolvedDb, resolvedVector, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const generate = setupGenerate(deps);
   const resolved = resolveSandboxBuiltins(agent, opts, builtinFetchOpt);
@@ -139,7 +140,7 @@ function setupSandboxTools(
         tool,
         env: frozenEnv,
         sessionId: sessionId ?? "",
-        kv: resolvedKv,
+        db: resolvedDb,
         vector: resolvedVector,
         messages,
         generate,
@@ -162,7 +163,7 @@ function setupSandboxTools(
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetup {
-  const { agent, opts, env, resolvedKv, resolvedVector, logger, sinkMap, stateMap } = deps;
+  const { agent, opts, env, resolvedDb, resolvedVector, logger, sinkMap, stateMap } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const customNames = new Set(Object.keys(agent.tools ?? {}));
   const builtinNames = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
@@ -188,11 +189,14 @@ function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetu
 
   // There is no sandbox on this path, so `allowedHosts` has nothing enforcing
   // it: tool code would reach any host locally and then fail once deployed.
-  // See tool-egress.ts — builtins and ctx.kv/ctx.vector stay exempt, matching
+  // See tool-egress.ts — builtins and ctx.db/ctx.vector stay exempt, matching
   // what the platform actually restricts.
   installToolFetchGuard();
   const allowedHosts = agent.allowedHosts ?? [];
-  const kv = exemptFromToolEgress(resolvedKv);
+  // db traffic is a TCP socket, not fetch, so the guard never sees it — the
+  // exemption is kept anyway for parity with vector (and any future
+  // HTTP-backed Db implementation).
+  const db = resolvedDb ? exemptFromToolEgress(resolvedDb) : undefined;
   const vector = exemptFromToolEgress(resolvedVector);
   const generate = setupGenerate(deps);
 
@@ -206,7 +210,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetu
         env: frozenEnv,
         state: getState(sessionId ?? ""),
         sessionId: sessionId ?? "",
-        kv,
+        db,
         vector,
         messages,
         generate,

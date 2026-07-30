@@ -10,6 +10,7 @@ import { ApiError, api, type ProjectData, parseSecrets, type StudioStatus } from
 import logoUrl from "./assets/assemblyai-logomark.svg";
 import { ChatPanel } from "./chat.tsx";
 import { PreviewPane } from "./preview.tsx";
+import { StorageControl, storageQueryKey } from "./storage.tsx";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the
 // default (Live) path shouldn't pay for it.
@@ -38,6 +39,8 @@ type PublishMenuProps = {
   busy: boolean;
   error?: string | undefined;
   deployedSlug?: string | undefined;
+  apiKey: string;
+  project: string | null;
   secrets: string;
   onSecretsChange: (value: string) => void;
   onPublish: () => void;
@@ -84,6 +87,9 @@ function PublishMenu(props: PublishMenuProps) {
           Live at {agentUrl(props.deployedSlug)}
         </a>
       )}
+      {/* Storage is a setting on the *published* agent, so it lives with
+          the Publish affordance — the same menu that lifts its 409 gate. */}
+      {props.project && <StorageControl apiKey={props.apiKey} project={props.project} />}
     </div>
   );
 }
@@ -270,6 +276,8 @@ export function App({ apiKey, onSignOut }: AppProps) {
     mutationFn: () => api.deploy(apiKey, project as string, parseSecrets(secrets)),
     onSuccess: () => {
       invalidateWorkspace();
+      // A first publish lifts the storage toggle's "publish first" gate.
+      if (project) void queryClient.invalidateQueries({ queryKey: storageQueryKey(project) });
       // The published agent changed — reload the live iframe.
       setPreviewNonce((n) => n + 1);
       setPublishOpen(false);
@@ -328,6 +336,8 @@ export function App({ apiKey, onSignOut }: AppProps) {
         busy={publish.isPending}
         error={publishError}
         deployedSlug={deployedSlug}
+        apiKey={apiKey}
+        project={project}
         secrets={secrets}
         onSecretsChange={setSecrets}
         onPublish={() => publish.mutate()}

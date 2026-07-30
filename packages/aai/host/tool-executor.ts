@@ -10,8 +10,8 @@ import pTimeout from "p-timeout";
 import type { z } from "zod";
 import { EMPTY_PARAMS } from "../sdk/_internal-types.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
+import type { Db } from "../sdk/db.ts";
 import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
-import type { Kv } from "../sdk/kv.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
@@ -29,7 +29,7 @@ type ExecuteToolCallOptions = {
   env: Readonly<Record<string, string>>;
   state?: Record<string, unknown>;
   sessionId?: string | undefined;
-  kv?: Kv | undefined;
+  db?: Db | undefined;
   vector?: Vector | undefined;
   messages?: readonly Message[] | undefined;
   /** Host LLM generation (ctx.generate); absent contexts throw on use. */
@@ -42,14 +42,20 @@ type ExecuteToolCallOptions = {
 };
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, kv, vector, messages, sessionId, send, signal, generate } = opts;
+  const { env, state, db, vector, messages, sessionId, send, signal, generate } = opts;
   return {
     env,
     state: state ?? {},
     ...(signal !== undefined ? { signal } : {}),
-    get kv(): Kv {
-      if (!kv) throw new Error("KV not available");
-      return kv;
+    get db(): Db {
+      if (!db) {
+        throw new Error(
+          "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
+            "the Storage toggle in the studio; under `aai dev`, set DATABASE_URL in the " +
+            "project .env.",
+        );
+      }
+      return db;
     },
     get vector(): Vector {
       if (!vector) throw new Error("Vector not available");

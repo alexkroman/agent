@@ -31,10 +31,7 @@ export const DEFAULT_SHUTDOWN_DRAIN_MS = 120_000;
 export const DRAIN_POLL_MS = 250;
 
 // ── Storage layout ──
-// Single source of truth for the `agents/{slug}` storage namespace. Note
-// that the platform-default KV lives under the same prefix, so a prefix
-// sweep of `agentPrefix(slug)` (deploy/delete) also removes the agent's
-// KV data.
+// Single source of truth for the `agents/{slug}` storage namespace.
 
 /** Root storage prefix for everything belonging to one agent. */
 export function agentPrefix(slug: string): string {
@@ -44,11 +41,6 @@ export function agentPrefix(slug: string): string {
 /** Storage key for one file of an agent's bundle (manifest, worker, client assets). */
 export function agentObjectKey(slug: string, file: string): string {
   return `${agentPrefix(slug)}/${file}`;
-}
-
-/** Storage prefix for the agent's platform-default KV data. */
-export function agentKvPrefix(slug: string): string {
-  return `${agentPrefix(slug)}/kv`;
 }
 
 /** Locate the built Deno guest harness (overridable via GUEST_HARNESS_PATH). */

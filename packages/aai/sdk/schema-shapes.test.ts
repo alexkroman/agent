@@ -4,9 +4,6 @@ import { AgentConfigSchema, ToolSchemaSchema } from "./_internal-types.ts";
 import {
   ClientEventSchema,
   ClientMessageSchema,
-  KvDelSchema,
-  KvGetSchema,
-  KvSetSchema,
   ReadyConfigSchema,
   ServerMessageSchema,
 } from "./protocol.ts";
@@ -49,18 +46,6 @@ describe("protocol schema shapes", () => {
 
   test("ReadyConfigSchema shape", () => {
     expect(shapeKeys(ReadyConfigSchema)).toMatchSnapshot();
-  });
-
-  test("KvGetSchema shape", () => {
-    expect(shapeKeys(KvGetSchema)).toMatchSnapshot();
-  });
-
-  test("KvSetSchema shape", () => {
-    expect(shapeKeys(KvSetSchema)).toMatchSnapshot();
-  });
-
-  test("KvDelSchema shape", () => {
-    expect(shapeKeys(KvDelSchema)).toMatchSnapshot();
   });
 });
 

@@ -2,14 +2,15 @@
 /**
  * Guest → host RPC surface for sandboxed agents.
  *
- * The Deno guest has no network or filesystem access; every KV, Vector, and
+ * The Deno guest has no network or filesystem access; every db, Vector, and
  * fetch operation is proxied to the host over the sandbox's NDJSON channel.
  * This module owns that surface: the Zod schemas that validate untrusted
  * guest params, and the handler registration wired onto a connection before
  * it starts listening (see `configureSandbox` in sandbox-vm.ts).
  */
 
-import { errorMessage, type Kv } from "@alexkroman1/aai";
+import type { Db } from "@alexkroman1/aai";
+import { errorMessage } from "@alexkroman1/aai";
 import {
   VectorDeleteSchema,
   VectorQuerySchema,
@@ -18,36 +19,17 @@ import {
 import type { HostGenerateFn, Vector } from "@alexkroman1/aai/runtime";
 import { z } from "zod";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
+import { DbQueryParamsSchema } from "./rpc-schemas.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
 
-// ── KV param schemas for guest → host validation ────────────────────────────
+// ── Db result cap ────────────────────────────────────────────────────────────
 
 /**
- * Safe KV key: non-empty, no path traversal. The agent prefix
- * (`agents/${slug}/kv`) uses `/` as the namespace separator, so we reject `/`,
- * `\`, `..`, and null bytes. `:` is allowed — it's a common Redis-style
- * delimiter for hierarchical keys (e.g. `incident:INC-0001`) and isn't used
- * by the prefix scheme.
+ * Max rows one `db/query` RPC returns to the guest. A runaway `select *`
+ * must not stream an unbounded result set through the NDJSON pipe (and the
+ * guest's memory); callers paginate with LIMIT/OFFSET past this.
  */
-const SafeKvKeySchema = z
-  .string()
-  .min(1)
-  .refine((k) => !k.includes("\0"), "Key must not contain null bytes")
-  .refine((k) => !k.includes("/"), "Key must not contain /")
-  .refine((k) => !k.includes("\\"), "Key must not contain \\")
-  .refine((k) => !k.includes(".."), "Key must not contain ..");
-
-const KvGetParamsSchema = z.object({ key: SafeKvKeySchema });
-const KvSetParamsSchema = z.object({
-  key: SafeKvKeySchema,
-  // No size refine here: every resolved Kv (platform default and BYO alike)
-  // goes through `createUnstorageKv`, whose `set` already enforces
-  // MAX_VALUE_SIZE — re-stringifying up to 64 KB per call just to measure it
-  // would duplicate that check.
-  value: z.unknown(),
-  expireIn: z.number().int().positive().optional(),
-});
-const KvDelParamsSchema = z.object({ key: SafeKvKeySchema });
+export const MAX_DB_RESULT_ROWS = 1000;
 
 // ── Vector param schemas for guest → host validation ────────────────────────
 
@@ -100,8 +82,8 @@ const GenerateParamsSchema = z.object({
 // ── Handler registration ─────────────────────────────────────────────────────
 
 export type GuestRpcOptions = {
-  /** Resolved Kv instance (enables kv/* RPC handlers when set). */
-  kv?: Kv | undefined;
+  /** App database handle (enables the db/query RPC handler when set). */
+  db?: Db | undefined;
   /** Resolved Vector instance (enables vector/* RPC handlers when set). */
   vector?: Vector | undefined;
   /** Host generate fn (enables the llm/generate RPC handler when set). */
@@ -110,29 +92,20 @@ export type GuestRpcOptions = {
 };
 
 /**
- * Register the host-side KV/Vector/fetch RPC handlers for one guest
+ * Register the host-side db/Vector/fetch RPC handlers for one guest
  * connection. Must run BEFORE `conn.listen()` so no incoming guest messages
  * are dropped.
  */
 export function registerGuestRpcHandlers(conn: NdjsonConnection, opts: GuestRpcOptions): void {
-  // Host serves guest KV requests (params validated with Zod).
-  if (opts.kv) {
-    const kv = opts.kv;
-    conn.onRequest("kv/get", async (raw: unknown) => {
-      const p = KvGetParamsSchema.parse(raw);
-      return await kv.get(p.key);
-    });
-    conn.onRequest("kv/set", async (raw: unknown) => {
-      const p = KvSetParamsSchema.parse(raw);
-      if (p.expireIn !== undefined) {
-        await kv.set(p.key, p.value, { expireIn: p.expireIn });
-      } else {
-        await kv.set(p.key, p.value);
-      }
-    });
-    conn.onRequest("kv/del", async (raw: unknown) => {
-      const p = KvDelParamsSchema.parse(raw);
-      await kv.delete(p.key);
+  // Host serves guest ctx.db queries against the app's provisioned database
+  // (params validated with Zod). JSON-serializability of row values is the
+  // caller's problem — non-serializable values fail the NDJSON write.
+  if (opts.db) {
+    const db = opts.db;
+    conn.onRequest("db/query", async (raw: unknown) => {
+      const p = DbQueryParamsSchema.parse(raw);
+      const rows = await db.query(p.sql, p.params);
+      return rows.length > MAX_DB_RESULT_ROWS ? rows.slice(0, MAX_DB_RESULT_ROWS) : rows;
     });
   }
 

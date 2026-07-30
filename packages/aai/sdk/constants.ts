@@ -107,9 +107,10 @@ export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [
 ];
 
 /**
- * TTL for the `remember`/`recall` session-notes KV record. Notes are scoped
- * to one voice session, which is bounded by the idle timeout — a generous TTL
- * only guarantees abandoned sessions' notes don't accumulate in the store.
+ * TTL for a session's `remember`/`recall` notes in the in-process store.
+ * Notes are scoped to one voice session, which is bounded by the idle
+ * timeout — a generous TTL only guarantees abandoned sessions' notes don't
+ * accumulate in the host process.
  */
 export const SESSION_NOTES_TTL_MS = 86_400_000;
 

@@ -7,7 +7,7 @@
  */
 
 import type { ToolSchema } from "../sdk/_internal-types.ts";
-import type { Kv } from "../sdk/kv.ts";
+import type { Db } from "../sdk/db.ts";
 import type { ClientSink, ReadyConfig } from "../sdk/protocol.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
 import type { SyncTurnRequest, SyncTurnResponse } from "../sdk/sync.ts";
@@ -47,7 +47,7 @@ export type AgentRuntime = {
 /**
  * Configuration for {@link createRuntime}.
  *
- * Configures the agent, environment, KV store, logging, and S2S connection.
+ * Configures the agent, environment, database, logging, and S2S connection.
  *
  * @public
  */
@@ -56,7 +56,7 @@ export type RuntimeOptions = {
   agent: AgentDef<any>;
   env: Record<string, string>;
   /**
-   * Environment used to resolve provider credentials (STT/TTS/LLM/KV/Vector).
+   * Environment used to resolve provider credentials (STT/TTS/LLM/Vector).
    * Defaults to {@link RuntimeOptions.env}.
    *
    * Exists so a self-hosted caller can let shell-exported credentials reach
@@ -66,7 +66,13 @@ export type RuntimeOptions = {
    * everything from the agent's own stored env.
    */
   providerEnv?: Record<string, string> | undefined;
-  kv?: Kv | undefined;
+  /**
+   * SQL database exposed to tool code as `ctx.db`. When omitted, the runtime
+   * connects one itself from `DATABASE_URL` in the provider env (self-hosted
+   * `aai dev` parity with the platform's storage toggle); with neither,
+   * `ctx.db` access throws.
+   */
+  db?: Db | undefined;
   /**
    * Vector store. If omitted, an in-memory store is created. The
    * runtime overrides this with `agent.vector` if set.

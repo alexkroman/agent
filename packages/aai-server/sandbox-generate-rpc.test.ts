@@ -3,7 +3,7 @@
  * The guest's `ctx.generate` surface: the llm/generate RPC handler that
  * `registerGuestRpcHandlers` wires when a host generate fn is supplied, and
  * `createSandbox` handing that fn to the VM options. Generation is a host
- * capability like KV — the guest has no network — so if either half is
+ * capability like ctx.db — the guest has no network — so if either half is
  * dropped, deployed tool code calling `ctx.generate` fails with a bare
  * "Method not found" while `aai dev` works: exactly the parity drift the
  * one-implementation rule exists to prevent.

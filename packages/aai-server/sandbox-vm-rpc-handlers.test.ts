@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Tests for the vector/* and kv/* RPC handlers that configureSandbox
+ * Tests for the vector/* and db/query RPC handlers that configureSandbox
  * registers on the host↔guest NDJSON connection.
  *
  * Split from sandbox-vm.test.ts; shared helpers live in
@@ -8,6 +8,7 @@
  */
 
 import type { PassThrough } from "node:stream";
+import type { Db } from "@alexkroman1/aai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   autorespondBundleLoad,
@@ -18,6 +19,7 @@ import {
   waitForResponseId,
 } from "./_sandbox-vm-test-utils.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
+import { MAX_DB_RESULT_ROWS } from "./sandbox-guest-rpc.ts";
 import { _internals } from "./sandbox-vm.ts";
 
 // ── Vector RPC handler tests ──────────────────────────────────────────────────
@@ -275,9 +277,9 @@ describe("fetch/request handler", () => {
   });
 });
 
-// ── kv/* delegation through resolved Kv tests ────────────────────────────────
+// ── db/query delegation through the injected Db ─────────────────────────────
 
-describe("kv/* handlers via injected Kv", () => {
+describe("db/query handler via injected Db", () => {
   let hostReadable: PassThrough;
   let hostWritable: PassThrough;
   let writtenLines: string[];
@@ -296,103 +298,101 @@ describe("kv/* handlers via injected Kv", () => {
     hostWritable.destroy();
   });
 
-  it("kv/get delegates to provided Kv instance", async () => {
-    const getSpy = vi.fn().mockResolvedValue("injected-value");
-    const kv = {
-      get: getSpy,
-      set: vi.fn().mockResolvedValue(undefined),
-      delete: vi.fn().mockResolvedValue(undefined),
-    };
-
-    const opts = baseOpts({ kv });
+  async function configure(db: Db) {
+    const opts = baseOpts({ db });
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
     const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     detach();
+    return handle;
+  }
+
+  it("db/query delegates sql + params to the provided Db", async () => {
+    const querySpy = vi.fn().mockResolvedValue([{ id: 1 }, { id: 2 }]);
+    const handle = await configure({ query: querySpy });
 
     const reqId = 601;
     hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: reqId, method: "kv/get", params: { key: "mykey" } })}\n`,
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: reqId,
+        method: "db/query",
+        params: { sql: "select * from notes where id = $1", params: [1] },
+      })}\n`,
     );
 
     await waitForResponseId(writtenLines, reqId);
 
-    expect(getSpy).toHaveBeenCalledWith("mykey");
+    expect(querySpy).toHaveBeenCalledWith("select * from notes where id = $1", [1]);
 
     const response = findResponseById(writtenLines, reqId);
-    expect(response?.result).toBe("injected-value");
+    expect(response?.error).toBeUndefined();
+    expect(response?.result).toEqual([{ id: 1 }, { id: 2 }]);
 
     handle.conn.dispose();
   });
 
-  it("kv/set delegates to provided Kv instance", async () => {
-    const setSpy = vi.fn().mockResolvedValue(undefined);
-    const kv = {
-      get: vi.fn().mockResolvedValue(null),
-      set: setSpy,
-      delete: vi.fn().mockResolvedValue(undefined),
-    };
-
-    const opts = baseOpts({ kv });
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
+  it("db/query omits params when the guest sends none", async () => {
+    const querySpy = vi.fn().mockResolvedValue([]);
+    const handle = await configure({ query: querySpy });
 
     const reqId = 602;
     hostReadable.push(
       `${JSON.stringify({
         jsonrpc: "2.0",
         id: reqId,
-        method: "kv/set",
-        params: { key: "mykey", value: "myvalue" },
+        method: "db/query",
+        params: { sql: "select 1" },
       })}\n`,
     );
 
     await waitForResponseId(writtenLines, reqId);
 
-    expect(setSpy).toHaveBeenCalledWith("mykey", "myvalue");
-
-    const response = findResponseById(writtenLines, reqId);
-    expect(response?.error).toBeUndefined();
-
+    expect(querySpy).toHaveBeenCalledWith("select 1", undefined);
     handle.conn.dispose();
   });
 
-  it("kv/del delegates to provided Kv instance", async () => {
-    const deleteSpy = vi.fn().mockResolvedValue(undefined);
-    const kv = {
-      get: vi.fn().mockResolvedValue(null),
-      set: vi.fn().mockResolvedValue(undefined),
-      delete: deleteSpy,
-    };
-
-    const opts = baseOpts({ kv });
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
+  it("db/query caps the returned rows at MAX_DB_RESULT_ROWS", async () => {
+    const rows = Array.from({ length: MAX_DB_RESULT_ROWS + 50 }, (_, i) => ({ i }));
+    const handle = await configure({ query: vi.fn().mockResolvedValue(rows) });
 
     const reqId = 603;
     hostReadable.push(
       `${JSON.stringify({
         jsonrpc: "2.0",
         id: reqId,
-        method: "kv/del",
-        params: { key: "mykey" },
+        method: "db/query",
+        params: { sql: "select * from big" },
       })}\n`,
     );
 
     await waitForResponseId(writtenLines, reqId);
 
-    expect(deleteSpy).toHaveBeenCalledWith("mykey");
+    const response = findResponseById(writtenLines, reqId);
+    expect(response).toBeDefined();
+    expect((response as { result: unknown[] }).result.length).toBe(MAX_DB_RESULT_ROWS);
+    handle.conn.dispose();
+  });
+
+  it("db/query rejects malformed params (empty sql)", async () => {
+    const querySpy = vi.fn().mockResolvedValue([]);
+    const handle = await configure({ query: querySpy });
+
+    const reqId = 604;
+    hostReadable.push(
+      `${JSON.stringify({
+        jsonrpc: "2.0",
+        id: reqId,
+        method: "db/query",
+        params: { sql: "" },
+      })}\n`,
+    );
+
+    await waitForResponseId(writtenLines, reqId);
 
     const response = findResponseById(writtenLines, reqId);
-    expect(response?.error).toBeUndefined();
-
+    expect(response?.error).toBeDefined();
+    expect(querySpy).not.toHaveBeenCalled();
     handle.conn.dispose();
   });
 });

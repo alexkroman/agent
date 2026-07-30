@@ -2,15 +2,19 @@
 /**
  * Node.js entry point for the AAI platform server.
  *
- * Creates the Hono orchestrator backed by Tigris S3 via unstorage and starts
- * a Node.js HTTP server with WebSocket upgrade support via `ws`.
+ * Creates the Hono orchestrator backed by Supabase Storage (S3-compatible)
+ * via unstorage — with agent secrets in Supabase Vault and per-app databases
+ * in Supabase Postgres — and starts a Node.js HTTP server with WebSocket
+ * upgrade support via `ws`.
  */
 
 import { createMemoryVector, createPineconeVector, type Vector } from "@alexkroman1/aai/runtime";
 import { serve } from "@hono/node-server";
+import postgres from "postgres";
 import { createStorage } from "unstorage";
 import { assertDevKeys, isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize } from "./_boot.ts";
 import { waitForIdle } from "./_drain.ts";
+import { type AppDatabases, createAppDatabases } from "./app-database.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
 import { initHostCapacityGauges, metrics } from "./metrics.ts";
@@ -20,7 +24,12 @@ import { createS3Storage } from "./s3-storage.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import { createSlotCache, registerSlotsForGauges } from "./sandbox-slots.ts";
 import { spawnWarmHarness } from "./sandbox-vm.ts";
-import { importMasterKey } from "./secrets.ts";
+import {
+  createMemorySecretStore,
+  createVaultSecretStore,
+  type SecretStore,
+  type SqlExec,
+} from "./secret-store.ts";
 
 function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
   const size = resolvePoolSize(env.SANDBOX_POOL_SIZE);
@@ -34,28 +43,53 @@ function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
   });
 }
 
-function buildStorage(env: NodeJS.ProcessEnv): {
-  storage: ReturnType<typeof createStorage>;
-  secret: string;
-} {
+function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createStorage> {
   if (isLocalDev(env)) {
     console.info("Local dev mode: unstorage memory driver for all storage");
-    return { storage: createStorage(), secret: "local-dev-secret" };
+    return createStorage();
   }
   const required = requireEnv(env, [
-    "BUCKET_NAME",
-    "AWS_ACCESS_KEY_ID",
-    "AWS_SECRET_ACCESS_KEY",
-    "KV_SCOPE_SECRET",
+    "SUPABASE_S3_ENDPOINT",
+    "SUPABASE_S3_ACCESS_KEY_ID",
+    "SUPABASE_S3_SECRET_ACCESS_KEY",
+    "SUPABASE_STORAGE_BUCKET",
   ]);
-  const storage = createS3Storage({
-    bucket: required.BUCKET_NAME,
-    endpoint: env.AWS_ENDPOINT_URL_S3 ?? "https://fly.storage.tigris.dev",
-    region: "auto",
-    accessKeyId: required.AWS_ACCESS_KEY_ID,
-    secretAccessKey: required.AWS_SECRET_ACCESS_KEY,
+  return createS3Storage({
+    bucket: required.SUPABASE_STORAGE_BUCKET,
+    endpoint: required.SUPABASE_S3_ENDPOINT,
+    // Supabase's S3-compatible endpoint expects the project's region string.
+    region: env.SUPABASE_S3_REGION ?? "us-east-1",
+    accessKeyId: required.SUPABASE_S3_ACCESS_KEY_ID,
+    secretAccessKey: required.SUPABASE_S3_SECRET_ACCESS_KEY,
   });
-  return { storage, secret: required.KV_SCOPE_SECRET };
+}
+
+/**
+ * Platform Postgres surface: Supabase Vault for secrets and per-app database
+ * provisioning, both over `SUPABASE_DB_URL` (service-role connection string).
+ * Required in production; local dev falls back to an in-memory secret store
+ * (and no per-app databases unless SUPABASE_DB_URL is set).
+ */
+function buildPlatformDb(env: NodeJS.ProcessEnv): {
+  secrets: SecretStore;
+  appDb?: AppDatabases;
+} {
+  const url = env.SUPABASE_DB_URL;
+  if (!url) {
+    if (!isLocalDev(env)) {
+      requireEnv(env, ["SUPABASE_DB_URL"]); // throws with the standard message
+    }
+    console.info("Local dev mode: in-memory secret store; per-app databases disabled");
+    return { secrets: createMemorySecretStore() };
+  }
+  // `prepare: false` keeps the client compatible with transaction-mode
+  // poolers (Supavisor / PgBouncer) in front of the Supabase database.
+  const sql = postgres(url, { max: 4, prepare: false });
+  const exec: SqlExec = async (query, params) => [...(await sql.unsafe(query, params as never))];
+  return {
+    secrets: isLocalDev(env) ? createMemorySecretStore() : createVaultSecretStore(exec),
+    appDb: createAppDatabases({ url, sql: exec }),
+  };
 }
 
 function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
@@ -67,17 +101,19 @@ function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
   return (slug) => createPineconeVector({ apiKey, index, namespace: slug });
 }
 
-async function buildOpts(env: NodeJS.ProcessEnv): Promise<OrchestratorOpts> {
-  const { storage, secret } = buildStorage(env);
-  const masterKey = await importMasterKey(secret);
+function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
+  const storage = buildStorage(env);
+  const { secrets, appDb } = buildPlatformDb(env);
   const slots = createSlotCache();
   registerSlotsForGauges(slots);
   const pool = buildPool(env);
   return {
     slots,
-    store: createBundleStore(storage, { masterKey }),
+    store: createBundleStore(storage, { secrets }),
     storage,
+    secrets,
     defaultVector: buildDefaultVector(env),
+    ...(appDb && { appDb }),
     ...(pool && { pool }),
   };
 }
@@ -105,7 +141,7 @@ async function main(): Promise<void> {
   // replica keeps accepting the sessions it is waiting to finish.
   let draining = false;
   const opts: OrchestratorOpts = {
-    ...(await buildOpts(env)),
+    ...buildOpts(env),
     isDraining: () => draining,
   };
 

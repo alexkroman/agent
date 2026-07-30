@@ -117,7 +117,7 @@ Six workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
-| `packages/aai/` | `@alexkroman1/aai` | Shared core: manifest, types, protocol, S2S, session, KV |
+| `packages/aai/` | `@alexkroman1/aai` | Shared core: manifest, types, protocol, S2S, session, Db |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
 | `packages/aai-server/` | `aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
@@ -143,14 +143,13 @@ script enforces this at CI time.
 
 Subpath exports consumed by sibling packages and user agents:
 
-- `.` — `agent()`, `tool()` helpers, `Kv`, types, utils, constants
+- `.` — `agent()`, `tool()` helpers, `Db`, types, utils, constants
 - `./utils` — zod-free utilities + platform slug contract (fast CLI startup path)
 - `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
 - `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
 - `./manifest` — `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`
 - `./stt` — pipeline-mode STT provider factories (e.g. `assemblyAI`)
 - `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
-- `./kv` — KV provider factories (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`)
 - `./vector` — Vector provider factories (`pinecone`, `inMemoryVector`)
 - `./send` — Send-channel factories + resolver (`slack`, `openSender`)
 
@@ -171,7 +170,7 @@ boundary** — this split is critical for sandbox security:
 
 - **`sdk/`** — shared modules with **zero Node.js dependencies**. Safe to
   run in browsers, Deno, and sandboxed environments. Contains:
-  `types.ts`, `kv.ts`, `hooks.ts`, `utils.ts`, `constants.ts`,
+  `types.ts`, `db.ts`, `hooks.ts`, `utils.ts`, `constants.ts`,
   `protocol.ts`, `system-prompt.ts`, `manifest.ts`,
   `ws-upgrade.ts`, `_internal-types.ts`, `define.ts` (`agent()` and
   `tool()` helpers for authoring `agent.ts` files).
@@ -185,7 +184,7 @@ boundary** — this split is critical for sandbox security:
   implementations, including `pipeline-turn-outcome.ts` — the three ways a
   pipeline turn ends: interrupted by barge-in, failed, or spoken), `to-vercel-tools.ts`,
   `providers/` (STT/TTS openers + descriptor→instance resolvers),
-  `builtin-tools.ts`, `unstorage-kv.ts`.
+  `builtin-tools.ts`, `postgres-db.ts`.
 
 **Rule**: When adding new SDK code, place it in `sdk/` if it has no
 `node:` dependencies. Moving code from `sdk/` → `host/` is safe;
@@ -244,7 +243,7 @@ restrictions apply there.
 - `sandbox-agent-config.ts` — maps the deploy-time `IsolateConfig` onto the
   runtime's agent definition + provider options (`toRuntimeAgent`,
   `pipelineProviderOpts`, `toHostBaseAgent`)
-- `sandbox-guest-rpc.ts` — guest→host KV/Vector/fetch RPC schemas + handler registration
+- `sandbox-guest-rpc.ts` — guest→host db/Vector/fetch RPC schemas + handler registration
 - `sandbox-pool.ts` — pool of pre-warmed Deno harnesses for fast cold starts
 - `sandbox-network.ts` — network proxying for sandbox
 - `sandbox-slots.ts` — slot allocation for concurrent sessions
@@ -258,13 +257,21 @@ restrictions apply there.
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
-- `bundle-store.ts` — agent bundle storage (S3/memory). Redeploy
-  (`putAgent`) replaces the bundle objects but **preserves** the agent's
-  platform-default KV data under `agentKvPrefix`; only `deleteAgent`
-  (the delete route) wipes KV.
+- `bundle-store.ts` — agent bundle storage (Supabase Storage via its
+  S3-compatible endpoint in production, memory in dev/tests). Agent env
+  lives in Supabase Vault through the injected `SecretStore`, not in the
+  manifest blob.
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
-- `kv-handler.ts` — KV store HTTP API
+- `secret-store.ts` — `SecretStore` interface: Supabase Vault
+  (`createVaultSecretStore`, over the `SUPABASE_DB_URL` Postgres
+  connection) in production, in-memory for local dev/tests. Holds agent
+  env (`agent-env:<slug>`) and app-database credentials (`app-db:<slug>`)
+- `app-database.ts` — per-app Postgres schema/role provisioning in the
+  platform Supabase database (`provisionAppDatabase`,
+  `deprovisionAppDatabase`, `openAppDb`)
+- `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
+  toggling the app's database
 - `metrics.ts` — Prometheus metrics registry and definitions; mounted at
   `/metrics` (internal-only).
 - `studio/` — the browser studio server side (see "Browser studio"):
@@ -398,7 +405,8 @@ voice agents without the CLI:
   (a remote Modal Sandbox). `test_agent` builds the workspace, loads the
   bundle there (repeat `bundle/load` replaces it), validates the config,
   and can trial-run one of the agent's tools via `tool/execute` against a
-  scratch KV/Vector — no tenant data, no secrets in the guest. Deploy
+  scratch Vector (no db — ctx.db reports storage-not-enabled) — no tenant
+  data, no secrets in the guest. Deploy
   config extraction reuses the same sandbox; the standalone deploy route
   uses a throwaway one (`describeBundle` in `sandbox-vm.ts`). The LLM
   orchestration itself stays host-side — the guest has no network device
@@ -531,7 +539,7 @@ default view never renders it.
 ### `ctx.generate` and workflow patterns (`@alexkroman1/aai/patterns`)
 
 Tool `execute` code gets one-shot LLM generation via `ctx.generate` — a
-**host capability like `ctx.kv`**: the guest has no network, so the platform
+**host capability like `ctx.db`**: the guest has no network, so the platform
 proxies it over the `llm/generate` guest RPC (`sandbox-guest-rpc.ts` +
 `guest/harness-rpc.ts:generateAdapter`), while `aai dev` runs it in-process.
 One implementation, `createGenerateFn` (`host/generate.ts`, exported from
@@ -539,7 +547,7 @@ One implementation, `createGenerateFn` (`host/generate.ts`, exported from
 the pipeline model, credentials from the agent env only. Defaults to the
 agent's own pipeline `llm`; a per-call `llm` descriptor works for S2S agents
 holding that provider's key. In self-hosted mode the fn is exempted from the
-tool-egress fetch guard (like kv/vector) — provider traffic is
+tool-egress fetch guard (like db/vector) — provider traffic is
 infrastructure, not agent egress.
 
 `GenerateOptions.schema` is **plain JSON Schema, never a Zod schema** — the
@@ -812,19 +820,24 @@ voices on AssemblyAI's S2S API:
 | `sophie` | UK | Clear, smooth, instructive, simple |
 | `oliver` | UK | Narrative, conversational |
 
-### Pluggable storage (KV + Vector)
+### Storage (`ctx.db`) + Vector
 
-Each session resolves its `Kv` and `Vector` instances at start. If `agent.ts`
-declares `kv:` / `vector:`, the descriptor resolves with the agent's env (BYO
-Redis, BYO Pinecone, etc.). If omitted, the platform default is used: Tigris S3
-for KV, Pinecone (or in-memory) for Vector.
+There is no KV store anymore. Persistent state is the opt-in **app
+database**: enabling storage for an app (CLI `aai storage enable`, the
+studio's Storage toggle, or `DATABASE_URL` in the project `.env` under
+`aai dev`) gives its tools `ctx.db` — a SQL handle
+(`query<T>(sql, params?)`, `$1` placeholders) backed by a per-app schema in
+the platform's Supabase Postgres. Accessing `ctx.db` without storage
+enabled throws with that enablement guidance. On the platform each app
+gets its own schema + login role (search_path pinned, 10s
+statement_timeout); credentials live in Supabase Vault. Session-scoped
+scratch belongs in `ctx.state` (or the `remember`/`recall` builtins, now
+in-memory per-session).
 
-Both are available to tool `execute` functions via `ctx.kv` and `ctx.vector`
-(see `ToolContext` in `packages/aai/sdk/types.ts`).
-
-Provider factories are imported from the `@alexkroman1/aai/kv` and
-`@alexkroman1/aai/vector` subpath exports (both resolve to `sdk/providers/`
-so they carry no Node.js dependencies and are safe in sandboxed environments).
+`Vector` is unchanged: `agent.ts` may declare `vector:` (BYO Pinecone,
+resolved with the agent's env), else the platform default applies. Both
+`ctx.db` and `ctx.vector` reach the guest as host-proxied RPC
+(`db/query`, `vector/*`).
 
 ### Send channels (`send: slack()`)
 
@@ -907,8 +920,8 @@ exemptions, both matching what the platform actually restricts:
 - **Built-in network tools** (`fetch_json`, `visit_webpage`,
   `get_page_design`, `web_search`)
   execute host-side in production too, where `allowedHosts` never applies.
-- **`ctx.kv` / `ctx.vector`** are RPC methods in the guest, not `fetch`, so
-  a BYO `s3Kv`/`pinecone` provider's endpoint needs no declaration.
+- **`ctx.db` / `ctx.vector`** are RPC methods in the guest, not `fetch`, so
+  the database (and a BYO `pinecone` endpoint) needs no declaration.
   `exemptFromToolEgress()` proxies them to run outside the scope.
 
 `node:async_hooks` is banned in `sdk/` (which must stay Node-free) but
@@ -928,7 +941,7 @@ and loads from a `blob:` URL, and sibling harness modules are bundled in.
 | Modal memory/CPU limits (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) | works in dev, fails in prod | `aai dev` runs tools in the host process with no caps; a memory-hungry tool OOMs only when deployed. |
 | `run_code` | fails in dev, works in prod | The host-side guard refuses rather than evaluating in-process. Fail-closed, so harmless. |
 | `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. The prod failure is a loud auth error at session start. |
-| KV/Vector defaults (memory vs Tigris/Pinecone), KV prefix `""` vs `kv:{hash}:{slug}:` | prod is stricter | Data doesn't persist across dev restarts; prod is the more isolated side. |
+| `ctx.db` backing (BYO `DATABASE_URL` in dev vs platform-provisioned schema+role) | prod is stricter | Dev connects wherever the developer points it; prod pins search_path + statement_timeout on a per-app role. |
 | Platform sandboxes need Modal credentials | prod is stricter | `aai dev` runs tools in-process; the platform (any machine with `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`) spawns real Modal sandboxes — see "Modal sandbox notes". |
 
 **`agent()` re-declares its parameter shape inline** rather than deriving it
@@ -1162,7 +1175,7 @@ of subpath exports in `aai/package.json`:
 
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
-| `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, KV, utils, constants, `agent()`/`tool()` helpers |
+| `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, Db, utils, constants, `agent()`/`tool()` helpers |
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …) + the slug contract (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`). Deliberately dependency-free so the CLI can load it on every invocation without paying zod's startup cost |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
@@ -1170,7 +1183,6 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
 | `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `gateway`) |
 | `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
-| `@alexkroman1/aai/kv` | `sdk/providers/kv-barrel.ts` | KV provider factories + types (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
 | `@alexkroman1/aai/send` | `sdk/providers/send-barrel.ts` | Send-channel factories + resolver (`slack`, `openSender`, `Sender`) |
 | `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox. Renamed from `./workflow` (which collided with the `workflow()` app kind) |
@@ -1518,7 +1530,7 @@ Key properties:
 The server can pre-spawn a pool of "warm" Deno harnesses (process running,
 NDJSON wired, no bundle loaded) so first-session cold starts skip the
 slow `Modal sandbox create → Deno JIT init` path. On acquire, the
-harness is finalized for the requesting agent by registering KV/fetch
+harness is finalized for the requesting agent by registering db/fetch
 handlers and sending `bundle/load` — a single round-trip.
 
 - **Enable**: set `SANDBOX_POOL_SIZE` to a positive integer (max 16).
@@ -1559,19 +1571,22 @@ stored env at sandbox creation time and kept host-side only.
 - **Vector store**: `PINECONE_API_KEY` is platform-owned by default. Agents
   that declare `vector: pinecone(...)` use their own key via
   `aai secret put PINECONE_API_KEY=...`.
-- **KV store**: same model — platform default uses platform creds; agent
-  descriptors (`redisKv`, `s3Kv`) read from agent env (`REDIS_URL`,
-  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
+- **App database**: per-app Postgres role/schema credentials are
+  platform-provisioned and held in Supabase Vault — never in the agent's
+  env, so tenant code can't read them.
+- **Agent secrets**: stored in Supabase Vault (`agent-env:<slug>`), not
+  encrypted blobs — the old master-key envelope encryption
+  (`KV_SCOPE_SECRET`) is gone.
 - **Credential resolution reads the agent env only — never `process.env`.**
   The platform host process holds its own credentials under exactly the names a
   tenant descriptor resolves (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for
-  the shared Tigris bucket, `PINECONE_API_KEY`), so a fallback let an agent that
-  declared `s3Kv`/`pinecone` with no credential of its own borrow the
-  platform's, aimed at a bucket/endpoint/index it chose.
+  Supabase storage, `PINECONE_API_KEY`), so a fallback let an agent that
+  declared `pinecone` with no credential of its own borrow the
+  platform's, aimed at an endpoint/index it chose.
 
   There are **two** such helpers and both must stay sealed — closing only one
   leaves the leak open, since between them they cover every provider:
-  - `resolveApiKey` (`providers/resolve.ts`) — `s3Kv`, `redisKv`.
+  - `resolveApiKey` (`providers/resolve.ts`) — descriptor-declared env keys.
   - `requireApiKey` (`providers/_utils.ts`) — every STT/TTS opener, every LLM
     (via `resolve.ts`'s `requireKey`), and Pinecone.
 
@@ -1584,8 +1599,8 @@ stored env at sandbox creation time and kept host-side only.
 
 **Cross-agent isolation:**
 
-- KV keys prefixed `kv:{keyHash}:{slug}:{key}` — agents cannot access
-  each other's data.
+- App databases are separate Postgres schemas with per-app login roles —
+  agents cannot access each other's data.
 - Each sandbox communicates via isolated NDJSON over stdio.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
@@ -1706,7 +1721,7 @@ is multi-tenant and an agent's WebSocket is deliberately **unauthenticated** —
 anyone with the URL can talk to it. Allowing prompt/tool overrides on that
 footing would make every deployed agent an open LLM proxy billed to its owner.
 So `?host=1` requires `Authorization: Bearer <api key>` on the upgrade,
-verified against slug ownership (the check `/:slug/secret` and `/:slug/kv`
+verified against slug ownership (the check `/:slug/secret` and `/:slug/storage`
 already use). `startHostSession` gained an `allowHost` option so the platform
 can gate on ownership instead of the env flag, which would be all-or-nothing
 across tenants.
@@ -1832,5 +1847,5 @@ session start, so `opened.length === 1` can hold while every sandbox fails.
 ### Known limitations
 
 - **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`)
-  and `aai-ui` (`.`). Subpath exports (e.g. `./kv`,
+  and `aai-ui` (`.`). Subpath exports (e.g. `./vector`,
   `./protocol`) are not covered by type tests.

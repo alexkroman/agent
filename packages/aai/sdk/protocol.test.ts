@@ -12,7 +12,6 @@ import {
   CLIENT_MESSAGE_TYPES,
   ClientEventSchema,
   ClientMessageSchema,
-  KvRequestSchema,
   lenientParse,
   SessionErrorCodeSchema,
   VectorRequestSchema,
@@ -29,43 +28,6 @@ describe("protocol constants", () => {
 
   test("TOOL_EXECUTION_TIMEOUT_MS is 30000", () => {
     expect(TOOL_EXECUTION_TIMEOUT_MS).toBe(30_000);
-  });
-});
-
-describe("KvRequestSchema", () => {
-  test("accepts valid get request", () => {
-    const result = KvRequestSchema.safeParse({
-      op: "get",
-      key: "my-key",
-    });
-    expect(result.success).toBe(true);
-  });
-
-  test("accepts valid set request with ttl", () => {
-    const result = KvRequestSchema.safeParse({
-      op: "set",
-      key: "my-key",
-      value: "my-value",
-      ttl: 3600,
-    });
-    expect(result.success).toBe(true);
-  });
-
-  // The Kv interface accepts `value: unknown` — ensure the schema matches.
-  test.each([{ nested: true }, [1, 2, 3], null, 42])(
-    "set accepts non-string value: %j",
-    (value) => {
-      const result = KvRequestSchema.safeParse({ op: "set", key: "k", value });
-      expect(result.success).toBe(true);
-    },
-  );
-
-  test("rejects empty key on get", () => {
-    const result = KvRequestSchema.safeParse({
-      op: "get",
-      key: "",
-    });
-    expect(result.success).toBe(false);
   });
 });
 

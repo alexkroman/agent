@@ -15,11 +15,9 @@ export type Message = {
   content: string;
 };
 
-// Minimal Kv-shaped adapter passed to tool contexts
-export type KvAdapter = {
-  get<T = unknown>(key: string): Promise<T | null>;
-  set(key: string, value: unknown, options?: { expireIn?: number }): Promise<void>;
-  delete(key: string | string[]): Promise<void>;
+// Minimal Db-shaped adapter passed to tool contexts (mirrors the SDK's `Db`)
+export type DbAdapter = {
+  query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
 
 export type VectorMatch = {
@@ -61,7 +59,8 @@ export type GenerateAdapter = (options: GenerateOptions) => Promise<GenerateResu
 export type ToolContext = {
   env: Readonly<Record<string, string>>;
   state: Record<string, unknown>;
-  kv: KvAdapter;
+  /** App database. Accessing it with storage disabled throws guidance. */
+  db: DbAdapter;
   vector: VectorAdapter;
   generate: GenerateAdapter;
   sessionId: string;

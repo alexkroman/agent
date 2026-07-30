@@ -4,7 +4,7 @@ import { createS3Storage, type S3StorageOptions } from "./s3-storage.ts";
 
 const BASE_OPTS = {
   bucket: "test-bucket",
-  endpoint: "https://fly.storage.tigris.dev",
+  endpoint: "https://example.supabase.co/storage/v1/s3",
   region: "auto",
   accessKeyId: "AKIATEST",
   secretAccessKey: "secret",
@@ -47,7 +47,7 @@ describe("createS3Storage getKeys", () => {
 
     expect(requests).toHaveLength(1);
     const url = requests[0] as URL;
-    expect(url.origin).toBe("https://fly.storage.tigris.dev");
+    expect(url.origin).toBe("https://example.supabase.co/storage/v1/s3");
     expect(url.pathname).toBe("/test-bucket");
     expect(url.searchParams.get("list-type")).toBe("2");
     // unstorage normalizes the base to `studio:scope-a:`; the driver must

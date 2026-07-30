@@ -126,8 +126,7 @@ export const opsRunScenario = tool({
   }),
   async execute(args, ctx) {
     return updateState(
-      ctx.kv,
-      ctx.sessionId,
+      ctx,
       (state) => {
         // The zod enum guarantees the scenario key exists.
         const s = scenarios[args.scenario] as ScenarioDef;

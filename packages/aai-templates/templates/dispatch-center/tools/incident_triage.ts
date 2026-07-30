@@ -30,8 +30,7 @@ export const incidentTriage = tool({
   }),
   async execute(args, ctx) {
     return updateState(
-      ctx.kv,
-      ctx.sessionId,
+      ctx,
       (state) => {
         const inc = findIncident(state, args.incidentId);
         if ("error" in inc) return inc;

@@ -8,7 +8,7 @@ export const incidentGet = tool({
     incidentId: z.string().max(20).describe("The incident ID"),
   }),
   async execute(args, ctx) {
-    const state = await getState(ctx.kv, ctx.sessionId);
+    const state = getState(ctx);
     const inc = findIncident(state, args.incidentId);
     if ("error" in inc) return inc;
 

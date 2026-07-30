@@ -5,7 +5,6 @@ import { assertProviderTriple } from "./config-rules.ts";
 import { type Manifest, parseManifest } from "./manifest.ts";
 import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
 import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
-import { redisKv } from "./providers/kv/redis.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAI } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
@@ -188,20 +187,14 @@ describe("manifest type contracts", () => {
   });
 });
 
-describe("parseManifest kv/vector", () => {
-  test("propagates kv descriptor", () => {
-    const m = parseManifest({ name: "x", kv: redisKv() });
-    expect(m.kv).toEqual({ kind: "redis", options: {} });
-  });
-
+describe("parseManifest vector", () => {
   test("propagates vector descriptor", () => {
     const m = parseManifest({ name: "x", vector: pinecone({ index: "ix" }) });
     expect(m.vector).toEqual({ kind: "pinecone", options: { index: "ix" } });
   });
 
-  test("leaves both undefined when omitted", () => {
+  test("leaves vector undefined when omitted", () => {
     const m = parseManifest({ name: "x" });
-    expect(m.kv).toBeUndefined();
     expect(m.vector).toBeUndefined();
   });
 });

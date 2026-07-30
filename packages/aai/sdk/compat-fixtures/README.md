@@ -21,6 +21,7 @@ fixture stays to protect any stragglers.
 
 - `ServerMessage` — all server-to-client WebSocket JSON messages
 - `ClientMessage` — all client-to-server WebSocket JSON messages
-- `KvRequest` — KV operations (also used by the sidecar since it shares
-  the same schema)
 - `constants` — wire-format constants (audio format, sample rates, error codes)
+
+`KvRequest` was covered until KV support was removed from the SDK (a
+deliberate breaking change — the guest RPC no longer has KV operations).

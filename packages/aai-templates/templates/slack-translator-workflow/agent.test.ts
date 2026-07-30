@@ -37,7 +37,7 @@ describe("slack-translator-workflow template", () => {
   test("prepare_french_translation echoes both sides of the translation", async () => {
     const prepare = agentDef.tools?.prepare_french_translation;
     expect(prepare).toBeDefined();
-    // The tool is a pure function of its args — no kv, no env, no ctx.send —
+    // The tool is a pure function of its args — no db, no env, no ctx.send —
     // so an empty context is enough and a full stub would be noise.
     const result = await prepare?.execute(
       { original_text: "See you tomorrow", french_text: "À demain" },

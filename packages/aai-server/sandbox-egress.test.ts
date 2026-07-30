@@ -30,7 +30,6 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type SandboxOptions } from "./sandbox.ts";
-import { createTestStorage } from "./test-utils.ts";
 
 const { mockCreateSandboxVm } = vi.hoisted(() => {
   const mockConn: NdjsonConnection = {
@@ -101,7 +100,6 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
   return {
     workerCode: 'export default { name: "test" };',
     env: { AAI_ENV_TEST: "1" },
-    storage: createTestStorage(),
     slug: "test-agent",
     agentConfig: BASE_CONFIG,
     ...overrides,

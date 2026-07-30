@@ -17,9 +17,11 @@ Deploy:
 Required Modal Secret named ``aai-server`` with (at least):
 
 - ``MODAL_TOKEN_ID`` / ``MODAL_TOKEN_SECRET`` — for creating guest sandboxes
-- ``BUCKET_NAME`` / ``AWS_ACCESS_KEY_ID`` / ``AWS_SECRET_ACCESS_KEY`` /
-  ``AWS_ENDPOINT_URL_S3`` — Tigris S3 storage
-- ``KV_SCOPE_SECRET`` — KV key-scope HMAC secret
+- ``SUPABASE_S3_ENDPOINT`` / ``SUPABASE_S3_ACCESS_KEY_ID`` /
+  ``SUPABASE_S3_SECRET_ACCESS_KEY`` / ``SUPABASE_STORAGE_BUCKET`` — Supabase
+  Storage (S3-compatible); optional ``SUPABASE_S3_REGION``
+- ``SUPABASE_DB_URL`` — service-role Postgres connection string (Vault
+  secrets + per-app databases)
 - optional: ``PINECONE_API_KEY`` / ``PINECONE_INDEX``, ``ASSEMBLYAI_API_KEY``,
   ``BRAVE_API_KEY``, ``SANDBOX_POOL_SIZE``
 """

@@ -1,9 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { Kv } from "@alexkroman1/aai";
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { createStorage, type Storage } from "unstorage";
-import { vi } from "vitest";
 import { registry } from "./metrics.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
@@ -71,20 +69,6 @@ export function histogramCount(name: string, labels?: Record<string, string>): n
   const entries = Object.values(m.hashMap);
   if (!labels) return entries.reduce((sum, e) => sum + (e.count ?? 0), 0);
   return entries.find((e) => entryMatches(e, labels))?.count ?? 0;
-}
-
-/** In-memory mock KV store backed by a Map. All methods are vi.fn() spies. */
-export function createMockKv(): Kv {
-  const store = new Map<string, unknown>();
-  return {
-    get: vi.fn(async (key: string) => store.get(key) ?? null) as Kv["get"],
-    set: vi.fn(async (key: string, value: unknown) => {
-      store.set(key, value);
-    }),
-    delete: vi.fn(async (key: string) => {
-      store.delete(key);
-    }),
-  };
 }
 
 export const VALID_ENV: Record<string, string> = {};

@@ -88,13 +88,12 @@ import { requireApiKey } from "./_utils.ts";
  *
  * This deliberately does NOT fall back to the host's `process.env`. On the
  * managed platform the host process holds the platform's own credentials
- * (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for the shared Tigris bucket,
- * `PINECONE_API_KEY`, …) under exactly the names a tenant descriptor resolves.
- * With a fallback, an agent that declared `kv: s3Kv({ bucket, endpoint })` or
- * `vector: pinecone({ index })` and supplied no credential of its own silently
- * borrowed the platform's — aimed at a bucket, endpoint, or index the tenant
- * chose. Whoever builds `env` now decides what a provider can authenticate
- * with; see `withHostCredentialFallback` for the self-hosted opt-in.
+ * (`PINECONE_API_KEY`, …) under exactly the names a tenant descriptor
+ * resolves. With a fallback, an agent that declared `vector: pinecone({
+ * index })` and supplied no credential of its own silently borrowed the
+ * platform's — aimed at an index the tenant chose. Whoever builds `env` now
+ * decides what a provider can authenticate with; see
+ * `withHostCredentialFallback` for the self-hosted opt-in.
  */
 export function resolveApiKey(envVar: string, env: Record<string, string>): string {
   return env[envVar] ?? "";
