@@ -169,10 +169,14 @@ export function buildContainerRunArgs(params: AppleContainerRunParams): string[]
 
 // ── Default context (the real CLI) ───────────────────────────────────────────
 
-function realContext(): AppleContainerSpawnContext {
+/**
+ * `binary` is injectable so tests can point at a name that resolves nowhere
+ * — exercising the error paths without ever running a real container.
+ */
+function realContext(binary = "container"): AppleContainerSpawnContext {
   return {
     runGuestContainer(params) {
-      const child = spawn("container", buildContainerRunArgs(params), {
+      const child = spawn(binary, buildContainerRunArgs(params), {
         stdio: ["ignore", "pipe", "pipe"],
       });
       const wait = new Promise<number>((resolve) => {
@@ -190,7 +194,7 @@ function realContext(): AppleContainerSpawnContext {
     },
     async stopGuestContainer(name) {
       await new Promise<void>((resolve) => {
-        const stop = spawn("container", ["stop", name], { stdio: "ignore" });
+        const stop = spawn(binary, ["stop", name], { stdio: "ignore" });
         // Best-effort by contract: an already-stopped container is fine.
         stop.once("error", () => resolve());
         stop.once("close", () => resolve());
@@ -294,6 +298,7 @@ export async function spawnAppleContainerWarm(
 /** @internal Exposed for unit tests only. */
 export const _internals = {
   getFreePort,
+  realContext,
   resetCliProbe(): void {
     cliMemo = null;
   },

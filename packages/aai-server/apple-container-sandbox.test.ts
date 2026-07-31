@@ -12,11 +12,13 @@ import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { createFakeGuestSocket, type FakeGuestSocket } from "./_sandbox-vm-test-utils.ts";
 import {
+  _internals,
   type AppleContainerRunParams,
   type AppleContainerSpawnContext,
   type BackendProbe,
   buildContainerRunArgs,
   type ContainerProcLike,
+  isAppleContainerCliAvailable,
   resolveSandboxBackend,
   spawnAppleContainerWarm,
 } from "./apple-container-sandbox.ts";
@@ -313,5 +315,61 @@ describe("spawnAppleContainerWarm", () => {
     await p1;
     expect(ctx.stops).toHaveLength(1);
     expect(warm.alive()).toBe(false);
+  });
+
+  it("asyncDispose notifies the guest, disposes the connection, and stops the container", async () => {
+    const fake = makeFakeProc();
+    const ctx = makeCtx(fake);
+    const socket = createFakeGuestSocket();
+    const { dial } = makeFakeDial(socket);
+    const harnessPath = await makeHarnessFile();
+    const warm = await spawnAppleContainerWarm({ harnessPath }, ctx, dial);
+
+    await warm[Symbol.asyncDispose]();
+    expect(socket.sentMessages().some((m) => m.method === "shutdown")).toBe(true);
+    expect(ctx.stops).toHaveLength(1);
+    expect(warm.alive()).toBe(false);
+  });
+});
+
+// ── The real CLI context ─────────────────────────────────────────────────────
+// Exercised against a binary name that resolves nowhere, so the error paths
+// run everywhere without ever invoking a real `container` CLI (which a
+// contributor's macOS machine might actually have).
+
+describe("realContext", () => {
+  const NO_SUCH_BINARY = "aai-test-no-such-container-cli";
+
+  it("settles wait() and tolerates kill() when the CLI is missing", async () => {
+    const ctx = _internals.realContext(NO_SUCH_BINARY);
+    const proc = ctx.runGuestContainer({
+      name: "aai-guest-test",
+      image: "node:24-slim",
+      hostPort: 1,
+      env: { AAI_GUEST_TOKEN: "tok" },
+      harnessDir: "/tmp/nowhere",
+    });
+    await expect(proc.wait()).resolves.toBe(-1);
+    expect(() => proc.kill()).not.toThrow();
+    // The pipes exist even though the process never ran; draining them ends.
+    await expect(proc.stdout.getReader().read()).resolves.toMatchObject({ done: true });
+    await expect(proc.stderr.getReader().read()).resolves.toMatchObject({ done: true });
+  });
+
+  it("stopGuestContainer resolves best-effort when the CLI is missing", async () => {
+    const ctx = _internals.realContext(NO_SUCH_BINARY);
+    await expect(ctx.stopGuestContainer("aai-guest-test")).resolves.toBeUndefined();
+  });
+});
+
+// ── CLI probe ────────────────────────────────────────────────────────────────
+
+describe("isAppleContainerCliAvailable", () => {
+  it("answers a boolean and memoizes it", () => {
+    _internals.resetCliProbe();
+    const first = isAppleContainerCliAvailable();
+    expect(typeof first).toBe("boolean");
+    expect(isAppleContainerCliAvailable()).toBe(first);
+    _internals.resetCliProbe();
   });
 });
