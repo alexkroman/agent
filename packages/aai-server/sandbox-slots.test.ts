@@ -182,6 +182,63 @@ describe("idle sandbox eviction", () => {
     expect(sandbox.shutdown).not.toHaveBeenCalled();
   });
 
+  it("scales in idle replicas while the primary stays busy", async () => {
+    const cache = createSlotCache();
+    const slot = makeSlot("scaled");
+    setSlot(cache, slot);
+    const sandbox = makeSandbox(() => Promise.resolve(2));
+    attachSandbox(cache, slot, sandbox);
+    const busyReplica = makeSandbox(() => Promise.resolve(1));
+    const idleReplica = makeSandbox(() => Promise.resolve(0));
+    slot.replicas = [busyReplica, idleReplica];
+
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+
+    // Only the idle replica was reclaimed; the timer re-armed.
+    expect(idleReplica.shutdown).toHaveBeenCalledOnce();
+    expect(busyReplica.shutdown).not.toHaveBeenCalled();
+    expect(sandbox.shutdown).not.toHaveBeenCalled();
+    expect(slot.replicas).toEqual([busyReplica]);
+    expect(slot.idleTimer).toBeDefined();
+  });
+
+  it("keeps an idle primary alive while a replica still has sessions", async () => {
+    const cache = createSlotCache();
+    const slot = makeSlot("tail");
+    setSlot(cache, slot);
+    const sandbox = makeSandbox(() => Promise.resolve(0));
+    attachSandbox(cache, slot, sandbox);
+    const busyReplica = makeSandbox(() => Promise.resolve(1));
+    slot.replicas = [busyReplica];
+
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+
+    // The primary is the slot's routing anchor — evicting it while a
+    // replica holds sessions would force a full rebuild on the next broker
+    // request. Everything is reclaimed once all counts reach zero.
+    expect(sandbox.shutdown).not.toHaveBeenCalled();
+    expect(busyReplica.shutdown).not.toHaveBeenCalled();
+
+    slot.replicas = [makeSandbox(() => Promise.resolve(0))];
+    const lastReplica = slot.replicas[0];
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+    expect(sandbox.shutdown).toHaveBeenCalledOnce();
+    expect(lastReplica?.shutdown).toHaveBeenCalledOnce();
+    expect(slot.replicas).toBeUndefined();
+    expect(cache.get("tail")?.sandbox).toBeUndefined();
+  });
+
+  it("terminateSlot shuts down replicas along with the primary", async () => {
+    const sandbox = makeSandbox();
+    const replica = makeSandbox();
+    const slot = makeSlot("multi", { sandbox, replicas: [replica] });
+    await terminateSlot(slot);
+    expect(sandbox.shutdown).toHaveBeenCalledOnce();
+    expect(replica.shutdown).toHaveBeenCalledOnce();
+    expect(slot.sandbox).toBeUndefined();
+    expect(slot.replicas).toBeUndefined();
+  });
+
   it("swallows shutdown errors during idle eviction", async () => {
     const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const cache = createSlotCache();

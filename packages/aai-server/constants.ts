@@ -14,6 +14,20 @@ export const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS) || 100;
 /** Idle time before a resident sandbox is evicted. Bumped on each session start. */
 export const IDLE_SANDBOX_MS = 5 * 60 * 1000;
 
+/**
+ * Horizontal sandbox scaling (see sandbox-scale.ts): live sessions per guest
+ * sandbox before the broker scales the slug out to another sandbox replica.
+ * Unset/0 disables scaling — one sandbox per slug, the pre-scaling behavior.
+ */
+export const SANDBOX_MAX_SESSIONS = Number(process.env.SANDBOX_MAX_SESSIONS) || 0;
+
+/**
+ * Cap on sandboxes per slug on this replica (primary included) when scaling
+ * is enabled. Saturation past the cap routes to the least-loaded sandbox
+ * rather than spawning without bound.
+ */
+export const SANDBOX_MAX_REPLICAS = Number(process.env.SANDBOX_MAX_REPLICAS) || 4;
+
 /** 10 MB. */
 export const MAX_WORKER_SIZE = 10_000_000;
 

@@ -13,6 +13,7 @@ import { readSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
+import { defaultScaleOptions, routeSession, type ScaleOptions } from "./sandbox-scale.ts";
 import {
   type AgentSlot,
   attachSandbox,
@@ -53,47 +54,109 @@ export type ResolveSandboxOpts = {
    * — the pre-split, pre-multi-replica behavior.
    */
   slugEpochs?: SlugEpochs;
+  /**
+   * Horizontal scaling policy (see sandbox-scale.ts). Defaults from
+   * SANDBOX_MAX_SESSIONS / SANDBOX_MAX_REPLICAS; scaling is off when the
+   * env leaves those unset.
+   */
+  scale?: ScaleOptions;
+};
+
+type BundleParts = {
+  workerCode: string;
+  env: Record<string, string>;
+  agentConfig: IsolateConfig;
+  appDbMeta: AppDbMeta | null;
 };
 
 /**
- * Build the slot's sandbox from its loaded bundle parts, wiring the
+ * Read the slug's stored bundle artifacts, all reads in flight at once.
+ * Resolves null when the bundle is incomplete (deleted mid-read). Each read
+ * gets a no-op rejection handler immediately: a caller that discards the
+ * whole promise while reads are still in flight (manifest miss) must not
+ * surface a late rejection as unhandled — `Promise.all` still observes the
+ * originals.
+ */
+function loadBundleParts(slug: string, opts: ResolveSandboxOpts): Promise<BundleParts | null> {
+  const { store } = opts;
+  const workerCodeP = store.getWorkerCode(slug);
+  const agentConfigP = store.getAgentConfig(slug);
+  const envP = store.getEnv(slug).then((e) => e ?? {});
+  // Storage ("app db") credentials, when the platform can open them.
+  const appDbMetaP = readAppDbMeta(slug, opts);
+  for (const p of [workerCodeP, agentConfigP, envP, appDbMetaP]) p.catch(() => undefined);
+  return Promise.all([workerCodeP, agentConfigP, envP, appDbMetaP]).then(
+    ([workerCode, agentConfig, env, appDbMeta]) =>
+      workerCode && agentConfig ? { workerCode, env, agentConfig, appDbMeta } : null,
+  );
+}
+
+/**
+ * Build one sandbox from loaded bundle parts. `onVmFailed` is the caller's
  * poisoned-sandbox detach: a rejected vmReady leaves the sandbox permanently
  * broken (every tool call fails) while live traffic keeps clearing its idle
- * timer, so it would never self-heal. Detach it so the next connection
- * rebuilds — identity-checked and under the slug lock so a deploy/delete
- * that already replaced the slot is never raced. (createSandbox returns
- * synchronously and the caller's attachSandbox runs in the same task, so the
- * async failure callback can only fire after the attach.)
+ * timer, so it would never self-heal — the callback must detach it from
+ * wherever it was installed so the next connection rebuilds. (createSandbox
+ * returns synchronously and the caller installs the sandbox in the same
+ * task, so the async failure callback can only fire after the install.)
  */
-function buildSlotSandbox(
+function buildSandboxFromParts(
   slug: string,
-  parts: {
-    workerCode: string;
-    env: Record<string, string>;
-    agentConfig: IsolateConfig;
-    appDbMeta: AppDbMeta | null;
-  },
+  parts: BundleParts,
   opts: ResolveSandboxOpts,
+  onVmFailed: (sandbox: Sandbox) => void,
 ): Sandbox {
   // Open the app db here — cheap, postgres connects on first query; the
   // sandbox owns the handle and closes it on shutdown.
   const db: CloseableDb | undefined =
     parts.appDbMeta && opts.appDb ? opts.appDb.open(parts.appDbMeta) : undefined;
-  const sandbox = createSandbox({
+  const sandbox: Sandbox = createSandbox({
     workerCode: parts.workerCode,
     env: parts.env,
     slug,
     agentConfig: parts.agentConfig,
     ...(db && { db }),
     ...(opts.pool && { pool: opts.pool }),
-    onVmFailed: () => {
-      void withSlugLock(slug, async () => {
-        const current = opts.slots.get(slug);
-        if (current?.sandbox === sandbox) await terminateSlot(current);
-      });
-    },
+    onVmFailed: () => onVmFailed(sandbox),
   });
   return sandbox;
+}
+
+/**
+ * Build the slot's primary sandbox — a failed VM tears the whole slot down
+ * (identity-checked under the slug lock so a deploy/delete that already
+ * replaced the slot is never raced).
+ */
+function buildSlotSandbox(slug: string, parts: BundleParts, opts: ResolveSandboxOpts): Sandbox {
+  return buildSandboxFromParts(slug, parts, opts, (sandbox) => {
+    void withSlugLock(slug, async () => {
+      const current = opts.slots.get(slug);
+      if (current?.sandbox === sandbox) await terminateSlot(current);
+    });
+  });
+}
+
+/**
+ * Build one overflow replica for the broker's scale-out (sandbox-scale.ts).
+ * A failed replica VM detaches only itself — the primary and its siblings
+ * keep serving.
+ */
+async function spawnReplicaSandbox(
+  slug: string,
+  slot: AgentSlot,
+  opts: ResolveSandboxOpts,
+): Promise<Sandbox | null> {
+  const parts = await loadBundleParts(slug, opts);
+  if (!parts) return null;
+  return buildSandboxFromParts(slug, parts, opts, (sandbox) => {
+    void withSlugLock(slug, async () => {
+      if (opts.slots.get(slug) !== slot) return;
+      const idx = slot.replicas?.indexOf(sandbox) ?? -1;
+      if (idx === -1) return;
+      slot.replicas?.splice(idx, 1);
+      await sandbox.shutdown().catch(() => undefined);
+    });
+  });
 }
 
 /**
@@ -127,16 +190,10 @@ async function rebuildSlot(
 
   // Kick off the bundle reads now so a cold miss doesn't serialize the
   // manifest read ahead of them (one extra storage RTT per
-  // first-session-per-slug-per-replica). Each gets a no-op rejection
-  // handler immediately: on a manifest miss the trio is discarded while
-  // possibly still in flight, and a late rejection must not surface as an
-  // unhandled rejection. `Promise.all` below still observes the originals.
-  const workerCodeP = store.getWorkerCode(slug);
-  const agentConfigP = store.getAgentConfig(slug);
-  const envP = store.getEnv(slug).then((e) => e ?? {});
-  // Storage ("app db") credentials, when the platform can open them.
-  const appDbMetaP = readAppDbMeta(slug, opts);
-  for (const p of [workerCodeP, agentConfigP, envP, appDbMetaP]) p.catch(() => undefined);
+  // first-session-per-slug-per-replica). The no-op rejection handler covers
+  // the manifest-miss path discarding it while reads are still in flight.
+  const partsP = loadBundleParts(slug, opts);
+  partsP.catch(() => undefined);
 
   let slot = existingSlot;
   if (!slot) {
@@ -147,28 +204,20 @@ async function rebuildSlot(
     debug("Lazy-discovered agent from store", { slug });
   }
 
-  const [workerCode, agentConfig, env, appDbMeta] = await Promise.all([
-    workerCodeP,
-    agentConfigP,
-    envP,
-    appDbMetaP,
-  ]);
-
-  if (!(workerCode && agentConfig)) {
+  const parts = await partsP;
+  if (!parts) {
     return null;
   }
 
-  const sandbox = buildSlotSandbox(slug, { workerCode, env, agentConfig, appDbMeta }, opts);
+  const sandbox = buildSlotSandbox(slug, parts, opts);
 
   slot.epoch = builtAtEpoch;
   attachSandbox(slots, slot, sandbox);
   return sandbox;
 }
 
-export async function resolveSandbox(
-  slug: string,
-  opts: ResolveSandboxOpts,
-): Promise<Sandbox | null> {
+/** Map a slug to its (possibly freshly built) primary resident sandbox. */
+async function resolvePrimary(slug: string, opts: ResolveSandboxOpts): Promise<Sandbox | null> {
   const { slots, store } = opts;
 
   // Fast path: a current resident sandbox needs no locking.
@@ -197,5 +246,33 @@ export async function resolveSandbox(
       store.invalidate?.(slug);
     }
     return rebuildSlot(slug, slot, opts);
+  });
+}
+
+/**
+ * Resolve the sandbox this session should connect to. Without a scaling
+ * policy that is the slug's one resident sandbox; with one (see
+ * sandbox-scale.ts) it is the least-loaded of the slug's replicas, scaling
+ * out when all are at session capacity.
+ */
+export async function resolveSandbox(
+  slug: string,
+  opts: ResolveSandboxOpts,
+): Promise<Sandbox | null> {
+  const sandbox = await resolvePrimary(slug, opts);
+  if (!sandbox) return null;
+  const scale = opts.scale ?? defaultScaleOptions();
+  if (!scale) return sandbox;
+  const slot = opts.slots.get(slug);
+  // Route only when the resolved sandbox is still the slot's primary — a
+  // mutation racing this resolve heals via the client's next re-broker.
+  if (!slot || slot.sandbox !== sandbox) return sandbox;
+  return routeSession({
+    slug,
+    slots: opts.slots,
+    slot,
+    primary: sandbox,
+    scale,
+    spawnReplica: () => spawnReplicaSandbox(slug, slot, opts),
   });
 }

@@ -1,5 +1,11 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { sharedConfig, sharedCoverageExclude } from "./vitest.shared.ts";
+
+// Auto-builds the aai-guest harness bundle createSandbox resolves eagerly.
+const ensureGuestHarness = fileURLToPath(
+  new URL("./scripts/ensure-guest-harness.mjs", import.meta.url),
+);
 
 export default defineConfig({
   ...sharedConfig,
@@ -80,6 +86,7 @@ export default defineConfig({
           name: "aai-server",
           root: "packages/aai-server",
           pool: "forks",
+          globalSetup: [ensureGuestHarness],
           include: ["**/*.test.ts"],
           exclude: [
             // LLM-in-the-loop evals: pnpm --filter aai-server test:evals
