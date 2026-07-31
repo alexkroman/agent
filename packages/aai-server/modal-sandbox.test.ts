@@ -12,15 +12,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HARNESS_HEARTBEAT_INTERVAL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./guest/limits.ts";
 import {
   _internals,
-  DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-  DEFAULT_SANDBOX_TIMEOUT_MS,
   type ModalProcLike,
   type ModalSandboxLike,
   type ModalSpawnContext,
-  parseSandboxLimitsFromEnv,
-  parseSandboxRegionsFromEnv,
   spawnModalWarm,
 } from "./modal-sandbox.ts";
+import {
+  DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
+  DEFAULT_SANDBOX_TIMEOUT_MS,
+  parseSandboxLimitsFromEnv,
+  parseSandboxRegionsFromEnv,
+} from "./modal-sandbox-env.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
