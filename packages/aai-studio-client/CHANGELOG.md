@@ -1,5 +1,12 @@
 # aai-studio-client
 
+## 0.1.10
+
+### Patch Changes
+
+- 369f950: Ship a favicon.ico on the studio and voice agent pages: the AssemblyAI mark is bundled with the studio client and the default agent client, served at /favicon.ico (studio) and /:slug/favicon.ico (agents, with a custom client's own favicon taking precedence).
+- 76b6f60: Default the studio coding agent to a cascaded pipeline (AssemblyAI STT, gpt-5.5 on the LLM Gateway, AssemblyAI TTS); the S2S voice agent API is now used only when the user asks for it. Codegen evals updated to grade the new default.
+
 ## 0.1.9
 
 ### Patch Changes

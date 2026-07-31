@@ -1,5 +1,13 @@
 # @alexkroman1/aai-ui
 
+## 3.1.0
+
+### Patch Changes
+
+- 369f950: Ship a favicon.ico on the studio and voice agent pages: the AssemblyAI mark is bundled with the studio client and the default agent client, served at /favicon.ico (studio) and /:slug/favicon.ico (agents, with a custom client's own favicon taking precedence).
+- Updated dependencies [1749ca4]
+  - @alexkroman1/aai@3.1.0
+
 ## 3.0.0
 
 ### Patch Changes
