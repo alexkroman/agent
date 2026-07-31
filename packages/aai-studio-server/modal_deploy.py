@@ -11,9 +11,9 @@ Wiring: deploy this app, copy the printed web URL into the ``aai-server``
 Modal Secret as ``STUDIO_UPSTREAM_URL``, and redeploy the agent app — its
 ``server`` function then boots in agent mode and reverse-proxies the studio
 surface here, keeping one public origin. Studio builds run in this app's
-``studio_build`` function (STUDIO_BUILD_MODAL_APP env overrides), so the
-build entry's code — which lives in this package — deploys with it: a
-changeset touching this package ships both, and they cannot skew.
+``studio_build`` function (STUDIO_BUILD_MODAL_APP env overrides): the build
+entry's code lives in this package, so a changeset touching it ships both
+— see DEFAULT_BUILD_APP in studio-build-runner.ts.
 
     modal deploy packages/aai-studio-server/modal_deploy.py
     # or: pnpm --filter aai-studio-server deploy:modal
@@ -112,7 +112,7 @@ def studio() -> None:
 # never runs in a process that holds platform credentials. Deliberately
 # **no secrets attached**: a build needs the image's node_modules and
 # nothing else. Same image as the services, so the build sees exactly the
-# dependency tree the in-process path used.
+# dependency tree they run on.
 @app.function(image=image, region=REGION, cpu=2, memory=2048, timeout=300)
 def studio_build(request: str) -> str:
     """Run one studio workspace build (worker and/or client) out of process.

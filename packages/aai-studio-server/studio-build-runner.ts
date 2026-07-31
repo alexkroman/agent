@@ -39,7 +39,7 @@ import { StudioBuildError } from "./studio-errors.ts";
 /**
  * Modal app the build function deploys under — the studio's own app (this
  * package's modal_deploy.py), so the build entry's code and its deployment
- * version together: a changeset touching this package redeploys both.
+ * ship together: a changeset touching this package redeploys both.
  */
 const DEFAULT_BUILD_APP = "aai-studio-web";
 const DEFAULT_BUILD_FUNCTION = "studio_build";
