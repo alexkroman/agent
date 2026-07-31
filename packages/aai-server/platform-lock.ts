@@ -30,6 +30,7 @@
 
 import { randomUUID } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
+import { ensureTableOnce } from "./pg-ensure.ts";
 import { withSlugLock } from "./sandbox-slots.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -51,7 +52,6 @@ export class SlugLockTimeoutError extends Error {
 }
 
 const TABLE = "aai_platform.slug_locks";
-const ENSURE_SCHEMA_SQL = "create schema if not exists aai_platform";
 const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
   key text primary key,
   holder text not null,
@@ -92,17 +92,7 @@ export function createPgSlugLock(sql: SqlExec, opts: PgSlugLockOptions = {}): Sl
   const acquireTimeoutMs = opts.acquireTimeoutMs ?? SLUG_LOCK_ACQUIRE_TIMEOUT_MS;
   const pollMs = opts.pollMs ?? ACQUIRE_POLL_MS;
 
-  let ensured: Promise<void> | null = null;
-  const ensure = (): Promise<void> => {
-    ensured ??= (async () => {
-      await sql(ENSURE_SCHEMA_SQL);
-      await sql(ENSURE_TABLE_SQL);
-    })().catch((err: unknown) => {
-      ensured = null;
-      throw err;
-    });
-    return ensured;
-  };
+  const ensure = ensureTableOnce(sql, ENSURE_TABLE_SQL);
 
   const sleep = (ms: number): Promise<void> =>
     new Promise((resolve) => {

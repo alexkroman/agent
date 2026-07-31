@@ -7,14 +7,8 @@
  * Named (not `export *`) so the shared surface stays deliberate.
  */
 
-export {
-  assertDevKeys,
-  isLocalDev,
-  requireEnv,
-  resolveDrainMs,
-  resolvePoolSize,
-} from "./_boot.ts";
+export { assertDevKeys, resolveDrainMs } from "./_boot.ts";
 export { waitForIdle } from "./_drain.ts";
-export { createKeyedLock, type KeyedLock } from "./_keyed-lock.ts";
+export { createKeyedLock } from "./_keyed-lock.ts";
 export { createCachedDirReader, isPathInside } from "./_static-files.ts";
 export { TtlCache } from "./_ttl-cache.ts";

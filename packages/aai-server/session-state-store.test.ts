@@ -155,6 +155,6 @@ describe("createPgSessionStateStore", () => {
     const store = createPgSessionStateStore(db.exec);
     await store.save("my-agent", "s1", { state: {} });
     await store.load("my-agent", "s1");
-    expect(db.statements.filter((s) => s.startsWith("create")).length).toBe(2);
+    expect(db.statements.filter((s) => s.startsWith("create")).length).toBe(3); // schema + table + index
   });
 });

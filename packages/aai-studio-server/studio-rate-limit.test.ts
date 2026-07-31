@@ -139,7 +139,7 @@ describe("createPgRateLimiter", () => {
     const limiter = createPgRateLimiter(db.exec, { name: "chat", limit: 5, windowMs: 60_000 });
     await limiter.check("scope");
     await limiter.check("scope");
-    expect(db.statements.filter((s) => s.startsWith("create")).length).toBe(2);
+    expect(db.statements.filter((s) => s.startsWith("create")).length).toBe(3); // schema + table + index
   });
 
   test("a database error propagates instead of unmetering the route", async () => {

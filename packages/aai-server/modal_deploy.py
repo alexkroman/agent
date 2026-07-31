@@ -41,6 +41,11 @@ import modal
 PORT = 8080
 PNPM_VERSION = "10.29.3"
 
+# One region for the web server AND the guest sandboxes it creates (see the
+# co-location rationale in CLAUDE.md's Modal notes). The studio app pins the
+# same value in its own modal_deploy.py.
+REGION = "us-east-2"
+
 # ── Split services ───────────────────────────────────────────────────────────
 #
 # The node app serves one of three surfaces (AAI_SERVICE): the agent backend,

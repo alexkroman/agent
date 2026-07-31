@@ -25,6 +25,7 @@
 
 import { SESSION_RESUME_GRACE_MS } from "@alexkroman1/aai";
 import { z } from "zod";
+import { ensureTableOnce } from "./pg-ensure.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /** What a resumed session needs back. Both halves optional — either may be empty. */
@@ -48,13 +49,17 @@ const StoredStateSchema = z.object({
 });
 
 const TABLE = "aai_platform.session_state";
-const ENSURE_SCHEMA_SQL = "create schema if not exists aai_platform";
 const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
   session_id text primary key,
   slug text not null,
   data jsonb not null,
   expires_at timestamptz not null
 )`;
+
+// The sweep filters on expiry; without this index it is a sequential scan
+// of the whole table on every disconnect, on every replica.
+const ENSURE_INDEX_SQL = `create index if not exists session_state_expires_at
+on ${TABLE} (expires_at)`;
 
 const SAVE_SQL = `insert into ${TABLE} (session_id, slug, data, expires_at)
 values ($1, $2, $3::jsonb, now() + $4::int * interval '1 millisecond')
@@ -76,17 +81,7 @@ const SWEEP_SQL = `delete from ${TABLE} where expires_at <= now()`;
  * same-replica resumes expire together.
  */
 export function createPgSessionStateStore(sql: SqlExec): SessionStateStore {
-  let ensured: Promise<void> | null = null;
-  const ensure = (): Promise<void> => {
-    ensured ??= (async () => {
-      await sql(ENSURE_SCHEMA_SQL);
-      await sql(ENSURE_TABLE_SQL);
-    })().catch((err: unknown) => {
-      ensured = null;
-      throw err;
-    });
-    return ensured;
-  };
+  const ensure = ensureTableOnce(sql, ENSURE_TABLE_SQL, ENSURE_INDEX_SQL);
 
   return {
     async save(slug, sessionId, data) {
@@ -124,6 +119,7 @@ export function createMemorySessionStateStore(): SessionStateStore {
     },
     load(slug, sessionId) {
       const row = rows.get(sessionId);
+      if (row && row.expiresAt <= Date.now()) rows.delete(sessionId); // lazy expiry
       if (!row || row.slug !== slug || row.expiresAt <= Date.now()) {
         return Promise.resolve(null);
       }

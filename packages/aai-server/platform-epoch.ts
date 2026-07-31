@@ -22,6 +22,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { ensureTableOnce } from "./pg-ensure.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 export type SlugEpochs = {
@@ -32,7 +33,6 @@ export type SlugEpochs = {
 };
 
 const TABLE = "aai_platform.slug_epochs";
-const ENSURE_SCHEMA_SQL = "create schema if not exists aai_platform";
 const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
   slug text primary key,
   epoch bigint not null,
@@ -46,17 +46,7 @@ const GET_SQL = `select epoch from ${TABLE} where slug = $1`;
 
 /** Postgres-backed epochs over the platform admin connection. */
 export function createPgSlugEpochs(sql: SqlExec): SlugEpochs {
-  let ensured: Promise<void> | null = null;
-  const ensure = (): Promise<void> => {
-    ensured ??= (async () => {
-      await sql(ENSURE_SCHEMA_SQL);
-      await sql(ENSURE_TABLE_SQL);
-    })().catch((err: unknown) => {
-      ensured = null;
-      throw err;
-    });
-    return ensured;
-  };
+  const ensure = ensureTableOnce(sql, ENSURE_TABLE_SQL);
 
   return {
     async bump(slug) {

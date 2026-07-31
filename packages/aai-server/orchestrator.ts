@@ -57,7 +57,7 @@ import {
   handleStorageStatus,
 } from "./storage-handler.ts";
 import type { BundleStore } from "./store-types.ts";
-import { createStudioProxy } from "./studio-proxy.ts";
+import { createStudioProxy, isStudioPath } from "./studio-proxy.ts";
 import {
   handleAgentFavicon,
   handleAgentHealth,
@@ -168,11 +168,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // can shadow the namespace in any mode.
   if (opts.studioUpstream) {
     const proxy = createStudioProxy(opts.studioUpstream, opts.studioProxyFetch);
-    app.get("/", proxy);
-    app.get("/favicon.ico", proxy);
-    app.get("/studio-assets/:path{.+}", proxy);
-    app.all("/studio", proxy);
-    app.all("/studio/*", proxy);
+    // Registered from the shared predicate, so this list can never drift
+    // from the combined dispatcher's.
+    app.use("*", (c, next) => (isStudioPath(new URL(c.req.url).pathname) ? proxy(c) : next()));
   } else {
     app.get("/", (c) => c.json({ service: "aai-agent", studio: "not served by this deployment" }));
   }

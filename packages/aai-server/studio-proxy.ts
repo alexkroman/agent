@@ -53,6 +53,23 @@ const STRIP_RESPONSE_HEADERS = new Set([
   "content-length",
 ]);
 
+/**
+ * The studio surface, as one predicate. Single source of truth for every
+ * consumer that must agree on it: the orchestrator's proxy registration
+ * (split mode) and the combined entry's path dispatcher
+ * (aai-studio-server/index.ts). Adding a studio path means editing this and
+ * the studio app's routes — nothing else.
+ */
+export function isStudioPath(pathname: string): boolean {
+  return (
+    pathname === "/" ||
+    pathname === "/favicon.ico" ||
+    pathname === "/studio" ||
+    pathname.startsWith("/studio/") ||
+    pathname.startsWith("/studio-assets/")
+  );
+}
+
 export type StudioProxy = (c: Context<HonoEnv>) => Promise<Response>;
 
 /**
@@ -73,7 +90,8 @@ export function createStudioProxy(
 
     const headers = new Headers();
     for (const [name, value] of c.req.raw.headers) {
-      if (!STRIP_REQUEST_HEADERS.has(name.toLowerCase())) headers.set(name, value);
+      // Headers iteration yields lowercased names per the Fetch spec.
+      if (!STRIP_REQUEST_HEADERS.has(name)) headers.set(name, value);
     }
 
     const method = c.req.method;
@@ -99,7 +117,7 @@ export function createStudioProxy(
 
     const responseHeaders = new Headers();
     for (const [name, value] of res.headers) {
-      if (!STRIP_RESPONSE_HEADERS.has(name.toLowerCase())) responseHeaders.set(name, value);
+      if (!STRIP_RESPONSE_HEADERS.has(name)) responseHeaders.set(name, value);
     }
     return new Response(res.body, { status: res.status, headers: responseHeaders });
   };

@@ -9,8 +9,8 @@
 
 import type { OrchestratorOpts } from "aai-server/orchestrator";
 import { createMemorySecretStore } from "aai-server/secret-store";
+import { isStudioPath } from "aai-server/studio-proxy";
 import { createTestOrchestrator, type TestFetch } from "aai-server/test-utils";
-import { isStudioPath } from "./index.ts";
 import { createStudioApp } from "./studio-app.ts";
 
 export async function createTestCombined(overrides: Partial<OrchestratorOpts> = {}) {

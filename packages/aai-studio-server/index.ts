@@ -27,6 +27,7 @@ import {
   installProcessSafetyNets,
   type ServiceConfig,
 } from "aai-server/service-config";
+import { isStudioPath } from "aai-server/studio-proxy";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import {
   CHAT_RATE_LIMIT,
@@ -72,16 +73,8 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
   };
 }
 
-/** Which paths belong to the studio surface in the combined composition. */
-export function isStudioPath(pathname: string): boolean {
-  return (
-    pathname === "/" ||
-    pathname === "/favicon.ico" ||
-    pathname === "/studio" ||
-    pathname.startsWith("/studio/") ||
-    pathname.startsWith("/studio-assets/")
-  );
-}
+// The studio-surface predicate lives beside the proxy in aai-server —
+// one definition for the split-mode proxy and this combined dispatcher.
 
 async function main(): Promise<void> {
   installProcessSafetyNets();

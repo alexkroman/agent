@@ -34,36 +34,28 @@ jobs:
           echo "agent=$(bumped aai-server && echo true || echo false)" >> "$GITHUB_OUTPUT"
           echo "studio=$(bumped aai-studio-server && echo true || echo false)" >> "$GITHUB_OUTPUT"
 
-  deploy-agent:
+  deploy:
     needs: changed
-    if: needs.changed.outputs.agent == 'true'
+    if: needs.changed.outputs.agent == 'true' || needs.changed.outputs.studio == 'true'
     runs-on: ubuntu-latest
     environment: production
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: aai-server
+            changed: agent
+          - service: aai-studio-server
+            changed: studio
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
         with:
           python-version: "3.13"
       - run: pip install modal
-      - name: Deploy agent service (Modal app aai-server-web)
+      - name: Deploy ${{ matrix.service }}
+        if: needs.changed.outputs[matrix.changed] == 'true'
         env:
           MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
           MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-        run: modal deploy packages/aai-server/modal_deploy.py
-
-  deploy-studio:
-    needs: changed
-    if: needs.changed.outputs.studio == 'true'
-    runs-on: ubuntu-latest
-    environment: production
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.13"
-      - run: pip install modal
-      - name: Deploy studio service (Modal app aai-studio-web)
-        env:
-          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
-          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
-        run: modal deploy packages/aai-studio-server/modal_deploy.py
+        run: modal deploy packages/${{ matrix.service }}/modal_deploy.py

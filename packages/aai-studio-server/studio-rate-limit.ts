@@ -21,6 +21,7 @@
  *   silently unmetering the route.
  */
 
+import { ensureTableOnce } from "aai-server/pg-ensure";
 import { TtlCache } from "aai-server/platform-barrel";
 import type { SqlExec } from "aai-server/secret-store";
 
@@ -71,7 +72,6 @@ export function createRateLimiter(options: { limit: number; windowMs: number }):
 }
 
 const TABLE = "aai_platform.studio_rate_limits";
-const ENSURE_SCHEMA_SQL = "create schema if not exists aai_platform";
 const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
   name text not null,
   key text not null,
@@ -79,6 +79,11 @@ const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
   reset_at timestamptz not null,
   primary key (name, key)
 )`;
+
+// The sweep filters on reset_at; index it or every fresh-window check pays
+// a sequential scan of the table.
+const ENSURE_INDEX_SQL = `create index if not exists studio_rate_limits_reset_at
+on ${TABLE} (reset_at)`;
 
 // One atomic statement: start a fresh window when the stored one has
 // expired, otherwise bump its counter. `returning` reports the verdict
@@ -106,17 +111,7 @@ export function createPgRateLimiter(
   sql: SqlExec,
   options: { name: string; limit: number; windowMs: number },
 ): RateLimiter {
-  let ensured: Promise<void> | null = null;
-  const ensure = (): Promise<void> => {
-    ensured ??= (async () => {
-      await sql(ENSURE_SCHEMA_SQL);
-      await sql(ENSURE_TABLE_SQL);
-    })().catch((err: unknown) => {
-      ensured = null;
-      throw err;
-    });
-    return ensured;
-  };
+  const ensure = ensureTableOnce(sql, ENSURE_TABLE_SQL, ENSURE_INDEX_SQL);
 
   return {
     async check(key) {
