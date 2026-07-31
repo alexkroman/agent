@@ -11,7 +11,11 @@
  */
 
 import { describe, expect, test, vi } from "vitest";
-import { createFakeLanguageModel, type ScriptedPart } from "../_pipeline-test-fakes.ts";
+import {
+  createFakeLanguageModel,
+  createFakeTtsProvider,
+  type ScriptedPart,
+} from "../_pipeline-test-fakes.ts";
 import { makeOpts, noopToolSchema, partialTranscriptSpy } from "./_pipeline-transport-harness.ts";
 import { createPipelineTransport } from "./pipeline-transport.ts";
 
@@ -127,5 +131,49 @@ describe("PipelineTransport speech vs. record", () => {
       for (const text of finals) expect(text).not.toContain("One moment.");
       await t.stop();
     });
+  });
+});
+
+describe("filler never talks over the caller", () => {
+  test("the hold phrase is suppressed while an utterance is open", async () => {
+    // Filler is silence-cover. Playing it across a live utterance is worse than
+    // the silence it hides — EVA's turn-taking metric scores it as an agent
+    // interruption (1.5s of simultaneous speech measured 0.13 out of 1). This is
+    // the gap `interruptionMinDurationMs` leaves open on purpose: a continuation
+    // too short to be a barge-in does not cancel the reply.
+    const script: ScriptedPart[] = [
+      {
+        type: "tool-call",
+        toolCallId: "tc-1",
+        toolName: "get_weather",
+        input: JSON.stringify({ city: "SF" }),
+      },
+      { type: "tool-result", toolCallId: "tc-1", toolName: "get_weather", result: "sunny" },
+      { type: "text", text: "It's sunny." },
+    ];
+    const tts = createFakeTtsProvider();
+    const { opts, stt } = makeOpts(
+      {
+        llm: createFakeLanguageModel({ script, delayMs: 15 }),
+        holdPhrase: "One moment.",
+        tts,
+        executeTool: vi.fn(async () => "sunny"),
+        toolSchemas: [{ ...noopToolSchema, name: "get_weather" }],
+      },
+      { tts },
+    );
+    const t = createPipelineTransport(opts);
+    await t.start();
+
+    // Commit a turn, then have the caller keep talking: a partial arrives, which
+    // opens the speech edge while the reply is still being produced.
+    stt.last()?.fireFinal("how's the weather?");
+    stt.last()?.firePartial("and also");
+
+    await vi.waitFor(() => {
+      expect(tts.last()?.textChunks.join("")).toContain("It's sunny.");
+    });
+    expect(tts.last()?.textChunks.join("")).not.toContain("One moment.");
+    await t.stop();
   });
 });

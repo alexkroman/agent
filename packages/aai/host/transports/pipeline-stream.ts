@@ -212,6 +212,8 @@ export interface ConsumeLlmStreamParams {
   sendTtsText: (text: string) => void;
   /** Filler spoken before a silent turn's first tool call — see {@link StreamPartHandlerDeps}. */
   holdPhrase?: string | undefined;
+  /** Is the caller speaking right now? Suppresses filler — see StreamPartHandlerDeps. */
+  callerSpeaking?: (() => boolean) | undefined;
   /** Tool-call/tool-result observability hooks, forwarded to SessionCore. */
   callbacks: Pick<TransportCallbacks, "onToolCall" | "onToolCallDone">;
   /** Report an LLM-stream error. */
@@ -272,6 +274,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     maxSteps,
     sendTtsText,
     holdPhrase,
+    callerSpeaking,
     callbacks,
     emitError,
     log,
@@ -331,6 +334,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       // Lets the dead-air cover die with the turn: a barge-in during a tool
       // execution parks the fullStream read, deferring dispose() below.
       signal: ctl.signal,
+      callerSpeaking,
       onToolCall: callbacks.onToolCall,
       onToolCallDone: callbacks.onToolCallDone,
       emitError,
