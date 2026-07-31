@@ -309,6 +309,11 @@ export function createSttEventHandlers(deps: {
         log.info("Pipeline replacing in-flight turn", { sid: deps.sid });
         deps.abortInFlightTurn();
         callbacks.onCancelled();
+        // The client's `cancelled` handler clears userTranscript, and the
+        // committed turn only goes out once the settler fires — re-emit the
+        // caption so the utterance doesn't vanish for the whole settle window
+        // and then reappear (same ordering rule as the partial path above).
+        callbacks.onUserTranscriptPartial?.(trimmed);
       }
       settler.push(trimmed);
     },

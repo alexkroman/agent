@@ -265,6 +265,36 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("a final-triggered barge-in re-emits the caption after the cancel", async () => {
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script, delayMs: 20 }),
+        falseInterruptionTimeoutMs: 0,
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("where is my order");
+      await vi.waitFor(() => {
+        expect(tts.last()?.textChunks.length).toBeGreaterThan(0);
+      });
+      // Barge-in requires the agent to be audibly speaking, not merely mid-turn.
+      tts.last()?.fireAudio(new Int16Array(2400));
+
+      // A final (no preceding partial) barges in. The committed user_transcript
+      // only goes out when the settler fires, so without a re-emitted caption
+      // the client's `cancelled` handler blanks the utterance for the whole
+      // settle window — it appears, disappears, then reappears as a message.
+      stt.last()?.fireFinal("okay, cool.");
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+      const cancelledCall = (callbacks.onCancelled as ReturnType<typeof vi.fn>).mock
+        .invocationCallOrder[0];
+      const partialCalls = (callbacks.onUserTranscriptPartial as ReturnType<typeof vi.fn>).mock;
+      const idx = partialCalls.calls.findIndex((c) => c[0] === "okay, cool.");
+      expect(idx).not.toBe(-1);
+      expect(partialCalls.invocationCallOrder[idx]).toBeGreaterThan(cancelledCall as number);
+      await t.stop();
+    });
+
     test("client-initiated cancelReply never resumes", async () => {
       const { opts, stt, tts, callbacks } = makeOpts({
         llm: createFakeLanguageModel({ script, delayMs: 20 }),
