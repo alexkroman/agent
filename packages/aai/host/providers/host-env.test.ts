@@ -14,9 +14,9 @@ describe("resolveApiKey", () => {
     expect(resolveApiKey("ANTHROPIC_API_KEY", {})).toBe("");
   });
 
-  // The platform host process holds its own Pinecone credentials under
+  // The platform host process may hold platform-owned credentials under
   // exactly these names. Falling back to process.env would hand them to any
-  // tenant that declared pinecone and supplied no credential of its own.
+  // tenant that supplied no credential of its own.
   test("does not fall back to the host process environment", () => {
     const key = "AAI_TEST_FALLBACK_KEY";
     process.env[key] = "platform-secret";
@@ -28,10 +28,9 @@ describe("resolveApiKey", () => {
   });
 });
 
-// The second credential path: every STT/TTS opener, every LLM (via
-// resolve.ts's requireKey) and Pinecone resolve through this one, so a
-// process.env fallback here reopens the whole leak even with resolveApiKey
-// sealed.
+// The second credential path: every STT/TTS opener and every LLM (via
+// resolve.ts's requireKey) resolve through this one, so a process.env
+// fallback here reopens the whole leak even with resolveApiKey sealed.
 describe("requireApiKey", () => {
   const fail = (msg: string) => new Error(msg);
 
@@ -75,13 +74,13 @@ describe("withHostCredentialFallback", () => {
     const merged = withHostCredentialFallback(
       {},
       {
-        PINECONE_API_KEY: "pinecone-secret",
+        ANTHROPIC_API_KEY: "sk-shell",
         AWS_SECRET_ACCESS_KEY: "aws-secret",
         BUCKET_NAME: "platform-bucket",
         PATH: "/usr/bin",
       },
     );
-    expect(merged.PINECONE_API_KEY).toBe("pinecone-secret");
+    expect(merged.ANTHROPIC_API_KEY).toBe("sk-shell");
     // Not provider credentials — must not leak into ctx.env.
     expect(merged.AWS_SECRET_ACCESS_KEY).toBeUndefined();
     expect(merged.BUCKET_NAME).toBeUndefined();
@@ -102,7 +101,7 @@ describe("withHostCredentialFallback", () => {
   // Derived from the provider registries, so a new provider is covered without
   // touching this list. These assertions catch the derivation breaking, not the
   // list going stale.
-  test("covers STT, TTS, LLM, S2S and Vector credential names", () => {
+  test("covers STT, TTS, LLM and S2S credential names", () => {
     for (const name of [
       "ASSEMBLYAI_API_KEY", // STT + default S2S
       "DEEPGRAM_API_KEY",
@@ -117,7 +116,6 @@ describe("withHostCredentialFallback", () => {
       "XAI_API_KEY",
       "GROQ_API_KEY",
       "AI_GATEWAY_API_KEY",
-      "PINECONE_API_KEY", // pinecone vector
     ]) {
       expect(PROVIDER_CREDENTIAL_ENVS).toContain(name);
     }

@@ -98,8 +98,8 @@ export function parseSandboxLimitsFromEnv(
  * Unpinned, Modal places sandboxes wherever it finds capacity — including a
  * different continent and cloud than the platform server (observed:
  * server in us-east-1/AWS, sandboxes in uk-london-1/OCI). The host↔guest
- * NDJSON link over Modal's command router is a network hop, so every
- * `ctx.db` query, Vector call, guest fetch proxy, and `bundle/load` pays
+ * WebSocket link over the Modal tunnel is a network hop, so every
+ * `ctx.db` query, guest fetch proxy, and `bundle/load` pays
  * that RTT — serialized inside the LLM loop of a latency-budgeted voice
  * turn. `modal_deploy.py` sets this variable to the same region constant
  * that pins the web server, so production host and guests are co-located

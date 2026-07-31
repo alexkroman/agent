@@ -4,9 +4,9 @@
  *
  * `resolveApiKey` reads only the agent's own env, so nothing a provider can
  * authenticate with is ever inherited implicitly from the host process. That
- * is the behavior the managed platform needs: its `process.env` holds the
- * platform's own vector credentials under the same names a tenant
- * descriptor would resolve.
+ * is the behavior the managed platform needs: its `process.env` may hold
+ * platform-owned credentials under the same names a tenant descriptor would
+ * resolve.
  *
  * Self-hosted runs (`aai dev`) have the opposite expectation — the host env
  * belongs to the same person as the agent, and exporting
@@ -17,17 +17,13 @@
  */
 
 import type { HostCredentialEnv } from "../../sdk/env-types.ts";
-import { PINECONE_API_KEY_ENV } from "../../sdk/providers/vector/pinecone.ts";
 import { ALL_PROVIDER_ENV_VARS } from "./resolve.ts";
 
 /**
  * Every env var name a provider descriptor may resolve a credential from:
- * the registry-derived STT/TTS/LLM/S2S set, plus the Vector providers
- * (which resolve their credentials outside those registries).
+ * the registry-derived STT/TTS/LLM/S2S set.
  */
-export const PROVIDER_CREDENTIAL_ENVS: readonly string[] = [
-  ...new Set([...ALL_PROVIDER_ENV_VARS, PINECONE_API_KEY_ENV]),
-];
+export const PROVIDER_CREDENTIAL_ENVS: readonly string[] = [...new Set(ALL_PROVIDER_ENV_VARS)];
 
 /**
  * Return `env` with any missing provider credential filled in from

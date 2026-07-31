@@ -124,7 +124,7 @@ describe("studio page + routing", () => {
           slug,
           worker: "export default {}",
           clientFiles: {},
-          agentConfig: { name: "x", systemPrompt: "s", toolSchemas: [], allowedHosts: [] },
+          agentConfig: { name: "x", systemPrompt: "s", toolSchemas: [] },
         },
       });
       expect(res.status).toBe(400);

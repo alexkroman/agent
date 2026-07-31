@@ -41,7 +41,7 @@ export async function requireOwner(
   }
   if (result.status === "unclaimed") {
     // An `unclaimed` slug has no manifest — only the deploy path (which
-    // claims it) may proceed. Data routes (vector/secret/storage) must reject it,
+    // claims it) may proceed. Data routes (secret/storage) must reject it,
     // otherwise any authenticated caller could pre-seed state for a slug they
     // don't own and have the eventual owner silently inherit it.
     throw new HTTPException(404, { message: `Agent ${opts.slug} not found` });

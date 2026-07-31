@@ -26,12 +26,12 @@ import {
 } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { calculate } from "./_calculate.ts";
+import { createRunCode, type RunCodeExecutor } from "./builtin-run-code.ts";
 import { createGetPageDesign } from "./page-design.ts";
 import { readNotes, writeNote } from "./session-notes.ts";
 import { safeFetch } from "./ssrf.ts";
 
-// Re-exported so the barrel keeps one import path for the notes surface.
-export { restoreSessionNotes, snapshotSessionNotes } from "./session-notes.ts";
+export type { RunCodeExecutor } from "./builtin-run-code.ts";
 // Re-exported for callers that inject it themselves (runtime-tools, sandbox).
 export { safeFetch } from "./ssrf.ts";
 
@@ -214,41 +214,6 @@ function createFetchJson(
   };
 }
 
-// ─── run_code ────────────────────────────────────────────────────────────────
-
-const runCodeParams = z.object({
-  code: z.string().describe("JavaScript code to execute. Use console.log() for output."),
-});
-
-/**
- * The run_code tool definition (schema + guidance only).
- *
- * run_code executes untrusted JavaScript and is ONLY ever run inside the guest
- * sandbox (Modal/Deno): in platform mode the runtime delegates it over RPC to
- * `deno-harness`, which runs it there. This host-side `execute` is a guard for
- * the self-hosted path (`aai dev`), which has no sandbox — it refuses rather
- * than evaluating attacker-influenceable code in the host process. (The old
- * `node:vm` host execution was removed: `node:vm` is not a security boundary
- * and its `Function`-constructor escape leaked the host process.)
- */
-function createRunCode(): ToolDef<typeof runCodeParams> & { guidance: string } {
-  return {
-    guidance:
-      "You MUST use the run_code tool for ANY question involving math, counting, calculations, " +
-      "data processing, or code. NEVER do mental math or recite code verbally. " +
-      "run_code executes JavaScript (not Python). Always write JavaScript.",
-    description:
-      "Execute JavaScript code in a sandbox and return the output. Use this for calculations, data transformations, string manipulation, or any task that benefits from running code. Output is captured from console.log(). No network or filesystem access.",
-    parameters: runCodeParams,
-    async execute() {
-      return {
-        error:
-          "run_code is only available in the sandboxed runtime and cannot run in this environment.",
-      };
-    },
-  };
-}
-
 // ─── think ───────────────────────────────────────────────────────────────
 //
 // A private no-op scratchpad, verbatim from the spec Anthropic published for
@@ -281,8 +246,7 @@ function createThink(): ToolDef<typeof thinkParams> & { guidance: string } {
 
 // ─── remember / recall ──────────────────────────────────────────────────────
 //
-// Session-scoped notes; the store (and its resume snapshot/restore surface)
-// lives in session-notes.ts.
+// Session-scoped notes; the store lives in session-notes.ts.
 
 const rememberParams = z.object({
   key: z
@@ -365,6 +329,11 @@ type BuiltinToolOptions = {
    * {@link safeFetch} — override only in tests.
    */
   fetch?: typeof globalThis.fetch;
+  /**
+   * In-sandbox run_code executor. Only the guest harness provides one —
+   * without it, run_code refuses to evaluate code in this process.
+   */
+  runCode?: RunCodeExecutor;
 };
 
 type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
@@ -396,7 +365,6 @@ const FETCH_BUILTINS: Record<
  * once at module load and the lookup replaces the dispatch switch.
  */
 const STATIC_BUILTINS: Record<string, ToolDef & { guidance?: string }> = {
-  run_code: createRunCode(),
   think: createThink(),
   remember: createRemember(),
   recall: createRecall(),
@@ -407,6 +375,7 @@ function resolveBuiltin(
   name: string,
   opts?: BuiltinToolOptions,
 ): (ToolDef & { guidance?: string }) | undefined {
+  if (name === "run_code") return createRunCode(opts?.runCode) as ToolDef & { guidance?: string };
   return FETCH_BUILTINS[name]?.(opts?.fetch) ?? STATIC_BUILTINS[name];
 }
 

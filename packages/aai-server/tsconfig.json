@@ -5,12 +5,5 @@
     "tsBuildInfoFile": "../../.tsbuildinfo/aai-server.tsbuildinfo",
     "types": ["node", "vitest/globals"]
   },
-  "include": ["."],
-  "exclude": [
-    "guest/deno-harness.ts",
-    "guest/deno-harness*.test.ts",
-    "guest/harness-types.ts",
-    "guest/harness-rpc.ts",
-    "guest/harness-rpc*.test.ts"
-  ]
+  "include": ["."]
 }

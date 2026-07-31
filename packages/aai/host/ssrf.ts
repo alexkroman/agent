@@ -148,31 +148,12 @@ function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
 /** Headers that must never be replayed to a different origin across a redirect. */
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"];
 
-type SsrfFetchOptions = {
-  /**
-   * Called for the initial URL and every redirect target. Returning false
-   * blocks the request. Used to enforce the agent's `allowedHosts` egress
-   * allowlist on redirect targets, not just the initial URL.
-   */
-  isHostAllowed?: (hostname: string) => boolean;
-};
-
 export async function ssrfSafeFetch(
   url: string,
   init: RequestInit,
   fetchFn: typeof globalThis.fetch,
-  opts: SsrfFetchOptions = {},
 ): Promise<Response> {
-  const { isHostAllowed } = opts;
   const originalOrigin = new URL(url).origin;
-  const checkAllowed = (target: string): void => {
-    if (isHostAllowed && !isHostAllowed(new URL(target).hostname)) {
-      throw new SsrfBlockedError(
-        `Blocked redirect to disallowed host: ${new URL(target).hostname}`,
-      );
-    }
-  };
-  checkAllowed(url);
   let resolvedIp = await resolveAndAssertPublic(url);
   let currentUrl = url;
   for (let i = 0; i < MAX_REDIRECTS; i++) {
@@ -193,7 +174,6 @@ export async function ssrfSafeFetch(
     // Release the redirect response's socket before following the hop.
     await resp.body?.cancel().catch(() => undefined);
     currentUrl = new URL(location, currentUrl).href;
-    checkAllowed(currentUrl);
     resolvedIp = await resolveAndAssertPublic(currentUrl);
   }
   throw new Error("Too many redirects");

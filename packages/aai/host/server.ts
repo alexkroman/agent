@@ -21,19 +21,27 @@ import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { parseWsUpgradeParams } from "../sdk/ws-upgrade.ts";
 import { isHostAllowed, startHostSession } from "./host-mode.ts";
-import type { Runtime } from "./runtime.ts";
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
+import type { AgentRuntime } from "./runtime-types.ts";
 import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 
 export { createRuntime, type Runtime, type RuntimeOptions } from "./runtime.ts";
+
+/**
+ * The session-facing slice of a runtime — all `createServer` actually drives.
+ * `readyConfig` is a property of a *constructed* runtime (`AgentRuntime`), so
+ * demanding it here would force a lazy/unbuilt runtime (the guest harness's
+ * facade) to fabricate one; narrowing to these two methods avoids that.
+ */
+export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown">;
 
 /**
  * Configuration for {@link createServer}.
  * @internal
  */
 type ServerOptions = {
-  runtime: Runtime;
+  runtime: SessionRuntime;
   name?: string;
   clientDir?: string;
   logger?: Logger;
@@ -55,6 +63,18 @@ type ServerOptions = {
   hostBaseAgent?: AgentDef;
   /** Agent greeting, included in the `GET /client-config` response. */
   greeting?: string;
+  /**
+   * First look at every WebSocket upgrade. Return true to claim it (the
+   * server then leaves the socket alone); return false to fall through to
+   * the standard `/websocket` session handling. Lets an embedder (the
+   * platform's guest harness) add its own upgrade surface — its host
+   * control channel — without a second HTTP server.
+   */
+  upgrade?: (
+    req: http.IncomingMessage,
+    socket: import("node:stream").Duplex,
+    head: Buffer,
+  ) => boolean;
 };
 
 /**
@@ -224,6 +244,8 @@ export function createServer(options: ServerOptions): AgentServer {
     socket.on("error", () => {
       /* surfaced via close; presence prevents an uncaught throw */
     });
+
+    if (options.upgrade?.(req, socket, head)) return;
 
     const url = req.url?.split("?")[0] ?? "";
     if (!url.startsWith("/websocket")) {

@@ -2,7 +2,6 @@
 
 exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
 [
-  "allowedHosts",
   "builtinTools",
   "errorPhrase",
   "falseInterruptionTimeoutMs",
@@ -24,7 +23,6 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "systemPrompt",
   "toolChoice",
   "tts",
-  "vector",
 ]
 `;
 

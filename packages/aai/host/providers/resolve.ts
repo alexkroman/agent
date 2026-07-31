@@ -89,13 +89,11 @@ import { requireApiKey } from "./_utils.ts";
  * the caller decides whether that's fatal.
  *
  * This deliberately does NOT fall back to the host's `process.env`. On the
- * managed platform the host process holds the platform's own credentials
- * (`PINECONE_API_KEY`, …) under exactly the names a tenant descriptor
- * resolves. With a fallback, an agent that declared `vector: pinecone({
- * index })` and supplied no credential of its own silently borrowed the
- * platform's — aimed at an index the tenant chose. Whoever builds `env` now
- * decides what a provider can authenticate with; see
- * `withHostCredentialFallback` for the self-hosted opt-in.
+ * managed platform the host process may hold platform-owned credentials
+ * under exactly the names a tenant descriptor resolves; with a fallback, an
+ * agent that supplied no credential of its own would silently borrow the
+ * platform's. Whoever builds `env` decides what a provider can authenticate
+ * with; see `withHostCredentialFallback` for the self-hosted opt-in.
  */
 export function resolveApiKey(envVar: string, env: ProviderEnv): string {
   return env[envVar] ?? "";

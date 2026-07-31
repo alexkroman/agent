@@ -9,7 +9,6 @@
  * Not to be confused with OS environment variables or agent env/secrets.
  */
 
-import type { Vector } from "@alexkroman1/aai/runtime";
 import type { Context } from "hono";
 import type { AppDatabases } from "./app-database.ts";
 import type { ChatStore } from "./chat-store.ts";
@@ -42,7 +41,6 @@ export type HonoEnv = {
      * compare (see platform-epoch.ts). Postgres in production, memory in dev.
      */
     slugEpochs: SlugEpochs;
-    defaultVector: (slug: string) => Vector;
   };
   Variables: {
     slug: string;

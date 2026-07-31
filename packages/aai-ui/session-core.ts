@@ -15,6 +15,7 @@
 
 import { createEpoch, WS_OPEN } from "@alexkroman1/aai";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
+import { fetchClientConfig } from "./client-config.ts";
 import { initAudioCapture } from "./session-core-audio-setup.ts";
 import {
   CLEARED_SESSION_STATE,
@@ -28,7 +29,7 @@ import type {
   SessionCoreOptions,
   SessionSnapshot,
 } from "./session-core-types.ts";
-import { buildWsUrl } from "./session-core-url.ts";
+import { buildBrokeredWsUrl, buildWsUrl } from "./session-core-url.ts";
 import { MIC_SEND_MAX_BUFFERED_BYTES, type WebSocketConstructor } from "./types.ts";
 
 // ─── Factory ────────────────────────────────────────────────────────────────
@@ -112,6 +113,16 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
    */
   let sessionId: string | undefined = options.resumeSessionId;
 
+  /**
+   * Whether `platformUrl` is a broker (its `client-config` names a
+   * `sessionUrl`). A server is one or it isn't — it never flips mid-session
+   * — so once a non-broker is observed, later reconnects skip the
+   * `client-config` re-fetch that would only fall through to `buildWsUrl`
+   * (every reconnect on `aai dev` / self-hosted otherwise pays a wasted GET).
+   * `undefined` until the first fetch settles.
+   */
+  let serverIsBroker: boolean | undefined;
+
   function cleanupAudio(): void {
     conn.audioSetupInFlight = false;
     void conn.voiceIO?.close().catch(() => {
@@ -191,20 +202,46 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   /**
    * The WebSocket URL for the *next* connection attempt. Evaluated per
-   * attempt (partysocket takes it as a URL provider), so once the first
-   * `config` arrives, every reconnect — automatic or explicit — carries
-   * `?sessionId=<id>` and the server resumes the SAME session (id, tool
-   * state) instead of minting a new one. `resume=1` remains only as the
-   * greeting-suppression fallback for a server whose config carried no id.
+   * attempt (partysocket takes it as an async URL provider):
+   *
+   * - `GET client-config` is re-fetched every attempt. When it names a
+   *   `sessionUrl` — the platform's broker pointing at the agent's live
+   *   sandbox — the session connects DIRECTLY there. The URL changes when
+   *   the sandbox is replaced (idle eviction, redeploy), which is exactly
+   *   when a reconnect happens, so per-attempt brokering is what makes
+   *   reconnects land on the replacement. Without one (`aai dev`, older
+   *   servers), the same-origin `websocket` path is used.
+   * - Once the first `config` arrives, every reconnect carries
+   *   `?sessionId=<id>` and the server resumes the SAME session (id, tool
+   *   state) instead of minting a new one. `resume=1` remains only as the
+   *   greeting-suppression fallback for a server whose config carried no id.
    */
-  function currentWsUrl(): string {
-    return buildWsUrl(options.platformUrl, hasConnected, sessionId).toString();
+  async function currentWsUrl(): Promise<string> {
+    // Known non-broker: skip the fetch and go straight to the same-origin
+    // path (the fetch could only return no `sessionUrl` again).
+    const cfg = serverIsBroker === false ? {} : await fetchClientConfig(options.platformUrl);
+    serverIsBroker = cfg.sessionUrl !== undefined;
+    const url = cfg.sessionUrl
+      ? buildBrokeredWsUrl(cfg.sessionUrl, hasConnected, sessionId)
+      : buildWsUrl(options.platformUrl, hasConnected, sessionId);
+    // Keep the programmatic-endpoint display current (minus resume params).
+    const display = new URL(url);
+    display.search = "";
+    if (display.toString() !== currentSnapshot.apiUrl) {
+      updateState({ apiUrl: display.toString() });
+    }
+    return url.toString();
   }
 
-  /** Open a socket: an injected constructor as-is (tests), or partysocket's
-   *  reconnecting WebSocket — same interface, plus reconnect-on-close. */
+  /** Open a socket: an injected constructor as-is (tests — connects to the
+   *  same-origin path, no brokering), or partysocket's reconnecting
+   *  WebSocket — same interface, plus reconnect-on-close. */
   function openSocket(): InstanceType<WebSocketConstructor> {
-    if (options.WebSocket) return new options.WebSocket(currentWsUrl());
+    if (options.WebSocket) {
+      return new options.WebSocket(
+        buildWsUrl(options.platformUrl, hasConnected, sessionId).toString(),
+      );
+    }
     const socket = openReconnectingSocket(currentWsUrl);
     return socket as unknown as InstanceType<WebSocketConstructor>;
   }

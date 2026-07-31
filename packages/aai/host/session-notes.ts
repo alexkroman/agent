@@ -14,12 +14,6 @@
  * per-key promise-chain lock the old KV-backed implementation needed.
  * Expired entries are pruned lazily on access, and total entries are capped
  * (evicting oldest) so an abandoned host process can't grow unboundedly.
- *
- * {@link snapshotSessionNotes} / {@link restoreSessionNotes} exist for the
- * platform's cross-replica session resume: the server persists a
- * disconnected session's notes (with its guest ctx.state) so a reconnect
- * that lands on a different replica finds them — see aai-server's
- * session-state-store.
  */
 
 type NotesEntry = { notes: Record<string, string>; expiresAt: number };
@@ -66,24 +60,4 @@ export function writeNote(sessionId: string, key: string, value: string): Record
     sessionNotes.delete(oldest);
   }
   return entry.notes;
-}
-
-/**
- * Snapshot a session's notes for resume persistence. Null when the session
- * has none — callers skip the write instead of storing an empty record.
- */
-export function snapshotSessionNotes(sessionId: string): Record<string, string> | null {
-  const entry = liveNotesEntry(sessionId);
-  if (!entry || Object.keys(entry.notes).length === 0) return null;
-  return { ...entry.notes };
-}
-
-/**
- * Restore a session's notes from persisted resume state. Set-if-absent: a
- * live entry under this id is fresher than anything persisted (same-replica
- * resume within the grace window) and is never clobbered.
- */
-export function restoreSessionNotes(sessionId: string, notes: Record<string, string>): void {
-  if (liveNotesEntry(sessionId)) return;
-  for (const [key, value] of Object.entries(notes)) writeNote(sessionId, key, value);
 }

@@ -213,7 +213,7 @@ function outcomeToResponse(c: ValidatedAppContext<DeployBody>, outcome: DeployOu
  * The agent config is derived from the uploaded worker inside a guest
  * sandbox (`inspect`), never taken from the request: a client-supplied
  * config would let a caller deploy a bundle whose declared capabilities
- * (allowedHosts, providers, tools) disagree with the code that runs.
+ * (providers, tools) disagree with the code that runs.
  */
 export async function handleDeployNew(
   c: ValidatedAppContext<DeployBody>,

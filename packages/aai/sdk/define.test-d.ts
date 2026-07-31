@@ -18,13 +18,12 @@ test("agent() accepts every AgentDef field", () => {
   expectTypeOf<MissingFromParam>().toEqualTypeOf<never>();
 });
 
-test("agent() accepts allowedHosts and state", () => {
+test("agent() accepts state", () => {
   const def = agent({
     name: "t",
-    allowedHosts: ["api.example.com", "*.example.org"],
     state: () => ({ count: 0 }),
   });
-  expectTypeOf(def.allowedHosts).toEqualTypeOf<string[] | undefined>();
+  expectTypeOf(def.state).toEqualTypeOf<(() => Record<string, unknown>) | undefined>();
 });
 
 test("agent() accepts stt/llm/tts optional fields", () => {

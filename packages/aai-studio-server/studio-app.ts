@@ -23,7 +23,6 @@
  * local `terminateSlot` is a no-op here by design.
  */
 
-import { createMemoryVector, type Vector } from "@alexkroman1/aai/runtime";
 import type { AppDatabases } from "aai-server/app-database";
 import { applyPlatformMiddleware } from "aai-server/app-middleware";
 import type { ChatStore } from "aai-server/chat-store";
@@ -92,10 +91,6 @@ export function createStudioApp(opts: StudioAppOpts): { app: Hono<HonoEnv> } {
     ...(opts.appDb && { appDb: opts.appDb }),
     slugLock: opts.slugLock ?? localSlugLock,
     slugEpochs: opts.slugEpochs ?? createMemorySlugEpochs(),
-    // Never used by studio routes (it belongs to the agent vector route,
-    // required by the shared Bindings shape) — a memory factory keeps the
-    // studio service free of Pinecone credentials.
-    defaultVector: (slug: string): Vector => createMemoryVector({ namespace: slug }),
   };
 
   const original = app.fetch.bind(app);

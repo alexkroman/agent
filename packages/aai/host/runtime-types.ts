@@ -12,7 +12,6 @@ import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { ClientSink, ReadyConfig } from "../sdk/protocol.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
 import type { AgentDef } from "../sdk/types.ts";
-import type { Vector } from "../sdk/vector.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import type { CreateS2sWebSocket } from "./s2s.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -75,7 +74,7 @@ export type RuntimeOptions = {
    */
   env: AgentEnv;
   /**
-   * Environment used to resolve provider credentials (STT/TTS/LLM/Vector).
+   * Environment used to resolve provider credentials (STT/TTS/LLM).
    * Defaults to {@link RuntimeOptions.env}.
    *
    * Exists so a self-hosted caller can let shell-exported credentials reach
@@ -92,11 +91,6 @@ export type RuntimeOptions = {
    * `ctx.db` access throws.
    */
   db?: Db | undefined;
-  /**
-   * Vector store. If omitted, an in-memory store is created. The
-   * runtime overrides this with `agent.vector` if set.
-   */
-  vector?: Vector | undefined;
   /** Custom WebSocket factory for the S2S connection (useful for testing). */
   createWebSocket?: CreateS2sWebSocket | undefined;
   /** Custom WebSocket factory for the OpenAI Realtime connection (testing). */
@@ -144,6 +138,13 @@ export type RuntimeOptions = {
    * their own fetch wrapper.
    */
   fetch?: typeof globalThis.fetch | undefined;
+  /**
+   * In-sandbox executor for the `run_code` builtin. Only the platform's
+   * guest harness provides one — it runs inside the Modal sandbox, which is
+   * the security boundary. Without it, run_code refuses to evaluate code in
+   * this process (the self-hosted guard).
+   */
+  runCode?: ((code: string) => Promise<string | { error: string }>) | undefined;
   /**
    * STT provider descriptor ({@link SttProvider}). Must be set together with
    * `llm` and `tts` to route sessions through the pipeline path; leave all

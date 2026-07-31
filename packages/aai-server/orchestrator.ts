@@ -11,21 +11,20 @@
  * - `GET  /:slug`                 — redirect to /:slug/
  * - `GET  /:slug/`               — agent UI page
  * - `GET  /:slug/health`         — per-agent health check
- * - `GET  /:slug/client-config`  — pre-connection client config (name/greeting)
+ * - `GET  /:slug/client-config`  — session broker: name/greeting + the live
+ *   sandbox session URL (ensures the sandbox is running)
  * - `GET  /:slug/favicon.ico`    — agent page favicon (custom or default)
  * - `GET  /:slug/assets/:path`   — client static assets
  * - `DELETE /:slug/`             — owner: delete agent
  * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
  * - `GET/POST/DELETE /:slug/storage` — owner: per-app database storage
- * - `POST /:slug/vector`         — owner: Vector store operations
- * - `WS   /:slug/websocket`     — WebSocket upgrade for voice sessions
+ * - `WS   /:slug/websocket`     — host-mode (`?host=1`) upgrades only; plain
+ *   voice sessions connect directly to the agent's sandbox (410 + guidance)
  *
  * Auth: `authMw` validates API key; `existingOwnerMw` verifies slug ownership.
  * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
  */
 
-import { VectorRequestSchema } from "@alexkroman1/aai/protocol";
-import type { Vector } from "@alexkroman1/aai/runtime";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -34,7 +33,7 @@ import { applyPlatformMiddleware } from "./app-middleware.ts";
 import type { ChatStore } from "./chat-store.ts";
 import { handleAgentClientConfig } from "./client-config-handler.ts";
 import { resolveHarnessPath } from "./constants.ts";
-import type { AppContext, HonoEnv } from "./context.ts";
+import type { HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { type BundleInspector, handleDeployNew } from "./deploy.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
@@ -42,15 +41,12 @@ import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import { createMemorySlugEpochs, type SlugEpochs } from "./platform-epoch.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
-import type { IsolateConfig } from "./rpc-schemas.ts";
-import { resolveAgentVector } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { describeBundle } from "./sandbox-vm.ts";
 import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
-import { createMemorySessionStateStore, type SessionStateStore } from "./session-state-store.ts";
 import {
   handleStorageDisable,
   handleStorageEnable,
@@ -64,7 +60,6 @@ import {
   handleAgentPage,
   handleClientAsset,
 } from "./transport-websocket.ts";
-import { handleVector } from "./vector-handler.ts";
 import type { WorkspaceStore } from "./workspace-store.ts";
 
 export type OrchestratorOpts = {
@@ -88,13 +83,6 @@ export type OrchestratorOpts = {
    * production; defaults to memory (local-only invalidation).
    */
   slugEpochs?: SlugEpochs;
-  /**
-   * Cross-replica session-resume persistence (guest ctx.state + remember
-   * notes). Postgres-backed in production; defaults to memory.
-   */
-  sessionStates?: SessionStateStore;
-  /** Factory that creates the server-default Vector for a given slug. */
-  defaultVector: (slug: string) => Vector;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
   /**
@@ -120,17 +108,6 @@ export type OrchestratorOpts = {
    */
   isDraining?: () => boolean;
 };
-
-async function loadAgentConfig(
-  c: AppContext,
-  slug: string,
-): Promise<{ agentConfig: IsolateConfig | null; env: Record<string, string> }> {
-  const [agentConfig, agentEnv] = await Promise.all([
-    c.env.store.getAgentConfig(slug),
-    c.env.store.getEnv(slug),
-  ]);
-  return { agentConfig, env: agentEnv ?? {} };
-}
 
 export type Orchestrator = {
   app: Hono<HonoEnv>;
@@ -223,17 +200,14 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.get("/storage", existingOwnerMw, handleStorageStatus);
   agents.post("/storage", existingOwnerMw, handleStorageEnable);
   agents.delete("/storage", existingOwnerMw, handleStorageDisable);
-  agents.post("/vector", existingOwnerMw, zValidator("json", VectorRequestSchema), async (c) => {
-    const slug = c.var.slug;
-    const { agentConfig, env } = await loadAgentConfig(c, slug);
-    if (!agentConfig) return c.json({ error: "agent not configured" }, 404);
-    return handleVector(c, resolveAgentVector(slug, agentConfig, env, c.env.defaultVector));
-  });
 
   agents.get("/health", handleAgentHealth);
-  // Pre-connection client config (name/greeting) for the default
-  // client — same auth posture as the page and the WebSocket: none.
-  agents.get("/client-config", handleAgentClientConfig);
+  // Session broker: name/greeting plus the live sandbox session URL (boots
+  // the sandbox on first request). Same auth posture as the page and the
+  // session endpoint: none.
+  agents.get("/client-config", (c) =>
+    handleAgentClientConfig(c, opts.pool ? { pool: opts.pool } : {}),
+  );
   agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);
   // GET /:slug/ stays on the top-level app — Hono's mergePath("/:slug", "/")
@@ -254,15 +228,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // platform database, where in-process exclusion is exact.
     slugLock: opts.slugLock ?? localSlugLock,
     slugEpochs: opts.slugEpochs ?? createMemorySlugEpochs(),
-    defaultVector: opts.defaultVector,
-  };
-  // resolveSandbox takes the bindings minus the studio stores (bundle data
-  // lives in the BundleStore; `workspaces`/`chats` are studio-only).
-  const { workspaces: _studioWorkspaces, chats: _studioChats, ...sandboxBindings } = bindings;
-  const sandboxOpts = {
-    ...sandboxBindings,
-    ...(opts.pool && { pool: opts.pool }),
-    sessionStates: opts.sessionStates ?? createMemorySessionStateStore(),
   };
 
   const original = app.fetch.bind(app);
@@ -272,7 +237,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const { injectWebSocket, closeActiveSockets, activeSessionCount } = createWsUpgrades({
     slots: opts.slots,
     store: opts.store,
-    sandboxOpts,
     ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),
     ...(opts.isDraining && { isDraining: opts.isDraining }),
   });

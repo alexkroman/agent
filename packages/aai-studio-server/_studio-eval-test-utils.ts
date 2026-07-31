@@ -166,8 +166,8 @@ export const UNCOVERED: Record<string, string> = {
   "math-buddy": "same shape as code-interpreter (run_code, no custom tools)",
   "personal-finance": "same shape as web-researcher (network builtins, no custom tools)",
   "health-assistant":
-    "custom tools like pizza-ordering; its egress + allowedHosts half is graded " +
-    "as a config fact by the `declares allowedHosts` config case",
+    "custom tools like pizza-ordering; its fetch-backed-tool half is graded " +
+    "as a config fact by the custom-fetch-tool config case",
   "night-owl": "same shape as embedded-assets (in-bundle data behind a tool)",
   "infocom-adventure": "same shape as pizza-ordering (per-session ctx.state)",
   "solo-rpg": "same shape as pizza-ordering (per-session ctx.state)",
@@ -209,31 +209,22 @@ export type ConfigCase = {
    */
   rationale: string;
   providers: ProviderExpectation;
-  /**
-   * Hostnames the agent's own tool code is asked to fetch. Each must be
-   * matched by an `allowedHosts` pattern in the reported config, or the
-   * request is rejected once published.
-   */
-  fetchedHosts?: string[];
 };
 
 /**
  * Cases graded purely on config facts — no template reference, so no parity
- * judge. These cover the two rules that are invisible to a resemblance
- * grader because they are about *what a published agent can actually run on*:
+ * judge. These cover the one rule that is invisible to a resemblance
+ * grader because it is about *what a published agent can actually run on*:
  *
- * 1. **An all-AssemblyAI pipeline is the default.** `ASSEMBLYAI_API_KEY` is
- *    the only key publishing seeds, so an agent that reaches for another
- *    provider the user never named cannot start until they supply a key —
- *    and the S2S voice agent API is reserved for prompts that ask for it,
- *    so a bare "build me a voice agent" must come out as a cascaded
- *    pipeline on AssemblyAI for every stage. A parity judge is the wrong
- *    instrument for this: several references legitimately run S2S or use
- *    other providers, so "matches the reference" and "runs when published"
- *    disagree.
- * 2. **Egress needs `allowedHosts`.** A tool that fetches an undeclared host
- *    builds, loads, and passes every rubric — then fails at runtime, in the
- *    one place the studio user cannot see from the Code pane.
+ * **An all-AssemblyAI pipeline is the default.** `ASSEMBLYAI_API_KEY` is
+ * the only key publishing seeds, so an agent that reaches for another
+ * provider the user never named cannot start until they supply a key —
+ * and the S2S voice agent API is reserved for prompts that ask for it,
+ * so a bare "build me a voice agent" must come out as a cascaded
+ * pipeline on AssemblyAI for every stage. A parity judge is the wrong
+ * instrument for this: several references legitimately run S2S or use
+ * other providers, so "matches the reference" and "runs when published"
+ * disagree.
  */
 export const CONFIG_CASES: ConfigCase[] = [
   {
@@ -305,11 +296,10 @@ export const CONFIG_CASES: ConfigCase[] = [
     },
   },
   {
-    name: "declares allowedHosts for a tool that fetches",
+    name: "builds a custom tool that fetches an external API",
     rationale:
-      "tool-code egress to a named endpoint → the hostname must appear in " +
-      "allowedHosts; also a second read on the pipeline default, since no " +
-      "provider is named here either",
+      "a custom fetch-backed tool must load and self-describe; also a second " +
+      "read on the pipeline default, since no provider is named here either",
     prompt:
       "Build a voice agent named Breeze that reports the weather. Give it a " +
       "get_weather tool that takes a latitude and longitude and fetches " +
@@ -324,6 +314,5 @@ export const CONFIG_CASES: ConfigCase[] = [
       tts: "assemblyai",
       llmModel: "qwen3-next-80b-a3b",
     },
-    fetchedHosts: ["api.open-meteo.com"],
   },
 ];

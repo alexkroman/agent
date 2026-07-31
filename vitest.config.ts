@@ -68,6 +68,15 @@ export default defineConfig({
       {
         ...sharedConfig,
         test: {
+          name: "aai-guest",
+          root: "packages/aai-guest",
+          include: ["**/*.test.ts"],
+          exclude: ["node_modules", "dist"],
+        },
+      },
+      {
+        ...sharedConfig,
+        test: {
           name: "aai-server",
           root: "packages/aai-server",
           pool: "forks",

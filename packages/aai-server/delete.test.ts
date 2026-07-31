@@ -1,5 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { expect, test, vi } from "vitest";
 import { createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
@@ -21,7 +20,6 @@ async function setup() {
     store,
     workspaces: createMemoryWorkspaceStore(),
     chats: createMemoryChatStore(),
-    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     inspect: async () => TEST_AGENT_CONFIG,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);

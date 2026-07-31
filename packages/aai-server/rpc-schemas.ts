@@ -7,8 +7,7 @@
  * evolve independently.
  */
 
-import type { Message } from "@alexkroman1/aai";
-import { AllowedHostsSchema, DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
+import { DEFAULT_SYSTEM_PROMPT, errorMessage } from "@alexkroman1/aai";
 import {
   AgentConfigSchema,
   assertPipelineTuning,
@@ -17,14 +16,7 @@ import {
   ToolSchemaSchema,
 } from "@alexkroman1/aai/manifest";
 import { z } from "zod";
-import type { MessagesMode } from "./guest/harness-messages.ts";
-import type { NdjsonConnection } from "./ndjson-transport.ts";
-import type {
-  FetchResponseChunk,
-  FetchResponseEnd,
-  FetchResponseError,
-  FetchResponseStart,
-} from "./sandbox-fetch.ts";
+import type { RpcConnection } from "./rpc-transport.ts";
 
 export { ToolSchemaSchema } from "@alexkroman1/aai/manifest";
 
@@ -54,12 +46,6 @@ export const IsolateConfigSchema = AgentConfigSchema.extend({
   // none (toRuntimeAgent falls back to ""), never the SDK default phrase.
   systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
   greeting: z.string().optional(),
-  // Re-validated host-side, not trusted: this list arrives from a tenant's
-  // bundle and decides that agent's guest egress, so the platform applies
-  // the same pattern rules the SDK does rather than assuming the CLI ran
-  // them. Rejects protocols, paths, ports, IP literals, bare `*`, and
-  // private TLDs; the SSRF guard still screens every request on top.
-  allowedHosts: AllowedHostsSchema.default([]),
   // Wire-only: the agent's custom tool schemas ride alongside the config.
   toolSchemas: z.array(ToolSchemaSchema).default([]),
 }).superRefine((cfg, ctx) => {
@@ -90,21 +76,23 @@ export const DbQueryParamsSchema = z.object({
   params: z.array(z.unknown()).optional(),
 });
 
-// Zod strips unknown keys, so a legacy guest that still echoes per-session
-// `state` on a tool response parses fine — the host only ever reads `result`.
-export const ToolCallResponseSchema = z.object({
-  result: z.string(),
+/** Response of the guest `status` request (guest-asserted wire data). */
+export const StatusResponseSchema = z.object({
+  activeSessions: z.number().int().nonnegative(),
 });
 
 /**
- * Response of the host→guest `session/export` request. Guest-asserted wire
- * data; an absent `state` means the session had none to export.
+ * Response of one one-shot guest tool trial (the studio's test_agent).
+ * Exactly one of `result`/`error` is set; `state` rides back so a trial can
+ * observe what the call did to a fresh session state.
  */
-export const SessionExportResultSchema = z.object({
-  state: z.record(z.string(), z.unknown()).optional(),
+export const ToolCallResponseSchema = z.object({
+  result: z.string().optional(),
+  error: z.string().optional(),
+  state: z.record(z.string(), z.unknown()),
 });
 
-// ── Typed method map for the host↔guest NDJSON link ─────────────────────────
+// ── Typed method map for the host↔guest RPC link ─────────────────────────────
 
 /** Params of the host→guest `bundle/load` request. */
 export type BundleLoadParams = {
@@ -118,66 +106,48 @@ export type BundleLoadParams = {
   storageEnabled?: boolean;
 };
 
-/** Params of the host→guest `tool/execute` request. */
+/** Params of the host→guest `tool/execute` request (one-shot trial). */
 export type ToolExecuteParams = {
   name: string;
   args: Readonly<Record<string, unknown>>;
   sessionId: string;
-  /** Conversation history — full or a delta, per `messagesMode`. */
-  messages: readonly Message[];
-  messagesMode?: MessagesMode;
-  messagesBase?: number;
+  /** Trial state — `null` initializes from the agent's `state()` factory. */
+  state: Record<string, unknown> | null;
 };
 
 /**
- * The host's view of the sandbox NDJSON link (see `RpcSchema` in
- * ndjson-transport.ts for why method names and outgoing params are typed
+ * The host's view of the sandbox control channel (see `RpcSchema` in
+ * rpc-transport.ts for why method names and outgoing params are typed
  * while results and incoming params stay `unknown`: the guest is untrusted,
  * so everything it sends is validated with Zod at the receiving site —
  * `ToolCallResponseSchema`, `DbQueryParamsSchema`, and the schemas in
  * sandbox-guest-rpc.ts).
  *
- * This map and the guest harness must agree; the harness is deliberately
- * self-contained (inline types, no imports from here), so the wire contract
- * is pinned by `sandbox-compat.test.ts` fixtures rather than shared types.
+ * Client voice sessions do NOT ride this link: the guest runs the complete
+ * agent runtime and clients connect directly to its public `/websocket`
+ * endpoint on the same tunnel.
+ *
+ * This map and the guest harness must agree; both sides ship in the same
+ * server artifact, so the contract can change atomically.
  */
 export type GuestRpcSchema = {
   requestsOut: {
     "bundle/load": { params: BundleLoadParams; result: unknown };
     "tool/execute": { params: ToolExecuteParams; result: unknown };
-    // Snapshot one session's guest ctx.state for cross-replica resume
-    // persistence; `{}` result means the session has no state to export.
-    "session/export": { params: { sessionId: string }; result: unknown };
+    /** Session-aware idleness: the host's idle eviction asks before killing. */
+    status: { params: undefined; result: unknown };
   };
   requestsIn: {
     "db/query": { params: unknown; result: unknown };
-    "vector/upsert": { params: unknown; result: unknown };
-    "vector/query": { params: unknown; result: unknown };
-    "vector/delete": { params: unknown; result: unknown };
-    "llm/generate": { params: unknown; result: unknown };
-    "fetch/request": { params: unknown; result: { id: string } };
   };
   notificationsOut: {
-    "session/end": { sessionId: string };
-    // Persisted ctx.state for a resumed session; guest applies set-if-absent.
-    "session/restore": { sessionId: string; state: Record<string, unknown> };
     shutdown: undefined;
-    // Host-liveness heartbeat (modal-sandbox.ts). The guest deliberately has
-    // no `ping` handler — any inbound line feeds its orphan watchdog — but the
-    // method still belongs in the contract, or sending it doesn't typecheck.
-    ping: undefined;
-    "fetch/response-start": FetchResponseStart;
-    "fetch/response-chunk": FetchResponseChunk;
-    "fetch/response-end": FetchResponseEnd;
-    "fetch/response-error": FetchResponseError;
   };
-  notificationsIn: {
-    "client/send": unknown;
-  };
+  notificationsIn: Record<string, never>;
 };
 
-/** An NDJSON connection to a guest sandbox, typed with the guest method map. */
-export type GuestConnection = NdjsonConnection<GuestRpcSchema>;
+/** An RPC connection to a guest sandbox, typed with the guest method map. */
+export type GuestConnection = RpcConnection<GuestRpcSchema>;
 
 /**
  * Response shape of `bundle/load` when the bundle self-describes its config

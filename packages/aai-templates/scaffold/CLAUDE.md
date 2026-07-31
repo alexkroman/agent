@@ -76,7 +76,6 @@ export default agent({
   interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 0 = off)
   holdPhrase?: string;                       // pipeline only — spoken before a silent tool-call turn (default "One moment."; "" disables)
   falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
-  allowedHosts?: string[];                   // hostnames your own tool code may fetch (required once deployed)
   state?: () => Record<string, unknown>;     // per-session mutable state, exposed as ctx.state
 });
 ```
@@ -283,10 +282,8 @@ const myTool = tool({
 });
 ```
 
-**If `execute` calls `fetch`, declare the hostname in the agent's
-`allowedHosts` in the same change** — an undeclared host is rejected at
-runtime (a blocked request, not a build error), in `aai dev` and deployed
-alike. See "Calling an external API from your own tool code" below.
+`execute` may call `fetch` directly — tool code reaches external APIs the
+same way in `aai dev` and deployed.
 
 ### `ctx` (ToolContext)
 
@@ -424,36 +421,14 @@ set `builtinTools` explicitly (including `[]`) to override.
 | `calculate` | Safe arithmetic evaluator, no code execution (on by default) | `expression` |
 
 The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
-`fetch_json`) run host-side and reach any public host — they need no
-`allowedHosts` entry.
+`fetch_json`) take model-controlled URLs and are SSRF-screened
+(private/loopback addresses are always blocked).
 
 ## Calling an external API from your own tool code
 
-`fetch` inside a tool's `execute` needs the hostname in `allowedHosts`. A
-deployed agent's tool code runs in a sandbox with **no network device**; its
-`fetch` is proxied to the host, which rejects any hostname you haven't
-declared.
-
-```ts
-export default agent({
-  name: "Weather",
-  allowedHosts: ["api.weather.example.com", "*.tiles.example.org"],
-  tools: { forecast },
-});
-```
-
-Patterns are bare hostnames with an optional single leading `*.` wildcard.
-No protocol, path, port, IP literal, bare `*`, or `.internal`/`.local`
-TLD — those are rejected at deploy time, and requests are SSRF-screened
-regardless of what you list.
-
-`aai dev` enforces the same rules as production — an undeclared host fails
-locally too, rather than working until you deploy. The same limits apply in
-both: 1 MB request body, 4 MB response, 30s timeout, 10 concurrent fetches,
-and private/loopback addresses are always blocked.
-
-If a plain `GET` returning JSON is all you need, `fetch_json` is simpler and
-needs no declaration.
+`fetch` inside a tool's `execute` works directly — no declaration needed,
+identical under `aai dev` and deployed. If a plain `GET` returning JSON is
+all you need, the `fetch_json` builtin is simpler.
 
 ## Database API — `ctx.db`
 

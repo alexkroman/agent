@@ -350,7 +350,6 @@ describe("POST /deploy", () => {
       name: "config-agent",
       systemPrompt: "Be helpful",
       toolSchemas: [],
-      allowedHosts: [],
     };
     const { fetch, store } = await createTestOrchestrator({
       inspect: async () => agentConfig,

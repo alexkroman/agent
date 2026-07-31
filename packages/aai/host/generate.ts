@@ -3,10 +3,9 @@
  * Host-side implementation of the `ctx.generate` capability
  * (see `sdk/generate.ts` for the contract).
  *
- * One implementation, two call sites — the self-hosted tool executor calls
- * it in-process, and the platform's sandbox sidecar exposes it to the guest
- * as the `llm/generate` RPC — so the two execution modes cannot drift on
- * what a generation call accepts or resolves. Descriptors resolve through
+ * One implementation running wherever the runtime runs — in-process under
+ * `aai dev` and inside the guest sandbox on the platform — so dev and prod
+ * cannot drift on what a generation call accepts or resolves. Descriptors resolve through
  * the same `resolveLlm` registry as the pipeline's own model, with
  * credentials from the agent's env (never `process.env`).
  */

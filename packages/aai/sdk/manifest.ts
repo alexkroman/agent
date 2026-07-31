@@ -7,7 +7,6 @@
  */
 
 import { z } from "zod";
-import { AllowedHostsSchema } from "./allowed-hosts.ts";
 import {
   assertPipelineTuning,
   assertProviderTriple,
@@ -16,13 +15,7 @@ import {
 } from "./config-rules.ts";
 import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
-import type {
-  LlmProvider,
-  S2sProvider,
-  SttProvider,
-  TtsProvider,
-  VectorProvider,
-} from "./providers.ts";
+import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 /**
@@ -87,12 +80,10 @@ const ManifestSchema = z.object({
   errorPhrase: z.string().optional(),
   falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
   tools: z.record(z.string(), ToolManifestSchema).default({}),
-  allowedHosts: AllowedHostsSchema.default([]),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
   s2s: ProviderDescriptorSchema.optional(),
-  vector: ProviderDescriptorSchema.optional(),
 });
 
 /**
@@ -105,7 +96,6 @@ type ManifestProviders = {
   llm?: LlmProvider | undefined;
   tts?: TtsProvider | undefined;
   s2s?: S2sProvider | undefined;
-  vector?: VectorProvider | undefined;
 };
 
 /**

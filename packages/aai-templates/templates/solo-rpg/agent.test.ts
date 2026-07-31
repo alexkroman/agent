@@ -51,7 +51,6 @@ function makeCtx(sessionId = "session-a", db: Db = makeDb().db): ToolContext {
     env: {},
     state: {},
     db,
-    vector: {} as ToolContext["vector"],
     generate: () => Promise.reject(new Error("generate not available in tests")),
     messages: [],
     sessionId,

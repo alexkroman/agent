@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Node.js entry point for the AAI AGENT service: voice sessions (WebSocket),
- * the platform API (deploy/delete/secret/storage/vector), and — when
+ * the platform API (deploy/delete/secret/storage), and — when
  * `STUDIO_UPSTREAM_URL` is set — a reverse proxy to the studio service so
  * browsers see one public origin. Without an upstream the studio surface is
  * simply not served here.

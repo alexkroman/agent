@@ -13,14 +13,12 @@
  * - starts with no bundle and can re-`loadBundle` repeatedly (the harness
  *   replaces the loaded agent), giving the coding agent a build → load →
  *   try loop against the production runtime;
- * - is wired to a scratch in-memory Vector and NO app database — trial tool
- *   runs never touch platform data, and no tenant secrets enter the guest.
- *   A trial run that touches ctx.db gets the self-explanatory
- *   storage-not-enabled error.
+ * - has NO app database — trial tool runs never touch platform data, and no
+ *   tenant secrets enter the guest. A trial run that touches ctx.db gets the
+ *   self-explanatory storage-not-enabled error.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { resolveHarnessPath } from "aai-server/constants";
 import type { BundleLoadResult } from "aai-server/rpc-schemas";
 import { registerGuestRpcHandlers } from "aai-server/sandbox-guest-rpc";
@@ -60,13 +58,9 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
   const spawn = opts.spawn ?? spawnWarmHarness;
   const harnessPath = opts.harnessPath ?? resolveHarnessPath();
 
-  // Scratch Vector so trial tool runs behave realistically (ctx.vector works)
-  // without reaching any tenant data. No db (ctx.db throws the
-  // storage-not-enabled error) and no allowedHosts — guest fetch is off.
+  // No db — ctx.db throws the storage-not-enabled error in trial runs.
   const wire = (warm: WarmHarness): WarmHarness => {
-    registerGuestRpcHandlers(warm.conn, {
-      vector: createMemoryVector({ namespace: TRIAL_SESSION_ID }),
-    });
+    registerGuestRpcHandlers(warm.conn, {});
     warm.conn.listen();
     return warm;
   };
@@ -132,6 +126,7 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
           const result = (await live.conn.sendRequest("bundle/load", {
             code,
             env: {},
+            storageEnabled: false,
           })) as BundleLoadResult | undefined;
           return { ...(result?.config !== undefined && { config: result.config }) };
         }),
@@ -145,7 +140,8 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
             name,
             args,
             sessionId: TRIAL_SESSION_ID,
-            messages: [],
+            // Trial runs are one-shot: fresh state per call.
+            state: null,
           })) as { result?: string; error?: string } | undefined;
           if (response?.error) return `Tool error: ${response.error}`;
           return response?.result ?? "(no result)";

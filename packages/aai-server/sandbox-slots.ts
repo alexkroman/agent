@@ -7,10 +7,16 @@ import { IDLE_SANDBOX_MS } from "./constants.ts";
 
 export type AgentSlot = {
   slug: string;
-  sandbox?: { shutdown(): Promise<void> };
+  sandbox?: {
+    shutdown(): Promise<void>;
+    /**
+     * Live client sessions in the guest. Sessions connect DIRECTLY to the
+     * sandbox's tunnel, so the host cannot count them — idle eviction asks
+     * the guest before killing (see evictIdleSandbox).
+     */
+    activeSessions?: () => Promise<number>;
+  };
   idleTimer?: NodeJS.Timeout;
-  /** Number of live WebSocket sessions on this slot's sandbox. */
-  activeSessions?: number;
   /**
    * Slug epoch the resident sandbox was built at (see platform-epoch.ts).
    * resolveSandbox terminates and rebuilds when the current epoch differs —
@@ -20,8 +26,8 @@ export type AgentSlot = {
 };
 
 // An OwnedMap because a redeploy replaces the slot object under the same
-// slug: mutations driven by a pre-replacement handle must no-op (see
-// releaseSlotSession), which is the map's `owns` check.
+// slug: mutations driven by a pre-replacement handle must no-op (see the
+// identity re-check in evictIdleSandbox), which is the map's `owns` check.
 export type SlotCache = OwnedMap<string, AgentSlot>;
 
 export function createSlotCache(): SlotCache {
@@ -103,39 +109,10 @@ export function deleteSlot(slots: SlotCache, slug: string): boolean {
 export function attachSandbox(
   slots: SlotCache,
   slot: AgentSlot,
-  sandbox: { shutdown(): Promise<void> },
+  sandbox: NonNullable<AgentSlot["sandbox"]>,
 ): void {
   slot.sandbox = sandbox;
   resetIdleTimer(slots, slot);
-}
-
-/**
- * Register a new active session on `slug`; pauses idle eviction.
- *
- * Returns the specific slot object the session was counted on. Release MUST
- * go through {@link releaseSlotSession} with this handle: a redeploy replaces
- * the slot object (deploy.ts `setSlot`), and a stale slug-keyed release would
- * decrement the *replacement* slot's counter — rearming idle eviction under a
- * live session on the new sandbox.
- */
-export function acquireSlotSession(slots: SlotCache, slug: string): AgentSlot | null {
-  const slot = slots.get(slug);
-  if (!slot) return null;
-  slot.activeSessions = (slot.activeSessions ?? 0) + 1;
-  // A live session must never be idle-evicted mid-call; stop the timer while
-  // any session is active (rearmed on release when the count hits zero).
-  clearIdleTimer(slot);
-  return slot;
-}
-
-/** Release an acquired session handle; rearms idle eviction when none remain. */
-export function releaseSlotSession(slots: SlotCache, acquired: AgentSlot | null): void {
-  if (!acquired) return;
-  acquired.activeSessions = Math.max(0, (acquired.activeSessions ?? 0) - 1);
-  // Only the slot currently installed for this slug may drive idle eviction —
-  // a handle from before a redeploy/delete must not touch the new slot.
-  if (!slots.owns(acquired.slug, acquired)) return;
-  if (acquired.activeSessions === 0 && acquired.sandbox) resetIdleTimer(slots, acquired);
 }
 
 function resetIdleTimer(slots: SlotCache, slot: AgentSlot): void {
@@ -154,9 +131,14 @@ async function evictIdleSandbox(slots: SlotCache, slug: string): Promise<void> {
   // The fired timer was ours; drop the field so a later attach can rearm.
   delete slot.idleTimer;
   if (!slot.sandbox) return;
-  // A session that started after the timer was armed but before it fired must
-  // not be killed mid-call; rearm instead of evicting.
-  if ((slot.activeSessions ?? 0) > 0) {
+  // Sessions connect directly to the sandbox, so the host must ASK whether
+  // any are live before killing it mid-call. A dead/unreachable guest
+  // answers 0 (see Sandbox.activeSessions) — eviction proceeds.
+  const live = (await slot.sandbox.activeSessions?.().catch(() => 0)) ?? 0;
+  // The probe awaited; only the slot's CURRENT sandbox may be evicted (a
+  // deploy may have replaced it while we asked).
+  if (slots.get(slug) !== slot || slot.sandbox === undefined) return;
+  if (live > 0) {
     resetIdleTimer(slots, slot);
     return;
   }

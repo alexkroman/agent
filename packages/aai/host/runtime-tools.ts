@@ -8,18 +8,20 @@
  */
 
 import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts";
-import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
+import {
+  DEFAULT_BUILTIN_TOOLS,
+  MAX_CLIENT_EVENT_NAME_LENGTH,
+  MAX_CLIENT_EVENT_PAYLOAD_BYTES,
+} from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { OwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
-import type { Vector } from "../sdk/vector.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
-import { exemptFromToolEgress, installToolFetchGuard, runInToolEgress } from "./tool-egress.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
 
 /**
@@ -68,7 +70,6 @@ type ToolSetupDeps = {
   providerEnv: ProviderEnv;
   /** ctx.db when storage is enabled; undefined makes ctx.db access throw. */
   resolvedDb: Db | undefined;
-  resolvedVector: Vector;
   logger: NonNullable<RuntimeOptions["logger"]>;
   sinkMap: OwnedMap<string, ClientSink>;
   /** Per-session tool state (self-hosted mode only); cleaned up on session end. */
@@ -78,22 +79,18 @@ type ToolSetupDeps = {
 /**
  * Build the ctx.generate implementation for this runtime: the agent's
  * effective LLM descriptor (platform passes it as a runtime option, `aai dev`
- * reads the agent's own field) with credentials from `providerEnv` — the same
- * env Vector descriptors resolve from. Provider HTTP traffic is exempt
- * from the tool-egress guard like ctx.db/ctx.vector: the call executes on the
- * host (over RPC in production), so `allowedHosts` never applies to it.
+ * reads the agent's own field) with credentials from `providerEnv`.
  */
 function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
-  const generate = createGenerateFn({
+  return createGenerateFn({
     llm: deps.opts.llm ?? deps.agent.llm,
     env: deps.providerEnv,
   });
-  return exemptFromToolEgress({ generate }).generate;
 }
 
 /** Sandbox mode — custom tools are RPC-backed; builtins run host-side. */
 function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): ToolSetup {
-  const { agent, opts, env, resolvedDb, resolvedVector, logger } = deps;
+  const { agent, opts, env, resolvedDb, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const generate = setupGenerate(deps);
   const resolved = resolveSandboxBuiltins(agent, opts, builtinFetchOpt);
@@ -114,7 +111,6 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
         env: frozenEnv,
         sessionId: sessionId ?? "",
         db: resolvedDb,
-        vector: resolvedVector,
         messages,
         generate,
         logger,
@@ -136,13 +132,18 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
 function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
-  const { agent, opts, env, resolvedDb, resolvedVector, logger, sinkMap, stateMap } = deps;
-  const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
+  const { agent, opts, env, resolvedDb, logger, sinkMap, stateMap } = deps;
+  const builtinOpts = {
+    ...(opts.fetch ? { fetch: opts.fetch } : {}),
+    // The guest harness runs this path INSIDE the sandbox and provides the
+    // real run_code executor; without one the builtin refuses (aai dev).
+    ...(opts.runCode ? { runCode: opts.runCode } : {}),
+  };
   const customNames = new Set(Object.keys(agent.tools ?? {}));
   const builtinNames = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
     (name) => !customNames.has(name),
   );
-  const builtins = resolveAllBuiltins(builtinNames, builtinFetchOpt);
+  const builtins = resolveAllBuiltins(builtinNames, builtinOpts);
   const allTools: Record<string, AgentDef["tools"][string]> = {
     ...builtins.defs,
     ...agent.tools,
@@ -156,19 +157,21 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   };
   const frozenEnv = Object.freeze({ ...env });
 
-  // There is no sandbox on this path, so `allowedHosts` has nothing enforcing
-  // it: tool code would reach any host locally and then fail once deployed.
-  // See tool-egress.ts — builtins and ctx.db/ctx.vector stay exempt, matching
-  // what the platform actually restricts.
-  installToolFetchGuard();
-  const allowedHosts = agent.allowedHosts ?? [];
-  // One concurrency counter per runtime (= per agent), matching the platform's
-  // per-sandbox counter — a fresh counter per tool call let N concurrent tool
-  // calls each open the full fetch budget locally and trip the cap only in
-  // production.
-  const activeFetches = { count: 0 };
-  const vector = exemptFromToolEgress(resolvedVector);
   const generate = setupGenerate(deps);
+
+  /**
+   * `ctx.send` → client `custom_event`, with the wire caps enforced here —
+   * this is the single point where a tool's send becomes a client frame now
+   * that the runtime runs in-guest (the old guest→host `client/send` relay,
+   * which held these checks, is gone). Over-cap events are dropped, matching
+   * that relay: the name cap mirrors the protocol schema, and the payload is
+   * measured in UTF-8 bytes (what actually crosses the socket).
+   */
+  const sendToClient = (sink: ClientSink, event: string, data: unknown): void => {
+    if (event.length > MAX_CLIENT_EVENT_NAME_LENGTH) return;
+    if (Buffer.byteLength(JSON.stringify(data ?? null)) > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return;
+    sink.event({ type: "custom_event", event, data });
+  };
 
   const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
     const tool = allTools[name];
@@ -181,17 +184,16 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         state: getState(sessionId ?? ""),
         sessionId: sessionId ?? "",
         // db traffic is a TCP socket, not fetch, so the egress guard never
-        // sees it — no exemption wrapper needed (unlike HTTP-backed vector).
+        // sees it — no exemption wrapper needed.
         db: resolvedDb,
-        vector,
         messages,
         generate,
         logger,
-        send: sink ? (event, data) => sink.event({ type: "custom_event", event, data }) : undefined,
+        send: sink ? (event, data) => sendToClient(sink, event, data) : undefined,
         // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
         signal: callOpts?.signal,
       });
-    return customNames.has(name) ? runInToolEgress(allowedHosts, run, activeFetches) : run();
+    return run();
   };
   return { executeTool, toolSchemas, toolGuidance: builtins.guidance };
 }

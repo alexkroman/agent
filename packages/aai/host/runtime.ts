@@ -18,11 +18,8 @@ import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts"
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
-import type { Vector } from "../sdk/vector.ts";
-import { createMemoryVector } from "./memory-vector.ts";
 import { createPostgresDb } from "./postgres-db.ts";
 import { descriptorKind, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
-import { resolveVector } from "./providers/resolve-vector.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
 import {
@@ -90,11 +87,6 @@ function resolvePipelineProviders(
   };
 }
 
-/** Create an in-memory Vector store (default for self-hosted). */
-function createLocalVector(slug: string): Vector {
-  return createMemoryVector({ namespace: slug });
-}
-
 /**
  * Create an agent runtime — the execution engine for a voice agent.
  *
@@ -111,7 +103,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const {
     agent,
     env,
-    vector,
     createWebSocket,
     createOpenaiRealtimeWebSocket,
     logger = consoleLogger,
@@ -143,9 +134,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ? createPostgresDb({ url: providerEnv.DATABASE_URL })
       : undefined;
   const resolvedDb = opts.db ?? ownedDb;
-  const resolvedVector = agent.vector
-    ? resolveVector(agent.vector, providerEnv, slug)
-    : (vector ?? createLocalVector(slug));
 
   // Validate against the *effective* providers, not the agent's own fields.
   // Providers may arrive as runtime options rather than on the agent object,
@@ -197,7 +185,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     env,
     providerEnv,
     resolvedDb,
-    resolvedVector,
     logger,
     sinkMap,
     stateMap,

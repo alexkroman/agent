@@ -2,24 +2,24 @@
 /**
  * Tests for sandbox VM configuration.
  *
- * The vector/* and db/query RPC handler tests live in
+ * The db/query RPC handler tests live in
  * sandbox-vm-rpc-handlers.test.ts; the Modal spawn backend is covered by
  * modal-sandbox.test.ts; shared helpers live in _sandbox-vm-test-utils.ts.
  */
 
-import type { PassThrough } from "node:stream";
 import type { Db } from "@alexkroman1/aai";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   autorespondBundleLoad,
   autorespondBundleLoadError,
   baseOpts,
   createTestConn,
+  type FakeGuestSocket,
   findResponseById,
   makeWarm,
   waitForResponseId,
 } from "./_sandbox-vm-test-utils.ts";
-import type { NdjsonConnection } from "./ndjson-transport.ts";
+import type { GuestConnection } from "./rpc-schemas.ts";
 import { _internals, createSandboxVm, describeBundle, type WarmHarness } from "./sandbox-vm.ts";
 
 /** In-memory mock Db whose query fn is a spy. */
@@ -32,44 +32,33 @@ function createMockDb(rows: Record<string, unknown>[] = []) {
 // ── Tests ────────────────────────────────────────────────────────────────────
 
 describe("configureSandbox", () => {
-  let hostReadable: PassThrough;
-  let hostWritable: PassThrough;
+  let socket: FakeGuestSocket;
   let writtenLines: string[];
-  let conn: NdjsonConnection;
+  let conn: GuestConnection;
 
   beforeEach(() => {
     const result = createTestConn();
-    hostReadable = result.hostReadable;
-    hostWritable = result.hostWritable;
+    socket = result.socket;
     writtenLines = result.writtenLines;
     conn = result.conn;
-  });
-
-  afterEach(() => {
-    hostReadable.destroy();
-    hostWritable.destroy();
   });
 
   it("sends bundle/load request during configuration", async () => {
     const opts = baseOpts();
     const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
+    autorespondBundleLoad(socket);
 
     const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     expect(handle.conn).toBe(conn);
 
     // Verify bundle/load was sent with correct params
-    const bundleReq = writtenLines
-      .map((l) => JSON.parse(l))
-      .find((m: { method?: string }) => m.method === "bundle/load");
+    const bundleReq = socket.sentMessages().find((m) => m.method === "bundle/load");
     expect(bundleReq).toBeDefined();
-    expect(bundleReq.params).toEqual({
+    expect(bundleReq?.params).toEqual({
       code: opts.workerCode,
       env: opts.env,
       storageEnabled: false,
     });
-
-    detach();
   });
 
   it("registers db/query handler that queries the app db", async () => {
@@ -77,22 +66,24 @@ describe("configureSandbox", () => {
 
     const opts = baseOpts({ db });
     const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
+    autorespondBundleLoad(socket);
 
     const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
 
     // bundle/load advertises storage as enabled when a db is bound.
-    const bundleReq = writtenLines
-      .map((l) => JSON.parse(l))
-      .find((m: { method?: string }) => m.method === "bundle/load");
+    const bundleReq = socket.sentMessages().find((m) => m.method === "bundle/load") as {
+      params: { storageEnabled: boolean };
+    };
     expect(bundleReq.params.storageEnabled).toBe(true);
 
     // Simulate guest sending a db/query request
     const reqId = 100;
-    hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: reqId, method: "db/query", params: { sql: "select body from notes where id = $1", params: [7] } })}\n`,
-    );
+    socket.receive({
+      jsonrpc: "2.0",
+      id: reqId,
+      method: "db/query",
+      params: { sql: "select body from notes where id = $1", params: [7] },
+    });
 
     await waitForResponseId(writtenLines, reqId);
 
@@ -106,16 +97,18 @@ describe("configureSandbox", () => {
   it("does not register the db handler when db is not provided", async () => {
     const opts = baseOpts(); // no db
     const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
+    autorespondBundleLoad(socket);
 
     await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
 
     // Try sending a db/query -- should get "Method not found" error response
     const reqId = 400;
-    hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: reqId, method: "db/query", params: { sql: "select 1" } })}\n`,
-    );
+    socket.receive({
+      jsonrpc: "2.0",
+      id: reqId,
+      method: "db/query",
+      params: { sql: "select 1" },
+    });
 
     await waitForResponseId(writtenLines, reqId);
 
@@ -132,17 +125,14 @@ describe("configureSandbox", () => {
   it("shutdown sends notification, disposes connection, and calls cleanup", async () => {
     const opts = baseOpts();
     const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
+    autorespondBundleLoad(socket);
 
     const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
 
     await handle.shutdown();
 
     // Verify shutdown notification was sent
-    const shutdownMsg = writtenLines
-      .map((l) => JSON.parse(l))
-      .find((m: { method?: string }) => m.method === "shutdown");
+    const shutdownMsg = socket.sentMessages().find((m) => m.method === "shutdown");
     expect(shutdownMsg).toBeDefined();
 
     // Verify cleanup was called
@@ -153,31 +143,23 @@ describe("configureSandbox", () => {
 // ── Warm-pool fallback ───────────────────────────────────────────────────────
 
 describe("createSandboxVm warm-pool fallback", () => {
-  let hostReadable: PassThrough;
-  let hostWritable: PassThrough;
-  let conn: NdjsonConnection;
+  let socket: FakeGuestSocket;
+  let conn: GuestConnection;
 
   beforeEach(() => {
     const result = createTestConn();
-    hostReadable = result.hostReadable;
-    hostWritable = result.hostWritable;
+    socket = result.socket;
     conn = result.conn;
-  });
-
-  afterEach(() => {
-    hostReadable.destroy();
-    hostWritable.destroy();
   });
 
   it("configures a pooled warm harness without spawning", async () => {
     const opts = baseOpts();
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const warm = makeWarm(conn, cleanup);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
+    autorespondBundleLoad(socket);
     const pool = { acquire: vi.fn(async (): Promise<WarmHarness | null> => warm) };
 
     const handle = await createSandboxVm(opts, pool);
-    detach();
 
     expect(handle.conn).toBe(conn);
     handle.conn.dispose();
@@ -188,22 +170,18 @@ describe("createSandboxVm warm-pool fallback", () => {
     const opts = baseOpts();
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const warm = makeWarm(conn, cleanup);
-    const detach = autorespondBundleLoadError(hostWritable, hostReadable);
+    autorespondBundleLoadError(socket);
     const pool = { acquire: vi.fn(async (): Promise<WarmHarness | null> => warm) };
 
     // The warm failure falls back to a cold spawn; make that fail identically
     // so the whole init rejects (a genuinely broken bundle breaks both paths).
     const cold = createTestConn();
-    const detachCold = autorespondBundleLoadError(cold.hostWritable, cold.hostReadable);
+    autorespondBundleLoadError(cold.socket);
     const coldCleanup = vi.fn().mockResolvedValue(undefined);
     const spawn = vi.fn(async () => makeWarm(cold.conn, coldCleanup));
 
     await expect(createSandboxVm(opts, pool, spawn)).rejects.toThrow();
     expect(spawn).toHaveBeenCalledOnce();
-    detach();
-    detachCold();
-    cold.hostReadable.destroy();
-    cold.hostWritable.destroy();
     consoleSpy.mockRestore();
   });
 
@@ -214,12 +192,12 @@ describe("createSandboxVm warm-pool fallback", () => {
     // Warm harness dies at bundle/load (acquired alive, dead by configure).
     const warmCleanup = vi.fn().mockResolvedValue(undefined);
     const warm = makeWarm(conn, warmCleanup);
-    const detachWarm = autorespondBundleLoadError(hostWritable, hostReadable);
+    autorespondBundleLoadError(socket);
     const pool = { acquire: vi.fn(async (): Promise<WarmHarness | null> => warm) };
 
     // Cold fallback spawn succeeds.
     const cold = createTestConn();
-    const detachCold = autorespondBundleLoad(cold.hostWritable, cold.hostReadable);
+    autorespondBundleLoad(cold.socket);
     const coldCleanup = vi.fn().mockResolvedValue(undefined);
     const spawn = vi.fn(async () => makeWarm(cold.conn, coldCleanup));
 
@@ -230,11 +208,7 @@ describe("createSandboxVm warm-pool fallback", () => {
     // The failed warm harness was cleaned up, not leaked.
     expect(warmCleanup).toHaveBeenCalled();
 
-    detachWarm();
-    detachCold();
     handle.conn.dispose();
-    cold.hostReadable.destroy();
-    cold.hostWritable.destroy();
     consoleSpy.mockRestore();
   });
 });
@@ -243,26 +217,16 @@ describe("createSandboxVm warm-pool fallback", () => {
 
 describe("describeBundle", () => {
   function makeInspectFixture(loadResult: unknown) {
-    const { conn, hostReadable, hostWritable, writtenLines } = createTestConn();
-    const detach = (() => {
-      const handler = (chunk: Buffer) => {
-        for (const line of chunk.toString().split("\n")) {
-          if (!line.trim()) continue;
-          const msg = JSON.parse(line);
-          if (msg.method === "bundle/load" && msg.id != null) {
-            hostReadable.push(
-              `${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result: loadResult })}\n`,
-            );
-          }
-        }
-      };
-      hostWritable.on("data", handler);
-      return () => hostWritable.off("data", handler);
-    })();
+    const { conn, socket, writtenLines } = createTestConn();
+    socket.onSend((msg) => {
+      if (msg.method === "bundle/load" && msg.id != null) {
+        socket.receive({ jsonrpc: "2.0", id: msg.id, result: loadResult });
+      }
+    });
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const warm = makeWarm(conn, cleanup);
     const spawn = vi.fn(async () => warm);
-    return { spawn, cleanup, writtenLines, detach, hostReadable, hostWritable };
+    return { spawn, cleanup, writtenLines, warm };
   }
 
   it("loads the bundle in a scratch harness and returns its config", async () => {
@@ -271,13 +235,10 @@ describe("describeBundle", () => {
       { harnessPath: "/tmp/harness.mjs", workerCode: "export default {};" },
       fixture.spawn,
     );
-    fixture.detach();
     expect(config).toEqual({ name: "studio-agent" });
     // The harness is always torn down, and a shutdown notification was sent.
     expect(fixture.cleanup).toHaveBeenCalledTimes(1);
     expect(fixture.writtenLines.some((l) => l.includes('"shutdown"'))).toBe(true);
-    fixture.hostReadable.destroy();
-    fixture.hostWritable.destroy();
   });
 
   it("returns undefined for a bundle that does not self-describe", async () => {
@@ -286,23 +247,17 @@ describe("describeBundle", () => {
       { harnessPath: "/tmp/harness.mjs", workerCode: "export default {};" },
       fixture.spawn,
     );
-    fixture.detach();
     expect(config).toBeUndefined();
-    fixture.hostReadable.destroy();
-    fixture.hostWritable.destroy();
   });
 
   it("tears the harness down even when bundle/load rejects", async () => {
-    const { conn, hostReadable, hostWritable } = createTestConn();
-    const detach = autorespondBundleLoadError(hostWritable, hostReadable);
+    const { conn, socket } = createTestConn();
+    autorespondBundleLoadError(socket);
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const spawn = vi.fn(async () => makeWarm(conn, cleanup));
     await expect(
       describeBundle({ harnessPath: "/tmp/harness.mjs", workerCode: "throw 1" }, spawn),
     ).rejects.toThrow(/Worker code not found/);
-    detach();
     expect(cleanup).toHaveBeenCalledTimes(1);
-    hostReadable.destroy();
-    hostWritable.destroy();
   });
 });

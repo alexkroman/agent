@@ -1,15 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
-// NDJSON transport for host↔guest JSON-RPC 2.0 communication.
+// WebSocket transport for host↔guest JSON-RPC 2.0 communication.
 //
-// Line framing (node:readline) and write backpressure are handled here;
-// JSON-RPC id allocation, response correlation, per-request timeouts, and
-// request dispatch are delegated to the `json-rpc-2.0` library. The wire
-// format is unchanged: one JSON object per line with `jsonrpc`/`id`/
-// `method`/`params`/`result`/`error` fields, -32601 for unknown methods
-// and -32603 for handler failures (the guest harness speaks exactly this).
+// The host dials the guest harness's WebSocket (through its Modal tunnel);
+// this module frames JSON-RPC over that socket. JSON-RPC id allocation,
+// response correlation, per-request timeouts, and request dispatch are
+// delegated to the `json-rpc-2.0` library. One JSON object per text frame
+// with `jsonrpc`/`id`/`method`/`params`/`result`/`error` fields, -32601 for
+// unknown methods and -32603 for handler failures (the guest harness speaks
+// exactly this).
 
-import { createInterface } from "node:readline";
-import type { Readable, Writable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import {
   createJSONRPCErrorResponse,
@@ -18,7 +17,6 @@ import {
   JSONRPCServer,
 } from "json-rpc-2.0";
 import { z } from "zod";
-import { createWriteChain } from "./guest/write-chain.ts";
 
 type JsonRpcRequest = {
   jsonrpc: "2.0";
@@ -78,13 +76,10 @@ export type RpcNotificationMap = Record<string, unknown>;
  * The four directional surfaces of one RPC link, seen from this side.
  *
  * A concrete schema (e.g. `GuestRpcSchema` in rpc-schemas.ts) makes method
- * names and request params compile-time-checked at every call site — the
- * stringly-typed `sendRequest(method: string, params?: unknown)` this
- * replaces let a renamed method or reshaped params drift from its handler
- * with nothing failing until runtime. Results and incoming params stay
- * `unknown` in concrete schemas on purpose: they are untrusted wire data,
- * and the type system must not claim otherwise — validation (Zod) at the
- * receiving site is the contract.
+ * names and request params compile-time-checked at every call site. Results
+ * and incoming params stay `unknown` in concrete schemas on purpose: they
+ * are untrusted wire data, and the type system must not claim otherwise —
+ * validation (Zod) at the receiving site is the contract.
  */
 export type RpcSchema = {
   requestsOut: RpcMethodMap;
@@ -93,7 +88,7 @@ export type RpcSchema = {
   notificationsIn: RpcNotificationMap;
 };
 
-export interface NdjsonConnection<S extends RpcSchema = RpcSchema> {
+export interface RpcConnection<S extends RpcSchema = RpcSchema> {
   // `params` is required exactly when the schema's params type cannot be
   // undefined — so `sendRequest("bundle/load")` is a missing-argument error
   // while an untyped connection (params: unknown) keeps its 1-arg form.
@@ -119,22 +114,36 @@ export interface NdjsonConnection<S extends RpcSchema = RpcSchema> {
   dispose(): void;
 }
 
+/**
+ * The subset of `ws`'s WebSocket the transport touches — structural so unit
+ * tests can inject fakes without opening sockets. The real WebSocket
+ * satisfies it.
+ */
+export type RpcWebSocket = {
+  readonly readyState: number;
+  readonly OPEN: number;
+  send(data: string): void;
+  close(): void;
+  on(event: "message", cb: (data: unknown) => void): unknown;
+  on(event: "close", cb: () => void): unknown;
+};
+
 type ParsedMessage =
   | { kind: "response"; data: JsonRpcResponse }
   | { kind: "request"; data: JsonRpcRequest }
   | { kind: "notification"; data: JsonRpcNotification }
   | null;
 
-function parseJsonRpcMessage(line: string): ParsedMessage {
-  let raw: unknown;
+function parseJsonRpcMessage(raw: unknown): ParsedMessage {
+  let value: unknown;
   try {
-    raw = JSON.parse(line);
+    value = JSON.parse(String(raw));
   } catch {
     return null;
   }
-  if (typeof raw !== "object" || raw === null) return null;
+  if (typeof value !== "object" || value === null) return null;
 
-  const obj = raw as Record<string, unknown>;
+  const obj = value as Record<string, unknown>;
   if ("result" in obj || "error" in obj) {
     const parsed = JsonRpcResponseSchema.safeParse(obj);
     return parsed.success ? { kind: "response", data: parsed.data as JsonRpcResponse } : null;
@@ -152,61 +161,32 @@ function parseJsonRpcMessage(line: string): ParsedMessage {
   return null;
 }
 
-export function createNdjsonConnection<S extends RpcSchema = RpcSchema>(
-  readable: Readable,
-  writable: Writable,
-): NdjsonConnection<S> {
+/**
+ * Wrap an OPEN WebSocket in a typed JSON-RPC connection.
+ *
+ * Frames received before `listen()` are buffered and replayed when it is
+ * called — handler registration (`onRequest`) must complete before any guest
+ * message is dispatched, and the socket starts delivering the moment it
+ * opens. In practice the guest sends nothing unprompted, but the buffer
+ * makes the ordering a non-event rather than a race.
+ */
+export function createRpcConnection<S extends RpcSchema = RpcSchema>(
+  ws: RpcWebSocket,
+): RpcConnection<S> {
   let disposed = false;
-  let rl: ReturnType<typeof createInterface> | null = null;
+  let listening = false;
+  const preListenBuffer: unknown[] = [];
 
   const notificationHandlers = new Map<string, (params?: unknown) => void>();
 
-  // Write queue for backpressure: while a previous write is waiting for
-  // 'drain', later sends chain behind it so ordering is preserved and the
-  // stream's internal buffer stops growing unboundedly. Idle, the common
-  // no-backpressure case writes synchronously, exactly like the pre-queue
-  // behavior (writeLine returns undefined when the write was accepted).
-  const writes = createWriteChain();
-
-  function waitForDrain(): Promise<void> {
-    return new Promise((resolve) => {
-      const settle = (): void => {
-        writable.off("drain", settle);
-        writable.off("error", settle);
-        writable.off("close", settle);
-        resolve();
-      };
-      writable.once("drain", settle);
-      // A dead peer never emits 'drain' — settle on error/close so queued
-      // writes fall through to the dead-stream guard instead of hanging.
-      writable.once("error", settle);
-      writable.once("close", settle);
-    });
-  }
-
-  /**
-   * Write one line, returning a drain promise when the stream reported
-   * backpressure, or undefined when the write was accepted outright.
-   */
-  function writeLine(line: string): Promise<void> | undefined {
-    // The peer (guest process) can die at any time — writing to its closed
-    // stdin would emit EPIPE/ERR_STREAM_DESTROYED. On a listener-less stream
-    // that becomes an uncaughtException and takes down the whole host, so
-    // never write to a dead stream and swallow any residual write error.
-    if (disposed || writable.destroyed || writable.writableEnded) return;
-    try {
-      if (writable.write(line)) return;
-    } catch {
-      // Peer went away between the check and the write — nothing to do.
-      return;
-    }
-    return waitForDrain();
-  }
-
   function send(msg: unknown): void {
-    if (disposed || writable.destroyed || writable.writableEnded) return;
-    const line = `${JSON.stringify(msg)}\n`;
-    void writes.enqueue(() => writeLine(line));
+    if (disposed || ws.readyState !== ws.OPEN) return;
+    try {
+      ws.send(JSON.stringify(msg));
+    } catch {
+      // Peer went away between the check and the send — the close handler
+      // rejects everything pending.
+    }
   }
 
   // json-rpc-2.0 handles id allocation, response correlation, and pending
@@ -227,8 +207,8 @@ export function createNdjsonConnection<S extends RpcSchema = RpcSchema>(
     client.rejectAllPendingRequests(reason);
   }
 
-  function handleLine(line: string): void {
-    const msg = parseJsonRpcMessage(line);
+  function handleFrame(raw: unknown): void {
+    const msg = parseJsonRpcMessage(raw);
     if (!msg) return;
     switch (msg.kind) {
       case "response":
@@ -246,35 +226,27 @@ export function createNdjsonConnection<S extends RpcSchema = RpcSchema>(
           });
           return;
         }
-        void Promise.resolve(server.receive(req))
-          .then((response) => {
-            if (response) send(response);
-          })
-          .catch((err: unknown) => {
-            // json-rpc-2.0 maps handler throws to error responses, so this is
-            // exceptional (e.g. a handler result JSON.stringify failing in
-            // send) — but an escape here is an unhandledRejection on the
-            // multi-tenant host, the class this module contains everywhere
-            // else (see the notification branch below).
-            console.error(`NDJSON request handler "${req.method}" failed: ${errorMessage(err)}`);
-          });
+        void server.receive(req).then((response) => {
+          if (response) send(response);
+        });
         return;
       }
       case "notification": {
-        // Notification handlers run bare inside the readline 'line' listener
-        // — a throw (or a rejected promise from an async handler) would be an
-        // uncaughtException/unhandledRejection on the whole host. Contain both.
+        // Notification handlers run bare inside the socket's message
+        // listener — a throw (or a rejected promise from an async handler)
+        // would be an uncaughtException/unhandledRejection on the whole
+        // host. Contain both.
         const handler = notificationHandlers.get(msg.data.method);
         if (!handler) return;
         try {
           Promise.resolve(handler(msg.data.params)).catch((err: unknown) => {
             console.error(
-              `NDJSON notification handler "${msg.data.method}" rejected: ${errorMessage(err)}`,
+              `RPC notification handler "${msg.data.method}" rejected: ${errorMessage(err)}`,
             );
           });
         } catch (err) {
           console.error(
-            `NDJSON notification handler "${msg.data.method}" threw: ${errorMessage(err)}`,
+            `RPC notification handler "${msg.data.method}" threw: ${errorMessage(err)}`,
           );
         }
         return;
@@ -284,10 +256,18 @@ export function createNdjsonConnection<S extends RpcSchema = RpcSchema>(
     }
   }
 
+  ws.on("message", (data) => {
+    if (listening) handleFrame(data);
+    else preListenBuffer.push(data);
+  });
+  ws.on("close", () => {
+    rejectAllPending("Connection closed");
+  });
+
   // The implementation is method-name-agnostic (framing, correlation, and
   // timeouts don't depend on the schema); the single cast below is what
   // projects it onto the caller's typed schema.
-  const connection: NdjsonConnection = {
+  const connection: RpcConnection = {
     sendRequest(
       method: string,
       params?: unknown,
@@ -317,17 +297,19 @@ export function createNdjsonConnection<S extends RpcSchema = RpcSchema>(
     },
 
     listen(): void {
-      rl = createInterface({ input: readable, crlfDelay: Number.POSITIVE_INFINITY });
-      rl.on("line", handleLine);
-      rl.on("close", () => {
-        rejectAllPending("Connection closed");
-      });
+      if (listening) return;
+      listening = true;
+      for (const frame of preListenBuffer.splice(0)) handleFrame(frame);
     },
 
     dispose(): void {
       rejectAllPending("Connection disposed");
-      rl?.close();
+      try {
+        ws.close();
+      } catch {
+        // Already closed/destroyed — nothing to release.
+      }
     },
   };
-  return connection as NdjsonConnection<S>;
+  return connection as RpcConnection<S>;
 }

@@ -9,12 +9,4 @@ export default defineConfig([
     outDir: "dist",
     deps: { alwaysBundle: [/^aai$/] },
   },
-  {
-    entry: ["guest/deno-harness.ts"],
-    format: "esm",
-    target: "node22",
-    outDir: "dist/guest",
-    // Bundle everything -- guest has no node_modules
-    deps: { alwaysBundle: [/.*/] },
-  },
 ]);

@@ -1,41 +1,22 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Agent sandbox backed by remote Modal Sandboxes.
+ * Agent sandbox lifecycle, backed by remote Modal Sandboxes.
  *
- * The host runs `createRuntime()` with VM-backed `executeTool`, giving it
- * the same session/S2S/WebSocket handling as self-hosted mode without
- * duplicating any of that logic.
- *
- * Communication with the guest uses NDJSON over stdio pipes,
- * mediated by the `SandboxHandle` from `sandbox-vm.ts`.
+ * The COMPLETE agent runs in the guest: the harness embeds the SDK runtime,
+ * and clients connect DIRECTLY to the sandbox's public `/websocket` endpoint
+ * (its Modal tunnel) — discovered via the platform's `GET /:slug/client-config`
+ * broker. The host holds only the control channel (`sandbox-vm.ts`): bundle
+ * loading, one-shot tool trials, the session-count probe idle eviction
+ * consults, and the guest's ctx.db proxy.
  */
 
-import { errorMessage, SESSION_RESUME_GRACE_MS, toolError } from "@alexkroman1/aai";
-import type { ClientSink } from "@alexkroman1/aai/protocol";
-import {
-  type AgentRuntime,
-  type CloseableDb,
-  createGenerateFn,
-  createRuntime,
-  type ExecuteTool,
-  resolveVector,
-  safeFetch,
-  type Vector,
-} from "@alexkroman1/aai/runtime";
+import { errorMessage } from "@alexkroman1/aai";
+import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
-import {
-  createMessageDeltaTracker,
-  isMessagesDesync,
-  type MessagesDelta,
-} from "./_sandbox-messages.ts";
-import { createClientSendHandler } from "./client-send.ts";
 import { resolveHarnessPath } from "./constants.ts";
-import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
-import { toRuntimeAgent } from "./sandbox-agent-config.ts";
+import { type IsolateConfig, StatusResponseSchema } from "./rpc-schemas.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
-import { createSessionResumer } from "./sandbox-session-resume.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
-import type { SessionStateStore } from "./session-state-store.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -53,18 +34,6 @@ export type SandboxOptions = {
   /** Optional pre-warmed harness pool for faster cold starts. */
   pool?: SandboxPool;
   /**
-   * Factory that creates the platform-default Vector for a given agent slug.
-   * Used when the agent config does not declare a `vector` provider.
-   */
-  defaultVector: (slug: string) => Vector;
-  /**
-   * Cross-replica resume persistence (see session-state-store.ts). When set,
-   * a session's resumable state (guest ctx.state + remember notes) is saved
-   * on disconnect and hydrated on a `?sessionId=<id>` resume, so a reconnect
-   * landing on a different replica keeps the agent's working memory.
-   */
-  sessionStates?: SessionStateStore | undefined;
-  /**
    * Called when the sandbox VM fails to start (rejected `vmReady`). The
    * sandbox object was already returned synchronously by then, so this is
    * the caller's hook to detach a now-permanently-broken sandbox from
@@ -73,167 +42,45 @@ export type SandboxOptions = {
   onVmFailed?: (err: unknown) => void;
 };
 
-export type Sandbox = AgentRuntime;
+export type Sandbox = {
+  /**
+   * The sandbox's public client-session endpoint (`wss://…/websocket` on its
+   * Modal tunnel). Resolves once the guest is configured; rejects when the
+   * VM failed to start.
+   */
+  sessionUrl(): Promise<string>;
+  /**
+   * Live client sessions in the guest, for session-aware idle eviction
+   * (sessions no longer pass through the host, so it must ask). A dead or
+   * unreachable guest answers 0 — eviction should proceed.
+   */
+  activeSessions(): Promise<number>;
+  shutdown(): Promise<void>;
+};
 
 // ── Public API ──────────────────────────────────────────────────────────
-
-/**
- * Resolve the Vector store an agent gets: its declared `vector:` provider
- * or the platform default factory.
- */
-export function resolveAgentVector(
-  slug: string,
-  config: Pick<IsolateConfig, "vector"> | null,
-  env: Record<string, string>,
-  defaultVector: (slug: string) => Vector,
-): Vector {
-  if (config?.vector) return resolveVector(config.vector, env, slug);
-  return defaultVector(slug);
-}
 
 export function createSandbox(opts: SandboxOptions): Sandbox {
   const { workerCode, env, slug, db } = opts;
 
   const config = opts.agentConfig;
 
-  const harnessPath = resolveHarnessPath();
-
-  const vector: Vector = resolveAgentVector(slug, config, env, opts.defaultVector);
-
   const vmReady = createSandboxVm(
     {
       slug,
       workerCode,
       env,
-      // ctx.db for guest tool code, proxied over the db/query RPC. Absent
-      // (storage not enabled) the guest's ctx.db getter throws guidance.
+      // ctx.db for guest tool code and the in-guest runtime, proxied over
+      // the db/query RPC. Absent (storage not enabled) the guest's ctx.db
+      // getter throws guidance.
       ...(db && { db }),
-      vector,
-      // Guest ctx.generate: one-shot LLM calls on the agent's own pipeline
-      // descriptor (per-call overrides allowed), credentials strictly from
-      // the agent env — never platform-owned keys.
-      generate: createGenerateFn({ llm: config.llm, env }),
-      harnessPath,
-      allowedHosts: [...(config.allowedHosts ?? [])],
+      harnessPath: resolveHarnessPath(),
     },
     opts.pool,
   );
 
-  // Ships only the history the guest doesn't already hold on each
-  // tool/execute (see _sandbox-messages.ts) — late-session calls used to pay
-  // stringify + pipe + parse of the full transcript per step.
-  const messageTracker = createMessageDeltaTracker();
-
-  const executeTool: ExecuteTool = async (name, args, sessionId, messages) => {
-    let sandboxHandle: Awaited<typeof vmReady>;
-    try {
-      sandboxHandle = await vmReady;
-    } catch (err: unknown) {
-      return toolError(`Sandbox failed to start: ${errorMessage(err)}`);
-    }
-    const sid = sessionId ?? "";
-    const history = messages ?? [];
-    const send = async (delta: MessagesDelta): Promise<unknown> => {
-      try {
-        return await sandboxHandle.conn.sendRequest("tool/execute", {
-          name,
-          args,
-          sessionId: sid,
-          ...delta,
-        });
-      } catch (err) {
-        // The guest may or may not have applied this delta — next call must
-        // carry full history.
-        messageTracker.reset(sid);
-        throw err;
-      }
-    };
-    let raw: unknown;
-    try {
-      raw = await send(messageTracker.delta(sid, history));
-      if (isMessagesDesync(raw)) {
-        // The guest lost the prefix (restart, cache eviction) — retry once
-        // with the full history.
-        messageTracker.reset(sid);
-        raw = await send(messageTracker.delta(sid, history));
-      }
-    } catch (err: unknown) {
-      // RPC failure (guest died, timeout) — name the tool at this layer so
-      // the error the LLM sees is actionable.
-      return toolError(`Tool "${name}" failed in sandbox: ${errorMessage(err)}`);
-    }
-    const parsed = ToolCallResponseSchema.safeParse(raw);
-    if (parsed.success) {
-      return parsed.data.result;
-    }
-    // A schema mismatch means the host↔guest contract is broken — log it
-    // loudly rather than letting it surface only as a confused conversation.
-    console.error("Invalid tool response from sandbox", { slug, tool: name });
-    return toolError(`Tool "${name}" failed in sandbox: invalid response`);
-  };
-
-  // Builtin resolution (including "a custom tool of the same name wins") lives
-  // in createRuntime, so the platform and `aai dev` cannot disagree about which
-  // builtins an agent gets. This previously resolved them here off
-  // `config.builtinTools ?? []`, which silently dropped the default cognitive
-  // builtins for every deployed agent that didn't set `builtinTools`: the
-  // deploy path builds its config with `toAgentConfig`, not `parseManifest`,
-  // and only the latter fills in DEFAULT_BUILTIN_TOOLS.
-  const agentRuntime = createRuntime({
-    // The config's provider descriptors (stt/llm/tts/s2s) ride on the agent
-    // object itself; createRuntime resolves them from there (see
-    // sandbox-agent-config.ts for why that keys off descriptor presence, not
-    // the optional `mode` field).
-    agent: toRuntimeAgent(config),
-    env,
-    executeTool,
-    // Host-side builtins get the same ctx.db the guest proxies to.
-    ...(db && { db }),
-    toolSchemas: config.toolSchemas,
-    // The SDK's SSRF-protected fetch (also the default inside
-    // resolveAllBuiltins) — passed explicitly so the platform's egress policy
-    // is visible here rather than only implied by a default.
-    fetch: safeFetch,
-  });
-
-  const sessionSinks = new Map<string, ClientSink>();
-
-  // Deferred guest `session/end` notifications, keyed by session id. The
-  // guest's session state (ctx.state, message cache) is keyed by that id, and
-  // a disconnected client may resume it (`?sessionId=<id>`) — sending
-  // session/end the moment the socket closed wiped the guest's ctx.state
-  // before any resume could land, so every resumed session ran the agent with
-  // fresh state. Mirror of the SDK runtime's grace-window state sweep.
-  const pendingSessionEnds = new Map<string, NodeJS.Timeout>();
-
-  function scheduleSessionEnd(sessionId: string): void {
-    cancelSessionEnd(sessionId);
-    const timer = setTimeout(() => {
-      pendingSessionEnds.delete(sessionId);
-      vmReady
-        .then((handle) => handle.conn.sendNotification("session/end", { sessionId }))
-        .catch(() => {
-          // VM failed to start — session/end notification is best-effort
-        });
-    }, SESSION_RESUME_GRACE_MS);
-    timer.unref?.();
-    pendingSessionEnds.set(sessionId, timer);
-  }
-
-  function cancelSessionEnd(sessionId: string): void {
-    const timer = pendingSessionEnds.get(sessionId);
-    if (timer === undefined) return;
-    clearTimeout(timer);
-    pendingSessionEnds.delete(sessionId);
-  }
-
-  // Cross-replica resume: persist on disconnect, hydrate on resume — see
-  // sandbox-session-resume.ts. No-op without a configured store.
-  const resumer = createSessionResumer({ slug, store: opts.sessionStates, vmReady });
-
   vmReady
-    .then((handle) => {
-      handle.conn.onNotification("client/send", createClientSendHandler(sessionSinks));
+    .then(() => {
       debug("Sandbox ready", { slug, agent: config.name });
     })
     .catch((err: unknown) => {
@@ -243,99 +90,29 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   debug("Sandbox initializing", { slug, agent: config.name });
 
-  async function shutdownSandbox(): Promise<void> {
-    // Deploy/secret/storage/delete tear the sandbox down under live sessions
-    // (activeSessions only guards idle eviction). agentRuntime.shutdown()
-    // below stops the sessions, but nothing closed their client sockets —
-    // the WebSocket (and S2S leg) stayed up, so callers limped on with every
-    // tool call failing "Connection disposed" and no signal to retry. Close
-    // the sinks (before clearing them) so clients get a real close frame and
-    // reconnect onto the replacement sandbox (resuming via their sessionId).
-    // Sessions still connected at shutdown never get their disconnect-path
-    // persist in time — the close handlers run asynchronously, after this
-    // teardown has already begun — so snapshot them now, while the guest is
-    // still alive to answer session/export. The store write is an upsert, so
-    // a close-path persist landing later is a harmless overwrite.
-    for (const sessionId of sessionSinks.keys()) resumer.persist(sessionId);
-    for (const sink of sessionSinks.values()) {
-      try {
-        sink.close?.("agent restarting");
-      } catch {
-        // Best-effort: a socket already dying must not block the teardown.
-      }
-    }
-    sessionSinks.clear();
-    // The guest process is going down with us — nothing left to notify.
-    for (const timer of pendingSessionEnds.values()) clearTimeout(timer);
-    pendingSessionEnds.clear();
-    // Let in-flight persists (the snapshot above, plus any close-path
-    // exports) finish before killing the guest, or every session cut at the
-    // drain deadline loses its resume state.
-    await resumer.flushPendingSaves();
-    try {
-      const handle = await vmReady;
-      await handle.shutdown();
-    } catch {
-      // VM failed to start or already shut down
-    }
-    await agentRuntime.shutdown();
-    // The sandbox owns the app db handle it was created with.
-    await db?.close().catch(() => undefined);
-  }
-
-  const originalStartSession = agentRuntime.startSession.bind(agentRuntime);
-  function startSessionWithCleanup(
-    ws: Parameters<typeof originalStartSession>[0],
-    startOpts?: Parameters<typeof originalStartSession>[1],
-  ): void {
-    // A resume that landed on this replica cold (or after the grace window)
-    // hydrates from the persisted state, if any. Kicked off before the
-    // session wiring so the read races only the transport connect.
-    if (startOpts?.resumeFrom) resumer.restore(startOpts.resumeFrom);
-    originalStartSession(ws, {
-      ...startOpts,
-      onSinkCreated(sessionId, sink) {
-        // A resume under this id keeps its guest-side session state — cancel
-        // the deferred session/end the previous connection scheduled.
-        cancelSessionEnd(sessionId);
-        sessionSinks.set(sessionId, sink);
-        startOpts?.onSinkCreated?.(sessionId, sink);
-      },
-      onSessionEnd(sessionId, sink) {
-        // Identity check, mirroring the SDK's own sessions-map cleanup: a
-        // reconnect with ?sessionId=<same id> can register a NEW session (and
-        // sink) under this key while the old session's async stop() drains.
-        // When the old teardown finally fires, a bare keyed cleanup here
-        // would delete the RESUMED session's sink (every guest client/send
-        // silently dropped) and arm a guest session/end nothing ever cancels
-        // — onSinkCreated's cancelSessionEnd already ran — wiping the live
-        // session's ctx.state mid-conversation at the end of the grace
-        // window. Only the session that still owns the sink may clean up.
-        if (sink !== undefined && sessionSinks.get(sessionId) !== sink) {
-          startOpts?.onSessionEnd?.(sessionId, sink);
-          return;
-        }
-        sessionSinks.delete(sessionId);
-        // Reset the delta tracker eagerly — the next call (resumed or not)
-        // just pays one full-history send. The guest's session state, by
-        // contrast, is unrecoverable once freed, so its release waits out
-        // the resume grace window.
-        messageTracker.reset(sessionId);
-        scheduleSessionEnd(sessionId);
-        // The reconnect may land on another replica; give it something to
-        // hydrate from. Runs while the guest still holds the state (the
-        // deferred session/end above won't fire for the whole grace window).
-        // Deliberately below the sink-ownership gate: a stale teardown
-        // settling after a resume must not snapshot over the live session.
-        resumer.persist(sessionId);
-        startOpts?.onSessionEnd?.(sessionId, sink);
-      },
-    });
-  }
-
   return {
-    readyConfig: agentRuntime.readyConfig,
-    startSession: startSessionWithCleanup,
-    shutdown: shutdownSandbox,
+    sessionUrl: () => vmReady.then((handle) => handle.sessionUrl),
+
+    async activeSessions(): Promise<number> {
+      try {
+        const handle = await vmReady;
+        const raw = await handle.conn.sendRequest("status");
+        return StatusResponseSchema.parse(raw).activeSessions;
+      } catch {
+        // Unreachable/dead guest — report idle so eviction can reclaim it.
+        return 0;
+      }
+    },
+
+    async shutdown(): Promise<void> {
+      try {
+        const handle = await vmReady;
+        await handle.shutdown();
+      } catch {
+        // VM failed to start or already shut down
+      }
+      // The sandbox owns the app db handle it was created with.
+      await db?.close().catch(() => undefined);
+    },
   };
 }

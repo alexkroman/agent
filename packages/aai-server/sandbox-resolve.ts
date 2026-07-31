@@ -6,7 +6,7 @@
  * cross-replica invalidation (slug epochs — see platform-epoch.ts).
  */
 
-import type { CloseableDb, Vector } from "@alexkroman1/aai/runtime";
+import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import { readSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
@@ -22,7 +22,6 @@ import {
   withSlugLock,
 } from "./sandbox-slots.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
-import type { SessionStateStore } from "./session-state-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
 type ResolveAppDbOpts = {
@@ -48,9 +47,6 @@ export type ResolveSandboxOpts = {
   /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
   pool?: SandboxPool;
-  defaultVector: (slug: string) => Vector;
-  /** Cross-replica resume persistence; absent means resume state is replica-local. */
-  sessionStates?: SessionStateStore;
   /**
    * Cross-replica invalidation epochs (see platform-epoch.ts). Absent means
    * resident sandboxes are only invalidated by this replica's own mutations
@@ -90,8 +86,6 @@ function buildSlotSandbox(
     agentConfig: parts.agentConfig,
     ...(db && { db }),
     ...(opts.pool && { pool: opts.pool }),
-    ...(opts.sessionStates && { sessionStates: opts.sessionStates }),
-    defaultVector: opts.defaultVector,
     onVmFailed: () => {
       void withSlugLock(slug, async () => {
         const current = opts.slots.get(slug);
@@ -195,9 +189,9 @@ export async function resolveSandbox(
       // Stale: a mutation landed elsewhere. Tear down the old sandbox and
       // drop this replica's bundle caches so the rebuild below reads the
       // freshly stored artifacts, not cached pre-mutation ones. Sessions
-      // already live on the old sandbox drain naturally (terminateSlot
-      // shuts it down; their sockets close and clients resume onto the
-      // rebuilt one).
+      // still live on the old sandbox get their sockets closed by the
+      // teardown; clients re-broker via client-config and reconnect onto
+      // the rebuilt sandbox's tunnel.
       debug("Resident sandbox stale (slug epoch advanced); rebuilding", { slug });
       await terminateSlot(slot);
       store.invalidate?.(slug);

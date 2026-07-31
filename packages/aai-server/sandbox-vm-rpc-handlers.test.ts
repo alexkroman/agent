@@ -1,171 +1,57 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Tests for the vector/* and db/query RPC handlers that configureSandbox
- * registers on the host↔guest NDJSON connection.
+ * Tests for the db/query RPC handlers that configureSandbox
+ * registers on the host↔guest RPC connection.
  *
  * Split from sandbox-vm.test.ts; shared helpers live in
  * _sandbox-vm-test-utils.ts.
  */
 
-import type { PassThrough } from "node:stream";
 import type { Db } from "@alexkroman1/aai";
 import { MAX_DB_RESULT_ROWS } from "@alexkroman1/aai";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   autorespondBundleLoad,
   baseOpts,
   createTestConn,
+  type FakeGuestSocket,
   findResponseById,
   makeWarm,
   waitForResponseId,
 } from "./_sandbox-vm-test-utils.ts";
-import type { NdjsonConnection } from "./ndjson-transport.ts";
+import type { GuestConnection } from "./rpc-schemas.ts";
 import { _internals } from "./sandbox-vm.ts";
 
-// ── Vector RPC handler tests ──────────────────────────────────────────────────
+// ── Unregistered-method tests ─────────────────────────────────────────────────
 
-describe("vector RPC handlers", () => {
-  let hostReadable: PassThrough;
-  let hostWritable: PassThrough;
+describe("unregistered RPC methods", () => {
+  let socket: FakeGuestSocket;
   let writtenLines: string[];
-  let conn: NdjsonConnection;
+  let conn: GuestConnection;
 
   beforeEach(() => {
     const result = createTestConn();
-    hostReadable = result.hostReadable;
-    hostWritable = result.hostWritable;
+    socket = result.socket;
     writtenLines = result.writtenLines;
     conn = result.conn;
   });
 
-  afterEach(() => {
-    hostReadable.destroy();
-    hostWritable.destroy();
-  });
-
-  it("vector/upsert delegates to provided Vector", async () => {
-    const upsertSpy = vi.fn().mockResolvedValue(undefined);
-    const vector = {
-      upsert: upsertSpy,
-      query: vi.fn().mockResolvedValue([]),
-      delete: vi.fn().mockResolvedValue(undefined),
-    };
-
-    const opts = baseOpts({ vector });
+  it("answers an unknown method with Method not found", async () => {
+    const opts = baseOpts();
     const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
-
-    const reqId = 501;
-    hostReadable.push(
-      `${JSON.stringify({
-        jsonrpc: "2.0",
-        id: reqId,
-        method: "vector/upsert",
-        params: { id: "doc-1", text: "hello", metadata: { tag: "x" } },
-      })}\n`,
-    );
-
-    await waitForResponseId(writtenLines, reqId);
-
-    expect(upsertSpy).toHaveBeenCalledWith("doc-1", "hello", { tag: "x" });
-
-    const response = findResponseById(writtenLines, reqId);
-    expect(response?.error).toBeUndefined();
-
-    handle.conn.dispose();
-  });
-
-  it("vector/query delegates and returns matches", async () => {
-    const querySpy = vi.fn().mockResolvedValue([{ id: "doc-1", score: 0.9, text: "hello" }]);
-    const vector = {
-      upsert: vi.fn().mockResolvedValue(undefined),
-      query: querySpy,
-      delete: vi.fn().mockResolvedValue(undefined),
-    };
-
-    const opts = baseOpts({ vector });
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
-
-    const reqId = 502;
-    hostReadable.push(
-      `${JSON.stringify({
-        jsonrpc: "2.0",
-        id: reqId,
-        method: "vector/query",
-        params: { text: "hello", topK: 3 },
-      })}\n`,
-    );
-
-    await waitForResponseId(writtenLines, reqId);
-
-    expect(querySpy).toHaveBeenCalledWith("hello", { topK: 3 });
-
-    const response = findResponseById(writtenLines, reqId);
-    expect(response?.error).toBeUndefined();
-    expect(response?.result).toEqual([{ id: "doc-1", score: 0.9, text: "hello" }]);
-
-    handle.conn.dispose();
-  });
-
-  it("vector/delete delegates", async () => {
-    const deleteSpy = vi.fn().mockResolvedValue(undefined);
-    const vector = {
-      upsert: vi.fn().mockResolvedValue(undefined),
-      query: vi.fn().mockResolvedValue([]),
-      delete: deleteSpy,
-    };
-
-    const opts = baseOpts({ vector });
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
-
-    const reqId = 503;
-    hostReadable.push(
-      `${JSON.stringify({
-        jsonrpc: "2.0",
-        id: reqId,
-        method: "vector/delete",
-        params: { ids: "doc-1" },
-      })}\n`,
-    );
-
-    await waitForResponseId(writtenLines, reqId);
-
-    expect(deleteSpy).toHaveBeenCalledWith("doc-1");
-
-    const response = findResponseById(writtenLines, reqId);
-    expect(response?.error).toBeUndefined();
-
-    handle.conn.dispose();
-  });
-
-  it("does not register vector handlers when vector is not provided", async () => {
-    const opts = baseOpts(); // no vector
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
+    autorespondBundleLoad(socket);
 
     await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
 
     const reqId = 504;
-    hostReadable.push(
-      `${JSON.stringify({
-        jsonrpc: "2.0",
-        id: reqId,
-        method: "vector/upsert",
-        params: { id: "x", text: "hello" },
-      })}\n`,
-    );
+    socket.receive({
+      jsonrpc: "2.0",
+      id: reqId,
+      // The fetch relay is gone — a guest still speaking it gets the same
+      // Method-not-found any unknown method does.
+      method: "fetch/request",
+      params: { id: "f1", url: "https://x.test/", method: "GET", headers: {}, body: null },
+    });
 
     await waitForResponseId(writtenLines, reqId);
 
@@ -179,132 +65,25 @@ describe("vector RPC handlers", () => {
   });
 });
 
-// ── fetch/request handler tests ──────────────────────────────────────────────
-
-describe("fetch/request handler", () => {
-  let hostReadable: PassThrough;
-  let hostWritable: PassThrough;
-  let writtenLines: string[];
-  let conn: NdjsonConnection;
-
-  beforeEach(() => {
-    const result = createTestConn();
-    hostReadable = result.hostReadable;
-    hostWritable = result.hostWritable;
-    writtenLines = result.writtenLines;
-    conn = result.conn;
-  });
-
-  afterEach(() => {
-    hostReadable.destroy();
-    hostWritable.destroy();
-  });
-
-  function parsedLines(): Record<string, unknown>[] {
-    return writtenLines.map((l) => JSON.parse(l) as Record<string, unknown>);
-  }
-
-  it("uses the guest-supplied id for the ack and for early-rejection notifications", async () => {
-    const opts = baseOpts({ allowedHosts: ["api.allowed.test"] });
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
-
-    const reqId = 701;
-    hostReadable.push(
-      `${JSON.stringify({
-        jsonrpc: "2.0",
-        id: reqId,
-        method: "fetch/request",
-        params: {
-          id: "guest-fetch-1",
-          url: "https://evil.test/steal",
-          method: "GET",
-          headers: {},
-          body: null,
-        },
-      })}\n`,
-    );
-
-    await waitForResponseId(writtenLines, reqId);
-
-    // Ack echoes the guest id.
-    const response = findResponseById(writtenLines, reqId);
-    expect(response?.error).toBeUndefined();
-    expect(response?.result).toEqual({ id: "guest-fetch-1" });
-
-    // The disallowed-host rejection notification carries the guest id, so
-    // the guest's already-registered pendingFetches entry catches it even
-    // when it is written before the ack.
-    await vi.waitFor(() => {
-      const errNotif = parsedLines().find((m) => m.method === "fetch/response-error");
-      expect(errNotif).toBeDefined();
-      expect((errNotif as { params: { id: string; message: string } }).params).toMatchObject({
-        id: "guest-fetch-1",
-        message: expect.stringContaining("not allowed"),
-      });
-    });
-
-    handle.conn.dispose();
-  });
-
-  it("rejects a fetch/request without a guest id", async () => {
-    const opts = baseOpts({ allowedHosts: ["api.allowed.test"] });
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
-
-    const reqId = 702;
-    hostReadable.push(
-      `${JSON.stringify({
-        jsonrpc: "2.0",
-        id: reqId,
-        method: "fetch/request",
-        params: { url: "https://api.allowed.test/", method: "GET", headers: {}, body: null },
-      })}\n`,
-    );
-
-    await waitForResponseId(writtenLines, reqId);
-
-    const response = findResponseById(writtenLines, reqId);
-    expect(response?.error).toBeDefined();
-
-    handle.conn.dispose();
-  });
-});
-
 // ── db/query delegation through the injected Db ─────────────────────────────
 
 describe("db/query handler via injected Db", () => {
-  let hostReadable: PassThrough;
-  let hostWritable: PassThrough;
+  let socket: FakeGuestSocket;
   let writtenLines: string[];
-  let conn: NdjsonConnection;
+  let conn: GuestConnection;
 
   beforeEach(() => {
     const result = createTestConn();
-    hostReadable = result.hostReadable;
-    hostWritable = result.hostWritable;
+    socket = result.socket;
     writtenLines = result.writtenLines;
     conn = result.conn;
-  });
-
-  afterEach(() => {
-    hostReadable.destroy();
-    hostWritable.destroy();
   });
 
   async function configure(db: Db) {
     const opts = baseOpts({ db });
     const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
-    return handle;
+    autorespondBundleLoad(socket);
+    return await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
   }
 
   it("db/query delegates sql + params to the provided Db", async () => {
@@ -312,14 +91,12 @@ describe("db/query handler via injected Db", () => {
     const handle = await configure({ query: querySpy });
 
     const reqId = 601;
-    hostReadable.push(
-      `${JSON.stringify({
-        jsonrpc: "2.0",
-        id: reqId,
-        method: "db/query",
-        params: { sql: "select * from notes where id = $1", params: [1] },
-      })}\n`,
-    );
+    socket.receive({
+      jsonrpc: "2.0",
+      id: reqId,
+      method: "db/query",
+      params: { sql: "select * from notes where id = $1", params: [1] },
+    });
 
     await waitForResponseId(writtenLines, reqId);
 
@@ -337,14 +114,12 @@ describe("db/query handler via injected Db", () => {
     const handle = await configure({ query: querySpy });
 
     const reqId = 602;
-    hostReadable.push(
-      `${JSON.stringify({
-        jsonrpc: "2.0",
-        id: reqId,
-        method: "db/query",
-        params: { sql: "select 1" },
-      })}\n`,
-    );
+    socket.receive({
+      jsonrpc: "2.0",
+      id: reqId,
+      method: "db/query",
+      params: { sql: "select 1" },
+    });
 
     await waitForResponseId(writtenLines, reqId);
 
@@ -359,14 +134,12 @@ describe("db/query handler via injected Db", () => {
     const handle = await configure({ query: vi.fn().mockRejectedValue(capError) });
 
     const reqId = 603;
-    hostReadable.push(
-      `${JSON.stringify({
-        jsonrpc: "2.0",
-        id: reqId,
-        method: "db/query",
-        params: { sql: "select * from big" },
-      })}\n`,
-    );
+    socket.receive({
+      jsonrpc: "2.0",
+      id: reqId,
+      method: "db/query",
+      params: { sql: "select * from big" },
+    });
 
     await waitForResponseId(writtenLines, reqId);
 
@@ -381,14 +154,12 @@ describe("db/query handler via injected Db", () => {
     const handle = await configure({ query: querySpy });
 
     const reqId = 604;
-    hostReadable.push(
-      `${JSON.stringify({
-        jsonrpc: "2.0",
-        id: reqId,
-        method: "db/query",
-        params: { sql: "" },
-      })}\n`,
-    );
+    socket.receive({
+      jsonrpc: "2.0",
+      id: reqId,
+      method: "db/query",
+      params: { sql: "" },
+    });
 
     await waitForResponseId(writtenLines, reqId);
 
