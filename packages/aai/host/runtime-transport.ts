@@ -119,8 +119,6 @@ export function createTransportFactory(
       silencePrompt: agentConfig.silencePrompt,
       minBargeInWords: agentConfig.minBargeInWords,
       interruptionMinDurationMs: agentConfig.interruptionMinDurationMs,
-      endpointSettleMs: agentConfig.endpointSettleMs,
-      completeSettleMs: agentConfig.completeSettleMs,
       holdPhrase: agentConfig.holdPhrase,
       // errorPhrase used to be missing here, so an agent that set it (including
       // to "" to disable) silently got the default instead.

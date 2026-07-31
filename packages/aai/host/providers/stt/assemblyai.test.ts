@@ -7,6 +7,7 @@ import { fileURLToPath } from "node:url";
 import type { TurnEvent } from "assemblyai";
 import { describe, expect, test, vi } from "vitest";
 import {
+  DEFAULT_MIN_TURN_SILENCE_MS,
   DEFAULT_SESSION_START_TIMEOUT_MS,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
@@ -212,6 +213,26 @@ describe("assemblyAI STT adapter — voice focus", () => {
     expect(offFake.params.voiceFocus).toBeUndefined();
     expect("voiceFocus" in offFake.params).toBe(false);
     await off.close();
+  });
+});
+
+describe("assemblyAI STT adapter — endpointing (min_turn_silence)", () => {
+  test("always sets minTurnSilence; defaults to DEFAULT_MIN_TURN_SILENCE_MS", async () => {
+    // Endpointing is the provider's job — the pipeline transport commits a
+    // turn on every final, so this window is the only thing keeping a
+    // mid-utterance pause from splitting one request across turns.
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+    expect(fake.params.minTurnSilence).toBe(DEFAULT_MIN_TURN_SILENCE_MS);
+    expect(fake.params.minTurnSilence).toBe(1500);
+    await session.close();
+  });
+
+  test("minTurnSilenceMs overrides the default", async () => {
+    const session = await openSession({ model: "universal-3-5-pro", minTurnSilenceMs: 800 });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+    expect(fake.params.minTurnSilence).toBe(800);
+    await session.close();
   });
 });
 

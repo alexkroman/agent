@@ -11,11 +11,10 @@
 
 import { describe, expect, test } from "vitest";
 import {
-  DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
-  DEFAULT_ENDPOINT_SETTLE_MS,
   DEFAULT_HOLD_PHRASE,
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
   DEFAULT_MIN_BARGE_IN_WORDS,
+  DEFAULT_MIN_TURN_SILENCE_MS,
 } from "../../sdk/constants.ts";
 import {
   createFakeLanguageModel,
@@ -43,20 +42,18 @@ function resolveBare() {
 describe("pipeline defaults", () => {
   test("turn-taking windows come from the shipped constants", () => {
     const resolved = resolveBare();
-    expect(resolved.endpointSettleMs).toBe(DEFAULT_ENDPOINT_SETTLE_MS);
-    expect(resolved.completeSettleMs).toBe(DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS);
     expect(resolved.interruptionMinDurationMs).toBe(DEFAULT_INTERRUPTION_MIN_DURATION_MS);
     expect(resolved.minBargeInWords).toBe(DEFAULT_MIN_BARGE_IN_WORDS);
     expect(resolved.holdPhrase).toBe(DEFAULT_HOLD_PHRASE);
   });
 
-  test("an utterance's tail can still finish inside the settle window", () => {
-    // The complete-final window is what keeps "How many options do you have?
-    // Also, I want to return three items." from committing at the question mark
-    // and answering half the request. It has to be long enough for the pause
-    // between two spoken sentences, and never longer than the general window.
-    expect(DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS).toBeGreaterThanOrEqual(1000);
-    expect(DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS).toBeLessThanOrEqual(DEFAULT_ENDPOINT_SETTLE_MS);
+  test("an utterance's tail can still finish inside the STT silence window", () => {
+    // Endpointing lives in the STT provider now (`min_turn_silence`), and this
+    // window is what keeps "How many options do you have? Also, I want to
+    // return three items." from committing at the question mark and answering
+    // half the request. It has to be long enough for the pause between two
+    // spoken sentences.
+    expect(DEFAULT_MIN_TURN_SILENCE_MS).toBeGreaterThanOrEqual(1000);
   });
 
   test("the barge-in duration gate is on, and short enough to stay responsive", () => {

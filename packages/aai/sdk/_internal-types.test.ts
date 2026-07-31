@@ -110,8 +110,6 @@ describe("toAgentConfig", () => {
       silencePrompt: "nudge",
       minBargeInWords: 3,
       interruptionMinDurationMs: 250,
-      endpointSettleMs: 800,
-      completeSettleMs: 400,
       holdPhrase: "One sec.",
       falseInterruptionTimeoutMs: 1500,
       stt: desc("assemblyai"),

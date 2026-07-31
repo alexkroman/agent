@@ -3,6 +3,7 @@
 import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import {
+  DEFAULT_MIN_TURN_SILENCE_MS,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,
@@ -147,6 +148,10 @@ function buildTranscriberParams(
     connectTimeout: opts.connectTimeoutMs ?? STT_CONNECT_TIMEOUT_MS,
     maxConnectionRetries: opts.maxConnectRetries ?? STT_CONNECT_MAX_RETRIES,
     connectionRetryDelay: STT_CONNECT_RETRY_DELAY_MS,
+    // Endpointing lives here, not in the transport: the service holds its
+    // `final` until this much end-of-turn silence has passed, so a disfluent
+    // utterance's pauses aggregate service-side. See the constant's doc.
+    minTurnSilence: opts.minTurnSilenceMs ?? DEFAULT_MIN_TURN_SILENCE_MS,
   };
   // EU data residency: point the SDK's streaming socket at the EU host.
   // The US default is left to the SDK (its default already carries the

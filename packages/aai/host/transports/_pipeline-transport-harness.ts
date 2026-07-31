@@ -65,13 +65,9 @@ export function makeOpts(
     },
     providerKeys: { stt: "stt-key", tts: "tts-key" },
     logger: silentLogger,
-    // Disable the endpoint settle window by default so specs that fire a single
-    // final commit the turn immediately (the pre-endpointing behavior most
-    // specs assume). Settle-window specs opt in via an explicit endpointSettleMs.
-    endpointSettleMs: 0,
-    // Same reasoning for the barge-in duration gate: a spec that fires one
+    // Disable the barge-in duration gate by default: a spec that fires one
     // partial and asserts the reply was cancelled is testing the cancel path,
-    // not the gate, and the real default would make every one of them wait out
+    // not the gate, and the real default would make every such spec wait out
     // 500 ms of "sustained speech" it never simulates. The gate's own specs set
     // it explicitly, and `pipeline-transport-options.test.ts` pins the shipped
     // default so this override cannot hide a bad one.

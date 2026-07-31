@@ -44,8 +44,6 @@ export const AgentConfigSchema = z.object({
   silencePrompt: z.string().optional(),
   minBargeInWords: z.number().int().min(1).optional(),
   interruptionMinDurationMs: z.number().int().nonnegative().optional(),
-  endpointSettleMs: z.number().int().nonnegative().optional(),
-  completeSettleMs: z.number().int().nonnegative().optional(),
   holdPhrase: z.string().optional(),
   errorPhrase: z.string().optional(),
   startFailurePhrase: z.string().optional(),

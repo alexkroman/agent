@@ -39,6 +39,14 @@ export interface AssemblyAIOptions {
    */
   voiceFocus?: "near-field" | "far-field" | "off" | string;
   /**
+   * Minimum end-of-turn silence (ms) before the service commits a `final`,
+   * sent as the `min_turn_silence` connection parameter. This is where
+   * endpointing lives: mid-utterance pauses shorter than this aggregate into
+   * one final instead of splitting the request across turns. Defaults to
+   * `DEFAULT_MIN_TURN_SILENCE_MS` (1500).
+   */
+  minTurnSilenceMs?: number;
+  /**
    * Deadline for one streaming connect attempt — socket open *and* the
    * server's `Begin` message. Defaults to `STT_CONNECT_TIMEOUT_MS`
    * (2500 ms), overriding the SDK's own 1000 ms, which a healthy handshake

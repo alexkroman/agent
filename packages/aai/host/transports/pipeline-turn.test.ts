@@ -592,106 +592,13 @@ describe("PipelineTransport — below-threshold deferral", () => {
   });
 });
 
-describe("PipelineTransport — endpoint settle window", () => {
-  test("a clearly-complete final commits after the short complete-settle window", async () => {
-    // Large fragment window: only the complete-final path can commit promptly.
-    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 10_000, completeSettleMs: 40 });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.fireFinal("Track order BOB12.");
-    // Inside the complete-settle window: not committed yet.
-    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
-    await vi.waitFor(() => {
-      expect(callbacks.onUserTranscript).toHaveBeenCalledWith("Track order BOB12.");
-    });
-    await t.stop();
-  });
-
-  test("completeSettleMs=0 commits a complete final immediately", async () => {
-    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 10_000, completeSettleMs: 0 });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.fireFinal("Track order BOB12.");
-    expect(callbacks.onUserTranscript).toHaveBeenCalledWith("Track order BOB12.");
-    await t.stop();
-  });
-
-  test("a continuation after a complete-looking final aggregates into one turn", async () => {
-    // Hesitant speakers pause at sentence boundaries mid-request; the
-    // complete-settle window lets the follow-on sentence join the same turn.
-    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 200, completeSettleMs: 80 });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    const s = stt.last();
-    s?.fireFinal("Track my order."); // complete-looking → short window
-    s?.firePartial("oh and"); // speaker resumed → extend
-    s?.fireFinal("Oh, and also search for winter jackets.");
-    await vi.waitFor(() => {
-      expect(callbacks.onUserTranscript).toHaveBeenCalledWith(
-        "Track my order. Oh, and also search for winter jackets.",
-      );
-    });
-    expect(callbacks.onUserTranscript).toHaveBeenCalledTimes(1);
-    await t.stop();
-  });
-
-  test("an incomplete final waits the settle window before committing", async () => {
-    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 80 });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    stt.last()?.fireFinal("track order BOB12"); // no punctuation → fragment
-    // Well inside the window: nothing committed yet.
-    await new Promise((r) => setTimeout(r, 30));
-    expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
-    // After the window elapses it commits the buffered utterance.
-    await vi.waitFor(() => {
-      expect(callbacks.onUserTranscript).toHaveBeenCalledWith("track order BOB12");
-    });
-    await t.stop();
-  });
-
-  test("finals within the window aggregate into a single turn (self-correction)", async () => {
-    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 80 });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    const s = stt.last();
-    s?.fireFinal("find a two-bedroom in Austin"); // fragment → waits
-    s?.fireFinal("actually make it Dallas."); // correction completes the turn
-    await vi.waitFor(() => {
-      expect(callbacks.onUserTranscript).toHaveBeenCalledWith(
-        "find a two-bedroom in Austin actually make it Dallas.",
-      );
-    });
-    // One aggregated turn, not one per fragment.
-    expect(callbacks.onUserTranscript).toHaveBeenCalledTimes(1);
-    await t.stop();
-  });
-
-  test("a partial resumption keeps the utterance buffered (mid-utterance pause)", async () => {
-    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 80 });
-    const t = createPipelineTransport(opts);
-    await t.start();
-    const s = stt.last();
-    s?.fireFinal("set the max price to"); // trails on a cue → waits
-    s?.firePartial("fifteen hundred"); // speaker resumed → extend the window
-    s?.fireFinal("fifteen hundred dollars."); // completes
-    await vi.waitFor(() => {
-      expect(callbacks.onUserTranscript).toHaveBeenCalledWith(
-        "set the max price to fifteen hundred dollars.",
-      );
-    });
-    expect(callbacks.onUserTranscript).toHaveBeenCalledTimes(1);
-    await t.stop();
-  });
-
-  test("endpointSettleMs=0 commits every final immediately (feature disabled)", async () => {
-    const { opts, stt, callbacks } = makeOpts({ endpointSettleMs: 0 });
+describe("PipelineTransport — turn commit on STT final", () => {
+  test("every final commits a turn immediately (endpointing is the STT provider's job)", async () => {
+    const { opts, stt, callbacks } = makeOpts();
     const t = createPipelineTransport(opts);
     await t.start();
     stt.last()?.fireFinal("track order BOB12"); // no punctuation, still immediate
-    await vi.waitFor(() => {
-      expect(callbacks.onUserTranscript).toHaveBeenCalledWith("track order BOB12");
-    });
+    expect(callbacks.onUserTranscript).toHaveBeenCalledWith("track order BOB12");
     await t.stop();
   });
 });

@@ -280,18 +280,18 @@ describe("PipelineTransport", () => {
       // Barge-in requires the agent to be audibly speaking, not merely mid-turn.
       tts.last()?.fireAudio(new Int16Array(2400));
 
-      // A final (no preceding partial) barges in. The committed user_transcript
-      // only goes out when the settler fires, so without a re-emitted caption
-      // the client's `cancelled` handler blanks the utterance for the whole
-      // settle window — it appears, disappears, then reappears as a message.
+      // A final (no preceding partial) barges in. The turn commits right after
+      // the cancel, so the client's `cancelled` handler (which clears
+      // userTranscript) must run before the committed user_transcript lands —
+      // the other order would blank the message it just set.
       stt.last()?.fireFinal("okay, cool.");
       expect(callbacks.onCancelled).toHaveBeenCalled();
       const cancelledCall = (callbacks.onCancelled as ReturnType<typeof vi.fn>).mock
         .invocationCallOrder[0];
-      const partialCalls = (callbacks.onUserTranscriptPartial as ReturnType<typeof vi.fn>).mock;
-      const idx = partialCalls.calls.findIndex((c) => c[0] === "okay, cool.");
+      const transcriptCalls = (callbacks.onUserTranscript as ReturnType<typeof vi.fn>).mock;
+      const idx = transcriptCalls.calls.findIndex((c) => c[0] === "okay, cool.");
       expect(idx).not.toBe(-1);
-      expect(partialCalls.invocationCallOrder[idx]).toBeGreaterThan(cancelledCall as number);
+      expect(transcriptCalls.invocationCallOrder[idx]).toBeGreaterThan(cancelledCall as number);
       await t.stop();
     });
 

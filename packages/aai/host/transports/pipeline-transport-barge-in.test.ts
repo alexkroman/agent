@@ -434,23 +434,5 @@ describe("PipelineTransport", () => {
       });
       await t.stop();
     });
-
-    test("cancelReply() discards a buffered utterance still settling", async () => {
-      const { opts, stt, callbacks } = makeOpts({
-        llm: createFakeLanguageModel({ script: [{ type: "text", text: "ok" }] }),
-        endpointSettleMs: 60,
-      });
-      const t = createPipelineTransport(opts);
-      await t.start();
-
-      stt.last()?.fireFinal("I was saying"); // fragment: buffers for the settle window
-      t.cancelReply();
-      // Without the settler reset, the utterance commits ~settleMs after the
-      // user pressed stop and launches a fresh turn.
-      await new Promise((r) => setTimeout(r, 150));
-      expect(callbacks.onUserTranscript).not.toHaveBeenCalled();
-      expect(callbacks.onReplyStarted).not.toHaveBeenCalled();
-      await t.stop();
-    });
   });
 });

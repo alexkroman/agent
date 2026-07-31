@@ -42,8 +42,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     maxSteps,
     minBargeInWords,
     interruptionMinDurationMs,
-    endpointSettleMs,
-    completeSettleMs,
     holdPhrase,
     errorPhrase,
     startFailurePhrase,
@@ -104,14 +102,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // audio is still playing client-side (see createPlaybackClock).
   const playbackClock = createPlaybackClock(ttsSampleRate);
 
-  // Endpoint settler, silence nudger, false-interruption recovery, speaking
-  // edges and the STT handlers that drive them — see createUserActivity.
-  const { settler, nudger, recovery, speechEdges, sttEvents } = createUserActivity({
+  // Silence nudger, false-interruption recovery, speaking edges and the STT
+  // handlers that drive them — see createUserActivity.
+  const { nudger, recovery, speechEdges, sttEvents } = createUserActivity({
     log,
     sid: opts.sid,
     callbacks,
-    endpointSettleMs,
-    completeSettleMs,
     silenceTimeoutMs: opts.silenceTimeoutMs,
     silencePrompt: opts.silencePrompt,
     falseInterruptionTimeoutMs,
@@ -207,7 +203,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     nudger.clear();
     recovery.clear();
     speechEdges.reset();
-    settler.reset();
     abortInFlightTurn();
     callbacks.onCancelled();
     sessionAbort.abort();
@@ -428,7 +423,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       nudger.clear();
       recovery.clear();
       speechEdges.reset();
-      settler.reset();
       sessionAbort.abort();
       turnController?.abort();
       providers.unsubscribe();
@@ -454,11 +448,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       if (terminated) return;
       // A client-initiated cancel is intentional — never resume from it.
       recovery.clear();
-      // "Stop responding": drop the settling utterance (it would otherwise
-      // commit ~settleMs after the cancel and launch a fresh turn) and strand
-      // turns already queued behind the cancelled one. History persistence
-      // stays valid — the conversation continues.
-      settler.reset();
+      // "Stop responding": strand turns already queued behind the cancelled
+      // one. History persistence stays valid — the conversation continues.
       gate.invalidateQueued();
       abortInFlightTurn();
       // Silence after a client-initiated cancel should still nudge.
@@ -481,7 +472,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // A reset is user activity: restore the resume budget as well.
       recovery.onUserTurn();
       speechEdges.reset();
-      settler.reset();
       abortInFlightTurn();
       history.reset();
       // A reset is user activity: restore the budget, restart the window.
