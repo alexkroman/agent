@@ -497,19 +497,22 @@ describe("createSandbox", () => {
       }),
     );
 
-    expect(capturedRuntimeOpts.current?.stt).toStrictEqual(stt);
-    expect(capturedRuntimeOpts.current?.llm).toStrictEqual(llm);
-    expect(capturedRuntimeOpts.current?.tts).toStrictEqual(tts);
+    // The descriptors ride on the runtime agent itself (the config flows
+    // through toRuntimeAgent unchanged); createRuntime resolves them from
+    // there via `opts.stt ?? agent.stt`.
+    expect(capturedRuntimeOpts.current?.agent.stt).toStrictEqual(stt);
+    expect(capturedRuntimeOpts.current?.agent.llm).toStrictEqual(llm);
+    expect(capturedRuntimeOpts.current?.agent.tts).toStrictEqual(tts);
 
     await sandbox.shutdown();
   });
 
-  it("does not pass pipeline providers when mode is not 'pipeline'", async () => {
+  it("does not put pipeline providers on the agent for an S2S config", async () => {
     const sandbox = createSandbox(makeSandboxOptions());
 
-    expect(capturedRuntimeOpts.current?.stt).toBeUndefined();
-    expect(capturedRuntimeOpts.current?.llm).toBeUndefined();
-    expect(capturedRuntimeOpts.current?.tts).toBeUndefined();
+    expect(capturedRuntimeOpts.current?.agent.stt).toBeUndefined();
+    expect(capturedRuntimeOpts.current?.agent.llm).toBeUndefined();
+    expect(capturedRuntimeOpts.current?.agent.tts).toBeUndefined();
 
     await sandbox.shutdown();
   });

@@ -6,11 +6,12 @@
 
 import { PassThrough } from "node:stream";
 import { vi } from "vitest";
-import { createNdjsonConnection, type NdjsonConnection } from "./ndjson-transport.ts";
+import { createNdjsonConnection } from "./ndjson-transport.ts";
+import type { GuestConnection, GuestRpcSchema } from "./rpc-schemas.ts";
 import type { SandboxVmOptions, WarmHarness } from "./sandbox-vm.ts";
 
 export function createTestConn(): {
-  conn: NdjsonConnection;
+  conn: GuestConnection;
   hostReadable: PassThrough;
   hostWritable: PassThrough;
   writtenLines: string[];
@@ -23,11 +24,11 @@ export function createTestConn(): {
       if (line.trim()) writtenLines.push(line);
     }
   });
-  const conn = createNdjsonConnection(hostReadable, hostWritable);
+  const conn = createNdjsonConnection<GuestRpcSchema>(hostReadable, hostWritable);
   return { conn, hostReadable, hostWritable, writtenLines };
 }
 
-export function makeWarm(conn: NdjsonConnection, cleanup: () => Promise<void>): WarmHarness {
+export function makeWarm(conn: GuestConnection, cleanup: () => Promise<void>): WarmHarness {
   return {
     conn,
     cleanup,

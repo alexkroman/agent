@@ -10,7 +10,6 @@
  * mediated by the `SandboxHandle` from `sandbox-vm.ts`.
  */
 
-import { randomUUID } from "node:crypto";
 import { errorMessage, SESSION_RESUME_GRACE_MS, toolError } from "@alexkroman1/aai";
 import type { ClientSink } from "@alexkroman1/aai/protocol";
 import {
@@ -20,12 +19,10 @@ import {
   createMemoryVector,
   createRuntime,
   type ExecuteTool,
-  type Runtime,
   resolveVector,
   safeFetch,
   type Vector,
 } from "@alexkroman1/aai/runtime";
-import { sendAllowedHosts } from "@alexkroman1/aai/send";
 import { debug } from "./_debug-log.ts";
 import {
   createMessageDeltaTracker,
@@ -36,7 +33,7 @@ import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-databas
 import { createClientSendHandler } from "./client-send.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
-import { pipelineProviderOpts, toRuntimeAgent } from "./sandbox-agent-config.ts";
+import { toRuntimeAgent } from "./sandbox-agent-config.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { attachSandbox, setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
@@ -84,15 +81,7 @@ export type SandboxOptions = {
   onVmFailed?: (err: unknown) => void;
 };
 
-export type Sandbox = AgentRuntime & {
-  /**
-   * One connectionless sync turn against this agent (`POST /:slug/sync`) —
-   * see `host/sync-turn.ts` in the SDK. Wrapped here so the guest's
-   * per-session tool state (message cache, ctx.state) is released after the
-   * turn, the job `session/end` does for WebSocket sessions.
-   */
-  runSyncTurn: Runtime["runSyncTurn"];
-};
+export type Sandbox = AgentRuntime;
 
 // ── Public API ──────────────────────────────────────────────────────────
 
@@ -108,21 +97,6 @@ export function resolveAgentVector(
 ): Vector {
   if (config?.vector) return resolveVector(config.vector, env, slug);
   return defaultVector ? defaultVector(slug) : createMemoryVector({ namespace: slug });
-}
-
-/**
- * The hostnames guest tool code may reach: the agent's own `allowedHosts`
- * plus the webhook host of any declared send channel — declaring the channel
- * is the egress opt-in, so an agent's own tool calling `openSender` works
- * without the author also hand-listing `hooks.slack.com`.
- *
- * Derived **host-side from the validated descriptor**, not read from a
- * bundle-supplied field: the deploy path builds its config with
- * `toAgentConfig`, which has no `allowedHosts` at all, and a bundle must not
- * be able to widen its own egress by naming hosts a channel doesn't use.
- */
-function resolveAgentAllowedHosts(config: Pick<IsolateConfig, "allowedHosts" | "send">): string[] {
-  return [...new Set([...(config.allowedHosts ?? []), ...sendAllowedHosts(config.send)])];
 }
 
 export function createSandbox(opts: SandboxOptions): Sandbox {
@@ -148,7 +122,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       // the agent env — never platform-owned keys.
       generate: createGenerateFn({ llm: config.llm, env }),
       harnessPath,
-      allowedHosts: resolveAgentAllowedHosts(config),
+      allowedHosts: [...(config.allowedHosts ?? [])],
     },
     opts.pool,
   );
@@ -214,6 +188,10 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   // deploy path builds its config with `toAgentConfig`, not `parseManifest`,
   // and only the latter fills in DEFAULT_BUILTIN_TOOLS.
   const agentRuntime = createRuntime({
+    // The config's provider descriptors (stt/llm/tts/s2s) ride on the agent
+    // object itself; createRuntime resolves them from there (see
+    // sandbox-agent-config.ts for why that keys off descriptor presence, not
+    // the optional `mode` field).
     agent: toRuntimeAgent(config),
     env,
     executeTool,
@@ -224,7 +202,6 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     // resolveAllBuiltins) — passed explicitly so the platform's egress policy
     // is visible here rather than only implied by a default.
     fetch: safeFetch,
-    ...pipelineProviderOpts(config),
   });
 
   const sessionSinks = new Map<string, ClientSink>();
@@ -313,26 +290,9 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     });
   }
 
-  const runSyncTurn: Sandbox["runSyncTurn"] = async (req, syncOpts) => {
-    const sessionId = syncOpts?.sessionId ?? `sync:${randomUUID()}`;
-    try {
-      return await agentRuntime.runSyncTurn(req, { sessionId });
-    } finally {
-      // Mirror onSessionEnd for WebSocket sessions: drop the host-side
-      // message-delta cache and tell the guest to free its session state.
-      messageTracker.reset(sessionId);
-      vmReady
-        .then((handle) => handle.conn.sendNotification("session/end", { sessionId }))
-        .catch(() => {
-          // VM failed to start — session/end notification is best-effort
-        });
-    }
-  };
-
   return {
     readyConfig: agentRuntime.readyConfig,
     startSession: startSessionWithCleanup,
-    runSyncTurn,
     shutdown: shutdownSandbox,
   };
 }

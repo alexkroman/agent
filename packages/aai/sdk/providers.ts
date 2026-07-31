@@ -51,34 +51,8 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>>;
 /** Descriptor for an S2S provider. Returned by factories like `openaiRealtime(...)`. */
 export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>>;
 
-/** Descriptor for an outbound send channel. Returned by factories like `slack()`. */
-export type SendProvider = ProviderDescriptor<string, Record<string, unknown>>;
-
 /** Descriptor for a Vector backend. Returned by factories like `pinecone(...)`. */
 export type VectorProvider = ProviderDescriptor<string, Record<string, unknown>>;
-
-// -------- Send channel (environment-agnostic) --------------------------------
-
-/**
- * Payload for a send channel. A string is wrapped in the channel's natural
- * text shape (Slack: `{ text }`); an object is posted verbatim as the HTTP
- * body, so callers control the full payload (Slack blocks, attachments, …).
- */
-export type SendMessage = string | Record<string, unknown>;
-
-/**
- * A live outbound channel resolved from a {@link SendProvider} descriptor
- * via `openSender` (`@alexkroman1/aai/send`). Unlike the STT/TTS openables
- * this is not host-only: senders are plain `fetch` + env, so the same
- * implementation runs on the host and inside the guest sandbox (where
- * `fetch` is the harness's proxied, allowlist-checked implementation).
- */
-export interface Sender {
-  /** The provider kind this sender was resolved from (e.g. `"slack"`). */
-  readonly name: string;
-  /** Deliver one message. Rejects on missing credential or non-2xx response. */
-  send(message: SendMessage, opts?: { signal?: AbortSignal | undefined }): Promise<void>;
-}
 
 // -------- STT openable (host-only) ------------------------------------------
 
@@ -126,28 +100,10 @@ export interface SttOpenOptions {
   signal: AbortSignal;
 }
 
-/** Options for {@link SttOpener.transcribeClip}. */
-export interface TranscribeClipOptions {
-  apiKey: string;
-  fetch?: typeof globalThis.fetch | undefined;
-  signal?: AbortSignal | undefined;
-}
-
 /** Host-side openable STT provider — produced by `resolveStt(descriptor)`. */
 export interface SttOpener {
   readonly name: string;
   open(opts: SttOpenOptions): Promise<SttSession>;
-  /**
-   * One-shot transcription of a short PCM16 clip (an uploaded file), for
-   * providers with a synchronous batch endpoint — AssemblyAI implements it
-   * via the Sync API. Providers without one omit it; the pipeline transport
-   * then replays the clip through the realtime session instead.
-   */
-  transcribeClip?(
-    pcm: Uint8Array,
-    sampleRate: number,
-    opts: TranscribeClipOptions,
-  ): Promise<string>;
 }
 
 // -------- TTS openable (host-only) ------------------------------------------
@@ -193,25 +149,8 @@ export interface TtsOpenOptions {
   signal: AbortSignal;
 }
 
-/** Options for {@link TtsOpener.synthesizeClip}. */
-export interface SynthesizeClipOptions {
-  /** Sample rate of the returned PCM16 audio, in Hz. */
-  sampleRate: number;
-  apiKey: string;
-  fetch?: typeof globalThis.fetch | undefined;
-  signal?: AbortSignal | undefined;
-}
-
 /** Host-side openable TTS provider — produced by `resolveTts(descriptor)`. */
 export interface TtsOpener {
   readonly name: string;
   open(opts: TtsOpenOptions): Promise<TtsSession>;
-  /**
-   * One-shot synthesis of a complete reply into mono PCM16LE bytes, for
-   * providers with a synchronous HTTP endpoint — Cartesia implements it via
-   * `/tts/bytes`. The mirror of {@link SttOpener.transcribeClip}: sync turns
-   * (`POST /sync`) use it instead of opening a streaming session. Providers
-   * without one omit it; a sync turn then returns a text-only reply.
-   */
-  synthesizeClip?(text: string, opts: SynthesizeClipOptions): Promise<Uint8Array>;
 }

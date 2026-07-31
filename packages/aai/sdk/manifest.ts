@@ -9,32 +9,21 @@
 import { z } from "zod";
 import { AllowedHostsSchema } from "./allowed-hosts.ts";
 import {
-  type AgentKind,
-  assertAgentKind,
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
-  assertTextOnlyTuning,
   type SessionMode,
 } from "./config-rules.ts";
 import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
-import { sendAllowedHosts } from "./providers/send/open.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import type {
   LlmProvider,
   S2sProvider,
-  SendProvider,
   SttProvider,
   TtsProvider,
   VectorProvider,
 } from "./providers.ts";
-import {
-  BuiltinToolSchema,
-  DEFAULT_GREETING,
-  DEFAULT_SYSTEM_PROMPT,
-  DEFAULT_WORKFLOW_GREETING,
-  DEFAULT_WORKFLOW_SYSTEM_PROMPT,
-} from "./types.ts";
+import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
 /**
  * Tool definition as it appears in the serialized manifest JSON.
@@ -43,124 +32,6 @@ import {
  * which uses Zod schemas for parameters — `agentToolsToSchemas()` in
  * `_internal-types.ts` converts ToolDef → ToolSchema (JSON Schema) for transport.
  */
-type ToolManifest = {
-  description: string;
-  parameters?: Record<string, unknown> | undefined;
-};
-
-/** Normalized agent manifest — all optional fields resolved to defaults. */
-export type Manifest = {
-  /** Agent display name (from `agent({ name: "..." })`). */
-  name: string;
-  /** System prompt sent to the LLM. Defaults to {@link DEFAULT_SYSTEM_PROMPT}. */
-  systemPrompt: string;
-  /** Initial greeting spoken to the user on connect. Defaults to {@link DEFAULT_GREETING}. */
-  greeting: string;
-  /** Optional prompt hint for the STT engine (improves transcription of domain terms). */
-  sttPrompt?: string | undefined;
-  /**
-   * Enabled built-in tools (`web_search`, `visit_webpage`, `get_page_design`,
-   * `fetch_json`, `run_code`, `think`, `remember`, `recall`, `calculate`).
-   * Defaults to
-   * {@link DEFAULT_BUILTIN_TOOLS} when unset; explicit `[]` disables all.
-   */
-  builtinTools: string[];
-  /** Max tool calls per LLM reply. Prevents runaway loops. Default: {@link DEFAULT_MAX_STEPS} (10). */
-  maxSteps: number;
-  /** `"auto"` = LLM decides when to use tools; `"required"` = always call a tool. */
-  toolChoice: "auto" | "required";
-  /** Idle timeout in ms before auto-closing the session. `undefined` = use default (5 min). */
-  idleTimeoutMs?: number | undefined;
-  /**
-   * Pipeline mode only. When set, the assistant proactively takes a turn
-   * after this many ms of user silence. `undefined` disables the behavior.
-   */
-  silenceTimeoutMs?: number | undefined;
-  /**
-   * Instruction injected as a synthetic user turn when `silenceTimeoutMs`
-   * elapses. Defaults to `DEFAULT_SILENCE_PROMPT`. Requires `silenceTimeoutMs`.
-   */
-  silencePrompt?: string | undefined;
-  /**
-   * Pipeline mode only. Minimum interim-transcript words before user speech
-   * barges in on the agent's in-flight reply. Default 2.
-   */
-  minBargeInWords?: number | undefined;
-  /**
-   * Pipeline mode only. Minimum sustained speech (ms) before an
-   * interim-triggered barge-in interrupts the reply. Default 0 (disabled).
-   */
-  interruptionMinDurationMs?: number | undefined;
-  /**
-   * Pipeline mode only. Endpoint settle window (ms) after an STT final before
-   * committing the user's turn. Default 1500; 0 commits every final at once.
-   */
-  endpointSettleMs?: number | undefined;
-  /**
-   * Pipeline mode only. Settle window (ms) for clearly-complete finals,
-   * capped by `endpointSettleMs`. Default 500.
-   */
-  completeSettleMs?: number | undefined;
-  /**
-   * Pipeline mode only. Phrase spoken when a turn opens with a tool call and
-   * no speech. Default `"One moment."`; `""` disables.
-   */
-  holdPhrase?: string | undefined;
-  /**
-   * Pipeline mode only. Phrase spoken when the turn's LLM stream fails.
-   * Default {@link DEFAULT_ERROR_PHRASE}; `""` disables.
-   */
-  errorPhrase?: string | undefined;
-  /**
-   * Pipeline mode only. False-interruption recovery window (ms). Default
-   * 2000; 0 disables recovery.
-   */
-  falseInterruptionTimeoutMs?: number | undefined;
-  /** CSS custom properties for agent UI theming. */
-  theme?: Record<string, string> | undefined;
-  /** Custom tool definitions keyed by tool name. */
-  tools: Record<string, ToolManifest>;
-  /** Hostnames the agent is allowed to fetch. Empty = no fetch access. */
-  allowedHosts: string[];
-  /**
-   * Pluggable STT provider. Must be set together with `llm` and `tts` to
-   * enable pipeline mode, or all three left unset for s2s mode.
-   */
-  stt?: SttProvider | undefined;
-  /**
-   * Pluggable LLM provider (Vercel AI SDK `LanguageModel`). Must be set
-   * together with `stt` and `tts` to enable pipeline mode.
-   */
-  llm?: LlmProvider | undefined;
-  /**
-   * Pluggable TTS provider. Must be set together with `stt` and `llm` to
-   * enable pipeline mode.
-   */
-  tts?: TtsProvider | undefined;
-  /**
-   * Pluggable S2S provider descriptor. When set, overrides the implicit
-   * AssemblyAI default. Mutually exclusive with the `stt`/`llm`/`tts`
-   * pipeline triple.
-   */
-  s2s?: S2sProvider | undefined;
-  /** Pluggable Vector backend descriptor. Falls back to platform default when omitted. */
-  vector?: VectorProvider | undefined;
-  /** Outbound send channel descriptor (e.g. Slack). No default. */
-  send?: SendProvider | undefined;
-  /**
-   * The app's mode: `"agent"` (default) is a conversational interface;
-   * `"workflow"` is audio in → action out — one recorded or uploaded
-   * instruction runs a single agentic loop (one `POST /sync` turn) and ends.
-   */
-  kind?: AgentKind | undefined;
-  /**
-   * Session mode derived from provider fields:
-   * - `"s2s"`: speech-to-speech path (default when no stt/llm/tts set, or when `s2s` is set).
-   * - `"pipeline"`: pluggable STT → LLM → TTS path (stt + llm + tts all set).
-   */
-  mode: SessionMode;
-};
-
 const ToolManifestSchema = z.object({
   description: z.string(),
   parameters: z.record(z.string(), z.unknown()).optional(),
@@ -185,14 +56,22 @@ export const ProviderDescriptorSchema = z.object({
   options: z.record(z.string(), z.unknown()),
 });
 
+/**
+ * Manifest wire schema — defaults live here, so the schema alone resolves a
+ * minimal manifest to a full one and the `Manifest` type is derived from it
+ * (`z.infer`) rather than re-declared. The hand-written type this replaces
+ * duplicated every field (docs live on {@link AgentDef}) and was one more
+ * shape a new field could silently miss.
+ */
 const ManifestSchema = z.object({
   name: z.string().min(1),
-  systemPrompt: z.string().optional(),
-  greeting: z.string().optional(),
+  systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
+  greeting: z.string().default(DEFAULT_GREETING),
   sttPrompt: z.string().optional(),
-  builtinTools: z.array(BuiltinToolSchema).optional(),
-  maxSteps: z.number().int().positive().optional(),
-  toolChoice: z.enum(["auto", "required"]).optional(),
+  // Function default so parses never share (or expose for mutation) one array.
+  builtinTools: z.array(BuiltinToolSchema).default(() => [...DEFAULT_BUILTIN_TOOLS]),
+  maxSteps: z.number().int().positive().default(DEFAULT_MAX_STEPS),
+  toolChoice: z.enum(["auto", "required"]).default("auto"),
   // 0 is the documented "disable the idle timer" value — allow it (the runtime
   // and AgentConfigSchema both treat 0 as disabled), so use nonnegative().
   idleTimeoutMs: z.number().int().nonnegative().optional(),
@@ -211,16 +90,42 @@ const ManifestSchema = z.object({
   errorPhrase: z.string().optional(),
   falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
   theme: z.record(z.string(), z.string()).optional(),
-  tools: z.record(z.string(), ToolManifestSchema).optional(),
-  allowedHosts: AllowedHostsSchema.optional(),
+  tools: z.record(z.string(), ToolManifestSchema).default({}),
+  allowedHosts: AllowedHostsSchema.default([]),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),
   tts: ProviderDescriptorSchema.optional(),
   s2s: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
-  send: ProviderDescriptorSchema.optional(),
-  kind: z.enum(["agent", "workflow"]).optional(),
 });
+
+/**
+ * The provider-descriptor fields, re-typed from the generic parsed shape to
+ * the SDK's nominal aliases so `Manifest` consumers meet the same types the
+ * factories (`assemblyAI(...)`, `anthropic(...)`) return.
+ */
+type ManifestProviders = {
+  stt?: SttProvider | undefined;
+  llm?: LlmProvider | undefined;
+  tts?: TtsProvider | undefined;
+  s2s?: S2sProvider | undefined;
+  vector?: VectorProvider | undefined;
+};
+
+/**
+ * Normalized agent manifest — all defaulted fields resolved, plus the
+ * derived session `mode`. Field semantics are documented on {@link AgentDef};
+ * the shape is the schema's, not a second declaration.
+ */
+export type Manifest = Omit<z.infer<typeof ManifestSchema>, keyof ManifestProviders> &
+  ManifestProviders & {
+    /**
+     * Session mode derived from provider fields:
+     * - `"s2s"`: speech-to-speech path (no stt/llm/tts set, or `s2s` set).
+     * - `"pipeline"`: pluggable STT → LLM → TTS path (stt + llm + tts all set).
+     */
+    mode: SessionMode;
+  };
 
 /**
  * Parse and normalize a raw agent manifest, applying defaults for all
@@ -237,23 +142,6 @@ export function parseManifest(input: unknown): Manifest {
   const mode = assertProviderTriple(parsed.stt, parsed.llm, parsed.tts, parsed.s2s);
   assertSilencePolicy(mode, parsed.silenceTimeoutMs, parsed.silencePrompt);
   assertPipelineTuning(mode, parsed);
-  assertTextOnlyTuning(parsed.tts, parsed);
-  assertAgentKind(mode, parsed.kind, parsed.tts);
   assertAssemblyAITtsLanguage(parsed.tts);
-  const isWorkflow = parsed.kind === "workflow";
-  return {
-    ...parsed,
-    systemPrompt:
-      parsed.systemPrompt ?? (isWorkflow ? DEFAULT_WORKFLOW_SYSTEM_PROMPT : DEFAULT_SYSTEM_PROMPT),
-    greeting: parsed.greeting ?? (isWorkflow ? DEFAULT_WORKFLOW_GREETING : DEFAULT_GREETING),
-    builtinTools: parsed.builtinTools ?? [...DEFAULT_BUILTIN_TOOLS],
-    maxSteps: parsed.maxSteps ?? DEFAULT_MAX_STEPS,
-    toolChoice: parsed.toolChoice ?? "auto",
-    tools: parsed.tools ?? {},
-    // Declaring a send channel is the egress opt-in for its webhook host:
-    // guest tool code posts through the sandbox fetch proxy, which checks
-    // this list, so the channel works without hand-listing the host.
-    allowedHosts: [...new Set([...(parsed.allowedHosts ?? []), ...sendAllowedHosts(parsed.send)])],
-    mode,
-  };
+  return { ...parsed, mode };
 }

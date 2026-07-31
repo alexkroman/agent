@@ -28,7 +28,6 @@ import type {
   SessionCoreOptions,
   SessionSnapshot,
 } from "./session-core-types.ts";
-import { createUploadSender } from "./session-core-upload.ts";
 import { buildWsUrl } from "./session-core-url.ts";
 import { MIC_SEND_MAX_BUFFERED_BYTES, type WebSocketConstructor } from "./types.ts";
 
@@ -62,8 +61,6 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     contentVersion: 0,
     started: false,
     running: false,
-    // Voice until the server's config says text-only (audioOut: false).
-    audioOut: true,
     recording: false,
     // The programmatic endpoint — same URL the session connects to, minus
     // resume params. Derived up front so UIs can show it before connecting.
@@ -124,7 +121,6 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   let sessionId: string | undefined = options.resumeSessionId;
 
   function cleanupAudio(): void {
-    upload.discard();
     conn.audioSetupInFlight = false;
     void conn.voiceIO?.close().catch(() => {
       /* already tearing down — nothing to report the failure to */
@@ -153,17 +149,12 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     conn.ws.send(bytes as unknown as ArrayBuffer);
   }
 
-  // ─── File uploads ─────────────────────────────────────────────────────────
-
-  const upload = createUploadSender({ conn, getSnapshot, sendJson });
-
   // ─── Message handling ─────────────────────────────────────────────────────
 
   const { handleMessage, settleWhenAudioDrained } = createMessageHandlers({
     getSnapshot,
     updateState,
     conn,
-    discardUpload: upload.discard,
     cleanupAudio,
   });
 
@@ -196,19 +187,9 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     const isReconnect = hasConnected;
     hasConnected = true;
     conn.readyConfig = { sampleRate: config.sampleRate, ttsSampleRate: config.ttsSampleRate };
-    const audioOut = config.audioOut !== false;
-    updateState({ audioOut });
-    if (audioOut) {
-      // initAudioCapture handles its own failures (sets error state internally).
-      // Fatal: a voice session without a mic cannot function.
-      void initAudioCapture(conn, config, audioDeps, true);
-    } else {
-      // Text-only session: no playback pipeline, and the mic is opt-in
-      // via startRecording() (the record button) — so the protocol
-      // handshake completes immediately with no permission prompt.
-      sendJson({ type: "audio_ready" });
-      updateState({ state: "listening" });
-    }
+    // initAudioCapture handles its own failures (sets error state internally).
+    // Fatal: a voice session without a mic cannot function.
+    void initAudioCapture(conn, config, audioDeps, true);
 
     if (isReconnect && currentSnapshot.messages.length > 0) {
       sendJson({
@@ -351,7 +332,6 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   }
 
   function reset(): void {
-    upload.discard();
     conn.voiceIO?.flush();
     if (conn.ws && conn.ws.readyState === WS_OPEN) {
       sendJson({ type: "reset" });
@@ -368,29 +348,6 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   function disconnect(): void {
     teardownConnection();
     updateState({ state: "disconnected", running: false, recording: false });
-  }
-
-  function startRecording(): void {
-    // Voice sessions stream the mic for their whole lifetime already; while a
-    // file upload is in flight the mic stays off so the streams can't mix.
-    if (
-      currentSnapshot.audioOut ||
-      currentSnapshot.recording ||
-      conn.audioSetupInFlight ||
-      upload.inFlight()
-    )
-      return;
-    const cfg = conn.readyConfig;
-    if (!(cfg && conn.ws) || conn.ws.readyState !== WS_OPEN) return;
-    // Sets `recording: true` itself. Non-fatal: mic denial on the opt-in
-    // record button must not brick a session that can still text/upload.
-    void initAudioCapture(conn, cfg, audioDeps, false);
-  }
-
-  function stopRecording(): void {
-    if (currentSnapshot.audioOut || !currentSnapshot.recording) return;
-    cleanupAudio();
-    updateState({ recording: false });
   }
 
   function start(): void {
@@ -417,9 +374,6 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     disconnect,
     start,
     toggle,
-    startRecording,
-    stopRecording,
-    sendAudioFile: upload.sendAudioFile,
     [Symbol.dispose]() {
       disconnect();
     },

@@ -2,8 +2,7 @@
 /**
  * `@alexkroman1/aai/tts` subpath barrel.
  *
- * Re-exports the descriptor factories (`assemblyAI`, `cartesia`, `rime`,
- * `none`) and
+ * Re-exports the descriptor factories (`assemblyAI`, `cartesia`, `rime`) and
  * the shared TTS contract types. Does not pull in any provider SDK — the host
  * resolver handles that at session start.
  *
@@ -31,7 +30,6 @@ export {
   type CartesiaProvider,
   cartesia,
 } from "./tts/cartesia.ts";
-export { isTextOnlyTts, NONE_TTS_KIND, type NoneTtsProvider, none } from "./tts/none.ts";
 export {
   RIME_API_KEY_ENV,
   RIME_DEFAULT_VOICE,

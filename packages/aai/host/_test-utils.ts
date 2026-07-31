@@ -65,8 +65,6 @@ export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
     stop: vi.fn(() => Promise.resolve()),
     onAudio: vi.fn(),
     onAudioReady: vi.fn(),
-    onTranscribeFileStart: vi.fn(),
-    onTranscribeFileEnd: vi.fn(),
     onCancel: vi.fn(),
     onReset: vi.fn(),
     onHistory: vi.fn(),

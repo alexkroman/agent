@@ -8,9 +8,9 @@
 
 import type { ToolSchema } from "../sdk/_internal-types.ts";
 import type { Db } from "../sdk/db.ts";
+import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { ClientSink, ReadyConfig } from "../sdk/protocol.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
-import type { SyncTurnRequest, SyncTurnResponse } from "../sdk/sync.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import type { Vector } from "../sdk/vector.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
@@ -54,7 +54,13 @@ export type AgentRuntime = {
 export type RuntimeOptions = {
   // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
   agent: AgentDef<any>;
-  env: Record<string, string>;
+  /**
+   * The agent's own env — what tool code sees as `ctx.env`. Typed
+   * {@link AgentEnv}: a `withHostCredentialFallback` result (which may carry
+   * host/shell credentials) is a compile error here — pass it as
+   * {@link RuntimeOptions.providerEnv} instead.
+   */
+  env: AgentEnv;
   /**
    * Environment used to resolve provider credentials (STT/TTS/LLM/Vector).
    * Defaults to {@link RuntimeOptions.env}.
@@ -65,7 +71,7 @@ export type RuntimeOptions = {
    * do not exist in production. The platform passes neither — it resolves
    * everything from the agent's own stored env.
    */
-  providerEnv?: Record<string, string> | undefined;
+  providerEnv?: ProviderEnv | undefined;
   /**
    * SQL database exposed to tool code as `ctx.db`. When omitted, the runtime
    * connects one itself from `DATABASE_URL` in the provider env (self-hosted
@@ -155,19 +161,6 @@ export type RuntimeOptions = {
 export type Runtime = AgentRuntime & {
   /** Execute a named tool with the given args, returning a JSON result string. */
   executeTool: ExecuteTool;
-  /**
-   * Run one connectionless sync turn (see `host/sync-turn.ts`): STT via the
-   * provider's one-shot batch endpoint, the LLM loop with the agent's tools,
-   * TTS via one-shot synthesis. Requires pipeline mode — S2S agents have no
-   * provider triple to run it against, so the call rejects with a
-   * `SyncTurnError` there.
-   *
-   * `opts.sessionId` names the turn for tool execution; callers that hold
-   * per-session state keyed by that id (the platform sandbox's guest) pass
-   * their own so they can release it after the turn. The runtime cleans its
-   * own per-session tool state either way.
-   */
-  runSyncTurn(req: SyncTurnRequest, opts?: { sessionId?: string }): Promise<SyncTurnResponse>;
   /** Tool schemas registered with the S2S API (custom + built-in). */
   toolSchemas: ToolSchema[];
   /** Create a new voice session for a connected client (lower-level than startSession). */

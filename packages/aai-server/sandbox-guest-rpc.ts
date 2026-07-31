@@ -18,8 +18,7 @@ import {
 } from "@alexkroman1/aai/protocol";
 import type { HostGenerateFn, Vector } from "@alexkroman1/aai/runtime";
 import { z } from "zod";
-import type { NdjsonConnection } from "./ndjson-transport.ts";
-import { DbQueryParamsSchema } from "./rpc-schemas.ts";
+import { DbQueryParamsSchema, type GuestConnection } from "./rpc-schemas.ts";
 import { createFetchHandler, type FetchRequest } from "./sandbox-fetch.ts";
 
 // ── Vector param schemas for guest → host validation ────────────────────────
@@ -87,7 +86,7 @@ export type GuestRpcOptions = {
  * connection. Must run BEFORE `conn.listen()` so no incoming guest messages
  * are dropped.
  */
-export function registerGuestRpcHandlers(conn: NdjsonConnection, opts: GuestRpcOptions): void {
+export function registerGuestRpcHandlers(conn: GuestConnection, opts: GuestRpcOptions): void {
   // Host serves guest ctx.db queries against the app's provisioned database
   // (params validated with Zod). JSON-serializability of row values is the
   // caller's problem — non-serializable values fail the NDJSON write. The

@@ -119,6 +119,3 @@ export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
  * of the host-side buffering budgets in `constants.ts`.
  */
 export const MIC_SEND_MAX_BUFFERED_BYTES = 64 * 1024;
-
-/** Client poll interval while waiting out socket backpressure during a file send. */
-export const FILE_SEND_BACKOFF_MS = 50;

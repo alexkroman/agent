@@ -8,7 +8,9 @@
  * NDJSON responses to stdout. Designed to run inside a Modal Sandbox.
  *
  * Protocol overview:
- * - Host -> guest: bundle/load, tool/execute, shutdown
+ * - Host -> guest: bundle/load, tool/execute, shutdown, ping (liveness
+ *   heartbeat — carries no payload; receiving any line feeds the orphan
+ *   watchdog, so `ping` needs no handler branch)
  * - Guest -> host: db/query (proxied ctx.db queries), vector/* (proxied Vector)
  * - Guest -> host: fetch/request (proxied fetch via RPC)
  * - Host -> guest: fetch/response-start, fetch/response-chunk,
@@ -50,7 +52,13 @@ import type {
   Message,
   ToolContext,
 } from "./harness-types.ts";
-import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "./limits.ts";
+import { createOrphanWatchdog } from "./harness-watchdog.ts";
+import {
+  HARNESS_ORPHAN_TIMEOUT_MS,
+  RUN_CODE_TIMEOUT_MS,
+  STORAGE_DISABLED_MESSAGE,
+  TOOL_TIMEOUT_MS,
+} from "./limits.ts";
 
 // Re-export the host-RPC surface so existing consumers/tests can keep
 // importing it from `./deno-harness.ts`.
@@ -428,7 +436,17 @@ async function main(): Promise<void> {
 
   const state: HarnessState = { agent: null, sessionState: null, sessionMessages: null };
 
+  const watchdog = createOrphanWatchdog({
+    onOrphaned: () => {
+      console.error(
+        `Harness orphaned: no host traffic for ${HARNESS_ORPHAN_TIMEOUT_MS}ms; exiting`,
+      );
+      Deno.exit(3);
+    },
+  });
+
   for await (const line of lineStream) {
+    watchdog.touch();
     const trimmed = line.trim();
     if (!trimmed) continue;
 
@@ -444,9 +462,11 @@ async function main(): Promise<void> {
   }
 
   // stdin closed — the host is gone. Nothing pending can ever be answered,
-  // so fail it all fast (this also clears the per-request timeout timers,
-  // letting the process exit instead of idling until they fire).
+  // so fail it all fast, then exit outright: a loaded bundle may hold its own
+  // timers/intervals, and waiting for the event loop to drain would leave the
+  // process (and its Modal sandbox) alive at the host's expense.
   rejectAllPendingHostRequests("Connection closed");
+  Deno.exit(0);
 }
 
 // Only run main loop when executed directly by Deno (not when imported in tests).

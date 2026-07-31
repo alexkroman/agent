@@ -330,8 +330,7 @@ describe("createSessionCore", () => {
       expect(first?.url).not.toContain("resume");
 
       first?.simulateOpen();
-      // audioOut:false keeps the handshake synchronous (no mic/worklet setup).
-      first?.simulateMessage(makeConfig(16_000, 24_000, "sess-1", { audioOut: false }));
+      first?.simulateMessage(makeConfig(16_000, 24_000, "sess-1"));
       first?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "Hello" }));
       expect(core.getSnapshot().messages).toHaveLength(1);
 
@@ -351,7 +350,7 @@ describe("createSessionCore", () => {
 
       second?.simulateOpen();
       expect(core.getSnapshot().state).toBe("ready");
-      second?.simulateMessage(makeConfig(16_000, 24_000, "sess-1", { audioOut: false }));
+      second?.simulateMessage(makeConfig(16_000, 24_000, "sess-1"));
       const historyCall = (second?.send.mock.calls ?? []).find(
         (c) => typeof c[0] === "string" && JSON.parse(c[0] as string).type === "history",
       );

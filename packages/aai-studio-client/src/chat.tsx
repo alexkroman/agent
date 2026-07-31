@@ -259,8 +259,8 @@ function EmptyStateBody({
     <>
       <div className="rounded-lg border border-line bg-cream px-[18px] py-4">
         <p className="m-0 text-[13px] leading-5">
-          Welcome to AssemblyAI App Builder. Tell me what your voice agent or workflow should do and
-          I'll build the first version.
+          Welcome to AssemblyAI App Builder. Tell me what your voice agent should do and I'll build
+          the first version.
         </p>
       </div>
       {status?.llm && (
@@ -384,7 +384,7 @@ function ProjectChat({
         disabled={!llmReady}
         busy={busy}
         onStop={handleStop}
-        placeholder="Describe your agent or workflow…"
+        placeholder="Describe your agent…"
         onSend={send}
       />
     </>
@@ -429,9 +429,7 @@ export function ChatPanel(props: ChatPanelProps) {
           </div>
           <Composer
             disabled={props.creating || props.llmStatus?.llm !== true}
-            placeholder={
-              props.creating ? "Creating your project…" : "Describe your agent or workflow…"
-            }
+            placeholder={props.creating ? "Creating your project…" : "Describe your agent…"}
             onSend={props.onStartWithPrompt}
           />
         </>

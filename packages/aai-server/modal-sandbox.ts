@@ -31,8 +31,10 @@ import { Readable, Writable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import { ModalClient, type SandboxCreateParams } from "modal";
 import { debug } from "./_debug-log.ts";
+import { HARNESS_HEARTBEAT_INTERVAL_MS } from "./guest/limits.ts";
 import { metrics } from "./metrics.ts";
 import { createNdjsonConnection } from "./ndjson-transport.ts";
+import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 
 // ── Structural Modal types ───────────────────────────────────────────────────
@@ -88,6 +90,34 @@ const HARNESS_REMOTE_PATH = "/tmp/harness.mjs";
  */
 export const DEFAULT_SANDBOX_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 
+/**
+ * Default Modal-side idle termination (Modal `idleTimeoutMs`) — the native
+ * orphan reaper. If this server process dies without running its shutdown
+ * teardown (crash, OOM, SIGKILL past the drain deadline, a scaledown that
+ * never reaches the node process), the in-memory slot cache is gone and
+ * nothing host-side will ever terminate the remote sandboxes; once no exec is
+ * running in a sandbox, Modal's idle timer reaps it after this window instead
+ * of billing until the 4h lifetime cap.
+ *
+ * Idle detection can only kick in once the harness exec has actually exited,
+ * and that is the link that failed in production: stdin EOF is not reliably
+ * delivered to the exec'd process when the host dies, and even when it is, a
+ * loaded bundle's own timers could hold Deno's event loop open — so orphaned
+ * harnesses kept "running" and their sandboxes never read as idle, surviving
+ * for hours. The guest therefore no longer relies on EOF: the host heartbeats
+ * every harness (`ping` each {@link HARNESS_HEARTBEAT_INTERVAL_MS}, wired in
+ * {@link warmFromModal}), and the harness self-exits after
+ * `HARNESS_ORPHAN_TIMEOUT_MS` of host silence and hard-exits on EOF
+ * (`guest/deno-harness.ts`) — after which this timer is what terminates the
+ * sandbox.
+ *
+ * A *healthy* resident sandbox always has the harness exec running (and its
+ * host pinging), so its idle timer never starts; host-side eviction
+ * (`sandbox-slots.ts`) remains the authority on session-aware idleness.
+ * Override with `SANDBOX_IDLE_TIMEOUT_SECS`.
+ */
+export const DEFAULT_SANDBOX_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
+
 export type ModalSandboxLimits = {
   /** Hard memory cap in MiB (Modal `memoryLimitMiB`). */
   memoryLimitMiB?: number;
@@ -95,6 +125,9 @@ export type ModalSandboxLimits = {
   cpuLimit?: number;
   /** Max sandbox lifetime in ms (Modal `timeoutMs`). */
   timeoutMs?: number;
+  /** Modal-side idle termination in ms (Modal `idleTimeoutMs`) — see
+   * {@link DEFAULT_SANDBOX_IDLE_TIMEOUT_MS} for why this exists. */
+  idleTimeoutMs?: number;
 };
 
 function clamp(value: number, min: number, max: number): number {
@@ -114,6 +147,7 @@ const LIMIT_SPECS: readonly [
   ["SANDBOX_MEMORY_LIMIT_MB", "memoryLimitMiB", 128, 4096, 1],
   ["SANDBOX_CPU_LIMIT", "cpuLimit", 0.125, 16, 1],
   ["SANDBOX_TIMEOUT_SECS", "timeoutMs", 300, 86_400, 1000],
+  ["SANDBOX_IDLE_TIMEOUT_SECS", "idleTimeoutMs", 60, 86_400, 1000],
 ];
 
 /**
@@ -311,13 +345,25 @@ function warmFromModal(sb: ModalSandboxLike, proc: ModalProcLike): WarmHarness {
   });
   void drainStderr(proc.stderr, sb.sandboxId);
 
-  const conn = createNdjsonConnection(stdout, stdin);
+  const conn = createNdjsonConnection<GuestRpcSchema>(stdout, stdin);
+
+  // Host-liveness heartbeat: the guest's orphan watchdog exits the harness
+  // after HARNESS_ORPHAN_TIMEOUT_MS without stdin traffic, so every live
+  // harness — pooled and unconfigured included — must hear from us on a
+  // shorter cadence. Unref'd (must never hold the host process open) and
+  // cleared the moment the harness is known dead or torn down; the guest
+  // needs no `ping` handler, any inbound line feeds its watchdog.
+  const heartbeat = setInterval(() => {
+    void conn.sendNotification("ping");
+  }, HARNESS_HEARTBEAT_INTERVAL_MS);
+  heartbeat.unref?.();
 
   const exitListeners: (() => void)[] = [];
   let dead = false;
   const notifyExit = (): void => {
     if (dead) return;
     dead = true;
+    clearInterval(heartbeat);
     for (const cb of exitListeners) {
       try {
         cb();
@@ -381,12 +427,21 @@ export async function spawnModalWarm(
     // image's default process, and denoland/deno's docker-entrypoint.sh
     // treats its arguments as Deno subcommands — the container exits
     // immediately and every later filesystem/exec call reports "Sandbox may
-    // have already shut down". `sleep infinity` is inert under both
-    // entrypoint interpretations.
+    // have already shut down". `sleep infinity` matches Modal's documented
+    // default main-process behavior ("sleep indefinitely"), which idle
+    // detection ignores — the exec'd harness is what holds the sandbox
+    // active, so its exit is what starts the idle timer.
     command: ["sleep", "infinity"],
+    // The denoland/deno image's entrypoint wraps the command in tini, which
+    // Modal does not run as PID 1 — without this, every sandbox logs a tini
+    // warning that it cannot reap re-parented zombies. Registering tini as a
+    // child subreaper silences the warning and makes the reaping real. Not an
+    // agent secret: agent env is delivered via bundle/load RPC, never here.
+    env: { TINI_SUBREAPER: "1" },
     // The guest has no network by design — all egress is host-proxied RPC.
     blockNetwork: true,
     timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
+    idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
     ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
     ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
     tags: { service: "aai-guest", slug: opts.slug ?? "pool" },
