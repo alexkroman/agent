@@ -28,18 +28,14 @@ import {
   isMessagesDesync,
   type MessagesDelta,
 } from "./_sandbox-messages.ts";
-import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import { createClientSendHandler } from "./client-send.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
 import { toRuntimeAgent } from "./sandbox-agent-config.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { createSessionResumer } from "./sandbox-session-resume.ts";
-import { attachSandbox, setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
-import { appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { SessionStateStore } from "./session-state-store.ts";
-import type { BundleStore } from "./store-types.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -342,134 +338,4 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     startSession: startSessionWithCleanup,
     shutdown: shutdownSandbox,
   };
-}
-
-// ── Resolve sandbox (slot-based) ────────────────────────────────────────
-
-type ResolveAppDbOpts = {
-  secrets?: SecretStore | undefined;
-  appDb?: AppDatabases | undefined;
-};
-
-/**
- * Read the app's stored `app-db:` credentials (when the platform can open
- * them). Resolves null when storage is not enabled or unconfigured.
- */
-function readAppDbMeta(slug: string, opts: ResolveAppDbOpts) {
-  return opts.secrets && opts.appDb
-    ? opts.secrets.get(appDbSecretName(slug)).then(parseAppDbMeta)
-    : Promise.resolve(null);
-}
-
-type ResolveSandboxOpts = {
-  slots: import("./sandbox-slots.ts").SlotCache;
-  store: BundleStore;
-  /** Named secret storage — read for the app's `app-db:` credentials. */
-  secrets?: SecretStore;
-  /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
-  appDb?: AppDatabases;
-  pool?: SandboxPool;
-  defaultVector: (slug: string) => Vector;
-  /** Cross-replica resume persistence; absent means resume state is replica-local. */
-  sessionStates?: SessionStateStore;
-};
-
-/**
- * Build the slot's sandbox from its loaded bundle parts, wiring the
- * poisoned-sandbox detach: a rejected vmReady leaves the sandbox permanently
- * broken (every tool call fails) while live traffic keeps clearing its idle
- * timer, so it would never self-heal. Detach it so the next connection
- * rebuilds — identity-checked and under the slug lock so a deploy/delete
- * that already replaced the slot is never raced. (createSandbox returns
- * synchronously and the caller's attachSandbox runs in the same task, so the
- * async failure callback can only fire after the attach.)
- */
-function buildSlotSandbox(
-  slug: string,
-  parts: {
-    workerCode: string;
-    env: Record<string, string>;
-    agentConfig: IsolateConfig;
-    appDbMeta: AppDbMeta | null;
-  },
-  opts: ResolveSandboxOpts,
-): Sandbox {
-  // Open the app db here — cheap, postgres connects on first query; the
-  // sandbox owns the handle and closes it on shutdown.
-  const db: CloseableDb | undefined =
-    parts.appDbMeta && opts.appDb ? opts.appDb.open(parts.appDbMeta) : undefined;
-  const sandbox = createSandbox({
-    workerCode: parts.workerCode,
-    env: parts.env,
-    slug,
-    agentConfig: parts.agentConfig,
-    ...(db && { db }),
-    ...(opts.pool && { pool: opts.pool }),
-    ...(opts.sessionStates && { sessionStates: opts.sessionStates }),
-    defaultVector: opts.defaultVector,
-    onVmFailed: () => {
-      void withSlugLock(slug, async () => {
-        const current = opts.slots.get(slug);
-        if (current?.sandbox === sandbox) await terminateSlot(current);
-      });
-    },
-  });
-  return sandbox;
-}
-
-export async function resolveSandbox(
-  slug: string,
-  opts: ResolveSandboxOpts,
-): Promise<Sandbox | null> {
-  const { slots, store } = opts;
-
-  // Fast path: a resident sandbox needs no locking.
-  const resident = slots.get(slug);
-  if (resident?.sandbox) return resident.sandbox as Sandbox;
-
-  // Serialize per-slug so concurrent cold upgrades don't each spawn a
-  // sandbox (duplicate Modal sandboxes, one orphaned) and so a session
-  // never attaches a sandbox built from pre-deploy code while a deploy is
-  // mutating the same slot (deploy/delete/secret all take this lock too).
-  return withSlugLock(slug, async () => {
-    let slot = slots.get(slug);
-    if (slot?.sandbox) return slot.sandbox as Sandbox;
-
-    // Kick off the bundle reads now so a cold miss doesn't serialize the
-    // manifest read ahead of them (one extra storage RTT per
-    // first-session-per-slug-per-replica). Each gets a no-op rejection
-    // handler immediately: on a manifest miss the trio is discarded while
-    // possibly still in flight, and a late rejection must not surface as an
-    // unhandled rejection. `Promise.all` below still observes the originals.
-    const workerCodeP = store.getWorkerCode(slug);
-    const agentConfigP = store.getAgentConfig(slug);
-    const envP = store.getEnv(slug).then((e) => e ?? {});
-    // Storage ("app db") credentials, when the platform can open them.
-    const appDbMetaP = readAppDbMeta(slug, opts);
-    for (const p of [workerCodeP, agentConfigP, envP, appDbMetaP]) p.catch(() => undefined);
-
-    if (!slot) {
-      const manifest = await store.getManifest(slug);
-      if (!manifest) return null;
-      slot = { slug: manifest.slug };
-      setSlot(slots, slot);
-      debug("Lazy-discovered agent from store", { slug });
-    }
-
-    const [workerCode, agentConfig, env, appDbMeta] = await Promise.all([
-      workerCodeP,
-      agentConfigP,
-      envP,
-      appDbMetaP,
-    ]);
-
-    if (!(workerCode && agentConfig)) {
-      return null;
-    }
-
-    const sandbox = buildSlotSandbox(slug, { workerCode, env, agentConfig, appDbMeta }, opts);
-
-    attachSandbox(slots, slot, sandbox);
-    return sandbox;
-  });
 }

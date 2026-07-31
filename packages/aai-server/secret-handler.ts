@@ -14,6 +14,7 @@
 
 import { HTTPException } from "hono/http-exception";
 import type { AppContext, ValidatedAppContext } from "./context.ts";
+import { bumpSlugEpoch } from "./platform-epoch.ts";
 import { restartSlotSandbox } from "./sandbox-slots.ts";
 import { SecretKeySchema } from "./schemas.ts";
 
@@ -36,6 +37,7 @@ export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>):
     await c.env.store.putEnv(slug, merged);
 
     await restartSlotSandbox(c.env.slots, slug, "secret update");
+    await bumpSlugEpoch(c.env.slugEpochs, slug);
     console.info("Secret updated", { slug, keyCount: Object.keys(updates).length });
     return c.json({ ok: true, keys: Object.keys(merged) });
   });
@@ -56,6 +58,7 @@ export function handleSecretDelete(c: AppContext): Promise<Response> {
     delete existing[key];
     await c.env.store.putEnv(slug, existing);
     await restartSlotSandbox(c.env.slots, slug, "secret delete");
+    await bumpSlugEpoch(c.env.slugEpochs, slug);
     console.info("Secret deleted", { slug });
     return c.json({ ok: true });
   });

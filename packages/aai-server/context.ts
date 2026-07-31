@@ -12,6 +12,7 @@
 import type { Vector } from "@alexkroman1/aai/runtime";
 import type { Context } from "hono";
 import type { AppDatabases } from "./app-database.ts";
+import type { SlugEpochs } from "./platform-epoch.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import type { SecretStore } from "./secret-store.ts";
@@ -36,6 +37,11 @@ export type HonoEnv = {
      * lease in production so replicas exclude each other; in-process in dev.
      */
     slugLock: SlugMutationLock;
+    /**
+     * Cross-replica invalidation epochs: mutations bump, session starts
+     * compare (see platform-epoch.ts). Postgres in production, memory in dev.
+     */
+    slugEpochs: SlugEpochs;
     defaultVector: (slug: string) => Vector;
   };
   Variables: {

@@ -41,6 +41,27 @@ import modal
 PORT = 8080
 PNPM_VERSION = "10.29.3"
 
+# ── Split services ───────────────────────────────────────────────────────────
+#
+# The node app serves one of three surfaces (AAI_SERVICE): the agent backend,
+# the studio backend, or both combined. This deployment runs the split:
+#
+# - ``server`` (below) is the AGENT service and the single public origin.
+#   When ``STUDIO_UPSTREAM_URL`` is present in the ``aai-server`` Secret it
+#   boots as ``AAI_SERVICE=agent`` and reverse-proxies the studio surface
+#   (``/``, ``/studio/*``, ``/studio-assets/*``) to that URL; when absent it
+#   boots combined — same behavior as before the split, so a fresh
+#   deployment works before the operator wires the studio URL.
+# - ``studio`` (below) is the STUDIO service. After the first deploy, copy
+#   its printed web URL into the Secret as ``STUDIO_UPSTREAM_URL`` and
+#   redeploy — one-time setup. It is internal-only in spirit (browsers go
+#   through the agent origin), scaled for bursty LLM-bound chat turns
+#   rather than long-lived voice sessions.
+#
+# Cross-service coordination needs no wiring here: both services share the
+# Supabase Postgres (locks, epochs, rate limits, workspaces), and a studio
+# Publish reaches the agent service's resident sandboxes via slug epochs.
+
 # ── Web-service autoscaling ──────────────────────────────────────────────────
 #
 # The server holds no cross-request state (coordination and session-resume
@@ -66,6 +87,15 @@ BUFFER_CONTAINERS = 1  # one pre-warmed spare while active, so bursts land warm
 MAX_CONNECTIONS = 100  # per-replica WebSocket cap (node server enforces it)
 TARGET_INPUTS = 75  # scale-out set point (~75% of the session cap)
 MAX_INPUTS = 150  # sessions at cap + short-request headroom
+
+# Studio service scaling: requests are bounded HTTP/SSE (chat turns, file
+# edits, builds shipped to studio_build) — heavier per request than a voice
+# relay but with no per-connection pinning, so it scales on fewer, busier
+# inputs and can idle to zero.
+STUDIO_MIN_CONTAINERS = 0
+STUDIO_MAX_CONTAINERS = 5
+STUDIO_TARGET_INPUTS = 20
+STUDIO_MAX_INPUTS = 40
 
 # One region for the web server AND the guest sandboxes it creates. Left
 # unpinned, Modal placed the server in us-east-1 (AWS) and guest sandboxes in
@@ -157,6 +187,34 @@ def server() -> None:
     # that doesn't serve it ("connect ENOENT /run/modal.sock"). Strip it so
     # the SDK uses api.modal.com with the tokens from the aai-server Secret.
     env.pop("MODAL_SERVER_URL", None)
+    # Agent service when the studio upstream is wired (see "Split services"
+    # above); combined otherwise, so a fresh deployment works pre-wiring.
+    env.setdefault("AAI_SERVICE", "agent" if env.get("STUDIO_UPSTREAM_URL") else "combined")
+    subprocess.Popen(["node", "packages/aai-server/dist/index.mjs"], cwd="/app", env=env)
+
+
+# The standalone studio service — see "Split services" above. Same image and
+# Secret as the agent service (it deploys bundles, runs test_agent sandboxes,
+# and invokes studio_build), but its own containers and scaling policy, so
+# LLM-bound chat turns never compete with live voice sessions for CPU.
+@app.function(
+    image=image,
+    secrets=[modal.Secret.from_name("aai-server")],
+    region=REGION,
+    cpu=1,
+    memory=2048,
+    min_containers=STUDIO_MIN_CONTAINERS,
+    max_containers=STUDIO_MAX_CONTAINERS,
+    # Chat turns are bounded requests (no session drain); the window only
+    # needs to outlast in-flight turns.
+    scaledown_window=120,
+)
+@modal.concurrent(max_inputs=STUDIO_MAX_INPUTS, target_inputs=STUDIO_TARGET_INPUTS)
+@modal.web_server(port=PORT, startup_timeout=180)
+def studio() -> None:
+    env = os.environ.copy()
+    env.pop("MODAL_SERVER_URL", None)  # same JS-SDK footgun as `server`
+    env["AAI_SERVICE"] = "studio"
     subprocess.Popen(["node", "packages/aai-server/dist/index.mjs"], cwd="/app", env=env)
 
 

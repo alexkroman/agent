@@ -23,6 +23,7 @@ import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
+import { createMemorySlugEpochs, createPgSlugEpochs, type SlugEpochs } from "./platform-epoch.ts";
 import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { createS3Storage } from "./s3-storage.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
@@ -40,6 +41,7 @@ import {
   type SessionStateStore,
 } from "./session-state-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./studio/chat-store.ts";
+import { createStudioApp } from "./studio/studio-app.ts";
 import {
   CHAT_RATE_LIMIT,
   createPgRateLimiter,
@@ -102,6 +104,8 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
   studioRateLimiters?: StudioRateLimiters;
   /** Cross-replica session-resume state; per-process memory without a db. */
   sessionStates: SessionStateStore;
+  /** Cross-replica/service invalidation epochs; per-process memory without a db. */
+  slugEpochs: SlugEpochs;
 } {
   const url = env.SUPABASE_DB_URL;
   if (!url) {
@@ -117,6 +121,7 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
       chats: createMemoryChatStore(),
       slugLock: localSlugLock,
       sessionStates: createMemorySessionStateStore(),
+      slugEpochs: createMemorySlugEpochs(),
     };
   }
   // The pool lives for the process; connections drain when the process exits
@@ -134,6 +139,7 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // fixed-window rate limits both survive replica restarts and scale-out.
     slugLock: localDev ? localSlugLock : createPgSlugLock(exec),
     sessionStates: localDev ? createMemorySessionStateStore() : createPgSessionStateStore(exec),
+    slugEpochs: localDev ? createMemorySlugEpochs() : createPgSlugEpochs(exec),
     ...(localDev
       ? {}
       : {
@@ -159,8 +165,16 @@ function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
 
 function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
   const storage = buildStorage(env);
-  const { secrets, workspaces, chats, appDb, slugLock, studioRateLimiters, sessionStates } =
-    buildPlatformDb(env);
+  const {
+    secrets,
+    workspaces,
+    chats,
+    appDb,
+    slugLock,
+    studioRateLimiters,
+    sessionStates,
+    slugEpochs,
+  } = buildPlatformDb(env);
   const slots = createSlotCache();
   const pool = buildPool(env);
   return {
@@ -172,12 +186,27 @@ function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
     chats,
     secrets,
     slugLock,
+    slugEpochs,
     sessionStates,
     defaultVector: buildDefaultVector(env),
     ...(appDb && { appDb }),
     ...(studioRateLimiters && { studioRateLimiters }),
     ...(pool && { pool }),
   };
+}
+
+/**
+ * Which surface this process serves (`AAI_SERVICE`):
+ * - `combined` (default) — agent backend with the studio mounted in-process;
+ *   what `aai dev` and single-service deployments run.
+ * - `agent` — voice sessions + platform API, with the studio surface
+ *   reverse-proxied to `STUDIO_UPSTREAM_URL` (required in this mode).
+ * - `studio` — the standalone studio service (see studio/studio-app.ts).
+ */
+function resolveServiceMode(env: NodeJS.ProcessEnv): "combined" | "agent" | "studio" {
+  const raw = env.AAI_SERVICE ?? "combined";
+  if (raw === "combined" || raw === "agent" || raw === "studio") return raw;
+  throw new Error(`Invalid AAI_SERVICE "${raw}" — expected combined | agent | studio`);
 }
 
 async function main(): Promise<void> {
@@ -195,15 +224,21 @@ async function main(): Promise<void> {
   const env = process.env;
   assertDevKeys(env);
   const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
+  const mode = resolveServiceMode(env);
 
   // Flipped by `shutdown()` before anything is torn down: it fails /health
   // so the platform's proxy stops routing here, and refuses new WebSocket
   // upgrades. Both are needed for the drain below to converge — otherwise the
   // replica keeps accepting the sessions it is waiting to finish.
   let draining = false;
+  const base = buildOpts(env);
+  // Agent mode without a studio upstream would silently serve 404s for the
+  // whole studio surface — a config error, so it fails at boot.
+  if (mode === "agent") requireEnv(env, ["STUDIO_UPSTREAM_URL"]);
   const opts: OrchestratorOpts = {
-    ...buildOpts(env),
+    ...base,
     isDraining: () => draining,
+    ...(mode === "agent" && env.STUDIO_UPSTREAM_URL && { studioUpstream: env.STUDIO_UPSTREAM_URL }),
   };
 
   // Sandboxes run on Modal — fail at boot when credentials are missing, where
@@ -223,6 +258,35 @@ async function main(): Promise<void> {
     // Resolve the Modal app/image context now (fire-and-forget) so the gRPC
     // round trip doesn't land on the first session's cold start.
     prewarmModal();
+  }
+
+  // The standalone studio service: no voice sessions, no WebSocket upgrades,
+  // no slot cache — chat turns are bounded HTTP/SSE requests, so shutdown is
+  // flip-health-and-close rather than the agent service's session drain.
+  if (mode === "studio") {
+    const { app } = createStudioApp({ ...base, isDraining: () => draining });
+    const nodeServer = serve({ fetch: app.fetch, port });
+    nodeServer.on("error", (err) => {
+      console.error("HTTP server error:", err);
+      process.exit(1);
+    });
+    await new Promise<void>((resolve) => {
+      nodeServer.on("listening", resolve);
+    });
+    console.info(`AAI studio service listening on http://localhost:${port}`);
+    let stopping = false;
+    const stopStudio = async () => {
+      if (stopping) return;
+      stopping = true;
+      draining = true;
+      console.info("Studio service shutting down...");
+      if (base.pool) await base.pool.shutdown().catch(() => undefined);
+      nodeServer.close(() => process.exit(0));
+      setTimeout(() => process.exit(0), 3000).unref();
+    };
+    process.on("SIGINT", () => void stopStudio());
+    process.on("SIGTERM", () => void stopStudio());
+    return;
   }
 
   const { app, injectWebSocket, closeActiveSockets, activeSessionCount } = createOrchestrator(opts);

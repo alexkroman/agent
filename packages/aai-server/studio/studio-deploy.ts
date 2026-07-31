@@ -110,7 +110,12 @@ export async function deployStudioProject(
   if (!extraction.ok) return { ok: false, error: extraction.error };
 
   const outcome = await deployAgentBundle(
-    { store: deps.store, slots: deps.slots, slugLock: deps.slugLock },
+    {
+      store: deps.store,
+      slots: deps.slots,
+      slugLock: deps.slugLock,
+      slugEpochs: deps.slugEpochs,
+    },
     {
       // Redeploys reuse the project's slug; first deploys claim the project
       // name itself (matching what a user would expect their URL to be).

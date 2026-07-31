@@ -29,18 +29,17 @@ import type { Vector } from "@alexkroman1/aai/runtime";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { cors } from "hono/cors";
-import { secureHeaders } from "hono/secure-headers";
 import type { AppDatabases } from "./app-database.ts";
+import { applyPlatformMiddleware } from "./app-middleware.ts";
 import { handleAgentClientConfig } from "./client-config-handler.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { type BundleInspector, handleDeployNew } from "./deploy.ts";
-import { createErrorHandler } from "./error-handler.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
+import { createMemorySlugEpochs, type SlugEpochs } from "./platform-epoch.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveAgentVector } from "./sandbox.ts";
@@ -66,6 +65,7 @@ import {
   handleStudioPage,
 } from "./studio/studio-static.ts";
 import type { WorkspaceStore } from "./studio/workspace-store.ts";
+import { createStudioProxy } from "./studio-proxy.ts";
 import {
   handleAgentFavicon,
   handleAgentHealth,
@@ -90,6 +90,11 @@ export type OrchestratorOpts = {
    * production so replicas exclude each other; defaults to in-process.
    */
   slugLock?: SlugMutationLock;
+  /**
+   * Cross-replica invalidation epochs (see platform-epoch.ts). Postgres in
+   * production; defaults to memory (local-only invalidation).
+   */
+  slugEpochs?: SlugEpochs;
   /** Studio rate limiters. Postgres-backed in production; defaults to memory. */
   studioRateLimiters?: StudioRateLimiters;
   /**
@@ -101,6 +106,14 @@ export type OrchestratorOpts = {
   defaultVector: (slug: string) => Vector;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
+  /**
+   * Split deployment: base URL of the standalone studio service. When set,
+   * the studio surface is reverse-proxied there (see studio-proxy.ts)
+   * instead of mounted in-process, keeping one public origin.
+   */
+  studioUpstream?: string;
+  /** Test seam for the studio proxy's outbound fetch. */
+  studioProxyFetch?: typeof globalThis.fetch;
   /** Optional pre-warmed Deno harness pool for faster cold starts. */
   pool?: SandboxPool;
   /**
@@ -143,40 +156,7 @@ export type Orchestrator = {
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const app = new Hono<HonoEnv>();
-
-  const allowedOrigins = opts.allowedOrigins;
-  app.use(
-    "*",
-    cors({
-      origin: (origin) => {
-        if (!origin) return "*"; // same-origin
-        if (!allowedOrigins) return ""; // reject when no origins configured
-        if (allowedOrigins.includes("*")) return "*";
-        return allowedOrigins.includes(origin) ? origin : "";
-      },
-      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowHeaders: ["Content-Type", "Authorization"],
-      credentials: false,
-      maxAge: 86_400,
-    }),
-  );
-  app.use(
-    "*",
-    secureHeaders({
-      crossOriginOpenerPolicy: "same-origin",
-      crossOriginEmbedderPolicy: "credentialless",
-      crossOriginResourcePolicy: "same-origin",
-      xContentTypeOptions: "nosniff",
-      // SAMEORIGIN (not DENY) so the studio's live preview can iframe agent
-      // pages. Cross-origin framing (real clickjacking) stays blocked;
-      // same-origin tenants can already script against each other's public
-      // pages, so this does not widen the tenant boundary.
-      xFrameOptions: "SAMEORIGIN",
-    }),
-  );
-
-  app.notFound((c) => c.json({ error: "Not found" }, 404));
-  app.onError(createErrorHandler());
+  applyPlatformMiddleware(app, opts.allowedOrigins);
 
   // 503 while draining is what pulls the replica out of the platform
   // proxy's rotation, so new traffic goes to a replica that is staying up.
@@ -190,19 +170,33 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // build and deploy voice agents from the browser. `studio` and
   // `studio-assets` are reserved slugs (RESERVED_SLUGS) so no agent route
   // can shadow the API namespace or the client assets.
-  app.get("/", handleStudioPage);
-  // Safe alongside agent routes: `favicon.ico` can never be a slug (dots
-  // are outside the slug grammar), so no agent route can shadow it.
-  app.get("/favicon.ico", handleStudioFavicon);
-  app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
-  app.route(
-    "/studio",
-    createStudioRoutes({
-      pool: opts.pool,
-      ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
-    }),
-  );
-  app.get("/studio/", (c) => c.redirect("/", 302));
+  //
+  // Two modes: mounted in-process (combined service — dev and the default),
+  // or reverse-proxied to the standalone studio service (split deployment,
+  // `studioUpstream` set). The proxy keeps the studio on THIS origin, which
+  // the preview iframe's SAMEORIGIN framing requires.
+  if (opts.studioUpstream) {
+    const proxy = createStudioProxy(opts.studioUpstream, opts.studioProxyFetch);
+    app.get("/", proxy);
+    app.get("/favicon.ico", proxy);
+    app.get("/studio-assets/:path{.+}", proxy);
+    app.all("/studio", proxy);
+    app.all("/studio/*", proxy);
+  } else {
+    app.get("/", handleStudioPage);
+    // Safe alongside agent routes: `favicon.ico` can never be a slug (dots
+    // are outside the slug grammar), so no agent route can shadow it.
+    app.get("/favicon.ico", handleStudioFavicon);
+    app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
+    app.route(
+      "/studio",
+      createStudioRoutes({
+        pool: opts.pool,
+        ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
+      }),
+    );
+    app.get("/studio/", (c) => c.redirect("/", 302));
+  }
 
   // Cap the on-the-wire deploy body (compressed or not) before anything
   // buffers it. gzipRequestMw separately caps the DECOMPRESSED size, so a
@@ -282,6 +276,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // Same default posture as secrets: tests build orchestrators without a
     // platform database, where in-process exclusion is exact.
     slugLock: opts.slugLock ?? localSlugLock,
+    slugEpochs: opts.slugEpochs ?? createMemorySlugEpochs(),
     defaultVector: opts.defaultVector,
   };
   // resolveSandbox takes the bindings minus the studio stores (bundle data

@@ -237,6 +237,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
           store: c.env.store,
           slots: c.env.slots,
           slugLock: c.env.slugLock,
+          slugEpochs: c.env.slugEpochs,
           workspaces: c.env.workspaces,
           pool: options.pool,
         },

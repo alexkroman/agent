@@ -2,6 +2,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import type { AppContext } from "./context.ts";
+import { bumpSlugEpoch } from "./platform-epoch.ts";
 import { deleteSlot, terminateSlot } from "./sandbox-slots.ts";
 
 export function handleDelete(c: AppContext): Promise<Response> {
@@ -29,6 +30,11 @@ async function handleDeleteInner(c: AppContext): Promise<Response> {
   }
 
   await c.env.store.deleteAgent(slug);
+
+  // Other replicas' resident sandboxes for this slug must go too — their
+  // next session start sees the epoch mismatch, rebuilds, finds no
+  // manifest, and 404s instead of serving the deleted agent.
+  await bumpSlugEpoch(c.env.slugEpochs, slug);
 
   debug("Delete received", { slug });
 

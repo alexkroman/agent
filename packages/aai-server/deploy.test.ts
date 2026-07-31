@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { deployAgentBundle } from "./deploy.ts";
+import { createMemorySlugEpochs } from "./platform-epoch.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
@@ -431,5 +432,52 @@ describe("POST /deploy", () => {
 
     const manifest = await store.getManifest("owned-agent");
     expect(manifest?.credential_hashes).toHaveLength(1);
+  });
+});
+
+// ── Cross-service invalidation (split deployment) ─────────────────────────
+
+describe("deployAgentBundle epoch bump", () => {
+  test("a deploy bumps the slug epoch so other services rebuild sandboxes", async () => {
+    const store = createTestStore();
+    const slugEpochs = createMemorySlugEpochs();
+    const outcome = await deployAgentBundle(
+      { store, slots: createSlotCache(), slugEpochs },
+      {
+        slug: "published-agent",
+        apiKey: "key1",
+        worker: "w",
+        clientFiles: {},
+        agentConfig: TEST_AGENT_CONFIG,
+      },
+    );
+    expect(outcome.ok).toBe(true);
+    await expect(slugEpochs.get("published-agent")).resolves.toBe(1);
+  });
+
+  test("a refused deploy does not bump", async () => {
+    const store = createTestStore();
+    const slugEpochs = createMemorySlugEpochs();
+    const ownerHash = await hashApiKey("owner-key");
+    await store.putAgent({
+      slug: "their-agent",
+      env: {},
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: [ownerHash],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+    const outcome = await deployAgentBundle(
+      { store, slots: createSlotCache(), slugEpochs },
+      {
+        slug: "their-agent",
+        apiKey: "intruder-key",
+        worker: "w",
+        clientFiles: {},
+        agentConfig: TEST_AGENT_CONFIG,
+      },
+    );
+    expect(outcome.ok).toBe(false);
+    await expect(slugEpochs.get("their-agent")).resolves.toBe(0);
   });
 });

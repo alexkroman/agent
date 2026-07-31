@@ -16,6 +16,7 @@
 import { HTTPException } from "hono/http-exception";
 import type { AppDatabases } from "./app-database.ts";
 import type { AppContext } from "./context.ts";
+import { bumpSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { restartSlotSandbox, type SlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
@@ -27,6 +28,8 @@ export type StorageEnv = {
   appDb?: AppDatabases | undefined;
   /** Per-slug mutation lock; defaults to in-process for direct callers. */
   slugLock?: SlugMutationLock | undefined;
+  /** Invalidation epochs; absent means local-only sandbox restarts. */
+  slugEpochs?: SlugEpochs | undefined;
 };
 
 const UNCONFIGURED_MESSAGE =
@@ -46,6 +49,7 @@ export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled:
     const meta = await appDb.provision(slug);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
     await restartSlotSandbox(env.slots, slug, "storage enable");
+    if (env.slugEpochs) await bumpSlugEpoch(env.slugEpochs, slug);
     console.info("Storage enabled", { slug, role: meta.role });
     return { enabled: true as const };
   });
@@ -59,6 +63,7 @@ export function disableStorage(env: StorageEnv, slug: string): Promise<{ enabled
     await appDb.deprovision(slug);
     await env.secrets.delete(appDbSecretName(slug));
     await restartSlotSandbox(env.slots, slug, "storage disable");
+    if (env.slugEpochs) await bumpSlugEpoch(env.slugEpochs, slug);
     console.info("Storage disabled", { slug });
     return { enabled: false as const };
   });

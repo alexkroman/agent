@@ -11,6 +11,12 @@ export type AgentSlot = {
   idleTimer?: NodeJS.Timeout;
   /** Number of live WebSocket sessions on this slot's sandbox. */
   activeSessions?: number;
+  /**
+   * Slug epoch the resident sandbox was built at (see platform-epoch.ts).
+   * resolveSandbox terminates and rebuilds when the current epoch differs —
+   * a deploy/secret/storage mutation on another replica or service.
+   */
+  epoch?: number;
 };
 
 // An OwnedMap because a redeploy replaces the slot object under the same

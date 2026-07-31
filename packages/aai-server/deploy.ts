@@ -4,6 +4,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { humanId } from "human-id";
 import { debug } from "./_debug-log.ts";
 import type { ValidatedAppContext } from "./context.ts";
+import { bumpSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { type SlotCache, setSlot, terminateSlot } from "./sandbox-slots.ts";
@@ -21,6 +22,12 @@ export type DeployDeps = {
    * defaults to the in-process lock for tests and single-replica callers.
    */
   slugLock?: SlugMutationLock | undefined;
+  /**
+   * Invalidation epochs, bumped after the bundle write lands so other
+   * replicas (and the agent service, when the studio deploys) rebuild
+   * their resident sandboxes. Absent means local-only invalidation.
+   */
+  slugEpochs?: SlugEpochs | undefined;
 };
 
 export type DeployParams = {
@@ -183,6 +190,11 @@ async function deployLocked(
 
   setSlot(deps.slots, { slug });
 
+  // Signal every other replica/service to rebuild its resident sandbox from
+  // the bundle just stored. After the write on purpose — an early bump would
+  // have peers rebuild from the pre-deploy artifacts.
+  if (deps.slugEpochs) await bumpSlugEpoch(deps.slugEpochs, slug);
+
   debug("Deploy received", { slug });
 
   return { ok: true, slug, message: `Deployed ${slug}` };
@@ -207,7 +219,12 @@ export async function handleDeployNew(
   c: ValidatedAppContext<DeployBody>,
   inspect: BundleInspector,
 ): Promise<Response> {
-  const deps = { store: c.env.store, slots: c.env.slots, slugLock: c.env.slugLock };
+  const deps = {
+    store: c.env.store,
+    slots: c.env.slots,
+    slugLock: c.env.slugLock,
+    slugEpochs: c.env.slugEpochs,
+  };
   const body = c.req.valid("json");
   const extraction = await extractAgentConfig(inspect, body.worker);
   if (!extraction.ok) return c.json({ error: extraction.error }, 400);

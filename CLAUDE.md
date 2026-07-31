@@ -261,6 +261,12 @@ restrictions apply there.
 - `platform-lock.ts` — cross-replica per-slug mutation lock (see "Stateless
   server" below): Postgres lease rows in `aai_platform.slug_locks` in
   production, the in-process keyed lock in dev/tests
+- `platform-epoch.ts` — cross-replica/service invalidation epochs (see
+  "Split services" below): mutations bump `aai_platform.slug_epochs`,
+  `resolveSandbox` rebuilds resident sandboxes on mismatch
+- `studio-proxy.ts` / `studio/studio-app.ts` / `app-middleware.ts` — the
+  split deployment (see "Split services" below): standalone studio service,
+  the agent service's reverse proxy to it, and their shared base middleware
 - `session-state-store.ts` / `sandbox-session-resume.ts` — cross-replica
   session resume (see "Stateless server" below): persists a disconnected
   session's guest ctx.state + remember notes to
@@ -583,6 +589,51 @@ What deliberately stays in-process, and why it doesn't break statelessness:
 - **The in-process workspace/slug mutexes** — kept *under* the distributed
   mechanisms so local writer fan-out (e.g. one AI SDK step's parallel tool
   calls) doesn't burn the cross-replica retry/lease on itself.
+
+### Split services (aai-server)
+
+One package, one node binary, three surfaces selected by `AAI_SERVICE`:
+`combined` (default — what `aai dev`, tests, and pre-split deployments run),
+`agent` (voice sessions + platform API), and `studio` (the browser studio as
+its own service, `studio/studio-app.ts`). The split exists because the two
+workloads scale differently — studio chat turns are LLM-bound and bursty,
+voice sessions are latency-sensitive pinned connections — and one container
+(and one connection-count autoscaling policy) served both badly.
+
+- **One public origin.** Browsers only ever talk to the agent service; in
+  `agent` mode it reverse-proxies `/`, `/favicon.ico`, `/studio-assets/*`,
+  and `/studio/*` to `STUDIO_UPSTREAM_URL` (`studio-proxy.ts` — streaming
+  passthrough, SSE included). This is what keeps the preview iframe working:
+  agent pages are served `X-Frame-Options: SAMEORIGIN`, so the studio must
+  share their origin. The proxy forwards identity-encoded (drops
+  `accept-encoding`) because undici's fetch decompresses bodies but leaves
+  `content-encoding` headers in place. Shared base middleware lives in
+  `app-middleware.ts` so the two apps can't drift on CORS/framing policy.
+- **Cross-service invalidation is slug epochs** (`platform-epoch.ts`,
+  `aai_platform.slug_epochs`). A local `terminateSlot`/`restartSlotSandbox`
+  only fixes the replica that handled the mutation; every deploy/delete/
+  secret/storage mutation therefore also bumps the slug's epoch, and
+  `resolveSandbox` compares the resident sandbox's build epoch at session
+  start — a mismatch terminates it, drops the bundle-store caches
+  (`BundleStore.invalidate`), and rebuilds from the freshly stored bundle.
+  This is how a studio-service Publish reaches the agent service's resident
+  sandboxes, and it also closes the pre-existing replica-to-replica
+  staleness (idle eviction was the only remedy before). Bumps are
+  best-effort after the write (`bumpSlugEpoch` warns, never fails the
+  mutation); epoch reads degrade to "current" so a session start never dies
+  on the invalidation check.
+- **The studio service holds an always-empty slot cache** — the shared
+  mutation cores' local sandbox restarts are deliberate no-ops there, while
+  their epoch bumps do the real work. It shares everything else through
+  Supabase (workspaces/chats, bundle store, Vault, the slug lock, rate
+  limits) and spawns its own Modal sandboxes for `test_agent`/config
+  extraction (its own warm pool via `SANDBOX_POOL_SIZE`).
+- **Deployment** (`modal_deploy.py`): the `server` function boots `agent`
+  when `STUDIO_UPSTREAM_URL` is in the `aai-server` Secret, else `combined`
+  — so a fresh deployment works before the operator wires the studio URL
+  (deploy once, copy the printed `studio` function URL into the Secret,
+  redeploy). The `studio` function has its own scaling policy
+  (`STUDIO_*` constants: scale-to-zero floor, fewer/busier inputs).
 
 ### `ctx.generate` and pattern combinators (`@alexkroman1/aai/patterns`)
 

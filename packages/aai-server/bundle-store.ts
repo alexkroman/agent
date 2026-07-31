@@ -314,6 +314,8 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
       });
     },
 
+    invalidate,
+
     async getAgentConfig(slug) {
       const cached = configCache.get(slug);
       if (cached !== undefined) return cached;
