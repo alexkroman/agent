@@ -313,7 +313,7 @@ voice agents without the CLI:
   once — the in-process keyed lock (`studio-workspace-lock.ts`) still
   serializes local writers, so a conflict means another replica. `scope` is
   a *deterministic* SHA-256 of the caller's API key (`studioScope`) — unlike
-  the salted PBKDF2 ownership hashes, it must be stable so a browser session
+  the salted argon2 ownership hashes, it must be stable so a browser session
   can find its projects again.
 - **Chat** (`POST /studio/chat`) runs one agent turn with file tools
   (list/read/write/edit/delete/grep) plus `test_agent`, streamed as the AI SDK **UI
@@ -1671,8 +1671,10 @@ stored env at sandbox creation time and kept host-side only.
 - API key hashes compared with `timingSafeEqual` (constant-time).
   Keys are SHA-256 hashed and cached; slug ownership is verified
   against stored credential hashes.
-- Stored credentials (agent env vars / secrets) are AES-256-GCM
-  encrypted with HKDF-derived keys.
+- Stored credentials (agent env vars / secrets) live in Supabase Vault,
+  which encrypts at rest — there is deliberately no app-layer encryption
+  on top, and no legacy hash/decrypt fallbacks (nothing predating the
+  current scheme was ever deployed). API key ownership hashes are argon2id.
 - Deploys check slug ownership whether the slug was requested or generated —
   a `humanId()` collision returns 409 rather than overwriting an existing
   agent and appending the caller's credential hash to it.

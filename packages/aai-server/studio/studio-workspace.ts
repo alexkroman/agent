@@ -77,7 +77,7 @@ export function hasUnpublishedChanges(workspace: StudioWorkspace): boolean {
 /**
  * Deterministic per-API-key namespace for studio data.
  *
- * Unlike the salted PBKDF2 ownership hashes (which are intentionally
+ * Unlike the salted argon2 ownership hashes (which are intentionally
  * unstable), this must be stable across requests so a browser session can
  * find its own projects again. A plain SHA-256 of the high-entropy API key
  * is sufficient — it is a namespace identifier, not a stored credential.

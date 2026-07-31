@@ -2,8 +2,10 @@
 /**
  * HTTP handlers for managing agent secrets (environment variables).
  *
- * Secrets are per-agent key/value pairs stored encrypted in the BundleStore.
- * They are delivered to the guest sandbox via the `bundle/load` RPC params
+ * Secrets are per-agent key/value pairs held in the injected SecretStore
+ * (Supabase Vault in production, which encrypts at rest — no app-layer
+ * encryption). They are delivered to the guest sandbox via the
+ * `bundle/load` RPC params
  * (see sandbox-vm.ts), never as host process environment variables.
  *
  * Related but distinct: `secrets.ts` handles API key hashing and

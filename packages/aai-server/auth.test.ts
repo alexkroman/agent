@@ -21,7 +21,7 @@ test("verifySlugOwner returns unclaimed for missing slug without computing a has
   const result = await verifySlugOwner("key1", { slug: "my-agent", store });
   expect(result.status).toBe("unclaimed");
   // No keyHash on the unclaimed result — hashing is deferred to the
-  // deploy-claim path so nonexistent slugs don't burn PBKDF2 time.
+  // deploy-claim path so nonexistent slugs don't burn argon2 time.
   expect("keyHash" in result).toBe(false);
 });
 

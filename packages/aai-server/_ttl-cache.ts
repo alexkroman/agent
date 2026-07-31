@@ -6,7 +6,7 @@ import QuickLRU from "quick-lru";
  * Expire-on-read TTL cache with an LRU max-size cap, built on quick-lru.
  *
  * Shared by the bundle store (manifest/config/asset caches) and the
- * PBKDF2 verification cache in `secrets.ts`.
+ * credential verification cache in `secrets.ts`.
  *
  * Note: quick-lru's dual-generation eviction means the cache may briefly
  * hold up to 2× maxSize entries — the cap is approximate, not exact.
