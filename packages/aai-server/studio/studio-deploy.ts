@@ -6,11 +6,9 @@
  * the coding agent (and the UI) can show — and fix — them.
  */
 
-import { errorMessage } from "@alexkroman1/aai";
 import { ASSEMBLYAI_API_KEY_ENV } from "@alexkroman1/aai/stt";
 import { resolveHarnessPath } from "../constants.ts";
-import { type DeployDeps, deployAgentBundle } from "../deploy.ts";
-import { IsolateConfigSchema } from "../rpc-schemas.ts";
+import { type DeployDeps, deployAgentBundle, extractAgentConfig } from "../deploy.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
 import { describeBundle } from "../sandbox-vm.ts";
 import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
@@ -108,18 +106,8 @@ export async function deployStudioProject(
     deps.inspect ??
     ((code: string) =>
       describeBundle({ harnessPath: resolveHarnessPath(), workerCode: code, pool: deps.pool }));
-  let rawConfig: unknown;
-  try {
-    rawConfig = await inspect(worker);
-  } catch (err) {
-    return { ok: false, error: `Agent bundle failed to load: ${errorMessage(err)}` };
-  }
-
-  const parsed = IsolateConfigSchema.safeParse(rawConfig);
-  if (!parsed.success) {
-    const issues = parsed.error.issues.map((i) => i.message).join("; ");
-    return { ok: false, error: `Invalid agent config: ${issues}` };
-  }
+  const extraction = await extractAgentConfig(inspect, worker);
+  if (!extraction.ok) return { ok: false, error: extraction.error };
 
   const outcome = await deployAgentBundle(
     { store: deps.store, slots: deps.slots },
@@ -138,7 +126,7 @@ export async function deployStudioProject(
       // so seed it as the agent's key. A floor, not an override: a key the
       // user set explicitly (here or via `aai secret put`) always wins.
       defaultEnv: { [ASSEMBLYAI_API_KEY_ENV]: params.apiKey },
-      agentConfig: parsed.data,
+      agentConfig: extraction.config,
     },
   );
   if (!outcome.ok) return { ok: false, error: outcome.error };

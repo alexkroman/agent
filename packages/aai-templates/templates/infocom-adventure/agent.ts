@@ -1,7 +1,7 @@
 import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { getGameState, resetGameState } from "./shared.ts";
-import systemPrompt from "./system-prompt.md";
+import systemPrompt from "./system-prompt.md?raw";
 
 export default agent({
   name: "Cavern Adventure",

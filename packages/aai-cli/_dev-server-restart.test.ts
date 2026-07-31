@@ -14,7 +14,7 @@ import {
   mockValidateAgentExport,
   primeDevServerMocks,
 } from "./_dev-server-test-utils.ts";
-import { withTempDir } from "./_test-utils.ts";
+import { linkSdkNodeModules, withTempDir } from "./_test-utils.ts";
 
 // ─── Module mocks ───────────────────────────────────────────────────────────
 // Factories (and the mock fns/state they wire up) live in the shared
@@ -46,6 +46,7 @@ import { log } from "./_ui.ts";
 
 /** Write a minimal agent.ts in the given directory. */
 async function writeAgentTs(dir: string, name = "test-agent"): Promise<void> {
+  await linkSdkNodeModules(dir);
   await fs.writeFile(
     path.join(dir, "agent.ts"),
     `export default { name: "${name}", tools: {} };\n`,

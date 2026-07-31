@@ -1,9 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { errorMessage } from "@alexkroman1/aai";
 import { humanId } from "human-id";
 import { debug } from "./_debug-log.ts";
 import type { ValidatedAppContext } from "./context.ts";
-import type { IsolateConfig } from "./rpc-schemas.ts";
+import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { type SlotCache, setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import type { AgentMetadata, DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
@@ -35,6 +36,46 @@ export type DeployParams = {
 export type DeployOutcome =
   | { ok: true; slug: string; message: string }
   | { ok: false; status: 400 | 403 | 409; error: string };
+
+/**
+ * Extracts an agent's config from its worker bundle — in production, by
+ * loading the bundle in a throwaway guest sandbox (`describeBundle`) and
+ * returning its `__aaiConfig` self-description. Never evaluates tenant code
+ * on the host.
+ */
+export type BundleInspector = (workerCode: string) => Promise<unknown>;
+
+export type ConfigExtraction = { ok: true; config: IsolateConfig } | { ok: false; error: string };
+
+/**
+ * Derive and validate an agent's config from its worker bundle. Shared by
+ * the HTTP deploy route and the studio's deploy flow, so a deployed config
+ * always comes from the bundle itself — never from anything a client sent.
+ */
+export async function extractAgentConfig(
+  inspect: BundleInspector,
+  worker: string,
+): Promise<ConfigExtraction> {
+  let raw: unknown;
+  try {
+    raw = await inspect(worker);
+  } catch (err) {
+    return { ok: false, error: `Agent bundle failed to load: ${errorMessage(err)}` };
+  }
+  if (raw === undefined) {
+    return {
+      ok: false,
+      error:
+        "Worker bundle does not self-describe its config — rebuild it with a current @alexkroman1/aai-cli",
+    };
+  }
+  const parsed = IsolateConfigSchema.safeParse(raw);
+  if (!parsed.success) {
+    const issues = parsed.error.issues.map((i) => i.message).join("; ");
+    return { ok: false, error: `Invalid agent config: ${issues}` };
+  }
+  return { ok: true, config: parsed.data };
+}
 
 /**
  * Deploy an agent bundle: claim (or re-claim) the slug under its lock,
@@ -147,17 +188,29 @@ function outcomeToResponse(c: ValidatedAppContext<DeployBody>, outcome: DeployOu
   return c.json({ ok: true, slug: outcome.slug, message: outcome.message });
 }
 
-/** `POST /deploy` — deploy to the body's slug, or a server-generated one. */
-export async function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Response> {
+/**
+ * `POST /deploy` — deploy to the body's slug, or a server-generated one.
+ *
+ * The agent config is derived from the uploaded worker inside a guest
+ * sandbox (`inspect`), never taken from the request: a client-supplied
+ * config would let a caller deploy a bundle whose declared capabilities
+ * (allowedHosts, providers, tools) disagree with the code that runs.
+ */
+export async function handleDeployNew(
+  c: ValidatedAppContext<DeployBody>,
+  inspect: BundleInspector,
+): Promise<Response> {
   const deps = { store: c.env.store, slots: c.env.slots };
   const body = c.req.valid("json");
+  const extraction = await extractAgentConfig(inspect, body.worker);
+  if (!extraction.ok) return c.json({ error: extraction.error }, 400);
   const outcome = await deployAgentBundle(deps, {
     slug: body.slug,
     apiKey: c.var.apiKey,
     worker: body.worker,
     clientFiles: body.clientFiles,
     env: body.env,
-    agentConfig: body.agentConfig,
+    agentConfig: extraction.config,
   });
   return outcomeToResponse(c, outcome);
 }

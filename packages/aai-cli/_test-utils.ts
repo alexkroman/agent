@@ -43,6 +43,17 @@ export function silenced<T>(fn: (dir: string) => Promise<T>) {
   };
 }
 
+/**
+ * Symlink this package's node_modules into a fixture project so the worker
+ * wrapper's `@alexkroman1/aai/manifest` import (and any fixture import of
+ * `zod`) resolves — a real project always has the SDK installed.
+ */
+export async function linkSdkNodeModules(dir: string): Promise<void> {
+  await fs
+    .symlink(path.resolve(import.meta.dirname, "node_modules"), path.join(dir, "node_modules"))
+    .catch(() => undefined);
+}
+
 /** Write a map of relative path → content under `rootDir`, creating directories. */
 export async function writeFiles(rootDir: string, files: Record<string, string>): Promise<string> {
   for (const [rel, content] of Object.entries(files)) {
@@ -70,15 +81,6 @@ export function makeBundle(overrides?: Partial<DirectoryBundleOutput>): Director
   return {
     worker: "export default { name: 'test-agent', tools: {} };",
     clientFiles: {},
-    agentConfig: {
-      name: "test-agent",
-      systemPrompt: "Test",
-      greeting: "",
-      maxSteps: 16,
-      toolChoice: "auto",
-      builtinTools: [],
-      toolSchemas: [],
-    },
     ...overrides,
   };
 }

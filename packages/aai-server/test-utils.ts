@@ -127,7 +127,6 @@ export function deployBody(overrides?: Record<string, unknown>): string {
         '<!DOCTYPE html><html><body><script type="module" src="./assets/index.js"></script></body></html>',
       "assets/index.js": 'console.log("c");',
     },
-    agentConfig: TEST_AGENT_CONFIG,
     ...overrides,
   });
 }
@@ -151,6 +150,9 @@ export async function createTestOrchestrator(
     workspaces,
     chats,
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
+    // The real default spins a Modal sandbox to read the worker's
+    // `__aaiConfig` self-description; tests answer with the standard config.
+    inspect: async () => TEST_AGENT_CONFIG,
     ...overrides,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);

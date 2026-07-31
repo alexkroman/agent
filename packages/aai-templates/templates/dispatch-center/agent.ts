@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import systemPrompt from "./system-prompt.md";
+import systemPrompt from "./system-prompt.md?raw";
 import { incidentAddNote } from "./tools/incident_add_note.ts";
 import { incidentCreate } from "./tools/incident_create.ts";
 import { incidentEscalate } from "./tools/incident_escalate.ts";

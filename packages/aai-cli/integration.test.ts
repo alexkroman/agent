@@ -16,7 +16,7 @@ import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { runDeploy } from "./_deploy.ts";
 import type { MockApi } from "./_mock-api.ts";
 import { startMockApi } from "./_mock-api.ts";
-import { makeBundle, silenced, withTempDir } from "./_test-utils.ts";
+import { linkSdkNodeModules, makeBundle, silenced, withTempDir } from "./_test-utils.ts";
 import { runDelete } from "./delete.ts";
 import { executeSecretDelete, executeSecretList, executeSecretPut } from "./secret.ts";
 
@@ -92,7 +92,7 @@ describe("deploy against mock API", () => {
     expect(body.slug).toBe("my-agent");
     expect(body.worker).toBeTruthy();
     expect(body.clientFiles).toEqual({});
-    expect((body.agentConfig as Record<string, unknown>).name).toBe("test-agent");
+    expect(body).not.toHaveProperty("agentConfig");
     expect((body.env as Record<string, string>).ASSEMBLYAI_API_KEY).toBe("key-123");
   });
 
@@ -267,8 +267,9 @@ describe("secrets against mock API", () => {
 // does" and kept passing with executeDeploy deleted entirely.
 
 describe("executeDeploy end to end", () => {
-  /** Scaffold a minimal dependency-free agent project in `dir`. */
+  /** Scaffold a minimal agent project in `dir`. */
   async function writeAgentProject(dir: string): Promise<void> {
+    await linkSdkNodeModules(dir);
     await writeFile(
       path.join(dir, "agent.ts"),
       `export default { name: "deploy-test-agent", systemPrompt: "Test", tools: {} };`,

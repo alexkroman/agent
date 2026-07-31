@@ -19,7 +19,7 @@
 import { buildClient } from "@alexkroman1/aai-cli/client-bundler";
 import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
-import { StudioBuildError } from "./studio-errors.ts";
+import { formatBuildFailure, StudioBuildError } from "./studio-errors.ts";
 
 /** Vite writes here, relative to the scratch dir. */
 const OUT_DIR = "dist-client";
@@ -38,14 +38,8 @@ export async function buildWorkspaceClient(dir: string): Promise<Record<string, 
       outDir: OUT_DIR,
     });
   } catch (err) {
-    throw new StudioBuildError(formatViteError(err), { cause: err });
+    throw new StudioBuildError(formatBuildFailure(err, "Client build failed", dir), {
+      cause: err,
+    });
   }
-}
-
-/** Format a Vite/Rollup build failure for the chat and the UI. */
-function formatViteError(err: unknown): string {
-  if (err instanceof StudioBuildError) return err.message;
-  const e = err as { message?: string; id?: string; loc?: { line?: number } };
-  const where = e?.id ? `${e.id}${e.loc?.line ? `:${e.loc.line}` : ""}: ` : "";
-  return `Client build failed:\n${where}${e?.message ?? String(err)}`;
 }

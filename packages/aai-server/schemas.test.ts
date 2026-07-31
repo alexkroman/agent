@@ -5,6 +5,7 @@ import {
   ServerMessageSchema,
 } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
+import { IsolateConfigSchema } from "./rpc-schemas.ts";
 import {
   AgentMetadataSchema,
   DeployBodySchema,
@@ -42,7 +43,7 @@ describe("DeployBodySchema", () => {
     ["empty worker string", { worker: "", clientFiles: {}, agentConfig: TEST_AGENT_CONFIG }, false],
     ["non-string worker", { worker: 42, clientFiles: {}, agentConfig: TEST_AGENT_CONFIG }, false],
     ["missing clientFiles", { worker: "code", agentConfig: TEST_AGENT_CONFIG }, false],
-    ["missing agentConfig", { worker: "code", clientFiles: {} }, false],
+    ["body without agentConfig (derived server-side)", { worker: "code", clientFiles: {} }, true],
     [
       "env with non-string values",
       { env: { KEY: 123 }, worker: "code", clientFiles: {}, agentConfig: TEST_AGENT_CONFIG },
@@ -88,48 +89,38 @@ describe("DeployBodySchema", () => {
     expect(DeployBodySchema.safeParse(input).success).toBe(expected);
   });
 
-  test("accepts agentConfig without systemPrompt and applies default", () => {
-    const result = DeployBodySchema.safeParse({
-      worker: "console.log('hello');",
-      clientFiles: {},
-      agentConfig: { name: "minimal-agent" },
-    });
+  // The config itself is validated by IsolateConfigSchema at extraction
+  // time (see extractAgentConfig in deploy.ts), no longer via the body.
+  test("extracted config without systemPrompt gets the default", () => {
+    const result = IsolateConfigSchema.safeParse({ name: "minimal-agent" });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.agentConfig.systemPrompt).toBeTypeOf("string");
-      expect(result.data.agentConfig.systemPrompt.length).toBeGreaterThan(0);
+      expect(result.data.systemPrompt).toBeTypeOf("string");
+      expect(result.data.systemPrompt.length).toBeGreaterThan(0);
     }
   });
 
-  test("preserves agentConfig.s2s descriptor through validation", () => {
-    const result = DeployBodySchema.safeParse({
-      worker: "code",
-      clientFiles: {},
-      agentConfig: {
-        name: "agent",
-        s2s: { kind: "openai-realtime", options: { model: "gpt-realtime-2" } },
-      },
+  test("extracted config preserves the s2s descriptor through validation", () => {
+    const result = IsolateConfigSchema.safeParse({
+      name: "agent",
+      s2s: { kind: "openai-realtime", options: { model: "gpt-realtime-2" } },
     });
     expect(result.success).toBe(true);
     if (result.success) {
-      expect(result.data.agentConfig.s2s).toEqual({
+      expect(result.data.s2s).toEqual({
         kind: "openai-realtime",
         options: { model: "gpt-realtime-2" },
       });
     }
   });
 
-  test("rejects agentConfig with s2s and pipeline triple set together", () => {
-    const result = DeployBodySchema.safeParse({
-      worker: "code",
-      clientFiles: {},
-      agentConfig: {
-        name: "agent",
-        s2s: { kind: "openai-realtime", options: {} },
-        stt: { kind: "assemblyai", options: {} },
-        llm: { kind: "openai", options: {} },
-        tts: { kind: "cartesia", options: {} },
-      },
+  test("rejects extracted config with s2s and pipeline triple set together", () => {
+    const result = IsolateConfigSchema.safeParse({
+      name: "agent",
+      s2s: { kind: "openai-realtime", options: {} },
+      stt: { kind: "assemblyai", options: {} },
+      llm: { kind: "openai", options: {} },
+      tts: { kind: "cartesia", options: {} },
     });
     expect(result.success).toBe(false);
   });

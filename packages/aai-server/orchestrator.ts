@@ -33,9 +33,10 @@ import { cors } from "hono/cors";
 import { secureHeaders } from "hono/secure-headers";
 import type { AppDatabases } from "./app-database.ts";
 import { handleAgentClientConfig } from "./client-config-handler.ts";
+import { resolveHarnessPath } from "./constants.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
-import { handleDeployNew } from "./deploy.ts";
+import { type BundleInspector, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
@@ -44,6 +45,7 @@ import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveAgentVector } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
+import { describeBundle } from "./sandbox-vm.ts";
 import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
@@ -86,6 +88,11 @@ export type OrchestratorOpts = {
   allowedOrigins?: string[];
   /** Optional pre-warmed Deno harness pool for faster cold starts. */
   pool?: SandboxPool;
+  /**
+   * Extracts an agent config from an uploaded worker bundle. Defaults to
+   * sandboxed `describeBundle`; injectable so tests don't need Modal.
+   */
+  inspect?: BundleInspector;
   /** Max concurrent WebSocket connections. Defaults to MAX_CONNECTIONS. */
   maxConnections?: number;
   /**
@@ -184,13 +191,21 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     onError: (c) => c.json({ error: "Request body too large" }, 413),
   });
 
+  // Config extraction loads the uploaded worker in a throwaway guest
+  // sandbox and reads its `__aaiConfig` self-description — tenant code
+  // never runs on the host.
+  const inspect: BundleInspector =
+    opts.inspect ??
+    ((workerCode) =>
+      describeBundle({ harnessPath: resolveHarnessPath(), workerCode, pool: opts.pool }));
+
   app.post(
     "/deploy",
     authMw,
     deployBodyLimit,
     gzipRequestMw,
     zValidator("json", DeployBodySchema),
-    handleDeployNew,
+    (c) => handleDeployNew(c, inspect),
   );
 
   // Bare-slug redirect — registered before sub-router so it takes priority.
