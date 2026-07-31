@@ -41,3 +41,13 @@ export const STORAGE_DISABLED_MESSAGE =
   "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
   "the Storage toggle in the studio; under `aai dev`, set DATABASE_URL in the " +
   "project .env.";
+
+/**
+ * Studio workspace caps, mirroring `studio-limits.ts` in aai-studio-server
+ * (same asserted-not-imported arrangement as the SDK constants above): the
+ * guest materializes and syncs workspaces and must enforce the same shape
+ * the host store accepts, without importing server code.
+ */
+export const MAX_STUDIO_FILES = 30;
+/** Max bytes for a single workspace file. */
+export const MAX_STUDIO_FILE_BYTES = 256_000;

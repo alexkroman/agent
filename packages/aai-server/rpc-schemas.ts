@@ -130,15 +130,40 @@ export type ToolExecuteParams = {
  * This map and the guest harness must agree; both sides ship in the same
  * server artifact, so the contract can change atomically.
  */
+/**
+ * Params of the host→guest `studio/session-init` request — installs the
+ * studio coding-agent session in the guest: workspace files, the CALLER'S
+ * OWN AssemblyAI key (the guest's LLM credential and the public chat
+ * surface's bearer — never a platform key), the system prompt, and turn
+ * config. The browser then talks to the guest's `POST /studio/chat`
+ * directly, mirroring how voice sessions connect to a deployed agent.
+ */
+export type StudioSessionInitParams = {
+  project: string;
+  files: Record<string, string>;
+  apiKey: string;
+  system: string;
+  model: string;
+  region?: "eu";
+  maxSteps: number;
+};
+
 export type GuestRpcSchema = {
   requestsOut: {
     "bundle/load": { params: BundleLoadParams; result: unknown };
     "tool/execute": { params: ToolExecuteParams; result: unknown };
+    "studio/session-init": { params: StudioSessionInitParams; result: unknown };
     /** Session-aware idleness: the host's idle eviction asks before killing. */
     status: { params: undefined; result: unknown };
   };
   requestsIn: {
     "db/query": { params: unknown; result: unknown };
+    /** Guest coding agent asks the host to build its workspace (Vite). */
+    "studio/build": { params: unknown; result: unknown };
+    /** End-of-turn workspace write-back into the project store. */
+    "studio/sync-workspace": { params: unknown; result: unknown };
+    /** End-of-turn conversation snapshot into the project's chat row. */
+    "studio/persist-chat": { params: unknown; result: unknown };
   };
   notificationsOut: {
     shutdown: undefined;

@@ -65,6 +65,12 @@ import type {
   JsonRpcResponse,
 } from "./harness-types.ts";
 import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
+import {
+  handleStudioRequest,
+  initStudioSession,
+  type StudioSession,
+  type StudioSessionParams,
+} from "./studio-chat.ts";
 import { executeTool, runCode, type ToolCallRequest } from "./trial.ts";
 
 // ---- bundle/load ------------------------------------------------------------
@@ -100,6 +106,12 @@ export type HarnessState = {
   runtime: AgentRuntime | null;
   /** Live client-session connections (host idle eviction asks). */
   activeSessions: number;
+  /**
+   * The studio coding-agent session, installed by `studio/session-init` —
+   * workspace dir, the caller's key (chat bearer + LLM credential), and
+   * turn config. Null on non-studio sandboxes; `/studio/chat` answers 409.
+   */
+  studio: StudioSession | null;
 };
 
 /**
@@ -195,6 +207,17 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
 
     case "status": {
       sendResponse(req.id, { activeSessions: state.activeSessions });
+      break;
+    }
+
+    case "studio/session-init": {
+      const params = req.params as StudioSessionParams | undefined;
+      if (!params || typeof params.apiKey !== "string" || typeof params.files !== "object") {
+        sendError(req.id, -32_602, "studio/session-init requires { files, apiKey, ... }");
+        break;
+      }
+      state.studio = await initStudioSession(params);
+      sendResponse(req.id, { ok: true });
       break;
     }
 
@@ -296,6 +319,7 @@ function main(): void {
     storageEnabled: false,
     runtime: null,
     activeSessions: 0,
+    studio: null,
   };
   let hostSocket: WebSocket | null = null;
   let lastConnectedAt = Date.now();
@@ -339,10 +363,29 @@ function main(): void {
     });
   });
 
+  // The studio chat surface's view of this harness's own loader + trial
+  // executor — test_agent loads and trials bundles in-place.
+  const studioDeps = {
+    loadBundle: (code: string) => loadBundle(state, { code, env: {}, storageEnabled: false }),
+    executeTool: async (name: string, args: Record<string, unknown>) => {
+      if (!state.agent) return "Tool error: agent not loaded";
+      const response = await executeTool(
+        state.agent,
+        { name, args, sessionId: "studio-trial", state: null },
+        { storageEnabled: false, env: state.env },
+      );
+      if (response.error) return `Tool error: ${response.error}`;
+      return response.result ?? "(no result)";
+    },
+  };
+
   // The dev server's HTTP+WS surface (health, client-config, /websocket
-  // sessions), with the control channel claimed first via the upgrade hook.
+  // sessions), with the control channel claimed first via the upgrade hook
+  // and the studio chat surface claimed via the request hook.
   const server = createServer({
     runtime: lazyRuntime(state),
+    request: (req, res, url, method) =>
+      handleStudioRequest(state.studio, studioDeps, req, res, url, method),
     upgrade: (req, socket, head) => {
       const pathname = (req.url ?? "/").split("?")[0];
       if (pathname !== "/ws") return false;

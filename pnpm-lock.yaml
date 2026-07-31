@@ -238,10 +238,25 @@ importers:
       '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
+      ai:
+        specifier: ^7.0.41
+        version: 7.0.41(zod@4.4.3)
+      diff:
+        specifier: ^9.0.0
+        version: 9.0.0
+      picomatch:
+        specifier: ^4.0.4
+        version: 4.0.5
       ws:
         specifier: ^8.21.1
         version: 8.21.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
+      '@types/picomatch':
+        specifier: ^4.0.2
+        version: 4.0.3
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1

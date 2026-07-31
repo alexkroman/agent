@@ -12,20 +12,13 @@
  * which on a multi-file workspace burns context to answer "where is this
  * defined".
  *
- * **Never call this on the server's main thread with a model-controlled
- * pattern.** JS regexes backtrack: a catastrophic pattern (`(a+)+$` against
- * a line of `a…a!`) goes exponential at a few dozen characters — far under
- * the long-line skip — and would pin the event loop for every session on
- * the process. The coding agent's grep tool therefore runs this through the
- * scan worker (`studio-scan-runner.ts`), whose hard `worker.terminate()`
- * deadline is the actual bound. This module stays pure and synchronous so
- * it can be unit-tested directly and loaded by the bare-`node` worker
- * thread — which is also why it imports nothing beyond picomatch and the
- * dependency-free `studio-limits.ts`.
+ * Runs INSIDE the guest sandbox (the coding agent's own container), so a
+ * catastrophic model-supplied regex costs this tenant's sandbox CPU — never
+ * another user's turn. The per-tool deadline in studio-tools.ts bounds it.
  */
 
 import picomatch from "picomatch";
-import { MAX_STUDIO_FILES } from "./studio-limits.ts";
+import { MAX_STUDIO_FILES } from "./limits.ts";
 
 /** Matches returned before the result is capped. */
 const DEFAULT_LIMIT = 100;

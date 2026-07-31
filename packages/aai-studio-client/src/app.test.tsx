@@ -102,6 +102,10 @@ describe("chat history hydration", () => {
     "/studio/status": () => jsonResponse({ llm: true }),
     "/studio/projects": () => jsonResponse({ projects: ["demo"] }),
     "/studio/projects/demo": () => jsonResponse({ files: { "agent.ts": "x" } }),
+    "/studio/projects/demo/session": () =>
+      jsonResponse({ url: "http://studio.test/sandbox/studio/chat" }),
+    "/sandbox/studio/tools": () =>
+      jsonResponse({ tools: [{ name: "bash", label: "Run command" }] }),
   };
 
   test("a persisted conversation renders when the project opens", async () => {

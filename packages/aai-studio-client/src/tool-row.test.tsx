@@ -5,13 +5,13 @@
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { ToolRow } from "./chat.tsx";
+import { prettyToolName, ToolRow } from "./chat.tsx";
 
 const render = (part: Record<string, unknown> & { type: string }): string =>
   renderToStaticMarkup(<ToolRow part={part} />);
 
 describe("ToolRow", () => {
-  test("shows a TOOL chip, the tool name, and an args preview", () => {
+  test("shows a TOOL chip, a friendly tool name, and an args preview", () => {
     const html = render({
       type: "tool-read_file",
       state: "output-available",
@@ -19,9 +19,28 @@ describe("ToolRow", () => {
       output: "ok",
     });
     expect(html).toContain("Tool");
-    expect(html).toContain("read_file");
+    // No raw snake_case in the row — the prettified fallback renders.
+    expect(html).toContain("Read file");
+    expect(html).not.toContain("read_file<");
     // Args ride on the collapsed row, as they do in the agent UI.
     expect(html).toContain("agent.ts");
+  });
+
+  test("prefers the sandbox-served label over the prettified fallback", () => {
+    const html = renderToStaticMarkup(
+      <ToolRow
+        part={{ type: "tool-bash", state: "output-available", input: { command: "ls" } }}
+        labels={{ bash: "Run command" }}
+      />,
+    );
+    expect(html).toContain("Run command");
+    expect(html).not.toContain(">bash<");
+  });
+
+  test("prettyToolName humanizes snake_case", () => {
+    expect(prettyToolName("write_file")).toBe("Write file");
+    expect(prettyToolName("test_agent")).toBe("Test agent");
+    expect(prettyToolName("grep")).toBe("Grep");
   });
 
   test("a pending call shimmers instead of showing a spinner glyph", () => {

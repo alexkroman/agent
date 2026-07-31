@@ -66,6 +66,7 @@ function makeState(overrides?: Partial<HarnessState>): HarnessState {
     storageEnabled: false,
     runtime: null,
     activeSessions: 0,
+    studio: null,
     ...overrides,
   };
 }

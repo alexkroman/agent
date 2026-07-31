@@ -13,6 +13,9 @@ export type ProjectData = {
 
 export type StorageStatus = { enabled: boolean };
 
+/** The project's coding-agent sandbox, brokered by the platform. */
+export type ChatSession = { url: string };
+
 export type StudioStatus = {
   llm: boolean;
   provider?: string;
@@ -82,6 +85,27 @@ export const api = {
       method: "PUT",
       body: JSON.stringify({ path, content }),
     }),
+
+  /**
+   * Boot (or refresh) the project's coding-agent sandbox. The returned URL
+   * is the sandbox's public chat endpoint — the browser streams turns to it
+   * DIRECTLY, the same way voice sessions connect straight to a deployed
+   * agent's sandbox.
+   */
+  createChatSession: (key: string, project: string) =>
+    request<ChatSession>(key, `/projects/${encodeURIComponent(project)}/session`, {
+      method: "POST",
+      body: "{}",
+    }),
+
+  /** Tool name → user-friendly label, served by the sandbox itself. */
+  sandboxToolLabels: async (key: string, sessionUrl: string): Promise<Record<string, string>> => {
+    const res = await fetch(sessionUrl.replace(/\/chat$/, "/tools"), {
+      headers: { Authorization: `Bearer ${key}` },
+    });
+    const { tools } = await handleResponse<{ tools: { name: string; label: string }[] }>(res);
+    return Object.fromEntries(tools.map((t) => [t.name, t.label]));
+  },
 
   getChat: (key: string, project: string) =>
     request<{ messages: UIMessage[] }>(key, `/projects/${encodeURIComponent(project)}/chat`).then(

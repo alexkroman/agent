@@ -266,15 +266,20 @@ model) is the security boundary.
   bearer token, and dials its WebSocket through the sandbox's Modal tunnel
 - `packages/aai-guest/` — its own private workspace package: the Node guest
   entry point (runs inside a Modal Sandbox) that runs the COMPLETE agent.
-  Serves two WebSocket surfaces on the tunneled port: `/ws` (bearer-token
-  host control channel — JSON-RPC `bundle/load`, one-shot `tool/execute`
-  trials, `status`, guest→host `db/query`) and `/session` (PUBLIC client
-  voice sessions, connected directly by browsers — the embedded SDK runtime
-  drives STT/LLM/TTS in-guest). `harness.ts` (servers + dispatch),
-  `trial.ts` (run_code executor + one-shot tool trials), `harness-rpc.ts`
-  (guest→host request proxy), `limits.ts` (import-free constants mirroring
-  the SDK's). tsdown bundles it — SDK runtime and provider SDKs included —
-  into the single `dist/harness.mjs` the server resolves via
+  Serves three surfaces on the tunneled port: `/ws` (bearer-token host
+  control channel — JSON-RPC `bundle/load`, one-shot `tool/execute`
+  trials, `status`, `studio/session-init`; guest→host `db/query`,
+  `studio/build`, `studio/sync-workspace`, `studio/persist-chat`),
+  `/session` (PUBLIC client voice sessions, connected directly by
+  browsers — the embedded SDK runtime drives STT/LLM/TTS in-guest), and
+  `/studio/chat` + `/studio/tools` (the studio coding agent's PUBLIC chat
+  surface, bearer-gated by the caller's key — see "Browser studio").
+  `harness.ts` (servers + dispatch), `trial.ts` (run_code executor +
+  one-shot tool trials), `harness-rpc.ts` (guest→host request proxy),
+  `studio-chat.ts`/`studio-tools.ts`/`studio-edit.ts`/`studio-grep.ts`
+  (the in-guest coding agent), `limits.ts` (import-free constants
+  mirroring the SDK's). tsdown bundles it — SDK runtime and provider SDKs
+  included — into the single `dist/harness.mjs` the server resolves via
   `aai-guest/harness` and bakes into the snapshot image
 - `modal_deploy.py` — Modal deployment of the agent service
   (`@modal.web_server` wrapping the node process);
@@ -316,11 +321,10 @@ model) is the security boundary.
   toggling the app's database
 - `packages/aai-studio-server/` — the browser studio server side, its own
   package/service (see "Browser studio"):
-  `studio-routes.ts` (HTTP surface), `studio-agent.ts` (coding-agent LLM
-  loop + tools), `studio-llm.ts` (provider/model selection + the picker's
-  option list), `studio-sandbox.ts` (per-chat-session sandbox),
-  `studio-edit.ts` (`edit_file`'s matching + diff), `studio-grep.ts`
-  (workspace content search), `studio-workspace-dir.ts`
+  `studio-routes.ts` (HTTP surface), `studio-session-broker.ts` (per-project
+  coding-agent sandboxes: boot via the shared warm-pool machinery, session
+  install, guest RPC handlers, idle eviction), `studio-llm.ts` (gateway
+  model config; the key is always the caller's), `studio-workspace-dir.ts`
   (materializes a workspace to a scratch dir),
   `studio-bundle.ts` (worker build + import allowlist),
   `studio-client-build.ts` (client.tsx build), `studio-errors.ts`
@@ -357,74 +361,57 @@ voice agents without the CLI:
   a *deterministic* SHA-256 of the caller's API key (`studioScope`) — unlike
   the salted argon2 ownership hashes, it must be stable so a browser session
   can find its projects again.
-- **Chat** (`POST /studio/chat`) runs one agent turn with file tools
-  (list/read/write/edit/delete/grep — `edit_file` takes `replaceAll` for
-  cross-file renames) plus `test_agent` and `todo_write` (a stateless
-  Claude-Code-style task list: each call replaces the whole list, and the
-  rendered result riding in message history is the persistence), streamed
-  as the AI SDK **UI message stream** (SSE) that the client's `useChat`
-  consumes directly.
-  The system prompt embeds the same `aai-templates/scaffold/CLAUDE.md` the
-  CLI ships to user projects (`studio-prompt.ts`) plus studio-specific
-  overrides. Conversations persist per project in
-  `aai_platform.studio_chats` (`chat-store.ts` — plain upsert, no
-  version column: one writer surface, always the full snapshot), written
-  server-side when the turn's UI stream settles (finish *and* client abort;
-  `originalMessages`/`onFinish` in `runStudioChat`) and restored on project
-  open via `GET /studio/projects/:project/chat`. Rows are capped at
-  `MAX_STUDIO_CHAT_STORE_BYTES` (512 KB) by trimming whole messages from
-  the front; project delete removes the chat row.
+- **Chat runs IN the project's sandbox, and the browser connects to it
+  DIRECTLY** — mirroring the voice path. `POST /studio/projects/:project/
+  session` (rate-limited; `studio-session-broker.ts`) boots or reuses a
+  guest sandbox through the same warm-pool/`spawnWarmHarness` machinery
+  deployed agents use, installs the session over the control channel
+  (`studio/session-init`: workspace files, the caller's own key, system
+  prompt, model config), and returns the sandbox's public chat URL. The
+  browser then streams turns straight to the guest's `POST /studio/chat`
+  (SSE, the AI SDK UI message stream `useChat` consumes) — chat turns never
+  pass through the platform host. The agentic loop (`streamText`, up to
+  `MAX_CHAT_STEPS` = 16 steps) runs in the guest (`aai-guest/
+  studio-chat.ts`) with Claude-Code-style tools over a real filesystem
+  workspace (`aai-guest/studio-tools.ts`): list/read (windowed, numbered —
+  opencode's read semantics)/write/edit/delete, `glob`, `grep`, `bash`
+  (real shell in the container, guest token scrubbed from its env),
+  `todo_write`, `test_agent`, and the keyless web builtins. Tool CPU —
+  regex, diff, whatever `bash` runs — burns the tenant's own sandbox,
+  which is why the host-side scan worker was deleted. The guest chat
+  surface is bearer-gated by the caller's key (the tunnel URL is public)
+  and CORS-open; `GET /studio/tools` on the same surface serves the
+  user-friendly tool labels (`STUDIO_TOOL_LABELS`) the client renders.
+  End of turn, the guest pushes state back over the control channel:
+  `studio/sync-workspace` (validated like a client file PUT; only
+  workspace source files — never node_modules/dist/.git — sync, under the
+  same file caps) and `studio/persist-chat` (the settled conversation →
+  `aai_platform.studio_chats`, restored on project open via
+  `GET /studio/projects/:project/chat`). `test_agent` builds via
+  guest→host `studio/build` (Vite stays out of the guest, which has no
+  node_modules; content-hash cached so Publish reuses the worker) and
+  loads/trials the bundle in place. Sandboxes are per (scope, project)
+  with a 15-min idle eviction; a dead one heals on the next broker call,
+  and the client re-brokers on a 409 from the chat surface.
 - **No MCP.** The studio's coding agent has no MCP integration (the docs
   MCP server it once connected to was removed). The system prompt embeds a
   *snapshot* of the scaffold guide; anything outside it — a voice, a newly
   added gateway model, a provider option — the prompt tells the agent to
   look up with `visit_webpage` (the AssemblyAI docs included) rather than
   guess.
-- **Every coding-agent tool runs under a per-call deadline**
-  (`studio-tool-timeout.ts`, `STUDIO_TOOL_TIMEOUT_MS`, default 120s —
-  generous because `test_agent` runs a full Vite build). A hung call (dead
-  sandbox RPC, stalled web fetch) used to hang the whole
-  turn with the client's tool row shimmering forever; the wrapper resolves
-  it to an error tool result instead. It is a resolution race, not a
-  cancellation — the abandoned work dies with the turn's teardown. The
-  client side of the same problem is the composer's **Stop button**
-  (`chat.tsx`): while a turn streams, send becomes stop; `useChat().stop()`
-  aborts the SSE fetch, the route's `c.req.raw.signal` fires, and
-  `streamText` cancels the LLM call while `disposeSandbox` tears down the
-  sandbox. A failed sandbox provisioning is retried on the
-  next tool call, not cached for the turn (`studio-routes.ts`).
-- **Model-controlled CPU work runs on the scan worker thread, never the
-  main thread — because `pTimeout` can't stop it.** The per-tool deadline
-  is a promise race — useless against work that pins the event loop, where
-  the timer never fires. Two studio tools run model-controlled input
-  through superlinear algorithms: `grep`'s regex scan (a catastrophic
-  pattern like `(a+)+$` goes exponential at ~40 chars — the long-line skip
-  does NOT bound it) and `edit_file`'s fuzzy matching + Myers diff (O(N·D):
-  ~7s at the 256KB file cap when most lines differ). Both execute on a
-  dedicated worker thread (`studio-scan-runner.ts` host side,
-  `studio-scan-worker.ts` thread side — its own tsdown entry, loaded from
-  `.ts` source via node's type stripping in dev, so its import graph must
-  stay to picomatch/diff plus the dependency-free `studio-limits.ts`) with
-  a hard `worker.terminate()` deadline (`SCAN_JOB_TIMEOUT_MS`, 2s): the
-  main loop never blocks however hostile the input, and the deadline kills
-  a mid-backtrack regex for real. Errors cross the thread as classified
-  wire data and rehydrate to `StudioGrepError`/`StudioEditError`
-  (build-runner pattern); the diff additionally self-elides at
-  `DIFF_BUDGET_MS` (500ms, jsdiff's `timeout`) so a huge-but-legit edit
-  still applies with its diff omitted. Any new studio tool that runs
-  regex/diff/parse work over workspace content or model args belongs on
-  the scan worker; user *code* is never evaluated in the server process
-  (builds are out-of-process, execution is in the Modal guest).
-- **Web access** (`studio-web.ts`) exposes the SDK's own `visit_webpage`,
-  `get_page_design`, and `web_search` builtins to the coding agent rather than reimplementing
-  them — which is what buys `safeFetch`, the SSRF guard. A URL here is
-  model-controlled and the studio runs on the platform host, so a
-  hand-rolled `fetch` would be a request-forgery hole aimed at the metadata
-  endpoint. All three are keyless — `web_search` is DuckDuckGo-backed (HTML
-  endpoint scraping, ported from openclaw's duckduckgo plugin; see the SDK's
-  `builtin-tools.ts`), so the tool set never varies by host configuration
-  and the tool context carries an empty env: a coding turn cannot read any
-  host credential.
+- **Guest tools carry their own deadlines** (`aai-guest/studio-tools.ts`):
+  every tool is wrapped in a 120s timeout resolving to an error tool
+  result, and `bash` has its own wall-clock kill (60s default, 300s max)
+  with capped, tail-kept output. The client side of a hung turn is the
+  composer's **Stop button** (`chat.tsx`): `useChat().stop()` aborts the
+  SSE fetch to the sandbox, whose request-close handler aborts
+  `streamText` and in-flight tools in the guest.
+- **Web access**: the SDK's keyless `visit_webpage`, `get_page_design`,
+  and `web_search` builtins (DuckDuckGo-backed — no key anywhere), mapped
+  into the guest tool set (`createGuestWebTools` in `aai-guest/
+  studio-chat.ts`). They run in the guest with open egress like all tenant
+  code; `safeFetch` still screens the model-controlled URLs, and the tool
+  context carries an empty env.
 - **The preview shows the *published* agent**, so edits look like they did
   nothing until Publish. `hasUnpublishedChanges` (`studio-workspace.ts`)
   compares a `filesHash` of the workspace against `deployedHash`, recorded
@@ -441,14 +428,14 @@ voice agents without the CLI:
   URL. Keep it that way — an agent that ships to a public URL on its own
   read of "make it live" is a surprise nobody asked for.
 - **LLM selection** (`studio-llm.ts`): every studio turn runs on the
-  AssemblyAI LLM Gateway **with the caller's own API key** — the same bearer
-  the request authenticated with (`StudioChatDeps.apiKey`). The platform
-  holds no studio LLM credential at all: no `ASSEMBLYAI_API_KEY` host
-  fallback, no Anthropic fallback, no `STUDIO_LLM_PROVIDER`. The *model*
-  (never the key) stays host config: default `qwen3-next-80b-a3b`,
-  `STUDIO_LLM_MODEL` overrides; non-OpenAI gateway streams run through the
-  `repairOpenAiStream` fetch wrapper. Chat is always available — a bad key
-  surfaces as a gateway auth error on the turn, billed to nobody.
+  AssemblyAI LLM Gateway **with the caller's own API key** — delivered to
+  the guest via `studio/session-init` and resolved there (`resolveLlm` +
+  the SDK's `assemblyAI` LLM factory); the platform holds no studio LLM
+  credential. The *model* (never the key) stays host config: default
+  `qwen3-next-80b-a3b`, `STUDIO_LLM_MODEL` overrides,
+  `STUDIO_LLM_REGION=eu` region-filters. The caller's key doubles as the
+  guest chat surface's bearer — same trust, no new secret. Host-side
+  `studioModel(apiKey)` remains only for the eval judge.
 - **Gateway regions.** `STUDIO_LLM_REGION=eu` selects the EU endpoint,
   which serves only Claude and most Gemini models. The gateway model list
   is therefore region-filtered (`GATEWAY_US_ONLY_MODELS`) and the EU
@@ -462,18 +449,16 @@ voice agents without the CLI:
   model** — the only request-side credential is the caller's own bearer,
   which selects nothing: keep any future request-side choice validated
   host-side.
-- **Session sandboxes run the agent's code work on production infra**:
-  each chat request lazily provisions one sandbox (`studio-sandbox.ts`)
-  through the same warm-pool/`spawnWarmHarness` path deployed agents use
-  (a remote Modal Sandbox). `test_agent` builds the workspace, loads the
-  bundle there (repeat `bundle/load` replaces it), validates the config,
-  and can trial-run one of the agent's tools via `tool/execute` (no db —
-  ctx.db reports storage-not-enabled) — no tenant
-  data, no secrets in the guest. Deploy
-  config extraction reuses the same sandbox; the standalone deploy route
-  uses a throwaway one (`describeBundle` in `sandbox-vm.ts`). The LLM
-  orchestration itself stays host-side — the guest has no network device
-  by design.
+- **The coding agent itself runs on production infra**: each project gets
+  one sandbox (`studio-session-broker.ts`) through the same
+  warm-pool/`spawnWarmHarness` path deployed agents use (a remote Modal
+  Sandbox). The whole agentic loop lives in that guest — LLM calls dial
+  the gateway from the guest on the caller's key, tools run on the guest
+  filesystem, and `test_agent` loads the built bundle in place and can
+  trial-run its tools (no db — ctx.db reports storage-not-enabled): no
+  tenant data and no platform secrets in the guest. Publish's config
+  extraction uses a throwaway sandbox (`describeBundle` in
+  `sandbox-vm.ts`).
 - **Builds never run in the server's process.** Every studio build executes
   the build entry (`studio-build-entry.ts`, wire contract in
   `studio-build-protocol.ts`) out of process, selected by

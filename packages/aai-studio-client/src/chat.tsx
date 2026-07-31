@@ -8,7 +8,7 @@ import { DefaultChatTransport, type UIMessage } from "ai";
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
-import type { StudioStatus } from "./api.ts";
+import type { ChatSession, StudioStatus } from "./api.ts";
 import { Markdown } from "./markdown.tsx";
 import { STARTERS } from "./starters.ts";
 
@@ -23,6 +23,14 @@ type ChatPanelProps = {
   chatHistory: UIMessage[] | undefined;
   /** Undefined while `/studio/status` is loading or unreachable. */
   llmStatus: StudioStatus | undefined;
+  /** The project's brokered sandbox; undefined while booting. */
+  chatSession: ChatSession | undefined;
+  /** Booting the sandbox failed — show a retryable error state. */
+  sessionError?: boolean;
+  /** Tool name → friendly label, served by the sandbox. */
+  toolLabels?: Record<string, string> | undefined;
+  /** The sandbox went away mid-session — re-broker. */
+  onSessionStale: () => void;
   /** A project is being created for the guided-start flow. */
   creating: boolean;
   /** Prompt queued before the project existed — sent once on mount. */
@@ -41,6 +49,12 @@ function toolPartName(part: { type: string; toolName?: string }): string {
   return part.type.replace(/^tool-/, "");
 }
 
+/** Fallback when the sandbox hasn't served a label: "write_file" → "Write file". */
+export function prettyToolName(name: string): string {
+  const words = name.replace(/[_-]+/g, " ").trim();
+  return words.charAt(0).toUpperCase() + words.slice(1);
+}
+
 function isToolPart(part: { type: string }): boolean {
   return part.type.startsWith("tool-") || part.type === "dynamic-tool";
 }
@@ -55,13 +69,17 @@ function isToolPart(part: { type: string }): boolean {
 export function ToolRow({
   part,
   active = true,
+  labels,
 }: {
   part: Record<string, unknown> & { type: string };
   /** False once the turn is over — a call abandoned by Stop must not shimmer forever. */
   active?: boolean;
+  /** Tool name → friendly label (from the sandbox's GET /studio/tools). */
+  labels?: Record<string, string> | undefined;
 }) {
   const [open, setOpen] = useState(false);
-  const name = toolPartName(part as { type: string; toolName?: string });
+  const rawName = toolPartName(part as { type: string; toolName?: string });
+  const name = labels?.[rawName] ?? prettyToolName(rawName);
   const done = part.state === "output-available";
   const output = part.output;
   const args = part.input == null ? "" : JSON.stringify(part.input);
@@ -150,7 +168,15 @@ export function toBlocks(message: UIMessage): MessageBlock[] {
   return blocks;
 }
 
-function MessageView({ message, busy = false }: { message: UIMessage; busy?: boolean }) {
+function MessageView({
+  message,
+  busy = false,
+  labels,
+}: {
+  message: UIMessage;
+  busy?: boolean;
+  labels?: Record<string, string> | undefined;
+}) {
   if (message.role === "user") {
     const text = message.parts
       .map((part) => (part.type === "text" ? part.text : ""))
@@ -170,7 +196,7 @@ function MessageView({ message, busy = false }: { message: UIMessage; busy?: boo
         block.kind === "text" ? (
           <Markdown key={block.key} text={block.text} />
         ) : (
-          <ToolRow key={block.key} part={block.part} active={busy} />
+          <ToolRow key={block.key} part={block.part} active={busy} labels={labels} />
         ),
       )}
     </div>
@@ -301,32 +327,42 @@ function EmptyStateBody({
  */
 function ProjectChat({
   apiKey,
-  project,
+  session,
   initialMessages,
   llmStatus,
+  toolLabels,
   initialPrompt,
   onInitialPromptSent,
   onWorkspaceChanged,
   onUnauthorized,
-}: Omit<ChatPanelProps, "project" | "chatHistory" | "onStartWithPrompt" | "creating"> & {
-  project: string;
+  onSessionStale,
+}: Omit<
+  ChatPanelProps,
+  "project" | "chatHistory" | "onStartWithPrompt" | "creating" | "chatSession" | "sessionError"
+> & {
+  session: ChatSession;
   initialMessages: UIMessage[];
 }) {
-  // Keep the latest callback out of the transport, which is created once.
+  // Keep the latest callbacks out of the transport, which is created once.
   const unauthorizedRef = useRef(onUnauthorized);
   unauthorizedRef.current = onUnauthorized;
+  const staleRef = useRef(onSessionStale);
+  staleRef.current = onSessionStale;
 
   const [transport] = useState(
     () =>
+      // Turns stream DIRECTLY to the project's sandbox (the brokered URL),
+      // mirroring how voice clients connect straight to a deployed agent.
       new DefaultChatTransport({
-        api: "/studio/chat",
+        api: session.url,
         headers: { Authorization: `Bearer ${apiKey}` },
-        body: () => ({ project }),
         // A rejected key gets the same global handling as the REST queries
-        // (app.tsx) — useChat only surfaces a generic Error otherwise.
+        // (app.tsx) — useChat only surfaces a generic Error otherwise. A 409
+        // means the sandbox was replaced under us: re-broker.
         fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
           const res = await fetch(input, init);
           if (res.status === 401) unauthorizedRef.current();
+          if (res.status === 409) staleRef.current();
           return res;
         }) as typeof fetch,
       }),
@@ -374,7 +410,7 @@ function ProjectChat({
             <EmptyStateBody status={llmStatus} onPick={send} />
           )}
           {messages.map((message) => (
-            <MessageView key={message.id} message={message} busy={busy} />
+            <MessageView key={message.id} message={message} busy={busy} labels={toolLabels} />
           ))}
           {error && <div className="text-[13px] text-err">{error.message}</div>}
           {busy && <div className="text-[13px] text-subtle italic">Working…</div>}
@@ -397,23 +433,36 @@ export function ChatPanel(props: ChatPanelProps) {
       <div className="flex items-center justify-between gap-2 px-6 pt-5">
         <span className="eyebrow">Agent</span>
       </div>
-      {props.project && props.chatHistory === undefined && (
-        // History still loading: hold the panel rather than flashing an
-        // empty "new chat" that the restored conversation then replaces.
+      {props.project && props.sessionError && (
         <div className="flex flex-1 items-center px-6 py-5">
-          <p className="m-0 text-[13px] text-subtle italic">Loading conversation…</p>
+          <p className="m-0 text-[13px] text-err">
+            Could not start the project's sandbox. Reload to try again.
+          </p>
         </div>
       )}
-      {props.project && props.chatHistory !== undefined && (
+      {props.project &&
+        !props.sessionError &&
+        (props.chatHistory === undefined || props.chatSession === undefined) && (
+          // History or sandbox still loading: hold the panel rather than
+          // flashing an empty "new chat" the restored conversation replaces.
+          <div className="flex flex-1 items-center px-6 py-5">
+            <p className="m-0 text-[13px] text-subtle italic">
+              {props.chatHistory === undefined ? "Loading conversation…" : "Starting sandbox…"}
+            </p>
+          </div>
+        )}
+      {props.project && props.chatHistory !== undefined && props.chatSession !== undefined && (
         <ProjectChat
           apiKey={props.apiKey}
-          project={props.project}
+          session={props.chatSession}
           initialMessages={props.chatHistory}
           llmStatus={props.llmStatus}
+          toolLabels={props.toolLabels}
           initialPrompt={props.initialPrompt}
           onInitialPromptSent={props.onInitialPromptSent}
           onWorkspaceChanged={props.onWorkspaceChanged}
           onUnauthorized={props.onUnauthorized}
+          onSessionStale={props.onSessionStale}
         />
       )}
       {!props.project && (
