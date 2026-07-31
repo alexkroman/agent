@@ -75,6 +75,12 @@
             "command": "pnpm install --frozen-lockfile 2>/dev/null || pnpm install",
             "timeout": 120,
             "statusMessage": "Installing dependencies..."
+          },
+          {
+            "type": "command",
+            "command": "[ \"${CLAUDE_CODE_REMOTE:-}\" != \"true\" ] || pnpm turbo run build --output-logs=errors-only",
+            "timeout": 300,
+            "statusMessage": "Building workspace packages (dist/ needed for Vite worker builds)..."
           }
         ]
       }
