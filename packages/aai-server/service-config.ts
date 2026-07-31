@@ -11,7 +11,7 @@ import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { createStorage } from "unstorage";
 import { isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
-import { resolveSandboxBackend } from "./apple-container-sandbox.ts";
+import { isAppleContainerCliAvailable } from "./apple-container-sandbox.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
@@ -20,6 +20,7 @@ import type { OrchestratorOpts } from "./orchestrator.ts";
 import { createMemorySlugEpochs, createPgSlugEpochs, type SlugEpochs } from "./platform-epoch.ts";
 import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { createS3Storage } from "./s3-storage.ts";
+import { describeSandboxBackend } from "./sandbox-backend.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { spawnWarmHarness } from "./sandbox-vm.ts";
@@ -177,19 +178,43 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
  * Boot-time sandbox-backend check, so a misconfiguration fails (or warns)
  * where the cause is obvious instead of on the first session's spawn.
  *
- * Developer mode on macOS (or an explicit `SANDBOX_BACKEND=apple-container`)
- * runs guests in local Apple containers and needs no Modal credentials.
- * Everything else runs on Modal: production fails at boot without
- * credentials; local dev only warns so non-sandbox surfaces stay usable.
+ * The selected backend is logged unconditionally. Previously this only spoke
+ * up for Apple containers or missing Modal credentials, so the most confusing
+ * configuration of all — auto-selection quietly landing on a backend the
+ * developer did not choose — was the one that produced no output at all, and
+ * surfaced instead as a spawn failure naming an unexpected backend.
+ *
+ * Each backend then gets the check that can only fail at boot:
+ * - `subprocess` warns, loudly: it has no isolation.
+ * - `apple-container` is opt-in, so a missing CLI is a hard error rather than
+ *   a fallback — the override not working must not look like it worked.
+ * - `modal` needs credentials: fatal in production, a warning in local dev so
+ *   non-sandbox surfaces stay usable.
  */
 export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
-  if (resolveSandboxBackend(env) === "apple-container") {
-    console.info(
-      "[sandbox] Developer mode: guest sandboxes run in local Apple containers " +
-        "(`container` CLI). Set SANDBOX_BACKEND=modal to use Modal instead.",
+  const { backend, reason } = describeSandboxBackend(env);
+  console.info(`[sandbox] backend=${backend} (${reason})`);
+
+  if (backend === "subprocess") {
+    console.warn(
+      "[sandbox] WARNING: guests run as plain child processes with NO isolation. " +
+        "Developer mode only. Set SANDBOX_BACKEND=apple-container (local containers) " +
+        "or SANDBOX_BACKEND=modal (remote sandboxes) for a real boundary.",
     );
     return;
   }
+
+  if (backend === "apple-container") {
+    if (!isAppleContainerCliAvailable()) {
+      throw new Error(
+        "SANDBOX_BACKEND=apple-container but Apple's `container` CLI is not on PATH. " +
+          "Install it from https://github.com/apple/container/releases and run " +
+          "`container system start`, or unset SANDBOX_BACKEND to use the subprocess backend.",
+      );
+    }
+    return;
+  }
+
   if (!isModalConfigured()) {
     if (isLocalDev(env)) {
       console.warn(

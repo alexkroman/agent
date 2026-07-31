@@ -1,9 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Tests for the Apple container sandbox backend: backend selection
- * (SANDBOX_BACKEND override + the developer-mode auto-detection), the
- * `container run` argument contract, and the spawn flow against an injected
- * AppleContainerSpawnContext (the real CLI is never invoked).
+ * Tests for the Apple container sandbox backend: the `container run` argument
+ * contract and the spawn flow against an injected AppleContainerSpawnContext
+ * (the real CLI is never invoked). Backend *selection* is tested in
+ * `sandbox-backend.test.ts`.
  */
 
 import { mkdtemp, readFile, writeFile } from "node:fs/promises";
@@ -15,24 +15,14 @@ import {
   _internals,
   type AppleContainerRunParams,
   type AppleContainerSpawnContext,
-  type BackendProbe,
   buildContainerRunArgs,
   type ContainerProcLike,
   isAppleContainerCliAvailable,
-  resolveSandboxBackend,
   spawnAppleContainerWarm,
 } from "./apple-container-sandbox.ts";
 import { GUEST_PORT } from "./modal-sandbox.ts";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
-
-function probe(platform: NodeJS.Platform, hasCli: boolean): BackendProbe {
-  return { platform, hasContainerCli: () => hasCli };
-}
-
-/** Env shape where local dev is on (no SUPABASE_S3_ENDPOINT). */
-const DEV_ENV: NodeJS.ProcessEnv = {};
-const PROD_ENV: NodeJS.ProcessEnv = { SUPABASE_S3_ENDPOINT: "https://s3.example" };
 
 type FakeProc = {
   proc: ContainerProcLike;
@@ -94,52 +84,6 @@ async function makeHarnessFile(content = "// harness"): Promise<string> {
   await writeFile(path, content, "utf-8");
   return path;
 }
-
-// ── resolveSandboxBackend ────────────────────────────────────────────────────
-
-describe("resolveSandboxBackend", () => {
-  it("honors an explicit SANDBOX_BACKEND override in both directions", () => {
-    // Apple container forced even off-macOS / in prod-shaped envs.
-    expect(
-      resolveSandboxBackend(
-        { ...PROD_ENV, SANDBOX_BACKEND: "apple-container" },
-        probe("linux", false),
-      ),
-    ).toBe("apple-container");
-    // Modal forced even where auto-detection would pick Apple containers.
-    expect(resolveSandboxBackend({ SANDBOX_BACKEND: "modal" }, probe("darwin", true))).toBe(
-      "modal",
-    );
-  });
-
-  it("normalizes SANDBOX_BACKEND whitespace and case", () => {
-    expect(
-      resolveSandboxBackend({ SANDBOX_BACKEND: " Apple-Container " }, probe("linux", false)),
-    ).toBe("apple-container");
-  });
-
-  it("throws on an unknown SANDBOX_BACKEND instead of silently using Modal", () => {
-    expect(() =>
-      resolveSandboxBackend({ SANDBOX_BACKEND: "docker" }, probe("darwin", true)),
-    ).toThrow(/Unknown SANDBOX_BACKEND "docker"/);
-  });
-
-  it("auto-selects apple-container only for local dev on darwin with the CLI", () => {
-    expect(resolveSandboxBackend(DEV_ENV, probe("darwin", true))).toBe("apple-container");
-    expect(resolveSandboxBackend(DEV_ENV, probe("darwin", false))).toBe("modal");
-    expect(resolveSandboxBackend(DEV_ENV, probe("linux", true))).toBe("modal");
-  });
-
-  it("never auto-selects apple-container in production", () => {
-    expect(resolveSandboxBackend(PROD_ENV, probe("darwin", true))).toBe("modal");
-  });
-
-  it("treats AAI_LOCAL_DEV=1 as local dev even with storage configured", () => {
-    expect(resolveSandboxBackend({ ...PROD_ENV, AAI_LOCAL_DEV: "1" }, probe("darwin", true))).toBe(
-      "apple-container",
-    );
-  });
-});
 
 // ── buildContainerRunArgs ────────────────────────────────────────────────────
 
