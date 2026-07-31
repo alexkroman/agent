@@ -435,7 +435,10 @@ voice agents without the CLI:
   `studio-build-protocol.ts`) out of process, selected by
   `studio-build-runner.ts`: in production `STUDIO_BUILD_BACKEND=modal` (set
   by `modal_deploy.py`'s image env) ships the build to the `studio_build`
-  Modal Function — same image, separate container, **no secrets attached** —
+  Modal Function — deployed with the **studio app** (`aai-studio-web`, in
+  `aai-studio-server/modal_deploy.py`, the package that owns the build
+  entry, so code and deployment version together), same image, separate
+  container, **no secrets attached** —
   while dev/tests default to spawning the same entry as a local child
   process (`subprocess` backend). Vite/Rollup over untrusted workspace trees
   therefore never competes with live voice sessions for the web container's
