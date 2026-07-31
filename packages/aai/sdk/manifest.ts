@@ -78,12 +78,9 @@ const ManifestSchema = z.object({
   silenceTimeoutMs: z.number().int().positive().optional(),
   silencePrompt: z.string().min(1).optional(),
   minBargeInWords: z.number().int().min(1).optional(),
-  // 0 is the documented "disable" value for the duration gate, the settle
-  // windows, and the false-interruption recovery timer — allow it via
-  // nonnegative().
+  // 0 is the documented "disable" value for the duration gate and the
+  // false-interruption recovery timer — allow it via nonnegative().
   interruptionMinDurationMs: z.number().int().nonnegative().optional(),
-  endpointSettleMs: z.number().int().nonnegative().optional(),
-  completeSettleMs: z.number().int().nonnegative().optional(),
   // "" is the documented "disable the hold phrase" value — no min(1).
   holdPhrase: z.string().optional(),
   // "" is the documented "disable the error phrase" value — no min(1).

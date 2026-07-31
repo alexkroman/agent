@@ -518,8 +518,6 @@ describe("createRuntime — provider resolution seams", () => {
     ["holdPhrase", { holdPhrase: "One moment." }],
     ["minBargeInWords", { minBargeInWords: 3 }],
     ["interruptionMinDurationMs", { interruptionMinDurationMs: 200 }],
-    ["endpointSettleMs", { endpointSettleMs: 800 }],
-    ["completeSettleMs", { completeSettleMs: 300 }],
     ["falseInterruptionTimeoutMs", { falseInterruptionTimeoutMs: 1500 }],
   ])("accepts %s when the providers arrive as runtime options", (_name, tuning) => {
     // The platform strips stt/llm/tts off

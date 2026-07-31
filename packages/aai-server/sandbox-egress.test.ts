@@ -261,8 +261,6 @@ describe("createSandbox — pipeline voice tuning", () => {
           ...PIPELINE_CONFIG,
           minBargeInWords: 3,
           interruptionMinDurationMs: 200,
-          endpointSettleMs: 900,
-          completeSettleMs: 300,
           falseInterruptionTimeoutMs: 1500,
         },
         env: { ASSEMBLYAI_API_KEY: "k", ANTHROPIC_API_KEY: "k", CARTESIA_API_KEY: "k" },

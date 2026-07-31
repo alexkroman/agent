@@ -8,8 +8,6 @@
 import type { LanguageModel } from "ai";
 import type { ExecuteTool, ToolSchema } from "../../sdk/_internal-types.ts";
 import {
-  DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
-  DEFAULT_ENDPOINT_SETTLE_MS,
   DEFAULT_ERROR_PHRASE,
   DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
   DEFAULT_HOLD_PHRASE,
@@ -71,21 +69,6 @@ export interface PipelineTransportOptions {
    */
   interruptionMinDurationMs?: number | undefined;
   /**
-   * Endpoint settle window (ms): how long to wait after an STT `final` for the
-   * speaker to continue before committing the turn, aggregating follow-on
-   * finals/partials into one utterance. Defaults to
-   * DEFAULT_ENDPOINT_SETTLE_MS; set 0 to disable (commit every final at once).
-   */
-  endpointSettleMs?: number | undefined;
-  /**
-   * Settle window (ms) for clearly-complete finals — shorter than
-   * `endpointSettleMs` (and capped by it) so finished requests pay little
-   * latency while sentence-boundary pauses mid-request still aggregate.
-   * Defaults to DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS; 0 commits complete
-   * finals immediately.
-   */
-  completeSettleMs?: number | undefined;
-  /**
    * Phrase spoken when the model's first action in a turn is a tool call with
    * no preceding speech. Defaults to DEFAULT_HOLD_PHRASE; `""` disables.
    */
@@ -137,8 +120,6 @@ export interface ResolvedPipelineOptions {
   maxSteps: number;
   minBargeInWords: number;
   interruptionMinDurationMs: number;
-  endpointSettleMs: number;
-  completeSettleMs: number;
   holdPhrase: string;
   errorPhrase: string;
   startFailurePhrase: string;
@@ -158,8 +139,6 @@ export function resolvePipelineOptions(opts: PipelineTransportOptions): Resolved
     minBargeInWords: opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS,
     interruptionMinDurationMs:
       opts.interruptionMinDurationMs ?? DEFAULT_INTERRUPTION_MIN_DURATION_MS,
-    endpointSettleMs: opts.endpointSettleMs ?? DEFAULT_ENDPOINT_SETTLE_MS,
-    completeSettleMs: opts.completeSettleMs ?? DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
     holdPhrase: opts.holdPhrase ?? DEFAULT_HOLD_PHRASE,
     errorPhrase: opts.errorPhrase ?? DEFAULT_ERROR_PHRASE,
     startFailurePhrase: opts.startFailurePhrase ?? DEFAULT_START_FAILURE_PHRASE,

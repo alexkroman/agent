@@ -157,9 +157,9 @@ describe("Deepgram STT adapter", () => {
     expect(finals).toEqual([]);
   });
 
-  test("default endpointing is 100 ms (transport settle windows own end-of-turn)", async () => {
+  test("default endpointing is 1500 ms (the provider owns end-of-turn)", async () => {
     const { session } = await openSession();
-    expect(captured.connectArgs?.endpointing).toBe(100);
+    expect(captured.connectArgs?.endpointing).toBe(1500);
     await session.close();
   });
 

@@ -313,32 +313,27 @@ describe("parseManifest — pipeline voice tuning", () => {
       ...pipelineFields,
       minBargeInWords: 3,
       interruptionMinDurationMs: 500,
-      endpointSettleMs: 800,
-      completeSettleMs: 200,
       holdPhrase: "Just a sec.",
       errorPhrase: "My brain went offline.",
       falseInterruptionTimeoutMs: 1500,
     } as never);
     expect(m.minBargeInWords).toBe(3);
     expect(m.interruptionMinDurationMs).toBe(500);
-    expect(m.endpointSettleMs).toBe(800);
-    expect(m.completeSettleMs).toBe(200);
     expect(m.holdPhrase).toBe("Just a sec.");
     expect(m.errorPhrase).toBe("My brain went offline.");
     expect(m.falseInterruptionTimeoutMs).toBe(1500);
   });
 
-  test("accepts the documented 'disable' values (0 windows, empty holdPhrase)", () => {
+  test("accepts the documented 'disable' values (0 timers, empty holdPhrase)", () => {
     const m = parseManifest({
       name: "x",
       ...pipelineFields,
-      endpointSettleMs: 0,
-      completeSettleMs: 0,
+      interruptionMinDurationMs: 0,
       holdPhrase: "",
       errorPhrase: "",
       falseInterruptionTimeoutMs: 0,
     } as never);
-    expect(m.endpointSettleMs).toBe(0);
+    expect(m.interruptionMinDurationMs).toBe(0);
     expect(m.holdPhrase).toBe("");
     expect(m.errorPhrase).toBe("");
     expect(m.falseInterruptionTimeoutMs).toBe(0);
@@ -347,8 +342,6 @@ describe("parseManifest — pipeline voice tuning", () => {
   test.each([
     ["minBargeInWords", 2],
     ["interruptionMinDurationMs", 500],
-    ["endpointSettleMs", 800],
-    ["completeSettleMs", 200],
     ["holdPhrase", "One sec."],
     ["errorPhrase", "Something broke."],
     ["falseInterruptionTimeoutMs", 1500],
@@ -372,15 +365,11 @@ describe("parseManifest — pipeline voice tuning", () => {
       ...pipelineFields,
       minBargeInWords: 1,
       interruptionMinDurationMs: 400,
-      endpointSettleMs: 900,
-      completeSettleMs: 300,
       holdPhrase: "",
       falseInterruptionTimeoutMs: 2500,
     });
     expect(config.minBargeInWords).toBe(1);
     expect(config.interruptionMinDurationMs).toBe(400);
-    expect(config.endpointSettleMs).toBe(900);
-    expect(config.completeSettleMs).toBe(300);
     expect(config.holdPhrase).toBe("");
     expect(config.falseInterruptionTimeoutMs).toBe(2500);
   });

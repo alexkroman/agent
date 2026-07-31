@@ -29,20 +29,22 @@ export interface DeepgramOptions {
   language?: string;
   /**
    * Deepgram endpointing window (ms of trailing silence before a `final` is
-   * emitted). Defaults to {@link DEFAULT_DEEPGRAM_ENDPOINTING_MS}. Kept low
-   * because the pipeline transport applies its own endpoint settling on top
-   * (`endpointSettleMs`/`completeSettleMs`) — the two delays serialize, so a
-   * large provider window just adds turn latency.
+   * emitted). Defaults to {@link DEFAULT_DEEPGRAM_ENDPOINTING_MS}. Endpointing
+   * is the provider's job — the pipeline transport commits a turn on every
+   * final — so this window is what keeps a mid-utterance pause from splitting
+   * one request across turns.
    */
   endpointing?: number;
 }
 
 /**
- * Default Deepgram `endpointing` (ms). Low by design: end-of-turn is owned
- * by the transport's settle windows, mirroring how LiveKit's Deepgram plugin
- * (`endpointing_ms = 25`) defers to framework-level turn detection.
+ * Default Deepgram `endpointing` (ms). Matches the AssemblyAI opener's
+ * `min_turn_silence` default (`DEFAULT_MIN_TURN_SILENCE_MS`): the transport
+ * commits a turn on every STT final, so end-of-turn detection is owned
+ * entirely by the provider and a short window would commit a turn at every
+ * mid-utterance pause.
  */
-export const DEFAULT_DEEPGRAM_ENDPOINTING_MS = 100;
+export const DEFAULT_DEEPGRAM_ENDPOINTING_MS = 1500;
 
 export type DeepgramProvider = SttProvider & {
   readonly kind: typeof DEEPGRAM_KIND;

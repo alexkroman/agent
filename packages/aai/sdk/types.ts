@@ -272,20 +272,6 @@ export type AgentDef<S = Record<string, unknown>> = {
    */
   interruptionMinDurationMs?: number;
   /**
-   * Pipeline mode only. Endpoint settle window (ms): after an STT final, how
-   * long to wait for the speaker to continue before committing the turn, so
-   * disfluent multi-final utterances aggregate into one turn. Defaults to
-   * `DEFAULT_ENDPOINT_SETTLE_MS` (1500); 0 commits every final immediately.
-   */
-  endpointSettleMs?: number;
-  /**
-   * Pipeline mode only. Settle window (ms) for clearly-complete finals
-   * (terminal punctuation, no trailing continuation cue) — shorter than
-   * `endpointSettleMs` (and capped by it) so finished requests pay little
-   * latency. Defaults to `DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS` (500).
-   */
-  completeSettleMs?: number;
-  /**
    * Pipeline mode only. Phrase spoken when the model's first action in a
    * turn is a tool call with no preceding speech, so the caller never hears
    * dead air. Defaults to `"One moment."`; set `""` to disable.

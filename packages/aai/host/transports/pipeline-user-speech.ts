@@ -13,7 +13,6 @@ import {
 } from "../../sdk/constants.ts";
 import { createRestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
-import { createEndpointSettler, type EndpointSettler } from "./pipeline-endpointing.ts";
 import { createSilenceNudger, type SilenceNudger } from "./pipeline-silence.ts";
 import { hasMinWords, scanWords } from "./pipeline-text.ts";
 import type { TransportCallbacks } from "./types.ts";
@@ -45,7 +44,7 @@ export interface SpeechEdgeTracker {
  * Create a {@link SpeechEdgeTracker} bound to the transport callbacks.
  *
  * `idleTimeoutMs` is a watchdog, not the primary close path: a genuine
- * utterance closes the edge when the settler commits it. But an STT partial
+ * utterance closes the edge when its final commits. But an STT partial
  * that never reaches a non-empty final (noise, a hallucinated interim) would
  * otherwise leave the edge open for the rest of the session — `speech_stopped`
  * never firing, and a stale `startedAtMs` making {@link durationMs} grow
@@ -95,7 +94,7 @@ export function createSpeechEdgeTracker(
 /**
  * False-interruption recovery timer. A partial-triggered barge-in aborts the
  * in-flight reply, but STT noise or a hallucinated partial may never produce
- * a final — the settler commits nothing and the agent falls silent
+ * a final — no turn ever commits and the agent falls silent
  * mid-thought. `arm()` starts the recovery window after such a barge-in;
  * `clear()` cancels it when real speech commits (or the client cancels). If
  * the window elapses while the transport is idle, `onResume` runs the
@@ -174,7 +173,7 @@ export interface SttEventHandlers {
 
 /**
  * Turn the STT transcript stream into speaking edges, live captions, barge-in
- * decisions and settled turns.
+ * decisions and committed turns.
  *
  * Split out of the transport so the barge-in policy — which is all threshold
  * and ordering rules rather than turn orchestration — reads on its own. The
@@ -195,12 +194,13 @@ function createSttEventHandlers(deps: {
   abortInFlightTurn: () => void;
   speechEdges: SpeechEdgeTracker;
   recovery: FalseInterruptionRecovery;
-  settler: EndpointSettler;
   nudger: SilenceNudger;
   callbacks: {
     onCancelled(): void;
     onUserTranscriptPartial?: ((text: string) => void) | undefined;
   };
+  /** Commit a user turn: emit the transcript and run the chained reply. */
+  commitUserTurn: (text: string) => void;
   /** Interim words required to barge in. */
   minBargeInWords: number;
   /** Sustained-speech gate for interim-triggered barge-in; 0 disables. */
@@ -208,7 +208,7 @@ function createSttEventHandlers(deps: {
   log: Logger;
   sid: string;
 }): SttEventHandlers {
-  const { speechEdges, recovery, settler, nudger, callbacks, log } = deps;
+  const { speechEdges, recovery, nudger, callbacks, log } = deps;
 
   /**
    * Is the agent actually speaking right now — audio already emitted for the
@@ -220,9 +220,8 @@ function createSttEventHandlers(deps: {
    * abandoned work redone on top of a longer history). A user re-prompting into
    * that silence on any regular cadence would then starve the reply
    * indefinitely, every restart outliving the next re-prompt. Utterances
-   * arriving before the agent speaks take the deferral path instead: the
-   * settler buffers them and they are answered as a chained turn once the reply
-   * in progress lands.
+   * arriving before the agent speaks take the deferral path instead: they
+   * commit as chained turns and are answered once the reply in progress lands.
    *
    * Once a turn has spoken it keeps the floor for the rest of its run, so a
    * mid-reply TTS stall (playback draining while more text is still streaming)
@@ -248,15 +247,16 @@ function createSttEventHandlers(deps: {
       // User speech proves presence: reset the nudge budget, restart the window.
       nudger.onUserSpeech();
       // Counted once, with a bounded scan: every consumer here is a threshold
-      // check — the speaking edge, caption emit and settler extension need
-      // >= 1, the barge-in gate needs >= minBargeInWords — so the scan stops
-      // at max(minBargeInWords, 1) instead of walking the whole partial,
+      // check — the speaking edge and caption emit need >= 1, the barge-in
+      // gate needs >= minBargeInWords — so the scan stops at
+      // max(minBargeInWords, 1) instead of walking the whole partial,
       // which grows to full-utterance length as the user keeps speaking.
       const words = scanWords(text, Math.max(deps.minBargeInWords, 1));
       // Live captions: forward the interim transcript as-is. The committed turn
-      // still arrives via onUserTranscript once the settler fires. Emitted after
-      // any barge-in below, because the client's `cancelled` handler clears
-      // userTranscript — emitting first would blank the caption it just set.
+      // still arrives via onUserTranscript once the STT final lands. Emitted
+      // after any barge-in below, because the client's `cancelled` handler
+      // clears userTranscript — emitting first would blank the caption it just
+      // set.
       const emitPartial = (): void => {
         if (words >= 1) callbacks.onUserTranscriptPartial?.(text);
       };
@@ -268,10 +268,7 @@ function createSttEventHandlers(deps: {
         // window would otherwise elapse mid-utterance.
         if (recovery.pending()) recovery.arm();
       }
-      // A partial while an utterance is buffered means the speaker resumed after
-      // a pause: extend the settle window so the continuation aggregates into
-      // the same turn instead of the pre-pause fragment committing on its own.
-      if (settler.extendOnPartial(words) || !partialTriggersBargeIn(words)) {
+      if (!partialTriggersBargeIn(words)) {
         emitPartial();
         return;
       }
@@ -292,37 +289,35 @@ function createSttEventHandlers(deps: {
       const trimmed = text.trim();
       if (trimmed.length === 0) return;
       // Real speech reached a final — whatever barge-in preceded it was not a
-      // false interruption; the settler will commit a genuine turn. Restores the
+      // false interruption; a genuine turn commits below. Restores the
       // consecutive-resume budget too: the user is demonstrably present.
       recovery.onUserTurn();
       // A final can arrive without any preceding partial (short utterances on
       // some STT providers) — make sure the speaking edge still fires.
       speechEdges.speechStarted();
-      // The turn that follows (via the settler) re-arms the nudge on completion.
+      // The turn that follows re-arms the nudge on completion.
       nudger.onUserTurn();
       // Interrupt the agent's reply only when it is actually speaking and the
       // utterance is clearly intentional (>= threshold). Anything else does NOT
-      // interrupt — it is buffered and answered once the reply finishes
-      // (chainTurn defers it), so neither short answers ("yes", a ZIP) spoken
-      // over the agent nor re-prompts into a not-yet-spoken reply are lost.
+      // interrupt — the turn is answered once the reply finishes (chainTurn
+      // defers it), so neither short answers ("yes", a ZIP) spoken over the
+      // agent nor re-prompts into a not-yet-spoken reply are lost.
       if (agentIsSpeaking() && hasMinWords(trimmed, deps.minBargeInWords)) {
         log.info("Pipeline replacing in-flight turn", { sid: deps.sid });
         deps.abortInFlightTurn();
         callbacks.onCancelled();
-        // The client's `cancelled` handler clears userTranscript, and the
-        // committed turn only goes out once the settler fires — re-emit the
-        // caption so the utterance doesn't vanish for the whole settle window
-        // and then reappear (same ordering rule as the partial path above).
-        callbacks.onUserTranscriptPartial?.(trimmed);
       }
-      settler.push(trimmed);
+      // Commit the turn immediately: endpointing (aggregating a disfluent
+      // utterance's pauses into one final) is the STT provider's job — the
+      // AssemblyAI opener sets `min_turn_silence` for exactly this.
+      speechEdges.speechEnded();
+      deps.commitUserTurn(trimmed);
     },
   };
 }
 
 /** The transport's user-activity machinery — see {@link createUserActivity}. */
 export interface UserActivity {
-  settler: EndpointSettler;
   nudger: SilenceNudger;
   recovery: FalseInterruptionRecovery;
   speechEdges: SpeechEdgeTracker;
@@ -330,14 +325,14 @@ export interface UserActivity {
 }
 
 /**
- * Wire up the pipeline transport's user-activity machinery: the endpoint
- * settler, silence nudger, false-interruption recovery, speaking-edge
- * tracker, and the STT event handlers that drive them. Pulled out of
- * `pipeline-transport.ts` so the transport keeps turn orchestration and this
- * module keeps everything downstream of the user's voice. The transport's
- * mutable turn state arrives as predicates, and every turn these components
- * launch goes through `runChainedTurn` — which is where the transport applies
- * its queued-turn invalidation gate (pipeline-turn-gate.ts).
+ * Wire up the pipeline transport's user-activity machinery: the silence
+ * nudger, false-interruption recovery, speaking-edge tracker, and the STT
+ * event handlers that drive them. Pulled out of `pipeline-transport.ts` so
+ * the transport keeps turn orchestration and this module keeps everything
+ * downstream of the user's voice. The transport's mutable turn state arrives
+ * as predicates, and every turn these components launch goes through
+ * `runChainedTurn` — which is where the transport applies its queued-turn
+ * invalidation gate (pipeline-turn-gate.ts).
  */
 export function createUserActivity(deps: {
   log: Logger;
@@ -350,9 +345,6 @@ export function createUserActivity(deps: {
     | "onSpeechStarted"
     | "onSpeechStopped"
   >;
-  /** Settle windows (ms) for the endpoint settler; 0 commits finals immediately. */
-  endpointSettleMs: number;
-  completeSettleMs: number;
   /** Silence-nudge window (ms); unset/non-positive disables the nudger. */
   silenceTimeoutMs: number | undefined;
   /** Synthetic user message a nudge injects; defaults to DEFAULT_SILENCE_PROMPT. */
@@ -381,19 +373,6 @@ export function createUserActivity(deps: {
   // STT transcript stream (see createSpeechEdgeTracker above).
   const speechEdges = createSpeechEdgeTracker(callbacks, {
     idleTimeoutMs: DEFAULT_SPEECH_IDLE_TIMEOUT_MS,
-  });
-
-  // Endpoint settling: STT finals buffer until a settle window elapses so
-  // disfluent multi-final utterances commit as one turn (pipeline-endpointing.ts).
-  const settler = createEndpointSettler({
-    settleMs: deps.endpointSettleMs,
-    completeSettleMs: deps.completeSettleMs,
-    onCommit: (text) => {
-      if (deps.isTerminated()) return;
-      speechEdges.speechEnded();
-      callbacks.onUserTranscript(text);
-      deps.runChainedTurn(text, "Pipeline turn crashed");
-    },
   });
 
   // Silence nudge: `silencePrompt` becomes a synthetic user message (in LLM
@@ -435,14 +414,17 @@ export function createUserActivity(deps: {
     abortInFlightTurn: deps.abortInFlightTurn,
     speechEdges,
     recovery,
-    settler,
     nudger,
     callbacks,
+    commitUserTurn(text: string): void {
+      callbacks.onUserTranscript(text);
+      deps.runChainedTurn(text, "Pipeline turn crashed");
+    },
     minBargeInWords: deps.minBargeInWords,
     interruptionMinDurationMs: deps.interruptionMinDurationMs,
     log,
     sid,
   });
 
-  return { settler, nudger, recovery, speechEdges, sttEvents };
+  return { nudger, recovery, speechEdges, sttEvents };
 }

@@ -201,46 +201,28 @@ export const DEFAULT_START_FAILURE_PHRASE =
  * heard the agent give up on its own sentences.
  */
 export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
-/**
- * Endpoint settle window (pipeline mode): after an STT `final`, how long to
- * wait for the speaker to continue before committing the turn. Disfluent,
- * in-the-wild speech (mid-utterance pauses, self-corrections, false starts)
- * makes STT emit several `final`s for one intended utterance; without a settle
- * window the transport starts a turn on the first fragment and acts on the
- * pre-correction request. Follow-on `final`s/`partial`s inside the window are
- * aggregated into a single turn. A clearly-complete final (terminal
- * punctuation, no trailing continuation cue) uses the shorter
- * {@link DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS} window instead. Set to 0 to
- * disable settling entirely (commit every final at once).
- */
-export const DEFAULT_ENDPOINT_SETTLE_MS = 2500;
 
 /**
- * Settle window for a clearly-complete final (pipeline mode). Hesitant
- * speakers pause at sentence boundaries mid-request ("Track my order. ...
- * Oh, and also...") — committing the instant a complete-looking final lands
- * makes the agent talk over the continuation and act on half the request.
- * A short window lets an immediate continuation (an STT partial extends it)
- * aggregate into the same turn while keeping added latency small on genuinely
- * finished requests. Set to 0 to commit complete finals immediately.
- *
- * 1500 rather than the 500 this used to be (LiveKit's `min_endpointing_delay`
- * default), because one sentence is very often not the whole request. A caller
- * saying "How many t-shirt options do you have? Also, I want to return three
- * items." produces a complete-looking final at the question mark; committing
- * there had the agent answer half the request while the other half was still
- * being spoken — and the rest of that same breath then barged in and cancelled
- * the reply. Measured on tau2's retail voice tasks, every turn of every call
- * died that way. The cost is added latency on a request that really did end at
- * the first sentence; the failure it prevents costs the whole call.
+ * Minimum end-of-turn silence (ms) the AssemblyAI streaming STT waits before
+ * emitting a `final` (`min_turn_silence`). Endpointing lives in the STT
+ * provider, not the transport: disfluent, in-the-wild speech (mid-utterance
+ * pauses, self-corrections, false starts) would otherwise split one intended
+ * utterance across several finals, each committing a turn of its own — the
+ * agent answering half the request while the other half was still being
+ * spoken, and the rest of that same breath then barging in and cancelling the
+ * reply. 1500 rather than a few hundred ms because one sentence is very often
+ * not the whole request ("How many t-shirt options do you have? [pause] Also,
+ * I want to return three items."). The cost is added latency on a request
+ * that really did end at the first sentence; the failure it prevents costs
+ * the whole call.
  */
-export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 1500;
+export const DEFAULT_MIN_TURN_SILENCE_MS = 1500;
 
 /**
  * False-interruption recovery window (pipeline mode). A barge-in triggered by
  * an interim STT transcript aborts the agent's in-flight reply — but if no
- * final transcript ever commits (STT noise, a hallucinated partial, a
- * trailing fragment the settler dropped), the interruption was a false alarm
+ * final transcript ever commits (STT noise, a hallucinated partial), the
+ * interruption was a false alarm
  * and the agent would otherwise fall silent mid-thought. After this many ms
  * with no committed user turn, the transport injects
  * {@link DEFAULT_FALSE_INTERRUPTION_PROMPT} as a synthetic user turn so the
@@ -322,9 +304,10 @@ export const MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES = 3;
 /**
  * Watchdog for the pipeline speaking edge: how long after the last STT partial
  * to force `speech_stopped` when no non-empty final ever arrives. Genuine
- * utterances close the edge when the settler commits them, well inside this
- * window ({@link DEFAULT_ENDPOINT_SETTLE_MS} plus provider final latency);
- * this only bounds the leak for noise partials that never commit.
+ * utterances close the edge when their final commits, well inside this window
+ * (provider endpointing — e.g. {@link DEFAULT_MIN_TURN_SILENCE_MS} — plus
+ * final latency); this only bounds the leak for noise partials that never
+ * commit.
  */
 export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 5000;
 export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
