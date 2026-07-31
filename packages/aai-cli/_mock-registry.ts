@@ -11,6 +11,7 @@ import { createRequire } from "node:module";
 import os from "node:os";
 import path from "node:path";
 import { execaNode, execaSync, type ResultPromise } from "execa";
+import pTimeout from "p-timeout";
 
 // This file is ESM ("type": "module") — a bare `require.resolve` only worked
 // because vitest's runtime injects `require`; importing this from a plain
@@ -94,17 +95,14 @@ async function startServer(configPath: string): Promise<{ server: VerdaccioProce
   const started = subprocess.getOneMessage({
     filter: (msg) => typeof msg === "object" && msg !== null && "verdaccio_started" in msg,
   });
-  let timer: NodeJS.Timeout | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error("Verdaccio failed to start within 30s")), 30_000);
-  });
   try {
-    await Promise.race([started, deadline]);
+    await pTimeout(started, {
+      milliseconds: 30_000,
+      message: new Error("Verdaccio failed to start within 30s"),
+    });
   } catch (err) {
     subprocess.kill();
     throw err;
-  } finally {
-    clearTimeout(timer);
   }
   return { server: subprocess };
 }

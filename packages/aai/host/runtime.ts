@@ -11,6 +11,7 @@ import pTimeout, { TimeoutError } from "p-timeout";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
 import { assertProviderTriple, type SessionMode } from "../sdk/config-rules.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
+import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
@@ -177,8 +178,12 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
         }
       : { s2s: descriptorKind(agent.s2s) ?? "assemblyai" }),
   });
-  const sessions = new Map<string, SessionCore>();
-  const sinkMap = new Map<string, ClientSink>();
+  // Owned maps because teardown is async on both: a reconnect resuming the
+  // same session id re-claims the key while the old session's stop() drains,
+  // and release-by-claim is what keeps that drain from evicting the
+  // successor's entry (see sdk/owned-map.ts).
+  const sessions = createOwnedMap<string, SessionCore>();
+  const sinkMap = createOwnedMap<string, ClientSink>();
   const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
 
   // Per-session tool state (self-hosted mode only); cleaned up on session
@@ -248,7 +253,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // A resume under this id (same key, new socket) reclaims its tool state —
     // cancel the sweep the previous session's stop() scheduled.
     stateSweeps.cancel(sessionOpts.id);
-    sinkMap.set(sessionOpts.id, sessionOpts.client);
+    const releaseSink = sinkMap.claim(sessionOpts.id, sessionOpts.client);
 
     const isPipeline = Boolean(pipelineProviders);
     // Relay (host) mode: the relay `executeTool` emits the client-facing
@@ -329,19 +334,17 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // Tie map cleanup to the session's own stop() so it happens on every
     // teardown path — including a direct `runtime.createSession()` caller that
     // never goes through startSession's onSessionEnd hook (which would
-    // otherwise leak the sinkMap/stateMap entry). The sink identity check
+    // otherwise leak the sinkMap/stateMap entry). Releasing the sink claim
     // guards the reconnect-resume race: an old session's async stop() can
-    // settle after a resumed session re-registered the same id, and a bare
-    // key delete would then wipe the NEW session's sink (ctx.send no-ops)
-    // and tool state. The sink is the ownership token — it is set at
-    // createSession, so `get === ours` means no newer session took over.
+    // settle after a resumed session re-claimed the same id, and a bare key
+    // delete would then wipe the NEW session's sink (ctx.send no-ops) and
+    // tool state — releaseSink no-ops (returns false) once that happens.
     const stopCore = core.stop.bind(core);
     core.stop = async () => {
       try {
         await stopCore();
       } finally {
-        if (sinkMap.get(sessionOpts.id) === sessionOpts.client) {
-          sinkMap.delete(sessionOpts.id);
+        if (releaseSink()) {
           // Tool state outlives the socket: keep it for the resume grace
           // window so a `?sessionId=<id>` reconnect finds its ctx.state.
           stateSweeps.schedule(sessionOpts.id);

@@ -5,6 +5,7 @@
 // in ws-handler.test.ts.
 
 import { describe, expect, test, vi } from "vitest";
+import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
@@ -29,7 +30,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -47,7 +48,7 @@ describe("wireSessionSocket lifecycle", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       logger,
@@ -68,7 +69,7 @@ describe("wireSessionSocket lifecycle", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       logger,
@@ -87,7 +88,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       onOpen,
@@ -102,7 +103,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       onClose,
@@ -116,7 +117,7 @@ describe("wireSessionSocket lifecycle", () => {
   test("onSessionEnd is called with sessionId after session cleanup", async () => {
     const onSessionEnd = vi.fn();
     const ws = openSocket();
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
 
     wireSessionSocket(ws, {
       sessions,
@@ -143,7 +144,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       onSinkCreated,
@@ -159,7 +160,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: (_sid, client) => {
         capturedClient = client;
         return makeMockCore();
@@ -178,7 +179,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: (_sid, client) => {
         capturedClient = client;
         return makeMockCore();
@@ -200,7 +201,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: (_sid, client) => {
         capturedClient = client;
         return makeMockCore();
@@ -221,7 +222,7 @@ describe("wireSessionSocket lifecycle", () => {
     let capturedClient!: ClientSink;
     const ws = openSocket();
     const logger = makeLogger();
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
     const closeSpy = vi.spyOn(ws, "close");
 
     wireSessionSocket(ws, {
@@ -267,7 +268,7 @@ describe("wireSessionSocket lifecycle", () => {
     (ws as { bufferedAmount: number | undefined }).bufferedAmount = undefined;
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: (_sid, client) => {
         capturedClient = client;
         return makeMockCore();
@@ -285,7 +286,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: (_sid, client) => {
         capturedClient = client;
         return makeMockCore();
@@ -306,7 +307,7 @@ describe("wireSessionSocket lifecycle", () => {
     const startGate = Promise.withResolvers<void>();
     const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
     const ws = openSocket();
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
 
     wireSessionSocket(ws, {
       sessions,
@@ -326,7 +327,7 @@ describe("wireSessionSocket lifecycle", () => {
   test("start() failure removes session from map before close", async () => {
     const core = makeMockCore({ start: vi.fn(() => Promise.reject(new Error("boom"))) });
     const ws = openSocket();
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
 
     wireSessionSocket(ws, {
       sessions,
@@ -352,7 +353,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -368,7 +369,7 @@ describe("wireSessionSocket lifecycle", () => {
 
   test("createSession throwing sends an error frame and closes without crashing", () => {
     const ws = openSocket();
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
 
     // A synchronous throw from createSession (e.g. buildTransport rejecting an
     // unregistered transport kind) must not escape as an uncaughtException.
@@ -398,7 +399,7 @@ describe("wireSessionSocket lifecycle", () => {
       ),
     });
     const ws = openSocket();
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
 
     wireSessionSocket(ws, {
       sessions,
@@ -428,7 +429,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket(MockWebSocket.CONNECTING);
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -443,7 +444,7 @@ describe("wireSessionSocket lifecycle", () => {
   });
 
   test("resumeFrom reuses old session ID instead of generating new UUID", () => {
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
     const ws = openSocket();
     let capturedId: string | undefined;
 
@@ -466,7 +467,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -479,7 +480,7 @@ describe("wireSessionSocket lifecycle", () => {
   });
 
   test("old session's delayed stop does not evict a resumed session with the same id", async () => {
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
     const onSessionEnd = vi.fn();
     const stopGate = Promise.withResolvers<void>();
     const oldCore = makeMockCore({ stop: vi.fn(() => stopGate.promise) });
@@ -522,7 +523,7 @@ describe("wireSessionSocket lifecycle", () => {
   });
 
   test("start-timeout cleanup after close does not evict a resumed session", async () => {
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
     const stopGate = Promise.withResolvers<void>();
     const oldCore = makeMockCore({
       start: vi.fn(
@@ -571,7 +572,7 @@ describe("wireSessionSocket lifecycle", () => {
   });
 
   test("without resumeFrom, generates a new UUID session ID", () => {
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
     const ws = openSocket();
     let capturedId: string | undefined;
 
@@ -601,7 +602,7 @@ describe("wireSessionSocket lifecycle", () => {
       const ws = Object.assign(openSocket(), { ping });
 
       wireSessionSocket(ws, {
-        sessions: new Map(),
+        sessions: createOwnedMap(),
         createSession: () => makeMockCore(),
         readyConfig: defaultConfig,
         logger: silentLogger,
@@ -623,7 +624,7 @@ describe("wireSessionSocket lifecycle", () => {
       const ws = Object.assign(openSocket(), { ping });
 
       wireSessionSocket(ws, {
-        sessions: new Map(),
+        sessions: createOwnedMap(),
         createSession: () => makeMockCore(),
         readyConfig: defaultConfig,
         logger: silentLogger,
@@ -648,7 +649,7 @@ describe("wireSessionSocket lifecycle", () => {
       const ws = openSocket(); // MockWebSocket has no ping()
       expect(() =>
         wireSessionSocket(ws, {
-          sessions: new Map(),
+          sessions: createOwnedMap(),
           createSession: () => makeMockCore(),
           readyConfig: defaultConfig,
           logger: silentLogger,
@@ -666,7 +667,7 @@ describe("wireSessionSocket lifecycle", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       logger,

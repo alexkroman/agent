@@ -27,6 +27,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { ModalClient } from "modal";
+import pTimeout from "p-timeout";
 import {
   type StudioBuildRequest,
   StudioBuildResponseSchema,
@@ -136,21 +137,6 @@ const subprocessInvoke: InvokeBuildFunction = async (requestJson, signal) => {
 
 // ── Wire handling shared by both backends ────────────────────────────────────
 
-async function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
-  let timer: NodeJS.Timeout | undefined;
-  const deadline = new Promise<never>((_, reject) => {
-    timer = setTimeout(() => reject(new Error(`Studio build timed out after ${ms}ms`)), ms);
-  });
-  try {
-    return await Promise.race([promise, deadline]);
-  } finally {
-    clearTimeout(timer);
-    // On timeout the invocation keeps settling on its own; that must not
-    // surface as an unhandled rejection.
-    promise.catch(() => undefined);
-  }
-}
-
 function safeJsonParse(text: string): unknown {
   try {
     return JSON.parse(text);
@@ -166,10 +152,12 @@ function safeJsonParse(text: string): unknown {
  */
 function wireRunner(invoke: InvokeBuildFunction, timeoutMs: number): StudioBuildRunner {
   return async (req: StudioBuildRequest): Promise<StudioBuildResult> => {
-    const raw = await withTimeout(
-      invoke(JSON.stringify(req), AbortSignal.timeout(timeoutMs)),
-      timeoutMs,
-    );
+    // On timeout the invocation keeps settling on its own; pTimeout keeps
+    // observing it, so that can't surface as an unhandled rejection.
+    const raw = await pTimeout(invoke(JSON.stringify(req), AbortSignal.timeout(timeoutMs)), {
+      milliseconds: timeoutMs,
+      message: new Error(`Studio build timed out after ${timeoutMs}ms`),
+    });
     const parsed = StudioBuildResponseSchema.safeParse(
       typeof raw === "string" ? safeJsonParse(raw) : undefined,
     );

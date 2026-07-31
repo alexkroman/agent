@@ -6,6 +6,7 @@
  * Split out of `session-core.ts` to keep that module focused on behaviour.
  */
 
+import type { Epoch } from "@alexkroman1/aai";
 import type { VoiceIO } from "./audio.ts";
 import type {
   AgentState,
@@ -110,9 +111,10 @@ export type ConnState = {
   ws: InstanceType<WebSocketConstructor> | null;
   voiceIO: VoiceIO | null;
   audioSetupInFlight: boolean;
-  /** Monotonically increasing counter bumped on each connect(). Prevents a stale
-   *  initAudioCapture from assigning its voiceIO to a newer connection. */
-  generation: number;
+  /** Connection epoch, bumped on each connect()/retry (see `createEpoch`).
+   *  Prevents a stale initAudioCapture from assigning its voiceIO to a newer
+   *  connection. */
+  generation: Epoch;
   /** Audio chunks that arrived before `voiceIO` was initialized — drained into
    *  the playback worklet once init completes. Closes the race between the
    *  server starting greeting audio (immediately on S2S connect) and the

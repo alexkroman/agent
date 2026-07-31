@@ -13,7 +13,7 @@
  * No dependency on React, Preact, or any UI framework.
  */
 
-import { WS_OPEN } from "@alexkroman1/aai";
+import { createEpoch, WS_OPEN } from "@alexkroman1/aai";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
 import { initAudioCapture } from "./session-core-audio-setup.ts";
 import {
@@ -96,7 +96,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     ws: null,
     voiceIO: null,
     audioSetupInFlight: false,
-    generation: 0,
+    generation: createEpoch(),
     preInitAudio: [],
     preInitDone: false,
   };
@@ -218,7 +218,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     }
     updateState({ state: "connecting", error: null });
     teardownConnection();
-    conn.generation++;
+    conn.generation.bump();
     const controller = new AbortController();
     connectionController = controller;
     const { signal: sig } = controller;
@@ -278,7 +278,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           // will start its own, and cleanupAudio just cleared the in-flight
           // flag, so a survivor would otherwise pass the same-generation
           // guard and double-run (two live mics, duplicate `audio_ready`).
-          conn.generation++;
+          conn.generation.bump();
           // A socket error here is part of the retry cycle, not terminal —
           // clear it so a later clean disconnect isn't misreported.
           socketErrored = false;

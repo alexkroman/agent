@@ -220,8 +220,8 @@ export interface ConsumeLlmStreamParams {
   emitError: (code: SessionErrorCode, message: string) => void;
   log: Logger;
   sid: string;
-  /** Aborts the LLM stream (turn cancellation / barge-in). */
-  ctl: AbortController;
+  /** The turn's abort signal (turn cancellation / barge-in / session end). */
+  signal: AbortSignal;
   /** Receives each assistant text delta (accumulated into the transcript). */
   onDelta: (delta: string) => void;
   /**
@@ -279,7 +279,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
     emitError,
     log,
     sid,
-    ctl,
+    signal,
     onDelta,
     onStepPersisted,
   } = params;
@@ -303,7 +303,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       experimental_transform: smoothTextStream(),
       experimental_repairToolCall: repairToolCall,
       stopWhen: stepCountIs(maxSteps),
-      abortSignal: ctl.signal,
+      abortSignal: signal,
       onStepFinish: (step) => {
         collected.push(...step.response.messages);
         onStepPersisted?.();
@@ -333,7 +333,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       holdPhrase,
       // Lets the dead-air cover die with the turn: a barge-in during a tool
       // execution parks the fullStream read, deferring dispose() below.
-      signal: ctl.signal,
+      signal,
       callerSpeaking,
       onToolCall: callbacks.onToolCall,
       onToolCallDone: callbacks.onToolCallDone,
@@ -342,14 +342,14 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
       sid,
     });
     for await (const part of result.fullStream) {
-      if (ctl.signal.aborted) break;
+      if (signal.aborted) break;
       handler.handle(part);
     }
     // The model is done: no filler may fire during the flush or the wait for
     // `result.steps` below, both of which follow the last stream part.
     handler.dispose();
     // Aborted turns skip the flush — TTS is being cancelled anyway.
-    if (ctl.signal.aborted) return { messages: collected, failed: false };
+    if (signal.aborted) return { messages: collected, failed: false };
     ttsText.flush();
     // Gather every step's response messages (assistant tool-call + `tool`
     // result + text) so tool context carries into the next turn. Top-level
@@ -366,7 +366,7 @@ export async function consumeLlmStream(params: ConsumeLlmStreamParams): Promise<
   } catch (err: unknown) {
     // A barge-in is not a failure — it has its own recovery path, and an
     // apology on top of a deliberate interruption would be wrong.
-    if (ctl.signal.aborted) return { messages: collected, failed: false };
+    if (signal.aborted) return { messages: collected, failed: false };
     // Flush buffered TTS text so speech matches the transcript already
     // accumulated via onDelta for the pre-error portion of the turn.
     ttsText.flush();

@@ -17,6 +17,9 @@
  * still be recorded. A `reset()`/`stop()`/terminate discards or ends the
  * conversation itself, so pending persistence is stale too.
  */
+
+import { createEpoch } from "../../sdk/epoch.ts";
+
 export interface TurnGate {
   /** Epoch to capture when queueing a turn (chainTurn). */
   queueEpoch(): number;
@@ -34,34 +37,17 @@ export interface TurnGate {
 
 /** Create a {@link TurnGate}. */
 export function createTurnGate(): TurnGate {
-  let queue = 0;
-  let history = 0;
+  const queue = createEpoch();
+  const history = createEpoch();
   return {
-    queueEpoch: () => queue,
-    historyEpoch: () => history,
-    queueCurrent: (epoch) => epoch === queue,
-    historyCurrent: (epoch) => epoch === history,
-    invalidateQueued(): void {
-      queue += 1;
-    },
+    queueEpoch: queue.current,
+    historyEpoch: history.current,
+    queueCurrent: queue.isCurrent,
+    historyCurrent: history.isCurrent,
+    invalidateQueued: queue.bump,
     invalidateAll(): void {
-      queue += 1;
-      history += 1;
+      queue.bump();
+      history.bump();
     },
   };
-}
-
-/**
- * Abort `ctl` when `signal` aborts (immediately if it already has). Returns
- * an unlink to call when the dependent work settles — without it, every turn
- * would leave a listener on the session-lifetime signal.
- */
-export function linkAbort(signal: AbortSignal, ctl: AbortController): () => void {
-  if (signal.aborted) {
-    ctl.abort();
-    return () => undefined;
-  }
-  const onAbort = (): void => ctl.abort();
-  signal.addEventListener("abort", onAbort, { once: true });
-  return () => signal.removeEventListener("abort", onAbort);
 }

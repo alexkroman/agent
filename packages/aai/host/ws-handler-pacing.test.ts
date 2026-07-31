@@ -5,6 +5,7 @@
 // wireSessionSocket lifecycle specs live in ws-handler-lifecycle.test.ts.
 
 import { describe, expect, test, vi } from "vitest";
+import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger } from "./_test-utils.ts";
@@ -30,7 +31,7 @@ describe("wireSessionSocket audio pacing", () => {
     const ws = openSocket();
     let client!: ClientSink;
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: (_sid, sink) => {
         client = sink;
         return makeMockCore();

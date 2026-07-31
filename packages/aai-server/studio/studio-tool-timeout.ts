@@ -15,6 +15,7 @@
  */
 
 import type { Tool, ToolSet } from "ai";
+import pTimeout from "p-timeout";
 
 /**
  * Generous by design: `test_agent` runs a full Vite build plus a sandbox
@@ -54,17 +55,15 @@ export function withToolTimeouts<T extends ToolSet>(
       out[name] = t;
       continue;
     }
-    const wrapped: Tool["execute"] = (args, opts) => {
-      let timer: NodeJS.Timeout | undefined;
-      const deadline = new Promise<string>((resolve) => {
-        timer = setTimeout(() => resolve(timeoutMessage(name, timeoutMs)), timeoutMs);
+    const wrapped: Tool["execute"] = (args, opts) =>
+      // `fallback` resolves the deadline to an error string instead of
+      // rejecting — the model gets a tool result it can react to. pTimeout
+      // keeps observing the abandoned call, so its eventual rejection can't
+      // surface as an unhandled rejection.
+      pTimeout(Promise.resolve(execute(args, opts)), {
+        milliseconds: timeoutMs,
+        fallback: () => timeoutMessage(name, timeoutMs),
       });
-      const run = Promise.resolve(execute(args, opts));
-      // If the deadline wins, the eventual rejection of the abandoned call
-      // must not surface as an unhandled rejection.
-      run.catch(() => undefined);
-      return Promise.race([run, deadline]).finally(() => clearTimeout(timer));
-    };
     out[name] = { ...t, execute: wrapped } as Tool;
   }
   return out as T;

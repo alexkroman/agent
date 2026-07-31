@@ -13,6 +13,7 @@ import {
   MAX_WS_PAYLOAD_BYTES,
   SESSION_KEEPALIVE_INTERVAL_MS,
 } from "../sdk/constants.ts";
+import type { OwnedMap } from "../sdk/owned-map.ts";
 import {
   CLIENT_MESSAGE_TYPES,
   ClientMessageSchema,
@@ -32,8 +33,8 @@ export { type SessionWebSocket, safeSend } from "./ws-frames.ts";
 
 /** Options for wiring a WebSocket to a session. */
 type WsSessionOptions = {
-  /** Map of active sessions (session is added on open, removed on close). */
-  sessions: Map<string, SessionCore>;
+  /** Map of active sessions (claimed on open, released on close). */
+  sessions: OwnedMap<string, SessionCore>;
   /** Factory function to create a session for a given ID and client sink. */
   createSession: (sessionId: string, client: ClientSink) => SessionCore;
   /** Protocol config sent to the client immediately on connect. */
@@ -129,6 +130,10 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   const ctx = opts.logContext ?? {};
 
   let session: SessionCore | null = null;
+  /** Release for this socket's claim on `sessions[sessionId]` — a no-op once
+   *  a reconnect with ?sessionId=<same id> (resumeFrom) re-claims the key
+   *  while the old session's async stop() drains (see endSession). */
+  let releaseSessionEntry: (() => boolean) | null = null;
   /** Releases the audio pacer's pending timer; set when the sink is created.
    *  Without it a paced send could fire against a closed socket, and the timer
    *  would outlive the session. */
@@ -196,11 +201,11 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         log.error("Session stop failed", { ...ctx, sid, error: errorDetail(err) });
       })
       .finally(() => {
-        // Delete by identity, not key: stop() is async, and a reconnect with
-        // ?sessionId=<same id> (resumeFrom) can register a NEW session under
+        // Release by claim, not key: stop() is async, and a reconnect with
+        // ?sessionId=<same id> (resumeFrom) can claim a NEW session under
         // this key while the old one drains — a key delete here would evict
         // the resumed session's entry and leak it past runtime.shutdown().
-        if (sessions.get(sessionId) === s) sessions.delete(sessionId);
+        releaseSessionEntry?.();
         opts.onSessionEnd?.(sessionId);
       })
       .catch(() => {
@@ -270,7 +275,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       failClientAndClose(client, "Failed to start session");
       return;
     }
-    sessions.set(sessionId, session);
+    releaseSessionEntry = sessions.claim(sessionId, session);
     opts.onSinkCreated?.(sessionId, client);
 
     // Send config immediately — zero RTT. Include sessionId so the

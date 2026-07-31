@@ -90,6 +90,8 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "WS_OPEN",
   "agent",
   "capToolResult",
+  "createEpoch",
+  "createOwnedMap",
   "errorDetail",
   "errorMessage",
   "isTextAssetPath",

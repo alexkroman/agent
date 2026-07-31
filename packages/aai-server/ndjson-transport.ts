@@ -18,6 +18,7 @@ import {
   JSONRPCServer,
 } from "json-rpc-2.0";
 import { z } from "zod";
+import { createWriteChain } from "./guest/write-chain.ts";
 
 type JsonRpcRequest = {
   jsonrpc: "2.0";
@@ -162,10 +163,10 @@ export function createNdjsonConnection<S extends RpcSchema = RpcSchema>(
 
   // Write queue for backpressure: while a previous write is waiting for
   // 'drain', later sends chain behind it so ordering is preserved and the
-  // stream's internal buffer stops growing unboundedly. `null` when idle —
-  // the common no-backpressure case writes synchronously, exactly like the
-  // pre-queue behavior. Links never reject, so nothing can unhandled-reject.
-  let writeChain: Promise<void> | null = null;
+  // stream's internal buffer stops growing unboundedly. Idle, the common
+  // no-backpressure case writes synchronously, exactly like the pre-queue
+  // behavior (writeLine returns undefined when the write was accepted).
+  const writes = createWriteChain();
 
   function waitForDrain(): Promise<void> {
     return new Promise((resolve) => {
@@ -205,13 +206,7 @@ export function createNdjsonConnection<S extends RpcSchema = RpcSchema>(
   function send(msg: unknown): void {
     if (disposed || writable.destroyed || writable.writableEnded) return;
     const line = `${JSON.stringify(msg)}\n`;
-    const wait = writeChain === null ? writeLine(line) : writeChain.then(() => writeLine(line));
-    if (wait === undefined) return;
-    const chained: Promise<void> = wait.then(() => {
-      // Last link in the chain: return to the synchronous fast path.
-      if (writeChain === chained) writeChain = null;
-    });
-    writeChain = chained;
+    void writes.enqueue(() => writeLine(line));
   }
 
   // json-rpc-2.0 handles id allocation, response correlation, and pending

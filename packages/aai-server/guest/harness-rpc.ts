@@ -19,6 +19,7 @@ import type {
   VectorMatch,
 } from "./harness-types.ts";
 import { MAX_REQUEST_BODY_BYTES } from "./limits.ts";
+import { createWriteChain } from "./write-chain.ts";
 
 // ---- Shared helpers ----------------------------------------------------------
 
@@ -46,13 +47,6 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, label: str
 
 const encoder = new TextEncoder();
 
-// Writes are serialized through a promise chain so NDJSON framing and
-// ordering are preserved without blocking the event loop. The old
-// `Deno.stdout.writeSync` loop stalled the guest's ENTIRE event loop (every
-// concurrent tool in the sandbox) whenever a line outran the ~64 KB pipe
-// buffer while the host was busy.
-let writeQueue: Promise<void> = Promise.resolve();
-
 /**
  * Set once the host has closed our stdout pipe (BrokenPipe). Further writes
  * are dropped: retrying would throw again — including from error paths like
@@ -60,33 +54,38 @@ let writeQueue: Promise<void> = Promise.resolve();
  */
 let stdoutDead = false;
 
+// Writes are serialized through a promise chain (shared with the host's
+// NDJSON transport — see write-chain.ts) so NDJSON framing and ordering are
+// preserved without blocking the event loop. The old `Deno.stdout.writeSync`
+// loop stalled the guest's ENTIRE event loop (every concurrent tool in the
+// sandbox) whenever a line outran the ~64 KB pipe buffer while the host was
+// busy. A failed write marks the pipe dead (stdout is the harness's only
+// channel to the host, so a write error means the host is gone) and is
+// logged to stderr once.
+const writes = createWriteChain((err: unknown) => {
+  stdoutDead = true;
+  console.error(`harness stdout write failed: ${errMsg(err)}`);
+});
+
 /**
  * Queue one NDJSON line for stdout. Serialization happens synchronously at
  * call time, so later mutation of `msg` cannot affect what is written. The
  * returned promise settles when the line is fully flushed; it never
- * rejects — a failed write marks the pipe dead (stdout is the harness's
- * only channel to the host, so a write error means the host is gone), is
- * logged to stderr once, and all further writes are dropped so teardown
- * stays clean.
+ * rejects — a failed write feeds the dead-pipe latch above, and all further
+ * writes are dropped so teardown stays clean.
  */
 export function writeMessage(msg: JsonRpcMessage): Promise<void> {
   if (stdoutDead) return Promise.resolve();
   const bytes = encoder.encode(`${JSON.stringify(msg)}\n`);
-  writeQueue = writeQueue
-    .then(async () => {
-      if (stdoutDead) return;
-      // write may accept fewer bytes than requested (pipe buffer full) —
-      // loop until the whole line is flushed so framing never tears.
-      let written = 0;
-      while (written < bytes.byteLength) {
-        written += await Deno.stdout.write(bytes.subarray(written));
-      }
-    })
-    .catch((err: unknown) => {
-      stdoutDead = true;
-      console.error(`harness stdout write failed: ${errMsg(err)}`);
-    });
-  return writeQueue;
+  return writes.enqueue(async () => {
+    if (stdoutDead) return;
+    // write may accept fewer bytes than requested (pipe buffer full) —
+    // loop until the whole line is flushed so framing never tears.
+    let written = 0;
+    while (written < bytes.byteLength) {
+      written += await Deno.stdout.write(bytes.subarray(written));
+    }
+  });
 }
 
 export function sendResponse(id: number | string, result: unknown): Promise<void> {
