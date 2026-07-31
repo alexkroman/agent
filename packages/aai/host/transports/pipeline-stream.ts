@@ -45,6 +45,13 @@ export type PlaybackClock = {
   reset(): void;
   /** True while the client may still be playing already-forwarded audio. */
   pending(): boolean;
+  /**
+   * Estimated ms of forwarded audio the client has not played yet. Ungraced —
+   * unlike {@link pending} — because its consumer (the playback-tail resume
+   * prompt) wants "where did the voice stop", not "could anything still be
+   * audible".
+   */
+  remainingMs(): number;
 };
 
 /**
@@ -70,6 +77,9 @@ export function createPlaybackClock(sampleRateHz: number): PlaybackClock {
     },
     pending() {
       return Date.now() < endsAtMs + PIPELINE_PLAYBACK_GRACE_MS;
+    },
+    remainingMs() {
+      return Math.max(0, endsAtMs - Date.now());
     },
   };
 }

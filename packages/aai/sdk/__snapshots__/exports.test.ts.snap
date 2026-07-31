@@ -76,6 +76,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "STT_FRAME_FLOOR_MS",
   "STT_FRAME_MAX_MS",
   "STT_FRAME_TARGET_MS",
+  "TAIL_RESUME_MIN_UNHEARD_MS",
   "TOOL_EXECUTION_TIMEOUT_MS",
   "TOOL_FETCH_MAX_CONCURRENT",
   "TOOL_FETCH_MAX_REQUEST_BODY_BYTES",
