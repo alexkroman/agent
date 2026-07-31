@@ -10,21 +10,6 @@
  */
 export const STARTERS: { label: string; prompt: string }[] = [
   {
-    label: "Cascaded agent with Assembly STT, Assembly TTS, Gemini Flash Lite",
-    // "Cascaded" is the user-facing name for pipeline mode — the studio's
-    // default, spelled out here with an explicitly named gateway model. STT,
-    // LLM, and TTS all bill to ASSEMBLYAI_API_KEY, which publishing seeds —
-    // so this path needs no secrets from the user.
-    prompt:
-      "Build a cascaded (pipeline-mode) agent: " +
-      'stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt", ' +
-      'llm: the AssemblyAI LLM Gateway with model "gemini-2.5-flash-lite" ' +
-      'from "@alexkroman1/aai/llm", and tts: assemblyAI({ voice: "vera" }) from ' +
-      '"@alexkroman1/aai/tts". The factory is called assemblyAI in all three ' +
-      "subpaths, so alias two of them on import. Make it a friendly " +
-      "general-purpose voice assistant, then run test_agent.",
-  },
-  {
     label: "A pizza-ordering agent with a real cart",
     // Modeled on the pizza-ordering template: tools that mutate per-session
     // ctx.state, so concurrent callers don't share a cart.
