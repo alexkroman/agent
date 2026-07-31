@@ -92,19 +92,23 @@ export const DEFAULT_SILENCE_PROMPT =
 
 /**
  * Built-in tools enabled when an agent does not set `builtinTools` at all.
- * These are the "cognitive" builtins — a private reasoning scratchpad
- * (`think`), session notes (`remember`/`recall`), and a safe calculator —
- * which measurably improve policy adherence and argument fidelity in
- * tool-heavy conversations (cf. Anthropic's tau-bench "think" tool results).
- * They are side-effect-free outside the session, so they are safe defaults.
- * Setting `builtinTools` explicitly (including `[]`) overrides this list.
+ *
+ * Just the calculator: side-effect-free, and the default system prompt tells
+ * the model to use one for every total, difference, and refund amount rather
+ * than doing arithmetic in its head.
+ *
+ * `think`, `remember`, and `recall` used to be here too — the "cognitive"
+ * builtins, on the strength of Anthropic's tau-bench results for a `think`
+ * tool. That evidence is from a *text* agent. On a call, every one of them is
+ * an extra LLM round trip before the agent says anything, announced to the
+ * caller as a hold phrase; a reasoning model already thinks before it answers,
+ * so `think` buys a pause and nothing else. Voice work is latency-bound in a
+ * way text work is not, and a caller who hangs up takes the whole task with
+ * them. All three remain available — name them in `builtinTools` for an agent
+ * that wants them. Setting `builtinTools` explicitly (including `[]`)
+ * overrides this list.
  */
-export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [
-  "think",
-  "remember",
-  "recall",
-  "calculate",
-];
+export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = ["calculate"];
 
 export const MAX_TOOL_RESULT_CHARS = 4000;
 /**
@@ -156,6 +160,22 @@ export const DEFAULT_MAX_STEPS = 10;
  */
 export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
 /**
+ * Minimum sustained speech before an interim-triggered barge-in aborts the
+ * agent's reply (pipeline mode) — measured from the utterance's first partial,
+ * LiveKit's `min_interruption_duration` analog. A companion to
+ * {@link DEFAULT_MIN_BARGE_IN_WORDS}: that one asks "is this enough words to be
+ * an interruption", this one asks "has it lasted long enough to be speech at
+ * all". Committed turns (STT finals) are never gated, so nothing the caller
+ * actually said is lost — a gated barge-in only means the agent finishes its
+ * sentence first.
+ *
+ * Non-zero by default because the alternative is worse than the latency: room
+ * noise and the tail of the agent's own audio both produce short interim
+ * transcripts, and every one of them used to abandon a reply mid-word. Callers
+ * heard the agent give up on its own sentences.
+ */
+export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
+/**
  * Endpoint settle window (pipeline mode): after an STT `final`, how long to
  * wait for the speaker to continue before committing the turn. Disfluent,
  * in-the-wild speech (mid-utterance pauses, self-corrections, false starts)
@@ -167,7 +187,7 @@ export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
  * {@link DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS} window instead. Set to 0 to
  * disable settling entirely (commit every final at once).
  */
-export const DEFAULT_ENDPOINT_SETTLE_MS = 1500;
+export const DEFAULT_ENDPOINT_SETTLE_MS = 2500;
 
 /**
  * Settle window for a clearly-complete final (pipeline mode). Hesitant
@@ -176,10 +196,19 @@ export const DEFAULT_ENDPOINT_SETTLE_MS = 1500;
  * makes the agent talk over the continuation and act on half the request.
  * A short window lets an immediate continuation (an STT partial extends it)
  * aggregate into the same turn while keeping added latency small on genuinely
- * finished requests. 500 matches LiveKit's `min_endpointing_delay` default.
- * Set to 0 to commit complete finals immediately.
+ * finished requests. Set to 0 to commit complete finals immediately.
+ *
+ * 1500 rather than the 500 this used to be (LiveKit's `min_endpointing_delay`
+ * default), because one sentence is very often not the whole request. A caller
+ * saying "How many t-shirt options do you have? Also, I want to return three
+ * items." produces a complete-looking final at the question mark; committing
+ * there had the agent answer half the request while the other half was still
+ * being spoken — and the rest of that same breath then barged in and cancelled
+ * the reply. Measured on tau2's retail voice tasks, every turn of every call
+ * died that way. The cost is added latency on a request that really did end at
+ * the first sentence; the failure it prevents costs the whole call.
  */
-export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 500;
+export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 1500;
 
 /**
  * False-interruption recovery window (pipeline mode). A barge-in triggered by

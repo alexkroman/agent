@@ -13,6 +13,7 @@ import {
   DEFAULT_ERROR_PHRASE,
   DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
   DEFAULT_HOLD_PHRASE,
+  DEFAULT_INTERRUPTION_MIN_DURATION_MS,
   DEFAULT_MAX_STEPS,
   DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_STT_SAMPLE_RATE,
@@ -64,7 +65,8 @@ export interface PipelineTransportOptions {
    * Minimum sustained speech (ms since the utterance's first interim
    * transcript) before an interim-triggered barge-in aborts the reply — a
    * duration gate alongside `minBargeInWords`. Committed turns (STT finals)
-   * are never gated. 0 (default) disables the gate.
+   * are never gated. Defaults to DEFAULT_INTERRUPTION_MIN_DURATION_MS; 0
+   * disables the gate.
    */
   interruptionMinDurationMs?: number | undefined;
   /**
@@ -147,7 +149,8 @@ export function resolvePipelineOptions(opts: PipelineTransportOptions): Resolved
     ttsSampleRate: opts.ttsSampleRate ?? DEFAULT_TTS_SAMPLE_RATE,
     maxSteps: opts.maxSteps ?? DEFAULT_MAX_STEPS,
     minBargeInWords: opts.minBargeInWords ?? DEFAULT_MIN_BARGE_IN_WORDS,
-    interruptionMinDurationMs: opts.interruptionMinDurationMs ?? 0,
+    interruptionMinDurationMs:
+      opts.interruptionMinDurationMs ?? DEFAULT_INTERRUPTION_MIN_DURATION_MS,
     endpointSettleMs: opts.endpointSettleMs ?? DEFAULT_ENDPOINT_SETTLE_MS,
     completeSettleMs: opts.completeSettleMs ?? DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
     holdPhrase: opts.holdPhrase ?? DEFAULT_HOLD_PHRASE,

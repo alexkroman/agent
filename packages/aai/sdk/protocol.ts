@@ -163,6 +163,14 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
     type: z.literal("user_transcript_partial"),
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
   }),
+  /**
+   * The current reply's transcript **so far** — cumulative, and the last one
+   * before `reply_done` is the whole reply. Pipeline mode sends one as each
+   * piece of text reaches TTS, so captions track the speech; S2S sends a single
+   * one per reply, when its provider reports the finished transcript. Either
+   * way a client renders the latest text for the reply in progress and commits
+   * it on `reply_done`/`cancelled` — never appending them as separate turns.
+   */
   z.object({
     type: z.literal("agent_transcript"),
     text: z.string().max(MAX_TRANSCRIPT_CHARS),

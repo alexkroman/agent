@@ -402,14 +402,8 @@ describe("createRuntime sandbox mode", () => {
     });
 
     // Relay/host-mode path: the agent has no explicit builtinTools, so the
-    // cognitive defaults are resolved here and appended to the relayed schemas.
-    expect(runtime.toolSchemas.map((s) => s.name)).toEqual([
-      "mock_tool",
-      "think",
-      "remember",
-      "recall",
-      "calculate",
-    ]);
+    // defaults are resolved here and appended to the relayed schemas.
+    expect(runtime.toolSchemas.map((s) => s.name)).toEqual(["mock_tool", "calculate"]);
     const result = await runtime.executeTool("any_tool", {}, "s1", []);
     expect(result).toBe("mocked-result");
     // The wrapper forwards a 5th `callOpts` arg (undefined when omitted).
@@ -425,8 +419,8 @@ describe("createRuntime sandbox mode", () => {
       toolSchemas: [],
     });
 
-    const result = await runtime.executeTool("think", { thought: "check the policy" }, "s1", []);
-    expect(result).toBe("ok");
+    const result = await runtime.executeTool("calculate", { expression: "2 + 2" }, "s1", []);
+    expect(result).toContain("4");
     expect(mockExecuteTool).not.toHaveBeenCalled();
   });
 
@@ -437,13 +431,18 @@ describe("createRuntime sandbox mode", () => {
       env: {},
       executeTool: mockExecuteTool,
       toolSchemas: [
-        { type: "function" as const, name: "think", description: "Client think", parameters: {} },
+        {
+          type: "function" as const,
+          name: "calculate",
+          description: "Client calculate",
+          parameters: {},
+        },
       ],
     });
 
-    expect(runtime.toolSchemas.filter((s) => s.name === "think")).toHaveLength(1);
-    expect(runtime.toolSchemas[0]?.description).toBe("Client think");
-    const result = await runtime.executeTool("think", { thought: "x" }, "s1", []);
+    expect(runtime.toolSchemas.filter((s) => s.name === "calculate")).toHaveLength(1);
+    expect(runtime.toolSchemas[0]?.description).toBe("Client calculate");
+    const result = await runtime.executeTool("calculate", { expression: "1 + 1" }, "s1", []);
     expect(result).toBe("relayed");
     expect(mockExecuteTool).toHaveBeenCalledOnce();
   });

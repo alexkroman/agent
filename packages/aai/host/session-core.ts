@@ -72,6 +72,12 @@ export type SessionCore = {
   /** Interim user transcript — forwarded to the client, never added to history. */
   onUserTranscriptPartial(text: string): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
+  /**
+   * The in-progress reply transcript — forwarded to the client so its captions
+   * track the audio, never added to history (the final
+   * {@link SessionCore.onAgentTranscript} owns that).
+   */
+  onAgentTranscriptPartial(text: string): void;
   onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
   onError(code: SessionErrorCode, message: string, opts?: { fatal?: boolean }): void;
   onSpeechStarted(): void;
@@ -292,6 +298,14 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       reply.flushedAwaitingContinuation = false;
       emit({ type: "agent_transcript", text });
       if (!interrupted) pushMessages({ role: "assistant", content: text });
+    },
+    onAgentTranscriptPartial(text) {
+      // Same event type as the final transcript: `agent_transcript` carries the
+      // reply's text so far and the last one within a reply wins, so a client
+      // needs no new case to render it. History is untouched — the final call
+      // above pushes the assistant turn exactly once.
+      reply.flushedAwaitingContinuation = false;
+      emit({ type: "agent_transcript", text });
     },
 
     onToolCall(callId, name, args) {

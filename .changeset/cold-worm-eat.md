@@ -1,0 +1,5 @@
+---
+"@alexkroman1/aai": minor
+---
+
+Retune the pipeline turn-taking defaults and the default voice prompt against tau2's retail voice tasks. A clearly-complete STT final now settles for 1500ms rather than 500ms (one sentence is often not the whole request — committing at the question mark had the agent answer half of it while the rest of the same breath barged in and cancelled the reply), the general settle window moves 1500ms to 2500ms, and the barge-in duration gate is on by default (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`, 500ms) so room noise and the tail of the agent's own audio stop abandoning replies mid-word. `DEFAULT_BUILTIN_TOOLS` is now just `calculate`: `think`/`remember`/`recall` each cost an LLM round trip before the agent says anything, which a call cannot afford, and they remain available explicitly. The default prompt gets voice-specific rules — one sentence per turn, don't restate what the caller already heard, offer alternative identifiers in one question, never re-ask for a value a third time without attempting the call, keep internal ids out of speech, and answer public questions while identity verification is still outstanding.

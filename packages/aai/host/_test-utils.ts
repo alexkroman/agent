@@ -77,6 +77,7 @@ export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
     onUserTranscript: vi.fn(),
     onUserTranscriptPartial: vi.fn(),
     onAgentTranscript: vi.fn(),
+    onAgentTranscriptPartial: vi.fn(),
     onToolCall: vi.fn(),
     onError: vi.fn(),
     onSpeechStarted: vi.fn(),

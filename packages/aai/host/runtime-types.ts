@@ -31,6 +31,12 @@ export type SessionStartOptions = {
   onSessionEnd?: (sessionId: string) => void;
   /** Called with session ID and client sink after session setup. Used by sandbox to route custom events. */
   onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
+  /**
+   * Audio pacing lead for this session, in ms. The default suits a client that
+   * plays audio in real time (a browser); pass `UNPACED_AUDIO_LEAD_MS` for a
+   * programmatic client that buffers and meters playback itself.
+   */
+  audioLeadMs?: number;
 };
 
 /**

@@ -86,6 +86,13 @@ type WsSessionOptions = {
   onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
   /** Logger instance. Defaults to console. */
   logger?: Logger;
+  /**
+   * Audio pacing lead for this connection. Defaults to
+   * {@link CLIENT_AUDIO_LEAD_MS}, which suits a client that plays the reply in
+   * real time; pass {@link UNPACED_AUDIO_LEAD_MS} for a programmatic client
+   * that meters playback itself.
+   */
+  audioLeadMs?: number;
   /** Timeout in ms for session.start(). Defaults to 10 000 (10s). */
   sessionStartTimeoutMs?: number;
   /**
@@ -128,10 +135,11 @@ const WS_CLOSE_INTERNAL = 1011;
  * through an {@link createAudioPacer} at a bounded lead rather than the instant
  * a provider frame arrives — otherwise a whole reply lands in the socket buffer
  * at once and a slow link turns that into seconds of invisible queue. The pacer
- * owns two ordering rules that follow from holding audio back: `audio_done` is
- * queued behind it (an early turn boundary truncates the reply client-side),
- * and a `cancelled`/`reset` event discards it (the client flushes its own
- * buffer on those, so held audio would arrive as an orphan fragment).
+ * owns two ordering rules that follow from holding audio back: end-of-reply
+ * frames are queued behind it (`audio_done` and `reply_done` — an early turn
+ * boundary truncates the reply client-side, or hands its remaining audio to the
+ * next turn), and a `cancelled`/`reset` event discards it (the client flushes
+ * its own buffer on those, so held audio would arrive as an orphan fragment).
  *
  * Audio backpressure: the pacer keeps the socket buffer small in the ordinary
  * case, so `bufferedAmount` past {@link MAX_CLIENT_WS_BUFFERED_BYTES} (~87 s of
@@ -144,12 +152,14 @@ function createClientSink(
   ws: SessionWebSocket,
   log: Logger,
   ttsSampleRate: number,
+  audioLeadMs?: number,
 ): { client: ClientSink; stopPacing: () => void } {
   let closedForBackpressure = false;
   const pacer = createAudioPacer({
     sendAudio: (chunk) => safeSend(ws, chunk, log),
     sendDone: () => safeSend(ws, AUDIO_DONE_FRAME, log),
     sampleRate: ttsSampleRate,
+    ...(audioLeadMs !== undefined ? { leadMs: audioLeadMs } : {}),
   });
   const client: ClientSink = {
     get open() {
@@ -159,7 +169,12 @@ function createClientSink(
       // Both events tell the client to drop its playback buffer, so whatever
       // this turn still has queued here is dead audio.
       if (e.type === "cancelled" || e.type === "reset") pacer.clear();
-      safeSend(ws, JSON.stringify(e), log);
+      const send = (): void => safeSend(ws, JSON.stringify(e), log);
+      // `reply_done` closes the turn the held audio belongs to, so it may not
+      // overtake it — see the pacer's ordering rules. Every other event is
+      // conversation-critical and goes out now.
+      if (e.type === "reply_done") pacer.pushAfterAudio(send);
+      else send();
     },
     playAudioChunk(chunk) {
       const buffered = ws.bufferedAmount;
@@ -367,7 +382,12 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     log.info("Session connected", { ...ctx, sid });
     startKeepalive();
 
-    const { client, stopPacing } = createClientSink(ws, log, opts.readyConfig.ttsSampleRate);
+    const { client, stopPacing } = createClientSink(
+      ws,
+      log,
+      opts.readyConfig.ttsSampleRate,
+      opts.audioLeadMs,
+    );
     stopPacingCurrent = stopPacing;
     // createSession runs synchronously from the 'open'/handleUpgrade callback;
     // a throw here (e.g. buildTransport rejecting an unregistered transport
