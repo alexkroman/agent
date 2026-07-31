@@ -273,8 +273,6 @@ restrictions apply there.
   `deprovisionAppDatabase`, `openAppDb`)
 - `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
   toggling the app's database
-- `metrics.ts` — Prometheus metrics registry and definitions; mounted at
-  `/metrics` (internal-only).
 - `studio/` — the browser studio server side (see "Browser studio"):
   `studio-routes.ts` (HTTP surface), `studio-agent.ts` (coding-agent LLM
   loop + tools), `studio-llm.ts` (provider/model selection + the picker's

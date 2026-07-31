@@ -12,12 +12,6 @@ import type { Db } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
 import type { HostGenerateFn, Vector } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
-import {
-  hrtimeSeconds,
-  metrics,
-  type SandboxInitFailReason,
-  type SandboxInitPath,
-} from "./metrics.ts";
 import { spawnModalWarm } from "./modal-sandbox.ts";
 import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
 import { registerGuestRpcHandlers } from "./sandbox-guest-rpc.ts";
@@ -215,38 +209,12 @@ export async function createSandboxVm(
   pool?: WarmHarnessSource,
   spawn: typeof spawnWarmHarness = spawnWarmHarness,
 ): Promise<SandboxHandle> {
-  const t0 = process.hrtime.bigint();
-  try {
-    const { handle, path } = await createSandboxVmInner(opts, pool, spawn);
-    metrics.sandboxInit.observe({ path }, hrtimeSeconds(t0));
-    return handle;
-  } catch (err) {
-    // A throw means the warm path was never taken, so the label is "cold".
-    metrics.sandboxInit.observe({ path: "cold" }, hrtimeSeconds(t0));
-    metrics.sandboxInitFailed.inc({ reason: classifyInitFailure(err) });
-    throw err;
-  }
-}
-
-/** Classify a sandbox-init error into one of three coarse buckets. */
-function classifyInitFailure(err: unknown): SandboxInitFailReason {
-  const msg = errorMessage(err);
-  if (msg.includes("bundle") || msg.includes("Worker code not found")) return "bundle_missing";
-  if (msg.includes("spawn") || msg.includes("ENOENT")) return "worker_spawn";
-  return "host_init";
-}
-
-async function createSandboxVmInner(
-  opts: SandboxVmOptions,
-  pool: WarmHarnessSource | undefined,
-  spawn: typeof spawnWarmHarness,
-): Promise<{ handle: SandboxHandle; path: SandboxInitPath }> {
   if (pool) {
     const warm = await pool.acquire();
     // A ready pooled harness is the only fast path.
     if (warm) {
       try {
-        return { handle: await configureSandbox(warm, opts), path: "warm" };
+        return await configureSandbox(warm, opts);
       } catch (err: unknown) {
         // The warm harness can die between acquire()'s alive() check and
         // bundle/load. Don't fail the session for it — clean up (idempotent;
@@ -266,5 +234,5 @@ async function createSandboxVmInner(
     harnessPath: opts.harnessPath,
     slug: opts.slug,
   });
-  return { handle: await configureSandbox(warm, opts), path: "cold" };
+  return configureSandbox(warm, opts);
 }

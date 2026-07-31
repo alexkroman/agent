@@ -2,9 +2,8 @@
 import http from "node:http";
 import net, { type AddressInfo } from "node:net";
 import { createMemoryVector, type SessionWebSocket } from "@alexkroman1/aai/runtime";
-import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { beforeEach, describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
-import { registry } from "./metrics.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -12,13 +11,9 @@ import { hashApiKey } from "./secrets.ts";
 import { createMemoryChatStore } from "./studio/chat-store.ts";
 import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
 import {
-  counterTotal,
-  counterValue,
   createTestOrchestrator,
   createTestStore,
   deployAgent,
-  gaugeValue,
-  histogramCount,
   TEST_AGENT_CONFIG,
 } from "./test-utils.ts";
 
@@ -150,9 +145,10 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
   slots: ReturnType<typeof createSlotCache>;
   store: ReturnType<typeof createTestStore>;
   sandbox: ReturnType<typeof makeFakeSandbox>;
+  activeSessionCount: () => number;
   close: () => Promise<void>;
 }> {
-  const slug = "metric-agent";
+  const slug = "ws-agent";
   const slots = createSlotCache();
   const sandbox = makeFakeSandbox();
   // Pre-populate the slot with a fake sandbox so resolveSandbox returns
@@ -165,7 +161,7 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
     });
   }
   const store = createTestStore();
-  // Seed an agent config so resolveUpgrade can read the mode label.
+  // Seed an agent config so the host-mode path can load it.
   await store.putAgent({
     slug,
     env: {},
@@ -175,7 +171,7 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
     agentConfig: TEST_AGENT_CONFIG,
   });
 
-  const { injectWebSocket } = createOrchestrator({
+  const { injectWebSocket, activeSessionCount } = createOrchestrator({
     slots,
     store,
     workspaces: createMemoryWorkspaceStore(),
@@ -199,23 +195,19 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
         slots,
         store,
         sandbox,
+        activeSessionCount,
         // Teardown must not return while a session is still unwinding. The
-        // decrement of `aai_sessions_active` lives on the *server-side*
-        // WebSocket's `close` event, which fires independently of both the
-        // client socket (`wsClosed(ws)` resolves before it) and
+        // *server-side* WebSocket's `close` event fires independently of both
+        // the client socket (`wsClosed(ws)` resolves before it) and
         // `server.close()` — an upgraded socket is no longer a tracked HTTP
-        // connection. Left pending, that decrement lands after the next
-        // test's `registry.resetMetrics()` and drives the gauge to -1,
-        // failing whichever test happens to run next. Waiting for every
-        // started session to be accounted as ended is the observable form of
-        // "no decrement is in flight".
+        // connection. Waiting for the live-session count to hit zero is the
+        // observable form of "no teardown is in flight".
         close: async () => {
           await vi.waitFor(() => {
-            const started = counterTotal("aai_sessions_started_total", { slug });
-            const ended = counterTotal("aai_sessions_ended_total", { slug });
+            const active = activeSessionCount();
             // A throw, not expect(): this runs outside a test body.
-            if (ended !== started) {
-              throw new Error(`session teardown pending: started=${started} ended=${ended}`);
+            if (active !== 0) {
+              throw new Error(`session teardown pending: active=${active}`);
             }
           });
           await new Promise<void>((r) => {
@@ -283,16 +275,8 @@ function wsError(ws: WsClient): Promise<Error> {
   });
 }
 
-describe("WS lifecycle metrics", () => {
-  beforeEach(() => {
-    registry.resetMetrics();
-  });
-
-  afterEach(() => {
-    registry.resetMetrics();
-  });
-
-  test("increments sessions_started and sessions_active on upgrade", async () => {
+describe("WS session lifecycle", () => {
+  test("tracks the live-session count across open and close", async () => {
     const ctx = await startServerWithOrchestrator();
     try {
       const ws = new WebSocket(`ws://127.0.0.1:${ctx.port}/${ctx.slug}/websocket`);
@@ -302,50 +286,16 @@ describe("WS lifecycle metrics", () => {
       });
 
       await vi.waitFor(() => {
-        expect(
-          counterValue("aai_sessions_started_total", { mode: "s2s", slug: "metric-agent" }),
-        ).toBe(1);
-        expect(gaugeValue("aai_sessions_active", { slug: "metric-agent" })).toBe(1);
+        expect(ctx.activeSessionCount()).toBe(1);
       });
+      expect(ctx.sandbox.startSession).toHaveBeenCalledTimes(1);
 
       ws.close(1000);
       await new Promise<void>((r) => ws.addEventListener("close", () => r()));
-      // Wait for server-side close handler to fire before next test resets
-      // metrics — otherwise a stale dec() can race with the next test's inc().
+      // Wait for the server-side close handler to fire — it lags the client's
+      // close event.
       await vi.waitFor(() => {
-        expect(gaugeValue("aai_sessions_active", { slug: "metric-agent" })).toBe(0);
-      });
-    } finally {
-      await ctx.close();
-    }
-  });
-
-  test("on clean close: increments sessions_ended{client_close}, decrements active, observes duration", async () => {
-    const ctx = await startServerWithOrchestrator();
-    try {
-      const ws = new WebSocket(`ws://127.0.0.1:${ctx.port}/${ctx.slug}/websocket`);
-      await new Promise<void>((resolve, reject) => {
-        ws.addEventListener("open", () => resolve());
-        ws.addEventListener("error", () => reject(new Error("ws error")));
-      });
-      // Wait for upgrade-side metrics to land so sessions_active is at 1.
-      await vi.waitFor(() => {
-        expect(gaugeValue("aai_sessions_active", { slug: "metric-agent" })).toBe(1);
-      });
-
-      ws.close(1000);
-      await new Promise<void>((r) => ws.addEventListener("close", () => r()));
-
-      await vi.waitFor(() => {
-        // Client-initiated close with code 1000 → reason="client_close".
-        expect(
-          counterValue("aai_sessions_ended_total", {
-            reason: "client_close",
-            slug: "metric-agent",
-          }),
-        ).toBe(1);
-        expect(gaugeValue("aai_sessions_active", { slug: "metric-agent" })).toBe(0);
-        expect(histogramCount("aai_session_duration_seconds")).toBeGreaterThanOrEqual(1);
+        expect(ctx.activeSessionCount()).toBe(0);
       });
     } finally {
       await ctx.close();
@@ -357,7 +307,6 @@ describe("WS lifecycle metrics", () => {
 
 describe("host-mode upgrade wiring", () => {
   beforeEach(() => {
-    registry.resetMetrics();
     hostSessionSpy.mockClear();
   });
 
@@ -461,22 +410,24 @@ describe("host-mode upgrade wiring", () => {
 
 describe("upgrade/teardown races", () => {
   beforeEach(() => {
-    registry.resetMetrics();
     hostSessionSpy.mockClear();
   });
 
-  test("sandbox torn down between upgrade and open → close 1011, active gauge back to 0", async () => {
+  test("sandbox torn down between upgrade and open → close 1011, session count back to 0", async () => {
     const ctx = await startServerWithOrchestrator();
-    // Deterministic race: resolveUpgrade reads the resident sandbox first,
-    // then awaits getAgentConfig — tearing the slot down inside that await
-    // lands exactly between upgrade-time resolve and session start. The
-    // re-resolve then finds no worker code and fails the session cleanly.
-    const origGetAgentConfig = ctx.store.getAgentConfig.bind(ctx.store);
-    ctx.store.getAgentConfig = async (slug) => {
-      const config = await origGetAgentConfig(slug);
-      const slot = ctx.slots.get(ctx.slug);
-      if (slot) delete slot.sandbox;
-      return config;
+    // Deterministic race: the upgrade-time resolve reads the resident
+    // sandbox off the slot (first `slots.get`); the next read is
+    // onSessionSocket's staleness check. Detaching the sandbox on that
+    // second read lands the teardown exactly between upgrade-time resolve
+    // and session start. The re-resolve then finds no worker code and fails
+    // the session cleanly.
+    const origGet = ctx.slots.get.bind(ctx.slots);
+    let reads = 0;
+    ctx.slots.get = (key: string) => {
+      const slot = origGet(key);
+      reads++;
+      if (reads === 2 && slot) delete slot.sandbox;
+      return slot;
     };
     ctx.store.getWorkerCode = () => Promise.resolve(null);
     try {
@@ -486,7 +437,7 @@ describe("upgrade/teardown races", () => {
       expect(closed.reason).toBe("agent unavailable");
       expect(ctx.sandbox.startSession).not.toHaveBeenCalled();
       await vi.waitFor(() => {
-        expect(gaugeValue("aai_sessions_active", { slug: ctx.slug })).toBe(0);
+        expect(ctx.activeSessionCount()).toBe(0);
       });
     } finally {
       await ctx.close();
@@ -530,7 +481,7 @@ describe("upgrade/teardown races", () => {
       const first = new WsClient(`ws://127.0.0.1:${ctx.port}/${ctx.slug}/websocket`);
       await wsOpen(first);
       await vi.waitFor(() => {
-        expect(gaugeValue("aai_sessions_active", { slug: ctx.slug })).toBe(1);
+        expect(ctx.activeSessionCount()).toBe(1);
       });
 
       // At capacity: the next upgrade's socket is destroyed pre-handshake.
@@ -541,7 +492,7 @@ describe("upgrade/teardown races", () => {
       first.close(1000);
       await wsClosed(first);
       await vi.waitFor(() => {
-        expect(gaugeValue("aai_sessions_active", { slug: ctx.slug })).toBe(0);
+        expect(ctx.activeSessionCount()).toBe(0);
       });
 
       // Closing the first connection released its slot: a new one succeeds.
@@ -550,7 +501,7 @@ describe("upgrade/teardown races", () => {
       third.close(1000);
       await wsClosed(third);
       await vi.waitFor(() => {
-        expect(gaugeValue("aai_sessions_active", { slug: ctx.slug })).toBe(0);
+        expect(ctx.activeSessionCount()).toBe(0);
       });
     } finally {
       await ctx.close();

@@ -40,7 +40,6 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { metrics, type WarmPoolAcquireResult } from "./metrics.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────
@@ -94,14 +93,6 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   let consecutiveSpawnFailures = 0;
   let cooldownUntil = 0;
 
-  // prom-client invokes `collect` whenever the metric is serialized.
-  // Each new pool overwrites these — fine, since there's only ever one
-  // pool per process in production.
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client typing limitation
-  (metrics.warmPoolReady as any).collect = () => metrics.warmPoolReady.set(ready.length);
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client typing limitation
-  (metrics.warmPoolPending as any).collect = () => metrics.warmPoolPending.set(pending.size);
-
   function recordSpawnFailure(err: unknown): void {
     consecutiveSpawnFailures++;
     const backoffMs = Math.min(
@@ -109,7 +100,6 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
       SPAWN_FAILURE_COOLDOWN_MS * 2 ** (consecutiveSpawnFailures - 1),
     );
     cooldownUntil = Date.now() + backoffMs;
-    metrics.warmPoolSpawnFailed.inc();
     console.warn("Sandbox pool: warm spawn failed", {
       error: errorMessage(err),
       cooldownMs: backoffMs,
@@ -186,8 +176,6 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
         }
         replenish();
       }
-      const result: WarmPoolAcquireResult = warm ? "hit" : "miss";
-      metrics.warmPoolAcquire.inc({ result });
       return warm ?? null;
     },
 

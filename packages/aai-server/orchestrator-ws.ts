@@ -5,20 +5,13 @@
  * Split from orchestrator.ts (which owns the HTTP routes): upgrades bypass
  * Hono routing entirely, so everything here hangs off the Node server's
  * `upgrade` event — slug matching, the connection cap, the host-mode
- * ownership gate, sandbox resolution, and session lifecycle metrics.
+ * ownership gate, sandbox resolution, and session lifecycle.
  */
 
 import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai";
 import type { SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { WebSocketServer } from "ws";
 import { MAX_CONNECTIONS } from "./constants.ts";
-import {
-  hrtimeSeconds,
-  metrics,
-  type SessionEndReason,
-  type SessionErrorKind,
-  type SessionMode,
-} from "./metrics.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveSandbox } from "./sandbox.ts";
 import { acquireSlotSession, releaseSlotSession, type SlotCache } from "./sandbox-slots.ts";
@@ -65,15 +58,6 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
   // Hono routing. Derived from VALID_SLUG_RE (anchors stripped) so the slug
   // pattern has a single source of truth.
   const SLUG_WS_RE = new RegExp(`^\\/(${VALID_SLUG_RE.source.slice(1, -1)})\\/websocket$`);
-
-  async function resolveUpgrade(slug: string) {
-    const [sandbox, agentConfig] = await Promise.all([
-      resolveSandbox(slug, opts.sandboxOpts),
-      opts.store.getAgentConfig(slug),
-    ]);
-    if (!sandbox) return null;
-    return { sandbox, agentConfig };
-  }
 
   /**
    * Take a connection slot for this upgrade and wire its single release point.
@@ -125,15 +109,12 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
         // exist: config + env are all a host session needs.
         agentConfig = await opts.store.getAgentConfig(slug);
       } else {
-        const result = await resolveUpgrade(slug);
-        if (!result) {
+        sandbox = await resolveSandbox(slug, opts.sandboxOpts);
+        if (!sandbox) {
           socket.destroy();
           return;
         }
-        sandbox = result.sandbox;
-        agentConfig = result.agentConfig;
       }
-      const mode: SessionMode = agentConfig?.mode === "pipeline" ? "pipeline" : "s2s";
       wss.handleUpgrade(req, socket, head, (ws) => {
         // This callback runs after completeUpgrade's own try/catch has already
         // passed — a failure here (slot acquisition, session start) would
@@ -142,7 +123,6 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
         // session.
         onSessionSocket(ws as unknown as SessionWebSocket, {
           slug,
-          mode,
           sandbox,
           agentConfig,
           hostMode,
@@ -159,46 +139,36 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
   }
 
   /**
-   * Wire metrics and start the session once the socket is upgraded. Extracted
-   * from the upgrade handler so neither piece trips the complexity cap.
+   * Start the session once the socket is upgraded. Extracted from the
+   * upgrade handler so neither piece trips the complexity cap.
    */
   async function onSessionSocket(
     ws: SessionWebSocket,
     ctx: {
       slug: string;
-      mode: SessionMode;
       sandbox: Awaited<ReturnType<typeof resolveSandbox>>;
       agentConfig: IsolateConfig | null;
       hostMode: boolean;
       rawUrl: string;
     },
   ): Promise<void> {
-    const { slug, mode, agentConfig, hostMode, rawUrl } = ctx;
+    const { slug, agentConfig, hostMode, rawUrl } = ctx;
     let { sandbox } = ctx;
-    metrics.sessionsStarted.inc({ slug, mode });
-    metrics.sessionsActive.inc({ slug });
     // Assigned after the re-resolve below; the close listener is attached
-    // first so a socket that dies during the await still runs the metrics
-    // path (releasing a null handle is a no-op).
+    // first so a socket that dies during the await still releases cleanly
+    // (releasing a null handle is a no-op).
     let sessionSlot: ReturnType<typeof acquireSlotSession> = null;
     let closed = false;
-    const startedAt = process.hrtime.bigint();
     const socket = ws as unknown as {
       on: (event: string, fn: (arg: number) => void) => void;
     };
-    socket.on("close", (code: number) => {
+    socket.on("close", () => {
       closed = true;
       releaseSlotSession(opts.slots, sessionSlot);
-      metrics.sessionDuration.observe(hrtimeSeconds(startedAt));
-      metrics.sessionsActive.dec({ slug });
-      const reason: SessionEndReason =
-        code === 1000 || code === 1001 ? "client_close" : "server_close";
-      metrics.sessionsEnded.inc({ slug, reason });
     });
-    socket.on("error", () => {
-      const kind: SessionErrorKind = "internal";
-      metrics.sessionErrors.inc({ kind });
-    });
+    // `ws` sockets are EventEmitters: an `error` with no listener throws.
+    // The paired `close` event carries the cleanup; nothing to do here.
+    socket.on("error", () => undefined);
     if (hostMode) {
       // Ownership was already proven at the upgrade (guardHostModeUpgrade).
       // A host session needs only the stored config + env — no sandbox, and

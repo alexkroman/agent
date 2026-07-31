@@ -21,12 +21,11 @@ import { waitForIdle } from "./_drain.ts";
 import { type AppDatabases, createAppDatabases } from "./app-database.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
-import { initHostCapacityGauges, metrics } from "./metrics.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { createS3Storage } from "./s3-storage.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
-import { createSlotCache, registerSlotsForGauges } from "./sandbox-slots.ts";
+import { createSlotCache } from "./sandbox-slots.ts";
 import { spawnWarmHarness } from "./sandbox-vm.ts";
 import {
   createMemorySecretStore,
@@ -46,7 +45,6 @@ function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
   if (size === null) return null;
   const harnessPath = resolveHarnessPath(env);
   console.info(`Sandbox pool: pre-warming ${size} Deno harness(es)`, { harnessPath });
-  metrics.warmPoolTarget.set(size);
   return createSandboxPool({
     targetSize: size,
     spawn: () => spawnWarmHarness({ harnessPath }),
@@ -127,7 +125,6 @@ function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
   const storage = buildStorage(env);
   const { secrets, workspaces, chats, appDb } = buildPlatformDb(env);
   const slots = createSlotCache();
-  registerSlotsForGauges(slots);
   const pool = buildPool(env);
   return {
     slots,
@@ -157,7 +154,6 @@ async function main(): Promise<void> {
 
   const env = process.env;
   assertDevKeys(env);
-  initHostCapacityGauges();
   const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
 
   // Flipped by `shutdown()` before anything is torn down: it fails /health

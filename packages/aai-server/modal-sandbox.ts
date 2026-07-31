@@ -32,7 +32,6 @@ import { errorMessage } from "@alexkroman1/aai";
 import { ModalClient, type SandboxCreateParams } from "modal";
 import { debug } from "./_debug-log.ts";
 import { HARNESS_HEARTBEAT_INTERVAL_MS } from "./guest/limits.ts";
-import { metrics } from "./metrics.ts";
 import { createNdjsonConnection } from "./ndjson-transport.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
@@ -446,11 +445,8 @@ export async function spawnModalWarm(
     ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
     tags: { service: "aai-guest", slug: opts.slug ?? "pool" },
   });
-  const tCreate = performance.now();
-
   try {
     await sb.filesystem.writeText(code, HARNESS_REMOTE_PATH);
-    const tHarness = performance.now();
 
     // Permissions: `--no-prompt` and nothing else — the bundle arrives over
     // RPC and loads from a `blob:` URL, so the harness needs no Deno grants.
@@ -461,10 +457,6 @@ export async function spawnModalWarm(
     });
     const tExec = performance.now();
 
-    metrics.sandboxSpawnPhase.observe({ phase: "create" }, (tCreate - t0) / 1000);
-    metrics.sandboxSpawnPhase.observe({ phase: "harness" }, (tHarness - tCreate) / 1000);
-    metrics.sandboxSpawnPhase.observe({ phase: "exec" }, (tExec - tHarness) / 1000);
-    metrics.sandboxSpawnPhase.observe({ phase: "total" }, (tExec - t0) / 1000);
     debug("Modal sandbox spawned", {
       sandboxId: sb.sandboxId,
       slug: opts.slug ?? "pool",

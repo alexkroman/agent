@@ -11,7 +11,7 @@
  */
 
 export type KeyedLock = ((key: string) => Promise<() => void>) & {
-  /** Number of keys currently held or queued. Exposed for tests/metrics. */
+  /** Number of keys currently held or queued. Exposed for tests. */
   readonly size: number;
 };
 

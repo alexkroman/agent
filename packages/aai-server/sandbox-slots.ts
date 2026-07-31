@@ -4,7 +4,6 @@ import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import { createKeyedLock } from "./_keyed-lock.ts";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
-import { metrics, type SandboxEvictReason } from "./metrics.ts";
 
 export type AgentSlot = {
   slug: string;
@@ -19,27 +18,6 @@ export type SlotCache = Map<string, AgentSlot>;
 
 export function createSlotCache(): SlotCache {
   return new Map<string, AgentSlot>();
-}
-
-// One slot cache per process; gauges read it lazily on each scrape so
-// callers don't need to push updates after every mutation.
-let _slotsForGauges: SlotCache | null = null;
-
-// biome-ignore lint/suspicious/noExplicitAny: prom-client doesn't type `collect` as writable
-(metrics.slotsRegistered as any).collect = function (this: typeof metrics.slotsRegistered) {
-  this.set(_slotsForGauges?.size ?? 0);
-};
-// biome-ignore lint/suspicious/noExplicitAny: prom-client doesn't type `collect` as writable
-(metrics.slotsResident as any).collect = function (this: typeof metrics.slotsResident) {
-  let resident = 0;
-  if (_slotsForGauges) {
-    for (const slot of _slotsForGauges.values()) if (slot.sandbox) resident++;
-  }
-  this.set(resident);
-};
-
-export function registerSlotsForGauges(slots: SlotCache): void {
-  _slotsForGauges = slots;
 }
 
 // Internal keyed lock (not p-lock): entries are deleted when released, so the
@@ -71,15 +49,10 @@ function clearIdleTimer(slot: AgentSlot): void {
   }
 }
 
-async function detachAndShutdown(
-  slot: AgentSlot,
-  reason: SandboxEvictReason,
-  errorLabel: string,
-): Promise<void> {
+async function detachAndShutdown(slot: AgentSlot, errorLabel: string): Promise<void> {
   const sb = slot.sandbox;
   if (!sb) return;
   delete slot.sandbox;
-  metrics.sandboxEvicted.inc({ reason });
   try {
     await sb.shutdown();
   } catch (err: unknown) {
@@ -90,7 +63,7 @@ async function detachAndShutdown(
 /** Best-effort terminate a slot's sandbox. Errors are logged, never thrown. */
 export async function terminateSlot(slot: AgentSlot): Promise<void> {
   clearIdleTimer(slot);
-  await detachAndShutdown(slot, "terminate", "Failed to shut down sandbox");
+  await detachAndShutdown(slot, "Failed to shut down sandbox");
 }
 
 /**
@@ -180,5 +153,5 @@ async function evictIdleSandbox(slots: SlotCache, slug: string): Promise<void> {
     return;
   }
   debug("Evicting idle sandbox", { slug });
-  await detachAndShutdown(slot, "idle", "Failed to shut down idle sandbox");
+  await detachAndShutdown(slot, "Failed to shut down idle sandbox");
 }

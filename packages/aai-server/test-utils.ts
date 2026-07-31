@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
-import { registry } from "./metrics.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { AgentSlot } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -10,68 +9,6 @@ import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-
 import type { BundleStore } from "./store-types.ts";
 import { type ChatStore, createMemoryChatStore } from "./studio/chat-store.ts";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "./studio/workspace-store.ts";
-
-// ── Metric-reading helpers (canonical versions for tests) ───────────────
-
-// biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-type MetricEntry = { labels?: Record<string, string>; value?: number; count?: number } & any;
-
-function getMetric(
-  name: string,
-): { hashMap?: Record<string, MetricEntry>; collect?: () => void } | null {
-  // biome-ignore lint/suspicious/noExplicitAny: prom-client internals not typed
-  return (registry.getSingleMetric(name) as any) ?? null;
-}
-
-function entryMatches(entry: MetricEntry, labels: Record<string, string>): boolean {
-  return Object.entries(labels).every(([k, v]) => entry.labels?.[k] === v);
-}
-
-/** Read a counter's value at the given label combination. Returns 0 if unset. */
-export function counterValue(name: string, labels: Record<string, string> = {}): number {
-  const m = getMetric(name);
-  if (!m?.hashMap) return 0;
-  if (Object.keys(labels).length === 0) return m.hashMap[""]?.value ?? 0;
-  for (const entry of Object.values(m.hashMap)) {
-    if (entryMatches(entry, labels)) return entry.value ?? 0;
-  }
-  return 0;
-}
-
-/**
- * Sum a counter across every label combination matching `labels`.
- *
- * `counterValue` returns the first match, which is wrong for a counter whose
- * label set is broader than the query — `aai_sessions_started_total{slug,mode}`
- * read by slug alone spans one entry per mode.
- */
-export function counterTotal(name: string, labels: Record<string, string> = {}): number {
-  const m = getMetric(name);
-  if (!m?.hashMap) return 0;
-  return Object.values(m.hashMap)
-    .filter((entry) => entryMatches(entry, labels))
-    .reduce((sum, entry) => sum + (entry.value ?? 0), 0);
-}
-
-/**
- * Read a gauge's value (unlabeled or matched). Returns 0 if unset.
- *
- * Triggers any registered `collect()` callback so pull-based gauges are
- * refreshed before the read.
- */
-export function gaugeValue(name: string, labels: Record<string, string> = {}): number {
-  getMetric(name)?.collect?.();
-  return counterValue(name, labels);
-}
-
-/** Read the count of observations on a histogram. Returns 0 if no observations. */
-export function histogramCount(name: string, labels?: Record<string, string>): number {
-  const m = getMetric(name);
-  if (!m?.hashMap) return 0;
-  const entries = Object.values(m.hashMap);
-  if (!labels) return entries.reduce((sum, e) => sum + (e.count ?? 0), 0);
-  return entries.find((e) => entryMatches(e, labels))?.count ?? 0;
-}
 
 export const VALID_ENV: Record<string, string> = {};
 
