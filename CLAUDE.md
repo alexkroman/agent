@@ -1157,6 +1157,14 @@ you only need to list one package.
 ### Testing
 
 - **Vitest**. Test files co-located: `foo.ts` → `foo.test.ts`.
+- **The aai-server test project auto-builds the guest harness**:
+  `scripts/ensure-guest-harness.mjs` runs as vitest `globalSetup` (root and
+  per-package configs) and builds `aai-guest` when `dist/harness.mjs` is
+  missing or older than the guest package's sources — `createSandbox`
+  resolves it eagerly, so an unbuilt harness otherwise fails every sandbox
+  test. Staleness tracks aai-guest sources only (not the bundled SDK);
+  `GUEST_HARNESS_PATH` skips the check. Also runnable directly:
+  `node scripts/ensure-guest-harness.mjs`.
 - Unit test projects (aai, aai-ui, aai-cli, aai-server) are defined in the
   root `vitest.config.ts`. Use `--project <name>` to run a specific project.
 - Slow/integration tests have separate per-package configs
@@ -1670,6 +1678,35 @@ sending `bundle/load`.
   injected per-acquire — no agent secrets enter a warm sandbox.
 - **Failure mode**: if the pool is empty or returns a dead harness,
   `createSandboxVm` falls back to a fresh spawn (the pre-pool path).
+
+### Horizontal sandbox scaling (aai-server/sandbox-scale.ts)
+
+Opt-in: set `SANDBOX_MAX_SESSIONS` (live sessions per guest sandbox) to
+enable; `SANDBOX_MAX_REPLICAS` caps sandboxes per slug (default 4). Unset,
+a slug has exactly one sandbox — the pre-scaling behavior.
+
+The broker (`GET /:slug/client-config` → `resolveSandbox`) is the only
+routing point: sessions connect directly to a sandbox tunnel, so once a
+client holds a `sessionUrl` the host can never move that session. Each
+broker request probes the slug's resident sandboxes with the same guest
+`status` RPC idle eviction uses and routes **least-connections**; when the
+least-loaded sandbox is at capacity it spawns an overflow replica
+(`AgentSlot.replicas`, under the slug lock so concurrent saturated brokers
+spawn one, not one each), and past the cap it routes to the least-loaded
+anyway with a warning. Scale-in is idle eviction's job: overflow replicas
+whose sessions ended are reclaimed individually on the idle probe even
+while the primary stays busy, and `terminateSlot` (deploy/delete/secret/
+epoch invalidation) tears down primary and replicas together.
+Least-connections is deliberately implemented in-repo rather than via a
+balancer library: off-the-shelf Node balancers are stateless pickers that
+infer load from the calls they routed, which cannot be truthful here —
+sessions start and end without passing through the host, so the
+guest-reported count is the only honest signal.
+
+Scaling is per-replica (each web-service replica scales its own slot);
+counts are sampled, not reserved, so `maxSessionsPerSandbox` is a target,
+not a hard limit — simultaneous brokered clients can land on the same
+sandbox before either connects.
 
 ### Platform sandbox (aai-server)
 

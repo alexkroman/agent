@@ -1,3 +1,4 @@
+import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
 
@@ -5,6 +6,10 @@ export default defineConfig({
   ...sharedConfig,
   test: {
     restoreMocks: true,
+    // Auto-builds the aai-guest harness bundle createSandbox resolves eagerly.
+    globalSetup: [
+      fileURLToPath(new URL("../../scripts/ensure-guest-harness.mjs", import.meta.url)),
+    ],
     include: ["**/*.test.ts"],
     // This suite is credential-bound: anything that deploys an agent or
     // authenticates a request runs an argon2id derivation (tens of ms idle,
