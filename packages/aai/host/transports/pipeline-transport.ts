@@ -257,7 +257,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     callbacks,
     providers,
     gate,
-    holdPhrase,
     errorPhrase,
     sendTtsText,
   });

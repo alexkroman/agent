@@ -111,6 +111,13 @@ export const DEFAULT_SILENCE_PROMPT =
 export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = ["calculate"];
 
 export const MAX_TOOL_RESULT_CHARS = 4000;
+
+/**
+ * Appended to a tool result trimmed by {@link capToolResult}, so a model reading
+ * it can tell the record is incomplete rather than answering from a partial list
+ * as though it were the whole one.
+ */
+export const TOOL_RESULT_TRUNCATION_MARKER = "\n[truncated]";
 /**
  * Wire cap on a single transcript event's text (matches the per-message
  * `history` content cap). Bounds what a hostile/buggy server can push into

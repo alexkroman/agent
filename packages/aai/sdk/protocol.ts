@@ -15,6 +15,7 @@ import {
   MAX_TOOL_RESULT_CHARS,
   MAX_TRANSCRIPT_CHARS,
 } from "./constants.ts";
+import { capToolResult } from "./utils.ts";
 
 // The pre-connection client-config endpoint's wire format is part of the
 // same protocol surface — re-exported so clients import one subpath.
@@ -276,7 +277,15 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("tool_result"),
     toolCallId: z.string().min(1),
-    result: z.string().max(MAX_TOOL_RESULT_CHARS),
+    /**
+     * Truncated rather than rejected. A `.max()` here made an oversized result
+     * fail validation, and a failed client message is *dropped* — so the relay
+     * call it was answering never settled and hung to
+     * `DEFAULT_RELAY_TOOL_TIMEOUT_MS`, presenting as a stuck tool rather than as
+     * data that didn't fit. The transform bounds host memory the same way while
+     * letting the turn continue on the part that fits (marked `[truncated]`).
+     */
+    result: z.string().transform(capToolResult),
     error: z.string().optional(),
   }),
 ]);

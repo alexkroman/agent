@@ -404,6 +404,52 @@ describe("PipelineTransport", () => {
     });
   });
 
+  describe("filler is spoken but not recorded", () => {
+    test("the hold phrase reaches TTS but not the recorded transcript", async () => {
+      // "One moment." is a timing artifact, not something the agent said. Left in
+      // the record it costs context on every later turn and shows the model its
+      // own filler as an example of what its turns look like.
+      const script: ScriptedPart[] = [
+        {
+          type: "tool-call",
+          toolCallId: "tc-1",
+          toolName: "get_weather",
+          input: JSON.stringify({ city: "SF" }),
+        },
+        { type: "tool-result", toolCallId: "tc-1", toolName: "get_weather", result: "sunny" },
+        { type: "text", text: "It's sunny." },
+      ];
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script }),
+        holdPhrase: "One moment.",
+        executeTool: vi.fn(async () => "sunny"),
+        toolSchemas: [{ ...noopToolSchema, name: "get_weather" }],
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      stt.last()?.fireFinal("how's the weather?");
+
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalled();
+      });
+      // Heard by the caller...
+      expect(tts.last()?.textChunks.join("")).toContain("One moment.");
+      // ...and shown live, since the caption is built from what reaches TTS.
+      expect(
+        partialTranscriptSpy(callbacks).mock.calls.some(([text]) => text.includes("One moment")),
+      ).toBe(true);
+      // ...but absent from the reply's final transcript, which is what history,
+      // ctx.messages, resume, and the STT agent-context hint are built from.
+      const finals = vi
+        .mocked(callbacks.onAgentTranscript)
+        .mock.calls.filter(([, interrupted]) => interrupted === false)
+        .map(([text]) => text);
+      expect(finals.some((text) => text.includes("It's sunny."))).toBe(true);
+      for (const text of finals) expect(text).not.toContain("One moment.");
+      await t.stop();
+    });
+  });
+
   describe("provider errors", () => {
     test("STT error fires onError('stt', ...) and terminates transport", async () => {
       const { opts, stt, callbacks } = makeOpts();

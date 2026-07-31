@@ -28,8 +28,6 @@ export interface TurnOutcomeDeps {
   callbacks: TransportCallbacks;
   providers: PipelineProviderSessions;
   gate: TurnGate;
-  /** Excluded from persisted history — see {@link persistInterruptedTurn}. */
-  holdPhrase: string;
   /** Spoken after a failed turn; `""` disables. */
   errorPhrase: string;
   /** Forwards text to the active TTS session, reopening the audio gate. */
@@ -64,8 +62,8 @@ export interface TurnOutcome {
    *
    * Emitted as a transcript so the UI matches what was heard, but deliberately
    * NOT pushed into `history.llm`: teaching the model that its own replies open
-   * with apologies is how it starts producing them unprompted. Same reasoning as
-   * `persistInterruptedTurn` excluding the hold phrase.
+   * with apologies is how it starts producing them unprompted. Same reasoning
+   * as keeping the hold phrase and dead-air cover out of the record.
    */
   speakRecovery(failed: boolean): boolean;
   /** Announce and persist a turn that produced speech. */
@@ -73,7 +71,7 @@ export interface TurnOutcome {
 }
 
 export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
-  const { history, callbacks, providers, gate, holdPhrase, errorPhrase, sendTtsText } = deps;
+  const { history, callbacks, providers, gate, errorPhrase, sendTtsText } = deps;
   return {
     persistBargeIn(args) {
       if (!gate.historyCurrent(args.historyEpoch)) return;
@@ -82,7 +80,6 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
         accumulated: args.accumulated,
         persistedLen: args.persistedLen,
         stepMessages: args.stepMessages,
-        holdPhrase,
         onTranscript: (text) => callbacks.onAgentTranscript(text, true),
         updateAgentContext: (text) => providers.stt?.updateAgentContext?.(text),
       });

@@ -83,6 +83,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "TOOL_FETCH_MAX_REQUEST_BODY_BYTES",
   "TOOL_FETCH_MAX_RESPONSE_BYTES",
   "TOOL_FETCH_TIMEOUT_MS",
+  "TOOL_RESULT_TRUNCATION_MARKER",
   "TTS_COALESCE_MAX_CHARS",
   "ToolChoiceSchema",
   "VALID_SLUG_RE",

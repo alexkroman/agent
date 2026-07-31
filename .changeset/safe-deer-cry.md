@@ -1,0 +1,5 @@
+---
+"@alexkroman1/aai": patch
+---
+
+Keep filler out of the conversation record, and truncate oversized relayed tool results instead of dropping them. The hold phrase and the dead-air cover are timing artifacts that exist so a tool chain doesn't sound like a dropped call; they were accumulated into the turn's text and persisted, so history filled with "One moment. Still working on that. Just a moment longer." as though the agent had said something — spending context on every later turn and showing the model its own filler as an example of its output. They now reach TTS and the live caption (which is built from what reaches TTS) but not `onDelta`, which feeds history, `ctx.messages`, resume, and the STT agent-context hint. Separately, an inbound `tool_result` over MAX_TOOL_RESULT_CHARS failed schema validation and was dropped, so the relay call it answered hung to `DEFAULT_RELAY_TOOL_TIMEOUT_MS` — it is now truncated with a `[truncated]` marker so the turn continues and the model can tell the record is incomplete.

@@ -97,21 +97,22 @@ export function persistInterruptedTurn(args: {
   persistedLen: number;
   /** Response messages of the turn's completed steps. */
   stepMessages: readonly ModelMessage[];
-  /** Filler phrase that must not be persisted as real speech. */
-  holdPhrase: string;
   /** Surface the interrupted transcript to the client. */
   onTranscript: (text: string) => void;
   /** Seed the STT provider with the agent's side of the dialog. */
   updateAgentContext: (text: string) => void;
 }): void {
-  const { history, accumulated, persistedLen, stepMessages, holdPhrase } = args;
+  const { history, accumulated, persistedLen, stepMessages } = args;
   if (stepMessages.length > 0) history.pushLlm(...stepMessages);
+  // `accumulated` is model text only — the hold phrase and dead-air cover are
+  // spoken but never recorded (see emitText's `record` flag), so an interrupted
+  // turn that got no further than its filler leaves nothing to persist.
   const spoken = accumulated.trim();
-  if (spoken.length === 0 || spoken === holdPhrase) return;
+  if (spoken.length === 0) return;
   args.onTranscript(spoken);
   history.pushConversation({ role: "assistant", content: `${spoken} [interrupted]` });
   const tail = accumulated.slice(persistedLen).trim();
-  if (tail.length > 0 && tail !== holdPhrase) {
+  if (tail.length > 0) {
     history.pushLlm({ role: "assistant", content: `${tail} [interrupted]` });
   }
   args.updateAgentContext(spoken);

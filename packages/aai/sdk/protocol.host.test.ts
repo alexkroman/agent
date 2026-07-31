@@ -8,7 +8,7 @@
  * (a `ClientMessageSchema` member).
  */
 import { describe, expect, test } from "vitest";
-import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
+import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "./constants.ts";
 import { ClientMessageSchema, HostConfigMessageSchema, HostConfigSchema } from "./protocol.ts";
 
 describe("HostConfigSchema", () => {
@@ -156,12 +156,20 @@ describe("ClientMessageSchema tool_result", () => {
     expect(result.success).toBe(false);
   });
 
-  test("rejects tool_result with result exceeding MAX_TOOL_RESULT_CHARS", () => {
+  test("truncates an oversized tool_result instead of rejecting it", () => {
+    // Rejecting it meant the frame was dropped, so the relay call it answered
+    // never settled and hung to DEFAULT_RELAY_TOOL_TIMEOUT_MS — a stuck tool
+    // instead of data that didn't fit.
     const result = ClientMessageSchema.safeParse({
       type: "tool_result",
       toolCallId: "tc-1",
-      result: "x".repeat(MAX_TOOL_RESULT_CHARS + 1),
+      result: "x".repeat(MAX_TOOL_RESULT_CHARS + 5000),
     });
-    expect(result.success).toBe(false);
+    expect(result.success).toBe(true);
+    const parsed = result.success && result.data.type === "tool_result" ? result.data.result : "";
+    expect(parsed.length).toBeLessThanOrEqual(MAX_TOOL_RESULT_CHARS);
+    // Marked, so a model reading it knows the record is incomplete rather than
+    // counting a partial list as though it were the whole one.
+    expect(parsed).toContain(TOOL_RESULT_TRUNCATION_MARKER);
   });
 });
