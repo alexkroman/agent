@@ -1,36 +1,87 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Shared test helpers for the sandbox-vm test files
- * (sandbox-vm.test.ts, sandbox-vm-rpc-handlers.test.ts).
+ * Shared test helpers for the sandbox test files: a fake guest WebSocket
+ * (the seam `rpc-transport.ts` speaks to), a typed connection over it, and
+ * auto-responders for the guest side of the RPC contract.
  */
 
-import { PassThrough } from "node:stream";
 import { vi } from "vitest";
-import { createNdjsonConnection } from "./ndjson-transport.ts";
 import type { GuestConnection, GuestRpcSchema } from "./rpc-schemas.ts";
+import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
 import type { SandboxVmOptions, WarmHarness } from "./sandbox-vm.ts";
+
+/** A fake guest endpoint: what the host sent, plus a way to answer. */
+export type FakeGuestSocket = {
+  ws: RpcWebSocket;
+  /** Raw JSON frames the host sent to the guest, in order. */
+  writtenLines: string[];
+  /** Parsed frames the host sent to the guest. */
+  sentMessages(): Record<string, unknown>[];
+  /** Deliver one message from the guest to the host. */
+  receive(msg: unknown): void;
+  /** Observe every frame the host sends (for auto-responders). */
+  onSend(cb: (msg: Record<string, unknown>) => void): void;
+  /** Close the socket from the guest side. */
+  close(): void;
+};
+
+export function createFakeGuestSocket(): FakeGuestSocket {
+  const messageHandlers: ((data: unknown) => void)[] = [];
+  const closeHandlers: (() => void)[] = [];
+  const sendObservers: ((msg: Record<string, unknown>) => void)[] = [];
+  const writtenLines: string[] = [];
+  let state = 1; // OPEN
+
+  const ws: RpcWebSocket = {
+    get readyState() {
+      return state;
+    },
+    OPEN: 1,
+    send(data: string) {
+      writtenLines.push(data);
+      const parsed = JSON.parse(data) as Record<string, unknown>;
+      for (const cb of sendObservers) cb(parsed);
+    },
+    close() {
+      if (state !== 1) return;
+      state = 3;
+      for (const cb of closeHandlers) cb();
+    },
+    on(event: "message" | "close", cb: ((data: unknown) => void) | (() => void)) {
+      if (event === "message") messageHandlers.push(cb as (data: unknown) => void);
+      else closeHandlers.push(cb as () => void);
+    },
+  };
+
+  return {
+    ws,
+    writtenLines,
+    sentMessages: () => writtenLines.map((l) => JSON.parse(l) as Record<string, unknown>),
+    receive(msg: unknown) {
+      const data = typeof msg === "string" ? msg : JSON.stringify(msg);
+      for (const cb of messageHandlers) cb(data);
+    },
+    onSend(cb) {
+      sendObservers.push(cb);
+    },
+    close: () => ws.close(),
+  };
+}
 
 export function createTestConn(): {
   conn: GuestConnection;
-  hostReadable: PassThrough;
-  hostWritable: PassThrough;
+  socket: FakeGuestSocket;
   writtenLines: string[];
 } {
-  const hostReadable = new PassThrough();
-  const hostWritable = new PassThrough();
-  const writtenLines: string[] = [];
-  hostWritable.on("data", (chunk: Buffer) => {
-    for (const line of chunk.toString().split("\n")) {
-      if (line.trim()) writtenLines.push(line);
-    }
-  });
-  const conn = createNdjsonConnection<GuestRpcSchema>(hostReadable, hostWritable);
-  return { conn, hostReadable, hostWritable, writtenLines };
+  const socket = createFakeGuestSocket();
+  const conn = createRpcConnection<GuestRpcSchema>(socket.ws);
+  return { conn, socket, writtenLines: socket.writtenLines };
 }
 
 export function makeWarm(conn: GuestConnection, cleanup: () => Promise<void>): WarmHarness {
   return {
     conn,
+    sessionUrl: "wss://tunnel.test:443/websocket",
     cleanup,
     alive: () => true,
     onExit: () => undefined,
@@ -43,33 +94,31 @@ export function makeWarm(conn: GuestConnection, cleanup: () => Promise<void>): W
   };
 }
 
-export function writeResponse(stream: PassThrough, id: number, result: unknown): void {
-  stream.push(`${JSON.stringify({ jsonrpc: "2.0", id, result })}\n`);
+/**
+ * Attach an auto-responder that replies `{ ok: true }` to every bundle/load
+ * the host sends. Returns a no-op detach for call-site symmetry.
+ */
+export function autorespondBundleLoad(socket: FakeGuestSocket): () => void {
+  socket.onSend((msg) => {
+    if (msg.method === "bundle/load" && msg.id != null) {
+      socket.receive({ jsonrpc: "2.0", id: msg.id, result: { ok: true } });
+    }
+  });
+  return () => undefined;
 }
 
-/**
- * Attach an auto-responder to hostWritable that replies to bundle/load
- * requests on hostReadable. Returns a detach function.
- */
-export function autorespondBundleLoad(
-  hostWritable: PassThrough,
-  hostReadable: PassThrough,
-): () => void {
-  const handler = (chunk: Buffer) => {
-    for (const line of chunk.toString().split("\n")) {
-      if (!line.trim()) continue;
-      try {
-        const msg = JSON.parse(line);
-        if (msg.method === "bundle/load" && msg.id != null) {
-          writeResponse(hostReadable, msg.id, { ok: true });
-        }
-      } catch {
-        // ignore parse errors
-      }
+/** Reject every bundle/load request with a "Worker code not found" error. */
+export function autorespondBundleLoadError(socket: FakeGuestSocket): () => void {
+  socket.onSend((msg) => {
+    if (msg.method === "bundle/load" && msg.id != null) {
+      socket.receive({
+        jsonrpc: "2.0",
+        id: msg.id,
+        error: { code: -32_603, message: "Worker code not found" },
+      });
     }
-  };
-  hostWritable.on("data", handler);
-  return () => hostWritable.off("data", handler);
+  });
+  return () => undefined;
 }
 
 export function baseOpts(overrides?: Partial<SandboxVmOptions>): SandboxVmOptions {
@@ -110,34 +159,4 @@ export function findResponseById(
       }
     })
     .find((m: { id?: number } | null) => m?.id === id);
-}
-
-/** Reject every bundle/load request with a "Worker code not found" error. */
-export function autorespondBundleLoadError(
-  hostWritable: PassThrough,
-  hostReadable: PassThrough,
-): () => void {
-  const handler = (chunk: Buffer) => onBundleLoadReject(chunk, hostReadable);
-  hostWritable.on("data", handler);
-  return () => hostWritable.off("data", handler);
-}
-
-function onBundleLoadReject(chunk: Buffer, hostReadable: PassThrough): void {
-  for (const line of chunk.toString().split("\n")) {
-    if (!line.trim()) continue;
-    try {
-      const msg = JSON.parse(line);
-      if (msg.method === "bundle/load" && msg.id != null) {
-        hostReadable.push(
-          `${JSON.stringify({
-            jsonrpc: "2.0",
-            id: msg.id,
-            error: { code: -32_603, message: "Worker code not found" },
-          })}\n`,
-        );
-      }
-    } catch {
-      // ignore
-    }
-  }
 }

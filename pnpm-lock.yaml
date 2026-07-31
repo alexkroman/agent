@@ -147,9 +147,6 @@ importers:
         specifier: ^4.4.3
         version: 4.4.3
     devDependencies:
-      '@pinecone-database/pinecone':
-        specifier: ^8.1.0
-        version: 8.1.0
       '@types/escape-html':
         specifier: ^1.0.4
         version: 1.0.4
@@ -236,6 +233,28 @@ importers:
         specifier: ^4.1.10
         version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.1.1)(@vitest/coverage-v8@4.1.10)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
 
+  packages/aai-guest:
+    dependencies:
+      '@alexkroman1/aai':
+        specifier: workspace:*
+        version: link:../aai
+      ws:
+        specifier: ^8.21.1
+        version: 8.21.1
+    devDependencies:
+      '@types/ws':
+        specifier: ^8.18.1
+        version: 8.18.1
+      tsdown:
+        specifier: ^0.22.13
+        version: 0.22.14(@arethetypeswrong/core@0.18.5)(oxc-resolver@11.24.2)(publint@0.3.22)(tsx@4.23.1)(typescript@7.0.2)
+      typescript:
+        specifier: ^7.0.2
+        version: 7.0.2
+      vitest:
+        specifier: ^4.1.10
+        version: 4.1.10(@opentelemetry/api@1.9.1)(@types/node@26.1.1)(@vitest/coverage-v8@4.1.10)(jsdom@29.1.1(@noble/hashes@1.8.0))(vite@8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0))
+
   packages/aai-server:
     dependencies:
       '@alexkroman1/aai':
@@ -253,6 +272,9 @@ importers:
       '@node-rs/argon2':
         specifier: ^2.0.2
         version: 2.0.2
+      aai-guest:
+        specifier: workspace:*
+        version: link:../aai-guest
       aws4fetch:
         specifier: ^1.0.20
         version: 1.0.20
@@ -1986,10 +2008,6 @@ packages:
     resolution: {integrity: sha512-UqGPmo56KDfLlfXFAFIrNflHT8tFxWGEivWg3Zeyp4Uy2NlKN1FGPr6/BxcLGG3+kZ6Wp14g5Uj+n71boqZfiw==}
     cpu: [x64]
     os: [win32]
-
-  '@pinecone-database/pinecone@8.1.0':
-    resolution: {integrity: sha512-aSC0u1HqUzOFnqHy4fpw8RD2TQdwaT0nMiYpc07Y8qW4tK59LTO3jTqQIjH1L93c4/cn8rfJCQimXmbtsi2acA==}
-    engines: {node: '>=20.0.0'}
 
   '@pinojs/redact@0.4.0':
     resolution: {integrity: sha512-k2ENnmBugE/rzQfEcdWHcCY+/FM3VLzH9cYEsbdsoqrvzAKRhUZeRNhAZvB8OitQJ1TBed3yqWtdjzS6wJKBwg==}
@@ -7542,8 +7560,6 @@ snapshots:
 
   '@oxc-resolver/binding-win32-x64-msvc@11.24.2':
     optional: true
-
-  '@pinecone-database/pinecone@8.1.0': {}
 
   '@pinojs/redact@0.4.0': {}
 

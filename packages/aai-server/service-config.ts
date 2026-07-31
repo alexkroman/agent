@@ -7,12 +7,7 @@
  * storage, Vault, locks, epochs, or resume-state wiring.
  */
 
-import {
-  createMemoryVector,
-  createPineconeVector,
-  createPostgresDb,
-  type Vector,
-} from "@alexkroman1/aai/runtime";
+import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { createStorage } from "unstorage";
 import { isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
@@ -33,11 +28,6 @@ import {
   type SecretStore,
   type SqlExec,
 } from "./secret-store.ts";
-import {
-  createMemorySessionStateStore,
-  createPgSessionStateStore,
-  type SessionStateStore,
-} from "./session-state-store.ts";
 import {
   createMemoryWorkspaceStore,
   createPgWorkspaceStore,
@@ -71,7 +61,7 @@ export function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
   const size = resolvePoolSize(env.SANDBOX_POOL_SIZE);
   if (size === null) return null;
   const harnessPath = resolveHarnessPath(env);
-  console.info(`Sandbox pool: pre-warming ${size} Deno harness(es)`, { harnessPath });
+  console.info(`Sandbox pool: pre-warming ${size} guest harness(es)`, { harnessPath });
   return createSandboxPool({
     targetSize: size,
     spawn: () => spawnWarmHarness({ harnessPath }),
@@ -113,8 +103,6 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   appDb?: AppDatabases;
   /** Cross-replica slug mutation lock; in-process without a platform db. */
   slugLock: SlugMutationLock;
-  /** Cross-replica session-resume state; per-process memory without a db. */
-  sessionStates: SessionStateStore;
   /** Cross-replica/service invalidation epochs; per-process memory without a db. */
   slugEpochs: SlugEpochs;
   /** Platform admin SQL executor (production only) — see ServiceConfig.sql. */
@@ -133,7 +121,6 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       workspaces: createMemoryWorkspaceStore(),
       chats: createMemoryChatStore(),
       slugLock: localSlugLock,
-      sessionStates: createMemorySessionStateStore(),
       slugEpochs: createMemorySlugEpochs(),
     };
   }
@@ -155,30 +142,18 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       extraTargets: parseExtraAppDbTargets(env.APP_DB_URLS),
     }),
     // Cross-request coordination lives in Postgres too, so any replica (and
-    // either service) can serve any request: per-slug mutation exclusion,
-    // invalidation epochs, and session-resume state all survive replica
-    // restarts and scale-out.
+    // either service) can serve any request: per-slug mutation exclusion and
+    // invalidation epochs survive replica restarts and scale-out.
     slugLock: localDev ? localSlugLock : createPgSlugLock(exec),
-    sessionStates: localDev ? createMemorySessionStateStore() : createPgSessionStateStore(exec),
     slugEpochs: localDev ? createMemorySlugEpochs() : createPgSlugEpochs(exec),
     ...(localDev ? {} : { sql: exec }),
   };
 }
 
-export function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
-  if (isLocalDev(env) || !env.PINECONE_API_KEY || !env.PINECONE_INDEX) {
-    return (slug) => createMemoryVector({ namespace: slug });
-  }
-  const apiKey = env.PINECONE_API_KEY;
-  const index = env.PINECONE_INDEX;
-  return (slug) => createPineconeVector({ apiKey, index, namespace: slug });
-}
-
 /** Assemble the shared service bindings from the environment. */
 export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const storage = buildStorage(env);
-  const { secrets, workspaces, chats, appDb, slugLock, sessionStates, slugEpochs, sql } =
-    buildPlatformDb(env);
+  const { secrets, workspaces, chats, appDb, slugLock, slugEpochs, sql } = buildPlatformDb(env);
   const slots = createSlotCache();
   const pool = buildPool(env);
   return {
@@ -191,8 +166,6 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     secrets,
     slugLock,
     slugEpochs,
-    sessionStates,
-    defaultVector: buildDefaultVector(env),
     ...(appDb && { appDb }),
     ...(pool && { pool }),
     ...(sql && { sql }),

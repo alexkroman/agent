@@ -60,9 +60,6 @@ export default agent({
   greeting:
     "Hey, I'm Dr. Sage. Try asking me something like, what are the side effects of ibuprofen, can I take aspirin and warfarin together, or calculate my BMI. Just remember, I'm not a real doctor, so always check with your healthcare provider.",
   builtinTools: ["web_search", "run_code"],
-  // fetchFdaLabel fetches openFDA from tool code, which only reaches hosts
-  // declared here once deployed (builtins like web_search are exempt).
-  allowedHosts: ["api.fda.gov"],
 
   tools: {
     check_drug_interaction: tool({

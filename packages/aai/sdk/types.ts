@@ -6,14 +6,7 @@
 import type { z } from "zod";
 import type { Db } from "./db.ts";
 import type { GenerateOptions, GenerateResult } from "./generate.ts";
-import type {
-  LlmProvider,
-  S2sProvider,
-  SttProvider,
-  TtsProvider,
-  VectorProvider,
-} from "./providers.ts";
-import type { Vector } from "./vector.ts";
+import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 
 /**
  * Identifier for a built-in server-side tool.
@@ -111,10 +104,8 @@ export type ToolContext<S = Record<string, unknown>> = {
    * it otherwise throws.
    */
   db: Db;
-  /** Vector store scoped to this agent deployment. */
-  vector: Vector;
   /**
-   * One-shot LLM generation, executed on the host (like `db`/`vector`).
+   * One-shot LLM generation, executed on the host (like `db`).
    * Defaults to the agent's pipeline `llm`; pass `llm` in the options to use
    * another provider (its API key must be in the agent's env). Throws when
    * no LLM is configured or named. Powers the `@alexkroman1/aai/patterns`
@@ -321,19 +312,6 @@ export type AgentDef<S = Record<string, unknown>> = {
    * pipeline triple.
    */
   s2s?: S2sProvider;
-  /** Pluggable Vector backend. Falls back to platform default when omitted. */
-  vector?: VectorProvider;
-  /**
-   * Hostnames this agent's own tool code may `fetch` — required for any
-   * outbound request from a tool's `execute`, in both `aai dev` and
-   * production (see `host/tool-egress.ts`). Omitting it means no network
-   * access from tool code at all.
-   *
-   * Bare hostnames with at most one leading `*.` wildcard. Does not apply to
-   * the host-side network builtins (`fetch_json`, `visit_webpage`,
-   * `get_page_design`, `web_search`), which reach any public host unlisted.
-   */
-  allowedHosts?: string[];
 };
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────

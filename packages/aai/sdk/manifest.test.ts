@@ -8,7 +8,6 @@ import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAI } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
-import { pinecone } from "./providers/vector/pinecone.ts";
 
 describe("parseManifest", () => {
   test("minimal manifest requires only name", () => {
@@ -22,7 +21,6 @@ describe("parseManifest", () => {
       toolChoice: "auto",
       idleTimeoutMs: undefined,
       builtinTools: ["think", "remember", "recall", "calculate"],
-      allowedHosts: [],
       tools: {},
       stt: undefined,
       llm: undefined,
@@ -80,41 +78,6 @@ describe("parseManifest", () => {
   test("explicit builtinTools: [] overrides the cognitive defaults", () => {
     const result = parseManifest({ name: "X", builtinTools: [] });
     expect(result.builtinTools).toEqual([]);
-  });
-
-  test("allowedHosts defaults to empty array when omitted", () => {
-    const result = parseManifest({ name: "test" });
-    expect(result.allowedHosts).toEqual([]);
-  });
-
-  test("allowedHosts passes through valid patterns", () => {
-    const result = parseManifest({
-      name: "test",
-      allowedHosts: ["api.weather.com", "*.mycompany.com"],
-    });
-    expect(result.allowedHosts).toEqual(["api.weather.com", "*.mycompany.com"]);
-  });
-
-  test("rejects invalid allowedHosts pattern", () => {
-    // Pin the diagnostic text: it names the offending pattern so users can
-    // find it in a long allowedHosts list.
-    expect(() => parseManifest({ name: "test", allowedHosts: ["*"] })).toThrow(
-      /Invalid allowedHosts pattern/,
-    );
-  });
-
-  test("rejects allowedHosts with IP address", () => {
-    expect(() => parseManifest({ name: "test", allowedHosts: ["192.168.1.1"] })).toThrow();
-  });
-
-  test("rejects allowedHosts with private TLD", () => {
-    expect(() => parseManifest({ name: "test", allowedHosts: ["*.internal"] })).toThrow();
-  });
-
-  test("rejects allowedHosts with protocol", () => {
-    expect(() =>
-      parseManifest({ name: "test", allowedHosts: ["https://api.example.com"] }),
-    ).toThrow();
   });
 });
 
@@ -176,23 +139,6 @@ describe("manifest type contracts", () => {
   test("agentToolsToSchemas returns ToolSchema[]", () => {
     const schemas = agentToolsToSchemas({});
     expectTypeOf(schemas).toEqualTypeOf<ToolSchema[]>();
-  });
-
-  test("Manifest has allowedHosts as string[]", () => {
-    const result = parseManifest({ name: "test" });
-    expectTypeOf(result.allowedHosts).toEqualTypeOf<string[]>();
-  });
-});
-
-describe("parseManifest vector", () => {
-  test("propagates vector descriptor", () => {
-    const m = parseManifest({ name: "x", vector: pinecone({ index: "ix" }) });
-    expect(m.vector).toEqual({ kind: "pinecone", options: { index: "ix" } });
-  });
-
-  test("leaves vector undefined when omitted", () => {
-    const m = parseManifest({ name: "x" });
-    expect(m.vector).toBeUndefined();
   });
 });
 

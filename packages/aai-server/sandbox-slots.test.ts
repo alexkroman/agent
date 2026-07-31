@@ -4,17 +4,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
 import {
   type AgentSlot,
-  acquireSlotSession,
   attachSandbox,
   createSlotCache,
   deleteSlot,
-  releaseSlotSession,
   setSlot,
   terminateSlot,
 } from "./sandbox-slots.ts";
 
-function makeSandbox() {
-  return { shutdown: vi.fn().mockResolvedValue(undefined) };
+function makeSandbox(activeSessions?: () => Promise<number>) {
+  return {
+    shutdown: vi.fn().mockResolvedValue(undefined),
+    ...(activeSessions && { activeSessions }),
+  };
 }
 
 function makeSlot(slug: string, overrides?: Partial<AgentSlot>): AgentSlot {
@@ -85,67 +86,67 @@ describe("idle sandbox eviction", () => {
     expect(cache.has("alpha")).toBe(true);
   });
 
-  it("does not evict a sandbox with an active session, and evicts after release", async () => {
+  it("probes the guest and rearms instead of evicting while sessions are live", async () => {
     const cache = createSlotCache();
     const slot = makeSlot("busy");
     setSlot(cache, slot);
-    const sandbox = makeSandbox();
+    // Sessions connect directly to the sandbox tunnel, so the host asks the
+    // guest: two probe rounds report a live session, the third reports idle.
+    const probe = vi
+      .fn<() => Promise<number>>()
+      .mockResolvedValueOnce(1)
+      .mockResolvedValueOnce(1)
+      .mockResolvedValue(0);
+    const sandbox = makeSandbox(probe);
     attachSandbox(cache, slot, sandbox);
 
-    // A live session pauses idle eviction indefinitely.
-    const acquired = acquireSlotSession(cache, "busy");
-    expect(acquired).toBe(slot);
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS * 3);
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+    expect(sandbox.shutdown).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
     expect(sandbox.shutdown).not.toHaveBeenCalled();
 
-    // Releasing the last session rearms the timer.
-    releaseSlotSession(cache, acquired);
+    // Third window: the guest reports no live sessions — evict.
     await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+    expect(sandbox.shutdown).toHaveBeenCalledOnce();
+    expect(probe).toHaveBeenCalledTimes(3);
+  });
+
+  it("evicts when the probe rejects (dead guest)", async () => {
+    const cache = createSlotCache();
+    const slot = makeSlot("dead");
+    setSlot(cache, slot);
+    const sandbox = makeSandbox(() => Promise.reject(new Error("guest gone")));
+    attachSandbox(cache, slot, sandbox);
+
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+
     expect(sandbox.shutdown).toHaveBeenCalledOnce();
   });
 
-  it("a stale release from before a redeploy cannot idle-evict the new sandbox", async () => {
+  it("does not evict a replacement sandbox installed while the probe was in flight", async () => {
     const cache = createSlotCache();
-    const oldSlot = makeSlot("agent");
-    setSlot(cache, oldSlot);
-    attachSandbox(cache, oldSlot, makeSandbox());
+    const slot = makeSlot("raced");
+    setSlot(cache, slot);
+    const gate = Promise.withResolvers<number>();
+    const sandbox = makeSandbox(() => gate.promise);
+    attachSandbox(cache, slot, sandbox);
 
-    // Session O goes live on the old slot.
-    const handleO = acquireSlotSession(cache, "agent");
+    // Fire the idle timer; the probe is now awaiting the gate.
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
 
-    // Redeploy: old slot terminated, replaced by a fresh slot object
-    // (deploy.ts resets the counter), new sandbox attached.
-    await terminateSlot(oldSlot);
-    const newSlot = makeSlot("agent");
+    // A redeploy replaces the slot object under the same slug mid-probe.
+    await terminateSlot(slot);
+    const newSlot = makeSlot("raced");
     setSlot(cache, newSlot);
     const newSandbox = makeSandbox();
     attachSandbox(cache, newSlot, newSandbox);
 
-    // Session N goes live on the new slot.
-    const handleN = acquireSlotSession(cache, "agent");
-    expect(handleN).toBe(newSlot);
+    // The stale probe settles "idle" — but its slot is no longer current.
+    gate.resolve(0);
+    await vi.advanceTimersByTimeAsync(0);
 
-    // O's socket finally closes. Its release targets the OLD slot only — it
-    // must not decrement the new slot's counter or rearm its idle timer.
-    releaseSlotSession(cache, handleO);
-    expect(newSlot.activeSessions).toBe(1);
-    expect(newSlot.idleTimer).toBeUndefined();
-
-    // N stays alive well past the idle window.
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS * 3);
     expect(newSandbox.shutdown).not.toHaveBeenCalled();
-
-    // Releasing N (the real last session) rearms eviction as usual.
-    releaseSlotSession(cache, handleN);
-    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
-    expect(newSandbox.shutdown).toHaveBeenCalledOnce();
-  });
-
-  it("acquire returns null and release tolerates it for an unknown slug", () => {
-    const cache = createSlotCache();
-    const acquired = acquireSlotSession(cache, "missing");
-    expect(acquired).toBeNull();
-    expect(() => releaseSlotSession(cache, acquired)).not.toThrow();
+    expect(cache.get("raced")?.sandbox).toBe(newSandbox);
   });
 
   it("terminateSlot clears the idle timer to avoid leaks", async () => {

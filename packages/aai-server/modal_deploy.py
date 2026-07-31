@@ -129,6 +129,7 @@ image = (
         "pnpm --filter aai build"
         " && pnpm --filter aai-ui build"
         " && pnpm --filter @alexkroman1/aai-cli build"
+        " && pnpm --filter aai-guest build"
         " && pnpm --filter aai-studio-client build"
         " && pnpm --filter aai-server build"
         " && pnpm --filter aai-studio-server build",
@@ -137,7 +138,7 @@ image = (
         {
             "NODE_ENV": "production",
             "PORT": str(PORT),
-            "GUEST_HARNESS_PATH": "/app/packages/aai-server/dist/guest/deno-harness.mjs",
+            "GUEST_HARNESS_PATH": "/app/packages/aai-guest/dist/harness.mjs",
             # Studio builds run in the studio app's studio_build function,
             # never in the web server's process (see studio-build-runner.ts).
             "STUDIO_BUILD_BACKEND": "modal",

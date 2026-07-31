@@ -23,10 +23,11 @@ const RECONNECT_OPTIONS = {
 
 /**
  * Open partysocket's reconnecting WebSocket. The URL is a *provider*,
- * re-evaluated on every attempt, so each retry picks up the current resume
- * URL rather than the one the session started with.
+ * re-evaluated on every attempt (async supported), so each retry picks up
+ * the current broker-named endpoint and resume URL rather than the ones the
+ * session started with.
  */
-export function openReconnectingSocket(urlProvider: () => string): ReconnectingWebSocket {
+export function openReconnectingSocket(urlProvider: () => Promise<string>): ReconnectingWebSocket {
   return new ReconnectingWebSocket(urlProvider, undefined, RECONNECT_OPTIONS);
 }
 

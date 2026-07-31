@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Server-specific constants. SDK-level constants live in aai.
 
-import path from "node:path";
+import { createRequire } from "node:module";
 
 /** 64 KB. */
 export const MAX_ENV_SIZE = 65_536;
@@ -43,7 +43,21 @@ export function agentObjectKey(slug: string, file: string): string {
   return `${agentPrefix(slug)}/${file}`;
 }
 
-/** Locate the built Deno guest harness (overridable via GUEST_HARNESS_PATH). */
+/**
+ * Locate the built Node guest harness — the `aai-guest` workspace package's
+ * single-file artifact (overridable via GUEST_HARNESS_PATH). Resolved
+ * lazily at sandbox creation, so a missing build fails the spawn loudly
+ * rather than the server boot.
+ */
 export function resolveHarnessPath(env: NodeJS.ProcessEnv = process.env): string {
-  return env.GUEST_HARNESS_PATH ?? path.resolve(import.meta.dirname, "dist/guest/deno-harness.mjs");
+  if (env.GUEST_HARNESS_PATH) return env.GUEST_HARNESS_PATH;
+  try {
+    return createRequire(import.meta.url).resolve("aai-guest/harness");
+  } catch (err) {
+    throw new Error(
+      "Guest harness not built — run `pnpm --filter aai-guest build` " +
+        "(or set GUEST_HARNESS_PATH to a built harness.mjs)",
+      { cause: err },
+    );
+  }
 }

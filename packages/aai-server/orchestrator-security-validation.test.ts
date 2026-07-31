@@ -5,7 +5,6 @@
  * validation. Cross-agent tenant-isolation tests live in
  * orchestrator-security.test.ts.
  */
-import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
 import { createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
@@ -112,7 +111,6 @@ describe("security headers on all response types", () => {
       store,
       workspaces: createMemoryWorkspaceStore(),
       chats: createMemoryChatStore(),
-      defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
     const res = await app.fetch(new Request("http://localhost/health"));
 
@@ -130,7 +128,6 @@ describe("security headers on all response types", () => {
       store,
       workspaces: createMemoryWorkspaceStore(),
       chats: createMemoryChatStore(),
-      defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
     const res = await app.fetch(new Request("http://localhost/nonexistent"));
 
@@ -165,7 +162,6 @@ describe("security headers on all response types", () => {
       store,
       workspaces: createMemoryWorkspaceStore(),
       chats: createMemoryChatStore(),
-      defaultVector: (slug) => createMemoryVector({ namespace: slug }),
       allowedOrigins: ["https://trusted.example.com"],
     });
 
@@ -195,7 +191,6 @@ describe("security headers on all response types", () => {
       store,
       workspaces: createMemoryWorkspaceStore(),
       chats: createMemoryChatStore(),
-      defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     });
 
     const res = await app.fetch(

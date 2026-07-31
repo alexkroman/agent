@@ -63,26 +63,6 @@ describe("AgentConfigSchema", () => {
   test("rejects unknown mode", () => {
     expect(AgentConfigSchema.safeParse({ ...base, mode: "hybrid" }).success).toBe(false);
   });
-
-  test.each([["api.example.com"], ["*.example.com"], ["sub.domain.example.co.uk"]])(
-    "accepts allowedHosts pattern %s",
-    (host) => {
-      expect(AgentConfigSchema.safeParse({ ...base, allowedHosts: [host] }).success).toBe(true);
-    },
-  );
-
-  test.each([
-    ["https://api.example.com"],
-    ["api.example.com/path"],
-    ["api.example.com:8080"],
-    ["*"],
-    ["*.foo.*.com"],
-    ["10.0.0.1"],
-    ["thing.internal"],
-    [""],
-  ])("rejects allowedHosts pattern %s", (host) => {
-    expect(AgentConfigSchema.safeParse({ ...base, allowedHosts: [host] }).success).toBe(false);
-  });
 });
 
 describe("toAgentConfig", () => {
@@ -115,25 +95,8 @@ describe("toAgentConfig", () => {
       stt: desc("assemblyai"),
       llm: desc("anthropic"),
       tts: desc("cartesia"),
-      vector: desc("in-memory"),
-      allowedHosts: ["api.example.com"],
     };
     expect(toAgentConfig(src)).toEqual({ ...src, mode: "pipeline" });
-  });
-
-  test("carries allowedHosts through to the deploy config", () => {
-    // Without this the field cannot reach the platform at all: the deploy path
-    // builds its config here, not through `parseManifest`, so a declared host
-    // was silently dropped and guest tool code had no egress.
-    const config = toAgentConfig({ ...base, allowedHosts: ["api.example.com", "*.example.org"] });
-    expect(config.allowedHosts).toEqual(["api.example.com", "*.example.org"]);
-  });
-
-  test("copies allowedHosts rather than aliasing the caller's array", () => {
-    const hosts = ["api.example.com"];
-    const config = toAgentConfig({ ...base, allowedHosts: hosts });
-    hosts.push("evil.example.com");
-    expect(config.allowedHosts).toEqual(["api.example.com"]);
   });
 
   test("propagates the s2s descriptor and keeps the pipeline triple absent", () => {

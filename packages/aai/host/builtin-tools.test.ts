@@ -287,7 +287,7 @@ describe("resolveAllBuiltins defs", () => {
     const { defs, schemas, guidance } = resolveAllBuiltins(["think"]);
     expect(schemas.map((s) => s.name)).toContain("think");
     expect(guidance.some((g) => g.includes("think"))).toBe(true);
-    // db/vector are throwing stubs in the mock context — a no-op must not touch them.
+    // db is a throwing stub in the mock context — a no-op must not touch it.
     const result = await defs.think?.execute(
       { thought: "check the policy first" },
       createMockToolContext(),

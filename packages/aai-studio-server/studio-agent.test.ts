@@ -27,7 +27,6 @@ function fakeSandbox(overrides: Partial<StudioSandbox> = {}): StudioSandbox {
             parameters: { type: "object" },
           },
         ],
-        allowedHosts: [],
       },
     })),
     executeTool: vi.fn(async (name: string) => `ran ${name}`),

@@ -4,6 +4,7 @@
 // Realtime). Tool-execution specs live in runtime.test.ts.
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { z } from "zod";
 import { SESSION_RESUME_GRACE_MS } from "../sdk/constants.ts";
 import { openaiRealtime } from "../sdk/providers/s2s/openai-realtime.ts";
 import type { S2sProvider } from "../sdk/providers.ts";
@@ -185,6 +186,39 @@ describe("createRuntime createSession", () => {
       type: "custom_event",
       event: "ping",
       data: { n: 2 },
+    });
+  });
+
+  test("ctx.send drops an over-cap payload but relays an under-cap one", async () => {
+    const agent = makeAgent({
+      tools: {
+        emit: {
+          description: "Send a client event of a caller-chosen size",
+          parameters: z.object({ size: z.number() }),
+          execute: (args, ctx) => {
+            ctx.send("big", { blob: "x".repeat((args as { size: number }).size) });
+            return "sent";
+          },
+        },
+      },
+    });
+    const runtime = createRuntime({ agent, env: {}, logger: silentLogger });
+    const client = makeClientSink();
+    runtime.createSession({ id: "s1", agent: agent.name, client });
+
+    // Over the 64 KB payload cap → dropped (the guest→host relay used to do
+    // this; the runtime now owns it since ctx.send runs in-guest).
+    await runtime.executeTool("emit", { size: 70_000 }, "s1", []);
+    expect(client.event).not.toHaveBeenCalledWith(
+      expect.objectContaining({ type: "custom_event" }),
+    );
+
+    // Comfortably under → relayed.
+    await runtime.executeTool("emit", { size: 10 }, "s1", []);
+    expect(client.event).toHaveBeenCalledWith({
+      type: "custom_event",
+      event: "big",
+      data: { blob: "x".repeat(10) },
     });
   });
 

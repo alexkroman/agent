@@ -3,43 +3,48 @@
  * Modal-backed sandbox spawning.
  *
  * Every guest harness runs in a [Modal Sandbox](https://modal.com/docs/guide/sandbox)
- * — a remote, isolated container managed by Modal's infrastructure. The host
- * creates a sandbox from a Deno image, writes the built guest harness into
- * its filesystem, and execs `deno run --no-prompt /harness.mjs`. The exec'd
- * process's stdin/stdout carry the same NDJSON JSON-RPC protocol the guest
- * harness has always spoken; only the transport underneath changed (Modal's
- * command router instead of local child-process pipes).
+ * — a remote, isolated container managed by Modal's infrastructure. The
+ * sandbox is created from a snapshot image with the harness baked in (built
+ * once per harness version — see `buildContext`), the harness is exec'd as a
+ * Node process serving a WebSocket, and the host dials that socket through
+ * the sandbox's Modal tunnel. JSON-RPC 2.0 messages flow both ways over the
+ * socket (see rpc-transport.ts).
  *
- * Security properties preserved from the previous gVisor backend:
- * - **No guest network**: sandboxes are created with `blockNetwork: true`.
- *   All external calls still proxy through host-side RPC (`fetch/request`).
+ * Security properties:
+ * - **The tunnel is public but the harness is not**: the host mints a
+ *   per-sandbox bearer token, delivers it via the exec's env (never the
+ *   sandbox's), and the harness rejects unauthenticated upgrades.
  * - **No secrets in the guest environment**: agent env is delivered via the
  *   `bundle/load` RPC params, never as sandbox environment variables.
- * - **No host filesystem**: the sandbox sees only the Deno image plus the
- *   harness file written into it.
+ * - **No host filesystem**: the sandbox sees only the baked guest image.
  * - **Resource limits**: memory/CPU caps map onto Modal's per-sandbox
  *   `memoryLimitMiB`/`cpuLimit` options.
+ *
+ * Guest runtime is Node — the same runtime as the host and `aai dev`, so
+ * tool code behaves identically everywhere. The Modal sandbox (not a
+ * language runtime permission model) is the security boundary.
  *
  * Credentials: `MODAL_TOKEN_ID` / `MODAL_TOKEN_SECRET` (or a `~/.modal.toml`
  * profile — the SDK resolves both). There is no fallback backend: without
  * Modal credentials, sandbox creation fails loudly in dev and prod alike.
  */
 
+import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
-import { Readable, Writable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import { ModalClient, type SandboxCreateParams } from "modal";
+import { WebSocket } from "ws";
 import { debug } from "./_debug-log.ts";
-import { HARNESS_HEARTBEAT_INTERVAL_MS } from "./guest/limits.ts";
+import { createHarnessImageResolver, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import {
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
   parseSandboxLimitsFromEnv,
   parseSandboxRegionsFromEnv,
 } from "./modal-sandbox-env.ts";
-import { createNdjsonConnection } from "./ndjson-transport.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
+import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 
 // ── Structural Modal types ───────────────────────────────────────────────────
@@ -48,44 +53,60 @@ import type { WarmHarness } from "./sandbox-vm.ts";
 // clients; the real `Sandbox`/`ContainerProcess` satisfy them.
 
 export type ModalProcLike = {
-  stdin: WritableStream<Uint8Array>;
   stdout: ReadableStream<Uint8Array>;
   stderr: ReadableStream<Uint8Array>;
   /** Resolves with the exit code once the process finishes. */
   wait(): Promise<number>;
 };
 
+export type ModalTunnelLike = {
+  host: string;
+  port: number;
+};
+
 export type ModalSandboxLike = {
   sandboxId: string;
-  filesystem: {
-    writeText(data: string, remotePath: string): Promise<unknown>;
-  };
   exec(
     command: string[],
-    params: { mode: "binary"; stdout: "pipe"; stderr: "pipe" },
+    params: { mode: "binary"; stdout: "pipe"; stderr: "pipe"; env?: Record<string, string> },
   ): Promise<ModalProcLike>;
+  tunnels(timeoutMs?: number): Promise<Record<number, ModalTunnelLike>>;
   terminate(): Promise<unknown>;
 };
 
-/** The one operation spawning needs from Modal — injectable for tests. */
+/**
+ * The one operation spawning needs from Modal — injectable for tests.
+ *
+ * `createGuestSandbox` creates a sandbox with the given harness code present
+ * at {@link HARNESS_REMOTE_PATH}, served from a baked snapshot image (built
+ * once per harness version, published under a content-addressed tag).
+ */
 export type ModalSpawnContext = {
-  createSandbox(params: SandboxCreateParams): Promise<ModalSandboxLike>;
+  createGuestSandbox(code: string, params: SandboxCreateParams): Promise<ModalSandboxLike>;
 };
 
 // ── Configuration ────────────────────────────────────────────────────────────
 
 /**
- * Default image for guest sandboxes. Only Deno is required — the harness is
- * written into the sandbox at spawn time. Override with `MODAL_SANDBOX_IMAGE`
- * (pin a version tag in production for reproducible guests).
+ * Default base image for guest sandboxes. Node only — the guest runs the
+ * same runtime as the host, and Modal's sandbox is the security boundary.
+ * The harness is baked on top via a one-time filesystem snapshot (see
+ * `buildContext`). Override with `MODAL_SANDBOX_IMAGE` (pin a version tag in
+ * production for reproducible guests).
  */
-const DEFAULT_SANDBOX_IMAGE = "denoland/deno:latest";
+const DEFAULT_SANDBOX_IMAGE = "node:24-slim";
 
 /** Modal App the sandboxes are created under. Override with `MODAL_APP_NAME`. */
 const DEFAULT_MODAL_APP_NAME = "aai-server";
 
-/** Where the guest harness is written inside the sandbox. */
-const HARNESS_REMOTE_PATH = "/tmp/harness.mjs";
+/** Container port the harness WebSocket server listens on (tunneled). */
+export const GUEST_PORT = 8080;
+
+/** Budget for the harness WebSocket to become dialable after exec. */
+const GUEST_DIAL_TIMEOUT_MS = 30_000;
+
+/** Delay between dial attempts while the harness server boots. */
+const GUEST_DIAL_RETRY_MS = 250;
 
 export function modalRequiredError(): Error {
   return new Error(
@@ -125,11 +146,17 @@ async function buildContext(): Promise<ModalSpawnContext> {
   const client = modalClient();
   const appName = process.env.MODAL_APP_NAME ?? DEFAULT_MODAL_APP_NAME;
   const app = await client.apps.fromName(appName, { createIfMissing: true });
-  const image = client.images.fromRegistry(
-    process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE,
-  );
+  const baseTag = process.env.MODAL_SANDBOX_IMAGE ?? DEFAULT_SANDBOX_IMAGE;
+  const baseImage = client.images.fromRegistry(baseTag);
+
+  // Snapshot image with the harness baked in — see modal-harness-image.ts.
+  const harnessImage = createHarnessImageResolver({ client, app, baseTag, baseImage });
+
   return {
-    createSandbox: (params) => client.sandboxes.create(app, image, params),
+    async createGuestSandbox(code, params) {
+      const image = await harnessImage(code);
+      return client.sandboxes.create(app, image, params);
+    },
   };
 }
 
@@ -174,64 +201,17 @@ function harnessCode(harnessPath: string): Promise<string> {
   return cached;
 }
 
-// ── Web stream ⇄ Node stream adapters ────────────────────────────────────────
-// The NDJSON transport speaks Node streams (readline + write/drain); Modal's
-// ContainerProcess exposes WHATWG streams. Hand-rolled pumps rather than
-// Readable.fromWeb/Writable.fromWeb because the SDK's stream types are the
-// DOM's, not node:stream/web's, and the manual form also gives us explicit
-// dead-peer behavior: a reader failure ends the readable (readline close →
-// pending RPCs rejected), and writer failures surface as stream errors the
-// transport already guards against.
-
-function webToNodeReadable(stream: ReadableStream<Uint8Array>): Readable {
-  const reader = stream.getReader();
-  return new Readable({
-    read() {
-      reader.read().then(
-        ({ done, value }) => {
-          if (done) this.push(null);
-          else this.push(Buffer.from(value));
-        },
-        () => {
-          // Peer died mid-read; end of stream is how the RPC layer learns.
-          this.push(null);
-        },
-      );
-    },
-  });
-}
-
-function webToNodeWritable(stream: WritableStream<Uint8Array>): Writable {
-  const writer = stream.getWriter();
-  return new Writable({
-    write(chunk: Buffer, _enc, cb) {
-      // Buffer is a Uint8Array, so it crosses the web-stream boundary as-is.
-      writer.write(chunk).then(() => cb(), cb);
-    },
-    final(cb) {
-      writer.close().then(
-        () => cb(),
-        () => cb(),
-      );
-    },
-    destroy(err, cb) {
-      void writer.abort(err ?? undefined).catch(() => undefined);
-      cb(err);
-    },
-  });
-}
-
-// ── stderr logging ───────────────────────────────────────────────────────────
+// ── Guest process logging ────────────────────────────────────────────────────
 
 /**
- * Cap on stderr bytes logged per sandbox. Guest stack traces are diagnostic
+ * Cap on stream bytes logged per sandbox. Guest stack traces are diagnostic
  * gold, but a guest looping on writes must not flood the host's logs — past
  * the cap the stream keeps draining silently (never stop consuming, or the
- * guest wedges on its next stderr write).
+ * guest wedges on its next write).
  */
-const MAX_STDERR_LOG_BYTES = 64 * 1024;
+const MAX_STREAM_LOG_BYTES = 64 * 1024;
 
-async function drainStderr(stream: ReadableStream<Uint8Array>, sandboxId: string): Promise<void> {
+async function drainProcStream(stream: ReadableStream<Uint8Array>, label: string): Promise<void> {
   const reader = stream.getReader();
   const decoder = new TextDecoder();
   let logged = 0;
@@ -239,52 +219,73 @@ async function drainStderr(stream: ReadableStream<Uint8Array>, sandboxId: string
     for (;;) {
       const { done, value } = await reader.read();
       if (done) return;
-      if (logged >= MAX_STDERR_LOG_BYTES) continue; // keep draining, stop logging
+      if (logged >= MAX_STREAM_LOG_BYTES) continue; // keep draining, stop logging
       logged += value.byteLength;
       const text = decoder.decode(value, { stream: true }).trimEnd();
-      if (text) console.warn(`[modal:${sandboxId}] stderr: ${text}`);
+      if (text) console.warn(`${label}: ${text}`);
     }
   } catch {
     // Peer died mid-read; process exit handling covers teardown.
   }
 }
 
+// ── Guest WebSocket dial ─────────────────────────────────────────────────────
+
+/** How the host reaches a spawned harness — injectable for tests. */
+export type DialGuest = (url: string, token: string) => Promise<RpcWebSocket>;
+
+function connectOnce(url: string, token: string): Promise<WebSocket> {
+  return new Promise((resolve, reject) => {
+    const ws = new WebSocket(url, { headers: { authorization: `Bearer ${token}` } });
+    ws.once("open", () => resolve(ws));
+    ws.once("error", (err) => reject(err));
+    ws.once("unexpected-response", (_req, res) => {
+      reject(new Error(`guest WebSocket dial rejected: HTTP ${res.statusCode}`));
+    });
+  });
+}
+
+/**
+ * Dial the harness WebSocket through its tunnel, retrying while the harness
+ * server boots (the tunnel exists before the exec'd process listens, so
+ * early attempts are refused/reset).
+ */
+async function dialGuest(url: string, token: string): Promise<RpcWebSocket> {
+  const deadline = Date.now() + GUEST_DIAL_TIMEOUT_MS;
+  for (;;) {
+    try {
+      return await connectOnce(url, token);
+    } catch (err) {
+      if (Date.now() >= deadline) {
+        throw new Error(
+          `guest WebSocket not dialable after ${GUEST_DIAL_TIMEOUT_MS}ms: ${errorMessage(err)}`,
+          { cause: err },
+        );
+      }
+      await new Promise((r) => setTimeout(r, GUEST_DIAL_RETRY_MS));
+    }
+  }
+}
+
 // ── WarmHarness construction ─────────────────────────────────────────────────
 
-/** Wrap a Modal sandbox + exec'd harness process into the WarmHarness shape. */
-function warmFromModal(sb: ModalSandboxLike, proc: ModalProcLike): WarmHarness {
-  const stdout = webToNodeReadable(proc.stdout);
-  const stdin = webToNodeWritable(proc.stdin);
-  // A guest that dies mid-RPC leaves its streams to error asynchronously.
-  // Without listeners those become an uncaughtException that exits the whole
-  // multi-tenant host.
-  stdout.on("error", () => {
-    /* guest died; RPC layer surfaces this via the readline close */
-  });
-  stdin.on("error", () => {
-    /* guest died; RPC layer surfaces this via the readline close */
-  });
-  void drainStderr(proc.stderr, sb.sandboxId);
+/** Wrap a Modal sandbox + dialed harness socket into the WarmHarness shape. */
+function warmFromModal(
+  sb: ModalSandboxLike,
+  proc: ModalProcLike,
+  ws: RpcWebSocket,
+  sessionUrl: string,
+): WarmHarness {
+  void drainProcStream(proc.stdout, `[modal:${sb.sandboxId}] stdout`);
+  void drainProcStream(proc.stderr, `[modal:${sb.sandboxId}] stderr`);
 
-  const conn = createNdjsonConnection<GuestRpcSchema>(stdout, stdin);
-
-  // Host-liveness heartbeat: the guest's orphan watchdog exits the harness
-  // after HARNESS_ORPHAN_TIMEOUT_MS without stdin traffic, so every live
-  // harness — pooled and unconfigured included — must hear from us on a
-  // shorter cadence. Unref'd (must never hold the host process open) and
-  // cleared the moment the harness is known dead or torn down; the guest
-  // needs no `ping` handler, any inbound line feeds its watchdog.
-  const heartbeat = setInterval(() => {
-    void conn.sendNotification("ping");
-  }, HARNESS_HEARTBEAT_INTERVAL_MS);
-  heartbeat.unref?.();
+  const conn = createRpcConnection<GuestRpcSchema>(ws);
 
   const exitListeners: (() => void)[] = [];
   let dead = false;
   const notifyExit = (): void => {
     if (dead) return;
     dead = true;
-    clearInterval(heartbeat);
     for (const cb of exitListeners) {
       try {
         cb();
@@ -294,8 +295,11 @@ function warmFromModal(sb: ModalSandboxLike, proc: ModalProcLike): WarmHarness {
     }
   };
   // The harness process ending — clean exit, sandbox timeout, OOM kill,
-  // terminate() — all settle wait(); either way the harness is gone.
+  // terminate() — all settle wait(). A dropped socket means the same thing
+  // from the host's perspective: this harness is unusable (the host never
+  // redials) and its guest self-exits on the orphan timeout.
   proc.wait().then(notifyExit, notifyExit);
+  ws.on("close", notifyExit);
 
   let cleanupPromise: Promise<void> | null = null;
   const cleanup = (): Promise<void> => {
@@ -314,6 +318,7 @@ function warmFromModal(sb: ModalSandboxLike, proc: ModalProcLike): WarmHarness {
 
   return {
     conn,
+    sessionUrl,
     cleanup,
     alive: () => !dead,
     onExit: (cb) => {
@@ -332,9 +337,8 @@ function warmFromModal(sb: ModalSandboxLike, proc: ModalProcLike): WarmHarness {
       exitListeners.push(cb);
     },
     async [Symbol.asyncDispose]() {
-      // Best-effort: on a dead guest the notification hits dispose()'s
-      // dead-stream guard and is dropped, and terminate() may find the
-      // sandbox already gone — both fine.
+      // Best-effort: on a dead guest the notification is dropped, and
+      // terminate() may find the sandbox already gone — both fine.
       void conn.sendNotification("shutdown");
       conn.dispose();
       await cleanup().catch(() => undefined);
@@ -345,16 +349,17 @@ function warmFromModal(sb: ModalSandboxLike, proc: ModalProcLike): WarmHarness {
 // ── Spawning ─────────────────────────────────────────────────────────────────
 
 /**
- * Spawn a warm Deno harness in a fresh Modal sandbox. The returned
- * WarmHarness has a running harness process and a connected NDJSON channel,
- * but no listeners attached and no bundle loaded.
+ * Spawn a warm Node harness in a fresh Modal sandbox and dial its WebSocket.
+ * The returned WarmHarness has a running harness process and a connected RPC
+ * channel, but no listeners attached and no bundle loaded.
  *
  * `slug` is attached as a sandbox tag for observability only; the security
- * boundary is Modal's sandbox isolation + blockNetwork.
+ * boundary is Modal's sandbox isolation + network policy.
  */
 export async function spawnModalWarm(
   opts: { harnessPath: string; slug?: string },
   ctx?: ModalSpawnContext,
+  dial: DialGuest = dialGuest,
 ): Promise<WarmHarness> {
   const [code, context] = await Promise.all([
     harnessCode(opts.harnessPath),
@@ -364,24 +369,13 @@ export async function spawnModalWarm(
   const regions = parseSandboxRegionsFromEnv(process.env);
 
   const t0 = performance.now();
-  const sb = await context.createSandbox({
-    // Explicit idle entrypoint. Without a command Modal falls back to the
-    // image's default process, and denoland/deno's docker-entrypoint.sh
-    // treats its arguments as Deno subcommands — the container exits
-    // immediately and every later filesystem/exec call reports "Sandbox may
-    // have already shut down". `sleep infinity` matches Modal's documented
-    // default main-process behavior ("sleep indefinitely"), which idle
-    // detection ignores — the exec'd harness is what holds the sandbox
+  const sb = await context.createGuestSandbox(code, {
+    // Explicit idle entrypoint: the exec'd harness is what holds the sandbox
     // active, so its exit is what starts the idle timer.
     command: ["sleep", "infinity"],
-    // The denoland/deno image's entrypoint wraps the command in tini, which
-    // Modal does not run as PID 1 — without this, every sandbox logs a tini
-    // warning that it cannot reap re-parented zombies. Registering tini as a
-    // child subreaper silences the warning and makes the reaping real. Not an
-    // agent secret: agent env is delivered via bundle/load RPC, never here.
-    env: { TINI_SUBREAPER: "1" },
-    // The guest has no network by design — all egress is host-proxied RPC.
-    blockNetwork: true,
+    // The host dials in through this tunnel; the harness's bearer-token
+    // check is what keeps the public tunnel URL from being an open door.
+    encryptedPorts: [GUEST_PORT],
     timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
     idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
     ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
@@ -391,24 +385,34 @@ export async function spawnModalWarm(
     tags: { service: "aai-guest", slug: opts.slug ?? "pool" },
   });
   try {
-    await sb.filesystem.writeText(code, HARNESS_REMOTE_PATH);
-
-    // Permissions: `--no-prompt` and nothing else — the bundle arrives over
-    // RPC and loads from a `blob:` URL, so the harness needs no Deno grants.
-    const proc = await sb.exec(["deno", "run", "--no-prompt", HARNESS_REMOTE_PATH], {
+    // The per-sandbox bearer token rides the EXEC env — never the sandbox
+    // env, where it would outlive the process and show in sandbox metadata.
+    const token = randomBytes(32).toString("hex");
+    const proc = await sb.exec(["node", HARNESS_REMOTE_PATH], {
       mode: "binary",
       stdout: "pipe",
       stderr: "pipe",
+      env: { AAI_GUEST_TOKEN: token, AAI_GUEST_PORT: String(GUEST_PORT) },
     });
-    const tExec = performance.now();
+
+    const tunnels = await sb.tunnels();
+    const tunnel = tunnels[GUEST_PORT];
+    if (!tunnel) {
+      throw new Error(`no tunnel for guest port ${GUEST_PORT}`);
+    }
+    const ws = await dial(`wss://${tunnel.host}:${tunnel.port}/ws`, token);
+    // The PUBLIC client-session endpoint on the same tunnel — handed to
+    // browsers by the platform's client-config broker. Auth-free by design
+    // (parity with the platform's always-public agent WebSocket).
+    const sessionUrl = `wss://${tunnel.host}:${tunnel.port}/websocket`;
 
     debug("Modal sandbox spawned", {
       sandboxId: sb.sandboxId,
       slug: opts.slug ?? "pool",
-      ms: Math.round(tExec - t0),
+      ms: Math.round(performance.now() - t0),
     });
 
-    return warmFromModal(sb, proc);
+    return warmFromModal(sb, proc, ws, sessionUrl);
   } catch (err) {
     // Never leak a sandbox whose harness failed to start.
     await sb.terminate().catch(() => undefined);
@@ -421,9 +425,7 @@ export async function spawnModalWarm(
 /** @internal Exposed for unit tests only. */
 export const _internals = {
   warmFromModal,
-  webToNodeReadable,
-  webToNodeWritable,
-  drainStderr,
+  drainProcStream,
   resetModalContext(): void {
     contextPromise = null;
     clientMemo = null;

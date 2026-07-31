@@ -1,5 +1,4 @@
 import type { Db, ToolContext, ToolDef } from "@alexkroman1/aai";
-import type { Vector } from "@alexkroman1/aai/vector";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
 import { calculateTotal, type Pizza, pizzaPrice } from "./shared.ts";
@@ -11,14 +10,6 @@ const noDb: Db = {
   query: () => Promise.reject(new Error("db not used by this template")),
 };
 
-const noopVector: Vector = {
-  async upsert() {},
-  async query() {
-    return [];
-  },
-  async delete() {},
-};
-
 /** ToolContext stub: per-session ctx.state, and captured ctx.send events.
  *  Each stub is one session — the cart is session-scoped by construction. */
 function makeCtx(sessionId = "session-a") {
@@ -27,7 +18,6 @@ function makeCtx(sessionId = "session-a") {
     env: {},
     state: {},
     db: noDb,
-    vector: noopVector,
     generate: () => Promise.reject(new Error("generate not available in tests")),
     messages: [],
     sessionId,

@@ -131,13 +131,13 @@ export const TOOL_RESULT_TRUNCATION_MARKER = "\n[truncated]";
 export const MAX_TRANSCRIPT_CHARS = 100_000;
 /** Wire cap on an error event's message. */
 export const MAX_ERROR_MESSAGE_CHARS = 10_000;
-/** Wire cap on a `custom_event` event name (guest→client `client/send` relay). */
+/** Wire cap on a `custom_event` event name (`ctx.send` → client). */
 export const MAX_CLIENT_EVENT_NAME_LENGTH = 256;
 /**
  * Wire cap on a `custom_event`'s serialized payload (64 KB) — prevents
- * memory abuse via the WebSocket relay. The payload is arbitrary JSON, so
- * this is enforced imperatively (serialize + measure) by the relay rather
- * than in the zod schema.
+ * memory abuse via `ctx.send`. The payload is arbitrary JSON, so any
+ * enforcement is imperative (serialize + measure) rather than in the zod
+ * schema.
  */
 export const MAX_CLIENT_EVENT_PAYLOAD_BYTES = 65_536;
 /** Cap on raw wire data echoed into warn/info logs. */
@@ -467,24 +467,6 @@ export const TTS_RECONNECT_TIMEOUT_MS = 8000;
 export const DEFAULT_STT_PROMPT = "";
 
 export const WS_OPEN = 1;
-
-/**
- * Limits on one outbound fetch made by an agent's own tool code.
- *
- * Deliberately mode-independent: the platform enforces them on the
- * host side of the guest's fetch RPC, and self-hosted runs enforce the
- * same numbers in-process (`host/tool-egress.ts`), so a tool that works
- * under `aai dev` behaves the same once deployed. Both sides read *these*
- * values through `host/guest-fetch-policy.ts` rather than their own copies
- * — see that module before adding a limit here.
- */
-export const TOOL_FETCH_TIMEOUT_MS = 30_000;
-/** Max request-body size for one tool fetch (1 MiB). */
-export const TOOL_FETCH_MAX_REQUEST_BODY_BYTES = 1024 * 1024;
-/** Max response size for one tool fetch (4 MiB). */
-export const TOOL_FETCH_MAX_RESPONSE_BYTES = 4 * 1024 * 1024;
-/** Max simultaneous tool fetches per agent. */
-export const TOOL_FETCH_MAX_CONCURRENT = 10;
 
 /**
  * Single source of truth — used by `secureHeaders` middleware and

@@ -13,13 +13,9 @@
 // imports in environments without dev deps installed (e.g. the deployed
 // platform server). It is consumed directly by sibling test files.
 
-export type { Vector, VectorMatch, VectorQueryOptions } from "../sdk/vector.ts";
 export * from "./builtin-tools.ts";
 export * from "./generate.ts";
-export * from "./guest-fetch-policy.ts";
 export * from "./host-mode.ts";
-export { createMemoryVector } from "./memory-vector.ts";
-export * from "./pinecone-vector.ts";
 export * from "./postgres-db.ts";
 export * from "./providers/host-env.ts";
 // Narrow named exports rather than `export *`: the rest of resolve.ts is
@@ -28,7 +24,6 @@ export * from "./providers/host-env.ts";
 // applications (e.g. the platform server's browser studio) turn an LLM
 // descriptor into a Vercel AI SDK model without duplicating provider wiring.
 export { requiredProviderEnvVars, resolveLlm } from "./providers/resolve.ts";
-export * from "./providers/resolve-vector.ts";
 export * from "./runtime.ts";
 export * from "./runtime-config.ts";
 export * from "./server.ts";

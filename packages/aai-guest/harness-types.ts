@@ -1,12 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 //
-// Shared type definitions for the Deno guest harness.
+// Shared type definitions for the Node guest harness.
 //
-// Split out of `deno-harness.ts` to keep that entrypoint focused on the
+// Split out of `harness.ts` to keep that entrypoint focused on the
 // dispatch loop. Like the harness, this file has ZERO workspace imports —
-// it is bundled into the self-contained guest artifact (and, in dev, loaded
-// by Deno as a sibling via a static import, which needs no extra
-// permissions).
+// it is bundled into the self-contained guest artifact.
 
 // ---- Tool / agent shapes ----------------------------------------------------
 
@@ -20,49 +18,23 @@ export type DbAdapter = {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
 
-export type VectorMatch = {
-  id: string;
-  score: number;
-  text: string;
-  metadata?: Record<string, unknown>;
-};
-
-export type VectorQueryOptions = {
-  topK?: number;
-  filter?: Record<string, unknown>;
-};
-
-export type VectorAdapter = {
-  upsert(id: string, text: string, metadata?: Record<string, unknown>): Promise<void>;
-  query(text: string, opts?: VectorQueryOptions): Promise<VectorMatch[]>;
-  delete(ids: string | string[]): Promise<void>;
-};
-
-// Mirrors the SDK's GenerateOptions/GenerateResult (sdk/generate.ts) —
-// JSON-serializable by design, proxied to the host as the llm/generate RPC.
-export type GenerateOptions = {
-  prompt: string;
-  system?: string;
-  llm?: { kind: string; options: Record<string, unknown> };
-  schema?: Record<string, unknown>;
-  temperature?: number;
-  maxOutputTokens?: number;
-};
-
-export type GenerateResult = {
-  text: string;
-  object?: unknown;
-};
-
-export type GenerateAdapter = (options: GenerateOptions) => Promise<GenerateResult>;
-
 export type ToolContext = {
   env: Readonly<Record<string, string>>;
+  /**
+   * Per-call trial state. The trial runner (studio `test_agent`) ships the
+   * state with each `tool/execute` and stores the (possibly mutated) object
+   * the response carries back — a real session's state lives in the embedded
+   * runtime, not here.
+   */
   state: Record<string, unknown>;
   /** App database. Accessing it with storage disabled throws guidance. */
   db: DbAdapter;
-  vector: VectorAdapter;
-  generate: GenerateAdapter;
+  /**
+   * ctx.generate. Only the trial runner builds a `ToolContext`, and trials
+   * don't run generation, so the harness supplies a rejecting stub — a real
+   * session's ctx.generate comes from the embedded SDK runtime instead.
+   */
+  generate: () => Promise<never>;
   sessionId: string;
   messages: readonly Message[];
   send(event: string, data: unknown): void;

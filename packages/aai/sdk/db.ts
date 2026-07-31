@@ -28,7 +28,7 @@ export const MAX_DB_RESULT_ROWS = 1000;
 /**
  * Error thrown when tool code touches `ctx.db` while storage is not enabled.
  * Single source: the host tool-executor throws it directly; the guest harness
- * keeps an import-free duplicate in `aai-server/guest/limits.ts`, pinned to
+ * keeps an import-free duplicate in `aai-guest/limits.ts`, pinned to
  * this constant by an equality test — dev and prod must read identically.
  */
 export const STORAGE_DISABLED_MESSAGE =

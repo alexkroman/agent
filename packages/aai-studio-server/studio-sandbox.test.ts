@@ -1,42 +1,32 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { PassThrough } from "node:stream";
 import type { WarmHarness } from "aai-server/sandbox-vm";
-import { createTestConn, makeWarm, writeResponse } from "aai-server/test-utils";
+import { createTestConn, type FakeGuestSocket, makeWarm } from "aai-server/test-utils";
 import { describe, expect, test, vi } from "vitest";
 import { createStudioSandbox } from "./studio-sandbox.ts";
 
 /** Auto-respond to bundle/load and tool/execute like a live harness would. */
-function autorespond(
-  hostWritable: PassThrough,
-  hostReadable: PassThrough,
-  results: { load?: unknown; tool?: unknown },
-): void {
-  const respond = (line: string) => {
-    if (!line.trim()) return;
-    const msg = JSON.parse(line);
+function autorespond(socket: FakeGuestSocket, results: { load?: unknown; tool?: unknown }): void {
+  socket.onSend((msg) => {
     if (msg.id == null || !msg.method) return;
     const table: Record<string, unknown> = {
       "bundle/load": results.load ?? { ok: true },
-      "tool/execute": results.tool ?? { result: "ok" },
+      "tool/execute": results.tool ?? { result: "ok", state: {} },
     };
-    const result = table[msg.method];
+    const result = table[msg.method as string];
     if (result !== undefined) {
-      hostReadable.push(`${JSON.stringify({ jsonrpc: "2.0", id: msg.id, result })}\n`);
+      socket.receive({ jsonrpc: "2.0", id: msg.id, result });
     }
-  };
-  hostWritable.on("data", (chunk: Buffer) => {
-    for (const line of chunk.toString().split("\n")) respond(line);
   });
 }
 
 function makeFixture(results: { load?: unknown; tool?: unknown } = {}) {
-  const { conn, hostReadable, hostWritable, writtenLines } = createTestConn();
-  autorespond(hostWritable, hostReadable, results);
+  const { conn, socket, writtenLines } = createTestConn();
+  autorespond(socket, results);
   const cleanup = vi.fn().mockResolvedValue(undefined);
   const warm = makeWarm(conn, cleanup);
   const spawn = vi.fn(async () => warm);
-  return { spawn, cleanup, warm, writtenLines, hostReadable, hostWritable };
+  return { spawn, cleanup, warm, writtenLines, socket };
 }
 
 describe("createStudioSandbox", () => {
@@ -135,7 +125,7 @@ describe("createStudioSandbox", () => {
   });
 
   test("executeTool returns results and formats guest errors", async () => {
-    const okFixture = makeFixture({ tool: { result: "rolled 6" } });
+    const okFixture = makeFixture({ tool: { result: "rolled 6", state: {} } });
     const sandbox = await createStudioSandbox({
       harnessPath: "/tmp/h.mjs",
       spawn: okFixture.spawn,
@@ -143,7 +133,7 @@ describe("createStudioSandbox", () => {
     expect(await sandbox.executeTool("roll_dice", { count: 1 })).toBe("rolled 6");
     await sandbox.dispose();
 
-    const errFixture = makeFixture({ tool: { error: "kaboom" } });
+    const errFixture = makeFixture({ tool: { error: "kaboom", state: {} } });
     const failing = await createStudioSandbox({
       harnessPath: "/tmp/h.mjs",
       spawn: errFixture.spawn,
@@ -157,7 +147,7 @@ describe("createStudioSandbox", () => {
     // still in flight when the turn's teardown runs. Before the in-flight
     // guard this rejected with the transport's "Connection disposed", which
     // `test_agent` reported as "Bundle failed to load in the sandbox".
-    const { conn, hostReadable, writtenLines } = createTestConn();
+    const { conn, socket, writtenLines } = createTestConn();
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const sandbox = await createStudioSandbox({
       harnessPath: "/tmp/h.mjs",
@@ -173,7 +163,7 @@ describe("createStudioSandbox", () => {
 
     // Teardown races the request; the guest replies only afterwards.
     const disposing = sandbox.dispose();
-    writeResponse(hostReadable, requestId, { ok: true, config: { name: "A" } });
+    socket.receive({ jsonrpc: "2.0", id: requestId, result: { ok: true, config: { name: "A" } } });
 
     await expect(pending).resolves.toEqual({ config: { name: "A" } });
     await disposing;
@@ -204,29 +194,5 @@ describe("createStudioSandbox", () => {
     await sandbox.dispose();
     expect(fixture.cleanup).toHaveBeenCalledTimes(1);
     expect(fixture.writtenLines.some((l) => l.includes('"shutdown"'))).toBe(true);
-  });
-
-  test("registers scratch vector handlers but no db handler", async () => {
-    const fixture = makeFixture();
-    const sandbox = await createStudioSandbox({
-      harnessPath: "/tmp/h.mjs",
-      spawn: fixture.spawn,
-    });
-    // Vector works against a scratch in-memory store.
-    fixture.hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: 900, method: "vector/upsert", params: { id: "d1", text: "hello" } })}\n`,
-    );
-    // No app db in a trial sandbox — db/query is not a registered method.
-    fixture.hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: 901, method: "db/query", params: { sql: "select 1" } })}\n`,
-    );
-    await vi.waitFor(() => {
-      const replies = fixture.writtenLines.map((l) => JSON.parse(l));
-      const upsert = replies.find((m: { id?: number }) => m.id === 900);
-      expect(upsert?.error).toBeUndefined();
-      const db = replies.find((m: { id?: number }) => m.id === 901);
-      expect(db?.error?.message).toContain("Method not found");
-    });
-    await sandbox.dispose();
   });
 });

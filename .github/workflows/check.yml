@@ -90,7 +90,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        package: [aai, aai-ui, aai-cli, aai-server, aai-studio-server, aai-studio-client, aai-templates]
+        package: [aai, aai-ui, aai-cli, aai-guest, aai-server, aai-studio-server, aai-studio-client, aai-templates]
     steps:
       - uses: actions/checkout@v7
         with:

@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { type ChatStore, createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
@@ -113,7 +112,6 @@ export const TEST_AGENT_CONFIG = {
   systemPrompt: "Test",
   greeting: "",
   toolSchemas: [],
-  allowedHosts: [] as string[],
 };
 
 export function deployBody(overrides?: Record<string, unknown>): string {
@@ -149,7 +147,6 @@ export async function createTestOrchestrator(
     store,
     workspaces,
     chats,
-    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     // The real default spins a Modal sandbox to read the worker's
     // `__aaiConfig` self-description; tests answer with the standard config.
     inspect: async () => TEST_AGENT_CONFIG,
@@ -194,4 +191,8 @@ export async function deployAgent(
 
 // Sandbox-VM fakes shared with the aai-studio-server package tests
 // (cross-package imports may not reach `_`-internal modules directly).
-export { createTestConn, makeWarm, writeResponse } from "./_sandbox-vm-test-utils.ts";
+export {
+  createTestConn,
+  type FakeGuestSocket,
+  makeWarm,
+} from "./_sandbox-vm-test-utils.ts";

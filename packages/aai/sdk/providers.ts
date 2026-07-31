@@ -51,9 +51,6 @@ export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>>;
 /** Descriptor for an S2S provider. Returned by factories like `openaiRealtime(...)`. */
 export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>>;
 
-/** Descriptor for a Vector backend. Returned by factories like `pinecone(...)`. */
-export type VectorProvider = ProviderDescriptor<string, Record<string, unknown>>;
-
 // -------- STT openable (host-only) ------------------------------------------
 
 export interface SttError extends Error {

@@ -13,7 +13,7 @@
  *   available): the built worker must load in a real studio sandbox and
  *   self-describe a valid agent config — i.e. the code actually works, not
  *   just parses. It also asserts any config facts the case declares (expected
- *   tools, provider kinds, `allowedHosts` coverage).
+ *   tools, provider kinds).
  * - `TemplateParityJudge`: the workspace must be functionally equivalent to a
  *   hand-written template in `packages/aai-templates/templates/` — i.e. the
  *   agent built the *right* thing, not merely a thing that loads.
@@ -27,10 +27,9 @@
  *   `aai-studio-client` talk over HTTP only, with no code imports either way.
  * - `CONFIG_CASES` — no reference and no parity judge, just facts the built
  *   worker must report: AssemblyAI backs every stage the prompt didn't assign
- *   elsewhere, and a tool that fetches declares its host in `allowedHosts`.
- *   Both are "does this run once published" rules that a resemblance grader
- *   is the wrong instrument for — several references legitimately use other
- *   providers, so parity and runnability disagree.
+ *   elsewhere. A "does this run once published" rule that a resemblance
+ *   grader is the wrong instrument for — several references legitimately use
+ *   other providers, so parity and runnability disagree.
  *
  * Requires a real LLM key (`ASSEMBLYAI_API_KEY` or `ANTHROPIC_API_KEY`, or
  * `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL`); the whole suite skips without
@@ -48,7 +47,6 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
-import { matchesAllowedHost } from "@alexkroman1/aai";
 import { resolveHarnessPath } from "aai-server/constants";
 import { isModalConfigured } from "aai-server/modal-sandbox";
 import { type IsolateConfig, IsolateConfigSchema } from "aai-server/rpc-schemas";
@@ -260,8 +258,7 @@ function providerProblems(cfg: IsolateConfig, want: ProviderExpectation): string
 /**
  * Score 1 when the built worker loads in a real studio sandbox and reports a
  * valid agent config — the "actually works" gate. Optionally asserts config
- * facts on top: specific tool names, which providers back each stage, and an
- * `allowedHosts` entry covering every host the agent's tool code fetches.
+ * facts on top: specific tool names and which providers back each stage.
  *
  * These are checked here rather than by a rubric because they are facts about
  * the config, and a judge reading source can be argued out of a fact.
@@ -269,8 +266,8 @@ function providerProblems(cfg: IsolateConfig, want: ProviderExpectation): string
 const SandboxLoadJudge = createJudge<
   string,
   StudioEvalOutput,
-  { expectedTools?: string[]; providers?: ProviderExpectation; fetchedHosts?: string[] }
->("SandboxLoadJudge", async ({ output, expectedTools, providers, fetchedHosts }) => {
+  { expectedTools?: string[]; providers?: ProviderExpectation }
+>("SandboxLoadJudge", async ({ output, expectedTools, providers }) => {
   const worker = await buildWorker(output.files);
   const sandbox = await createStudioSandbox();
   try {
@@ -282,7 +279,6 @@ const SandboxLoadJudge = createJudge<
     }
     const config = parsed.data;
     const tools = config.toolSchemas.map((schema) => schema.name);
-    const { allowedHosts } = config;
     const problems: string[] = [];
 
     const missing = (expectedTools ?? []).filter((name) => !tools.includes(name));
@@ -290,24 +286,12 @@ const SandboxLoadJudge = createJudge<
 
     if (providers !== undefined) problems.push(...providerProblems(config, providers));
 
-    for (const host of fetchedHosts ?? []) {
-      // Any pattern that *matches* passes: "*.open-meteo.com" is as correct as
-      // the bare hostname, so match with the runtime's own matcher rather than
-      // looking for a literal entry.
-      if (!matchesAllowedHost(host, allowedHosts)) {
-        problems.push(
-          `tool code fetches ${host} but no allowedHosts pattern covers it ` +
-            `(allowedHosts: ${allowedHosts.length === 0 ? "none declared" : allowedHosts.join(", ")})`,
-        );
-      }
-    }
-
     if (problems.length > 0) {
-      return { score: 0, metadata: { rationale: problems.join(" | "), tools, allowedHosts } };
+      return { score: 0, metadata: { rationale: problems.join(" | "), tools } };
     }
     return {
       score: 1,
-      metadata: { rationale: `loaded agent "${config.name}"`, tools, allowedHosts },
+      metadata: { rationale: `loaded agent "${config.name}"`, tools },
     };
   } catch (err) {
     return { score: 0, metadata: { rationale: `bundle failed to load: ${String(err)}` } };
@@ -506,10 +490,10 @@ describeEval(
     }
 
     // Config cases assert what the built worker reports about itself — which
-    // providers back each stage, and whether egress is declared. Both are
-    // "will this run once published" questions, which is why they are facts
-    // checked against the config rather than rubric criteria.
-    for (const { name, prompt, providers, fetchedHosts = [] } of CONFIG_CASES) {
+    // providers back each stage. These are "will this run once published"
+    // questions, which is why they are facts checked against the config
+    // rather than rubric criteria.
+    for (const { name, prompt, providers } of CONFIG_CASES) {
       it(name, async ({ run }) => {
         const result = await run(prompt);
         expect(Object.keys(result.output.files)).toContain("agent.ts");
@@ -518,7 +502,6 @@ describeEval(
         if (canSandbox) {
           await expect(result).toSatisfyJudge(SandboxLoadJudge, {
             providers,
-            fetchedHosts,
             threshold: 1,
           });
         }

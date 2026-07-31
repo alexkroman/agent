@@ -3,7 +3,6 @@
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
 import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
-import { AllowedHostsSchema } from "./allowed-hosts.ts";
 import { assertPipelineTuning, assertProviderTriple, assertSilencePolicy } from "./config-rules.ts";
 import { ProviderDescriptorSchema } from "./manifest.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
@@ -53,8 +52,6 @@ export const AgentConfigSchema = z.object({
   tts: ProviderDescriptorSchema.optional(),
   s2s: ProviderDescriptorSchema.optional(),
   mode: z.enum(["s2s", "pipeline"]).optional(),
-  vector: ProviderDescriptorSchema.optional(),
-  allowedHosts: AllowedHostsSchema.optional(),
 });
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
@@ -98,7 +95,7 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   // Deny-list copy: everything defined flows through unless it is host-only.
   // The allow-list mapper this replaces is how fields went missing silently —
   // every field is optional, so an omitted copy is valid TypeScript
-  // (`allowedHosts` shipped that way and deployed agents lost guest egress).
+  // (which is how fields have gone missing silently before).
   const wire: Record<string, unknown> = { mode };
   for (const [key, value] of Object.entries(src)) {
     if (value === undefined || HOST_ONLY_FIELD_SET.has(key)) continue;

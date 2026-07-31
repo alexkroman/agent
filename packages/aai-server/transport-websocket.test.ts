@@ -1,11 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 import http from "node:http";
 import net, { type AddressInfo } from "node:net";
-import { createMemoryVector, type SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
 import { createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
+import { createMemorySlugEpochs } from "./platform-epoch.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey } from "./secrets.ts";
@@ -53,15 +53,45 @@ describe("handleAgentClientConfig", () => {
     expect(res.status).toBe(404);
   });
 
-  test("serves the agent's name and greeting pre-connection", async () => {
-    const { fetch } = await createTestOrchestrator();
+  test("brokers name, greeting, and the sandbox's live sessionUrl", async () => {
+    // A resident fake sandbox: the broker must reuse it (resolveSandbox fast
+    // path) rather than spawning a real one.
+    const slots = createSlotCache();
+    const slugEpochs = createMemorySlugEpochs();
+    const { fetch } = await createTestOrchestrator({ slots, slugEpochs });
     await deployAgent(fetch, "my-agent");
+    // Seed AFTER deploying (the deploy replaces the slug's slot), at the
+    // deploy's epoch so the resident isn't invalidated as stale.
+    slots.claim("my-agent", {
+      slug: "my-agent",
+      sandbox: makeFakeSandbox(),
+      epoch: await slugEpochs.get("my-agent"),
+    });
     const res = await fetch("/my-agent/client-config");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
       name: "test-agent",
       greeting: "",
+      sessionUrl: "wss://tunnel.test:443/websocket",
     });
+  });
+
+  test("answers 503 when the sandbox VM failed to start", async () => {
+    const slots = createSlotCache();
+    const slugEpochs = createMemorySlugEpochs();
+    const { fetch } = await createTestOrchestrator({ slots, slugEpochs });
+    await deployAgent(fetch, "my-agent");
+    const broken: Sandbox = {
+      ...makeFakeSandbox(),
+      sessionUrl: () => Promise.reject(new Error("spawn failed")),
+    };
+    slots.claim("my-agent", {
+      slug: "my-agent",
+      sandbox: broken,
+      epoch: await slugEpochs.get("my-agent"),
+    });
+    const res = await fetch("/my-agent/client-config");
+    expect(res.status).toBe(503);
   });
 });
 
@@ -117,16 +147,13 @@ describe("handleClientAsset", () => {
 
 // ── WS lifecycle metrics ────────────────────────────────────────────────
 
-/** Fake Sandbox for WS lifecycle tests. Avoids spawning a real Deno child. */
-function makeFakeSandbox(): Sandbox & { startSession: ReturnType<typeof vi.fn> } {
+/** Fake Sandbox (the direct-to-tunnel control-channel shape). */
+function makeFakeSandbox(): Sandbox {
   return {
-    readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
-    // accept the ws but don't actually wire a session — just register a no-op
-    startSession: vi.fn((_ws: SessionWebSocket) => {
-      // intentionally empty: we only care about orchestrator-level lifecycle
-    }),
+    sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
+    activeSessions: vi.fn(() => Promise.resolve(0)),
     shutdown: vi.fn(() => Promise.resolve()),
-  } as unknown as Sandbox & { startSession: ReturnType<typeof vi.fn> };
+  };
 }
 
 type HarnessOpts = {
@@ -151,13 +178,9 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
   const slug = "ws-agent";
   const slots = createSlotCache();
   const sandbox = makeFakeSandbox();
-  // Pre-populate the slot with a fake sandbox so resolveSandbox returns
-  // it immediately without spawning a Deno child.
+  // Pre-populate the slot with a fake sandbox so nothing spawns for real.
   if (opts.seedSandbox !== false) {
-    slots.claim(slug, {
-      slug,
-      sandbox: sandbox as unknown as { shutdown(): Promise<void> },
-    });
+    slots.claim(slug, { slug, sandbox });
   }
   const store = createTestStore();
   // Seed an agent config so the host-mode path can load it.
@@ -175,7 +198,6 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
     store,
     workspaces: createMemoryWorkspaceStore(),
     chats: createMemoryChatStore(),
-    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),
   });
   const server = http.createServer((_req, res) => {
@@ -274,28 +296,16 @@ function wsError(ws: WsClient): Promise<Error> {
   });
 }
 
-describe("WS session lifecycle", () => {
-  test("tracks the live-session count across open and close", async () => {
+describe("plain session upgrades (direct-to-tunnel)", () => {
+  test("a plain upgrade is answered 410 with broker guidance, not a session", async () => {
     const ctx = await startServerWithOrchestrator();
     try {
-      const ws = new WebSocket(`ws://127.0.0.1:${ctx.port}/${ctx.slug}/websocket`);
-      await new Promise<void>((resolve, reject) => {
-        ws.addEventListener("open", () => resolve());
-        ws.addEventListener("error", () => reject(new Error("ws error")));
-      });
-
-      await vi.waitFor(() => {
-        expect(ctx.activeSessionCount()).toBe(1);
-      });
-      expect(ctx.sandbox.startSession).toHaveBeenCalledTimes(1);
-
-      ws.close(1000);
-      await new Promise<void>((r) => ws.addEventListener("close", () => r()));
-      // Wait for the server-side close handler to fire — it lags the client's
-      // close event.
-      await vi.waitFor(() => {
-        expect(ctx.activeSessionCount()).toBe(0);
-      });
+      const response = await rawUpgrade(ctx.port, `/${ctx.slug}/websocket`);
+      expect(response).toMatch(/^HTTP\/1\.1 410 Gone/);
+      expect(response).toContain(`/${ctx.slug}/client-config`);
+      // The sandbox is never consulted: clients dial its tunnel directly.
+      expect(ctx.sandbox.sessionUrl).not.toHaveBeenCalled();
+      expect(ctx.activeSessionCount()).toBe(0);
     } finally {
       await ctx.close();
     }
@@ -315,7 +325,6 @@ describe("host-mode upgrade wiring", () => {
       const response = await rawUpgrade(ctx.port, `/${ctx.slug}/websocket?host=1`);
       expect(response).toMatch(/^HTTP\/1\.1 401 Unauthorized/);
       expect(response).toContain("Authorization: Bearer");
-      expect(ctx.sandbox.startSession).not.toHaveBeenCalled();
       expect(hostSessionSpy).not.toHaveBeenCalled();
     } finally {
       await ctx.close();
@@ -329,7 +338,6 @@ describe("host-mode upgrade wiring", () => {
         Authorization: "Bearer wrong-key",
       });
       expect(response).toMatch(/^HTTP\/1\.1 403 Forbidden/);
-      expect(ctx.sandbox.startSession).not.toHaveBeenCalled();
       expect(hostSessionSpy).not.toHaveBeenCalled();
     } finally {
       await ctx.close();
@@ -354,7 +362,6 @@ describe("host-mode upgrade wiring", () => {
         }),
       );
       // The deployed agent's sandbox is never touched by a host session.
-      expect(ctx.sandbox.startSession).not.toHaveBeenCalled();
       ws.close(1000);
       await wsClosed(ws);
     } finally {
@@ -397,7 +404,6 @@ describe("host-mode upgrade wiring", () => {
       expect(closed.reason).toBe("agent unavailable");
       // The owner's overrides must not be silently dropped into a plain
       // sandbox session.
-      expect(ctx.sandbox.startSession).not.toHaveBeenCalled();
       expect(hostSessionSpy).not.toHaveBeenCalled();
     } finally {
       await ctx.close();
@@ -412,37 +418,6 @@ describe("upgrade/teardown races", () => {
     hostSessionSpy.mockClear();
   });
 
-  test("sandbox torn down between upgrade and open → close 1011, session count back to 0", async () => {
-    const ctx = await startServerWithOrchestrator();
-    // Deterministic race: the upgrade-time resolve reads the resident
-    // sandbox off the slot (first `slots.get`); the next read is
-    // onSessionSocket's staleness check. Detaching the sandbox on that
-    // second read lands the teardown exactly between upgrade-time resolve
-    // and session start. The re-resolve then finds no worker code and fails
-    // the session cleanly.
-    const origGet = ctx.slots.get.bind(ctx.slots);
-    let reads = 0;
-    ctx.slots.get = (key: string) => {
-      const slot = origGet(key);
-      reads++;
-      if (reads === 2 && slot) delete slot.sandbox;
-      return slot;
-    };
-    ctx.store.getWorkerCode = () => Promise.resolve(null);
-    try {
-      const ws = new WsClient(`ws://127.0.0.1:${ctx.port}/${ctx.slug}/websocket`);
-      const closed = await wsClosed(ws);
-      expect(closed.code).toBe(1011);
-      expect(closed.reason).toBe("agent unavailable");
-      expect(ctx.sandbox.startSession).not.toHaveBeenCalled();
-      await vi.waitFor(() => {
-        expect(ctx.activeSessionCount()).toBe(0);
-      });
-    } finally {
-      await ctx.close();
-    }
-  });
-
   test("a store failure during a host=1 upgrade answers 500 and destroys the socket", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const ctx = await startServerWithOrchestrator();
@@ -452,7 +427,6 @@ describe("upgrade/teardown races", () => {
         Authorization: "Bearer any-key",
       });
       expect(response).toMatch(/^HTTP\/1\.1 500 Internal Server Error/);
-      expect(ctx.sandbox.startSession).not.toHaveBeenCalled();
     } finally {
       await ctx.close();
       errorSpy.mockRestore();
@@ -475,16 +449,20 @@ describe("upgrade/teardown races", () => {
 
   test("connections over maxConnections are refused; the slot frees on close", async () => {
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    const ctx = await startServerWithOrchestrator({ maxConnections: 1 });
+    const ctx = await startServerWithOrchestrator({ maxConnections: 1, ownerKey: "owner-key" });
+    const hostWs = (path = `/${ctx.slug}/websocket?host=1`) =>
+      new WsClient(`ws://127.0.0.1:${ctx.port}${path}`, {
+        headers: { Authorization: "Bearer owner-key" },
+      });
     try {
-      const first = new WsClient(`ws://127.0.0.1:${ctx.port}/${ctx.slug}/websocket`);
+      const first = hostWs();
       await wsOpen(first);
       await vi.waitFor(() => {
         expect(ctx.activeSessionCount()).toBe(1);
       });
 
       // At capacity: the next upgrade's socket is destroyed pre-handshake.
-      const refused = new WsClient(`ws://127.0.0.1:${ctx.port}/${ctx.slug}/websocket`);
+      const refused = hostWs();
       const err = await wsError(refused);
       expect(err).toBeInstanceOf(Error);
 
@@ -495,7 +473,7 @@ describe("upgrade/teardown races", () => {
       });
 
       // Closing the first connection released its slot: a new one succeeds.
-      const third = new WsClient(`ws://127.0.0.1:${ctx.port}/${ctx.slug}/websocket`);
+      const third = hostWs();
       await wsOpen(third);
       third.close(1000);
       await wsClosed(third);

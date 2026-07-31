@@ -22,7 +22,6 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
     env: {},
     state: {},
     db: {} as never,
-    vector: {} as never,
     generate: () => Promise.reject(new Error("generate not mocked")),
     messages: [],
     sessionId: "test-session",

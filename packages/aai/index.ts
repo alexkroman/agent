@@ -8,7 +8,6 @@
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
 
-export * from "./sdk/allowed-hosts.ts";
 export * from "./sdk/constants.ts";
 export * from "./sdk/db.ts";
 export * from "./sdk/define.ts";

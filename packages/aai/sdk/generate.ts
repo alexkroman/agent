@@ -3,7 +3,7 @@
  * The `ctx.generate` capability contract — one-shot LLM text/object
  * generation available to tool `execute` functions.
  *
- * Like `ctx.db` and `ctx.vector`, generation always executes on the host:
+ * Like `ctx.db`, generation always executes on the host:
  * the self-hosted runtime calls the provider SDK in-process, while the
  * platform sandbox proxies the call over the guest's NDJSON RPC channel
  * (`llm/generate`). This module holds only the shared, Node-free contract;

@@ -262,18 +262,3 @@ test("agent favicon falls back to the default client's icon", async () => {
     expect(res.status).toBe(404);
   }
 });
-
-test("vector POST returns 404 when the agent config is missing", async () => {
-  const { fetch, store } = await createTestOrchestrator();
-  await deployAgent(fetch, "my-agent");
-  // Simulate an agent whose config.json is gone: POST must 404, not silently
-  // fall back to the platform-default backend.
-  store.getAgentConfig = () => Promise.resolve(null);
-
-  const vecRes = await fetch("/my-agent/vector", {
-    method: "POST",
-    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-    body: JSON.stringify({ op: "query", text: "hello" }),
-  });
-  expect(vecRes.status).toBe(404);
-});

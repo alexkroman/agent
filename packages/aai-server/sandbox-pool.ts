@@ -1,15 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Pool of pre-warmed Deno harness processes for faster cold starts.
+ * Pool of pre-warmed Node harness sandboxes for faster cold starts.
  *
- * Inspired by Val Town: keep N idle Deno processes already past the slow
- * "Modal sandbox create + Deno JIT init" path. When a session needs a
- * sandbox, acquire a warm one from the pool and immediately send
- * `bundle/load` — skipping ~most of the cold-start latency.
+ * Keep N idle guest sandboxes already past the slow "Modal sandbox create +
+ * dial" path. When a session needs a sandbox, acquire a warm one from the
+ * pool and immediately send `bundle/load` — skipping most of the cold-start
+ * latency.
  *
- * A warm harness is a spawned Deno process whose NDJSON connection is
- * wired to its stdio but which has not yet:
- * - had request handlers registered (db / fetch)
+ * A warm harness is a spawned guest sandbox whose control-channel WebSocket
+ * is dialed but which has not yet:
+ * - had request handlers registered (db/query)
  * - had `listen()` called
  * - received the agent's bundle
  *

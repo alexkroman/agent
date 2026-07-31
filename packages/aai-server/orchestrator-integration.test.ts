@@ -19,7 +19,6 @@ async function createRealOrchestrator() {
   const storage = createStorage();
   const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
   const { createSlotCache } = await import("./sandbox-slots.ts");
-  const { createMemoryVector } = await import("@alexkroman1/aai/runtime");
   const { createMemoryWorkspaceStore } = await import("./workspace-store.ts");
   const { createMemoryChatStore } = await import("./chat-store.ts");
   const { app } = createOrchestrator({
@@ -27,7 +26,6 @@ async function createRealOrchestrator() {
     store,
     workspaces: createMemoryWorkspaceStore(),
     chats: createMemoryChatStore(),
-    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
   return { fetch, store };

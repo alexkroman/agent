@@ -37,8 +37,8 @@ export type HostCredentialEnv = Record<string, string> & {
 };
 
 /**
- * Env acceptable for provider-credential resolution (STT/TTS/LLM/Vector
- * openers, `ctx.generate`): the agent's own env or a host-fallback env.
+ * Env acceptable for provider-credential resolution (STT/TTS/LLM openers,
+ * `ctx.generate`): the agent's own env or a host-fallback env.
  * Everything is assignable here — the restriction lives on {@link AgentEnv}.
  */
 export type ProviderEnv = Record<string, string> & {

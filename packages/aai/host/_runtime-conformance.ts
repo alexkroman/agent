@@ -42,16 +42,6 @@ export const CONFORMANCE_AGENT: AgentDef = {
       description: "Return messages as JSON",
       execute: (_args: unknown, ctx) => JSON.stringify(ctx.messages),
     },
-    vector_roundtrip: {
-      description: "Test Vector roundtrip via tool execution",
-      parameters: z.object({ text: z.string() }),
-      execute: async ({ text }: { text: string }, ctx) => {
-        await ctx.vector.upsert("conformance-doc", text);
-        const matches = await ctx.vector.query(text, { topK: 1 });
-        await ctx.vector.delete("conformance-doc");
-        return matches[0]?.text ?? "(none)";
-      },
-    },
   },
 };
 
@@ -84,17 +74,6 @@ export function testRuntime(label: string, getContext: () => RuntimeTestContext)
       ];
       const result = await executeTool("echo_messages", {}, "s1", msgs);
       expect(JSON.parse(result)).toEqual(msgs);
-    });
-
-    test("Vector round-trip through tool context", async () => {
-      const { executeTool } = getContext();
-      const vectorResult = await executeTool(
-        "vector_roundtrip",
-        { text: "conformance-input" },
-        "s1",
-        [],
-      );
-      expect(vectorResult).toBe("conformance-input");
     });
 
     test("session state is initialized from factory", async () => {

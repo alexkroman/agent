@@ -20,7 +20,7 @@
  */
 
 import type { ToolContext, ToolDef } from "@alexkroman1/aai";
-import { createMemoryVector, resolveAllBuiltins } from "@alexkroman1/aai/runtime";
+import { resolveAllBuiltins } from "@alexkroman1/aai/runtime";
 import { jsonSchema, type ToolSet, tool } from "ai";
 import type { z } from "zod";
 
@@ -46,7 +46,6 @@ function toolContext(env: NodeJS.ProcessEnv): ToolContext {
     db: {
       query: () => Promise.reject(new Error("Storage is not available in studio web tools")),
     },
-    vector: createMemoryVector({ namespace: SESSION_ID }),
     // The web builtins never call ctx.generate; the studio's own LLM loop is
     // the generation surface for a coding turn.
     generate: () => Promise.reject(new Error("generate is not available in studio web tools")),

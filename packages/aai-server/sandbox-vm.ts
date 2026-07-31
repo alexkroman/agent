@@ -3,14 +3,16 @@
  * Sandbox implementation backed by Modal Sandboxes (see modal-sandbox.ts).
  *
  * Provides the `SandboxHandle` abstraction that `sandbox.ts` delegates to.
- * Communication with the guest uses NDJSON over the exec'd harness process's
- * stdio streams.
+ * The guest runs the COMPLETE agent runtime; this control channel (JSON-RPC
+ * over the harness's WebSocket, dialed through the sandbox's Modal tunnel)
+ * carries only bundle loading, one-shot tool trials, the session-count
+ * probe, and the guest's ctx.db proxy. Clients connect directly to the
+ * guest's public `/websocket` endpoint (`SandboxHandle.sessionUrl`).
  */
 
 import { performance } from "node:perf_hooks";
 import type { Db } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
-import type { HostGenerateFn, Vector } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
 import { spawnModalWarm } from "./modal-sandbox.ts";
 import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
@@ -21,33 +23,29 @@ import type { SandboxPool } from "./sandbox-pool.ts";
 
 export type SandboxHandle = {
   conn: GuestConnection;
+  /** Public client-session endpoint on the sandbox's tunnel. */
+  sessionUrl: string;
   shutdown(): Promise<void>;
 };
 
 /**
- * A spawned harness whose guest process is running and whose NDJSON
- * connection is wired to its stdio, but which has NOT yet received a
- * bundle/load. Used by the sandbox pool for warm starts.
+ * A spawned harness whose guest process is running and whose RPC connection
+ * is dialed, but which has NOT yet received a bundle/load. Used by the
+ * sandbox pool for warm starts.
  *
  * `listen()` has not been called on the connection yet — the per-agent
- * configuration step (db/fetch handler registration + bundle/load) will
- * call it after handlers are registered.
+ * configuration step (handler registration + bundle/load) will call it
+ * after handlers are registered.
  */
 export type WarmHarness = {
   conn: GuestConnection;
+  /** Public client-session endpoint on the sandbox's tunnel. */
+  sessionUrl: string;
   cleanup: () => Promise<void>;
   /** True while the underlying guest process is alive. */
   alive: () => boolean;
   /** Register a one-shot listener for guest exit (for pool reaping). */
   onExit: (cb: () => void) => void;
-  /**
-   * Full best-effort teardown: a `shutdown` notification (dropped by the
-   * transport's dead-stream guard when the guest is already gone), connection
-   * dispose, then `cleanup()` with its rejection swallowed. One definition of
-   * the teardown triple so failure paths and `await using` scopes can't
-   * drift; the pool keeps calling `cleanup()` directly where the connection
-   * was never wired.
-   */
   [Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -61,11 +59,6 @@ export type SandboxVmOptions = {
    * guest storage is enabled, so ctx.db resolves instead of throwing).
    */
   db?: Db;
-  /** Resolved Vector instance (enables vector/* RPC handlers when set). */
-  vector?: Vector;
-  /** Host generate fn (enables the llm/generate RPC handler when set). */
-  generate?: HostGenerateFn;
-  allowedHosts?: string[];
 };
 
 /** Minimal interface the pool exposes to createSandboxVm. */
@@ -76,26 +69,23 @@ type WarmHarnessSource = {
 // ── Shared setup ─────────────────────────────────────────────────────────────
 
 /**
- * Finalize a warm harness for a specific agent: register host-side db/fetch
- * handlers, start listening on the connection, and send bundle/load. Returns
- * the configured SandboxHandle.
+ * Finalize a warm harness for a specific agent: register host-side RPC
+ * handlers, start listening on the connection, and send bundle/load.
+ * Returns the configured SandboxHandle.
  *
- * Splitting register-handlers → listen → bundle/load lets the pool spawn a
- * harness ahead of time without committing to an agent identity. Handlers
- * MUST be registered before listen() so no incoming guest messages are
- * dropped.
+ * Splitting register-handlers → listen → bundle-load lets the pool
+ * spawn a harness ahead of time without committing to an agent identity.
+ * Handlers MUST be registered before listen() so no incoming guest messages
+ * are dropped.
  */
 async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Promise<SandboxHandle> {
   const { conn } = warm;
 
-  // Host serves guest db/Vector/fetch requests — see sandbox-guest-rpc.ts.
+  // Host serves guest ctx.db requests — see sandbox-guest-rpc.ts.
   registerGuestRpcHandlers(conn, opts);
 
   conn.listen();
 
-  // Send bundle to guest. The bundle/load round-trip is on the request
-  // path, so we time it to distinguish guest cold-start latency (Modal
-  // sandbox boot + Deno V8 init) from host-side spawn overhead.
   const tBundle = performance.now();
   try {
     await conn.sendRequest("bundle/load", {
@@ -106,7 +96,7 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
       storageEnabled: opts.db !== undefined,
     });
   } catch (err) {
-    // bundle/load can now time out (a bundle whose top level never resolves).
+    // bundle/load can time out (a bundle whose top level never resolves).
     // Tear down the harness sandbox so it doesn't leak, then rethrow.
     await warm[Symbol.asyncDispose]();
     throw err;
@@ -119,23 +109,20 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
 
   return {
     conn,
-    async shutdown() {
-      // Best-effort: under stdin backpressure the queued notification hits
-      // dispose()'s dead-stream guard and is dropped. That's acceptable —
-      // cleanup() terminates the Modal sandbox, so the guest dies either way.
-      void conn.sendNotification("shutdown");
-      conn.dispose();
-      await warm.cleanup();
-    },
+    sessionUrl: warm.sessionUrl,
+    // One teardown definition (`WarmHarness[Symbol.asyncDispose]`) so this
+    // handle and every error path below can't drift on the shutdown-notify /
+    // dispose / cleanup triple.
+    shutdown: () => warm[Symbol.asyncDispose](),
   };
 }
 
 // ── Warm-harness spawning ────────────────────────────────────────────────────
 
 /**
- * Spawn a warm Deno harness in a fresh Modal sandbox. The returned
- * WarmHarness has a running guest process and a connected NDJSON channel,
- * but no listeners are attached and no bundle has been loaded.
+ * Spawn a warm Node harness in a fresh Modal sandbox. The returned
+ * WarmHarness has a running guest process and a dialed RPC channel, but no
+ * listeners attached and no bundle loaded.
  *
  * Single source of the backend policy, used by both the sandbox pool and
  * on-demand sandbox creation. Modal is the only backend — spawning fails
@@ -173,7 +160,7 @@ export async function describeBundle(
   await using warm =
     (await opts.pool?.acquire()) ??
     (await spawn({ harnessPath: opts.harnessPath, slug: "studio-inspect" }));
-  // Register the standard guest-RPC handlers (with no db/Vector bound) so a
+  // Register the standard guest-RPC handlers (with no db bound) so a
   // bundle whose top level issues a guest→host request gets an error reply
   // instead of wedging the load until the RPC timeout.
   registerGuestRpcHandlers(warm.conn, {});
@@ -242,8 +229,7 @@ export async function createSandboxVm(
     // path; a throw before it (handler registration, listen) would strand
     // the just-spawned Modal sandbox until the guest orphan watchdog reaps
     // it. Idempotent with that path's cleanup.
-    warm.conn.dispose();
-    await warm.cleanup().catch(() => undefined);
+    await warm[Symbol.asyncDispose]();
     throw err;
   }
 }

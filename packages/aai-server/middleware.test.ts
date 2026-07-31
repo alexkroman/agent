@@ -1,5 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
 import { createMemoryChatStore } from "./chat-store.ts";
 import { requireOwner } from "./middleware.ts";
@@ -15,7 +14,6 @@ test("orchestrator adds Cross-Origin-Isolation headers", async () => {
     store,
     workspaces: createMemoryWorkspaceStore(),
     chats: createMemoryChatStore(),
-    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const res = await app.fetch(new Request("http://localhost/health"));
   expect(res.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin");
@@ -29,7 +27,6 @@ test("orchestrator returns 401 on deploy without auth", async () => {
     store,
     workspaces: createMemoryWorkspaceStore(),
     chats: createMemoryChatStore(),
-    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const res = await app.fetch(new Request("http://localhost/deploy", { method: "POST" }));
   expect(res.status).toBe(401);

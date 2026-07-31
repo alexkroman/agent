@@ -61,7 +61,7 @@ function PublishMenu(props: PublishMenuProps) {
         className="field h-16 resize-none py-2 font-mono text-xs"
         value={props.secrets}
         onChange={(e) => props.onSecretsChange(e.target.value)}
-        placeholder="PINECONE_API_KEY=..."
+        placeholder="OPENAI_API_KEY=..."
         spellCheck={false}
       />
       <div className="flex items-center gap-2">

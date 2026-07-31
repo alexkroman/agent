@@ -35,10 +35,7 @@
         "**/*.test.ts",
         "**/*.test-d.ts"
       ],
-      "includeEntryExports": true,
-      "ignoreDependencies": [
-        "@pinecone-database/pinecone"
-      ]
+      "includeEntryExports": true
     },
     "packages/aai-ui": {
       "entry": [
@@ -62,13 +59,20 @@
         "@alexkroman1/aai-ui"
       ]
     },
+    "packages/aai-guest": {
+      "entry": [
+        "**/*.test.ts"
+      ],
+      "includeEntryExports": true
+    },
     "packages/aai-server": {
       "entry": [
         "**/*.test.ts"
       ],
       "includeEntryExports": true,
       "ignoreDependencies": [
-        "@types/json-schema"
+        "@types/json-schema",
+        "aai-guest"
       ],
       "ignoreBinaries": [
         "modal"

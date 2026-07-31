@@ -15,7 +15,6 @@ import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
-import type { Vector } from "../sdk/vector.ts";
 import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 
@@ -31,7 +30,6 @@ type ExecuteToolCallOptions = {
   state?: Record<string, unknown>;
   sessionId?: string | undefined;
   db?: Db | undefined;
-  vector?: Vector | undefined;
   messages?: readonly Message[] | undefined;
   /** Host LLM generation (ctx.generate); absent contexts throw on use. */
   generate?: HostGenerateFn | undefined;
@@ -43,7 +41,7 @@ type ExecuteToolCallOptions = {
 };
 
 function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
-  const { env, state, db, vector, messages, sessionId, send, signal, generate } = opts;
+  const { env, state, db, messages, sessionId, send, signal, generate } = opts;
   return {
     env,
     state: state ?? {},
@@ -53,10 +51,6 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
         throw new Error(STORAGE_DISABLED_MESSAGE);
       }
       return db;
-    },
-    get vector(): Vector {
-      if (!vector) throw new Error("Vector not available");
-      return vector;
     },
     generate(genOpts: GenerateOptions): Promise<GenerateResult> {
       if (!generate) {

@@ -7,17 +7,16 @@
  * are covered in sandbox.test.ts.
  */
 
-import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { NdjsonConnection } from "./ndjson-transport.ts";
 import { createMemorySlugEpochs } from "./platform-epoch.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
+import type { RpcConnection } from "./rpc-transport.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { createTestStore } from "./test-utils.ts";
 
 const { mockCreateSandboxVm } = vi.hoisted(() => {
-  const mockConn: NdjsonConnection = {
+  const mockConn: RpcConnection = {
     sendRequest: vi.fn().mockResolvedValue(undefined),
     sendNotification: vi.fn(),
     onRequest: vi.fn(),
@@ -27,6 +26,7 @@ const { mockCreateSandboxVm } = vi.hoisted(() => {
   };
   const mockCreateSandboxVm = vi.fn().mockResolvedValue({
     conn: mockConn,
+    sessionUrl: "wss://tunnel.test:443/websocket",
     shutdown: vi.fn().mockResolvedValue(undefined),
   });
   return { mockCreateSandboxVm };
@@ -44,7 +44,6 @@ const TEST_AGENT_CONFIG: IsolateConfig = {
   maxSteps: 3,
   toolSchemas: [],
   builtinTools: [],
-  allowedHosts: [],
 };
 
 async function seedAgent(slug: string) {
@@ -63,7 +62,6 @@ async function seedAgent(slug: string) {
     store: Object.assign(store, { invalidate }),
     invalidate,
     slugEpochs: createMemorySlugEpochs(),
-    defaultVector: (s: string) => createMemoryVector({ namespace: s }),
   };
 }
 

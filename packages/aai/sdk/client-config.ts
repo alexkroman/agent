@@ -26,6 +26,16 @@ export const ClientConfigResponseSchema = z.object({
   name: z.string().optional(),
   /** The agent's greeting, shown by the default shell's start screen. */
   greeting: z.string().max(MAX_TRANSCRIPT_CHARS).optional(),
+  /**
+   * Absolute WebSocket URL of the agent's live session endpoint. On the
+   * platform, clients connect DIRECTLY to the agent's sandbox (its Modal
+   * tunnel) — this endpoint is the broker that spins the sandbox up and
+   * names the current URL, re-fetched on every (re)connect because the URL
+   * changes when the sandbox is replaced (idle eviction, redeploy). Absent
+   * on servers that terminate sessions themselves (`aai dev`), where the
+   * client falls back to the same-origin `websocket` path.
+   */
+  sessionUrl: z.string().optional(),
 });
 
 /** Parsed body of `GET /client-config`. */
@@ -41,9 +51,11 @@ export type ClientConfigResponse = z.infer<typeof ClientConfigResponseSchema>;
 export function buildClientConfig(src: {
   name?: string | undefined;
   greeting?: string | undefined;
+  sessionUrl?: string | undefined;
 }): ClientConfigResponse {
   return {
     ...(src.name !== undefined ? { name: src.name } : {}),
     ...(src.greeting !== undefined ? { greeting: src.greeting } : {}),
+    ...(src.sessionUrl !== undefined ? { sessionUrl: src.sessionUrl } : {}),
   };
 }
