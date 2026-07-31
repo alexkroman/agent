@@ -49,7 +49,7 @@ PNPM_VERSION = "10.29.3"
 # same value as ``MODAL_SANDBOX_REGION``, which modal-sandbox.ts passes to
 # every ``sandboxes.create`` — co-location holds by construction, and moving
 # the deployment is a one-line change here.
-REGION = "us-east-1"
+REGION = "us-east-2"
 
 # Repo root (this file lives at packages/aai-server/modal_deploy.py).
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
