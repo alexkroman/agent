@@ -16,7 +16,7 @@ import { waitForIdle } from "./_drain.ts";
 import { DEFAULT_PORT } from "./constants.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import {
-  assertModalOrWarn,
+  assertSandboxBackendOrWarn,
   buildServiceConfig,
   installProcessSafetyNets,
 } from "./service-config.ts";
@@ -39,7 +39,7 @@ async function main(): Promise<void> {
     ...(env.STUDIO_UPSTREAM_URL && { studioUpstream: env.STUDIO_UPSTREAM_URL }),
   };
 
-  assertModalOrWarn(env);
+  assertSandboxBackendOrWarn(env);
 
   const { app, injectWebSocket, closeActiveSockets, activeSessionCount } = createOrchestrator(opts);
   const nodeServer = serve({ fetch: app.fetch, port });

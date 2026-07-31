@@ -22,7 +22,7 @@ import { DEFAULT_PORT } from "aai-server/constants";
 import { createOrchestrator } from "aai-server/orchestrator";
 import { assertDevKeys, resolveDrainMs, waitForIdle } from "aai-server/platform-barrel";
 import {
-  assertModalOrWarn,
+  assertSandboxBackendOrWarn,
   buildServiceConfig,
   installProcessSafetyNets,
   type ServiceConfig,
@@ -86,7 +86,7 @@ async function main(): Promise<void> {
 
   let draining = false;
   const base = buildServiceConfig(env);
-  assertModalOrWarn(env);
+  assertSandboxBackendOrWarn(env);
 
   const { app: studioApp } = createStudioApp(studioAppOpts(base, () => draining));
 

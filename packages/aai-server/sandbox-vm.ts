@@ -1,19 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Sandbox implementation backed by Modal Sandboxes (see modal-sandbox.ts).
+ * Sandbox implementation backed by Modal Sandboxes (see modal-sandbox.ts) in
+ * production, and by local Apple containers in developer mode on macOS (see
+ * apple-container-sandbox.ts, which also owns the backend-selection policy).
  *
  * Provides the `SandboxHandle` abstraction that `sandbox.ts` delegates to.
  * The guest runs the COMPLETE agent runtime; this control channel (JSON-RPC
- * over the harness's WebSocket, dialed through the sandbox's Modal tunnel)
- * carries only bundle loading, one-shot tool trials, the session-count
- * probe, and the guest's ctx.db proxy. Clients connect directly to the
- * guest's public `/websocket` endpoint (`SandboxHandle.sessionUrl`).
+ * over the harness's WebSocket, dialed through the sandbox's Modal tunnel or
+ * the container's published loopback port) carries only bundle loading,
+ * one-shot tool trials, the session-count probe, and the guest's ctx.db
+ * proxy. Clients connect directly to the guest's public `/websocket`
+ * endpoint (`SandboxHandle.sessionUrl`).
  */
 
 import { performance } from "node:perf_hooks";
 import type { Db } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
+import { resolveSandboxBackend, spawnAppleContainerWarm } from "./apple-container-sandbox.ts";
 import { spawnModalWarm } from "./modal-sandbox.ts";
 import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
 import { registerGuestRpcHandlers } from "./sandbox-guest-rpc.ts";
@@ -120,21 +124,27 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
 // ── Warm-harness spawning ────────────────────────────────────────────────────
 
 /**
- * Spawn a warm Node harness in a fresh Modal sandbox. The returned
- * WarmHarness has a running guest process and a dialed RPC channel, but no
- * listeners attached and no bundle loaded.
+ * Spawn a warm Node harness in a fresh sandbox. The returned WarmHarness has
+ * a running guest process and a dialed RPC channel, but no listeners
+ * attached and no bundle loaded.
  *
  * Single source of the backend policy, used by both the sandbox pool and
- * on-demand sandbox creation. Modal is the only backend — spawning fails
- * loudly (dev and prod alike) when Modal credentials are absent.
+ * on-demand sandbox creation: `resolveSandboxBackend` picks Apple containers
+ * in developer mode on macOS (or under an explicit `SANDBOX_BACKEND`
+ * override) and Modal everywhere else. Either way spawning fails loudly when
+ * the backend's prerequisites (the `container` CLI, Modal credentials) are
+ * absent — there is no fallback between backends.
  *
  * `slug` only affects the sandbox's observability tag (pool spawns default
- * to "pool"); the security boundary is Modal's sandbox isolation.
+ * to "pool"); the security boundary is the backend's container isolation.
  */
 export async function spawnWarmHarness(opts: {
   harnessPath: string;
   slug?: string;
 }): Promise<WarmHarness> {
+  if (resolveSandboxBackend(process.env) === "apple-container") {
+    return spawnAppleContainerWarm(opts);
+  }
   return spawnModalWarm(opts);
 }
 
@@ -187,7 +197,7 @@ export const _internals = {
 // ── Factory ──────────────────────────────────────────────────────────────────
 
 /**
- * Creates a sandbox backed by a Modal Sandbox.
+ * Creates a sandbox backed by the selected backend (see spawnWarmHarness).
  *
  * If a `pool` is provided, attempts to acquire a pre-warmed harness from
  * it before spawning a fresh one. Falls back to a fresh spawn if the pool

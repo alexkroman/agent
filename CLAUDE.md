@@ -823,7 +823,7 @@ The bundle arrives over RPC and loads from a temp-file `file:` URL.
 | `run_code` | fails in dev, works in prod | The host-side guard refuses rather than evaluating in-process. Fail-closed, so harmless. |
 | `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. The prod failure is a loud auth error at session start. |
 | `ctx.db` backing (BYO `DATABASE_URL` in dev vs platform-provisioned schema+role) | prod is stricter | Dev connects wherever the developer points it; prod pins search_path + statement_timeout on a per-app role. |
-| Platform sandboxes need Modal credentials | prod is stricter | `aai dev` runs tools in-process; the platform (any machine with `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`) spawns real Modal sandboxes — see "Modal sandbox notes". |
+| Platform sandboxes need Modal credentials (or macOS + the `container` CLI) | prod is stricter | `aai dev` runs tools in-process; the platform spawns real sandboxes — Modal in production (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`), local Apple containers in developer mode on macOS — see "Modal sandbox notes". |
 
 **One canonical config schema, deny-list boundaries.** The dropped-field bug
 family (`builtinTools` — deployed agents silently lost the default cognitive
@@ -1500,10 +1500,35 @@ service's control work is light — and one container served both badly.
 
 ### Modal sandbox notes
 
-- Guest sandboxes are **remote Modal Sandboxes** (`modal-sandbox.ts`) on every
-  platform — macOS dev boxes and production alike. There is no local
-  child-process or gVisor fallback; without `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`
-  (or a `~/.modal.toml` profile) sandbox creation fails loudly.
+- Guest sandboxes are **remote Modal Sandboxes** (`modal-sandbox.ts`) in
+  production and on non-macOS dev machines. **Developer mode on macOS runs
+  guests in local Apple containers instead** — see the next bullet. There is
+  no plain child-process or gVisor fallback anywhere; on the Modal backend,
+  without `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` (or a `~/.modal.toml`
+  profile) sandbox creation fails loudly.
+- **Apple container backend (developer mode)** —
+  `apple-container-sandbox.ts` runs the same guest harness in a local
+  container via Apple's [`container`](https://github.com/apple/container)
+  CLI (each container a lightweight VM under the Containerization
+  framework). `resolveSandboxBackend` owns the policy: an explicit
+  `SANDBOX_BACKEND` (`modal` | `apple-container`) always wins (unknown
+  values throw — a silent Modal fallback would look like the override not
+  working); unset, local dev (`isLocalDev`) on darwin auto-selects Apple
+  containers when the CLI is on PATH, and everything else — production
+  above all — stays on Modal. There is **no fallback between backends**: a
+  failed spawn is a failed spawn. Differences from Modal, all dev-only:
+  the published port binds 127.0.0.1 (plain `ws://` loopback URLs, no
+  tunnel), the bearer token rides the container env rather than an exec
+  env (visible to `container inspect` on the same machine only), the
+  harness is copied to a per-spawn temp dir and mounted rather than baked
+  into a snapshot image (a per-spawn copy so one guest can't tamper with
+  what later spawns load), and there are no lifetime/idle timers — the
+  container dies with its harness (`--rm`), and the harness orphan timeout
+  covers a crashed host. `APPLE_CONTAINER_IMAGE` overrides the guest image
+  (default `node:24-slim`); `SANDBOX_MEMORY_LIMIT_MB`/`SANDBOX_CPU_LIMIT`
+  map onto `--memory`/`--cpus`. The shared harness lifecycle (exit fan-out,
+  memoized cleanup, guest dial retry, stdio draining) lives in
+  `warm-harness.ts`, used by both backends.
 - The guest base image defaults to `node:24-slim`; pin via
   `MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
   Modal App sandboxes are created under (default `aai-server`).
