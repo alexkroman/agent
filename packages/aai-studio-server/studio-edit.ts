@@ -148,6 +148,16 @@ function countLines(text: string): number {
 }
 
 /**
+ * Main-thread budget for computing the presentation diff. Myers is O(N·D):
+ * at the workspace file-size cap, two mostly-different files measure ~7s —
+ * and shorter lines push it to minutes — all synchronous, pinning every
+ * other request on the process. jsdiff's `timeout` aborts the diff at the
+ * deadline (returning undefined); the edit itself has already applied, so
+ * the only cost is an elided diff in the tool result.
+ */
+const DIFF_BUDGET_MS = 500;
+
+/**
  * A unified diff with line numbers, trimmed to `context` lines around each
  * change — the agent gets to see what it actually did, and so does anyone
  * reading the tool row.
@@ -157,7 +167,14 @@ function countLines(text: string): number {
  * between hunks) is ours.
  */
 function formatDiff(before: string, after: string, context = 3): string {
-  const { hunks } = Diff.structuredPatch("", "", before, after, undefined, undefined, { context });
+  const patch = Diff.structuredPatch("", "", before, after, undefined, undefined, {
+    context,
+    timeout: DIFF_BUDGET_MS,
+  });
+  if (patch === undefined) {
+    return `(diff omitted: the change was too large to diff within ${DIFF_BUDGET_MS}ms — read the file to see the result)`;
+  }
+  const { hunks } = patch;
   const width = String(Math.max(before.split("\n").length, after.split("\n").length)).length;
   const elision = ` ${" ".repeat(width)} …`;
   const out: string[] = [];

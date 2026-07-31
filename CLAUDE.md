@@ -399,6 +399,23 @@ voice agents without the CLI:
   `streamText` cancels the LLM call while `disposeSandbox` tears down the
   sandbox. A failed sandbox provisioning is retried on the
   next tool call, not cached for the turn (`studio-routes.ts`).
+- **Model-controlled CPU work is hard-budgeted, because `pTimeout` can't
+  stop it.** The per-tool deadline is a promise race — useless against work
+  that pins the event loop, where the timer never fires. Two studio tools
+  run model-controlled input through superlinear algorithms in-process, and
+  each carries its own synchronous budget: `grep`'s regex scan (a
+  catastrophic pattern like `(a+)+$` goes exponential at ~40 chars — the
+  long-line skip does NOT bound it) executes inside a `vm.Script` with a
+  hard `timeout` (`GREP_BUDGET_MS`, 500ms; V8's TerminateExecution
+  interrupts a mid-backtrack regex — the vm is a CPU watchdog here, not an
+  isolation boundary: no untrusted code is evaluated in it), and
+  `edit_file`'s presentation diff (Myers O(N·D): ~7s at the 256KB file cap
+  when most lines differ) passes jsdiff's `timeout` option
+  (`DIFF_BUDGET_MS`, 500ms) and elides the diff on deadline — the edit
+  still applies. Any new studio tool that runs regex/diff/parse work over
+  workspace content or model args on the host needs the same treatment;
+  user *code* is never evaluated in the server process (builds are
+  out-of-process, execution is in the Modal guest).
 - **Web access** (`studio-web.ts`) exposes the SDK's own `visit_webpage`,
   `get_page_design`, and `web_search` builtins to the coding agent rather than reimplementing
   them — which is what buys `safeFetch`, the SSRF guard. A URL here is

@@ -88,6 +88,24 @@ describe("grepWorkspace", () => {
     expect(grepWorkspace(minified, "(z+)+$")).toBe("No matches found");
   });
 
+  test("a catastrophically backtracking pattern is terminated, not an event-loop pin", () => {
+    // Exponential backtracking explodes at tens of characters — far under the
+    // long-line skip — and the per-tool pTimeout can't fire while a regex
+    // spins on the main thread. The vm budget must hard-interrupt it.
+    const bait = { "a.ts": `${"a".repeat(60)}!` };
+    const start = Date.now();
+    expect(() => grepWorkspace(bait, "(a+)+$")).toThrow(StudioGrepError);
+    expect(() => grepWorkspace(bait, "(a+)+$")).toThrow(/timed out/);
+    // Two runs, each bounded by GREP_BUDGET_MS — generous headroom for CI.
+    expect(Date.now() - start).toBeLessThan(10_000);
+  });
+
+  test("a glob picomatch refuses is an actionable error, not a crash", () => {
+    expect(() => grepWorkspace(FILES, "rollDice", { glob: "a".repeat(70_000) })).toThrow(
+      StudioGrepError,
+    );
+  });
+
   test("rejects an empty pattern", () => {
     expect(() => grepWorkspace(FILES, "")).toThrow(/must not be empty/);
   });
