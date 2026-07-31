@@ -186,7 +186,13 @@ export type S2sCallbacks = {
 
 export type S2sHandle = {
   sendAudio(audio: Uint8Array): void;
-  sendToolResult(callId: string, result: string): void;
+  /**
+   * Send a tool result. Returns whether the frame actually went out — false
+   * means the socket was not open (e.g. dropped, awaiting resume), and the
+   * provider session is still waiting on this result: the caller must queue
+   * it for redelivery or the provider-side turn stalls.
+   */
+  sendToolResult(callId: string, result: string): boolean;
   updateSession(config: S2sSessionConfig): void;
   resumeSession(sessionId: string): void;
   close(): void;
@@ -230,10 +236,10 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
   // pre-open failures to the connect and later ones to the session callbacks.
   const connect = createWsOpenRace();
 
-  function send(msg: { type: string; [key: string]: unknown }): void {
+  function send(msg: { type: string; [key: string]: unknown }): boolean {
     if (ws.readyState !== WS_OPEN) {
       log.debug("S2S send dropped: socket not open", { type: msg.type });
-      return;
+      return false;
     }
     const json = JSON.stringify(msg);
     // Per-outbound-message logging is a hot path (one line per wire
@@ -244,6 +250,7 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       log.debug(`S2S >> ${msg.type}`);
     }
     ws.send(json);
+    return true;
   }
 
   const handle: S2sHandle = {
@@ -252,9 +259,9 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       ws.send(`{"type":"input.audio","audio":"${uint8ToBase64(audio)}"}`);
     },
 
-    sendToolResult(callId: string, result: string): void {
+    sendToolResult(callId: string, result: string): boolean {
       log.info("S2S >> tool.result", { call_id: callId, resultLength: result.length });
-      send({ type: "tool.result", call_id: callId, result });
+      return send({ type: "tool.result", call_id: callId, result });
     },
 
     updateSession(sessionConfig: S2sSessionConfig): void {
@@ -344,9 +351,19 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     }
   });
 
+  // Message from a post-open socket `error`, held for the `close` handler.
+  // The `ws` library always follows a fatal socket error with `close`, and
+  // the close path is where the transport decides between resuming and
+  // failing the session — so the error is folded into that decision instead
+  // of surfaced on its own. Reporting it immediately sent the client a
+  // fatal-looking `error` frame for the most common transient-drop shape
+  // (error-then-close), tearing the client down moments before the resume
+  // machinery successfully restored a session nobody was listening to.
+  let lastSocketError: string | null = null;
+
   ws.addEventListener("close", (ev) => {
     const code = ev.code ?? 0;
-    const reason = ev.reason ?? "";
+    const reason = ev.reason || (lastSocketError ?? "");
     log.info("S2S WebSocket closed", { code, reason });
     if (connect.isOpening()) {
       connect.fail(new Error(`WebSocket closed before open (code: ${code})`));
@@ -361,7 +378,8 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     if (connect.isOpening()) {
       connect.fail(errObj);
     } else {
-      callbacks.onError(errObj);
+      // Deferred to the close handler — see lastSocketError above.
+      lastSocketError = message;
     }
   });
 

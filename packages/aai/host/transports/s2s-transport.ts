@@ -66,6 +66,30 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
   // fatal close). The session is over; any trailing close from a dead socket
   // must not re-emit an error or start another resume loop.
   let sessionEnded = false;
+  // Tool results that could not be delivered because the socket was down
+  // (dropped mid-tool, awaiting resume). The provider restores the session
+  // server-side with its tool calls still unanswered, so these must be
+  // redelivered once the resumed socket is ready — silently dropping them
+  // stalled the resumed turn until the idle timeout, with the only trace a
+  // debug log line.
+  let pendingToolResults: { callId: string; result: string }[] = [];
+
+  /**
+   * Redeliver tool results the dead socket dropped — the restored provider
+   * session is still awaiting them. Runs on every session.ready; a no-op when
+   * nothing was queued.
+   */
+  function flushPendingToolResults(): void {
+    if (pendingToolResults.length === 0) return;
+    const queued = pendingToolResults;
+    pendingToolResults = [];
+    for (const { callId, result } of queued) {
+      log.info("S2S redelivering tool.result after resume", { sid: opts.sid, callId });
+      if (handle?.sendToolResult(callId, result) !== true) {
+        pendingToolResults.push({ callId, result });
+      }
+    }
+  }
 
   /** Surface a fatal connection error exactly once and retire the session. */
   function endSession(detail: string): void {
@@ -85,6 +109,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         } else if (isFirstReady) {
           log.info("S2S session ready", { sid: opts.sid, sessionId: id });
         }
+        flushPendingToolResults();
         opts.callbacks.onSessionReady?.(id);
       },
       onReplyStarted: (replyId) => {
@@ -272,6 +297,7 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
 
   async function stop(): Promise<void> {
     closing = true;
+    pendingToolResults = [];
     handle?.close();
     handle = null;
   }
@@ -283,7 +309,14 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
       handle?.sendAudio(bytes);
     },
     sendToolResult(callId, result) {
-      handle?.sendToolResult(callId, result);
+      // During the resume window `handle` still points at the dead socket
+      // (reassigned only when the replacement connects), so the send reports
+      // failure; queue for redelivery once the resumed session is ready.
+      const delivered = handle?.sendToolResult(callId, result) === true;
+      if (!(delivered || closing || sessionEnded)) {
+        log.info("S2S tool.result queued for redelivery", { sid: opts.sid, callId });
+        pendingToolResults.push({ callId, result });
+      }
     },
     cancelReply() {
       // AssemblyAI S2S doesn't expose an explicit cancel RPC — reply is

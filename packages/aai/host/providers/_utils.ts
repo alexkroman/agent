@@ -46,9 +46,15 @@ export function requireApiKey(
   return explicit;
 }
 
-/** Resolve once the socket opens; reject with the socket error if it fails first. */
-export async function waitForOpen(ws: WebSocket): Promise<void> {
-  await pEvent(ws, "open"); // rejects on "error" (p-event's default rejectionEvents)
+/**
+ * Resolve once the socket opens; reject with the socket error if it fails
+ * first. Pass `timeoutMs` to bound a connect that black-holes (no `open`, no
+ * `error` — a dropped SYN or a stalled proxy emits neither): mandatory for any
+ * open that runs mid-session, where nothing upstream bounds it.
+ */
+export async function waitForOpen(ws: WebSocket, timeoutMs?: number): Promise<void> {
+  // rejects on "error" (p-event's default rejectionEvents)
+  await pEvent(ws, "open", timeoutMs === undefined ? {} : { timeout: timeoutMs });
 }
 
 /**

@@ -151,15 +151,27 @@ describe("guardHostModeUpgrade", () => {
 });
 
 describe("startDeployedHostSession", () => {
-  test("a failed env load closes the socket instead of stranding it", async () => {
+  test("a failed env load rejects the handshake instead of stranding the socket", async () => {
+    // The env fetch rides along as a promise so the handshake listener
+    // attaches synchronously (a slow Vault fetch used to lose the client's
+    // config frame outright); its failure is reported when the handshake
+    // lands, as a protocol error + close.
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const close = vi.fn();
+    const sent: string[] = [];
+    const listeners = new Map<string, Array<(ev: unknown) => void>>();
     const ws = {
       readyState: 1,
-      send: () => undefined,
+      send: (data: string) => {
+        sent.push(data);
+      },
       close,
-      addEventListener: () => undefined,
-    };
+      addEventListener(type: string, cb: (ev: unknown) => void) {
+        const arr = listeners.get(type) ?? [];
+        arr.push(cb);
+        listeners.set(type, arr);
+      },
+    } as unknown as Parameters<typeof startDeployedHostSession>[0];
     const store = {
       ...createTestStore(),
       getEnv: () => Promise.reject(new Error("storage blip")),
@@ -172,7 +184,20 @@ describe("startDeployedHostSession", () => {
       startOpts: {},
     });
 
-    await vi.waitFor(() => expect(close).toHaveBeenCalledWith(1011, "internal error"));
+    // The client's handshake frame arrives immediately — it must NOT be lost
+    // to a listener attached only after the env fetch settles.
+    const frame = JSON.stringify({
+      type: "config",
+      host: { systemPrompt: "p", tools: [] },
+    });
+    for (const cb of listeners.get("message") ?? []) cb({ data: frame });
+
+    await vi.waitFor(() => {
+      expect(sent.map((s) => JSON.parse(s) as Record<string, unknown>)).toContainEqual(
+        expect.objectContaining({ type: "error", code: "protocol" }),
+      );
+    });
+    await vi.waitFor(() => expect(close).toHaveBeenCalled());
     errorSpy.mockRestore();
   });
 });

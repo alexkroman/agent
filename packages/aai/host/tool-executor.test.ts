@@ -149,21 +149,57 @@ describe("executeToolCall", () => {
 });
 
 describe("executeToolCall — cancellation", () => {
-  test("exposes the caller's signal as ctx.signal", async () => {
+  test("ctx.signal follows the caller's signal", async () => {
+    // ctx.signal is a per-call signal (so a timeout can fire it too), chained
+    // to the caller's turn signal: aborting the turn aborts the call.
     const controller = new AbortController();
     let seen: AbortSignal | undefined;
+    const gate = Promise.withResolvers<string>();
     const tool = makeTool({
       execute: (_args, ctx) => {
         seen = ctx.signal;
-        return "ok";
+        return gate.promise;
       },
     });
-    expect(await run("probe", {}, tool, { signal: controller.signal })).toBe("ok");
-    expect(seen).toBe(controller.signal);
+    const running = run("probe", {}, tool, { signal: controller.signal });
+    await vi.waitFor(() => {
+      expect(seen).toBeDefined();
+    });
+    expect(seen?.aborted).toBe(false);
+    controller.abort();
+    expect(seen?.aborted).toBe(true);
+    gate.resolve("late");
+    await running;
   });
 
-  test("ctx.signal is undefined when no signal is provided", async () => {
-    const tool = makeTool({ execute: (_args, ctx) => String(ctx.signal === undefined) });
+  test("a timeout fires ctx.signal so the tool can stop its side effects", async () => {
+    // pTimeout only settles the await; without the per-call abort a timed-out
+    // tool kept running — and kept mutating shared ctx.state — after its
+    // error result was already committed to the turn.
+    vi.useFakeTimers();
+    try {
+      let seen: AbortSignal | undefined;
+      const tool = makeTool({
+        execute: (_args, ctx) => {
+          seen = ctx.signal;
+          return new Promise<never>(() => {
+            /* never resolves */
+          });
+        },
+      });
+      const promise = run("slow", {}, tool);
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(JSON.parse(await promise)).toMatchObject({
+        error: expect.stringContaining("timed out"),
+      });
+      expect(seen?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("ctx.signal is provided even when the caller passes none", async () => {
+    const tool = makeTool({ execute: (_args, ctx) => String(ctx.signal !== undefined) });
     expect(await run("probe", {}, tool)).toBe("true");
   });
 

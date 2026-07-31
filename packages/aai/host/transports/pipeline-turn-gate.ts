@@ -1,4 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
+import { errorMessage } from "../../sdk/utils.ts";
 /**
  * Turn-invalidation guards for the pipeline transport.
  *
@@ -49,5 +50,23 @@ export function createTurnGate(): TurnGate {
       queue.bump();
       history.bump();
     },
+  };
+}
+
+/**
+ * Build the transport's turn-crash handler factory. Throw-safe: the logger is
+ * caller-injectable, and a throw from a `.catch` handler would reject the
+ * chained turn promise anyway — exactly what the handler exists to prevent.
+ */
+export function turnCrashLogger(
+  log: { error(msg: string, meta?: Record<string, unknown>): void },
+  sid: string,
+): (what: string) => (err: unknown) => void {
+  return (what) => (err) => {
+    try {
+      log.error(what, { error: errorMessage(err), sid });
+    } catch {
+      // A throwing logger must not poison the turn chain.
+    }
   };
 }

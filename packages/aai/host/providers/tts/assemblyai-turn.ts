@@ -81,7 +81,14 @@ export function createTurnTracker(emitDone: () => void): TurnTracker {
       doneEmitted = false;
       turnClosed = false;
       outstandingFlushes = 0;
-      flushDoneDebt = 0;
+      // `flushDoneDebt` deliberately survives the turn boundary: it pairs
+      // per-SOCKET frames, not per-turn state. The previous turn's last
+      // synthesis may have been acknowledged by its `is_final` — ending that
+      // turn — while the paired `FlushDone` is still on the wire. Zeroing the
+      // debt here would let that stale frame retire one of THIS turn's
+      // outstanding flushes, emitting `done` while its audio is still
+      // streaming. The debt resets only in `cancel()`, where the socket is
+      // actually swapped (or its queued frames discarded).
     },
 
     onFlushSent(): void {

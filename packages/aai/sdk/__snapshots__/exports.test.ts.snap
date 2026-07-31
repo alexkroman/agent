@@ -85,6 +85,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "TOOL_FETCH_TIMEOUT_MS",
   "TOOL_RESULT_TRUNCATION_MARKER",
   "TTS_COALESCE_MAX_CHARS",
+  "TTS_RECONNECT_TIMEOUT_MS",
   "ToolChoiceSchema",
   "VALID_SLUG_RE",
   "WS_OPEN",

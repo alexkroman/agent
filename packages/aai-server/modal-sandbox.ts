@@ -317,6 +317,18 @@ function warmFromModal(sb: ModalSandboxLike, proc: ModalProcLike): WarmHarness {
     cleanup,
     alive: () => !dead,
     onExit: (cb) => {
+      // A harness can die between spawn resolution and this registration —
+      // notifyExit walks the listener list exactly once, so a listener added
+      // afterwards would never fire and (for the pool) a dead harness would
+      // sit in `ready` unevicted until an acquire skipped it. Fire it now.
+      if (dead) {
+        try {
+          cb();
+        } catch {
+          // Listener errors must not crash the host
+        }
+        return;
+      }
       exitListeners.push(cb);
     },
     async [Symbol.asyncDispose]() {

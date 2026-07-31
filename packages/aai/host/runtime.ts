@@ -379,8 +379,8 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       // sinkMap/stateMap cleanup lives in the identity-guarded stop() wrapper
       // (createSession) — a key delete here would hit the resumed session's
       // entries when an old session's stop settles after a reconnect.
-      onSessionEnd: (sid) => {
-        userOnSessionEnd?.(sid);
+      onSessionEnd: (sid, sink) => {
+        userOnSessionEnd?.(sid, sink);
       },
       ...(sessionStartTimeoutMs !== undefined ? { sessionStartTimeoutMs } : {}),
       ...(resumeFrom ? { resumeFrom } : {}),

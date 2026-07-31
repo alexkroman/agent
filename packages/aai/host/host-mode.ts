@@ -29,6 +29,7 @@ import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import { createRuntime, type RuntimeOptions, type SessionStartOptions } from "./runtime.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
+import { WS_OPEN } from "./ws-frames.ts";
 import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 
 /**
@@ -194,7 +195,16 @@ export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef
 
 /** Options for {@link startHostSession}. */
 export type StartHostSessionOptions = {
-  env: Record<string, string>;
+  /**
+   * The agent env, or a promise of it. Accepting a promise matters on the
+   * platform: the env lives in Supabase Vault, and awaiting that fetch BEFORE
+   * calling this function left the socket with no `message` listener while the
+   * client's one-and-only handshake frame arrived — `ws` does not buffer for
+   * late listeners, so the frame was lost and the connection died on the
+   * handshake timeout. Pass the pending fetch instead; the listener attaches
+   * synchronously and the env is awaited only once the handshake has landed.
+   */
+  env: Record<string, string> | PromiseLike<Record<string, string>>;
   startOpts?: SessionStartOptions;
   logger?: Logger;
   /**
@@ -279,6 +289,83 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
   }, opts.handshakeTimeoutMs ?? DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS);
   handshakeTimer.unref?.();
 
+  // A socket that dies before any handshake must release the timer — left
+  // armed it fires rejectHandshake against a dead socket later, logging a
+  // misleading "handshake rejected" for a connection that simply went away.
+  ws.addEventListener("close", () => {
+    if (settled) return;
+    settled = true;
+    clearTimeout(handshakeTimer);
+  });
+
+  /** Runs once the handshake has been validated AND the env has resolved. */
+  function startWithEnv(
+    env: Record<string, string>,
+    handshake: {
+      host: HostConfig;
+      sampleRate?: number | undefined;
+      ttsSampleRate?: number | undefined;
+    },
+  ): void {
+    // The env may have resolved after the socket died; a runtime built now
+    // would wait forever for an `open` that never comes and leak its pool.
+    if (ws.readyState !== WS_OPEN) return;
+
+    if (!(opts.allowHost ?? isHostAllowed(env))) {
+      rejectHandshake(ws, log, "host-mode is disabled on this server (AAI_ALLOW_HOST)");
+      return;
+    }
+
+    const { host } = handshake;
+    const relay = createRelayExecuteTool({
+      send: (e) => sendEvent(ws, e, log),
+      timeoutMs: opts.relayTimeoutMs,
+    });
+
+    let runtime: ReturnType<typeof createRuntime>;
+    try {
+      runtime = makeRuntime({
+        agent: buildHostAgent(host, opts.baseAgent),
+        env,
+        executeTool: relay.executeTool,
+        toolSchemas: host.tools as ToolSchema[],
+        onToolResult: relay.onToolResult,
+        s2sConfig: s2sConfigFromHandshake(handshake),
+        logger: log,
+      });
+    } catch (err) {
+      relay.dispose();
+      rejectHandshake(ws, log, `host-mode: failed to build runtime: ${errorMessage(err)}`);
+      return;
+    }
+
+    ws.addEventListener("close", () => {
+      relay.dispose();
+      // The runtime is single-use — built for this connection alone — and
+      // socket teardown only stops the session. shutdown() is what releases
+      // runtime-owned resources (a DATABASE_URL-backed pg pool above all);
+      // without it every host-mode connect/disconnect strands one pool in
+      // the server process until Postgres runs out of connections.
+      void runtime.shutdown().catch((err: unknown) => {
+        log.warn("host-mode runtime shutdown failed", { error: errorMessage(err) });
+      });
+    });
+
+    log.info("host-mode session starting", { tools: host.tools.length });
+    // A host-mode client is programmatic by construction — it supplies the
+    // agent definition and executes the tools, and browsers cannot even open
+    // one (the platform requires an `Authorization` header on the upgrade). It
+    // therefore owns its own playback clock, so relaying audio at the wall
+    // clock's pace only starves it: a harness whose timeline advances per
+    // processed tick sees the agent trail off mid-sentence and answers as if
+    // the line went quiet. Overridable — a caller that really does play in real
+    // time can set its own lead.
+    runtime.startSession(ws, {
+      audioLeadMs: UNPACED_AUDIO_LEAD_MS,
+      ...opts.startOpts,
+    });
+  }
+
   ws.addEventListener("message", (event: { data: unknown }) => {
     if (settled) return;
     const { data } = event;
@@ -300,48 +387,14 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
       return;
     }
 
-    if (!(opts.allowHost ?? isHostAllowed(opts.env))) {
-      rejectHandshake(ws, log, "host-mode is disabled on this server (AAI_ALLOW_HOST)");
-      return;
-    }
-
-    const { host } = result.data;
-    const relay = createRelayExecuteTool({
-      send: (e) => sendEvent(ws, e, log),
-      timeoutMs: opts.relayTimeoutMs,
-    });
-
-    let runtime: ReturnType<typeof createRuntime>;
-    try {
-      runtime = makeRuntime({
-        agent: buildHostAgent(host, opts.baseAgent),
-        env: opts.env,
-        executeTool: relay.executeTool,
-        toolSchemas: host.tools as ToolSchema[],
-        onToolResult: relay.onToolResult,
-        s2sConfig: s2sConfigFromHandshake(result.data),
-        logger: log,
-      });
-    } catch (err) {
-      relay.dispose();
-      rejectHandshake(ws, log, `host-mode: failed to build runtime: ${errorMessage(err)}`);
-      return;
-    }
-
-    ws.addEventListener("close", () => relay.dispose());
-
-    log.info("host-mode session starting", { tools: host.tools.length });
-    // A host-mode client is programmatic by construction — it supplies the
-    // agent definition and executes the tools, and browsers cannot even open
-    // one (the platform requires an `Authorization` header on the upgrade). It
-    // therefore owns its own playback clock, so relaying audio at the wall
-    // clock's pace only starves it: a harness whose timeline advances per
-    // processed tick sees the agent trail off mid-sentence and answers as if
-    // the line went quiet. Overridable — a caller that really does play in real
-    // time can set its own lead.
-    runtime.startSession(ws, {
-      audioLeadMs: UNPACED_AUDIO_LEAD_MS,
-      ...opts.startOpts,
-    });
+    // The env may be a pending Vault fetch (see StartHostSessionOptions.env);
+    // for a plain object this resolves on the next microtask, before any
+    // further socket event can be delivered.
+    void Promise.resolve(opts.env).then(
+      (env) => startWithEnv(env, result.data),
+      (err: unknown) => {
+        rejectHandshake(ws, log, `host-mode: failed to load agent env: ${errorMessage(err)}`);
+      },
+    );
   });
 }

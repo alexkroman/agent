@@ -250,15 +250,20 @@ describe("connectS2s", () => {
     expect(callbacks.onClose).toHaveBeenCalledWith(1000, "normal");
   });
 
-  test("error after open dispatches 'onError' callback with Error object", async () => {
+  test("a post-open socket error is folded into the close, not surfaced as its own error", async () => {
+    // `ws` always follows a fatal socket error with `close`, and the close
+    // path is where the transport decides between resuming and failing the
+    // session. Surfacing the error immediately sent the client a
+    // fatal-looking frame for the most common transient-drop shape
+    // (error-then-close), defeating the resume that followed.
     const callbacks = makeMockCallbacks();
     const { raw } = await setupHandle(callbacks);
 
     raw.emit("error", new Error("ws transport error"));
+    expect(callbacks.onError).not.toHaveBeenCalled();
 
-    expect(callbacks.onError).toHaveBeenCalledOnce();
-    const err = errorArg(callbacks);
-    expect(err).toBeInstanceOf(Error);
-    expect(err.message).toBe("ws transport error");
+    // The close that follows carries the error message as its reason.
+    raw.emit("close", 1006, "");
+    expect(callbacks.onClose).toHaveBeenCalledWith(1006, "ws transport error");
   });
 });

@@ -228,6 +228,13 @@ export interface ClientSink {
   playAudioChunk(chunk: Uint8Array): void;
   /** Signal that TTS audio is complete (JSON text frame). */
   playAudioDone(): void;
+  /**
+   * Close the underlying connection (best-effort, idempotent). Used when the
+   * server retires a session out from under a connected client — a resume
+   * takeover, or a sandbox teardown — so the client gets a real close to
+   * react to instead of a socket that silently stops answering.
+   */
+  close?(reason?: string): void;
 }
 
 // ─── WebSocket message types ────────────────────────────────────────────────

@@ -16,7 +16,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { TOOL_FETCH_MAX_CONCURRENT, TOOL_FETCH_MAX_REQUEST_BODY_BYTES } from "../sdk/constants.ts";
+import {
+  TOOL_FETCH_MAX_CONCURRENT,
+  TOOL_FETCH_MAX_REQUEST_BODY_BYTES,
+  TOOL_FETCH_TIMEOUT_MS,
+} from "../sdk/constants.ts";
 import { createMemoryVector } from "./memory-vector.ts";
 import { exemptFromToolEgress, installToolFetchGuard, runInToolEgress } from "./tool-egress.ts";
 
@@ -223,13 +227,73 @@ describe("tool egress guard — shared policy", () => {
     expect(String((rejected[0] as PromiseRejectedResult).reason)).toMatch(/concurrent limit/);
   });
 
-  test("frees a concurrency slot once a fetch settles", async () => {
+  test("frees a concurrency slot once a fetch's body is consumed", async () => {
+    // The slot is held for the BODY's lifetime, matching the platform (which
+    // holds its slot while relaying the body over NDJSON) — not released at
+    // response headers, which under-counted streaming reads.
+    inner.mockImplementation(async () => new Response("ok"));
     await runInToolEgress(["api.example.com"], async () => {
       for (let i = 0; i < TOOL_FETCH_MAX_CONCURRENT + 2; i++) {
-        await globalThis.fetch("https://api.example.com/x");
+        const resp = await globalThis.fetch("https://api.example.com/x");
+        await resp.text();
       }
     });
     expect(inner).toHaveBeenCalledTimes(TOOL_FETCH_MAX_CONCURRENT + 2);
+  });
+
+  test("slots held by never-read bodies are reclaimed by the timeout backstop", async () => {
+    // A tool that drops responses without reading them settles nothing; the
+    // backstop bounds the hold at the fetch timeout instead of leaking the
+    // slot forever.
+    vi.useFakeTimers();
+    try {
+      inner.mockImplementation(async () => new Response("ok"));
+      await runInToolEgress(["api.example.com"], async () => {
+        for (let i = 0; i < TOOL_FETCH_MAX_CONCURRENT; i++) {
+          await globalThis.fetch("https://api.example.com/x"); // body never read
+        }
+        await expect(globalThis.fetch("https://api.example.com/x")).rejects.toThrow(
+          /concurrent limit/,
+        );
+        await vi.advanceTimersByTimeAsync(TOOL_FETCH_TIMEOUT_MS + 1);
+        const resp = await globalThis.fetch("https://api.example.com/x");
+        await resp.text();
+      });
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  test("a shared counter spans separate egress scopes (per-agent cap)", async () => {
+    // The platform's cap is per agent (one counter per sandbox), so
+    // concurrent tool calls share it — a fresh counter per call would let
+    // each open the full budget in dev and trip the cap only in production.
+    const { promise: gate, resolve: release } = Promise.withResolvers<void>();
+    inner.mockImplementation(async () => {
+      await gate;
+      return new Response("ok");
+    });
+    const active = { count: 0 };
+    const first = runInToolEgress(
+      ["api.example.com"],
+      () =>
+        Promise.allSettled(
+          Array.from({ length: TOOL_FETCH_MAX_CONCURRENT }, () =>
+            globalThis.fetch("https://api.example.com/x"),
+          ),
+        ),
+      active,
+    );
+    // A second tool call in the same agent shares the exhausted budget.
+    await expect(
+      runInToolEgress(
+        ["api.example.com"],
+        () => globalThis.fetch("https://api.example.com/x"),
+        active,
+      ),
+    ).rejects.toThrow(/concurrent limit/);
+    release();
+    await first;
   });
 });
 

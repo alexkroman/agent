@@ -246,9 +246,18 @@ export function createNdjsonConnection<S extends RpcSchema = RpcSchema>(
           });
           return;
         }
-        void server.receive(req).then((response) => {
-          if (response) send(response);
-        });
+        void Promise.resolve(server.receive(req))
+          .then((response) => {
+            if (response) send(response);
+          })
+          .catch((err: unknown) => {
+            // json-rpc-2.0 maps handler throws to error responses, so this is
+            // exceptional (e.g. a handler result JSON.stringify failing in
+            // send) — but an escape here is an unhandledRejection on the
+            // multi-tenant host, the class this module contains everywhere
+            // else (see the notification branch below).
+            console.error(`NDJSON request handler "${req.method}" failed: ${errorMessage(err)}`);
+          });
         return;
       }
       case "notification": {

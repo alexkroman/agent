@@ -132,24 +132,29 @@ export function startDeployedHostSession(
     startOpts: SessionStartOptions;
   },
 ): void {
-  void opts.store
-    .getEnv(opts.slug)
-    .then((agentEnv) => {
-      startHostSession(ws, {
-        env: agentEnv ?? {},
-        // toRuntimeAgent keeps the provider descriptors on the agent, so a
-        // pipeline agent driven over ?host=1 stays a pipeline agent.
-        baseAgent: toRuntimeAgent(opts.agentConfig),
-        // Ownership was verified at the upgrade; the platform's gate is the
-        // API key, not AAI_ALLOW_HOST (which would be all-or-nothing).
-        allowHost: true,
-        startOpts: opts.startOpts,
-      });
-    })
-    .catch((err: unknown) => {
-      // A storage blip here would otherwise strand the caller on a silent,
-      // open socket. Close with 1011 so the client sees a real failure.
-      console.error(`Host-mode session start failed for ${opts.slug}:`, err);
-      ws.close?.(1011, "internal error");
-    });
+  // startHostSession attaches the handshake `message` listener SYNCHRONOUSLY
+  // — the client's config frame is the first frame of the protocol and can
+  // arrive the moment the 101 completes, and `ws` does not buffer for late
+  // listeners. Awaiting the Vault fetch before calling it lost that frame
+  // whenever the fetch was slower than the client, failing the connection on
+  // the handshake timeout. The env rides along as a promise instead, awaited
+  // only once the handshake has landed; a rejected fetch is reported to the
+  // client as a handshake rejection there. The pre-observation `.catch`
+  // keeps a fetch that fails before any handshake from becoming an
+  // unhandled rejection (the returned promise — with the handler attached —
+  // is what the session awaits, not this observer).
+  const envPromise = opts.store.getEnv(opts.slug).then((agentEnv) => agentEnv ?? {});
+  envPromise.catch((err: unknown) => {
+    console.error(`Host-mode env fetch failed for ${opts.slug}:`, err);
+  });
+  startHostSession(ws, {
+    env: envPromise,
+    // toRuntimeAgent keeps the provider descriptors on the agent, so a
+    // pipeline agent driven over ?host=1 stays a pipeline agent.
+    baseAgent: toRuntimeAgent(opts.agentConfig),
+    // Ownership was verified at the upgrade; the platform's gate is the
+    // API key, not AAI_ALLOW_HOST (which would be all-or-nothing).
+    allowHost: true,
+    startOpts: opts.startOpts,
+  });
 }

@@ -27,8 +27,15 @@ export type SessionStartOptions = {
   logContext?: Record<string, string>;
   onOpen?: () => void;
   onClose?: () => void;
-  /** Called with session ID after session cleanup, for guest state cleanup. */
-  onSessionEnd?: (sessionId: string) => void;
+  /**
+   * Called with session ID after session cleanup, for guest state cleanup.
+   * `sink` is the ending connection's own client sink; compare it against the
+   * sink the latest `onSinkCreated` delivered before releasing per-session
+   * state — a resume can register a NEW session under the same id while the
+   * old one drains, and a bare keyed cleanup here would tear down the live
+   * resumed session's state.
+   */
+  onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
   /** Called with session ID and client sink after session setup. Used by sandbox to route custom events. */
   onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
   /**

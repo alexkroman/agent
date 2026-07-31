@@ -45,8 +45,13 @@ type WsSessionOptions = {
   onOpen?: () => void;
   /** Callback invoked when the WebSocket connection closes. */
   onClose?: () => void;
-  /** Callback invoked with the session ID after session cleanup. */
-  onSessionEnd?: (sessionId: string) => void;
+  /**
+   * Callback invoked with the session ID after session cleanup. `sink` is the
+   * closing connection's own client sink — the identity token consumers need
+   * to distinguish this teardown from a resumed session now live under the
+   * same id (compare against the sink the latest `onSinkCreated` delivered).
+   */
+  onSessionEnd?: (sessionId: string, sink?: ClientSink) => void;
   /** Callback invoked with the session ID and client sink after session setup. */
   onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
   /** Logger instance. Defaults to console. */
@@ -71,6 +76,13 @@ type WsSessionOptions = {
 };
 
 const WS_CLOSE_INTERNAL = 1011;
+
+/**
+ * Sink per live session, so a resume takeover (a new connection presenting an
+ * id whose previous session is still registered) can close the superseded
+ * connection. Weak: entries die with their sessions.
+ */
+const sinkBySession = new WeakMap<SessionCore, ClientSink>();
 
 function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: string): void {
   if (data instanceof Uint8Array) {
@@ -134,6 +146,8 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
    *  a reconnect with ?sessionId=<same id> (resumeFrom) re-claims the key
    *  while the old session's async stop() drains (see endSession). */
   let releaseSessionEntry: (() => boolean) | null = null;
+  /** This connection's client sink — the identity token passed to onSessionEnd. */
+  let clientSink: ClientSink | null = null;
   /** Releases the audio pacer's pending timer; set when the sink is created.
    *  Without it a paced send could fire against a closed socket, and the timer
    *  would outlive the session. */
@@ -206,7 +220,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         // this key while the old one drains — a key delete here would evict
         // the resumed session's entry and leak it past runtime.shutdown().
         releaseSessionEntry?.();
-        opts.onSessionEnd?.(sessionId);
+        opts.onSessionEnd?.(sessionId, clientSink ?? undefined);
       })
       .catch(() => {
         /* finally callback errors are not actionable */
@@ -262,6 +276,7 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       opts.readyConfig.ttsSampleRate,
       opts.audioLeadMs,
     );
+    clientSink = client;
     stopPacingCurrent = stopPacing;
     // createSession runs synchronously from the 'open'/handleUpgrade callback;
     // a throw here (e.g. buildTransport rejecting an unregistered transport
@@ -275,8 +290,28 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
       failClientAndClose(client, "Failed to start session");
       return;
     }
+    // One id, one live session. The resume path (`?sessionId=<id>`) is meant
+    // for the post-disconnect grace window, but a fast client reconnect can
+    // land before the server has seen the old socket close — and a replayed
+    // id can land at any time. Left running, the previous session would share
+    // this id's tool state concurrently, keep its provider socket open past
+    // runtime.shutdown() (the claim replacement orphans it from shutdown's
+    // iteration), and stream into a client that no longer owns the id. Evict
+    // it: stop it directly (its own close handler may never fire if its
+    // socket is already dead) and close its socket so its client gets a real
+    // signal. All cleanup on the old connection releases by claim, so its
+    // late teardown cannot touch the entries registered below.
+    const superseded = sessions.get(sessionId);
     releaseSessionEntry = sessions.claim(sessionId, session);
+    sinkBySession.set(session, client);
     opts.onSinkCreated?.(sessionId, client);
+    if (superseded && superseded !== session) {
+      log.warn("ws: session id already live; evicting the superseded session", { ...ctx, sid });
+      sinkBySession.get(superseded)?.close?.("session resumed by another connection");
+      void superseded.stop().catch((err: unknown) => {
+        log.warn("ws: superseded session stop failed", { ...ctx, sid, error: errorMessage(err) });
+      });
+    }
 
     // Send config immediately — zero RTT. Include sessionId so the
     // client can reconnect with ?sessionId=<id> to resume a persisted session.

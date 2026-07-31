@@ -427,6 +427,22 @@ export const STT_CONNECT_MAX_RETRIES = 2;
 export const STT_CONNECT_RETRY_DELAY_MS = 500;
 
 /**
+ * Deadline for the TTS replacement socket opened after a mid-turn cancel
+ * (barge-in drops the whole connection — see the AssemblyAI TTS module doc).
+ *
+ * Unlike the initial open, which runs inside `session.start()` and is bounded
+ * by its timeout, the cancel-reconnect runs mid-session with no deadline
+ * upstream. A connect that black-holes (no `open`, no `error`) would otherwise
+ * leave the adapter queueing frames forever: every later turn's flushes count
+ * as sent while nothing reaches the wire, so each reply burns the full
+ * {@link PIPELINE_FLUSH_TIMEOUT_MS} in silence and the session is mute until
+ * the OS-level TCP timeout — if one ever fires. Kept under the flush timeout
+ * so the failure surfaces as a specific reconnect error before the first
+ * post-cancel turn gives up.
+ */
+export const TTS_RECONNECT_TIMEOUT_MS = 8000;
+
+/**
  * Default streaming STT `prompt` — deliberately empty: transcription is
  * unbiased unless an agent sets `sttPrompt`.
  *

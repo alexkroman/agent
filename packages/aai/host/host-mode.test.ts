@@ -296,7 +296,7 @@ describe("buildHostAgent", () => {
 });
 
 describe("startHostSession (deferred host handshake)", () => {
-  test("first config.host frame builds a host runtime from the block and starts the session", () => {
+  test("first config.host frame builds a host runtime from the block and starts the session", async () => {
     const ws = openMockWs();
     let captured: RuntimeOptions | undefined;
     let startSession: ReturnType<typeof vi.fn> = vi.fn();
@@ -314,6 +314,9 @@ describe("startHostSession (deferred host handshake)", () => {
     });
 
     ws.simulateMessage(hostConfigFrame());
+    // The env is awaited (it may be a pending Vault fetch); a plain object
+    // resolves on the next microtask.
+    await Promise.resolve();
 
     // Synthetic agent built from the host block.
     expect(captured?.agent.systemPrompt).toBe("You are a host agent.");
@@ -329,7 +332,7 @@ describe("startHostSession (deferred host handshake)", () => {
     expect(startSession.mock.calls[0]?.[0]).toBe(ws);
   });
 
-  test("rejects with a protocol error when AAI_ALLOW_HOST is disabled", () => {
+  test("rejects with a protocol error when AAI_ALLOW_HOST is disabled", async () => {
     const ws = openMockWs();
     const createRuntime = vi.fn();
 
@@ -339,11 +342,103 @@ describe("startHostSession (deferred host handshake)", () => {
       createRuntime,
     });
     ws.simulateMessage(hostConfigFrame());
+    await Promise.resolve(); // the env gate runs after the env resolves
 
     expect(createRuntime).not.toHaveBeenCalled();
     expect(ws.sentJson()).toContainEqual(
       expect.objectContaining({ type: "error", code: "protocol" }),
     );
+  });
+
+  test("a handshake landing before a slow env fetch resolves still starts the session", async () => {
+    // The platform's agent env is a Vault fetch. Awaiting it BEFORE attaching
+    // the message listener lost the client's config frame (ws does not buffer
+    // for late listeners); the env now rides along as a promise and the
+    // listener attaches synchronously.
+    const ws = openMockWs();
+    const envGate = Promise.withResolvers<Record<string, string>>();
+    let startSession: ReturnType<typeof vi.fn> = vi.fn();
+
+    startHostSession(ws as unknown as SessionWebSocket, {
+      env: envGate.promise,
+      allowHost: true,
+      logger: silentLogger,
+      createRuntime: (o) => {
+        const fake = makeFakeRuntime(o);
+        startSession = fake.startSession;
+        return fake.runtime;
+      },
+    });
+
+    // The frame arrives while the env fetch is still in flight.
+    ws.simulateMessage(hostConfigFrame());
+    expect(startSession).not.toHaveBeenCalled();
+
+    envGate.resolve({});
+    await vi.waitFor(() => {
+      expect(startSession).toHaveBeenCalledTimes(1);
+    });
+  });
+
+  test("a rejected env fetch rejects the handshake instead of hanging the socket", async () => {
+    const ws = openMockWs();
+    const createRuntime = vi.fn();
+    startHostSession(ws as unknown as SessionWebSocket, {
+      env: Promise.reject(new Error("vault down")),
+      allowHost: true,
+      logger: silentLogger,
+      createRuntime,
+    });
+    ws.simulateMessage(hostConfigFrame());
+
+    await vi.waitFor(() => {
+      expect(ws.sentJson()).toContainEqual(
+        expect.objectContaining({ type: "error", code: "protocol" }),
+      );
+    });
+    expect(createRuntime).not.toHaveBeenCalled();
+  });
+
+  test("socket close shuts down the per-connection runtime (releases owned resources)", async () => {
+    // The runtime is single-use: without shutdown() every host-mode
+    // connect/disconnect strands runtime-owned resources (above all a
+    // DATABASE_URL-backed pg pool) in the server process.
+    const ws = openMockWs();
+    let shutdown: ReturnType<typeof vi.fn> | undefined;
+    startHostSession(ws as unknown as SessionWebSocket, {
+      env: { AAI_ALLOW_HOST: "1" },
+      logger: silentLogger,
+      createRuntime: (o) => {
+        const fake = makeFakeRuntime(o);
+        shutdown = fake.runtime.shutdown as ReturnType<typeof vi.fn>;
+        return fake.runtime;
+      },
+    });
+    ws.simulateMessage(hostConfigFrame());
+    await Promise.resolve();
+    expect(shutdown).toBeDefined();
+    expect(shutdown).not.toHaveBeenCalled();
+
+    ws.close();
+    expect(shutdown).toHaveBeenCalledTimes(1);
+  });
+
+  test("a socket that closes before any handshake releases the timer without a rejection log", () => {
+    vi.useFakeTimers();
+    try {
+      const ws = openMockWs();
+      const logger = makeLogger();
+      startHostSession(ws as unknown as SessionWebSocket, {
+        env: { AAI_ALLOW_HOST: "1" },
+        logger,
+      });
+      ws.close();
+      vi.runAllTimers();
+      // No "handshake rejected" warn for a connection that simply went away.
+      expect(logger.warn).not.toHaveBeenCalled();
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   test("rejects when the first frame is not a valid host config", () => {

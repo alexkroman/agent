@@ -156,4 +156,36 @@ describe("deferred guest session/end (resume grace window)", () => {
     });
     await sandbox.shutdown();
   });
+
+  it("a resume overlapping the old session's drain keeps its guest state", async () => {
+    // The old connection's teardown is async: a fast reconnect can register a
+    // NEW session under the same id before the old onSessionEnd fires. That
+    // late teardown must not arm a guest session/end — onSinkCreated's
+    // cancelSessionEnd already ran for this id, so nothing would ever cancel
+    // it and the LIVE session's ctx.state would be freed mid-conversation at
+    // the end of the grace window.
+    const sandbox = createSandbox(makeSandboxOptions());
+    const ended: string[] = [];
+    const first = makeSessionWs();
+    sandbox.startSession(first.ws as never, { onSessionEnd: (sid) => ended.push(sid) });
+    const configFrame = JSON.parse(
+      (first.ws.send as ReturnType<typeof vi.fn>).mock.calls[0]?.[0] as string,
+    ) as { sessionId: string };
+    const sid = configFrame.sessionId;
+
+    // Socket drops; the reconnect lands BEFORE the old teardown settles.
+    first.fire("close", { code: 1006, reason: "network blip" });
+    const second = makeSessionWs();
+    sandbox.startSession(second.ws as never, { resumeFrom: sid });
+    // Now let the old session's async stop() settle — its late onSessionEnd
+    // must be a no-op for this id (the resumed session owns the sink).
+    await vi.advanceTimersByTimeAsync(0);
+    expect(ended).toContain(sid);
+
+    await vi.advanceTimersByTimeAsync(SESSION_RESUME_GRACE_MS + 1);
+    expect(mockConn.sendNotification).not.toHaveBeenCalledWith("session/end", {
+      sessionId: sid,
+    });
+    await sandbox.shutdown();
+  });
 });

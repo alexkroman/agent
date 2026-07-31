@@ -3,20 +3,24 @@
 // ExecuteToolOptions through executeToolCall into ctx.signal, and settle
 // hung tools. (Lives outside runtime.test.ts, which is at its ceiling.)
 
-import { describe, expect, test } from "vitest";
+import { describe, expect, test, vi } from "vitest";
 import { makeAgent, makeTool, silentLogger } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 
 describe("runtime executeTool — cancellation (self-hosted tools)", () => {
-  test("exposes the turn signal as ctx.signal", async () => {
+  test("ctx.signal follows the turn signal", async () => {
+    // ctx.signal is a per-call signal chained to the turn's (so a tool
+    // timeout can fire it too — see tool-executor.ts); aborting the turn
+    // signal must still reach the tool.
     let seen: AbortSignal | undefined;
+    const gate = Promise.withResolvers<string>();
     const runtime = createRuntime({
       agent: makeAgent({
         tools: {
           probe: makeTool({
             execute: (_args, ctx) => {
               seen = ctx.signal;
-              return "ok";
+              return gate.promise;
             },
           }),
         },
@@ -26,11 +30,17 @@ describe("runtime executeTool — cancellation (self-hosted tools)", () => {
     });
 
     const controller = new AbortController();
-    const result = await runtime.executeTool("probe", {}, "sid", [], {
+    const running = runtime.executeTool("probe", {}, "sid", [], {
       signal: controller.signal,
     });
-    expect(result).toBe("ok");
-    expect(seen).toBe(controller.signal);
+    await vi.waitFor(() => {
+      expect(seen).toBeDefined();
+    });
+    expect(seen?.aborted).toBe(false);
+    controller.abort();
+    expect(seen?.aborted).toBe(true);
+    gate.resolve("ok");
+    await running;
   });
 
   test("aborting the signal settles a hung tool with a tool error", async () => {

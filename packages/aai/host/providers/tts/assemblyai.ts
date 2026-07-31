@@ -95,6 +95,7 @@
 
 import { createNanoEvents, type Emitter } from "nanoevents";
 import WebSocket from "ws";
+import { TTS_RECONNECT_TIMEOUT_MS } from "../../../sdk/constants.ts";
 import {
   ASSEMBLYAI_TTS_API_KEY_ENV,
   ASSEMBLYAI_TTS_DEFAULT_VOICE,
@@ -334,13 +335,14 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           // Unexpected server-side close: release the turn so the pipeline
           // doesn't wait for an utterance that will never complete.
           turn.forceDone();
-          // A non-normal close (idle kick, 1011, deploy) leaves the session
-          // alive but every later `send` silently dropped by the readyState
-          // guard — surface it so the session fails loudly rather than going
-          // permanently, silently mute.
-          if (code !== 1000) {
-            shell.streamError(`AssemblyAI TTS: socket closed ${code}`);
-          }
+          // Any close that reaches this handler is one we did NOT initiate:
+          // dropSocket() detaches listeners before every local close and
+          // shell.close() latches first. This is one long-lived connection per
+          // session, so even a clean 1000 (idle policy, deploy) means every
+          // later `send` is silently dropped by the readyState guard — each
+          // turn would "complete" with zero audio and no error, the session
+          // permanently, silently mute. Surface it regardless of code.
+          shell.streamError(`AssemblyAI TTS: socket closed ${code}`);
         });
       };
       attach(ws);
@@ -359,7 +361,11 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           return;
         }
         ws = next;
-        void waitForOpen(next).then(
+        // Deadline, not just open-or-error: this open runs mid-session with
+        // nothing upstream bounding it, and a black-holed connect (no `open`,
+        // no `error`) would leave `queued` non-null forever — every later
+        // turn's frames queue "successfully" while nothing reaches the wire.
+        void waitForOpen(next, TTS_RECONNECT_TIMEOUT_MS).then(
           () => {
             // Superseded (closed, or cancelled again) — not the live socket.
             if (shell.isClosed() || ws !== next) return;
@@ -369,6 +375,9 @@ export function openAssemblyAITts(opts: AssemblyAITtsOptions): TtsOpener {
           },
           (cause: unknown) => {
             if (shell.isClosed() || ws !== next) return;
+            // Release the failed socket now — on timeout it may still open
+            // later and would otherwise linger connected until session close.
+            dropSocket(next);
             queued = null;
             shell.streamError(
               `AssemblyAI TTS: reconnect after cancel failed: ${errorMessage(cause)}`,
