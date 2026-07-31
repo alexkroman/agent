@@ -1,5 +1,73 @@
 # @alexkroman1/aai-server
 
+## 3.0.0
+
+### Major Changes
+
+- 2236275: Migrate all sandboxing and deployment to Modal.
+
+  Agent guest sandboxes now run as remote Modal Sandboxes (`modal-sandbox.ts`,
+  via the `modal` SDK): network-blocked containers running the Deno harness,
+  speaking the same NDJSON JSON-RPC protocol over the exec'd process's stdio.
+  The gVisor (runsc) OCI backend, the dev-mode child-process fallback, and the
+  fake-VM harness are all removed — Modal credentials (`MODAL_TOKEN_ID` /
+  `MODAL_TOKEN_SECRET`) are now required to run sandboxes in dev and prod alike.
+
+  The server itself also deploys to Modal (`modal_deploy.py`,
+  `pnpm --filter aai-server deploy:modal`); the production Dockerfile, the
+  Docker test image, and the Fly.io configuration/deploy pipeline are removed.
+
+- 2236275: Move the platform to Supabase and replace KV with an opt-in per-app database.
+
+  - **Blob storage**: agent bundles now live in Supabase Storage via its
+    S3-compatible endpoint (`SUPABASE_S3_ENDPOINT` / `SUPABASE_S3_ACCESS_KEY_ID`
+    / `SUPABASE_S3_SECRET_ACCESS_KEY` / `SUPABASE_STORAGE_BUCKET`), replacing
+    Tigris.
+  - **Secrets**: agent env vars are stored in Supabase Vault over
+    `SUPABASE_DB_URL` (service-role Postgres). The master-key envelope
+    encryption and `KV_SCOPE_SECRET` are removed.
+  - **KV support is removed** — `ctx.kv`, the `@alexkroman1/aai/kv` providers
+    (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`), the `kv:` agent config field, the
+    `/:slug/kv` HTTP API, and the guest `kv/*` RPC are all gone. The
+    `remember`/`recall` builtins keep working, now backed by in-memory
+    per-session notes.
+  - **New: opt-in app storage (`ctx.db`)** — enabling storage gives an app its
+    own Postgres schema + role in the platform's Supabase database, exposed to
+    tool code as `ctx.db.query(sql, params)` (proxied over the `db/query` guest
+    RPC). Enable it with the new `aai storage enable|disable|status` CLI
+    command or the studio's Storage toggle; under `aai dev`, set `DATABASE_URL`
+    in the project `.env`. Templates needing persistence (solo-rpg saves,
+    debrief-workflow records) now use `ctx.db`; session-scoped template state
+    moved to `ctx.state`.
+
+### Patch Changes
+
+- 6c79521: Studio builds run out of process: a Modal Function build worker in production, a local build subprocess in dev — never in the server process
+- d917095: Fix session resume losing the agent's context (ctx.state): the browser client now reconnects with the server-issued sessionId instead of a bare resume=1 (so the server resumes the same session rather than minting a new id), and per-session tool state survives a disconnect for a resume grace window (SESSION_RESUME_GRACE_MS) on both the self-hosted runtime and the platform sandbox (deferred guest session/end) instead of being wiped the moment the old session stopped.
+- 63af436: Guest sandboxes now set Modal's `idleTimeoutMs` (default 15 min, override
+  with `SANDBOX_IDLE_TIMEOUT_SECS`), so sandboxes orphaned by a host crash
+  self-terminate once their harness exec exits instead of billing until the
+  4h lifetime cap. Healthy sandboxes are unaffected — the harness exec runs
+  for the sandbox's whole life, so its idle timer never starts.
+- d3f3ebb: Fix orphaned Modal sandboxes surviving for hours: the guest harness now self-exits after 5 minutes without host traffic (fed by per-harness host heartbeats) and hard-exits on stdin EOF, so Modal's idleTimeoutMs can actually reap sandboxes whose host died without teardown. Also sets TINI_SUBREAPER=1 in guest sandboxes to silence the denoland/deno image's tini warning.
+- 57e1807: Remove the studio's per-request LLM model picker — chat always runs on the host-configured default model (gpt-5.5 on the AssemblyAI LLM Gateway)
+- 3722a9f: Improve the studio coding-agent prompt: concrete design guidelines for custom client.tsx UI (color, typography, layout, Tailwind, accessibility) in the scaffold guide, plus parallel tool-call and context-gathering rules in the studio preamble
+- Updated dependencies [bb02ded]
+- Updated dependencies [2b395b3]
+- Updated dependencies [d917095]
+- Updated dependencies [08f2937]
+- Updated dependencies [bb02ded]
+- Updated dependencies [2236275]
+- Updated dependencies [2236275]
+- Updated dependencies [2236275]
+- Updated dependencies [eb9f662]
+- Updated dependencies [57e1807]
+- Updated dependencies [6cac47f]
+  - @alexkroman1/aai@3.0.0
+  - aai-studio-client@0.1.9
+  - @alexkroman1/aai-cli@3.0.0
+  - @alexkroman1/aai-ui@3.0.0
+
 ## 2.0.0
 
 ### Major Changes

@@ -1,5 +1,59 @@
 # @alexkroman1/aai
 
+## 3.0.0
+
+### Major Changes
+
+- 2b395b3: Remove the workflow() app kind, the sync-turn API (POST /sync, createSyncSession, createPttRecorder, the WebSocket audio-file upload path), text-only mode (tts: none(), audioOut), and the Slack send channel (send:, @alexkroman1/aai/send, the send_message builtin).
+- 2236275: Move the platform to Supabase and replace KV with an opt-in per-app database.
+
+  - **Blob storage**: agent bundles now live in Supabase Storage via its
+    S3-compatible endpoint (`SUPABASE_S3_ENDPOINT` / `SUPABASE_S3_ACCESS_KEY_ID`
+    / `SUPABASE_S3_SECRET_ACCESS_KEY` / `SUPABASE_STORAGE_BUCKET`), replacing
+    Tigris.
+  - **Secrets**: agent env vars are stored in Supabase Vault over
+    `SUPABASE_DB_URL` (service-role Postgres). The master-key envelope
+    encryption and `KV_SCOPE_SECRET` are removed.
+  - **KV support is removed** — `ctx.kv`, the `@alexkroman1/aai/kv` providers
+    (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`), the `kv:` agent config field, the
+    `/:slug/kv` HTTP API, and the guest `kv/*` RPC are all gone. The
+    `remember`/`recall` builtins keep working, now backed by in-memory
+    per-session notes.
+  - **New: opt-in app storage (`ctx.db`)** — enabling storage gives an app its
+    own Postgres schema + role in the platform's Supabase database, exposed to
+    tool code as `ctx.db.query(sql, params)` (proxied over the `db/query` guest
+    RPC). Enable it with the new `aai storage enable|disable|status` CLI
+    command or the studio's Storage toggle; under `aai dev`, set `DATABASE_URL`
+    in the project `.env`. Templates needing persistence (solo-rpg saves,
+    debrief-workflow records) now use `ctx.db`; session-scoped template state
+    moved to `ctx.state`.
+
+### Minor Changes
+
+- bb02ded: Three type-level hardenings: (1) branded env records (AgentEnv/ProviderEnv/HostCredentialEnv in sdk/env-types) make it a compile error for withHostCredentialFallback output to become ctx.env; (2) the host-guest NDJSON connection is typed by a per-direction RPC method map (RpcSchema / GuestRpcSchema) so method names and request params are compile-checked while untrusted wire data stays unknown; (3) Manifest is now derived from ManifestSchema (defaults live in the schema, type via z.infer) instead of a hand-declared duplicate.
+- 08f2937: Simplify the client audio path: the push-to-talk recorder now uses the same capture worklet as the WebSocket mic (start/stop gating, stop-flush-ack instead of a fixed sleep, sample-rate assertion, dead-mic probe), PCM16 conversion and mic-open failure cleanup are shared helpers, the playback worklet's concealment ring uses bulk copies, and all client-audio timing constants (playback done wait, capture stop ack, playback buffer seconds) live in the shared constants module.
+- bb02ded: Collapse the config-mapping layer into one canonical schema: AgentConfigSchema is now the single serializable agent-config shape flowing CLI -> server -> runtime unchanged. toAgentConfig strips an explicit host-only deny-list (tools, state) instead of copying fields, agent() derives its parameter type from AgentDef instead of re-declaring it, the server's IsolateConfigSchema extends AgentConfigSchema, and toRuntimeAgent passes the whole config through minus wire-only fields (provider descriptors now ride on the runtime agent). Type-level guards enforce each subtraction so a new config field flows everywhere by default.
+- 2236275: Add region: "eu" to the AssemblyAI STT provider — routes both streaming and sync transcription to AssemblyAI's EU data-residency endpoints
+
+### Patch Changes
+
+- d917095: Fix session resume losing the agent's context (ctx.state): the browser client now reconnects with the server-issued sessionId instead of a bare resume=1 (so the server resumes the same session rather than minting a new id), and per-session tool state survives a disconnect for a resume grace window (SESSION_RESUME_GRACE_MS) on both the self-hosted runtime and the platform sandbox (deferred guest session/end) instead of being wiped the moment the old session stopped.
+- 2236275: Migrate all sandboxing and deployment to Modal.
+
+  Agent guest sandboxes now run as remote Modal Sandboxes (`modal-sandbox.ts`,
+  via the `modal` SDK): network-blocked containers running the Deno harness,
+  speaking the same NDJSON JSON-RPC protocol over the exec'd process's stdio.
+  The gVisor (runsc) OCI backend, the dev-mode child-process fallback, and the
+  fake-VM harness are all removed — Modal credentials (`MODAL_TOKEN_ID` /
+  `MODAL_TOKEN_SECRET`) are now required to run sandboxes in dev and prod alike.
+
+  The server itself also deploys to Modal (`modal_deploy.py`,
+  `pnpm --filter aai-server deploy:modal`); the production Dockerfile, the
+  Docker test image, and the Fly.io configuration/deploy pipeline are removed.
+
+- eb9f662: Fix "Sync turn failed: malformed server response" when a turn's model emits an invalid tool call. The AI SDK surfaces an unparsable tool call as a `tool-call` stream part whose `input` is the raw argument string rather than a parsed object; the sync-turn runner shipped it verbatim in `toolCalls[].args`, the client's response schema rejected the whole body, and the workflow run died. Tool-call args are now coerced to a plain record (`toArgsRecord`, exported from `@alexkroman1/aai/utils`) on both the sync path and the WebSocket pipeline's `tool_call` observability frame, sync turns run the same tool-call repair the pipeline transport uses, failed/invalid calls are recorded with an error result instead of dangling, and the client's malformed-response error now names the offending field.
+- 6cac47f: Fix AssemblyAI streaming TTS cutting replies short when the server acknowledges a flush with both an is_final audio frame and a FlushDone: the pair now counts as one acknowledgement, so done can no longer fire mid-reply, drop buffered sentence text, or let audio_done overtake segments still synthesizing.
+
 ## 2.0.0
 
 ### Major Changes

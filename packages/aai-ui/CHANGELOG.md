@@ -1,5 +1,21 @@
 # @alexkroman1/aai-ui
 
+## 3.0.0
+
+### Patch Changes
+
+- Updated dependencies [bb02ded]
+- Updated dependencies [2b395b3]
+- Updated dependencies [d917095]
+- Updated dependencies [08f2937]
+- Updated dependencies [bb02ded]
+- Updated dependencies [2236275]
+- Updated dependencies [2236275]
+- Updated dependencies [2236275]
+- Updated dependencies [eb9f662]
+- Updated dependencies [6cac47f]
+  - @alexkroman1/aai@3.0.0
+
 ## 2.0.0
 
 ### Major Changes

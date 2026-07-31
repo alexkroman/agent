@@ -1,5 +1,50 @@
 # aai-templates
 
+## 0.3.0
+
+### Minor Changes
+
+- 2236275: Move the platform to Supabase and replace KV with an opt-in per-app database.
+
+  - **Blob storage**: agent bundles now live in Supabase Storage via its
+    S3-compatible endpoint (`SUPABASE_S3_ENDPOINT` / `SUPABASE_S3_ACCESS_KEY_ID`
+    / `SUPABASE_S3_SECRET_ACCESS_KEY` / `SUPABASE_STORAGE_BUCKET`), replacing
+    Tigris.
+  - **Secrets**: agent env vars are stored in Supabase Vault over
+    `SUPABASE_DB_URL` (service-role Postgres). The master-key envelope
+    encryption and `KV_SCOPE_SECRET` are removed.
+  - **KV support is removed** — `ctx.kv`, the `@alexkroman1/aai/kv` providers
+    (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`), the `kv:` agent config field, the
+    `/:slug/kv` HTTP API, and the guest `kv/*` RPC are all gone. The
+    `remember`/`recall` builtins keep working, now backed by in-memory
+    per-session notes.
+  - **New: opt-in app storage (`ctx.db`)** — enabling storage gives an app its
+    own Postgres schema + role in the platform's Supabase database, exposed to
+    tool code as `ctx.db.query(sql, params)` (proxied over the `db/query` guest
+    RPC). Enable it with the new `aai storage enable|disable|status` CLI
+    command or the studio's Storage toggle; under `aai dev`, set `DATABASE_URL`
+    in the project `.env`. Templates needing persistence (solo-rpg saves,
+    debrief-workflow records) now use `ctx.db`; session-scoped template state
+    moved to `ctx.state`.
+
+### Patch Changes
+
+- 53b1b45: Declare allowedHosts in templates whose tool code fetches external services (health-assistant: api.fda.gov; personal-finance: open.er-api.com, api.coingecko.com)
+- 2236275: Migrate all sandboxing and deployment to Modal.
+
+  Agent guest sandboxes now run as remote Modal Sandboxes (`modal-sandbox.ts`,
+  via the `modal` SDK): network-blocked containers running the Deno harness,
+  speaking the same NDJSON JSON-RPC protocol over the exec'd process's stdio.
+  The gVisor (runsc) OCI backend, the dev-mode child-process fallback, and the
+  fake-VM harness are all removed — Modal credentials (`MODAL_TOKEN_ID` /
+  `MODAL_TOKEN_SECRET`) are now required to run sandboxes in dev and prod alike.
+
+  The server itself also deploys to Modal (`modal_deploy.py`,
+  `pnpm --filter aai-server deploy:modal`); the production Dockerfile, the
+  Docker test image, and the Fly.io configuration/deploy pipeline are removed.
+
+- 3722a9f: Improve the studio coding-agent prompt: concrete design guidelines for custom client.tsx UI (color, typography, layout, Tailwind, accessibility) in the scaffold guide, plus parallel tool-call and context-gathering rules in the studio preamble
+
 ## 0.2.3
 
 ### Patch Changes
