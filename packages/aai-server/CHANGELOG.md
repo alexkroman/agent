@@ -1,5 +1,24 @@
 # @alexkroman1/aai-server
 
+## 3.0.3
+
+### Patch Changes
+
+- 34b40f7: Switch the pipeline-simple template's TTS from Cartesia to AssemblyAI so all templates use AssemblyAI TTS
+- 4de94cb: Default the studio coding agent's pipeline LLM to qwen3-next-80b-a3b on the AssemblyAI LLM Gateway (studio prompt, chat model list, and codegen evals); pipeline mode remains the default over the S2S voice agent API, and the evals now assert the default gateway model id
+- 9509b0f: Studio starter project now defaults to a pipeline agent: AssemblyAI STT, qwen3-next-80b-a3b on the AssemblyAI LLM Gateway, and AssemblyAI TTS
+- 77bc03a: Remove the legacy PBKDF2 credential-verify fallback and the orphaned base64url helpers; credential hashes are argon2id only. Secrets are stored in Supabase Vault with no app-layer encryption; stale comments claiming AES-GCM/HKDF encryption are corrected.
+- Updated dependencies [3e21af9]
+- Updated dependencies [9ad4e51]
+- Updated dependencies [b50b0e9]
+- Updated dependencies [b50b0e9]
+- Updated dependencies [577b17a]
+- Updated dependencies [527c401]
+- Updated dependencies [3125c8d]
+  - @alexkroman1/aai@4.0.0
+  - @alexkroman1/aai-ui@4.0.0
+  - @alexkroman1/aai-cli@4.0.0
+
 ## 3.0.2
 
 ### Patch Changes

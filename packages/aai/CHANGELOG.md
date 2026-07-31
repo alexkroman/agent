@@ -1,5 +1,29 @@
 # @alexkroman1/aai
 
+## 4.0.0
+
+### Major Changes
+
+- 3e21af9: Remove legacy code, dead exports, and silent fallbacks across the SDK, CLI, UI, and server.
+
+  Breaking changes:
+
+  - `@alexkroman1/aai`: removed the dead `MAX_VALUE_SIZE` constant and the unused `ASSEMBLYAI_STREAMING_URL` STT constant; removed the legacy STT model aliases `"u3pro-rt"` and `"universal-3.5-pro"` (use `"universal-3-5-pro"`); removed the dead `theme` manifest field and `HostConfigMessage` type; `PipelineTransportOptions.executeTool` is now required (it previously defaulted to a stub that threw mid-turn).
+  - `@alexkroman1/aai-ui`: removed the dead `floatToPcm16` export.
+  - `@alexkroman1/aai-cli`: removed the deprecated no-op `--skipApi` init flag; the global config dir no longer falls back to the pre-env-paths legacy path (macOS/Windows users authenticated at the old path will be re-prompted for their API key); an unreadable or malformed `.env` now fails loudly instead of silently running with no secrets.
+  - aai-server (private): removed the legacy `POST /:slug/deploy` route (deploys go through `POST /deploy` with the slug in the body); a corrupt stored env record now fails the agent boot instead of degrading to an empty env; the platform default Vector factory is now required (no silent in-memory fallback).
+
+### Minor Changes
+
+- b50b0e9: Host mode accepts an sttPrompt in its config block, and the pipeline traces the STT→LLM boundary under AAI_DEBUG=1 (each STT partial/final, the committed turn text, and each raw AssemblyAI turn event with its end_of_turn/turn_is_formatted flags). DEFAULT_STT_PROMPT is exported and empty — biasing stays opt-in.
+- 527c401: Remove the pipeline transport's endpoint-settlement layer (`endpointSettleMs` / `completeSettleMs` and the host-side settler) — every STT final now commits a turn immediately. End-of-turn detection moves into the STT provider: the AssemblyAI opener always sets `min_turn_silence` (default 1500 ms, override via `assemblyAI({ minTurnSilenceMs })`), and Deepgram's default `endpointing` rises from 100 ms to the matching 1500 ms.
+
+### Patch Changes
+
+- 9ad4e51: Recover from a false barge-in during a reply's playback tail: a noise-triggered interruption after the turn finished server-side used to kill the rest of the reply permanently (full transcript shown, voice cut mid-sentence, no resume). The false-interruption recovery window is now armed for playback-tail cuts too, with a continuation prompt that quotes the estimated last words the caller heard.
+- b50b0e9: Filler no longer plays over a caller who is speaking: the hold phrase is skipped and dead-air cover re-arms while the caller holds the floor, so a short continuation that does not qualify as a barge-in is no longer talked over.
+- 577b17a: Fix the user's barge-in utterance flickering in the UI: a final-triggered barge-in now re-emits the interim caption after the cancel, so the utterance no longer disappears for the settle window before reappearing as a committed message
+
 ## 3.2.0
 
 ### Minor Changes

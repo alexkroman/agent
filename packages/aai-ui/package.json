@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai-ui",
-  "version": "3.2.0",
+  "version": "4.0.0",
   "type": "module",
   "files": [
     "dist",
