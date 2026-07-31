@@ -255,6 +255,12 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     // tool call failing "Connection disposed" and no signal to retry. Close
     // the sinks (before clearing them) so clients get a real close frame and
     // reconnect onto the replacement sandbox (resuming via their sessionId).
+    // Sessions still connected at shutdown never get their disconnect-path
+    // persist in time — the close handlers run asynchronously, after this
+    // teardown has already begun — so snapshot them now, while the guest is
+    // still alive to answer session/export. The store write is an upsert, so
+    // a close-path persist landing later is a harmless overwrite.
+    for (const sessionId of sessionSinks.keys()) resumer.persist(sessionId);
     for (const sink of sessionSinks.values()) {
       try {
         sink.close?.("agent restarting");
@@ -266,9 +272,9 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     // The guest process is going down with us — nothing left to notify.
     for (const timer of pendingSessionEnds.values()) clearTimeout(timer);
     pendingSessionEnds.clear();
-    // Draining shutdown closes live sockets, whose onSessionEnd persists are
-    // still exporting from the guest — let them finish before killing it, or
-    // every session cut at the drain deadline loses its resume state.
+    // Let in-flight persists (the snapshot above, plus any close-path
+    // exports) finish before killing the guest, or every session cut at the
+    // drain deadline loses its resume state.
     await resumer.flushPendingSaves();
     try {
       const handle = await vmReady;

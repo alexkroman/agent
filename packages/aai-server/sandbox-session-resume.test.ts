@@ -248,6 +248,43 @@ describe("cross-replica session resume", () => {
     await replicaB.shutdown();
   });
 
+  it("an open session survives a server restart: state follows the client's reconnect", async () => {
+    const store = createMemorySessionStateStore();
+
+    // A client is mid-call on replica A: WebSocket open, guest ctx.state
+    // accumulated, a remember note saved host-side. No disconnect happens
+    // before the restart — this is the deploy/scale-down path where the
+    // server goes away underneath a live session.
+    const replicaA = createSandbox(makeSandboxOptions(store));
+    const a = openSession(replicaA);
+    await vi.advanceTimersByTimeAsync(0); // let vmReady settle
+    guests[0]?.state.set(a.sid, { step: "payment", order_id: "o-7" });
+    restoreSessionNotes(a.sid, { customer: "Sam" });
+
+    // The server restarts. shutdown() closes the still-open socket itself
+    // (the client never said goodbye) and must snapshot the session's state
+    // to the shared store before the guest dies.
+    await replicaA.shutdown();
+    await expect(store.load("test-agent", a.sid)).resolves.toEqual({
+      state: { step: "payment", order_id: "o-7" },
+      notes: { customer: "Sam" },
+    });
+
+    // The browser client auto-reconnects (partysocket retries with
+    // `?sessionId=<id>` — see aai-ui/session-core-reconnect.ts; here that
+    // arrives as `resumeFrom`) and lands on the restarted server: a fresh
+    // sandbox with a fresh guest, sharing only the store.
+    const replicaB = createSandbox(makeSandboxOptions(store));
+    openSession(replicaB, { resumeFrom: a.sid });
+    await vi.advanceTimersByTimeAsync(0);
+
+    // The resumed session finds its working memory: guest ctx.state was
+    // hydrated into the new guest, and the remember notes are readable.
+    expect(guests[1]?.state.get(a.sid)).toEqual({ step: "payment", order_id: "o-7" });
+    expect(snapshotSessionNotes(a.sid)).toEqual({ customer: "Sam" });
+    await replicaB.shutdown();
+  });
+
   it("shutdown waits for in-flight persists (drain-deadline closes)", async () => {
     const store = createMemorySessionStateStore();
     const replicaA = createSandbox(makeSandboxOptions(store));
