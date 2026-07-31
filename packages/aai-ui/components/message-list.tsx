@@ -17,6 +17,7 @@ import {
 import { useSessionSelector, useTheme } from "../context.ts";
 import type { ChatMessage, ToolCallInfo } from "../types.ts";
 import { primaryTint, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
+import { Markdown } from "./markdown.tsx";
 import { ToolCallBlock } from "./tool-call-block.tsx";
 
 const DOT_STYLES: CSSProperties[] = [0, 0.16, 0.32].map((delay) => ({
@@ -107,10 +108,10 @@ const MessageBubble = memo(function MessageBubble({
         Agent
       </span>
       <div
-        className="whitespace-pre-wrap wrap-break-word text-[15px] font-normal leading-[23px]"
+        className="wrap-break-word text-[15px] font-normal leading-[23px]"
         style={{ color: theme.text }}
       >
-        {message.content}
+        <Markdown text={message.content} />
       </div>
     </div>
   );

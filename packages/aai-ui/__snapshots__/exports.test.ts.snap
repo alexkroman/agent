@@ -6,6 +6,7 @@ exports[`aai-ui export surface > @alexkroman1/aai-ui main export 1`] = `
   "Button",
   "ChatView",
   "Controls",
+  "Markdown",
   "MessageList",
   "SessionProvider",
   "SessionUrlChips",
