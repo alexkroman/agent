@@ -202,6 +202,10 @@ function createSttEventHandlers(deps: {
   return {
     onSttPartial(text: string): void {
       if (deps.isTerminated()) return;
+      // Debug trace (AAI_DEBUG=1): partials are the only record of a word STT
+      // heard mid-utterance and then dropped from its final, which otherwise
+      // looks like the LLM inventing a tool argument out of nowhere.
+      log.debug("Pipeline STT partial", { sid: deps.sid, text });
       // User speech proves presence: reset the nudge budget, restart the window.
       nudger.onUserSpeech();
       // Counted once, with a bounded scan: every consumer here is a threshold
@@ -242,6 +246,10 @@ function createSttEventHandlers(deps: {
       if (deps.isTerminated()) return;
       const trimmed = text.trim();
       if (trimmed.length === 0) return;
+      // Debug trace (AAI_DEBUG=1): pairs with "Pipeline turn committed" below.
+      // Finals that differ from the commit locate a loss in aggregation; a
+      // commit that matches the finals locates it in STT instead.
+      log.debug("Pipeline STT final", { sid: deps.sid, text: trimmed });
       // Real speech reached a final — whatever barge-in preceded it was not a
       // false interruption; a genuine turn commits below. Restores the
       // consecutive-resume budget too: the user is demonstrably present.
@@ -372,6 +380,9 @@ export function createUserActivity(deps: {
     nudger,
     callbacks,
     commitUserTurn(text: string): void {
+      // Debug trace (AAI_DEBUG=1): this is verbatim the text the turn prompts
+      // the LLM with, so it is the ground truth for "did the model see it?".
+      log.debug("Pipeline turn committed", { sid, text });
       callbacks.onUserTranscript(text);
       deps.runChainedTurn(text, "Pipeline turn crashed");
     },

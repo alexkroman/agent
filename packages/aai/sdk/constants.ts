@@ -426,6 +426,30 @@ export const STT_CONNECT_TIMEOUT_MS = 2500;
 export const STT_CONNECT_MAX_RETRIES = 2;
 export const STT_CONNECT_RETRY_DELAY_MS = 500;
 
+/**
+ * Default streaming STT `prompt` — deliberately empty: transcription is
+ * unbiased unless an agent sets `sttPrompt`.
+ *
+ * Worth knowing what an agent gives up by leaving it empty. Spoken identifiers
+ * are the pipeline's quietest transcription failure: a caller spelling out a
+ * confirmation code lands in an *interim* turn, and the formatted final turn
+ * can revise those characters away entirely, so the code reaches the LLM
+ * missing rather than misheard. The model still has a required tool argument to
+ * fill, so it substitutes something plausible — in the worst case the example
+ * value from the tool's own schema — and the turn fails with no error anywhere.
+ * (Reproduced against FDB-v3: a spelled order ID was dropped from every final
+ * turn, and the agent called the tool with the schema's example value.)
+ *
+ * A prompt only helps when it is specific to the agent's own vocabulary, and
+ * showing the spelled→joined form is what makes it stick, e.g.
+ * `"Callers read order IDs out character by character: 'K L 4 7 2' is KL472.
+ * Never omit a spoken identifier."` A generic version of the same instruction
+ * measured no better than none, which is why there is no default here — and
+ * why an unrelated prompt is worse than empty: it biases the transcript
+ * toward vocabulary the caller never used.
+ */
+export const DEFAULT_STT_PROMPT = "";
+
 export const WS_OPEN = 1;
 
 /**

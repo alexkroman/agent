@@ -184,6 +184,9 @@ export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef
     systemPrompt: host.systemPrompt,
     greeting: host.greeting ?? "",
     maxSteps: DEFAULT_HOST_MAX_STEPS,
+    // STT biasing follows the provider triple's inheritance rule: the client's
+    // value wins when sent, the operator's configured prompt stands otherwise.
+    ...(host.sttPrompt !== undefined ? { sttPrompt: host.sttPrompt } : {}),
     // Injected tools are relayed to the client, not executed in-process.
     tools: {},
   };

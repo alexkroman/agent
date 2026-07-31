@@ -314,6 +314,16 @@ export const HostConfigSchema = z.object({
   systemPrompt: z.string().min(1),
   greeting: z.string().optional(),
   tools: z.array(ToolSchemaSchema),
+  /**
+   * Contextual biasing for the pipeline's STT stage (AssemblyAI's streaming
+   * `prompt`). The client owns the task's vocabulary — spelled-out order IDs,
+   * product codes, passport numbers — and steering the LLM alone leaves those
+   * identifiers transcribed unbiased, where a formatted final turn can revise
+   * a spelled code out of the transcript entirely. Omit it to keep whatever
+   * the deployed agent configures. No effect on S2S transports, which have no
+   * separate STT stage.
+   */
+  sttPrompt: z.string().optional(),
 });
 
 /** Host-provided agent configuration for a host-mode connection. */

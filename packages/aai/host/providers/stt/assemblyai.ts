@@ -4,6 +4,7 @@ import { AssemblyAI, type StreamingTranscriber } from "assemblyai";
 import { createNanoEvents, type Emitter } from "nanoevents";
 import {
   DEFAULT_MIN_TURN_SILENCE_MS,
+  DEFAULT_STT_PROMPT,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,
@@ -22,6 +23,7 @@ import {
   type SttSession,
 } from "../../../sdk/providers.ts";
 import { createAudioSendGate } from "../../_audio-gate.ts";
+import { consoleLogger } from "../../runtime-config.ts";
 import {
   closeOnAbort,
   connectOrThrow,
@@ -157,7 +159,11 @@ function buildTranscriberParams(
   // The US default is left to the SDK (its default already carries the
   // versioned path), so only the EU case names an endpoint here.
   if (opts.region === "eu") params.websocketBaseUrl = ASSEMBLYAI_STREAMING_EU_URL;
-  if (openOpts.sttPrompt) params.prompt = openOpts.sttPrompt;
+  // Contextual biasing is opt-in: DEFAULT_STT_PROMPT is empty, so an agent
+  // that sets no sttPrompt sends no `prompt` at all — as does `sttPrompt: ""`.
+  // DEFAULT_STT_PROMPT documents what a useful prompt buys and costs.
+  const sttPrompt = openOpts.sttPrompt ?? DEFAULT_STT_PROMPT;
+  if (sttPrompt) params.prompt = sttPrompt;
   if (initialAgentContext !== undefined) params.agentContext = initialAgentContext;
   if (voiceFocus) params.voiceFocus = voiceFocus;
   return { params, agentContextCapable };
@@ -196,6 +202,16 @@ export function openAssemblyAI(opts: AssemblyAIOptions = {}): SttOpener {
       transcriber.on("turn", (event) => {
         if (shell.isClosed()) return;
         const text = event.transcript ?? "";
+        // Raw turn trace (AAI_DEBUG=1; `debug` is a no-op otherwise). Logged
+        // before the empty-text early return and with the service's own flags,
+        // so a word that appears in an interim turn and is then revised out of
+        // the final one is attributable to STT rather than to the transport's
+        // turn aggregation (see pipeline-user-speech.ts's matching trace).
+        consoleLogger.debug("AssemblyAI STT turn", {
+          transcript: text,
+          endOfTurn: event.end_of_turn,
+          formatted: event.turn_is_formatted,
+        });
         if (text.length === 0) return;
         emitter.emit(event.end_of_turn ? "final" : "partial", text);
       });
