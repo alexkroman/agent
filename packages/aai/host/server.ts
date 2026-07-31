@@ -75,6 +75,19 @@ type ServerOptions = {
     socket: import("node:stream").Duplex,
     head: Buffer,
   ) => boolean;
+  /**
+   * First look at every HTTP request (after `/health`). Return true to claim
+   * it — the server then leaves the response alone. The `upgrade` hook's
+   * HTTP twin: lets an embedder (the platform's guest harness) add its own
+   * HTTP surface — the studio coding agent's chat endpoint — without a
+   * second HTTP server.
+   */
+  request?: (
+    req: http.IncomingMessage,
+    res: http.ServerResponse,
+    url: string,
+    method: string,
+  ) => boolean;
 };
 
 /**
@@ -219,6 +232,7 @@ export function createServer(options: ServerOptions): AgentServer {
       sendJson(res, 200, { status: "ok", name });
       return;
     }
+    if (options.request?.(req, res, url, method)) return;
     handleRequest(req, res, url, method).catch((err: unknown) => {
       // A rejection here would otherwise be an unhandled rejection that can
       // take down the process; answer 500 when possible, else drop the socket.

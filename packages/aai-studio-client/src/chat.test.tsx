@@ -72,6 +72,8 @@ describe("toBlocks", () => {
 const noop = (): void => undefined;
 
 const panelProps = {
+  chatSession: undefined,
+  onSessionStale: noop,
   apiKey: "k",
   project: null,
   chatHistory: undefined,

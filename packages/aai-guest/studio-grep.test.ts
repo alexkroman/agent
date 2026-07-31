@@ -88,6 +88,12 @@ describe("grepWorkspace", () => {
     expect(grepWorkspace(minified, "(z+)+$")).toBe("No matches found");
   });
 
+  test("a glob picomatch refuses is an actionable error, not a crash", () => {
+    expect(() => grepWorkspace(FILES, "rollDice", { glob: "a".repeat(70_000) })).toThrow(
+      StudioGrepError,
+    );
+  });
+
   test("rejects an empty pattern", () => {
     expect(() => grepWorkspace(FILES, "")).toThrow(/must not be empty/);
   });

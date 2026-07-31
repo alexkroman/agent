@@ -7,7 +7,14 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
 import clsx from "clsx";
 import { lazy, Suspense, useEffect, useState } from "react";
-import { ApiError, api, type ProjectData, parseSecrets, type StudioStatus } from "./api.ts";
+import {
+  ApiError,
+  api,
+  type ChatSession,
+  type ProjectData,
+  parseSecrets,
+  type StudioStatus,
+} from "./api.ts";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 import { ChatPanel } from "./chat.tsx";
 import { PreviewPane } from "./preview.tsx";
@@ -244,6 +251,28 @@ export function App({ apiKey, onSignOut }: AppProps) {
     refetchOnWindowFocus: false,
   });
 
+  // The project's coding-agent sandbox. Brokered once per project open and
+  // held for the session; a dead sandbox (evicted, replaced) surfaces as a
+  // failed chat send, which invalidates this query to re-broker.
+  const chatSession = useQuery<ChatSession>({
+    queryKey: ["chat-session", project],
+    queryFn: () => api.createChatSession(apiKey, project as string),
+    enabled: project != null,
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
+    retry: 1,
+  });
+
+  // Friendly tool labels, served by the sandbox (single source of truth —
+  // the guest owns the tool set). Sticky: labels are static per build.
+  const toolLabels = useQuery<Record<string, string>>({
+    queryKey: ["tool-labels", chatSession.data?.url],
+    queryFn: () => api.sandboxToolLabels(apiKey, chatSession.data?.url as string),
+    enabled: chatSession.data?.url != null,
+    staleTime: Number.POSITIVE_INFINITY,
+    refetchOnWindowFocus: false,
+  });
+
   useEffect(() => {
     if (chat.error instanceof ApiError && chat.error.status === 401) onSignOut();
   }, [chat.error, onSignOut]);
@@ -381,6 +410,10 @@ export function App({ apiKey, onSignOut }: AppProps) {
           // a failed fetch degrades to an empty history rather than wedging
           // the panel in its loading state.
           chatHistory={chat.data ?? (chat.isError ? [] : undefined)}
+          chatSession={chatSession.data}
+          sessionError={chatSession.isError}
+          toolLabels={toolLabels.data}
+          onSessionStale={() => void queryClient.invalidateQueries({ queryKey: ["chat-session"] })}
           llmStatus={status.data}
           creating={createProject.isPending}
           initialPrompt={pendingPrompt}

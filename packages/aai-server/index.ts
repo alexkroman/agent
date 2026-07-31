@@ -11,7 +11,7 @@
  */
 
 import { serve } from "@hono/node-server";
-import { assertDevKeys, resolveDrainMs } from "./_boot.ts";
+import { resolveDrainMs } from "./_boot.ts";
 import { waitForIdle } from "./_drain.ts";
 import { DEFAULT_PORT } from "./constants.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
@@ -25,7 +25,6 @@ async function main(): Promise<void> {
   installProcessSafetyNets();
 
   const env = process.env;
-  assertDevKeys(env);
   const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
 
   // Flipped by `shutdown()` before anything is torn down: it fails /health

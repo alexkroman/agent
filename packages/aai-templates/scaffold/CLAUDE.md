@@ -410,7 +410,7 @@ set `builtinTools` explicitly (including `[]`) to override.
 
 | Tool | Description | Params |
 | --- | --- | --- |
-| `web_search` | Search the web (Brave) — requires the `BRAVE_API_KEY` secret | `query`, `max_results?` (default 5) |
+| `web_search` | Search the web (DuckDuckGo) — no API key required | `query`, `max_results?` (default 5) |
 | `visit_webpage` | Fetch URL to plain text | `url` |
 | `get_page_design` | Fetch URL's raw HTML + CSS (style blocks and linked stylesheets) to study/mimic a site's design | `url` |
 | `fetch_json` | HTTP GET a JSON API | `url`, `headers?` |
@@ -652,10 +652,6 @@ Never hardcode secrets in agent code.
 - **Access:** `ctx.env.MY_KEY` in tool execute functions.
 - **AssemblyAI key:** CLI prompts on first use, stores globally. No `.env`
   entry needed. For CI, set `ASSEMBLYAI_API_KEY` env var.
-- **`BRAVE_API_KEY`:** required by the `web_search` builtin (a free key from
-  brave.com/search/api). Without it, `web_search` returns an error result.
-  Set it like any other secret: `.env` locally, `aai secret put` in
-  production.
 
 ## Voice rules for systemPrompt
 

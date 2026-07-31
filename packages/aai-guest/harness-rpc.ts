@@ -80,15 +80,24 @@ export const pendingHostRequests = new Map<
   { resolve: (value: unknown) => void; reject: (err: unknown) => void }
 >();
 
-/** Send an RPC request to the host and wait for its response. */
-function hostRequest(method: string, params: Record<string, unknown>): Promise<unknown> {
+/**
+ * Send an RPC request to the host and wait for its response. Exported for
+ * the studio session (guest→host `studio/build`, `studio/sync-workspace`,
+ * `studio/persist-chat`); `timeoutMs` exists because a workspace build
+ * legitimately outlives the default deadline.
+ */
+export function hostRequest(
+  method: string,
+  params: Record<string, unknown>,
+  timeoutMs: number = HOST_REQUEST_TIMEOUT_MS,
+): Promise<unknown> {
   const id = hostRequestId++;
   const { promise, resolve, reject } = Promise.withResolvers<unknown>();
   const timer = setTimeout(() => {
     if (pendingHostRequests.delete(id)) {
-      reject(new Error(`Host RPC "${method}" timed out after ${HOST_REQUEST_TIMEOUT_MS}ms`));
+      reject(new Error(`Host RPC "${method}" timed out after ${timeoutMs}ms`));
     }
-  }, HOST_REQUEST_TIMEOUT_MS);
+  }, timeoutMs);
   pendingHostRequests.set(id, {
     resolve: (value) => {
       clearTimeout(timer);

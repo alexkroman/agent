@@ -238,10 +238,25 @@ importers:
       '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
+      ai:
+        specifier: ^7.0.41
+        version: 7.0.41(zod@4.4.3)
+      diff:
+        specifier: ^9.0.0
+        version: 9.0.0
+      picomatch:
+        specifier: ^4.0.4
+        version: 4.0.5
       ws:
         specifier: ^8.21.1
         version: 8.21.1
+      zod:
+        specifier: ^4.4.3
+        version: 4.4.3
     devDependencies:
+      '@types/picomatch':
+        specifier: ^4.0.2
+        version: 4.0.3
       '@types/ws':
         specifier: ^8.18.1
         version: 8.18.1
@@ -454,9 +469,6 @@ importers:
       ai:
         specifier: ^7.0.41
         version: 7.0.41(zod@4.4.3)
-      diff:
-        specifier: ^9.0.0
-        version: 9.0.0
       hono:
         specifier: ^4.12.31
         version: 4.12.32
@@ -469,9 +481,6 @@ importers:
       p-timeout:
         specifier: ^7.0.1
         version: 7.0.1
-      picomatch:
-        specifier: ^4.0.5
-        version: 4.0.5
       react:
         specifier: ^19.2.8
         version: 19.2.8
@@ -488,9 +497,6 @@ importers:
       '@types/mime-types':
         specifier: ^3.0.1
         version: 3.0.1
-      '@types/picomatch':
-        specifier: ^4.0.3
-        version: 4.0.3
       tsdown:
         specifier: ^0.22.13
         version: 0.22.14(@arethetypeswrong/core@0.18.5)(oxc-resolver@11.24.2)(publint@0.3.22)(tsx@4.23.1)(typescript@7.0.2)

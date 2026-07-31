@@ -47,9 +47,11 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
+import { createMemoryChatStore } from "aai-server/chat-store";
 import { resolveHarnessPath } from "aai-server/constants";
 import { isModalConfigured } from "aai-server/modal-sandbox";
 import { type IsolateConfig, IsolateConfigSchema } from "aai-server/rpc-schemas";
+import { describeBundle } from "aai-server/sandbox-vm";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { generateObject, type UIMessage } from "ai";
 import { describe, expect, test } from "vitest";
@@ -66,22 +68,24 @@ import {
   TEMPLATES_DIR,
   UNCOVERED,
 } from "./_studio-eval-test-utils.ts";
-import { runStudioChat, type StudioChatDeps } from "./studio-agent.ts";
 import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
 import { bundleWorkspaceWorker } from "./studio-bundle.ts";
 import { StudioBuildError } from "./studio-errors.ts";
-import { isStudioLlmConfigured, studioLlmInfo, studioModel } from "./studio-llm.ts";
-import { createStudioSandbox, type StudioSandbox } from "./studio-sandbox.ts";
+import { studioLlmInfo, studioModel } from "./studio-llm.ts";
+import { createStudioSessionBroker } from "./studio-session-broker.ts";
 import { starterFiles } from "./studio-template.ts";
 import { createWorkspace, filesHash, getWorkspace } from "./studio-workspace.ts";
 import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 
 const SCOPE = "eval-scope";
 
-const llmReady = isStudioLlmConfigured(process.env);
+// The studio LLM now runs on the caller's key; evals borrow the shell's.
+const evalApiKey = process.env.ASSEMBLYAI_API_KEY ?? "";
 
-/** The sandbox judge needs Modal credentials plus the built guest harness. */
+/** The agent loop runs IN the guest sandbox now, so every eval needs Modal
+ * credentials plus the built guest harness — not just the sandbox judge. */
 const canSandbox = isModalConfigured() && existsSync(resolveHarnessPath());
+const llmReady = Boolean(evalApiKey) && canSandbox;
 
 type StudioEvalOutput = {
   /** Workspace files as the agent left them after its one turn. */
@@ -154,48 +158,57 @@ const studioHarness = createHarness<string, StudioEvalOutput>({
   run: async ({ input, setArtifact }) => {
     const project = `eval-${++runCounter}`;
     const workspaces = createMemoryWorkspaceStore();
+    const chats = createMemoryChatStore();
     await createWorkspace(workspaces, SCOPE, project, { files: starterFiles() });
 
-    let sandbox: StudioSandbox | undefined;
-    const deps: StudioChatDeps = {
-      workspaces,
-      scope: SCOPE,
-      project,
-      sandbox: async () => {
-        if (!canSandbox) throw new Error("no Modal credentials/guest harness in this environment");
-        sandbox ??= await createStudioSandbox();
-        return sandbox;
-      },
-      disposeSandbox: async () => {
-        await sandbox?.dispose();
-        sandbox = undefined;
-      },
-      model: studioModel(process.env),
-    };
-
-    const events = await readSseEvents(await runStudioChat(deps, [userMessage(input)]));
-    const workspace = await getWorkspace(workspaces, SCOPE, project);
-    const errors = events.filter((e) => e.type === "error").map((e) => String(e.errorText));
-    // Fail loudly on an errored turn. Judging the leftover workspace would be
-    // a false pass — the untouched starter files build just fine.
-    if (errors.length > 0) {
-      throw new Error(`agent turn errored: ${errors.join("; ")}`);
+    // The real architecture end to end: broker boots a Modal sandbox via the
+    // warm-spawn path, installs the session (caller key, prompt, files), and
+    // the "browser" posts the turn straight to the guest's public chat URL.
+    const broker = createStudioSessionBroker({ workspaces, chats });
+    try {
+      const session = await broker.ensureSession(SCOPE, project, evalApiKey);
+      if (!session) throw new Error("eval project missing");
+      const res = await fetch(session.url, {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          authorization: `Bearer ${evalApiKey}`,
+        },
+        body: JSON.stringify({ messages: [userMessage(input)] }),
+      });
+      if (!res.ok) throw new Error(`guest chat answered ${res.status}`);
+      const events = await readSseEvents(res);
+      const errors = events.filter((e) => e.type === "error").map((e) => String(e.errorText));
+      // Fail loudly on an errored turn. Judging the leftover workspace would
+      // be a false pass — the untouched starter files build just fine.
+      if (errors.length > 0) {
+        throw new Error(`agent turn errored: ${errors.join("; ")}`);
+      }
+      // The guest syncs the workspace at end of turn; poll the store briefly.
+      const settled = Date.now() + 15_000;
+      let files = (await getWorkspace(workspaces, SCOPE, project))?.files ?? {};
+      while (Date.now() < settled && filesHash(files) === filesHash(starterFiles())) {
+        await new Promise((r) => setTimeout(r, 500));
+        files = (await getWorkspace(workspaces, SCOPE, project))?.files ?? {};
+      }
+      const transcript = toTranscript(input, events);
+      const assistant = transcript.at(-1);
+      setArtifact("llm", (studioLlmInfo(process.env) ?? {}) as never);
+      setArtifact("steps", events.filter((e) => e.type === "start-step").length);
+      return {
+        output: {
+          files,
+          assistantText:
+            assistant?.type === "message" && typeof assistant.content === "string"
+              ? assistant.content
+              : "",
+        },
+        events: transcript,
+        errors,
+      };
+    } finally {
+      await broker.dispose();
     }
-    const transcript = toTranscript(input, events);
-    const assistant = transcript.at(-1);
-    setArtifact("llm", (studioLlmInfo(process.env) ?? {}) as never);
-    setArtifact("steps", events.filter((e) => e.type === "start-step").length);
-    return {
-      output: {
-        files: workspace?.files ?? {},
-        assistantText:
-          assistant?.type === "message" && typeof assistant.content === "string"
-            ? assistant.content
-            : "",
-      },
-      events: transcript,
-      errors,
-    };
   },
 });
 
@@ -269,10 +282,12 @@ const SandboxLoadJudge = createJudge<
   { expectedTools?: string[]; providers?: ProviderExpectation }
 >("SandboxLoadJudge", async ({ output, expectedTools, providers }) => {
   const worker = await buildWorker(output.files);
-  const sandbox = await createStudioSandbox();
   try {
-    const loaded = await sandbox.loadBundle(worker);
-    const parsed = IsolateConfigSchema.safeParse(loaded.config);
+    const described = await describeBundle({
+      harnessPath: resolveHarnessPath(),
+      workerCode: worker,
+    });
+    const parsed = IsolateConfigSchema.safeParse(described);
     if (!parsed.success) {
       const issues = parsed.error.issues.map((i) => i.message).join("; ");
       return { score: 0, metadata: { rationale: `invalid agent config: ${issues}` } };
@@ -295,8 +310,6 @@ const SandboxLoadJudge = createJudge<
     };
   } catch (err) {
     return { score: 0, metadata: { rationale: `bundle failed to load: ${String(err)}` } };
-  } finally {
-    await sandbox.dispose();
   }
 });
 
@@ -413,7 +426,7 @@ const TemplateParityJudge = createJudge<string, StudioEvalOutput, { template: st
     ].join("\n");
 
     const { object } = await generateObject({
-      model: studioModel(process.env),
+      model: studioModel(evalApiKey),
       schema: ParityVerdictSchema,
       // Deliberately no `temperature: 0`: the default studio model is a
       // reasoning model, which rejects the parameter with an AI SDK warning on

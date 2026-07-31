@@ -13,7 +13,9 @@
  * - `POST /studio/projects/:project/deploy`   — build + deploy the workspace
  * - `GET/POST/DELETE /studio/projects/:project/storage` — per-app database
  *   storage on the published agent (409 until published)
- * - `POST /studio/chat`                       — coding-agent turn (NDJSON stream)
+ * - `POST /studio/projects/:project/session`  — boot the project's coding-agent
+ *   sandbox; the browser then streams chat turns DIRECTLY to the sandbox's
+ *   public `/studio/chat` (see studio-session-broker.ts)
  *
  * Auth: any bearer API key (the platform's self-sovereign key model — same
  * as `POST /deploy`). Workspaces are namespaced by a deterministic hash of
@@ -27,12 +29,10 @@ import { authMw } from "aai-server/middleware";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { disableStorage, enableStorage, storageStatus } from "aai-server/storage-handler";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
-import type { UIMessage } from "ai";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
-import { runStudioChat } from "./studio-agent.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
-import { isStudioLlmConfigured, studioLlmInfo } from "./studio-llm.ts";
+import { studioLlmInfo } from "./studio-llm.ts";
 import {
   CHAT_RATE_LIMIT,
   createRateLimiter,
@@ -40,15 +40,13 @@ import {
   type RateLimiter,
   type StudioRateLimiters,
 } from "./studio-rate-limit.ts";
-import { createStudioSandbox, type StudioSandbox } from "./studio-sandbox.ts";
 import {
-  ChatBodySchema,
   CreateProjectSchema,
-  MAX_STUDIO_CHAT_BYTES,
   ProjectNameSchema,
   StudioDeployBodySchema,
   StudioFileSchema,
 } from "./studio-schemas.ts";
+import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
 import { starterFiles } from "./studio-template.ts";
 import {
   createWorkspace,
@@ -72,10 +70,11 @@ export type StudioRouteOptions = {
   rateLimiters?: StudioRateLimiters | undefined;
   /** Test seam: swap the deploy pipeline without module mocks. */
   deployProject?: typeof deployStudioProject;
-  /** Test seam: swap the LLM gate. */
-  llmConfigured?: () => boolean;
-  /** Test seam: swap session-sandbox provisioning. */
-  createSandbox?: typeof createStudioSandbox;
+  /** Test seam: swap the coding-agent session broker. */
+  broker?: (stores: {
+    workspaces: HonoEnv["Bindings"]["workspaces"];
+    chats: HonoEnv["Bindings"]["chats"];
+  }) => StudioSessionBroker;
 };
 
 function validateProject(name: string | undefined): string {
@@ -86,16 +85,25 @@ function validateProject(name: string | undefined): string {
 
 export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoEnv> {
   const deploy = options.deployProject ?? deployStudioProject;
-  const llmConfigured = options.llmConfigured ?? isStudioLlmConfigured;
-  const newSandbox = options.createSandbox ?? createStudioSandbox;
+  // One broker per app instance, created lazily on the first session request
+  // (the stores ride on the request env). Per-replica, like the slot cache.
+  let broker: StudioSessionBroker | undefined;
+  const ensureBroker = (c: Context<HonoEnv>): StudioSessionBroker => {
+    broker ??= (options.broker ?? createStudioSessionBroker)({
+      workspaces: c.env.workspaces,
+      chats: c.env.chats,
+      ...(options.pool && { pool: options.pool }),
+    });
+    return broker;
+  };
 
   const studio = new Hono<HonoEnv>();
 
-  // Per-scope fixed-window limits (see studio-rate-limit.ts): any non-empty
-  // bearer authenticates here, so without these the chat route is an
-  // unmetered LLM proxy on platform-owned keys. Injected in production
-  // (Postgres-backed, shared across replicas); the in-memory default covers
-  // dev and tests.
+  // Per-scope fixed-window limits (see studio-rate-limit.ts). The LLM runs
+  // on the caller's own key, so the limiter is no longer guarding a
+  // platform-billed proxy — it still bounds sandbox spawns and build-worker
+  // work per caller. Injected in production (Postgres-backed, shared across
+  // replicas); the in-memory default covers dev and tests.
   const chatLimiter = options.rateLimiters?.chat ?? createRateLimiter(CHAT_RATE_LIMIT);
   const projectCreateLimiter =
     options.rateLimiters?.projectCreate ?? createRateLimiter(PROJECT_CREATE_RATE_LIMIT);
@@ -111,9 +119,8 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   // `GET /studio` (no trailing path) — send the browser to the studio page.
   studio.get("/", (c) => c.redirect("/", 302));
 
-  studio.get("/status", (c) =>
-    c.json({ llm: llmConfigured(), ...(llmConfigured() && studioLlmInfo()) }),
-  );
+  // `llm: true` is legacy shape — chat always runs now, on the caller's key.
+  studio.get("/status", (c) => c.json({ llm: true, ...studioLlmInfo() }));
 
   // Bearer auth without slug ownership: workspace scoping needs only the
   // deterministic `studioScope`, and the deploy path derives the ownership
@@ -284,97 +291,18 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     return c.json({ ok: true, enabled });
   });
 
-  studio.post("/chat", async (c) => {
+  // Boot (or refresh) the project's coding-agent sandbox and return its
+  // public chat URL — the browser talks to the sandbox directly from here
+  // on (SSE), mirroring how voice clients connect straight to a deployed
+  // agent's /websocket. Rate-limited: each call can spawn a Modal sandbox.
+  studio.post("/projects/:project/session", async (c) => {
     const limited = await rateLimited(c.var.apiKey, chatLimiter);
     if (limited) return limited;
-    if (!llmConfigured()) {
-      return c.json(
-        {
-          error:
-            "Chat is not configured on this server — set ASSEMBLYAI_API_KEY " +
-            "(LLM Gateway) or ANTHROPIC_API_KEY",
-        },
-        503,
-      );
-    }
-    // The aggregate conversation cap is enforced on the raw body *before*
-    // parsing: near-limit requests used to pay a whole-array JSON.stringify
-    // inside a zod refine — re-serializing up to 4 MB that had just been
-    // parsed. The raw text length is measured directly (Content-Length can
-    // lie) and bounds everything the parse below can produce.
-    const raw = await c.req.text();
-    // Byte length, not `raw.length`: the cap is in bytes and non-ASCII
-    // content is up to 3x its UTF-16 code-unit count in UTF-8.
-    if (Buffer.byteLength(raw) > MAX_STUDIO_CHAT_BYTES) {
-      return c.json({ error: "Conversation too large" }, 400);
-    }
-    let json: unknown;
-    try {
-      json = JSON.parse(raw);
-    } catch {
-      return c.json({ error: "Malformed JSON in request body" }, 400);
-    }
-    const body = ChatBodySchema.safeParse(json);
-    if (!body.success) {
-      return c.json({ error: "Invalid chat body", issues: body.error.issues }, 400);
-    }
+    const project = validateProject(c.req.param("project"));
     const scope = studioScope(c.var.apiKey);
-    const { project, messages } = body.data;
-
-    if (!(await getWorkspace(c.env.workspaces, scope, project))) {
-      return c.json({ error: "Project not found" }, 404);
-    }
-
-    // One sandbox per chat request, provisioned lazily on first
-    // code-executing tool call (test_agent / deploy config extraction) via
-    // the same warm-pool/spawn path deployed agents use. runStudioChat
-    // disposes it when the stream settles.
-    //
-    // The `disposed` flag closes an abort race: a chat abort can run
-    // disposeSandbox while sandboxPromise is still null (test_agent spends
-    // seconds in the Vite build before asking for the sandbox), and a
-    // provisioning that started afterwards would be a leaked Modal/Deno
-    // process nothing ever disposes.
-    let sandboxPromise: Promise<StudioSandbox> | null = null;
-    let disposed = false;
-    const sandbox = (): Promise<StudioSandbox> => {
-      if (disposed) {
-        return Promise.reject(new Error("The chat turn ended before the sandbox was provisioned."));
-      }
-      // A failed provisioning must not be cached: `??=` would pin the
-      // rejection, turning one transient spawn failure into "Sandbox
-      // unavailable" for every later test_agent call in the turn.
-      sandboxPromise ??= newSandbox({ pool: options.pool }).catch((err) => {
-        sandboxPromise = null;
-        throw err;
-      });
-      return sandboxPromise;
-    };
-    const disposeSandbox = async (): Promise<void> => {
-      disposed = true;
-      if (!sandboxPromise) return;
-      const live = await sandboxPromise.catch(() => null);
-      await live?.dispose();
-    };
-
-    // Persist the settled conversation into the project's chat row, so
-    // reopening the project restores the history. Bound here (not in
-    // runStudioChat) so the agent module never depends on the ChatStore.
-    const chats = c.env.chats;
-    return runStudioChat(
-      {
-        workspaces: c.env.workspaces,
-        scope,
-        project,
-        sandbox,
-        disposeSandbox,
-        abortSignal: c.req.raw.signal,
-        persistMessages: (updated) => chats.putChat(scope, project, updated),
-      },
-      // Structurally validated by UiMessageSchema; part-level validation
-      // happens in convertToModelMessages.
-      messages as unknown as UIMessage[],
-    );
+    const session = await ensureBroker(c).ensureSession(scope, project, c.var.apiKey);
+    if (!session) return c.json({ error: "Project not found" }, 404);
+    return c.json({ url: session.url });
   });
 
   return studio;

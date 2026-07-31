@@ -2,17 +2,12 @@
 // Studio HTTP surface, exercised through the full orchestrator (routing
 // order vs the /:slug routes matters and is covered here).
 
-import { createMemoryChatStore } from "aai-server/chat-store";
-import type { HonoEnv } from "aai-server/context";
 import { createMemorySecretStore } from "aai-server/secret-store";
 import { authFetch, authHeaders, type TestFetch } from "aai-server/test-utils";
-import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
-import { Hono } from "hono";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
-import { createStudioRoutes } from "./studio-routes.ts";
-import type { StudioSandbox } from "./studio-sandbox.ts";
+import type { StudioSessionBroker } from "./studio-session-broker.ts";
 import { createWorkspace, studioScope } from "./studio-workspace.ts";
 
 const deployMock = vi.fn(
@@ -30,28 +25,28 @@ vi.mock("./studio-deploy.ts", async (importOriginal) => {
   return { ...original, deployStudioProject: (...args: unknown[]) => deployMock(...args) };
 });
 
-// Chat: replace the LLM loop with a fixed SSE response so the route's
-// gating/wiring is exercised without a model or sandbox.
-const chatMock = vi.fn(
-  async (..._args: unknown[]): Promise<Response> =>
-    new Response('data: {"type":"start"}\n\ndata: [DONE]\n\n', {
-      headers: { "Content-Type": "text/event-stream" },
-    }),
+// Session broker: replace sandbox provisioning with an observable fake so
+// the route's gating/wiring is exercised without Modal.
+const ensureSessionMock = vi.fn(async (_scope: string, project: string, _apiKey: string) =>
+  project === "ghost" ? null : { url: "https://tunnel.example/studio/chat" },
 );
-vi.mock("./studio-agent.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("./studio-agent.ts")>();
-  return { ...original, runStudioChat: (...args: unknown[]) => chatMock(...args) };
+const brokerMock = vi.fn(
+  (): StudioSessionBroker => ({
+    ensureSession: (...args: Parameters<StudioSessionBroker["ensureSession"]>) =>
+      ensureSessionMock(...args),
+    dispose: async () => undefined,
+  }),
+);
+vi.mock("./studio-session-broker.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./studio-session-broker.ts")>();
+  return {
+    ...original,
+    createStudioSessionBroker: (...args: unknown[]) => brokerMock(...(args as [])),
+  };
 });
 
 function createProject(fetch: TestFetch, name = "proj", key = "key1"): Promise<Response> {
   return authFetch(fetch, "/studio/projects", { body: { name }, key });
-}
-
-function chatBody(project = "proj") {
-  return {
-    project,
-    messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] }],
-  };
 }
 
 describe("studio page + routing", () => {
@@ -93,14 +88,16 @@ describe("studio page + routing", () => {
     expect((await fetch("/studio-assets/..%2f..%2fpackage.json")).status).toBe(400);
   });
 
-  test("GET /studio/status is public and reports LLM availability", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
-    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
+  test("GET /studio/status is public and reports the caller-keyed LLM", async () => {
     const { fetch } = await createTestCombined();
     const res = await fetch("/studio/status");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ llm: false });
+    // Chat always runs — on the caller's own key — so llm is always true.
+    expect(await res.json()).toEqual({
+      llm: true,
+      provider: "assemblyai",
+      model: "qwen3-next-80b-a3b",
+    });
   });
 
   test("status reports the gateway provider/model when configured", async () => {
@@ -325,27 +322,13 @@ describe("chat history routes", () => {
     await authFetch(fetch, "/studio/projects/proj", { method: "DELETE" });
     expect(await chats.getChat(scope, "proj")).toBeNull();
   });
-
-  test("the chat route hands runStudioChat a persist hook writing to the chat store", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
-    chatMock.mockClear();
-    const { fetch, chats } = await createTestCombined();
-    await createProject(fetch);
-    await authFetch(fetch, "/studio/chat", { body: chatBody() });
-    const [deps] = chatMock.mock.calls[0] as unknown[] as [
-      { persistMessages: (messages: unknown[]) => Promise<void> },
-    ];
-    expect(typeof deps.persistMessages).toBe("function");
-    await deps.persistMessages(HISTORY);
-    expect(await chats.getChat(studioScope("key1"), "proj")).toEqual(HISTORY);
-  });
 });
 
 describe("deploy + chat endpoints", () => {
   let fetch: TestFetch;
   beforeEach(async () => {
     deployMock.mockClear();
-    chatMock.mockClear();
+    ensureSessionMock.mockClear();
     ({ fetch } = await createTestCombined());
   });
 
@@ -375,123 +358,45 @@ describe("deploy + chat endpoints", () => {
     expect(((await res.json()) as { error: string }).error).toContain("Build failed");
   });
 
-  test("chat returns 503 when the LLM is not configured", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
-    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
-    await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/chat", { body: chatBody() });
-    expect(res.status).toBe(503);
-  });
-
-  test("chat 404s for a missing project before touching the LLM", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
-    const res = await authFetch(fetch, "/studio/chat", { body: chatBody("ghost") });
+  test("session 404s for a missing project", async () => {
+    const res = await authFetch(fetch, "/studio/projects/ghost/session", { body: {} });
     expect(res.status).toBe(404);
-    expect(chatMock).not.toHaveBeenCalled();
   });
 
-  test("chat validates the body (empty messages, missing ids)", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+  test("session boots the project sandbox and returns its public chat URL", async () => {
     await createProject(fetch);
-    const empty = await authFetch(fetch, "/studio/chat", {
-      body: { project: "proj", messages: [] },
-    });
-    expect(empty.status).toBe(400);
-    const noId = await authFetch(fetch, "/studio/chat", {
-      body: { project: "proj", messages: [{ role: "user", parts: [] }] },
-    });
-    expect(noId.status).toBe(400);
-  });
-
-  test("chat rejects an oversized raw body before parsing it", async () => {
-    // The aggregate cap is enforced on raw text length — no JSON.parse, no
-    // zod, no re-stringify of a 4MB body.
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
-    await createProject(fetch);
-    const padding = "x".repeat(4_000_001);
-    const res = await authFetch(fetch, "/studio/chat", {
-      body: { ...chatBody(), padding },
-    });
-    expect(res.status).toBe(400);
-    expect(((await res.json()) as { error: string }).error).toContain("too large");
-    expect(chatMock).not.toHaveBeenCalled();
-  });
-
-  test("chat rejects malformed JSON with a 400", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
-    await createProject(fetch);
-    const res = await fetch("/studio/chat", {
-      method: "POST",
-      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-      body: "{not json",
-    });
-    expect(res.status).toBe(400);
-    expect(chatMock).not.toHaveBeenCalled();
-  });
-
-  test("chat rejects a single message over the per-message content cap", async () => {
-    // Per-message size is summed string content, not a per-message
-    // JSON.stringify — same effective limit, no re-serialization.
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
-    await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/chat", {
-      body: {
-        project: "proj",
-        messages: [
-          { id: "m1", role: "user", parts: [{ type: "text", text: "y".repeat(600_001) }] },
-        ],
-      },
-    });
-    expect(res.status).toBe(400);
-    expect(chatMock).not.toHaveBeenCalled();
-  });
-
-  test("chat streams the UI message stream from runStudioChat", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
-    await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/chat", { body: chatBody() });
+    const res = await authFetch(fetch, "/studio/projects/proj/session", { body: {} });
     expect(res.status).toBe(200);
-    expect(res.headers.get("Content-Type")).toContain("text/event-stream");
-    expect(await res.text()).toContain('"type":"start"');
-    expect(chatMock).toHaveBeenCalledTimes(1);
-    const [deps, messages] = chatMock.mock.calls[0] as unknown[] as [
-      { project: string; sandbox: unknown; disposeSandbox: unknown },
-      { role: string }[],
-    ];
-    expect(deps.project).toBe("proj");
-    expect(typeof deps.sandbox).toBe("function");
-    expect(typeof deps.disposeSandbox).toBe("function");
-    expect(messages).toHaveLength(1);
+    expect(await res.json()).toEqual({ url: "https://tunnel.example/studio/chat" });
+    // The broker got the caller's own key — it becomes the guest's LLM
+    // credential and the chat surface's bearer.
+    const call = ensureSessionMock.mock.calls.at(-1) as unknown[];
+    expect(call[0]).toBe(studioScope("key1"));
+    expect(call[1]).toBe("proj");
+    expect(call[2]).toBe("key1");
   });
 
-  test("chat always runs on the host default model — no per-request choice", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
-    await createProject(fetch);
-    // A stray `model` field is ignored (stripped by the body schema), never
-    // honored: the host default is the only model the chat route runs.
-    const res = await authFetch(fetch, "/studio/chat", {
-      body: { ...chatBody(), model: "claude-opus-4-7" },
-    });
-    expect(res.status).toBe(200);
-    const [deps] = chatMock.mock.calls[0] as unknown[] as [{ model?: unknown }];
-    expect(deps.model).toBeUndefined();
+  test("session requires a bearer key", async () => {
+    const res = await fetch("/studio/projects/proj/session", { method: "POST" });
+    expect(res.status).toBe(401);
   });
 
-  test("chat is rate limited per scope with a Retry-After", async () => {
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+  test("session is rate limited per scope with a Retry-After", async () => {
     await createProject(fetch);
     for (let i = 0; i < 30; i += 1) {
-      expect((await authFetch(fetch, "/studio/chat", { body: chatBody() })).status).toBe(200);
+      expect((await authFetch(fetch, "/studio/projects/proj/session", { body: {} })).status).toBe(
+        200,
+      );
     }
-    const limited = await authFetch(fetch, "/studio/chat", { body: chatBody() });
+    const limited = await authFetch(fetch, "/studio/projects/proj/session", { body: {} });
     expect(limited.status).toBe(429);
     expect(((await limited.json()) as { error: string }).error).toContain("Rate limit");
     expect(limited.headers.get("Retry-After")).toMatch(/^\d+$/);
-    // Another scope is unaffected (its project doesn't exist → 404, not 429).
-    expect((await authFetch(fetch, "/studio/chat", { body: chatBody(), key: "key2" })).status).toBe(
-      404,
-    );
+    // Another scope is unaffected: it reaches the broker (404 for a project
+    // the fake broker treats as missing) instead of being answered 429.
+    expect(
+      (await authFetch(fetch, "/studio/projects/ghost/session", { body: {}, key: "key2" })).status,
+    ).toBe(404);
   });
 
   test("project creation is rate limited per scope", async () => {
@@ -501,106 +406,6 @@ describe("deploy + chat endpoints", () => {
     const limited = await createProject(fetch, "one-too-many");
     expect(limited.status).toBe(429);
     expect(limited.headers.get("Retry-After")).toMatch(/^\d+$/);
-  });
-
-  test("a client-supplied provider/model is ignored — the host config decides", async () => {
-    // Nothing about the LLM is negotiable: a hand-crafted request naming a
-    // provider and model is stripped by the body schema and the turn runs on
-    // the host-configured default.
-    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
-    vi.stubEnv("STUDIO_LLM_MODEL", "");
-    await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/chat", {
-      body: { ...chatBody(), provider: "assemblyai", model: "gpt-4.1" },
-    });
-    expect(res.status).toBe(200);
-    const [deps] = chatMock.mock.calls[0] as unknown[] as [
-      Record<string, unknown> & { model?: unknown },
-    ];
-    expect(deps).not.toHaveProperty("llm");
-    expect(deps.model).toBeUndefined();
-  });
-});
-
-describe("chat sandbox lifecycle", () => {
-  type ChatDeps = {
-    sandbox: () => Promise<StudioSandbox>;
-    disposeSandbox: () => Promise<void>;
-  };
-
-  /** Studio routes with an observable fake sandbox factory, plus one project. */
-  async function chatApp() {
-    const dispose = vi.fn(async (): Promise<void> => undefined);
-    const createSandbox = vi.fn(
-      async (): Promise<StudioSandbox> => ({
-        loadBundle: async () => ({}),
-        executeTool: async () => "ok",
-        dispose,
-      }),
-    );
-    const workspaces = createMemoryWorkspaceStore();
-    await createWorkspace(workspaces, studioScope("key1"), "proj", { files: { "agent.ts": "x" } });
-    const app = new Hono<HonoEnv>().route(
-      "/studio",
-      createStudioRoutes({ createSandbox, llmConfigured: () => true }),
-    );
-    const bindings = {
-      workspaces,
-      chats: createMemoryChatStore(),
-    } as unknown as HonoEnv["Bindings"];
-    const request = () =>
-      app.request(
-        "/studio/chat",
-        { method: "POST", headers: authHeaders(), body: JSON.stringify(chatBody()) },
-        bindings,
-      );
-    return { request, createSandbox, dispose };
-  }
-
-  beforeEach(() => {
-    chatMock.mockClear();
-  });
-
-  test("a dispose that ran before lazy provisioning blocks it — no leaked sandbox", async () => {
-    // The abort race: runStudioChat's teardown fires while sandboxPromise is
-    // still null (test_agent is mid Vite build), then the tool asks for the
-    // sandbox. Provisioning one now would leak a Modal sandbox nothing
-    // ever disposes.
-    const { request, createSandbox } = await chatApp();
-    expect((await request()).status).toBe(200);
-    const [deps] = chatMock.mock.calls[0] as unknown[] as [ChatDeps];
-
-    await deps.disposeSandbox();
-    await expect(deps.sandbox()).rejects.toThrow(/turn ended/);
-    expect(createSandbox).not.toHaveBeenCalled();
-  });
-
-  test("a failed provisioning is retried, not cached for the rest of the turn", async () => {
-    // `??=` used to pin the first rejection: one transient spawn failure made
-    // every later test_agent call answer "Sandbox unavailable".
-    const { request, createSandbox } = await chatApp();
-    createSandbox.mockRejectedValueOnce(new Error("spawn failed"));
-    expect((await request()).status).toBe(200);
-    const [deps] = chatMock.mock.calls[0] as unknown[] as [ChatDeps];
-
-    await expect(deps.sandbox()).rejects.toThrow("spawn failed");
-    await expect(deps.sandbox()).resolves.toBeDefined();
-    expect(createSandbox).toHaveBeenCalledTimes(2);
-  });
-
-  test("a sandbox provisioned before dispose is disposed exactly once", async () => {
-    const { request, createSandbox, dispose } = await chatApp();
-    expect((await request()).status).toBe(200);
-    const [deps] = chatMock.mock.calls[0] as unknown[] as [ChatDeps];
-
-    await deps.sandbox();
-    // Repeat calls reuse the one sandbox.
-    await deps.sandbox();
-    expect(createSandbox).toHaveBeenCalledTimes(1);
-    await deps.disposeSandbox();
-    expect(dispose).toHaveBeenCalledTimes(1);
   });
 });
 

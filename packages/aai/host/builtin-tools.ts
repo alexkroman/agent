@@ -40,27 +40,100 @@ const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 const htmlToText = (html: string): string => convert(html, { wordwrap: false });
 
 // ─── web_search ────────────────────────────────────────────────────────────
+//
+// Backed by DuckDuckGo's HTML endpoint — keyless, so every agent (and the
+// studio's coding agent) gets search without provisioning a search-API
+// credential. The scraping approach (endpoint, result/snippet selectors,
+// uddg redirect decoding, bot-challenge detection) is ported from openclaw's
+// duckduckgo web-search plugin (MIT, https://github.com/openclaw/openclaw —
+// extensions/duckduckgo/src/ddg-client.ts). This replaced the Brave Search
+// API implementation, which required a per-tenant BRAVE_API_KEY.
 
 const webSearchParams = z.object({
   query: z.string().describe("The search query"),
   max_results: z.number().describe("Maximum number of results to return (default 5)").optional(),
 });
 
-const BRAVE_SEARCH_URL = "https://api.search.brave.com/res/v1/web/search";
+const DDG_HTML_ENDPOINT = "https://html.duckduckgo.com/html";
+/** DDG serves a stripped page to obvious bots; a browser UA gets results. */
+const DDG_USER_AGENT =
+  "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36";
+const MAX_SEARCH_RESULTS = 10;
 
-const BraveSearchResponseSchema = z.object({
-  web: z
-    .object({
-      results: z.array(
-        z.object({
-          title: z.string(),
-          url: z.string(),
-          description: z.string(),
-        }),
-      ),
-    })
-    .optional(),
-});
+const DDG_NAMED_ENTITIES: Readonly<Record<string, string>> = {
+  "&lt;": "<",
+  "&gt;": ">",
+  "&quot;": '"',
+  "&apos;": "'",
+  "&#39;": "'",
+  "&#x27;": "'",
+  "&#x2f;": "/",
+  "&nbsp;": " ",
+  "&ndash;": "-",
+  "&mdash;": "--",
+  "&hellip;": "...",
+  "&amp;": "&",
+};
+
+function decodeHtmlEntities(text: string): string {
+  return text.replace(/&(?:[a-z]+|#\d+|#x[0-9a-f]+);/gi, (entity) => {
+    const named = DDG_NAMED_ENTITIES[entity.toLowerCase()];
+    if (named !== undefined) return named;
+    const numeric = /^&#(x?)([0-9a-f]+);$/i.exec(entity);
+    if (!numeric) return entity;
+    const code = Number.parseInt(numeric[2] ?? "", numeric[1] ? 16 : 10);
+    return Number.isFinite(code) ? String.fromCodePoint(code) : entity;
+  });
+}
+
+function stripHtml(html: string): string {
+  // Match highlights (<b>) can occur inside words — remove without spacing.
+  return html
+    .replace(/<\/?b\b[^>]*>/gi, "")
+    .replace(/<[^>]+>/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+}
+
+/** DDG links route through a redirect whose `uddg` param is the real URL. */
+function decodeDuckDuckGoUrl(rawUrl: string): string {
+  try {
+    const normalized = rawUrl.startsWith("//") ? `https:${rawUrl}` : rawUrl;
+    const uddg = new URL(normalized).searchParams.get("uddg");
+    if (uddg) return uddg;
+  } catch {
+    // Not a URL we can parse — fall through to the raw value.
+  }
+  return rawUrl;
+}
+
+/** No results markup + challenge markers = we're being asked to prove humanity. */
+function isBotChallenge(html: string): boolean {
+  if (/class="[^"]*\bresult__a\b[^"]*"/i.test(html)) return false;
+  return /g-recaptcha|are you a human|id="challenge-form"|name="challenge"/i.test(html);
+}
+
+type SearchResult = { title: string; url: string; description: string };
+
+function parseDuckDuckGoHtml(html: string): SearchResult[] {
+  const results: SearchResult[] = [];
+  const resultRegex = /<a\b(?=[^>]*\bclass="[^"]*\bresult__a\b[^"]*")([^>]*)>([\s\S]*?)<\/a>/gi;
+  const nextResultRegex = /<a\b(?=[^>]*\bclass="[^"]*\bresult__a\b[^"]*")[^>]*>/i;
+  const snippetRegex = /<a\b(?=[^>]*\bclass="[^"]*\bresult__snippet\b[^"]*")[^>]*>([\s\S]*?)<\/a>/i;
+
+  for (const match of html.matchAll(resultRegex)) {
+    const rawUrl = /\bhref="([^"]*)"/i.exec(match[1] ?? "")?.[1] ?? "";
+    // The snippet anchor sits between this result link and the next one.
+    const trailing = html.slice((match.index ?? 0) + match[0].length);
+    const nextAt = trailing.search(nextResultRegex);
+    const scoped = nextAt >= 0 ? trailing.slice(0, nextAt) : trailing;
+    const title = decodeHtmlEntities(stripHtml(match[2] ?? ""));
+    const url = decodeDuckDuckGoUrl(decodeHtmlEntities(rawUrl));
+    const description = decodeHtmlEntities(stripHtml(snippetRegex.exec(scoped)?.[1] ?? ""));
+    if (title && url) results.push({ title, url, description });
+  }
+  return results;
+}
 
 function createWebSearch(
   fetchFn = safeFetch,
@@ -70,36 +143,24 @@ function createWebSearch(
       "Use web_search for factual questions, current events, or anything you are unsure about. " +
       "Search first rather than guessing.",
     description:
-      "Search the web for current information, facts, news, or answers to questions. Returns a list of results with title, URL, and description. Use this when the user asks about something you don't know, need up-to-date information, or want to verify facts.",
+      "Search the web for current information, facts, news, or answers to questions. Returns a list of results with title, URL, and description. Use this when the user asks about something you don't know, need up-to-date information, or want to verify facts. No API key required.",
     parameters: webSearchParams,
-    async execute(args, ctx) {
+    async execute(args) {
       const { query, max_results: maxResults = 5 } = args;
-      const apiKey = ctx.env.BRAVE_API_KEY ?? "";
-      if (!apiKey) {
-        return { error: "BRAVE_API_KEY is not set — web search unavailable" };
-      }
-      const url = `${BRAVE_SEARCH_URL}?${new URLSearchParams({
-        q: query,
-        count: String(maxResults),
-        text_decorations: "false",
-      })}`;
+      const count = Math.max(1, Math.min(maxResults, MAX_SEARCH_RESULTS));
+      const url = `${DDG_HTML_ENDPOINT}?${new URLSearchParams({ q: query })}`;
       const resp = await fetchFn(url, {
-        headers: { "X-Subscription-Token": apiKey },
+        headers: { "User-Agent": DDG_USER_AGENT },
         signal: fetchSignal(),
       });
       if (!resp.ok) {
         return { error: `Search request failed: ${resp.status} ${resp.statusText}` };
       }
-      const raw = await resp.json();
-      const data = BraveSearchResponseSchema.safeParse(raw);
-      if (!data.success) {
-        return { error: "Unexpected search response format" };
+      const html = await resp.text();
+      if (isBotChallenge(html)) {
+        return { error: "Search provider returned a bot-detection challenge — try again later" };
       }
-      return (data.data.web?.results ?? []).slice(0, maxResults).map((r) => ({
-        title: r.title,
-        url: r.url,
-        description: r.description,
-      }));
+      return parseDuckDuckGoHtml(html).slice(0, count);
     },
   };
 }

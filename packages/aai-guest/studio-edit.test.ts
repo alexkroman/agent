@@ -139,4 +139,18 @@ describe("applyEdit", () => {
   test("rejects a no-op replacement", () => {
     expect(() => applyEdit("f.ts", FILE, '"My Agent"', '"My Agent"')).toThrow(/No change/);
   });
+
+  test("a diff too expensive to compute is elided, not a multi-second stall", () => {
+    // Myers is O(N·D): two mostly-different files at the workspace size cap
+    // measure ~7s of synchronous main-thread time. The edit must still apply,
+    // with the presentation diff bounded by its budget.
+    const n = 6400;
+    const before = Array.from({ length: n }, (_, i) => `line ${i} ${"x".repeat(30)}`).join("\n");
+    const after = Array.from({ length: n }, (_, i) => `LINE ${n - i} ${"y".repeat(30)}`).join("\n");
+    const start = Date.now();
+    const result = applyEdit("f.ts", before, before, after);
+    expect(Date.now() - start).toBeLessThan(5000);
+    expect(result.content).toBe(after);
+    expect(result.diff).toContain("diff omitted");
+  });
 });
