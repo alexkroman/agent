@@ -122,6 +122,10 @@ export function createTransportFactory(
       endpointSettleMs: agentConfig.endpointSettleMs,
       completeSettleMs: agentConfig.completeSettleMs,
       holdPhrase: agentConfig.holdPhrase,
+      // errorPhrase used to be missing here, so an agent that set it (including
+      // to "" to disable) silently got the default instead.
+      errorPhrase: agentConfig.errorPhrase,
+      startFailurePhrase: agentConfig.startFailurePhrase,
       falseInterruptionTimeoutMs: agentConfig.falseInterruptionTimeoutMs,
       skipGreeting: sessionOpts.skipGreeting ?? false,
       logger,

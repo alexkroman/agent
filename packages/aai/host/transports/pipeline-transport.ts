@@ -46,6 +46,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     completeSettleMs,
     holdPhrase,
     errorPhrase,
+    startFailurePhrase,
     falseInterruptionTimeoutMs,
     toolChoice,
     toolSchemas,
@@ -372,6 +373,26 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     });
   }
 
+  /**
+   * Last words when the session cannot start.
+   *
+   * A provider open failed, so there is no conversation to have — but the two
+   * sides open independently, and the usual failure is STT missing while TTS
+   * connected. That leaves a working voice and nothing to listen with, and
+   * saying nothing hands the caller a line that sounds connected and never
+   * answers. Skipped when TTS is the side that failed (nothing to speak with)
+   * or the phrase is disabled.
+   *
+   * Not a reply: no reply id, no history, no turn. Just the sentence and its
+   * audio, drained before the caller's teardown discards what is still queued.
+   */
+  async function speakStartFailure(): Promise<void> {
+    if (startFailurePhrase.length === 0 || !providers.tts) return;
+    callbacks.onAgentTranscript(startFailurePhrase, false);
+    sendTtsText(startFailurePhrase);
+    await drainTts(sessionAbort.signal).catch(() => undefined);
+  }
+
   function runGreeting(text: string): Promise<void> {
     return runReply("pipeline-greeting", async () => {
       callbacks.onAgentTranscript(text, false);
@@ -400,10 +421,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // live) tears the whole transport down.
       startPromise = providers.open();
       if ((await startPromise) === "failed") {
-        // terminate() already emitted the provider error + `cancelled` and
-        // aborted the session. Do NOT go on to signal session-ready — that
+        // Say something first, while the socket is still up and TTS may still
+        // be live — see speakStartFailure. terminate() then emits `cancelled`
+        // and aborts the session; do NOT go on to signal session-ready, which
         // would hand the runtime a "started" session that is actually dead,
         // holding it open until the idle timeout.
+        await speakStartFailure();
         terminate();
         return;
       }

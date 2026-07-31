@@ -48,6 +48,7 @@ export const AgentConfigSchema = z.object({
   completeSettleMs: z.number().int().nonnegative().optional(),
   holdPhrase: z.string().optional(),
   errorPhrase: z.string().optional(),
+  startFailurePhrase: z.string().optional(),
   falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),

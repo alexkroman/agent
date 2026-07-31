@@ -16,6 +16,7 @@ import {
   DEFAULT_INTERRUPTION_MIN_DURATION_MS,
   DEFAULT_MAX_STEPS,
   DEFAULT_MIN_BARGE_IN_WORDS,
+  DEFAULT_START_FAILURE_PHRASE,
   DEFAULT_STT_SAMPLE_RATE,
   DEFAULT_TTS_SAMPLE_RATE,
 } from "../../sdk/constants.ts";
@@ -95,6 +96,11 @@ export interface PipelineTransportOptions {
    */
   errorPhrase?: string | undefined;
   /**
+   * Phrase spoken when a provider fails to open and the session cannot start.
+   * Defaults to DEFAULT_START_FAILURE_PHRASE; `""` disables.
+   */
+  startFailurePhrase?: string | undefined;
+  /**
    * False-interruption recovery window (ms): when a barge-in aborts the
    * in-flight reply but no user turn commits within this window, the agent
    * resumes the interrupted reply via a synthetic continuation turn.
@@ -135,6 +141,7 @@ export interface ResolvedPipelineOptions {
   completeSettleMs: number;
   holdPhrase: string;
   errorPhrase: string;
+  startFailurePhrase: string;
   falseInterruptionTimeoutMs: number;
   toolChoice: ToolChoice;
   toolSchemas: readonly ToolSchema[];
@@ -155,6 +162,7 @@ export function resolvePipelineOptions(opts: PipelineTransportOptions): Resolved
     completeSettleMs: opts.completeSettleMs ?? DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS,
     holdPhrase: opts.holdPhrase ?? DEFAULT_HOLD_PHRASE,
     errorPhrase: opts.errorPhrase ?? DEFAULT_ERROR_PHRASE,
+    startFailurePhrase: opts.startFailurePhrase ?? DEFAULT_START_FAILURE_PHRASE,
     falseInterruptionTimeoutMs:
       opts.falseInterruptionTimeoutMs ?? DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
     toolChoice: opts.toolChoice ?? "auto",

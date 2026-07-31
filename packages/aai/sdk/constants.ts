@@ -160,6 +160,21 @@ export const DEFAULT_MAX_STEPS = 10;
  */
 export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
 /**
+ * Spoken when the session cannot start at all — a provider failed to open, so
+ * there is no conversation to have (pipeline mode).
+ *
+ * STT and TTS open concurrently and each goes live on its own, so the common
+ * case is that TTS connected and STT did not: the agent has a working voice and
+ * nothing to listen with. Saying nothing leaves the caller holding a line that
+ * sounds connected and never responds — indistinguishable, from their side,
+ * from a dead call. One sentence tells them to hang up and try again, which is
+ * the only useful thing left to do. Set `startFailurePhrase: ""` to disable.
+ */
+export const DEFAULT_START_FAILURE_PHRASE =
+  "I'm sorry, I'm having trouble with my connection and can't hear you. " +
+  "Please hang up and call back.";
+
+/**
  * Minimum sustained speech before an interim-triggered barge-in aborts the
  * agent's reply (pipeline mode) — measured from the utterance's first partial,
  * LiveKit's `min_interruption_duration` analog. A companion to

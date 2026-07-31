@@ -299,6 +299,14 @@ export type AgentDef<S = Record<string, unknown>> = {
    */
   errorPhrase?: string;
   /**
+   * Pipeline mode only. Phrase spoken when a provider fails to open, so a
+   * session that cannot start says so instead of holding an open line in
+   * silence. Only reachable when TTS itself came up — which is the usual case,
+   * since STT and TTS open independently. Defaults to
+   * {@link DEFAULT_START_FAILURE_PHRASE}; set `""` to disable.
+   */
+  startFailurePhrase?: string;
+  /**
    * Pipeline mode only. False-interruption recovery window (ms): when a
    * barge-in aborts the agent's reply but no user turn commits within this
    * window (STT noise, hallucinated partial), the agent resumes the

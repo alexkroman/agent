@@ -443,6 +443,63 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("a session that cannot start says so instead of holding a silent line", async () => {
+      // STT and TTS open independently, so the usual failure leaves a working
+      // voice and nothing to listen with. Silence is indistinguishable from a
+      // dead call from the caller's side.
+      const tts = createFakeTtsProvider();
+      const { opts, callbacks } = makeOpts(
+        {
+          stt: createFailingSttProvider("stt_connect_failed", "connect timed out"),
+          tts,
+          startFailurePhrase: "Sorry, I cannot hear you. Please call back.",
+        },
+        { tts },
+      );
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      expect(tts.last()?.textChunks.join("")).toContain("cannot hear you");
+      // Spoken, and surfaced as a transcript so captions match the audio.
+      expect(callbacks.onAgentTranscript).toHaveBeenCalledWith(
+        expect.stringContaining("cannot hear you"),
+        false,
+      );
+      // Still a failed start: the client must learn the session is dead.
+      expect(callbacks.onError).toHaveBeenCalledWith("stt", "connect timed out");
+      expect(callbacks.onSessionReady).not.toHaveBeenCalled();
+      await t.stop();
+    });
+
+    test("stays silent when TTS is the side that failed", async () => {
+      // Nothing to speak with; the phrase must not wedge the teardown waiting
+      // on a provider that never opened.
+      const { opts, callbacks } = makeOpts({
+        tts: createFailingTtsProvider("tts_connect_failed", "tts connect failed"),
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
+      await t.stop();
+    });
+
+    test('startFailurePhrase "" disables the spoken failure', async () => {
+      const tts = createFakeTtsProvider();
+      const { opts, callbacks } = makeOpts(
+        {
+          stt: createFailingSttProvider("stt_connect_failed", "connect timed out"),
+          tts,
+          startFailurePhrase: "",
+        },
+        { tts },
+      );
+      const t = createPipelineTransport(opts);
+      await t.start();
+      expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
+      expect(callbacks.onError).toHaveBeenCalledWith("stt", "connect timed out");
+      await t.stop();
+    });
+
     test("when STT fails, TTS session is still opened but then immediately closed", async () => {
       const tts = createFakeTtsProvider();
       const { opts } = makeOpts(
