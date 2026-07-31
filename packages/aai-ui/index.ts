@@ -9,6 +9,7 @@ export {
 export { Button } from "./components/button.tsx";
 export { ChatView } from "./components/chat-view.tsx";
 export { Controls } from "./components/controls.tsx";
+export { Markdown } from "./components/markdown.tsx";
 export { MessageList } from "./components/message-list.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
 export { StartScreen } from "./components/start-screen.tsx";
