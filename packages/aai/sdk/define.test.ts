@@ -32,7 +32,7 @@ describe("agent()", () => {
   test("applies defaults", () => {
     const def = agent({ name: "Test Agent" });
     expect(def.name).toBe("Test Agent");
-    expect(def.systemPrompt).toContain("customer service agent");
+    expect(def.systemPrompt).toContain("voice agent");
     expect(def.greeting).toContain("Hey there");
     expect(def.maxSteps).toBe(10);
     expect(def.tools).toEqual({});
