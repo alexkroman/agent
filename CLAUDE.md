@@ -1534,6 +1534,17 @@ bumped automatically.
 - The server itself deploys to Modal too (`modal_deploy.py`,
   `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
   Fly.io deployment anymore.
+- **The web service autoscales** (constants block in `modal_deploy.py`):
+  Modal adds replicas once per-container concurrency crosses
+  `TARGET_INPUTS`, bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS` with one
+  `BUFFER_CONTAINERS` spare kept warm. The numbers are coupled to the node
+  server's own per-replica WebSocket cap (`MAX_CONNECTIONS`, exported in
+  the image env): the target sits below the cap so new capacity warms
+  before any replica starts refusing upgrades, and `MAX_INPUTS` adds
+  short-request headroom on top. Statelessness + cross-replica session
+  resume are what make scale-in/redeploys safe — draining replicas persist
+  live sessions' resume state and clients reconnect onto survivors. Raise
+  `MAX_CONTAINERS` deliberately; it is a cost guard.
 
 ### Updating CLAUDE.md
 

@@ -41,6 +41,32 @@ import modal
 PORT = 8080
 PNPM_VERSION = "10.29.3"
 
+# ── Web-service autoscaling ──────────────────────────────────────────────────
+#
+# The server holds no cross-request state (coordination and session-resume
+# state live in Supabase — see CLAUDE.md "Stateless server"), so replicas are
+# interchangeable: scale-out is safe, and scale-in/redeploys drain via the
+# node process's SIGTERM handler, with live sessions persisting their resume
+# state and clients auto-reconnecting (?sessionId) onto surviving replicas.
+#
+# Each in-flight HTTP request and each open WebSocket counts as one input, so
+# the numbers below are coupled to the node server's own per-replica
+# WebSocket cap (MAX_CONNECTIONS, exported in the image env — the server
+# rejects upgrade #N+1 itself, as a load-shed backstop):
+#
+# - TARGET_INPUTS is the autoscaler's set point: Modal adds containers once
+#   per-container concurrency crosses it. Set below MAX_CONNECTIONS so new
+#   capacity is warming BEFORE any replica starts refusing sessions.
+# - MAX_INPUTS caps what one container absorbs while scale-up is in flight:
+#   MAX_CONNECTIONS long-lived sessions plus headroom for short HTTP traffic
+#   (health checks, studio API, deploys).
+MIN_CONTAINERS = 1  # always-warm floor: voice sessions are latency-sensitive
+MAX_CONTAINERS = 10  # cost guard; raise deliberately, not by incident
+BUFFER_CONTAINERS = 1  # one pre-warmed spare while active, so bursts land warm
+MAX_CONNECTIONS = 100  # per-replica WebSocket cap (node server enforces it)
+TARGET_INPUTS = 75  # scale-out set point (~75% of the session cap)
+MAX_INPUTS = 150  # sessions at cap + short-request headroom
+
 # One region for the web server AND the guest sandboxes it creates. Left
 # unpinned, Modal placed the server in us-east-1 (AWS) and guest sandboxes in
 # uk-london-1 (OCI), so every host<->guest RPC (ctx.db, Vector, guest fetch
@@ -94,6 +120,10 @@ image = (
             "STUDIO_BUILD_BACKEND": "modal",
             # Guest sandboxes are pinned to the web server's region (above).
             "MODAL_SANDBOX_REGION": REGION,
+            # Per-replica WebSocket cap, kept in lockstep with the autoscaler
+            # numbers above (TARGET_INPUTS / MAX_INPUTS) — the server refuses
+            # upgrades past it, so Modal must scale out before it is reached.
+            "MAX_CONNECTIONS": str(MAX_CONNECTIONS),
         }
     )
 )
@@ -107,14 +137,16 @@ app = modal.App("aai-server-web")
     region=REGION,
     cpu=1,
     memory=2048,
-    # One always-warm replica: voice sessions are latency-sensitive and the
-    # server pre-warms guest sandboxes at boot.
-    min_containers=1,
+    # Autoscaler bounds — see the "Web-service autoscaling" block above.
+    min_containers=MIN_CONTAINERS,
+    max_containers=MAX_CONTAINERS,
+    buffer_containers=BUFFER_CONTAINERS,
     # SHUTDOWN_DRAIN_MS (120s) + sandbox teardown must fit in the container's
-    # grace period — the node process handles SIGTERM itself.
+    # grace period — the node process handles SIGTERM itself, persisting live
+    # sessions' resume state before exiting (see sandbox.ts shutdown).
     scaledown_window=300,
 )
-@modal.concurrent(max_inputs=200)
+@modal.concurrent(max_inputs=MAX_INPUTS, target_inputs=TARGET_INPUTS)
 @modal.web_server(port=PORT, startup_timeout=180)
 def server() -> None:
     env = os.environ.copy()
