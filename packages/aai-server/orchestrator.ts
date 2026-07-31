@@ -27,7 +27,6 @@
 
 import { VectorRequestSchema } from "@alexkroman1/aai/protocol";
 import type { Vector } from "@alexkroman1/aai/runtime";
-import { prometheus } from "@hono/prometheus";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
@@ -40,7 +39,6 @@ import { handleDelete } from "./delete.ts";
 import { handleDeploy, handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
-import { registry, serialize } from "./metrics.ts";
 import { authMw, existingOwnerMw, ownerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
@@ -109,13 +107,6 @@ async function loadAgentConfig(
   return { agentConfig, env: agentEnv ?? {} };
 }
 
-// Build the prometheus middleware once at module load. `@hono/prometheus`
-// constructs `http_requests_total` / `http_request_duration_seconds` on
-// the registry every call, so calling it from `createOrchestrator` would
-// throw "metric already registered" on the second invocation (e.g. during
-// tests).
-const { registerMetrics: prometheusMiddleware } = prometheus({ registry });
-
 export type Orchestrator = {
   app: Hono<HonoEnv>;
   injectWebSocket: (server: import("node:http").Server) => void;
@@ -165,7 +156,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
 
   app.notFound((c) => c.json({ error: "Not found" }, 404));
   app.onError(createErrorHandler());
-  app.use("*", prometheusMiddleware);
 
   // 503 while draining is what pulls the replica out of the platform
   // proxy's rotation, so new traffic goes to a replica that is staying up.
@@ -174,16 +164,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.get("/health", (c) =>
     opts.isDraining?.() ? c.json({ status: "draining" }, 503) : c.json({ status: "ok" }),
   );
-
-  // Internal-only: any request through the public edge carries
-  // X-Forwarded-For (Modal's proxy always sets it) — treat XFF presence as
-  // "external request". Fail-closed: with no private scrape path, /metrics
-  // is simply unreachable from outside.
-  app.get("/metrics", async (c) => {
-    if (c.req.header("X-Forwarded-For")) return c.notFound();
-    const text = await serialize();
-    return c.text(text, 200, { "Content-Type": "text/plain; version=0.0.4" });
-  });
 
   // Browser studio: loading the server root gives a coding agent that can
   // build and deploy voice agents from the browser. `studio` and

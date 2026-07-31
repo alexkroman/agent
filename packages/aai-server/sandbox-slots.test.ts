@@ -2,19 +2,16 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
-import { registry } from "./metrics.ts";
 import {
   type AgentSlot,
   acquireSlotSession,
   attachSandbox,
   createSlotCache,
   deleteSlot,
-  registerSlotsForGauges,
   releaseSlotSession,
   setSlot,
   terminateSlot,
 } from "./sandbox-slots.ts";
-import { counterValue, gaugeValue } from "./test-utils.ts";
 
 function makeSandbox() {
   return { shutdown: vi.fn().mockResolvedValue(undefined) };
@@ -66,56 +63,20 @@ describe("terminateSlot", () => {
   });
 });
 
-describe("slot-cache gauges", () => {
-  beforeEach(() => {
-    registry.resetMetrics();
-  });
-  afterEach(() => {
-    registry.resetMetrics();
-  });
-
-  it("publishes aai_slots_registered when a slot is added or removed", () => {
-    const cache = createSlotCache();
-    registerSlotsForGauges(cache);
-    setSlot(cache, makeSlot("a"));
-    setSlot(cache, makeSlot("b"));
-    expect(gaugeValue("aai_slots_registered")).toBe(2);
-    deleteSlot(cache, "a");
-    expect(gaugeValue("aai_slots_registered")).toBe(1);
-  });
-
-  it("publishes aai_slots_resident when a sandbox is attached or detached", async () => {
-    const cache = createSlotCache();
-    registerSlotsForGauges(cache);
-    const slot = makeSlot("a");
-    setSlot(cache, slot);
-    expect(gaugeValue("aai_slots_resident")).toBe(0);
-    attachSandbox(cache, slot, makeSandbox());
-    expect(gaugeValue("aai_slots_resident")).toBe(1);
-    await terminateSlot(slot);
-    expect(gaugeValue("aai_slots_resident")).toBe(0);
-  });
-});
-
 describe("idle sandbox eviction", () => {
   beforeEach(() => {
     vi.useFakeTimers();
-    registry.resetMetrics();
   });
   afterEach(() => {
     vi.useRealTimers();
-    registry.resetMetrics();
   });
 
   it("evicts a sandbox after IDLE_SANDBOX_MS with no touches", async () => {
     const cache = createSlotCache();
-    registerSlotsForGauges(cache);
     const slot = makeSlot("alpha");
     setSlot(cache, slot);
     const sandbox = makeSandbox();
     attachSandbox(cache, slot, sandbox);
-
-    expect(gaugeValue("aai_slots_resident")).toBe(1);
 
     await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
 
@@ -123,9 +84,6 @@ describe("idle sandbox eviction", () => {
     expect(cache.get("alpha")?.sandbox).toBeUndefined();
     // Slot itself stays registered — only the sandbox is evicted.
     expect(cache.has("alpha")).toBe(true);
-    expect(gaugeValue("aai_slots_resident")).toBe(0);
-    expect(gaugeValue("aai_slots_registered")).toBe(1);
-    expect(counterValue("aai_sandbox_evicted_total", { reason: "idle" })).toBe(1);
   });
 
   it("does not evict a sandbox with an active session, and evicts after release", async () => {
@@ -207,8 +165,6 @@ describe("idle sandbox eviction", () => {
     // already happened and the timer should have been cleared.
     await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
     expect(sandbox.shutdown).toHaveBeenCalledOnce();
-    // No "idle" eviction either — terminate doesn't increment that counter.
-    expect(counterValue("aai_sandbox_evicted_total", { reason: "idle" })).toBe(0);
   });
 
   it("deleteSlot clears the idle timer to avoid leaks", async () => {

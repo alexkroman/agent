@@ -17,7 +17,6 @@ import { createKeyedLock } from "./_keyed-lock.ts";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import { agentObjectKey, agentPrefix, MAX_ENV_SIZE } from "./constants.ts";
-import { metrics, observeDurationWithStatus } from "./metrics.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { withLock } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema, EnvSchema } from "./schemas.ts";
@@ -120,15 +119,6 @@ export class ByteBudgetTtlCache<V> {
     this.#entries.delete(key);
     this.#totalBytes -= entry.bytes;
   }
-}
-
-async function instrumentStorage<T>(op: string, fn: () => Promise<T>): Promise<T> {
-  return observeDurationWithStatus(
-    metrics.upstreamCallSeconds,
-    metrics.upstreamCall,
-    { upstream: "storage", op },
-    fn,
-  );
 }
 
 export function createBundleStore(storage: Storage, opts: { secrets: SecretStore }): BundleStore {
@@ -237,114 +227,102 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
   }
 
   return {
-    putAgent(bundle) {
-      return instrumentStorage("putAgent", async () => {
-        invalidate(bundle.slug);
-        try {
-          await deleteByPrefix(agentPrefix(bundle.slug));
-        } catch (err) {
-          console.warn(
-            `Failed to delete old agent files for ${bundle.slug}, proceeding with overwrite: ${errorMessage(err)}`,
-          );
-        }
+    async putAgent(bundle) {
+      invalidate(bundle.slug);
+      try {
+        await deleteByPrefix(agentPrefix(bundle.slug));
+      } catch (err) {
+        console.warn(
+          `Failed to delete old agent files for ${bundle.slug}, proceeding with overwrite: ${errorMessage(err)}`,
+        );
+      }
 
-        const manifest = {
-          slug: bundle.slug,
-          credential_hashes: bundle.credential_hashes,
-        };
-        // All writes go to distinct keys with no ordering requirement
-        // (deleteByPrefix already cleared the prefix; the trailing
-        // invalidate handles cache races), so run them concurrently.
-        await Promise.all([
-          writeEnv(bundle.slug, bundle.env),
-          storage.setItem(agentObjectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest)),
-          storage.setItem(agentObjectKey(bundle.slug, "worker.js"), bundle.worker),
-          ...Object.entries(bundle.clientFiles).map(([filePath, content]) =>
-            storage.setItem(agentObjectKey(bundle.slug, `client/${filePath}`), content),
-          ),
-          storage.setItem(
-            agentObjectKey(bundle.slug, "config.json"),
-            JSON.stringify(bundle.agentConfig),
-          ),
-        ]);
-        // Re-invalidate to catch any concurrent read that repopulated the
-        // cache with a pre-write value during the write window.
-        invalidate(bundle.slug);
-      });
+      const manifest = {
+        slug: bundle.slug,
+        credential_hashes: bundle.credential_hashes,
+      };
+      // All writes go to distinct keys with no ordering requirement
+      // (deleteByPrefix already cleared the prefix; the trailing
+      // invalidate handles cache races), so run them concurrently.
+      await Promise.all([
+        writeEnv(bundle.slug, bundle.env),
+        storage.setItem(agentObjectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest)),
+        storage.setItem(agentObjectKey(bundle.slug, "worker.js"), bundle.worker),
+        ...Object.entries(bundle.clientFiles).map(([filePath, content]) =>
+          storage.setItem(agentObjectKey(bundle.slug, `client/${filePath}`), content),
+        ),
+        storage.setItem(
+          agentObjectKey(bundle.slug, "config.json"),
+          JSON.stringify(bundle.agentConfig),
+        ),
+      ]);
+      // Re-invalidate to catch any concurrent read that repopulated the
+      // cache with a pre-write value during the write window.
+      invalidate(bundle.slug);
     },
 
     getManifest(slug) {
-      return instrumentStorage("getManifest", () => getManifestCached(slug));
+      return getManifestCached(slug);
     },
 
-    getWorkerCode(slug) {
-      return instrumentStorage("getWorkerCode", async () => {
-        const cached = workerCodeCache.get(slug);
-        if (cached !== undefined) return cached;
-        const value = await readItem(agentObjectKey(slug, "worker.js"));
-        workerCodeCache.set(slug, value, value?.length ?? 0);
-        return value;
-      });
+    async getWorkerCode(slug) {
+      const cached = workerCodeCache.get(slug);
+      if (cached !== undefined) return cached;
+      const value = await readItem(agentObjectKey(slug, "worker.js"));
+      workerCodeCache.set(slug, value, value?.length ?? 0);
+      return value;
     },
 
-    getClientFile(slug, filePath) {
-      return instrumentStorage("getClientFile", async () => {
-        const key = agentObjectKey(slug, `client/${filePath}`);
-        const cached = clientFileCache.get(key);
-        if (cached !== undefined) return cached;
-        const value = await readItem(key);
-        clientFileCache.set(key, value);
-        return value;
-      });
+    async getClientFile(slug, filePath) {
+      const key = agentObjectKey(slug, `client/${filePath}`);
+      const cached = clientFileCache.get(key);
+      if (cached !== undefined) return cached;
+      const value = await readItem(key);
+      clientFileCache.set(key, value);
+      return value;
     },
 
-    deleteAgent(slug) {
-      return instrumentStorage("deleteAgent", async () => {
-        invalidate(slug);
-        await Promise.all([
-          deleteByPrefix(agentPrefix(slug)),
-          // Delete-only sweep of this agent's SecretStore entries. The
-          // app-db credentials go too; the caller (delete route) is
-          // responsible for deprovisioning the database itself first.
-          secrets.delete(agentEnvSecretName(slug)),
-          secrets.delete(appDbSecretName(slug)),
-        ]);
-        invalidate(slug);
-      });
+    async deleteAgent(slug) {
+      invalidate(slug);
+      await Promise.all([
+        deleteByPrefix(agentPrefix(slug)),
+        // Delete-only sweep of this agent's SecretStore entries. The
+        // app-db credentials go too; the caller (delete route) is
+        // responsible for deprovisioning the database itself first.
+        secrets.delete(agentEnvSecretName(slug)),
+        secrets.delete(appDbSecretName(slug)),
+      ]);
+      invalidate(slug);
     },
 
-    getEnv(slug) {
-      return instrumentStorage("getEnv", async () => (await getManifestCached(slug))?.env ?? null);
+    async getEnv(slug) {
+      return (await getManifestCached(slug))?.env ?? null;
     },
 
     putEnv(slug, env) {
-      return instrumentStorage("putEnv", () =>
-        withLock(manifestLock, slug, async () => {
-          // The manifest existence check keeps putEnv's contract: env for an
-          // unknown agent is an error, not a silent secret write.
-          const manifest = await getManifestCached(slug);
-          if (!manifest) throw new Error(`Agent ${slug} not found`);
-          await writeEnv(slug, env);
-          manifestCache.delete(slug);
-        }),
-      );
+      return withLock(manifestLock, slug, async () => {
+        // The manifest existence check keeps putEnv's contract: env for an
+        // unknown agent is an error, not a silent secret write.
+        const manifest = await getManifestCached(slug);
+        if (!manifest) throw new Error(`Agent ${slug} not found`);
+        await writeEnv(slug, env);
+        manifestCache.delete(slug);
+      });
     },
 
-    getAgentConfig(slug) {
-      return instrumentStorage("getAgentConfig", async () => {
-        const cached = configCache.get(slug);
-        if (cached !== undefined) return cached;
-        const json = await readJson(agentObjectKey(slug, "config.json"));
-        if (json == null) {
-          configCache.set(slug, null);
-          return null;
-        }
-        // Don't cache parse failures — transient corruption shouldn't stick.
-        const parsed = IsolateConfigSchema.safeParse(json);
-        if (!parsed.success) return null;
-        configCache.set(slug, parsed.data);
-        return parsed.data;
-      });
+    async getAgentConfig(slug) {
+      const cached = configCache.get(slug);
+      if (cached !== undefined) return cached;
+      const json = await readJson(agentObjectKey(slug, "config.json"));
+      if (json == null) {
+        configCache.set(slug, null);
+        return null;
+      }
+      // Don't cache parse failures — transient corruption shouldn't stick.
+      const parsed = IsolateConfigSchema.safeParse(json);
+      if (!parsed.success) return null;
+      configCache.set(slug, parsed.data);
+      return parsed.data;
     },
   };
 }

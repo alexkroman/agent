@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Tests for sandbox VM configuration and init metrics.
+ * Tests for sandbox VM configuration.
  *
  * The vector/* and db/query RPC handler tests live in
  * sandbox-vm-rpc-handlers.test.ts; the Modal spawn backend is covered by
@@ -19,10 +19,8 @@ import {
   makeWarm,
   waitForResponseId,
 } from "./_sandbox-vm-test-utils.ts";
-import { registry } from "./metrics.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import { _internals, createSandboxVm, describeBundle, type WarmHarness } from "./sandbox-vm.ts";
-import { counterValue, histogramCount } from "./test-utils.ts";
 
 /** In-memory mock Db whose query fn is a spy. */
 function createMockDb(rows: Record<string, unknown>[] = []) {
@@ -152,15 +150,14 @@ describe("configureSandbox", () => {
   });
 });
 
-// ── Init metrics ─────────────────────────────────────────────────────────────
+// ── Warm-pool fallback ───────────────────────────────────────────────────────
 
-describe("createSandboxVm metrics", () => {
+describe("createSandboxVm warm-pool fallback", () => {
   let hostReadable: PassThrough;
   let hostWritable: PassThrough;
   let conn: NdjsonConnection;
 
   beforeEach(() => {
-    registry.resetMetrics();
     const result = createTestConn();
     hostReadable = result.hostReadable;
     hostWritable = result.hostWritable;
@@ -168,12 +165,11 @@ describe("createSandboxVm metrics", () => {
   });
 
   afterEach(() => {
-    registry.resetMetrics();
     hostReadable.destroy();
     hostWritable.destroy();
   });
 
-  it("observes aai_sandbox_init_seconds on successful spawn (via warm pool)", async () => {
+  it("configures a pooled warm harness without spawning", async () => {
     const opts = baseOpts();
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const warm = makeWarm(conn, cleanup);
@@ -183,12 +179,11 @@ describe("createSandboxVm metrics", () => {
     const handle = await createSandboxVm(opts, pool);
     detach();
 
-    expect(histogramCount("aai_sandbox_init_seconds")).toBe(1);
-    expect(handle).toBeDefined();
+    expect(handle.conn).toBe(conn);
     handle.conn.dispose();
   });
 
-  it("increments aai_sandbox_init_failed_total{reason=bundle_missing} when bundle/load rejects", async () => {
+  it("rejects when both the warm harness and the cold fallback fail bundle/load", async () => {
     const consoleSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
     const opts = baseOpts();
     const cleanup = vi.fn().mockResolvedValue(undefined);
@@ -205,9 +200,6 @@ describe("createSandboxVm metrics", () => {
 
     await expect(createSandboxVm(opts, pool, spawn)).rejects.toThrow();
     expect(spawn).toHaveBeenCalledOnce();
-    expect(
-      counterValue("aai_sandbox_init_failed_total", { reason: "bundle_missing" }),
-    ).toBeGreaterThanOrEqual(1);
     detach();
     detachCold();
     cold.hostReadable.destroy();
@@ -237,9 +229,6 @@ describe("createSandboxVm metrics", () => {
     expect(handle.conn).toBe(cold.conn);
     // The failed warm harness was cleaned up, not leaked.
     expect(warmCleanup).toHaveBeenCalled();
-    // The successful fallback is recorded as a cold init, not a failure.
-    expect(counterValue("aai_sandbox_init_failed_total", { reason: "bundle_missing" })).toBe(0);
-    expect(histogramCount("aai_sandbox_init_seconds", { path: "cold" })).toBe(1);
 
     detachWarm();
     detachCold();

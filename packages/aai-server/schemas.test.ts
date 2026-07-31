@@ -154,8 +154,10 @@ describe("DeployBodySchema", () => {
   );
 
   test("RESERVED_SLUGS covers every top-level platform route", () => {
-    // /health and /metrics are top-level routes (orchestrator.ts) that an
-    // agent slug would shadow; /deploy is the top-level deploy route.
+    // /health is a top-level route (orchestrator.ts) that an agent slug
+    // would shadow; /deploy is the top-level deploy route. "metrics" stays
+    // reserved even though the /metrics endpoint was removed, so the path
+    // can never be claimed by a tenant if it ever returns.
     for (const slug of ["studio", "studio-assets", "health", "metrics", "deploy"]) {
       expect(RESERVED_SLUGS.has(slug)).toBe(true);
     }

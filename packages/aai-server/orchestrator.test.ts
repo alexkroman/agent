@@ -3,7 +3,7 @@ import { existsSync } from "node:fs";
 import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
-import { describe, expect, it, test } from "vitest";
+import { expect, test } from "vitest";
 import {
   createTestOrchestrator,
   deployAgent,
@@ -274,24 +274,4 @@ test("vector POST returns 404 when the agent config is missing", async () => {
     body: JSON.stringify({ op: "query", text: "hello" }),
   });
   expect(vecRes.status).toBe(404);
-});
-
-describe("/metrics endpoint", () => {
-  it("returns Prometheus text for internal requests", async () => {
-    const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/metrics");
-    expect(res.status).toBe(200);
-    const body = await res.text();
-    // Default Node.js metric is always exported by prom-client's
-    // collectDefaultMetrics — its presence proves the registry is wired.
-    expect(body).toContain("nodejs_eventloop_lag_p99_seconds");
-  });
-
-  it("rejects /metrics from public callers", async () => {
-    const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/metrics", {
-      headers: { "X-Forwarded-For": "1.2.3.4" },
-    });
-    expect(res.status).toBe(404);
-  });
 });
