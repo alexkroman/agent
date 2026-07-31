@@ -1240,26 +1240,24 @@ itself. They cover the two rules a resemblance grader is the wrong
 instrument for, because they are about whether a *published* agent can run
 at all rather than whether it looks like a template:
 
-- **AssemblyAI is the default provider.** `ASSEMBLYAI_API_KEY` is the only
-  key publishing seeds (`studio-deploy.ts`'s `defaultEnv`), so an agent
-  that reaches for Anthropic or Cartesia unbidden cannot start until the
-  user supplies a key. Cases assert S2S when no provider is named at all,
-  all-`assemblyai` descriptors when cascaded mode is requested without
-  naming providers, and — when the prompt names one stage's provider — that
-  stage honored plus AssemblyAI for the two the prompt left open. Parity
-  can't grade this: several references legitimately use other providers, so
+- **An all-AssemblyAI cascaded pipeline is the default.** The studio
+  preamble tells the agent to default every build to pipeline mode with
+  AssemblyAI backing all three stages — `assemblyAI` STT, `gpt-5.5` on the
+  AssemblyAI LLM Gateway, `assemblyAI` TTS — and to use the S2S voice agent
+  API (no stt/llm/tts declared) only when the user asks for it.
+  `ASSEMBLYAI_API_KEY` is the only key publishing seeds
+  (`studio-deploy.ts`'s `defaultEnv`), so an agent that reaches for
+  Anthropic or Cartesia unbidden cannot start until the user supplies a
+  key. Cases assert an all-`assemblyai` pipeline when no provider or mode
+  is named at all (and when cascaded mode is requested without naming
+  providers), S2S when the prompt asks for the voice agent API, and — when
+  the prompt names one stage's provider — that stage honored plus
+  AssemblyAI for the two the prompt left open. Parity can't grade this:
+  several references legitimately run S2S or use other providers, so
   "matches the reference" and "runs when published" disagree. The `mode`
   rubric criterion states the same rule as the judge-side backstop for
-  template cases.
-
-  The first run of this case is what forced the studio preamble to split the
-  rule in two — **which mode** (leave stt/llm/tts unset; S2S is the default
-  for anything that just asks for a voice agent) before **which providers**
-  (AssemblyAI for every stage the user didn't assign). The single combined
-  "default to AssemblyAI for every provider" bullet listed the three
-  descriptors to use, so a plain "build me a voice agent" reliably produced
-  an all-AssemblyAI *pipeline* — correct on credentials, wrong on mode, and
-  invisible to every other judge.
+  template cases (a pipeline agent is correct against an S2S reference
+  unless the prompt asked for S2S).
 - **Egress needs `allowedHosts`.** A tool fetching an undeclared host
   builds, loads, and passes every rubric criterion, then fails at runtime —
   the one failure mode invisible from the studio's Code pane.

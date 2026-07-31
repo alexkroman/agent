@@ -11,10 +11,10 @@
 export const STARTERS: { label: string; prompt: string }[] = [
   {
     label: "Cascaded agent with Assembly STT, Assembly TTS, Gemini Flash Lite",
-    // "Cascaded" is the user-facing name for pipeline mode. Spelled out so the
-    // agent writes a pipeline config rather than defaulting to S2S. STT, LLM,
-    // and TTS all bill to ASSEMBLYAI_API_KEY, which publishing seeds — so this
-    // path needs no secrets from the user.
+    // "Cascaded" is the user-facing name for pipeline mode — the studio's
+    // default, spelled out here with an explicitly named gateway model. STT,
+    // LLM, and TTS all bill to ASSEMBLYAI_API_KEY, which publishing seeds —
+    // so this path needs no secrets from the user.
     prompt:
       "Build a cascaded (pipeline-mode) agent: " +
       'stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt", ' +

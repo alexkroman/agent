@@ -317,13 +317,17 @@ const RUBRIC_IDS = ["mode", "capabilities", "state", "assets", "persona"] as con
 
 const RUBRIC: Record<(typeof RUBRIC_IDS)[number], string> = {
   mode:
-    "Session mode matches the reference: S2S mode declares none of stt/llm/tts; " +
-    "pipeline mode declares all three. " +
+    "Unless the user prompt asked for the AssemblyAI voice agent API (S2S / " +
+    "speech-to-speech), the generated agent runs in pipeline mode with all three " +
+    "of stt/llm/tts declared — the studio's default is a cascaded all-AssemblyAI " +
+    "pipeline, so a pipeline agent is correct even where the reference declares " +
+    "no providers (S2S). If the prompt DID ask for the voice agent API, none of " +
+    "stt/llm/tts may be declared. " +
     "Additionally, if the user prompt named specific providers, models, or voices, " +
-    "those are the ones used. If the prompt named none, every provider must be " +
-    "AssemblyAI — or S2S mode, which is AssemblyAI too — even where the reference " +
-    "uses a different one: ASSEMBLYAI_API_KEY is the only key a published agent is " +
-    "given, so an unrequested third-party provider cannot run at all.",
+    "those are the ones used. Every stage the prompt left open must be " +
+    "AssemblyAI, even where the reference uses a different provider: " +
+    "ASSEMBLYAI_API_KEY is the only key a published agent is given, so an " +
+    "unrequested third-party provider cannot run at all.",
   capabilities:
     "Every capability the USER PROMPT asked for is reachable in the generated " +
     "agent — as a custom tool or a `builtinTools` entry. Judge by function, not " +

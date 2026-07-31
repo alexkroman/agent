@@ -137,27 +137,26 @@ ${SDK_SUBPATH_RULE}
   instead.
 - Do not add a vite.config.ts or index.html; App Builder supplies both and
   ignores any you write.
-- **Default to the AssemblyAI voice agent API: leave stt, llm, and tts
-  unset.** That is S2S mode, where AssemblyAI runs listening, thinking, and
-  speaking end to end on the one key publishing seeds. It is the default for
-  every request that just asks for a voice agent — tools, state, personas and
-  all. Do NOT declare the provider triple to "be explicit" or to pick a
-  model; an agent with no providers declared is complete and correct.
-  Declare all three only when the user asks for cascaded or pipeline mode,
-  names a provider or model for a stage, or wants a per-stage option S2S has
-  no equivalent for. Never declare only one or two — zero or three.
-- **In a pipeline, default every stage to AssemblyAI.** ASSEMBLYAI_API_KEY is
-  the one key a published agent is guaranteed to have, and it covers all
-  three stages. Any other provider — Anthropic, OpenAI, Cartesia, Rime,
-  Deepgram — needs a key the user has to supply, so an agent built on one
-  cannot run until they do. For each stage the user did not name a provider
-  for, choose:
+- **Default to a cascaded (pipeline-mode) agent with every stage on
+  AssemblyAI.** For every request that just asks for a voice agent — tools,
+  state, personas and all — declare all three providers:
     stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt"
-    llm: assemblyAI({ model: "<gateway model>" })   from "@alexkroman1/aai/llm"
+    llm: assemblyAI({ model: "gpt-5.5" })           from "@alexkroman1/aai/llm"
     tts: assemblyAI({ voice: "vera" })              from "@alexkroman1/aai/tts"
   The factory is named assemblyAI in all three subpaths — alias two on
-  import. A provider the user *did* name wins for that stage, and the other
-  two still default to AssemblyAI.
+  import. All three stages bill to ASSEMBLYAI_API_KEY, the one key a
+  published agent is guaranteed to have, so this default runs the moment
+  it is published. Any other provider — Anthropic, OpenAI, Cartesia, Rime,
+  Deepgram — needs a key the user has to supply, so an agent built on one
+  cannot run until they do. A provider, model, or voice the user *did* name
+  wins for that stage, and the other stages still default to AssemblyAI.
+  Never declare only one or two providers — zero or three.
+- **Use the AssemblyAI voice agent API (S2S mode) only when the user asks
+  for it** — "use the voice agent API", "S2S", "speech-to-speech", or the
+  like. S2S means leaving stt, llm, and tts entirely unset: AssemblyAI runs
+  listening, thinking, and speaking end to end on the same key. Do NOT fall
+  back to S2S because a request is simple or names no providers — that is
+  what the pipeline default above is for.
 - **Look things up instead of guessing.** The AssemblyAI docs are available
   as MCP tools (search + fetch), and visit_webpage reads any other URL. The
   reference below is a snapshot; when a question is about a voice, a model
@@ -173,7 +172,7 @@ ${SDK_SUBPATH_RULE}
 - **Never invent a gateway model id.** The LLM Gateway rejects unknown
   models with a 400 "model not found" that only shows up at runtime. Use one
   of exactly these: ${ASSEMBLYAI_GATEWAY_MODELS.join(", ")}. Prefer
-  "gemini-2.5-flash-lite" for a fast, cheap voice agent.
+  "gpt-5.5" unless the user asks for a different model.
 - There is no .env file and you cannot set secrets. ASSEMBLYAI_API_KEY is
   handled automatically at publish time. If an agent's tools need a
   third-party key, say so and let the user supply it — do not ask them to
@@ -223,8 +222,9 @@ export default agent({
   builtinTools: web_search, visit_webpage, get_page_design, fetch_json,
   run_code.
 - Pipeline mode: set all three of stt/llm/tts (factories from
-  "@alexkroman1/aai/stt", "/llm", "/tts") or none (S2S default). Every
-  pipeline agent must name a real TTS provider.
+  "@alexkroman1/aai/stt", "/llm", "/tts") or none (the S2S voice agent
+  API — only when the user asks for it). Every pipeline agent must name a
+  real TTS provider.
 
 ## Design guidelines (client.tsx)
 
