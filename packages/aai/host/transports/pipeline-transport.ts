@@ -15,6 +15,7 @@ import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
 import { createPipelineProviderSessions } from "./pipeline-providers.ts";
+import { createReplyTailTracker } from "./pipeline-recovery.ts";
 import { createToolCallRepair } from "./pipeline-repair.ts";
 import {
   createPlaybackClock,
@@ -101,6 +102,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // so barge-in keeps working after the server-side turn is done but buffered
   // audio is still playing client-side (see createPlaybackClock).
   const playbackClock = createPlaybackClock(ttsSampleRate);
+  // What the current reply handed to TTS (cumulative transcript + audio
+  // duration), which is also where a playback-tail barge-in's cut point comes
+  // from — see createReplyTailTracker.
+  const replyTail = createReplyTailTracker({
+    sampleRate: ttsSampleRate,
+    remainingMs: () => playbackClock.remainingMs(),
+  });
 
   // Silence nudger, false-interruption recovery, speaking edges and the STT
   // handlers that drive them — see createUserActivity.
@@ -119,6 +127,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     hasTurnSpoken: () => turnSpoke,
     isPlaybackPending: () => playbackClock.pending(),
     abortInFlightTurn: () => abortInFlightTurn(),
+    tailResumePrompt: () => replyTail.resumePrompt(),
     runChainedTurn,
   });
 
@@ -143,6 +152,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       onTtsAudio: (pcm) => {
         if (!ttsAudioOpen) return;
         turnSpoke = true;
+        replyTail.onAudio(pcm);
         playbackClock.onChunk(pcm);
         callbacks.onAudioChunk(pcm16ToBytes(pcm));
       },
@@ -225,13 +235,6 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     terminate();
   }
 
-  /**
-   * Text the current reply has handed to TTS, i.e. everything the caller either
-   * has heard or is about to. Reset per reply in {@link runReply}; the source of
-   * the cumulative interim transcript below.
-   */
-  let replySpoken = "";
-
   /** Forward turn text to TTS, reopening the audio gate for the new turn. */
   function sendTtsText(text: string): void {
     ttsAudioOpen = true;
@@ -241,8 +244,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     // and dead-air cover many seconds before the model's answer exists, and a
     // client that pairs text with audio (captions, a voice harness) has already
     // played that audio by the time one end-of-reply transcript arrives.
-    replySpoken += text;
-    callbacks.onAgentTranscriptPartial?.(replySpoken);
+    callbacks.onAgentTranscriptPartial?.(replyTail.onText(text));
   }
 
   // How a turn is wrapped up once its stream settles — interrupted, failed, or
@@ -313,7 +315,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     const unlink = linkAbort(sessionAbort.signal, ctl);
     turnController = ctl;
     turnSpoke = false;
-    replySpoken = "";
+    replyTail.reset();
 
     try {
       const spoke = await body(ctl);

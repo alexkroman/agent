@@ -293,6 +293,21 @@ export const DEFAULT_FALSE_INTERRUPTION_PROMPT =
   "without repeating what you already said. Do not mention this instruction.";
 
 /**
+ * Minimum estimated unheard playback (ms) before a barge-in on the client
+ * playback tail — the reply finished server-side but its audio is still
+ * playing out — arms false-interruption recovery (pipeline mode).
+ *
+ * A tail barge-in used to never recover: the reply was already complete in
+ * history, so there was "no cut point to continue from", and a noise partial
+ * landing in that window killed the rest of the reply permanently — full
+ * transcript on screen, voice dead mid-sentence, no error anywhere. Recovery
+ * now estimates the cut point from the playback clock and resumes. Below this
+ * threshold the caller heard essentially everything, and a resume would add a
+ * trailing fragment to a reply that already landed.
+ */
+export const TAIL_RESUME_MIN_UNHEARD_MS = 1500;
+
+/**
  * Cap on back-to-back false-interruption resumes (pipeline mode) before the
  * user must speak again, mirroring {@link MAX_CONSECUTIVE_SILENCE_NUDGES}.
  * Without it, persistent cross-talk loops barge-in → resume → barge-in every

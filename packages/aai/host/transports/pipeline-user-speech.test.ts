@@ -1,16 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
-// Unit specs for the pipeline transport's user-speech helpers: the speaking
-// edge tracker (including its idle watchdog) and the false-interruption
-// recovery timer (including its consecutive-resume budget). Exercised directly
-// rather than through the transport so the timeouts can be short and the
-// timer-boundary cases stay deterministic. End-to-end wiring is covered by
-// pipeline-voice-events.test.ts.
+// Unit specs for the pipeline transport's speaking-edge tracker (including
+// its idle watchdog). Exercised directly rather than through the transport so
+// the timeouts can be short and the timer-boundary cases stay deterministic.
+// End-to-end wiring is covered by pipeline-voice-events.test.ts; the
+// false-interruption recovery timer's specs live in pipeline-recovery.test.ts.
 
 import { describe, expect, test, vi } from "vitest";
-import {
-  createFalseInterruptionRecovery,
-  createSpeechEdgeTracker,
-} from "./pipeline-user-speech.ts";
+import { createSpeechEdgeTracker } from "./pipeline-user-speech.ts";
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -93,117 +89,5 @@ describe("createSpeechEdgeTracker", () => {
     await sleep(40);
     // The pending watchdog must not fire an edge event after the reset.
     expect(cb.onSpeechStopped).not.toHaveBeenCalled();
-  });
-});
-
-describe("createFalseInterruptionRecovery", () => {
-  function makeRecovery(over: Partial<Parameters<typeof createFalseInterruptionRecovery>[0]> = {}) {
-    const onResume = vi.fn();
-    const recovery = createFalseInterruptionRecovery({
-      timeoutMs: 20,
-      maxConsecutive: 3,
-      isActive: () => true,
-      isBusy: () => false,
-      onResume,
-      ...over,
-    });
-    return { recovery, onResume };
-  }
-
-  test("resumes once the window elapses", async () => {
-    const { recovery, onResume } = makeRecovery();
-    recovery.arm();
-    expect(recovery.pending()).toBe(true);
-    await vi.waitFor(() => {
-      expect(onResume).toHaveBeenCalledTimes(1);
-    });
-    expect(recovery.pending()).toBe(false);
-  });
-
-  test("timeoutMs 0 disables recovery entirely", async () => {
-    const { recovery, onResume } = makeRecovery({ timeoutMs: 0 });
-    recovery.arm();
-    expect(recovery.pending()).toBe(false);
-    await sleep(40);
-    expect(onResume).not.toHaveBeenCalled();
-  });
-
-  test("re-arming pushes the deadline out so a still-talking user isn't spoken over", async () => {
-    const { recovery, onResume } = makeRecovery({ timeoutMs: 50 });
-    recovery.arm();
-    // Each "partial" re-arms while the window is pending.
-    for (let i = 0; i < 4; i++) {
-      await sleep(25);
-      expect(recovery.pending()).toBe(true);
-      recovery.arm();
-    }
-    // Total elapsed (~100 ms) is well past one window, but none elapsed fully.
-    expect(onResume).not.toHaveBeenCalled();
-
-    await vi.waitFor(() => {
-      expect(onResume).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  test("clear cancels a pending window but keeps the budget", async () => {
-    const { recovery, onResume } = makeRecovery();
-    recovery.arm();
-    recovery.clear();
-    expect(recovery.pending()).toBe(false);
-    await sleep(40);
-    expect(onResume).not.toHaveBeenCalled();
-
-    // Budget untouched: a later barge-in can still recover.
-    recovery.arm();
-    await vi.waitFor(() => {
-      expect(onResume).toHaveBeenCalledTimes(1);
-    });
-  });
-
-  test("caps consecutive resumes so cross-talk cannot loop forever", async () => {
-    const { recovery, onResume } = makeRecovery({ maxConsecutive: 3 });
-
-    // Simulate persistent noise: every resume is followed by another barge-in
-    // that never commits a user turn.
-    for (let i = 0; i < 6; i++) {
-      recovery.arm();
-      await sleep(40);
-    }
-    expect(onResume).toHaveBeenCalledTimes(3);
-    // Budget spent — arming is now inert.
-    expect(recovery.pending()).toBe(false);
-  });
-
-  test("a committed user turn restores the budget", async () => {
-    const { recovery, onResume } = makeRecovery({ maxConsecutive: 1 });
-
-    recovery.arm();
-    await vi.waitFor(() => {
-      expect(onResume).toHaveBeenCalledTimes(1);
-    });
-
-    // Spent: no further resume.
-    recovery.arm();
-    await sleep(40);
-    expect(onResume).toHaveBeenCalledTimes(1);
-
-    // The user speaks for real → budget restored.
-    recovery.onUserTurn();
-    recovery.arm();
-    await vi.waitFor(() => {
-      expect(onResume).toHaveBeenCalledTimes(2);
-    });
-  });
-
-  test("a fired window is dropped when the transport went inactive or busy", async () => {
-    const inactive = makeRecovery({ isActive: () => false });
-    inactive.recovery.arm();
-    await sleep(40);
-    expect(inactive.onResume).not.toHaveBeenCalled();
-
-    const busy = makeRecovery({ isBusy: () => true });
-    busy.recovery.arm();
-    await sleep(40);
-    expect(busy.onResume).not.toHaveBeenCalled();
   });
 });

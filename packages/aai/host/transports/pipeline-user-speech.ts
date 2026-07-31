@@ -1,9 +1,9 @@
 // Copyright 2026 the AAI authors. MIT license.
 // User-speech handling for the pipeline transport: speaking-edge detection
 // (pipeline mode has no VAD, so speech_started/speech_stopped derive from the
-// STT transcript stream), false-interruption recovery (resume a barged-in reply
-// when the interruption never commits a turn), and the STT partial/final
-// handlers that drive both from the provider's transcript stream.
+// STT transcript stream) and the STT partial/final handlers that drive it —
+// including when to arm false-interruption recovery (whose timer, tail
+// tracker, and resume prompts live in pipeline-recovery.ts).
 
 import {
   DEFAULT_FALSE_INTERRUPTION_PROMPT,
@@ -13,6 +13,10 @@ import {
 } from "../../sdk/constants.ts";
 import { createRestartableTimer } from "../_timer.ts";
 import type { Logger } from "../runtime-config.ts";
+import {
+  createFalseInterruptionRecovery,
+  type FalseInterruptionRecovery,
+} from "./pipeline-recovery.ts";
 import { createSilenceNudger, type SilenceNudger } from "./pipeline-silence.ts";
 import { hasMinWords, scanWords } from "./pipeline-text.ts";
 import type { TransportCallbacks } from "./types.ts";
@@ -91,78 +95,6 @@ export function createSpeechEdgeTracker(
   };
 }
 
-/**
- * False-interruption recovery timer. A partial-triggered barge-in aborts the
- * in-flight reply, but STT noise or a hallucinated partial may never produce
- * a final — no turn ever commits and the agent falls silent
- * mid-thought. `arm()` starts the recovery window after such a barge-in;
- * `clear()` cancels it when real speech commits (or the client cancels). If
- * the window elapses while the transport is idle, `onResume` runs the
- * continuation turn.
- */
-export interface FalseInterruptionRecovery {
-  /**
-   * Start (or restart) the recovery window. No-op when the timeout is 0 or the
-   * consecutive-resume budget is spent.
-   */
-  arm(): void;
-  /** Cancel a pending recovery window, keeping the consecutive-resume budget. */
-  clear(): void;
-  /** Is a recovery window currently pending? Drives re-arming on continued speech. */
-  pending(): boolean;
-  /**
-   * A real user turn committed (STT final) — the barge-in that preceded it was
-   * genuine. Cancel the window and restore the budget.
-   */
-  onUserTurn(): void;
-}
-
-/** Create a {@link FalseInterruptionRecovery}. */
-export function createFalseInterruptionRecovery(opts: {
-  /** Recovery window in ms; 0 (or negative) disables recovery entirely. */
-  timeoutMs: number;
-  /** Max back-to-back resumes before the user must speak again. */
-  maxConsecutive: number;
-  /** False once the transport terminated — a fired timer then does nothing. */
-  isActive: () => boolean;
-  /**
-   * True while a turn is in flight or client audio may still be playing —
-   * something else took the floor, so the interruption resolved itself.
-   */
-  isBusy: () => boolean;
-  /** Run the resume turn. Only called when active and not busy. */
-  onResume: () => void;
-}): FalseInterruptionRecovery {
-  let consecutive = 0;
-  const window = createRestartableTimer(() => fire());
-
-  function arm(): void {
-    // Budget spent: persistent cross-talk must not loop barge-in → resume →
-    // barge-in indefinitely, each cycle costing a full LLM+TTS turn and
-    // another copy of the continuation prompt in history.
-    if (consecutive >= opts.maxConsecutive) return;
-    window.arm(opts.timeoutMs);
-  }
-
-  function fire(): void {
-    if (!opts.isActive()) return;
-    if (opts.isBusy()) return;
-    if (consecutive >= opts.maxConsecutive) return;
-    consecutive++;
-    opts.onResume();
-  }
-
-  return {
-    arm,
-    clear: window.clear,
-    pending: window.pending,
-    onUserTurn(): void {
-      consecutive = 0;
-      window.clear();
-    },
-  };
-}
-
 /** STT transcript-stream handlers. See {@link createSttEventHandlers}. */
 export interface SttEventHandlers {
   /** An interim transcript arrived. */
@@ -192,6 +124,14 @@ function createSttEventHandlers(deps: {
   isPlaybackPending: () => boolean;
   /** Abort the in-flight turn and cancel TTS playback. */
   abortInFlightTurn: () => void;
+  /**
+   * Resume prompt for a barge-in on the client playback tail — the reply
+   * finished server-side but its audio was still playing out. `undefined` when
+   * the caller had essentially heard it all (then a cut costs nothing worth a
+   * resume turn). Read BEFORE the abort: aborting resets the playback clock
+   * this estimate is built from.
+   */
+  tailResumePrompt: () => string | undefined;
   speechEdges: SpeechEdgeTracker;
   recovery: FalseInterruptionRecovery;
   nudger: SilenceNudger;
@@ -229,6 +169,24 @@ function createSttEventHandlers(deps: {
    */
   const agentIsSpeaking = (): boolean =>
     deps.isPlaybackPending() || (deps.isTurnInFlight() && deps.hasTurnSpoken());
+
+  /**
+   * Decide, BEFORE the abort, how a partial-triggered barge-in recovers from a
+   * false alarm, returning the arm to run after it. Both barge-in shapes can
+   * recover, each with its own resume prompt: an aborted in-flight turn
+   * continues from its `[interrupted]` history marker, while a turn that
+   * already finished server-side (client playback tail) has its full text in
+   * history with no marker, so its prompt embeds the estimated cut point —
+   * captured here because the abort resets the playback clock that estimate
+   * reads. A fully-heard tail (`undefined`) arms nothing: there is nothing
+   * left to resume.
+   */
+  function bargeInRecoveryArm(): () => void {
+    if (deps.isTurnInFlight()) return () => recovery.arm(DEFAULT_FALSE_INTERRUPTION_PROMPT);
+    const tailPrompt = deps.tailResumePrompt();
+    if (tailPrompt === undefined) return () => undefined;
+    return () => recovery.arm(tailPrompt);
+  }
 
   /** Should this interim transcript interrupt the agent right now? */
   function partialTriggersBargeIn(words: number): boolean {
@@ -273,15 +231,11 @@ function createSttEventHandlers(deps: {
         return;
       }
       log.info("Pipeline barge-in", { sid: deps.sid });
-      // Only an aborted in-flight turn can be resumed after a false alarm — its
-      // spoken-so-far text lands in history marked `[interrupted]`. A turn that
-      // already finished server-side (client playback tail) has no cut point to
-      // continue from, so no recovery timer is armed for it.
-      const wasTurnInFlight = deps.isTurnInFlight();
+      const armRecovery = bargeInRecoveryArm();
       deps.abortInFlightTurn();
       callbacks.onCancelled();
       emitPartial();
-      if (wasTurnInFlight) recovery.arm();
+      armRecovery();
     },
 
     onSttFinal(text: string): void {
@@ -363,6 +317,8 @@ export function createUserActivity(deps: {
   hasTurnSpoken(): boolean;
   isPlaybackPending(): boolean;
   abortInFlightTurn(): void;
+  /** Cut-point resume prompt for a playback-tail barge-in — see {@link SttEventHandlers}. */
+  tailResumePrompt(): string | undefined;
   /** Chain `runTurn(text)` behind the active turn, logging crashes as `crashLabel`. */
   runChainedTurn(text: string, crashLabel: string): void;
 }): UserActivity {
@@ -388,21 +344,19 @@ export function createUserActivity(deps: {
     },
   });
 
-  // Resume a barged-in reply when the interruption never commits a user turn
-  // — its spoken-so-far text is already in history marked `[interrupted]`,
-  // so a synthetic continuation turn picks up where it was cut off.
+  // Resume a barged-in reply when the interruption never commits a user turn.
+  // The prompt was chosen when the window was armed: the default continuation
+  // prompt for an aborted in-flight turn (its spoken-so-far text is in history
+  // marked `[interrupted]`), the cut-point prompt for a playback-tail cut.
   const recovery = createFalseInterruptionRecovery({
     timeoutMs: deps.falseInterruptionTimeoutMs,
     maxConsecutive: MAX_CONSECUTIVE_FALSE_INTERRUPTION_RESUMES,
     isActive: () => !deps.isTerminated(),
     isBusy,
-    onResume: () => {
+    onResume: (resumePrompt) => {
       log.info("Pipeline false-interruption resume", { sid });
       speechEdges.speechEnded();
-      deps.runChainedTurn(
-        DEFAULT_FALSE_INTERRUPTION_PROMPT,
-        "Pipeline false-interruption resume crashed",
-      );
+      deps.runChainedTurn(resumePrompt, "Pipeline false-interruption resume crashed");
     },
   });
 
@@ -412,6 +366,7 @@ export function createUserActivity(deps: {
     hasTurnSpoken: deps.hasTurnSpoken,
     isPlaybackPending: deps.isPlaybackPending,
     abortInFlightTurn: deps.abortInFlightTurn,
+    tailResumePrompt: deps.tailResumePrompt,
     speechEdges,
     recovery,
     nudger,

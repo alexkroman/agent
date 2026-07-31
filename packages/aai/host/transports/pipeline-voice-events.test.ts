@@ -175,11 +175,18 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
-    test("a barge-in on the client playback tail (turn already finished) does not resume", async () => {
-      const { opts, stt, tts, callbacks } = makeOpts({
-        llm: createFakeLanguageModel({ script: [{ type: "text", text: "20, 19, 18…" }] }),
-        falseInterruptionTimeoutMs: 40,
+    test("a barge-in on the client playback tail (turn already finished) resumes with the cut point", async () => {
+      // The reply completed server-side while its audio was still playing out
+      // client-side. A noise partial in that window used to kill the rest of
+      // the reply permanently — full transcript on screen, voice dead
+      // mid-sentence — because no recovery was armed for a finished turn.
+      const llm = createFakeLanguageModel({
+        steps: [
+          [{ type: "text", text: "20, 19, 18…" }],
+          [{ type: "text", text: "As I was counting…" }],
+        ],
       });
+      const { opts, stt, tts, callbacks } = makeOpts({ llm, falseInterruptionTimeoutMs: 40 });
       const t = createPipelineTransport(opts);
       await t.start();
 
@@ -190,6 +197,40 @@ describe("PipelineTransport", () => {
 
       // 10 s of PCM16 at the default 24 kHz — client playback lags well behind.
       tts.last()?.fireAudio(new Int16Array(240_000));
+      stt.last()?.firePartial("uh what");
+      expect(callbacks.onCancelled).toHaveBeenCalled();
+
+      // The window elapses with no committed turn → the reply resumes.
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyStarted).toHaveBeenCalledTimes(2);
+      });
+      await vi.waitFor(() => {
+        expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("As I was counting…", false);
+      });
+      // The resume turn's synthetic prompt tells the model about the cut; it
+      // is never surfaced as a user transcript.
+      expect(JSON.stringify(llm.calls.at(-1))).toContain("cut off by a false interruption");
+      expect(callbacks.onUserTranscript).toHaveBeenCalledTimes(1);
+      await t.stop();
+    });
+
+    test("a barge-in on a playback tail the caller has essentially heard does not resume", async () => {
+      const { opts, stt, tts, callbacks } = makeOpts({
+        llm: createFakeLanguageModel({ script: [{ type: "text", text: "Sure." }] }),
+        falseInterruptionTimeoutMs: 40,
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+
+      stt.last()?.fireFinal("thanks");
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalled();
+      });
+
+      // 500 ms of audio — under TAIL_RESUME_MIN_UNHEARD_MS, so the cut costs
+      // nothing worth a resume turn (which would only append a fragment to a
+      // reply the caller heard).
+      tts.last()?.fireAudio(new Int16Array(12_000));
       stt.last()?.firePartial("uh what");
       expect(callbacks.onCancelled).toHaveBeenCalled();
 
