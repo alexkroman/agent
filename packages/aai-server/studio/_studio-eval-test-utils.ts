@@ -184,7 +184,19 @@ export const UNCOVERED: Record<string, string> = {
  */
 export type ProviderExpectation =
   | { mode: "s2s" }
-  | { mode: "pipeline"; stt: string; llm: string; tts: string };
+  | {
+      mode: "pipeline";
+      stt: string;
+      llm: string;
+      tts: string;
+      /**
+       * Exact LLM model id, asserted only when the prompt names no model —
+       * the studio preamble says to prefer the default gateway model
+       * ("qwen3-next-80b-a3b"), and a drift here means the prompt's stated
+       * default and the agent's behavior have come apart.
+       */
+      llmModel?: string;
+    };
 
 export type ConfigCase = {
   /** Test title, read as "the studio agent <name>". */
@@ -234,7 +246,13 @@ export const CONFIG_CASES: ConfigCase[] = [
       "thinks of an object, I ask yes/no questions, and it tracks how many I " +
       "have used. Keep the secret object and the question count in ctx.state." +
       ONE_SHOT,
-    providers: { mode: "pipeline", stt: "assemblyai", llm: "assemblyai", tts: "assemblyai" },
+    providers: {
+      mode: "pipeline",
+      stt: "assemblyai",
+      llm: "assemblyai",
+      tts: "assemblyai",
+      llmModel: "qwen3-next-80b-a3b",
+    },
   },
   {
     name: "uses the voice agent API when asked for it",
@@ -259,7 +277,13 @@ export const CONFIG_CASES: ConfigCase[] = [
       "assistant for a dentist's office and can answer questions about opening " +
       "hours. Pick sensible providers and models." +
       ONE_SHOT,
-    providers: { mode: "pipeline", stt: "assemblyai", llm: "assemblyai", tts: "assemblyai" },
+    providers: {
+      mode: "pipeline",
+      stt: "assemblyai",
+      llm: "assemblyai",
+      tts: "assemblyai",
+      llmModel: "qwen3-next-80b-a3b",
+    },
   },
   {
     name: "honors a named provider and defaults the rest to AssemblyAI",
@@ -272,7 +296,13 @@ export const CONFIG_CASES: ConfigCase[] = [
       'words as a language-practice partner. Use Deepgram with the "nova-3" ' +
       "model for speech-to-text. Choose whatever fits for the other two stages." +
       ONE_SHOT,
-    providers: { mode: "pipeline", stt: "deepgram", llm: "assemblyai", tts: "assemblyai" },
+    providers: {
+      mode: "pipeline",
+      stt: "deepgram",
+      llm: "assemblyai",
+      tts: "assemblyai",
+      llmModel: "qwen3-next-80b-a3b",
+    },
   },
   {
     name: "declares allowedHosts for a tool that fetches",
@@ -287,7 +317,13 @@ export const CONFIG_CASES: ConfigCase[] = [
       "longitude, current=temperature_2m,wind_speed_10m) with fetch, then reads " +
       "back the temperature and wind speed conversationally." +
       ONE_SHOT,
-    providers: { mode: "pipeline", stt: "assemblyai", llm: "assemblyai", tts: "assemblyai" },
+    providers: {
+      mode: "pipeline",
+      stt: "assemblyai",
+      llm: "assemblyai",
+      tts: "assemblyai",
+      llmModel: "qwen3-next-80b-a3b",
+    },
     fetchedHosts: ["api.open-meteo.com"],
   },
 ];

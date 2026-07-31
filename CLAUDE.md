@@ -382,9 +382,9 @@ voice agents without the CLI:
 - **LLM selection** (`studio-llm.ts`) uses the SDK's own provider
   descriptors + `resolveLlm` (exported from `@alexkroman1/aai/runtime`).
   Keys are **platform-owned host config**, never tenant env. Default: the
-  AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set (model `gpt-5.5` —
-  OpenAI models are the only ones the gateway documents streamed responses
-  for), else Anthropic via `ANTHROPIC_API_KEY`;
+  AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set (model
+  `qwen3-next-80b-a3b`; non-OpenAI gateway streams run through the
+  `repairOpenAiStream` fetch wrapper), else Anthropic via `ANTHROPIC_API_KEY`;
   `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL` override (any pipeline-mode LLM
   provider). Chat returns 503 when unconfigured — the editor and deploy
   button still work without it.
@@ -397,7 +397,7 @@ voice agents without the CLI:
 - **No per-request model switching.** `POST /studio/chat` accepts no
   `model` field (a stray one is stripped by the body schema, never
   honored): every turn runs on the host-configured default —
-  `gpt-5.5` on the gateway. **A client can never name a provider or a
+  `qwen3-next-80b-a3b` on the gateway. **A client can never name a provider or a
   model and never supplies a key** — keep it that way: reintroducing any
   request-side choice must stay validated against host-held keys.
 - **Session sandboxes run the agent's code work on production infra**:
@@ -1235,9 +1235,10 @@ at all rather than whether it looks like a template:
 
 - **An all-AssemblyAI cascaded pipeline is the default.** The studio
   preamble tells the agent to default every build to pipeline mode with
-  AssemblyAI backing all three stages — `assemblyAI` STT, `gpt-5.5` on the
-  AssemblyAI LLM Gateway, `assemblyAI` TTS — and to use the S2S voice agent
-  API (no stt/llm/tts declared) only when the user asks for it.
+  AssemblyAI backing all three stages — `assemblyAI` STT,
+  `qwen3-next-80b-a3b` on the AssemblyAI LLM Gateway, `assemblyAI` TTS —
+  and to use the S2S voice agent API (no stt/llm/tts declared) only when
+  the user asks for it.
   `ASSEMBLYAI_API_KEY` is the only key publishing seeds
   (`studio-deploy.ts`'s `defaultEnv`), so an agent that reaches for
   Anthropic or Cartesia unbidden cannot start until the user supplies a

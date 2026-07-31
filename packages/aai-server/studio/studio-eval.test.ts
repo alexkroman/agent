@@ -224,9 +224,11 @@ const WorkerBuildJudge = createJudge<string, StudioEvalOutput>(
  * Provider mismatches between the config the guest reported and what the case
  * expects. Empty means it matches.
  *
- * Kinds rather than descriptor identity: the case cares that the AssemblyAI
- * gateway is doing the LLM work, not which gateway model was picked (the
- * prompt's model list changes; `assemblyai` does not).
+ * Kinds rather than descriptor identity — the case cares that the AssemblyAI
+ * gateway is doing the LLM work — with one exception: when the case sets
+ * `llmModel`, the exact gateway model id is asserted too, because the studio
+ * preamble names a default model and a case where the prompt names none is
+ * the only place that default is observable.
  */
 function providerProblems(cfg: IsolateConfig, want: ProviderExpectation): string[] {
   const got = { stt: cfg.stt?.kind, llm: cfg.llm?.kind, tts: cfg.tts?.kind };
@@ -240,9 +242,19 @@ function providerProblems(cfg: IsolateConfig, want: ProviderExpectation): string
         `but the agent runs a pipeline: ${shown}`,
     ];
   }
-  return stages
+  const problems = stages
     .filter((stage) => got[stage] !== want[stage])
     .map((stage) => `${stage} provider is "${got[stage] ?? "unset"}", expected "${want[stage]}"`);
+  if (want.llmModel !== undefined) {
+    const model = cfg.llm?.options.model;
+    if (model !== want.llmModel) {
+      problems.push(
+        `llm model is ${model === undefined ? "unset" : `"${String(model)}"`}, ` +
+          `expected the default "${want.llmModel}"`,
+      );
+    }
+  }
+  return problems;
 }
 
 /**

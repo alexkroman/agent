@@ -38,19 +38,18 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("test_agent");
     // Any non-AssemblyAI provider needs a key the user must supply, so a
     // generated agent should default to an all-AssemblyAI pipeline (STT +
-    // gpt-5.5 on the LLM Gateway + TTS) on the one key publishing
+    // qwen3-next-80b-a3b on the LLM Gateway + TTS) on the one key publishing
     // guarantees, with the S2S voice agent API only on request. Both are
     // graded by the CONFIG_CASES half of the studio codegen evals.
     expect(prompt).toContain("Default to a cascaded (pipeline-mode) agent");
-    expect(prompt).toContain('llm: assemblyAI({ model: "gpt-5.5" })');
-    expect(prompt).toContain("only when the user asks");
+    expect(prompt).toContain('llm: assemblyAI({ model: "qwen3-next-80b-a3b" })');
     // Real gateway ids are interpolated so the agent can't invent one
     // (a made-up id only fails at runtime, with a 400 "model not found").
     // gpt-5.2 appears nowhere in the preamble literal, so it can only be here
     // if the ASSEMBLYAI_GATEWAY_MODELS interpolation ran.
     expect(prompt).toContain("gpt-5.2");
     // The default gateway model for generated pipeline agents.
-    expect(prompt).toContain('"gpt-5.5" unless the user asks for a different model');
+    expect(prompt).toContain('"qwen3-next-80b-a3b" unless the user asks for a different model');
     // Publishing is the user's call, so the agent must be told it cannot.
     expect(prompt).toContain("You cannot publish");
     // Working-style rules: implement with tools instead of pasting code
@@ -62,6 +61,11 @@ describe("studioSystemPrompt", () => {
     // so assert against a whitespace-normalized copy.
     const flat = prompt.replace(/\s+/g, " ");
     expect(flat).toContain("don't stop at the first match");
+    // Pipeline is the default; the S2S voice agent API is opt-in only.
+    expect(flat).toContain(
+      "Use the AssemblyAI voice agent API (S2S mode) only when the user asks for it",
+    );
+    expect(flat).toContain("Do NOT fall back to S2S because a request is simple");
     // Custom UI gets concrete design constraints, not just "look nice" —
     // the preamble names the guide section that carries the full rules.
     expect(flat).toContain('"Design guidelines" section of the reference');
