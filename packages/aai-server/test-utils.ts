@@ -1,13 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
+import { type ChatStore, createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
-import { type ChatStore, createMemoryChatStore } from "./studio/chat-store.ts";
-import { createMemoryWorkspaceStore, type WorkspaceStore } from "./studio/workspace-store.ts";
+import { createMemoryWorkspaceStore, type WorkspaceStore } from "./workspace-store.ts";
 
 export const VALID_ENV: Record<string, string> = {};
 
@@ -191,3 +191,7 @@ export async function deployAgent(
     body: deployBody({ slug }),
   });
 }
+
+// Sandbox-VM fakes shared with the aai-studio-server package tests
+// (cross-package imports may not reach `_`-internal modules directly).
+export { createTestConn, makeWarm, writeResponse } from "./_sandbox-vm-test-utils.ts";

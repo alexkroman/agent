@@ -1,0 +1,9 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "incremental": true,
+    "tsBuildInfoFile": "../../.tsbuildinfo/aai-studio-server.tsbuildinfo",
+    "types": ["node", "vitest/globals"]
+  },
+  "include": ["."]
+}

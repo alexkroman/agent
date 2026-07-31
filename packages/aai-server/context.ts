@@ -12,13 +12,13 @@
 import type { Vector } from "@alexkroman1/aai/runtime";
 import type { Context } from "hono";
 import type { AppDatabases } from "./app-database.ts";
+import type { ChatStore } from "./chat-store.ts";
 import type { SlugEpochs } from "./platform-epoch.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
-import type { ChatStore } from "./studio/chat-store.ts";
-import type { WorkspaceStore } from "./studio/workspace-store.ts";
+import type { WorkspaceStore } from "./workspace-store.ts";
 
 export type HonoEnv = {
   Bindings: {

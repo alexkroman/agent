@@ -88,24 +88,9 @@ MAX_CONNECTIONS = 100  # per-replica WebSocket cap (node server enforces it)
 TARGET_INPUTS = 75  # scale-out set point (~75% of the session cap)
 MAX_INPUTS = 150  # sessions at cap + short-request headroom
 
-# Studio service scaling: requests are bounded HTTP/SSE (chat turns, file
-# edits, builds shipped to studio_build) — heavier per request than a voice
-# relay but with no per-connection pinning, so it scales on fewer, busier
-# inputs and can idle to zero.
-STUDIO_MIN_CONTAINERS = 0
-STUDIO_MAX_CONTAINERS = 5
-STUDIO_TARGET_INPUTS = 20
-STUDIO_MAX_INPUTS = 40
-
-# One region for the web server AND the guest sandboxes it creates. Left
-# unpinned, Modal placed the server in us-east-1 (AWS) and guest sandboxes in
-# uk-london-1 (OCI), so every host<->guest RPC (ctx.db, Vector, guest fetch
-# proxy, bundle/load) paid a transatlantic RTT inside latency-budgeted voice
-# turns. The server functions pin ``region=REGION`` and the image exports the
-# same value as ``MODAL_SANDBOX_REGION``, which modal-sandbox.ts passes to
-# every ``sandboxes.create`` — co-location holds by construction, and moving
-# the deployment is a one-line change here.
-REGION = "us-east-2"
+# The studio service deploys as its OWN Modal app from its own package —
+# see packages/aai-studio-server/modal_deploy.py. CI deploys each app only
+# when its package version changed (changeset-driven).
 
 # Repo root (this file lives at packages/aai-server/modal_deploy.py).
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -133,12 +118,14 @@ image = (
     .workdir("/app")
     .run_commands(
         "pnpm install --frozen-lockfile --ignore-scripts --prod=false",
-        # SDK + UI (default client) + CLI (client bundler) + studio client + server
+        # SDK + UI (default client) + CLI (client bundler) + studio client +
+        # server + studio server
         "pnpm --filter aai build"
         " && pnpm --filter aai-ui build"
         " && pnpm --filter @alexkroman1/aai-cli build"
         " && pnpm --filter aai-studio-client build"
-        " && pnpm --filter aai-server build",
+        " && pnpm --filter aai-server build"
+        " && pnpm --filter aai-studio-server build",
     )
     .env(
         {
@@ -146,7 +133,7 @@ image = (
             "PORT": str(PORT),
             "GUEST_HARNESS_PATH": "/app/packages/aai-server/dist/guest/deno-harness.mjs",
             # Studio builds run in the studio_build function below, not in the
-            # web server's process (see studio/studio-build-runner.ts).
+            # web server's process (see studio-build-runner.ts).
             "STUDIO_BUILD_BACKEND": "modal",
             # Guest sandboxes are pinned to the web server's region (above).
             "MODAL_SANDBOX_REGION": REGION,
@@ -188,34 +175,14 @@ def server() -> None:
     # the SDK uses api.modal.com with the tokens from the aai-server Secret.
     env.pop("MODAL_SERVER_URL", None)
     # Agent service when the studio upstream is wired (see "Split services"
-    # above); combined otherwise, so a fresh deployment works pre-wiring.
-    env.setdefault("AAI_SERVICE", "agent" if env.get("STUDIO_UPSTREAM_URL") else "combined")
-    subprocess.Popen(["node", "packages/aai-server/dist/index.mjs"], cwd="/app", env=env)
-
-
-# The standalone studio service — see "Split services" above. Same image and
-# Secret as the agent service (it deploys bundles, runs test_agent sandboxes,
-# and invokes studio_build), but its own containers and scaling policy, so
-# LLM-bound chat turns never compete with live voice sessions for CPU.
-@app.function(
-    image=image,
-    secrets=[modal.Secret.from_name("aai-server")],
-    region=REGION,
-    cpu=1,
-    memory=2048,
-    min_containers=STUDIO_MIN_CONTAINERS,
-    max_containers=STUDIO_MAX_CONTAINERS,
-    # Chat turns are bounded requests (no session drain); the window only
-    # needs to outlast in-flight turns.
-    scaledown_window=120,
-)
-@modal.concurrent(max_inputs=STUDIO_MAX_INPUTS, target_inputs=STUDIO_TARGET_INPUTS)
-@modal.web_server(port=PORT, startup_timeout=180)
-def studio() -> None:
-    env = os.environ.copy()
-    env.pop("MODAL_SERVER_URL", None)  # same JS-SDK footgun as `server`
-    env["AAI_SERVICE"] = "studio"
-    subprocess.Popen(["node", "packages/aai-server/dist/index.mjs"], cwd="/app", env=env)
+    # above); the combined single-process entry (aai-studio-server package)
+    # otherwise, so a fresh deployment works pre-wiring.
+    if env.get("STUDIO_UPSTREAM_URL"):
+        entry = "packages/aai-server/dist/index.mjs"
+    else:
+        env["AAI_SERVICE"] = "combined"
+        entry = "packages/aai-studio-server/dist/index.mjs"
+    subprocess.Popen(["node", entry], cwd="/app", env=env)
 
 
 # The studio build worker. The web server ships each studio build here (see
@@ -241,7 +208,7 @@ def studio_build(request: str) -> str:
         proc = subprocess.run(
             [
                 "node",
-                "packages/aai-server/dist/studio/studio-build-entry.mjs",
+                "packages/aai-studio-server/dist/studio-build-entry.mjs",
                 str(request_path),
                 str(response_path),
             ],

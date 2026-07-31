@@ -31,6 +31,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AppDatabases } from "./app-database.ts";
 import { applyPlatformMiddleware } from "./app-middleware.ts";
+import type { ChatStore } from "./chat-store.ts";
 import { handleAgentClientConfig } from "./client-config-handler.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
@@ -56,15 +57,6 @@ import {
   handleStorageStatus,
 } from "./storage-handler.ts";
 import type { BundleStore } from "./store-types.ts";
-import type { ChatStore } from "./studio/chat-store.ts";
-import type { StudioRateLimiters } from "./studio/studio-rate-limit.ts";
-import { createStudioRoutes } from "./studio/studio-routes.ts";
-import {
-  handleStudioClientAsset,
-  handleStudioFavicon,
-  handleStudioPage,
-} from "./studio/studio-static.ts";
-import type { WorkspaceStore } from "./studio/workspace-store.ts";
 import { createStudioProxy } from "./studio-proxy.ts";
 import {
   handleAgentFavicon,
@@ -73,6 +65,7 @@ import {
   handleClientAsset,
 } from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
+import type { WorkspaceStore } from "./workspace-store.ts";
 
 export type OrchestratorOpts = {
   slots: SlotCache;
@@ -95,8 +88,6 @@ export type OrchestratorOpts = {
    * production; defaults to memory (local-only invalidation).
    */
   slugEpochs?: SlugEpochs;
-  /** Studio rate limiters. Postgres-backed in production; defaults to memory. */
-  studioRateLimiters?: StudioRateLimiters;
   /**
    * Cross-replica session-resume persistence (guest ctx.state + remember
    * notes). Postgres-backed in production; defaults to memory.
@@ -166,15 +157,15 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     opts.isDraining?.() ? c.json({ status: "draining" }, 503) : c.json({ status: "ok" }),
   );
 
-  // Browser studio: loading the server root gives a coding agent that can
-  // build and deploy voice agents from the browser. `studio` and
+  // The studio surface. This app never serves it in-process anymore — the
+  // studio is its own package/service (aai-studio-server). Two modes here:
+  // reverse-proxy to the studio service (split deployment, `studioUpstream`
+  // set — keeps ONE public origin, which the preview iframe's SAMEORIGIN
+  // framing requires), or agent-only (no studio surface; the combined
+  // single-process composition lives in aai-studio-server's entry, which
+  // dispatches between this app and the studio app). `studio` and
   // `studio-assets` are reserved slugs (RESERVED_SLUGS) so no agent route
-  // can shadow the API namespace or the client assets.
-  //
-  // Two modes: mounted in-process (combined service — dev and the default),
-  // or reverse-proxied to the standalone studio service (split deployment,
-  // `studioUpstream` set). The proxy keeps the studio on THIS origin, which
-  // the preview iframe's SAMEORIGIN framing requires.
+  // can shadow the namespace in any mode.
   if (opts.studioUpstream) {
     const proxy = createStudioProxy(opts.studioUpstream, opts.studioProxyFetch);
     app.get("/", proxy);
@@ -183,19 +174,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     app.all("/studio", proxy);
     app.all("/studio/*", proxy);
   } else {
-    app.get("/", handleStudioPage);
-    // Safe alongside agent routes: `favicon.ico` can never be a slug (dots
-    // are outside the slug grammar), so no agent route can shadow it.
-    app.get("/favicon.ico", handleStudioFavicon);
-    app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
-    app.route(
-      "/studio",
-      createStudioRoutes({
-        pool: opts.pool,
-        ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
-      }),
-    );
-    app.get("/studio/", (c) => c.redirect("/", 302));
+    app.get("/", (c) => c.json({ service: "aai-agent", studio: "not served by this deployment" }));
   }
 
   // Cap the on-the-wire deploy body (compressed or not) before anything

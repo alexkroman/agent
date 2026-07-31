@@ -18,9 +18,12 @@ export default defineConfig({
     exclude: ["orchestrator-integration.test.ts", "ws-integration.test.ts", "node_modules", "dist"],
     coverage: {
       exclude: [...sharedCoverageExclude],
-      // Ratchet: floors only move up. Raise to ~2-3 points below actuals
+      // Ratchet: floors only move up (functions eased 88→85 once, when the
+      // studio surface — its most function-dense code — moved to the
+      // aai-studio-server package and took its coverage with it).
+      // Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
-      thresholds: { lines: 89, functions: 88, branches: 74, statements: 87 },
+      thresholds: { lines: 89, functions: 85, branches: 74, statements: 87 },
     },
   },
 });

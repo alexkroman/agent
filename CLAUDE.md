@@ -120,7 +120,8 @@ Six workspace packages under `packages/`:
 | `packages/aai/` | `@alexkroman1/aai` | Shared core: manifest, types, protocol, S2S, session, Db |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
-| `packages/aai-server/` | `aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
+| `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks/epochs |
+| `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds, combined entry |
 | `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
 
@@ -592,7 +593,18 @@ What deliberately stays in-process, and why it doesn't break statelessness:
 
 ### Split services (aai-server)
 
-One package, one node binary, three surfaces selected by `AAI_SERVICE`:
+Two packages, one surface each. `aai-server` is the AGENT service plus the
+shared platform core (stores, locks, epochs, sandbox machinery — exported to
+the sibling via `"./*": "./*.ts"` exports; `platform-barrel.ts` is the
+sanctioned path to its `_`-internal utilities). `aai-studio-server` is the
+STUDIO service; its entry also hosts the `combined` composition (`AAI_SERVICE`
+combined|studio — a path dispatcher over both apps, which is what
+`pnpm dev:aai-server` and pre-split deployments run; each production entry is
+one tsdown bundle with `aai`/`aai-server` compiled in, so module-level state
+has exactly one copy per process). Deploys are per-service Modal apps
+(`aai-server-web`, `aai-studio-web`, each package's `modal_deploy.py`), and
+`.github/workflows/deploy.yml` redeploys an app only when its package version
+changed — i.e. only when a changeset touched it. Surfaces by `AAI_SERVICE`:
 `combined` (default — what `aai dev`, tests, and pre-split deployments run),
 `agent` (voice sessions + platform API), and `studio` (the browser studio as
 its own service, `studio/studio-app.ts`). The split exists because the two

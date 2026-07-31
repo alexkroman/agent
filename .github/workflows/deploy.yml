@@ -1,0 +1,69 @@
+# Deploys each platform service to Modal — but ONLY when that service's
+# package version changed in the push. Versions only move via changesets
+# (the merged "Version Packages" PR), so a changeset for aai-server ships
+# the agent app, a changeset for aai-studio-server ships the studio app,
+# and a docs-only merge ships nothing.
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  changed:
+    runs-on: ubuntu-latest
+    outputs:
+      agent: ${{ steps.diff.outputs.agent }}
+      studio: ${{ steps.diff.outputs.studio }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - id: diff
+        name: Detect changeset version bumps
+        run: |
+          bumped() {
+            # True when the package's version field changed in this push —
+            # the changesets release commit is the only thing that moves it.
+            git diff HEAD^ HEAD -- "packages/$1/package.json" | grep -q '^+.*"version":'
+          }
+          echo "agent=$(bumped aai-server && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          echo "studio=$(bumped aai-studio-server && echo true || echo false)" >> "$GITHUB_OUTPUT"
+
+  deploy-agent:
+    needs: changed
+    if: needs.changed.outputs.agent == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install modal
+      - name: Deploy agent service (Modal app aai-server-web)
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: modal deploy packages/aai-server/modal_deploy.py
+
+  deploy-studio:
+    needs: changed
+    if: needs.changed.outputs.studio == 'true'
+    runs-on: ubuntu-latest
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install modal
+      - name: Deploy studio service (Modal app aai-studio-web)
+        env:
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}
+        run: modal deploy packages/aai-studio-server/modal_deploy.py
