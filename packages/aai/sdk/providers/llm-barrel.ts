@@ -35,4 +35,6 @@ export * from "./llm/mistral.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./llm/openai.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
+export * from "./llm/openrouter.ts";
+// biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./llm/xai.ts";

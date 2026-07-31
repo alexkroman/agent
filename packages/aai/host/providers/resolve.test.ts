@@ -16,6 +16,7 @@ import { GOOGLE_KIND } from "../../sdk/providers/llm/google.ts";
 import { GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
 import { MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
 import { OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
+import { OPENROUTER_KIND } from "../../sdk/providers/llm/openrouter.ts";
 import { XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import type { LlmProvider, SttOpener } from "../../sdk/providers.ts";
 import {
@@ -71,6 +72,11 @@ const cases: ProviderCase[] = [
     label: "AssemblyAI",
   },
   {
+    provider: { kind: OPENROUTER_KIND, options: { model: "meta-llama/llama-3.3-70b-instruct" } },
+    envVar: "OPENROUTER_API_KEY",
+    label: "OpenRouter",
+  },
+  {
     provider: { kind: GATEWAY_KIND, options: { model: "zai/glm-4.6" } },
     envVar: "AI_GATEWAY_API_KEY",
     label: "Vercel AI Gateway",
@@ -105,7 +111,7 @@ describe("resolveLlm", () => {
     const bogus = { kind: "claude-direct", options: {} } as unknown as LlmProvider;
     expect(() => resolveLlm(bogus, {})).toThrow(/Unknown LLM provider kind: "claude-direct"/);
     expect(() => resolveLlm(bogus, {})).toThrow(
-      /anthropic.*openai.*google.*mistral.*xai.*groq.*gateway.*assemblyai/,
+      /anthropic.*openai.*google.*mistral.*xai.*groq.*openrouter.*gateway.*assemblyai/,
     );
   });
 
@@ -118,6 +124,22 @@ describe("resolveLlm", () => {
       // The gateway keeps the full "creator/model" string as the model id
       // and dispatches routing service-side.
       expect(model).toMatchObject({ provider: "gateway", modelId: "zai/glm-4.6" });
+    });
+  });
+
+  describe("OpenRouter", () => {
+    it("resolves a creator/model id to a chat-completions model", () => {
+      const model = resolveLlm(
+        { kind: OPENROUTER_KIND, options: { model: "meta-llama/llama-3.3-70b-instruct" } },
+        { OPENROUTER_API_KEY: "fake-key" },
+      );
+      // OpenRouter implements /chat/completions; the `.chat` suffix in the
+      // provider id is the observable handle on that dispatch, and the full
+      // "creator/model" string stays the model id (routing is service-side).
+      expect(model).toMatchObject({
+        provider: "openrouter.chat",
+        modelId: "meta-llama/llama-3.3-70b-instruct",
+      });
     });
   });
 

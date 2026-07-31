@@ -644,6 +644,13 @@ Reference providers shipped today:
   - `mistral({ model })` — `MISTRAL_API_KEY`
   - `xai({ model })` — `XAI_API_KEY`
   - `groq({ model })` — `GROQ_API_KEY`
+  - `openrouter({ model })` — `OPENROUTER_API_KEY`; routes through
+    [OpenRouter](https://openrouter.ai)'s OpenAI-compatible
+    chat-completions endpoint, one key fronting hundreds of models
+    addressed as `"creator/model"` (e.g.
+    `openrouter({ model: "meta-llama/llama-3.3-70b-instruct" })`).
+    Resolved via `@ai-sdk/openai`'s `.chat()` client pointed at the
+    OpenRouter base URL — no extra `@ai-sdk/*` dependency.
   - `gateway({ model })` — `AI_GATEWAY_API_KEY`; routes through the
     [Vercel AI Gateway](https://vercel.com/docs/ai-gateway), one endpoint
     fronting hundreds of models addressed as `"creator/model"` (e.g.
@@ -1090,7 +1097,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
 | `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
-| `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `gateway`) |
+| `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway`) |
 | `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
 | `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox |
