@@ -191,21 +191,44 @@ function formatDiff(before: string, after: string, context = 3): string {
   return out.join("\n");
 }
 
-export type EditResult = { content: string; diff: string };
+export type EditResult = { content: string; diff: string; replacements: number };
 
 /**
- * Replace `oldText` with `newText` in `content`, exactly once.
+ * Replace every match of `needle`, exact-first-then-fuzzy per occurrence.
+ * Resumes the search after each replacement, so a `to` that contains the
+ * needle can't be re-matched (no runaway loop) and overlaps are impossible.
+ */
+function replaceAllMatches(haystack: string, needle: string, to: string): [string, number] {
+  const out: string[] = [];
+  let rest = haystack;
+  let count = 0;
+  for (;;) {
+    const match = findText(rest, needle);
+    if (!match) break;
+    out.push(rest.slice(0, match.start), to);
+    rest = rest.slice(match.end);
+    count += 1;
+  }
+  out.push(rest);
+  return [out.join(""), count];
+}
+
+/**
+ * Replace `oldText` with `newText` in `content` — exactly once, or at every
+ * occurrence with `replaceAll` (the rename case, where requiring a unique
+ * match would force one edit per call site).
  *
- * @throws {StudioEditError} when the text is absent or ambiguous — both are
- * cases where guessing would corrupt the file, so the agent is told to try
- * again with more context rather than having an edit applied to the wrong
- * occurrence.
+ * @throws {StudioEditError} when the text is absent or (without `replaceAll`)
+ * ambiguous — both are cases where guessing would corrupt the file, so the
+ * agent is told to try again with more context rather than having an edit
+ * applied to the wrong occurrence.
  */
 export function applyEdit(
   path: string,
   content: string,
   oldText: string,
   newText: string,
+  opts: { replaceAll?: boolean | undefined } = {},
 ): EditResult {
   const bom = content.startsWith("﻿") ? "﻿" : "";
   const body = bom ? content.slice(1) : content;
@@ -218,26 +241,39 @@ export function applyEdit(
     throw new StudioEditError(`oldText must not be empty (editing ${path})`);
   }
 
-  const match = findText(normalized, from);
-  if (!match) {
-    throw new StudioEditError(
-      `Could not find that text in ${path}. It must match the file exactly, ` +
-        "including whitespace and newlines — read the file and copy the text verbatim.",
-    );
-  }
+  let updated: string;
+  let replacements: number;
+  if (opts.replaceAll) {
+    [updated, replacements] = replaceAllMatches(normalized, from, to);
+    if (replacements === 0) {
+      throw new StudioEditError(
+        `Could not find that text in ${path}. It must match the file exactly, ` +
+          "including whitespace and newlines — read the file and copy the text verbatim.",
+      );
+    }
+  } else {
+    const match = findText(normalized, from);
+    if (!match) {
+      throw new StudioEditError(
+        `Could not find that text in ${path}. It must match the file exactly, ` +
+          "including whitespace and newlines — read the file and copy the text verbatim.",
+      );
+    }
 
-  const occurrences = countOccurrences(match.occurrenceHaystack, match.occurrenceNeedle);
-  if (occurrences > 1) {
-    throw new StudioEditError(
-      `Found ${occurrences} occurrences of that text in ${path}. It must be unique — ` +
-        "include surrounding lines so the match is unambiguous.",
-    );
-  }
+    const occurrences = countOccurrences(match.occurrenceHaystack, match.occurrenceNeedle);
+    if (occurrences > 1) {
+      throw new StudioEditError(
+        `Found ${occurrences} occurrences of that text in ${path}. Include surrounding ` +
+          "lines so the match is unambiguous, or pass replaceAll: true to change every one.",
+      );
+    }
 
-  // Spliced into the original content in both the exact and the fuzzy case,
-  // and diffed original-vs-updated — only the matched region ever changes,
-  // and the diff shows exactly the bytes that did.
-  const updated = normalized.slice(0, match.start) + to + normalized.slice(match.end);
+    // Spliced into the original content in both the exact and the fuzzy case,
+    // and diffed original-vs-updated — only the matched region ever changes,
+    // and the diff shows exactly the bytes that did.
+    updated = normalized.slice(0, match.start) + to + normalized.slice(match.end);
+    replacements = 1;
+  }
   if (updated === normalized) {
     throw new StudioEditError(`No change: the replacement is identical to the original in ${path}`);
   }
@@ -245,5 +281,6 @@ export function applyEdit(
   return {
     content: bom + restoreEndings(updated, ending),
     diff: formatDiff(normalized, updated),
+    replacements,
   };
 }

@@ -171,8 +171,39 @@ describe("createStudioTools", () => {
       "list_files",
       "read_file",
       "test_agent",
+      "todo_write",
       "write_file",
     ]);
+  });
+
+  test("edit_file replaceAll rewrites every occurrence", async () => {
+    const deps = await makeDeps();
+    const tools = createStudioTools(deps);
+    const out = await tools.edit_file.execute?.(
+      { path: "agent.ts", oldText: "agent", newText: "AGENT", replaceAll: true },
+      toolOpts(),
+    );
+    expect(out).toMatch(/Edited agent\.ts \(\d+ replacements\)/);
+    const ws = await getWorkspace(deps.workspaces, SCOPE, PROJECT);
+    expect(ws?.files["agent.ts"]).not.toContain("agent(");
+    expect(ws?.files["agent.ts"]).toContain("AGENT(");
+  });
+
+  test("todo_write echoes the rendered list back as the tool result", async () => {
+    const tools = createStudioTools(await makeDeps());
+    const out = await tools.todo_write.execute?.(
+      {
+        todos: [
+          { content: "Add add_pizza tool", status: "completed" },
+          { content: "Add remove_pizza tool", status: "in_progress" },
+          { content: "Run test_agent", status: "pending" },
+        ],
+      },
+      toolOpts(),
+    );
+    expect(out).toBe(
+      "[x] Add add_pizza tool\n[>] Add remove_pizza tool\n[ ] Run test_agent\n\n2 remaining",
+    );
   });
 
   test("file tools share one workspace read per turn", async () => {

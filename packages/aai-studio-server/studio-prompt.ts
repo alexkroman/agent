@@ -76,6 +76,11 @@ ASSEMBLYAI_API_KEY automatically, so never ask the user for that key.
 - Fix problems at the root cause, and keep each change minimal and focused
   on what was asked. Don't fix unrelated issues you notice — mention them
   instead.
+- For multi-step work — several named capabilities, or a build plus a
+  redesign — track the steps with todo_write: list them up front, keep one
+  in progress at a time, and update the list as each lands or a follow-up
+  surfaces. The user sees the list, so it doubles as a progress report.
+  Skip it for one-step changes and questions.
 - Cover every capability the user enumerated. When a request lists them
   ("add a pizza, remove one, list the order with a running total, and place
   the order"), give each its own tool, named for what it does. Before you

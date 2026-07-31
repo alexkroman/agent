@@ -24,6 +24,45 @@ describe("applyEdit", () => {
   test("refuses an ambiguous match rather than editing the wrong one", () => {
     const doubled = 'const a = "x";\nconst b = "x";\n';
     expect(() => applyEdit("f.ts", doubled, '"x"', '"y"')).toThrow(/2 occurrences/);
+    // The refusal must teach the way out — replaceAll is the rename escape.
+    expect(() => applyEdit("f.ts", doubled, '"x"', '"y"')).toThrow(/replaceAll/);
+  });
+
+  test("replaceAll replaces every occurrence and reports the count", () => {
+    const file = "const cnt = 1;\nuse(cnt);\nreturn cnt + cnt;\n";
+    const { content, replacements } = applyEdit("f.ts", file, "cnt", "count", {
+      replaceAll: true,
+    });
+    expect(content).toBe("const count = 1;\nuse(count);\nreturn count + count;\n");
+    expect(replacements).toBe(4);
+  });
+
+  test("replaceAll terminates when the replacement contains the needle", () => {
+    // Each replacement's output must not be re-matched, or "x" → "xx" loops.
+    const { content, replacements } = applyEdit("f.ts", "x y x\n", "x", "xx", {
+      replaceAll: true,
+    });
+    expect(content).toBe("xx y xx\n");
+    expect(replacements).toBe(2);
+  });
+
+  test("replaceAll fuzzy-matches each occurrence independently", () => {
+    const file = "say(“hi”);\nlog(“hi”);\n";
+    const { content, replacements } = applyEdit("f.ts", file, '"hi"', '"yo"', {
+      replaceAll: true,
+    });
+    expect(content).toBe('say("yo");\nlog("yo");\n');
+    expect(replacements).toBe(2);
+  });
+
+  test("replaceAll still refuses a missing match", () => {
+    expect(() => applyEdit("f.ts", FILE, "absent", "x", { replaceAll: true })).toThrow(
+      StudioEditError,
+    );
+  });
+
+  test("a single-match edit reports one replacement", () => {
+    expect(applyEdit("agent.ts", FILE, '"My Agent"', '"Other"').replacements).toBe(1);
   });
 
   test("refuses a missing match instead of guessing", () => {
