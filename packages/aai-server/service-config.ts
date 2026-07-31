@@ -11,6 +11,7 @@ import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { createStorage } from "unstorage";
 import { isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
+import { resolveSandboxBackend } from "./apple-container-sandbox.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
@@ -173,11 +174,22 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
 }
 
 /**
- * Sandboxes run on Modal — fail at boot when credentials are missing, where
- * the cause is obvious, instead of on the first session's spawn. Local dev
- * only warns so non-sandbox surfaces stay usable without Modal credentials.
+ * Boot-time sandbox-backend check, so a misconfiguration fails (or warns)
+ * where the cause is obvious instead of on the first session's spawn.
+ *
+ * Developer mode on macOS (or an explicit `SANDBOX_BACKEND=apple-container`)
+ * runs guests in local Apple containers and needs no Modal credentials.
+ * Everything else runs on Modal: production fails at boot without
+ * credentials; local dev only warns so non-sandbox surfaces stay usable.
  */
-export function assertModalOrWarn(env: NodeJS.ProcessEnv): void {
+export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
+  if (resolveSandboxBackend(env) === "apple-container") {
+    console.info(
+      "[sandbox] Developer mode: guest sandboxes run in local Apple containers " +
+        "(`container` CLI). Set SANDBOX_BACKEND=modal to use Modal instead.",
+    );
+    return;
+  }
   if (!isModalConfigured()) {
     if (isLocalDev(env)) {
       console.warn(

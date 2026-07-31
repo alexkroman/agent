@@ -75,7 +75,8 @@
         "aai-guest"
       ],
       "ignoreBinaries": [
-        "modal"
+        "modal",
+        "container"
       ]
     },
     "packages/aai-studio-client": {
