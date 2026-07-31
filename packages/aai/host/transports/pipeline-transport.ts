@@ -279,6 +279,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       repairToolCall: createToolCallRepair(opts.llm, log, () => ctl.signal),
       maxSteps,
       holdPhrase,
+      // An open speech edge means an utterance is in progress (0 when not).
+      callerSpeaking: () => speechEdges.durationMs() > 0,
       sendTtsText,
       callbacks,
       emitError,

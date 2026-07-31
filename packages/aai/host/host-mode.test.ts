@@ -263,6 +263,35 @@ describe("buildHostAgent", () => {
     const agent = buildHostAgent({ systemPrompt: "P", tools: [] });
     expect(agent.greeting).toBe("");
   });
+
+  test("carries the host block's sttPrompt so the client can bias transcription", () => {
+    // A host-mode client owns the task vocabulary (spelled-out order IDs,
+    // product codes) but could previously only steer the LLM, not the STT —
+    // leaving the pipeline to transcribe domain identifiers unbiased.
+    const agent = buildHostAgent({
+      systemPrompt: "P",
+      tools: [],
+      sttPrompt: "Identifiers are read letter by letter, e.g. 'P O 999'.",
+    });
+    expect(agent.sttPrompt).toBe("Identifiers are read letter by letter, e.g. 'P O 999'.");
+  });
+
+  test("host sttPrompt overrides the base agent's, and the base value survives when omitted", () => {
+    const base = {
+      name: "deployed",
+      systemPrompt: "base",
+      sttPrompt: "base terms",
+      greeting: "",
+      maxSteps: 5,
+      tools: {},
+    };
+    expect(
+      buildHostAgent({ systemPrompt: "P", tools: [], sttPrompt: "host terms" }, base).sttPrompt,
+    ).toBe("host terms");
+    // Omitted in the host block → the operator's configured prompt stands, the
+    // same inheritance rule the provider triple follows.
+    expect(buildHostAgent({ systemPrompt: "P", tools: [] }, base).sttPrompt).toBe("base terms");
+  });
 });
 
 describe("startHostSession (deferred host handshake)", () => {

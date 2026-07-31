@@ -62,6 +62,19 @@ type StreamPartHandlerDeps = {
    * post-cancel silence (and polluting the interrupted-turn transcript).
    */
   signal?: AbortSignal | undefined;
+  /**
+   * Is the caller speaking right now? Filler is silence-cover, so playing it
+   * over a live utterance is worse than the silence it exists to hide: the
+   * caller hears the agent talk across them, and (measured on EVA's
+   * turn-taking metric) it registers as an agent interruption — 1.5s of
+   * simultaneous speech on one turn, scored 0.13 out of 1.
+   *
+   * This is the case `interruptionMinDurationMs` deliberately leaves open: a
+   * continuation too short to count as a barge-in does not cancel the reply, so
+   * without this check the hold phrase talks over it. Omitted by callers with no
+   * speech tracking, which keeps the filler unconditional as before.
+   */
+  callerSpeaking?: (() => boolean) | undefined;
   log: Logger;
   sid: string;
 };
@@ -129,6 +142,7 @@ export type StreamPartHandler = {
 export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPartHandler {
   const { onDelta, sendTtsText, onToolCall, onToolCallDone, emitError, signal, log, sid } = deps;
   const holdPhrase = deps.holdPhrase ?? DEFAULT_HOLD_PHRASE;
+  const callerSpeaking = deps.callerSpeaking ?? ((): boolean => false);
   const ttsBoundary = deps.onTtsBoundary ?? ((): void => undefined);
   let pendingSeparator = false;
   let lastChar = "";
@@ -184,6 +198,12 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     // listener below clears the timer, but a callback already dispatched (or
     // an abort that raced the arm) must still no-op.
     if (signal?.aborted) return;
+    // The caller is talking — the gap is already filled, by them. Re-arm and
+    // cover the next gap instead of speaking across this one.
+    if (callerSpeaking()) {
+      armCover();
+      return;
+    }
     const phrase = DEAD_AIR_COVER_PHRASES[coverCount % DEAD_AIR_COVER_PHRASES.length] ?? "";
     coverCount += 1;
     emitText(phrase, false);
@@ -249,7 +269,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         // Guarantee the caller hears a hold phrase if the model jumps straight
         // to a tool call without speaking. Fire once per turn; separate it from
         // the model's later reply so they don't fuse.
-        if (!(spokeText || holdEmitted) && holdPhrase.length > 0) {
+        if (!(spokeText || holdEmitted) && holdPhrase.length > 0 && !callerSpeaking()) {
           holdEmitted = true;
           emitText(holdPhrase, false);
           pendingSeparator = true;

@@ -9,6 +9,7 @@ import { describe, expect, test, vi } from "vitest";
 import {
   DEFAULT_MIN_TURN_SILENCE_MS,
   DEFAULT_SESSION_START_TIMEOUT_MS,
+  DEFAULT_STT_PROMPT,
   STT_CONNECT_MAX_RETRIES,
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,
@@ -114,6 +115,92 @@ describe("assemblyAI STT adapter — fixture replay", () => {
   });
 });
 
+describe("assemblyAI STT adapter — raw turn trace (AAI_DEBUG)", () => {
+  /**
+   * Load a fresh module graph with debug logging on, so `consoleLogger.debug`
+   * (bound at import time from `debugLoggingEnabled`) is live `console.debug`.
+   */
+  async function withDebugModule(): Promise<{
+    open: typeof openAssemblyAI;
+    debugSpy: ReturnType<typeof vi.spyOn>;
+  }> {
+    vi.stubEnv("AAI_DEBUG", "1");
+    vi.resetModules();
+    const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => undefined);
+    const mod = await import("./assemblyai.ts");
+    return { open: mod.openAssemblyAI, debugSpy };
+  }
+
+  test("traces each raw turn event with its end_of_turn and formatted flags", async () => {
+    // Diagnosing "the model called a tool with an argument the user never
+    // said" needs the provider's raw view: a word can appear in an interim
+    // turn and be revised out of the final one. Without end_of_turn /
+    // turn_is_formatted on the trace, an STT revision is indistinguishable
+    // from the transport dropping a final.
+    const { open, debugSpy } = await withDebugModule();
+    const provider = open({ model: "u3pro-rt" });
+    const session = (await provider.open({
+      sampleRate: 16_000,
+      apiKey: "k",
+      signal: new AbortController().signal,
+    })) as AssemblyAISession;
+    const fake = session._transcriber as unknown as FakeTranscriber;
+
+    fake._fire("turn", { transcript: "track my order T-O-999", end_of_turn: false } as TurnEvent);
+    fake._fire("turn", {
+      transcript: "I've been waiting on that one.",
+      end_of_turn: true,
+      turn_is_formatted: true,
+    } as TurnEvent);
+    await flush();
+
+    expect(debugSpy).toHaveBeenCalledWith(
+      "AssemblyAI STT turn",
+      expect.objectContaining({
+        transcript: "track my order T-O-999",
+        endOfTurn: false,
+      }),
+    );
+    expect(debugSpy).toHaveBeenCalledWith(
+      "AssemblyAI STT turn",
+      expect.objectContaining({
+        transcript: "I've been waiting on that one.",
+        endOfTurn: true,
+        formatted: true,
+      }),
+    );
+
+    await session.close();
+    vi.unstubAllEnvs();
+    debugSpy.mockRestore();
+  });
+
+  test("traces empty-transcript turns, which are otherwise dropped silently", async () => {
+    // The adapter returns early on empty text; without a trace those events
+    // are invisible, and "STT went quiet" looks the same as "no audio".
+    const { open, debugSpy } = await withDebugModule();
+    const provider = open({ model: "u3pro-rt" });
+    const session = (await provider.open({
+      sampleRate: 16_000,
+      apiKey: "k",
+      signal: new AbortController().signal,
+    })) as AssemblyAISession;
+    const fake = session._transcriber as unknown as FakeTranscriber;
+
+    fake._fire("turn", { transcript: "", end_of_turn: true } as TurnEvent);
+    await flush();
+
+    expect(debugSpy).toHaveBeenCalledWith(
+      "AssemblyAI STT turn",
+      expect.objectContaining({ transcript: "", endOfTurn: true }),
+    );
+
+    await session.close();
+    vi.unstubAllEnvs();
+    debugSpy.mockRestore();
+  });
+});
+
 describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", () => {
   test("universal-3-5-pro: passes agentContext at connect and updates it mid-stream", async () => {
     const session = await openSession(
@@ -191,6 +278,36 @@ describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", ()
     session.updateAgentContext?.("Sure, I can help with that.");
     expect(fake.updateConfigurationCalls).toEqual([]);
 
+    await session.close();
+  });
+});
+
+describe("assemblyAI STT adapter — prompt default", () => {
+  test("sends no prompt when the agent configures none (default is empty)", async () => {
+    // Biasing is opt-in: a generic identifier prompt measured no better than
+    // none, and an off-target one steers the transcript toward vocabulary the
+    // caller never used. Agents that need it supply their own.
+    expect(DEFAULT_STT_PROMPT).toBe("");
+    const session = await openSession({ model: "universal-3-5-pro" });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+    expect("prompt" in fake.params).toBe(false);
+    await session.close();
+  });
+
+  test("an agent's own sttPrompt replaces the default", async () => {
+    const session = await openSession(
+      { model: "universal-3-5-pro" },
+      { sttPrompt: "Terms: dosage names." },
+    );
+    const fake = session._transcriber as unknown as FakeTranscriber;
+    expect(fake.params.prompt).toBe("Terms: dosage names.");
+    await session.close();
+  });
+
+  test("sttPrompt: '' opts out — no prompt param at all", async () => {
+    const session = await openSession({ model: "universal-3-5-pro" }, { sttPrompt: "" });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+    expect("prompt" in fake.params).toBe(false);
     await session.close();
   });
 });
