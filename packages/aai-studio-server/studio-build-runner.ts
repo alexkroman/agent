@@ -36,8 +36,12 @@ import {
 } from "./studio-build-protocol.ts";
 import { StudioBuildError } from "./studio-errors.ts";
 
-/** Modal app the build function deploys under (the web server's own app). */
-const DEFAULT_BUILD_APP = "aai-server-web";
+/**
+ * Modal app the build function deploys under — the studio's own app (this
+ * package's modal_deploy.py), so the build entry's code and its deployment
+ * version together: a changeset touching this package redeploys both.
+ */
+const DEFAULT_BUILD_APP = "aai-studio-web";
 const DEFAULT_BUILD_FUNCTION = "studio_build";
 /** Build deadline; generous because a cold Publish runs two Vite passes. */
 const DEFAULT_BUILD_TIMEOUT_MS = 180_000;
