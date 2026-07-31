@@ -89,18 +89,17 @@ describe("api", () => {
     expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
   });
 
-  test("project and path segments are URL-encoded", async () => {
+  test("project segments are URL-encoded", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ ok: true }));
-    await api.deleteFile("k", "my project", "src/a b.ts");
+    await api.getProject("k", "my project");
     const [url] = fetchMock.mock.calls[0] as [string];
-    expect(url).toBe("/studio/projects/my%20project/file?path=src%2Fa%20b.ts");
+    expect(url).toBe("/studio/projects/my%20project");
   });
 
-  test("getProject / writeFile / deleteProject / deploy hit their routes", async () => {
+  test("getProject / writeFile / deploy hit their routes", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ ok: true, slug: "s", url: "u", files: {} }));
     await api.getProject("k", "p");
     await api.writeFile("k", "p", "agent.ts", "code");
-    await api.deleteProject("k", "p");
     await api.deploy("k", "p", { A: "1" });
     const calls = fetchMock.mock.calls.map((c) => {
       const [url, init] = c as [string, RequestInit | undefined];
@@ -109,7 +108,6 @@ describe("api", () => {
     expect(calls).toEqual([
       "GET /studio/projects/p",
       "PUT /studio/projects/p/file",
-      "DELETE /studio/projects/p",
       "POST /studio/projects/p/deploy",
     ]);
   });

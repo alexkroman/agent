@@ -14,14 +14,13 @@
  * - `GET  /:slug/client-config`  — pre-connection client config (name/greeting)
  * - `GET  /:slug/favicon.ico`    — agent page favicon (custom or default)
  * - `GET  /:slug/assets/:path`   — client static assets
- * - `POST /:slug/deploy`         — owner: re-deploy agent
  * - `DELETE /:slug/`             — owner: delete agent
  * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
  * - `GET/POST/DELETE /:slug/storage` — owner: per-app database storage
  * - `POST /:slug/vector`         — owner: Vector store operations
  * - `WS   /:slug/websocket`     — WebSocket upgrade for voice sessions
  *
- * Auth: `authMw` validates API key; `ownerMw` verifies slug ownership.
+ * Auth: `authMw` validates API key; `existingOwnerMw` verifies slug ownership.
  * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
  */
 
@@ -36,10 +35,10 @@ import type { AppDatabases } from "./app-database.ts";
 import { handleAgentClientConfig } from "./client-config-handler.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
-import { handleDeploy, handleDeployNew } from "./deploy.ts";
+import { handleDeployNew } from "./deploy.ts";
 import { createErrorHandler } from "./error-handler.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
-import { authMw, existingOwnerMw, ownerMw, slugMw } from "./middleware.ts";
+import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveAgentVector } from "./sandbox.ts";
@@ -206,17 +205,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const agents = new Hono<HonoEnv>();
   agents.use("*", slugMw);
 
-  // Deploy claims a new slug, so it uses ownerMw (unclaimed allowed). Every
-  // other owner-scoped route operates on an existing agent's data/secrets and
+  // Deploys go through the top-level `POST /deploy` (slug in the body). Every
+  // owner-scoped route here operates on an existing agent's data/secrets and
   // uses existingOwnerMw, which rejects unclaimed slugs.
-  agents.post(
-    "/deploy",
-    ownerMw,
-    deployBodyLimit,
-    gzipRequestMw,
-    zValidator("json", DeployBodySchema),
-    handleDeploy,
-  );
   agents.delete("/", existingOwnerMw, handleDelete);
   agents.get("/secret", existingOwnerMw, handleSecretList);
   agents.put("/secret", existingOwnerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);

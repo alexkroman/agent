@@ -150,14 +150,6 @@ describe("repairOpenAiStream", () => {
     expect(ids).toEqual(["call_real", "call_real"]);
   });
 
-  it("repairs a null choices spelled with a space after the colon", async () => {
-    // The pre-parse fast path checks substrings; both compact and
-    // single-space spellings must still reach the repair.
-    const spaced = '{"id": "x", "choices": null, "usage": {"total_tokens": 2}}';
-    const payloads = await repaired(sse(spaced));
-    expect(JSON.parse(payloads[0] ?? "{}")).toMatchObject({ choices: [] });
-  });
-
   it("passes lines that cannot need repair through without reserializing", async () => {
     // Non-canonical spacing and key order survive verbatim — JSON.stringify
     // would normalize both, so byte-equality proves the fast path skipped

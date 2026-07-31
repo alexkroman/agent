@@ -89,7 +89,7 @@ describe("assemblyAI STT adapter — fixture replay", () => {
       await readFile(join(here, "fixtures/assemblyai/basic-turn.json"), "utf8"),
     ) as Record<string, unknown>[];
 
-    const session = await openSession({ model: "u3pro-rt" });
+    const session = await openSession({ model: "universal-3-5-pro" });
 
     const partials: string[] = [];
     const finals: string[] = [];
@@ -131,11 +131,11 @@ describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", ()
     await session.close();
   });
 
-  test("universal-3-5-pro (u3pro-rt alias): trims agentContext to 1750 chars, both at connect and mid-stream", async () => {
+  test("u3-rt-pro: trims agentContext to 1750 chars, both at connect and mid-stream", async () => {
     const long = "x".repeat(2000);
     const trimmed = "x".repeat(1750);
 
-    const session = await openSession({ model: "u3pro-rt" }, { agentContext: long });
+    const session = await openSession({ model: "u3-rt-pro" }, { agentContext: long });
     const fake = session._transcriber as unknown as FakeTranscriber;
 
     expect(fake.params.agentContext).toBe(trimmed);

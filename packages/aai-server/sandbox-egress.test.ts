@@ -10,6 +10,7 @@
  */
 
 import { anthropic } from "@alexkroman1/aai/llm";
+import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { assemblyAI } from "@alexkroman1/aai/stt";
 import { cartesia } from "@alexkroman1/aai/tts";
 import { beforeEach, describe, expect, it, vi } from "vitest";
@@ -86,6 +87,7 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
     env: { AAI_ENV_TEST: "1" },
     slug: "test-agent",
     agentConfig: BASE_CONFIG,
+    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     ...overrides,
   };
 }

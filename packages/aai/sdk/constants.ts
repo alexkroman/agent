@@ -152,7 +152,6 @@ export const MAX_DESIGN_CSS_CHARS = 20_000;
 export const MAX_DESIGN_STYLESHEETS = 5;
 /** Cap on a `fetch_json` response body — bounds host memory on a hostile URL. */
 export const MAX_JSON_BYTES = 1_000_000;
-export const MAX_VALUE_SIZE = 65_536;
 export const DEFAULT_MAX_HISTORY = 200;
 /**
  * Max tool calls per reply — prevents runaway tool loops. Sized so a

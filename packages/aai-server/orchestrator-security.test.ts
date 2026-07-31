@@ -52,10 +52,10 @@ describe("cross-agent auth isolation", () => {
     await deployAgent(fetch, "agent-beta", "key-beta");
 
     // Alpha's key tries to redeploy over beta
-    const res = await fetch("/agent-beta/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: authHeaders("key-alpha"),
-      body: deployBody(),
+      body: deployBody({ slug: "agent-beta" }),
     });
     expect(res.status).toBe(403);
   });
@@ -106,18 +106,18 @@ describe("cross-agent auth isolation", () => {
 
     await deployAgent(fetch, "agent-alpha", "key-alpha");
 
-    // Use wrong key — error message should not confirm agent exists
-    const res = await fetch("/agent-alpha/deploy", {
+    // Use wrong key — error message should not echo the slug back
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: authHeaders("wrong-key"),
-      body: deployBody(),
+      body: deployBody({ slug: "agent-alpha" }),
     });
     expect(res.status).toBe(403);
     const body = (await res.json()) as { error: string };
-    // Message should be generic, not "agent-alpha is owned by someone else"
-    expect(body.error).toBe("Forbidden");
+    // The deploy route says the requested slug is taken (that is inherent to
+    // claiming a named slug) but never echoes the slug itself.
+    expect(body.error).toBe("Forbidden: slug already owned by another user");
     expect(body.error).not.toContain("agent-alpha");
-    expect(body.error).not.toContain("owned");
   });
 });
 
@@ -204,10 +204,10 @@ describe("multi-tenant deploy isolation", () => {
     });
 
     // Redeploy agent alpha
-    await fetch("/agent-alpha/deploy", {
+    await fetch("/deploy", {
       method: "POST",
       headers: authHeaders("key-alpha"),
-      body: deployBody(),
+      body: deployBody({ slug: "agent-alpha" }),
     });
 
     // Beta's secret should still be intact

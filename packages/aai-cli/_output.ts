@@ -28,24 +28,6 @@ export function getOutputMode(
 }
 
 /**
- * Wrap a command function to handle output formatting.
- *
- * - `fn` does the work and returns a `CommandResult<T>`. Human-readable
- *   output is printed inside `fn` itself.
- * - In JSON mode, writes exactly one JSON line to stdout.
- */
-export async function withOutput<T>(
-  mode: OutputMode,
-  fn: () => Promise<CommandResult<T>>,
-): Promise<void> {
-  const result = await fn();
-  // Await the flush before exiting: on a pipe (the JSON-mode case) stdout is
-  // async, so process.exit() would truncate the JSON line just queued.
-  if (mode === "json") await writeLine(`${JSON.stringify(result)}\n`);
-  if (!result.ok) process.exit(1);
-}
-
-/**
  * Write a line to stdout, resolving only once it has been flushed.
  *
  * Resolves (never rejects) even when the write fails: the common failure is

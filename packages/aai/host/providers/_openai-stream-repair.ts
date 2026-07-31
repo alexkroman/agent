@@ -160,17 +160,12 @@ function repairChunk(payload: unknown, ids: Map<string, string>, newId: () => st
  * Cheap pre-parse check: a line can only need repair when it carries a
  * `tool_calls` delta or an explicitly-null `choices`. `JSON.stringify` never
  * puts whitespace after a colon, so the compact spelling covers everything
- * the gateway emits; the single-space variant is tolerated for
- * pretty-printing upstreams. Lines failing this check — the vast majority of
+ * the gateway emits. Lines failing this check — the vast majority of
  * every stream (text deltas) — pass through with no parse/stringify round
  * trip, and byte-for-byte by construction.
  */
 function mayNeedRepair(body: string): boolean {
-  return (
-    body.includes('"tool_calls"') ||
-    body.includes('"choices":null') ||
-    body.includes('"choices": null')
-  );
+  return body.includes('"tool_calls"') || body.includes('"choices":null');
 }
 
 /**

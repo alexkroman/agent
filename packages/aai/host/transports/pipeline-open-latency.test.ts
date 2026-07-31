@@ -64,6 +64,9 @@ describe("PipelineTransport — provider-open latency", () => {
       tts,
       callbacks,
       sessionConfig: { systemPrompt: "s", greeting: "Hi there!" },
+      executeTool: async () => {
+        throw new Error("No executeTool provided to test");
+      },
       providerKeys: { stt: "k", tts: "k" },
       logger: silentLogger,
     };
@@ -105,6 +108,9 @@ describe("PipelineTransport — provider-open latency", () => {
       llm: createFakeLanguageModel({ script: [] }),
       tts,
       callbacks,
+      executeTool: async () => {
+        throw new Error("No executeTool provided to test");
+      },
       sessionConfig: { systemPrompt: "s", greeting: "Hi there!" },
       providerKeys: { stt: "k", tts: "k" },
       logger: silentLogger,

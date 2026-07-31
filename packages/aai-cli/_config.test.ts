@@ -1,5 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-import fs from "node:fs";
 import path from "node:path";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { readProjectConfig, writeProjectConfig } from "./_config.ts";
@@ -64,7 +63,7 @@ describe("readProjectConfig / writeProjectConfig", () => {
 
 describe("getConfigDir", () => {
   // The suite-wide setup file sets AAI_CONFIG_DIR (see _test-setup.ts);
-  // clear it here so the injected legacy/modern dirs are what's under test.
+  // clear it here so the env-paths default is what's under test.
   beforeEach(() => {
     vi.stubEnv("AAI_CONFIG_DIR", "");
   });
@@ -72,36 +71,13 @@ describe("getConfigDir", () => {
   test("AAI_CONFIG_DIR overrides everything", async () => {
     const { getConfigDir } = await import("./_config.ts");
     vi.stubEnv("AAI_CONFIG_DIR", "/tmp/aai-override");
-    expect(getConfigDir({ legacy: "/l", modern: "/m" })).toBe("/tmp/aai-override");
+    expect(getConfigDir()).toBe("/tmp/aai-override");
   });
 
-  test("prefers the legacy dir when a config file already exists there", async () => {
-    await withTempDir(async (dir) => {
-      const { getConfigDir, writeGlobalConfig } = await import("./_config.ts");
-      const legacy = path.join(dir, "legacy");
-      const modern = path.join(dir, "modern");
-      await writeGlobalConfig(legacy, { apiKey: "old-key" });
-      expect(getConfigDir({ legacy, modern })).toBe(legacy);
-    });
-  });
-
-  test("uses the env-paths dir when no legacy config exists", async () => {
-    await withTempDir(async (dir) => {
-      const { getConfigDir } = await import("./_config.ts");
-      const legacy = path.join(dir, "legacy");
-      const modern = path.join(dir, "modern");
-      expect(getConfigDir({ legacy, modern })).toBe(modern);
-    });
-  });
-
-  test("ignores a legacy dir that exists but holds no config.json", async () => {
-    await withTempDir(async (dir) => {
-      const { getConfigDir } = await import("./_config.ts");
-      const legacy = path.join(dir, "legacy");
-      const modern = path.join(dir, "modern");
-      fs.mkdirSync(legacy, { recursive: true });
-      expect(getConfigDir({ legacy, modern })).toBe(modern);
-    });
+  test("defaults to the env-paths config dir", async () => {
+    const { getConfigDir } = await import("./_config.ts");
+    const envPaths = (await import("env-paths")).default;
+    expect(getConfigDir()).toBe(envPaths("aai", { suffix: "" }).config);
   });
 });
 

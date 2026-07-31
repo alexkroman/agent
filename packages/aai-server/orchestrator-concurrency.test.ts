@@ -10,10 +10,10 @@ describe("orchestrator concurrency", () => {
 
     const results = await Promise.all(
       slugs.map((slug) =>
-        fetch(`/${slug}/deploy`, {
+        fetch("/deploy", {
           method: "POST",
           headers: authHeaders(),
-          body: deployBody(),
+          body: deployBody({ slug }),
         }),
       ),
     );
@@ -29,10 +29,10 @@ describe("orchestrator concurrency", () => {
     // Deploy the same slug concurrently — all should succeed since same owner
     const results = await Promise.all(
       Array.from({ length: 5 }, () =>
-        fetch("/my-agent/deploy", {
+        fetch("/deploy", {
           method: "POST",
           headers: authHeaders("key1"),
-          body: deployBody(),
+          body: deployBody({ slug: "my-agent" }),
         }),
       ),
     );
@@ -52,10 +52,10 @@ describe("orchestrator concurrency", () => {
 
     // Mix deploy and health check requests
     const deploys = Array.from({ length: 5 }, (_, i) =>
-      fetch(`/agent-${i}/deploy`, {
+      fetch("/deploy", {
         method: "POST",
         headers: authHeaders(),
-        body: deployBody(),
+        body: deployBody({ slug: `agent-${i}` }),
       }),
     );
     const healthChecks = Array.from({ length: 10 }, () => fetch("/health"));
@@ -72,10 +72,10 @@ describe("orchestrator concurrency", () => {
     const { fetch } = await createTestOrchestrator();
 
     // Deploy first
-    const deployRes = await fetch("/my-agent/deploy", {
+    const deployRes = await fetch("/deploy", {
       method: "POST",
       headers: authHeaders("key1"),
-      body: deployBody(),
+      body: deployBody({ slug: "my-agent" }),
     });
     expect(deployRes.status).toBe(200);
 
@@ -85,10 +85,10 @@ describe("orchestrator concurrency", () => {
         method: "POST",
         headers: authHeaders("key1"),
       }),
-      fetch("/my-agent/deploy", {
+      fetch("/deploy", {
         method: "POST",
         headers: authHeaders("key1"),
-        body: deployBody(),
+        body: deployBody({ slug: "my-agent" }),
       }),
     ]);
 

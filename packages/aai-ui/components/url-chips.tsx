@@ -18,7 +18,7 @@ const COPIED_FEEDBACK_MS = 1500;
  *
  * @internal
  */
-export function UrlChip({
+function UrlChip({
   label,
   url,
   hint,

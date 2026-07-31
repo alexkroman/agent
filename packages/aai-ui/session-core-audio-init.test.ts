@@ -14,7 +14,8 @@ import {
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore, type SessionCore } from "./session-core.ts";
+import { createSessionCore } from "./session-core.ts";
+import type { SessionCore } from "./session-core-types.ts";
 
 type FakeVoiceIO = {
   enqueue: ReturnType<typeof vi.fn<(buf: ArrayBuffer) => void>>;

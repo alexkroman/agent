@@ -336,9 +336,6 @@ export const HostConfigMessageSchema = z.object({
   ttsSampleRate: z.number().int().positive().optional(),
 });
 
-/** The host-mode handshake frame. */
-export type HostConfigMessage = z.infer<typeof HostConfigMessageSchema>;
-
 // ─── Ready config builder ───────────────────────────────────────────────────
 
 /** Build the protocol-level session config from S2S sample rates. */

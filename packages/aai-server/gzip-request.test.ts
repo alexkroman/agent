@@ -14,10 +14,10 @@ describe("gzip deploy request decompression", () => {
   test("gzipped deploy round-trips: body is inflated, validated, and stored", async () => {
     const { fetch, store } = await createTestOrchestrator();
 
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: gzipHeaders(),
-      body: new Uint8Array(gzipSync(deployBody())),
+      body: new Uint8Array(gzipSync(deployBody({ slug: "my-agent" }))),
     });
 
     expect(res.status).toBe(200);
@@ -48,10 +48,10 @@ describe("gzip deploy request decompression", () => {
   test("uncompressed deploy still works (no Content-Encoding header)", async () => {
     const { fetch } = await createTestOrchestrator();
 
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: authHeaders(),
-      body: deployBody(),
+      body: deployBody({ slug: "my-agent" }),
     });
 
     expect(res.status).toBe(200);
@@ -66,7 +66,7 @@ describe("gzip deploy request decompression", () => {
     const bomb = gzipSync(Buffer.alloc(MAX_INFLATED_BODY_BYTES + 1));
     expect(bomb.byteLength).toBeLessThan(1_000_000);
 
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: gzipHeaders(),
       body: new Uint8Array(bomb),
@@ -78,7 +78,7 @@ describe("gzip deploy request decompression", () => {
   test("invalid gzip bytes are rejected with 400", async () => {
     const { fetch } = await createTestOrchestrator();
 
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: gzipHeaders(),
       body: "definitely not gzip",
@@ -93,7 +93,7 @@ describe("gzip deploy request decompression", () => {
     // Uncompressed JSON larger than MAX_INFLATED_BODY_BYTES: the deploy
     // route's bodyLimit middleware must reject it (via Content-Length)
     // before anything buffers or parses it.
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: authHeaders(),
       body: `{"pad":"${"x".repeat(MAX_INFLATED_BODY_BYTES + 1)}"}`,
@@ -105,7 +105,7 @@ describe("gzip deploy request decompression", () => {
   test("unsupported Content-Encoding is rejected with 415", async () => {
     const { fetch } = await createTestOrchestrator();
 
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: { ...authHeaders(), "Content-Encoding": "br" },
       body: deployBody(),

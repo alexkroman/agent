@@ -53,8 +53,6 @@ const WORKSPACE_PKG_DIRS: Record<string, string> = {
   "@alexkroman1/aai": "aai",
   "@alexkroman1/aai-cli": "aai-cli",
   "@alexkroman1/aai-ui": "aai-ui",
-  "aai-server": "aai-server",
-  "aai-templates": "aai-templates",
 };
 
 /** Rewrite workspace deps to link: paths so pnpm links to local source. */

@@ -51,7 +51,7 @@ let tmpDir: string;
 let registry: MockRegistry;
 
 function initProject(template: string, projectDir: string): void {
-  aai(aaiBin, ["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
+  aai(aaiBin, ["init", projectDir, "-t", template, "--skip-deploy"], tmpDir);
   installDeps(registry, projectDir);
 }
 
@@ -95,7 +95,7 @@ describe("pack + build: template workflows", () => {
     const projectDir = path.join(tmpDir, template);
 
     // Init + install from mock registry + test + build
-    aai(aaiBin, ["init", projectDir, "-t", template, "--skip-api", "--skip-deploy"], tmpDir);
+    aai(aaiBin, ["init", projectDir, "-t", template, "--skip-deploy"], tmpDir);
     try {
       installDeps(registry, projectDir);
     } catch (err) {

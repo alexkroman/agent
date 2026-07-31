@@ -284,10 +284,9 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       case "error":
         handleErrorEvent(e);
         break;
-      case "idle_timeout":
-        // Server-side idle timeout — treat as a graceful disconnect signal.
-        break;
       default:
+        // Includes idle_timeout: the server closes the socket itself, and the
+        // close handler is what transitions the session.
         break;
     }
   }

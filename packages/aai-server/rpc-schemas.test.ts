@@ -25,7 +25,7 @@ test("every IsolateConfig field reaches the runtime agent or is wire-only", () =
 });
 
 const pipelineFields = {
-  stt: { kind: "assemblyai", options: { model: "u3pro-rt" } },
+  stt: { kind: "assemblyai", options: { model: "universal-3-5-pro" } },
   llm: { kind: "anthropic", options: { model: "claude-haiku-4-5" } },
 };
 

@@ -4,8 +4,6 @@
  * Type declarations for the framework-agnostic voice session core.
  *
  * Split out of `session-core.ts` to keep that module focused on behaviour.
- * The public types here are re-exported from `session-core.ts` for
- * backwards compatibility.
  */
 
 import type { VoiceIO } from "./audio.ts";
@@ -124,8 +122,4 @@ export type ConnState = {
    *  signal must be replayed after draining preInitAudio, or a short greeting
    *  buffered during mic-permission never finishes playing. */
   preInitDone: boolean;
-  /** The server's `config` payload for the current connection — kept so
-   *  text-only sessions can init the mic lazily (record button) and file
-   *  uploads know the STT sample rate to resample to. */
-  readyConfig: { sampleRate: number; ttsSampleRate: number } | null;
 };

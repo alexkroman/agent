@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-export { floatToPcm16 } from "./audio.ts";
 // Pre-connection client-config lookup (name + greeting)
 export {
   buildAgentUrl,
@@ -34,14 +33,14 @@ export type {
 // Entry
 export { client } from "./define-client.tsx";
 export { useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
+// Session core (for advanced use)
+export { createSessionCore } from "./session-core.ts";
 export type {
   CustomEvent,
   SessionCore,
   SessionCoreOptions,
   SessionSnapshot,
-} from "./session-core.ts";
-// Session core (for advanced use)
-export { createSessionCore } from "./session-core.ts";
+} from "./session-core-types.ts";
 // Types
 export type {
   AgentState,

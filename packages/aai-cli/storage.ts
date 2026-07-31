@@ -48,7 +48,7 @@ export async function executeStorageEnable(
   const {
     data: { enabled },
     slug,
-  } = await storageRequest<{ ok: true; enabled: boolean }>(cwd, { method: "POST" }, server);
+  } = await storageRequest<{ enabled: boolean }>(cwd, { method: "POST" }, server);
   log.success(`Storage enabled for ${slug}`);
   log.info("Tool code can now use ctx.db.query(sql, params).");
   return ok({ slug, enabled });
@@ -93,7 +93,7 @@ export async function executeStorageDisable(
   const {
     data: { enabled },
     slug,
-  } = await storageRequest<{ ok: true; enabled: boolean }>(cwd, { method: "DELETE" }, opts.server);
+  } = await storageRequest<{ enabled: boolean }>(cwd, { method: "DELETE" }, opts.server);
   log.success(`Storage disabled for ${slug} — database schema and data dropped`);
   return ok({ slug, enabled });
 }

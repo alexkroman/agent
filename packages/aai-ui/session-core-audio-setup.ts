@@ -38,17 +38,13 @@ export type AudioSetupDeps = {
  * VoiceIO is closed immediately to prevent it from being assigned to a newer
  * connection.
  *
- * `fatal` selects the failure mode: voice sessions (`config` handshake) can't
- * function without the mic, so failure there sets the error state and ends
- * the session; a text-only session's opt-in record button must not brick an
- * otherwise healthy session, so failure there is a banner (`error` set,
- * state kept) and the session stays interactive.
+ * A failure is fatal: a voice session can't function without the mic, so it
+ * sets the error state and ends the session.
  */
 export async function initAudioCapture(
   conn: ConnState,
   msg: { sampleRate: number; ttsSampleRate: number },
   deps: AudioSetupDeps,
-  fatal: boolean,
 ): Promise<void> {
   if (conn.audioSetupInFlight) return;
   conn.audioSetupInFlight = true;
@@ -56,22 +52,16 @@ export async function initAudioCapture(
   const stale = (): boolean =>
     conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN;
   const reportAudioFailure = (message: string): void => {
-    // Either way the dead audio path is released — a playback-worklet crash
-    // must not leave the healthy capture worklet streaming into the socket
-    // with the mic indicator lit. The branches differ only in what the
-    // session becomes: fatal ends it, non-fatal keeps the socket (and
-    // text/upload controls) usable behind an error banner.
+    // The dead audio path is released — a playback-worklet crash must not
+    // leave the healthy capture worklet streaming into the socket with the
+    // mic indicator lit.
     deps.cleanupAudio();
-    if (fatal) {
-      deps.updateState({
-        state: "error",
-        error: { code: "audio", message },
-        running: false,
-        recording: false,
-      });
-    } else {
-      deps.updateState({ error: { code: "audio", message }, recording: false });
-    }
+    deps.updateState({
+      state: "error",
+      error: { code: "audio", message },
+      running: false,
+      recording: false,
+    });
   };
   try {
     const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await Promise.all([

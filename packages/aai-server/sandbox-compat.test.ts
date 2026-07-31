@@ -22,8 +22,6 @@ type Fixture = {
   version: number;
   IsolateConfig: Record<string, unknown>[];
   ToolCallResponse: Record<string, unknown>[];
-  HookResponse?: Record<string, unknown>[];
-  TurnConfigResult?: (Record<string, unknown> | null)[];
 };
 
 function loadFixture(filename: string): Fixture {

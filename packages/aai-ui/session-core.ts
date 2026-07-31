@@ -31,13 +31,6 @@ import type {
 import { buildWsUrl } from "./session-core-url.ts";
 import { MIC_SEND_MAX_BUFFERED_BYTES, type WebSocketConstructor } from "./types.ts";
 
-export type {
-  CustomEvent,
-  SessionCore,
-  SessionCoreOptions,
-  SessionSnapshot,
-} from "./session-core-types.ts";
-
 // ─── Factory ────────────────────────────────────────────────────────────────
 
 /**
@@ -53,7 +46,7 @@ export type {
  * @public
  */
 export function createSessionCore(options: SessionCoreOptions): SessionCore {
-  // ─── Internal state (replaces signals) ──────────────────────────────────
+  // ─── Internal state ─────────────────────────────────────────────────────
 
   let currentSnapshot: SessionSnapshot = {
     ...CLEARED_SESSION_STATE,
@@ -106,7 +99,6 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     generation: 0,
     preInitAudio: [],
     preInitDone: false,
-    readyConfig: null,
   };
   let connectionController: AbortController | null = null;
   let hasConnected = false;
@@ -186,10 +178,8 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     }
     const isReconnect = hasConnected;
     hasConnected = true;
-    conn.readyConfig = { sampleRate: config.sampleRate, ttsSampleRate: config.ttsSampleRate };
     // initAudioCapture handles its own failures (sets error state internally).
-    // Fatal: a voice session without a mic cannot function.
-    void initAudioCapture(conn, config, audioDeps, true);
+    void initAudioCapture(conn, config, audioDeps);
 
     if (isReconnect && currentSnapshot.messages.length > 0) {
       sendJson({

@@ -21,9 +21,8 @@ export function resolveVector(
     case IN_MEMORY_VECTOR_KIND:
       return createMemoryVector({ namespace });
     case PINECONE_VECTOR_KIND: {
-      // requireApiKey's process.env fallback mirrors resolveApiKey's, so
-      // passing the agent-env value keeps the same lookup order and produces
-      // the same message from one implementation.
+      // Reads the agent env only — never process.env (see the credential
+      // separation notes on resolveApiKey).
       const apiKey = requireApiKey(
         env[PINECONE_API_KEY_ENV],
         PINECONE_API_KEY_ENV,

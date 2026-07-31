@@ -398,8 +398,8 @@ export function loadProviderPackage<T>(name: string, label: string): T {
 }
 
 function requireKey(env: Record<string, string>, name: string, label: string): string {
-  // requireApiKey's process.env fallback mirrors resolveApiKey's, so passing
-  // the agent-env value keeps the same lookup order with one implementation.
+  // Reads the agent env only — never process.env (see the credential
+  // separation notes on resolveApiKey).
   return requireApiKey(env[name], name, `${label} LLM`, (msg) => new Error(msg));
 }
 

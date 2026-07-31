@@ -7,26 +7,6 @@ import {
 } from "./types.ts";
 
 /**
- * Clamp-and-convert Float32 samples to PCM16. The one main-thread home of the
- * asymmetric-rounding convention (negative × 0x8000, positive × 0x7fff) —
- * the capture worklet's `accumulate` embeds the same math, which cannot
- * import it (worklet source is a string).
- *
- * @public
- */
-export function floatToPcm16(samples: Float32Array): Int16Array {
-  const pcm = new Int16Array(samples.length);
-  // for-of over the typed array: every sample is in bounds, so this avoids
-  // a per-sample undefined check that indexed access would require.
-  let i = 0;
-  for (const sample of samples) {
-    const s = Math.max(-1, Math.min(1, sample));
-    pcm[i++] = s < 0 ? s * 0x80_00 : s * 0x7f_ff;
-  }
-  return pcm;
-}
-
-/**
  * How much of one turn's playback was covered by concealment rather than
  * received audio — the playback worklet's underrun report, in the shape
  * WebRTC's `inbound-rtp` audio stats use, so the numbers mean the same thing
@@ -107,7 +87,7 @@ export type VoiceIO = AsyncDisposable & {
  * audio that only sounds like speech to the wrong decoder. Every capture
  * path must call this after context creation.
  */
-export function assertGranted(granted: number, requested: number, side: string): void {
+function assertGranted(granted: number, requested: number, side: string): void {
   if (granted === requested) return;
   throw new Error(
     `Browser refused the ${side} sample rate: asked for ${requested} Hz, got ${granted} Hz`,
@@ -120,7 +100,7 @@ export function assertGranted(granted: number, requested: number, side: string):
  * it, a mic granted after a failed init keeps the browser's recording
  * indicator lit with no way to turn it off.
  */
-export function releaseStreamOnFailure(streamPromise: Promise<MediaStream>): void {
+function releaseStreamOnFailure(streamPromise: Promise<MediaStream>): void {
   void streamPromise
     .then((s) => {
       for (const t of s.getTracks()) t.stop();
@@ -145,13 +125,12 @@ export type CaptureNode = {
 
 /**
  * Wire one capture worklet node: node construction, the chunk/silent/stopped
- * port protocol, and the stop→ack handshake — one spelling for both the
- * WebSocket mic and the push-to-talk recorder. No `processorOptions`: the
+ * port protocol, and the stop→ack handshake. No `processorOptions`: the
  * worklet reads the context rate from its global scope (callers assert the
  * granted rate first) and owns its own batching default — re-spelling
  * defaults caller-side is drift.
  */
-export function createCaptureNode(
+function createCaptureNode(
   ctx: AudioContext,
   onChunk: (pcm16: ArrayBuffer) => void,
   onSilent?: () => void,

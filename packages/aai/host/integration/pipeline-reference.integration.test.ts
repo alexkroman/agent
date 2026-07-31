@@ -4,7 +4,7 @@
  *
  * Runs only when VITEST_PROFILE=integration is set AND all three API keys
  * plus the input audio fixture are available. Exercises the full STT → LLM → TTS
- * path with real providers (AssemblyAI u3pro-rt + OpenAI gpt-4o-mini +
+ * path with real providers (AssemblyAI universal-3-5-pro + OpenAI gpt-4o-mini +
  * Cartesia) so latency and wire-format issues are caught before release.
  *
  * To run locally:
@@ -86,7 +86,7 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
       },
       // Descriptors, not pre-resolved openers — so this exercises the same
       // resolution path (and API-key routing) a deployed agent takes.
-      stt: assemblyAI({ model: "u3pro-rt" }),
+      stt: assemblyAI({ model: "universal-3-5-pro" }),
       llm: openai({ model: "gpt-4o-mini" }),
       tts: cartesia({ voice: "694f9389-aac1-45b6-b726-9d9369183238" }),
       logger: consoleLogger,

@@ -20,7 +20,6 @@ function makeSandbox() {
 function makeSlot(slug: string, overrides?: Partial<AgentSlot>): AgentSlot {
   return {
     slug,
-    keyHash: `hash-${slug}`,
     ...overrides,
   };
 }

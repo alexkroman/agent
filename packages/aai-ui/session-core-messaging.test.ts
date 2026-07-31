@@ -14,7 +14,8 @@ import {
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore, type SessionCore } from "./session-core.ts";
+import { createSessionCore } from "./session-core.ts";
+import type { SessionCore } from "./session-core-types.ts";
 import { MIC_SEND_MAX_BUFFERED_BYTES } from "./types.ts";
 
 // ─── Tests ──────────────────────────────────────────────────────────────────

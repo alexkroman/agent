@@ -9,6 +9,7 @@
  */
 
 import { SESSION_RESUME_GRACE_MS } from "@alexkroman1/aai";
+import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
@@ -72,6 +73,7 @@ function makeSandboxOptions(): SandboxOptions {
     env: { AAI_ENV_TEST: "1" },
     slug: "test-agent",
     agentConfig: TEST_AGENT_CONFIG,
+    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   };
 }
 

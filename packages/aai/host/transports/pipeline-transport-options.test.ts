@@ -32,6 +32,9 @@ function resolveBare() {
     llm: createFakeLanguageModel({ script: [] }),
     tts: createFakeTtsProvider(),
     callbacks: makeCallbacks(),
+    executeTool: async () => {
+      throw new Error("No executeTool provided to test");
+    },
     sessionConfig: { systemPrompt: "s" },
     providerKeys: { stt: "k", tts: "k" },
   });

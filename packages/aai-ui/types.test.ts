@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, expectTypeOf, it, test } from "vitest";
 import type { Session } from "./context.ts";
-import type { SessionCore, SessionSnapshot } from "./session-core.ts";
+import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
 import type { AgentState, ChatMessage, ClientTheme, SessionError, ToolCallInfo } from "./types.ts";
 import { MIC_BUFFER_SECONDS } from "./types.ts";
 

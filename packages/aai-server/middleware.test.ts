@@ -6,7 +6,7 @@ import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { createMemoryChatStore } from "./studio/chat-store.ts";
 import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
-import { createTestOrchestrator, createTestStore, deployAgent } from "./test-utils.ts";
+import { createTestOrchestrator, createTestStore, deployAgent, deployBody } from "./test-utils.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
   const store = createTestStore();
@@ -31,7 +31,7 @@ test("orchestrator returns 401 on deploy without auth", async () => {
     chats: createMemoryChatStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
-  const res = await app.fetch(new Request("http://localhost/my-agent/deploy", { method: "POST" }));
+  const res = await app.fetch(new Request("http://localhost/deploy", { method: "POST" }));
   expect(res.status).toBe(401);
 });
 
@@ -58,10 +58,10 @@ describe("validateSlug", () => {
   });
 });
 
-describe("requireOwner", () => {
+describe("deploy route auth", () => {
   test("returns 401 without Authorization header", async () => {
     const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/my-agent/deploy", { method: "POST" });
+    const res = await fetch("/deploy", { method: "POST" });
     expect(res.status).toBe(401);
     const json = (await res.json()) as { error: string };
     expect(json.error).toContain("Missing Authorization");
@@ -70,13 +70,13 @@ describe("requireOwner", () => {
   test("returns 403 when key does not match agent owner", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent", "owner-key");
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: {
         Authorization: "Bearer wrong-key",
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ worker: "x", clientFiles: {} }),
+      body: deployBody({ slug: "my-agent" }),
     });
     expect(res.status).toBe(403);
   });
@@ -86,22 +86,11 @@ describe("requireOwner unclaimed-slug paths", () => {
   const bearerReq = () =>
     new Request("http://localhost/", { headers: { Authorization: "Bearer some-key" } });
 
-  test("throws 404 for a nonexistent slug on data routes (no allowUnclaimed)", async () => {
+  test("throws 404 for a nonexistent slug on data routes", async () => {
     const store = createTestStore();
     await expect(requireOwner(bearerReq(), { slug: "ghost-agent", store })).rejects.toMatchObject({
       status: 404,
     });
-  });
-
-  test("computes keyHash lazily on the allowUnclaimed (deploy-claim) path", async () => {
-    const store = createTestStore();
-    const { apiKey, keyHash } = await requireOwner(bearerReq(), {
-      slug: "ghost-agent",
-      store,
-      allowUnclaimed: true,
-    });
-    expect(apiKey).toBe("some-key");
-    expect(keyHash).toMatch(/^\$argon2id\$/);
   });
 });
 

@@ -186,15 +186,19 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     return parsed.data;
   }
 
-  /** Read + parse the agent's env record from the SecretStore. */
+  /**
+   * Read + parse the agent's env record from the SecretStore. A corrupt
+   * record throws rather than degrading to `{}` — a secretless boot runs the
+   * agent with its tenant credentials silently absent, which is strictly
+   * worse than a failed boot.
+   */
   async function loadEnv(slug: string): Promise<Record<string, string>> {
     const raw = await secrets.get(agentEnvSecretName(slug));
     if (raw === null) return {};
     try {
       return EnvSchema.parse(JSON.parse(raw));
-    } catch {
-      console.warn(`Corrupt env record for agent ${slug}; treating as empty`);
-      return {};
+    } catch (err) {
+      throw new Error(`Corrupt env record for agent ${slug}`, { cause: err });
     }
   }
 

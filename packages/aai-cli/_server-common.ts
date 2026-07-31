@@ -26,13 +26,18 @@ export async function resolveServerEnv(
 ): Promise<Record<string, string>> {
   let fileEntries: Record<string, string> = {};
   if (cwd) {
+    let content: string | null = null;
     try {
-      const content = await fs.readFile(path.join(cwd, ".env"), "utf-8");
+      content = await fs.readFile(path.join(cwd, ".env"), "utf-8");
+    } catch (err) {
+      // No .env file is fine; an unreadable one is not — the agent would
+      // otherwise run with no secrets and fail later as an opaque auth error.
+      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+    }
+    if (content !== null) {
       // Node's built-in dotenv-syntax parser (quotes, comments, multiline) —
       // replaced the `dotenv` package, whose only use was this one call.
       fileEntries = parseEnv(content) as Record<string, string>;
-    } catch {
-      // No .env file — that's fine
     }
   }
 

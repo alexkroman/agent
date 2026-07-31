@@ -60,6 +60,9 @@ export function makeOpts(
     tts,
     callbacks,
     sessionConfig: { systemPrompt: "s", greeting: "" },
+    executeTool: async () => {
+      throw new Error("No executeTool provided to test harness");
+    },
     providerKeys: { stt: "stt-key", tts: "tts-key" },
     logger: silentLogger,
     // Disable the endpoint settle window by default so specs that fire a single

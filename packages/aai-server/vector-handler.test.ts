@@ -26,7 +26,6 @@ function createTestApp(vector: Vector) {
   const app = new Hono<HonoEnv>();
   app.use("*", async (c, next) => {
     c.set("slug", SLUG);
-    c.set("keyHash", "abc");
     await next();
   });
   app.post("/vector", zValidator("json", VectorRequestSchema), (c) => handleVector(c, vector));

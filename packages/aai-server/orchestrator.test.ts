@@ -46,9 +46,9 @@ test("adds Cross-Origin-Isolation headers", async () => {
 
 test("deploy rejects without auth", async () => {
   const { fetch } = await createTestOrchestrator();
-  expect((await fetch("/my-agent/deploy", { method: "POST", body: deployBody() })).status).toBe(
-    401,
-  );
+  expect(
+    (await fetch("/deploy", { method: "POST", body: deployBody({ slug: "my-agent" }) })).status,
+  ).toBe(401);
 });
 
 test("deploy rejects different owner for claimed slug", async () => {
@@ -62,10 +62,10 @@ test("deploy rejects different owner for claimed slug", async () => {
     credential_hashes: [await hashApiKey("key1")],
     agentConfig: TEST_AGENT_CONFIG,
   });
-  const res = await fetch("/my-agent/deploy", {
+  const res = await fetch("/deploy", {
     method: "POST",
-    headers: { Authorization: "Bearer key2" },
-    body: deployBody(),
+    headers: { Authorization: "Bearer key2", "Content-Type": "application/json" },
+    body: deployBody({ slug: "my-agent" }),
   });
   expect(res.status).toBe(403);
 });
@@ -73,10 +73,10 @@ test("deploy rejects different owner for claimed slug", async () => {
 test("deploy succeeds and stores agent", async () => {
   const { fetch, store } = await createTestOrchestrator();
   const { verifyApiKeyHash } = await import("./secrets.ts");
-  const res = await fetch("/my-agent/deploy", {
+  const res = await fetch("/deploy", {
     method: "POST",
     headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-    body: deployBody(),
+    body: deployBody({ slug: "my-agent" }),
   });
   expect(res.status).toBe(200);
   const manifest = await store.getManifest("my-agent");
@@ -88,10 +88,10 @@ test("deploy succeeds and stores agent", async () => {
 test("deploy can redeploy same slug", async () => {
   const { fetch } = await createTestOrchestrator();
   await deployAgent(fetch);
-  const res = await fetch("/my-agent/deploy", {
+  const res = await fetch("/deploy", {
     method: "POST",
     headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-    body: deployBody(),
+    body: deployBody({ slug: "my-agent" }),
   });
   expect(res.status).toBe(200);
 });
@@ -206,10 +206,11 @@ test("client asset returns JS with correct content type", async () => {
 
 test("client asset falls back to octet-stream for unknown extension", async () => {
   const { fetch } = await createTestOrchestrator();
-  await fetch("/my-agent/deploy", {
+  await fetch("/deploy", {
     method: "POST",
     headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
     body: deployBody({
+      slug: "my-agent",
       clientFiles: { "index.html": "<html></html>", "assets/data.xyz123": "binary stuff" },
     }),
   });
@@ -231,10 +232,11 @@ test("agent favicon serves a custom client's stored favicon", async () => {
   // Binary client files are stored base64-encoded (isTextAssetPath), so the
   // favicon route must decode — a pass-through would corrupt the bytes.
   const icoBytes = Buffer.from([0x00, 0x00, 0x01, 0x00, 0xff, 0xfe]);
-  await fetch("/my-agent/deploy", {
+  await fetch("/deploy", {
     method: "POST",
     headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
     body: deployBody({
+      slug: "my-agent",
       clientFiles: { "index.html": "<html></html>", "favicon.ico": icoBytes.toString("base64") },
     }),
   });
