@@ -1,5 +1,17 @@
 # @alexkroman1/aai-cli
 
+## 3.2.0
+
+### Patch Changes
+
+- Updated dependencies [9c9eadb]
+- Updated dependencies [9c9eadb]
+- Updated dependencies [9c9eadb]
+- Updated dependencies [9c9eadb]
+- Updated dependencies [9c9eadb]
+  - @alexkroman1/aai@3.2.0
+  - @alexkroman1/aai-ui@3.2.0
+
 ## 3.1.0
 
 ### Patch Changes

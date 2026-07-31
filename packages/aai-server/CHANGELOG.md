@@ -1,5 +1,19 @@
 # @alexkroman1/aai-server
 
+## 3.0.2
+
+### Patch Changes
+
+- 444879c: Remove the studio coding agent's MCP integration (AssemblyAI docs MCP server and its tools, including the docs search tool); the agent looks up docs via visit_webpage instead
+- Updated dependencies [9c9eadb]
+- Updated dependencies [9c9eadb]
+- Updated dependencies [9c9eadb]
+- Updated dependencies [9c9eadb]
+- Updated dependencies [9c9eadb]
+  - @alexkroman1/aai@3.2.0
+  - @alexkroman1/aai-ui@3.2.0
+  - @alexkroman1/aai-cli@3.2.0
+
 ## 3.0.1
 
 ### Patch Changes
