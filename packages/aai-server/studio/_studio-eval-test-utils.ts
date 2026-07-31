@@ -1,9 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * The codegen eval corpus: which template shape each case builds, the one-shot
- * prompt that asks for it, and the reference implementation it is graded
- * against. `studio-eval.test.ts` holds the other half — the harness and the
- * judges that do the grading.
+ * The codegen eval corpus in two halves: template-parity cases (which template
+ * shape each builds, the one-shot prompt that asks for it, and the reference
+ * implementation it is graded against) and config cases, which assert facts
+ * about the config the built worker reports rather than a resemblance to any
+ * reference. `studio-eval.test.ts` holds the harness and the judges.
  *
  * Split out because the two halves grow for different reasons (a new template
  * adds a case here; a new grading dimension adds a judge there) and together
@@ -164,9 +165,111 @@ export const UNCOVERED: Record<string, string> = {
   simple: "the starter workspace already is this shape",
   "math-buddy": "same shape as code-interpreter (run_code, no custom tools)",
   "personal-finance": "same shape as web-researcher (network builtins, no custom tools)",
-  "health-assistant": "same shape as pizza-ordering (custom tools) plus egress, covered there",
+  "health-assistant":
+    "custom tools like pizza-ordering; its egress + allowedHosts half is graded " +
+    "as a config fact by the `declares allowedHosts` config case",
   "night-owl": "same shape as embedded-assets (in-bundle data behind a tool)",
   "infocom-adventure": "same shape as pizza-ordering (per-session ctx.state)",
   "solo-rpg": "same shape as pizza-ordering (per-session ctx.state)",
   "dispatch-center": "same shape as pizza-ordering (per-session ctx.state)",
 };
+
+/**
+ * Which providers the built worker must report. Checked against the config the
+ * guest self-describes, not read off the source or argued over by a judge: an
+ * LLM can be talked out of a verdict, `stt.kind === "deepgram"` cannot.
+ *
+ * `s2s` means none of stt/llm/tts is set — AssemblyAI's voice agent (S2S) API,
+ * which is what an agent with no providers declared runs on.
+ */
+export type ProviderExpectation =
+  | { mode: "s2s" }
+  | { mode: "pipeline"; stt: string; llm: string; tts: string };
+
+export type ConfigCase = {
+  /** Test title, read as "the studio agent <name>". */
+  name: string;
+  /** One-shot user prompt. */
+  prompt: string;
+  /**
+   * Why this case earns a slot. Documentation only — like `TemplateCase.shape`
+   * it is never shown to a judge, and there is no judge here to show it to.
+   */
+  rationale: string;
+  providers: ProviderExpectation;
+  /**
+   * Hostnames the agent's own tool code is asked to fetch. Each must be
+   * matched by an `allowedHosts` pattern in the reported config, or the
+   * request is rejected once published.
+   */
+  fetchedHosts?: string[];
+};
+
+/**
+ * Cases graded purely on config facts — no template reference, so no parity
+ * judge. These cover the two rules that are invisible to a resemblance
+ * grader because they are about *what a published agent can actually run on*:
+ *
+ * 1. **AssemblyAI is the default.** `ASSEMBLYAI_API_KEY` is the only key
+ *    publishing seeds, so an agent that reaches for another provider the user
+ *    never named cannot start until they supply a key. A parity judge is the
+ *    wrong instrument for this: several references legitimately use other
+ *    providers, so "matches the reference" and "runs when published" disagree.
+ * 2. **Egress needs `allowedHosts`.** A tool that fetches an undeclared host
+ *    builds, loads, and passes every rubric — then fails at runtime, in the
+ *    one place the studio user cannot see from the Code pane.
+ */
+export const CONFIG_CASES: ConfigCase[] = [
+  {
+    name: "defaults to the AssemblyAI voice agent API",
+    rationale: "no provider named anywhere in the prompt → S2S, not a cascaded pipeline",
+    prompt:
+      "Build a voice agent named Sunny that plays twenty questions with me: it " +
+      "thinks of an object, I ask yes/no questions, and it tracks how many I " +
+      "have used. Keep the secret object and the question count in ctx.state." +
+      ONE_SHOT,
+    providers: { mode: "s2s" },
+  },
+  {
+    name: "uses AssemblyAI for all three pipeline stages when none is named",
+    rationale:
+      "cascaded mode requested with no provider named → all three descriptors " +
+      "must be AssemblyAI, the one key publishing seeds",
+    prompt:
+      "Build a cascaded (pipeline-mode) voice agent — separate speech-to-text, " +
+      "LLM, and text-to-speech stages — that acts as a friendly front desk " +
+      "assistant for a dentist's office and can answer questions about opening " +
+      "hours. Pick sensible providers and models." +
+      ONE_SHOT,
+    providers: { mode: "pipeline", stt: "assemblyai", llm: "assemblyai", tts: "assemblyai" },
+  },
+  {
+    name: "honors a named provider and defaults the rest to AssemblyAI",
+    rationale:
+      "one non-AssemblyAI provider named → that stage is Deepgram, the two the " +
+      "prompt is silent about still default to AssemblyAI (a partial triple is " +
+      "rejected at parse time, so the agent must choose the other two)",
+    prompt:
+      "Build a cascaded (pipeline-mode) voice agent that reads back the user's " +
+      'words as a language-practice partner. Use Deepgram with the "nova-3" ' +
+      "model for speech-to-text. Choose whatever fits for the other two stages." +
+      ONE_SHOT,
+    providers: { mode: "pipeline", stt: "deepgram", llm: "assemblyai", tts: "assemblyai" },
+  },
+  {
+    name: "declares allowedHosts for a tool that fetches",
+    rationale:
+      "tool-code egress to a named endpoint → the hostname must appear in " +
+      "allowedHosts; also a second read on the S2S default, since no provider " +
+      "is named here either",
+    prompt:
+      "Build a voice agent named Breeze that reports the weather. Give it a " +
+      "get_weather tool that takes a latitude and longitude and fetches " +
+      "https://api.open-meteo.com/v1/forecast (query params latitude, " +
+      "longitude, current=temperature_2m,wind_speed_10m) with fetch, then reads " +
+      "back the temperature and wind speed conversationally." +
+      ONE_SHOT,
+    providers: { mode: "s2s" },
+    fetchedHosts: ["api.open-meteo.com"],
+  },
+];

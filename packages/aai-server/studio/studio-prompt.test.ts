@@ -37,8 +37,11 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("AssemblyAI App Builder coding agent");
     expect(prompt).toContain("test_agent");
     // Any non-AssemblyAI provider needs a key the user must supply, so a
-    // generated agent should default to the one key publishing guarantees.
-    expect(prompt).toContain("Default to AssemblyAI for every provider");
+    // generated agent should default to the one key publishing guarantees —
+    // and S2S, which needs no provider declared at all, is the default mode.
+    // Both are graded by the CONFIG_CASES half of the studio codegen evals.
+    expect(prompt).toContain("Default to the AssemblyAI voice agent API");
+    expect(prompt).toContain("In a pipeline, default every stage to AssemblyAI");
     // Real gateway ids are interpolated so the agent can't invent one
     // (a made-up id only fails at runtime, with a 400 "model not found").
     // gpt-5.2 appears nowhere in the preamble literal, so it can only be here

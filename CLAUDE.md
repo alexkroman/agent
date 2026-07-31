@@ -1188,11 +1188,15 @@ behind, using [vitest-evals](https://github.com/getsentry/vitest-evals)
   build through `bundleWorkspaceWorker` — the exact Vite/Rollup pass
   Publish runs. This is the "one-shot produces syntactically valid code"
   gate.
-- **`SandboxLoadJudge`** (asserted via `toSatisfyJudge` when Deno + the
-  built guest harness are available): the built worker must load in a
-  real studio sandbox, self-describe a valid `IsolateConfigSchema`
-  config, and expose the tools the prompt asked for — the "code actually
-  works" gate.
+- **`SandboxLoadJudge`** (asserted via `toSatisfyJudge` when Modal
+  credentials + the built guest harness are available): the built worker
+  must load in a real studio sandbox and self-describe a valid
+  `IsolateConfigSchema` config — the "code actually works" gate. It also
+  asserts whatever **config facts** the case declares: expected tool
+  names, which provider kind backs each pipeline stage (or that none is
+  declared, i.e. S2S), and that every host the agent's tool code fetches
+  is covered by an `allowedHosts` pattern (matched with the runtime's own
+  `matchesAllowedHost`, so `*.example.com` counts).
 - **`TemplateParityJudge`** (threshold 0.8): the workspace must be
   functionally equivalent to a hand-written template — the "built the
   *right* thing" gate. Most cases are template-parity cases: the prompt is
@@ -1220,10 +1224,45 @@ behind, using [vitest-evals](https://github.com/getsentry/vitest-evals)
   shown to the judge (it read "run_code only" as a requirement and failed an
   agent for keeping the defaults), and the `ONE_SHOT` suffix is stripped
   from the judge's view of the prompt (it instructs the *builder*, and the
-  judge graded the voice agent's persona against it). When a case regresses,
-  suspect the rubric before the studio prompt. `temperature: 0` is
-  deliberately absent — the default studio model is a reasoning model that
-  rejects it, and generation variance dominates anyway.
+  judge graded the voice agent's persona against it). The mirror-image
+  false negative is why `capabilities` grades coverage of the **prompt**,
+  not of the reference: the templates are fuller than the starter prompts
+  they pair with (the pizza reference also updates a cart line and takes the
+  customer's name; its starter prompt asks for neither), so demanding every
+  reference capability failed agents that built exactly what was asked.
+  When a case regresses, suspect the rubric before the studio prompt.
+  `temperature: 0` is deliberately absent — the default studio model is a
+  reasoning model that rejects it, and generation variance dominates anyway.
+
+The corpus has a second family with no reference and no parity judge:
+**`CONFIG_CASES`**, graded only on what the built worker reports about
+itself. They cover the two rules a resemblance grader is the wrong
+instrument for, because they are about whether a *published* agent can run
+at all rather than whether it looks like a template:
+
+- **AssemblyAI is the default provider.** `ASSEMBLYAI_API_KEY` is the only
+  key publishing seeds (`studio-deploy.ts`'s `defaultEnv`), so an agent
+  that reaches for Anthropic or Cartesia unbidden cannot start until the
+  user supplies a key. Cases assert S2S when no provider is named at all,
+  all-`assemblyai` descriptors when cascaded mode is requested without
+  naming providers, and — when the prompt names one stage's provider — that
+  stage honored plus AssemblyAI for the two the prompt left open. Parity
+  can't grade this: several references legitimately use other providers, so
+  "matches the reference" and "runs when published" disagree. The `mode`
+  rubric criterion states the same rule as the judge-side backstop for
+  template cases.
+
+  The first run of this case is what forced the studio preamble to split the
+  rule in two — **which mode** (leave stt/llm/tts unset; S2S is the default
+  for anything that just asks for a voice agent) before **which providers**
+  (AssemblyAI for every stage the user didn't assign). The single combined
+  "default to AssemblyAI for every provider" bullet listed the three
+  descriptors to use, so a plain "build me a voice agent" reliably produced
+  an all-AssemblyAI *pipeline* — correct on credentials, wrong on mode, and
+  invisible to every other judge.
+- **Egress needs `allowedHosts`.** A tool fetching an undeclared host
+  builds, loads, and passes every rubric criterion, then fails at runtime —
+  the one failure mode invisible from the studio's Code pane.
 
 Run with `pnpm --filter aai-server test:evals` (the e2e profile of
 `vitest.slow.config.ts`). The suite is excluded from the unit project and

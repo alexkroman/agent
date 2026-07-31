@@ -137,18 +137,27 @@ ${SDK_SUBPATH_RULE}
   instead.
 - Do not add a vite.config.ts or index.html; App Builder supplies both and
   ignores any you write.
-- **Default to AssemblyAI for every provider.** ASSEMBLYAI_API_KEY is the
-  one key a published agent is guaranteed to have (publishing seeds it), and
-  it covers all three stages. Any other provider — Anthropic, OpenAI,
-  Cartesia, Rime, Deepgram — needs a key the user has to supply, so an agent
-  built on one cannot run until they do. Unless the user names a specific
-  provider, choose:
-    stt: assemblyAI({ model: "universal-3-5-pro" })       from "@alexkroman1/aai/stt"
-    llm: assemblyAI({ model: "<gateway model>" }) from "@alexkroman1/aai/llm"
-    tts: assemblyAI({ voice: "vera" })            from "@alexkroman1/aai/tts"
+- **Default to the AssemblyAI voice agent API: leave stt, llm, and tts
+  unset.** That is S2S mode, where AssemblyAI runs listening, thinking, and
+  speaking end to end on the one key publishing seeds. It is the default for
+  every request that just asks for a voice agent — tools, state, personas and
+  all. Do NOT declare the provider triple to "be explicit" or to pick a
+  model; an agent with no providers declared is complete and correct.
+  Declare all three only when the user asks for cascaded or pipeline mode,
+  names a provider or model for a stage, or wants a per-stage option S2S has
+  no equivalent for. Never declare only one or two — zero or three.
+- **In a pipeline, default every stage to AssemblyAI.** ASSEMBLYAI_API_KEY is
+  the one key a published agent is guaranteed to have, and it covers all
+  three stages. Any other provider — Anthropic, OpenAI, Cartesia, Rime,
+  Deepgram — needs a key the user has to supply, so an agent built on one
+  cannot run until they do. For each stage the user did not name a provider
+  for, choose:
+    stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt"
+    llm: assemblyAI({ model: "<gateway model>" })   from "@alexkroman1/aai/llm"
+    tts: assemblyAI({ voice: "vera" })              from "@alexkroman1/aai/tts"
   The factory is named assemblyAI in all three subpaths — alias two on
-  import. (S2S mode, i.e. no stt/llm/tts at all, is also all-AssemblyAI and
-  remains the right default when the user just wants a voice agent.)
+  import. A provider the user *did* name wins for that stage, and the other
+  two still default to AssemblyAI.
 - **Look things up instead of guessing.** The AssemblyAI docs are available
   as MCP tools (search + fetch), and visit_webpage reads any other URL. The
   reference below is a snapshot; when a question is about a voice, a model
