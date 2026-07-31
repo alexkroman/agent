@@ -137,6 +137,36 @@ describe("S2sTransport reconnect", () => {
     expect(callbacks.onError).not.toHaveBeenCalled();
   });
 
+  test("a tool.result dropped during the resume window is redelivered once resumed", async () => {
+    // The provider restores the session server-side with its tool calls
+    // still unanswered; a result silently dropped on the dead socket used to
+    // stall the resumed turn until the idle timeout.
+    const { callbacks, handles, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    const cb1 = expectAt(capturedCallbacks, 0, "first callbacks");
+    cb1.onSessionReady("sess_abc");
+    cb1.onReplyStarted("rep_1");
+
+    // Socket drops while the tool runs; the settled result hits the dead
+    // handle, whose send reports failure.
+    const h1 = expectAt(handles, 0, "first handle");
+    vi.mocked(h1.sendToolResult).mockReturnValue(false);
+    cb1.onClose(1005, "");
+    t.sendToolResult("call-1", "result-1");
+
+    await vi.waitFor(() => {
+      expect(handles.length).toBe(2);
+    });
+    const h2 = expectAt(handles, 1, "resumed handle");
+    vi.mocked(h2.sendToolResult).mockReturnValue(true);
+    const cb2 = expectAt(capturedCallbacks, 1, "resumed callbacks");
+    cb2.onSessionReady("sess_abc");
+
+    expect(h2.sendToolResult).toHaveBeenCalledWith("call-1", "result-1");
+  });
+
   test("does NOT reconnect on fatal close codes (1008 unauthorized)", async () => {
     const { callbacks, handles, capturedCallbacks } = setupSpiedTransport();
     const t = createS2sTransport(makeTransportOptions({ callbacks }));

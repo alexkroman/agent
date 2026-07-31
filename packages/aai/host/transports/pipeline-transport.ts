@@ -10,7 +10,6 @@
 import type { SessionErrorCode } from "../../sdk/protocol.ts";
 import type { SttError, TtsError } from "../../sdk/providers.ts";
 import type { Message } from "../../sdk/types.ts";
-import { errorMessage } from "../../sdk/utils.ts";
 import { bytesToPcm16, pcm16ToBytes } from "../_pcm.ts";
 import { toVercelTools } from "../to-vercel-tools.ts";
 import { createPipelineHistory } from "./pipeline-history.ts";
@@ -27,7 +26,7 @@ import {
   type PipelineTransportOptions,
   resolvePipelineOptions,
 } from "./pipeline-transport-options.ts";
-import { createTurnGate } from "./pipeline-turn-gate.ts";
+import { createTurnGate, turnCrashLogger } from "./pipeline-turn-gate.ts";
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
 import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
@@ -57,20 +56,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   const systemPrompt = sessionConfig.systemPrompt;
 
   const sessionAbort = new AbortController();
-  /**
-   * Turn-crash handler for chainTurn call sites. Throw-safe: the logger is
-   * caller-injectable, and a throw from a `.catch` handler would reject the
-   * chained turn promise anyway — exactly what the handler exists to prevent.
-   */
-  function logTurnCrash(what: string): (err: unknown) => void {
-    return (err: unknown): void => {
-      try {
-        log.error(what, { error: errorMessage(err), sid: opts.sid });
-      } catch {
-        // A throwing logger must not poison the turn chain.
-      }
-    };
-  }
+  // Turn-crash handler for chainTurn call sites — see turnCrashLogger.
+  const logTurnCrash = turnCrashLogger(log, opts.sid);
   let audioReady = false;
   let terminated = false;
   let nextReplyId = 0;
@@ -85,6 +72,15 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   // restart a slower one — a user re-prompting into the silence would
   // starve the reply indefinitely.
   const turns = createTurnMachine();
+  // The in-flight turn's body has completed (full text persisted, no
+  // [interrupted] marker) and only the TTS drain remains — a barge-in in this
+  // window is a playback cut, so its false-interruption recovery must use the
+  // cut-point prompt, not [interrupted]. Written only by runReply's drain.
+  let turnDraining = false;
+  // The running chained turn is a false-interruption resume; a committed user
+  // turn moots an unspoken one (see onSttFinal in pipeline-user-speech.ts).
+  // Written only by runChainedTurn.
+  let resumeTurnScope = false;
   // Pipeline transport owns its conversation memory (SessionCore does not in
   // pipeline mode): a text view (client/resume/tool-context) and a
   // ModelMessage view (what the LLM sees, incl. tool calls/results).
@@ -120,6 +116,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
     isTurnInFlight: () => turns.inFlight(),
+    isTurnDraining: () => turnDraining,
+    isResumeTurnInFlight: () => resumeTurnScope && turns.inFlight(),
     hasTurnSpoken: () => turns.spoke(),
     isPlaybackPending: () => playbackClock.pending(),
     abortInFlightTurn: () => abortInFlightTurn(),
@@ -180,8 +178,15 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       .then(() => (terminated || !gate.queueCurrent(epoch) ? undefined : start()));
   }
 
-  function runChainedTurn(text: string, crashLabel: string): void {
-    chainTurn(() => runTurn(text).catch(logTurnCrash(crashLabel)));
+  function runChainedTurn(text: string, crashLabel: string, kind?: { isResume: boolean }): void {
+    chainTurn(async () => {
+      resumeTurnScope = kind?.isResume === true;
+      try {
+        await runTurn(text).catch(logTurnCrash(crashLabel));
+      } finally {
+        resumeTurnScope = false;
+      }
+    });
   }
 
   function emitError(code: SessionErrorCode, message: string): void {
@@ -315,7 +320,17 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
     try {
       const spoke = await body(signal);
-      if (spoke && !signal.aborted) await drainTts(signal);
+      if (spoke && !signal.aborted) {
+        // The body persisted the full reply; only synthesis/playback remains.
+        // A barge-in in this window is classified as a playback cut (see
+        // turnDraining above).
+        turnDraining = true;
+        try {
+          await drainTts(signal);
+        } finally {
+          turnDraining = false;
+        }
+      }
       if (!signal.aborted) callbacks.onReplyDone();
     } finally {
       // Return to idle unless a newer turn already replaced this one.
@@ -394,6 +409,13 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // live) tears the whole transport down.
       startPromise = providers.open();
       if ((await startPromise) === "failed") {
+        // The greeting turn may already be running (onAudioReady fires the
+        // moment TTS is adopted, before open() settles). Silence it — strand
+        // the queued copy and abort a running one — so the failure phrase is
+        // the sole speaker instead of interleaving with the greeting and
+        // racing its TTS drain.
+        gate.invalidateQueued();
+        abortInFlightTurn();
         // Say something first, while the socket is still up and TTS may still
         // be live — see speakStartFailure. terminate() then emits `cancelled`
         // and aborts the session; do NOT go on to signal session-ready, which

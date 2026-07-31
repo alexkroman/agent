@@ -193,6 +193,16 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       // `TransportCallbacks` deliberately has no member for it.
     },
     onCancel() {
+      // Stop the in-flight tools' work promptly — the user has abandoned this
+      // turn, and without the abort a tool keeps running (network calls, db
+      // writes) into a turn the client already displays as cancelled. The
+      // reply object is deliberately NOT swapped (unlike transport-driven
+      // onCancelled): the aborted tools still settle into pendingTools, and
+      // an S2S provider — which has no cancel RPC — is still awaiting
+      // tool.result for the calls it issued; flushing the (error) results on
+      // reply.done is what hands its turn back. Audio stays suppressed by
+      // the transport until the next reply.
+      reply.abort.abort();
       opts.transport.cancelReply();
       emit({ type: "cancelled" });
     },
@@ -216,6 +226,11 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
 
     // ─── Inbound from transport ───────────────────────────────────────────
     onReplyStarted(replyId) {
+      // stop() aborts the current reply and then awaits transport.stop() — an
+      // async drain during which the transport can still dispatch a trailing
+      // reply.started. Unguarded, beginReply would mint a fresh, un-aborted
+      // controller for post-teardown tool calls to run on.
+      if (stopped) return;
       beginReply(replyId);
     },
 
@@ -280,6 +295,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
 
     onAudioChunk(bytes) {
+      if (stopped) return;
       reply.flushedAwaitingContinuation = false;
       opts.client.playAudioChunk(bytes);
     },
@@ -309,6 +325,10 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
 
     onToolCall(callId, name, args) {
+      // See onReplyStarted: a trailing tool.call during stop()'s transport
+      // drain must not start tool work (guest RPC, ctx.db, ctx.generate)
+      // against a session already torn down.
+      if (stopped) return;
       // In relay/host mode the relay `executeTool` emits the `tool_call` frame
       // itself (keyed by callId), so emitting here too would duplicate it.
       if (!opts.onToolResult) emit({ type: "tool_call", toolCallId: callId, toolName: name, args });

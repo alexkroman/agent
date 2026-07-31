@@ -97,6 +97,40 @@ describe("createSessionCore — lifecycle", () => {
     await core.stop();
     expect(transport.stops).toBe(1);
   });
+  test("transport events during stop()'s drain cannot start post-teardown tool work", async () => {
+    // stop() aborts the current reply and then awaits transport.stop() — an
+    // async drain during which the transport can still dispatch trailing
+    // events. A reply.started + tool.call pair used to mint a fresh,
+    // un-aborted controller and run the tool after teardown.
+    const executeTool = vi.fn(async () => "ok");
+    const stopGate = Promise.withResolvers<void>();
+    const sink = makeSink();
+    const transport: Transport = {
+      start: async () => undefined,
+      stop: () => stopGate.promise,
+      sendUserAudio: vi.fn(),
+      sendToolResult: vi.fn(),
+      cancelReply: vi.fn(),
+    };
+    const core = createSessionCore({
+      id: "s-test",
+      agent: "test-agent",
+      client: sink.sink,
+      agentConfig: makeAgentConfig(),
+      executeTool,
+      transport,
+    });
+    await core.start();
+    const stopping = core.stop();
+    // Trailing transport events arrive mid-drain.
+    core.onReplyStarted("late-reply");
+    core.onToolCall("late-call", "lookup", {});
+    core.onAudioChunk(new Uint8Array([1]));
+    stopGate.resolve();
+    await stopping;
+    expect(executeTool).not.toHaveBeenCalled();
+    expect(sink.audioChunks).toHaveLength(0);
+  });
   test("post-stop onAudio does not reschedule the idle timer", async () => {
     vi.useFakeTimers();
     try {
@@ -128,6 +162,41 @@ describe("createSessionCore — client inbound", () => {
     core.onCancel();
     expect(transport.cancelReply).toHaveBeenCalledOnce();
     expect(sink.events.some((e) => e.type === "cancelled")).toBe(true);
+  });
+  test("onCancel aborts an in-flight tool's signal", async () => {
+    // A user cancel must stop the tool's actual work — without the abort the
+    // tool keeps running (network calls, db writes) into a turn the client
+    // already displays as cancelled.
+    let seenSignal: AbortSignal | undefined;
+    const executeTool: ExecuteTool = async (_n, _a, _s, _m, callOpts) => {
+      seenSignal = callOpts?.signal;
+      return "ok";
+    };
+    const { core } = makeCore({ executeTool });
+    await core.start();
+    core.onReplyStarted("r1");
+    core.onToolCall("c1", "lookup", {});
+    expect(seenSignal?.aborted).toBe(false);
+    core.onCancel();
+    expect(seenSignal?.aborted).toBe(true);
+    await flush();
+  });
+  test("onCancel keeps the reply so aborted tool results still flush to the provider", async () => {
+    // S2S has no cancel RPC: the provider is still awaiting tool.result for
+    // the calls it issued, so the (error) results must go out on reply.done
+    // or the provider-side turn stalls.
+    const gate = Promise.withResolvers<string>();
+    const executeTool: ExecuteTool = () => gate.promise;
+    const { core, transport } = makeCore({ executeTool });
+    await core.start();
+    core.onReplyStarted("r1");
+    core.onToolCall("c1", "lookup", {});
+    core.onCancel();
+    gate.resolve("late result");
+    core.onReplyDone();
+    await vi.waitFor(() => {
+      expect(transport.sendToolResult).toHaveBeenCalledWith("c1", "late result");
+    });
   });
   test("onReset emits reset", async () => {
     const { core, sink } = makeCore();

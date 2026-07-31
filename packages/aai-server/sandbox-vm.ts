@@ -235,5 +235,15 @@ export async function createSandboxVm(
     harnessPath: opts.harnessPath,
     slug: opts.slug,
   });
-  return configureSandbox(warm, opts);
+  try {
+    return await configureSandbox(warm, opts);
+  } catch (err) {
+    // configureSandbox's own cleanup only covers the bundle/load failure
+    // path; a throw before it (handler registration, listen) would strand
+    // the just-spawned Modal sandbox until the guest orphan watchdog reaps
+    // it. Idempotent with that path's cleanup.
+    warm.conn.dispose();
+    await warm.cleanup().catch(() => undefined);
+    throw err;
+  }
 }

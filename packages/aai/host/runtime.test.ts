@@ -368,13 +368,18 @@ describe("executeToolCall", () => {
     expect(JSON.parse(result)).toEqual([]);
   });
 
-  test("uses default empty sessionId when not provided", async () => {
+  test("mints a unique sessionId when not provided", async () => {
+    // Not "": the builtin remember/recall notes are keyed by sessionId in a
+    // process-wide map, so sessionless callers sharing the "" bucket would
+    // read each other's notes.
     const tool: ToolDef = {
       description: "Get sessionId",
       execute: (_args, ctx) => ctx.sessionId,
     };
-    const result = await executeToolCall("sidTool", {}, { tool, env: {} });
-    expect(result).toBe("");
+    const first = await executeToolCall("sidTool", {}, { tool, env: {} });
+    const second = await executeToolCall("sidTool", {}, { tool, env: {} });
+    expect(first).not.toBe("");
+    expect(second).not.toBe(first);
   });
 
   test("tool with no parameters schema accepts any args", async () => {

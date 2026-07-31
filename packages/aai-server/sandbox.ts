@@ -235,6 +235,20 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   debug("Sandbox initializing", { slug, agent: config.name });
 
   async function shutdownSandbox(): Promise<void> {
+    // Deploy/secret/storage/delete tear the sandbox down under live sessions
+    // (activeSessions only guards idle eviction). agentRuntime.shutdown()
+    // below stops the sessions, but nothing closed their client sockets —
+    // the WebSocket (and S2S leg) stayed up, so callers limped on with every
+    // tool call failing "Connection disposed" and no signal to retry. Close
+    // the sinks (before clearing them) so clients get a real close frame and
+    // reconnect onto the replacement sandbox (resuming via their sessionId).
+    for (const sink of sessionSinks.values()) {
+      try {
+        sink.close?.("agent restarting");
+      } catch {
+        // Best-effort: a socket already dying must not block the teardown.
+      }
+    }
     sessionSinks.clear();
     // The guest process is going down with us — nothing left to notify.
     for (const timer of pendingSessionEnds.values()) clearTimeout(timer);
@@ -264,7 +278,20 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
         sessionSinks.set(sessionId, sink);
         opts?.onSinkCreated?.(sessionId, sink);
       },
-      onSessionEnd(sessionId) {
+      onSessionEnd(sessionId, sink) {
+        // Identity check, mirroring the SDK's own sessions-map cleanup: a
+        // reconnect with ?sessionId=<same id> can register a NEW session (and
+        // sink) under this key while the old session's async stop() drains.
+        // When the old teardown finally fires, a bare keyed cleanup here
+        // would delete the RESUMED session's sink (every guest client/send
+        // silently dropped) and arm a guest session/end nothing ever cancels
+        // — onSinkCreated's cancelSessionEnd already ran — wiping the live
+        // session's ctx.state mid-conversation at the end of the grace
+        // window. Only the session that still owns the sink may clean up.
+        if (sink !== undefined && sessionSinks.get(sessionId) !== sink) {
+          opts?.onSessionEnd?.(sessionId, sink);
+          return;
+        }
         sessionSinks.delete(sessionId);
         // Reset the delta tracker eagerly — the next call (resumed or not)
         // just pays one full-history send. The guest's session state, by
@@ -272,7 +299,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
         // the resume grace window.
         messageTracker.reset(sessionId);
         scheduleSessionEnd(sessionId);
-        opts?.onSessionEnd?.(sessionId);
+        opts?.onSessionEnd?.(sessionId, sink);
       },
     });
   }

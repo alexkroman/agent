@@ -118,6 +118,13 @@ function createSttEventHandlers(deps: {
   isTerminated: () => boolean;
   /** True while a turn is in flight server-side (an abortable reply exists). */
   isTurnInFlight: () => boolean;
+  /**
+   * True while the in-flight turn's body has completed (full text persisted,
+   * no [interrupted] marker) and only its TTS drain remains.
+   */
+  isTurnDraining: () => boolean;
+  /** True while the in-flight turn is a false-interruption resume. */
+  isResumeTurnInFlight: () => boolean;
   /** True once the in-flight turn has put audio on the wire. */
   hasTurnSpoken: () => boolean;
   /** True while forwarded audio may still be playing client-side. */
@@ -182,7 +189,16 @@ function createSttEventHandlers(deps: {
    * left to resume.
    */
   function bargeInRecoveryArm(): () => void {
-    if (deps.isTurnInFlight()) return () => recovery.arm(DEFAULT_FALSE_INTERRUPTION_PROMPT);
+    // "In flight" alone is the wrong classifier: the turn controller stays
+    // non-null through the TTS drain, which for a sentence-flushing adapter
+    // lasts as long as the remaining synthesis. A turn in that window already
+    // persisted its FULL text with no [interrupted] marker, so the mid-turn
+    // prompt would tell the model to continue past an ending it produced —
+    // it repeats itself or rambles. Only a turn whose body is still streaming
+    // resumes from the marker; everything else is a playback cut.
+    if (deps.isTurnInFlight() && !deps.isTurnDraining()) {
+      return () => recovery.arm(DEFAULT_FALSE_INTERRUPTION_PROMPT);
+    }
     const tailPrompt = deps.tailResumePrompt();
     if (tailPrompt === undefined) return () => undefined;
     return () => recovery.arm(tailPrompt);
@@ -254,6 +270,20 @@ function createSttEventHandlers(deps: {
       // false interruption; a genuine turn commits below. Restores the
       // consecutive-resume budget too: the user is demonstrably present.
       recovery.onUserTurn();
+      // The recovery window may have already fired (a short utterance whose
+      // only STT event is this final loses the race to the timer): a resume
+      // turn is then in flight covering an "interruption" this final just
+      // proved genuine. Abort it while it is still silent — otherwise the
+      // agent first speaks a full continuation of the interrupted reply and
+      // only then answers the user. A resume that already spoke falls through
+      // to the ordinary barge-in rules below. This cannot starve replies the
+      // way aborting unspoken turns generally would: only resume turns are
+      // aborted here, and each abort is caused by a committed user turn.
+      if (deps.isResumeTurnInFlight() && !deps.hasTurnSpoken()) {
+        log.info("Pipeline resume mooted by committed user turn", { sid: deps.sid });
+        deps.abortInFlightTurn();
+        callbacks.onCancelled();
+      }
       // A final can arrive without any preceding partial (short utterances on
       // some STT providers) — make sure the speaking edge still fires.
       speechEdges.speechStarted();
@@ -321,6 +351,10 @@ export function createUserActivity(deps: {
   /** False once the transport terminated or the session aborted (nudger gate). */
   isSessionActive(): boolean;
   isTurnInFlight(): boolean;
+  /** True while the in-flight turn's body has finished and only its TTS drain remains. */
+  isTurnDraining(): boolean;
+  /** True while the in-flight turn is a false-interruption resume. */
+  isResumeTurnInFlight(): boolean;
   /** True once the in-flight turn has put audio on the wire. */
   hasTurnSpoken(): boolean;
   isPlaybackPending(): boolean;
@@ -328,7 +362,7 @@ export function createUserActivity(deps: {
   /** Cut-point resume prompt for a playback-tail barge-in — see {@link SttEventHandlers}. */
   tailResumePrompt(): string | undefined;
   /** Chain `runTurn(text)` behind the active turn, logging crashes as `crashLabel`. */
-  runChainedTurn(text: string, crashLabel: string): void;
+  runChainedTurn(text: string, crashLabel: string, kind?: { isResume: boolean }): void;
 }): UserActivity {
   const { log, sid, callbacks } = deps;
   const isBusy = (): boolean => deps.isTurnInFlight() || deps.isPlaybackPending();
@@ -364,13 +398,17 @@ export function createUserActivity(deps: {
     onResume: (resumePrompt) => {
       log.info("Pipeline false-interruption resume", { sid });
       speechEdges.speechEnded();
-      deps.runChainedTurn(resumePrompt, "Pipeline false-interruption resume crashed");
+      deps.runChainedTurn(resumePrompt, "Pipeline false-interruption resume crashed", {
+        isResume: true,
+      });
     },
   });
 
   const sttEvents = createSttEventHandlers({
     isTerminated: deps.isTerminated,
     isTurnInFlight: deps.isTurnInFlight,
+    isTurnDraining: deps.isTurnDraining,
+    isResumeTurnInFlight: deps.isResumeTurnInFlight,
     hasTurnSpoken: deps.hasTurnSpoken,
     isPlaybackPending: deps.isPlaybackPending,
     abortInFlightTurn: deps.abortInFlightTurn,

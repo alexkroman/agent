@@ -162,6 +162,11 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   // what the platform actually restricts.
   installToolFetchGuard();
   const allowedHosts = agent.allowedHosts ?? [];
+  // One concurrency counter per runtime (= per agent), matching the platform's
+  // per-sandbox counter — a fresh counter per tool call let N concurrent tool
+  // calls each open the full fetch budget locally and trip the cap only in
+  // production.
+  const activeFetches = { count: 0 };
   const vector = exemptFromToolEgress(resolvedVector);
   const generate = setupGenerate(deps);
 
@@ -186,7 +191,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
         signal: callOpts?.signal,
       });
-    return customNames.has(name) ? runInToolEgress(allowedHosts, run) : run();
+    return customNames.has(name) ? runInToolEgress(allowedHosts, run, activeFetches) : run();
   };
   return { executeTool, toolSchemas, toolGuidance: builtins.guidance };
 }

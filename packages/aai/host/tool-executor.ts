@@ -67,7 +67,10 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
       return generate(genOpts, signal !== undefined ? { signal } : {});
     },
     messages: messages ?? [],
-    sessionId: sessionId ?? "",
+    // No session → a unique per-call id, NOT "": the builtin remember/recall
+    // notes are keyed by sessionId in a process-wide map, so sessionless
+    // callers sharing the "" bucket would read each other's notes.
+    sessionId: sessionId ?? crypto.randomUUID(),
     send(event: string, data: unknown): void {
       send?.(event, data);
     },
@@ -100,10 +103,22 @@ export async function executeToolCall(
     return toolError(`Invalid arguments for tool "${name}": ${formatZodIssues(parsed.error)}`);
   }
 
+  // Per-call controller, exposed to the tool as ctx.signal. It follows the
+  // turn signal AND fires when the call settles exceptionally — above all on
+  // timeout, which the turn signal alone never covered: pTimeout only settles
+  // the await, so a timed-out tool kept running (and kept mutating shared
+  // ctx.state) after its error result was already committed to the turn, with
+  // no way to even notice it had timed out.
+  const turnSignal = options.signal;
+  const callController = new AbortController();
+  const followTurn = (): void => callController.abort(turnSignal?.reason);
+  if (turnSignal?.aborted) followTurn();
+  else turnSignal?.addEventListener("abort", followTurn, { once: true });
+
   try {
-    const ctx = buildToolContext(options);
+    const ctx = buildToolContext({ ...options, signal: callController.signal });
     await yieldTick();
-    if (options.signal?.aborted) {
+    if (callController.signal.aborted) {
       return toolError(`Tool "${name}" was cancelled before it ran`);
     }
     // The signal makes the await settle promptly on barge-in/reset/stop; the
@@ -111,16 +126,23 @@ export async function executeToolCall(
     const result = await pTimeout(Promise.resolve(tool.execute(parsed.data, ctx)), {
       milliseconds: TOOL_EXECUTION_TIMEOUT_MS,
       message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
-      ...(options.signal !== undefined ? { signal: options.signal } : {}),
+      signal: callController.signal,
     });
     await yieldTick();
     return stringifyResult(result);
   } catch (err: unknown) {
+    // The call is over (timeout or failure): fire the per-call signal so a
+    // still-running execute can observe ctx.signal and stop its side effects.
+    callController.abort(err);
     if (logger) {
       logger.warn("Tool execution failed", { tool: name, error: errorDetail(err) });
     } else {
       console.warn(`[tool-executor] Tool execution failed: ${name}`, err);
     }
     return toolError(errorMessage(err));
+  } finally {
+    // The turn signal outlives this call; drop the follower or every tool
+    // call in the reply leaks a listener on it.
+    turnSignal?.removeEventListener("abort", followTurn);
   }
 }

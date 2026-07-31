@@ -139,6 +139,30 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
   }
 
   /**
+   * Converge on the sandbox the slot CURRENTLY holds. The identity check is
+   * repeated after each await: a deploy/secret-restart/delete acquiring the
+   * slug lock in a resolve's lock-handoff window terminates the just-resolved
+   * sandbox and installs a fresh slot — starting the session on the stale
+   * reference would run it against a disposed guest connection (every tool
+   * call failing "Connection disposed") on the pre-deploy bundle. Bounded
+   * retries: a slug being redeployed in a tight loop ends in a clean close
+   * (null) rather than livelock.
+   */
+  async function resolveCurrentSandbox(
+    slug: string,
+    initial: Awaited<ReturnType<typeof resolveSandbox>>,
+    isClosed: () => boolean,
+  ): Promise<Awaited<ReturnType<typeof resolveSandbox>>> {
+    let sandbox = initial;
+    for (let attempt = 0; opts.slots.get(slug)?.sandbox !== sandbox; attempt++) {
+      if (attempt >= 2) return null;
+      sandbox = await resolveSandbox(slug, opts.sandboxOpts).catch(() => null);
+      if (isClosed() || sandbox === null) break;
+    }
+    return sandbox;
+  }
+
+  /**
    * Start the session once the socket is upgraded. Extracted from the
    * upgrade handler so neither piece trips the complexity cap.
    */
@@ -191,10 +215,8 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
     // The sandbox resolved at upgrade time can be shut down (idle eviction,
     // deploy/delete) before the handshake completes; starting a session on it
     // would be use-after-teardown. When the slot no longer holds it,
-    // re-resolve once (or fail the session cleanly below).
-    if (opts.slots.get(slug)?.sandbox !== sandbox) {
-      sandbox = await resolveSandbox(slug, opts.sandboxOpts).catch(() => null);
-    }
+    // re-resolve (or fail the session cleanly below).
+    sandbox = await resolveCurrentSandbox(slug, sandbox, () => closed);
     // Track the live session so idle eviction can't kill the sandbox mid-call
     // (a session can outlive IDLE_SANDBOX_MS). The returned handle pins the
     // specific slot object — a redeploy replaces the slot, and releasing by

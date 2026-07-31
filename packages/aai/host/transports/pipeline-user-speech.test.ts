@@ -6,7 +6,9 @@
 // false-interruption recovery timer's specs live in pipeline-recovery.test.ts.
 
 import { describe, expect, test, vi } from "vitest";
-import { createSpeechEdgeTracker } from "./pipeline-user-speech.ts";
+import { DEFAULT_FALSE_INTERRUPTION_PROMPT } from "../../sdk/constants.ts";
+import { silentLogger } from "../_test-utils.ts";
+import { createSpeechEdgeTracker, createUserActivity } from "./pipeline-user-speech.ts";
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
@@ -89,5 +91,117 @@ describe("createSpeechEdgeTracker", () => {
     await sleep(40);
     // The pending watchdog must not fire an edge event after the reset.
     expect(cb.onSpeechStopped).not.toHaveBeenCalled();
+  });
+});
+
+// ─── Barge-in classification + resume mooting (createUserActivity) ─────────
+
+type ActivityDeps = Parameters<typeof createUserActivity>[0];
+
+function makeActivity(overrides: Partial<ActivityDeps> = {}): {
+  activity: ReturnType<typeof createUserActivity>;
+  calls: { aborts: number; cancelled: number; chained: { text: string; isResume: boolean }[] };
+  state: { inFlight: boolean; draining: boolean; resumeInFlight: boolean; spoke: boolean };
+} {
+  const calls = {
+    aborts: 0,
+    cancelled: 0,
+    chained: [] as { text: string; isResume: boolean }[],
+  };
+  const state = { inFlight: true, draining: false, resumeInFlight: false, spoke: true };
+  const deps: ActivityDeps = {
+    log: silentLogger,
+    sid: "t",
+    callbacks: {
+      onCancelled: () => {
+        calls.cancelled++;
+      },
+      onUserTranscript: vi.fn(),
+      onUserTranscriptPartial: vi.fn(),
+      onSpeechStarted: vi.fn(),
+      onSpeechStopped: vi.fn(),
+    },
+    silenceTimeoutMs: undefined,
+    silencePrompt: undefined,
+    falseInterruptionTimeoutMs: 20,
+    minBargeInWords: 2,
+    interruptionMinDurationMs: 0,
+    isTerminated: () => false,
+    isSessionActive: () => true,
+    isTurnInFlight: () => state.inFlight,
+    isTurnDraining: () => state.draining,
+    isResumeTurnInFlight: () => state.resumeInFlight,
+    hasTurnSpoken: () => state.spoke,
+    isPlaybackPending: () => false,
+    abortInFlightTurn: () => {
+      calls.aborts++;
+      state.inFlight = false;
+      state.resumeInFlight = false;
+      state.spoke = false;
+    },
+    tailResumePrompt: () => "TAIL_PROMPT",
+    runChainedTurn: (text, _label, kind) => {
+      calls.chained.push({ text, isResume: kind?.isResume === true });
+    },
+    ...overrides,
+  };
+  return { activity: createUserActivity(deps), calls, state };
+}
+
+describe("barge-in recovery classification", () => {
+  test("a barge-in mid-stream arms the [interrupted] continuation prompt", async () => {
+    const { activity, calls } = makeActivity();
+    activity.sttEvents.onSttPartial("stop right there");
+    expect(calls.aborts).toBe(1);
+    // No final ever commits — the recovery window fires the resume.
+    await vi.waitFor(() => {
+      expect(calls.chained).toHaveLength(1);
+    });
+    expect(calls.chained[0]?.text).toBe(DEFAULT_FALSE_INTERRUPTION_PROMPT);
+    expect(calls.chained[0]?.isResume).toBe(true);
+  });
+
+  test("a barge-in during the TTS drain arms the cut-point prompt, not [interrupted]", async () => {
+    // The turn controller stays non-null through the drain, but the turn's
+    // FULL text is already persisted with no [interrupted] marker — resuming
+    // from the marker makes the model repeat or ramble past its own ending.
+    const { activity, calls, state } = makeActivity();
+    state.draining = true;
+    activity.sttEvents.onSttPartial("stop right there");
+    expect(calls.aborts).toBe(1);
+    await vi.waitFor(() => {
+      expect(calls.chained).toHaveLength(1);
+    });
+    expect(calls.chained[0]?.text).toBe("TAIL_PROMPT");
+  });
+});
+
+describe("resume mooted by a committed user turn", () => {
+  test("a final landing after the resume fired aborts the still-silent resume turn", () => {
+    // Short utterances can produce a final with no preceding partial; the
+    // recovery timer may have fired first and its resume turn already be in
+    // flight. The final proves the interruption was genuine — the unspoken
+    // resume must die, or the agent speaks a full continuation of the
+    // interrupted reply before answering the user.
+    const { activity, calls, state } = makeActivity();
+    state.inFlight = true;
+    state.resumeInFlight = true;
+    state.spoke = false;
+    activity.sttEvents.onSttFinal("what about tuesday");
+    expect(calls.aborts).toBe(1);
+    expect(calls.cancelled).toBe(1);
+    // The user's turn still commits and runs.
+    expect(calls.chained).toEqual([{ text: "what about tuesday", isResume: false }]);
+  });
+
+  test("a resume that already spoke is handled by the ordinary barge-in rules", () => {
+    const { activity, calls, state } = makeActivity();
+    state.inFlight = true;
+    state.resumeInFlight = true;
+    state.spoke = true; // audibly resuming
+    activity.sttEvents.onSttFinal("what about tuesday");
+    // Aborted via the agentIsSpeaking() barge-in path (>= minBargeInWords).
+    expect(calls.aborts).toBe(1);
+    expect(calls.chained).toEqual([{ text: "what about tuesday", isResume: false }]);
   });
 });

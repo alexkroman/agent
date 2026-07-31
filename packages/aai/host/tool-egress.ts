@@ -32,7 +32,12 @@
  */
 
 import { AsyncLocalStorage } from "node:async_hooks";
-import { capResponseBody, checkToolFetch, performToolFetch } from "./guest-fetch-policy.ts";
+import {
+  capResponseBody,
+  checkToolFetch,
+  performToolFetch,
+  TOOL_FETCH_TIMEOUT_MS,
+} from "./guest-fetch-policy.ts";
 
 type EgressScope = {
   allowedHosts: readonly string[];
@@ -107,6 +112,12 @@ export function installToolFetchGuard(): void {
     }
 
     scope.active.count++;
+    let released = false;
+    const release = (): void => {
+      if (released) return;
+      released = true;
+      scope.active.count--;
+    };
     try {
       // No `fetchFn`: `performToolFetch` must use its own pinned default. Its
       // SSRF screening attaches a DNS-pinning dispatcher built from this
@@ -120,18 +131,39 @@ export function installToolFetchGuard(): void {
       const response = await egressScope.exit(() =>
         performToolFetch(url, normalized, { allowedHosts: scope.allowedHosts }),
       );
-      return capResponseBody(response);
-    } finally {
-      scope.active.count--;
+      // The slot is held until the response BODY settles, matching the
+      // platform, which holds its slot while relaying the body over NDJSON —
+      // releasing at headers under-counted streaming reads and made the cap
+      // looser in dev than in production. A body the tool never reads settles
+      // nothing, so a backstop timer bounds the hold at the fetch timeout;
+      // the request itself cannot outlive that (AbortSignal.timeout covers
+      // the body read too).
+      setTimeout(release, TOOL_FETCH_TIMEOUT_MS).unref?.();
+      return capResponseBody(response, release);
+    } catch (err) {
+      release();
+      throw err;
     }
   };
   guarded[GUARD_TAG] = true;
   globalThis.fetch = guarded;
 }
 
-/** Run `fn` with the tool-fetch policy enforced on any `fetch` it performs. */
-export function runInToolEgress<T>(allowedHosts: readonly string[], fn: () => T): T {
-  return egressScope.run({ allowedHosts, active: { count: 0 } }, fn);
+/**
+ * Run `fn` with the tool-fetch policy enforced on any `fetch` it performs.
+ *
+ * Pass `active` to share one concurrency counter across calls. The platform's
+ * cap is per **agent** (one counter per sandbox fetch handler), so a runtime
+ * should thread one per-runtime object here — a fresh counter per tool call
+ * would let N concurrent tool calls each open the full budget, a cap that
+ * passes in dev and trips in production.
+ */
+export function runInToolEgress<T>(
+  allowedHosts: readonly string[],
+  fn: () => T,
+  active?: { count: number },
+): T {
+  return egressScope.run({ allowedHosts, active: active ?? { count: 0 } }, fn);
 }
 
 /**

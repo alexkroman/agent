@@ -101,18 +101,41 @@ describe("createTurnTracker", () => {
     expect(doneCount()).toBe(2);
   });
 
-  test("new-turn text resets the pairing debt left by an is_final-only server", () => {
+  test("a FlushDone delayed past the turn boundary cannot retire the next turn's flush", () => {
+    // The previous turn's last synthesis was acknowledged by its `is_final` —
+    // ending that turn — while the paired `FlushDone` was still on the wire.
+    // The debt must survive `onTurnText`, or the stale frame frees a flush of
+    // the NEXT turn and `done` overtakes its still-streaming audio.
     const { turn, doneCount } = tracker();
     turn.onTurnText();
     turn.onFlushSent();
     turn.closeTurn();
-    turn.onAck("is_final"); // debt of 1 that no FlushDone ever repays
+    turn.onAck("is_final"); // ends turn A; its FlushDone is still in flight
     expect(doneCount()).toBe(1);
 
+    turn.onTurnText(); // turn B starts before the stale frame lands
+    turn.onFlushSent();
+    turn.onAck("flush_done"); // turn A's late FlushDone — pairs with the debt
+    turn.closeTurn();
+    expect(doneCount()).toBe(1); // B still waiting on its own ack
+
+    turn.onAck("flush_done"); // B's real acknowledgement
+    expect(doneCount()).toBe(2);
+  });
+
+  test("a stale FlushDone landing between turns is absorbed by the pairing debt", () => {
+    const { turn, doneCount } = tracker();
     turn.onTurnText();
     turn.onFlushSent();
     turn.closeTurn();
-    turn.onAck("flush_done"); // must NOT be eaten by the stale debt
+    turn.onAck("is_final");
+    expect(doneCount()).toBe(1);
+
+    turn.onAck("flush_done"); // late pair partner, no turn open — a no-op
+    turn.onTurnText();
+    turn.onFlushSent();
+    turn.closeTurn();
+    turn.onAck("flush_done");
     expect(doneCount()).toBe(2);
   });
 

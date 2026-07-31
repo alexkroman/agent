@@ -14,6 +14,9 @@ import { AUDIO_DONE_FRAME, type SessionWebSocket, safeSend, WS_OPEN } from "./ws
 /** WebSocket close code sent when a stalled client is disconnected (policy violation). */
 const WS_CLOSE_POLICY_VIOLATION = 1008;
 
+/** Normal closure — used for server-initiated session retirement. */
+const WS_CLOSE_NORMAL = 1000;
+
 /**
  * Creates a {@link ClientSink} backed by a plain WebSocket.
  *
@@ -86,6 +89,13 @@ export function createClientSink(
     },
     playAudioDone() {
       pacer.pushDone();
+    },
+    close(reason) {
+      try {
+        ws.close?.(WS_CLOSE_NORMAL, reason);
+      } catch (err) {
+        log.debug("ws: sink close failed", { error: errorMessage(err) });
+      }
     },
   };
   return { client, stopPacing: pacer.stop };

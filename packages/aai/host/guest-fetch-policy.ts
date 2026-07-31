@@ -143,9 +143,19 @@ export function performToolFetch(
  *
  * Counts streamed bytes rather than trusting `content-length`, which is absent
  * on chunked responses and is attacker-controlled besides.
+ *
+ * `onSettled` (optional) fires once when the body is done — drained, over the
+ * cap, or cancelled by the consumer — and immediately for a bodyless response.
+ * The egress guard uses it to hold its concurrency slot for the body's
+ * lifetime, as the platform does while relaying. A source-side stream error
+ * bypasses the transformer hooks, so callers needing a hard guarantee must
+ * keep their own backstop (the guard bounds it with the fetch timeout).
  */
-export function capResponseBody(response: Response): Response {
-  if (!response.body) return response;
+export function capResponseBody(response: Response, onSettled?: () => void): Response {
+  if (!response.body) {
+    onSettled?.();
+    return response;
+  }
   let seen = 0;
   const capped = response.body.pipeThrough(
     new TransformStream<Uint8Array, Uint8Array>({
@@ -155,9 +165,16 @@ export function capResponseBody(response: Response): Response {
           controller.error(
             new TypeError(`Response exceeds ${TOOL_FETCH_MAX_RESPONSE_BYTES} byte limit`),
           );
+          onSettled?.();
           return;
         }
         controller.enqueue(chunk);
+      },
+      flush() {
+        onSettled?.();
+      },
+      cancel() {
+        onSettled?.();
       },
     }),
   );
