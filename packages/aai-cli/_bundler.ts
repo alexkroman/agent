@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createHash } from "node:crypto";
+import { hash } from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
@@ -111,10 +111,10 @@ export function createWorkerEvaluator(cwd: string): (code: string) => Promise<Ag
   let lastHash: string | undefined;
   let lastAgentDef: AgentDef | undefined;
   return async (code: string): Promise<AgentDef> => {
-    const hash = createHash("sha256").update(code).digest("hex");
-    if (lastAgentDef && hash === lastHash) return lastAgentDef;
+    const codeHash = hash("sha256", code);
+    if (lastAgentDef && codeHash === lastHash) return lastAgentDef;
     const agentDef = await evalWorkerBundle(code, cwd);
-    lastHash = hash;
+    lastHash = codeHash;
     lastAgentDef = agentDef;
     return agentDef;
   };

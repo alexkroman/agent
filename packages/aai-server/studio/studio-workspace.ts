@@ -17,7 +17,7 @@
  * races, which the lock cannot see.
  */
 
-import { createHash } from "node:crypto";
+import { hash } from "node:crypto";
 import { SafePathSchema } from "../schemas.ts";
 import {
   MAX_STUDIO_FILE_BYTES,
@@ -55,7 +55,7 @@ export function filesHash(files: Record<string, string>): string {
   const stable = Object.keys(files)
     .sort()
     .map((path) => [path, files[path]]);
-  return createHash("sha256").update(JSON.stringify(stable)).digest("hex");
+  return hash("sha256", JSON.stringify(stable));
 }
 
 /**
@@ -83,7 +83,7 @@ export function hasUnpublishedChanges(workspace: StudioWorkspace): boolean {
  * is sufficient — it is a namespace identifier, not a stored credential.
  */
 export function studioScope(apiKey: string): string {
-  return createHash("sha256").update(`studio:${apiKey}`).digest("base64url");
+  return hash("sha256", `studio:${apiKey}`, "base64url");
 }
 
 /** Validate a workspace-relative file path; throws on traversal/absolute paths. */

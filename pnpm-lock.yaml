@@ -213,9 +213,6 @@ importers:
       p-debounce:
         specifier: ^5.1.0
         version: 5.1.0
-      picocolors:
-        specifier: ^1.1.1
-        version: 1.1.1
       rolldown:
         specifier: ~1.1.4
         version: 1.1.5

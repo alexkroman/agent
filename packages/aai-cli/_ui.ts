@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { styleText } from "node:util";
 import * as p from "@clack/prompts";
-import pc from "picocolors";
 
 type Log = typeof p.log;
 
@@ -35,7 +35,7 @@ export function unwrapCancel<T>(result: T | symbol): T {
 
 /** Format a URL for display. */
 export function fmtUrl(url: string): string {
-  return pc.cyanBright(url);
+  return styleText("cyanBright", url);
 }
 
 /**

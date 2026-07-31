@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createHash } from "node:crypto";
+import { hash } from "node:crypto";
 import type { Vector, VectorMatch, VectorQueryOptions } from "../sdk/vector.ts";
 
 type MemoryVectorOptions = {
@@ -36,8 +36,8 @@ function getStore(ns: string): Map<string, StoredRecord> {
 // the goal is proving tool wiring rather than retrieval ranking.
 function pseudoEmbed(text: string): Float32Array {
   const out = new Float32Array(DIM);
-  const h1 = createHash("sha256").update(text).digest();
-  const h2 = createHash("sha256").update(h1).digest();
+  const h1 = hash("sha256", text, "buffer");
+  const h2 = hash("sha256", h1, "buffer");
   for (let i = 0; i < 32; i++) {
     out[i] = ((h1[i] as number) - 128) / 128;
     out[i + 32] = ((h2[i] as number) - 128) / 128;

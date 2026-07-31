@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import path from "node:path";
-import pc from "picocolors";
+import { styleText } from "node:util";
 import { type CommandResult, ok } from "./_output.ts";
 import { fmtUrl, log, parsePort } from "./_ui.ts";
 import { errorDetail } from "./_utils.ts";
@@ -47,7 +47,7 @@ export async function executeDev(opts: {
   cleanup = await startDevServer({ cwd: opts.cwd, port });
 
   const url = `http://localhost:${port}`;
-  log.success(`${pc.bold(agentName)} running at ${fmtUrl(url)}`);
+  log.success(`${styleText("bold", agentName)} running at ${fmtUrl(url)}`);
   log.info("Press Ctrl-C to stop");
 
   // Defense-in-depth: a provider SDK can emit a stray unhandled rejection on a

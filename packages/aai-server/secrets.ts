@@ -4,7 +4,7 @@
 // hash or decrypt formats: nothing predating the current scheme was ever
 // deployed.
 
-import { createHash } from "node:crypto";
+import { hash } from "node:crypto";
 import { hash as argon2Hash, verify as argon2Verify } from "@node-rs/argon2";
 import { TtlCache } from "./_ttl-cache.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -56,7 +56,7 @@ export async function hashApiKey(apiKey: string): Promise<string> {
 export async function verifyApiKeyHash(apiKey: string, storedHash: string): Promise<boolean> {
   // The fixed-length hex digest doubles as a concatenation-safe prefix — no
   // (apiKey, storedHash) pair can collide with another by concatenation.
-  const cacheKey = `${createHash("sha256").update(apiKey).digest("hex")}:${storedHash}`;
+  const cacheKey = `${hash("sha256", apiKey)}:${storedHash}`;
   const cached = verifyCache.get(cacheKey);
   if (cached !== undefined) return cached;
 
