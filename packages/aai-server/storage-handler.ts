@@ -16,7 +16,8 @@
 import { HTTPException } from "hono/http-exception";
 import type { AppDatabases } from "./app-database.ts";
 import type { AppContext } from "./context.ts";
-import { restartSlotSandbox, type SlotCache, withSlugLock } from "./sandbox-slots.ts";
+import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
+import { restartSlotSandbox, type SlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
 
 /** What the storage core needs from the server bindings. */
@@ -24,6 +25,8 @@ export type StorageEnv = {
   slots: SlotCache;
   secrets: SecretStore;
   appDb?: AppDatabases | undefined;
+  /** Per-slug mutation lock; defaults to in-process for direct callers. */
+  slugLock?: SlugMutationLock | undefined;
 };
 
 const UNCONFIGURED_MESSAGE =
@@ -39,7 +42,7 @@ export async function storageStatus(env: StorageEnv, slug: string): Promise<{ en
 export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled: true }> {
   const appDb = env.appDb;
   if (!appDb) throw new HTTPException(503, { message: UNCONFIGURED_MESSAGE });
-  return withSlugLock(slug, async () => {
+  return (env.slugLock ?? localSlugLock)(slug, async () => {
     const meta = await appDb.provision(slug);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
     await restartSlotSandbox(env.slots, slug, "storage enable");
@@ -52,7 +55,7 @@ export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled:
 export function disableStorage(env: StorageEnv, slug: string): Promise<{ enabled: false }> {
   const appDb = env.appDb;
   if (!appDb) throw new HTTPException(503, { message: UNCONFIGURED_MESSAGE });
-  return withSlugLock(slug, async () => {
+  return (env.slugLock ?? localSlugLock)(slug, async () => {
     await appDb.deprovision(slug);
     await env.secrets.delete(appDbSecretName(slug));
     await restartSlotSandbox(env.slots, slug, "storage disable");

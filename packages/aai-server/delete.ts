@@ -2,11 +2,11 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import type { AppContext } from "./context.ts";
-import { deleteSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
+import { deleteSlot, terminateSlot } from "./sandbox-slots.ts";
 
 export function handleDelete(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
-  return withSlugLock(slug, () => handleDeleteInner(c));
+  return c.env.slugLock(slug, () => handleDeleteInner(c));
 }
 
 async function handleDeleteInner(c: AppContext): Promise<Response> {

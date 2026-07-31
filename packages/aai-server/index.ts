@@ -23,6 +23,7 @@ import { createBundleStore } from "./bundle-store.ts";
 import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
+import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { createS3Storage } from "./s3-storage.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
@@ -34,6 +35,12 @@ import {
   type SqlExec,
 } from "./secret-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./studio/chat-store.ts";
+import {
+  CHAT_RATE_LIMIT,
+  createPgRateLimiter,
+  PROJECT_CREATE_RATE_LIMIT,
+  type StudioRateLimiters,
+} from "./studio/studio-rate-limit.ts";
 import {
   createMemoryWorkspaceStore,
   createPgWorkspaceStore,
@@ -84,6 +91,10 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
   workspaces: WorkspaceStore;
   chats: ChatStore;
   appDb?: AppDatabases;
+  /** Cross-replica slug mutation lock; in-process without a platform db. */
+  slugLock: SlugMutationLock;
+  /** Cross-replica studio rate limiters; per-process memory without one. */
+  studioRateLimiters?: StudioRateLimiters;
 } {
   const url = env.SUPABASE_DB_URL;
   if (!url) {
@@ -97,6 +108,7 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
       secrets: createMemorySecretStore(),
       workspaces: createMemoryWorkspaceStore(),
       chats: createMemoryChatStore(),
+      slugLock: localSlugLock,
     };
   }
   // The pool lives for the process; connections drain when the process exits
@@ -109,6 +121,21 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
     workspaces: localDev ? createMemoryWorkspaceStore() : createPgWorkspaceStore(exec),
     chats: localDev ? createMemoryChatStore() : createPgChatStore(exec),
     appDb: createAppDatabases({ url, sql: exec }),
+    // Cross-request coordination lives in Postgres too, so any replica can
+    // serve any request: per-slug mutation exclusion and the studio's
+    // fixed-window rate limits both survive replica restarts and scale-out.
+    slugLock: localDev ? localSlugLock : createPgSlugLock(exec),
+    ...(localDev
+      ? {}
+      : {
+          studioRateLimiters: {
+            chat: createPgRateLimiter(exec, { name: "studio-chat", ...CHAT_RATE_LIMIT }),
+            projectCreate: createPgRateLimiter(exec, {
+              name: "studio-project-create",
+              ...PROJECT_CREATE_RATE_LIMIT,
+            }),
+          },
+        }),
   };
 }
 
@@ -123,7 +150,7 @@ function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
 
 function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
   const storage = buildStorage(env);
-  const { secrets, workspaces, chats, appDb } = buildPlatformDb(env);
+  const { secrets, workspaces, chats, appDb, slugLock, studioRateLimiters } = buildPlatformDb(env);
   const slots = createSlotCache();
   const pool = buildPool(env);
   return {
@@ -134,8 +161,10 @@ function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
     workspaces,
     chats,
     secrets,
+    slugLock,
     defaultVector: buildDefaultVector(env),
     ...(appDb && { appDb }),
+    ...(studioRateLimiters && { studioRateLimiters }),
     ...(pool && { pool }),
   };
 }

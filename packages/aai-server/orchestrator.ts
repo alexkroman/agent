@@ -41,6 +41,7 @@ import { createErrorHandler } from "./error-handler.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
+import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveAgentVector } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
@@ -56,6 +57,7 @@ import {
 } from "./storage-handler.ts";
 import type { BundleStore } from "./store-types.ts";
 import type { ChatStore } from "./studio/chat-store.ts";
+import type { StudioRateLimiters } from "./studio/studio-rate-limit.ts";
 import { createStudioRoutes } from "./studio/studio-routes.ts";
 import {
   handleStudioClientAsset,
@@ -82,6 +84,13 @@ export type OrchestratorOpts = {
   secrets?: SecretStore;
   /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
+  /**
+   * Per-slug mutation lock (deploy/delete/secret/storage). Postgres lease in
+   * production so replicas exclude each other; defaults to in-process.
+   */
+  slugLock?: SlugMutationLock;
+  /** Studio rate limiters. Postgres-backed in production; defaults to memory. */
+  studioRateLimiters?: StudioRateLimiters;
   /** Factory that creates the server-default Vector for a given slug. */
   defaultVector: (slug: string) => Vector;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
@@ -180,7 +189,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // are outside the slug grammar), so no agent route can shadow it.
   app.get("/favicon.ico", handleStudioFavicon);
   app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
-  app.route("/studio", createStudioRoutes({ pool: opts.pool }));
+  app.route(
+    "/studio",
+    createStudioRoutes({
+      pool: opts.pool,
+      ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
+    }),
+  );
   app.get("/studio/", (c) => c.redirect("/", 302));
 
   // Cap the on-the-wire deploy body (compressed or not) before anything
@@ -258,6 +273,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // the storage-status route (and anything else reading secrets) works.
     secrets: opts.secrets ?? createMemorySecretStore(),
     ...(opts.appDb && { appDb: opts.appDb }),
+    // Same default posture as secrets: tests build orchestrators without a
+    // platform database, where in-process exclusion is exact.
+    slugLock: opts.slugLock ?? localSlugLock,
     defaultVector: opts.defaultVector,
   };
   // resolveSandbox takes the bindings minus the studio stores (bundle data

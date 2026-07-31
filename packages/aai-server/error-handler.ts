@@ -4,6 +4,7 @@ import { errorDetail, errorMessage } from "@alexkroman1/aai";
 import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
+import { SlugLockTimeoutError } from "./platform-lock.ts";
 
 /**
  * Shared Hono error handler for the platform server and sidecars.
@@ -18,6 +19,11 @@ export function createErrorHandler(opts?: { exposeErrors?: boolean }): ErrorHand
     }
     if (err instanceof z.ZodError || err instanceof SyntaxError) {
       return c.json({ error: err.message }, 400);
+    }
+    // Cross-replica slug-lock contention: another replica holds the lease.
+    // A retryable conflict, not a server fault.
+    if (err instanceof SlugLockTimeoutError) {
+      return c.json({ error: err.message }, 409);
     }
     console.error(`Unhandled error on ${c.req.path}: ${errorDetail(err)}`);
     return c.json({ error: opts?.exposeErrors ? errorMessage(err) : "Internal server error" }, 500);

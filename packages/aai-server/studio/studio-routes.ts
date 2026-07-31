@@ -37,6 +37,7 @@ import {
   createRateLimiter,
   PROJECT_CREATE_RATE_LIMIT,
   type RateLimiter,
+  type StudioRateLimiters,
 } from "./studio-rate-limit.ts";
 import { createStudioSandbox, type StudioSandbox } from "./studio-sandbox.ts";
 import {
@@ -63,6 +64,12 @@ import { WorkspaceConflictError } from "./workspace-store.ts";
 export type StudioRouteOptions = {
   /** Warm harness pool shared with deployed-agent sandboxes. */
   pool?: SandboxPool | undefined;
+  /**
+   * Rate limiters for chat and project creation. Postgres-backed in
+   * production so the limits hold across replicas; defaults to per-process
+   * in-memory windows (dev/tests).
+   */
+  rateLimiters?: StudioRateLimiters | undefined;
   /** Test seam: swap the deploy pipeline without module mocks. */
   deployProject?: typeof deployStudioProject;
   /** Test seam: swap the LLM gate. */
@@ -86,12 +93,14 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
 
   // Per-scope fixed-window limits (see studio-rate-limit.ts): any non-empty
   // bearer authenticates here, so without these the chat route is an
-  // unmetered LLM proxy on platform-owned keys. Per router instance — one
-  // orchestrator holds one set of windows.
-  const chatLimiter = createRateLimiter(CHAT_RATE_LIMIT);
-  const projectCreateLimiter = createRateLimiter(PROJECT_CREATE_RATE_LIMIT);
-  const rateLimited = (apiKey: string, limiter: RateLimiter): Response | null => {
-    const verdict = limiter.check(studioScope(apiKey));
+  // unmetered LLM proxy on platform-owned keys. Injected in production
+  // (Postgres-backed, shared across replicas); the in-memory default covers
+  // dev and tests.
+  const chatLimiter = options.rateLimiters?.chat ?? createRateLimiter(CHAT_RATE_LIMIT);
+  const projectCreateLimiter =
+    options.rateLimiters?.projectCreate ?? createRateLimiter(PROJECT_CREATE_RATE_LIMIT);
+  const rateLimited = async (apiKey: string, limiter: RateLimiter): Promise<Response | null> => {
+    const verdict = await limiter.check(studioScope(apiKey));
     if (verdict.ok) return null;
     return Response.json(
       { error: "Rate limit exceeded — try again later" },
@@ -119,7 +128,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   });
 
   studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
-    const limited = rateLimited(c.var.apiKey, projectCreateLimiter);
+    const limited = await rateLimited(c.var.apiKey, projectCreateLimiter);
     if (limited) return limited;
     const scope = studioScope(c.var.apiKey);
     const { name } = c.req.valid("json");
@@ -227,6 +236,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
         {
           store: c.env.store,
           slots: c.env.slots,
+          slugLock: c.env.slugLock,
           workspaces: c.env.workspaces,
           pool: options.pool,
         },
@@ -274,7 +284,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   });
 
   studio.post("/chat", async (c) => {
-    const limited = rateLimited(c.var.apiKey, chatLimiter);
+    const limited = await rateLimited(c.var.apiKey, chatLimiter);
     if (limited) return limited;
     if (!llmConfigured()) {
       return c.json(

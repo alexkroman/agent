@@ -14,7 +14,7 @@
 
 import { HTTPException } from "hono/http-exception";
 import type { AppContext, ValidatedAppContext } from "./context.ts";
-import { restartSlotSandbox, withSlugLock } from "./sandbox-slots.ts";
+import { restartSlotSandbox } from "./sandbox-slots.ts";
 import { SecretKeySchema } from "./schemas.ts";
 
 export async function handleSecretList(c: AppContext): Promise<Response> {
@@ -28,7 +28,7 @@ export async function handleSecretList(c: AppContext): Promise<Response> {
 
 export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>): Promise<Response> {
   const slug = c.var.slug;
-  return withSlugLock(slug, async () => {
+  return c.env.slugLock(slug, async () => {
     const updates = c.req.valid("json");
 
     const existing = (await c.env.store.getEnv(slug)) ?? {};
@@ -43,7 +43,7 @@ export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>):
 
 export function handleSecretDelete(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
-  return withSlugLock(slug, async () => {
+  return c.env.slugLock(slug, async () => {
     // biome-ignore lint/style/noNonNullAssertion: key param guaranteed by route
     const key = c.req.param("key")!;
     if (!SecretKeySchema.safeParse(key).success) {

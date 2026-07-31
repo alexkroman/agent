@@ -258,6 +258,9 @@ restrictions apply there.
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
+- `platform-lock.ts` — cross-replica per-slug mutation lock (see "Stateless
+  server" below): Postgres lease rows in `aai_platform.slug_locks` in
+  production, the in-process keyed lock in dev/tests
 - `bundle-store.ts` — agent bundle storage (Supabase Storage via its
   S3-compatible endpoint in production, memory in dev/tests). Agent env
   lives in Supabase Vault through the injected `SecretStore`, not in the
@@ -511,6 +514,51 @@ voice agents without the CLI:
   `studio-assets` can never be claimed as agent slugs — they would shadow
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
   the deploy core.
+
+### Stateless server (aai-server)
+
+The platform server holds no cross-request durable or coordination state in
+process — any replica can serve any request, and a replica restart loses
+nothing but live sessions. Everything durable lives in Supabase (bundles and
+client files in Storage, agent env + app-db credentials in Vault, studio
+workspaces/chats and per-app data in Postgres), and cross-replica
+coordination lives in the same Postgres over `SUPABASE_DB_URL`:
+
+- **Per-slug mutation lock** (`platform-lock.ts`): deploy/delete/secret/
+  storage mutations for a slug run under a lease row in
+  `aai_platform.slug_locks` (`createPgSlugLock`), injected as the `slugLock`
+  binding. A lease table, not a Postgres advisory lock — advisory locks are
+  connection-scoped and `SqlExec` runs over a pool, so acquire and release
+  could land on different connections; a lease survives any connection and
+  expires on its own if the holder crashes. The Postgres lock still takes
+  the in-process `withSlugLock` first (local waiters queue on the mutex
+  instead of polling the database), and it is **not renewed while held** —
+  an operation outrunning `SLUG_LOCK_LEASE_MS` loses exclusivity, same
+  single-concurrent-writer posture as the workspace store's one conflict
+  retry. Contention past the acquire deadline surfaces as
+  `SlugLockTimeoutError` → 409. `sandbox.ts` stays on the in-process lock
+  deliberately: it guards this replica's slot cache, a legitimately
+  process-local resource.
+- **Studio rate limits** (`studio/studio-rate-limit.ts`): the chat and
+  project-create windows are rows in `aai_platform.studio_rate_limits`
+  (`createPgRateLimiter`, one atomic upsert per check), so the limit holds
+  platform-wide instead of multiplying by the replica count. `RateLimiter.
+  check` is async for this reason. Fail-closed: a database error propagates
+  rather than silently unmetering the LLM-proxy route. Dev/tests keep the
+  in-memory fixed-window limiter.
+
+What deliberately stays in-process, and why it doesn't break statelessness:
+
+- **Live session state** (slot cache, sandboxes, warm pool, WebSockets) —
+  a voice session is a connection pinned to its replica by nature; the
+  drain-on-shutdown path handles replica replacement.
+- **Caches** (bundle-store manifest/worker/client caches, the auth hash
+  cache, the studio build cache) — TTL-bounded or content-hash-keyed
+  read-through caches whose staleness windows are documented at each site;
+  losing them costs a refetch, never correctness.
+- **The in-process workspace/slug mutexes** — kept *under* the distributed
+  mechanisms so local writer fan-out (e.g. one AI SDK step's parallel tool
+  calls) doesn't burn the cross-replica retry/lease on itself.
 
 ### `ctx.generate` and pattern combinators (`@alexkroman1/aai/patterns`)
 
