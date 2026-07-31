@@ -1,5 +1,11 @@
 # aai-studio-client
 
+## 0.1.9
+
+### Patch Changes
+
+- 57e1807: Remove the studio's per-request LLM model picker — chat always runs on the host-configured default model (gpt-5.5 on the AssemblyAI LLM Gateway)
+
 ## 0.1.8
 
 ### Patch Changes

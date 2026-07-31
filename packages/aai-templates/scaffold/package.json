@@ -11,15 +11,15 @@
     "deploy": "aai deploy"
   },
   "dependencies": {
-    "@alexkroman1/aai": "^2.0.0",
-    "@alexkroman1/aai-ui": "^2.0.0",
+    "@alexkroman1/aai": "^3.0.0",
+    "@alexkroman1/aai-ui": "^3.0.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
     "tailwindcss": "^4.0.0",
     "zod": "^4.4.3"
   },
   "devDependencies": {
-    "@alexkroman1/aai-cli": "^2.0.0",
+    "@alexkroman1/aai-cli": "^3.0.0",
     "@tailwindcss/vite": "^4.3.3",
     "@types/node": "^26.1.1",
     "@types/react": "^19.2.17",
