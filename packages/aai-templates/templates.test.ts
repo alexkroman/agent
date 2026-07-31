@@ -4,8 +4,8 @@
  * Build-smoke test for every template.
  *
  * Imports each template's agent.ts (through the same import shapes the CLI
- * bundler supports — `.md` raw strings via the plugin in vitest.config.ts,
- * `.json` natively) and runs the config through `toAgentConfig` +
+ * bundler supports — `?raw`-suffixed raw strings and `.json`, both native
+ * to Vite/vitest) and runs the config through `toAgentConfig` +
  * `agentToolsToSchemas`, the exact validation path `aai build`/`aai deploy`
  * use (see packages/aai-cli/_bundler.ts).
  *

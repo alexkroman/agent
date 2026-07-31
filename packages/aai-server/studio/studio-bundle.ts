@@ -5,14 +5,12 @@
  * This does **not** reimplement the CLI's worker build — it calls `buildWorker`
  * from `@alexkroman1/aai-cli/worker-bundler`, the same Vite/Rollup pass
  * `aai deploy` runs, so a worker published from the browser matches one built
- * on a laptop. What the studio adds on top is policy:
+ * on a laptop. `buildWorker` itself wraps the agent in a generated entry that
+ * re-exports the config as `__aaiConfig`, so the guest sandbox can report the
+ * config back from `bundle/load` — the host never evaluates agent code.
  *
- * - **The config wrapper.** The entry re-exports the agent *and* its config as
- *   `__aaiConfig` (extracted with the dependency-free
- *   `@alexkroman1/aai/manifest` helpers), so the guest sandbox can report the
- *   config back from `bundle/load`. The host never evaluates agent code — the
- *   CLI's own `buildAgentBundle` does (`evalWorkerBundle`), which is exactly
- *   why only `buildWorker` is reused here and not the whole bundle step.
+ * What the studio adds on top is policy:
+ *
  * - **The import allowlist** (`allowlistPlugin`). Vite resolves from the
  *   server's own `node_modules`, so without this a workspace could pull any
  *   server dependency into the guest bundle. Workspace code may import its own
@@ -23,29 +21,16 @@
 
 import fs from "node:fs/promises";
 import path from "node:path";
-import { stripVTControlCharacters } from "node:util";
 import { buildWorker } from "@alexkroman1/aai-cli/worker-bundler";
 import type { PluginOption } from "vite";
 import { MAX_WORKER_SIZE } from "../constants.ts";
-import { StudioBuildError } from "./studio-errors.ts";
+import { formatBuildFailure, StudioBuildError } from "./studio-errors.ts";
 import { isKnownSdkSpecifier, SDK_PACKAGE, sdkSpecifiers } from "./studio-sdk-exports.ts";
 
 export { StudioBuildError } from "./studio-errors.ts";
 
 /** Bare import prefixes workspace code may use. */
 const ALLOWED_PACKAGES = ["@alexkroman1/aai", "zod"];
-
-/** Generated entry filename, written into the scratch dir alongside agent.ts. */
-const WRAPPER_ENTRY_FILE = "__aai-entry.ts";
-
-const WRAPPER_ENTRY = `import def from "./agent.ts";
-import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
-export default def;
-export const __aaiConfig = {
-  ...toAgentConfig(def),
-  toolSchemas: agentToolsToSchemas(def.tools ?? {}),
-};
-`;
 
 async function fileExists(p: string): Promise<boolean> {
   return await fs
@@ -63,7 +48,10 @@ function isAllowedPackage(spec: string): boolean {
  *
  * Only imports whose importer lives inside the scratch dir are policed —
  * `@alexkroman1/aai`'s own dependencies resolve from `node_modules` and must
- * pass through untouched.
+ * pass through untouched. (`buildWorker`'s generated wrapper entry lives
+ * under the scratch dir's `.aai/` and is policed like workspace code; its
+ * two imports — the agent entry and `@alexkroman1/aai/manifest` — both
+ * pass.)
  */
 function allowlistPlugin(dir: string): PluginOption {
   const prefix = `${dir}${path.sep}`;
@@ -124,14 +112,10 @@ export async function bundleWorkspaceWorker(dir: string): Promise<string> {
   if (!(await fileExists(path.join(dir, "agent.ts")))) {
     throw new StudioBuildError("Workspace has no agent.ts — create one first");
   }
-  // The wrapper is generated, not user content, so it is written here rather
-  // than materialized with the workspace.
-  await fs.writeFile(path.join(dir, WRAPPER_ENTRY_FILE), WRAPPER_ENTRY, "utf-8");
 
   let code: string;
   try {
     code = await buildWorker(dir, {
-      entry: WRAPPER_ENTRY_FILE,
       // A vite.config.ts in the workspace is executable host code and
       // workspace files are untrusted, so any config written there is inert.
       configFile: false,
@@ -139,46 +123,10 @@ export async function bundleWorkspaceWorker(dir: string): Promise<string> {
       minify: true,
     });
   } catch (err) {
-    throw new StudioBuildError(formatBuildError(err, dir), { cause: err });
+    throw new StudioBuildError(formatBuildFailure(err, "Build failed", dir), { cause: err });
   }
   if (code.length > MAX_WORKER_SIZE) {
     throw new StudioBuildError(`Bundle too large (${code.length} bytes, max ${MAX_WORKER_SIZE})`);
   }
   return code;
-}
-
-/**
- * Format a Vite/Rollup build failure for the chat and the UI.
- *
- * Diagnostics are scrubbed of the scratch-dir prefix and terminal colour
- * codes: the coding agent (and the user reading the chat) only knows the
- * workspace, so a path like `.studio-build/<uuid>/agent.ts` is noise it might
- * try to "fix".
- */
-function formatBuildError(err: unknown, dir: string): string {
-  // Allowlist rejections are already the message we want to show.
-  const cause = (err as { cause?: unknown })?.cause;
-  if (err instanceof StudioBuildError) return err.message;
-  if (cause instanceof StudioBuildError) return cause.message;
-
-  const e = err as { message?: string; id?: string; loc?: { file?: string; line?: number } };
-  const file = e?.loc?.file ?? e?.id;
-  const where = file ? `${path.basename(file)}${e.loc?.line ? `:${e.loc.line}` : ""}: ` : "";
-  return scrub(`Build failed:\n${where}${e?.message ?? String(err)}`, dir);
-}
-
-/**
- * Strip scratch-dir paths and ANSI escape codes from a diagnostic.
- *
- * Rollup reports paths relative to `process.cwd()` while Vite's own errors
- * carry absolute ones, so both spellings of the scratch dir are removed.
- * ANSI/VT sequences go via `node:util`'s own stripper.
- */
-function scrub(message: string, dir: string): string {
-  const forms = [dir, path.relative(process.cwd(), dir)].filter(Boolean);
-  let out = stripVTControlCharacters(message);
-  for (const form of forms) {
-    out = out.split(`${form}${path.sep}`).join("").split(form).join(".");
-  }
-  return out;
 }

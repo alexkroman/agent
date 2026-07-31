@@ -95,7 +95,7 @@ System prompt from file:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import systemPrompt from "./system-prompt.md";
+import systemPrompt from "./system-prompt.md?raw";
 export default agent({ name: "My Agent", systemPrompt });
 ```
 

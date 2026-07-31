@@ -1,6 +1,6 @@
 import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import systemPrompt from "./system-prompt.md";
+import systemPrompt from "./system-prompt.md?raw";
 
 function first(arr: string[] | undefined): string | undefined {
   return arr?.[0];

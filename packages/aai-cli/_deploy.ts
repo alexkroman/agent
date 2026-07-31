@@ -32,7 +32,6 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
       env: opts.env,
       worker: opts.bundle.worker,
       clientFiles: opts.bundle.clientFiles,
-      agentConfig: opts.bundle.agentConfig,
     }),
   );
   const data = await apiRequest<{ slug: string }>(`${opts.url}/deploy`, {

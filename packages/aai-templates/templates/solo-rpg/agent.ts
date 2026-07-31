@@ -1,5 +1,5 @@
 import { agent } from "@alexkroman1/aai";
-import systemPrompt from "./system-prompt.md";
+import systemPrompt from "./system-prompt.md?raw";
 import { actionRoll } from "./tools/action_roll.ts";
 import { burnMomentum } from "./tools/burn_momentum.ts";
 import { checkState } from "./tools/check_state.ts";

@@ -5,7 +5,6 @@ import { posix } from "node:path";
 import { RESERVED_SLUGS, VALID_SLUG_RE } from "@alexkroman1/aai";
 import { z } from "zod";
 import { MAX_WORKER_SIZE } from "./constants.ts";
-import { IsolateConfigSchema } from "./rpc-schemas.ts";
 
 /**
  * Zod schema for a safe relative file path.
@@ -36,8 +35,9 @@ export const DeployBodySchema = z.object({
   clientFiles: z
     .record(SafePathSchema, z.string().max(MAX_WORKER_SIZE))
     .refine((files) => Object.keys(files).length <= 100, "Too many client files (max 100)"),
-  /** Pre-extracted agent config from CLI build. */
-  agentConfig: IsolateConfigSchema,
+  // No agentConfig field: the server derives the config from the worker
+  // bundle's own `__aaiConfig` export inside a guest sandbox (see
+  // `extractAgentConfig` in deploy.ts). A client-sent config is ignored.
 });
 
 export type DeployBody = z.infer<typeof DeployBodySchema>;

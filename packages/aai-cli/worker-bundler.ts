@@ -9,17 +9,22 @@
  * worker published from the browser comes out of the same Vite/Rollup pass as
  * one from `aai deploy`.
  *
+ * Every worker is built through a generated wrapper entry that re-exports the
+ * agent *and* its extracted config as `__aaiConfig` (via the dependency-free
+ * `@alexkroman1/aai/manifest` helpers, bundled in). The guest harness returns
+ * that export from `bundle/load`, which is how the platform obtains an
+ * agent's config without ever evaluating tenant code on the host — the
+ * `POST /deploy` route and the studio's sandbox inspection both rely on it.
+ *
  * What the studio supplies via options, because a workspace is not a project:
  *
- * - **`root` + `entry`.** The studio builds a generated entry that re-exports
- *   the agent *and* its extracted config, so the guest can report the config
- *   back without the host ever evaluating agent code.
  * - **`configFile: false`.** Workspace files are untrusted and a Vite config
  *   is executable host code.
  * - **`plugins`.** The studio adds its import allowlist; without it, Vite
  *   would happily resolve any package in the server's `node_modules`.
  */
 
+import fs from "node:fs/promises";
 import path from "node:path";
 import { build, type PluginOption, type Rollup } from "vite";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
@@ -32,26 +37,27 @@ export type BuildWorkerOptions = {
    * readable stack traces.
    */
   minify?: boolean;
-  /** Entry module, absolute or relative to `cwd`. Defaults to `agent.ts`. */
-  entry?: string;
   /** `false` ignores any `vite.config.ts` under `cwd` (see module doc). */
   configFile?: false;
-  /** Extra plugins, appended after the built-in `.md` raw loader. */
+  /** Extra plugins (the studio's import allowlist). */
   plugins?: PluginOption[];
 };
 
 /**
- * Transform `.md` imports into raw string exports so templates that do
- * `import systemPrompt from "./system-prompt.md"` bundle correctly.
+ * Generated wrapper entry, written under `.aai/` for the duration of the
+ * build (the CLI's own scratch dir — dot-paths are ignored by the dev
+ * watcher, and the studio's workspace materialization never writes there).
  */
-const rawMdPlugin: PluginOption = {
-  name: "raw-md",
-  transform(code: string, id: string) {
-    if (id.endsWith(".md")) {
-      return `export default ${JSON.stringify(code)}`;
-    }
-  },
+const WRAPPER_ENTRY_REL = path.join(".aai", "worker-entry.ts");
+
+const WRAPPER_ENTRY_SOURCE = `import def from "../agent.ts";
+import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
+export default def;
+export const __aaiConfig = {
+  ...toAgentConfig(def),
+  toolSchemas: agentToolsToSchemas(def.tools ?? {}),
 };
+`;
 
 /**
  * Bundle agent.ts into a single ESM string for the sandbox worker.
@@ -60,26 +66,33 @@ const rawMdPlugin: PluginOption = {
  * and gracefully degrades in restricted environments like Deno.
  */
 export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): Promise<string> {
-  const entry = opts.entry ?? "agent.ts";
-  const agentEntry = path.isAbsolute(entry) ? entry : path.join(cwd, entry);
+  const wrapperPath = path.join(cwd, WRAPPER_ENTRY_REL);
 
-  const result = await withPreservedNodeEnv(() =>
-    build({
-      root: cwd,
-      logLevel: "silent",
-      ...(opts.configFile === false && { configFile: false }),
-      plugins: [rawMdPlugin, ...(opts.plugins ?? [])],
-      build: {
-        lib: { entry: agentEntry, formats: ["es"], fileName: "worker" },
-        target: "node20",
-        minify: opts.minify ? "oxc" : false,
-        write: false,
-        rollupOptions: {
-          output: { entryFileNames: "[name].js" },
+  await fs.mkdir(path.dirname(wrapperPath), { recursive: true });
+  await fs.writeFile(wrapperPath, WRAPPER_ENTRY_SOURCE, "utf-8");
+
+  let result: Awaited<ReturnType<typeof build>>;
+  try {
+    result = await withPreservedNodeEnv(() =>
+      build({
+        root: cwd,
+        logLevel: "silent",
+        ...(opts.configFile === false && { configFile: false }),
+        ...(opts.plugins && { plugins: opts.plugins }),
+        build: {
+          lib: { entry: wrapperPath, formats: ["es"], fileName: "worker" },
+          target: "node20",
+          minify: opts.minify ? "oxc" : false,
+          write: false,
+          rollupOptions: {
+            output: { entryFileNames: "[name].js" },
+          },
         },
-      },
-    }),
-  );
+      }),
+    );
+  } finally {
+    await fs.rm(wrapperPath, { force: true }).catch(() => undefined);
+  }
 
   const output = Array.isArray(result) ? result[0] : (result as Rollup.RollupOutput);
   if (!output) throw new Error("Vite produced no output for agent.ts");

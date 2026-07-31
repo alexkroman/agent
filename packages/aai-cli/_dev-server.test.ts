@@ -42,7 +42,7 @@ vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts"))
 
 // ─── Imports under test (after mocks) ───────────────────────────────────────
 
-import { loadAgentDefWith, startDevServer, watchDirectory } from "./_dev-server.ts";
+import { loadAgentDef, startDevServer, watchDirectory } from "./_dev-server.ts";
 import { log } from "./_ui.ts";
 
 describe("watchDirectory", () => {
@@ -73,6 +73,11 @@ describe("watchDirectory", () => {
 
 /** Write a minimal agent.ts in the given directory. */
 async function writeAgentTs(dir: string, name = "test-agent"): Promise<void> {
+  // The worker wrapper imports `@alexkroman1/aai/manifest`, so the fixture
+  // project needs a resolvable node_modules — like any real project.
+  await fs
+    .symlink(path.resolve(import.meta.dirname, "node_modules"), path.join(dir, "node_modules"))
+    .catch(() => undefined);
   await fs.writeFile(
     path.join(dir, "agent.ts"),
     `export default { name: "${name}", tools: {} };\n`,
@@ -246,18 +251,15 @@ describe("startDevServer", () => {
     });
   });
 
-  test("throws when agent.ts has invalid default export", async () => {
+  test("throws when agent.ts has no default export", async () => {
     await withTempDir(async (dir) => {
+      await writeAgentTs(dir);
       await fs.writeFile(path.join(dir, "agent.ts"), "export const notDefault = 42;\n");
 
-      mockValidateAgentExport.mockImplementation((mod: unknown) => {
-        if (!mod || typeof mod !== "object" || !("name" in mod)) {
-          throw new Error("agent.ts must export default agent({ name: ... })");
-        }
-      });
-
+      // The worker wrapper re-exports the default, so a missing default
+      // export fails the build itself — with an error naming agent.ts.
       await expect(startDevServer({ cwd: dir, port: 3000 })).rejects.toThrow(
-        "agent.ts must export default agent({ name: ... })",
+        /"default" is not exported/,
       );
     });
   });
@@ -400,31 +402,29 @@ describe("dev server host mode gate", () => {
   });
 });
 
-describe("loadAgentDefWith", () => {
+describe("loadAgentDef", () => {
   const fakeDef = (name: string) => ({ name, tools: {} }) as AgentDef;
 
-  test("compile errors from the incremental builder propagate (no Vite fallback)", async () => {
+  test("hands the Vite-built worker to the evaluator", async () => {
     await withTempDir(async (dir) => {
-      const buildFailure = Object.assign(new Error("Build failed"), { errors: [] });
-      const builder = { build: vi.fn().mockRejectedValue(buildFailure) };
-      const evaluate = vi.fn();
-      await expect(loadAgentDefWith(dir, builder, evaluate)).rejects.toBe(buildFailure);
-      expect(evaluate).not.toHaveBeenCalled();
+      await writeAgentTs(dir, "built-agent");
+      const evaluated: string[] = [];
+      const def = await loadAgentDef(dir, async (code) => {
+        evaluated.push(code);
+        return fakeDef("built-agent");
+      });
+      expect(def.name).toBe("built-agent");
+      expect(evaluated[0]).toContain("built-agent");
     });
   });
 
-  test("non-compile builder failures fall back to the cold Vite build", async () => {
+  test("compile errors in the agent's code propagate", async () => {
     await withTempDir(async (dir) => {
-      await writeAgentTs(dir, "fallback-agent");
-      const builder = { build: vi.fn().mockRejectedValue(new Error("bundler infra died")) };
-      const evaluated: string[] = [];
-      const def = await loadAgentDefWith(dir, builder, async (code) => {
-        evaluated.push(code);
-        return fakeDef("fallback-agent");
-      });
-      expect(def.name).toBe("fallback-agent");
-      // The Vite-built worker was handed to the evaluator.
-      expect(evaluated[0]).toContain("fallback-agent");
+      await writeAgentTs(dir);
+      await fs.writeFile(path.join(dir, "agent.ts"), "export default {{{ nope\n");
+      const evaluate = vi.fn();
+      await expect(loadAgentDef(dir, evaluate)).rejects.toThrow();
+      expect(evaluate).not.toHaveBeenCalled();
     });
   });
 });

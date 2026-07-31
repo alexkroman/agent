@@ -344,24 +344,71 @@ describe("POST /deploy", () => {
     expect(afterManifest?.credential_hashes).toEqual(originalHashes);
   });
 
-  test("stores agentConfig from deploy body", async () => {
-    const { fetch, store } = await createTestOrchestrator();
+  test("stores the config extracted from the worker bundle, ignoring any body config", async () => {
     const agentConfig: IsolateConfig = {
       name: "config-agent",
       systemPrompt: "Be helpful",
       toolSchemas: [],
       allowedHosts: [],
     };
+    const { fetch, store } = await createTestOrchestrator({
+      inspect: async () => agentConfig,
+    });
 
     const res = await fetch("/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-      body: deployBody({ slug: "config-test", agentConfig }),
+      // A client-supplied agentConfig must be ignored — the sandbox
+      // extraction is the only source.
+      body: deployBody({ slug: "config-test", agentConfig: { name: "attacker-config" } }),
     });
     expect(res.status).toBe(200);
 
     const stored = await store.getAgentConfig("config-test");
     expect(stored).toEqual(agentConfig);
+  });
+
+  test("rejects a worker whose bundle does not self-describe", async () => {
+    const { fetch } = await createTestOrchestrator({ inspect: async () => undefined });
+    const res = await fetch("/deploy", {
+      method: "POST",
+      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      body: deployBody({ slug: "no-config" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("does not self-describe");
+  });
+
+  test("rejects a worker bundle that fails to load in the sandbox", async () => {
+    const { fetch } = await createTestOrchestrator({
+      inspect: async () => {
+        throw new Error("boom at import time");
+      },
+    });
+    const res = await fetch("/deploy", {
+      method: "POST",
+      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      body: deployBody({ slug: "bad-bundle" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("failed to load");
+    expect(body.error).toContain("boom at import time");
+  });
+
+  test("rejects a worker whose extracted config is invalid", async () => {
+    const { fetch } = await createTestOrchestrator({
+      inspect: async () => ({ systemPrompt: 42 }),
+    });
+    const res = await fetch("/deploy", {
+      method: "POST",
+      headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+      body: deployBody({ slug: "invalid-config" }),
+    });
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as { error: string };
+    expect(body.error).toContain("Invalid agent config");
   });
 
   test("redeploy to same slug preserves ownership", async () => {

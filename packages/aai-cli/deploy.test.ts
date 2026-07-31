@@ -17,7 +17,6 @@ type DecodedDeployBody = {
   env?: Record<string, string>;
   worker?: string;
   clientFiles?: Record<string, string>;
-  agentConfig: Record<string, unknown>;
 };
 
 /** Inflate + parse the gzipped JSON body the CLI sends. */
@@ -69,32 +68,22 @@ describe("runDeploy", () => {
     const bytes = body as Uint8Array;
     expect(bytes[0]).toBe(0x1f);
     expect(bytes[1]).toBe(0x8b);
-    expect(decodeBody(init).agentConfig.name).toBe("test-agent");
+    expect(decodeBody(init).worker).toContain("test-agent");
   });
 
-  test("sends worker, clientFiles, and agentConfig in body", async () => {
+  test("sends worker and clientFiles in body (no agentConfig — the server extracts it)", async () => {
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
     await runDeploy(deployOpts(mockFetch));
     const [, init] = mockFetch.mock.calls[0] ?? [];
     const body = decodeBody(init);
     expect(body.worker).toBeTruthy();
     expect(body.clientFiles).toEqual({});
-    expect(body.agentConfig.name).toBe("test-agent");
-    expect(body.agentConfig.toolSchemas).toEqual([]);
+    expect(body).not.toHaveProperty("agentConfig");
   });
 
-  test("sends bundle clientFiles and agentConfig fields verbatim", async () => {
+  test("sends bundle clientFiles verbatim", async () => {
     const bundle = makeBundle({
       clientFiles: { "index.html": "<html></html>", "app.js": "console.log('hi')" },
-      agentConfig: {
-        name: "custom-agent",
-        systemPrompt: "You are helpful",
-        greeting: "Hello!",
-        maxSteps: 10,
-        toolChoice: "required",
-        builtinTools: ["run_code"],
-        toolSchemas: [{ name: "search", description: "Search", parameters: {} }],
-      },
     });
     const mockFetch = vi.fn().mockResolvedValue(deployOk());
     await runDeploy(deployOpts(mockFetch, { bundle }));
@@ -104,10 +93,6 @@ describe("runDeploy", () => {
       "index.html": "<html></html>",
       "app.js": "console.log('hi')",
     });
-    expect(body.agentConfig.name).toBe("custom-agent");
-    expect(body.agentConfig.greeting).toBe("Hello!");
-    expect(body.agentConfig.maxSteps).toBe(10);
-    expect(body.agentConfig.builtinTools).toEqual(["run_code"]);
   });
 
   test("sends env vars in body", async () => {

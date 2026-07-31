@@ -1,7 +1,7 @@
 import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { CRUSTS, calculateTotal, getOrder, type Pizza, resetOrder, SIZES } from "./shared.ts";
-import systemPrompt from "./system-prompt.md";
+import systemPrompt from "./system-prompt.md?raw";
 
 const sizes = z.enum(SIZES);
 const crusts = z.enum(CRUSTS);

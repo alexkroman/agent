@@ -11,7 +11,7 @@ import path from "node:path";
 import getPort from "get-port";
 import { describe, expect, test } from "vitest";
 import { startDevServer, viteDevConfig } from "./_dev-server.ts";
-import { silenced, withTempDir } from "./_test-utils.ts";
+import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 
 describe("viteDevConfig", () => {
   test("proxies /websocket with ws:true and /health to the backend", () => {
@@ -40,6 +40,7 @@ describe("startDevServer (real serving path)", () => {
   test("boots a real agent dir and answers /health", { timeout: 30_000 }, async () => {
     await withTempDir(
       silenced(async (dir) => {
+        await linkSdkNodeModules(dir);
         await writeFile(
           path.join(dir, "agent.ts"),
           `export default { name: "serve-test-agent", systemPrompt: "hi", tools: {} };`,

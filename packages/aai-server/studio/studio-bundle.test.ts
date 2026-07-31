@@ -72,10 +72,10 @@ export default {};`,
     ).rejects.toThrow(/escapes the workspace/);
   }, 30_000);
 
-  test("imports .md files as raw strings", async () => {
+  test("imports ?raw-suffixed files as raw strings", async () => {
     const code = await bundleWorkspace({
       "agent.ts": `import { agent } from "@alexkroman1/aai";
-import prompt from "./prompt.md";
+import prompt from "./prompt.md?raw";
 export default agent({ name: "Md Agent", systemPrompt: prompt });`,
       "prompt.md": "You are markdown-configured.",
     });

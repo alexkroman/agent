@@ -5,7 +5,13 @@ import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { createMemoryChatStore } from "./studio/chat-store.ts";
 import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
-import { createTestStore, deployAgent, makeSlot, type TestFetch } from "./test-utils.ts";
+import {
+  createTestStore,
+  deployAgent,
+  makeSlot,
+  TEST_AGENT_CONFIG,
+  type TestFetch,
+} from "./test-utils.ts";
 
 async function setup() {
   const store = createTestStore();
@@ -16,6 +22,7 @@ async function setup() {
     workspaces: createMemoryWorkspaceStore(),
     chats: createMemoryChatStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
+    inspect: async () => TEST_AGENT_CONFIG,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
   return { fetch, store, slots };
