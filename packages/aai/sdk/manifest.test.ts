@@ -22,7 +22,7 @@ describe("parseManifest", () => {
       toolChoice: "auto",
       idleTimeoutMs: undefined,
       theme: undefined,
-      builtinTools: ["calculate"],
+      builtinTools: ["think", "remember", "recall", "calculate"],
       allowedHosts: [],
       tools: {},
       stt: undefined,

@@ -403,7 +403,13 @@ describe("createRuntime sandbox mode", () => {
 
     // Relay/host-mode path: the agent has no explicit builtinTools, so the
     // defaults are resolved here and appended to the relayed schemas.
-    expect(runtime.toolSchemas.map((s) => s.name)).toEqual(["mock_tool", "calculate"]);
+    expect(runtime.toolSchemas.map((s) => s.name)).toEqual([
+      "mock_tool",
+      "think",
+      "remember",
+      "recall",
+      "calculate",
+    ]);
     const result = await runtime.executeTool("any_tool", {}, "s1", []);
     expect(result).toBe("mocked-result");
     // The wrapper forwards a 5th `callOpts` arg (undefined when omitted).

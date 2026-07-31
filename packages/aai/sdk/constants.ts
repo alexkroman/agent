@@ -92,23 +92,28 @@ export const DEFAULT_SILENCE_PROMPT =
 
 /**
  * Built-in tools enabled when an agent does not set `builtinTools` at all.
+ * These are the "cognitive" builtins — a private reasoning scratchpad
+ * (`think`), session notes (`remember`/`recall`), and a safe calculator —
+ * which measurably improve policy adherence and argument fidelity in
+ * tool-heavy conversations (cf. Anthropic's tau-bench "think" tool results).
+ * They are side-effect-free outside the session, so they are safe defaults.
+ * Setting `builtinTools` explicitly (including `[]`) overrides this list.
  *
- * Just the calculator: side-effect-free, and the default system prompt tells
- * the model to use one for every total, difference, and refund amount rather
- * than doing arithmetic in its head.
- *
- * `think`, `remember`, and `recall` used to be here too — the "cognitive"
- * builtins, on the strength of Anthropic's tau-bench results for a `think`
- * tool. That evidence is from a *text* agent. On a call, every one of them is
- * an extra LLM round trip before the agent says anything, announced to the
- * caller as a hold phrase; a reasoning model already thinks before it answers,
- * so `think` buys a pause and nothing else. Voice work is latency-bound in a
- * way text work is not, and a caller who hangs up takes the whole task with
- * them. All three remain available — name them in `builtinTools` for an agent
- * that wants them. Setting `builtinTools` explicitly (including `[]`)
- * overrides this list.
+ * Trimming this to `["calculate"]` was tried, on the theory that each of the
+ * others costs an LLM round trip before the agent says anything and a call
+ * cannot afford that. The theory did not survive measurement: on tau2's voice
+ * tasks the model under test never invoked `think` or `calculate` at all — not
+ * even when the prompt demanded a calculator for a dollar figure it was about
+ * to quote — so an unused builtin costs nothing, and the one paired comparison
+ * available favoured keeping `think` (4/5 correct writes with it, 3/5 without).
+ * A latency argument needs a latency measurement; that one had none.
  */
-export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = ["calculate"];
+export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [
+  "think",
+  "remember",
+  "recall",
+  "calculate",
+];
 
 export const MAX_TOOL_RESULT_CHARS = 4000;
 
