@@ -50,6 +50,29 @@ export async function handleAgentPage(c: AppContext): Promise<Response> {
   return c.html(html, 200, cspHeaders);
 }
 
+/**
+ * `GET /:slug/favicon.ico` — the icon the default client's page links
+ * relatively (`./favicon.ico`). A custom client that shipped its own
+ * favicon wins; otherwise the one bundled with aai-ui's default client
+ * is served (it ships in `dist/default-client` via the Vite public dir).
+ */
+export async function handleAgentFavicon(c: AppContext): Promise<Response> {
+  const slug = c.var.slug;
+  const headers = {
+    "Content-Type": "image/x-icon",
+    "Cache-Control": "public, max-age=86400",
+  };
+
+  // Stored deployed favicons are binary, so the bundler base64-encoded them
+  // (isTextAssetPath — same contract as handleClientAsset).
+  const stored = await c.env.store.getClientFile(slug, "favicon.ico");
+  if (stored !== null) return c.body(Buffer.from(stored, "base64"), 200, headers);
+
+  const fallback = await readDefaultClient("favicon.ico");
+  if (!fallback) throw new HTTPException(404, { message: "Favicon not found" });
+  return c.body(new Uint8Array(fallback), 200, headers);
+}
+
 export async function handleClientAsset(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
   // biome-ignore lint/style/noNonNullAssertion: path param guaranteed by route

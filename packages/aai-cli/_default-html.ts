@@ -17,7 +17,7 @@ export const DEFAULT_HTML = `<!DOCTYPE html>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>aai</title>
-    <link rel="icon" href="data:," />
+    <link rel="icon" href="./favicon.ico" />
     <style>html, body { background: #FBF8F2; margin: 0; }</style>
   </head>
   <body>

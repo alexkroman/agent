@@ -67,6 +67,19 @@ describe("studio page + routing", () => {
     expect(await res.text()).toContain("<!DOCTYPE html>");
   });
 
+  test("GET /favicon.ico serves the studio icon when built, else 404", async () => {
+    const { fetch } = await createTestOrchestrator();
+    const res = await fetch("/favicon.ico");
+    // The icon ships inside the studio client build, which dev checkouts may
+    // not have run — assert the two valid outcomes (never a 500, and never a
+    // match on the agent slug routes).
+    if (res.status === 200) {
+      expect(res.headers.get("Content-Type")).toBe("image/x-icon");
+    } else {
+      expect(res.status).toBe(404);
+    }
+  });
+
   test("GET /studio and /studio/ redirect to the page", async () => {
     const { fetch } = await createTestOrchestrator();
     expect((await fetch("/studio")).status).toBe(302);
