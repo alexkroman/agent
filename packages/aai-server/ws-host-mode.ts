@@ -25,7 +25,7 @@ import type { SessionStartOptions, SessionWebSocket } from "@alexkroman1/aai/run
 import { startHostSession } from "@alexkroman1/aai/runtime";
 import { parseBearer } from "./_bearer.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { toHostBaseAgent } from "./sandbox-agent-config.ts";
+import { toRuntimeAgent } from "./sandbox-agent-config.ts";
 import { verifySlugOwner } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -137,7 +137,9 @@ export function startDeployedHostSession(
     .then((agentEnv) => {
       startHostSession(ws, {
         env: agentEnv ?? {},
-        baseAgent: toHostBaseAgent(opts.agentConfig),
+        // toRuntimeAgent keeps the provider descriptors on the agent, so a
+        // pipeline agent driven over ?host=1 stays a pipeline agent.
+        baseAgent: toRuntimeAgent(opts.agentConfig),
         // Ownership was verified at the upgrade; the platform's gate is the
         // API key, not AAI_ALLOW_HOST (which would be all-or-nothing).
         allowHost: true,

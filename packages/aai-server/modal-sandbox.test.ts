@@ -9,8 +9,10 @@ import { mkdtemp, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { HARNESS_HEARTBEAT_INTERVAL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./guest/limits.ts";
 import {
   _internals,
+  DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
   type ModalProcLike,
   type ModalSandboxLike,
@@ -18,6 +20,7 @@ import {
   parseSandboxLimitsFromEnv,
   spawnModalWarm,
 } from "./modal-sandbox.ts";
+import type { NdjsonConnection } from "./ndjson-transport.ts";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
 
@@ -138,6 +141,18 @@ describe("parseSandboxLimitsFromEnv", () => {
     );
   });
 
+  it("parses SANDBOX_IDLE_TIMEOUT_SECS into milliseconds, clamped to [60, 86400] secs", () => {
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_IDLE_TIMEOUT_SECS: "600" }).idleTimeoutMs).toBe(
+      600_000,
+    );
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_IDLE_TIMEOUT_SECS: "1" }).idleTimeoutMs).toBe(
+      60_000,
+    );
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_IDLE_TIMEOUT_SECS: "999999" }).idleTimeoutMs).toBe(
+      86_400_000,
+    );
+  });
+
   it("ignores non-numeric and undefined values", () => {
     expect(
       parseSandboxLimitsFromEnv({
@@ -157,7 +172,10 @@ describe("warmFromModal", () => {
     const warm = _internals.warmFromModal(sb, fake.proc);
     warm.conn.listen();
 
-    const pending = warm.conn.sendRequest<{ pong: boolean }>("ping", { n: 1 });
+    // "ping" is a transport-level probe, not a guest method — widen past the
+    // typed method map for this plumbing test.
+    const untyped = warm.conn as NdjsonConnection;
+    const pending = untyped.sendRequest("ping", { n: 1 }) as Promise<{ pong: boolean }>;
     await vi.waitFor(() => {
       if (!fake.stdinText().includes('"ping"')) throw new Error("request not written yet");
     });
@@ -215,7 +233,7 @@ describe("warmFromModal", () => {
     const fake = makeFakeProc();
     const warm = _internals.warmFromModal(makeFakeSandbox(fake), fake.proc);
     warm.conn.listen();
-    const pending = warm.conn.sendRequest("ping");
+    const pending = (warm.conn as NdjsonConnection).sendRequest("ping");
     await vi.waitFor(() => {
       if (!fake.stdinText().includes('"ping"')) throw new Error("request not written yet");
     });
@@ -244,8 +262,10 @@ describe("spawnModalWarm", () => {
     expect(createParams).toHaveLength(1);
     expect(createParams[0]).toMatchObject({
       command: ["sleep", "infinity"],
+      env: { TINI_SUBREAPER: "1" },
       blockNetwork: true,
       timeoutMs: DEFAULT_SANDBOX_TIMEOUT_MS,
+      idleTimeoutMs: DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
       tags: { service: "aai-guest", slug: "my-agent" },
     });
     expect([...sb.writtenFiles.values()]).toEqual(["// the harness code"]);
@@ -258,6 +278,60 @@ describe("spawnModalWarm", () => {
     expect(params).toMatchObject({ mode: "binary", stdout: "pipe", stderr: "pipe" });
     expect(warm.alive()).toBe(true);
     await warm.cleanup();
+  });
+
+  it("honors SANDBOX_IDLE_TIMEOUT_SECS over the default idle timeout", async () => {
+    vi.stubEnv("SANDBOX_IDLE_TIMEOUT_SECS", "600");
+    try {
+      const fake = makeFakeProc();
+      const sb = makeFakeSandbox(fake);
+      const createParams: unknown[] = [];
+      const ctx: ModalSpawnContext = {
+        createSandbox: async (params) => {
+          createParams.push(params);
+          return sb;
+        },
+      };
+      const harnessPath = await makeHarnessFile();
+
+      const warm = await spawnModalWarm({ harnessPath }, ctx);
+      expect(createParams[0]).toMatchObject({ idleTimeoutMs: 600_000 });
+      await warm.cleanup();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("heartbeats the harness on an interval and stops after cleanup", async () => {
+    vi.useFakeTimers();
+    try {
+      const fake = makeFakeProc();
+      const sb = makeFakeSandbox(fake);
+      const ctx: ModalSpawnContext = { createSandbox: async () => sb };
+      const harnessPath = await makeHarnessFile();
+
+      const warm = await spawnModalWarm({ harnessPath }, ctx);
+      expect(fake.stdinText()).not.toContain('"ping"');
+
+      // The guest's orphan watchdog kills the harness after
+      // HARNESS_ORPHAN_TIMEOUT_MS of silence, so over that window a healthy
+      // host must have pinged several times.
+      await vi.advanceTimersByTimeAsync(HARNESS_ORPHAN_TIMEOUT_MS);
+      const pings = fake.stdinText().match(/"ping"/g) ?? [];
+      expect(pings.length).toBeGreaterThanOrEqual(2);
+      expect(pings.length).toBe(
+        Math.floor(HARNESS_ORPHAN_TIMEOUT_MS / HARNESS_HEARTBEAT_INTERVAL_MS),
+      );
+
+      // Teardown must stop the heartbeat — a cleared harness with a live
+      // interval would tick forever (and write into a disposed stream).
+      await warm.cleanup();
+      const after = (fake.stdinText().match(/"ping"/g) ?? []).length;
+      await vi.advanceTimersByTimeAsync(HARNESS_HEARTBEAT_INTERVAL_MS * 3);
+      expect((fake.stdinText().match(/"ping"/g) ?? []).length).toBe(after);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it("terminates the sandbox when harness setup fails, and wraps the error", async () => {

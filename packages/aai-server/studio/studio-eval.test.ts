@@ -9,27 +9,28 @@
  * - `WorkerBuildJudge` (always): the workspace must survive the exact
  *   Vite/Rollup pass Publish runs (`bundleWorkspaceWorker`) — i.e. the agent
  *   one-shot produced syntactically valid code with legal imports.
- * - `SandboxLoadJudge` (when Deno + the built guest harness are available):
- *   the built worker must load in a real studio sandbox and self-describe a
- *   valid agent config — i.e. the code actually works, not just parses.
+ * - `SandboxLoadJudge` (when Modal credentials + the built guest harness are
+ *   available): the built worker must load in a real studio sandbox and
+ *   self-describe a valid agent config — i.e. the code actually works, not
+ *   just parses. It also asserts any config facts the case declares (expected
+ *   tools, provider kinds, `allowedHosts` coverage).
  * - `TemplateParityJudge`: the workspace must be functionally equivalent to a
  *   hand-written template in `packages/aai-templates/templates/` — i.e. the
  *   agent built the *right* thing, not merely a thing that loads.
  *
- * Most cases are template-parity cases (`TEMPLATE_CASES`): the prompt is one
- * of the studio's own starter prompts (`aai-studio-client/src/starters.ts`,
- * each of which is modeled on a template) and the template is the reference
- * implementation the result is graded against. The prompts are duplicated
- * rather than imported — `aai-server` and `aai-studio-client` talk over HTTP
- * only, with no code imports in either direction.
+ * Two families of case, in `_studio-eval-test-utils.ts`:
  *
- * `SHAPE_CASES` cover the one thing those can't. A parity prompt names the
- * mode, the providers, and the imports so the rubric grades one dimension at a
- * time — which means `expectedKind` only ever tested instruction-following. A
- * shape case is a terse user-level ask that names no API at all, so choosing
- * `agent()` vs `workflow()` is the measurement. Graded on the built worker's
- * reported kind, in both directions, with a guard test keeping the answer out
- * of the prompts.
+ * - `TEMPLATE_CASES` — the prompt is one of the studio's own starter prompts
+ *   (`aai-studio-client/src/starters.ts`, each modeled on a template) and the
+ *   matching template is the reference the result is graded against. The
+ *   prompts are duplicated rather than imported: `aai-server` and
+ *   `aai-studio-client` talk over HTTP only, with no code imports either way.
+ * - `CONFIG_CASES` — no reference and no parity judge, just facts the built
+ *   worker must report: AssemblyAI backs every stage the prompt didn't assign
+ *   elsewhere, and a tool that fetches declares its host in `allowedHosts`.
+ *   Both are "does this run once published" rules that a resemblance grader
+ *   is the wrong instrument for — several references legitimately use other
+ *   providers, so parity and runnability disagree.
  *
  * Requires a real LLM key (`ASSEMBLYAI_API_KEY` or `ANTHROPIC_API_KEY`, or
  * `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL`); the whole suite skips without
@@ -48,6 +49,7 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
+import { matchesAllowedHost } from "@alexkroman1/aai";
 import { generateObject, type UIMessage } from "ai";
 import { describe, expect, test } from "vitest";
 import type { TranscriptEvent } from "vitest-evals";
@@ -55,13 +57,13 @@ import { createHarness, createJudge, describeEval } from "vitest-evals";
 import { z } from "zod";
 import { resolveHarnessPath } from "../constants.ts";
 import { isModalConfigured } from "../modal-sandbox.ts";
-import { IsolateConfigSchema } from "../rpc-schemas.ts";
+import { type IsolateConfig, IsolateConfigSchema } from "../rpc-schemas.ts";
 import {
+  CONFIG_CASES,
   ONE_SHOT,
+  type ProviderExpectation,
   readTemplate,
   renderFiles,
-  SHAPE_CASES,
-  SHAPE_GIVEAWAYS,
   TEMPLATE_CASES,
   TEMPLATES_DIR,
   UNCOVERED,
@@ -223,15 +225,44 @@ const WorkerBuildJudge = createJudge<string, StudioEvalOutput>(
 );
 
 /**
+ * Provider mismatches between the config the guest reported and what the case
+ * expects. Empty means it matches.
+ *
+ * Kinds rather than descriptor identity: the case cares that the AssemblyAI
+ * gateway is doing the LLM work, not which gateway model was picked (the
+ * prompt's model list changes; `assemblyai` does not).
+ */
+function providerProblems(cfg: IsolateConfig, want: ProviderExpectation): string[] {
+  const got = { stt: cfg.stt?.kind, llm: cfg.llm?.kind, tts: cfg.tts?.kind };
+  const stages = ["stt", "llm", "tts"] as const;
+  if (want.mode === "s2s") {
+    const declared = stages.filter((stage) => got[stage] !== undefined);
+    if (declared.length === 0) return [];
+    const shown = declared.map((stage) => `${stage}=${got[stage]}`).join(", ");
+    return [
+      "expected the AssemblyAI voice agent API (S2S: none of stt/llm/tts declared) " +
+        `but the agent runs a pipeline: ${shown}`,
+    ];
+  }
+  return stages
+    .filter((stage) => got[stage] !== want[stage])
+    .map((stage) => `${stage} provider is "${got[stage] ?? "unset"}", expected "${want[stage]}"`);
+}
+
+/**
  * Score 1 when the built worker loads in a real studio sandbox and reports a
- * valid agent config — the "actually works" gate. Optionally requires the
- * config to expose specific tool names, or to declare a send channel.
+ * valid agent config — the "actually works" gate. Optionally asserts config
+ * facts on top: specific tool names, which providers back each stage, and an
+ * `allowedHosts` entry covering every host the agent's tool code fetches.
+ *
+ * These are checked here rather than by a rubric because they are facts about
+ * the config, and a judge reading source can be argued out of a fact.
  */
 const SandboxLoadJudge = createJudge<
   string,
   StudioEvalOutput,
-  { expectedTools?: string[]; expectedSend?: string; expectedKind?: "agent" | "workflow" }
->("SandboxLoadJudge", async ({ output, expectedTools, expectedSend, expectedKind }) => {
+  { expectedTools?: string[]; providers?: ProviderExpectation; fetchedHosts?: string[] }
+>("SandboxLoadJudge", async ({ output, expectedTools, providers, fetchedHosts }) => {
   const worker = await buildWorker(output.files);
   const sandbox = await createStudioSandbox();
   try {
@@ -241,36 +272,34 @@ const SandboxLoadJudge = createJudge<
       const issues = parsed.error.issues.map((i) => i.message).join("; ");
       return { score: 0, metadata: { rationale: `invalid agent config: ${issues}` } };
     }
-    // `kind` is absent for an `agent()` config and "workflow" for a
-    // `workflow()` one, so the default reads as the app the code actually is.
-    const kind = parsed.data.kind ?? "agent";
-    if (expectedKind !== undefined && kind !== expectedKind) {
-      return {
-        score: 0,
-        metadata: { rationale: `expected \`export default ${expectedKind}()\`, got ${kind}()` },
-      };
-    }
-    const tools = parsed.data.toolSchemas.map((schema) => schema.name);
+    const config = parsed.data;
+    const tools = config.toolSchemas.map((schema) => schema.name);
+    const { allowedHosts } = config;
+    const problems: string[] = [];
+
     const missing = (expectedTools ?? []).filter((name) => !tools.includes(name));
-    if (missing.length > 0) {
-      return {
-        score: 0,
-        metadata: { rationale: `missing expected tools: ${missing.join(", ")}`, tools },
-      };
+    if (missing.length > 0) problems.push(`missing expected tools: ${missing.join(", ")}`);
+
+    if (providers !== undefined) problems.push(...providerProblems(config, providers));
+
+    for (const host of fetchedHosts ?? []) {
+      // Any pattern that *matches* passes: "*.open-meteo.com" is as correct as
+      // the bare hostname, so match with the runtime's own matcher rather than
+      // looking for a literal entry.
+      if (!matchesAllowedHost(host, allowedHosts)) {
+        problems.push(
+          `tool code fetches ${host} but no allowedHosts pattern covers it ` +
+            `(allowedHosts: ${allowedHosts.length === 0 ? "none declared" : allowedHosts.join(", ")})`,
+        );
+      }
     }
-    // A send channel is a config field, not a tool name, so unlike
-    // `expectedTools` there is no "the generated name may differ" caveat —
-    // and its absence is silent, since the agent still builds and runs.
-    if (expectedSend !== undefined && parsed.data.send?.kind !== expectedSend) {
-      const got = parsed.data.send === undefined ? "none" : `"${parsed.data.send.kind}"`;
-      return {
-        score: 0,
-        metadata: { rationale: `expected send channel "${expectedSend}", got ${got}`, tools },
-      };
+
+    if (problems.length > 0) {
+      return { score: 0, metadata: { rationale: problems.join(" | "), tools, allowedHosts } };
     }
     return {
       score: 1,
-      metadata: { rationale: `loaded agent "${parsed.data.name}"`, tools },
+      metadata: { rationale: `loaded agent "${config.name}"`, tools, allowedHosts },
     };
   } catch (err) {
     return { score: 0, metadata: { rationale: `bundle failed to load: ${String(err)}` } };
@@ -284,38 +313,29 @@ const SandboxLoadJudge = createJudge<
  * runs and models; each entry is the question the judge answers about one
  * dimension of "is this the same agent as the reference".
  */
-const RUBRIC_IDS = ["mode", "capabilities", "generation", "state", "assets", "persona"] as const;
+const RUBRIC_IDS = ["mode", "capabilities", "state", "assets", "persona"] as const;
 
 const RUBRIC: Record<(typeof RUBRIC_IDS)[number], string> = {
   mode:
-    "App kind and session mode match the reference. App kind first: a reference " +
-    "whose default export is `workflow({ ... })` (a one-shot run — audio in, " +
-    "actions out, a written run report) must be met with `export default " +
-    "workflow(...)` too, never `agent(...)`, and vice versa. Then session mode: " +
-    "S2S mode declares none of stt/llm/tts; " +
-    "pipeline mode declares all three; text-only mode is pipeline with `tts: none()`; " +
-    "a workflow requires stt and llm and leaves tts unset. " +
+    "Session mode matches the reference: S2S mode declares none of stt/llm/tts; " +
+    "pipeline mode declares all three. " +
     "Additionally, if the user prompt named specific providers, models, or voices, " +
-    "those are the ones used.",
+    "those are the ones used. If the prompt named none, every provider must be " +
+    "AssemblyAI — or S2S mode, which is AssemblyAI too — even where the reference " +
+    "uses a different one: ASSEMBLYAI_API_KEY is the only key a published agent is " +
+    "given, so an unrequested third-party provider cannot run at all.",
   capabilities:
-    "Every capability the reference offers is reachable in the generated agent — " +
-    "as a custom tool or a `builtinTools` entry. Judge by function, not by name: " +
-    "`add_pizza` and `add_item` are the same capability. A capability the " +
-    "reference gets by *declaring* a channel rather than writing a tool counts " +
-    "too — `send: slack()` is what registers the framework's `send_message` " +
-    "tool, so an agent expected to send messages must declare it. This " +
-    "criterion is about coverage ONLY: extra tools, and extra builtins " +
-    "(including the framework defaults think/remember/recall/calculate), are " +
-    "never a failure. Fail only when a capability the reference has cannot be " +
-    "reached at all.",
-  generation:
-    "If the reference calls the LLM from inside a tool — `ctx.generate`, or a helper " +
-    "over it from `@alexkroman1/aai/patterns` (`generateStructured`, `sequential`, " +
-    "`route`, `orchestrate`, …) — the generated agent has an equivalent step, " +
-    "producing the same kind of result: a structured/typed extraction where the " +
-    "reference gets one, not raw text the caller has to parse, and not left to the " +
-    "outer agent loop to infer. A different helper, schema, or prompt wording is " +
-    "fine. If the reference makes no such call, pass.",
+    "Every capability the USER PROMPT asked for is reachable in the generated " +
+    "agent — as a custom tool or a `builtinTools` entry. Judge by function, not " +
+    "by name: `add_pizza` and `add_item` are the same capability. Coverage of " +
+    "the ask is the whole question, so two things are never failures: extra " +
+    "tools and extra builtins (including the framework defaults " +
+    "think/remember/recall/calculate), and a capability the reference happens " +
+    "to offer that the prompt never mentions — the references are fuller than " +
+    "the prompts they are paired with, and an agent is not wrong for building " +
+    "what was asked. Fail only when something the prompt asked for cannot be " +
+    "reached at all, or when two requested capabilities were folded into one " +
+    "tool.",
   state:
     "If the reference keeps state, the generated agent does too, with the same " +
     "backing and scoping — per-session scratch in `ctx.state` where the reference " +
@@ -454,25 +474,17 @@ describeEval(
 
     // The template cases are all from-scratch rewrites of the starter
     // workspace, graded against the hand-written template of the same shape.
-    for (const { template, prompt, expectedSend, expectedKind } of TEMPLATE_CASES) {
+    for (const { template, prompt } of TEMPLATE_CASES) {
       it(`builds the ${template} shape`, async ({ run }) => {
         const result = await run(prompt);
         expect(Object.keys(result.output.files)).toContain("agent.ts");
         if (canSandbox) {
           // No `expectedTools` here: generated tool names legitimately differ
           // from the template's, and capability coverage is the parity judge's
-          // job. This is the "loads and self-describes" gate, plus the app kind
-          // and send channel where a case declares them.
-          await expect(result).toSatisfyJudge(SandboxLoadJudge, {
-            threshold: 1,
-            // Spread rather than passing the fields directly: under
-            // exactOptionalPropertyTypes an explicit `undefined` is not the
-            // same as an absent optional property.
-            ...(expectedSend === undefined ? {} : { expectedSend }),
-            ...(expectedKind === undefined ? {} : { expectedKind }),
-          });
+          // job. This is the "loads and self-describes" gate.
+          await expect(result).toSatisfyJudge(SandboxLoadJudge, { threshold: 1 });
         }
-        // 0.8 of a 6-criterion rubric: at most one criterion may miss. Runs
+        // 0.8 of a 5-criterion rubric: at most one criterion may miss. Runs
         // mostly score 1.00; the slack absorbs residual tension between a
         // reference constraint and this eval's one-shot framing (the
         // embedded-assets prompt tells the agent to ask when a question is
@@ -481,62 +493,27 @@ describeEval(
       });
     }
 
-    // Shape *discovery*: the prompt describes what the user wants and never
-    // names an API, so picking agent() vs workflow() is the thing under test.
-    // No parity judge — there is no reference workspace, only a right shape.
-    for (const { name, prompt, expectedKind } of SHAPE_CASES) {
-      it(`picks the right app shape: ${name} → ${expectedKind}()`, async ({ run }) => {
+    // Config cases assert what the built worker reports about itself — which
+    // providers back each stage, and whether egress is declared. Both are
+    // "will this run once published" questions, which is why they are facts
+    // checked against the config rather than rubric criteria.
+    for (const { name, prompt, providers, fetchedHosts = [] } of CONFIG_CASES) {
+      it(name, async ({ run }) => {
         const result = await run(prompt);
-        const agentTs = result.output.files["agent.ts"];
-        expect(agentTs, "no agent.ts in the workspace").toBeTruthy();
-        // Deterministic and sandbox-free, so this half runs everywhere. It is
-        // a necessary condition rather than the real check, but it catches the
-        // failure this case exists for: a local `const workflow = (config) =>
-        // ({ ...config, mode: "workflow" })` shim in place of the import. Such
-        // a workspace builds and loads — it just isn't a workflow — so the
-        // source is where it shows.
-        if (expectedKind === "workflow") {
-          expect(
-            agentTs,
-            "agent.ts defines its own workflow helper instead of importing one",
-          ).not.toMatch(/(?:const|let|var|function)\s+workflow\b/);
-          expect(agentTs, "agent.ts never imports workflow from the SDK").toMatch(
-            /import\s*\{[^}]*\bworkflow\b[^}]*\}\s*from\s*["']@alexkroman1\/aai["']/,
-          );
-        }
-        // The authoritative check: the app kind the built worker reports.
+        expect(Object.keys(result.output.files)).toContain("agent.ts");
+        // Without a sandbox this case still gates on WorkerBuildJudge, but the
+        // config facts — the whole point of the case — go unchecked.
         if (canSandbox) {
-          await expect(result).toSatisfyJudge(SandboxLoadJudge, { threshold: 1, expectedKind });
+          await expect(result).toSatisfyJudge(SandboxLoadJudge, {
+            providers,
+            fetchedHosts,
+            threshold: 1,
+          });
         }
       });
     }
   },
 );
-
-/**
- * Non-LLM guard: a shape case must not leak its own answer.
- *
- * These are the only cases measuring whether the studio *discovers* the app
- * shape, and the tempting fix for a flaky one is to add "use workflow()" to
- * the prompt — which silently converts it into an instruction-following case
- * indistinguishable from the `TEMPLATE_CASES` it was written to complement.
- * Over-specifying the workflow prompts is how this coverage went missing
- * before; this makes doing it again a test failure.
- */
-describe("shape-discovery prompts", () => {
-  test("name no API, so the shape has to be inferred", () => {
-    const leaks = SHAPE_CASES.flatMap(({ name, prompt }) =>
-      SHAPE_GIVEAWAYS.filter((word) => prompt.toLowerCase().includes(word)).map(
-        (word) => `${name}: "${word}"`,
-      ),
-    );
-    expect(leaks, "these prompts give the answer away; describe the use case instead").toEqual([]);
-  });
-
-  test("cover both shapes, so the rule can't just always pick one", () => {
-    expect(new Set(SHAPE_CASES.map((c) => c.expectedKind))).toEqual(new Set(["agent", "workflow"]));
-  });
-});
 
 /**
  * Cheap, LLM-free guard: every template is either evaluated or explicitly

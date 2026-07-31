@@ -67,11 +67,53 @@ const JsonRpcNotificationSchema = z.object({
  */
 const DEFAULT_REQUEST_TIMEOUT_MS = 30_000;
 
-export interface NdjsonConnection {
-  sendRequest<T = unknown>(method: string, params?: unknown, timeoutMs?: number): Promise<T>;
-  sendNotification(method: string, params?: unknown): void;
-  onRequest<T = unknown>(method: string, handler: (params: T) => unknown | Promise<unknown>): void;
-  onNotification(method: string, handler: (params?: unknown) => void): void;
+/** Method-name → `{ params, result }` map for one direction of an RPC link. */
+export type RpcMethodMap = Record<string, { params: unknown; result: unknown }>;
+
+/** Method-name → params map for one direction's notifications. */
+export type RpcNotificationMap = Record<string, unknown>;
+
+/**
+ * The four directional surfaces of one RPC link, seen from this side.
+ *
+ * A concrete schema (e.g. `GuestRpcSchema` in rpc-schemas.ts) makes method
+ * names and request params compile-time-checked at every call site — the
+ * stringly-typed `sendRequest(method: string, params?: unknown)` this
+ * replaces let a renamed method or reshaped params drift from its handler
+ * with nothing failing until runtime. Results and incoming params stay
+ * `unknown` in concrete schemas on purpose: they are untrusted wire data,
+ * and the type system must not claim otherwise — validation (Zod) at the
+ * receiving site is the contract.
+ */
+export type RpcSchema = {
+  requestsOut: RpcMethodMap;
+  requestsIn: RpcMethodMap;
+  notificationsOut: RpcNotificationMap;
+  notificationsIn: RpcNotificationMap;
+};
+
+export interface NdjsonConnection<S extends RpcSchema = RpcSchema> {
+  // `params` is required exactly when the schema's params type cannot be
+  // undefined — so `sendRequest("bundle/load")` is a missing-argument error
+  // while an untyped connection (params: unknown) keeps its 1-arg form.
+  sendRequest<M extends keyof S["requestsOut"] & string>(
+    method: M,
+    ...args: undefined extends S["requestsOut"][M]["params"]
+      ? [params?: S["requestsOut"][M]["params"], timeoutMs?: number]
+      : [params: S["requestsOut"][M]["params"], timeoutMs?: number]
+  ): Promise<S["requestsOut"][M]["result"]>;
+  sendNotification<M extends keyof S["notificationsOut"] & string>(
+    method: M,
+    params?: S["notificationsOut"][M],
+  ): void;
+  onRequest<M extends keyof S["requestsIn"] & string>(
+    method: M,
+    handler: (params: S["requestsIn"][M]["params"]) => unknown | Promise<unknown>,
+  ): void;
+  onNotification<M extends keyof S["notificationsIn"] & string>(
+    method: M,
+    handler: (params?: S["notificationsIn"][M]) => void,
+  ): void;
   listen(): void;
   dispose(): void;
 }
@@ -109,7 +151,10 @@ function parseJsonRpcMessage(line: string): ParsedMessage {
   return null;
 }
 
-export function createNdjsonConnection(readable: Readable, writable: Writable): NdjsonConnection {
+export function createNdjsonConnection<S extends RpcSchema = RpcSchema>(
+  readable: Readable,
+  writable: Writable,
+): NdjsonConnection<S> {
   let disposed = false;
   let rl: ReturnType<typeof createInterface> | null = null;
 
@@ -235,12 +280,15 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
     }
   }
 
-  return {
-    sendRequest<T = unknown>(
+  // The implementation is method-name-agnostic (framing, correlation, and
+  // timeouts don't depend on the schema); the single cast below is what
+  // projects it onto the caller's typed schema.
+  const connection: NdjsonConnection = {
+    sendRequest(
       method: string,
       params?: unknown,
       timeoutMs: number = DEFAULT_REQUEST_TIMEOUT_MS,
-    ): Promise<T> {
+    ): Promise<unknown> {
       if (disposed) return Promise.reject(new Error("Connection disposed"));
       const requester =
         timeoutMs > 0 && Number.isFinite(timeoutMs)
@@ -256,11 +304,8 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
       client.notify(method, params, undefined);
     },
 
-    onRequest<T = unknown>(
-      method: string,
-      handler: (params: T) => unknown | Promise<unknown>,
-    ): void {
-      server.addMethod(method, handler as (params: unknown) => unknown | Promise<unknown>);
+    onRequest(method: string, handler: (params: unknown) => unknown | Promise<unknown>): void {
+      server.addMethod(method, handler);
     },
 
     onNotification(method: string, handler: (params?: unknown) => void): void {
@@ -280,4 +325,5 @@ export function createNdjsonConnection(readable: Readable, writable: Writable): 
       rl?.close();
     },
   };
+  return connection as NdjsonConnection<S>;
 }

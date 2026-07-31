@@ -31,8 +31,8 @@ export function stateColor(state: AgentState, primary: string): string {
 }
 
 /**
- * The design-system "console" chrome shared by the chat shell and the
- * workflow run surface: a 760px column on the cream page with a header
+ * The design-system "console" chrome for the chat shell:
+ * a 760px column on the cream page with a header
  * (logo + live-status eyebrow), an optional error banner, the main content
  * on a raised white card, and a footer row beneath it.
  *

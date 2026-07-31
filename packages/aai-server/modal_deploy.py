@@ -9,6 +9,10 @@ Agent guest sandboxes are ALSO Modal Sandboxes (see modal-sandbox.ts), created
 by the server at runtime under the ``aai-server`` Modal App using the
 ``MODAL_TOKEN_ID``/``MODAL_TOKEN_SECRET`` from the ``aai-server`` Secret.
 
+Studio builds run in the ``studio_build`` function below (same app, same
+image, separate containers, no secrets) — the web server invokes it per
+build via the Modal JS SDK (see studio/studio-build-runner.ts).
+
 Deploy (from the repo root, with the Python `modal` CLI authed via
 `modal token new`):
 
@@ -29,6 +33,7 @@ Required Modal Secret named ``aai-server`` with (at least):
 
 import os
 import subprocess
+import tempfile
 from pathlib import Path
 
 import modal
@@ -74,6 +79,9 @@ image = (
             "NODE_ENV": "production",
             "PORT": str(PORT),
             "GUEST_HARNESS_PATH": "/app/packages/aai-server/dist/guest/deno-harness.mjs",
+            # Studio builds run in the studio_build function below, not in the
+            # web server's process (see studio/studio-build-runner.ts).
+            "STUDIO_BUILD_BACKEND": "modal",
         }
     )
 )
@@ -105,3 +113,43 @@ def server() -> None:
     # the SDK uses api.modal.com with the tokens from the aai-server Secret.
     env.pop("MODAL_SERVER_URL", None)
     subprocess.Popen(["node", "packages/aai-server/dist/index.mjs"], cwd="/app", env=env)
+
+
+# The studio build worker. The web server ships each studio build here (see
+# studio/studio-build-runner.ts) so Vite/Rollup over untrusted workspace
+# trees never competes with live voice sessions for the web container's CPU
+# — and never runs in the process that holds platform credentials.
+# Deliberately **no secrets attached**: a build needs the image's
+# node_modules and nothing else. Same image as the server, so the build sees
+# exactly the dependency tree the in-process path used.
+@app.function(image=image, cpu=2, memory=2048, timeout=300)
+def studio_build(request: str) -> str:
+    """Run one studio workspace build (worker and/or client) out of process.
+
+    ``request``/return value are the JSON wire format defined in
+    studio/studio-build-protocol.ts. Build failures come back as data in the
+    response (the coding agent acts on them); a raised error here means the
+    build entry itself broke.
+    """
+    with tempfile.TemporaryDirectory() as td:
+        request_path = Path(td) / "request.json"
+        response_path = Path(td) / "response.json"
+        request_path.write_text(request)
+        proc = subprocess.run(
+            [
+                "node",
+                "packages/aai-server/dist/studio/studio-build-entry.mjs",
+                str(request_path),
+                str(response_path),
+            ],
+            cwd="/app",
+            capture_output=True,
+            text=True,
+            timeout=280,
+        )
+        if response_path.exists():
+            return response_path.read_text()
+        raise RuntimeError(
+            f"studio build entry wrote no response (exit {proc.returncode}): "
+            f"{proc.stderr[-2000:]}"
+        )

@@ -6,20 +6,14 @@
  * into every `aai init` project (`aai-templates/scaffold/CLAUDE.md`) — one
  * source of truth for how to write `agent.ts`, whether the coding agent is
  * Claude Code on a laptop or the studio in a browser. A studio preamble
- * overrides the parts that don't apply here (CLI workflow, custom UI build,
- * npm installs) and describes the studio's own tools.
+ * overrides the parts that don't apply here (the CLI dev loop, custom UI
+ * build, npm installs) and describes the studio's own tools.
  *
  * **Disclaiming a guide section by name is a sharp tool.** The preamble
  * outranks the reference, so a section it tells the agent to ignore is
- * effectively deleted — and the guide has two headings one word matches:
- * `## Workflow` (the `pnpm dev` CLI loop, which really doesn't apply) and
- * ``## `workflow()` API`` (an app shape that very much does). A bare "ignore
- * the Workflow section" took both. Asked for a one-shot voice debrief in a
- * user's own words, the studio produced `export default agent(...)` with a
- * hand-rolled `const workflow = (c) => ({ ...c, mode: "workflow" })` shim —
- * `mode` being the only marker vocabulary left once the real section was out
- * of view. Name an excluded section precisely enough that no other heading
- * matches, and prefer stating what *does* apply over what doesn't.
+ * effectively deleted. Name an excluded section precisely enough that no
+ * other heading matches, and prefer stating what *does* apply over what
+ * doesn't.
  */
 
 import { readFileSync } from "node:fs";
@@ -36,7 +30,7 @@ import { sdkSpecifiers } from "./studio-sdk-exports.ts";
  * `/patterns` is called out by name because `/workflow` *was* its name until
  * the combinators moved, so it sits in the model's priors and in any docs
  * snapshot predating the rename; a bare list doesn't correct a wrong belief
- * the way a contradiction does.
+ * the way a contradiction does. Same for the removed `workflow()` app mode.
  */
 const SDK_SUBPATH_RULE = (() => {
   const specs = sdkSpecifiers();
@@ -44,14 +38,13 @@ const SDK_SUBPATH_RULE = (() => {
   return `- **Never invent an SDK subpath.** These are the only importable ones, and a
   wrong guess is a build error, not a fallback:
   ${specs.join(", ")}
-  The workflow-pattern combinators (sequential, parallel, route, orchestrate,
+  The pattern combinators (sequential, parallel, route, orchestrate,
   evaluatorOptimizer, generateStructured) live in "@alexkroman1/aai/patterns" —
-  **not** "@alexkroman1/aai/workflow", which does not exist. The workflow()
-  helper itself is a named export of the root "@alexkroman1/aai".`;
+  **not** "@alexkroman1/aai/workflow", which does not exist.`;
 })();
 
 const STUDIO_PREAMBLE = `You are the AssemblyAI App Builder coding agent. You help the user build and deploy \
-voice agents and voice workflows for the AAI platform, working on a small \
+voice agents for the AAI platform, working on a small \
 server-side workspace of files via your tools.
 
 ## Your workflow
@@ -83,35 +76,6 @@ ASSEMBLYAI_API_KEY automatically, so never ask the user for that key.
 - Fix problems at the root cause, and keep each change minimal and focused
   on what was asked. Don't fix unrelated issues you notice — mention them
   instead.
-- **"Workflow" means workflow(), not agent().** The SDK has two app modes:
-  agent() is a conversational chat/voice session; workflow() (also from
-  "@alexkroman1/aai") is a one-shot run — the user records or uploads one
-  instruction, presses Go, one agentic loop executes it with the workflow's
-  tools, and the run ends with a written report. When the user asks for a
-  "workflow" ("build a workflow", "a workflow that files my expenses"),
-  build it with workflow() — stt and llm are required; there is no tts, a
-  workflow never speaks — never with agent(). See the workflow() section
-  in the reference below.
-- **Recognize a workflow even when the user never says the word.** Most
-  people describe the job, not the API. Reach for workflow() whenever the
-  request is about capturing **one** clip and having its contents filed,
-  sent, logged, translated, or extracted — "I ramble into my phone at the
-  end of the day and it files everything I mentioned", "record a note and
-  send it to Slack", "dictate this and turn it into notes". Debrief,
-  dictation, wrap-up, hand-off, voice memo, and "not a chat" are all tells.
-  The test is whether the user talks *with* the app (agent()) or *at* it
-  once (workflow()). Getting this wrong ships the wrong app: an agent()
-  carrying the same tools builds and runs fine, it just holds a
-  conversation and asks questions nobody is there to answer.
-- **Import workflow(), never re-create it.** \`workflow\` is a named export of
-  "@alexkroman1/aai", alongside \`agent\` and \`tool\`. It is what applies the
-  app kind, the transport, and the one-shot system prompt, so a local
-  \`const workflow = (config) => ({ ...config, mode: "workflow" })\` produces
-  a plain conversational agent that is missing its tts and dies at load with
-  "stt, llm, and tts must be set together". \`kind\` and \`mode\` are not
-  authoring fields at all — never write either one. If an import looks
-  wrong, re-read the "\`workflow()\` API" section instead of working around
-  it.
 - Cover every capability the user enumerated. When a request lists them
   ("add a pizza, remove one, list the order with a running total, and place
   the order"), give each its own tool, named for what it does. Before you
@@ -155,9 +119,6 @@ These CLI-specific parts do NOT apply in App Builder:
   section (the \`pnpm dev\` / \`pnpm test\` / \`pnpm build\` loop) and the
   "CLI" section — your loop is: edit files → test_agent → read the
   reported errors → fix → test again. The user publishes when ready.
-  That exclusion covers those two sections only: the "\`workflow()\` API"
-  section is a different thing despite the similar name, and it applies
-  here in full.
 - agent.ts and anything it imports are restricted to workspace files,
   "@alexkroman1/aai" (any subpath), and "zod". client.tsx may additionally
   import "@alexkroman1/aai-ui" and "react". No other npm packages can be
@@ -176,18 +137,27 @@ ${SDK_SUBPATH_RULE}
   instead.
 - Do not add a vite.config.ts or index.html; App Builder supplies both and
   ignores any you write.
-- **Default to AssemblyAI for every provider.** ASSEMBLYAI_API_KEY is the
-  one key a published agent is guaranteed to have (publishing seeds it), and
-  it covers all three stages. Any other provider — Anthropic, OpenAI,
-  Cartesia, Rime, Deepgram — needs a key the user has to supply, so an agent
-  built on one cannot run until they do. Unless the user names a specific
-  provider, choose:
-    stt: assemblyAI({ model: "universal-3-5-pro" })       from "@alexkroman1/aai/stt"
-    llm: assemblyAI({ model: "<gateway model>" }) from "@alexkroman1/aai/llm"
-    tts: assemblyAI({ voice: "vera" })            from "@alexkroman1/aai/tts"
+- **Default to the AssemblyAI voice agent API: leave stt, llm, and tts
+  unset.** That is S2S mode, where AssemblyAI runs listening, thinking, and
+  speaking end to end on the one key publishing seeds. It is the default for
+  every request that just asks for a voice agent — tools, state, personas and
+  all. Do NOT declare the provider triple to "be explicit" or to pick a
+  model; an agent with no providers declared is complete and correct.
+  Declare all three only when the user asks for cascaded or pipeline mode,
+  names a provider or model for a stage, or wants a per-stage option S2S has
+  no equivalent for. Never declare only one or two — zero or three.
+- **In a pipeline, default every stage to AssemblyAI.** ASSEMBLYAI_API_KEY is
+  the one key a published agent is guaranteed to have, and it covers all
+  three stages. Any other provider — Anthropic, OpenAI, Cartesia, Rime,
+  Deepgram — needs a key the user has to supply, so an agent built on one
+  cannot run until they do. For each stage the user did not name a provider
+  for, choose:
+    stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt"
+    llm: assemblyAI({ model: "<gateway model>" })   from "@alexkroman1/aai/llm"
+    tts: assemblyAI({ voice: "vera" })              from "@alexkroman1/aai/tts"
   The factory is named assemblyAI in all three subpaths — alias two on
-  import. (S2S mode, i.e. no stt/llm/tts at all, is also all-AssemblyAI and
-  remains the right default when the user just wants a voice agent.)
+  import. A provider the user *did* name wins for that stage, and the other
+  two still default to AssemblyAI.
 - **Look things up instead of guessing.** The AssemblyAI docs are available
   as MCP tools (search + fetch), and visit_webpage reads any other URL. The
   reference below is a snapshot; when a question is about a voice, a model
@@ -253,21 +223,8 @@ export default agent({
   builtinTools: web_search, visit_webpage, get_page_design, fetch_json,
   run_code.
 - Pipeline mode: set all three of stt/llm/tts (factories from
-  "@alexkroman1/aai/stt", "/llm", "/tts") or none (S2S default). An agent
-  must name a real TTS provider — there is no text-only agent mode
-  (tts: none() on agent() is a config error).
-- Workflows: workflow() from "@alexkroman1/aai" is the second app mode —
-  one-shot audio in → action out (record/upload one instruction, one
-  agentic loop runs the tools, ends with a written report; no conversation,
-  no history). stt + llm required; there is no tts — a workflow never
-  speaks. When the user asks for a "workflow", or for any speech-in
-  text/action-out transform (dictation → notes, voice memo → summary),
-  use workflow(), never agent(). Import it as a named export alongside
-  agent and tool; never define a local workflow helper, and never write a
-  kind or mode field — workflow() sets those itself.
-- Send channel: send: slack() from "@alexkroman1/aai/send" +
-  SLACK_WEBHOOK_URL secret registers a send_message tool that posts to a
-  Slack incoming webhook.
+  "@alexkroman1/aai/stt", "/llm", "/tts") or none (S2S default). Every
+  pipeline agent must name a real TTS provider.
 
 ## Design guidelines (client.tsx)
 

@@ -371,13 +371,13 @@ describe("wireSessionSocket", () => {
       logger,
     });
 
-    // Budget is MAX_SYNC_AUDIO_BYTES + MAX_WS_PAYLOAD_BYTES = 13 MiB; fill it
-    // with 1 MiB frames, then one more must be dropped (and logged).
-    for (let i = 0; i < 13; i++) {
-      simulateBinaryFrame(ws, new Uint8Array(1024 * 1024));
+    // Budget is MAX_WS_PAYLOAD_BYTES = 1 MiB; fill it with 256 KiB frames,
+    // then one more must be dropped (and logged).
+    for (let i = 0; i < 4; i++) {
+      simulateBinaryFrame(ws, new Uint8Array(256 * 1024));
     }
     expect(logger.warn).not.toHaveBeenCalled();
-    simulateBinaryFrame(ws, new Uint8Array(1024 * 1024));
+    simulateBinaryFrame(ws, new Uint8Array(256 * 1024));
     expect(logger.warn).toHaveBeenCalledWith(
       "ws: pre-ready message buffer full; dropping frame",
       expect.any(Object),
@@ -385,7 +385,7 @@ describe("wireSessionSocket", () => {
 
     startGate.resolve();
     await waitForSessionReady(logger);
-    expect(core.onAudio).toHaveBeenCalledTimes(13);
+    expect(core.onAudio).toHaveBeenCalledTimes(4);
   });
 
   test("messages before session is created (no open yet) are ignored", () => {

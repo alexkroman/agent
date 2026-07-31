@@ -151,7 +151,6 @@ Subpath exports consumed by sibling packages and user agents:
 - `./stt` — pipeline-mode STT provider factories (e.g. `assemblyAI`)
 - `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
 - `./vector` — Vector provider factories (`pinecone`, `inMemoryVector`)
-- `./send` — Send-channel factories + resolver (`slack`, `openSender`)
 
 #### `aai-ui` (UI)
 
@@ -228,10 +227,7 @@ restrictions apply there.
 - `default-client.tsx` / `build-default-client.ts` — the default UI shipped
   to agents with no `client.tsx`, and its build step
 - `types.ts` — UI type definitions
-- `sync-session.ts` / `sync-mic.ts` — `POST /sync` turn client and
-  push-to-talk capture, the plumbing under the workflow run surface
-- `components/` — UI components (console-shell — the shared chrome both
-  chat-view and workflow-view compose, chat-view, workflow-view, controls,
+- `components/` — UI components (console-shell, chat-view, controls,
   message-list, start-screen, sidebar-layout, tool-call-block, button,
   aai-logo, tool-config-context)
 
@@ -240,9 +236,9 @@ restrictions apply there.
 - `orchestrator.ts` — HTTP + WebSocket routing
 - `sandbox.ts` — agent sandbox management
 - `sandbox-vm.ts` — per-agent sandbox lifecycle (start, teardown)
-- `sandbox-agent-config.ts` — maps the deploy-time `IsolateConfig` onto the
-  runtime's agent definition + provider options (`toRuntimeAgent`,
-  `pipelineProviderOpts`, `toHostBaseAgent`)
+- `sandbox-agent-config.ts` — the deploy-time `IsolateConfig` → runtime-agent
+  boundary: `toRuntimeAgent` passes the config through unchanged minus the
+  `WIRE_ONLY_CONFIG_FIELDS` deny-list (see "One canonical config schema")
 - `sandbox-guest-rpc.ts` — guest→host db/Vector/fetch RPC schemas + handler registration
 - `sandbox-pool.ts` — pool of pre-warmed Deno harnesses for fast cold starts
 - `sandbox-network.ts` — network proxying for sandbox
@@ -253,7 +249,12 @@ restrictions apply there.
 - `guest/deno-harness.ts` — Deno guest entry point (runs inside a Modal Sandbox)
 - `modal_deploy.py` — Modal deployment of the server itself (`@modal.web_server`
   wrapping the node process); `pnpm --filter aai-server deploy:modal`
-- `ndjson-transport.ts` — NDJSON-over-stdio transport for host↔guest RPC
+- `ndjson-transport.ts` — NDJSON-over-stdio transport for host↔guest RPC.
+  Connections are typed by a per-direction method map (`RpcSchema`); the
+  sandbox link's concrete map is `GuestRpcSchema` in `rpc-schemas.ts`, so
+  method names and outgoing request params are compile-checked at every
+  call site while results/incoming params stay `unknown` (untrusted wire
+  data — Zod at the receiving site is the contract)
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
@@ -425,6 +426,26 @@ voice agents without the CLI:
   uses a throwaway one (`describeBundle` in `sandbox-vm.ts`). The LLM
   orchestration itself stays host-side — the guest has no network device
   by design.
+- **Builds never run in the server's process.** Every studio build executes
+  the build entry (`studio/studio-build-entry.ts`, wire contract in
+  `studio-build-protocol.ts`) out of process, selected by
+  `studio-build-runner.ts`: in production `STUDIO_BUILD_BACKEND=modal` (set
+  by `modal_deploy.py`'s image env) ships the build to the `studio_build`
+  Modal Function — same image, separate container, **no secrets attached** —
+  while dev/tests default to spawning the same entry as a local child
+  process (`subprocess` backend). Vite/Rollup over untrusted workspace trees
+  therefore never competes with live voice sessions for the web container's
+  CPU, and never runs in the process holding platform credentials; it also
+  moots the `withPreservedNodeEnv` hazard for studio builds, since the
+  `NODE_ENV` mutation dies with the build process. There is deliberately
+  **no in-process build path and no fallback between backends** — a failed
+  backend is a failed build, loudly. Compile errors cross the process
+  boundary as classified wire data and are rethrown host-side as
+  `StudioBuildError`, so the coding agent still gets a message it can act
+  on. `STUDIO_BUILD_TIMEOUT_MS` bounds each build (default 180s; the
+  subprocess is killed on the deadline), and
+  `STUDIO_BUILD_MODAL_APP`/`STUDIO_BUILD_MODAL_FUNCTION`/
+  `STUDIO_BUILD_ENTRY_PATH` override the backend wiring.
 - **Builds run through the CLI's bundlers, not copies of them.**
   `withWorkspaceDir` (`studio-workspace-dir.ts`) materializes the
   workspace to one scratch dir and both builds read it. The scratch dir
@@ -505,52 +526,7 @@ voice agents without the CLI:
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
   the deploy core.
 
-### App modes: agents and workflows
-
-The SDK defines two kinds of app, marked by `AgentDef.kind`
-(`"agent"` default | `"workflow"`, type `AgentKind` in `sdk/config-rules.ts`):
-
-- **Agents** (`agent()`) are conversational chat/voice interfaces — an open
-  WebSocket session the user talks with turn by turn. Everything under
-  "Session modes" below applies.
-- **Workflows** (`workflow()` in `sdk/define.ts`) are **audio in → action
-  out**: the user records one instruction (push to talk) or uploads an audio
-  file, presses Go, one agentic loop transcribes and executes it with the
-  workflow's tools, and the run ends with a written report. No conversation,
-  no history between runs. A workflow is always a **pipeline** (`stt` + `llm`
-  required) and **never speaks**: `workflow()` has no `tts` parameter and
-  always sets the internal `none()` sentinel; each run is one history-less
-  `POST /sync`. `assertAgentKind` (`sdk/config-rules.ts`) enforces both
-  kind rules — workflow ⇒ pipeline + `none()` tts, agent ⇒ a real TTS
-  (there is **no text-only agent mode**) — in `parseManifest`,
-  `toAgentConfig`, and the server's `IsolateConfigSchema`. **`workflow()`
-  is the only author-facing way to set
-  the kind** — `agent()` deliberately doesn't accept a `kind` parameter
-  (`define.test-d.ts` pins the exclusion), so a workflow can't be hand-rolled
-  without its defaults.
-
-The two modes speak from **different default system prompts**
-(`sdk/agent-defaults.ts`): agents get the conversational customer-service
-prompt; workflows get `DEFAULT_WORKFLOW_SYSTEM_PROMPT` (one-shot semantics —
-never ask clarifying questions, state assumptions, end with a run report).
-`buildSystemPrompt` (`sdk/system-prompt.ts`) keys the base prompt off
-`config.kind` and skips the spoken tool preamble + voice output rules for
-workflows, so `toRuntimeAgent` **must** copy `config.kind` (it does — the
-usual dropped-field failure would run a deployed workflow on the
-conversational prompt, asking questions nobody can answer).
-
-The marker reaches the browser via `GET /client-config` (`kind`, default
-`"agent"` for older servers); `client()`'s `DefaultRoot` renders
-`WorkflowView` (aai-ui) for workflows — hold-to-talk (`createPttRecorder`) /
-audio upload (`decodeAudioToPcm16`) staging one clip, a Go button, and the
-run record: the transcript plus the tool calls the run executed
-(`SyncTurnResponse.toolCalls`, collected by `runSyncTurn` from the
-stream's tool-call/tool-result parts). Deliberately **no greeting and no
-assistant prose** — a workflow is an execution surface, not a chat, so the
-reply text stays on the wire (it is still the LLM's run report) but the
-default view never renders it.
-
-### `ctx.generate` and workflow patterns (`@alexkroman1/aai/patterns`)
+### `ctx.generate` and pattern combinators (`@alexkroman1/aai/patterns`)
 
 Tool `execute` code gets one-shot LLM generation via `ctx.generate` — a
 **host capability like `ctx.db`**: the guest has no network, so the platform
@@ -574,8 +550,8 @@ dispatch), `orchestrate` (plan → workers → synthesize), and
 `evaluatorOptimizer` (generate → judge → retry with feedback) — plus
 `generateStructured`, which converts Zod → JSON Schema caller-side and
 re-validates the result. The subpath was renamed from
-`@alexkroman1/aai/workflow`, which collided with the `workflow()` app kind
-despite being unrelated to it.
+`@alexkroman1/aai/workflow` (a name that collided with a since-removed
+`workflow()` app kind).
 
 ### Session modes
 
@@ -598,112 +574,43 @@ Each agent runs in one of two session modes, selected at parse time by
 Partial provider configs are rejected at parse time — `parseManifest()`
 requires either zero or all three of `stt`/`llm`/`tts`.
 
-- **Sync turns** (pipeline agents only) are a connectionless *transport*,
-  not a third session mode: `POST /sync` on the self-hosted server runs one
-  complete conversational turn per HTTP request with **no WebSockets on
-  either leg** — not browser→server, not server→providers. It is the
-  substrate workflow runs execute on, and remains available as a
-  programmatic API for pipeline agents (there is deliberately **no
-  per-agent client-transport switch** anymore — the default browser client
-  always uses the WebSocket session for agents, and the workflow surface
-  for workflows). The caller endpoints speech itself and sends one
-  utterance (base64 PCM16) or
-  committed text plus the conversation history (the server holds no session
-  state between turns); the response carries the transcript, the reply, and
-  the spoken reply when available. Provider calls are all one-shot HTTP:
-  STT via `SttOpener.transcribeClip` (AssemblyAI Sync API — providers
-  without it 422 on audio input), the LLM loop via `streamText` drained
-  server-side (tools execute exactly as on the pipeline path), TTS via
-  `TtsOpener.synthesizeClip` (Cartesia `/tts/bytes`; providers without it
-  degrade to a text-only reply, a synthesis *failure* degrades to
-  `ttsError` alongside the intact text reply).
-
-  **Tool-call args must be coerced before they hit a wire schema.** The AI
+- **Tool-call args must be coerced before they hit a wire schema.** The AI
   SDK surfaces an unparsable/unknown tool call as a `tool-call` stream part
-  whose `input` is the *raw argument string*, not a parsed object. Both
-  `tool_call` (WebSocket) and `toolCalls[]` (sync) require a record for
-  `args` — and on the sync path one bad call fails the client's parse of the
-  **entire** response ("Sync turn failed: malformed server response"),
-  killing the workflow run. Every emitter therefore routes args through
-  `toArgsRecord` (`sdk/utils.ts`; non-records become `{}`), the sync runner
-  passes the same `experimental_repairToolCall` the pipeline transport uses,
-  and a failed/invalid call is recorded with an error `result` rather than
-  left dangling. Key files:
-  `host/sync-turn.ts` (runner + `SyncTurnError` status mapping),
-  `sdk/sync.ts` (wire schemas, exported from `/protocol`),
-  `runtime.runSyncTurn` (rejects 409 for S2S agents). In `aai-ui`:
-  `createSyncSession` (HTTP turns, client-held history bounded by
-  `DEFAULT_MAX_HISTORY` — the server trims to the same window, and past
-  `MAX_SYNC_HISTORY_MESSAGES` it rejects the request outright, so an
-  unbounded client eventually broke every later turn; plus a turn queue)
-  and `createPttRecorder` (`sync-mic.ts`, WebRTC push-to-talk capture —
-  the button is the endpointing).
+  whose `input` is the *raw argument string*, not a parsed object. The
+  WebSocket `tool_call` event requires a record for `args`, so every emitter
+  routes args through `toArgsRecord` (`sdk/utils.ts`; non-records become
+  `{}`), and a failed/invalid call is recorded with an error `result` rather
+  than left dangling.
 
-  **There is exactly one capture worklet** (`worklets/capture-processor.ts`),
-  shared by the WebSocket mic and the push-to-talk recorder. `sync-mic.ts`
-  used to inline a second Float32-batching processor, which re-read a view it
-  had just transferred: `postMessage(msg, [buf])` detaches `buf`, so sizing
-  the next batch as `new Float32Array(out.length)` after transferring
-  `out.buffer` yields `0`, `read` stopped advancing, and `process()` spun
-  forever posting empty chunks — the mic went permanently deaf on its first
-  flush (measured: 1.88M messages in 6s at 100% on the render thread, zero
-  `POST /sync`). The shared processor flushes a `slice()` copy and keeps its
-  own buffer, so the hazard is structurally gone; the PTT path also gets the
-  processor's start/stop gating (no pre-press audio in a clip), its
-  stop → flush → `stopped`-ack protocol (no fixed sleep, no dropped tail),
-  and the dead-mic probe for free. Two guards remain load-bearing:
+- **The capture worklet** (`worklets/capture-processor.ts`) is the single
+  mic-capture processor. It flushes a `slice()` copy and keeps its own
+  buffer (re-reading a just-transferred view is how a mic once went
+  permanently deaf), with start/stop gating, a stop → flush → `stopped`-ack
+  protocol, and the dead-mic probe. Two guards remain load-bearing:
   `instantiateWorklet`'s harness honors the transfer list (`structuredClone`
   with `transfer`, which really detaches) and caps posted messages so a
   runaway loop is a named failure rather than a hang, and
-  `worklets/capture-processor.test.ts` exercises the processor source, which
-  the mock node in `sync-mic.test.ts` never does.
+  `worklets/capture-processor.test.ts` exercises the processor source.
 
-  On the platform, `POST /:slug/sync`
-  (unauthenticated, parity with the agent WebSocket) runs the turn through
-  the deployed agent's sandbox — `Sandbox.runSyncTurn` wraps the runtime
-  call so the guest's per-session tool state is released after the turn
-  (`session/end`, message-delta cache), and the studio exposes
-  `POST /studio/projects/:project/sync` (bearer-auth'd) against a project's
-  *published* slug; both share `sync-turn-handler.ts`.
-
-  **App-kind selection for the default client**: the default client page is
+- **Pre-connection client config**: the default client page is
   byte-identical for every agent and the CSP bars inline scripts, so the
-  kind reaches the browser via a pre-connection endpoint:
-  `GET /client-config` (dev server) / `GET /:slug/client-config` (platform,
-  unauthenticated — parity with the page and the WebSocket) returns
-  `{ kind, name, greeting }` (`sdk/client-config.ts`, re-exported from
+  agent's display name and greeting reach the browser via a pre-connection
+  endpoint: `GET /client-config` (dev server) / `GET /:slug/client-config`
+  (platform, unauthenticated — parity with the page and the WebSocket)
+  returns `{ name, greeting }` (`sdk/client-config.ts`, re-exported from
   `/protocol`). **Every server builds the body through one helper**,
-  `buildClientConfig` — two servers once derived a workflow's fields
-  differently, masked only by the client's check ordering; the platform's
-  handler lives in `aai-server/client-config-handler.ts`. In `aai-ui`,
-  `client()`'s config tier renders `DefaultRoot`, which fetches the config
-  (any failure degrades to the agent kind, so older servers keep working)
-  and mounts the chat shell or `WorkflowView`; the chat shell uses the
-  server-declared `name` unless `client({ name })` overrides it. A custom
-  `component` ignores all of it.
-  The `aai dev` Vite proxy forwards `/client-config` *and* `/sync` to the
-  backend — without the latter, custom sync clients 404'd under dev.
+  `buildClientConfig`; the platform's handler lives in
+  `aai-server/client-config-handler.ts`. In `aai-ui`, `client()`'s config
+  tier renders `DefaultRoot`, which fetches the config (any failure degrades
+  to the empty default, so older servers keep working) and mounts the chat
+  shell; the shell uses the server-declared `name` unless `client({ name })`
+  overrides it. A custom `component` ignores all of it. The `aai dev` Vite
+  proxy forwards `/client-config` to the backend.
 
-- **Text-only output is workflow-only** — there is no text-only *agent*
-  mode. The `none()` sentinel (`sdk/providers/tts/none.ts`) is what
-  `workflow()` always sets as its `tts`: it keeps the all-or-none triple
-  rule intact (a *forgotten* `tts` stays a loud error) while
-  `isTextOnlyTts()` flags the mode wherever it matters: the runtime
-  resolves `tts: null` (no opener, no TTS credential —
-  `requiredProviderEnvVars` skips it since `none` has no registry entry),
-  the pipeline transport skips the TTS side entirely (`openTtsSide` fires
-  `onAudioReady` immediately; `flushTtsAndWait` early-returns;
-  `holdPhrase` is forced off and rejected at config time via
-  `assertTextOnlyTuning`), and the `config` protocol message stamps
-  `audioOut: false` so the client skips the playback pipeline.
-  `assertAgentKind` rejects `tts: none()` on an agent and a real TTS on a
-  workflow, in `parseManifest`, `toAgentConfig`, and the server's
-  `IsolateConfigSchema`. `SessionCore` keeps the audioOut-aware plumbing
-  (`startRecording()`/`stopRecording()`, `sendAudioFile()`) for
-  programmatic clients, but the default `ChatView` always renders the
-  voice `Controls` — the former `TextControls` UI is gone. The snapshot's
-  `apiUrl` field carries the programmatic WebSocket endpoint, shown by
-  `ApiUrlChip` in every mode.
+- **There is no text-only mode.** Every pipeline agent declares a real TTS
+  provider, and the default `ChatView` always renders the voice `Controls`.
+  The snapshot's `apiUrl` field carries the programmatic WebSocket endpoint,
+  shown by `ApiUrlChip`.
 
 Reference providers shipped today:
 
@@ -853,35 +760,6 @@ resolved with the agent's env), else the platform default applies. Both
 `ctx.db` and `ctx.vector` reach the guest as host-proxied RPC
 (`db/query`, `vector/*`).
 
-### Send channels (`send: slack()`)
-
-An agent's outbound channel has **two independent sides**, and a deployed
-agent needs both wired or the failure is silent:
-
-- **Host side** — `createRuntime` registers the `send_message` builtin only
-  when `agent.send` is set (`host/runtime-tools.ts:resolveSendMessage`). The
-  platform builds its agent object with `toRuntimeAgent`
-  (`sandbox-agent-config.ts`), so
-  that mapper must copy `config.send`; when it didn't, a deployed
-  `send: slack()` was a no-op — the tool never entered the LLM's schema
-  list, so the symptom was a reply that simply didn't send, with no error
-  anywhere. The builtin executes host-side with `safeFetch` and resolves
-  `SLACK_WEBHOOK_URL` from the agent env *per send*, so a missing secret is
-  a tool error mid-conversation rather than a session-start failure.
-- **Guest side** — tool code calling `openSender(slack(), ctx.env)` posts
-  through the sandbox's proxied `fetch`, which the host validates against
-  `allowedHosts`. `resolveAgentAllowedHosts` (`sandbox.ts`) unions the
-  agent's declared hosts with the channel's webhook host, derived from the
-  *validated descriptor* host-side rather than trusting a bundle-supplied
-  field. Getting this wrong disables guest fetch **entirely**, not just
-  Slack: `registerGuestRpcHandlers` registers no `fetch/request` handler for
-  an empty list.
-
-Both sides are covered by `packages/aai-server/sandbox-egress.test.ts`. When
-adding a channel kind, the registry entry in `sdk/providers/send/open.ts`
-(env var + hosts + opener) is the only place that needs the hostname —
-everything above derives from it.
-
 ### Guest egress (`allowedHosts`)
 
 `fetch` from an agent's own tool code only works against hostnames the agent
@@ -958,31 +836,50 @@ and loads from a `blob:` URL, and sibling harness modules are bundled in.
 | `ctx.db` backing (BYO `DATABASE_URL` in dev vs platform-provisioned schema+role) | prod is stricter | Dev connects wherever the developer points it; prod pins search_path + statement_timeout on a per-app role. |
 | Platform sandboxes need Modal credentials | prod is stricter | `aai dev` runs tools in-process; the platform (any machine with `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`) spawns real Modal sandboxes — see "Modal sandbox notes". |
 
-**`agent()` re-declares its parameter shape inline** rather than deriving it
-from `AgentDef`, and returns `{...defaults, ...def}`. A field added to
-`AgentDef` alone therefore *works at runtime* while being a TS2353
-excess-property error for the author — and neither bundler typechecks, so
-nothing catches it. `send` and `state` both shipped in that state.
-`define.test-d.ts` now asserts
-`Exclude<keyof AgentDef, keyof Parameters<typeof agent>[0]>` is `never`.
+**One canonical config schema, deny-list boundaries.** The dropped-field bug
+family (`builtinTools` — deployed agents silently lost the default cognitive
+builtins; `send`; the provider triple; `allowedHosts`) all came from
+allow-list mappers re-declaring the config field list, where every field is
+optional and an omission is valid TypeScript. Every such bug presents as a
+*working* agent quietly ignoring part of its own config. The design is now
+inverted — one canonical serializable schema flows CLI → server → runtime
+unchanged, and each boundary subtracts an explicit deny-list instead of
+copying fields:
 
-`toRuntimeAgent` copies ~14 optional fields through a `defined({...})` helper
-rather than one conditional spread each. That shape is deliberate: the
-per-field form is how `builtinTools` (deployed agents silently lost the
-default cognitive builtins) and then `send` came to be dropped, since every
-field is optional and an omission is valid TypeScript.
+- **`AgentConfigSchema`** (`sdk/_internal-types.ts`) is the canonical shape.
+  `toAgentConfig` strips `HOST_ONLY_AGENT_FIELDS` (`tools`, `state`) plus
+  undefined values and validates through the schema — no per-field copies.
+  `_internal-types.test.ts` asserts the one subtraction:
+  `Exclude<keyof AgentDef, keyof AgentConfig | HostOnlyAgentField>` is `never`.
+- **`agent()`** derives its parameter shape from `AgentDef`
+  (`AgentParams` = `Omit` + `Partial<Pick>` of the defaulted fields) instead
+  of re-declaring it inline — the inline form is how `send` and `state`
+  shipped as runtime-working but excess-property errors for authors
+  (neither bundler typechecks user code). `define.test-d.ts` locks this.
+- **`IsolateConfigSchema`** (`aai-server/rpc-schemas.ts`) is
+  `AgentConfigSchema.extend({...})` — the extensions are wire-tolerance
+  loosenings (a stored bundle from an older CLI must keep loading), wire
+  defaults, and the wire-only `toolSchemas`; none may drop a field.
+- **`toRuntimeAgent`** (`aai-server/sandbox-agent-config.ts`) passes the
+  whole config through minus `WIRE_ONLY_CONFIG_FIELDS` (`toolSchemas`,
+  `mode`). The provider descriptors ride on the runtime agent itself
+  (`createRuntime` resolves `opts.stt ?? agent.stt`), keyed off the
+  descriptors' own presence — never `config.mode`, which is optional: a
+  config carrying all three providers with no `mode` once hit a
+  `config.mode === "pipeline"` gate and lost every one of them, so
+  `createRuntime` resolved S2S and ran a healthy S2S session on the agent's
+  own key, nothing logged. `superRefine` rejects a `mode` that disagrees
+  with the descriptors. Host mode (`ws-host-mode.ts`) uses the same
+  function, so a pipeline agent driven over `?host=1` stays pipeline.
+  `rpc-schemas.test.ts` asserts both subtractions:
+  `Exclude<keyof AgentConfig, keyof IsolateConfig>` and
+  `Exclude<keyof IsolateConfig, keyof AgentDef | WireOnlyConfigField>` are
+  `never`.
 
-This mapping lives in **`sandbox-agent-config.ts`**, split out of `sandbox.ts`
-because it has its own history of dropping fields, and every such bug presents
-as a *working* agent quietly ignoring part of its own config. The third was the
-provider triple: `pipelineProviderOpts` forwards stt/llm/tts keyed off the
-**descriptors**, never `config.mode`, which is optional in
-`IsolateConfigSchema`. A config carrying all three providers with no `mode` hit
-the old `config.mode === "pipeline"` gate and lost every one of them, so
-`createRuntime` resolved S2S and ran a healthy S2S session on the agent's own
-key — nothing logged, the configured providers simply ignored. The descriptors
-are the safe source because `superRefine` rejects a `mode` that disagrees with
-them.
+A new serializable agent field therefore needs exactly two edits — `AgentDef`
+(docs + type) and `AgentConfigSchema` (shape) — and the type guards fail
+loudly if either half is missing; no mapper edits, and the field reaches the
+server, the wire, and the runtime by default.
 
 **Never let S2S be a fallback.** `buildTransport`
 (`host/runtime-transport.ts`) reaches `buildAssemblyS2sTransport` by
@@ -1198,8 +1095,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `gateway`) |
 | `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
-| `@alexkroman1/aai/send` | `sdk/providers/send-barrel.ts` | Send-channel factories + resolver (`slack`, `openSender`, `Sender`) |
-| `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox. Renamed from `./workflow` (which collided with the `workflow()` app kind) |
+| `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox |
 
 ### Default values and magic numbers
 
@@ -1219,7 +1115,7 @@ defaults that affect agent behavior:
 | Deepgram `endpointing` | 100 (`DEFAULT_DEEPGRAM_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Provider endpointing serializes with the transport settle windows, so it stays low; override via `deepgram({ endpointing })`. |
 | `endpointSettleMs` | 1500 (`DEFAULT_ENDPOINT_SETTLE_MS`) | `constants.ts` | Pipeline only: wait after an STT final before committing the turn, aggregating disfluent multi-final utterances. `completeSettleMs` (500) is the shorter window for clearly-complete finals. 0 disables. |
 | `holdPhrase` | `"One moment."` (`DEFAULT_HOLD_PHRASE`) | `pipeline-stream.ts` | Pipeline only: spoken when a turn opens with a tool call and no speech. `""` disables. |
-| `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. Unlike `holdPhrase` it is **allowed** with `tts: none()` — an error is meaningful as text. `""` disables. |
+| `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. `""` disables. |
 | dead-air cover | 2000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream.ts` | Pipeline only: tool execution that sends nothing to TTS for this long gets a `DEAD_AIR_COVER_PHRASES` filler — unlike `holdPhrase` this is time-based, so it still fires after the model has spoken, and repeats across a tool chain with the wait doubling each time. `holdPhrase: ""` disables both. |
 | `falseInterruptionTimeoutMs` | 2000 (`DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS`) | `constants.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn (`DEFAULT_FALSE_INTERRUPTION_PROMPT`) after this window. 0 disables. |
 | `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. |
@@ -1292,11 +1188,15 @@ behind, using [vitest-evals](https://github.com/getsentry/vitest-evals)
   build through `bundleWorkspaceWorker` — the exact Vite/Rollup pass
   Publish runs. This is the "one-shot produces syntactically valid code"
   gate.
-- **`SandboxLoadJudge`** (asserted via `toSatisfyJudge` when Deno + the
-  built guest harness are available): the built worker must load in a
-  real studio sandbox, self-describe a valid `IsolateConfigSchema`
-  config, and expose the tools the prompt asked for — the "code actually
-  works" gate.
+- **`SandboxLoadJudge`** (asserted via `toSatisfyJudge` when Modal
+  credentials + the built guest harness are available): the built worker
+  must load in a real studio sandbox and self-describe a valid
+  `IsolateConfigSchema` config — the "code actually works" gate. It also
+  asserts whatever **config facts** the case declares: expected tool
+  names, which provider kind backs each pipeline stage (or that none is
+  declared, i.e. S2S), and that every host the agent's tool code fetches
+  is covered by an `allowedHosts` pattern (matched with the runtime's own
+  `matchesAllowedHost`, so `*.example.com` counts).
 - **`TemplateParityJudge`** (threshold 0.8): the workspace must be
   functionally equivalent to a hand-written template — the "built the
   *right* thing" gate. Most cases are template-parity cases: the prompt is
@@ -1324,10 +1224,45 @@ behind, using [vitest-evals](https://github.com/getsentry/vitest-evals)
   shown to the judge (it read "run_code only" as a requirement and failed an
   agent for keeping the defaults), and the `ONE_SHOT` suffix is stripped
   from the judge's view of the prompt (it instructs the *builder*, and the
-  judge graded the voice agent's persona against it). When a case regresses,
-  suspect the rubric before the studio prompt. `temperature: 0` is
-  deliberately absent — the default studio model is a reasoning model that
-  rejects it, and generation variance dominates anyway.
+  judge graded the voice agent's persona against it). The mirror-image
+  false negative is why `capabilities` grades coverage of the **prompt**,
+  not of the reference: the templates are fuller than the starter prompts
+  they pair with (the pizza reference also updates a cart line and takes the
+  customer's name; its starter prompt asks for neither), so demanding every
+  reference capability failed agents that built exactly what was asked.
+  When a case regresses, suspect the rubric before the studio prompt.
+  `temperature: 0` is deliberately absent — the default studio model is a
+  reasoning model that rejects it, and generation variance dominates anyway.
+
+The corpus has a second family with no reference and no parity judge:
+**`CONFIG_CASES`**, graded only on what the built worker reports about
+itself. They cover the two rules a resemblance grader is the wrong
+instrument for, because they are about whether a *published* agent can run
+at all rather than whether it looks like a template:
+
+- **AssemblyAI is the default provider.** `ASSEMBLYAI_API_KEY` is the only
+  key publishing seeds (`studio-deploy.ts`'s `defaultEnv`), so an agent
+  that reaches for Anthropic or Cartesia unbidden cannot start until the
+  user supplies a key. Cases assert S2S when no provider is named at all,
+  all-`assemblyai` descriptors when cascaded mode is requested without
+  naming providers, and — when the prompt names one stage's provider — that
+  stage honored plus AssemblyAI for the two the prompt left open. Parity
+  can't grade this: several references legitimately use other providers, so
+  "matches the reference" and "runs when published" disagree. The `mode`
+  rubric criterion states the same rule as the judge-side backstop for
+  template cases.
+
+  The first run of this case is what forced the studio preamble to split the
+  rule in two — **which mode** (leave stt/llm/tts unset; S2S is the default
+  for anything that just asks for a voice agent) before **which providers**
+  (AssemblyAI for every stage the user didn't assign). The single combined
+  "default to AssemblyAI for every provider" bullet listed the three
+  descriptors to use, so a plain "build me a voice agent" reliably produced
+  an all-AssemblyAI *pipeline* — correct on credentials, wrong on mode, and
+  invisible to every other judge.
+- **Egress needs `allowedHosts`.** A tool fetching an undeclared host
+  builds, loads, and passes every rubric criterion, then fails at runtime —
+  the one failure mode invisible from the studio's Code pane.
 
 Run with `pnpm --filter aai-server test:evals` (the e2e profile of
 `vitest.slow.config.ts`). The suite is excluded from the unit project and
@@ -1464,6 +1399,26 @@ bumped automatically.
 - Sandboxes are created with `blockNetwork: true` and a bounded lifetime
   (`SANDBOX_TIMEOUT_SECS`, default 4h). Memory/CPU caps come from
   `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT`.
+- **Orphan cleanup is heartbeat + watchdog + Modal's `idleTimeoutMs`, not
+  host code** (`SANDBOX_IDLE_TIMEOUT_SECS`, default 15 min). A host that dies
+  without running `shutdown()`'s teardown (crash, OOM, SIGKILL past the drain
+  deadline, a scaledown that never reaches the node process) strands its
+  remote sandboxes with no record of them. The original design relied on
+  stdin EOF alone ("host death closes the exec'd harness's stdin, the harness
+  exits, the sandbox goes idle") — in production that chain did not hold:
+  EOF is not reliably delivered to the exec when the host dies, and even
+  when it is, a loaded bundle's own timers could keep Deno's event loop (and
+  therefore the exec, and therefore the sandbox) alive to the 4h lifetime
+  cap. Orphan detection is now the guest's own job: the host pings every
+  harness (`ping` notification each `HARNESS_HEARTBEAT_INTERVAL_MS`, wired in
+  `modal-sandbox.ts:warmFromModal` so pooled/resident/studio harnesses are
+  all covered), the harness self-exits after `HARNESS_ORPHAN_TIMEOUT_MS` of
+  host silence and hard-exits (`Deno.exit`) on stdin EOF
+  (`guest/deno-harness.ts`, constants in `guest/limits.ts`). Once the exec
+  has exited, Modal's `idleTimeoutMs` terminates the sandbox. A healthy
+  sandbox always has the harness exec running and its host pinging, so its
+  idle timer never starts — host-side eviction (`sandbox-slots.ts`) stays
+  the authority on session-aware idleness (Modal can't see sessions).
 - The server itself deploys to Modal too (`modal_deploy.py`,
   `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
   Fly.io deployment anymore.
@@ -1611,6 +1566,16 @@ stored env at sandbox creation time and kept host-side only.
   `ctx.env`, both so agent code can't read them and so dev keeps parity with
   production in what `ctx.env` contains.
 
+  The providerEnv-not-env rule is **type-enforced** via the branded env
+  records in `sdk/env-types.ts`: `withHostCredentialFallback` is the only
+  minter of `HostCredentialEnv`, which satisfies
+  `RuntimeOptions.providerEnv` (`ProviderEnv`) but is a compile error for
+  `RuntimeOptions.env` (`AgentEnv`) and everything else that becomes
+  `ctx.env`. Plain records stay assignable to both, so only the dangerous
+  flow needs ceremony; `env-types.test-d.ts` locks the assignability matrix.
+  The brand is advisory against *deliberate* re-annotation — the point is
+  that leaking host credentials into `ctx.env` can no longer be silent.
+
 **Cross-agent isolation:**
 
 - App databases are separate Postgres schemas with per-app login roles —
@@ -1688,23 +1653,12 @@ stored env at sandbox creation time and kept host-side only.
   `instanceof` against **its own** class, so a `globalThis.FormData` (an
   instance of Node's *internal* undici's class) matches no branch, falls
   through to the string conversion, and goes out as `Content-Type: text/plain`
-  with the 17-byte body `[object FormData]`. AssemblyAI's Sync API answered
-  `415 Unsupported Media Type` and the browser saw `Sync turn failed: HTTP
-  502` — **every sync turn was broken**, on the platform and under `aai dev`
-  alike, since `syncTranscribe` is handed `RuntimeOptions.fetch`.
-  `assemblyai-sync.ts` therefore encodes the multipart body by hand into a
-  `Uint8Array` and sets `Content-Type` itself: a `BufferSource` is a realm
-  intrinsic with no per-copy class to disagree about, so it encodes identically
-  on every `fetch`. That module is in `sdk/`, which must stay Node-free, so
-  importing undici's own `FormData` was never an option.
+  with the 17-byte body `[object FormData]` — the server answers
+  `415 Unsupported Media Type` and the caller sees an opaque HTTP failure.
 
   The rule that generalizes: **never hand a `FormData`, `Blob`, `File`,
   `Headers`, or `Request` to a `fetch` that might not be the one your realm's
-  global came from** — pass bytes. And the guard has to send real bytes over a
-  real socket: the sdk specs inject a fake fetch and assert on the body
-  *object*, which is exactly why this shipped. `host/sync-transcribe-wire.test.ts`
-  posts through the actual `pinnedFetch` to a loopback server and reads what
-  arrived.
+  global came from** — pass bytes.
 - The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
   `fetch_json`) take a
   model-controlled URL and **default** to this via `safeFetch` in
@@ -1752,10 +1706,10 @@ Details worth keeping:
   gets no existence oracle.
 - **Runs in the server process, not the guest sandbox.** Host mode replaces
   the agent's tools with ones relayed to the caller, so there is no tenant
-  code to isolate. `toHostBaseAgent` carries the provider descriptors on the
-  agent object (unlike `toRuntimeAgent`, which omits them because
-  `createSandbox` passes them as options) — otherwise a pipeline agent would
-  silently fall back to S2S when driven over `?host=1`.
+  code to isolate. It builds its base agent with the same `toRuntimeAgent`
+  the sandbox path uses, which keeps the provider descriptors on the agent
+  object — otherwise a pipeline agent would silently fall back to S2S when
+  driven over `?host=1`.
 - Plain connections are untouched and stay unauthenticated.
 
 ### Self-hosted server defaults (`aai/host/server.ts`)

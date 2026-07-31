@@ -26,7 +26,8 @@ import {
 import { z } from "zod";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
-import { bundleWorkspaceWorker } from "./studio-bundle.ts";
+import type { StudioBuildRunner } from "./studio-build-protocol.ts";
+import { resolveStudioBuildRunner } from "./studio-build-runner.ts";
 import { applyEdit, StudioEditError } from "./studio-edit.ts";
 import { StudioBuildError } from "./studio-errors.ts";
 import { grepWorkspace, StudioGrepError } from "./studio-grep.ts";
@@ -37,7 +38,6 @@ import type { StudioSandbox } from "./studio-sandbox.ts";
 import { withToolTimeouts } from "./studio-tool-timeout.ts";
 import { createWebTools } from "./studio-web.ts";
 import { currentFilesHash } from "./studio-workspace.ts";
-import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 import { createWorkspaceSession, type WorkspaceSession } from "./studio-workspace-session.ts";
 import type { WorkspaceStore } from "./workspace-store.ts";
 
@@ -55,6 +55,12 @@ export type StudioChatDeps = {
   sandbox: () => Promise<StudioSandbox>;
   /** Tears down the session sandbox if one was provisioned. Idempotent. */
   disposeSandbox?: () => Promise<void>;
+  /**
+   * Injectable for tests — defaults to the env-selected out-of-process build
+   * runner (a local build subprocess in dev, the Modal build worker in
+   * production; see `studio-build-runner.ts`).
+   */
+  build?: StudioBuildRunner;
   /** Test injection seam. Defaults to the host-env selection. */
   model?: LanguageModel;
   /**
@@ -95,6 +101,32 @@ async function trialToolRun(
   }
 }
 
+/**
+ * Build (or reuse) the trial's worker bundle. Content-hash keyed: a Publish
+ * right after this trial reuses the worker instead of re-materializing and
+ * re-running Vite (see studio-build-cache). A compile error comes back as a
+ * message the coding agent can act on, not an exception.
+ */
+async function trialWorker(
+  deps: StudioChatDeps,
+  files: Record<string, string>,
+  hash: string,
+): Promise<{ worker: string } | { buildError: string }> {
+  const cached = getCachedBuild(hash)?.worker;
+  if (cached !== undefined) return { worker: cached };
+  const build = deps.build ?? resolveStudioBuildRunner();
+  let worker: string | undefined;
+  try {
+    ({ worker } = await build({ files, worker: true, client: false }));
+  } catch (err) {
+    if (err instanceof StudioBuildError) return { buildError: err.message };
+    throw err;
+  }
+  if (worker === undefined) throw new Error("Build runner returned no worker bundle");
+  putCachedBuild(hash, { worker });
+  return { worker };
+}
+
 /** Build the workspace, load it in the session sandbox, and report back. */
 async function runTrial(
   deps: StudioChatDeps,
@@ -104,19 +136,9 @@ async function runTrial(
 ): Promise<string> {
   const workspace = await workspaces.current();
   if (!workspace) return `Error: project ${deps.project} not found`;
-  // Content-hash keyed: a Publish right after this trial reuses the worker
-  // instead of re-materializing and re-running Vite (see studio-build-cache).
-  const hash = currentFilesHash(workspace);
-  let worker = getCachedBuild(hash)?.worker;
-  if (worker === undefined) {
-    try {
-      worker = await withWorkspaceDir(workspace.files, bundleWorkspaceWorker);
-    } catch (err) {
-      if (err instanceof StudioBuildError) return err.message;
-      throw err;
-    }
-    putCachedBuild(hash, { worker });
-  }
+  const built = await trialWorker(deps, workspace.files, currentFilesHash(workspace));
+  if ("buildError" in built) return built.buildError;
+  const { worker } = built;
   let sandbox: StudioSandbox;
   try {
     sandbox = await deps.sandbox();

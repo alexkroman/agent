@@ -10,22 +10,19 @@
  * - `GET  /:slug`                 — redirect to /:slug/
  * - `GET  /:slug/`               — agent UI page
  * - `GET  /:slug/health`         — per-agent health check
- * - `GET  /:slug/client-config`  — pre-connection client config (kind/name/greeting)
+ * - `GET  /:slug/client-config`  — pre-connection client config (name/greeting)
  * - `GET  /:slug/assets/:path`   — client static assets
  * - `POST /:slug/deploy`         — owner: re-deploy agent
  * - `DELETE /:slug/`             — owner: delete agent
  * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
  * - `GET/POST/DELETE /:slug/storage` — owner: per-app database storage
  * - `POST /:slug/vector`         — owner: Vector store operations
- * - `POST /:slug/sync`           — one connectionless sync turn (unauthenticated,
- *                                   parity with the WebSocket; pipeline agents only)
  * - `WS   /:slug/websocket`     — WebSocket upgrade for voice sessions
  *
  * Auth: `authMw` validates API key; `ownerMw` verifies slug ownership.
  * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
  */
 
-import { MAX_SYNC_BODY_BYTES } from "@alexkroman1/aai";
 import { VectorRequestSchema } from "@alexkroman1/aai/protocol";
 import type { Vector } from "@alexkroman1/aai/runtime";
 import { prometheus } from "@hono/prometheus";
@@ -61,7 +58,6 @@ import type { ChatStore } from "./studio/chat-store.ts";
 import { createStudioRoutes } from "./studio/studio-routes.ts";
 import { handleStudioClientAsset, handleStudioPage } from "./studio/studio-static.ts";
 import type { WorkspaceStore } from "./studio/workspace-store.ts";
-import { handleSyncTurn } from "./sync-turn-handler.ts";
 import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
 
@@ -242,16 +238,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     return handleVector(c, resolveAgentVector(slug, agentConfig, env, c.env.defaultVector));
   });
 
-  // Sync turns are the WebSocket's connectionless sibling and share its auth
-  // posture: none. The body cap bounds the base64 audio + history payload.
-  const syncBodyLimit = bodyLimit({
-    maxSize: MAX_SYNC_BODY_BYTES,
-    onError: (c) => c.json({ error: "Request body too large" }, 413),
-  });
-  agents.post("/sync", syncBodyLimit, (c) => handleSyncTurn(c, c.var.slug, opts.pool));
-
   agents.get("/health", handleAgentHealth);
-  // Pre-connection client config (transport/name/greeting) for the default
+  // Pre-connection client config (name/greeting) for the default
   // client — same auth posture as the page and the WebSocket: none.
   agents.get("/client-config", handleAgentClientConfig);
   agents.get("/assets/:path{.+}", handleClientAsset);

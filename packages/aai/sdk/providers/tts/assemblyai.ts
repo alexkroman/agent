@@ -83,8 +83,8 @@ export function assemblyAITtsLanguageCodes(): string[] {
 /**
  * Reject an AssemblyAI TTS descriptor carrying an unsupported `language`.
  *
- * Shared by `parseManifest` and `toAgentConfig` — the same two-call-site shape
- * as {@link assertTextOnlyTuning}. Both matter for *where the author sees the
+ * Shared by `parseManifest` and `toAgentConfig`. Both matter for *where the
+ * author sees the
  * error*: `parseManifest` covers the CLI (`aai dev`, `aai build`, `aai deploy`)
  * and `toAgentConfig` runs inside the generated bundle entry, so the studio's
  * `test_agent` reports it as a load error instead of the coding agent shipping

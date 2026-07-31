@@ -125,35 +125,12 @@ describe("client", () => {
     handle.dispose();
   });
 
-  it("swaps to the workflow surface when GET client-config declares a workflow", async () => {
-    vi.stubGlobal(
-      "fetch",
-      vi.fn(async (input: RequestInfo | URL) => {
-        expect(String(input)).toBe("http://localhost:3000/client-config");
-        return new Response(JSON.stringify({ kind: "workflow", name: "Server Name" }), {
-          status: 200,
-          headers: { "Content-Type": "application/json" },
-        });
-      }),
-    );
-    const handle = client({ target: "#app", platformUrl: "http://localhost:3000" });
-    // Optimistic chat shell first…
-    expect(container.textContent).toContain("Start Conversation");
-    // …then the declared kind lands (the run surface's endpoint chip).
-    await vi.waitFor(() => {
-      expect(container.querySelector('[data-testid="sync-url-chip"]')).toBeTruthy();
-    });
-    expect(container.textContent).toContain("Server Name");
-    handle.dispose();
-    vi.unstubAllGlobals();
-  });
-
   it("uses the server-declared name on the chat shell when none is passed", async () => {
     vi.stubGlobal(
       "fetch",
       vi.fn(
         async () =>
-          new Response(JSON.stringify({ kind: "agent", name: "Server Name" }), {
+          new Response(JSON.stringify({ name: "Server Name" }), {
             status: 200,
             headers: { "Content-Type": "application/json" },
           }),
