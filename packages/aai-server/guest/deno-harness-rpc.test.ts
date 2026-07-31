@@ -287,6 +287,66 @@ describe("handleNotification", () => {
     };
     expect(denoShim.exit).toHaveBeenCalledWith(0);
   });
+
+  test("session/restore hydrates a resumed session's ctx.state", () => {
+    const sessionState = createSessionStateMap(() => ({ count: 0 }));
+    const state = { agent: null, sessionState, sessionMessages: createSessionMessagesCache() };
+    handleNotification(
+      {
+        jsonrpc: "2.0",
+        method: "session/restore",
+        params: { sessionId: "s1", state: { count: 7 } },
+      },
+      state,
+    );
+    expect(sessionState.get("s1")).toEqual({ count: 7 });
+  });
+
+  test("session/restore never clobbers a live session's state", () => {
+    const sessionState = createSessionStateMap(() => ({ count: 0 }));
+    sessionState.get("s1").count = 5;
+    const state = { agent: null, sessionState, sessionMessages: createSessionMessagesCache() };
+    handleNotification(
+      {
+        jsonrpc: "2.0",
+        method: "session/restore",
+        params: { sessionId: "s1", state: { count: 1 } },
+      },
+      state,
+    );
+    expect(sessionState.get("s1")).toEqual({ count: 5 });
+  });
+});
+
+// ── session/export ────────────────────────────────────────────────────────
+
+describe("session/export", () => {
+  test("returns the session's state when it exists", async () => {
+    writtenBytes.length = 0;
+    const sessionState = createSessionStateMap(() => ({ count: 0 }));
+    sessionState.get("s1").count = 42;
+    const state = { agent: null, sessionState, sessionMessages: createSessionMessagesCache() };
+    await handleRequest(
+      { jsonrpc: "2.0", id: 9, method: "session/export", params: { sessionId: "s1" } },
+      state,
+    );
+    expect(getWrittenLines()).toEqual([
+      { jsonrpc: "2.0", id: 9, result: { state: { count: 42 } } },
+    ]);
+  });
+
+  test("returns {} without minting state for an untouched session", async () => {
+    writtenBytes.length = 0;
+    const sessionState = createSessionStateMap(() => ({ count: 0 }));
+    const state = { agent: null, sessionState, sessionMessages: createSessionMessagesCache() };
+    await handleRequest(
+      { jsonrpc: "2.0", id: 10, method: "session/export", params: { sessionId: "never-seen" } },
+      state,
+    );
+    expect(getWrittenLines()).toEqual([{ jsonrpc: "2.0", id: 10, result: {} }]);
+    // Exporting must not have created an entry.
+    expect(sessionState.peek("never-seen")).toBeUndefined();
+  });
 });
 
 // ── vector adapter ────────────────────────────────────────────────────────

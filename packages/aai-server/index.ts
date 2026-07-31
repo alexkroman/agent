@@ -34,6 +34,11 @@ import {
   type SecretStore,
   type SqlExec,
 } from "./secret-store.ts";
+import {
+  createMemorySessionStateStore,
+  createPgSessionStateStore,
+  type SessionStateStore,
+} from "./session-state-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./studio/chat-store.ts";
 import {
   CHAT_RATE_LIMIT,
@@ -95,6 +100,8 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
   slugLock: SlugMutationLock;
   /** Cross-replica studio rate limiters; per-process memory without one. */
   studioRateLimiters?: StudioRateLimiters;
+  /** Cross-replica session-resume state; per-process memory without a db. */
+  sessionStates: SessionStateStore;
 } {
   const url = env.SUPABASE_DB_URL;
   if (!url) {
@@ -109,6 +116,7 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
       workspaces: createMemoryWorkspaceStore(),
       chats: createMemoryChatStore(),
       slugLock: localSlugLock,
+      sessionStates: createMemorySessionStateStore(),
     };
   }
   // The pool lives for the process; connections drain when the process exits
@@ -125,6 +133,7 @@ function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // serve any request: per-slug mutation exclusion and the studio's
     // fixed-window rate limits both survive replica restarts and scale-out.
     slugLock: localDev ? localSlugLock : createPgSlugLock(exec),
+    sessionStates: localDev ? createMemorySessionStateStore() : createPgSessionStateStore(exec),
     ...(localDev
       ? {}
       : {
@@ -150,7 +159,8 @@ function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
 
 function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
   const storage = buildStorage(env);
-  const { secrets, workspaces, chats, appDb, slugLock, studioRateLimiters } = buildPlatformDb(env);
+  const { secrets, workspaces, chats, appDb, slugLock, studioRateLimiters, sessionStates } =
+    buildPlatformDb(env);
   const slots = createSlotCache();
   const pool = buildPool(env);
   return {
@@ -162,6 +172,7 @@ function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
     chats,
     secrets,
     slugLock,
+    sessionStates,
     defaultVector: buildDefaultVector(env),
     ...(appDb && { appDb }),
     ...(studioRateLimiters && { studioRateLimiters }),

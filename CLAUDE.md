@@ -261,6 +261,10 @@ restrictions apply there.
 - `platform-lock.ts` — cross-replica per-slug mutation lock (see "Stateless
   server" below): Postgres lease rows in `aai_platform.slug_locks` in
   production, the in-process keyed lock in dev/tests
+- `session-state-store.ts` / `sandbox-session-resume.ts` — cross-replica
+  session resume (see "Stateless server" below): persists a disconnected
+  session's guest ctx.state + remember notes to
+  `aai_platform.session_state`, hydrated on a `?sessionId` resume
 - `bundle-store.ts` — agent bundle storage (Supabase Storage via its
   S3-compatible endpoint in production, memory in dev/tests). Agent env
   lives in Supabase Vault through the injected `SecretStore`, not in the
@@ -546,6 +550,26 @@ coordination lives in the same Postgres over `SUPABASE_DB_URL`:
   check` is async for this reason. Fail-closed: a database error propagates
   rather than silently unmetering the LLM-proxy route. Dev/tests keep the
   in-memory fixed-window limiter.
+- **Session resume state** (`session-state-store.ts` +
+  `sandbox-session-resume.ts`): a `?sessionId=<id>` reconnect that lands on
+  a *different* replica used to run a fresh session behind a
+  continuous-looking transcript — the client replays conversation history
+  itself (the `history` frame → `transport.seedHistory`), but guest-side
+  `ctx.state` and the host-side `remember` notes lived only in the dead
+  replica. On disconnect the sandbox now persists both to
+  `aai_platform.session_state` (guest state via the `session/export` RPC,
+  notes via `snapshotSessionNotes`), rows expiring with
+  `SESSION_RESUME_GRACE_MS`; a resume hydrates them back (`session/restore`
+  notification + `restoreSessionNotes`). **Both restore sides are
+  set-if-absent** — a same-replica resume's live state (kept by the
+  deferred guest `session/end`) is always at least as fresh and must never
+  be clobbered; losing the restore-vs-first-tool-call race can only skip
+  hydration. Slug-scoped: session ids appear in client URLs, so a resume
+  for agent A must never hydrate agent B's row. Shutdown flushes in-flight
+  persists *before* killing the guest (drain-deadline closes are exactly
+  the sessions that need it). What a crash (SIGKILL) loses is the delta
+  since the last disconnect — there is deliberately no continuous
+  checkpointing.
 
 What deliberately stays in-process, and why it doesn't break statelessness:
 

@@ -34,9 +34,11 @@ import { resolveHarnessPath } from "./constants.ts";
 import { type IsolateConfig, ToolCallResponseSchema } from "./rpc-schemas.ts";
 import { toRuntimeAgent } from "./sandbox-agent-config.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
+import { createSessionResumer } from "./sandbox-session-resume.ts";
 import { attachSandbox, setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
+import type { SessionStateStore } from "./session-state-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────
@@ -59,6 +61,13 @@ export type SandboxOptions = {
    * Used when the agent config does not declare a `vector` provider.
    */
   defaultVector: (slug: string) => Vector;
+  /**
+   * Cross-replica resume persistence (see session-state-store.ts). When set,
+   * a session's resumable state (guest ctx.state + remember notes) is saved
+   * on disconnect and hydrated on a `?sessionId=<id>` resume, so a reconnect
+   * landing on a different replica keeps the agent's working memory.
+   */
+  sessionStates?: SessionStateStore | undefined;
   /**
    * Called when the sandbox VM fails to start (rejected `vmReady`). The
    * sandbox object was already returned synchronously by then, so this is
@@ -222,6 +231,10 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     pendingSessionEnds.delete(sessionId);
   }
 
+  // Cross-replica resume: persist on disconnect, hydrate on resume — see
+  // sandbox-session-resume.ts. No-op without a configured store.
+  const resumer = createSessionResumer({ slug, store: opts.sessionStates, vmReady });
+
   vmReady
     .then((handle) => {
       handle.conn.onNotification("client/send", createClientSendHandler(sessionSinks));
@@ -253,6 +266,10 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     // The guest process is going down with us — nothing left to notify.
     for (const timer of pendingSessionEnds.values()) clearTimeout(timer);
     pendingSessionEnds.clear();
+    // Draining shutdown closes live sockets, whose onSessionEnd persists are
+    // still exporting from the guest — let them finish before killing it, or
+    // every session cut at the drain deadline loses its resume state.
+    await resumer.flushPendingSaves();
     try {
       const handle = await vmReady;
       await handle.shutdown();
@@ -267,16 +284,20 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   const originalStartSession = agentRuntime.startSession.bind(agentRuntime);
   function startSessionWithCleanup(
     ws: Parameters<typeof originalStartSession>[0],
-    opts?: Parameters<typeof originalStartSession>[1],
+    startOpts?: Parameters<typeof originalStartSession>[1],
   ): void {
+    // A resume that landed on this replica cold (or after the grace window)
+    // hydrates from the persisted state, if any. Kicked off before the
+    // session wiring so the read races only the transport connect.
+    if (startOpts?.resumeFrom) resumer.restore(startOpts.resumeFrom);
     originalStartSession(ws, {
-      ...opts,
+      ...startOpts,
       onSinkCreated(sessionId, sink) {
         // A resume under this id keeps its guest-side session state — cancel
         // the deferred session/end the previous connection scheduled.
         cancelSessionEnd(sessionId);
         sessionSinks.set(sessionId, sink);
-        opts?.onSinkCreated?.(sessionId, sink);
+        startOpts?.onSinkCreated?.(sessionId, sink);
       },
       onSessionEnd(sessionId, sink) {
         // Identity check, mirroring the SDK's own sessions-map cleanup: a
@@ -289,7 +310,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
         // session's ctx.state mid-conversation at the end of the grace
         // window. Only the session that still owns the sink may clean up.
         if (sink !== undefined && sessionSinks.get(sessionId) !== sink) {
-          opts?.onSessionEnd?.(sessionId, sink);
+          startOpts?.onSessionEnd?.(sessionId, sink);
           return;
         }
         sessionSinks.delete(sessionId);
@@ -299,7 +320,13 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
         // the resume grace window.
         messageTracker.reset(sessionId);
         scheduleSessionEnd(sessionId);
-        opts?.onSessionEnd?.(sessionId, sink);
+        // The reconnect may land on another replica; give it something to
+        // hydrate from. Runs while the guest still holds the state (the
+        // deferred session/end above won't fire for the whole grace window).
+        // Deliberately below the sink-ownership gate: a stale teardown
+        // settling after a resume must not snapshot over the live session.
+        resumer.persist(sessionId);
+        startOpts?.onSessionEnd?.(sessionId, sink);
       },
     });
   }
@@ -337,6 +364,8 @@ type ResolveSandboxOpts = {
   appDb?: AppDatabases;
   pool?: SandboxPool;
   defaultVector: (slug: string) => Vector;
+  /** Cross-replica resume persistence; absent means resume state is replica-local. */
+  sessionStates?: SessionStateStore;
 };
 
 /**
@@ -370,6 +399,7 @@ function buildSlotSandbox(
     agentConfig: parts.agentConfig,
     ...(db && { db }),
     ...(opts.pool && { pool: opts.pool }),
+    ...(opts.sessionStates && { sessionStates: opts.sessionStates }),
     defaultVector: opts.defaultVector,
     onVmFailed: () => {
       void withSlugLock(slug, async () => {

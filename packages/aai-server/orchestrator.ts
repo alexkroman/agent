@@ -50,6 +50,7 @@ import { describeBundle } from "./sandbox-vm.ts";
 import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
+import { createMemorySessionStateStore, type SessionStateStore } from "./session-state-store.ts";
 import {
   handleStorageDisable,
   handleStorageEnable,
@@ -91,6 +92,11 @@ export type OrchestratorOpts = {
   slugLock?: SlugMutationLock;
   /** Studio rate limiters. Postgres-backed in production; defaults to memory. */
   studioRateLimiters?: StudioRateLimiters;
+  /**
+   * Cross-replica session-resume persistence (guest ctx.state + remember
+   * notes). Postgres-backed in production; defaults to memory.
+   */
+  sessionStates?: SessionStateStore;
   /** Factory that creates the server-default Vector for a given slug. */
   defaultVector: (slug: string) => Vector;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
@@ -281,7 +287,11 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // resolveSandbox takes the bindings minus the studio stores (bundle data
   // lives in the BundleStore; `workspaces`/`chats` are studio-only).
   const { workspaces: _studioWorkspaces, chats: _studioChats, ...sandboxBindings } = bindings;
-  const sandboxOpts = { ...sandboxBindings, ...(opts.pool && { pool: opts.pool }) };
+  const sandboxOpts = {
+    ...sandboxBindings,
+    ...(opts.pool && { pool: opts.pool }),
+    sessionStates: opts.sessionStates ?? createMemorySessionStateStore(),
+  };
 
   const original = app.fetch.bind(app);
   app.fetch = (req: Request, env?: Record<string, unknown>) =>

@@ -96,6 +96,14 @@ export const ToolCallResponseSchema = z.object({
   result: z.string(),
 });
 
+/**
+ * Response of the host→guest `session/export` request. Guest-asserted wire
+ * data; an absent `state` means the session had none to export.
+ */
+export const SessionExportResultSchema = z.object({
+  state: z.record(z.string(), z.unknown()).optional(),
+});
+
 // ── Typed method map for the host↔guest NDJSON link ─────────────────────────
 
 /** Params of the host→guest `bundle/load` request. */
@@ -137,6 +145,9 @@ export type GuestRpcSchema = {
   requestsOut: {
     "bundle/load": { params: BundleLoadParams; result: unknown };
     "tool/execute": { params: ToolExecuteParams; result: unknown };
+    // Snapshot one session's guest ctx.state for cross-replica resume
+    // persistence; `{}` result means the session has no state to export.
+    "session/export": { params: { sessionId: string }; result: unknown };
   };
   requestsIn: {
     "db/query": { params: unknown; result: unknown };
@@ -148,6 +159,8 @@ export type GuestRpcSchema = {
   };
   notificationsOut: {
     "session/end": { sessionId: string };
+    // Persisted ctx.state for a resumed session; guest applies set-if-absent.
+    "session/restore": { sessionId: string; state: Record<string, unknown> };
     shutdown: undefined;
     // Host-liveness heartbeat (modal-sandbox.ts). The guest deliberately has
     // no `ping` handler — any inbound line feeds its orphan watchdog — but the

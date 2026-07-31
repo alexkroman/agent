@@ -27,8 +27,11 @@ import {
 import type { ToolDef } from "../sdk/types.ts";
 import { calculate } from "./_calculate.ts";
 import { createGetPageDesign } from "./page-design.ts";
+import { readNotes, writeNote } from "./session-notes.ts";
 import { safeFetch } from "./ssrf.ts";
 
+// Re-exported so the barrel keeps one import path for the notes surface.
+export { restoreSessionNotes, snapshotSessionNotes } from "./session-notes.ts";
 // Re-exported for callers that inject it themselves (runtime-tools, sandbox).
 export { safeFetch } from "./ssrf.ts";
 
@@ -278,63 +281,8 @@ function createThink(): ToolDef<typeof thinkParams> & { guidance: string } {
 
 // ─── remember / recall ──────────────────────────────────────────────────────
 //
-// Session-scoped notes, in the spirit of Letta/MemGPT's memory-block tools:
-// small labeled values the agent writes and re-reads via tool calls. On a
-// voice call the transcript is noisy (misheard IDs, self-corrections), so
-// persisting a value once confirmed — and recalling it instead of re-reading
-// the transcript — keeps later tool arguments exact.
-//
-// The store is in-process and module-level, keyed by sessionId: notes are
-// per-session working memory, not durable data, so a host restart losing
-// them is fine. Map updates are synchronous, which is what makes one LLM
-// step's concurrent tool calls safe without the per-key promise-chain lock
-// the old KV-backed implementation needed. Expired entries are pruned lazily
-// on access, and total entries are capped (evicting oldest) so an abandoned
-// host process can't grow unboundedly.
-
-type NotesEntry = { notes: Record<string, string>; expiresAt: number };
-
-const sessionNotes = new Map<string, NotesEntry>();
-
-/**
- * TTL for a session's `remember`/`recall` notes in the in-process store.
- * Notes are scoped to one voice session, which is bounded by the idle
- * timeout — a generous TTL only guarantees abandoned sessions' notes don't
- * accumulate in the host process.
- */
-const SESSION_NOTES_TTL_MS = 86_400_000;
-/** Hard cap on tracked sessions; oldest entries are evicted past it. */
-const MAX_SESSION_NOTES_ENTRIES = 10_000;
-
-function liveNotesEntry(sessionId: string): NotesEntry | undefined {
-  const entry = sessionNotes.get(sessionId);
-  if (!entry) return;
-  if (entry.expiresAt <= Date.now()) {
-    sessionNotes.delete(sessionId);
-    return;
-  }
-  return entry;
-}
-
-function readNotes(ctx: { sessionId: string }): Record<string, string> {
-  return liveNotesEntry(ctx.sessionId)?.notes ?? {};
-}
-
-function writeNote(sessionId: string, key: string, value: string): Record<string, string> {
-  const entry = liveNotesEntry(sessionId) ?? { notes: {}, expiresAt: 0 };
-  entry.notes[key] = value;
-  entry.expiresAt = Date.now() + SESSION_NOTES_TTL_MS;
-  // Delete-then-set moves the session to the back of the Map's insertion
-  // order, so the eviction below always removes the least-recently-written.
-  sessionNotes.delete(sessionId);
-  sessionNotes.set(sessionId, entry);
-  while (sessionNotes.size > MAX_SESSION_NOTES_ENTRIES) {
-    const oldest = sessionNotes.keys().next().value;
-    if (oldest === undefined) break;
-    sessionNotes.delete(oldest);
-  }
-  return entry.notes;
-}
+// Session-scoped notes; the store (and its resume snapshot/restore surface)
+// lives in session-notes.ts.
 
 const rememberParams = z.object({
   key: z
