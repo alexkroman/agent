@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-// A hung tool call (dead sandbox RPC, silent MCP server) used to hang the
+// A hung tool call (dead sandbox RPC, stalled web fetch) used to hang the
 // whole chat turn — the UI shimmered forever with nothing to cancel. The
 // deadline wrapper turns that into an ordinary tool-result error.
 

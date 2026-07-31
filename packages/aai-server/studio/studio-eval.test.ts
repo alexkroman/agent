@@ -34,8 +34,7 @@
  *
  * Requires a real LLM key (`ASSEMBLYAI_API_KEY` or `ANTHROPIC_API_KEY`, or
  * `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL`); the whole suite skips without
- * one, so `pnpm test` stays hermetic. MCP is stubbed out — the eval measures
- * the model + system prompt + tools, not the docs server.
+ * one, so `pnpm test` stays hermetic.
  *
  * Run: pnpm --filter aai-server test:evals
  * For the sandbox judge, build the guest harness first:
@@ -147,10 +146,10 @@ let runCounter = 0;
 
 /**
  * Run one real coding-agent turn against a fresh starter workspace and
- * return the workspace it produced. Sandbox and MCP wiring mirror the chat
- * route, except MCP is stubbed and the sandbox degrades to "unavailable"
- * (which `test_agent` reports as tool-result text) when the environment
- * cannot spawn one — the one-shot output is judged either way.
+ * return the workspace it produced. Sandbox wiring mirrors the chat route,
+ * except the sandbox degrades to "unavailable" (which `test_agent` reports
+ * as tool-result text) when the environment cannot spawn one — the one-shot
+ * output is judged either way.
  */
 const studioHarness = createHarness<string, StudioEvalOutput>({
   name: "studio-coding-agent",
@@ -174,9 +173,6 @@ const studioHarness = createHarness<string, StudioEvalOutput>({
         sandbox = undefined;
       },
       model: studioModel(process.env),
-      // No MCP: the eval measures the model + prompt + studio tools, and
-      // must not depend on the docs server being reachable.
-      mcp: { tools: {}, close: async () => undefined },
     };
 
     const events = await readSseEvents(await runStudioChat(deps, [userMessage(input)]));

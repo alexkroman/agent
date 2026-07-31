@@ -241,9 +241,6 @@ importers:
 
   packages/aai-server:
     dependencies:
-      '@ai-sdk/mcp':
-        specifier: ^2.0.18
-        version: 2.0.18(zod@4.4.3)
       '@alexkroman1/aai':
         specifier: workspace:*
         version: link:../aai
