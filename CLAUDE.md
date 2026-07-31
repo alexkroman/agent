@@ -120,7 +120,8 @@ Six workspace packages under `packages/`:
 | `packages/aai/` | `@alexkroman1/aai` | Shared core: manifest, types, protocol, S2S, session, Db |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
-| `packages/aai-server/` | `aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
+| `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks/epochs |
+| `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds, combined entry |
 | `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
 
@@ -258,6 +259,19 @@ restrictions apply there.
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
+- `platform-lock.ts` — cross-replica per-slug mutation lock (see "Stateless
+  server" below): Postgres lease rows in `aai_platform.slug_locks` in
+  production, the in-process keyed lock in dev/tests
+- `platform-epoch.ts` — cross-replica/service invalidation epochs (see
+  "Split services" below): mutations bump `aai_platform.slug_epochs`,
+  `resolveSandbox` rebuilds resident sandboxes on mismatch
+- `studio-proxy.ts` / `studio/studio-app.ts` / `app-middleware.ts` — the
+  split deployment (see "Split services" below): standalone studio service,
+  the agent service's reverse proxy to it, and their shared base middleware
+- `session-state-store.ts` / `sandbox-session-resume.ts` — cross-replica
+  session resume (see "Stateless server" below): persists a disconnected
+  session's guest ctx.state + remember notes to
+  `aai_platform.session_state`, hydrated on a `?sessionId` resume
 - `bundle-store.ts` — agent bundle storage (Supabase Storage via its
   S3-compatible endpoint in production, memory in dev/tests). Agent env
   lives in Supabase Vault through the injected `SecretStore`, not in the
@@ -511,6 +525,127 @@ voice agents without the CLI:
   `studio-assets` can never be claimed as agent slugs — they would shadow
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
   the deploy core.
+
+### Stateless server (aai-server)
+
+The platform server holds no cross-request durable or coordination state in
+process — any replica can serve any request, and a replica restart loses
+nothing but live sessions. Everything durable lives in Supabase (bundles and
+client files in Storage, agent env + app-db credentials in Vault, studio
+workspaces/chats and per-app data in Postgres), and cross-replica
+coordination lives in the same Postgres over `SUPABASE_DB_URL`:
+
+- **Per-slug mutation lock** (`platform-lock.ts`): deploy/delete/secret/
+  storage mutations for a slug run under a lease row in
+  `aai_platform.slug_locks` (`createPgSlugLock`), injected as the `slugLock`
+  binding. A lease table, not a Postgres advisory lock — advisory locks are
+  connection-scoped and `SqlExec` runs over a pool, so acquire and release
+  could land on different connections; a lease survives any connection and
+  expires on its own if the holder crashes. The Postgres lock still takes
+  the in-process `withSlugLock` first (local waiters queue on the mutex
+  instead of polling the database), and it is **not renewed while held** —
+  an operation outrunning `SLUG_LOCK_LEASE_MS` loses exclusivity, same
+  single-concurrent-writer posture as the workspace store's one conflict
+  retry. Contention past the acquire deadline surfaces as
+  `SlugLockTimeoutError` → 409. `sandbox.ts` stays on the in-process lock
+  deliberately: it guards this replica's slot cache, a legitimately
+  process-local resource.
+- **Studio rate limits** (`studio/studio-rate-limit.ts`): the chat and
+  project-create windows are rows in `aai_platform.studio_rate_limits`
+  (`createPgRateLimiter`, one atomic upsert per check), so the limit holds
+  platform-wide instead of multiplying by the replica count. `RateLimiter.
+  check` is async for this reason. Fail-closed: a database error propagates
+  rather than silently unmetering the LLM-proxy route. Dev/tests keep the
+  in-memory fixed-window limiter.
+- **Session resume state** (`session-state-store.ts` +
+  `sandbox-session-resume.ts`): a `?sessionId=<id>` reconnect that lands on
+  a *different* replica used to run a fresh session behind a
+  continuous-looking transcript — the client replays conversation history
+  itself (the `history` frame → `transport.seedHistory`), but guest-side
+  `ctx.state` and the host-side `remember` notes lived only in the dead
+  replica. On disconnect the sandbox now persists both to
+  `aai_platform.session_state` (guest state via the `session/export` RPC,
+  notes via `snapshotSessionNotes`), rows expiring with
+  `SESSION_RESUME_GRACE_MS`; a resume hydrates them back (`session/restore`
+  notification + `restoreSessionNotes`). **Both restore sides are
+  set-if-absent** — a same-replica resume's live state (kept by the
+  deferred guest `session/end`) is always at least as fresh and must never
+  be clobbered; losing the restore-vs-first-tool-call race can only skip
+  hydration. Slug-scoped: session ids appear in client URLs, so a resume
+  for agent A must never hydrate agent B's row. Shutdown flushes in-flight
+  persists *before* killing the guest (drain-deadline closes are exactly
+  the sessions that need it). What a crash (SIGKILL) loses is the delta
+  since the last disconnect — there is deliberately no continuous
+  checkpointing.
+
+What deliberately stays in-process, and why it doesn't break statelessness:
+
+- **Live session state** (slot cache, sandboxes, warm pool, WebSockets) —
+  a voice session is a connection pinned to its replica by nature; the
+  drain-on-shutdown path handles replica replacement.
+- **Caches** (bundle-store manifest/worker/client caches, the auth hash
+  cache, the studio build cache) — TTL-bounded or content-hash-keyed
+  read-through caches whose staleness windows are documented at each site;
+  losing them costs a refetch, never correctness.
+- **The in-process workspace/slug mutexes** — kept *under* the distributed
+  mechanisms so local writer fan-out (e.g. one AI SDK step's parallel tool
+  calls) doesn't burn the cross-replica retry/lease on itself.
+
+### Split services (aai-server)
+
+Two packages, one surface each. `aai-server` is the AGENT service plus the
+shared platform core (stores, locks, epochs, sandbox machinery — exported to
+the sibling via `"./*": "./*.ts"` exports; `platform-barrel.ts` is the
+sanctioned path to its `_`-internal utilities). `aai-studio-server` is the
+STUDIO service; its entry also hosts the `combined` composition (`AAI_SERVICE`
+combined|studio — a path dispatcher over both apps, which is what
+`pnpm dev:aai-server` and pre-split deployments run; each production entry is
+one tsdown bundle with `aai`/`aai-server` compiled in, so module-level state
+has exactly one copy per process). Deploys are per-service Modal apps
+(`aai-server-web`, `aai-studio-web`, each package's `modal_deploy.py`), and
+`.github/workflows/deploy.yml` redeploys an app only when its package version
+changed — i.e. only when a changeset touched it. Surfaces by `AAI_SERVICE`:
+`combined` (default — what `aai dev`, tests, and pre-split deployments run),
+`agent` (voice sessions + platform API), and `studio` (the browser studio as
+its own service, `studio/studio-app.ts`). The split exists because the two
+workloads scale differently — studio chat turns are LLM-bound and bursty,
+voice sessions are latency-sensitive pinned connections — and one container
+(and one connection-count autoscaling policy) served both badly.
+
+- **One public origin.** Browsers only ever talk to the agent service; in
+  `agent` mode it reverse-proxies `/`, `/favicon.ico`, `/studio-assets/*`,
+  and `/studio/*` to `STUDIO_UPSTREAM_URL` (`studio-proxy.ts` — streaming
+  passthrough, SSE included). This is what keeps the preview iframe working:
+  agent pages are served `X-Frame-Options: SAMEORIGIN`, so the studio must
+  share their origin. The proxy forwards identity-encoded (drops
+  `accept-encoding`) because undici's fetch decompresses bodies but leaves
+  `content-encoding` headers in place. Shared base middleware lives in
+  `app-middleware.ts` so the two apps can't drift on CORS/framing policy.
+- **Cross-service invalidation is slug epochs** (`platform-epoch.ts`,
+  `aai_platform.slug_epochs`). A local `terminateSlot`/`restartSlotSandbox`
+  only fixes the replica that handled the mutation; every deploy/delete/
+  secret/storage mutation therefore also bumps the slug's epoch, and
+  `resolveSandbox` compares the resident sandbox's build epoch at session
+  start — a mismatch terminates it, drops the bundle-store caches
+  (`BundleStore.invalidate`), and rebuilds from the freshly stored bundle.
+  This is how a studio-service Publish reaches the agent service's resident
+  sandboxes, and it also closes the pre-existing replica-to-replica
+  staleness (idle eviction was the only remedy before). Bumps are
+  best-effort after the write (`bumpSlugEpoch` warns, never fails the
+  mutation); epoch reads degrade to "current" so a session start never dies
+  on the invalidation check.
+- **The studio service holds an always-empty slot cache** — the shared
+  mutation cores' local sandbox restarts are deliberate no-ops there, while
+  their epoch bumps do the real work. It shares everything else through
+  Supabase (workspaces/chats, bundle store, Vault, the slug lock, rate
+  limits) and spawns its own Modal sandboxes for `test_agent`/config
+  extraction (its own warm pool via `SANDBOX_POOL_SIZE`).
+- **Deployment** (`modal_deploy.py`): the `server` function boots `agent`
+  when `STUDIO_UPSTREAM_URL` is in the `aai-server` Secret, else `combined`
+  — so a fresh deployment works before the operator wires the studio URL
+  (deploy once, copy the printed `studio` function URL into the Secret,
+  redeploy). The `studio` function has its own scaling policy
+  (`STUDIO_*` constants: scale-to-zero floor, fewer/busier inputs).
 
 ### `ctx.generate` and pattern combinators (`@alexkroman1/aai/patterns`)
 
@@ -1462,6 +1597,17 @@ bumped automatically.
 - The server itself deploys to Modal too (`modal_deploy.py`,
   `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
   Fly.io deployment anymore.
+- **The web service autoscales** (constants block in `modal_deploy.py`):
+  Modal adds replicas once per-container concurrency crosses
+  `TARGET_INPUTS`, bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS` with one
+  `BUFFER_CONTAINERS` spare kept warm. The numbers are coupled to the node
+  server's own per-replica WebSocket cap (`MAX_CONNECTIONS`, exported in
+  the image env): the target sits below the cap so new capacity warms
+  before any replica starts refusing upgrades, and `MAX_INPUTS` adds
+  short-request headroom on top. Statelessness + cross-replica session
+  resume are what make scale-in/redeploys safe — draining replicas persist
+  live sessions' resume state and clients reconnect onto survivors. Raise
+  `MAX_CONTAINERS` deliberately; it is a cost guard.
 
 ### Updating CLAUDE.md
 

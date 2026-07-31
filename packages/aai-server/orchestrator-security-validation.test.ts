@@ -7,10 +7,9 @@
  */
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
+import { createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createMemoryChatStore } from "./studio/chat-store.ts";
-import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
 import {
   authHeaders,
   createTestOrchestrator,
@@ -18,6 +17,7 @@ import {
   deployAgent,
   deployBody,
 } from "./test-utils.ts";
+import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 // ── Slug Validation & Path Traversal ───────────────────────────────────
 

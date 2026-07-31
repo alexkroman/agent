@@ -1,10 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { expect, test, vi } from "vitest";
+import { createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createMemoryChatStore } from "./studio/chat-store.ts";
-import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
 import {
   createTestStore,
   deployAgent,
@@ -12,6 +11,7 @@ import {
   TEST_AGENT_CONFIG,
   type TestFetch,
 } from "./test-utils.ts";
+import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 async function setup() {
   const store = createTestStore();

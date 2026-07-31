@@ -79,6 +79,21 @@
         "**/*.test.{ts,tsx}"
       ],
       "includeEntryExports": true
+    },
+    "packages/aai-studio-server": {
+      "entry": [
+        "**/*.test.ts"
+      ],
+      "includeEntryExports": true,
+      "ignoreDependencies": [
+        "@alexkroman1/aai-ui",
+        "react",
+        "react-dom",
+        "tailwindcss"
+      ],
+      "ignoreBinaries": [
+        "modal"
+      ]
     }
   }
 }

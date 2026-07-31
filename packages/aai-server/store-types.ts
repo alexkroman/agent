@@ -28,4 +28,10 @@ export type BundleStore = {
   putEnv(slug: string, env: Record<string, string>): Promise<void>;
   /** Retrieve the pre-extracted agent config. */
   getAgentConfig(slug: string): Promise<IsolateConfig | null>;
+  /**
+   * Drop this replica's read-through caches for `slug`. Called when a slug
+   * epoch mismatch reveals another replica/service mutated the stored
+   * bundle, so the rebuild reads fresh artifacts instead of cached ones.
+   */
+  invalidate?(slug: string): void;
 };

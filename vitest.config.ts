@@ -74,10 +74,25 @@ export default defineConfig({
           include: ["**/*.test.ts"],
           exclude: [
             // LLM-in-the-loop evals: pnpm --filter aai-server test:evals
-            "studio/studio-eval.test.ts",
+            // (studio tests live in the aai-studio-server project)
             "sandbox-integration.test.ts",
             "sandbox-lifecycle.test.ts",
             "ws-integration.test.ts",
+            "node_modules",
+            "dist",
+          ],
+        },
+      },
+      {
+        ...sharedConfig,
+        test: {
+          name: "aai-studio-server",
+          root: "packages/aai-studio-server",
+          pool: "forks",
+          include: ["**/*.test.ts"],
+          exclude: [
+            // LLM-in-the-loop evals: pnpm --filter aai-studio-server test:evals
+            "studio-eval.test.ts",
             "node_modules",
             "dist",
           ],

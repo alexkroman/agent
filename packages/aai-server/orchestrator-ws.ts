@@ -13,7 +13,7 @@ import type { SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { WebSocketServer } from "ws";
 import { MAX_CONNECTIONS } from "./constants.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { resolveSandbox } from "./sandbox.ts";
+import { resolveSandbox } from "./sandbox-resolve.ts";
 import { acquireSlotSession, releaseSlotSession, type SlotCache } from "./sandbox-slots.ts";
 import { VALID_SLUG_RE } from "./schemas.ts";
 import type { BundleStore } from "./store-types.ts";

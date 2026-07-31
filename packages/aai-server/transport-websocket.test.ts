@@ -4,18 +4,18 @@ import net, { type AddressInfo } from "node:net";
 import { createMemoryVector, type SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
+import { createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey } from "./secrets.ts";
-import { createMemoryChatStore } from "./studio/chat-store.ts";
-import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
 import {
   createTestOrchestrator,
   createTestStore,
   deployAgent,
   TEST_AGENT_CONFIG,
 } from "./test-utils.ts";
+import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 // Partial mock: the real guardHostModeUpgrade/wantsHostMode gate runs (that
 // wiring is what these tests cover), but startDeployedHostSession is a spy —

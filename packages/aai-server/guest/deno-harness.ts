@@ -43,6 +43,7 @@ import {
   vectorAdapter,
   withTimeout,
 } from "./harness-rpc.ts";
+import { createSessionStateMap } from "./harness-session-state.ts";
 import type {
   AgentDef,
   JsonRpcMessage,
@@ -113,29 +114,8 @@ let _storageEnabled = false;
 
 // ---- Session state ----------------------------------------------------------
 
-/**
- * Per-session state map. Lazily initialised from agent.state() factory per
- * session. Deep-cloned via structuredClone to ensure isolation.
- */
-export function createSessionStateMap(initState?: () => Record<string, unknown>) {
-  const map = new Map<string, Record<string, unknown>>();
-  return {
-    get(sessionId: string): Record<string, unknown> {
-      if (!map.has(sessionId)) {
-        const initial = initState ? initState() : {};
-        map.set(sessionId, structuredClone(initial));
-      }
-      // map.has() guarantees the key exists after the block above
-      return map.get(sessionId) as Record<string, unknown>;
-    },
-    set(sessionId: string, state: Record<string, unknown>): void {
-      map.set(sessionId, state);
-    },
-    delete(sessionId: string): boolean {
-      return map.delete(sessionId);
-    },
-  };
-}
+// Lives in harness-session-state.ts; re-exported for the harness tests.
+export { createSessionStateMap, type SessionStateMap } from "./harness-session-state.ts";
 
 // ---- run_code builtin -------------------------------------------------------
 
@@ -380,6 +360,17 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
       break;
     }
 
+    // Snapshot one session's ctx.state so the host can persist it for a
+    // cross-replica resume. `{}` (no `state` key) means "nothing to export" —
+    // never lazily initialise state just to export it.
+    case "session/export": {
+      const params = req.params as { sessionId?: string } | undefined;
+      const exported =
+        params?.sessionId !== undefined ? state.sessionState?.peek(params.sessionId) : undefined;
+      await sendResponse(req.id, exported === undefined ? {} : { state: exported });
+      break;
+    }
+
     default:
       await sendError(req.id, -32_601, `Method not found: ${req.method}`);
   }
@@ -395,6 +386,17 @@ export function handleNotification(notif: JsonRpcNotification, state: HarnessSta
     if (params?.sessionId) {
       state.sessionState?.delete(params.sessionId);
       state.sessionMessages?.delete(params.sessionId);
+    }
+  }
+  // Persisted ctx.state for a resumed session (cross-replica resume). The
+  // state map's restore is set-if-absent, so a live same-host session is
+  // never clobbered.
+  if (notif.method === "session/restore") {
+    const params = notif.params as
+      | { sessionId?: string; state?: Record<string, unknown> }
+      | undefined;
+    if (params?.sessionId && params.state && typeof params.state === "object") {
+      state.sessionState?.restore(params.sessionId, params.state);
     }
   }
   if (notif.method.startsWith("fetch/response-")) {

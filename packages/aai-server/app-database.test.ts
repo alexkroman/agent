@@ -32,7 +32,7 @@ describe("appDbIdentifier", () => {
 describe("provisionAppDatabase", () => {
   test("creates schema + role with grants, search_path, and statement_timeout in one batch", async () => {
     const { sql, calls } = captureSql();
-    const meta = await provisionAppDatabase(sql, "my-agent");
+    const meta = await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db");
     const id = appDbIdentifier("my-agent");
 
     expect(meta.role).toBe(id);
@@ -46,17 +46,26 @@ describe("provisionAppDatabase", () => {
     expect(query).toContain(`create schema if not exists "${id}"`);
     // Create-or-alter branches on role existence server-side in a do-block.
     expect(query).toContain(`select 1 from pg_roles where rolname = '${id}'`);
-    expect(query).toContain(`alter role "${id}" with login password '${meta.password}'`);
-    expect(query).toContain(`create role "${id}" with login password '${meta.password}'`);
+    expect(query).toContain(
+      `alter role "${id}" with login password '${meta.password}' connection limit 4`,
+    );
+    expect(query).toContain(
+      `create role "${id}" with login password '${meta.password}' connection limit 4`,
+    );
     expect(query).toContain(`grant usage, create on schema "${id}" to "${id}"`);
     expect(query).toContain(`alter role "${id}" set search_path = "${id}"`);
     expect(query).toContain(`alter role "${id}" set statement_timeout = '10s'`);
+    // Per-tenant caps: temp scratch bound is best-effort (superuser GUC).
+    expect(query).toContain(`alter role "${id}" set temp_file_limit = '64MB'`);
+    expect(query).toContain("insufficient_privilege");
+    // The locator records which cluster the app was placed on.
+    expect(meta.url).toBe("postgres://admin@primary/db");
   });
 
   test("two provisions issue distinct random passwords", async () => {
     const { sql } = captureSql(() => []);
-    const a = await provisionAppDatabase(sql, "my-agent");
-    const b = await provisionAppDatabase(sql, "my-agent");
+    const a = await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db");
+    const b = await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db");
     expect(a.password).not.toBe(b.password);
   });
 });

@@ -1,0 +1,233 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Shared service configuration for the platform's deployable entries — the
+ * agent service (this package's index.ts) and the studio/combined entries
+ * (the aai-studio-server package). One implementation of "read the
+ * environment, build the platform bindings" so the services cannot drift on
+ * storage, Vault, locks, epochs, or resume-state wiring.
+ */
+
+import {
+  createMemoryVector,
+  createPineconeVector,
+  createPostgresDb,
+  type Vector,
+} from "@alexkroman1/aai/runtime";
+import { createStorage } from "unstorage";
+import { isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
+import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
+import { createBundleStore } from "./bundle-store.ts";
+import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
+import { resolveHarnessPath } from "./constants.ts";
+import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
+import type { OrchestratorOpts } from "./orchestrator.ts";
+import { createMemorySlugEpochs, createPgSlugEpochs, type SlugEpochs } from "./platform-epoch.ts";
+import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
+import { createS3Storage } from "./s3-storage.ts";
+import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
+import { createSlotCache } from "./sandbox-slots.ts";
+import { spawnWarmHarness } from "./sandbox-vm.ts";
+import {
+  createMemorySecretStore,
+  createVaultSecretStore,
+  type SecretStore,
+  type SqlExec,
+} from "./secret-store.ts";
+import {
+  createMemorySessionStateStore,
+  createPgSessionStateStore,
+  type SessionStateStore,
+} from "./session-state-store.ts";
+import {
+  createMemoryWorkspaceStore,
+  createPgWorkspaceStore,
+  type WorkspaceStore,
+} from "./workspace-store.ts";
+
+/** Comma-separated extra placement clusters (APP_DB_URLS) → pooled targets. */
+function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean)
+    .map((url) => {
+      const db = createPostgresDb({ url, max: 4 });
+      return { url, sql: (query, params) => db.query(query, params) } satisfies AppDbTarget;
+    });
+}
+
+/** buildOpts plus what service entries need beyond the orchestrator's opts. */
+export type ServiceConfig = OrchestratorOpts & {
+  /**
+   * The platform admin SQL executor when a platform database is configured
+   * and this is not local dev — the studio entry builds its Postgres rate
+   * limiters on it. Absent means "use in-memory equivalents".
+   */
+  sql?: SqlExec;
+};
+
+export function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
+  const size = resolvePoolSize(env.SANDBOX_POOL_SIZE);
+  if (size === null) return null;
+  const harnessPath = resolveHarnessPath(env);
+  console.info(`Sandbox pool: pre-warming ${size} Deno harness(es)`, { harnessPath });
+  return createSandboxPool({
+    targetSize: size,
+    spawn: () => spawnWarmHarness({ harnessPath }),
+  });
+}
+
+export function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createStorage> {
+  if (isLocalDev(env)) {
+    console.info("Local dev mode: unstorage memory driver for all storage");
+    return createStorage();
+  }
+  const required = requireEnv(env, [
+    "SUPABASE_S3_ENDPOINT",
+    "SUPABASE_S3_ACCESS_KEY_ID",
+    "SUPABASE_S3_SECRET_ACCESS_KEY",
+    "SUPABASE_STORAGE_BUCKET",
+  ]);
+  return createS3Storage({
+    bucket: required.SUPABASE_STORAGE_BUCKET,
+    endpoint: required.SUPABASE_S3_ENDPOINT,
+    // Supabase's S3-compatible endpoint expects the project's region string.
+    region: env.SUPABASE_S3_REGION ?? "us-east-1",
+    accessKeyId: required.SUPABASE_S3_ACCESS_KEY_ID,
+    secretAccessKey: required.SUPABASE_S3_SECRET_ACCESS_KEY,
+  });
+}
+
+/**
+ * Platform Postgres surface: Supabase Vault for secrets, studio workspaces,
+ * and per-app database provisioning, all over `SUPABASE_DB_URL`
+ * (service-role connection string). Required in production; local dev falls
+ * back to in-memory secret and workspace stores (and no per-app databases
+ * unless SUPABASE_DB_URL is set).
+ */
+export function buildPlatformDb(env: NodeJS.ProcessEnv): {
+  secrets: SecretStore;
+  workspaces: WorkspaceStore;
+  chats: ChatStore;
+  appDb?: AppDatabases;
+  /** Cross-replica slug mutation lock; in-process without a platform db. */
+  slugLock: SlugMutationLock;
+  /** Cross-replica session-resume state; per-process memory without a db. */
+  sessionStates: SessionStateStore;
+  /** Cross-replica/service invalidation epochs; per-process memory without a db. */
+  slugEpochs: SlugEpochs;
+  /** Platform admin SQL executor (production only) — see ServiceConfig.sql. */
+  sql?: SqlExec;
+} {
+  const url = env.SUPABASE_DB_URL;
+  if (!url) {
+    if (!isLocalDev(env)) {
+      requireEnv(env, ["SUPABASE_DB_URL"]); // throws with the standard message
+    }
+    console.info(
+      "Local dev mode: in-memory secret + studio workspace/chat stores; per-app databases disabled",
+    );
+    return {
+      secrets: createMemorySecretStore(),
+      workspaces: createMemoryWorkspaceStore(),
+      chats: createMemoryChatStore(),
+      slugLock: localSlugLock,
+      sessionStates: createMemorySessionStateStore(),
+      slugEpochs: createMemorySlugEpochs(),
+    };
+  }
+  // The pool lives for the process; connections drain when the process exits
+  // (no explicit close() hook on the shutdown path today).
+  const admin = createPostgresDb({ url, max: 4 });
+  const exec: SqlExec = (query, params) => admin.query(query, params);
+  const localDev = isLocalDev(env);
+  return {
+    secrets: localDev ? createMemorySecretStore() : createVaultSecretStore(exec),
+    workspaces: localDev ? createMemoryWorkspaceStore() : createPgWorkspaceStore(exec),
+    chats: localDev ? createMemoryChatStore() : createPgChatStore(exec),
+    appDb: createAppDatabases({
+      url,
+      sql: exec,
+      // Cellular sharding: APP_DB_URLS lists additional Supabase clusters
+      // new apps may be placed on. Each app's cluster is recorded in its
+      // app-db:<slug> locator, so agent code never notices placement.
+      extraTargets: parseExtraAppDbTargets(env.APP_DB_URLS),
+    }),
+    // Cross-request coordination lives in Postgres too, so any replica (and
+    // either service) can serve any request: per-slug mutation exclusion,
+    // invalidation epochs, and session-resume state all survive replica
+    // restarts and scale-out.
+    slugLock: localDev ? localSlugLock : createPgSlugLock(exec),
+    sessionStates: localDev ? createMemorySessionStateStore() : createPgSessionStateStore(exec),
+    slugEpochs: localDev ? createMemorySlugEpochs() : createPgSlugEpochs(exec),
+    ...(localDev ? {} : { sql: exec }),
+  };
+}
+
+export function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
+  if (isLocalDev(env) || !env.PINECONE_API_KEY || !env.PINECONE_INDEX) {
+    return (slug) => createMemoryVector({ namespace: slug });
+  }
+  const apiKey = env.PINECONE_API_KEY;
+  const index = env.PINECONE_INDEX;
+  return (slug) => createPineconeVector({ apiKey, index, namespace: slug });
+}
+
+/** Assemble the shared service bindings from the environment. */
+export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
+  const storage = buildStorage(env);
+  const { secrets, workspaces, chats, appDb, slugLock, sessionStates, slugEpochs, sql } =
+    buildPlatformDb(env);
+  const slots = createSlotCache();
+  const pool = buildPool(env);
+  return {
+    slots,
+    // Blob storage serves deploy artifacts only (bundles/client files);
+    // studio workspaces and chats live in Postgres via `workspaces`/`chats`.
+    store: createBundleStore(storage, { secrets }),
+    workspaces,
+    chats,
+    secrets,
+    slugLock,
+    slugEpochs,
+    sessionStates,
+    defaultVector: buildDefaultVector(env),
+    ...(appDb && { appDb }),
+    ...(pool && { pool }),
+    ...(sql && { sql }),
+  };
+}
+
+/**
+ * Sandboxes run on Modal — fail at boot when credentials are missing, where
+ * the cause is obvious, instead of on the first session's spawn. Local dev
+ * only warns so non-sandbox surfaces stay usable without Modal credentials.
+ */
+export function assertModalOrWarn(env: NodeJS.ProcessEnv): void {
+  if (!isModalConfigured()) {
+    if (isLocalDev(env)) {
+      console.warn(
+        "[sandbox] WARNING: Modal credentials not configured " +
+          "(MODAL_TOKEN_ID/MODAL_TOKEN_SECRET). Sandbox creation will fail.",
+      );
+    } else {
+      throw modalRequiredError();
+    }
+  } else {
+    // Resolve the Modal app/image context now (fire-and-forget) so the gRPC
+    // round trip doesn't land on the first session's cold start.
+    prewarmModal();
+  }
+}
+
+/** Process-level safety nets, registered before anything else at boot. */
+export function installProcessSafetyNets(): void {
+  process.on("unhandledRejection", (err) => {
+    console.error("Unhandled rejection:", err);
+  });
+  process.on("uncaughtException", (err) => {
+    console.error("Uncaught exception:", err);
+    process.exit(1);
+  });
+}

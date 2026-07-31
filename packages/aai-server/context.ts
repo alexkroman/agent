@@ -12,11 +12,13 @@
 import type { Vector } from "@alexkroman1/aai/runtime";
 import type { Context } from "hono";
 import type { AppDatabases } from "./app-database.ts";
+import type { ChatStore } from "./chat-store.ts";
+import type { SlugEpochs } from "./platform-epoch.ts";
+import type { SlugMutationLock } from "./platform-lock.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
-import type { ChatStore } from "./studio/chat-store.ts";
-import type { WorkspaceStore } from "./studio/workspace-store.ts";
+import type { WorkspaceStore } from "./workspace-store.ts";
 
 export type HonoEnv = {
   Bindings: {
@@ -30,6 +32,16 @@ export type HonoEnv = {
     secrets: SecretStore;
     /** Per-app database provisioning. Absent when SUPABASE_DB_URL is unset. */
     appDb?: AppDatabases;
+    /**
+     * Serializes per-slug mutations (deploy/delete/secret/storage). Postgres
+     * lease in production so replicas exclude each other; in-process in dev.
+     */
+    slugLock: SlugMutationLock;
+    /**
+     * Cross-replica invalidation epochs: mutations bump, session starts
+     * compare (see platform-epoch.ts). Postgres in production, memory in dev.
+     */
+    slugEpochs: SlugEpochs;
     defaultVector: (slug: string) => Vector;
   };
   Variables: {

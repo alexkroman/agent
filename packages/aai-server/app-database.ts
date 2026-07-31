@@ -22,12 +22,29 @@ import type { SqlExec } from "./secret-store.ts";
 export type AppDbMeta = {
   role: string;
   password: string;
+  /**
+   * Admin connection URL of the cluster this app lives on — the database
+   * locator. Provisioning picks a target from the configured cluster list
+   * (APP_DB_URLS, defaulting to the platform database), so apps can be
+   * placed on any of N Supabase projects; `open` follows the stored URL.
+   * Absent only in rows from before the locator existed → primary cluster.
+   */
+  url?: string;
 };
 
 /** Max pooled connections per app db handle — one sandbox, light duty. */
 const APP_DB_POOL_MAX = 2;
 
 const IDENTIFIER_RE = /^app_[a-f0-9]{16}$/;
+
+/**
+ * Per-tenant caps so one hot app cannot starve the shared cluster: a role
+ * connection ceiling (each sandbox pools APP_DB_POOL_MAX, so this allows a
+ * couple of concurrent sandboxes plus a migration connection) and a bound on
+ * scratch disk from pathological sorts/hash joins.
+ */
+const APP_DB_CONNECTION_LIMIT = 4;
+const APP_DB_TEMP_FILE_LIMIT = "64MB";
 
 /** Deterministic schema/role identifier for one app slug. */
 export function appDbIdentifier(slug: string): string {
@@ -49,7 +66,11 @@ function assertIdentifier(id: string): string {
  * a fresh random password — the caller persists the returned meta (in the
  * SecretStore under `app-db:<slug>`), so re-provisioning simply rotates it.
  */
-export async function provisionAppDatabase(sql: SqlExec, slug: string): Promise<AppDbMeta> {
+export async function provisionAppDatabase(
+  sql: SqlExec,
+  slug: string,
+  targetUrl: string,
+): Promise<AppDbMeta> {
   const id = assertIdentifier(appDbIdentifier(slug));
   const password = randomBytes(16).toString("hex");
 
@@ -62,18 +83,27 @@ export async function provisionAppDatabase(sql: SqlExec, slug: string): Promise<
 do $$
 begin
   if exists (select 1 from pg_roles where rolname = '${id}') then
-    alter role "${id}" with login password '${password}';
+    alter role "${id}" with login password '${password}' connection limit ${APP_DB_CONNECTION_LIMIT};
   else
-    create role "${id}" with login password '${password}';
+    create role "${id}" with login password '${password}' connection limit ${APP_DB_CONNECTION_LIMIT};
   end if;
 end
 $$;
 grant usage, create on schema "${id}" to "${id}";
 alter role "${id}" set search_path = "${id}";
-alter role "${id}" set statement_timeout = '10s'`,
+alter role "${id}" set statement_timeout = '10s';
+do $$
+begin
+  -- Best-effort: temp_file_limit is a superuser GUC on vanilla Postgres;
+  -- Supabase's postgres role can set it, but a stricter host must not fail
+  -- provisioning over a tenant nicety.
+  alter role "${id}" set temp_file_limit = '${APP_DB_TEMP_FILE_LIMIT}';
+exception when insufficient_privilege then null;
+end
+$$`,
   );
 
-  return { role: id, password };
+  return { role: id, password, url: targetUrl };
 }
 
 /** Drop one app's schema (with all its data) and its role. Idempotent. */
@@ -104,7 +134,9 @@ export function appDbConnectionUrl(meta: AppDbMeta, adminUrl: string): string {
   return url.toString();
 }
 
-export function openAppDb(meta: AppDbMeta, adminUrl: string): CloseableDb {
+export function openAppDb(meta: AppDbMeta, fallbackAdminUrl: string): CloseableDb {
+  // The stored locator wins; rows predating it live on the primary cluster.
+  const adminUrl = meta.url ?? fallbackAdminUrl;
   return createPostgresDb({ url: appDbConnectionUrl(meta, adminUrl), max: APP_DB_POOL_MAX });
 }
 
@@ -121,11 +153,33 @@ export type AppDatabases = {
   open(meta: AppDbMeta): CloseableDb;
 };
 
-export function createAppDatabases(opts: { url: string; sql: SqlExec }): AppDatabases {
+/** One placement target: a cluster's admin URL plus an executor over it. */
+export type AppDbTarget = { url: string; sql: SqlExec };
+
+/** Deterministic placement: hash the slug across the configured clusters. */
+export function pickAppDbTarget(targets: AppDbTarget[], slug: string): AppDbTarget {
+  const index = Number.parseInt(hash("sha256", slug).slice(16, 24), 16) % targets.length;
+  return targets[index] as AppDbTarget;
+}
+
+export function createAppDatabases(opts: {
+  url: string;
+  sql: SqlExec;
+  /** Additional placement clusters (cellular sharding); primary is always a target. */
+  extraTargets?: AppDbTarget[];
+}): AppDatabases {
+  const targets: AppDbTarget[] = [{ url: opts.url, sql: opts.sql }, ...(opts.extraTargets ?? [])];
+  const targetFor = (url: string | undefined): AppDbTarget =>
+    targets.find((t) => t.url === url) ?? (targets[0] as AppDbTarget);
   return {
-    provision: (slug) => provisionAppDatabase(opts.sql, slug),
-    deprovision: (slug) => deprovisionAppDatabase(opts.sql, slug),
-    open: (meta) => openAppDb(meta, opts.url),
+    provision: (slug) => {
+      const target = pickAppDbTarget(targets, slug);
+      return provisionAppDatabase(target.sql, slug, target.url);
+    },
+    // Deprovision on the cluster that hosts the app: same deterministic
+    // placement, so no locator lookup is needed for the DDL executor.
+    deprovision: (slug) => deprovisionAppDatabase(pickAppDbTarget(targets, slug).sql, slug),
+    open: (meta) => openAppDb(meta, targetFor(meta.url).url),
   };
 }
 
@@ -135,7 +189,11 @@ export function parseAppDbMeta(raw: string | null): AppDbMeta | null {
   try {
     const value = JSON.parse(raw) as Partial<AppDbMeta> | null;
     if (value && typeof value.role === "string" && typeof value.password === "string") {
-      return { role: value.role, password: value.password };
+      return {
+        role: value.role,
+        password: value.password,
+        ...(typeof value.url === "string" && { url: value.url }),
+      };
     }
   } catch {
     // fall through

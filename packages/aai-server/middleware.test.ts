@@ -1,12 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { describe, expect, test } from "vitest";
+import { createMemoryChatStore } from "./chat-store.ts";
 import { requireOwner } from "./middleware.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
-import { createMemoryChatStore } from "./studio/chat-store.ts";
-import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
 import { createTestOrchestrator, createTestStore, deployAgent, deployBody } from "./test-utils.ts";
+import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
   const store = createTestStore();

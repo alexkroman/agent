@@ -41,15 +41,61 @@ import modal
 PORT = 8080
 PNPM_VERSION = "10.29.3"
 
-# One region for the web server AND the guest sandboxes it creates. Left
-# unpinned, Modal placed the server in us-east-1 (AWS) and guest sandboxes in
-# uk-london-1 (OCI), so every host<->guest RPC (ctx.db, Vector, guest fetch
-# proxy, bundle/load) paid a transatlantic RTT inside latency-budgeted voice
-# turns. The server functions pin ``region=REGION`` and the image exports the
-# same value as ``MODAL_SANDBOX_REGION``, which modal-sandbox.ts passes to
-# every ``sandboxes.create`` — co-location holds by construction, and moving
-# the deployment is a one-line change here.
+# One region for the web server AND the guest sandboxes it creates (see the
+# co-location rationale in CLAUDE.md's Modal notes). The studio app pins the
+# same value in its own modal_deploy.py.
 REGION = "us-east-2"
+
+# ── Split services ───────────────────────────────────────────────────────────
+#
+# The node app serves one of three surfaces (AAI_SERVICE): the agent backend,
+# the studio backend, or both combined. This deployment runs the split:
+#
+# - ``server`` (below) is the AGENT service and the single public origin.
+#   When ``STUDIO_UPSTREAM_URL`` is present in the ``aai-server`` Secret it
+#   boots as ``AAI_SERVICE=agent`` and reverse-proxies the studio surface
+#   (``/``, ``/studio/*``, ``/studio-assets/*``) to that URL; when absent it
+#   boots combined — same behavior as before the split, so a fresh
+#   deployment works before the operator wires the studio URL.
+# - ``studio`` (below) is the STUDIO service. After the first deploy, copy
+#   its printed web URL into the Secret as ``STUDIO_UPSTREAM_URL`` and
+#   redeploy — one-time setup. It is internal-only in spirit (browsers go
+#   through the agent origin), scaled for bursty LLM-bound chat turns
+#   rather than long-lived voice sessions.
+#
+# Cross-service coordination needs no wiring here: both services share the
+# Supabase Postgres (locks, epochs, rate limits, workspaces), and a studio
+# Publish reaches the agent service's resident sandboxes via slug epochs.
+
+# ── Web-service autoscaling ──────────────────────────────────────────────────
+#
+# The server holds no cross-request state (coordination and session-resume
+# state live in Supabase — see CLAUDE.md "Stateless server"), so replicas are
+# interchangeable: scale-out is safe, and scale-in/redeploys drain via the
+# node process's SIGTERM handler, with live sessions persisting their resume
+# state and clients auto-reconnecting (?sessionId) onto surviving replicas.
+#
+# Each in-flight HTTP request and each open WebSocket counts as one input, so
+# the numbers below are coupled to the node server's own per-replica
+# WebSocket cap (MAX_CONNECTIONS, exported in the image env — the server
+# rejects upgrade #N+1 itself, as a load-shed backstop):
+#
+# - TARGET_INPUTS is the autoscaler's set point: Modal adds containers once
+#   per-container concurrency crosses it. Set below MAX_CONNECTIONS so new
+#   capacity is warming BEFORE any replica starts refusing sessions.
+# - MAX_INPUTS caps what one container absorbs while scale-up is in flight:
+#   MAX_CONNECTIONS long-lived sessions plus headroom for short HTTP traffic
+#   (health checks, studio API, deploys).
+MIN_CONTAINERS = 1  # always-warm floor: voice sessions are latency-sensitive
+MAX_CONTAINERS = 10  # cost guard; raise deliberately, not by incident
+BUFFER_CONTAINERS = 1  # one pre-warmed spare while active, so bursts land warm
+MAX_CONNECTIONS = 100  # per-replica WebSocket cap (node server enforces it)
+TARGET_INPUTS = 75  # scale-out set point (~75% of the session cap)
+MAX_INPUTS = 150  # sessions at cap + short-request headroom
+
+# The studio service deploys as its OWN Modal app from its own package —
+# see packages/aai-studio-server/modal_deploy.py. CI deploys each app only
+# when its package version changed (changeset-driven).
 
 # Repo root (this file lives at packages/aai-server/modal_deploy.py).
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
@@ -77,12 +123,14 @@ image = (
     .workdir("/app")
     .run_commands(
         "pnpm install --frozen-lockfile --ignore-scripts --prod=false",
-        # SDK + UI (default client) + CLI (client bundler) + studio client + server
+        # SDK + UI (default client) + CLI (client bundler) + studio client +
+        # server + studio server
         "pnpm --filter aai build"
         " && pnpm --filter aai-ui build"
         " && pnpm --filter @alexkroman1/aai-cli build"
         " && pnpm --filter aai-studio-client build"
-        " && pnpm --filter aai-server build",
+        " && pnpm --filter aai-server build"
+        " && pnpm --filter aai-studio-server build",
     )
     .env(
         {
@@ -90,10 +138,14 @@ image = (
             "PORT": str(PORT),
             "GUEST_HARNESS_PATH": "/app/packages/aai-server/dist/guest/deno-harness.mjs",
             # Studio builds run in the studio_build function below, not in the
-            # web server's process (see studio/studio-build-runner.ts).
+            # web server's process (see studio-build-runner.ts).
             "STUDIO_BUILD_BACKEND": "modal",
             # Guest sandboxes are pinned to the web server's region (above).
             "MODAL_SANDBOX_REGION": REGION,
+            # Per-replica WebSocket cap, kept in lockstep with the autoscaler
+            # numbers above (TARGET_INPUTS / MAX_INPUTS) — the server refuses
+            # upgrades past it, so Modal must scale out before it is reached.
+            "MAX_CONNECTIONS": str(MAX_CONNECTIONS),
         }
     )
 )
@@ -107,14 +159,16 @@ app = modal.App("aai-server-web")
     region=REGION,
     cpu=1,
     memory=2048,
-    # One always-warm replica: voice sessions are latency-sensitive and the
-    # server pre-warms guest sandboxes at boot.
-    min_containers=1,
+    # Autoscaler bounds — see the "Web-service autoscaling" block above.
+    min_containers=MIN_CONTAINERS,
+    max_containers=MAX_CONTAINERS,
+    buffer_containers=BUFFER_CONTAINERS,
     # SHUTDOWN_DRAIN_MS (120s) + sandbox teardown must fit in the container's
-    # grace period — the node process handles SIGTERM itself.
+    # grace period — the node process handles SIGTERM itself, persisting live
+    # sessions' resume state before exiting (see sandbox.ts shutdown).
     scaledown_window=300,
 )
-@modal.concurrent(max_inputs=200)
+@modal.concurrent(max_inputs=MAX_INPUTS, target_inputs=TARGET_INPUTS)
 @modal.web_server(port=PORT, startup_timeout=180)
 def server() -> None:
     env = os.environ.copy()
@@ -125,7 +179,15 @@ def server() -> None:
     # that doesn't serve it ("connect ENOENT /run/modal.sock"). Strip it so
     # the SDK uses api.modal.com with the tokens from the aai-server Secret.
     env.pop("MODAL_SERVER_URL", None)
-    subprocess.Popen(["node", "packages/aai-server/dist/index.mjs"], cwd="/app", env=env)
+    # Agent service when the studio upstream is wired (see "Split services"
+    # above); the combined single-process entry (aai-studio-server package)
+    # otherwise, so a fresh deployment works pre-wiring.
+    if env.get("STUDIO_UPSTREAM_URL"):
+        entry = "packages/aai-server/dist/index.mjs"
+    else:
+        env["AAI_SERVICE"] = "combined"
+        entry = "packages/aai-studio-server/dist/index.mjs"
+    subprocess.Popen(["node", entry], cwd="/app", env=env)
 
 
 # The studio build worker. The web server ships each studio build here (see
@@ -151,7 +213,7 @@ def studio_build(request: str) -> str:
         proc = subprocess.run(
             [
                 "node",
-                "packages/aai-server/dist/studio/studio-build-entry.mjs",
+                "packages/aai-studio-server/dist/studio-build-entry.mjs",
                 str(request_path),
                 str(response_path),
             ],

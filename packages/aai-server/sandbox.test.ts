@@ -10,7 +10,8 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClientSendHandler } from "./client-send.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { createSandbox, resolveSandbox, type SandboxOptions } from "./sandbox.ts";
+import { createSandbox, type SandboxOptions } from "./sandbox.ts";
+import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { createTestStore } from "./test-utils.ts";
 

@@ -1,156 +1,28 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Node.js entry point for the AAI platform server.
+ * Node.js entry point for the AAI AGENT service: voice sessions (WebSocket),
+ * the platform API (deploy/delete/secret/storage/vector), and — when
+ * `STUDIO_UPSTREAM_URL` is set — a reverse proxy to the studio service so
+ * browsers see one public origin. Without an upstream the studio surface is
+ * simply not served here.
  *
- * Creates the Hono orchestrator backed by Supabase Storage (S3-compatible)
- * via unstorage — with agent secrets in Supabase Vault and per-app databases
- * in Supabase Postgres — and starts a Node.js HTTP server with WebSocket
- * upgrade support via `ws`.
+ * The studio service and the combined single-process composition (local
+ * dev, pre-split deployments) live in the aai-studio-server package.
  */
 
-import {
-  createMemoryVector,
-  createPineconeVector,
-  createPostgresDb,
-  type Vector,
-} from "@alexkroman1/aai/runtime";
 import { serve } from "@hono/node-server";
-import { createStorage } from "unstorage";
-import { assertDevKeys, isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize } from "./_boot.ts";
+import { assertDevKeys, resolveDrainMs } from "./_boot.ts";
 import { waitForIdle } from "./_drain.ts";
-import { type AppDatabases, createAppDatabases } from "./app-database.ts";
-import { createBundleStore } from "./bundle-store.ts";
-import { DEFAULT_PORT, resolveHarnessPath } from "./constants.ts";
-import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
+import { DEFAULT_PORT } from "./constants.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
-import { createS3Storage } from "./s3-storage.ts";
-import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
-import { spawnWarmHarness } from "./sandbox-vm.ts";
 import {
-  createMemorySecretStore,
-  createVaultSecretStore,
-  type SecretStore,
-  type SqlExec,
-} from "./secret-store.ts";
-import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./studio/chat-store.ts";
-import {
-  createMemoryWorkspaceStore,
-  createPgWorkspaceStore,
-  type WorkspaceStore,
-} from "./studio/workspace-store.ts";
-
-function buildPool(env: NodeJS.ProcessEnv): SandboxPool | null {
-  const size = resolvePoolSize(env.SANDBOX_POOL_SIZE);
-  if (size === null) return null;
-  const harnessPath = resolveHarnessPath(env);
-  console.info(`Sandbox pool: pre-warming ${size} Deno harness(es)`, { harnessPath });
-  return createSandboxPool({
-    targetSize: size,
-    spawn: () => spawnWarmHarness({ harnessPath }),
-  });
-}
-
-function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createStorage> {
-  if (isLocalDev(env)) {
-    console.info("Local dev mode: unstorage memory driver for all storage");
-    return createStorage();
-  }
-  const required = requireEnv(env, [
-    "SUPABASE_S3_ENDPOINT",
-    "SUPABASE_S3_ACCESS_KEY_ID",
-    "SUPABASE_S3_SECRET_ACCESS_KEY",
-    "SUPABASE_STORAGE_BUCKET",
-  ]);
-  return createS3Storage({
-    bucket: required.SUPABASE_STORAGE_BUCKET,
-    endpoint: required.SUPABASE_S3_ENDPOINT,
-    // Supabase's S3-compatible endpoint expects the project's region string.
-    region: env.SUPABASE_S3_REGION ?? "us-east-1",
-    accessKeyId: required.SUPABASE_S3_ACCESS_KEY_ID,
-    secretAccessKey: required.SUPABASE_S3_SECRET_ACCESS_KEY,
-  });
-}
-
-/**
- * Platform Postgres surface: Supabase Vault for secrets, studio workspaces,
- * and per-app database provisioning, all over `SUPABASE_DB_URL`
- * (service-role connection string). Required in production; local dev falls
- * back to in-memory secret and workspace stores (and no per-app databases
- * unless SUPABASE_DB_URL is set).
- */
-function buildPlatformDb(env: NodeJS.ProcessEnv): {
-  secrets: SecretStore;
-  workspaces: WorkspaceStore;
-  chats: ChatStore;
-  appDb?: AppDatabases;
-} {
-  const url = env.SUPABASE_DB_URL;
-  if (!url) {
-    if (!isLocalDev(env)) {
-      requireEnv(env, ["SUPABASE_DB_URL"]); // throws with the standard message
-    }
-    console.info(
-      "Local dev mode: in-memory secret + studio workspace/chat stores; per-app databases disabled",
-    );
-    return {
-      secrets: createMemorySecretStore(),
-      workspaces: createMemoryWorkspaceStore(),
-      chats: createMemoryChatStore(),
-    };
-  }
-  // The pool lives for the process; connections drain when the process exits
-  // (no explicit close() hook on the shutdown path today).
-  const admin = createPostgresDb({ url, max: 4 });
-  const exec: SqlExec = (query, params) => admin.query(query, params);
-  const localDev = isLocalDev(env);
-  return {
-    secrets: localDev ? createMemorySecretStore() : createVaultSecretStore(exec),
-    workspaces: localDev ? createMemoryWorkspaceStore() : createPgWorkspaceStore(exec),
-    chats: localDev ? createMemoryChatStore() : createPgChatStore(exec),
-    appDb: createAppDatabases({ url, sql: exec }),
-  };
-}
-
-function buildDefaultVector(env: NodeJS.ProcessEnv): (slug: string) => Vector {
-  if (isLocalDev(env) || !env.PINECONE_API_KEY || !env.PINECONE_INDEX) {
-    return (slug) => createMemoryVector({ namespace: slug });
-  }
-  const apiKey = env.PINECONE_API_KEY;
-  const index = env.PINECONE_INDEX;
-  return (slug) => createPineconeVector({ apiKey, index, namespace: slug });
-}
-
-function buildOpts(env: NodeJS.ProcessEnv): OrchestratorOpts {
-  const storage = buildStorage(env);
-  const { secrets, workspaces, chats, appDb } = buildPlatformDb(env);
-  const slots = createSlotCache();
-  const pool = buildPool(env);
-  return {
-    slots,
-    // Blob storage serves deploy artifacts only (bundles/client files);
-    // studio workspaces and chats live in Postgres via `workspaces`/`chats`.
-    store: createBundleStore(storage, { secrets }),
-    workspaces,
-    chats,
-    secrets,
-    defaultVector: buildDefaultVector(env),
-    ...(appDb && { appDb }),
-    ...(pool && { pool }),
-  };
-}
+  assertModalOrWarn,
+  buildServiceConfig,
+  installProcessSafetyNets,
+} from "./service-config.ts";
 
 async function main(): Promise<void> {
-  // Register process-level safety nets FIRST — an unhandled rejection or
-  // uncaught exception during startup (storage init, pool pre-warm) must be
-  // logged, not silently subject to Node's defaults.
-  process.on("unhandledRejection", (err) => {
-    console.error("Unhandled rejection:", err);
-  });
-  process.on("uncaughtException", (err) => {
-    console.error("Uncaught exception:", err);
-    process.exit(1);
-  });
+  installProcessSafetyNets();
 
   const env = process.env;
   assertDevKeys(env);
@@ -162,28 +34,12 @@ async function main(): Promise<void> {
   // replica keeps accepting the sessions it is waiting to finish.
   let draining = false;
   const opts: OrchestratorOpts = {
-    ...buildOpts(env),
+    ...buildServiceConfig(env),
     isDraining: () => draining,
+    ...(env.STUDIO_UPSTREAM_URL && { studioUpstream: env.STUDIO_UPSTREAM_URL }),
   };
 
-  // Sandboxes run on Modal — fail at boot when credentials are missing, where
-  // the cause is obvious, instead of on the first session's spawn. Local dev
-  // only warns so the studio's non-sandbox surfaces (editor, static routes)
-  // stay usable without Modal credentials.
-  if (!isModalConfigured()) {
-    if (isLocalDev(env)) {
-      console.warn(
-        "[sandbox] WARNING: Modal credentials not configured " +
-          "(MODAL_TOKEN_ID/MODAL_TOKEN_SECRET). Sandbox creation will fail.",
-      );
-    } else {
-      throw modalRequiredError();
-    }
-  } else {
-    // Resolve the Modal app/image context now (fire-and-forget) so the gRPC
-    // round trip doesn't land on the first session's cold start.
-    prewarmModal();
-  }
+  assertModalOrWarn(env);
 
   const { app, injectWebSocket, closeActiveSockets, activeSessionCount } = createOrchestrator(opts);
   const nodeServer = serve({ fetch: app.fetch, port });
@@ -200,7 +56,7 @@ async function main(): Promise<void> {
     nodeServer.on("listening", resolve);
   });
 
-  console.info(`AAI server listening on http://localhost:${port}`);
+  console.info(`AAI agent service listening on http://localhost:${port}`);
 
   let shuttingDown = false;
   async function shutdown() {

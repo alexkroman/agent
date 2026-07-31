@@ -127,6 +127,30 @@ describe("createSessionStateMap", () => {
     const map = createSessionStateMap();
     expect(map.get("s1")).toEqual({});
   });
+
+  test("peek never lazily initializes state", () => {
+    const map = createSessionStateMap(() => ({ count: 0 }));
+    expect(map.peek("s1")).toBeUndefined();
+    map.get("s1").count = 3;
+    expect(map.peek("s1")).toEqual({ count: 3 });
+  });
+
+  test("restore hydrates an absent session with a detached clone", () => {
+    const map = createSessionStateMap(() => ({ count: 0 }));
+    const persisted = { count: 7 };
+    map.restore("s1", persisted);
+    expect(map.get("s1")).toEqual({ count: 7 });
+    // Cloned on the way in — the caller's object is not shared state.
+    persisted.count = 99;
+    expect(map.get("s1")).toEqual({ count: 7 });
+  });
+
+  test("restore is set-if-absent: live state is never clobbered", () => {
+    const map = createSessionStateMap(() => ({ count: 0 }));
+    map.get("s1").count = 5;
+    map.restore("s1", { count: 1 });
+    expect(map.get("s1")).toEqual({ count: 5 });
+  });
 });
 
 // ── executeTool ───────────────────────────────────────────────────────────

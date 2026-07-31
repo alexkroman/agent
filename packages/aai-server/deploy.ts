@@ -4,8 +4,10 @@ import { errorMessage } from "@alexkroman1/aai";
 import { humanId } from "human-id";
 import { debug } from "./_debug-log.ts";
 import type { ValidatedAppContext } from "./context.ts";
+import { bumpSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
+import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
-import { type SlotCache, setSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
+import { type SlotCache, setSlot, terminateSlot } from "./sandbox-slots.ts";
 import type { AgentMetadata, DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
@@ -15,6 +17,17 @@ import type { BundleStore } from "./store-types.ts";
 export type DeployDeps = {
   store: BundleStore;
   slots: SlotCache;
+  /**
+   * Per-slug mutation lock. Cross-replica (Postgres lease) in production;
+   * defaults to the in-process lock for tests and single-replica callers.
+   */
+  slugLock?: SlugMutationLock | undefined;
+  /**
+   * Invalidation epochs, bumped after the bundle write lands so other
+   * replicas (and the agent service, when the studio deploys) rebuild
+   * their resident sandboxes. Absent means local-only invalidation.
+   */
+  slugEpochs?: SlugEpochs | undefined;
 };
 
 export type DeployParams = {
@@ -91,7 +104,8 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
     return Promise.resolve({ ok: false as const, status: 400 as const, error: "Reserved slug" });
   }
   const slug = requested ?? humanId({ separator: "-", capitalize: false });
-  return withSlugLock(slug, async () => {
+  const lock = deps.slugLock ?? localSlugLock;
+  return lock(slug, async () => {
     // Ownership is checked whether the slug was requested or generated. A
     // generated slug used to skip this entirely, so a `humanId()` collision
     // with an existing agent would overwrite that agent's bundle and append
@@ -176,6 +190,11 @@ async function deployLocked(
 
   setSlot(deps.slots, { slug });
 
+  // Signal every other replica/service to rebuild its resident sandbox from
+  // the bundle just stored. After the write on purpose — an early bump would
+  // have peers rebuild from the pre-deploy artifacts.
+  if (deps.slugEpochs) await bumpSlugEpoch(deps.slugEpochs, slug);
+
   debug("Deploy received", { slug });
 
   return { ok: true, slug, message: `Deployed ${slug}` };
@@ -200,7 +219,12 @@ export async function handleDeployNew(
   c: ValidatedAppContext<DeployBody>,
   inspect: BundleInspector,
 ): Promise<Response> {
-  const deps = { store: c.env.store, slots: c.env.slots };
+  const deps = {
+    store: c.env.store,
+    slots: c.env.slots,
+    slugLock: c.env.slugLock,
+    slugEpochs: c.env.slugEpochs,
+  };
   const body = c.req.valid("json");
   const extraction = await extractAgentConfig(inspect, body.worker);
   if (!extraction.ok) return c.json({ error: extraction.error }, 400);

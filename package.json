@@ -20,7 +20,7 @@
     "test:mutate:server": "stryker run stryker.server.config.mjs",
     "test:mutate:cli": "stryker run stryker.cli.config.mjs",
     "aai": "node --experimental-strip-types packages/aai-cli/cli.ts",
-    "dev:aai-server": "pnpm --filter aai-server dev",
+    "dev:aai-server": "pnpm --filter aai-studio-server dev",
     "typecheck": "turbo run typecheck",
     "lint": "turbo run lint",
     "lint:fix": "biome check --write packages/",
@@ -43,7 +43,8 @@
     "changeset:create": "bash scripts/create-changeset.sh",
     "version": "changeset version && node scripts/sync-scaffold-versions.mjs",
     "release": "turbo run build && changeset publish",
-    "prepare": "[ \"$(git rev-parse --git-dir 2>/dev/null)\" != \"$(git rev-parse --git-common-dir 2>/dev/null)\" ] || lefthook install --force"
+    "prepare": "[ \"$(git rev-parse --git-dir 2>/dev/null)\" != \"$(git rev-parse --git-common-dir 2>/dev/null)\" ] || lefthook install --force",
+    "test:aai-studio-server": "pnpm --filter aai-studio-server test"
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",

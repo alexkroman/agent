@@ -29,18 +29,19 @@ import type { Vector } from "@alexkroman1/aai/runtime";
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
-import { cors } from "hono/cors";
-import { secureHeaders } from "hono/secure-headers";
 import type { AppDatabases } from "./app-database.ts";
+import { applyPlatformMiddleware } from "./app-middleware.ts";
+import type { ChatStore } from "./chat-store.ts";
 import { handleAgentClientConfig } from "./client-config-handler.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import type { AppContext, HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
 import { type BundleInspector, handleDeployNew } from "./deploy.ts";
-import { createErrorHandler } from "./error-handler.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
+import { createMemorySlugEpochs, type SlugEpochs } from "./platform-epoch.ts";
+import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { resolveAgentVector } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
@@ -49,20 +50,14 @@ import { describeBundle } from "./sandbox-vm.ts";
 import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
+import { createMemorySessionStateStore, type SessionStateStore } from "./session-state-store.ts";
 import {
   handleStorageDisable,
   handleStorageEnable,
   handleStorageStatus,
 } from "./storage-handler.ts";
 import type { BundleStore } from "./store-types.ts";
-import type { ChatStore } from "./studio/chat-store.ts";
-import { createStudioRoutes } from "./studio/studio-routes.ts";
-import {
-  handleStudioClientAsset,
-  handleStudioFavicon,
-  handleStudioPage,
-} from "./studio/studio-static.ts";
-import type { WorkspaceStore } from "./studio/workspace-store.ts";
+import { createStudioProxy, isStudioPath } from "./studio-proxy.ts";
 import {
   handleAgentFavicon,
   handleAgentHealth,
@@ -70,6 +65,7 @@ import {
   handleClientAsset,
 } from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
+import type { WorkspaceStore } from "./workspace-store.ts";
 
 export type OrchestratorOpts = {
   slots: SlotCache;
@@ -82,10 +78,33 @@ export type OrchestratorOpts = {
   secrets?: SecretStore;
   /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
+  /**
+   * Per-slug mutation lock (deploy/delete/secret/storage). Postgres lease in
+   * production so replicas exclude each other; defaults to in-process.
+   */
+  slugLock?: SlugMutationLock;
+  /**
+   * Cross-replica invalidation epochs (see platform-epoch.ts). Postgres in
+   * production; defaults to memory (local-only invalidation).
+   */
+  slugEpochs?: SlugEpochs;
+  /**
+   * Cross-replica session-resume persistence (guest ctx.state + remember
+   * notes). Postgres-backed in production; defaults to memory.
+   */
+  sessionStates?: SessionStateStore;
   /** Factory that creates the server-default Vector for a given slug. */
   defaultVector: (slug: string) => Vector;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
+  /**
+   * Split deployment: base URL of the standalone studio service. When set,
+   * the studio surface is reverse-proxied there (see studio-proxy.ts)
+   * instead of mounted in-process, keeping one public origin.
+   */
+  studioUpstream?: string;
+  /** Test seam for the studio proxy's outbound fetch. */
+  studioProxyFetch?: typeof globalThis.fetch;
   /** Optional pre-warmed Deno harness pool for faster cold starts. */
   pool?: SandboxPool;
   /**
@@ -128,40 +147,7 @@ export type Orchestrator = {
 
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const app = new Hono<HonoEnv>();
-
-  const allowedOrigins = opts.allowedOrigins;
-  app.use(
-    "*",
-    cors({
-      origin: (origin) => {
-        if (!origin) return "*"; // same-origin
-        if (!allowedOrigins) return ""; // reject when no origins configured
-        if (allowedOrigins.includes("*")) return "*";
-        return allowedOrigins.includes(origin) ? origin : "";
-      },
-      allowMethods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-      allowHeaders: ["Content-Type", "Authorization"],
-      credentials: false,
-      maxAge: 86_400,
-    }),
-  );
-  app.use(
-    "*",
-    secureHeaders({
-      crossOriginOpenerPolicy: "same-origin",
-      crossOriginEmbedderPolicy: "credentialless",
-      crossOriginResourcePolicy: "same-origin",
-      xContentTypeOptions: "nosniff",
-      // SAMEORIGIN (not DENY) so the studio's live preview can iframe agent
-      // pages. Cross-origin framing (real clickjacking) stays blocked;
-      // same-origin tenants can already script against each other's public
-      // pages, so this does not widen the tenant boundary.
-      xFrameOptions: "SAMEORIGIN",
-    }),
-  );
-
-  app.notFound((c) => c.json({ error: "Not found" }, 404));
-  app.onError(createErrorHandler());
+  applyPlatformMiddleware(app, opts.allowedOrigins);
 
   // 503 while draining is what pulls the replica out of the platform
   // proxy's rotation, so new traffic goes to a replica that is staying up.
@@ -171,17 +157,23 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     opts.isDraining?.() ? c.json({ status: "draining" }, 503) : c.json({ status: "ok" }),
   );
 
-  // Browser studio: loading the server root gives a coding agent that can
-  // build and deploy voice agents from the browser. `studio` and
+  // The studio surface. This app never serves it in-process anymore — the
+  // studio is its own package/service (aai-studio-server). Two modes here:
+  // reverse-proxy to the studio service (split deployment, `studioUpstream`
+  // set — keeps ONE public origin, which the preview iframe's SAMEORIGIN
+  // framing requires), or agent-only (no studio surface; the combined
+  // single-process composition lives in aai-studio-server's entry, which
+  // dispatches between this app and the studio app). `studio` and
   // `studio-assets` are reserved slugs (RESERVED_SLUGS) so no agent route
-  // can shadow the API namespace or the client assets.
-  app.get("/", handleStudioPage);
-  // Safe alongside agent routes: `favicon.ico` can never be a slug (dots
-  // are outside the slug grammar), so no agent route can shadow it.
-  app.get("/favicon.ico", handleStudioFavicon);
-  app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
-  app.route("/studio", createStudioRoutes({ pool: opts.pool }));
-  app.get("/studio/", (c) => c.redirect("/", 302));
+  // can shadow the namespace in any mode.
+  if (opts.studioUpstream) {
+    const proxy = createStudioProxy(opts.studioUpstream, opts.studioProxyFetch);
+    // Registered from the shared predicate, so this list can never drift
+    // from the combined dispatcher's.
+    app.use("*", (c, next) => (isStudioPath(new URL(c.req.url).pathname) ? proxy(c) : next()));
+  } else {
+    app.get("/", (c) => c.json({ service: "aai-agent", studio: "not served by this deployment" }));
+  }
 
   // Cap the on-the-wire deploy body (compressed or not) before anything
   // buffers it. gzipRequestMw separately caps the DECOMPRESSED size, so a
@@ -258,12 +250,20 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // the storage-status route (and anything else reading secrets) works.
     secrets: opts.secrets ?? createMemorySecretStore(),
     ...(opts.appDb && { appDb: opts.appDb }),
+    // Same default posture as secrets: tests build orchestrators without a
+    // platform database, where in-process exclusion is exact.
+    slugLock: opts.slugLock ?? localSlugLock,
+    slugEpochs: opts.slugEpochs ?? createMemorySlugEpochs(),
     defaultVector: opts.defaultVector,
   };
   // resolveSandbox takes the bindings minus the studio stores (bundle data
   // lives in the BundleStore; `workspaces`/`chats` are studio-only).
   const { workspaces: _studioWorkspaces, chats: _studioChats, ...sandboxBindings } = bindings;
-  const sandboxOpts = { ...sandboxBindings, ...(opts.pool && { pool: opts.pool }) };
+  const sandboxOpts = {
+    ...sandboxBindings,
+    ...(opts.pool && { pool: opts.pool }),
+    sessionStates: opts.sessionStates ?? createMemorySessionStateStore(),
+  };
 
   const original = app.fetch.bind(app);
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
