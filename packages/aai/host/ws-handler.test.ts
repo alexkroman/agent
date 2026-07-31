@@ -3,6 +3,7 @@
 // Lifecycle/callback/ClientSink specs live in ws-handler-lifecycle.test.ts.
 
 import { describe, expect, test, vi } from "vitest";
+import { createOwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeLogger, makeMockCore, silentLogger } from "./_test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -50,7 +51,7 @@ describe("wireSessionSocket", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -75,7 +76,7 @@ describe("wireSessionSocket", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -88,7 +89,7 @@ describe("wireSessionSocket", () => {
   });
 
   test("session is added to sessions map on open", () => {
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
     const core = makeMockCore();
     const ws = openSocket();
 
@@ -103,7 +104,7 @@ describe("wireSessionSocket", () => {
   });
 
   test("session is removed from sessions map on close", async () => {
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
     const ws = openSocket();
 
     wireSessionSocket(ws, {
@@ -124,7 +125,7 @@ describe("wireSessionSocket", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -139,7 +140,7 @@ describe("wireSessionSocket", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -157,7 +158,7 @@ describe("wireSessionSocket", () => {
     let capturedId: string | undefined;
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: (sid) => {
         capturedId = sid;
         return makeMockCore();
@@ -178,7 +179,7 @@ describe("wireSessionSocket", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -200,7 +201,7 @@ describe("wireSessionSocket", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -217,7 +218,7 @@ describe("wireSessionSocket", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -234,7 +235,7 @@ describe("wireSessionSocket", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -251,7 +252,7 @@ describe("wireSessionSocket", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -275,7 +276,7 @@ describe("wireSessionSocket", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -295,7 +296,7 @@ describe("wireSessionSocket", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -317,7 +318,7 @@ describe("wireSessionSocket", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -339,7 +340,7 @@ describe("wireSessionSocket", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -365,7 +366,7 @@ describe("wireSessionSocket", () => {
     const logger = makeLogger();
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger,
@@ -392,7 +393,7 @@ describe("wireSessionSocket", () => {
     const ws = openSocket(MockWebSocket.CONNECTING);
 
     wireSessionSocket(ws, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       createSession: () => makeMockCore(),
       readyConfig: defaultConfig,
       logger: silentLogger,

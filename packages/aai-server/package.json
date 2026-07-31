@@ -39,6 +39,7 @@
     "mime-types": "^3.0.2",
     "modal": "^0.9.0",
     "p-retry": "^8.0.0",
+    "p-timeout": "^7.0.1",
     "picomatch": "^4.0.5",
     "quick-lru": "^7.3.0",
     "react": "^19.2.8",

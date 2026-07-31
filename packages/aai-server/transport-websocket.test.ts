@@ -154,7 +154,7 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
   // Pre-populate the slot with a fake sandbox so resolveSandbox returns
   // it immediately without spawning a Deno child.
   if (opts.seedSandbox !== false) {
-    slots.set(slug, {
+    slots.claim(slug, {
       slug,
       sandbox: sandbox as unknown as { shutdown(): Promise<void> },
     });

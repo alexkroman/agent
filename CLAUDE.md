@@ -1090,6 +1090,44 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
 | `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox |
 
+### Concurrency primitives (use these, don't hand-roll)
+
+The codebase's recurring async-coordination patterns are reified as small
+primitives — reach for them before re-inventing the pattern at a call site:
+
+- **`createEpoch()`** (`aai/sdk/epoch.ts`, exported from `@alexkroman1/aai`) —
+  staleness guard for async continuations: capture `current()` when deferring
+  work, check `isCurrent(gen)` when it settles, `bump()` to invalidate.
+  Adopted by the aai-ui connection/turn generations and the pipeline turn
+  gate. Don't hand-roll `let generation = 0; generation++` counters.
+- **`createOwnedMap()`** (`aai/sdk/owned-map.ts`, exported from
+  `@alexkroman1/aai`) — a map whose entries are removed by ownership token:
+  `claim(key, value)` returns the only release for that claim, so an async
+  teardown settling after the key was re-claimed (reconnect resume, redeploy)
+  can't evict the successor's entry. `owns()` guards non-delete mutations.
+  Adopted by the runtime's `sessions`/`sinkMap`, the WS handler, and the
+  platform `SlotCache`. Don't write `if (map.get(k) === mine) map.delete(k)`
+  by hand.
+- **`createWriteChain()`** (`aai-server/guest/write-chain.ts`) — serialize
+  stream writes behind a promise chain (ordering, sync fast path, never
+  rejects). One implementation for both NDJSON ends; it lives under `guest/`
+  because the harness may import only sibling guest modules, while the host
+  imports it freely.
+- **`createTurnMachine()`** (`aai/host/transports/pipeline-turn-state.ts`) —
+  the pipeline transport's turn lifecycle (in-flight reply, spoke flag, TTS
+  audio gate) as a discriminated-union machine whose named transitions are
+  the only mutation path. New turn-state reads/writes go through it, not new
+  closure flags.
+- **Timeouts**: use `p-timeout` (a dependency of aai, aai-cli, and
+  aai-server) — never a hand-rolled `Promise.race` with a timer; the losing
+  branch's late rejection and timer cleanup are exactly what gets re-derived
+  wrong. The one exception is the guest harness's `withTimeout`
+  (`guest/harness-rpc.ts`), which stays local because the bundled harness
+  imports no npm packages.
+- **Combining abort signals**: use native `AbortSignal.any([...])` (sources
+  held weakly — no unlink bookkeeping); the pipeline transport combines the
+  session signal with each turn's controller this way.
+
 ### Default values and magic numbers
 
 All numeric constants live in `packages/aai/sdk/constants.ts` (client-audio

@@ -8,6 +8,7 @@
  * so the test runs without external dependencies.
  */
 import http from "node:http";
+import { createOwnedMap } from "@alexkroman1/aai";
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
 import {
   type SessionCore,
@@ -77,7 +78,7 @@ function startTestServer(): Promise<{
 
     server.on("upgrade", (req, socket, head) => {
       wss.handleUpgrade(req, socket, head, (ws) => {
-        const sessions = new Map<string, SessionCore>();
+        const sessions = createOwnedMap<string, SessionCore>();
         wireSessionSocket(ws as unknown as SessionWebSocket, {
           sessions,
           createSession: (sid, _client) => {

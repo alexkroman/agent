@@ -11,6 +11,7 @@ import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts"
 import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
+import type { OwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
@@ -69,7 +70,7 @@ type ToolSetupDeps = {
   resolvedDb: Db | undefined;
   resolvedVector: Vector;
   logger: NonNullable<RuntimeOptions["logger"]>;
-  sinkMap: Map<string, ClientSink>;
+  sinkMap: OwnedMap<string, ClientSink>;
   /** Per-session tool state (self-hosted mode only); cleaned up on session end. */
   stateMap: Map<string, Record<string, unknown>>;
 };

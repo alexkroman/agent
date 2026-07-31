@@ -48,9 +48,9 @@ export async function initAudioCapture(
 ): Promise<void> {
   if (conn.audioSetupInFlight) return;
   conn.audioSetupInFlight = true;
-  const gen = conn.generation;
+  const gen = conn.generation.current();
   const stale = (): boolean =>
-    conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN;
+    !(conn.generation.isCurrent(gen) && conn.ws) || conn.ws.readyState !== WS_OPEN;
   const reportAudioFailure = (message: string): void => {
     // The dead audio path is released — a playback-worklet crash must not
     // leave the healthy capture worklet streaming into the socket with the
@@ -100,7 +100,7 @@ export async function initAudioCapture(
       // though the socket is fine, so surface it instead of staying in a
       // healthy-looking listening/speaking state forever.
       onError: (err: Error) => {
-        if (conn.generation !== gen) return;
+        if (!conn.generation.isCurrent(gen)) return;
         reportAudioFailure(err.message);
       },
     });
@@ -142,6 +142,6 @@ export async function initAudioCapture(
     // generation's settle must not unlock a newer init that is in flight
     // (which would let a second same-generation init start and orphan a
     // live microphone).
-    if (conn.generation === gen) conn.audioSetupInFlight = false;
+    if (conn.generation.isCurrent(gen)) conn.audioSetupInFlight = false;
   }
 }

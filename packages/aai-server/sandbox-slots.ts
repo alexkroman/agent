@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { errorMessage } from "@alexkroman1/aai";
+import { createOwnedMap, errorMessage, type OwnedMap } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import { createKeyedLock } from "./_keyed-lock.ts";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
@@ -13,10 +13,13 @@ export type AgentSlot = {
   activeSessions?: number;
 };
 
-export type SlotCache = Map<string, AgentSlot>;
+// An OwnedMap because a redeploy replaces the slot object under the same
+// slug: mutations driven by a pre-replacement handle must no-op (see
+// releaseSlotSession), which is the map's `owns` check.
+export type SlotCache = OwnedMap<string, AgentSlot>;
 
 export function createSlotCache(): SlotCache {
-  return new Map<string, AgentSlot>();
+  return createOwnedMap<string, AgentSlot>();
 }
 
 // Internal keyed lock (not p-lock): entries are deleted when released, so the
@@ -82,7 +85,7 @@ export async function restartSlotSandbox(
 }
 
 export function setSlot(slots: SlotCache, slot: AgentSlot): void {
-  slots.set(slot.slug, slot);
+  slots.claim(slot.slug, slot);
 }
 
 export function deleteSlot(slots: SlotCache, slug: string): boolean {
@@ -125,7 +128,7 @@ export function releaseSlotSession(slots: SlotCache, acquired: AgentSlot | null)
   acquired.activeSessions = Math.max(0, (acquired.activeSessions ?? 0) - 1);
   // Only the slot currently installed for this slug may drive idle eviction —
   // a handle from before a redeploy/delete must not touch the new slot.
-  if (slots.get(acquired.slug) !== acquired) return;
+  if (!slots.owns(acquired.slug, acquired)) return;
   if (acquired.activeSessions === 0 && acquired.sandbox) resetIdleTimer(slots, acquired);
 }
 

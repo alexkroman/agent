@@ -27,8 +27,9 @@ import {
   type PipelineTransportOptions,
   resolvePipelineOptions,
 } from "./pipeline-transport-options.ts";
-import { createTurnGate, linkAbort } from "./pipeline-turn-gate.ts";
+import { createTurnGate } from "./pipeline-turn-gate.ts";
 import { createTurnOutcome } from "./pipeline-turn-outcome.ts";
+import { createTurnMachine } from "./pipeline-turn-state.ts";
 import { createUserActivity } from "./pipeline-user-speech.ts";
 import type { Transport } from "./types.ts";
 
@@ -72,23 +73,18 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   }
   let audioReady = false;
   let terminated = false;
-  let turnController: AbortController | null = null;
   let nextReplyId = 0;
   // Invalidation epochs for queued turns and an aborted turn's deferred
   // persistence — see pipeline-turn-gate.ts.
   const gate = createTurnGate();
-  // Closed on abort so TTS chunks still in flight can't re-advance the
-  // playback clock (which would re-arm barge-in against nothing) or reach the
-  // just-flushed client; reopened by the next turn's first TTS text, which
-  // always precedes that turn's audio.
-  let ttsAudioOpen = true;
-  // Has the in-flight turn put any audio on the wire yet? Barge-in gates on
-  // this: a turn that has not spoken cannot be spoken over, and aborting it
-  // would discard the reply mid-computation only to restart a slower one — a
-  // user re-prompting into the silence would starve the reply indefinitely.
-  // Cleared when a turn starts and when one is aborted, so it always describes
-  // the current turn rather than a previous one's audio.
-  let turnSpoke = false;
+  // Turn lifecycle (the abortable in-flight reply, whether it has spoken,
+  // and the TTS audio gate) — the named transitions in
+  // pipeline-turn-state.ts are the only way this state changes. `spoke()`
+  // is what barge-in gates on: a turn that has not spoken cannot be spoken
+  // over, and aborting it would discard the reply mid-computation only to
+  // restart a slower one — a user re-prompting into the silence would
+  // starve the reply indefinitely.
+  const turns = createTurnMachine();
   // Pipeline transport owns its conversation memory (SessionCore does not in
   // pipeline mode): a text view (client/resume/tool-context) and a
   // ModelMessage view (what the LLM sees, incl. tool calls/results).
@@ -123,8 +119,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     interruptionMinDurationMs,
     isTerminated: () => terminated,
     isSessionActive: () => !(terminated || sessionAbort.signal.aborted),
-    isTurnInFlight: () => turnController !== null,
-    hasTurnSpoken: () => turnSpoke,
+    isTurnInFlight: () => turns.inFlight(),
+    hasTurnSpoken: () => turns.spoke(),
     isPlaybackPending: () => playbackClock.pending(),
     abortInFlightTurn: () => abortInFlightTurn(),
     tailResumePrompt: () => replyTail.resumePrompt(),
@@ -150,8 +146,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       onSttError: (err) => onProviderError("stt", err),
       onTtsError: (err) => onProviderError("tts", err),
       onTtsAudio: (pcm) => {
-        if (!ttsAudioOpen) return;
-        turnSpoke = true;
+        if (!turns.audioGateOpen()) return;
+        turns.markSpoke();
         replyTail.onAudio(pcm);
         playbackClock.onChunk(pcm);
         callbacks.onAudioChunk(pcm16ToBytes(pcm));
@@ -194,11 +190,8 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   /** Abort the in-flight turn (if any) and cancel TTS playback. */
   function abortInFlightTurn(): void {
-    turnController?.abort();
-    turnController = null;
+    turns.interrupt();
     providers.tts?.cancel();
-    ttsAudioOpen = false;
-    turnSpoke = false;
     // Every abort path ends with the client flushing its playback buffer
     // (`cancelled` for barge-in/client cancel, `reset` for reset, teardown
     // for terminate), so the estimated-playback clock restarts from zero.
@@ -237,7 +230,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
 
   /** Forward turn text to TTS, reopening the audio gate for the new turn. */
   function sendTtsText(text: string): void {
-    ttsAudioOpen = true;
+    turns.openAudioGate();
     providers.tts?.sendText(text);
     // Publish the transcript as it becomes audible rather than only when the
     // reply ends. A reply that opens with a tool chain speaks its hold phrase
@@ -261,7 +254,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
   });
 
   const consumeLlmStream = (
-    ctl: AbortController,
+    signal: AbortSignal,
     onDelta: (delta: string) => void,
     onStepPersisted?: () => void,
   ): Promise<LlmStreamResult> =>
@@ -273,10 +266,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       toolChoice,
       temperature: opts.temperature,
       // Built per turn so the repair holds THIS turn's signal. Reading the
-      // mutable `turnController` at repair time raced barge-in: nulled, the
+      // mutable turn state at repair time raced barge-in: settled, the
       // repair ran unsignalled (an orphaned billed call); replaced, it held
       // the NEXT turn's signal.
-      repairToolCall: createToolCallRepair(opts.llm, log, () => ctl.signal),
+      repairToolCall: createToolCallRepair(opts.llm, log, () => signal),
       maxSteps,
       holdPhrase,
       // An open speech edge means an utterance is in progress (0 when not).
@@ -286,7 +279,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       emitError,
       log,
       sid: opts.sid,
-      ctl,
+      signal,
       onDelta,
       onStepPersisted,
     });
@@ -306,34 +299,34 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
    */
   async function runReply(
     idPrefix: string,
-    body: (ctl: AbortController) => Promise<boolean /* spoke */>,
+    body: (signal: AbortSignal) => Promise<boolean /* spoke */>,
   ): Promise<void> {
     callbacks.onReplyStarted(`${idPrefix}-${++nextReplyId}`);
 
     const ctl = new AbortController();
-    // stop()/terminate() aborts only the turnController of the moment; link
+    // stop()/terminate() aborts only the turn of the moment; combine with
     // the session signal so a turn that starts later still dies with the
-    // session instead of running against closed providers.
-    const unlink = linkAbort(sessionAbort.signal, ctl);
-    turnController = ctl;
-    turnSpoke = false;
+    // session instead of running against closed providers. AbortSignal.any
+    // holds its sources weakly, so a settled turn leaves no listener on the
+    // session-lifetime signal.
+    const signal = AbortSignal.any([sessionAbort.signal, ctl.signal]);
+    turns.begin(ctl);
     replyTail.reset();
 
     try {
-      const spoke = await body(ctl);
-      if (spoke && !ctl.signal.aborted) await drainTts(ctl.signal);
-      if (!ctl.signal.aborted) callbacks.onReplyDone();
+      const spoke = await body(signal);
+      if (spoke && !signal.aborted) await drainTts(signal);
+      if (!signal.aborted) callbacks.onReplyDone();
     } finally {
-      unlink();
-      // Clear the controller unless a newer turn replaced it.
-      if (turnController === ctl) turnController = null;
+      // Return to idle unless a newer turn already replaced this one.
+      turns.settle(ctl);
       // Aborted turns skip the re-arm: onSttPartial / cancelReply handle those.
-      if (!ctl.signal.aborted) nudger.arm();
+      if (!signal.aborted) nudger.arm();
     }
   }
 
   function runTurn(userText: string): Promise<void> {
-    return runReply("pipeline", async (ctl) => {
+    return runReply("pipeline", async (signal) => {
       // reset() bumps this before clearing history — the persistence below
       // runs asynchronously after the abort and must not write the
       // interrupted tail into (or emit a transcript over) a fresh conversation.
@@ -347,11 +340,11 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       const onDelta = (delta: string): void => {
         accumulated += delta;
       };
-      const { messages: responseMessages, failed } = await consumeLlmStream(ctl, onDelta, () => {
+      const { messages: responseMessages, failed } = await consumeLlmStream(signal, onDelta, () => {
         persistedLen = accumulated.length;
       });
 
-      if (ctl.signal.aborted) {
+      if (signal.aborted) {
         outcome.persistBargeIn({
           historyEpoch,
           accumulated,
@@ -428,7 +421,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       recovery.clear();
       speechEdges.reset();
       sessionAbort.abort();
-      turnController?.abort();
+      turns.abortCurrent();
       providers.unsubscribe();
       // Let an in-flight start() settle after the abort so any provider that
       // opened mid-connect is adopted-then-closed (openSide) before we close

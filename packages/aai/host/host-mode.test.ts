@@ -2,6 +2,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import type { ToolSchema } from "../sdk/_internal-types.ts";
+import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientEvent } from "../sdk/protocol.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeConfig, makeLogger, silentLogger } from "./_test-utils.ts";
@@ -375,7 +376,7 @@ describe("startHostSession (deferred host handshake)", () => {
 
     let core: ReturnType<typeof createSessionCore> | undefined;
     wireSessionSocket(ws as unknown as SessionWebSocket, {
-      sessions: new Map(),
+      sessions: createOwnedMap(),
       logger,
       readyConfig: { audioFormat: "pcm16", sampleRate: 16_000, ttsSampleRate: 24_000 },
       createSession: (_sid, client) => {

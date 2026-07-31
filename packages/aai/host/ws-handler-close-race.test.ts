@@ -3,6 +3,7 @@
 // (Lives outside ws-handler.test.ts, which is at its file-length ceiling.)
 
 import { describe, expect, test, vi } from "vitest";
+import { createOwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger } from "./_test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -21,7 +22,7 @@ describe("wireSessionSocket — close during start()", () => {
     const startGate = Promise.withResolvers<void>();
     const core = makeMockCore({ start: vi.fn(() => startGate.promise) });
     const ws = openSocket();
-    const sessions = new Map<string, SessionCore>();
+    const sessions = createOwnedMap<string, SessionCore>();
 
     wireSessionSocket(ws, {
       sessions,
@@ -52,7 +53,7 @@ describe("wireSessionSocket — close during start()", () => {
     const onSessionEnd = vi.fn();
 
     wireSessionSocket(ws, {
-      sessions: new Map<string, SessionCore>(),
+      sessions: createOwnedMap<string, SessionCore>(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,
@@ -73,7 +74,7 @@ describe("wireSessionSocket — close during start()", () => {
     const ws = openSocket();
 
     wireSessionSocket(ws, {
-      sessions: new Map<string, SessionCore>(),
+      sessions: createOwnedMap<string, SessionCore>(),
       createSession: () => core,
       readyConfig: defaultConfig,
       logger: silentLogger,

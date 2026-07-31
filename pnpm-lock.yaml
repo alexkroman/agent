@@ -213,6 +213,9 @@ importers:
       p-debounce:
         specifier: ^5.1.0
         version: 5.1.0
+      p-timeout:
+        specifier: ^7.0.1
+        version: 7.0.1
       vite:
         specifier: ^8.1.5
         version: 8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)
@@ -295,6 +298,9 @@ importers:
       p-retry:
         specifier: ^8.0.0
         version: 8.0.0
+      p-timeout:
+        specifier: ^7.0.1
+        version: 7.0.1
       picomatch:
         specifier: ^4.0.5
         version: 4.0.5

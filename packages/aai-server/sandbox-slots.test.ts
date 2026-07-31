@@ -33,7 +33,7 @@ describe("createSlotCache", () => {
   it("stores and retrieves a slot", () => {
     const cache = createSlotCache();
     const slot = makeSlot("my-agent");
-    cache.set("my-agent", slot);
+    cache.claim("my-agent", slot);
     expect(cache.get("my-agent")).toBe(slot);
   });
 });

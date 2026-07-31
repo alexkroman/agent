@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test, vi } from "vitest";
+import { createOwnedMap, type OwnedMap } from "../sdk/owned-map.ts";
 import { MockWebSocket } from "./_mock-ws.ts";
 import { makeMockCore, silentLogger } from "./_test-utils.ts";
 import type { SessionCore } from "./session-core.ts";
@@ -17,8 +18,8 @@ function makeOpenWs(): MockWebSocket {
 function wire(
   ws: MockWebSocket,
   core: SessionCore,
-  sessions: Map<string, SessionCore> = new Map(),
-): Map<string, SessionCore> {
+  sessions: OwnedMap<string, SessionCore> = createOwnedMap(),
+): OwnedMap<string, SessionCore> {
   wireSessionSocket(ws, {
     sessions,
     createSession: () => core,

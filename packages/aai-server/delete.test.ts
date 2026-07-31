@@ -72,7 +72,7 @@ test("delete shuts down running sandbox", async () => {
   await deployAgent(fetch);
 
   const shutdown = vi.fn().mockResolvedValue(undefined);
-  slots.set("my-agent", { ...makeSlot({ slug: "my-agent" }), sandbox: { shutdown } as never });
+  slots.claim("my-agent", { ...makeSlot({ slug: "my-agent" }), sandbox: { shutdown } as never });
 
   const resp = await fetch("/my-agent", {
     method: "DELETE",
@@ -89,7 +89,7 @@ test("delete succeeds even if sandbox shutdown fails", async () => {
   await deployAgent(fetch);
 
   const shutdown = vi.fn().mockRejectedValue(new Error("shutdown failed"));
-  slots.set("my-agent", { ...makeSlot({ slug: "my-agent" }), sandbox: { shutdown } as never });
+  slots.claim("my-agent", { ...makeSlot({ slug: "my-agent" }), sandbox: { shutdown } as never });
 
   const resp = await fetch("/my-agent", {
     method: "DELETE",

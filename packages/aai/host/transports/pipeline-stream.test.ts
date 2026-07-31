@@ -188,7 +188,7 @@ describe("LLM stream error reporting", () => {
       emitError: () => undefined,
       log,
       sid: "sid-3",
-      ctl: new AbortController(),
+      signal: new AbortController().signal,
       onDelta: () => undefined,
     });
     expect(consoleError).not.toHaveBeenCalled();
@@ -217,7 +217,7 @@ describe("LLM stream error reporting", () => {
       emitError: () => undefined,
       log: silentLogger,
       sid: "sid-4",
-      ctl: new AbortController(),
+      signal: new AbortController().signal,
       onDelta: () => undefined,
     });
     expect(result.failed).toBe(true);
@@ -238,7 +238,7 @@ describe("LLM stream error reporting", () => {
       emitError: () => undefined,
       log: silentLogger,
       sid: "sid-5",
-      ctl: new AbortController(),
+      signal: new AbortController().signal,
       onDelta: () => undefined,
     });
     expect(result.failed).toBe(false);
@@ -263,7 +263,7 @@ describe("LLM stream error reporting", () => {
       emitError: () => undefined,
       log: silentLogger,
       sid: "sid-6",
-      ctl,
+      signal: ctl.signal,
       onDelta: () => undefined,
     });
     expect(result.failed).toBe(false);
