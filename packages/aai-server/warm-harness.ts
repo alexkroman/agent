@@ -14,6 +14,7 @@
  * host never redials.
  */
 
+import { createServer } from "node:net";
 import { errorMessage } from "@alexkroman1/aai";
 import { WebSocket } from "ws";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
@@ -25,6 +26,28 @@ const GUEST_DIAL_TIMEOUT_MS = 30_000;
 
 /** Delay between dial attempts while the harness server boots. */
 const GUEST_DIAL_RETRY_MS = 250;
+
+/**
+ * Ask the OS for a free loopback port, used by the two host-local backends
+ * (Apple containers publish to it, the subprocess harness binds it directly).
+ * Racy by nature — the port is released before the guest claims it — which is
+ * fine on a single-user dev machine and is why no production backend uses it.
+ */
+export function getFreePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (address === null || typeof address === "string") {
+        server.close();
+        reject(new Error("could not allocate a loopback port"));
+        return;
+      }
+      server.close(() => resolve(address.port));
+    });
+  });
+}
 
 /** What every backend needs from its running guest process. */
 export type GuestProcLike = {

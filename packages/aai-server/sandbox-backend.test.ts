@@ -1,0 +1,62 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Tests for sandbox backend selection: the SANDBOX_BACKEND override, the
+ * production guarantee, and the local-dev default.
+ */
+
+import { describe, expect, it } from "vitest";
+import { describeSandboxBackend, resolveSandboxBackend } from "./sandbox-backend.ts";
+
+/** Env shape where local dev is on (no SUPABASE_S3_ENDPOINT). */
+const DEV_ENV: NodeJS.ProcessEnv = {};
+const PROD_ENV: NodeJS.ProcessEnv = { SUPABASE_S3_ENDPOINT: "https://s3.example" };
+
+describe("resolveSandboxBackend", () => {
+  it("honors an explicit SANDBOX_BACKEND override for every backend", () => {
+    for (const backend of ["modal", "apple-container", "subprocess"] as const) {
+      expect(resolveSandboxBackend({ ...DEV_ENV, SANDBOX_BACKEND: backend })).toBe(backend);
+    }
+  });
+
+  it("lets the override win over the production default", () => {
+    expect(resolveSandboxBackend({ ...PROD_ENV, SANDBOX_BACKEND: "apple-container" })).toBe(
+      "apple-container",
+    );
+  });
+
+  it("normalizes SANDBOX_BACKEND whitespace and case", () => {
+    expect(resolveSandboxBackend({ SANDBOX_BACKEND: " Apple-Container " })).toBe("apple-container");
+  });
+
+  it("throws on an unknown SANDBOX_BACKEND instead of silently picking a default", () => {
+    expect(() => resolveSandboxBackend({ SANDBOX_BACKEND: "docker" })).toThrow(
+      /Unknown SANDBOX_BACKEND "docker"/,
+    );
+  });
+
+  it("defaults local dev to the subprocess backend", () => {
+    // The regression this replaced: with no Modal credentials and no
+    // `container` CLI, selection used to land on Modal and the developer's
+    // first publish died on a 30s dial timeout naming a backend they never
+    // chose. Local dev must resolve to something that always works.
+    expect(resolveSandboxBackend(DEV_ENV)).toBe("subprocess");
+  });
+
+  it("never selects a host-local backend outside local dev", () => {
+    expect(resolveSandboxBackend(PROD_ENV)).toBe("modal");
+  });
+
+  it("treats AAI_LOCAL_DEV=1 as local dev even with storage configured", () => {
+    expect(resolveSandboxBackend({ ...PROD_ENV, AAI_LOCAL_DEV: "1" })).toBe("subprocess");
+  });
+});
+
+describe("describeSandboxBackend", () => {
+  it("explains every branch so the boot log can name a cause", () => {
+    expect(describeSandboxBackend(DEV_ENV).reason).toBe("local dev default");
+    expect(describeSandboxBackend(PROD_ENV).reason).toBe("not local dev");
+    expect(describeSandboxBackend({ SANDBOX_BACKEND: "modal" }).reason).toBe(
+      "SANDBOX_BACKEND override",
+    );
+  });
+});

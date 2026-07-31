@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Sandbox implementation backed by Modal Sandboxes (see modal-sandbox.ts) in
- * production, and by local Apple containers in developer mode on macOS (see
- * apple-container-sandbox.ts, which also owns the backend-selection policy).
+ * production, and in local dev by a plain child process (subprocess-sandbox.ts,
+ * the default) or local Apple containers (apple-container-sandbox.ts, opt-in).
+ * `sandbox-backend.ts` owns the selection policy.
  *
  * Provides the `SandboxHandle` abstraction that `sandbox.ts` delegates to.
  * The guest runs the COMPLETE agent runtime; this control channel (JSON-RPC
@@ -17,11 +18,13 @@ import { performance } from "node:perf_hooks";
 import type { Db } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
-import { resolveSandboxBackend, spawnAppleContainerWarm } from "./apple-container-sandbox.ts";
+import { spawnAppleContainerWarm } from "./apple-container-sandbox.ts";
 import { spawnModalWarm } from "./modal-sandbox.ts";
 import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
+import { resolveSandboxBackend } from "./sandbox-backend.ts";
 import { registerGuestRpcHandlers } from "./sandbox-guest-rpc.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
+import { spawnSubprocessWarm } from "./subprocess-sandbox.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -128,12 +131,14 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
  * a running guest process and a dialed RPC channel, but no listeners
  * attached and no bundle loaded.
  *
- * Single source of the backend policy, used by both the sandbox pool and
- * on-demand sandbox creation: `resolveSandboxBackend` picks Apple containers
- * in developer mode on macOS (or under an explicit `SANDBOX_BACKEND`
- * override) and Modal everywhere else. Either way spawning fails loudly when
- * the backend's prerequisites (the `container` CLI, Modal credentials) are
- * absent — there is no fallback between backends.
+ * Single dispatch point for the backend policy, used by both the sandbox pool
+ * and on-demand sandbox creation. `resolveSandboxBackend` (see
+ * `sandbox-backend.ts`) picks Modal in production, Apple containers in
+ * developer mode on macOS, and the isolation-free `subprocess` backend as the
+ * local-dev floor. Spawning fails loudly when the chosen backend's
+ * prerequisites are absent — there is no fallback *between* backends at spawn
+ * time, only at selection time, and selection can never reach `subprocess`
+ * outside local dev.
  *
  * `slug` only affects the sandbox's observability tag (pool spawns default
  * to "pool"); the security boundary is the backend's container isolation.
@@ -142,10 +147,14 @@ export async function spawnWarmHarness(opts: {
   harnessPath: string;
   slug?: string;
 }): Promise<WarmHarness> {
-  if (resolveSandboxBackend(process.env) === "apple-container") {
-    return spawnAppleContainerWarm(opts);
+  switch (resolveSandboxBackend(process.env)) {
+    case "apple-container":
+      return spawnAppleContainerWarm(opts);
+    case "subprocess":
+      return spawnSubprocessWarm(opts);
+    default:
+      return spawnModalWarm(opts);
   }
-  return spawnModalWarm(opts);
 }
 
 // ── Bundle inspection ────────────────────────────────────────────────────────

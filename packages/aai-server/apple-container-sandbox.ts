@@ -11,12 +11,10 @@
  * over the same `/ws` control channel, serving sessions on the same
  * `/websocket` endpoint.
  *
- * Backend selection lives in {@link resolveSandboxBackend}: an explicit
- * `SANDBOX_BACKEND` (`modal` | `apple-container`) always wins; unset, local
- * dev (see `isLocalDev`) on darwin auto-selects this backend when the
- * `container` CLI is on PATH, and everything else stays on Modal. Production
- * is never auto-switched — `SUPABASE_S3_ENDPOINT` being set makes
- * `isLocalDev` false regardless of platform.
+ * Backend selection lives in `sandbox-backend.ts`, which calls this module's
+ * {@link isAppleContainerCliAvailable} probe: local dev on darwin picks this
+ * backend when the `container` CLI is on PATH, falls back to the isolation-free
+ * `subprocess` backend when it is not, and never auto-switches production.
  *
  * Differences from the Modal backend, all acceptable because this only runs
  * on a single-user dev machine:
@@ -34,65 +32,34 @@
 import { spawn, spawnSync } from "node:child_process";
 import { randomBytes } from "node:crypto";
 import { copyFile, mkdtemp, rm } from "node:fs/promises";
-import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { Readable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
-import { isLocalDev } from "./_boot.ts";
 import { debug } from "./_debug-log.ts";
 import { GUEST_PORT } from "./modal-sandbox.ts";
 import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
-import { type DialGuest, dialGuest, type GuestProcLike, warmFromGuest } from "./warm-harness.ts";
+import {
+  type DialGuest,
+  dialGuest,
+  type GuestProcLike,
+  getFreePort,
+  warmFromGuest,
+} from "./warm-harness.ts";
 
-// ── Backend selection ────────────────────────────────────────────────────────
+// ── CLI probe ────────────────────────────────────────────────────────────────
 
-export type SandboxBackend = "modal" | "apple-container";
-
-/** Injectable host probe so selection is unit-testable off-macOS. */
-export type BackendProbe = {
-  platform: NodeJS.Platform;
-  hasContainerCli(): boolean;
-};
-
-// Probing PATH costs a subprocess; the answer is stable per process.
+// Probing PATH costs a subprocess; the answer is stable per process. Note the
+// consequence for `sandbox-backend.ts`: installing the CLI under a running
+// server does not change the selected backend until the server restarts.
 let cliMemo: boolean | null = null;
 
 /** True when Apple's `container` CLI resolves on PATH and answers --version. */
 export function isAppleContainerCliAvailable(): boolean {
   cliMemo ??= spawnSync("container", ["--version"], { stdio: "ignore" }).status === 0;
   return cliMemo;
-}
-
-const defaultProbe: BackendProbe = {
-  platform: process.platform,
-  hasContainerCli: isAppleContainerCliAvailable,
-};
-
-/**
- * Which backend guest sandboxes run on. `SANDBOX_BACKEND` is the explicit
- * operator override and wins outright (an unknown value throws — silently
- * falling back to Modal would look exactly like the override not working).
- * Unset, developer mode on macOS with the `container` CLI installed selects
- * Apple containers; everything else — production above all — stays on Modal.
- */
-export function resolveSandboxBackend(
-  env: NodeJS.ProcessEnv,
-  probe: BackendProbe = defaultProbe,
-): SandboxBackend {
-  const raw = env.SANDBOX_BACKEND?.trim().toLowerCase();
-  if (raw === "apple-container") return "apple-container";
-  if (raw === "modal") return "modal";
-  if (raw) {
-    throw new Error(
-      `Unknown SANDBOX_BACKEND ${JSON.stringify(raw)} — expected "modal" or "apple-container"`,
-    );
-  }
-  return isLocalDev(env) && probe.platform === "darwin" && probe.hasContainerCli()
-    ? "apple-container"
-    : "modal";
 }
 
 // ── Configuration ────────────────────────────────────────────────────────────
@@ -205,23 +172,6 @@ function realContext(binary = "container"): AppleContainerSpawnContext {
 
 // ── Spawning ─────────────────────────────────────────────────────────────────
 
-/** Ask the OS for a free loopback port (racy by nature; fine for dev). */
-function getFreePort(): Promise<number> {
-  return new Promise((resolve, reject) => {
-    const server = createServer();
-    server.once("error", reject);
-    server.listen(0, "127.0.0.1", () => {
-      const address = server.address();
-      if (address === null || typeof address === "string") {
-        server.close();
-        reject(new Error("could not allocate a loopback port"));
-        return;
-      }
-      server.close(() => resolve(address.port));
-    });
-  });
-}
-
 /**
  * Spawn a warm Node harness in a local Apple container and dial its
  * WebSocket. Mirrors `spawnModalWarm`: the returned WarmHarness has a
@@ -297,7 +247,6 @@ export async function spawnAppleContainerWarm(
 
 /** @internal Exposed for unit tests only. */
 export const _internals = {
-  getFreePort,
   realContext,
   resetCliProbe(): void {
     cliMemo = null;

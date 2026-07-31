@@ -281,6 +281,14 @@ function main(): void {
     process.exit(1);
   }
   const port = Number(process.env.AAI_GUEST_PORT ?? "8080");
+  // Every containerized backend (Modal, Apple containers) gives the guest its
+  // own network namespace, so binding every interface reaches no further than
+  // the container. The subprocess backend has no such wrapper: there the
+  // harness shares the dev machine's interfaces, and `/websocket` is auth-free
+  // by design (parity with the platform's public agent endpoint), so it must
+  // bind loopback instead. Default stays 0.0.0.0 — a container that cannot be
+  // reached on its published port is the more damaging failure.
+  const host = process.env.AAI_GUEST_HOST ?? "0.0.0.0";
 
   const state: HarnessState = {
     agent: null,
@@ -374,8 +382,8 @@ function main(): void {
   }, HARNESS_ORPHAN_POLL_MS);
   orphanCheck.unref?.();
 
-  void server.listen(port, "0.0.0.0").then(() => {
-    console.error(`harness listening on :${port}`);
+  void server.listen(port, host).then(() => {
+    console.error(`harness listening on ${host}:${port}`);
   });
 }
 
