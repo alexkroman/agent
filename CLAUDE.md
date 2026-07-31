@@ -330,8 +330,12 @@ voice agents without the CLI:
   the salted argon2 ownership hashes, it must be stable so a browser session
   can find its projects again.
 - **Chat** (`POST /studio/chat`) runs one agent turn with file tools
-  (list/read/write/edit/delete/grep) plus `test_agent`, streamed as the AI SDK **UI
-  message stream** (SSE) that the client's `useChat` consumes directly.
+  (list/read/write/edit/delete/grep — `edit_file` takes `replaceAll` for
+  cross-file renames) plus `test_agent` and `todo_write` (a stateless
+  Claude-Code-style task list: each call replaces the whole list, and the
+  rendered result riding in message history is the persistence), streamed
+  as the AI SDK **UI message stream** (SSE) that the client's `useChat`
+  consumes directly.
   The system prompt embeds the same `aai-templates/scaffold/CLAUDE.md` the
   CLI ships to user projects (`studio-prompt.ts`) plus studio-specific
   overrides. Conversations persist per project in

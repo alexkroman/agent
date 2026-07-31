@@ -42,6 +42,34 @@ import { createWorkspaceSession, type WorkspaceSession } from "./studio-workspac
 
 const MAX_CHAT_STEPS = 16;
 
+/**
+ * One todo_write list item. The tool is a stateless echo — the rendered list
+ * rides back to the model as the tool result (and to the user as a tool row),
+ * and the conversation history is the persistence; each call replaces the
+ * whole list. Modeled on the todo tools coding agents converge on
+ * (Claude Code's TodoWrite, opencode's todowrite).
+ */
+const TodoItemSchema = z.object({
+  content: z.string().describe("The step, specific and actionable"),
+  status: z.enum(["pending", "in_progress", "completed", "cancelled"]),
+});
+
+const TODO_MARKS = {
+  pending: "[ ]",
+  in_progress: "[>]",
+  completed: "[x]",
+  cancelled: "[-]",
+} as const;
+
+function renderTodos(todos: z.infer<typeof TodoItemSchema>[]): string {
+  if (todos.length === 0) return "(empty todo list)";
+  const remaining = todos.filter(
+    (t) => t.status === "pending" || t.status === "in_progress",
+  ).length;
+  const lines = todos.map((t) => `${TODO_MARKS[t.status]} ${t.content}`);
+  return `${lines.join("\n")}\n\n${remaining} remaining`;
+}
+
 export type StudioChatDeps = {
   workspaces: WorkspaceStore;
   scope: string;
@@ -241,20 +269,29 @@ export function createStudioTools(
         "write_file for changes to an existing file — write_file rewrites the " +
         "whole thing, which is slow and risks dropping code you meant to keep. " +
         "oldText must appear exactly once; include surrounding lines if it " +
-        "would otherwise be ambiguous. Returns a diff of what changed.",
+        "would otherwise be ambiguous, or set replaceAll to change every " +
+        "occurrence (renaming an identifier across a file). Returns a diff " +
+        "of what changed.",
       inputSchema: z.object({
         path: z.string().describe("Workspace-relative path"),
         oldText: z.string().describe("Exact text to replace; must be unique in the file"),
         newText: z.string().describe("Replacement text"),
+        replaceAll: z
+          .boolean()
+          .optional()
+          .describe("Replace every occurrence of oldText instead of requiring a unique match"),
       }),
-      execute: ({ path, oldText, newText }) =>
+      execute: ({ path, oldText, newText, replaceAll }) =>
         withFiles((files) => {
           const current = files[path];
           if (current === undefined) return `Error: no such file: ${path}`;
           try {
-            const { content, diff } = applyEdit(path, current, oldText, newText);
+            const { content, diff, replacements } = applyEdit(path, current, oldText, newText, {
+              replaceAll,
+            });
             files[path] = content;
-            return `Edited ${path}\n\n${diff}`;
+            const label = replacements === 1 ? "" : ` (${replacements} replacements)`;
+            return `Edited ${path}${label}\n\n${diff}`;
           } catch (err) {
             // A failed match is the agent's cue to re-read and retry with more
             // context, so surface the reason rather than throwing.
@@ -286,6 +323,22 @@ export function createStudioTools(
           delete files[path];
           return `Deleted ${path}`;
         }),
+    }),
+    todo_write: tool({
+      description:
+        "Replace your todo list for the current request. Use it for " +
+        "multi-step work — a request naming three or more capabilities, or " +
+        "an edit plus a redesign — so no step gets dropped: write the steps " +
+        "up front, then resend the full list as statuses change. Keep " +
+        "exactly one item in_progress at a time, and mark an item completed " +
+        "only once the work is actually done (verified, not intended). Skip " +
+        "it for single-step changes and questions.",
+      inputSchema: z.object({
+        todos: z
+          .array(TodoItemSchema)
+          .describe("The complete updated todo list; replaces the previous list"),
+      }),
+      execute: async ({ todos }) => renderTodos(todos),
     }),
     test_agent: tool({
       description:
