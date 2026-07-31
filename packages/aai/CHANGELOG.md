@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 3.1.0
+
+### Minor Changes
+
+- 1749ca4: Add OpenRouter LLM provider: openrouter({ model }) in @alexkroman1/aai/llm routes through OpenRouter's OpenAI-compatible endpoint using OPENROUTER_API_KEY, giving pipeline agents access to hundreds of models addressed as creator/model.
+
 ## 3.0.0
 
 ### Major Changes

@@ -1,5 +1,20 @@
 # @alexkroman1/aai-server
 
+## 3.0.1
+
+### Patch Changes
+
+- 369f950: Ship a favicon.ico on the studio and voice agent pages: the AssemblyAI mark is bundled with the studio client and the default agent client, served at /favicon.ico (studio) and /:slug/favicon.ico (agents, with a custom client's own favicon taking precedence).
+- 76b6f60: Default the studio coding agent to a cascaded pipeline (AssemblyAI STT, gpt-5.5 on the LLM Gateway, AssemblyAI TTS); the S2S voice agent API is now used only when the user asks for it. Codegen evals updated to grade the new default.
+- 7d6b627: Pin Modal guest sandboxes to the platform server's region. Unpinned, Modal placed the web server in us-east-1 (AWS) and guest sandboxes in uk-london-1 (OCI), so every host↔guest RPC (ctx.db, Vector, guest fetch proxy, bundle/load) paid a transatlantic RTT inside voice turns. `modal-sandbox.ts` now passes `regions` to `sandboxes.create` from a new `MODAL_SANDBOX_REGION` env var (comma-separated for multiple regions; unset means unpinned, so local dev is unchanged), and `modal_deploy.py` pins the web server and studio_build functions to a single `REGION` constant and exports it as `MODAL_SANDBOX_REGION` — host and guests are co-located by construction.
+- Updated dependencies [369f950]
+- Updated dependencies [76b6f60]
+- Updated dependencies [1749ca4]
+  - @alexkroman1/aai-ui@3.1.0
+  - aai-studio-client@0.1.10
+  - @alexkroman1/aai@3.1.0
+  - @alexkroman1/aai-cli@3.1.0
+
 ## 3.0.0
 
 ### Major Changes
