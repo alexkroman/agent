@@ -8,6 +8,37 @@ import remarkGfm from "remark-gfm";
 import { useTheme } from "../context.ts";
 import { SURFACE_TINT, TEXT_MUTED } from "./_colors.ts";
 
+const BARE_ORDERED_MARKER = /^(\s*)(\d{1,9})([.)])\s*$/;
+const BARE_BULLET_MARKER = /^(\s*)([-*+])\s*$/;
+const CODE_FENCE = /^\s*(```|~~~)/;
+
+/**
+ * Escape list markers that have no content, so a terse reply renders as
+ * text instead of vanishing. CommonMark parses a line that is only `42.`
+ * as an *empty* ordered list starting at 42 — a voice agent answering
+ * "what's 6 times 7?" with "42." would otherwise display nothing (and a
+ * streaming transcript briefly ending on `1.` would blank the row).
+ * Lines inside fenced code blocks are left alone.
+ */
+function escapeBareListMarkers(text: string): string {
+  let inFence = false;
+  return text
+    .split("\n")
+    .map((line) => {
+      if (CODE_FENCE.test(line)) {
+        inFence = !inFence;
+        return line;
+      }
+      if (inFence) return line;
+      const ordered = BARE_ORDERED_MARKER.exec(line);
+      if (ordered) return `${ordered[1]}${ordered[2]}\\${ordered[3]}`;
+      const bullet = BARE_BULLET_MARKER.exec(line);
+      if (bullet) return `${bullet[1]}\\${bullet[2]}`;
+      return line;
+    })
+    .join("\n");
+}
+
 /**
  * Agent prose, rendered as Markdown.
  *
@@ -102,7 +133,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }): Reac
         ),
       }}
     >
-      {text}
+      {escapeBareListMarkers(text)}
     </ReactMarkdown>
   );
 });

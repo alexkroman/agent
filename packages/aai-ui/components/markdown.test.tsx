@@ -73,4 +73,19 @@ describe("Markdown", () => {
   test("leaves plain prose alone", () => {
     expect(render("Just a sentence.")).toContain("Just a sentence.");
   });
+
+  test("a reply that is only a list marker stays visible as text", () => {
+    // CommonMark parses a bare "42." as an empty ordered list, which would
+    // make a terse voice reply display as nothing.
+    expect(render("42.")).toContain("42.");
+    expect(render("42.")).not.toContain("<ol");
+    expect(render("- ")).toContain("-");
+    expect(render("- ")).not.toContain("<ul");
+  });
+
+  test("real lists still render as lists", () => {
+    expect(render("1. first\n2. second")).toContain("<ol");
+    // A bare marker line inside a fenced block is untouched.
+    expect(render("```\n42.\n```")).toContain("42.");
+  });
 });
