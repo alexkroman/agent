@@ -5,15 +5,22 @@
  * still resolve `aai-guest/harness` eagerly in createSandbox) never die on
  * "Guest harness not built".
  *
- * Dual-use:
+ * Callers:
  *   - vitest globalSetup (default export) — wired into the aai-server test
  *     project, runs once per vitest invocation.
+ *   - `predev` in aai-server and aai-studio-server — dev servers spawn
+ *     subprocess-backend sandboxes from `dist/harness.mjs`, so a dev boot
+ *     always starts with a fresh harness.
+ *   - `predeploy:modal` in both server packages — the Modal image rebuilds
+ *     the harness remotely, so this is a fail-fast: catch a guest package
+ *     that doesn't build before paying for the remote image build.
  *   - CLI: `node scripts/ensure-guest-harness.mjs`
  *
- * Staleness tracks the aai-guest package's own sources only. The harness
- * also bundles the aai SDK, so an SDK-only edit does NOT trigger a rebuild
- * here — `pnpm --filter aai-guest build` (or the turbo build graph) stays
- * the authority when working on the SDK↔harness seam.
+ * Staleness tracks the sources of aai-guest AND the aai SDK it bundles.
+ * Rebuilds go through turbo so `@alexkroman1/aai` builds first: the guest
+ * bundler resolves the SDK via its dist exports, and without a built dist
+ * the SDK imports are silently left external — a harness that "builds"
+ * but crashes on import inside the sandbox, which has no node_modules.
  */
 
 import { execFileSync } from "node:child_process";
@@ -23,16 +30,20 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 const repoRoot = fileURLToPath(new URL("..", import.meta.url));
 const guestDir = join(repoRoot, "packages", "aai-guest");
+const sdkDir = join(repoRoot, "packages", "aai");
 const harnessPath = join(guestDir, "dist", "harness.mjs");
 
 function newestSourceMtime(dir) {
   let newest = 0;
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === "node_modules" || entry.name === "dist") continue;
+    // `.turbo/` logs and `*.tsbuildinfo` are build BYPRODUCTS written after
+    // the harness — counting them as sources makes every run a "rebuild".
+    if (entry.name === "node_modules" || entry.name === "dist" || entry.name.startsWith("."))
+      continue;
     const path = join(dir, entry.name);
     if (entry.isDirectory()) {
       newest = Math.max(newest, newestSourceMtime(path));
-    } else if (!entry.name.endsWith(".test.ts")) {
+    } else if (!entry.name.endsWith(".test.ts") && !entry.name.endsWith(".tsbuildinfo")) {
       newest = Math.max(newest, statSync(path).mtimeMs);
     }
   }
@@ -43,13 +54,17 @@ export function ensureGuestHarness() {
   // The caller points at a harness of their own — trust it.
   if (process.env.GUEST_HARNESS_PATH) return;
   const builtAt = existsSync(harnessPath) ? statSync(harnessPath).mtimeMs : 0;
-  if (builtAt > newestSourceMtime(guestDir)) return;
+  if (builtAt > Math.max(newestSourceMtime(guestDir), newestSourceMtime(sdkDir))) return;
   console.info(
     builtAt === 0
       ? "Guest harness not built — building aai-guest..."
-      : "Guest harness older than aai-guest sources — rebuilding...",
+      : "Guest harness older than aai-guest/aai sources — rebuilding...",
   );
-  execFileSync("pnpm", ["--filter", "aai-guest", "build"], { cwd: repoRoot, stdio: "inherit" });
+  // Through turbo so the aai SDK's dist builds first (see module doc).
+  execFileSync("pnpm", ["exec", "turbo", "run", "build", "--filter", "aai-guest"], {
+    cwd: repoRoot,
+    stdio: "inherit",
+  });
 }
 
 // vitest globalSetup entry.
