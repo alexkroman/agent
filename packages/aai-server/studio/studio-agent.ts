@@ -32,7 +32,6 @@ import { applyEdit, StudioEditError } from "./studio-edit.ts";
 import { StudioBuildError } from "./studio-errors.ts";
 import { grepWorkspace, StudioGrepError } from "./studio-grep.ts";
 import { studioModel } from "./studio-llm.ts";
-import { type McpSession, openMcpTools } from "./studio-mcp.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
 import { withToolTimeouts } from "./studio-tool-timeout.ts";
@@ -64,15 +63,9 @@ export type StudioChatDeps = {
   /** Test injection seam. Defaults to the host-env selection. */
   model?: LanguageModel;
   /**
-   * Injectable for tests — defaults to the configured MCP servers. A promise
-   * is accepted so the route can start the connect early and hand it in;
-   * `runStudioChat` awaits it as late as possible (see below).
-   */
-  mcp?: McpSession | Promise<McpSession>;
-  /**
    * Client-abort signal (the HTTP request's). Lets streamText stop the LLM
    * call and in-flight tool executions promptly instead of leaving them to
-   * race the sandbox/MCP teardown.
+   * race the sandbox teardown.
    */
   abortSignal?: AbortSignal;
   /**
@@ -319,42 +312,33 @@ export function createStudioTools(
  * AI SDK UI message stream over SSE). The client resends the full UIMessage
  * history each turn, so the server stays stateless between requests.
  *
- * The session sandbox (if any tool provisioned one) and the MCP clients are
- * disposed when the stream settles — finish, error, and client abort all
- * funnel through `onFinish`/`onError` of the UI stream response.
+ * The session sandbox (if any tool provisioned one) is disposed when the
+ * stream settles — finish, error, and client abort all funnel through
+ * `onFinish`/`onError` of the UI stream response.
  */
 export async function runStudioChat(
   deps: StudioChatDeps,
   messages: UIMessage[],
 ): Promise<Response> {
-  // Started, not awaited: the MCP connect (never fails — an unreachable
-  // server yields no tools rather than an error) runs concurrently with
-  // prompt assembly below, and with the route's workspace fetch when the
-  // route handed in an already-started promise. `streamText` needs the tool
-  // set synchronously, so the await lands as late as possible instead of
-  // serializing ahead of the first token.
-  const mcpPromise = Promise.resolve(deps.mcp ?? openMcpTools());
   let disposeCalled = false;
   const disposeSandbox = () => {
     if (disposeCalled) return;
     disposeCalled = true;
     void deps.disposeSandbox?.();
-    void mcpPromise.then((mcp) => mcp.close());
   };
   try {
     const modelMessages = await convertToModelMessages(messages, {
       ignoreIncompleteToolCalls: true,
     });
-    const mcp = await mcpPromise;
     const result = streamText({
       model: deps.model ?? studioModel(),
       system: studioSystemPrompt(),
       messages: modelMessages,
-      // Studio tools last: neither an MCP server nor a web builtin may
-      // shadow write_file. Every tool gets a per-call deadline — a hung
-      // sandbox RPC or silent MCP server must cost one tool result, not
-      // the whole turn (the UI would shimmer forever).
-      tools: withToolTimeouts({ ...mcp.tools, ...createWebTools(), ...createStudioTools(deps) }),
+      // Studio tools last: a web builtin may never shadow write_file. Every
+      // tool gets a per-call deadline — a hung sandbox RPC or stalled web
+      // fetch must cost one tool result, not the whole turn (the UI would
+      // shimmer forever).
+      tools: withToolTimeouts({ ...createWebTools(), ...createStudioTools(deps) }),
       ...(deps.abortSignal && { abortSignal: deps.abortSignal }),
       stopWhen: stepCountIs(MAX_CHAT_STEPS),
       onFinish: disposeSandbox,

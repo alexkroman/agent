@@ -2,17 +2,16 @@
 /**
  * Per-call timeout for the coding agent's tools.
  *
- * A tool call that never settles — a sandbox RPC whose harness died, a docs
- * MCP server that accepted the request and went silent, a web fetch stuck in
- * a stalled body read — used to hang the whole chat turn: the UI shows the
- * tool row shimmering forever and the stream never finishes. Wrapping every
- * tool's `execute` in a deadline turns that hang into an ordinary tool-result
- * error the model can react to (and the UI renders as a completed call).
+ * A tool call that never settles — a sandbox RPC whose harness died, a web
+ * fetch stuck in a stalled body read — used to hang the whole chat turn: the
+ * UI shows the tool row shimmering forever and the stream never finishes.
+ * Wrapping every tool's `execute` in a deadline turns that hang into an
+ * ordinary tool-result error the model can react to (and the UI renders as
+ * a completed call).
  *
  * The timeout is a resolution race, not a cancellation: the underlying work
- * may keep running until the turn's teardown (`disposeSandbox` / MCP close)
- * kills its transport. That's acceptable — the point is the conversation
- * stays live.
+ * may keep running until the turn's teardown (`disposeSandbox`) kills its
+ * transport. That's acceptable — the point is the conversation stays live.
  */
 
 import type { Tool, ToolSet } from "ai";

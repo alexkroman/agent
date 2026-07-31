@@ -328,24 +328,12 @@ voice agents without the CLI:
   open via `GET /studio/projects/:project/chat`. Rows are capped at
   `MAX_STUDIO_CHAT_STORE_BYTES` (512 KB) by trimming whole messages from
   the front; project delete removes the chat row.
-- **Docs MCP** (`studio-mcp.ts`). The system prompt embeds a *snapshot* of
-  the scaffold guide, so anything outside it — a voice, a newly added
-  gateway model, a provider option — was previously a guess. The agent now
-  also gets AssemblyAI's docs MCP server
-  (`https://www.assemblyai.com/docs/mcp`, via `@ai-sdk/mcp`'s
-  `createMCPClient`) merged into its tool set. Points worth keeping:
-  - One client per chat turn, closed when the stream settles, alongside the
-    session sandbox. A turn is short; a shared long-lived client would be
-    another thing to health-check.
-  - **Failure is never fatal.** Connect and tool-listing are bounded at 5s
-    and every failure path degrades to "no MCP tools this turn" — a docs
-    server being down must cost a lookup, not the user's reply.
-  - Studio tools are merged *on top* of MCP tools, so a server can never
-    shadow `write_file`. `DENIED_TOOLS` additionally drops
-    `submit_feedback`, which the docs server advertises — a coding turn has
-    no business posting feedback as the user.
-  - `STUDIO_MCP_URLS` overrides the default list; setting it empty disables
-    MCP entirely.
+- **No MCP.** The studio's coding agent has no MCP integration (the docs
+  MCP server it once connected to was removed). The system prompt embeds a
+  *snapshot* of the scaffold guide; anything outside it — a voice, a newly
+  added gateway model, a provider option — the prompt tells the agent to
+  look up with `visit_webpage` (the AssemblyAI docs included) rather than
+  guess.
 - **Dev-mode key check.** `assertDevKeys` (`index.ts`) refuses to start a
   *local dev* server without `ASSEMBLYAI_API_KEY` and `BRAVE_API_KEY`. Both
   stay optional in production — the studio degrades (chat 503s, `web_search`
@@ -355,7 +343,7 @@ voice agents without the CLI:
 - **Every coding-agent tool runs under a per-call deadline**
   (`studio-tool-timeout.ts`, `STUDIO_TOOL_TIMEOUT_MS`, default 120s —
   generous because `test_agent` runs a full Vite build). A hung call (dead
-  sandbox RPC, silent MCP server, stalled web fetch) used to hang the whole
+  sandbox RPC, stalled web fetch) used to hang the whole
   turn with the client's tool row shimmering forever; the wrapper resolves
   it to an error tool result instead. It is a resolution race, not a
   cancellation — the abandoned work dies with the turn's teardown. The
@@ -363,7 +351,7 @@ voice agents without the CLI:
   (`chat.tsx`): while a turn streams, send becomes stop; `useChat().stop()`
   aborts the SSE fetch, the route's `c.req.raw.signal` fires, and
   `streamText` cancels the LLM call while `disposeSandbox` tears down the
-  sandbox and MCP clients. A failed sandbox provisioning is retried on the
+  sandbox. A failed sandbox provisioning is retried on the
   next tool call, not cached for the turn (`studio-routes.ts`).
 - **Web access** (`studio-web.ts`) exposes the SDK's own `visit_webpage`,
   `get_page_design`, and `web_search` builtins to the coding agent rather than reimplementing
@@ -1273,8 +1261,7 @@ Run with `pnpm --filter aai-server test:evals` (the e2e profile of
 `ANTHROPIC_API_KEY`, or `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL`), so
 `pnpm test` stays hermetic. For the sandbox judge, build the guest
 harness first (`pnpm --filter aai-server build`, or point
-`GUEST_HARNESS_PATH` at one). MCP is stubbed out so the eval measures the
-model + system prompt + studio tools, never the docs server. An errored
+`GUEST_HARNESS_PATH` at one). An errored
 agent turn fails the run loudly — judging the leftover starter workspace
 (which builds fine) would be a false pass.
 

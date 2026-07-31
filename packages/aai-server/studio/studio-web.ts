@@ -14,9 +14,9 @@
  * Turndown for — HTML to clean text, with byte and character caps and a
  * `truncated` flag.
  *
- * MCP covers AssemblyAI's own docs (see `studio-mcp.ts`); this covers
- * everything else — a third-party API the agent is wiring a tool up against,
- * a page the user pasted.
+ * This covers everything the agent needs to read on the web — the AssemblyAI
+ * docs, a third-party API the agent is wiring a tool up against, a page the
+ * user pasted.
  */
 
 import type { ToolContext, ToolDef } from "@alexkroman1/aai";

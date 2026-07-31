@@ -157,8 +157,8 @@ ${SDK_SUBPATH_RULE}
   listening, thinking, and speaking end to end on the same key. Do NOT fall
   back to S2S because a request is simple or names no providers — that is
   what the pipeline default above is for.
-- **Look things up instead of guessing.** The AssemblyAI docs are available
-  as MCP tools (search + fetch), and visit_webpage reads any other URL. The
+- **Look things up instead of guessing.** visit_webpage reads any URL,
+  including the AssemblyAI docs (https://www.assemblyai.com/docs). The
   reference below is a snapshot; when a question is about a voice, a model
   id, a provider option, a third-party API you are wiring a tool up to, or
   anything the reference does not cover, look it up rather than inventing an

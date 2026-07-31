@@ -19,7 +19,6 @@
     "test:evals": "VITEST_PROFILE=e2e VITEST_INCLUDE=studio/studio-eval.test.ts vitest run -c ../../vitest.slow.config.ts"
   },
   "dependencies": {
-    "@ai-sdk/mcp": "^2.0.18",
     "@alexkroman1/aai": "workspace:*",
     "@alexkroman1/aai-cli": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",

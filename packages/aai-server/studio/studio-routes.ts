@@ -32,7 +32,6 @@ import { disableStorage, enableStorage, storageStatus } from "../storage-handler
 import { runStudioChat } from "./studio-agent.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { isStudioLlmConfigured, studioLlmInfo } from "./studio-llm.ts";
-import { openMcpTools } from "./studio-mcp.ts";
 import {
   CHAT_RATE_LIMIT,
   createRateLimiter,
@@ -311,13 +310,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     const scope = studioScope(c.var.apiKey);
     const { project, messages } = body.data;
 
-    // Start the MCP connect now so it overlaps the workspace fetch below and
-    // runStudioChat's prompt assembly. Never rejects — failure degrades to no
-    // MCP tools. Closed by runStudioChat when the stream settles, or right
-    // here on the early-return path.
-    const mcp = openMcpTools();
     if (!(await getWorkspace(c.env.workspaces, scope, project))) {
-      void mcp.then((session) => session.close());
       return c.json({ error: "Project not found" }, 404);
     }
 
@@ -364,7 +357,6 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
         project,
         sandbox,
         disposeSandbox,
-        mcp,
         abortSignal: c.req.raw.signal,
         persistMessages: (updated) => chats.putChat(scope, project, updated),
       },

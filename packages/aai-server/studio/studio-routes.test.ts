@@ -327,7 +327,6 @@ describe("chat history routes", () => {
 
   test("the chat route hands runStudioChat a persist hook writing to the chat store", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
-    vi.stubEnv("STUDIO_MCP_URLS", "");
     chatMock.mockClear();
     const { fetch, chats } = await createTestOrchestrator();
     await createProject(fetch);
@@ -346,9 +345,6 @@ describe("deploy + chat endpoints", () => {
   beforeEach(async () => {
     deployMock.mockClear();
     chatMock.mockClear();
-    // The chat route starts the MCP connect itself (to overlap it with the
-    // workspace fetch); disable it so route tests never touch the network.
-    vi.stubEnv("STUDIO_MCP_URLS", "");
     ({ fetch } = await createTestOrchestrator());
   });
 
@@ -535,7 +531,6 @@ describe("chat sandbox lifecycle", () => {
 
   /** Studio routes with an observable fake sandbox factory, plus one project. */
   async function chatApp() {
-    vi.stubEnv("STUDIO_MCP_URLS", "");
     const dispose = vi.fn(async (): Promise<void> => undefined);
     const createSandbox = vi.fn(
       async (): Promise<StudioSandbox> => ({
