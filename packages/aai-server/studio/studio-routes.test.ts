@@ -110,7 +110,7 @@ describe("studio page + routing", () => {
     expect(await (await fetch("/studio/status")).json()).toEqual({
       llm: true,
       provider: "assemblyai",
-      model: "gpt-5.5",
+      model: "qwen3-next-80b-a3b",
     });
   });
 

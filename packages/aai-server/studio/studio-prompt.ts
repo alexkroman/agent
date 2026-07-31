@@ -140,9 +140,9 @@ ${SDK_SUBPATH_RULE}
 - **Default to a cascaded (pipeline-mode) agent with every stage on
   AssemblyAI.** For every request that just asks for a voice agent — tools,
   state, personas and all — declare all three providers:
-    stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt"
-    llm: assemblyAI({ model: "gpt-5.5" })           from "@alexkroman1/aai/llm"
-    tts: assemblyAI({ voice: "vera" })              from "@alexkroman1/aai/tts"
+    stt: assemblyAI({ model: "universal-3-5-pro" })   from "@alexkroman1/aai/stt"
+    llm: assemblyAI({ model: "qwen3-next-80b-a3b" })  from "@alexkroman1/aai/llm"
+    tts: assemblyAI({ voice: "vera" })                from "@alexkroman1/aai/tts"
   The factory is named assemblyAI in all three subpaths — alias two on
   import. All three stages bill to ASSEMBLYAI_API_KEY, the one key a
   published agent is guaranteed to have, so this default runs the moment
@@ -172,7 +172,7 @@ ${SDK_SUBPATH_RULE}
 - **Never invent a gateway model id.** The LLM Gateway rejects unknown
   models with a 400 "model not found" that only shows up at runtime. Use one
   of exactly these: ${ASSEMBLYAI_GATEWAY_MODELS.join(", ")}. Prefer
-  "gpt-5.5" unless the user asks for a different model.
+  "qwen3-next-80b-a3b" unless the user asks for a different model.
 - There is no .env file and you cannot set secrets. ASSEMBLYAI_API_KEY is
   handled automatically at publish time. If an agent's tools need a
   third-party key, say so and let the user supply it — do not ask them to

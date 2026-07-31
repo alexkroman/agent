@@ -55,15 +55,15 @@ type StudioLlmEntry = {
  * https://www.assemblyai.com/docs/llm-gateway/available-models.
  *
  * Order matters: the first entry available in the configured region is the
- * default. `gpt-5.5` leads because OpenAI models are the only ones the
- * gateway documents streamed responses for. Claude and Gemini do stream,
- * but only once their id-less `tool_calls` deltas are repaired
- * (`_openai-stream-repair.ts` in the SDK), so they are a step off the
- * supported path.
+ * default. `qwen3-next-80b-a3b` leads as the chosen default. Note the gateway
+ * documents streamed responses for OpenAI models only; non-OpenAI streams run
+ * through the repair wrapper (`_openai-stream-repair.ts` in the SDK), which
+ * fills in id-less `tool_calls` deltas and the null `choices` usage frame.
  */
 export const ASSEMBLYAI_GATEWAY_MODELS = [
+  "qwen3-next-80b-a3b",
   "gpt-5.5",
-  // Leads the EU list — the OpenAI models are US-only.
+  // Leads the EU list — Qwen is undocumented for the EU and OpenAI is US-only.
   "claude-sonnet-4-6",
   "gpt-5.2",
   "gpt-5.1",
@@ -83,7 +83,6 @@ export const ASSEMBLYAI_GATEWAY_MODELS = [
   "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
-  "qwen3-next-80b-a3b",
   "qwen3-32B",
   "kimi-k2.5",
 ] as const;
