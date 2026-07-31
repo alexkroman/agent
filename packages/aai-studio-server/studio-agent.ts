@@ -29,12 +29,13 @@ import { z } from "zod";
 import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
 import type { StudioBuildRunner } from "./studio-build-protocol.ts";
 import { resolveStudioBuildRunner } from "./studio-build-runner.ts";
-import { applyEdit, StudioEditError } from "./studio-edit.ts";
+import { StudioEditError } from "./studio-edit.ts";
 import { StudioBuildError } from "./studio-errors.ts";
-import { grepWorkspace, StudioGrepError } from "./studio-grep.ts";
+import { StudioGrepError } from "./studio-grep.ts";
 import { studioModel } from "./studio-llm.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
+import { applyEditInWorker, grepWorkspaceInWorker } from "./studio-scan-runner.ts";
 import { withToolTimeouts } from "./studio-tool-timeout.ts";
 import { createWebTools } from "./studio-web.ts";
 import { currentFilesHash } from "./studio-workspace.ts";
@@ -255,7 +256,9 @@ export function createStudioTools(
         const workspace = await workspaces.current();
         if (!workspace) return `Error: project ${project} not found`;
         try {
-          return grepWorkspace(workspace.files, pattern, opts);
+          // Off-thread: a model-controlled regex must never run on the main
+          // thread — see studio-scan-runner.ts.
+          return await grepWorkspaceInWorker(workspace.files, pattern, opts);
         } catch (err) {
           // A bad pattern is the agent's to fix, so hand back the reason.
           if (err instanceof StudioGrepError) return `Error: ${err.message}`;
@@ -282,13 +285,19 @@ export function createStudioTools(
           .describe("Replace every occurrence of oldText instead of requiring a unique match"),
       }),
       execute: ({ path, oldText, newText, replaceAll }) =>
-        withFiles((files) => {
+        withFiles(async (files) => {
           const current = files[path];
           if (current === undefined) return `Error: no such file: ${path}`;
           try {
-            const { content, diff, replacements } = applyEdit(path, current, oldText, newText, {
-              replaceAll,
-            });
+            // Off-thread: fuzzy matching + Myers diff over a model-sized
+            // file is superlinear CPU work — see studio-scan-runner.ts.
+            const { content, diff, replacements } = await applyEditInWorker(
+              path,
+              current,
+              oldText,
+              newText,
+              { replaceAll },
+            );
             files[path] = content;
             const label = replacements === 1 ? "" : ` (${replacements} replacements)`;
             return `Edited ${path}${label}\n\n${diff}`;

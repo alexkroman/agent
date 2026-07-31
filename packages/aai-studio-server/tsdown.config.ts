@@ -22,4 +22,14 @@ export default defineConfig([
     outDir: "dist",
     deps: { alwaysBundle: [/^aai$/, /^aai-server$/] },
   },
+  {
+    // Scan-worker thread entry: spawned by studio-scan-runner.ts as a
+    // sibling of dist/index.mjs.
+    entry: ["studio-scan-worker.ts"],
+    format: "esm",
+    platform: "node",
+    target: "node22",
+    outDir: "dist",
+    deps: { alwaysBundle: [/^aai$/, /^aai-server$/] },
+  },
 ]);

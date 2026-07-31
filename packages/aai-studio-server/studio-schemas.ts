@@ -4,11 +4,10 @@
 import slugifyLib from "@sindresorhus/slugify";
 import { RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/schemas";
 import { z } from "zod";
+import { MAX_STUDIO_FILE_BYTES } from "./studio-limits.ts";
 
-/** Max files per studio project workspace. */
-export const MAX_STUDIO_FILES = 30;
-/** Max bytes for a single workspace file. */
-export const MAX_STUDIO_FILE_BYTES = 256_000;
+// Re-exported from studio-limits.ts (dependency-free) for the scan worker.
+export { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./studio-limits.ts";
 /** Max total bytes across a workspace (guards the single-doc storage model). */
 export const MAX_STUDIO_WORKSPACE_BYTES = 1_000_000;
 /** Max messages accepted per chat turn (client resends full history). */
