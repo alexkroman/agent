@@ -30,6 +30,10 @@ export interface TurnOutcomeDeps {
   gate: TurnGate;
   /** Spoken after a failed turn; `""` disables. */
   errorPhrase: string;
+  /** Spoken when a provider fails to open and the session cannot start; `""` disables. */
+  startFailurePhrase: string;
+  /** Per-turn TTS drain, bound to the session signal. */
+  drainTts: () => Promise<void>;
   /** Forwards text to the active TTS session, reopening the audio gate. */
   sendTtsText: (text: string) => void;
 }
@@ -68,10 +72,25 @@ export interface TurnOutcome {
   speakRecovery(failed: boolean): boolean;
   /** Announce and persist a turn that produced speech. */
   finishSpokenTurn(text: string): void;
+  /**
+   * Last words when the session cannot start.
+   *
+   * A provider open failed, so there is no conversation to have — but the two
+   * sides open independently, and the usual failure is STT missing while TTS
+   * connected. That leaves a working voice and nothing to listen with, and
+   * saying nothing hands the caller a line that sounds connected and never
+   * answers. Skipped when TTS is the side that failed (nothing to speak with)
+   * or the phrase is disabled.
+   *
+   * Not a reply: no reply id, no history, no turn. Just the sentence and its
+   * audio, drained before the caller's teardown discards what is still queued.
+   */
+  speakStartFailure(): Promise<void>;
 }
 
 export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
   const { history, callbacks, providers, gate, errorPhrase, sendTtsText } = deps;
+  const { startFailurePhrase, drainTts } = deps;
   return {
     persistBargeIn(args) {
       if (!gate.historyCurrent(args.historyEpoch)) return;
@@ -90,6 +109,13 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
       sendTtsText(errorPhrase);
       callbacks.onAgentTranscript(errorPhrase, false);
       return true;
+    },
+
+    async speakStartFailure() {
+      if (startFailurePhrase.length === 0 || !providers.tts) return;
+      callbacks.onAgentTranscript(startFailurePhrase, false);
+      sendTtsText(startFailurePhrase);
+      await drainTts().catch(() => undefined);
     },
 
     finishSpokenTurn(text) {
