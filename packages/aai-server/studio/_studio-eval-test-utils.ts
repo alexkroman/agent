@@ -210,23 +210,41 @@ export type ConfigCase = {
  * judge. These cover the two rules that are invisible to a resemblance
  * grader because they are about *what a published agent can actually run on*:
  *
- * 1. **AssemblyAI is the default.** `ASSEMBLYAI_API_KEY` is the only key
- *    publishing seeds, so an agent that reaches for another provider the user
- *    never named cannot start until they supply a key. A parity judge is the
- *    wrong instrument for this: several references legitimately use other
- *    providers, so "matches the reference" and "runs when published" disagree.
+ * 1. **An all-AssemblyAI pipeline is the default.** `ASSEMBLYAI_API_KEY` is
+ *    the only key publishing seeds, so an agent that reaches for another
+ *    provider the user never named cannot start until they supply a key —
+ *    and the S2S voice agent API is reserved for prompts that ask for it,
+ *    so a bare "build me a voice agent" must come out as a cascaded
+ *    pipeline on AssemblyAI for every stage. A parity judge is the wrong
+ *    instrument for this: several references legitimately run S2S or use
+ *    other providers, so "matches the reference" and "runs when published"
+ *    disagree.
  * 2. **Egress needs `allowedHosts`.** A tool that fetches an undeclared host
  *    builds, loads, and passes every rubric — then fails at runtime, in the
  *    one place the studio user cannot see from the Code pane.
  */
 export const CONFIG_CASES: ConfigCase[] = [
   {
-    name: "defaults to the AssemblyAI voice agent API",
-    rationale: "no provider named anywhere in the prompt → S2S, not a cascaded pipeline",
+    name: "defaults to an all-AssemblyAI cascaded pipeline",
+    rationale:
+      "no provider or mode named anywhere in the prompt → a cascaded pipeline " +
+      "with AssemblyAI backing every stage, not the S2S voice agent API",
     prompt:
       "Build a voice agent named Sunny that plays twenty questions with me: it " +
       "thinks of an object, I ask yes/no questions, and it tracks how many I " +
       "have used. Keep the secret object and the question count in ctx.state." +
+      ONE_SHOT,
+    providers: { mode: "pipeline", stt: "assemblyai", llm: "assemblyai", tts: "assemblyai" },
+  },
+  {
+    name: "uses the voice agent API when asked for it",
+    rationale:
+      "S2S is no longer the default, so the one way to get it — asking for " +
+      "the voice agent API — must still work: none of stt/llm/tts declared",
+    prompt:
+      "Build a voice agent on the AssemblyAI voice agent API (S2S, " +
+      "speech-to-speech — no separate STT/LLM/TTS stages) that acts as a " +
+      "cheerful barista taking coffee orders and repeating them back." +
       ONE_SHOT,
     providers: { mode: "s2s" },
   },
@@ -260,8 +278,8 @@ export const CONFIG_CASES: ConfigCase[] = [
     name: "declares allowedHosts for a tool that fetches",
     rationale:
       "tool-code egress to a named endpoint → the hostname must appear in " +
-      "allowedHosts; also a second read on the S2S default, since no provider " +
-      "is named here either",
+      "allowedHosts; also a second read on the pipeline default, since no " +
+      "provider is named here either",
     prompt:
       "Build a voice agent named Breeze that reports the weather. Give it a " +
       "get_weather tool that takes a latitude and longitude and fetches " +
@@ -269,7 +287,7 @@ export const CONFIG_CASES: ConfigCase[] = [
       "longitude, current=temperature_2m,wind_speed_10m) with fetch, then reads " +
       "back the temperature and wind speed conversationally." +
       ONE_SHOT,
-    providers: { mode: "s2s" },
+    providers: { mode: "pipeline", stt: "assemblyai", llm: "assemblyai", tts: "assemblyai" },
     fetchedHosts: ["api.open-meteo.com"],
   },
 ];
