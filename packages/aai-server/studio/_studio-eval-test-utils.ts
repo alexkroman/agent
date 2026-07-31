@@ -139,10 +139,10 @@ export const TEMPLATE_CASES: TemplateCase[] = [
   {
     template: "pipeline-simple",
     shape: "pipeline mode — three provider descriptors from three subpaths, aliased",
-    // "Cascaded" is the user-facing name for pipeline mode. The providers here
-    // deliberately differ from the reference's (Anthropic + Cartesia): all
-    // three bill to ASSEMBLYAI_API_KEY, which publishing seeds. The judge is
-    // told the prompt wins over the reference on provider identity.
+    // "Cascaded" is the user-facing name for pipeline mode. The LLM here
+    // deliberately differs from the reference's (Anthropic): all three
+    // providers bill to ASSEMBLYAI_API_KEY, which publishing seeds. The judge
+    // is told the prompt wins over the reference on provider identity.
     prompt:
       "Build a cascaded (pipeline-mode) agent: " +
       'stt: assemblyAI({ model: "universal-3-5-pro" }) from "@alexkroman1/aai/stt", ' +

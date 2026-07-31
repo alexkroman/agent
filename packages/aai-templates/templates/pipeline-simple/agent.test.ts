@@ -26,7 +26,7 @@ describe("pipeline-simple template", () => {
     expect(agentDef.llm?.kind).toBe("anthropic");
   });
 
-  test("TTS descriptor is Cartesia", () => {
-    expect(agentDef.tts?.kind).toBe("cartesia");
+  test("TTS descriptor is AssemblyAI", () => {
+    expect(agentDef.tts?.kind).toBe("assemblyai");
   });
 });
