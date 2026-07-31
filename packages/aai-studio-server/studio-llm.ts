@@ -2,53 +2,23 @@
 /**
  * Studio chat LLM selection.
  *
- * The provider and model are chosen entirely from **platform-owned host
- * configuration** (never tenant env, never the request) via the SDK's own
- * provider descriptors + `resolveLlm`, so the studio can run on any
- * pipeline-mode LLM provider. A client can never name a provider or model
- * and never supplies a key — every turn runs on the host default.
+ * Every studio turn runs on the AssemblyAI LLM Gateway **with the caller's
+ * own API key** — the same bearer the request authenticated with. The
+ * platform holds no LLM credential for the studio at all: a chat turn is
+ * billed to the account that asked for it, exactly like the voice sessions
+ * of an agent that account publishes (studio-deploy seeds the same key as
+ * the published agent's `ASSEMBLYAI_API_KEY`).
  *
- * Defaults: the AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set,
- * else Anthropic direct (`ANTHROPIC_API_KEY`). `STUDIO_LLM_PROVIDER` /
- * `STUDIO_LLM_MODEL` override, and `STUDIO_LLM_REGION=eu` picks the
- * gateway's EU endpoint.
+ * The *model* (never the key) stays host configuration: `STUDIO_LLM_MODEL`
+ * overrides the default, and `STUDIO_LLM_REGION=eu` selects the gateway's
+ * EU endpoint (which serves a subset of models — see the region filter).
+ * A client can never name a provider or a model; a request-side model field
+ * is stripped by the body schema, never honored.
  */
 
-import type { LlmProvider } from "@alexkroman1/aai/llm";
-import {
-  ANTHROPIC_API_KEY_ENV,
-  ASSEMBLYAI_LLM_API_KEY_ENV,
-  anthropic,
-  assemblyAI,
-  GATEWAY_API_KEY_ENV,
-  GOOGLE_API_KEY_ENV,
-  GROQ_API_KEY_ENV,
-  gateway,
-  google,
-  groq,
-  MISTRAL_API_KEY_ENV,
-  mistral,
-  OPENAI_API_KEY_ENV,
-  OPENROUTER_API_KEY_ENV,
-  openai,
-  openrouter,
-  XAI_API_KEY_ENV,
-  xai,
-} from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAI } from "@alexkroman1/aai/llm";
 import { resolveLlm } from "@alexkroman1/aai/runtime";
 import type { LanguageModel } from "ai";
-
-type StudioLlmEntry = {
-  envVar: string;
-  /**
-   * Known models, most capable first. The first entry is the default when
-   * `STUDIO_LLM_MODEL` is unset; an empty list means this provider requires
-   * an explicit `STUDIO_LLM_MODEL`. Takes env because gateway availability
-   * is region-dependent.
-   */
-  models: (env: NodeJS.ProcessEnv) => readonly string[];
-  make: (model: string, env: NodeJS.ProcessEnv) => LlmProvider;
-};
 
 /**
  * Models on the AssemblyAI LLM Gateway, per
@@ -112,137 +82,32 @@ function isEuGateway(env: NodeJS.ProcessEnv): boolean {
   return env.STUDIO_LLM_REGION === "eu";
 }
 
-/** Anthropic direct — the current Claude 5 family plus Haiku 4.5. */
-const ANTHROPIC_MODELS = [
-  "claude-sonnet-5",
-  "claude-opus-5",
-  "claude-fable-5",
-  "claude-haiku-4-5-20251001",
-] as const;
+/** The gateway model studio turns run on — host override, else region default. */
+export function studioLlmModelId(env: NodeJS.ProcessEnv = process.env): string {
+  // `||` not `??`: an empty-string env var means "unset".
+  const models = isEuGateway(env) ? ASSEMBLYAI_GATEWAY_EU_MODELS : ASSEMBLYAI_GATEWAY_MODELS;
+  return env.STUDIO_LLM_MODEL || (models[0] as string);
+}
 
-/**
- * Providers the studio chat can run on. All pipeline-mode LLM providers are
- * wired so `STUDIO_LLM_PROVIDER` reaches any of them; the two the platform
- * is expected to hold keys for carry known-model lists so they work without
- * an explicit `STUDIO_LLM_MODEL`.
- */
-const STUDIO_LLM_PROVIDERS: Record<string, StudioLlmEntry> = {
-  assemblyai: {
-    envVar: ASSEMBLYAI_LLM_API_KEY_ENV,
-    models: (env) => (isEuGateway(env) ? ASSEMBLYAI_GATEWAY_EU_MODELS : ASSEMBLYAI_GATEWAY_MODELS),
-    make: (model, env) =>
-      assemblyAI({ model, ...(isEuGateway(env) ? { region: "eu" as const } : {}) }),
-  },
-  anthropic: {
-    envVar: ANTHROPIC_API_KEY_ENV,
-    models: () => ANTHROPIC_MODELS,
-    make: (model) => anthropic({ model }),
-  },
-  openai: {
-    envVar: OPENAI_API_KEY_ENV,
-    models: () => [],
-    make: (model) => openai({ model }),
-  },
-  google: {
-    envVar: GOOGLE_API_KEY_ENV,
-    models: () => [],
-    make: (model) => google({ model }),
-  },
-  mistral: {
-    envVar: MISTRAL_API_KEY_ENV,
-    models: () => [],
-    make: (model) => mistral({ model }),
-  },
-  xai: { envVar: XAI_API_KEY_ENV, models: () => [], make: (model) => xai({ model }) },
-  groq: {
-    envVar: GROQ_API_KEY_ENV,
-    models: () => [],
-    make: (model) => groq({ model }),
-  },
-  openrouter: {
-    envVar: OPENROUTER_API_KEY_ENV,
-    models: () => [],
-    make: (model) => openrouter({ model }),
-  },
-  gateway: {
-    envVar: GATEWAY_API_KEY_ENV,
-    models: () => [],
-    make: (model) => gateway({ model }),
-  },
-};
-
-/** Providers auto-selected (in order) when STUDIO_LLM_PROVIDER is unset. */
-const AUTO_PROVIDER_ORDER = ["assemblyai", "anthropic"] as const;
-
-export type StudioLlmSelection = {
+/** Provider/model info for the status endpoint. */
+export function studioLlmInfo(env: NodeJS.ProcessEnv = process.env): {
   provider: string;
   model: string;
-  descriptor: LlmProvider;
-  envVar: string;
-};
-
-/** The host-configured provider/model, or null when no key selects one. */
-export function selectStudioLlm(env: NodeJS.ProcessEnv = process.env): StudioLlmSelection | null {
-  const explicit = env.STUDIO_LLM_PROVIDER?.toLowerCase();
-  let provider: string | undefined;
-  if (explicit) {
-    if (!(explicit in STUDIO_LLM_PROVIDERS)) {
-      throw new Error(
-        `Unknown STUDIO_LLM_PROVIDER "${explicit}" — one of: ${Object.keys(STUDIO_LLM_PROVIDERS).join(", ")}`,
-      );
-    }
-    provider = explicit;
-  } else {
-    provider = AUTO_PROVIDER_ORDER.find((name) => {
-      const candidate = STUDIO_LLM_PROVIDERS[name];
-      return candidate !== undefined && Boolean(env[candidate.envVar]);
-    });
-  }
-  if (!provider) return null;
-  // Guarded above for the explicit path; AUTO_PROVIDER_ORDER names are keys.
-  const entry = STUDIO_LLM_PROVIDERS[provider] as StudioLlmEntry;
-  // `||` not `??`: an empty-string env var means "unset".
-  const model = env.STUDIO_LLM_MODEL || entry.models(env)[0];
-  if (!model) {
-    throw new Error(`STUDIO_LLM_MODEL is required for STUDIO_LLM_PROVIDER "${provider}"`);
-  }
-  return { provider, model, descriptor: entry.make(model, env), envVar: entry.envVar };
+} {
+  return { provider: "assemblyai", model: studioLlmModelId(env) };
 }
 
-/** True when the platform host is configured to run the studio LLM. */
-export function isStudioLlmConfigured(env: NodeJS.ProcessEnv = process.env): boolean {
-  try {
-    const selection = selectStudioLlm(env);
-    return selection !== null && Boolean(env[selection.envVar]);
-  } catch {
-    return false;
-  }
-}
-
-/** Provider/model info for the status endpoint; null when unconfigured. */
-export function studioLlmInfo(
-  env: NodeJS.ProcessEnv = process.env,
-): { provider: string; model: string } | null {
-  if (!isStudioLlmConfigured(env)) return null;
-  // isStudioLlmConfigured just proved this select succeeds and is non-null.
-  const selection = selectStudioLlm(env) as StudioLlmSelection;
-  return { provider: selection.provider, model: selection.model };
-}
-
-/** Resolve the host-configured selection to a live `LanguageModel`. */
-export function studioModel(env: NodeJS.ProcessEnv = process.env): LanguageModel {
-  const selection = selectStudioLlm(env);
-  if (!selection) {
-    throw new Error(
-      "Studio LLM not configured: set ASSEMBLYAI_API_KEY (LLM Gateway) or " +
-        "ANTHROPIC_API_KEY, or choose a provider with STUDIO_LLM_PROVIDER",
-    );
-  }
-  const key = env[selection.envVar];
-  if (!key) {
-    throw new Error(`Studio LLM misconfigured: ${selection.envVar} is not set`);
-  }
-  // resolveLlm reads the key from the env record it is given — pass exactly
-  // the one variable it needs (host env never flows anywhere else).
-  return resolveLlm(selection.descriptor, { [selection.envVar]: key });
+/**
+ * Resolve the live `LanguageModel` for one caller's turn. `apiKey` is the
+ * caller's AssemblyAI key (the studio request's bearer) — the only
+ * credential the studio LLM ever runs on; host env never reaches the
+ * resolver.
+ */
+export function studioModel(apiKey: string, env: NodeJS.ProcessEnv = process.env): LanguageModel {
+  if (!apiKey) throw new Error("Studio LLM requires the caller's AssemblyAI API key");
+  const descriptor = assemblyAI({
+    model: studioLlmModelId(env),
+    ...(isEuGateway(env) ? { region: "eu" as const } : {}),
+  });
+  return resolveLlm(descriptor, { [ASSEMBLYAI_LLM_API_KEY_ENV]: apiKey });
 }

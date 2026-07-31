@@ -20,7 +20,7 @@
 import { serve } from "@hono/node-server";
 import { DEFAULT_PORT } from "aai-server/constants";
 import { createOrchestrator } from "aai-server/orchestrator";
-import { assertDevKeys, resolveDrainMs, waitForIdle } from "aai-server/platform-barrel";
+import { resolveDrainMs, waitForIdle } from "aai-server/platform-barrel";
 import {
   assertSandboxBackendOrWarn,
   buildServiceConfig,
@@ -80,7 +80,6 @@ async function main(): Promise<void> {
   installProcessSafetyNets();
 
   const env = process.env;
-  assertDevKeys(env);
   const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
   const mode = resolveServiceMode(env);
 

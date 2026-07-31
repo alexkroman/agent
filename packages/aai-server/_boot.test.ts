@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { assertDevKeys, isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize } from "./_boot.ts";
+import { isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize } from "./_boot.ts";
 import { DEFAULT_SHUTDOWN_DRAIN_MS } from "./constants.ts";
 
 // ── isLocalDev ─────────────────────────────────────────────────────────
@@ -38,39 +38,6 @@ describe("requireEnv", () => {
 
   test("treats empty strings as missing", () => {
     expect(() => requireEnv({ A: "" }, ["A"])).toThrow("Missing required environment variables: A");
-  });
-});
-
-// ── assertDevKeys ──────────────────────────────────────────────────────
-
-const BOTH_KEYS = { ASSEMBLYAI_API_KEY: "aai", BRAVE_API_KEY: "brave" };
-
-describe("assertDevKeys", () => {
-  test("passes in dev when both keys are set", () => {
-    expect(() => assertDevKeys({ ...BOTH_KEYS })).not.toThrow();
-  });
-
-  test.each([
-    ["ASSEMBLYAI_API_KEY", { BRAVE_API_KEY: "brave" }],
-    ["BRAVE_API_KEY", { ASSEMBLYAI_API_KEY: "aai" }],
-  ] as const)("throws in dev naming the missing %s", (missing, env) => {
-    expect(() => assertDevKeys(env)).toThrow(missing);
-    expect(() => assertDevKeys(env)).toThrow("Set it in");
-  });
-
-  test("throws in dev naming both keys when both are missing", () => {
-    expect(() => assertDevKeys({})).toThrow("ASSEMBLYAI_API_KEY and BRAVE_API_KEY");
-    expect(() => assertDevKeys({})).toThrow("Set them in");
-  });
-
-  test("AAI_DEV_SKIP_KEY_CHECK=1 skips the check entirely", () => {
-    expect(() => assertDevKeys({ AAI_DEV_SKIP_KEY_CHECK: "1" })).not.toThrow();
-  });
-
-  test("non-dev (SUPABASE_S3_ENDPOINT set) never throws", () => {
-    expect(() =>
-      assertDevKeys({ SUPABASE_S3_ENDPOINT: "https://ref.supabase.co/storage/v1/s3" }),
-    ).not.toThrow();
   });
 });
 

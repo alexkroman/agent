@@ -32,7 +32,7 @@ import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { runStudioChat } from "./studio-agent.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
-import { isStudioLlmConfigured, studioLlmInfo } from "./studio-llm.ts";
+import { studioLlmInfo } from "./studio-llm.ts";
 import {
   CHAT_RATE_LIMIT,
   createRateLimiter,
@@ -72,8 +72,6 @@ export type StudioRouteOptions = {
   rateLimiters?: StudioRateLimiters | undefined;
   /** Test seam: swap the deploy pipeline without module mocks. */
   deployProject?: typeof deployStudioProject;
-  /** Test seam: swap the LLM gate. */
-  llmConfigured?: () => boolean;
   /** Test seam: swap session-sandbox provisioning. */
   createSandbox?: typeof createStudioSandbox;
 };
@@ -86,16 +84,15 @@ function validateProject(name: string | undefined): string {
 
 export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoEnv> {
   const deploy = options.deployProject ?? deployStudioProject;
-  const llmConfigured = options.llmConfigured ?? isStudioLlmConfigured;
   const newSandbox = options.createSandbox ?? createStudioSandbox;
 
   const studio = new Hono<HonoEnv>();
 
-  // Per-scope fixed-window limits (see studio-rate-limit.ts): any non-empty
-  // bearer authenticates here, so without these the chat route is an
-  // unmetered LLM proxy on platform-owned keys. Injected in production
-  // (Postgres-backed, shared across replicas); the in-memory default covers
-  // dev and tests.
+  // Per-scope fixed-window limits (see studio-rate-limit.ts). The LLM runs
+  // on the caller's own key, so the limiter is no longer guarding a
+  // platform-billed proxy — it still bounds sandbox spawns and build-worker
+  // work per caller. Injected in production (Postgres-backed, shared across
+  // replicas); the in-memory default covers dev and tests.
   const chatLimiter = options.rateLimiters?.chat ?? createRateLimiter(CHAT_RATE_LIMIT);
   const projectCreateLimiter =
     options.rateLimiters?.projectCreate ?? createRateLimiter(PROJECT_CREATE_RATE_LIMIT);
@@ -111,9 +108,8 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   // `GET /studio` (no trailing path) — send the browser to the studio page.
   studio.get("/", (c) => c.redirect("/", 302));
 
-  studio.get("/status", (c) =>
-    c.json({ llm: llmConfigured(), ...(llmConfigured() && studioLlmInfo()) }),
-  );
+  // `llm: true` is legacy shape — chat always runs now, on the caller's key.
+  studio.get("/status", (c) => c.json({ llm: true, ...studioLlmInfo() }));
 
   // Bearer auth without slug ownership: workspace scoping needs only the
   // deterministic `studioScope`, and the deploy path derives the ownership
@@ -287,16 +283,6 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
   studio.post("/chat", async (c) => {
     const limited = await rateLimited(c.var.apiKey, chatLimiter);
     if (limited) return limited;
-    if (!llmConfigured()) {
-      return c.json(
-        {
-          error:
-            "Chat is not configured on this server — set ASSEMBLYAI_API_KEY " +
-            "(LLM Gateway) or ANTHROPIC_API_KEY",
-        },
-        503,
-      );
-    }
     // The aggregate conversation cap is enforced on the raw body *before*
     // parsing: near-limit requests used to pay a whole-array JSON.stringify
     // inside a zod refine — re-serializing up to 4 MB that had just been
@@ -366,6 +352,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
         workspaces: c.env.workspaces,
         scope,
         project,
+        apiKey: c.var.apiKey,
         sandbox,
         disposeSandbox,
         abortSignal: c.req.raw.signal,

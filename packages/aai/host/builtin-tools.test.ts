@@ -177,11 +177,25 @@ describe("resolveAllBuiltins defs", () => {
 
   // ─── web_search ────────────────────────────────────────────────────────
 
-  test("web_search returns error when BRAVE_API_KEY is not set", async () => {
-    const { defs } = resolveAllBuiltins(["web_search"]);
+  /** A minimal DDG HTML results page: two result anchors with snippets. */
+  const ddgHtml = `
+    <div class="result">
+      <a class="result__a" href="//duckduckgo.com/l/?uddg=https%3A%2F%2Fexample.com%2F1&rut=abc">Result <b>1</b></a>
+      <a class="result__snippet" href="#">Desc &amp; 1</a>
+    </div>
+    <div class="result">
+      <a class="result__a" href="https://example.com/2">Result 2</a>
+      <a class="result__snippet" href="#">Desc&nbsp;2</a>
+    </div>`;
+
+  test("web_search needs no API key", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response(ddgHtml)));
+    const { defs } = resolveAllBuiltins(["web_search"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
     const ctx = createMockToolContext({ env: {} });
     const result = await defs.web_search?.execute({ query: "test" }, ctx);
-    expect(result).toEqual({ error: "BRAVE_API_KEY is not set — web search unavailable" });
+    expect(Array.isArray(result)).toBe(true);
   });
 
   test("web_search returns error on non-ok response", async () => {
@@ -190,44 +204,54 @@ describe("resolveAllBuiltins defs", () => {
     const { defs } = resolveAllBuiltins(["web_search"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
-    const ctx = createMockToolContext({ env: { BRAVE_API_KEY: "key123" } });
+    const ctx = createMockToolContext();
     const result = await defs.web_search?.execute({ query: "test" }, ctx);
     expect(result).toEqual({ error: "Search request failed: 500 Internal Server Error" });
   });
 
-  test("web_search returns empty results when response has no web results", async () => {
-    const mockFetch = () => Promise.resolve(new Response(JSON.stringify({ invalid: true })));
+  test("web_search parses DDG results, decoding redirect URLs and entities", async () => {
+    const mockFetch = vi.fn(() => Promise.resolve(new Response(ddgHtml)));
     const { defs } = resolveAllBuiltins(["web_search"], {
       fetch: mockFetch as typeof globalThis.fetch,
     });
-    const ctx = createMockToolContext({ env: { BRAVE_API_KEY: "key123" } });
-    const result = await defs.web_search?.execute({ query: "test" }, ctx);
-    expect(result).toEqual([]);
-  });
-
-  test("web_search returns results from Brave API", async () => {
-    const braveResponse = {
-      web: {
-        results: [
-          { title: "Result 1", url: "https://example.com/1", description: "Desc 1" },
-          { title: "Result 2", url: "https://example.com/2", description: "Desc 2" },
-        ],
-      },
-    };
-    const mockFetch = vi.fn(() => Promise.resolve(new Response(JSON.stringify(braveResponse))));
-    const { defs } = resolveAllBuiltins(["web_search"], {
-      fetch: mockFetch as typeof globalThis.fetch,
-    });
-    const ctx = createMockToolContext({ env: { BRAVE_API_KEY: "key123" } });
-    const result = await defs.web_search?.execute({ query: "test", max_results: 2 }, ctx);
+    const ctx = createMockToolContext();
+    const result = await defs.web_search?.execute({ query: "aai sdk", max_results: 2 }, ctx);
     expect(result).toEqual([
-      { title: "Result 1", url: "https://example.com/1", description: "Desc 1" },
+      // uddg redirect decoded to the real URL; <b> highlight stripped in-word.
+      { title: "Result 1", url: "https://example.com/1", description: "Desc & 1" },
       { title: "Result 2", url: "https://example.com/2", description: "Desc 2" },
     ]);
-    // Check correct URL construction
     const fetchUrl = (mockFetch.mock.calls[0] as unknown as [string])[0];
-    expect(fetchUrl).toContain("q=test");
-    expect(fetchUrl).toContain("count=2");
+    expect(fetchUrl).toContain("html.duckduckgo.com");
+    expect(fetchUrl).toContain("q=aai+sdk");
+  });
+
+  test("web_search caps max_results", async () => {
+    const many = Array.from(
+      { length: 12 },
+      (_, i) => `<a class="result__a" href="https://example.com/${i}">R${i}</a>`,
+    ).join("\n");
+    const mockFetch = () => Promise.resolve(new Response(many));
+    const { defs } = resolveAllBuiltins(["web_search"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    const result = (await defs.web_search?.execute(
+      { query: "q", max_results: 50 },
+      ctx,
+    )) as unknown[];
+    expect(result).toHaveLength(10);
+  });
+
+  test("web_search surfaces a bot-detection challenge as an error", async () => {
+    const challenge = '<form id="challenge-form">are you a human</form>';
+    const mockFetch = () => Promise.resolve(new Response(challenge));
+    const { defs } = resolveAllBuiltins(["web_search"], {
+      fetch: mockFetch as typeof globalThis.fetch,
+    });
+    const ctx = createMockToolContext();
+    const result = await defs.web_search?.execute({ query: "q" }, ctx);
+    expect(result).toMatchObject({ error: expect.stringContaining("bot-detection") });
   });
 
   // ─── visit_webpage ─────────────────────────────────────────────────────

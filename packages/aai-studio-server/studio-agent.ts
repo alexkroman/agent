@@ -76,6 +76,12 @@ export type StudioChatDeps = {
   scope: string;
   project: string;
   /**
+   * The caller's AssemblyAI API key (the request's bearer) — the studio LLM
+   * runs on it, never on a platform key. Optional only for tests that inject
+   * `model` directly.
+   */
+  apiKey?: string;
+  /**
    * Lazy handle to this chat session's sandbox — the same warm-pool/Modal
    * infrastructure deployed agents run in. Used by test_agent, and reused by
    * the deploy route for config extraction. Provisioned on first use.
@@ -393,7 +399,7 @@ export async function runStudioChat(
       ignoreIncompleteToolCalls: true,
     });
     const result = streamText({
-      model: deps.model ?? studioModel(),
+      model: deps.model ?? studioModel(deps.apiKey ?? ""),
       system: studioSystemPrompt(),
       messages: modelMessages,
       // Studio tools last: a web builtin may never shadow write_file. Every

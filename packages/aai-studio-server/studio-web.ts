@@ -2,21 +2,22 @@
 /**
  * Web access for the studio's coding agent.
  *
- * These are the SDK's own `visit_webpage` and `web_search` builtins, not new
- * implementations. Reusing them means the studio inherits `safeFetch` — the
- * SSRF guard that resolves and pins a public IP, re-validates every redirect
- * hop, and strips credential headers across origins. A URL here is
- * model-controlled and the studio runs on the platform host, so that guard is
- * the whole ballgame; a hand-rolled `fetch` would be a server-side request
- * forgery hole pointed at the metadata endpoint.
+ * These are the SDK's own `visit_webpage`, `get_page_design`, and
+ * `web_search` builtins, not new implementations. Reusing them means the
+ * studio inherits `safeFetch` — the SSRF guard that resolves and pins a
+ * public IP, re-validates every redirect hop, and strips credential headers
+ * across origins. A URL here is model-controlled and the studio runs on the
+ * platform host, so that guard is the whole ballgame; a hand-rolled `fetch`
+ * would be a server-side request forgery hole pointed at the metadata
+ * endpoint.
+ *
+ * All three builtins are keyless — `web_search` is DuckDuckGo-backed (see
+ * the SDK's builtin-tools.ts), so nothing here reads host env and the tool
+ * set never varies by configuration.
  *
  * `visit_webpage` also already does the part opencode's webfetch uses
  * Turndown for — HTML to clean text, with byte and character caps and a
  * `truncated` flag.
- *
- * This covers everything the agent needs to read on the web — the AssemblyAI
- * docs, a third-party API the agent is wiring a tool up against, a page the
- * user pasted.
  */
 
 import type { ToolContext, ToolDef } from "@alexkroman1/aai";
@@ -24,23 +25,20 @@ import { resolveAllBuiltins } from "@alexkroman1/aai/runtime";
 import { jsonSchema, type ToolSet, tool } from "ai";
 import type { z } from "zod";
 
-/** Builtins the coding agent gets. `web_search` is dropped without a key. */
+/** Builtins the coding agent gets — all keyless. */
 const WEB_BUILTINS = ["visit_webpage", "get_page_design", "web_search"] as const;
-
-/** Agent-env variable backing the SDK's `web_search` builtin (Brave Search). */
-const BRAVE_API_KEY_ENV = "BRAVE_API_KEY";
 
 const SESSION_ID = "studio-web";
 
 /**
  * The context a builtin's `execute` receives. Deliberately bare: the coding
  * agent is not a deployed agent, so there is no session state, no app
- * database, and no client to `send` to. Only `env` carries anything, and
- * only the search key.
+ * database, no client to `send` to — and an empty env, so a coding turn can
+ * never read a host credential through a tool context.
  */
-function toolContext(env: NodeJS.ProcessEnv): ToolContext {
+function toolContext(): ToolContext {
   return {
-    env: env[BRAVE_API_KEY_ENV] ? { [BRAVE_API_KEY_ENV]: env[BRAVE_API_KEY_ENV] } : {},
+    env: {},
     state: {},
     // The web builtins never touch ctx.db; a coding turn has no app database.
     db: {
@@ -57,22 +55,16 @@ function toolContext(env: NodeJS.ProcessEnv): ToolContext {
   };
 }
 
-/** Which builtins to offer, given what the host is configured for. */
-export function webBuiltinNames(env: NodeJS.ProcessEnv = process.env): string[] {
-  // web_search returns "BRAVE_API_KEY is not set" without a key. Offering a
-  // tool that can only fail wastes a turn, so drop it instead.
-  return WEB_BUILTINS.filter((name) => name !== "web_search" || Boolean(env[BRAVE_API_KEY_ENV]));
+/** The builtins the coding agent is offered. */
+export function webBuiltinNames(): string[] {
+  return [...WEB_BUILTINS];
 }
 
-/**
- * Build the coding agent's web tools. Returns `{}` when none are available.
- */
-export function createWebTools(env: NodeJS.ProcessEnv = process.env): ToolSet {
-  const names = webBuiltinNames(env);
-  if (names.length === 0) return {};
-
+/** Build the coding agent's web tools. */
+export function createWebTools(): ToolSet {
+  const names = webBuiltinNames();
   const { defs, schemas } = resolveAllBuiltins(names);
-  const ctx = toolContext(env);
+  const ctx = toolContext();
   const out: ToolSet = {};
 
   for (const schema of schemas) {

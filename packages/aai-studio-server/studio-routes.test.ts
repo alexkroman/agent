@@ -93,14 +93,16 @@ describe("studio page + routing", () => {
     expect((await fetch("/studio-assets/..%2f..%2fpackage.json")).status).toBe(400);
   });
 
-  test("GET /studio/status is public and reports LLM availability", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
-    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
+  test("GET /studio/status is public and reports the caller-keyed LLM", async () => {
     const { fetch } = await createTestCombined();
     const res = await fetch("/studio/status");
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ llm: false });
+    // Chat always runs — on the caller's own key — so llm is always true.
+    expect(await res.json()).toEqual({
+      llm: true,
+      provider: "assemblyai",
+      model: "qwen3-next-80b-a3b",
+    });
   });
 
   test("status reports the gateway provider/model when configured", async () => {
@@ -375,15 +377,6 @@ describe("deploy + chat endpoints", () => {
     expect(((await res.json()) as { error: string }).error).toContain("Build failed");
   });
 
-  test("chat returns 503 when the LLM is not configured", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
-    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
-    await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/chat", { body: chatBody() });
-    expect(res.status).toBe(503);
-  });
-
   test("chat 404s for a missing project before touching the LLM", async () => {
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
     const res = await authFetch(fetch, "/studio/chat", { body: chatBody("ghost") });
@@ -542,10 +535,7 @@ describe("chat sandbox lifecycle", () => {
     );
     const workspaces = createMemoryWorkspaceStore();
     await createWorkspace(workspaces, studioScope("key1"), "proj", { files: { "agent.ts": "x" } });
-    const app = new Hono<HonoEnv>().route(
-      "/studio",
-      createStudioRoutes({ createSandbox, llmConfigured: () => true }),
-    );
+    const app = new Hono<HonoEnv>().route("/studio", createStudioRoutes({ createSandbox }));
     const bindings = {
       workspaces,
       chats: createMemoryChatStore(),

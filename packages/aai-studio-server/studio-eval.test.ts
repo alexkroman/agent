@@ -70,7 +70,7 @@ import { runStudioChat, type StudioChatDeps } from "./studio-agent.ts";
 import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
 import { bundleWorkspaceWorker } from "./studio-bundle.ts";
 import { StudioBuildError } from "./studio-errors.ts";
-import { isStudioLlmConfigured, studioLlmInfo, studioModel } from "./studio-llm.ts";
+import { studioLlmInfo, studioModel } from "./studio-llm.ts";
 import { createStudioSandbox, type StudioSandbox } from "./studio-sandbox.ts";
 import { starterFiles } from "./studio-template.ts";
 import { createWorkspace, filesHash, getWorkspace } from "./studio-workspace.ts";
@@ -78,7 +78,9 @@ import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 
 const SCOPE = "eval-scope";
 
-const llmReady = isStudioLlmConfigured(process.env);
+// The studio LLM now runs on the caller's key; evals borrow the shell's.
+const evalApiKey = process.env.ASSEMBLYAI_API_KEY ?? "";
+const llmReady = Boolean(evalApiKey);
 
 /** The sandbox judge needs Modal credentials plus the built guest harness. */
 const canSandbox = isModalConfigured() && existsSync(resolveHarnessPath());
@@ -170,7 +172,7 @@ const studioHarness = createHarness<string, StudioEvalOutput>({
         await sandbox?.dispose();
         sandbox = undefined;
       },
-      model: studioModel(process.env),
+      model: studioModel(evalApiKey),
     };
 
     const events = await readSseEvents(await runStudioChat(deps, [userMessage(input)]));
@@ -413,7 +415,7 @@ const TemplateParityJudge = createJudge<string, StudioEvalOutput, { template: st
     ].join("\n");
 
     const { object } = await generateObject({
-      model: studioModel(process.env),
+      model: studioModel(evalApiKey),
       schema: ParityVerdictSchema,
       // Deliberately no `temperature: 0`: the default studio model is a
       // reasoning model, which rejects the parameter with an AI SDK warning on

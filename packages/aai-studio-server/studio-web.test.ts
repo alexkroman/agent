@@ -3,45 +3,28 @@
 import { describe, expect, test } from "vitest";
 import { createWebTools, webBuiltinNames } from "./studio-web.ts";
 
-const env = (values: Record<string, string>) => values as NodeJS.ProcessEnv;
-
 describe("webBuiltinNames", () => {
-  test("visit_webpage and get_page_design need no key", () => {
-    expect(webBuiltinNames(env({}))).toEqual(["visit_webpage", "get_page_design"]);
-  });
-
-  test("web_search appears only when the host holds a Brave key", () => {
-    // Without one the builtin can only return "BRAVE_API_KEY is not set";
-    // offering a tool that can only fail wastes a turn.
-    expect(webBuiltinNames(env({ BRAVE_API_KEY: "k" }))).toEqual([
-      "visit_webpage",
-      "get_page_design",
-      "web_search",
-    ]);
+  test("offers all web builtins — every one is keyless", () => {
+    expect(webBuiltinNames()).toEqual(["visit_webpage", "get_page_design", "web_search"]);
   });
 });
 
 describe("createWebTools", () => {
-  test("exposes the builtins as AI SDK tools with descriptions", () => {
-    const tools = createWebTools(env({}));
-    expect(Object.keys(tools)).toEqual(["visit_webpage", "get_page_design"]);
-    expect(tools.visit_webpage?.description).toMatch(/webpage/i);
-    expect(tools.visit_webpage?.inputSchema).toBeDefined();
-    expect(tools.get_page_design?.description).toMatch(/design/i);
-    expect(tools.get_page_design?.inputSchema).toBeDefined();
+  test("builds an executable AI SDK tool per builtin", () => {
+    const tools = createWebTools();
+    expect(Object.keys(tools).sort()).toEqual(["get_page_design", "visit_webpage", "web_search"]);
+    for (const t of Object.values(tools)) {
+      expect(t.execute).toBeTypeOf("function");
+      expect(t.description).toBeTruthy();
+    }
   });
 
-  test("includes web_search when configured", () => {
-    expect(Object.keys(createWebTools(env({ BRAVE_API_KEY: "k" })))).toContain("web_search");
-  });
-
-  test("rejects malformed arguments instead of calling out", async () => {
-    const tools = createWebTools(env({}));
-    // No url: the builtin would otherwise fetch `undefined`.
-    const execute = tools.visit_webpage?.execute as
-      | ((args: unknown, options: unknown) => Promise<unknown>)
-      | undefined;
-    const result = await execute?.({}, { toolCallId: "t", messages: [] });
+  test("rejects invalid arguments as a tool-result error, not a throw", async () => {
+    const tools = createWebTools();
+    const result = await tools.visit_webpage?.execute?.(
+      {} as never,
+      { toolCallId: "t1", messages: [] } as never,
+    );
     expect(result).toMatchObject({ error: expect.stringContaining("Invalid arguments") });
   });
 });

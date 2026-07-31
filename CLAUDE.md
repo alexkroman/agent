@@ -380,12 +380,6 @@ voice agents without the CLI:
   added gateway model, a provider option — the prompt tells the agent to
   look up with `visit_webpage` (the AssemblyAI docs included) rather than
   guess.
-- **Dev-mode key check.** `assertDevKeys` (`index.ts`) refuses to start a
-  *local dev* server without `ASSEMBLYAI_API_KEY` and `BRAVE_API_KEY`. Both
-  stay optional in production — the studio degrades (chat 503s, `web_search`
-  is dropped) — but in dev that degradation is silent and reads as a bug, so
-  it fails at boot where the cause is obvious. `AAI_DEV_SKIP_KEY_CHECK=1`
-  overrides.
 - **Every coding-agent tool runs under a per-call deadline**
   (`studio-tool-timeout.ts`, `STUDIO_TOOL_TIMEOUT_MS`, default 120s —
   generous because `test_agent` runs a full Vite build). A hung call (dead
@@ -426,12 +420,11 @@ voice agents without the CLI:
   them — which is what buys `safeFetch`, the SSRF guard. A URL here is
   model-controlled and the studio runs on the platform host, so a
   hand-rolled `fetch` would be a request-forgery hole aimed at the metadata
-  endpoint. `visit_webpage` and `get_page_design` need no key; `web_search`
-  is dropped from the
-  tool set unless the host holds `BRAVE_API_KEY`, since without one it can
-  only return "not set" and waste a turn. The tool context is built from
-  that single variable, never `process.env`, so a coding turn cannot read
-  the host's other credentials.
+  endpoint. All three are keyless — `web_search` is DuckDuckGo-backed (HTML
+  endpoint scraping, ported from openclaw's duckduckgo plugin; see the SDK's
+  `builtin-tools.ts`), so the tool set never varies by host configuration
+  and the tool context carries an empty env: a coding turn cannot read any
+  host credential.
 - **The preview shows the *published* agent**, so edits look like they did
   nothing until Publish. `hasUnpublishedChanges` (`studio-workspace.ts`)
   compares a `filesHash` of the workspace against `deployedHash`, recorded
@@ -447,15 +440,15 @@ voice agents without the CLI:
   outright so the agent doesn't claim to have deployed or invent a live
   URL. Keep it that way — an agent that ships to a public URL on its own
   read of "make it live" is a surprise nobody asked for.
-- **LLM selection** (`studio-llm.ts`) uses the SDK's own provider
-  descriptors + `resolveLlm` (exported from `@alexkroman1/aai/runtime`).
-  Keys are **platform-owned host config**, never tenant env. Default: the
-  AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set (model
-  `qwen3-next-80b-a3b`; non-OpenAI gateway streams run through the
-  `repairOpenAiStream` fetch wrapper), else Anthropic via `ANTHROPIC_API_KEY`;
-  `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL` override (any pipeline-mode LLM
-  provider). Chat returns 503 when unconfigured — the editor and deploy
-  button still work without it.
+- **LLM selection** (`studio-llm.ts`): every studio turn runs on the
+  AssemblyAI LLM Gateway **with the caller's own API key** — the same bearer
+  the request authenticated with (`StudioChatDeps.apiKey`). The platform
+  holds no studio LLM credential at all: no `ASSEMBLYAI_API_KEY` host
+  fallback, no Anthropic fallback, no `STUDIO_LLM_PROVIDER`. The *model*
+  (never the key) stays host config: default `qwen3-next-80b-a3b`,
+  `STUDIO_LLM_MODEL` overrides; non-OpenAI gateway streams run through the
+  `repairOpenAiStream` fetch wrapper. Chat is always available — a bad key
+  surfaces as a gateway auth error on the turn, billed to nobody.
 - **Gateway regions.** `STUDIO_LLM_REGION=eu` selects the EU endpoint,
   which serves only Claude and most Gemini models. The gateway model list
   is therefore region-filtered (`GATEWAY_US_ONLY_MODELS`) and the EU
@@ -466,8 +459,9 @@ voice agents without the CLI:
   `model` field (a stray one is stripped by the body schema, never
   honored): every turn runs on the host-configured default —
   `qwen3-next-80b-a3b` on the gateway. **A client can never name a provider or a
-  model and never supplies a key** — keep it that way: reintroducing any
-  request-side choice must stay validated against host-held keys.
+  model** — the only request-side credential is the caller's own bearer,
+  which selects nothing: keep any future request-side choice validated
+  host-side.
 - **Session sandboxes run the agent's code work on production infra**:
   each chat request lazily provisions one sandbox (`studio-sandbox.ts`)
   through the same warm-pool/`spawnWarmHarness` path deployed agents use

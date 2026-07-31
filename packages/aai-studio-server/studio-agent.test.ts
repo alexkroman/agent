@@ -472,13 +472,12 @@ describe("runStudioChat", () => {
     warn.mockRestore();
   });
 
-  test("rejects when the model cannot be created (and disposes)", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "");
-    vi.stubEnv("ANTHROPIC_API_KEY", "");
-    vi.stubEnv("STUDIO_LLM_PROVIDER", "");
+  test("rejects when no caller key and no model are supplied (and disposes)", async () => {
     const disposeSandbox = vi.fn(async () => undefined);
     const deps = await makeDeps({ disposeSandbox });
-    await expect(runStudioChat(deps, [userMessage("hi")])).rejects.toThrow(/not configured/);
+    await expect(runStudioChat(deps, [userMessage("hi")])).rejects.toThrow(
+      /caller's AssemblyAI API key/,
+    );
     expect(disposeSandbox).toHaveBeenCalled();
   });
 });
