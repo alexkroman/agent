@@ -87,6 +87,7 @@ describe("env-only providers", () => {
     ["mistral", "MISTRAL_API_KEY"],
     ["xai", "XAI_API_KEY"],
     ["groq", "GROQ_API_KEY"],
+    ["openrouter", "OPENROUTER_API_KEY"],
     ["gateway", "AI_GATEWAY_API_KEY"],
   ] as const;
 

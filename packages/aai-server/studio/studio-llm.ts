@@ -29,7 +29,9 @@ import {
   MISTRAL_API_KEY_ENV,
   mistral,
   OPENAI_API_KEY_ENV,
+  OPENROUTER_API_KEY_ENV,
   openai,
+  openrouter,
   XAI_API_KEY_ENV,
   xai,
 } from "@alexkroman1/aai/llm";
@@ -157,6 +159,11 @@ const STUDIO_LLM_PROVIDERS: Record<string, StudioLlmEntry> = {
     envVar: GROQ_API_KEY_ENV,
     models: () => [],
     make: (model) => groq({ model }),
+  },
+  openrouter: {
+    envVar: OPENROUTER_API_KEY_ENV,
+    models: () => [],
+    make: (model) => openrouter({ model }),
   },
   gateway: {
     envVar: GATEWAY_API_KEY_ENV,

@@ -34,5 +34,13 @@ export * from "./llm/groq.ts";
 export * from "./llm/mistral.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./llm/openai.ts";
+export {
+  OPENROUTER_API_KEY_ENV,
+  OPENROUTER_BASE_URL,
+  OPENROUTER_KIND,
+  type OpenRouterOptions,
+  type OpenRouterProvider,
+  openrouter,
+} from "./llm/openrouter.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./llm/xai.ts";

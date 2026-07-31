@@ -111,7 +111,8 @@ simplest path and what `agent({ name })` gives you.
 SDK) and you choose your own STT, LLM, and TTS providers. Use it when:
 
 - you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq,
-  or 25+ models via the AssemblyAI LLM Gateway)
+  hundreds of models via OpenRouter, or 25+ models via the AssemblyAI
+  LLM Gateway)
 - you want a specific STT model or TTS voice
 - you need to swap providers without changing agent code
 
@@ -188,11 +189,18 @@ API keys require it; the US endpoints reject them. Example:
 | `mistral`   | `@ai-sdk/mistral`     | `MISTRAL_API_KEY`                |
 | `xai`       | `@ai-sdk/xai`         | `XAI_API_KEY`                    |
 | `groq`      | `@ai-sdk/groq`        | `GROQ_API_KEY`                   |
+| `openrouter`| `@ai-sdk/openai`      | `OPENROUTER_API_KEY`             |
 | `gateway`   | `ai` (built in)       | `AI_GATEWAY_API_KEY`             |
 | `assemblyAI`| `@ai-sdk/openai`      | `ASSEMBLYAI_API_KEY`             |
 
 LLM factories require `{ model: string }`. Example:
 `anthropic({ model: "claude-haiku-4-5" })`.
+
+`openrouter` routes through [OpenRouter](https://openrouter.ai) — an
+OpenAI-compatible endpoint fronting hundreds of models addressed as
+`"creator/model"`, e.g.
+`openrouter({ model: "meta-llama/llama-3.3-70b-instruct" })`. It needs
+no extra SDK install (it reuses the `@ai-sdk/openai` client).
 
 `gateway` routes through the [Vercel AI
 Gateway](https://vercel.com/docs/ai-gateway) — one endpoint fronting

@@ -35,6 +35,11 @@ import { GOOGLE_API_KEY_ENV, GOOGLE_KIND } from "../../sdk/providers/llm/google.
 import { GROQ_API_KEY_ENV, GROQ_KIND } from "../../sdk/providers/llm/groq.ts";
 import { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "../../sdk/providers/llm/mistral.ts";
 import { OPENAI_API_KEY_ENV, OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
+import {
+  OPENROUTER_API_KEY_ENV,
+  OPENROUTER_BASE_URL,
+  OPENROUTER_KIND,
+} from "../../sdk/providers/llm/openrouter.ts";
 import { XAI_API_KEY_ENV, XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import { OPENAI_REALTIME_KIND } from "../../sdk/providers/s2s/openai-realtime.ts";
 import {
@@ -313,6 +318,16 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
     envVar: GROQ_API_KEY_ENV,
     label: "Groq",
     create: (apiKey, d) => createGroq({ apiKey })(model(d)),
+  },
+  [OPENROUTER_KIND]: {
+    envVar: OPENROUTER_API_KEY_ENV,
+    label: "OpenRouter",
+    // OpenRouter is an OpenAI-compatible chat-completions API, so it
+    // reuses @ai-sdk/openai's chat client pointed at its base URL — the
+    // same shape as the AssemblyAI LLM Gateway below. Model ids are
+    // "creator/model" strings, e.g. "anthropic/claude-sonnet-4.5".
+    create: (apiKey, d) =>
+      createOpenAI({ apiKey, baseURL: OPENROUTER_BASE_URL, name: "openrouter" }).chat(model(d)),
   },
   [GATEWAY_KIND]: {
     envVar: GATEWAY_API_KEY_ENV,
