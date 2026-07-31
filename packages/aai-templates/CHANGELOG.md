@@ -1,5 +1,11 @@
 # aai-templates
 
+## 0.3.1
+
+### Patch Changes
+
+- 34b40f7: Switch the pipeline-simple template's TTS from Cartesia to AssemblyAI so all templates use AssemblyAI TTS
+
 ## 0.3.0
 
 ### Minor Changes

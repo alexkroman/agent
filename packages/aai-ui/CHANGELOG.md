@@ -1,5 +1,21 @@
 # @alexkroman1/aai-ui
 
+## 4.0.0
+
+### Minor Changes
+
+- 3125c8d: Render agent chat messages as Markdown in the default client UI (emphasis, lists, code, links, tables), with model-authored HTML kept escaped
+
+### Patch Changes
+
+- Updated dependencies [3e21af9]
+- Updated dependencies [9ad4e51]
+- Updated dependencies [b50b0e9]
+- Updated dependencies [b50b0e9]
+- Updated dependencies [577b17a]
+- Updated dependencies [527c401]
+  - @alexkroman1/aai@4.0.0
+
 ## 3.2.0
 
 ### Patch Changes
