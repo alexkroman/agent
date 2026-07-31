@@ -104,10 +104,6 @@ const init = defineCommand({
     server: sharedArgs.server,
     yes: sharedArgs.yes,
     json: sharedArgs.json,
-    skipApi: {
-      type: "boolean",
-      description: "Deprecated no-op: the API key is now only requested when deploying",
-    },
     skipDeploy: { type: "boolean", description: "Skip deploy after scaffolding" },
   },
   async run({ args }) {

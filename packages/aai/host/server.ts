@@ -78,7 +78,7 @@ export type AgentServer = {
  * anyone on the same network (a shared office or cafe LAN). Exposing it is now
  * an explicit choice by the caller.
  */
-export const DEFAULT_LISTEN_HOST = "127.0.0.1";
+const DEFAULT_LISTEN_HOST = "127.0.0.1";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 

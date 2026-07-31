@@ -89,7 +89,6 @@ const ManifestSchema = z.object({
   // "" is the documented "disable the error phrase" value — no min(1).
   errorPhrase: z.string().optional(),
   falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
-  theme: z.record(z.string(), z.string()).optional(),
   tools: z.record(z.string(), ToolManifestSchema).default({}),
   allowedHosts: AllowedHostsSchema.default([]),
   stt: ProviderDescriptorSchema.optional(),

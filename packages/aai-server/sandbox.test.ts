@@ -3,13 +3,15 @@
 import type { Message } from "@alexkroman1/aai";
 import { anthropic } from "@alexkroman1/aai/llm";
 import type { ClientEvent, ClientSink } from "@alexkroman1/aai/protocol";
+import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { assemblyAI } from "@alexkroman1/aai/stt";
 import { cartesia } from "@alexkroman1/aai/tts";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createClientSendHandler } from "./client-send.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { createSandbox, createSlotCache, resolveSandbox, type SandboxOptions } from "./sandbox.ts";
+import { createSandbox, resolveSandbox, type SandboxOptions } from "./sandbox.ts";
+import { createSlotCache } from "./sandbox-slots.ts";
 import { createTestStore } from "./test-utils.ts";
 
 // ── Mock sandbox-vm ──────────────────────────────────────────────────────────
@@ -81,6 +83,7 @@ function makeSandboxOptions(overrides?: Partial<SandboxOptions>): SandboxOptions
     env: { AAI_ENV_TEST: "1" },
     slug: "test-agent",
     agentConfig: TEST_AGENT_CONFIG,
+    defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     ...overrides,
   };
 }
@@ -475,7 +478,7 @@ describe("createSandbox", () => {
   // in by asserting the runtime actually receives them.
 
   it("threads pipeline descriptors from agentConfig into createRuntime", async () => {
-    const stt = assemblyAI({ model: "u3pro-rt" });
+    const stt = assemblyAI({ model: "universal-3-5-pro" });
     const llm = anthropic({ model: "claude-haiku-4-5" });
     const tts = cartesia({ voice: "v" });
     const sandbox = createSandbox(
@@ -603,7 +606,11 @@ describe("createSandbox", () => {
         credential_hashes: ["hash"],
         agentConfig: TEST_AGENT_CONFIG,
       });
-      return { slots: createSlotCache(), store };
+      return {
+        slots: createSlotCache(),
+        store,
+        defaultVector: (slug: string) => createMemoryVector({ namespace: slug }),
+      };
     }
 
     it("detaches the resident sandbox when its VM fails to start", async () => {

@@ -16,7 +16,6 @@ import {
   type AgentRuntime,
   type CloseableDb,
   createGenerateFn,
-  createMemoryVector,
   createRuntime,
   type ExecuteTool,
   resolveVector,
@@ -40,17 +39,6 @@ import { createSandboxVm } from "./sandbox-vm.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
-// ── Re-exports consumed by orchestrator / handlers / tests ──────────────
-
-export {
-  type AgentSlot,
-  createSlotCache,
-  type SlotCache,
-  terminateSlot,
-  withSlugLock,
-} from "./sandbox-slots.ts";
-export type { AgentMetadata } from "./schemas.ts";
-
 // ── Types ───────────────────────────────────────────────────────────────
 
 export type SandboxOptions = {
@@ -69,9 +57,8 @@ export type SandboxOptions = {
   /**
    * Factory that creates the platform-default Vector for a given agent slug.
    * Used when the agent config does not declare a `vector` provider.
-   * If omitted, falls back to an in-memory vector store.
    */
-  defaultVector?: (slug: string) => Vector;
+  defaultVector: (slug: string) => Vector;
   /**
    * Called when the sandbox VM fails to start (rejected `vmReady`). The
    * sandbox object was already returned synchronously by then, so this is
@@ -87,16 +74,16 @@ export type Sandbox = AgentRuntime;
 
 /**
  * Resolve the Vector store an agent gets: its declared `vector:` provider
- * or the platform default factory (in-memory when none is supplied).
+ * or the platform default factory.
  */
 export function resolveAgentVector(
   slug: string,
   config: Pick<IsolateConfig, "vector"> | null,
   env: Record<string, string>,
-  defaultVector?: (slug: string) => Vector,
+  defaultVector: (slug: string) => Vector,
 ): Vector {
   if (config?.vector) return resolveVector(config.vector, env, slug);
-  return defaultVector ? defaultVector(slug) : createMemoryVector({ namespace: slug });
+  return defaultVector(slug);
 }
 
 export function createSandbox(opts: SandboxOptions): Sandbox {
@@ -174,10 +161,10 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     if (parsed.success) {
       return parsed.data.result;
     }
-    if (typeof raw === "object" && raw !== null && "error" in raw) {
-      return String((raw as { error: unknown }).error);
-    }
-    return "Tool execution failed: invalid response from sandbox";
+    // A schema mismatch means the host↔guest contract is broken — log it
+    // loudly rather than letting it surface only as a confused conversation.
+    console.error("Invalid tool response from sandbox", { slug, tool: name });
+    return toolError(`Tool "${name}" failed in sandbox: invalid response`);
   };
 
   // Builtin resolution (including "a custom tool of the same name wins") lives
@@ -322,7 +309,7 @@ type ResolveSandboxOpts = {
   /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
   pool?: SandboxPool;
-  defaultVector?: (slug: string) => Vector;
+  defaultVector: (slug: string) => Vector;
 };
 
 /**
@@ -356,7 +343,7 @@ function buildSlotSandbox(
     agentConfig: parts.agentConfig,
     ...(db && { db }),
     ...(opts.pool && { pool: opts.pool }),
-    ...(opts.defaultVector && { defaultVector: opts.defaultVector }),
+    defaultVector: opts.defaultVector,
     onVmFailed: () => {
       void withSlugLock(slug, async () => {
         const current = opts.slots.get(slug);
@@ -401,10 +388,7 @@ export async function resolveSandbox(
     if (!slot) {
       const manifest = await store.getManifest(slug);
       if (!manifest) return null;
-      slot = {
-        slug: manifest.slug,
-        keyHash: manifest.credential_hashes[0] ?? "",
-      };
+      slot = { slug: manifest.slug };
       setSlot(slots, slot);
       debug("Lazy-discovered agent from store", { slug });
     }

@@ -58,7 +58,6 @@ OPTIONS
       -s, --server=<server>    Platform server URL
                   -y, --yes    Accept defaults (no prompts)
                      --json    Output JSON (auto-detected in non-TTY)
-                  --skipApi    Deprecated no-op: the API key is now only requested when deploying
                --skipDeploy    Skip deploy after scaffolding"
 `;
 

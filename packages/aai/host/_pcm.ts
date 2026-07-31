@@ -23,18 +23,3 @@ export function bytesToPcm16(bytes: Uint8Array): Int16Array {
 export function pcm16ToBytes(pcm: Int16Array): Uint8Array {
   return new Uint8Array(pcm.buffer, pcm.byteOffset, pcm.byteLength);
 }
-
-/**
- * Append trailing silence to a PCM16 byte buffer — used when an uploaded
- * clip is replayed through a realtime STT session, whose endpointing needs
- * silence after the speech to commit the final turn.
- */
-export function withTrailingSilence(
-  bytes: Uint8Array,
-  sampleRate: number,
-  seconds = 1,
-): Uint8Array {
-  const padded = new Uint8Array(bytes.byteLength + sampleRate * 2 * seconds);
-  padded.set(bytes);
-  return padded;
-}

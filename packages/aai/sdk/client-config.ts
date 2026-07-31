@@ -19,7 +19,7 @@ export const CLIENT_CONFIG_PATH = "client-config";
 
 /**
  * Body of `GET /client-config`. Unknown fields are stripped, so a response
- * from an older server (which also sent a `transport` field) still parses.
+ * from an older server still parses.
  */
 export const ClientConfigResponseSchema = z.object({
   /** Agent display name, for the default client's header/start screen. */

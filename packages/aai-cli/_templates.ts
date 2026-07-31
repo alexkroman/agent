@@ -5,7 +5,7 @@ import fs from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { downloadTemplate } from "giget";
-import { getMonorepoRoot, isDevMode } from "./_agent.ts";
+import { getMonorepoRoot } from "./_agent.ts";
 import { errorMessage } from "./_utils.ts";
 
 const GIGET_SOURCE = "github:alexkroman/agent/packages/aai-templates";
@@ -29,8 +29,7 @@ async function resolveTemplatesDir(): Promise<TemplatesDir> {
   if (process.env.AAI_TEMPLATES_DIR) {
     return { root: process.env.AAI_TEMPLATES_DIR, cleanup: noCleanup };
   }
-  // isDevMode() implies a monorepo checkout, so getMonorepoRoot() is non-null.
-  const monorepoRoot = isDevMode() ? getMonorepoRoot() : null;
+  const monorepoRoot = getMonorepoRoot();
   if (monorepoRoot) {
     return { root: path.join(monorepoRoot, "packages", "aai-templates"), cleanup: noCleanup };
   }

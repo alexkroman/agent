@@ -156,7 +156,6 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
   if (opts.seedSandbox !== false) {
     slots.set(slug, {
       slug,
-      keyHash: "test-hash",
       sandbox: sandbox as unknown as { shutdown(): Promise<void> },
     });
   }

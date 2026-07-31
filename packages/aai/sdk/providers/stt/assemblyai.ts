@@ -16,25 +16,15 @@ export const ASSEMBLYAI_KIND = "assemblyai" as const;
 /** Agent-env variable holding the AssemblyAI API key. */
 export const ASSEMBLYAI_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 
-/**
- * US (default) streaming endpoint — the `assemblyai` SDK's own default. Only
- * the EU URL is ever passed to the SDK, so a future SDK path bump cannot be
- * silently undone by a stale copy here; this constant exists for symmetry and
- * tests.
- */
-export const ASSEMBLYAI_STREAMING_URL = "wss://streaming.assemblyai.com/v3/ws";
-
 /** EU data-residency streaming endpoint. */
 export const ASSEMBLYAI_STREAMING_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
 
 export interface AssemblyAIOptions {
   /**
    * Streaming speech model. Defaults to `"universal-3-5-pro"` (Universal-3.5
-   * Pro Real-Time). The legacy alias `"u3pro-rt"` is still accepted and maps to
-   * the SDK's `"u3-rt-pro"`. Arbitrary strings are forwarded to the SDK
-   * unchanged.
+   * Pro Real-Time). Arbitrary strings are forwarded to the SDK unchanged.
    */
-  model?: "universal-3-5-pro" | "u3pro-rt" | string;
+  model?: "universal-3-5-pro" | string;
   /**
    * EU data-residency — routes both streaming and sync transcription to
    * AssemblyAI's EU endpoints (`streaming.eu.assemblyai.com` /

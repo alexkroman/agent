@@ -5,7 +5,7 @@ import { HTTPException } from "hono/http-exception";
 import { parseBearer } from "./_bearer.ts";
 import type { HonoEnv } from "./context.ts";
 import { RESERVED_SLUGS, VALID_SLUG_RE } from "./schemas.ts";
-import { hashApiKey, verifySlugOwner } from "./secrets.ts";
+import { verifySlugOwner } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 
 function requireBearerToken(req: Request): string {
@@ -32,8 +32,8 @@ export function validateSlug(slug: string): string {
 
 export async function requireOwner(
   req: Request,
-  opts: { slug: string; store: BundleStore; allowUnclaimed?: boolean },
-): Promise<{ apiKey: string; keyHash: string }> {
+  opts: { slug: string; store: BundleStore },
+): Promise<{ apiKey: string }> {
   const apiKey = requireBearerToken(req);
   const result = await verifySlugOwner(apiKey, { slug: opts.slug, store: opts.store });
   if (result.status === "forbidden") {
@@ -44,15 +44,9 @@ export async function requireOwner(
     // claims it) may proceed. Data routes (vector/secret/storage) must reject it,
     // otherwise any authenticated caller could pre-seed state for a slug they
     // don't own and have the eventual owner silently inherit it.
-    if (!opts.allowUnclaimed) {
-      throw new HTTPException(404, { message: `Agent ${opts.slug} not found` });
-    }
-    // Deploy-claim path: compute the hash lazily, only once we know the
-    // caller may proceed — verifySlugOwner no longer burns an expensive
-    // fresh-salt argon2 derivation on every request for a nonexistent slug.
-    return { apiKey, keyHash: await hashApiKey(apiKey) };
+    throw new HTTPException(404, { message: `Agent ${opts.slug} not found` });
   }
-  return { apiKey, keyHash: result.keyHash };
+  return { apiKey };
 }
 
 export const slugMw = createMiddleware<HonoEnv>(async (c, next) => {
@@ -62,31 +56,15 @@ export const slugMw = createMiddleware<HonoEnv>(async (c, next) => {
 });
 
 /**
- * Ownership for the deploy route: an unclaimed slug is allowed through so a
- * first deploy can claim it.
- */
-export const ownerMw = createMiddleware<HonoEnv>(async (c, next) => {
-  const { apiKey, keyHash } = await requireOwner(c.req.raw, {
-    slug: c.var.slug,
-    store: c.env.store,
-    allowUnclaimed: true,
-  });
-  c.set("apiKey", apiKey);
-  c.set("keyHash", keyHash);
-  await next();
-});
-
-/**
  * Ownership for data/secret routes: requires the slug to already exist and be
  * owned by the caller. Rejects unclaimed slugs (see requireOwner).
  */
 export const existingOwnerMw = createMiddleware<HonoEnv>(async (c, next) => {
-  const { apiKey, keyHash } = await requireOwner(c.req.raw, {
+  const { apiKey } = await requireOwner(c.req.raw, {
     slug: c.var.slug,
     store: c.env.store,
   });
   c.set("apiKey", apiKey);
-  c.set("keyHash", keyHash);
   await next();
 });
 

@@ -12,10 +12,10 @@ test("concurrent deploy and delete are serialized", async () => {
   // Fire deploy and delete concurrently for the same slug.
   // Without the shared lock the delete could run mid-deploy, corrupting state.
   const [deployResp, deleteResp] = await Promise.all([
-    fetch("/my-agent/deploy", {
+    fetch("/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-      body: deployBody(),
+      body: deployBody({ slug: "my-agent" }),
     }),
     fetch("/my-agent", {
       method: "DELETE",

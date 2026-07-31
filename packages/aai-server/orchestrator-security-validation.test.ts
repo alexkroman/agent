@@ -11,24 +11,50 @@ import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { createMemoryChatStore } from "./studio/chat-store.ts";
 import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
-import { createTestOrchestrator, createTestStore, deployAgent } from "./test-utils.ts";
+import {
+  authHeaders,
+  createTestOrchestrator,
+  createTestStore,
+  deployAgent,
+  deployBody,
+} from "./test-utils.ts";
 
 // ── Slug Validation & Path Traversal ───────────────────────────────────
 
 describe("slug validation prevents path traversal", () => {
-  test("rejects slug with path traversal characters", async () => {
+  test("deploy rejects a body slug with path traversal characters", async () => {
     const { fetch } = await createTestOrchestrator();
 
-    const res = await fetch("/../etc/passwd/deploy", { method: "POST" });
-    // Either 400 (invalid slug) or 404 — but not a successful traversal
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    // The slug now travels in the deploy body; DeployBodySchema must reject
+    // anything outside the slug grammar before it becomes a storage path.
+    const res = await fetch("/deploy", {
+      method: "POST",
+      headers: authHeaders(),
+      body: deployBody({ slug: "../etc/passwd" }),
+    });
+    expect(res.status).toBe(400);
   });
 
-  test("rejects slug with URL-encoded traversal", async () => {
+  test("deploy rejects a body slug with URL-encoded traversal", async () => {
     const { fetch } = await createTestOrchestrator();
 
-    const res = await fetch("/%2e%2e%2fetc%2fpasswd/deploy", { method: "POST" });
-    expect(res.status).toBeGreaterThanOrEqual(400);
+    const res = await fetch("/deploy", {
+      method: "POST",
+      headers: authHeaders(),
+      body: deployBody({ slug: "%2e%2e%2fetc%2fpasswd" }),
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("deploy rejects a reserved body slug", async () => {
+    const { fetch } = await createTestOrchestrator();
+
+    const res = await fetch("/deploy", {
+      method: "POST",
+      headers: authHeaders(),
+      body: deployBody({ slug: "studio" }),
+    });
+    expect(res.status).toBe(400);
   });
 
   test("rejects slug with dots", async () => {
@@ -116,7 +142,7 @@ describe("security headers on all response types", () => {
     const { fetch } = await createTestOrchestrator();
 
     // Trigger a 401
-    const res = await fetch("/my-agent/deploy", { method: "POST" });
+    const res = await fetch("/deploy", { method: "POST" });
     expect(res.status).toBe(401);
     expect(res.headers.get("X-Content-Type-Options")).toBe("nosniff");
   });

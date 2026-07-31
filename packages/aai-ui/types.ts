@@ -7,7 +7,6 @@ import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 // MAX_CLIENT_WS_BUFFERED_BYTES).
 export {
   CAPTURE_STOP_ACK_TIMEOUT_MS,
-  DEFAULT_STT_SAMPLE_RATE,
   MIC_BUFFER_SECONDS,
   MIC_SEND_MAX_BUFFERED_BYTES,
   MIC_SILENCE_PROBE_MS,

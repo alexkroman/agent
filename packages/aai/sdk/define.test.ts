@@ -60,7 +60,7 @@ describe("agent()", () => {
   });
 
   function pipelineAgent() {
-    const stt = assemblyAI({ model: "u3pro-rt" });
+    const stt = assemblyAI({ model: "universal-3-5-pro" });
     const tts = cartesia({ voice: "v" });
     const llm = anthropic({ model: "claude-haiku-4-5" });
     return { stt, llm, tts, def: agent({ name: "t", systemPrompt: "p", stt, llm, tts }) };

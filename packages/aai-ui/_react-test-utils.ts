@@ -5,7 +5,7 @@
  * No dependency on @preact/signals.
  */
 
-import type { SessionCore, SessionSnapshot } from "./session-core.ts";
+import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
 import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
 
 /**

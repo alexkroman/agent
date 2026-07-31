@@ -90,13 +90,10 @@ export const DbQueryParamsSchema = z.object({
   params: z.array(z.unknown()).optional(),
 });
 
+// Zod strips unknown keys, so a legacy guest that still echoes per-session
+// `state` on a tool response parses fine — the host only ever reads `result`.
 export const ToolCallResponseSchema = z.object({
   result: z.string(),
-  // Older guest harnesses echoed the full per-session state on every tool
-  // response. The host never reads it (the guest's own session-state map is
-  // the source of truth), and current guests no longer send it — kept
-  // optional so old and new sides interoperate.
-  state: z.record(z.string(), z.unknown()).optional(),
 });
 
 // ── Typed method map for the host↔guest NDJSON link ─────────────────────────

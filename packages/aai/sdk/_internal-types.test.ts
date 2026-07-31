@@ -64,12 +64,6 @@ describe("AgentConfigSchema", () => {
     expect(AgentConfigSchema.safeParse({ ...base, mode: "hybrid" }).success).toBe(false);
   });
 
-  test("strips a legacy transport field from an older stored config", () => {
-    const result = AgentConfigSchema.safeParse({ ...base, transport: "sync" });
-    expect(result.success).toBe(true);
-    expect(result.data).not.toHaveProperty("transport");
-  });
-
   test.each([["api.example.com"], ["*.example.com"], ["sub.domain.example.co.uk"]])(
     "accepts allowedHosts pattern %s",
     (host) => {

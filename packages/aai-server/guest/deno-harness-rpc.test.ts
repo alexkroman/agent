@@ -38,13 +38,8 @@ function getWrittenLines(): unknown[] {
 // Dynamic import after shim is in place.
 const harness = await import("./deno-harness.ts");
 const { createSessionMessagesCache } = await import("./harness-messages.ts");
-const {
-  createSessionStateMap,
-  handleRequest,
-  handleHostResponse,
-  handleNotification,
-  pendingHostRequests,
-} = harness;
+const { pendingHostRequests } = await import("./harness-rpc.ts");
+const { createSessionStateMap, handleRequest, handleHostResponse, handleNotification } = harness;
 
 /** Yield a macrotask so the async serialized stdout writer can flush. */
 function flush(): Promise<void> {

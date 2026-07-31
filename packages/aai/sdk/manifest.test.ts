@@ -21,7 +21,6 @@ describe("parseManifest", () => {
       maxSteps: 10,
       toolChoice: "auto",
       idleTimeoutMs: undefined,
-      theme: undefined,
       builtinTools: ["think", "remember", "recall", "calculate"],
       allowedHosts: [],
       tools: {},
@@ -42,7 +41,6 @@ describe("parseManifest", () => {
       maxSteps: 10,
       toolChoice: "required" as const,
       idleTimeoutMs: 60_000,
-      theme: { bg: "#000", primary: "#fff" },
       tools: {
         get_weather: {
           description: "Get weather",
@@ -199,7 +197,7 @@ describe("parseManifest vector", () => {
 });
 
 describe("parseManifest — mode classification", () => {
-  const stubStt = assemblyAI({ model: "u3pro-rt" });
+  const stubStt = assemblyAI({ model: "universal-3-5-pro" });
   const stubTts = cartesia({ voice: "v" });
   const stubLlm = anthropic({ model: "claude-haiku-4-5" });
 
@@ -244,7 +242,7 @@ describe("parseManifest — mode classification", () => {
 
 describe("parseManifest — silence nudge", () => {
   const pipelineFields = {
-    stt: assemblyAI({ model: "u3pro-rt" }),
+    stt: assemblyAI({ model: "universal-3-5-pro" }),
     llm: anthropic({ model: "claude-haiku-4-5" }),
     tts: cartesia({ voice: "v" }),
   };
@@ -304,7 +302,7 @@ describe("parseManifest — silence nudge", () => {
 
 describe("parseManifest — pipeline voice tuning", () => {
   const pipelineFields = {
-    stt: assemblyAI({ model: "u3pro-rt" }),
+    stt: assemblyAI({ model: "universal-3-5-pro" }),
     llm: anthropic({ model: "claude-haiku-4-5" }),
     tts: cartesia({ voice: "v" }),
   };

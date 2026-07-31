@@ -601,7 +601,7 @@ requires either zero or all three of `stt`/`llm`/`tts`.
 Reference providers shipped today:
 
 - **STT**: one of
-  - `assemblyAI({ model: "u3pro-rt" })` — `ASSEMBLYAI_API_KEY`
+  - `assemblyAI({ model: "universal-3-5-pro" })` — `ASSEMBLYAI_API_KEY`
   - `deepgram({ model: "nova-3" })` — `DEEPGRAM_API_KEY`
   - `elevenlabs({ model: "scribe_v2_realtime" })` — `ELEVENLABS_API_KEY`
   - `soniox({ model: "stt-rt-v3" })` — `SONIOX_API_KEY`
@@ -1669,13 +1669,16 @@ stored env at sandbox creation time and kept host-side only.
 
 **Auth:**
 
-- API key hashes compared with `timingSafeEqual` (constant-time).
-  Keys are SHA-256 hashed and cached; slug ownership is verified
-  against stored credential hashes.
+- API key ownership hashes are argon2id PHC strings (`secrets.ts`), verified
+  constant-time inside `@node-rs/argon2` and cached by SHA-256(apiKey) —
+  slug ownership is verified against stored credential hashes. There are no
+  legacy hash/decrypt fallbacks (nothing predating the current scheme was
+  ever deployed).
 - Stored credentials (agent env vars / secrets) live in Supabase Vault,
   which encrypts at rest — there is deliberately no app-layer encryption
-  on top, and no legacy hash/decrypt fallbacks (nothing predating the
-  current scheme was ever deployed). API key ownership hashes are argon2id.
+  on top.
+- Deploys go through the single `POST /deploy` route (slug in the body);
+  the legacy `POST /:slug/deploy` route was removed.
 - Deploys check slug ownership whether the slug was requested or generated —
   a `humanId()` collision returns 409 rather than overwriting an existing
   agent and appending the caller's credential hash to it.

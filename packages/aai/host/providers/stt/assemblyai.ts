@@ -34,14 +34,6 @@ export interface AssemblyAISession extends SttSession {
   readonly _transcriber: StreamingTranscriber;
 }
 
-function resolveSpeechModel(model: string): string {
-  // Normalize friendly/legacy aliases to the AssemblyAI streaming enum values.
-  // The API rejects "universal-3.5-pro" (dot) and "u3pro-rt"; map both.
-  if (model === "u3pro-rt") return "u3-rt-pro";
-  if (model === "universal-3.5-pro") return "universal-3-5-pro";
-  return model;
-}
-
 /**
  * `agent_context` is accepted only by the Universal-3.5 Pro streaming
  * family — connection-time is rejected and mid-stream updates are stripped
@@ -137,7 +129,7 @@ function buildTranscriberParams(
   opts: AssemblyAIOptions,
   openOpts: SttOpenOptions,
 ): { params: Record<string, unknown>; agentContextCapable: boolean } {
-  const speechModel = resolveSpeechModel(opts.model ?? "universal-3-5-pro");
+  const speechModel = opts.model ?? "universal-3-5-pro";
   const agentContextCapable = supportsAgentContext(speechModel);
   const initialAgentContext = agentContextCapable
     ? normalizeAgentContext(openOpts.agentContext ?? "")

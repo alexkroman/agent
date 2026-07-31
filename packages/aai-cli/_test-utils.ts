@@ -17,7 +17,7 @@ export async function withTempDir(fn: (dir: string) => Promise<void>): Promise<v
 }
 
 /** Stub console.log to suppress output in tests. */
-export function silenceSteps(): {
+function silenceSteps(): {
   restore: () => void;
 } {
   const orig = console.log;

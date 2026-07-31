@@ -8,7 +8,7 @@ describe("e2e HTTP malformed payload rejection", () => {
   test("deploy rejects non-JSON body", async () => {
     const { fetch } = await createTestOrchestrator();
 
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: {
         Authorization: "Bearer key1",
@@ -37,7 +37,7 @@ describe("e2e HTTP malformed payload rejection", () => {
   test("deploy rejects array body", async () => {
     const { fetch } = await createTestOrchestrator();
 
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: {
         Authorization: "Bearer key1",
@@ -52,7 +52,7 @@ describe("e2e HTTP malformed payload rejection", () => {
     const { fetch } = await createTestOrchestrator();
 
     // MAX_WORKER_SIZE is enforced by the schema
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: {
         Authorization: "Bearer key1",
@@ -74,7 +74,7 @@ describe("HTTP endpoint schema validation", () => {
   test("deploy endpoint rejects invalid deploy body with 400", async () => {
     const { fetch } = await createTestOrchestrator();
 
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: {
         Authorization: "Bearer key1",

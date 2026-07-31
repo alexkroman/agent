@@ -7,7 +7,6 @@ import { IDLE_SANDBOX_MS } from "./constants.ts";
 
 export type AgentSlot = {
   slug: string;
-  keyHash: string;
   sandbox?: { shutdown(): Promise<void> };
   idleTimer?: NodeJS.Timeout;
   /** Number of live WebSocket sessions on this slot's sandbox. */

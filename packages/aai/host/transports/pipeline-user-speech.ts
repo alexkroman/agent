@@ -182,7 +182,7 @@ export interface SttEventHandlers {
  * `hasTurnSpoken` / `isPlaybackPending` predicates rather than as captured
  * variables, so this module never needs to know how a turn is represented.
  */
-export function createSttEventHandlers(deps: {
+function createSttEventHandlers(deps: {
   /** True once the transport terminated — every inbound event is then dropped. */
   isTerminated: () => boolean;
   /** True while a turn is in flight server-side (an abortable reply exists). */

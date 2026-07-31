@@ -12,7 +12,7 @@ import {
 // The non-shim entry point delegates to React's native useSyncExternalStore
 // (guaranteed by the React 18+ peer) instead of bundling the userland shim.
 import { useSyncExternalStoreWithSelector } from "use-sync-external-store/with-selector";
-import type { SessionCore, SessionSnapshot } from "./session-core.ts";
+import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
 import type { ClientTheme } from "./types.ts";
 
 // AssemblyAI design system ("website refresh"): warm cream surface, deep

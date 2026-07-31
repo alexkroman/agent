@@ -81,7 +81,7 @@ const POOL_SIZE_MAX = 16;
 /** Base cooldown after a spawn failure before replenishment resumes. */
 export const SPAWN_FAILURE_COOLDOWN_MS = 30_000;
 /** Cap on the exponential backoff for consecutive spawn failures. */
-export const SPAWN_FAILURE_COOLDOWN_MAX_MS = 5 * 60_000;
+const SPAWN_FAILURE_COOLDOWN_MAX_MS = 5 * 60_000;
 
 export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
   const targetSize = Math.max(1, Math.min(POOL_SIZE_MAX, Math.floor(opts.targetSize)));

@@ -18,7 +18,7 @@ import { createTestOrchestrator } from "./test-utils.ts";
  * Build a deploy body from an SDK-defined agent, mimicking what the CLI does.
  */
 // biome-ignore lint/suspicious/noExplicitAny: accepts any state type
-function buildDeployBodyFromAgent(agent: AgentDef<any>): string {
+function buildDeployBodyFromAgent(slug: string, agent: AgentDef<any>): string {
   const config = toAgentConfig(agent);
   const toolSchemas = agentToolsToSchemas(agent.tools);
 
@@ -30,6 +30,7 @@ function buildDeployBodyFromAgent(agent: AgentDef<any>): string {
   // The deploy body contains the bundled worker code (JS string),
   // client files, env, and pre-extracted agentConfig.
   return JSON.stringify({
+    slug,
     env: { ASSEMBLYAI_API_KEY: "test-key" },
     worker: `export default ${JSON.stringify(config)};`,
     clientFiles: {
@@ -58,8 +59,8 @@ describe("cross-package smoke: SDK → server deploy", () => {
     };
 
     const { fetch } = await createTestOrchestrator();
-    const body = buildDeployBodyFromAgent(agent);
-    const res = await fetch("/smoke-test/deploy", {
+    const body = buildDeployBodyFromAgent("smoke-test", agent);
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
       body,
@@ -77,10 +78,10 @@ describe("cross-package smoke: SDK → server deploy", () => {
     };
     const { fetch } = await createTestOrchestrator();
 
-    await fetch("/accessible-agent/deploy", {
+    await fetch("/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-      body: buildDeployBodyFromAgent(agent),
+      body: buildDeployBodyFromAgent("accessible-agent", agent),
     });
 
     const healthRes = await fetch("/accessible-agent/health");

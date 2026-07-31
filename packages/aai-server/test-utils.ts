@@ -2,8 +2,7 @@
 
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { createOrchestrator } from "./orchestrator.ts";
-import type { AgentSlot } from "./sandbox.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
+import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
 import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -104,7 +103,6 @@ export function createTestStore(secrets?: SecretStore): BundleStore {
 export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {
   return {
     slug: "test-agent",
-    keyHash: "test-key-hash",
     ...overrides,
   };
 }
@@ -185,9 +183,9 @@ export async function deployAgent(
   slug = "my-agent",
   key = "key1",
 ): Promise<void> {
-  await fetch(`/${slug}/deploy`, {
+  await fetch("/deploy", {
     method: "POST",
     headers: authHeaders(key),
-    body: deployBody(),
+    body: deployBody({ slug }),
   });
 }

@@ -1,6 +1,4 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { existsSync } from "node:fs";
-import os from "node:os";
 import path from "node:path";
 import * as p from "@clack/prompts";
 import envPaths from "env-paths";
@@ -26,38 +24,18 @@ const ProjectConfigSchema = z.object({
 });
 
 /**
- * Config dir the CLI used before switching to env-paths. On Linux it matches
- * env-paths exactly; on macOS (XDG-style vs ~/Library/Preferences/aai) and
- * Windows (no trailing `Config` segment) it does not.
- */
-function legacyConfigDir(): string {
-  if (process.platform === "win32") {
-    return path.join(process.env.APPDATA ?? path.join(os.homedir(), "AppData", "Roaming"), "aai");
-  }
-  return path.join(process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config"), "aai");
-}
-
-/**
- * Resolve the global config directory, preferring the platform-conventional
- * env-paths location while staying backward compatible: an existing config at
- * the legacy path keeps winning so already-authenticated users are not
- * silently logged out. Injectable for tests.
+ * Resolve the global config directory (the platform-conventional env-paths
+ * location).
  *
  * `AAI_CONFIG_DIR` overrides everything — it exists so tests (and unusual
  * setups) can redirect ALL global-config reads and writes away from the
  * user's real config. The test suite's `approveServer` calls used to
  * permanently pollute `~/.config/aai/config.json` with approved origins.
  */
-export function getConfigDir(
-  dirs: { legacy: string; modern: string } = {
-    legacy: legacyConfigDir(),
-    modern: envPaths("aai", { suffix: "" }).config,
-  },
-  exists: (p: string) => boolean = existsSync,
-): string {
+export function getConfigDir(): string {
   const override = process.env.AAI_CONFIG_DIR?.trim();
   if (override) return override;
-  return exists(path.join(dirs.legacy, "config.json")) ? dirs.legacy : dirs.modern;
+  return envPaths("aai", { suffix: "" }).config;
 }
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;

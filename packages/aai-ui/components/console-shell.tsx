@@ -15,7 +15,7 @@ import { Eyebrow } from "./eyebrow.tsx";
  *
  * @internal
  */
-export function stateColor(state: AgentState, primary: string): string {
+function stateColor(state: AgentState, primary: string): string {
   switch (state) {
     case "listening":
     case "speaking":
@@ -36,9 +36,6 @@ export function stateColor(state: AgentState, primary: string): string {
  * (logo + live-status eyebrow), an optional error banner, the main content
  * on a raised white card, and a footer row beneath it.
  *
- * Extracted so the two default surfaces stay visually identical by
- * construction — they used to be hand-copied down to the same `boxShadow`
- * literal, and drifted.
  *
  * @internal
  */

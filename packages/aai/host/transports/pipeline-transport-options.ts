@@ -42,7 +42,7 @@ export interface PipelineTransportOptions {
   /** Tool schemas (JSON Schema) for Vercel AI tool binding. */
   toolSchemas?: readonly ToolSchema[];
   /** Agent's tool-execution function. */
-  executeTool?: ExecuteTool;
+  executeTool: ExecuteTool;
   /** Provider-specific API keys. */
   providerKeys: {
     stt: string;
@@ -54,7 +54,7 @@ export interface PipelineTransportOptions {
   ttsSampleRate?: number | undefined;
   /** Optional STT prompt injected via SttOpenOptions.sttPrompt. */
   sttPrompt?: string | undefined;
-  /** Max LLM tool-call steps per turn. Defaults to 5. */
+  /** Max LLM tool-call steps per turn. Defaults to DEFAULT_MAX_STEPS. */
   maxSteps?: number | undefined;
   /**
    * Minimum interim-transcript words required to barge in on the agent while
@@ -167,10 +167,6 @@ export function resolvePipelineOptions(opts: PipelineTransportOptions): Resolved
       opts.falseInterruptionTimeoutMs ?? DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
     toolChoice: opts.toolChoice ?? "auto",
     toolSchemas: opts.toolSchemas ?? [],
-    executeTool:
-      opts.executeTool ??
-      (async () => {
-        throw new Error("No executeTool provided");
-      }),
+    executeTool: opts.executeTool,
   };
 }

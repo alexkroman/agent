@@ -20,13 +20,6 @@ export type DeployParams = {
   /** Requested slug. Omit to generate one (`humanId`). */
   slug?: string | undefined;
   apiKey: string;
-  /**
-   * Precomputed ownership hash for `apiKey` (e.g. from `ownerMw`). Optional:
-   * when omitted, the deploy core reuses the stored hash the key matches and
-   * only pays the ~100ms fresh-salt `hashApiKey` when the slug is genuinely
-   * unclaimed and a hash must be stored.
-   */
-  keyHash?: string | undefined;
   worker: string;
   clientFiles: Record<string, string>;
   env?: Record<string, string> | undefined;
@@ -77,8 +70,8 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
     }
     // The matched stored hash doubles as the caller's keyHash. A fresh-salt
     // hashApiKey (~100ms, uncacheable) only runs when the slug is genuinely
-    // unclaimed and no middleware precomputed one (`POST /deploy`).
-    const keyHash = matchedHash ?? params.keyHash ?? (await hashApiKey(params.apiKey));
+    // unclaimed and a hash must be stored.
+    const keyHash = matchedHash ?? (await hashApiKey(params.apiKey));
     // The check above and deployLocked run under the same slug lock, so the
     // manifest snapshot and match result can be passed through — no TOCTOU,
     // no second read, no second argon2 sweep.
@@ -140,7 +133,7 @@ async function deployLocked(
     agentConfig: params.agentConfig,
   });
 
-  setSlot(deps.slots, { slug, keyHash });
+  setSlot(deps.slots, { slug });
 
   debug("Deploy received", { slug });
 
@@ -154,40 +147,17 @@ function outcomeToResponse(c: ValidatedAppContext<DeployBody>, outcome: DeployOu
   return c.json({ ok: true, slug: outcome.slug, message: outcome.message });
 }
 
-function paramsFromBody(
-  c: ValidatedAppContext<DeployBody>,
-  opts: { slug?: string | undefined; keyHash?: string | undefined },
-): DeployParams {
+/** `POST /deploy` — deploy to the body's slug, or a server-generated one. */
+export async function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Response> {
+  const deps = { store: c.env.store, slots: c.env.slots };
   const body = c.req.valid("json");
-  return {
-    slug: opts.slug,
+  const outcome = await deployAgentBundle(deps, {
+    slug: body.slug,
     apiKey: c.var.apiKey,
-    keyHash: opts.keyHash,
     worker: body.worker,
     clientFiles: body.clientFiles,
     env: body.env,
     agentConfig: body.agentConfig,
-  };
-}
-
-/** `POST /:slug/deploy` — deploy to a caller-chosen slug (ownership via `ownerMw`). */
-export async function handleDeploy(c: ValidatedAppContext<DeployBody>): Promise<Response> {
-  const deps = { store: c.env.store, slots: c.env.slots };
-  const outcome = await deployAgentBundle(
-    deps,
-    paramsFromBody(c, { slug: c.var.slug, keyHash: c.var.keyHash }),
-  );
-  return outcomeToResponse(c, outcome);
-}
-
-/** `POST /deploy` — deploy to the body's slug, or a server-generated one. */
-export async function handleDeployNew(c: ValidatedAppContext<DeployBody>): Promise<Response> {
-  const deps = { store: c.env.store, slots: c.env.slots };
-  // No keyHash: `authMw` doesn't hash, and the deploy core resolves
-  // ownership via the cacheable verify path (hashing only when unclaimed).
-  const outcome = await deployAgentBundle(
-    deps,
-    paramsFromBody(c, { slug: c.req.valid("json").slug }),
-  );
+  });
   return outcomeToResponse(c, outcome);
 }

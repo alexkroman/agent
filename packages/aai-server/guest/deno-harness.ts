@@ -60,18 +60,9 @@ import {
   TOOL_TIMEOUT_MS,
 } from "./limits.ts";
 
-// Re-export the host-RPC surface so existing consumers/tests can keep
-// importing it from `./deno-harness.ts`.
-export {
-  dbAdapter,
-  generateAdapter,
-  handleHostResponse,
-  pendingHostRequests,
-  sendError,
-  sendResponse,
-  vectorAdapter,
-  writeMessage,
-} from "./harness-rpc.ts";
+// Re-export the host-RPC surface the harness tests exercise through this
+// module.
+export { handleHostResponse, vectorAdapter } from "./harness-rpc.ts";
 
 // ---- Inline TextLineStream (avoids jsr: import that can't be bundled) -------
 

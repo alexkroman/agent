@@ -15,7 +15,7 @@ import { Profiler, type ReactNode } from "react";
 import { describe, expect, test, vi } from "vitest";
 import { createMockSessionCore } from "../_react-test-utils.ts";
 import { SessionProvider, ThemeProvider } from "../context.ts";
-import type { SessionCore } from "../session-core.ts";
+import type { SessionCore } from "../session-core-types.ts";
 import { ChatView } from "./chat-view.tsx";
 import { Controls } from "./controls.tsx";
 import { MessageList } from "./message-list.tsx";

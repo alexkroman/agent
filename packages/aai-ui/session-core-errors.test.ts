@@ -15,7 +15,8 @@ import {
   makeConfig,
   resetLastSocket,
 } from "./_session-core-test-utils.ts";
-import { createSessionCore, type SessionCore } from "./session-core.ts";
+import { createSessionCore } from "./session-core.ts";
+import type { SessionCore } from "./session-core-types.ts";
 
 const fatalError = () =>
   JSON.stringify({ type: "error", code: "internal", message: "provider died" });

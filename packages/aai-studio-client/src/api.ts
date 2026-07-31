@@ -77,23 +77,11 @@ export const api = {
   getProject: (key: string, project: string) =>
     request<ProjectData>(key, `/projects/${encodeURIComponent(project)}`),
 
-  deleteProject: (key: string, project: string) =>
-    request<{ ok: boolean }>(key, `/projects/${encodeURIComponent(project)}`, {
-      method: "DELETE",
-    }),
-
   writeFile: (key: string, project: string, path: string, content: string) =>
     request<{ ok: boolean }>(key, `/projects/${encodeURIComponent(project)}/file`, {
       method: "PUT",
       body: JSON.stringify({ path, content }),
     }),
-
-  deleteFile: (key: string, project: string, path: string) =>
-    request<{ ok: boolean }>(
-      key,
-      `/projects/${encodeURIComponent(project)}/file?path=${encodeURIComponent(path)}`,
-      { method: "DELETE" },
-    ),
 
   getChat: (key: string, project: string) =>
     request<{ messages: UIMessage[] }>(key, `/projects/${encodeURIComponent(project)}/chat`).then(

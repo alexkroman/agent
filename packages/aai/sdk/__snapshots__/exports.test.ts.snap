@@ -52,7 +52,6 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "MAX_PROVIDER_WS_BUFFERED_BYTES",
   "MAX_TOOL_RESULT_CHARS",
   "MAX_TRANSCRIPT_CHARS",
-  "MAX_VALUE_SIZE",
   "MAX_WS_PAYLOAD_BYTES",
   "MIC_BUFFER_SECONDS",
   "MIC_SEND_MAX_BUFFERED_BYTES",
@@ -141,7 +140,6 @@ exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
 
 exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
 [
-  "DEFAULT_LISTEN_HOST",
   "DEFAULT_S2S_CONFIG",
   "PROVIDER_CREDENTIAL_ENVS",
   "SANDBOX_ONLY_BUILTINS",

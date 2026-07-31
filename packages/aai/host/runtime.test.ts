@@ -532,7 +532,7 @@ describe("createRuntime — provider resolution seams", () => {
       createRuntime({
         agent: { ...baseAgent, ...tuning },
         env: PROVIDER_KEYS,
-        stt: assemblyAI({ model: "u3pro-rt" }),
+        stt: assemblyAI({ model: "universal-3-5-pro" }),
         llm: anthropic({ model: "claude-haiku-4-5" }),
         tts: cartesia(),
       }),
@@ -548,7 +548,7 @@ describe("createRuntime — provider resolution seams", () => {
       agent: baseAgent,
       env: PROVIDER_KEYS,
       logger,
-      stt: assemblyAI({ model: "u3pro-rt" }),
+      stt: assemblyAI({ model: "universal-3-5-pro" }),
       llm: anthropic({ model: "claude-haiku-4-5" }),
       tts: cartesia(),
     });

@@ -19,12 +19,12 @@ test("hashApiKey produces argon2 PHC format and verifies", async () => {
   expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
 });
 
-// ── Slug-scoped deploy (legacy: POST /:slug/deploy) ──────────────────────
+// ── Deploy body handling (POST /deploy, slug in the body) ────────────────
 
-describe("POST /:slug/deploy", () => {
+describe("POST /deploy body handling", () => {
   test("rejects invalid JSON body", async () => {
     const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
       body: "not json",
@@ -35,7 +35,7 @@ describe("POST /:slug/deploy", () => {
 
   test("rejects body missing required fields", async () => {
     const { fetch } = await createTestOrchestrator();
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
       body: JSON.stringify({ worker: "" }),
@@ -47,10 +47,11 @@ describe("POST /:slug/deploy", () => {
     const { fetch } = await createTestOrchestrator();
     // Real Vite SSR output: minified zod import + named re-export
     const esmWorker = `import{z as e}from"/app/_zod.mjs";var s={name:"test-agent",systemPrompt:"Test"};export{s as default};`;
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
       body: JSON.stringify({
+        slug: "my-agent",
         env: { MY_SECRET: "value" },
         worker: esmWorker,
         clientFiles: { "index.html": "<html></html>" },
@@ -67,10 +68,10 @@ describe("POST /:slug/deploy", () => {
       EXISTING: "original-value",
       EXTRA: "stored-value",
     });
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-      body: deployBody({ env: { EXISTING: "new-value" } }),
+      body: deployBody({ slug: "my-agent", env: { EXISTING: "new-value" } }),
     });
     expect(res.status).toBe(200);
     const env = await store.getEnv("my-agent");
@@ -81,10 +82,10 @@ describe("POST /:slug/deploy", () => {
   test("replaces existing sandbox on redeploy", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch);
-    const res = await fetch("/my-agent/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-      body: deployBody(),
+      body: deployBody({ slug: "my-agent" }),
     });
     expect(res.status).toBe(200);
     const body = (await res.json()) as Record<string, unknown>;
@@ -102,10 +103,11 @@ describe("POST /:slug/deploy", () => {
       credential_hashes: [await hashApiKey("key1")],
       agentConfig: TEST_AGENT_CONFIG,
     });
-    const res = await fetch("/pre-stored/deploy", {
+    const res = await fetch("/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
       body: JSON.stringify({
+        slug: "pre-stored",
         worker:
           'export default { name: "pre-stored", systemPrompt: "Test", greeting: "", maxSteps: 1, tools: {} };',
         clientFiles: { "index.html": "<html></html>" },
@@ -129,7 +131,6 @@ describe("deployAgentBundle defaultEnv", () => {
       {
         slug: "my-agent",
         apiKey: "key1",
-        keyHash: await hashApiKey("key1"),
         worker: "w",
         clientFiles: {},
         agentConfig: TEST_AGENT_CONFIG,
@@ -188,9 +189,9 @@ describe("deployAgentBundle defaultEnv", () => {
   });
 });
 
-// ── Lazy keyHash (deployAgentBundle without a precomputed hash) ───────────
+// ── Ownership resolution (deployAgentBundle hashes lazily) ────────────────
 
-describe("deployAgentBundle without a precomputed keyHash", () => {
+describe("deployAgentBundle ownership resolution", () => {
   const baseParams = {
     apiKey: "key1",
     worker: "w",
