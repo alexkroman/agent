@@ -374,7 +374,7 @@ describe("deployStudioProject", () => {
       env: {},
       worker: "w",
       clientFiles: {},
-      credential_hashes: ["pbkdf2:600000:AAAA:BBBB"],
+      credential_hashes: [await hashApiKey("someone-elses-key")],
       agentConfig: TEST_AGENT_CONFIG,
     });
     const result = await deployStudioProject(deps, {

@@ -81,15 +81,15 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
     const keyHash = matchedHash ?? params.keyHash ?? (await hashApiKey(params.apiKey));
     // The check above and deployLocked run under the same slug lock, so the
     // manifest snapshot and match result can be passed through — no TOCTOU,
-    // no second read, no second PBKDF2 sweep.
+    // no second read, no second argon2 sweep.
     return deployLocked(deps, params, { slug, existing, matchedHash, keyHash });
   });
 }
 
 /** Resolve the first stored hash `apiKey` matches, or null when none do. */
 async function matchAnyHash(apiKey: string, hashes: string[]): Promise<string | null> {
-  // Verify concurrently — each cache miss costs ~100ms of PBKDF2, and
-  // deriveBits runs off the main thread.
+  // Verify concurrently — each cache miss costs an expensive argon2
+  // derivation that runs off the main thread.
   const results = await Promise.all(
     hashes.map(async (h) => ((await verifyApiKeyHash(apiKey, h)) ? h : null)),
   );

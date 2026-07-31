@@ -48,8 +48,8 @@ export async function requireOwner(
       throw new HTTPException(404, { message: `Agent ${opts.slug} not found` });
     }
     // Deploy-claim path: compute the hash lazily, only once we know the
-    // caller may proceed — verifySlugOwner no longer burns ~100ms of
-    // fresh-salt PBKDF2 on every request for a nonexistent slug.
+    // caller may proceed — verifySlugOwner no longer burns an expensive
+    // fresh-salt argon2 derivation on every request for a nonexistent slug.
     return { apiKey, keyHash: await hashApiKey(apiKey) };
   }
   return { apiKey, keyHash: result.keyHash };
@@ -93,7 +93,7 @@ export const existingOwnerMw = createMiddleware<HonoEnv>(async (c, next) => {
 /**
  * Authenticates the bearer token without checking slug ownership
  * (`POST /deploy`, where the slug may not exist yet). Deliberately computes
- * no keyHash: a fresh-salt `hashApiKey` costs ~100ms of uncacheable PBKDF2
+ * no keyHash: a fresh-salt `hashApiKey` is an uncacheable argon2 derivation
  * on every request, so the deploy core resolves ownership through the
  * cacheable verify path and hashes only when the slug is genuinely
  * unclaimed (mirroring `requireOwner`'s lazy hash for `/:slug` routes).

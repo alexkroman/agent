@@ -7,8 +7,9 @@ export default defineConfig({
     restoreMocks: true,
     include: ["**/*.test.ts"],
     // This suite is credential-bound: anything that deploys an agent or
-    // authenticates a request runs PBKDF2 at 600k iterations (~300ms idle,
-    // ~750ms when the CPUs are contended). A test that deploys two agents and
+    // authenticates a request runs an argon2id derivation (tens of ms idle,
+    // several times that when the CPUs are contended). A test that deploys
+    // two agents and
     // then calls authenticated endpoints does that 4-6 times, which lands right
     // on vitest's 5s default when `pnpm check` runs the whole turbo graph in
     // parallel — the tests then fail as timeouts with nothing actually wrong.
