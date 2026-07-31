@@ -165,6 +165,30 @@ export function parseSandboxLimitsFromEnv(
   return limits;
 }
 
+/**
+ * Parses guest-sandbox region pinning from `MODAL_SANDBOX_REGION`
+ * (comma-separated for multiple acceptable regions, e.g. `"us-east-1"`).
+ *
+ * Unpinned, Modal places sandboxes wherever it finds capacity — including a
+ * different continent and cloud than the platform server (observed:
+ * server in us-east-1/AWS, sandboxes in uk-london-1/OCI). The host↔guest
+ * NDJSON link over Modal's command router is a network hop, so every
+ * `ctx.db` query, Vector call, guest fetch proxy, and `bundle/load` pays
+ * that RTT — serialized inside the LLM loop of a latency-budgeted voice
+ * turn. `modal_deploy.py` sets this variable to the same region constant
+ * that pins the web server, so production host and guests are co-located
+ * by construction; local dev stays unpinned.
+ */
+export function parseSandboxRegionsFromEnv(
+  env: Record<string, string | undefined>,
+): string[] | undefined {
+  const regions = (env.MODAL_SANDBOX_REGION ?? "")
+    .split(",")
+    .map((r) => r.trim())
+    .filter(Boolean);
+  return regions.length > 0 ? regions : undefined;
+}
+
 export function modalRequiredError(): Error {
   return new Error(
     "Modal credentials are required to run agent sandboxes. " +
@@ -419,6 +443,7 @@ export async function spawnModalWarm(
     ctx ? Promise.resolve(ctx) : modalContext(),
   ]);
   const limits = parseSandboxLimitsFromEnv(process.env);
+  const regions = parseSandboxRegionsFromEnv(process.env);
 
   const t0 = performance.now();
   const sb = await context.createSandbox({
@@ -443,6 +468,8 @@ export async function spawnModalWarm(
     idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
     ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
     ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
+    // Co-locate guests with the host — see parseSandboxRegionsFromEnv.
+    ...(regions && { regions }),
     tags: { service: "aai-guest", slug: opts.slug ?? "pool" },
   });
   try {
