@@ -15,7 +15,7 @@ import {
 } from "@alexkroman1/aai/runtime";
 import { createStorage } from "unstorage";
 import { isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
-import { type AppDatabases, createAppDatabases } from "./app-database.ts";
+import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
@@ -43,6 +43,19 @@ import {
   createPgWorkspaceStore,
   type WorkspaceStore,
 } from "./workspace-store.ts";
+
+/** Comma-separated extra placement clusters (APP_DB_URLS) → pooled targets. */
+function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
+  if (!raw) return [];
+  return raw
+    .split(",")
+    .map((url) => url.trim())
+    .filter(Boolean)
+    .map((url) => {
+      const db = createPostgresDb({ url, max: 4 });
+      return { url, sql: (query, params) => db.query(query, params) } satisfies AppDbTarget;
+    });
+}
 
 /** buildOpts plus what service entries need beyond the orchestrator's opts. */
 export type ServiceConfig = OrchestratorOpts & {
@@ -133,7 +146,14 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     secrets: localDev ? createMemorySecretStore() : createVaultSecretStore(exec),
     workspaces: localDev ? createMemoryWorkspaceStore() : createPgWorkspaceStore(exec),
     chats: localDev ? createMemoryChatStore() : createPgChatStore(exec),
-    appDb: createAppDatabases({ url, sql: exec }),
+    appDb: createAppDatabases({
+      url,
+      sql: exec,
+      // Cellular sharding: APP_DB_URLS lists additional Supabase clusters
+      // new apps may be placed on. Each app's cluster is recorded in its
+      // app-db:<slug> locator, so agent code never notices placement.
+      extraTargets: parseExtraAppDbTargets(env.APP_DB_URLS),
+    }),
     // Cross-request coordination lives in Postgres too, so any replica (and
     // either service) can serve any request: per-slug mutation exclusion,
     // invalidation epochs, and session-resume state all survive replica
