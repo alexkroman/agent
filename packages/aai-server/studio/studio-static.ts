@@ -59,6 +59,21 @@ export async function handleStudioPage(c: AppContext): Promise<Response> {
   return c.html(html ? html.toString("utf-8") : FALLBACK_HTML, 200, headers);
 }
 
+/**
+ * `GET /favicon.ico` — the studio icon, for the default browser request
+ * (the built studio shell links it at `/studio-assets/favicon.ico`, but
+ * the not-built fallback page and non-browser clients hit the root path).
+ * 404s when the client has not been built.
+ */
+export async function handleStudioFavicon(c: AppContext): Promise<Response> {
+  const content = await readClientFile("favicon.ico");
+  if (!content) throw new HTTPException(404, { message: "Favicon not found" });
+  return c.body(new Uint8Array(content), 200, {
+    "Content-Type": "image/x-icon",
+    "Cache-Control": "public, max-age=86400",
+  });
+}
+
 /** `GET /studio-assets/:path{.+}` — hashed Vite build assets. */
 export async function handleStudioClientAsset(c: AppContext): Promise<Response> {
   const rawPath = c.req.param("path") ?? "";

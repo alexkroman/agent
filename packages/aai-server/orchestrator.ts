@@ -5,12 +5,14 @@
  * Route structure:
  * - `GET  /`                      — browser studio (coding agent UI)
  * - `GET  /health`                — platform health check
+ * - `GET  /favicon.ico`           — studio favicon
  * - `/studio/*`                   — studio API (see studio/studio-routes.ts)
  * - `POST /deploy`                — top-level deploy (server-generated slug)
  * - `GET  /:slug`                 — redirect to /:slug/
  * - `GET  /:slug/`               — agent UI page
  * - `GET  /:slug/health`         — per-agent health check
  * - `GET  /:slug/client-config`  — pre-connection client config (name/greeting)
+ * - `GET  /:slug/favicon.ico`    — agent page favicon (custom or default)
  * - `GET  /:slug/assets/:path`   — client static assets
  * - `POST /:slug/deploy`         — owner: re-deploy agent
  * - `DELETE /:slug/`             — owner: delete agent
@@ -56,9 +58,18 @@ import {
 import type { BundleStore } from "./store-types.ts";
 import type { ChatStore } from "./studio/chat-store.ts";
 import { createStudioRoutes } from "./studio/studio-routes.ts";
-import { handleStudioClientAsset, handleStudioPage } from "./studio/studio-static.ts";
+import {
+  handleStudioClientAsset,
+  handleStudioFavicon,
+  handleStudioPage,
+} from "./studio/studio-static.ts";
 import type { WorkspaceStore } from "./studio/workspace-store.ts";
-import { handleAgentHealth, handleAgentPage, handleClientAsset } from "./transport-websocket.ts";
+import {
+  handleAgentFavicon,
+  handleAgentHealth,
+  handleAgentPage,
+  handleClientAsset,
+} from "./transport-websocket.ts";
 import { handleVector } from "./vector-handler.ts";
 
 export type OrchestratorOpts = {
@@ -179,6 +190,9 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // `studio-assets` are reserved slugs (RESERVED_SLUGS) so no agent route
   // can shadow the API namespace or the client assets.
   app.get("/", handleStudioPage);
+  // Safe alongside agent routes: `favicon.ico` can never be a slug (dots
+  // are outside the slug grammar), so no agent route can shadow it.
+  app.get("/favicon.ico", handleStudioFavicon);
   app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
   app.route("/studio", createStudioRoutes({ pool: opts.pool }));
   app.get("/studio/", (c) => c.redirect("/", 302));
@@ -242,6 +256,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // Pre-connection client config (name/greeting) for the default
   // client — same auth posture as the page and the WebSocket: none.
   agents.get("/client-config", handleAgentClientConfig);
+  agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);
   // GET /:slug/ stays on the top-level app — Hono's mergePath("/:slug", "/")
   // collapses the trailing slash, breaking the route.

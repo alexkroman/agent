@@ -1,4 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { createRequire } from "node:module";
+import path from "node:path";
 import { describe, expect, it, test } from "vitest";
 import {
   createTestOrchestrator,
@@ -212,6 +216,49 @@ test("client asset falls back to octet-stream for unknown extension", async () =
   const res = await fetch("/my-agent/assets/data.xyz123");
   expect(res.status).toBe(200);
   expect(res.headers.get("Content-Type")).toBe("application/octet-stream");
+});
+
+// ── Favicons ───────────────────────────────────────────────────────────
+
+const defaultClientFavicon = (() => {
+  const require = createRequire(import.meta.url);
+  const pkgPath = require.resolve("@alexkroman1/aai-ui/package.json");
+  return path.join(path.dirname(pkgPath), "dist", "default-client", "favicon.ico");
+})();
+
+test("agent favicon serves a custom client's stored favicon", async () => {
+  const { fetch } = await createTestOrchestrator();
+  // Binary client files are stored base64-encoded (isTextAssetPath), so the
+  // favicon route must decode — a pass-through would corrupt the bytes.
+  const icoBytes = Buffer.from([0x00, 0x00, 0x01, 0x00, 0xff, 0xfe]);
+  await fetch("/my-agent/deploy", {
+    method: "POST",
+    headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
+    body: deployBody({
+      clientFiles: { "index.html": "<html></html>", "favicon.ico": icoBytes.toString("base64") },
+    }),
+  });
+  const res = await fetch("/my-agent/favicon.ico");
+  expect(res.status).toBe(200);
+  expect(res.headers.get("Content-Type")).toBe("image/x-icon");
+  expect(Buffer.from(await res.arrayBuffer())).toEqual(icoBytes);
+});
+
+test("agent favicon falls back to the default client's icon", async () => {
+  const { fetch } = await createTestOrchestrator();
+  await deployAgent(fetch);
+  const res = await fetch("/my-agent/favicon.ico");
+  // The fallback reads aai-ui's built default client off disk (same
+  // precondition handleAgentPage has), so the icon only exists once that
+  // build has run — either way the route must answer, never 500.
+  if (existsSync(defaultClientFavicon)) {
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toBe("image/x-icon");
+    const body = Buffer.from(await res.arrayBuffer());
+    expect(body).toEqual(await readFile(defaultClientFavicon));
+  } else {
+    expect(res.status).toBe(404);
+  }
 });
 
 test("vector POST returns 404 when the agent config is missing", async () => {
