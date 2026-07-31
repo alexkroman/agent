@@ -94,12 +94,7 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
       console.warn("Studio sandbox: pooled harness failed; retrying on a fresh spawn", {
         error: errorMessage(err),
       });
-      try {
-        live.conn.dispose();
-        await live.cleanup();
-      } catch {
-        /* best-effort teardown of the dead harness */
-      }
+      await live[Symbol.asyncDispose]();
       live = wire(await spawn({ harnessPath, slug: "studio-session" }));
       return await op();
     }
@@ -165,13 +160,7 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
       // Bounded, not open-ended: every request carries the transport's own
       // timeout, so a wedged guest delays teardown but cannot block it.
       if (inFlight.size > 0) await Promise.allSettled([...inFlight]);
-      try {
-        void live.conn.sendNotification("shutdown");
-        live.conn.dispose();
-        await live.cleanup();
-      } catch (err) {
-        console.warn("Studio sandbox teardown failed:", errorMessage(err));
-      }
+      await live[Symbol.asyncDispose]();
     },
   };
 }

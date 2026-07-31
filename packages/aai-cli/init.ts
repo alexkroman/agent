@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import path from "node:path";
+import { styleText } from "node:util";
 import * as p from "@clack/prompts";
 import { execa } from "execa";
-import pc from "picocolors";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { log, unwrapCancel } from "./_ui.ts";
@@ -160,7 +160,7 @@ export async function executeInit(
 ): Promise<CommandResult<InitData>> {
   const suppressUi = extra?.silent;
   if (!suppressUi) {
-    p.intro(pc.cyanBright("Create a new voice agent"));
+    p.intro(styleText("cyanBright", "Create a new voice agent"));
   }
 
   const dir = opts.dir ?? (await promptProjectName(opts.yes));
@@ -169,7 +169,7 @@ export async function executeInit(
 
   if (!opts.force && (await fileExists(path.join(cwd, "agent.ts")))) {
     throw new Error(
-      `agent.ts already exists in this directory. Use ${pc.cyanBright("--force")} to overwrite.`,
+      `agent.ts already exists in this directory. Use ${styleText("cyanBright", "--force")} to overwrite.`,
     );
   }
 

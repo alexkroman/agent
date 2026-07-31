@@ -11,6 +11,7 @@
 import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { setTimeout as sleep } from "node:timers/promises";
 import type { AgentDef } from "@alexkroman1/aai";
 import {
   type AgentServer,
@@ -415,7 +416,7 @@ export async function startDevServer(opts: DevServerOptions): Promise<() => Prom
         return;
       } catch (err) {
         if (attempt >= LISTEN_ATTEMPTS || closed) throw err;
-        await new Promise((resolve) => setTimeout(resolve, LISTEN_RETRY_DELAY_MS));
+        await sleep(LISTEN_RETRY_DELAY_MS);
       }
     }
   }

@@ -40,6 +40,15 @@ export type WarmHarness = {
   alive: () => boolean;
   /** Register a one-shot listener for guest exit (for pool reaping). */
   onExit: (cb: () => void) => void;
+  /**
+   * Full best-effort teardown: a `shutdown` notification (dropped by the
+   * transport's dead-stream guard when the guest is already gone), connection
+   * dispose, then `cleanup()` with its rejection swallowed. One definition of
+   * the teardown triple so failure paths and `await using` scopes can't
+   * drift; the pool keeps calling `cleanup()` directly where the connection
+   * was never wired.
+   */
+  [Symbol.asyncDispose](): Promise<void>;
 };
 
 export type SandboxVmOptions = {
@@ -99,8 +108,7 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
   } catch (err) {
     // bundle/load can now time out (a bundle whose top level never resolves).
     // Tear down the harness sandbox so it doesn't leak, then rethrow.
-    conn.dispose();
-    await warm.cleanup().catch(() => undefined);
+    await warm[Symbol.asyncDispose]();
     throw err;
   }
   debug("Sandbox bundle/load complete", {
@@ -162,30 +170,24 @@ export async function describeBundle(
   // Prefer a pre-warmed harness when the caller holds a pool — the studio's
   // Publish path does — falling back to a cold spawn exactly like
   // `createStudioSandbox`. `acquire()` returns null when the pool is empty.
-  const warm =
+  await using warm =
     (await opts.pool?.acquire()) ??
     (await spawn({ harnessPath: opts.harnessPath, slug: "studio-inspect" }));
-  try {
-    // Register the standard guest-RPC handlers (with no db/Vector bound) so a
-    // bundle whose top level issues a guest→host request gets an error reply
-    // instead of wedging the load until the RPC timeout.
-    registerGuestRpcHandlers(warm.conn, {});
-    warm.conn.listen();
-    // The reply is guest-asserted wire data (see BundleLoadResult); the
-    // caller validates `config` with IsolateConfigSchema.
-    const result = (await warm.conn.sendRequest("bundle/load", {
-      code: opts.workerCode,
-      env: {},
-      // Explicit even though the guest schema defaults it: every in-repo
-      // sender states its storage intent.
-      storageEnabled: false,
-    })) as BundleLoadResult | undefined;
-    return result?.config;
-  } finally {
-    void warm.conn.sendNotification("shutdown");
-    warm.conn.dispose();
-    await warm.cleanup().catch(() => undefined);
-  }
+  // Register the standard guest-RPC handlers (with no db/Vector bound) so a
+  // bundle whose top level issues a guest→host request gets an error reply
+  // instead of wedging the load until the RPC timeout.
+  registerGuestRpcHandlers(warm.conn, {});
+  warm.conn.listen();
+  // The reply is guest-asserted wire data (see BundleLoadResult); the
+  // caller validates `config` with IsolateConfigSchema.
+  const result = (await warm.conn.sendRequest("bundle/load", {
+    code: opts.workerCode,
+    env: {},
+    // Explicit even though the guest schema defaults it: every in-repo
+    // sender states its storage intent.
+    storageEnabled: false,
+  })) as BundleLoadResult | undefined;
+  return result?.config;
 }
 
 // ── Test-only internals ─────────────────────────────────────────────────
@@ -224,8 +226,7 @@ export async function createSandboxVm(
           slug: opts.slug,
           error: errorMessage(err),
         });
-        warm.conn.dispose();
-        await warm.cleanup().catch(() => undefined);
+        await warm[Symbol.asyncDispose]();
       }
     }
   }

@@ -34,6 +34,12 @@ export function makeWarm(conn: GuestConnection, cleanup: () => Promise<void>): W
     cleanup,
     alive: () => true,
     onExit: () => undefined,
+    // Mirrors the real teardown in modal-sandbox.ts:warmFromModal.
+    async [Symbol.asyncDispose]() {
+      void conn.sendNotification("shutdown");
+      conn.dispose();
+      await cleanup().catch(() => undefined);
+    },
   };
 }
 

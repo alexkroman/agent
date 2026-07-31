@@ -11,7 +11,7 @@
  * shape-asserted before it is quoted into `create/alter role`.
  */
 
-import { createHash, randomBytes } from "node:crypto";
+import { hash, randomBytes } from "node:crypto";
 import { type CloseableDb, createPostgresDb } from "@alexkroman1/aai/runtime";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -31,7 +31,7 @@ const IDENTIFIER_RE = /^app_[a-f0-9]{16}$/;
 
 /** Deterministic schema/role identifier for one app slug. */
 export function appDbIdentifier(slug: string): string {
-  return `app_${createHash("sha256").update(slug).digest("hex").slice(0, 16)}`;
+  return `app_${hash("sha256", slug).slice(0, 16)}`;
 }
 
 /**

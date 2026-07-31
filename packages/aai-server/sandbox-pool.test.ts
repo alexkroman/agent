@@ -25,6 +25,11 @@ function makeFakeWarm(): FakeWarm {
     onExit: (cb) => {
       exitListeners.push(cb);
     },
+    // The pool never disposes via the symbol (it calls cleanup() directly on
+    // never-wired connections), so the fake skips the conn teardown.
+    async [Symbol.asyncDispose]() {
+      await warm.cleanup();
+    },
     __die() {
       if (!alive) return;
       alive = false;

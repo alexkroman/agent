@@ -319,6 +319,14 @@ function warmFromModal(sb: ModalSandboxLike, proc: ModalProcLike): WarmHarness {
     onExit: (cb) => {
       exitListeners.push(cb);
     },
+    async [Symbol.asyncDispose]() {
+      // Best-effort: on a dead guest the notification hits dispose()'s
+      // dead-stream guard and is dropped, and terminate() may find the
+      // sandbox already gone — both fine.
+      void conn.sendNotification("shutdown");
+      conn.dispose();
+      await cleanup().catch(() => undefined);
+    },
   };
 }
 
