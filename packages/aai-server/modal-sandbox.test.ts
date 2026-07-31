@@ -12,14 +12,17 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { HARNESS_HEARTBEAT_INTERVAL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./guest/limits.ts";
 import {
   _internals,
-  DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-  DEFAULT_SANDBOX_TIMEOUT_MS,
   type ModalProcLike,
   type ModalSandboxLike,
   type ModalSpawnContext,
-  parseSandboxLimitsFromEnv,
   spawnModalWarm,
 } from "./modal-sandbox.ts";
+import {
+  DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
+  DEFAULT_SANDBOX_TIMEOUT_MS,
+  parseSandboxLimitsFromEnv,
+  parseSandboxRegionsFromEnv,
+} from "./modal-sandbox-env.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
 
 // ── Fakes ────────────────────────────────────────────────────────────────────
@@ -163,6 +166,28 @@ describe("parseSandboxLimitsFromEnv", () => {
   });
 });
 
+// ── parseSandboxRegionsFromEnv ───────────────────────────────────────────────
+
+describe("parseSandboxRegionsFromEnv", () => {
+  it("returns undefined when MODAL_SANDBOX_REGION is unset or empty", () => {
+    expect(parseSandboxRegionsFromEnv({})).toBeUndefined();
+    expect(parseSandboxRegionsFromEnv({ MODAL_SANDBOX_REGION: "" })).toBeUndefined();
+    expect(parseSandboxRegionsFromEnv({ MODAL_SANDBOX_REGION: " , " })).toBeUndefined();
+  });
+
+  it("parses a single region", () => {
+    expect(parseSandboxRegionsFromEnv({ MODAL_SANDBOX_REGION: "us-east-1" })).toEqual([
+      "us-east-1",
+    ]);
+  });
+
+  it("parses a comma-separated list, trimming whitespace and dropping empties", () => {
+    expect(
+      parseSandboxRegionsFromEnv({ MODAL_SANDBOX_REGION: "us-east-1, us-east-2,,us-west-1 " }),
+    ).toEqual(["us-east-1", "us-east-2", "us-west-1"]);
+  });
+});
+
 // ── warmFromModal ────────────────────────────────────────────────────────────
 
 describe("warmFromModal", () => {
@@ -278,6 +303,35 @@ describe("spawnModalWarm", () => {
     expect(params).toMatchObject({ mode: "binary", stdout: "pipe", stderr: "pipe" });
     expect(warm.alive()).toBe(true);
     await warm.cleanup();
+  });
+
+  it("omits region pinning by default and passes regions when MODAL_SANDBOX_REGION is set", async () => {
+    const harnessPath = await makeHarnessFile();
+    const spawnOnce = async (): Promise<Record<string, unknown>> => {
+      const fake = makeFakeProc();
+      const sb = makeFakeSandbox(fake);
+      const createParams: unknown[] = [];
+      const warm = await spawnModalWarm(
+        { harnessPath },
+        {
+          createSandbox: async (params) => {
+            createParams.push(params);
+            return sb;
+          },
+        },
+      );
+      await warm.cleanup();
+      return createParams[0] as Record<string, unknown>;
+    };
+
+    expect(await spawnOnce()).not.toHaveProperty("regions");
+
+    vi.stubEnv("MODAL_SANDBOX_REGION", "us-east-1");
+    try {
+      expect(await spawnOnce()).toMatchObject({ regions: ["us-east-1"] });
+    } finally {
+      vi.unstubAllEnvs();
+    }
   });
 
   it("honors SANDBOX_IDLE_TIMEOUT_SECS over the default idle timeout", async () => {

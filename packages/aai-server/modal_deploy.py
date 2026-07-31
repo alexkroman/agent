@@ -41,6 +41,16 @@ import modal
 PORT = 8080
 PNPM_VERSION = "10.29.3"
 
+# One region for the web server AND the guest sandboxes it creates. Left
+# unpinned, Modal placed the server in us-east-1 (AWS) and guest sandboxes in
+# uk-london-1 (OCI), so every host<->guest RPC (ctx.db, Vector, guest fetch
+# proxy, bundle/load) paid a transatlantic RTT inside latency-budgeted voice
+# turns. The server functions pin ``region=REGION`` and the image exports the
+# same value as ``MODAL_SANDBOX_REGION``, which modal-sandbox.ts passes to
+# every ``sandboxes.create`` — co-location holds by construction, and moving
+# the deployment is a one-line change here.
+REGION = "us-east-2"
+
 # Repo root (this file lives at packages/aai-server/modal_deploy.py).
 REPO_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -82,6 +92,8 @@ image = (
             # Studio builds run in the studio_build function below, not in the
             # web server's process (see studio/studio-build-runner.ts).
             "STUDIO_BUILD_BACKEND": "modal",
+            # Guest sandboxes are pinned to the web server's region (above).
+            "MODAL_SANDBOX_REGION": REGION,
         }
     )
 )
@@ -92,6 +104,7 @@ app = modal.App("aai-server-web")
 @app.function(
     image=image,
     secrets=[modal.Secret.from_name("aai-server")],
+    region=REGION,
     cpu=1,
     memory=2048,
     # One always-warm replica: voice sessions are latency-sensitive and the
@@ -122,7 +135,7 @@ def server() -> None:
 # Deliberately **no secrets attached**: a build needs the image's
 # node_modules and nothing else. Same image as the server, so the build sees
 # exactly the dependency tree the in-process path used.
-@app.function(image=image, cpu=2, memory=2048, timeout=300)
+@app.function(image=image, region=REGION, cpu=2, memory=2048, timeout=300)
 def studio_build(request: str) -> str:
     """Run one studio workspace build (worker and/or client) out of process.
 

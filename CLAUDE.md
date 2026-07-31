@@ -1402,6 +1402,17 @@ bumped automatically.
 - Sandboxes are created with `blockNetwork: true` and a bounded lifetime
   (`SANDBOX_TIMEOUT_SECS`, default 4h). Memory/CPU caps come from
   `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT`.
+- **Region pinning**: `MODAL_SANDBOX_REGION` (comma-separated for multiple)
+  pins sandbox placement via Modal's `regions` create param. Unpinned, Modal
+  places for capacity — it once put the server in us-east-1/AWS and guest
+  sandboxes in uk-london-1/OCI, so every host↔guest RPC (ctx.db, Vector,
+  guest fetch proxy, `bundle/load`) paid a transatlantic RTT inside voice
+  turns. `modal_deploy.py` pins its functions to one `REGION` constant and
+  exports it as `MODAL_SANDBOX_REGION`, so production host and guests are
+  co-located by construction; local dev stays unpinned. (Modal's
+  regions/cloud params are compatible with `blockNetwork` — the SDK's
+  "cannot be used with blockNetwork" note applies to i6pn and the network
+  allowlists, not placement.)
 - **Orphan cleanup is heartbeat + watchdog + Modal's `idleTimeoutMs`, not
   host code** (`SANDBOX_IDLE_TIMEOUT_SECS`, default 15 min). A host that dies
   without running `shutdown()`'s teardown (crash, OOM, SIGKILL past the drain
