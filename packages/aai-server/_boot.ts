@@ -19,7 +19,7 @@ export function requireEnv<const K extends string>(
 }
 
 export function isLocalDev(env: NodeJS.ProcessEnv): boolean {
-  return env.AAI_LOCAL_DEV === "1" || !env.BUCKET_NAME;
+  return env.AAI_LOCAL_DEV === "1" || !env.SUPABASE_S3_ENDPOINT;
 }
 
 /**

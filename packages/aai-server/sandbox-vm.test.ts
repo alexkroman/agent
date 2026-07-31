@@ -1,14 +1,14 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Tests for sandbox VM configuration, env-derived resource limits,
- * connection wiring, dev-mode spawn args, and init metrics.
+ * Tests for sandbox VM configuration and init metrics.
  *
- * The vector/* and kv/* RPC handler tests live in
- * sandbox-vm-rpc-handlers.test.ts; shared helpers live in
- * _sandbox-vm-test-utils.ts.
+ * The vector/* and db/query RPC handler tests live in
+ * sandbox-vm-rpc-handlers.test.ts; the Modal spawn backend is covered by
+ * modal-sandbox.test.ts; shared helpers live in _sandbox-vm-test-utils.ts.
  */
 
-import { PassThrough } from "node:stream";
+import type { PassThrough } from "node:stream";
+import type { Db } from "@alexkroman1/aai";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   autorespondBundleLoad,
@@ -21,14 +21,15 @@ import {
 } from "./_sandbox-vm-test-utils.ts";
 import { registry } from "./metrics.ts";
 import type { NdjsonConnection } from "./ndjson-transport.ts";
-import {
-  _internals,
-  createSandboxVm,
-  describeBundle,
-  parseSandboxLimitsFromEnv,
-  type WarmHarness,
-} from "./sandbox-vm.ts";
-import { counterValue, createMockKv, histogramCount } from "./test-utils.ts";
+import { _internals, createSandboxVm, describeBundle, type WarmHarness } from "./sandbox-vm.ts";
+import { counterValue, histogramCount } from "./test-utils.ts";
+
+/** In-memory mock Db whose query fn is a spy. */
+function createMockDb(rows: Record<string, unknown>[] = []) {
+  const query = vi.fn().mockResolvedValue(rows);
+  const db: Db = { query };
+  return { db, query };
+}
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
@@ -67,95 +68,55 @@ describe("configureSandbox", () => {
     expect(bundleReq.params).toEqual({
       code: opts.workerCode,
       env: opts.env,
+      storageEnabled: false,
     });
 
     detach();
   });
 
-  it("registers kv/get handler that reads from Kv", async () => {
-    const kv = createMockKv();
-    await kv.set("existing", "hello");
+  it("registers db/query handler that queries the app db", async () => {
+    const { db, query } = createMockDb([{ body: "hello" }]);
 
-    const opts = baseOpts({ kv });
+    const opts = baseOpts({ db });
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
     const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     detach();
 
-    // Simulate guest sending kv/get request for the pre-populated key
-    const getReqId = 100;
+    // bundle/load advertises storage as enabled when a db is bound.
+    const bundleReq = writtenLines
+      .map((l) => JSON.parse(l))
+      .find((m: { method?: string }) => m.method === "bundle/load");
+    expect(bundleReq.params.storageEnabled).toBe(true);
+
+    // Simulate guest sending a db/query request
+    const reqId = 100;
     hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: getReqId, method: "kv/get", params: { key: "existing" } })}\n`,
+      `${JSON.stringify({ jsonrpc: "2.0", id: reqId, method: "db/query", params: { sql: "select body from notes where id = $1", params: [7] } })}\n`,
     );
 
-    await waitForResponseId(writtenLines, getReqId);
+    await waitForResponseId(writtenLines, reqId);
 
-    const getResponse = findResponseById(writtenLines, getReqId);
-    expect(getResponse).toBeDefined();
-    expect(getResponse?.result).toBe("hello");
+    const response = findResponseById(writtenLines, reqId);
+    expect(response?.result).toEqual([{ body: "hello" }]);
+    expect(query).toHaveBeenCalledWith("select body from notes where id = $1", [7]);
 
     handle.conn.dispose();
   });
 
-  it("kv/set handler stores values in Kv", async () => {
-    const kv = createMockKv();
-    const opts = baseOpts({ kv });
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
-
-    // Simulate guest sending kv/set
-    const setReqId = 200;
-    hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: setReqId, method: "kv/set", params: { key: "newkey", value: 42 } })}\n`,
-    );
-
-    await waitForResponseId(writtenLines, setReqId);
-
-    // Verify Kv was updated
-    expect(kv.set).toHaveBeenCalledWith("newkey", 42);
-
-    handle.conn.dispose();
-  });
-
-  it("kv/del handler removes items from Kv", async () => {
-    const kv = createMockKv();
-    const opts = baseOpts({ kv });
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    const detach = autorespondBundleLoad(hostWritable, hostReadable);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-    detach();
-
-    // Send kv/del request
-    const delReqId = 300;
-    hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: delReqId, method: "kv/del", params: { key: "delkey" } })}\n`,
-    );
-
-    await waitForResponseId(writtenLines, delReqId);
-
-    // Verify the item was removed
-    expect(kv.delete).toHaveBeenCalledWith("delkey");
-
-    handle.conn.dispose();
-  });
-
-  it("does not register KV handlers when kv is not provided", async () => {
-    const opts = baseOpts(); // no kv
+  it("does not register the db handler when db is not provided", async () => {
+    const opts = baseOpts(); // no db
     const cleanup = vi.fn().mockResolvedValue(undefined);
     const detach = autorespondBundleLoad(hostWritable, hostReadable);
 
     await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
     detach();
 
-    // Try sending a kv/get -- should get "Method not found" error response
+    // Try sending a db/query -- should get "Method not found" error response
     const reqId = 400;
     hostReadable.push(
-      `${JSON.stringify({ jsonrpc: "2.0", id: reqId, method: "kv/get", params: { key: "x" } })}\n`,
+      `${JSON.stringify({ jsonrpc: "2.0", id: reqId, method: "db/query", params: { sql: "select 1" } })}\n`,
     );
 
     await waitForResponseId(writtenLines, reqId);
@@ -188,148 +149,6 @@ describe("configureSandbox", () => {
 
     // Verify cleanup was called
     expect(cleanup).toHaveBeenCalledOnce();
-  });
-});
-
-describe("parseSandboxLimitsFromEnv", () => {
-  it("returns empty object when no env vars are set", () => {
-    const limits = parseSandboxLimitsFromEnv({});
-    expect(limits).toEqual({});
-  });
-
-  it("parses SANDBOX_MEMORY_LIMIT_MB", () => {
-    const limits = parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_LIMIT_MB: "128" });
-    expect(limits.memoryLimitBytes).toBe(128 * 1024 * 1024);
-  });
-
-  it("clamps SANDBOX_MEMORY_LIMIT_MB to minimum 16 MB", () => {
-    const limits = parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_LIMIT_MB: "1" });
-    expect(limits.memoryLimitBytes).toBe(16 * 1024 * 1024);
-  });
-
-  it("clamps SANDBOX_MEMORY_LIMIT_MB to maximum 512 MB", () => {
-    const limits = parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_LIMIT_MB: "9999" });
-    expect(limits.memoryLimitBytes).toBe(512 * 1024 * 1024);
-  });
-
-  it("parses SANDBOX_PID_LIMIT", () => {
-    const limits = parseSandboxLimitsFromEnv({ SANDBOX_PID_LIMIT: "64" });
-    expect(limits.pidLimit).toBe(64);
-  });
-
-  it("clamps SANDBOX_PID_LIMIT to [8, 256]", () => {
-    expect(parseSandboxLimitsFromEnv({ SANDBOX_PID_LIMIT: "1" }).pidLimit).toBe(8);
-    expect(parseSandboxLimitsFromEnv({ SANDBOX_PID_LIMIT: "1000" }).pidLimit).toBe(256);
-  });
-
-  it("parses SANDBOX_TMPFS_LIMIT_MB", () => {
-    const limits = parseSandboxLimitsFromEnv({ SANDBOX_TMPFS_LIMIT_MB: "50" });
-    expect(limits.tmpfsSizeBytes).toBe(50 * 1024 * 1024);
-  });
-
-  it("clamps SANDBOX_TMPFS_LIMIT_MB to [1, 100]", () => {
-    expect(parseSandboxLimitsFromEnv({ SANDBOX_TMPFS_LIMIT_MB: "0" }).tmpfsSizeBytes).toBe(
-      1 * 1024 * 1024,
-    );
-    expect(parseSandboxLimitsFromEnv({ SANDBOX_TMPFS_LIMIT_MB: "999" }).tmpfsSizeBytes).toBe(
-      100 * 1024 * 1024,
-    );
-  });
-
-  it("parses SANDBOX_CPU_TIME_LIMIT_SECS", () => {
-    const limits = parseSandboxLimitsFromEnv({ SANDBOX_CPU_TIME_LIMIT_SECS: "120" });
-    expect(limits.cpuTimeLimitSecs).toBe(120);
-  });
-
-  it("clamps SANDBOX_CPU_TIME_LIMIT_SECS to [10, 300]", () => {
-    expect(parseSandboxLimitsFromEnv({ SANDBOX_CPU_TIME_LIMIT_SECS: "1" }).cpuTimeLimitSecs).toBe(
-      10,
-    );
-    expect(
-      parseSandboxLimitsFromEnv({ SANDBOX_CPU_TIME_LIMIT_SECS: "9999" }).cpuTimeLimitSecs,
-    ).toBe(300);
-  });
-
-  it("ignores non-numeric and undefined values", () => {
-    const limits = parseSandboxLimitsFromEnv({
-      SANDBOX_MEMORY_LIMIT_MB: "not-a-number",
-      SANDBOX_TMPFS_LIMIT_MB: undefined,
-    });
-    expect(limits).toEqual({});
-  });
-
-  it("treats empty string as 0 (clamped to minimum)", () => {
-    // Number("") === 0, which is finite, so it gets clamped to the minimum
-    const limits = parseSandboxLimitsFromEnv({ SANDBOX_PID_LIMIT: "" });
-    expect(limits.pidLimit).toBe(8); // clamped to min
-  });
-
-  it("parses all env vars together", () => {
-    const limits = parseSandboxLimitsFromEnv({
-      SANDBOX_MEMORY_LIMIT_MB: "64",
-      SANDBOX_PID_LIMIT: "32",
-      SANDBOX_TMPFS_LIMIT_MB: "10",
-      SANDBOX_CPU_TIME_LIMIT_SECS: "60",
-    });
-    expect(limits).toEqual({
-      memoryLimitBytes: 64 * 1024 * 1024,
-      pidLimit: 32,
-      tmpfsSizeBytes: 10 * 1024 * 1024,
-      cpuTimeLimitSecs: 60,
-    });
-  });
-});
-
-describe("createConnection", () => {
-  it("throws when child process has no stdout", () => {
-    const fakeChild = { stdout: null, stdin: new PassThrough() } as never;
-    expect(() => _internals.createConnection(fakeChild)).toThrow("Child process missing stdio");
-  });
-
-  it("throws when child process has no stdin", () => {
-    const fakeChild = { stdout: new PassThrough(), stdin: null } as never;
-    expect(() => _internals.createConnection(fakeChild)).toThrow("Child process missing stdio");
-  });
-
-  it("returns an NdjsonConnection when child has stdio", () => {
-    const fakeChild = {
-      stdout: new PassThrough(),
-      stdin: new PassThrough(),
-    } as never;
-    const conn = _internals.createConnection(fakeChild);
-    expect(conn).toBeDefined();
-    expect(typeof conn.sendRequest).toBe("function");
-    expect(typeof conn.onRequest).toBe("function");
-    expect(typeof conn.listen).toBe("function");
-    expect(typeof conn.dispose).toBe("function");
-  });
-});
-
-describe("devSandboxSpawnArgs", () => {
-  it("restricts env to PATH, HOME, NO_COLOR only", () => {
-    const { env } = _internals.devSandboxSpawnArgs("/tmp/harness.mjs");
-    expect(Object.keys(env)).toEqual(["PATH", "HOME", "NO_COLOR"]);
-    expect(env.NO_COLOR).toBe("1");
-    expect(env.PATH).toBe(process.env.PATH);
-    expect(env.HOME).toBe(process.env.HOME);
-  });
-
-  it("grants no Deno permissions, matching the production OCI spec", () => {
-    // Dev used to pass --allow-env and --allow-read, which production denies
-    // (see oci-spec.test.ts). Agent code reading env or the filesystem then
-    // worked on a macOS dev box and failed once deployed.
-    const { args } = _internals.devSandboxSpawnArgs("/tmp/harness.mjs");
-    expect(args.filter((a) => a.startsWith("--allow"))).toEqual([]);
-  });
-
-  it("includes --no-prompt", () => {
-    const { args } = _internals.devSandboxSpawnArgs("/tmp/harness.mjs");
-    expect(args).toContain("--no-prompt");
-  });
-
-  it("passes harness path as final argument", () => {
-    const { args } = _internals.devSandboxSpawnArgs("/my/path/harness.mjs");
-    expect(args.at(-1)).toBe("/my/path/harness.mjs");
   });
 });
 

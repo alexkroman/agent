@@ -5,18 +5,14 @@
 import { Hono } from "hono";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import type { HonoEnv } from "../context.ts";
-import {
-  authFetch,
-  authHeaders,
-  createTestOrchestrator,
-  createTestStorage,
-  type TestFetch,
-} from "../test-utils.ts";
+import { createMemorySecretStore } from "../secret-store.ts";
+import { authFetch, authHeaders, createTestOrchestrator, type TestFetch } from "../test-utils.ts";
+import { createMemoryChatStore } from "./chat-store.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
-import { ASSEMBLYAI_GATEWAY_MODELS } from "./studio-llm.ts";
 import { createStudioRoutes } from "./studio-routes.ts";
 import type { StudioSandbox } from "./studio-sandbox.ts";
-import { putWorkspace, studioScope } from "./studio-workspace.ts";
+import { createWorkspace, studioScope } from "./studio-workspace.ts";
+import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 const deployMock = vi.fn(
   async (..._args: unknown[]): Promise<StudioDeployResult> => ({
@@ -102,7 +98,6 @@ describe("studio page + routing", () => {
       llm: true,
       provider: "assemblyai",
       model: "gpt-5.5",
-      models: [...ASSEMBLYAI_GATEWAY_MODELS],
     });
   });
 
@@ -269,6 +264,70 @@ describe("project CRUD", () => {
   });
 });
 
+describe("chat history routes", () => {
+  const HISTORY = [
+    { id: "m1", role: "user", parts: [{ type: "text", text: "hi" }] },
+    { id: "m2", role: "assistant", parts: [{ type: "text", text: "hello" }] },
+  ];
+
+  test("GET chat is bearer-auth'd and 404s for a missing project", async () => {
+    const { fetch } = await createTestOrchestrator();
+    expect((await fetch("/studio/projects/proj/chat")).status).toBe(401);
+    expect((await authFetch(fetch, "/studio/projects/ghost/chat", { method: "GET" })).status).toBe(
+      404,
+    );
+  });
+
+  test("a project with no chat yet returns an empty message list", async () => {
+    const { fetch } = await createTestOrchestrator();
+    await createProject(fetch);
+    const res = await authFetch(fetch, "/studio/projects/proj/chat", { method: "GET" });
+    expect(res.status).toBe(200);
+    expect(await res.json()).toEqual({ messages: [] });
+  });
+
+  test("a persisted conversation round-trips through the route", async () => {
+    const { fetch, chats } = await createTestOrchestrator();
+    await createProject(fetch);
+    await chats.putChat(studioScope("key1"), "proj", HISTORY);
+    const res = await authFetch(fetch, "/studio/projects/proj/chat", { method: "GET" });
+    expect(await res.json()).toEqual({ messages: HISTORY });
+  });
+
+  test("chats are namespaced per key — another key's project 404s", async () => {
+    const { fetch, chats } = await createTestOrchestrator();
+    await createProject(fetch);
+    await chats.putChat(studioScope("key1"), "proj", HISTORY);
+    expect(
+      (await authFetch(fetch, "/studio/projects/proj/chat", { method: "GET", key: "key2" })).status,
+    ).toBe(404);
+  });
+
+  test("deleting the project deletes its chat row too", async () => {
+    const { fetch, chats } = await createTestOrchestrator();
+    await createProject(fetch);
+    const scope = studioScope("key1");
+    await chats.putChat(scope, "proj", HISTORY);
+    await authFetch(fetch, "/studio/projects/proj", { method: "DELETE" });
+    expect(await chats.getChat(scope, "proj")).toBeNull();
+  });
+
+  test("the chat route hands runStudioChat a persist hook writing to the chat store", async () => {
+    vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
+    vi.stubEnv("STUDIO_MCP_URLS", "");
+    chatMock.mockClear();
+    const { fetch, chats } = await createTestOrchestrator();
+    await createProject(fetch);
+    await authFetch(fetch, "/studio/chat", { body: chatBody() });
+    const [deps] = chatMock.mock.calls[0] as unknown[] as [
+      { persistMessages: (messages: unknown[]) => Promise<void> },
+    ];
+    expect(typeof deps.persistMessages).toBe("function");
+    await deps.persistMessages(HISTORY);
+    expect(await chats.getChat(studioScope("key1"), "proj")).toEqual(HISTORY);
+  });
+});
+
 describe("deploy + chat endpoints", () => {
   let fetch: TestFetch;
   beforeEach(async () => {
@@ -396,36 +455,17 @@ describe("deploy + chat endpoints", () => {
     expect(messages).toHaveLength(1);
   });
 
-  test("chat accepts a model from the configured provider's list", async () => {
+  test("chat always runs on the host default model — no per-request choice", async () => {
     vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
     await createProject(fetch);
+    // A stray `model` field is ignored (stripped by the body schema), never
+    // honored: the host default is the only model the chat route runs.
     const res = await authFetch(fetch, "/studio/chat", {
       body: { ...chatBody(), model: "claude-opus-4-7" },
     });
     expect(res.status).toBe(200);
-    const [deps] = chatMock.mock.calls[0] as unknown[] as [{ model?: { modelId?: string } }];
-    expect(deps.model?.modelId).toBe("claude-opus-4-7");
-  });
-
-  test("chat without a model leaves the host default in charge", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
-    await createProject(fetch);
-    expect((await authFetch(fetch, "/studio/chat", { body: chatBody() })).status).toBe(200);
     const [deps] = chatMock.mock.calls[0] as unknown[] as [{ model?: unknown }];
     expect(deps.model).toBeUndefined();
-  });
-
-  test("chat rejects a model off the provider's list with a 400", async () => {
-    vi.stubEnv("ASSEMBLYAI_API_KEY", "test-key");
-    await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/chat", {
-      body: { ...chatBody(), model: "gpt-999-turbo-pro" },
-    });
-    expect(res.status).toBe(400);
-    const body = (await res.json()) as { error: string; models: string[] };
-    expect(body.error).toContain("Unknown model");
-    expect(body.models).toEqual([...ASSEMBLYAI_GATEWAY_MODELS]);
-    expect(chatMock).not.toHaveBeenCalled();
   });
 
   test("chat is rate limited per scope with a Retry-After", async () => {
@@ -453,32 +493,24 @@ describe("deploy + chat endpoints", () => {
     expect(limited.headers.get("Retry-After")).toMatch(/^\d+$/);
   });
 
-  test("a client-supplied provider is ignored; the model stays provider-bound", async () => {
-    // Only the model is negotiable, and only within the host-configured
-    // provider's list: a hand-crafted request naming a provider (ignored) and
-    // a model from a *different* provider's catalogue must be refused, not
-    // routed there.
+  test("a client-supplied provider/model is ignored — the host config decides", async () => {
+    // Nothing about the LLM is negotiable: a hand-crafted request naming a
+    // provider and model is stripped by the body schema and the turn runs on
+    // the host-configured default.
     vi.stubEnv("ANTHROPIC_API_KEY", "test-key");
     vi.stubEnv("ASSEMBLYAI_API_KEY", "");
     vi.stubEnv("STUDIO_LLM_PROVIDER", "");
     vi.stubEnv("STUDIO_LLM_MODEL", "");
     await createProject(fetch);
-    const crossProvider = await authFetch(fetch, "/studio/chat", {
-      body: { ...chatBody(), provider: "assemblyai", model: "gpt-4.1" },
-    });
-    expect(crossProvider.status).toBe(400);
-    expect(chatMock).not.toHaveBeenCalled();
-    // Same request with a model the configured (Anthropic) provider serves:
-    // the stray provider field is ignored and the turn runs on Anthropic.
     const res = await authFetch(fetch, "/studio/chat", {
-      body: { ...chatBody(), provider: "assemblyai", model: "claude-opus-5" },
+      body: { ...chatBody(), provider: "assemblyai", model: "gpt-4.1" },
     });
     expect(res.status).toBe(200);
     const [deps] = chatMock.mock.calls[0] as unknown[] as [
-      Record<string, unknown> & { model?: { modelId?: string } },
+      Record<string, unknown> & { model?: unknown },
     ];
     expect(deps).not.toHaveProperty("llm");
-    expect(deps.model?.modelId).toBe("claude-opus-5");
+    expect(deps.model).toBeUndefined();
   });
 });
 
@@ -499,13 +531,16 @@ describe("chat sandbox lifecycle", () => {
         dispose,
       }),
     );
-    const storage = createTestStorage();
-    await putWorkspace(storage, studioScope("key1"), "proj", { files: { "agent.ts": "x" } });
+    const workspaces = createMemoryWorkspaceStore();
+    await createWorkspace(workspaces, studioScope("key1"), "proj", { files: { "agent.ts": "x" } });
     const app = new Hono<HonoEnv>().route(
       "/studio",
       createStudioRoutes({ createSandbox, llmConfigured: () => true }),
     );
-    const bindings = { storage } as unknown as HonoEnv["Bindings"];
+    const bindings = {
+      workspaces,
+      chats: createMemoryChatStore(),
+    } as unknown as HonoEnv["Bindings"];
     const request = () =>
       app.request(
         "/studio/chat",
@@ -522,7 +557,7 @@ describe("chat sandbox lifecycle", () => {
   test("a dispose that ran before lazy provisioning blocks it — no leaked sandbox", async () => {
     // The abort race: runStudioChat's teardown fires while sandboxPromise is
     // still null (test_agent is mid Vite build), then the tool asks for the
-    // sandbox. Provisioning one now would leak a gVisor/Deno process nothing
+    // sandbox. Provisioning one now would leak a Modal sandbox nothing
     // ever disposes.
     const { request, createSandbox } = await chatApp();
     expect((await request()).status).toBe(200);
@@ -557,5 +592,84 @@ describe("chat sandbox lifecycle", () => {
     expect(createSandbox).toHaveBeenCalledTimes(1);
     await deps.disposeSandbox();
     expect(dispose).toHaveBeenCalledTimes(1);
+  });
+});
+
+// ── Storage routes (per-app database on the published agent) ─────────────
+
+describe("studio storage routes", () => {
+  const META = { role: "app_0123456789abcdef", password: "f" };
+
+  async function storageApp(opts: { deployed?: boolean } = {}) {
+    const appDb = {
+      provision: vi.fn(async () => META),
+      deprovision: vi.fn(async () => undefined),
+      open: () => {
+        throw new Error("open not expected");
+      },
+    };
+    const secrets = createMemorySecretStore();
+    const { fetch, workspaces } = await createTestOrchestrator({ secrets, appDb });
+    await createWorkspace(workspaces, studioScope("key1"), "proj", {
+      files: { "agent.ts": "x" },
+      ...(opts.deployed !== false && { deployedSlug: "proj" }),
+    });
+    return { fetch, appDb, secrets };
+  }
+
+  test("routes are bearer-auth'd", async () => {
+    const { fetch } = await storageApp();
+    expect((await fetch("/studio/projects/proj/storage")).status).toBe(401);
+  });
+
+  test("unknown project → 404, unpublished project → 409", async () => {
+    const { fetch } = await storageApp({ deployed: false });
+    const missing = await fetch("/studio/projects/nope/storage", { headers: authHeaders() });
+    expect(missing.status).toBe(404);
+
+    const unpublished = await fetch("/studio/projects/proj/storage", { headers: authHeaders() });
+    expect(unpublished.status).toBe(409);
+    expect(await unpublished.json()).toEqual({ error: "Project has not been published yet" });
+  });
+
+  test("enable/status/disable round-trip against the published slug", async () => {
+    const { fetch, appDb, secrets } = await storageApp();
+
+    const before = await fetch("/studio/projects/proj/storage", { headers: authHeaders() });
+    expect(await before.json()).toEqual({ enabled: false });
+
+    const enable = await fetch("/studio/projects/proj/storage", {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    expect(enable.status).toBe(200);
+    expect(await enable.json()).toEqual({ ok: true, enabled: true });
+    expect(appDb.provision).toHaveBeenCalledWith("proj");
+    expect(await secrets.get("app-db:proj")).not.toBeNull();
+
+    const after = await fetch("/studio/projects/proj/storage", { headers: authHeaders() });
+    expect(await after.json()).toEqual({ enabled: true });
+
+    const disable = await fetch("/studio/projects/proj/storage", {
+      method: "DELETE",
+      headers: authHeaders(),
+    });
+    expect(await disable.json()).toEqual({ ok: true, enabled: false });
+    expect(appDb.deprovision).toHaveBeenCalledWith("proj");
+    expect(await secrets.get("app-db:proj")).toBeNull();
+  });
+
+  test("enable without SUPABASE_DB_URL configured → 503", async () => {
+    const secrets = createMemorySecretStore();
+    const { fetch, workspaces } = await createTestOrchestrator({ secrets });
+    await createWorkspace(workspaces, studioScope("key1"), "proj", {
+      files: { "agent.ts": "x" },
+      deployedSlug: "proj",
+    });
+    const res = await fetch("/studio/projects/proj/storage", {
+      method: "POST",
+      headers: authHeaders(),
+    });
+    expect(res.status).toBe(503);
   });
 });

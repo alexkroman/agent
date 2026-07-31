@@ -3,12 +3,11 @@
  * Pre-connection client-config lookup.
  *
  * `GET client-config` (relative to the agent's base URL — see
- * `sdk/client-config.ts` in `@alexkroman1/aai`) tells the default client
- * what kind of app the agent is before any connection exists — a
- * conversational agent (WebSocket chat shell) or a workflow (one-shot run
- * surface). Every failure path — network error, 404 from an older server,
- * malformed body — degrades to the agent default, so this lookup can never
- * break an existing agent.
+ * `sdk/client-config.ts` in `@alexkroman1/aai`) gives the default client the
+ * agent's display name and greeting before any connection exists. Every
+ * failure path — network error, 404 from an older server, malformed body —
+ * degrades to the empty default, so this lookup can never break an existing
+ * agent.
  */
 
 import {
@@ -24,7 +23,7 @@ export function buildAgentUrl(platformUrl: string, endpointPath: string): URL {
   return new URL(endpointPath, platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
 }
 
-const AGENT_DEFAULT: ClientConfigResponse = { kind: "agent" };
+const AGENT_DEFAULT: ClientConfigResponse = {};
 
 /** Fetch the agent's client config; any failure yields the agent default. */
 export async function fetchClientConfig(

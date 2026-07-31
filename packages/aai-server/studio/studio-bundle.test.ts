@@ -93,6 +93,36 @@ export default { name: pad("x", 3) };`,
     ).rejects.toThrow(/Cannot import "left-pad"/);
   }, 30_000);
 
+  test("names the valid subpaths when an SDK subpath does not exist", async () => {
+    // A subpath guess the model makes on its own. Left to Vite it failed with
+    // rolldown's "is not exported under the conditions […] see exports field
+    // in /…/package.json" — which points the agent at a file it cannot read
+    // and names no alternative, so it guesses again instead of fixing the
+    // import.
+    const err = await bundleWorkspace({
+      "agent.ts": `import { sequential } from "@alexkroman1/aai/combinators";
+export default { name: String(typeof sequential) };`,
+    }).catch((e: unknown) => e);
+
+    expect(err).toBeInstanceOf(StudioBuildError);
+    const message = (err as Error).message;
+    expect(message).toContain('Cannot import "@alexkroman1/aai/combinators"');
+    expect(message).toContain("has no such subpath");
+    // The actionable half: the correct subpath is in the message.
+    expect(message).toContain("@alexkroman1/aai/patterns");
+    // And the root entry.
+    expect(message).toContain("@alexkroman1/aai,");
+  }, 30_000);
+
+  test("accepts every subpath the SDK really exports", async () => {
+    const code = await bundleWorkspace({
+      "agent.ts": `import { sequential } from "@alexkroman1/aai/patterns";
+import { agent } from "@alexkroman1/aai";
+export default { name: String(typeof sequential) + String(typeof agent) };`,
+    });
+    expect(code).toBeTruthy();
+  }, 30_000);
+
   test("leaves node: builtins external (CLI-build parity; guest denies at runtime)", async () => {
     const code = await bundleWorkspace({
       "agent.ts": `import { readFileSync } from "node:fs";
@@ -116,8 +146,8 @@ export default { name: String(typeof readFileSync) };`,
     // Vite's build() sets NODE_ENV=production when it is unset. In a
     // `pnpm dev:aai-server` process that is exactly the case, so the first
     // studio build used to flip the whole server to "production" for the rest
-    // of its life — after which describeBundle refuses to run without gVisor
-    // ("gVisor (runsc) is required in production but not found on PATH").
+    // of its life — production-only checks (Modal credentials, storage env)
+    // then start failing on a dev machine.
     const saved = process.env.NODE_ENV;
     delete process.env.NODE_ENV;
     try {

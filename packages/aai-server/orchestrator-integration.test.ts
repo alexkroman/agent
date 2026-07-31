@@ -13,18 +13,20 @@ import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 async function createRealOrchestrator() {
   const { createStorage } = await import("unstorage");
   const { createBundleStore } = await import("./bundle-store.ts");
-  const { importMasterKey } = await import("./secrets.ts");
+  const { createMemorySecretStore } = await import("./secret-store.ts");
   const { createOrchestrator } = await import("./orchestrator.ts");
 
   const storage = createStorage();
-  const masterKey = await importMasterKey("test-secret");
-  const store = createBundleStore(storage, { masterKey });
+  const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
   const { createSlotCache } = await import("./sandbox-slots.ts");
   const { createMemoryVector } = await import("@alexkroman1/aai/runtime");
+  const { createMemoryWorkspaceStore } = await import("./studio/workspace-store.ts");
+  const { createMemoryChatStore } = await import("./studio/chat-store.ts");
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    storage,
+    workspaces: createMemoryWorkspaceStore(),
+    chats: createMemoryChatStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
   });
   const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);

@@ -10,9 +10,8 @@
  * :project/deploy`).
  *
  * LLM selection lives in `studio-llm.ts` — platform-owned host config. A
- * request may pick a model from the configured provider's own list (the
- * route validates it against `studioLlmModels()` and resolves it into
- * `deps.model`); it can never pick a provider or supply a key.
+ * request can never pick a provider or model or supply a key; every turn
+ * runs on the host-configured default.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
@@ -24,11 +23,11 @@ import {
   tool,
   type UIMessage,
 } from "ai";
-import type { Storage } from "unstorage";
 import { z } from "zod";
 import { IsolateConfigSchema } from "../rpc-schemas.ts";
 import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
-import { bundleWorkspaceWorker } from "./studio-bundle.ts";
+import type { StudioBuildRunner } from "./studio-build-protocol.ts";
+import { resolveStudioBuildRunner } from "./studio-build-runner.ts";
 import { applyEdit, StudioEditError } from "./studio-edit.ts";
 import { StudioBuildError } from "./studio-errors.ts";
 import { grepWorkspace, StudioGrepError } from "./studio-grep.ts";
@@ -39,17 +38,17 @@ import type { StudioSandbox } from "./studio-sandbox.ts";
 import { withToolTimeouts } from "./studio-tool-timeout.ts";
 import { createWebTools } from "./studio-web.ts";
 import { currentFilesHash } from "./studio-workspace.ts";
-import { withWorkspaceDir } from "./studio-workspace-dir.ts";
 import { createWorkspaceSession, type WorkspaceSession } from "./studio-workspace-session.ts";
+import type { WorkspaceStore } from "./workspace-store.ts";
 
 const MAX_CHAT_STEPS = 16;
 
 export type StudioChatDeps = {
-  storage: Storage;
+  workspaces: WorkspaceStore;
   scope: string;
   project: string;
   /**
-   * Lazy handle to this chat session's sandbox — the same warm-pool/gVisor
+   * Lazy handle to this chat session's sandbox — the same warm-pool/Modal
    * infrastructure deployed agents run in. Used by test_agent, and reused by
    * the deploy route for config extraction. Provisioned on first use.
    */
@@ -57,9 +56,12 @@ export type StudioChatDeps = {
   /** Tears down the session sandbox if one was provisioned. Idempotent. */
   disposeSandbox?: () => Promise<void>;
   /**
-   * The resolved model for this turn — the route's validated per-request
-   * picker choice, or a test injection. Defaults to the host-env selection.
+   * Injectable for tests — defaults to the env-selected out-of-process build
+   * runner (a local build subprocess in dev, the Modal build worker in
+   * production; see `studio-build-runner.ts`).
    */
+  build?: StudioBuildRunner;
+  /** Test injection seam. Defaults to the host-env selection. */
   model?: LanguageModel;
   /**
    * Injectable for tests — defaults to the configured MCP servers. A promise
@@ -73,6 +75,13 @@ export type StudioChatDeps = {
    * race the sandbox/MCP teardown.
    */
   abortSignal?: AbortSignal;
+  /**
+   * Persist the full updated conversation when the UI stream settles (the
+   * request's messages plus the assistant's response). The route wires this
+   * to the project's `ChatStore` row; a failure is logged, never fatal —
+   * losing one snapshot must not cost the user their reply.
+   */
+  persistMessages?: (messages: UIMessage[]) => Promise<void>;
 };
 
 /** Invoke one agent tool in the sandbox, reporting failures as text. */
@@ -92,6 +101,32 @@ async function trialToolRun(
   }
 }
 
+/**
+ * Build (or reuse) the trial's worker bundle. Content-hash keyed: a Publish
+ * right after this trial reuses the worker instead of re-materializing and
+ * re-running Vite (see studio-build-cache). A compile error comes back as a
+ * message the coding agent can act on, not an exception.
+ */
+async function trialWorker(
+  deps: StudioChatDeps,
+  files: Record<string, string>,
+  hash: string,
+): Promise<{ worker: string } | { buildError: string }> {
+  const cached = getCachedBuild(hash)?.worker;
+  if (cached !== undefined) return { worker: cached };
+  const build = deps.build ?? resolveStudioBuildRunner();
+  let worker: string | undefined;
+  try {
+    ({ worker } = await build({ files, worker: true, client: false }));
+  } catch (err) {
+    if (err instanceof StudioBuildError) return { buildError: err.message };
+    throw err;
+  }
+  if (worker === undefined) throw new Error("Build runner returned no worker bundle");
+  putCachedBuild(hash, { worker });
+  return { worker };
+}
+
 /** Build the workspace, load it in the session sandbox, and report back. */
 async function runTrial(
   deps: StudioChatDeps,
@@ -101,19 +136,9 @@ async function runTrial(
 ): Promise<string> {
   const workspace = await workspaces.current();
   if (!workspace) return `Error: project ${deps.project} not found`;
-  // Content-hash keyed: a Publish right after this trial reuses the worker
-  // instead of re-materializing and re-running Vite (see studio-build-cache).
-  const hash = currentFilesHash(workspace);
-  let worker = getCachedBuild(hash)?.worker;
-  if (worker === undefined) {
-    try {
-      worker = await withWorkspaceDir(workspace.files, bundleWorkspaceWorker);
-    } catch (err) {
-      if (err instanceof StudioBuildError) return err.message;
-      throw err;
-    }
-    putCachedBuild(hash, { worker });
-  }
+  const built = await trialWorker(deps, workspace.files, currentFilesHash(workspace));
+  if ("buildError" in built) return built.buildError;
+  const { worker } = built;
   let sandbox: StudioSandbox;
   try {
     sandbox = await deps.sandbox();
@@ -167,7 +192,7 @@ async function runTrial(
  */
 export function createStudioTools(
   deps: StudioChatDeps,
-  workspaces: WorkspaceSession = createWorkspaceSession(deps.storage, deps.scope, deps.project),
+  workspaces: WorkspaceSession = createWorkspaceSession(deps.workspaces, deps.scope, deps.project),
 ) {
   const { project } = deps;
   const withFiles = workspaces.update;
@@ -272,11 +297,11 @@ export function createStudioTools(
     test_agent: tool({
       description:
         "Build the workspace and load it into a sandbox running the exact " +
-        "production runtime (gVisor + Deno, no network/filesystem). Reports " +
+        "production runtime (Modal sandbox + Deno, no network/filesystem). Reports " +
         "build errors, load errors, and the extracted agent config. Pass " +
         "`tool` and `args` to also invoke one of the agent's tools with " +
         "sample arguments and see its result. Secrets are NOT available in " +
-        "test runs (ctx.env is empty); KV is a scratch store.",
+        "test runs (ctx.env is empty); ctx.db is unavailable (storage disabled).",
       inputSchema: z.object({
         tool: z.string().optional().describe("Name of an agent tool to invoke after loading"),
         args: z
@@ -337,6 +362,22 @@ export async function runStudioChat(
       onError: disposeSandbox,
     });
     return result.toUIMessageStreamResponse({
+      // `originalMessages` switches the stream to persistence mode: its
+      // onFinish reports the full updated conversation (request messages +
+      // the assistant response). It fires on normal finish AND on client
+      // abort (`isAborted`), so an aborted turn still persists the user
+      // message plus whatever assistant output settled; a turn that dies
+      // before the stream starts persists nothing — the client resends the
+      // full history next turn anyway.
+      originalMessages: messages,
+      onFinish: ({ messages: updated }) => {
+        void deps.persistMessages?.(updated).catch((err: unknown) => {
+          console.warn("Studio chat: failed to persist conversation", {
+            project: deps.project,
+            error: errorMessage(err),
+          });
+        });
+      },
       onError: (error) => {
         disposeSandbox();
         return errorMessage(error);

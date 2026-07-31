@@ -82,14 +82,20 @@ describe("executeToolCall", () => {
     expect(await run("test", {}, tool, { messages: [{ role: "user", content: "hi" }] })).toBe("1");
   });
 
-  test("kv throws when not provided", async () => {
+  test("db throws when not provided", async () => {
     const tool = makeTool({
       execute: (_args, ctx) => {
-        void ctx.kv;
+        void ctx.db;
         return "no error";
       },
     });
-    expect(await run("test", {}, tool)).toBe(JSON.stringify({ error: "KV not available" }));
+    const result = await run("test", {}, tool);
+    expect(JSON.parse(result)).toEqual({
+      error:
+        "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +
+        "the Storage toggle in the studio; under `aai dev`, set DATABASE_URL in the " +
+        "project .env.",
+    });
   });
 
   test("handles async tool execution", async () => {

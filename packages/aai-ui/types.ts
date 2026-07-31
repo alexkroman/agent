@@ -4,14 +4,18 @@ import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 
 // Client audio/backpressure budgets live in the SDK's constants module,
 // next to the host-side halves of the same wire paths (e.g.
-// FILE_UPLOAD_CHUNK_BYTES, MAX_CLIENT_WS_BUFFERED_BYTES).
+// MAX_CLIENT_WS_BUFFERED_BYTES).
 export {
-  FILE_SEND_BACKOFF_MS,
+  CAPTURE_STOP_ACK_TIMEOUT_MS,
+  DEFAULT_STT_SAMPLE_RATE,
   MIC_BUFFER_SECONDS,
   MIC_SEND_MAX_BUFFERED_BYTES,
   MIC_SILENCE_PROBE_MS,
+  PLAYBACK_BUFFER_SECONDS,
   PLAYBACK_CONCEAL_FADE_MS,
   PLAYBACK_CONCEAL_FLOOR,
+  PLAYBACK_DONE_MAX_WAIT_MS,
+  PLAYBACK_DONE_POLL_MS,
   PLAYBACK_JITTER_MS,
   PLAYBACK_REFILL_MS,
 } from "@alexkroman1/aai";

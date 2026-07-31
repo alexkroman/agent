@@ -61,11 +61,11 @@ function Gate({ onEnter }: { onEnter: (key: string) => void }) {
           <span className="font-serif text-[16px]">AssemblyAI App Builder</span>
         </div>
         <h1 className="m-0 font-serif text-[26px] leading-[1.18] font-normal text-balance">
-          Build your first voice agent or workflow
+          Build your first voice agent
         </h1>
         <p className="m-0 text-[15px] leading-[21px] text-muted">
-          Describe a voice agent or workflow and App Builder writes and tests it — you publish when
-          it's ready. Enter your platform API key to start.
+          Describe a voice agent and App Builder writes and tests it — you publish when it's ready.
+          Enter your platform API key to start.
         </p>
         <input
           className="field h-10"

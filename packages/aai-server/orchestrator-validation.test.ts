@@ -19,21 +19,6 @@ describe("e2e HTTP malformed payload rejection", () => {
     expect(res.status).toBe(400);
   });
 
-  test("KV endpoint rejects non-JSON body", async () => {
-    const { fetch } = await createTestOrchestrator();
-    await deployAgent(fetch, "my-agent", "key1");
-
-    const res = await fetch("/my-agent/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
-      body: "not json",
-    });
-    expect(res.status).toBe(400);
-  });
-
   test("secret update rejects non-JSON body", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent", "key1");
@@ -111,36 +96,6 @@ describe("HTTP endpoint schema validation", () => {
         "Content-Type": "application/json",
       },
       body: JSON.stringify({ "invalid-key-name!": "value" }),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  test("KV endpoint rejects invalid request body", async () => {
-    const { fetch } = await createTestOrchestrator();
-    await deployAgent(fetch, "my-agent", "key1");
-
-    const res = await fetch("/my-agent/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ op: "invalid_op", key: "test" }),
-    });
-    expect(res.status).toBe(400);
-  });
-
-  test("KV endpoint rejects missing op field", async () => {
-    const { fetch } = await createTestOrchestrator();
-    await deployAgent(fetch, "my-agent", "key1");
-
-    const res = await fetch("/my-agent/kv", {
-      method: "POST",
-      headers: {
-        Authorization: "Bearer key1",
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ key: "test" }),
     });
     expect(res.status).toBe(400);
   });

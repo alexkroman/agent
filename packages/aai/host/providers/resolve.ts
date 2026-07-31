@@ -21,6 +21,7 @@ import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
 import { createGateway, type LanguageModel } from "ai";
+import type { ProviderEnv } from "../../sdk/env-types.ts";
 import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import {
   ASSEMBLYAI_LLM_API_KEY_ENV,
@@ -36,13 +37,11 @@ import { MISTRAL_API_KEY_ENV, MISTRAL_KIND } from "../../sdk/providers/llm/mistr
 import { OPENAI_API_KEY_ENV, OPENAI_KIND } from "../../sdk/providers/llm/openai.ts";
 import { XAI_API_KEY_ENV, XAI_KIND } from "../../sdk/providers/llm/xai.ts";
 import { OPENAI_REALTIME_KIND } from "../../sdk/providers/s2s/openai-realtime.ts";
-import { SEND_CHANNEL_REGISTRY } from "../../sdk/providers/send/open.ts";
 import {
   ASSEMBLYAI_API_KEY_ENV,
   ASSEMBLYAI_KIND,
   type AssemblyAIOptions,
 } from "../../sdk/providers/stt/assemblyai.ts";
-import { syncTranscribe } from "../../sdk/providers/stt/assemblyai-sync.ts";
 import {
   DEEPGRAM_API_KEY_ENV,
   DEEPGRAM_KIND,
@@ -65,11 +64,9 @@ import {
 } from "../../sdk/providers/tts/assemblyai.ts";
 import {
   CARTESIA_API_KEY_ENV,
-  CARTESIA_DEFAULT_VOICE,
   CARTESIA_KIND,
   type CartesiaOptions,
 } from "../../sdk/providers/tts/cartesia.ts";
-import { syncSynthesize } from "../../sdk/providers/tts/cartesia-sync.ts";
 import { RIME_API_KEY_ENV, RIME_KIND, type RimeOptions } from "../../sdk/providers/tts/rime.ts";
 import type {
   LlmProvider,
@@ -88,15 +85,14 @@ import { requireApiKey } from "./_utils.ts";
  *
  * This deliberately does NOT fall back to the host's `process.env`. On the
  * managed platform the host process holds the platform's own credentials
- * (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for the shared Tigris bucket,
- * `PINECONE_API_KEY`, …) under exactly the names a tenant descriptor resolves.
- * With a fallback, an agent that declared `kv: s3Kv({ bucket, endpoint })` or
- * `vector: pinecone({ index })` and supplied no credential of its own silently
- * borrowed the platform's — aimed at a bucket, endpoint, or index the tenant
- * chose. Whoever builds `env` now decides what a provider can authenticate
- * with; see `withHostCredentialFallback` for the self-hosted opt-in.
+ * (`PINECONE_API_KEY`, …) under exactly the names a tenant descriptor
+ * resolves. With a fallback, an agent that declared `vector: pinecone({
+ * index })` and supplied no credential of its own silently borrowed the
+ * platform's — aimed at an index the tenant chose. Whoever builds `env` now
+ * decides what a provider can authenticate with; see
+ * `withHostCredentialFallback` for the self-hosted opt-in.
  */
-export function resolveApiKey(envVar: string, env: Record<string, string>): string {
+export function resolveApiKey(envVar: string, env: ProviderEnv): string {
   return env[envVar] ?? "";
 }
 
@@ -142,23 +138,10 @@ function lazyOpener<Opts, Session>(
 const STT_REGISTRY: Record<string, OpenerRegistryEntry<SttOpener>> = {
   [ASSEMBLYAI_KIND]: {
     envVar: ASSEMBLYAI_API_KEY_ENV,
-    open: (d) => ({
-      ...lazyOpener(ASSEMBLYAI_KIND, async () =>
+    open: (d) =>
+      lazyOpener(ASSEMBLYAI_KIND, async () =>
         (await import("./stt/assemblyai.ts")).openAssemblyAI(options<AssemblyAIOptions>(d)),
       ),
-      // One-shot clips (uploaded files) go through the Sync API — the
-      // preferred endpoint for short audio. Zero-dep, so no lazy load.
-      transcribeClip: (pcm, sampleRate, o) =>
-        syncTranscribe({
-          audio: pcm,
-          contentType: "audio/pcm",
-          sampleRate,
-          channels: 1,
-          apiKey: o.apiKey,
-          fetch: o.fetch,
-          signal: o.signal,
-        }).then((r) => r.text),
-    }),
   },
   [DEEPGRAM_KIND]: {
     envVar: DEEPGRAM_API_KEY_ENV,
@@ -186,26 +169,10 @@ const STT_REGISTRY: Record<string, OpenerRegistryEntry<SttOpener>> = {
 const TTS_REGISTRY: Record<string, OpenerRegistryEntry<TtsOpener>> = {
   [CARTESIA_KIND]: {
     envVar: CARTESIA_API_KEY_ENV,
-    open: (d) => ({
-      ...lazyOpener(CARTESIA_KIND, async () =>
+    open: (d) =>
+      lazyOpener(CARTESIA_KIND, async () =>
         (await import("./tts/cartesia.ts")).openCartesia(options<CartesiaOptions>(d)),
       ),
-      // One-shot replies (sync turns) go through the bytes endpoint — the
-      // mirror of the AssemblyAI STT entry above. Zero-dep, so no lazy load.
-      synthesizeClip: (text, o) => {
-        const { voice, model, language } = options<CartesiaOptions>(d);
-        return syncSynthesize({
-          text,
-          voice: voice ?? CARTESIA_DEFAULT_VOICE,
-          model,
-          language,
-          sampleRate: o.sampleRate,
-          apiKey: o.apiKey,
-          fetch: o.fetch,
-          signal: o.signal,
-        });
-      },
-    }),
   },
   [RIME_KIND]: {
     envVar: RIME_API_KEY_ENV,
@@ -444,7 +411,6 @@ export function requiredProviderEnvVars(agent: {
   llm?: { kind: string } | object | undefined;
   tts?: { kind: string } | object | undefined;
   s2s?: { kind: string } | object | undefined;
-  send?: { kind: string } | object | undefined;
 }): string[] {
   const vars = new Set<string>();
   const add = (envVar: string | undefined): void => {
@@ -459,7 +425,6 @@ export function requiredProviderEnvVars(agent: {
   add(envVarFor(STT_REGISTRY, agent.stt));
   add(envVarFor(TTS_REGISTRY, agent.tts));
   add(envVarFor(LLM_REGISTRY, agent.llm));
-  add(envVarFor(SEND_CHANNEL_REGISTRY, agent.send));
 
   // S2S mode: an explicit descriptor selects its vendor, and its *absence*
   // means the default AssemblyAI S2S path (see createTransportFactory).
@@ -488,7 +453,6 @@ export const ALL_PROVIDER_ENV_VARS: readonly string[] = [
     ...Object.values(STT_REGISTRY).map((e) => e.envVar),
     ...Object.values(TTS_REGISTRY).map((e) => e.envVar),
     ...Object.values(LLM_REGISTRY).map((e) => e.envVar),
-    ...Object.values(SEND_CHANNEL_REGISTRY).map((e) => e.envVar),
     // S2S: the default AssemblyAI path and the OpenAI Realtime alternative.
     ASSEMBLYAI_API_KEY_ENV,
     OPENAI_API_KEY_ENV,

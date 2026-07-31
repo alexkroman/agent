@@ -23,9 +23,7 @@ import {
   MAX_HTML_BYTES,
   MAX_JSON_BYTES,
   MAX_PAGE_CHARS,
-  SESSION_NOTES_TTL_MS,
 } from "../sdk/constants.ts";
-import type { Kv } from "../sdk/kv.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { calculate } from "./_calculate.ts";
 import { createGetPageDesign } from "./page-design.ts";
@@ -223,7 +221,7 @@ const runCodeParams = z.object({
  * The run_code tool definition (schema + guidance only).
  *
  * run_code executes untrusted JavaScript and is ONLY ever run inside the guest
- * sandbox (gVisor/Deno): in platform mode the runtime delegates it over RPC to
+ * sandbox (Modal/Deno): in platform mode the runtime delegates it over RPC to
  * `deno-harness`, which runs it there. This host-side `execute` is a guard for
  * the self-hosted path (`aai dev`), which has no sandbox — it refuses rather
  * than evaluating attacker-influenceable code in the host process. (The old
@@ -285,42 +283,57 @@ function createThink(): ToolDef<typeof thinkParams> & { guidance: string } {
 // voice call the transcript is noisy (misheard IDs, self-corrections), so
 // persisting a value once confirmed — and recalling it instead of re-reading
 // the transcript — keeps later tool arguments exact.
+//
+// The store is in-process and module-level, keyed by sessionId: notes are
+// per-session working memory, not durable data, so a host restart losing
+// them is fine. Map updates are synchronous, which is what makes one LLM
+// step's concurrent tool calls safe without the per-key promise-chain lock
+// the old KV-backed implementation needed. Expired entries are pruned lazily
+// on access, and total entries are capped (evicting oldest) so an abandoned
+// host process can't grow unboundedly.
 
-function notesKvKey(sessionId: string): string {
-  return `builtin:notes:${sessionId}`;
-}
+type NotesEntry = { notes: Record<string, string>; expiresAt: number };
 
-// `remember` is a KV read-modify-write, and one LLM step's tool calls execute
-// concurrently (pipeline streamText runs them in parallel; S2S starts each on
-// arrival) — two unserialized remembers read the same snapshot and the second
-// set() silently drops the first note. Chain the ops per Kv instance + key.
-// WeakMap so a Kv's chains die with it; entries are pruned once drained.
-const notesOpChains = new WeakMap<Kv, Map<string, Promise<void>>>();
+const sessionNotes = new Map<string, NotesEntry>();
 
-function withNotesLock<T>(kv: Kv, key: string, op: () => Promise<T>): Promise<T> {
-  let chains = notesOpChains.get(kv);
-  if (!chains) {
-    chains = new Map();
-    notesOpChains.set(kv, chains);
+/**
+ * TTL for a session's `remember`/`recall` notes in the in-process store.
+ * Notes are scoped to one voice session, which is bounded by the idle
+ * timeout — a generous TTL only guarantees abandoned sessions' notes don't
+ * accumulate in the host process.
+ */
+const SESSION_NOTES_TTL_MS = 86_400_000;
+/** Hard cap on tracked sessions; oldest entries are evicted past it. */
+const MAX_SESSION_NOTES_ENTRIES = 10_000;
+
+function liveNotesEntry(sessionId: string): NotesEntry | undefined {
+  const entry = sessionNotes.get(sessionId);
+  if (!entry) return;
+  if (entry.expiresAt <= Date.now()) {
+    sessionNotes.delete(sessionId);
+    return;
   }
-  const scope = chains;
-  const prev = scope.get(key) ?? Promise.resolve();
-  // Run after the predecessor settles either way — a failed remember must not
-  // wedge the chain for the rest of the session.
-  const result = prev.then(op, op);
-  const link = result.then(
-    () => undefined,
-    () => undefined,
-  );
-  scope.set(key, link);
-  void link.then(() => {
-    if (scope.get(key) === link) scope.delete(key);
-  });
-  return result;
+  return entry;
 }
 
-async function readNotes(ctx: { kv: Kv; sessionId: string }): Promise<Record<string, string>> {
-  return (await ctx.kv.get<Record<string, string>>(notesKvKey(ctx.sessionId))) ?? {};
+function readNotes(ctx: { sessionId: string }): Record<string, string> {
+  return liveNotesEntry(ctx.sessionId)?.notes ?? {};
+}
+
+function writeNote(sessionId: string, key: string, value: string): Record<string, string> {
+  const entry = liveNotesEntry(sessionId) ?? { notes: {}, expiresAt: 0 };
+  entry.notes[key] = value;
+  entry.expiresAt = Date.now() + SESSION_NOTES_TTL_MS;
+  // Delete-then-set moves the session to the back of the Map's insertion
+  // order, so the eviction below always removes the least-recently-written.
+  sessionNotes.delete(sessionId);
+  sessionNotes.set(sessionId, entry);
+  while (sessionNotes.size > MAX_SESSION_NOTES_ENTRIES) {
+    const oldest = sessionNotes.keys().next().value;
+    if (oldest === undefined) break;
+    sessionNotes.delete(oldest);
+  }
+  return entry.notes;
 }
 
 const rememberParams = z.object({
@@ -344,12 +357,8 @@ function createRemember(): ToolDef<typeof rememberParams> & { guidance: string }
       "value instead of re-reading a noisy transcript.",
     parameters: rememberParams,
     execute(args, ctx) {
-      return withNotesLock(ctx.kv, notesKvKey(ctx.sessionId), async () => {
-        const notes = await readNotes(ctx);
-        notes[args.key] = args.value;
-        await ctx.kv.set(notesKvKey(ctx.sessionId), notes, { expireIn: SESSION_NOTES_TTL_MS });
-        return { saved: args.key, notes };
-      });
+      const notes = writeNote(ctx.sessionId, args.key, args.value);
+      return { saved: args.key, notes: { ...notes } };
     },
   };
 }
@@ -365,10 +374,10 @@ function createRecall(): ToolDef<typeof recallParams> & { guidance: string } {
       "to list every saved note. Notes are per-session and never shown to the customer.",
     guidance: "",
     parameters: recallParams,
-    async execute(args, ctx) {
-      const notes = await readNotes(ctx);
+    execute(args, ctx) {
+      const notes = readNotes(ctx);
       if (args.key !== undefined) return { key: args.key, value: notes[args.key] ?? null };
-      return { notes };
+      return { notes: { ...notes } };
     },
   };
 }
@@ -414,7 +423,7 @@ type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
 
 /**
  * Builtins that execute untrusted code and must ONLY run inside the guest
- * sandbox (gVisor/Deno), never on the host. The runtime's sandbox-mode
+ * sandbox (Modal/Deno), never on the host. The runtime's sandbox-mode
  * dispatcher consults this to delegate them over RPC like custom tools.
  */
 export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string> = new Set(["run_code"]);

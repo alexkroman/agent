@@ -1,3 +1,5 @@
+import type { ToolContext } from "@alexkroman1/aai";
+
 export const SIZES = ["small", "medium", "large"] as const;
 export const CRUSTS = ["thin", "regular", "thick", "stuffed"] as const;
 
@@ -43,4 +45,35 @@ export function pizzaPrice(p: Pizza): number {
     0,
   );
   return (base + crust + toppings) * p.quantity;
+}
+
+// ── Order state ──────────────────────────────────────────────────────────────
+// The in-progress order is session-scoped scratch, so it lives in `ctx.state`
+// (the agent's per-session mutable state) — concurrent customers each get
+// their own cart, and an abandoned cart vanishes with its session.
+
+export interface OrderState {
+  pizzas: Pizza[];
+  nextId: number;
+  customerName: string | null;
+}
+
+type StateSlot = { order?: OrderState };
+
+function emptyOrder(): OrderState {
+  return { pizzas: [], nextId: 1, customerName: null };
+}
+
+/** The session's live cart. Mutations to the returned object stick — it is
+ *  the object stored in `ctx.state`. */
+export function getOrder(ctx: ToolContext): OrderState {
+  const slot = ctx.state as StateSlot;
+  slot.order ??= emptyOrder();
+  return slot.order;
+}
+
+/** Clear the cart after checkout so a follow-up order starts fresh. */
+export function resetOrder(ctx: ToolContext): void {
+  const slot = ctx.state as StateSlot;
+  slot.order = emptyOrder();
 }

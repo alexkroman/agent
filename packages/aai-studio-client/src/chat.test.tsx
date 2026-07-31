@@ -6,7 +6,7 @@
 import type { UIMessage } from "ai";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { ChatPanel, Composer, ModelPicker, toBlocks } from "./chat.tsx";
+import { ChatPanel, Composer, toBlocks } from "./chat.tsx";
 
 function message(parts: Record<string, unknown>[]): UIMessage {
   return { id: "m1", role: "assistant", parts } as UIMessage;
@@ -74,6 +74,7 @@ const noop = (): void => undefined;
 const panelProps = {
   apiKey: "k",
   project: null,
+  chatHistory: undefined,
   creating: false,
   initialPrompt: null,
   onInitialPromptSent: noop,
@@ -113,7 +114,7 @@ describe("ChatPanel (pre-project)", () => {
   test("shows starters and an enabled composer when the server has an LLM", () => {
     const html = renderToStaticMarkup(<ChatPanel {...panelProps} llmStatus={{ llm: true }} />);
     expect(html).toContain("Try one of these");
-    expect(html).toContain("Describe your agent or workflow…");
+    expect(html).toContain("Describe your agent…");
     // The `disabled` attribute — Tailwind `disabled:` variant classes also
     // contain the word, so match the attribute shape.
     expect(html).not.toMatch(/<input[^>]*\sdisabled=/);
@@ -146,76 +147,14 @@ describe("ChatPanel (pre-project)", () => {
     expect(html).not.toContain("Try one of these");
   });
 
-  test("shows the host-configured model as a header chip", () => {
+  test("renders no model picker or chip — the server default always runs", () => {
     const html = renderToStaticMarkup(
       <ChatPanel
         {...panelProps}
         llmStatus={{ llm: true, provider: "assemblyai", model: "gpt-5.5" }}
       />,
     );
-    expect(html).toContain("gpt-5.5");
-    expect(html).toContain("Model: gpt-5.5 (assemblyai)");
-  });
-
-  test("no model in the status means no chip", () => {
-    const html = renderToStaticMarkup(<ChatPanel {...panelProps} llmStatus={{ llm: false }} />);
+    expect(html).not.toContain('aria-label="Model"');
     expect(html).not.toContain("Model:");
-  });
-
-  test("a multi-model status renders the picker with every option", () => {
-    const html = renderToStaticMarkup(
-      <ChatPanel
-        {...panelProps}
-        llmStatus={{
-          llm: true,
-          provider: "assemblyai",
-          model: "gpt-5.5",
-          models: ["gpt-5.5", "claude-opus-4-7", "gemini-2.5-pro"],
-        }}
-      />,
-    );
-    expect(html).toContain('aria-label="Model"');
-    expect(html).toContain(">claude-opus-4-7</option>");
-    expect(html).toContain(">gemini-2.5-pro</option>");
-  });
-});
-
-describe("ModelPicker", () => {
-  const status = {
-    llm: true,
-    provider: "assemblyai",
-    model: "gpt-5.5",
-    models: ["gpt-5.5", "claude-opus-4-7"],
-  };
-
-  test("a single-model list stays the read-only chip", () => {
-    const html = renderToStaticMarkup(
-      <ModelPicker
-        status={{ llm: true, provider: "anthropic", model: "claude-sonnet-5" }}
-        value={null}
-        onChange={noop}
-      />,
-    );
-    expect(html).not.toContain("<select");
-    expect(html).toContain("claude-sonnet-5");
-  });
-
-  test("null value selects the server default; a choice selects itself", () => {
-    const asDefault = renderToStaticMarkup(
-      <ModelPicker status={status} value={null} onChange={noop} />,
-    );
-    expect(asDefault).toMatch(/<option[^>]*selected[^>]*>gpt-5\.5<\/option>/);
-    const picked = renderToStaticMarkup(
-      <ModelPicker status={status} value="claude-opus-4-7" onChange={noop} />,
-    );
-    expect(picked).toMatch(/<option[^>]*selected[^>]*>claude-opus-4-7<\/option>/);
-    expect(picked).toContain("Model: claude-opus-4-7 (assemblyai)");
-  });
-
-  test("unconfigured status renders nothing", () => {
-    const html = renderToStaticMarkup(
-      <ModelPicker status={{ llm: false }} value={null} onChange={noop} />,
-    );
-    expect(html).toBe("");
   });
 });

@@ -1,7 +1,7 @@
 {
   "version": 1,
   "created": "2026-04-07",
-  "description": "Initial baseline: all WebSocket message types and KV operations",
+  "description": "Initial baseline: all WebSocket message types",
   "ServerMessage": [
     { "type": "config", "audioFormat": "pcm16", "sampleRate": 16000, "ttsSampleRate": 24000 },
     {
@@ -41,13 +41,6 @@
       "messages": [{ "role": "user", "content": "Hello" }, { "role": "assistant", "content": "Hi" }]
     },
     { "type": "history", "messages": [] }
-  ],
-  "KvRequest": [
-    { "op": "get", "key": "k1" },
-    { "op": "set", "key": "k1", "value": "v1" },
-    { "op": "set", "key": "k1", "value": { "nested": true } },
-    { "op": "set", "key": "k1", "value": "v1", "expireIn": 60000 },
-    { "op": "del", "key": "k1" }
   ],
   "constants": {
     "AUDIO_FORMAT": "pcm16",

@@ -1,5 +1,11 @@
 # aai-templates
 
+## 0.2.3
+
+### Patch Changes
+
+- e17fdc4: Rename workflow templates: voice-debrief → debrief-workflow, slack-translator → slack-translator-workflow; scaffold guide notes that a "workflow" request means workflow(), not agent()
+
 ## 0.2.2
 
 ### Patch Changes

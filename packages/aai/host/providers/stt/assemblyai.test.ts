@@ -12,6 +12,7 @@ import {
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,
 } from "../../../sdk/constants.ts";
+import { ASSEMBLYAI_STREAMING_EU_URL, assemblyAI } from "../../../sdk/providers/stt/assemblyai.ts";
 import { flush } from "../../_test-utils.ts";
 import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
 
@@ -211,6 +212,37 @@ describe("assemblyAI STT adapter — voice focus", () => {
     expect(offFake.params.voiceFocus).toBeUndefined();
     expect("voiceFocus" in offFake.params).toBe(false);
     await off.close();
+  });
+});
+
+describe("assemblyAI STT adapter — region (EU data residency)", () => {
+  test("factory: region lands in the descriptor options and is absent by default", () => {
+    expect(assemblyAI({ region: "eu" }).options.region).toBe("eu");
+    expect("region" in assemblyAI().options).toBe(false);
+  });
+
+  test("region: 'eu' points the SDK's streaming socket at the EU endpoint", async () => {
+    const session = await openSession({ model: "universal-3-5-pro", region: "eu" });
+    const fake = session._transcriber as unknown as FakeTranscriber;
+    expect(fake.params.websocketBaseUrl).toBe(ASSEMBLYAI_STREAMING_EU_URL);
+    expect(fake.params.websocketBaseUrl).toBe("wss://streaming.eu.assemblyai.com/v3/ws");
+    await session.close();
+  });
+
+  test("no region (or 'us') leaves the SDK's own default endpoint in place", async () => {
+    // Not pinned host-side: a stale copy of the SDK's versioned default path
+    // would silently override an SDK path bump.
+    const unset = await openSession({ model: "universal-3-5-pro" });
+    expect("websocketBaseUrl" in (unset._transcriber as unknown as FakeTranscriber).params).toBe(
+      false,
+    );
+    await unset.close();
+
+    const us = await openSession({ model: "universal-3-5-pro", region: "us" });
+    expect("websocketBaseUrl" in (us._transcriber as unknown as FakeTranscriber).params).toBe(
+      false,
+    );
+    await us.close();
   });
 });
 

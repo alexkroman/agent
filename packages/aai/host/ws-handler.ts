@@ -11,7 +11,6 @@ import {
   LOG_PREVIEW_CHARS,
   MAX_CLIENT_WS_BUFFERED_BYTES,
   MAX_MESSAGE_BUFFER_SIZE,
-  MAX_SYNC_AUDIO_BYTES,
   MAX_WS_PAYLOAD_BYTES,
   SESSION_KEEPALIVE_INTERVAL_MS,
   WS_OPEN,
@@ -225,12 +224,6 @@ function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: 
     case "tool_result":
       session.onToolResult(result.data.toolCallId, result.data.result, result.data.error);
       break;
-    case "transcribe_file_start":
-      session.onTranscribeFileStart(result.data.sampleRate, result.data.byteLength);
-      break;
-    case "transcribe_file_end":
-      session.onTranscribeFileEnd();
-      break;
     default:
       break;
   }
@@ -264,25 +257,22 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
   let sessionReady = false;
   let messageBuffer: { data: unknown }[] | null = [];
   /** Binary bytes currently held in `messageBuffer` (budgeted separately from
-   *  the message-count cap so a whole file upload fits — see bufferMessage). */
+   *  the message-count cap — see bufferMessage). */
   let bufferedBinaryBytes = 0;
   /** JSON (non-binary) messages currently held in `messageBuffer`. */
   let bufferedJsonCount = 0;
 
   /**
-   * Buffer one pre-ready message. Binary frames budget by bytes (a complete
-   * one-shot upload — up to MAX_SYNC_AUDIO_BYTES plus mic frames — must fit,
-   * or a dropped frame/`transcribe_file_end` breaks the upload framing and
-   * leaves the session's upload buffer absorbing mic audio); JSON messages
-   * keep the small count cap. Drops are logged — silent loss here cost a
-   * long debug once.
+   * Buffer one pre-ready message. Binary frames budget by bytes (mic audio
+   * arriving before session.start() resolves); JSON messages keep the small
+   * count cap. Drops are logged — silent loss here cost a long debug once.
    */
   function bufferMessage(event: { data: unknown }): void {
     if (!messageBuffer) return;
     const size = event.data instanceof Uint8Array ? event.data.byteLength : 0;
     const overBudget =
       size > 0
-        ? bufferedBinaryBytes + size > MAX_SYNC_AUDIO_BYTES + MAX_WS_PAYLOAD_BYTES
+        ? bufferedBinaryBytes + size > MAX_WS_PAYLOAD_BYTES
         : bufferedJsonCount >= MAX_MESSAGE_BUFFER_SIZE;
     if (overBudget) {
       log.warn("ws: pre-ready message buffer full; dropping frame", { sid });
@@ -404,7 +394,6 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
         sampleRate: opts.readyConfig.sampleRate,
         ttsSampleRate: opts.readyConfig.ttsSampleRate,
         // Present (false) only for text-only agents — see ReadyConfigSchema.
-        ...(opts.readyConfig.audioOut === false && { audioOut: false }),
         sessionId,
       }),
       log,

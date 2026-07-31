@@ -4,12 +4,14 @@
 // owns all server state, invalidated after agent turns / publishes.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import type { UIMessage } from "ai";
 import clsx from "clsx";
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ApiError, api, type ProjectData, parseSecrets, type StudioStatus } from "./api.ts";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 import { ChatPanel } from "./chat.tsx";
 import { PreviewPane } from "./preview.tsx";
+import { StorageControl, storageQueryKey } from "./storage.tsx";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the
 // default (Live) path shouldn't pay for it.
@@ -38,6 +40,8 @@ type PublishMenuProps = {
   busy: boolean;
   error?: string | undefined;
   deployedSlug?: string | undefined;
+  apiKey: string;
+  project: string | null;
   secrets: string;
   onSecretsChange: (value: string) => void;
   onPublish: () => void;
@@ -84,6 +88,9 @@ function PublishMenu(props: PublishMenuProps) {
           Live at {agentUrl(props.deployedSlug)}
         </a>
       )}
+      {/* Storage is a setting on the *published* agent, so it lives with
+          the Publish affordance — the same menu that lifts its 409 gate. */}
+      {props.project && <StorageControl apiKey={props.apiKey} project={props.project} />}
     </div>
   );
 }
@@ -218,6 +225,29 @@ export function App({ apiKey, onSignOut }: AppProps) {
     if (workspace.error instanceof ApiError && workspace.error.status === 401) onSignOut();
   }, [workspace.error, onSignOut]);
 
+  // Persisted chat history, re-fetched on every project open. `useChat`
+  // owns the live conversation after hydration, but the server rewrites the
+  // row as each turn settles — so a cached snapshot goes stale the moment a
+  // turn completes, and switching back to a project must re-ask the server
+  // or it re-hydrates from the pre-turn cache and drops the newest turns.
+  // ProjectChat reads its seed once at mount, so a cached array served
+  // before the refetch resolves would hydrate stale and the fresh result
+  // would be ignored — gcTime: 0 evicts the cache on switch-away instead,
+  // making every open a fresh fetch behind the loading pane. Focus
+  // refetches are pointless for the same reason the cache is.
+  const chat = useQuery<UIMessage[]>({
+    queryKey: ["chat", project],
+    queryFn: () => api.getChat(apiKey, project as string),
+    enabled: project != null,
+    staleTime: 0,
+    gcTime: 0,
+    refetchOnWindowFocus: false,
+  });
+
+  useEffect(() => {
+    if (chat.error instanceof ApiError && chat.error.status === 401) onSignOut();
+  }, [chat.error, onSignOut]);
+
   // Default to the first project once the list arrives.
   useEffect(() => {
     if (!project && projects.data?.[0]) setProject(projects.data[0]);
@@ -270,6 +300,8 @@ export function App({ apiKey, onSignOut }: AppProps) {
     mutationFn: () => api.deploy(apiKey, project as string, parseSecrets(secrets)),
     onSuccess: () => {
       invalidateWorkspace();
+      // A first publish lifts the storage toggle's "publish first" gate.
+      if (project) void queryClient.invalidateQueries({ queryKey: storageQueryKey(project) });
       // The published agent changed — reload the live iframe.
       setPreviewNonce((n) => n + 1);
       setPublishOpen(false);
@@ -328,6 +360,8 @@ export function App({ apiKey, onSignOut }: AppProps) {
         busy={publish.isPending}
         error={publishError}
         deployedSlug={deployedSlug}
+        apiKey={apiKey}
+        project={project}
         secrets={secrets}
         onSecretsChange={setSecrets}
         onPublish={() => publish.mutate()}
@@ -343,6 +377,10 @@ export function App({ apiKey, onSignOut }: AppProps) {
           key={project ?? "no-project"}
           apiKey={apiKey}
           project={project}
+          // undefined = still loading (the panel must not flash "new chat");
+          // a failed fetch degrades to an empty history rather than wedging
+          // the panel in its loading state.
+          chatHistory={chat.data ?? (chat.isError ? [] : undefined)}
           llmStatus={status.data}
           creating={createProject.isPending}
           initialPrompt={pendingPrompt}

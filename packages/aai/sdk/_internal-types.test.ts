@@ -1,8 +1,23 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { describe, expect, test } from "vitest";
+import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { AgentConfigSchema, agentToolsToSchemas, toAgentConfig } from "./_internal-types.ts";
-import type { ToolDef } from "./types.ts";
+import {
+  type AgentConfig,
+  AgentConfigSchema,
+  agentToolsToSchemas,
+  type HostOnlyAgentField,
+  toAgentConfig,
+} from "./_internal-types.ts";
+import type { AgentDef, ToolDef } from "./types.ts";
+
+// The single subtraction the config-mapping design rests on: every AgentDef
+// field must be either serializable (present in AgentConfigSchema) or named
+// in HOST_ONLY_AGENT_FIELDS. A field added to AgentDef alone fails here
+// instead of silently vanishing at the serialization boundary.
+test("every AgentDef field is serialized or explicitly host-only", () => {
+  type Dropped = Exclude<keyof AgentDef, keyof AgentConfig | HostOnlyAgentField>;
+  expectTypeOf<Dropped>().toEqualTypeOf<never>();
+});
 
 test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
   const noop = async () => {
@@ -108,9 +123,7 @@ describe("toAgentConfig", () => {
       stt: desc("assemblyai"),
       llm: desc("anthropic"),
       tts: desc("cartesia"),
-      kv: desc("memory"),
       vector: desc("in-memory"),
-      send: desc("slack"),
       allowedHosts: ["api.example.com"],
     };
     expect(toAgentConfig(src)).toEqual({ ...src, mode: "pipeline" });
@@ -129,14 +142,6 @@ describe("toAgentConfig", () => {
     const config = toAgentConfig({ ...base, allowedHosts: hosts });
     hosts.push("evil.example.com");
     expect(config.allowedHosts).toEqual(["api.example.com"]);
-  });
-
-  test("does not union the send channel's host (the platform derives that)", () => {
-    // `resolveAgentAllowedHosts` on the server adds `hooks.slack.com` from the
-    // validated descriptor. Deriving it here too would be a second place to
-    // keep in sync, and this one a bundle could bypass.
-    const config = toAgentConfig({ ...base, send: desc("slack") });
-    expect("allowedHosts" in config).toBe(false);
   });
 
   test("propagates the s2s descriptor and keeps the pipeline triple absent", () => {

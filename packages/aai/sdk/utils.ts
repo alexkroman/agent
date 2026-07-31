@@ -56,6 +56,21 @@ export function capToolResult(result: string): string {
   return result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
 }
 
+/**
+ * Coerce a tool call's input to the wire schema's args record. The AI SDK
+ * surfaces an unparsable/invalid tool call as a `tool-call` part whose
+ * `input` is the raw argument string (or any JSON value), not a parsed
+ * object — shipping that verbatim fails the `tool_call` / sync `toolCalls`
+ * schemas, which require a record. Anything that isn't a plain object
+ * becomes `{}` so one bad call degrades to empty args instead of
+ * invalidating the whole frame or response.
+ */
+export function toArgsRecord(input: unknown): Record<string, unknown> {
+  return typeof input === "object" && input !== null && !Array.isArray(input)
+    ? (input as Record<string, unknown>)
+    : {};
+}
+
 /** Text-based client asset extensions safe to carry as a UTF-8 string. */
 const TEXT_ASSET_EXTENSIONS = new Set([
   "html",

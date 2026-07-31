@@ -1,5 +1,11 @@
 # aai-studio-client
 
+## 0.1.8
+
+### Patch Changes
+
+- e17fdc4: Remove the text-only dictation starter prompt (text-only agents are no longer a mode; use workflows)
+
 ## 0.1.7
 
 ### Patch Changes

@@ -283,7 +283,7 @@ describe("tool egress guard — undici pairing", () => {
 
 describe("exemptFromToolEgress", () => {
   test("lets an exempt object's methods fetch from inside a tool scope", async () => {
-    // Stands in for a BYO s3Kv/pinecone provider: in the guest these are RPC
+    // Stands in for a BYO pinecone provider: in the guest these are RPC
     // methods, so production never asks the author to list a storage endpoint.
     const store = {
       async load() {
@@ -308,8 +308,8 @@ describe("exemptFromToolEgress", () => {
   });
 
   test("passes non-function properties through unchanged", () => {
-    const exempt = exemptFromToolEgress({ name: "kv", nested: { a: 1 } });
-    expect(exempt.name).toBe("kv");
+    const exempt = exemptFromToolEgress({ name: "db", nested: { a: 1 } });
+    expect(exempt.name).toBe("db");
     expect(exempt.nested).toEqual({ a: 1 });
   });
 

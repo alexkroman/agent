@@ -9,15 +9,14 @@ import { createOrchestrator } from "./orchestrator.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey } from "./secrets.ts";
+import { createMemoryChatStore } from "./studio/chat-store.ts";
+import { createMemoryWorkspaceStore } from "./studio/workspace-store.ts";
 import {
-  authHeaders,
   counterTotal,
   counterValue,
   createTestOrchestrator,
-  createTestStorage,
   createTestStore,
   deployAgent,
-  deployBody,
   gaugeValue,
   histogramCount,
   TEST_AGENT_CONFIG,
@@ -59,41 +58,14 @@ describe("handleAgentClientConfig", () => {
     expect(res.status).toBe(404);
   });
 
-  test("defaults to the agent kind for a plain agent", async () => {
+  test("serves the agent's name and greeting pre-connection", async () => {
     const { fetch } = await createTestOrchestrator();
     await deployAgent(fetch, "my-agent");
     const res = await fetch("/my-agent/client-config");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
-      kind: "agent",
       name: "test-agent",
       greeting: "",
-    });
-  });
-
-  test("serves the declared workflow kind pre-connection", async () => {
-    const { fetch } = await createTestOrchestrator();
-    await fetch("/wf-agent/deploy", {
-      method: "POST",
-      headers: authHeaders(),
-      body: deployBody({
-        agentConfig: {
-          ...TEST_AGENT_CONFIG,
-          greeting: "Hi! Talk to me.",
-          kind: "workflow",
-          mode: "pipeline",
-          stt: { kind: "assemblyai", options: {} },
-          llm: { kind: "anthropic", options: { model: "claude-haiku-4-5" } },
-          tts: { kind: "none", options: {} },
-        },
-      }),
-    });
-    const res = await fetch("/wf-agent/client-config");
-    expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({
-      kind: "workflow",
-      name: "test-agent",
-      greeting: "Hi! Talk to me.",
     });
   });
 });
@@ -193,7 +165,6 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
     });
   }
   const store = createTestStore();
-  const storage = createTestStorage();
   // Seed an agent config so resolveUpgrade can read the mode label.
   await store.putAgent({
     slug,
@@ -207,7 +178,8 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
   const { injectWebSocket } = createOrchestrator({
     slots,
     store,
-    storage,
+    workspaces: createMemoryWorkspaceStore(),
+    chats: createMemoryChatStore(),
     defaultVector: (slug) => createMemoryVector({ namespace: slug }),
     ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),
   });

@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Orchestrator security tests: cross-agent tenant isolation (KV, auth,
+ * Orchestrator security tests: cross-agent tenant isolation (storage, auth,
  * deploy) and platform credential handling. Slug validation, security
  * headers, and WebSocket URL validation tests live in
  * orchestrator-security-validation.test.ts.
@@ -17,96 +17,28 @@ import {
   TEST_AGENT_CONFIG,
 } from "./test-utils.ts";
 
-// ── Cross-Agent KV Isolation ───────────────────────────────────────────
+// ── Cross-Agent Storage Isolation ──────────────────────────────────────
 
-describe("cross-agent KV isolation", () => {
-  test("agent A cannot read agent B's KV data via API", async () => {
-    const { fetch } = await createTestOrchestrator();
-
-    // Deploy two agents with different keys
-    await deployAgent(fetch, "agent-alpha", "key-alpha");
-    await deployAgent(fetch, "agent-beta", "key-beta");
-
-    // Agent alpha writes a KV entry
-    await authFetch(fetch, "/agent-alpha/kv", {
-      key: "key-alpha",
-      body: { op: "set", key: "secret", value: "alpha-secret-data" },
-    });
-
-    // Agent alpha can read its own data
-    const alphaRead = await fetch("/agent-alpha/kv?key=secret", {
-      headers: { Authorization: "Bearer key-alpha" },
-    });
-    expect(alphaRead.status).toBe(200);
-    const alphaData = await alphaRead.json();
-    expect(alphaData).toBe("alpha-secret-data");
-
-    // Agent beta writes a KV entry with the same key name
-    await authFetch(fetch, "/agent-beta/kv", {
-      key: "key-beta",
-      body: { op: "set", key: "secret", value: "beta-secret-data" },
-    });
-
-    // Agent beta reads its own data — should get beta's value, not alpha's
-    const betaRead = await fetch("/agent-beta/kv?key=secret", {
-      headers: { Authorization: "Bearer key-beta" },
-    });
-    expect(betaRead.status).toBe(200);
-    const betaData = await betaRead.json();
-    expect(betaData).toBe("beta-secret-data");
-
-    // Verify alpha's data is still its own
-    const alphaVerify = await fetch("/agent-alpha/kv?key=secret", {
-      headers: { Authorization: "Bearer key-alpha" },
-    });
-    expect(await alphaVerify.json()).toBe("alpha-secret-data");
-  });
-
-  test("agent A's key cannot access agent B's KV endpoint", async () => {
+describe("cross-agent storage isolation", () => {
+  test("agent A's key cannot access agent B's storage endpoint", async () => {
     const { fetch } = await createTestOrchestrator();
 
     await deployAgent(fetch, "agent-alpha", "key-alpha");
     await deployAgent(fetch, "agent-beta", "key-beta");
 
-    // Agent alpha's key should be rejected on agent beta's KV endpoint
-    const res = await authFetch(fetch, "/agent-beta/kv", {
-      key: "key-alpha",
-      body: { op: "get", key: "test" },
+    // Agent alpha's key should be rejected on agent beta's storage endpoint
+    const res = await fetch("/agent-beta/storage", {
+      method: "GET",
+      headers: { Authorization: "Bearer key-alpha" },
     });
     expect(res.status).toBe(403);
-  });
 
-  test("KV data is scoped per agent", async () => {
-    const { fetch } = await createTestOrchestrator();
-
-    await deployAgent(fetch, "agent-alpha", "key-alpha");
-    await deployAgent(fetch, "agent-beta", "key-beta");
-
-    // Both agents write to the same key name
-    await authFetch(fetch, "/agent-alpha/kv", {
-      key: "key-alpha",
-      body: { op: "set", key: "shared-key", value: "alpha-value" },
+    // Beta's own key is accepted
+    const own = await fetch("/agent-beta/storage", {
+      method: "GET",
+      headers: { Authorization: "Bearer key-beta" },
     });
-
-    await authFetch(fetch, "/agent-beta/kv", {
-      key: "key-beta",
-      body: { op: "set", key: "shared-key", value: "beta-value" },
-    });
-
-    // Each agent reads its own value — no cross-contamination
-    const alphaGet = await authFetch(fetch, "/agent-alpha/kv", {
-      key: "key-alpha",
-      body: { op: "get", key: "shared-key" },
-    });
-    const alphaResult = (await alphaGet.json()) as { result: string };
-    expect(alphaResult.result).toBe("alpha-value");
-
-    const betaGet = await authFetch(fetch, "/agent-beta/kv", {
-      key: "key-beta",
-      body: { op: "get", key: "shared-key" },
-    });
-    const betaResult = (await betaGet.json()) as { result: string };
-    expect(betaResult.result).toBe("beta-value");
+    expect(own.status).toBe(200);
   });
 });
 
@@ -264,10 +196,11 @@ describe("multi-tenant deploy isolation", () => {
     await deployAgent(fetch, "agent-alpha", "key-alpha");
     await deployAgent(fetch, "agent-beta", "key-beta");
 
-    // Store data in beta's KV
-    await authFetch(fetch, "/agent-beta/kv", {
+    // Store a secret in beta's env
+    await authFetch(fetch, "/agent-beta/secret", {
+      method: "PUT",
       key: "key-beta",
-      body: { op: "set", key: "persist-test", value: "should-survive" },
+      body: { PERSIST_TEST: "should-survive" },
     });
 
     // Redeploy agent alpha
@@ -277,12 +210,12 @@ describe("multi-tenant deploy isolation", () => {
       body: deployBody(),
     });
 
-    // Beta's KV data should still be intact
-    const betaRead = await fetch("/agent-beta/kv?key=persist-test", {
+    // Beta's secret should still be intact
+    const betaRead = await fetch("/agent-beta/secret", {
       headers: { Authorization: "Bearer key-beta" },
     });
     expect(betaRead.status).toBe(200);
-    expect(await betaRead.json()).toBe("should-survive");
+    expect(((await betaRead.json()) as { vars: string[] }).vars).toContain("PERSIST_TEST");
   });
 
   test("deleting agent A does not delete agent B", async () => {

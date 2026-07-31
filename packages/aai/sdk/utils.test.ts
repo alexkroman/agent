@@ -1,6 +1,22 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { errorDetail, errorMessage, isTextAssetPath } from "./utils.ts";
+import { errorDetail, errorMessage, isTextAssetPath, toArgsRecord } from "./utils.ts";
+
+describe("toArgsRecord", () => {
+  test("passes a plain object through unchanged", () => {
+    const args = { city: "Paris", n: 1 };
+    expect(toArgsRecord(args)).toBe(args);
+  });
+
+  test("coerces non-record inputs to an empty record", () => {
+    // The raw-string case is what an unrepairable invalid tool call carries.
+    expect(toArgsRecord('{"broken json')).toEqual({});
+    expect(toArgsRecord(undefined)).toEqual({});
+    expect(toArgsRecord(null)).toEqual({});
+    expect(toArgsRecord([1, 2])).toEqual({});
+    expect(toArgsRecord(42)).toEqual({});
+  });
+});
 
 describe("errorMessage", () => {
   test("extracts message from Error instance", () => {

@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-// Pre-connection client-config lookup (app-kind selection)
+export { floatToPcm16 } from "./audio.ts";
+// Pre-connection client-config lookup (name + greeting)
 export {
   buildAgentUrl,
   type ClientConfigResponse,
@@ -12,13 +13,11 @@ export { Controls } from "./components/controls.tsx";
 export { MessageList } from "./components/message-list.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
 export { StartScreen } from "./components/start-screen.tsx";
-export { TextControls } from "./components/text-controls.tsx";
 export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 // Tool config (for component-tier custom UIs)
 export { ToolConfigContext } from "./components/tool-config-context.ts";
 // Components
 export { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./components/url-chips.tsx";
-export { WorkflowView } from "./components/workflow-view.tsx";
 export type { Session } from "./context.ts";
 // Context & hooks
 export {
@@ -43,24 +42,6 @@ export type {
 } from "./session-core.ts";
 // Session core (for advanced use)
 export { createSessionCore } from "./session-core.ts";
-
-// Workflow run plumbing (one HTTP turn per run over POST /sync, WebRTC
-// push-to-talk mic — no WebSocket)
-export {
-  CAPTURE_WORKLET_MODULE_URL,
-  createPttRecorder,
-  DEFAULT_SYNC_MIC_SAMPLE_RATE,
-  floatToPcm16,
-  type PttRecorder,
-} from "./sync-mic.ts";
-export {
-  base64ToPcm16,
-  createSyncSession,
-  pcm16ToBase64,
-  type SyncSession,
-  type SyncSessionOptions,
-  type SyncTurnResult,
-} from "./sync-session.ts";
 // Types
 export type {
   AgentState,

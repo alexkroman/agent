@@ -42,15 +42,6 @@ export const CONFORMANCE_AGENT: AgentDef = {
       description: "Return messages as JSON",
       execute: (_args: unknown, ctx) => JSON.stringify(ctx.messages),
     },
-    kv_roundtrip: {
-      description: "KV set then get",
-      parameters: z.object({ value: z.string() }),
-      execute: async ({ value }: { value: string }, ctx) => {
-        await ctx.kv.set("test-key", value);
-        const result = await ctx.kv.get<string>("test-key");
-        return `stored:${JSON.stringify(result)}`;
-      },
-    },
     vector_roundtrip: {
       description: "Test Vector roundtrip via tool execution",
       parameters: z.object({ text: z.string() }),
@@ -93,12 +84,6 @@ export function testRuntime(label: string, getContext: () => RuntimeTestContext)
       ];
       const result = await executeTool("echo_messages", {}, "s1", msgs);
       expect(JSON.parse(result)).toEqual(msgs);
-    });
-
-    test("KV round-trip through tool context", async () => {
-      const { executeTool } = getContext();
-      const result = await executeTool("kv_roundtrip", { value: "abc" }, "s1", []);
-      expect(result).toBe('stored:"abc"');
     });
 
     test("Vector round-trip through tool context", async () => {

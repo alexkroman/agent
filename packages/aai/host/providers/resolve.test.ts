@@ -9,7 +9,6 @@
  */
 
 import { describe, expect, it } from "vitest";
-import { fetchMockJson } from "../../sdk/_test-utils.ts";
 import { ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import { ASSEMBLYAI_LLM_KIND } from "../../sdk/providers/llm/assemblyai.ts";
 import { GATEWAY_KIND } from "../../sdk/providers/llm/gateway.ts";
@@ -201,28 +200,6 @@ describe("requiredProviderEnvVars", () => {
       "ASSEMBLYAI_API_KEY",
     ]);
   });
-
-  it("includes the send channel's credential env var", () => {
-    expect(requiredProviderEnvVars({ send: { kind: "slack" } })).toEqual([
-      "SLACK_WEBHOOK_URL",
-      "ASSEMBLYAI_API_KEY",
-    ]);
-  });
-
-  it("requires no TTS credential for a text-only agent (tts: none())", () => {
-    // The `none` kind is deliberately absent from TTS_REGISTRY, and the
-    // descriptor still counts toward the pipeline triple — so no TTS key and
-    // no S2S fallback key either.
-    const vars = requiredProviderEnvVars({
-      stt: { kind: "deepgram" },
-      llm: { kind: "anthropic" },
-      tts: { kind: "none" },
-    });
-    expect([...vars].sort((a, b) => a.localeCompare(b))).toEqual([
-      "ANTHROPIC_API_KEY",
-      "DEEPGRAM_API_KEY",
-    ]);
-  });
 });
 
 describe("registerSttKind / registerTtsKind / registerLlmKind", () => {
@@ -266,75 +243,5 @@ describe("registerSttKind / registerTtsKind / registerLlmKind", () => {
     expect(requiredProviderEnvVars({ llm: { kind: ANTHROPIC_KIND } })).toContain(
       "ANTHROPIC_API_KEY",
     );
-  });
-});
-
-describe("resolveStt — AssemblyAI transcribeClip capability", () => {
-  it("posts the clip to the Sync API and returns the transcript text", async () => {
-    const fetchFn = fetchMockJson({ text: "hello from sync", words: [] });
-    const { opener } = resolveStt({ kind: "assemblyai", options: { model: "u3pro-rt" } });
-    expect(opener.transcribeClip).toBeDefined();
-    const text = await opener.transcribeClip?.(new Uint8Array([1, 0]), 16_000, {
-      apiKey: "k",
-      fetch: fetchFn,
-    });
-    expect(text).toBe("hello from sync");
-    const [url, init] = fetchFn.mock.calls[0] ?? [];
-    expect(String(url)).toContain("sync");
-    // Hand-encoded multipart bytes, not a FormData — see the module doc on
-    // `assemblyai-sync.ts` for why the body must carry no class identity.
-    const body = Buffer.from(init?.body as Uint8Array).toString("latin1");
-    expect(body).toContain('{"sample_rate":16000,"channels":1}');
-  });
-
-  it("other STT kinds carry no clip capability", () => {
-    expect(resolveStt({ kind: "deepgram", options: {} }).opener.transcribeClip).toBeUndefined();
-  });
-});
-
-describe("resolveTts — Cartesia synthesizeClip capability", () => {
-  it("posts the reply to the bytes endpoint with the descriptor's voice options", async () => {
-    const pcm = new Uint8Array([1, 2, 3, 4]);
-    const calls: [string, RequestInit][] = [];
-    const fetchFn: typeof globalThis.fetch = async (input, init) => {
-      calls.push([String(input), init as RequestInit]);
-      return new Response(pcm.slice().buffer as ArrayBuffer, { status: 200 });
-    };
-    const { opener, envVar } = resolveTts({
-      kind: "cartesia",
-      options: { voice: "v-9", model: "sonic-3", language: "de" },
-    });
-    expect(envVar).toBe("CARTESIA_API_KEY");
-    expect(opener.synthesizeClip).toBeDefined();
-    const out = await opener.synthesizeClip?.("Guten Tag", {
-      sampleRate: 24_000,
-      apiKey: "ck",
-      fetch: fetchFn,
-    });
-    expect([...(out ?? [])]).toEqual([...pcm]);
-    const [url, init] = calls[0] as [string, RequestInit];
-    expect(url).toContain("/tts/bytes");
-    const body = JSON.parse(init.body as string);
-    expect(body.voice).toEqual({ mode: "id", id: "v-9" });
-    expect(body.model_id).toBe("sonic-3");
-    expect(body.language).toBe("de");
-    expect(body.output_format.sample_rate).toBe(24_000);
-  });
-
-  it("defaults the voice when the descriptor omits it", async () => {
-    let sent: RequestInit | undefined;
-    const fetchFn: typeof globalThis.fetch = async (_input, init) => {
-      sent = init as RequestInit;
-      return new Response(new ArrayBuffer(0), { status: 200 });
-    };
-    const { opener } = resolveTts({ kind: "cartesia", options: {} });
-    await opener.synthesizeClip?.("hi", { sampleRate: 16_000, apiKey: "ck", fetch: fetchFn });
-    const body = JSON.parse(sent?.body as string);
-    expect(typeof body.voice.id).toBe("string");
-    expect(body.voice.id.length).toBeGreaterThan(0);
-  });
-
-  it("other TTS kinds carry no clip capability", () => {
-    expect(resolveTts({ kind: "rime", options: {} }).opener.synthesizeClip).toBeUndefined();
   });
 });

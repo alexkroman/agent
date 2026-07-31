@@ -25,7 +25,6 @@ export function createMockSessionCore(
     error: SessionError | null;
     started: boolean;
     running: boolean;
-    audioOut: boolean;
     recording: boolean;
     apiUrl: string;
   }>,
@@ -41,7 +40,6 @@ export function createMockSessionCore(
     error: overrides?.error ?? null,
     started: overrides?.started ?? false,
     running: overrides?.running ?? true,
-    audioOut: overrides?.audioOut ?? true,
     recording: overrides?.recording ?? false,
     apiUrl: overrides?.apiUrl ?? "ws://test.local/websocket",
   };
@@ -84,17 +82,6 @@ export function createMockSessionCore(
     toggle() {
       snapshot = { ...snapshot, running: !snapshot.running };
       notify();
-    },
-    startRecording() {
-      snapshot = { ...snapshot, recording: true };
-      notify();
-    },
-    stopRecording() {
-      snapshot = { ...snapshot, recording: false };
-      notify();
-    },
-    sendAudioFile(_file: Blob) {
-      return Promise.resolve();
     },
     update(partial: Partial<SessionSnapshot>) {
       // Mirror the real core: content changes bump contentVersion. An explicit

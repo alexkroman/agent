@@ -5,11 +5,13 @@
  * Deno guest-side harness entrypoint.
  *
  * Reads NDJSON from stdin, dispatches JSON-RPC 2.0 messages, and writes
- * NDJSON responses to stdout. Designed to run inside a gVisor sandbox.
+ * NDJSON responses to stdout. Designed to run inside a Modal Sandbox.
  *
  * Protocol overview:
- * - Host -> guest: bundle/load, tool/execute, shutdown
- * - Guest -> host: kv/get, kv/set, kv/del (proxied KV requests)
+ * - Host -> guest: bundle/load, tool/execute, shutdown, ping (liveness
+ *   heartbeat — carries no payload; receiving any line feeds the orphan
+ *   watchdog, so `ping` needs no handler branch)
+ * - Guest -> host: db/query (proxied ctx.db queries), vector/* (proxied Vector)
  * - Guest -> host: fetch/request (proxied fetch via RPC)
  * - Host -> guest: fetch/response-start, fetch/response-chunk,
  *                  fetch/response-end, fetch/response-error (streamed response)
@@ -29,11 +31,11 @@ import {
   type SessionMessagesCache,
 } from "./harness-messages.ts";
 import {
+  dbAdapter,
   errMsg,
   generateAdapter,
   handleFetchNotification,
   handleHostResponse,
-  kvAdapter,
   rejectAllPendingHostRequests,
   sendError,
   sendResponse,
@@ -50,14 +52,20 @@ import type {
   Message,
   ToolContext,
 } from "./harness-types.ts";
-import { RUN_CODE_TIMEOUT_MS, TOOL_TIMEOUT_MS } from "./limits.ts";
+import { createOrphanWatchdog } from "./harness-watchdog.ts";
+import {
+  HARNESS_ORPHAN_TIMEOUT_MS,
+  RUN_CODE_TIMEOUT_MS,
+  STORAGE_DISABLED_MESSAGE,
+  TOOL_TIMEOUT_MS,
+} from "./limits.ts";
 
 // Re-export the host-RPC surface so existing consumers/tests can keep
 // importing it from `./deno-harness.ts`.
 export {
+  dbAdapter,
   generateAdapter,
   handleHostResponse,
-  kvAdapter,
   pendingHostRequests,
   sendError,
   sendResponse,
@@ -104,6 +112,14 @@ export class TextLineStream extends TransformStream<string, string> {
 
 let _bundleEnv: Readonly<Record<string, string>> = Object.freeze({});
 
+/**
+ * Whether storage (ctx.db) is enabled for the loaded bundle — set by the
+ * `storageEnabled` bundle/load param. Off means a ctx.db access throws the
+ * same guidance the SDK's tool-executor gives (see the getter in
+ * `executeTool`), so `aai dev` and the platform read identically.
+ */
+let _storageEnabled = false;
+
 // ---- Session state ----------------------------------------------------------
 
 /**
@@ -135,7 +151,7 @@ export function createSessionStateMap(initState?: () => Record<string, unknown>)
 /**
  * Execute agent-supplied JavaScript for the `run_code` builtin.
  *
- * `run_code` runs HERE, inside the Deno guest, not on the host. The gVisor
+ * `run_code` runs HERE, inside the Deno guest, not on the host. The Modal
  * sandbox plus Deno's permission model (`--no-prompt`, no net/fs/run) ARE the
  * security boundary, so we deliberately do NOT attempt in-process `node:vm`
  * isolation — that was never a real boundary and was escapable via the host
@@ -229,7 +245,12 @@ export async function executeTool(
   const ctx: ToolContext = {
     env: _bundleEnv,
     state: sessionState.get(req.sessionId),
-    kv: kvAdapter,
+    // Lazy getter: only an actual ctx.db access should fail when storage is
+    // disabled — constructing the context must not.
+    get db() {
+      if (!_storageEnabled) throw new Error(STORAGE_DISABLED_MESSAGE);
+      return dbAdapter;
+    },
     vector: vectorAdapter,
     generate: generateAdapter,
     messages,
@@ -298,8 +319,10 @@ async function importBundleModule(code: string): Promise<Record<string, unknown>
 async function loadBundle(
   code: string,
   env: Record<string, string>,
+  storageEnabled: boolean,
 ): Promise<{ agent: AgentDef; config?: unknown }> {
   _bundleEnv = Object.freeze({ ...env });
+  _storageEnabled = storageEnabled;
 
   const mod = await importBundleModule(code);
   const agent = (mod.default ?? mod) as AgentDef;
@@ -329,8 +352,16 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
         await sendError(req.id, -32_602, "bundle/load requires { code: string, env: {} }");
         break;
       }
-      const params = req.params as { code: string; env: Record<string, string> };
-      const loaded = await loadBundle(params.code, params.env ?? {});
+      const params = req.params as {
+        code: string;
+        env: Record<string, string>;
+        storageEnabled?: boolean;
+      };
+      const loaded = await loadBundle(
+        params.code,
+        params.env ?? {},
+        params.storageEnabled === true,
+      );
       state.agent = loaded.agent;
       state.sessionState = createSessionStateMap(
         typeof state.agent.state === "function" ? state.agent.state : undefined,
@@ -381,7 +412,7 @@ export function handleNotification(notif: JsonRpcNotification, state: HarnessSta
 }
 
 export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void {
-  // Incoming response to a host RPC request we sent (kv/*, vector/*, etc.)
+  // Incoming response to a host RPC request we sent (db/query, vector/*, etc.)
   if ("id" in msg && !("method" in msg)) {
     handleHostResponse(msg as JsonRpcResponse);
     return;
@@ -405,7 +436,17 @@ async function main(): Promise<void> {
 
   const state: HarnessState = { agent: null, sessionState: null, sessionMessages: null };
 
+  const watchdog = createOrphanWatchdog({
+    onOrphaned: () => {
+      console.error(
+        `Harness orphaned: no host traffic for ${HARNESS_ORPHAN_TIMEOUT_MS}ms; exiting`,
+      );
+      Deno.exit(3);
+    },
+  });
+
   for await (const line of lineStream) {
+    watchdog.touch();
     const trimmed = line.trim();
     if (!trimmed) continue;
 
@@ -421,9 +462,11 @@ async function main(): Promise<void> {
   }
 
   // stdin closed — the host is gone. Nothing pending can ever be answered,
-  // so fail it all fast (this also clears the per-request timeout timers,
-  // letting the process exit instead of idling until they fire).
+  // so fail it all fast, then exit outright: a loaded bundle may hold its own
+  // timers/intervals, and waiting for the event loop to drain would leave the
+  // process (and its Modal sandbox) alive at the host's expense.
   rejectAllPendingHostRequests("Connection closed");
+  Deno.exit(0);
 }
 
 // Only run main loop when executed directly by Deno (not when imported in tests).

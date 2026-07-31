@@ -78,7 +78,6 @@ export default agent({
   completeSettleMs?: number;                 // pipeline only — shorter wait for clearly-complete finals (default 500)
   holdPhrase?: string;                       // pipeline only — spoken before a silent tool-call turn (default "One moment."; "" disables)
   falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
-  send?: SendProvider;                       // outbound send channel (e.g. slack()) — registers the send_message tool
   allowedHosts?: string[];                   // hostnames your own tool code may fetch (required once deployed)
   state?: () => Record<string, unknown>;     // per-session mutable state, exposed as ctx.state
 });
@@ -101,48 +100,6 @@ import { agent } from "@alexkroman1/aai";
 import systemPrompt from "./system-prompt.md";
 export default agent({ name: "My Agent", systemPrompt });
 ```
-
-## `workflow()` API — audio in, action out
-
-The SDK's second app mode, alongside `agent()`. An agent is a conversation;
-a **workflow** is a one-shot run: the user records one instruction (push to
-talk) or uploads an audio file, presses Go, one agentic loop transcribes and
-executes it with the workflow's tools, and the run ends with a written
-report. No conversation, no history between runs.
-
-```ts
-import { workflow, tool } from "@alexkroman1/aai";
-import { assemblyAI } from "@alexkroman1/aai/stt";
-import { anthropic } from "@alexkroman1/aai/llm";
-import { z } from "zod";
-
-export default workflow({
-  name: "Expense Filer",
-  stt: assemblyAI({ model: "u3pro-rt" }),   // required
-  llm: anthropic({ model: "claude-sonnet-5" }), // required
-  // tts is optional — defaults to none(): the output is a report, not speech
-  tools: {
-    file_expense: tool({
-      description: "File one expense",
-      parameters: z.object({ amount: z.number(), memo: z.string() }),
-      async execute({ amount, memo }, ctx) {
-        await ctx.kv.set(`expense:${Date.now()}`, { amount, memo });
-        return { filed: true, amount, memo };
-      },
-    }),
-  },
-});
-```
-
-Differences from `agent()`:
-
-- Always a pipeline (`stt` + `llm` required); runs over the sync transport —
-  each run is one history-less `POST /sync`.
-- Its own default system prompt: one-shot semantics (never ask clarifying
-  questions, state assumptions, finish every action, end with a run report).
-  A custom `systemPrompt` is layered on top of that contract.
-- The default client renders the run surface (hold-to-talk / upload + Go and
-  the run report) instead of a chat.
 
 ## Pipeline mode
 
@@ -175,47 +132,11 @@ export default agent({
 });
 ```
 
-Tools, KV, `ctx`, and the UI all behave identically across modes. Only
-the audio + LLM transport differs.
+Tools, the database, `ctx`, and the UI all behave identically across modes.
+Only the audio + LLM transport differs.
 
-**Text-only mode (`tts: none()`):** pipeline mode without synthesis —
-speech in (STT → LLM), text out. Use it for transcription assistants,
-dictation, or any agent whose replies are read rather than heard:
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { assemblyAI } from "@alexkroman1/aai/stt";
-import { anthropic } from "@alexkroman1/aai/llm";
-import { none } from "@alexkroman1/aai/tts";
-
-export default agent({
-  name: "My Agent",
-  stt: assemblyAI({ model: "universal-3-5-pro" }),
-  llm: anthropic({ model: "claude-haiku-4-5" }),
-  tts: none(), // explicit — stt/llm without tts is still a config error
-});
-```
-
-No TTS key is needed. The default UI switches to a text layout: a record
-button (mic is opt-in, not always-on), an audio-file upload button that
-transcribes and answers, and streamed text replies. `holdPhrase` is
-rejected with `tts: none()` (it is spoken filler); the other pipeline
-tuning fields work unchanged.
-
-Uploads of **two minutes or less** are transcribed in a single request
-via AssemblyAI's Sync API (`universal-3-5-pro`) — the preferred endpoint
-for short files — rather than replayed through the realtime socket.
-This is platform behavior; the agent code needs nothing extra. Longer
-uploads stream through the agent's realtime STT. (Custom tools can also
-call the Sync API directly with `syncTranscribe` from
-`@alexkroman1/aai/stt`.)
-
-**One-shot transform agents.** Most text-only agents are *transforms*
-(dictation → structured notes, voice memo → summary), not chat: treat
-each utterance or upload as an independent request and reply with only
-the transformed output. Write the systemPrompt accordingly ("Transform
-the user's dictation into X. Output only X, nothing else.") and keep the
-greeting to a one-line instruction — or omit it.
+**There is no text-only agent mode.** An agent is a voice conversation —
+every pipeline agent must declare a real TTS provider.
 
 **Silence nudge (pipeline only):** set `silenceTimeoutMs` to make the
 assistant proactively take a turn after that much user silence (e.g.
@@ -235,23 +156,6 @@ before committing the turn (aggregating disfluent multi-final utterances).
 `falseInterruptionTimeoutMs` resumes an interrupted reply when a barge-in
 turns out to be noise (no user turn commits within the window).
 
-**Sync turns (pipeline only):** every pipeline agent also answers
-`POST /sync` — one complete conversational turn per HTTP request, with no
-WebSocket on either leg. The body carries `{ text }` *or*
-`{ audio, sampleRate }` (base64 mono PCM16 of one utterance, endpointed
-client-side) plus `history` (prior `{ role, content }` turns — the server
-keeps no session state); the response returns `{ transcript, reply }` and,
-when the TTS provider supports one-shot synthesis (Cartesia), base64
-`audio`. Audio input needs an STT provider with a batch endpoint
-(AssemblyAI); text input works with any. Tools, KV, and `ctx` behave
-exactly as in a voice session. Nothing in agent code opts in — it comes
-with pipeline mode. Programmatic clients can use `createSyncSession` /
-`createPttRecorder` (WebRTC push-to-talk capture) from
-`@alexkroman1/aai-ui`. The *default* browser client always uses the
-WebSocket session for agents; workflows (`workflow()`) get the one-shot
-run surface over `POST /sync` automatically — there is no per-agent
-transport switch.
-
 ## Providers
 
 Provider SDKs are **optional peer dependencies**. Install only the SDKs
@@ -268,6 +172,11 @@ for the providers you actually use.
 
 All STT factories accept `{ model?: string, ... }`. Bare calls
 (`deepgram()`, `soniox()`, etc.) use the default model.
+
+`assemblyAI` accepts an optional `region: "eu"` for EU data residency —
+it routes streaming transcription to AssemblyAI's EU endpoints. EU-region
+API keys require it; the US endpoints reject them. Example:
+`assemblyAI({ model: "universal-3-5-pro", region: "eu" })`.
 
 ### LLM — `@alexkroman1/aai/llm`
 
@@ -351,47 +260,6 @@ Anything else fails at session start. Because the factory is named
 **Rime quirk:** language uses ISO 639-3 three-letter codes (e.g. `"eng"`
 not `"en"`).
 
-`none()` (no env var) declares a **text-only** agent — see "Text-only
-mode" above.
-
-### Send channels — `@alexkroman1/aai/send`
-
-An outbound channel the agent can post to. Declaring one registers a
-`send_message` builtin tool (the LLM can call it when asked to send,
-post, or notify) and allowlists the channel's host for tool code.
-
-| Factory | Destination                    | Env var (the secret)  |
-| ------- | ------------------------------ | --------------------- |
-| `slack` | Slack incoming webhook (POST)  | `SLACK_WEBHOOK_URL`   |
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { slack } from "@alexkroman1/aai/send";
-
-export default agent({
-  name: "My Agent",
-  send: slack(), // + SLACK_WEBHOOK_URL secret → send_message tool works
-});
-```
-
-A string message posts as Slack's `{ text }`; custom tools can send any
-webhook body (blocks, attachments) programmatically:
-
-```ts
-import { openSender, slack } from "@alexkroman1/aai/send";
-
-execute: async ({ summary }, ctx) => {
-  await openSender(slack(), ctx.env).send(
-    { blocks: [{ type: "section", text: { type: "mrkdwn", text: summary } }] },
-    { signal: ctx.signal },
-  );
-  return "posted";
-};
-```
-
-The webhook URL **is** the credential — keep it in the env
-(`SLACK_WEBHOOK_URL`), never in code or descriptor options.
-
 Set provider keys the same way as any secret: `.env` for local dev,
 `aai secret put` for production.
 
@@ -408,11 +276,17 @@ const myTool = tool({
 });
 ```
 
+**If `execute` calls `fetch`, declare the hostname in the agent's
+`allowedHosts` in the same change** — an undeclared host is rejected at
+runtime (a blocked request, not a build error), in `aai dev` and deployed
+alike. See "Calling an external API from your own tool code" below.
+
 ### `ctx` (ToolContext)
 
 ```ts
 ctx.env: Readonly<Record<string, string>>     // secrets from .env / aai secret put
-ctx.kv: Kv                                     // persistent KV store (see KV section)
+ctx.state: S                                   // per-session mutable state (agent's `state` factory)
+ctx.db: Db                                     // SQL database, needs storage enabled (see Database section)
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
 ctx.sessionId: string                          // unique session ID
 ctx.send(event: string, data: unknown): void   // push custom event to browser client
@@ -424,9 +298,9 @@ runs one LLM generation on the host. It defaults to the agent's pipeline
 `llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) to use another
 provider whose API key is in the agent's secrets — that's also how S2S
 agents use it. `schema` must be a **plain JSON Schema object** (use
-`z.toJSONSchema(...)`, or the workflow helpers below), never a Zod schema.
+`z.toJSONSchema(...)`, or the pattern helpers below), never a Zod schema.
 
-### Workflow patterns — `@alexkroman1/aai/patterns`
+### Pattern combinators — `@alexkroman1/aai/patterns`
 
 Multi-step LLM orchestration inside a tool, as pure helpers over
 `ctx.generate`:
@@ -564,8 +438,7 @@ export default agent({
 Patterns are bare hostnames with an optional single leading `*.` wildcard.
 No protocol, path, port, IP literal, bare `*`, or `.internal`/`.local`
 TLD — those are rejected at deploy time, and requests are SSRF-screened
-regardless of what you list. A declared `send:` channel's host is added for
-you.
+regardless of what you list.
 
 `aai dev` enforces the same rules as production — an undeclared host fails
 locally too, rather than working until you deploy. The same limits apply in
@@ -575,20 +448,51 @@ and private/loopback addresses are always blocked.
 If a plain `GET` returning JSON is all you need, `fetch_json` is simpler and
 needs no declaration.
 
-## KV API
+## Database API — `ctx.db`
 
-Persistent key-value store scoped per agent deployment. Access via `ctx.kv`.
+Persistent SQL storage scoped per app, backed by the app's own Postgres
+schema. Access via `ctx.db`:
 
 ```ts
-ctx.kv.get<T>(key: string): Promise<T | null>
-ctx.kv.set(key: string, value: unknown, opts?: { expireIn?: number }): Promise<void>
-ctx.kv.delete(keys: string | string[]): Promise<void>
+ctx.db.query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>
 ```
 
-- Values are JSON-serialized. Max value size: 64 KB.
-- Use colon-prefixed keys: `"user:123"`, `"save:game"`.
-- Scoped per deployment. New slug = fresh namespace.
-- No key enumeration — maintain your own index key if needed.
+One parameterized statement per call, `$1, $2…` placeholders — never
+interpolate values into the SQL string. The rows come back as plain objects;
+`jsonb` columns are returned already parsed (no `JSON.parse` needed).
+A query returning more than 1000 rows throws — always bound reads with
+`LIMIT` (paginate with `LIMIT`/`OFFSET`).
+
+**Storage must be enabled** or accessing `ctx.db` throws:
+
+- CLI: `aai storage enable`
+- Studio: the Storage toggle
+- `aai dev`: set `DATABASE_URL` in the project `.env`
+
+Create tables lazily from tool code and upsert with `on conflict`:
+
+```ts
+await ctx.db.query(`create table if not exists app_state (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+)`);
+await ctx.db.query(
+  "insert into app_state (key, value, updated_at) values ($1, $2::jsonb, now()) " +
+    "on conflict (key) do update set value = excluded.value, updated_at = now()",
+  ["user:123", JSON.stringify({ name: "Alex" })],
+);
+const rows = await ctx.db.query<{ value: { name: string } }>(
+  "select value from app_state where key = $1",
+  ["user:123"],
+);
+```
+
+Use `ctx.db` for data that must outlive the session (saves, filed records,
+user profiles). For scratch that only the current session needs, prefer
+`ctx.state` (per-session mutable state — no storage required); the
+`remember`/`recall` builtins likewise remain for session-scoped notes the
+LLM manages itself.
 
 ## Custom UI — `client()`
 
@@ -721,7 +625,6 @@ Available from `@alexkroman1/aai-ui`:
 | `SidebarLayout` | `sidebar, children, sidebarWidth?, sidebarPosition?` | Two-column layout |
 | `MessageList` | — | Messages with auto-scroll, tool calls, transcript |
 | `Controls` | — | Stop/Resume + New Conversation buttons |
-| `TextControls` | — | Record/upload/New Conversation (text-only sessions) |
 | `Button` | — | Styled button |
 
 ## Styling
@@ -733,6 +636,29 @@ Available from `@alexkroman1/aai-ui`:
 - Override CSS custom properties for extra tokens:
   `--color-aai-*`, `--radius-aai`, `--font-aai`.
 - Always import `"@alexkroman1/aai-ui/styles.css"` at the top of `client.tsx`.
+
+### Design guidelines
+
+A custom UI should look deliberate, not like boilerplate. When building or
+restyling a `client.tsx`:
+
+- **Color:** pick one primary brand color, 2-3 neutrals (white/grays/black
+  variants), and at most 1-2 accents — 3-5 colors total. Avoid gradients
+  unless asked. If you override an element's background color, also set its
+  text color so contrast holds.
+- **Typography:** at most 2 font families — one for headings, one for body.
+  Body text 14px or larger with a relaxed line height (`leading-relaxed`).
+- **Layout:** design mobile-first, then enhance with responsive prefixes
+  (`md:`, `lg:`). Prefer flexbox (`flex items-center justify-between`);
+  use grid only for genuinely two-dimensional layouts; avoid absolute
+  positioning unless nothing else works.
+- **Tailwind:** stay on the spacing scale (`p-4`, never `p-[16px]`), use
+  `gap-*` between siblings rather than per-child margins, and wrap headings
+  and key copy in `text-balance` or `text-pretty`.
+- **Accessibility:** semantic elements (`main`, `header`, `button`), alt
+  text on meaningful images, `sr-only` labels on icon-only buttons.
+- **No filler:** no emojis as icons, no decorative gradient blobs or
+  abstract placeholder shapes, no lorem-ipsum-looking content.
 
 ## Secrets
 
@@ -783,8 +709,7 @@ Common mistakes when working in aai projects:
   only what the model needs.
 - **Pipeline mode requires all three of `stt` / `llm` / `tts`.** Partial
   configs are rejected at parse time. Use S2S (omit all three) if you
-  don't need provider control, or `tts: none()` for a text-only agent —
-  never just leave `tts` off.
+  don't need provider control.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
 - **Don't use `useEffect` + `toolCalls` to derive state.** Use
@@ -798,11 +723,15 @@ Common mistakes when working in aai projects:
   points. See "Voice rules" above.
 - **`fetch` to private IPs is blocked** (SSRF protection). Use public URLs.
 - **`run_code` only executes on the deployed platform.** It runs inside the
-  platform's gVisor/Deno sandbox; the self-hosted `aai dev` server has no
+  platform's Modal/Deno sandbox; the self-hosted `aai dev` server has no
   sandbox, so there `run_code` refuses with an error result. Deploy to test
   it end-to-end, or use the `calculate` builtin for simple arithmetic in dev.
-- **KV is per-deployment.** A new slug = fresh namespace. Don't expect
-  data to survive `aai delete` + `aai deploy` with a different name.
+- **`ctx.db` throws until storage is enabled.** Enable it with
+  `aai storage enable` (CLI), the Storage toggle (studio), or `DATABASE_URL`
+  in `.env` (`aai dev`) before shipping tools that persist data.
+- **The database is per-app.** Rows are shared by every session of one
+  deployment — key them yourself if sessions must not see each other's data
+  (or keep session-scoped data in `ctx.state`).
 - **Rime language codes are ISO 639-3** (3-letter, e.g. `"eng"`), not
   ISO 639-1 (`"en"`).
 
@@ -817,6 +746,5 @@ Common mistakes when working in aai projects:
 - Tool execution timeout: 30 seconds
 - `maxSteps` limits tool calls per turn (default 10) — increase for
   multi-tool workflows
-- KV reads return `null` after redeployment with a new slug
 - Tool returns `undefined` if execute function has no return statement —
   always return a value

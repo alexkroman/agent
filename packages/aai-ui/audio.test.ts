@@ -7,83 +7,7 @@ import {
   MockAudioContext,
   voiceOpts,
 } from "./_react-test-utils.ts";
-import { createVoiceIO, decodeAudioToPcm16, type PlaybackStats } from "./audio.ts";
-
-describe("decodeAudioToPcm16", () => {
-  test("decodes, clamps, and converts samples to PCM16", async () => {
-    const samples = new Float32Array([0.5, -0.5, 2, -2, 0]);
-    class FakeOfflineAudioContext {
-      destination = {};
-      rate: number;
-      constructor(_channels: number, _frames: number, rate: number) {
-        this.rate = rate;
-      }
-      decodeAudioData(_data: ArrayBuffer) {
-        return Promise.resolve({ duration: samples.length / this.rate });
-      }
-      createBufferSource() {
-        return {
-          buffer: null as unknown,
-          connect(_dest: unknown) {
-            /* noop */
-          },
-          start() {
-            /* noop */
-          },
-        };
-      }
-      startRendering() {
-        return Promise.resolve({ getChannelData: () => samples });
-      }
-    }
-    vi.stubGlobal("OfflineAudioContext", FakeOfflineAudioContext);
-    try {
-      const pcm = await decodeAudioToPcm16(new ArrayBuffer(4), 16_000);
-      expect(Array.from(pcm)).toEqual([16_383, -16_384, 32_767, -32_768, 0]);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-
-  test("sizes the render context to ceil(duration * targetRate) frames", async () => {
-    const constructed: [number, number, number][] = [];
-    const samples = new Float32Array(8);
-    class FakeOfflineAudioContext {
-      destination = {};
-      constructor(channels: number, frames: number, rate: number) {
-        constructed.push([channels, frames, rate]);
-      }
-      decodeAudioData(_data: ArrayBuffer) {
-        // 0.10003s at 16k is 1600.48 frames — must round up, not truncate.
-        return Promise.resolve({ duration: 0.100_03 });
-      }
-      createBufferSource() {
-        return {
-          buffer: null as unknown,
-          connect(_dest: unknown) {
-            /* noop */
-          },
-          start() {
-            /* noop */
-          },
-        };
-      }
-      startRendering() {
-        return Promise.resolve({ getChannelData: () => samples });
-      }
-    }
-    vi.stubGlobal("OfflineAudioContext", FakeOfflineAudioContext);
-    try {
-      await decodeAudioToPcm16(new ArrayBuffer(4), 16_000);
-      // Throwaway decode context first, then the real render context.
-      expect(constructed[0]).toEqual([1, 1, 16_000]);
-      expect(constructed[1]).toEqual([1, Math.ceil(0.100_03 * 16_000), 16_000]);
-      expect(constructed[1]?.[1]).toBe(1601);
-    } finally {
-      vi.unstubAllGlobals();
-    }
-  });
-});
+import { createVoiceIO, type PlaybackStats } from "./audio.ts";
 
 function noop() {
   /* silence expected console.error output */
@@ -133,12 +57,9 @@ describe("createVoiceIO", () => {
     const playNodeCtxRates = audio.contexts().map((c) => c.sampleRate);
     expect(playNodeCtxRates).toContain(16_000);
     expect(playNodeCtxRates).toContain(24_000);
+    // The worklet gets no rate option: the context it runs on is already at
+    // the STT rate (asserted), and it reads its global sampleRate.
     expect(capNode.ctx.sampleRate).toBe(16_000);
-
-    // The worklet is told one rate because it converts nothing: the context
-    // it runs on is already at the STT rate.
-    const opts = capNode.options as { processorOptions?: Record<string, unknown> };
-    expect(opts.processorOptions?.sampleRate).toBe(16_000);
     await io.close();
   });
 
@@ -225,14 +146,6 @@ describe("createVoiceIO", () => {
     const firstCall = onMicData.mock.calls[0] as [ArrayBuffer];
     expect(firstCall[0].byteLength).toBe(3200);
     expect(new Int16Array(firstCall[0])[0]).toBe(16_384);
-    await io.close();
-  });
-
-  test("capture worklet receives bufferSeconds in processorOptions", async () => {
-    const io = await createVoiceIO(voiceOpts());
-    const capNode = findWorkletNode(audio.workletNodes(), "capture-processor");
-    const opts = capNode.options as { processorOptions?: Record<string, unknown> };
-    expect(opts.processorOptions?.bufferSeconds).toBe(0.1);
     await io.close();
   });
 

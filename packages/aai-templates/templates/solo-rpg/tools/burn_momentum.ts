@@ -13,7 +13,7 @@ export const burnMomentum = tool({
   description:
     "Burn momentum to upgrade the most recent action roll. Only valid when current momentum beats the roll's challenge dice (both dice for a full upgrade, one for Miss to Weak Hit). Reverts the original result's consequences, applies the upgraded result, and resets momentum to +2.",
   async execute(_args, ctx) {
-    const state = await getGameState(ctx.kv, ctx.sessionId);
+    const state = getGameState(ctx);
     const last = state.lastRoll;
     if (!last) return { error: "No recent action roll to upgrade. Roll first." };
     if (last.result === "STRONG_HIT") {
@@ -49,7 +49,7 @@ export const burnMomentum = tool({
     state.momentum = MOMENTUM_RESET;
     state.lastRoll = null;
 
-    await saveGameState(ctx.kv, ctx.sessionId, state);
+    saveGameState(ctx, state);
     ctx.send("game_state", state);
 
     return {

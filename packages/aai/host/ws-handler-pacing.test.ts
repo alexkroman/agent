@@ -110,7 +110,9 @@ describe("wireSessionSocket audio pacing", () => {
       for (let i = 0; i < 20; i++) client.playAudioChunk(CHUNK());
       const sentBeforeClose = binaryFrames(ws).length;
 
-      ws.dispatchEvent(new CloseEvent("close"));
+      // CloseEvent is only a global from Node 23; the handler under test
+      // reads nothing off the event beyond its type.
+      ws.dispatchEvent(new (globalThis.CloseEvent ?? Event)("close"));
       vi.advanceTimersByTime(5000);
 
       expect(binaryFrames(ws)).toHaveLength(sentBeforeClose);

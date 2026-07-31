@@ -2,26 +2,11 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
+import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
 import { AllowedHostsSchema } from "./allowed-hosts.ts";
-import {
-  type AgentKind,
-  assertAgentKind,
-  assertPipelineTuning,
-  assertProviderTriple,
-  assertSilencePolicy,
-  assertTextOnlyTuning,
-} from "./config-rules.ts";
+import { assertPipelineTuning, assertProviderTriple, assertSilencePolicy } from "./config-rules.ts";
 import { ProviderDescriptorSchema } from "./manifest.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
-import type {
-  KvProvider,
-  LlmProvider,
-  S2sProvider,
-  SendProvider,
-  SttProvider,
-  TtsProvider,
-  VectorProvider,
-} from "./providers.ts";
 import type { Message } from "./types.ts";
 import { BuiltinToolSchema, ToolChoiceSchema, type ToolDef } from "./types.ts";
 
@@ -44,8 +29,12 @@ export type ExecuteTool = (
 // host via structured clone.
 export const AgentConfigSchema = z.object({
   name: z.string().min(1),
-  systemPrompt: z.string(),
-  greeting: z.string(),
+  // Defaulted rather than required: `agent()` fills these in, but a raw
+  // `export default {...}` agent.ts (no `agent()` wrapper) reaches
+  // `toAgentConfig` without them — the old mapper shipped a config with
+  // `greeting: undefined` (typed `string`, silently invalid) for such agents.
+  systemPrompt: z.string().default(DEFAULT_SYSTEM_PROMPT),
+  greeting: z.string().default(DEFAULT_GREETING),
   sttPrompt: z.string().optional(),
   maxSteps: z.number().int().positive().optional(),
   toolChoice: ToolChoiceSchema.optional(),
@@ -65,62 +54,37 @@ export const AgentConfigSchema = z.object({
   tts: ProviderDescriptorSchema.optional(),
   s2s: ProviderDescriptorSchema.optional(),
   mode: z.enum(["s2s", "pipeline"]).optional(),
-  kv: ProviderDescriptorSchema.optional(),
   vector: ProviderDescriptorSchema.optional(),
-  send: ProviderDescriptorSchema.optional(),
-  kind: z.enum(["agent", "workflow"]).optional(),
   allowedHosts: AllowedHostsSchema.optional(),
 });
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;
 
-// Covers both `AgentDef` (where `maxSteps` may be a function) and
-// `IsolateConfig` (where it is always a number).
-interface AgentConfigSource {
-  name: string;
-  systemPrompt: string;
-  greeting: string;
-  sttPrompt?: string | undefined;
-  maxSteps?: number | undefined;
-  toolChoice?: AgentConfig["toolChoice"] | undefined;
-  builtinTools?: Readonly<AgentConfig["builtinTools"]> | undefined;
-  idleTimeoutMs?: number | undefined;
-  silenceTimeoutMs?: number | undefined;
-  silencePrompt?: string | undefined;
-  minBargeInWords?: number | undefined;
-  interruptionMinDurationMs?: number | undefined;
-  endpointSettleMs?: number | undefined;
-  completeSettleMs?: number | undefined;
-  holdPhrase?: string | undefined;
-  errorPhrase?: string | undefined;
-  falseInterruptionTimeoutMs?: number | undefined;
-  stt?: SttProvider | undefined;
-  llm?: LlmProvider | undefined;
-  tts?: TtsProvider | undefined;
-  s2s?: S2sProvider | undefined;
-  kv?: KvProvider | undefined;
-  vector?: VectorProvider | undefined;
-  send?: SendProvider | undefined;
-  kind?: AgentKind | undefined;
-  allowedHosts?: readonly string[] | undefined;
-}
+/**
+ * `AgentDef` fields that must never cross the serialization boundary — the
+ * single deny-list {@link toAgentConfig} strips. Everything else on the agent
+ * definition flows into {@link AgentConfig} by default, so a new serializable
+ * field works CLI → server → runtime without touching a mapper. A field added
+ * to `AgentDef` must appear either in `AgentConfigSchema` or here — the
+ * type-level guard in `_internal-types.test.ts` enforces that subtraction.
+ */
+export const HOST_ONLY_AGENT_FIELDS = ["tools", "state"] as const;
 
-/** Copy the defined pipeline voice-tuning fields into a config-shaped partial. */
-function pipelineTuningConfig(src: AgentConfigSource): Partial<AgentConfig> {
-  return {
-    ...(src.minBargeInWords !== undefined ? { minBargeInWords: src.minBargeInWords } : {}),
-    ...(src.interruptionMinDurationMs !== undefined
-      ? { interruptionMinDurationMs: src.interruptionMinDurationMs }
-      : {}),
-    ...(src.endpointSettleMs !== undefined ? { endpointSettleMs: src.endpointSettleMs } : {}),
-    ...(src.completeSettleMs !== undefined ? { completeSettleMs: src.completeSettleMs } : {}),
-    ...(src.holdPhrase !== undefined ? { holdPhrase: src.holdPhrase } : {}),
-    ...(src.errorPhrase !== undefined ? { errorPhrase: src.errorPhrase } : {}),
-    ...(src.falseInterruptionTimeoutMs !== undefined
-      ? { falseInterruptionTimeoutMs: src.falseInterruptionTimeoutMs }
-      : {}),
-  };
-}
+export type HostOnlyAgentField = (typeof HOST_ONLY_AGENT_FIELDS)[number];
+
+const HOST_ONLY_FIELD_SET: ReadonlySet<string> = new Set(HOST_ONLY_AGENT_FIELDS);
+
+/**
+ * What {@link toAgentConfig} accepts: every serializable {@link AgentConfig}
+ * field (`mode` excepted — it is derived, never supplied) plus the host-only
+ * fields the deny-list strips. `AgentDef` is assignable to this by
+ * construction; the explicit `| undefined` on the host-only members keeps
+ * spread call sites (`{...agent, stt: maybeUndefined}`) legal under
+ * `exactOptionalPropertyTypes`.
+ */
+export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
+  [K in HostOnlyAgentField]?: unknown;
+};
 
 export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   // `assertProviderTriple` enforces that stt/llm/tts are all-or-nothing so the
@@ -128,42 +92,23 @@ export function toAgentConfig(src: AgentConfigSource): AgentConfig {
   const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s);
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
   assertPipelineTuning(mode, src);
-  assertTextOnlyTuning(src.tts, src);
-  assertAgentKind(mode, src.kind);
   // Runs inside the generated bundle entry too, so the studio's test_agent
   // surfaces a bad TTS language as a load error rather than shipping a mute agent.
   assertAssemblyAITtsLanguage(src.tts);
 
-  const config: AgentConfig = {
-    name: src.name,
-    systemPrompt: src.systemPrompt,
-    greeting: src.greeting,
-    mode,
-  };
-  if (src.sttPrompt !== undefined) config.sttPrompt = src.sttPrompt;
-  if (src.maxSteps !== undefined) config.maxSteps = src.maxSteps;
-  if (src.toolChoice !== undefined) config.toolChoice = src.toolChoice;
-  if (src.builtinTools) config.builtinTools = [...src.builtinTools];
-  if (src.idleTimeoutMs !== undefined) config.idleTimeoutMs = src.idleTimeoutMs;
-  if (src.silenceTimeoutMs !== undefined) config.silenceTimeoutMs = src.silenceTimeoutMs;
-  if (src.silencePrompt !== undefined) config.silencePrompt = src.silencePrompt;
-  Object.assign(config, pipelineTuningConfig(src));
-  if (mode === "pipeline") {
-    config.stt = src.stt;
-    config.llm = src.llm;
-    config.tts = src.tts;
+  // Deny-list copy: everything defined flows through unless it is host-only.
+  // The allow-list mapper this replaces is how fields went missing silently —
+  // every field is optional, so an omitted copy is valid TypeScript
+  // (`allowedHosts` shipped that way and deployed agents lost guest egress).
+  const wire: Record<string, unknown> = { mode };
+  for (const [key, value] of Object.entries(src)) {
+    if (value === undefined || HOST_ONLY_FIELD_SET.has(key)) continue;
+    wire[key] = value;
   }
-  if (src.s2s !== undefined) config.s2s = src.s2s;
-  if (src.kv !== undefined) config.kv = src.kv;
-  if (src.vector !== undefined) config.vector = src.vector;
-  if (src.send !== undefined) config.send = src.send;
-  if (src.kind !== undefined) config.kind = src.kind;
-  // Copied verbatim, NOT unioned with the send channel's host. The platform
-  // derives that itself (`resolveAgentAllowedHosts`) from the validated
-  // descriptor, so deriving it here too would be a second place to keep in
-  // sync — and the server's is the one a bundle cannot bypass.
-  if (src.allowedHosts !== undefined) config.allowedHosts = [...src.allowedHosts];
-  return config;
+  // parse() re-validates field shapes, copies arrays (the config must not
+  // alias caller-owned arrays), and strips any key the schema doesn't know —
+  // a second net under the deny-list for non-serializable strays.
+  return AgentConfigSchema.parse(wire);
 }
 
 // ─── ToolSchema ─────────────────────────────────────────────────────────────

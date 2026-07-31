@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
     inputs:
       deploy:
-        description: Deploy aai-server to Fly.io
+        description: Deploy aai-server to Modal
         type: boolean
         default: false
 
@@ -106,8 +106,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
 
-      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.13"
 
-      - run: flyctl deploy --remote-only
+      - run: pip install modal
+
+      - run: modal deploy packages/aai-server/modal_deploy.py
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_API_TOKEN }}
+          MODAL_TOKEN_ID: ${{ secrets.MODAL_TOKEN_ID }}
+          MODAL_TOKEN_SECRET: ${{ secrets.MODAL_TOKEN_SECRET }}

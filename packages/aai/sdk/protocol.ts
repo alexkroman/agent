@@ -12,7 +12,6 @@ import {
   MAX_AUDIO_SAMPLE_RATE,
   MAX_CLIENT_EVENT_NAME_LENGTH,
   MAX_ERROR_MESSAGE_CHARS,
-  MAX_SYNC_AUDIO_BYTES,
   MAX_TOOL_RESULT_CHARS,
   MAX_TRANSCRIPT_CHARS,
 } from "./constants.ts";
@@ -25,18 +24,6 @@ export {
   type ClientConfigResponse,
   ClientConfigResponseSchema,
 } from "./client-config.ts";
-// The sync-turn HTTP wire format lives beside this module and is part of the
-// same protocol surface — re-exported so clients import one subpath.
-export {
-  type SyncHistoryMessage,
-  SyncHistoryMessageSchema,
-  type SyncToolCall,
-  SyncToolCallSchema,
-  type SyncTurnRequest,
-  SyncTurnRequestSchema,
-  type SyncTurnResponse,
-  SyncTurnResponseSchema,
-} from "./sync.ts";
 
 /**
  * Audio codec identifier used in the wire protocol.
@@ -96,27 +83,6 @@ function discriminatorValues(union: z.ZodDiscriminatedUnion): ReadonlySet<string
   }
   return values;
 }
-
-/** Zod schema for the KV "get" operation. */
-export const KvGetSchema = z.object({ op: z.literal("get"), key: z.string().min(1) });
-
-/** Zod schema for the KV "set" operation. */
-export const KvSetSchema = z.object({
-  op: z.literal("set"),
-  key: z.string().min(1),
-  value: z.unknown(),
-  /** Time-to-live in **milliseconds**. */
-  expireIn: z.number().int().positive().optional(),
-});
-
-/** Zod schema for the KV "del" operation. */
-export const KvDelSchema = z.object({ op: z.literal("del"), key: z.string().min(1) });
-
-/** Zod schema for KV operation requests from the worker to the host. */
-export const KvRequestSchema = z.discriminatedUnion("op", [KvGetSchema, KvSetSchema, KvDelSchema]);
-
-/** KV operation request — discriminated union on the `op` field. */
-export type KvRequest = z.infer<typeof KvRequestSchema>;
 
 /** Zod schema for the Vector "upsert" operation. */
 export const VectorUpsertSchema = z.object({
@@ -262,12 +228,6 @@ export const ReadyConfigSchema = z.object({
   audioFormat: z.enum(["pcm16"]),
   sampleRate: z.number().int().positive(),
   ttsSampleRate: z.number().int().positive(),
-  /**
-   * False for text-only agents (`tts: none()`): the server sends no audio
-   * frames and the client should render streamed text replies instead of
-   * expecting playback. Omitted means true (voice reply — the default).
-   */
-  audioOut: z.boolean().optional(),
 });
 
 /** Protocol-level session config returned to the client on connect. */
@@ -278,14 +238,11 @@ export const ServerMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("config"),
     audioFormat: z.string(),
-    // Bounded like the client→server `transcribe_file_start` rate: these
-    // numbers feed client-side allocations (upload padding, the playback
+    // Bounded: these numbers feed client-side allocations (the playback
     // worklet's rate*60 ring buffer), so an unbounded server value would be
     // an allocation-size lever against the client.
     sampleRate: z.number().int().positive().max(MAX_AUDIO_SAMPLE_RATE),
     ttsSampleRate: z.number().int().positive().max(MAX_AUDIO_SAMPLE_RATE),
-    /** False for text-only agents — see {@link ReadyConfigSchema}. */
-    audioOut: z.boolean().optional(),
     /** Session ID for this connection. Clients can reconnect with
      *  `?sessionId=<id>` to resume a persisted session. */
     sessionId: z.string().optional(),
@@ -314,26 +271,6 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
     result: z.string().max(MAX_TOOL_RESULT_CHARS),
     error: z.string().optional(),
   }),
-  /**
-   * One-shot file transcription: the binary frames between `start` and `end`
-   * are buffered as a single PCM16 clip and transcribed in one request (the
-   * AssemblyAI Sync API when the agent's STT supports it) instead of being
-   * replayed through the realtime socket. Preferred for uploads under two
-   * minutes.
-   */
-  z.object({
-    type: z.literal("transcribe_file_start"),
-    // Capped: the rate feeds server-side padding allocations
-    // (withTrailingSilence), so an unbounded client value would be an
-    // allocation-size lever. 192 kHz is beyond any real capture rate.
-    sampleRate: z.number().int().positive().max(MAX_AUDIO_SAMPLE_RATE),
-    byteLength: z
-      .number()
-      .int()
-      .positive()
-      .max(MAX_SYNC_AUDIO_BYTES, "audio exceeds the one-shot transcription cap"),
-  }),
-  ev("transcribe_file_end"),
 ]);
 
 /** The set of recognised client→server message `type` values — pass to
@@ -388,19 +325,13 @@ export type HostConfigMessage = z.infer<typeof HostConfigMessageSchema>;
 // ─── Ready config builder ───────────────────────────────────────────────────
 
 /** Build the protocol-level session config from S2S sample rates. */
-export function buildReadyConfig(
-  s2sConfig: {
-    inputSampleRate: number;
-    outputSampleRate: number;
-  },
-  opts: { audioOut?: boolean } = {},
-): ReadyConfig {
+export function buildReadyConfig(s2sConfig: {
+  inputSampleRate: number;
+  outputSampleRate: number;
+}): ReadyConfig {
   return {
     audioFormat: AUDIO_FORMAT,
     sampleRate: s2sConfig.inputSampleRate,
     ttsSampleRate: s2sConfig.outputSampleRate,
-    // Only stamped when replies are text-only, so existing voice sessions
-    // keep a byte-identical config message.
-    ...(opts.audioOut === false && { audioOut: false }),
   };
 }

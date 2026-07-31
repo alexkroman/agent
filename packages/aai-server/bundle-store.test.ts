@@ -2,15 +2,14 @@
 import { createStorage } from "unstorage";
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { ByteBudgetTtlCache, createBundleStore } from "./bundle-store.ts";
-import { agentObjectKey } from "./constants.ts";
-import { importMasterKey } from "./secrets.ts";
+import { agentObjectKey, MAX_ENV_SIZE } from "./constants.ts";
+import { createMemorySecretStore } from "./secret-store.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 describe("bundle store (unstorage)", () => {
   test("putAgent + getManifest round-trip", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -28,8 +27,7 @@ describe("bundle store (unstorage)", () => {
 
   test("getManifest returns cached data on second read", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -51,8 +49,7 @@ describe("bundle store (unstorage)", () => {
 
   test("getManifest returns null for non-existent agent", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     const result = await store.getManifest("nonexistent");
     expect(result).toBeNull();
@@ -60,8 +57,7 @@ describe("bundle store (unstorage)", () => {
 
   test("getManifest treats corrupt stored JSON as missing instead of throwing", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     await storage.setItem(agentObjectKey("bad-agent", "manifest.json"), "{not json at all");
@@ -72,8 +68,7 @@ describe("bundle store (unstorage)", () => {
 
   test("getManifest treats a schema-invalid manifest as missing instead of throwing", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
     const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
 
     // Valid JSON, wrong shape — a corrupt or half-written manifest object.
@@ -86,10 +81,38 @@ describe("bundle store (unstorage)", () => {
     warnSpy.mockRestore();
   });
 
+  test("env writes over MAX_ENV_SIZE are rejected on both write paths", async () => {
+    const storage = createStorage();
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+    const oversized = { BIG: "x".repeat(MAX_ENV_SIZE) };
+
+    await expect(
+      store.putAgent({
+        slug: "test-agent",
+        env: oversized,
+        worker: "console.log('w');",
+        clientFiles: {},
+        credential_hashes: ["hash1"],
+        agentConfig: TEST_AGENT_CONFIG,
+      }),
+    ).rejects.toThrow(/exceeds the .*limit/);
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { OK: "1" },
+      worker: "console.log('w');",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+    await expect(store.putEnv("test-agent", oversized)).rejects.toThrow(/exceeds the .*limit/);
+    // The rejected write must not have clobbered the stored env.
+    await expect(store.getEnv("test-agent")).resolves.toEqual({ OK: "1" });
+  });
+
   test("concurrent putEnv calls do not lose updates", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -116,8 +139,7 @@ describe("bundle store (unstorage)", () => {
 
   test("getWorkerCode returns worker code", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -134,8 +156,7 @@ describe("bundle store (unstorage)", () => {
 
   test("getClientFile returns deployed HTML and assets", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     const html = "<!DOCTYPE html><html><body>hello</body></html>";
     const js = 'console.log("app");';
@@ -156,8 +177,7 @@ describe("bundle store (unstorage)", () => {
 
   test("redeploy replaces client files", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -186,8 +206,7 @@ describe("bundle store (unstorage)", () => {
 
   test("deleteAgent removes all files", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -204,10 +223,61 @@ describe("bundle store (unstorage)", () => {
     expect(await store.getWorkerCode("test-agent")).toBeNull();
   });
 
+  test("deleteAgent removes the agent's secret entries (env + app-db)", async () => {
+    const storage = createStorage();
+    const secrets = createMemorySecretStore();
+    const store = createBundleStore(storage, { secrets });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { K: "v" },
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+    await secrets.put(
+      "app-db:test-agent",
+      JSON.stringify({ schema: "s", role: "r", password: "p" }),
+    );
+    expect(await secrets.get("agent-env:test-agent")).toBe(JSON.stringify({ K: "v" }));
+
+    await store.deleteAgent("test-agent");
+
+    expect(await secrets.get("agent-env:test-agent")).toBeNull();
+    expect(await secrets.get("app-db:test-agent")).toBeNull();
+  });
+
+  test("env round-trips through the secret store, not the manifest blob", async () => {
+    const storage = createStorage();
+    const secrets = createMemorySecretStore();
+    const store = createBundleStore(storage, { secrets });
+
+    await store.putAgent({
+      slug: "test-agent",
+      env: { ASSEMBLYAI_API_KEY: "sk-123" },
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["hash1"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+
+    // The manifest object carries no env; the secret store does. (The memory
+    // driver auto-parses `.json` keys, so the stored value comes back parsed.)
+    const rawManifest = await storage.getItem(agentObjectKey("test-agent", "manifest.json"));
+    expect(rawManifest).toEqual({
+      slug: "test-agent",
+      credential_hashes: ["hash1"],
+    });
+    expect(await secrets.get("agent-env:test-agent")).toBe(
+      JSON.stringify({ ASSEMBLYAI_API_KEY: "sk-123" }),
+    );
+    expect(await store.getEnv("test-agent")).toEqual({ ASSEMBLYAI_API_KEY: "sk-123" });
+  });
+
   test("retries getWorkerCode on transient ECONNRESET", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -239,8 +309,7 @@ describe("bundle store (unstorage)", () => {
 
   test("getAgentConfig gives up after repeated transient failures", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -265,8 +334,7 @@ describe("bundle store (unstorage)", () => {
 
   test("non-transient errors are not retried", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     let callCount = 0;
     storage.getItem = (async () => {
@@ -280,8 +348,7 @@ describe("bundle store (unstorage)", () => {
 
   test("getManifest caches result — second call does not hit storage", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -309,8 +376,7 @@ describe("bundle store (unstorage)", () => {
 
   test("putEnv invalidates manifest cache", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -332,8 +398,7 @@ describe("bundle store (unstorage)", () => {
 
   test("getWorkerCode caches result — second call does not hit storage", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -361,8 +426,7 @@ describe("bundle store (unstorage)", () => {
 
   test("putAgent invalidates the worker-code cache", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     const bundle = {
       slug: "test-agent",
@@ -380,8 +444,7 @@ describe("bundle store (unstorage)", () => {
 
   test("getAgentConfig caches result", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -408,8 +471,7 @@ describe("bundle store (unstorage)", () => {
 
   test("putAgent invalidates both manifest and config caches", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -438,8 +500,7 @@ describe("bundle store (unstorage)", () => {
 
   test("getManifest and getAgentConfig handle drivers that auto-parse JSON", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",
@@ -464,8 +525,7 @@ describe("bundle store (unstorage)", () => {
 
   test("deleteAgent invalidates cache — subsequent reads return null", async () => {
     const storage = createStorage();
-    const masterKey = await importMasterKey("test-secret");
-    const store = createBundleStore(storage, { masterKey });
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
 
     await store.putAgent({
       slug: "test-agent",

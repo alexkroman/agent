@@ -39,17 +39,7 @@ export type CustomEvent = {
  */
 export type SessionSnapshot = {
   readonly state: AgentState;
-  /**
-   * False when the server declared the session text-only (`tts: none()`):
-   * no audio frames will arrive and replies render as text. True until the
-   * server's `config` message says otherwise (voice is the default).
-   */
-  readonly audioOut: boolean;
-  /**
-   * True while the microphone is live and streaming to the server. Voice
-   * sessions record for their whole lifetime; text-only sessions toggle this
-   * via `startRecording()` / `stopRecording()` (the record button).
-   */
+  /** True while the microphone is live and streaming to the server. */
   readonly recording: boolean;
   /**
    * The WebSocket URL a program can connect to directly (the same endpoint
@@ -105,22 +95,6 @@ export type SessionCore = {
   start(): void;
   /** Toggle between connected and disconnected states. */
   toggle(): void;
-  /**
-   * Start streaming microphone audio (text-only sessions). Requests mic
-   * access on first use. No-op in voice sessions, where the mic is always on.
-   */
-  startRecording(): void;
-  /** Stop streaming microphone audio (text-only sessions). No-op in voice sessions. */
-  stopRecording(): void;
-  /**
-   * Decode an audio file (any format the browser can decode), resample it to
-   * the session's STT rate, and stream it to the server for transcription.
-   * Text-only sessions (`tts: none()`) only — voice sessions stream the
-   * microphone instead and reject. Also rejects when no session is connected,
-   * the mic is recording, another upload is in flight, or the file cannot be
-   * decoded. Resolves once the audio has been handed to the socket.
-   */
-  sendAudioFile(file: Blob): Promise<void>;
   /** Alias for `disconnect` for use with `using`. */
   [Symbol.dispose](): void;
 };

@@ -15,7 +15,7 @@
  *   *unauthenticated* — anyone with the URL can talk to it. Allowing prompt
  *   and tool overrides on that same footing would turn every deployed agent
  *   into an open LLM proxy billed to its owner. So overrides require proving
- *   ownership of the slug, the same check `/:slug/secret` and `/:slug/kv`
+ *   ownership of the slug, the same check `/:slug/secret` and `/:slug/storage`
  *   already use. An env flag would be all-or-nothing across tenants.
  *
  * Plain (non-host) connections are untouched and stay unauthenticated.
@@ -25,7 +25,7 @@ import type { SessionStartOptions, SessionWebSocket } from "@alexkroman1/aai/run
 import { startHostSession } from "@alexkroman1/aai/runtime";
 import { parseBearer } from "./_bearer.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { toHostBaseAgent } from "./sandbox-agent-config.ts";
+import { toRuntimeAgent } from "./sandbox-agent-config.ts";
 import { verifySlugOwner } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -117,7 +117,7 @@ export async function guardHostModeUpgrade(opts: {
 /**
  * Begin a host-mode session on a deployed agent.
  *
- * Runs in this process rather than the gVisor sandbox: host mode replaces the
+ * Runs in this process rather than the guest sandbox: host mode replaces the
  * agent's tools with ones relayed back to the caller, so there is no tenant
  * code to isolate. The credentials and provider pipeline are still the
  * deployed agent's — which is the point, and why ownership was checked before
@@ -137,7 +137,9 @@ export function startDeployedHostSession(
     .then((agentEnv) => {
       startHostSession(ws, {
         env: agentEnv ?? {},
-        baseAgent: toHostBaseAgent(opts.agentConfig),
+        // toRuntimeAgent keeps the provider descriptors on the agent, so a
+        // pipeline agent driven over ?host=1 stays a pipeline agent.
+        baseAgent: toRuntimeAgent(opts.agentConfig),
         // Ownership was verified at the upgrade; the platform's gate is the
         // API key, not AAI_ALLOW_HOST (which would be all-or-nothing).
         allowHost: true,

@@ -6,21 +6,23 @@
  * extracting its config, and trial-running its tools — happens inside a
  * sandbox provisioned through the exact same machinery as deployed agents:
  * the orchestrator's warm pool when available, otherwise
- * `spawnWarmHarness` (gVisor on Linux, dev child process elsewhere). The
+ * `spawnWarmHarness` (a remote Modal Sandbox). The
  * host never evaluates workspace code.
  *
  * Unlike a deployed agent's sandbox, a studio session sandbox:
  * - starts with no bundle and can re-`loadBundle` repeatedly (the harness
  *   replaces the loaded agent), giving the coding agent a build → load →
  *   try loop against the production runtime;
- * - is wired to a scratch in-memory KV/Vector — trial tool runs never
- *   touch platform data, and no tenant secrets enter the guest.
+ * - is wired to a scratch in-memory Vector and NO app database — trial tool
+ *   runs never touch platform data, and no tenant secrets enter the guest.
+ *   A trial run that touches ctx.db gets the self-explanatory
+ *   storage-not-enabled error.
  */
 
-import type { Kv } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
 import { createMemoryVector } from "@alexkroman1/aai/runtime";
 import { resolveHarnessPath } from "../constants.ts";
+import type { BundleLoadResult } from "../rpc-schemas.ts";
 import { registerGuestRpcHandlers } from "../sandbox-guest-rpc.ts";
 import type { SandboxPool } from "../sandbox-pool.ts";
 import { spawnWarmHarness, type WarmHarness } from "../sandbox-vm.ts";
@@ -54,30 +56,15 @@ export type StudioSandboxOptions = {
   spawn?: typeof spawnWarmHarness;
 };
 
-function scratchKv(): Kv {
-  const map = new Map<string, unknown>();
-  return {
-    get: (key) => Promise.resolve((map.get(key) as never) ?? null),
-    set: (key, value) => {
-      map.set(key, value);
-      return Promise.resolve();
-    },
-    delete: (keys) => {
-      for (const key of Array.isArray(keys) ? keys : [keys]) map.delete(key);
-      return Promise.resolve();
-    },
-  };
-}
-
 export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Promise<StudioSandbox> {
   const spawn = opts.spawn ?? spawnWarmHarness;
   const harnessPath = opts.harnessPath ?? resolveHarnessPath();
 
-  // Scratch KV/Vector so trial tool runs behave realistically (ctx.kv works)
-  // without reaching any tenant data. No allowedHosts — guest fetch is off.
+  // Scratch Vector so trial tool runs behave realistically (ctx.vector works)
+  // without reaching any tenant data. No db (ctx.db throws the
+  // storage-not-enabled error) and no allowedHosts — guest fetch is off.
   const wire = (warm: WarmHarness): WarmHarness => {
     registerGuestRpcHandlers(warm.conn, {
-      kv: scratchKv(),
       vector: createMemoryVector({ namespace: TRIAL_SESSION_ID }),
     });
     warm.conn.listen();
@@ -145,10 +132,12 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
     loadBundle(code: string) {
       return track(() =>
         withPooledRetry(async () => {
-          const result = await live.conn.sendRequest<{ ok: boolean; config?: unknown }>(
-            "bundle/load",
-            { code, env: {} },
-          );
+          // Guest-asserted wire data; the caller validates `config` with
+          // IsolateConfigSchema (see BundleLoadResult in rpc-schemas.ts).
+          const result = (await live.conn.sendRequest("bundle/load", {
+            code,
+            env: {},
+          })) as BundleLoadResult | undefined;
           return { ...(result?.config !== undefined && { config: result.config }) };
         }),
       );
@@ -157,10 +146,12 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
     executeTool(name: string, args: Record<string, unknown>) {
       return track(() =>
         withPooledRetry(async () => {
-          const response = await live.conn.sendRequest<{ result?: string; error?: string }>(
-            "tool/execute",
-            { name, args, sessionId: TRIAL_SESSION_ID, messages: [] },
-          );
+          const response = (await live.conn.sendRequest("tool/execute", {
+            name,
+            args,
+            sessionId: TRIAL_SESSION_ID,
+            messages: [],
+          })) as { result?: string; error?: string } | undefined;
           if (response?.error) return `Tool error: ${response.error}`;
           return response?.result ?? "(no result)";
         }),

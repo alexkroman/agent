@@ -8,6 +8,7 @@
  * barge-in must discard what is held.
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { CLIENT_AUDIO_LEAD_MS, PACER_BURST_MS, PLAYBACK_JITTER_MS } from "../sdk/constants.ts";
 import { createAudioPacer } from "./audio-pacer.ts";
 
 const SAMPLE_RATE = 24_000;
@@ -40,6 +41,13 @@ describe("createAudioPacer", () => {
     vi.useRealTimers();
   });
 
+  test("the burst dip leaves the client's jitter cushion intact", () => {
+    // The burst wake lets the lead sag to CLIENT_AUDIO_LEAD_MS -
+    // PACER_BURST_MS; that dip is cushion the client temporarily doesn't
+    // have, so it must stay above the playback worklet's jitter target.
+    expect(CLIENT_AUDIO_LEAD_MS - PACER_BURST_MS).toBeGreaterThan(PLAYBACK_JITTER_MS);
+  });
+
   test("sends audio immediately while the lead is unmet", () => {
     const { pacer, audio } = makePacer();
     pushChunks(pacer, 3); // 300ms, well inside a 1000ms lead
@@ -57,15 +65,21 @@ describe("createAudioPacer", () => {
     pacer.stop();
   });
 
-  test("releases held audio as the lead drains", () => {
+  test("releases held audio in bursts as the lead drains", () => {
     const { pacer, audio } = makePacer();
     pushChunks(pacer, 15);
     expect(audio).toHaveLength(11);
 
+    // Burst release: nothing goes out until the lead has drained
+    // PACER_BURST_MS below the ceiling, then the drained span's worth of
+    // frames goes out in one wakeup — not one timer fire per frame.
     vi.advanceTimersByTime(100);
-    expect(audio).toHaveLength(12);
+    expect(audio).toHaveLength(11);
 
-    vi.advanceTimersByTime(300);
+    vi.advanceTimersByTime(200);
+    expect(audio.length).toBeGreaterThanOrEqual(13);
+
+    vi.advanceTimersByTime(600);
     expect(audio).toHaveLength(15);
     pacer.stop();
   });
@@ -79,7 +93,7 @@ describe("createAudioPacer", () => {
     // treat the turn as finished and drop the rest of the reply.
     expect(dones).toHaveLength(0);
 
-    vi.advanceTimersByTime(400);
+    vi.advanceTimersByTime(900);
     expect(audio).toHaveLength(15);
     expect(dones).toHaveLength(1);
     pacer.stop();

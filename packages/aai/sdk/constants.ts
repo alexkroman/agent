@@ -38,6 +38,14 @@ export const DEFAULT_IDLE_TIMEOUT_MS = 300_000;
  * auto-replies with a pong), and can't be mistaken for session traffic.
  */
 export const SESSION_KEEPALIVE_INTERVAL_MS = 15_000;
+/**
+ * How long a disconnected session's per-session tool state (`ctx.state`)
+ * survives awaiting a resume (`?sessionId=<id>` reconnect) before it is
+ * reclaimed. Sized above the client's worst-case automatic-reconnect span
+ * (partysocket: exponential from 1s capped at 15s, 10 retries ≈ 105s), so a
+ * reconnect that exhausts its backoff still finds the state it left behind.
+ */
+export const SESSION_RESUME_GRACE_MS = 120_000;
 export const FETCH_TIMEOUT_MS = 15_000;
 /**
  * Max consecutive S2S `session.resume` attempts before giving up and surfacing
@@ -97,13 +105,6 @@ export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [
   "recall",
   "calculate",
 ];
-
-/**
- * TTL for the `remember`/`recall` session-notes KV record. Notes are scoped
- * to one voice session, which is bounded by the idle timeout — a generous TTL
- * only guarantees abandoned sessions' notes don't accumulate in the store.
- */
-export const SESSION_NOTES_TTL_MS = 86_400_000;
 
 export const MAX_TOOL_RESULT_CHARS = 4000;
 /**
@@ -274,117 +275,29 @@ export const DEFAULT_SPEECH_IDLE_TIMEOUT_MS = 5000;
 export const MAX_WS_PAYLOAD_BYTES = 1 * 1024 * 1024;
 export const MAX_MESSAGE_BUFFER_SIZE = 100;
 
-/**
- * Cap on one uploaded-audio transcription buffer (`transcribe_file_start`'s
- * `byteLength`). Sized to the Sync API's 120 s limit at its highest PCM16
- * mono rate (48 kHz × 2 bytes × 120 s ≈ 11.5 MB) — anything bigger belongs
- * on the streaming path.
- */
-export const MAX_SYNC_AUDIO_BYTES = 12 * 1024 * 1024;
+// Client-audio budgets (mic capture, playback jitter buffer/concealment,
+// pacing lead, client send backpressure) live in their own module; re-exported
+// here so `@alexkroman1/aai` stays the one import path for constants.
+export {
+  CAPTURE_STOP_ACK_TIMEOUT_MS,
+  CLIENT_AUDIO_LEAD_MS,
+  MIC_BUFFER_SECONDS,
+  MIC_SEND_MAX_BUFFERED_BYTES,
+  MIC_SILENCE_PROBE_MS,
+  PACER_BURST_MS,
+  PLAYBACK_BUFFER_SECONDS,
+  PLAYBACK_CONCEAL_FADE_MS,
+  PLAYBACK_CONCEAL_FLOOR,
+  PLAYBACK_DONE_MAX_WAIT_MS,
+  PLAYBACK_DONE_POLL_MS,
+  PLAYBACK_JITTER_MS,
+  PLAYBACK_REFILL_MS,
+} from "./client-audio-constants.ts";
 
 /**
- * Cap on prior turns a sync-turn request may replay (`history` in
- * `SyncTurnRequestSchema`). Bounds request size and LLM prompt growth from
- * client-supplied history; the runner additionally trims to the agent's
- * own `maxHistory` window.
- */
-export const MAX_SYNC_HISTORY_MESSAGES = 1000;
-
-/**
- * Cap on one `POST /sync` request body. Sized to hold
- * {@link MAX_SYNC_AUDIO_BYTES} of audio in base64 (4/3 expansion) plus a
- * full history payload, with headroom — anything bigger belongs on the
- * streaming path.
- */
-export const MAX_SYNC_BODY_BYTES = 24 * 1024 * 1024;
-
-/**
- * Chunk size for file-audio transfers (client upload frames and server-side
- * replay into a realtime STT session) — socket-friendly, comfortably under
- * {@link MAX_WS_PAYLOAD_BYTES}. Shared by aai-ui and the host so the two
- * halves of the upload path cannot drift.
- */
-export const FILE_UPLOAD_CHUNK_BYTES = 32 * 1024;
-
-/** Microphone buffer duration in seconds before the client sends audio to the server. */
-export const MIC_BUFFER_SECONDS = 0.1;
-
-/**
- * Window the capture worklet watches, once per session, to decide the
- * microphone is dead. A device muted at the OS level or an input that is not
- * really a microphone delivers digital silence, which is otherwise
- * indistinguishable from a user who has not spoken — the session looks healthy
- * and simply never responds.
- *
- * Exact zeros are the signal (a live mic in a quiet room still carries a noise
- * floor), and the probe disarms on the first nonzero sample, so it costs
- * nothing after the first second and cannot fire mid-session.
- */
-export const MIC_SILENCE_PROBE_MS = 1500;
-
-/**
- * How much TTS audio the playback worklet buffers before a turn starts
- * speaking. This is the client's whole cushion against uneven chunk arrival,
- * so raising it trades time-to-first-audio for resilience. Tune it against the
- * concealment counters the worklet reports on each turn's `stop` (a turn with
- * `concealmentEvents: 0` never needed the cushion it was given).
- */
-export const PLAYBACK_JITTER_MS = 400;
-
-/**
- * How far ahead of real time the server may run when relaying TTS audio to a
- * client. TTS synthesis outruns playback, so without a ceiling an entire reply
- * lands in the socket buffer the moment the provider produces it: on a slow
- * link that is a multi-second queue the server cannot see into, and the only
- * limit is the {@link MAX_CLIENT_WS_BUFFERED_BYTES} disconnect.
- *
- * **Must stay above {@link PLAYBACK_JITTER_MS}.** The lead is the client's only
- * source of cushion — pacing at exactly real time would leave the playback
- * worklet unable to ever fill its jitter buffer, which is the failure mode of
- * a producer-paced/consumer-unbuffered pairing.
- */
-export const CLIENT_AUDIO_LEAD_MS = 1000;
-
-/**
- * Refill target after an underrun, deliberately lower than
- * {@link PLAYBACK_JITTER_MS}: mid-reply, waiting to rebuild the full cushion is
- * itself a hole in the speech, so the buffer trades some resilience for a
- * shorter gap. Without a refill step at all, one stall degrades the rest of the
- * turn into a fragment per render quantum.
- */
-export const PLAYBACK_REFILL_MS = 200;
-
-/**
- * How long concealment extrapolates from already-played audio before it has
- * decayed to silence. Covering a gap with the recent signal (rather than
- * zeros) is what keeps a stall from sounding like a click; the fade keeps a
- * long stall from buzzing a looped fragment indefinitely.
- */
-export const PLAYBACK_CONCEAL_FADE_MS = 40;
-
-/**
- * Gain at which concealment is treated as silence: the end point of the
- * {@link PLAYBACK_CONCEAL_FADE_MS} fade, and the threshold that separates
- * `silentConcealedSamples` from the concealed total.
- */
-export const PLAYBACK_CONCEAL_FLOOR = 0.001;
-
-/**
- * Client-side backpressure threshold for outbound mic audio. When the
- * WebSocket's `bufferedAmount` exceeds this many bytes (~2s of 16 kHz PCM16),
- * mic frames are dropped instead of queued — for live voice, stale audio
- * flushed into STT on recovery is worse than a gap. The client-side mirror
- * of the host-side buffering budgets below.
- */
-export const MIC_SEND_MAX_BUFFERED_BYTES = 64 * 1024;
-
-/** Client poll interval while waiting out socket backpressure during a file send. */
-export const FILE_SEND_BACKOFF_MS = 50;
-
-/**
- * Highest client-declarable audio sample rate (Hz). Bounds the
- * `transcribe_file_start` schema — the declared rate sizes server-side
- * silence-padding allocations, so it must not be an unbounded lever.
+ * Highest server-declarable audio sample rate (Hz). Bounds the `config`
+ * message schema — the declared rates size client-side allocations, so they
+ * must not be an unbounded lever.
  */
 export const MAX_AUDIO_SAMPLE_RATE = 192_000;
 

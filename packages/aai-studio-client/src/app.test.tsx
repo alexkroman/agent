@@ -88,10 +88,61 @@ describe("App auth handling", () => {
       "/studio/status": () => jsonResponse({ llm: true }),
       "/studio/projects": () => jsonResponse({ projects: ["demo"] }),
       "/studio/projects/demo": () => jsonResponse({ error: "storage exploded" }, 500),
+      "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
     });
     const onSignOut = vi.fn();
     renderApp(onSignOut);
     await waitFor(() => expect(screen.getByText(/storage exploded/)).toBeDefined());
     expect(onSignOut).not.toHaveBeenCalled();
+  });
+});
+
+describe("chat history hydration", () => {
+  const demoRoutes = {
+    "/studio/status": () => jsonResponse({ llm: true }),
+    "/studio/projects": () => jsonResponse({ projects: ["demo"] }),
+    "/studio/projects/demo": () => jsonResponse({ files: { "agent.ts": "x" } }),
+  };
+
+  test("a persisted conversation renders when the project opens", async () => {
+    stubFetch({
+      ...demoRoutes,
+      "/studio/projects/demo/chat": () =>
+        jsonResponse({
+          messages: [
+            { id: "m1", role: "user", parts: [{ type: "text", text: "build a pizza bot" }] },
+            { id: "m2", role: "assistant", parts: [{ type: "text", text: "Done — pizza bot" }] },
+          ],
+        }),
+    });
+    renderApp(vi.fn());
+    await waitFor(() => expect(screen.getByText("build a pizza bot")).toBeDefined());
+    expect(screen.getByText(/Done — pizza bot/)).toBeDefined();
+    // Hydrated history means no "new chat" welcome bubble.
+    expect(screen.queryByText(/Welcome to AssemblyAI App Builder/)).toBeNull();
+  });
+
+  test("a project with no history shows the empty chat, not a stuck loader", async () => {
+    stubFetch({
+      ...demoRoutes,
+      "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
+    });
+    renderApp(vi.fn());
+    await waitFor(() =>
+      expect(screen.getByText(/Welcome to AssemblyAI App Builder/)).toBeDefined(),
+    );
+    expect(screen.queryByText("Loading conversation…")).toBeNull();
+  });
+
+  test("while the history loads, the panel holds instead of flashing a new chat", async () => {
+    stubFetch({
+      ...demoRoutes,
+      // Never resolves — the loading state must persist, not fall through.
+      "/studio/projects/demo/chat": () =>
+        new Response(new ReadableStream(), { headers: { "Content-Type": "application/json" } }),
+    });
+    renderApp(vi.fn());
+    await waitFor(() => expect(screen.getByText("Loading conversation…")).toBeDefined());
+    expect(screen.queryByText(/Welcome to AssemblyAI App Builder/)).toBeNull();
   });
 });

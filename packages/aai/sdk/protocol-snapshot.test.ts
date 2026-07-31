@@ -16,7 +16,6 @@ import type { ClientEvent, ClientMessage, ServerMessage } from "./protocol.ts";
 import {
   ClientEventSchema,
   ClientMessageSchema,
-  KvRequestSchema,
   SessionErrorCodeSchema,
   VectorRequestSchema,
 } from "./protocol.ts";
@@ -164,27 +163,6 @@ describe("ServerMessage type covers all variants", () => {
   test("ClientEvent is a valid ServerMessage", () => {
     const msg: ServerMessage = { type: "speech_started" };
     expect(msg.type).toBe("speech_started");
-  });
-});
-
-describe("KvRequest wire format", () => {
-  const valid = [
-    ["get", { op: "get", key: "k1" }],
-    ["set", { op: "set", key: "k1", value: "v1" }],
-    ["set with expireIn", { op: "set", key: "k1", value: "v1", expireIn: 60_000 }],
-    ["del", { op: "del", key: "k1" }],
-  ] as const;
-
-  test.each(valid)("%s parses successfully", (_label, req) => {
-    expect(KvRequestSchema.safeParse(req).success).toBe(true);
-  });
-
-  test("rejects unknown op", () => {
-    expect(KvRequestSchema.safeParse({ op: "update", key: "k1" }).success).toBe(false);
-  });
-
-  test("rejects empty key for get", () => {
-    expect(KvRequestSchema.safeParse({ op: "get", key: "" }).success).toBe(false);
   });
 });
 

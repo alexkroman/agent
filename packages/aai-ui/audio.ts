@@ -1,52 +1,25 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { MIC_BUFFER_SECONDS, VOICE_CAPTURE_CONSTRAINTS } from "./types.ts";
-
-/** How often {@link VoiceIO.done} checks that the AudioContext is still rendering. */
-const DONE_POLL_INTERVAL_MS = 1000;
-
-/**
- * Hard cap on waiting for playback to drain. The playback worklet buffers up
- * to 60s of audio, so the longest legitimate drain is just under that — a
- * wait past this means the processor died without reporting 'stop'.
- */
-const DONE_MAX_WAIT_MS = 65_000;
+import {
+  CAPTURE_STOP_ACK_TIMEOUT_MS,
+  PLAYBACK_DONE_MAX_WAIT_MS,
+  PLAYBACK_DONE_POLL_MS,
+  VOICE_CAPTURE_CONSTRAINTS,
+} from "./types.ts";
 
 /**
- * Bounded wait for the capture worklet's 'stopped' ack during close(). The
- * ack follows the final flush, so waiting for it keeps the tail of speech
- * from being dropped; the timeout covers a dead worklet.
- */
-const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
-
-/**
- * Decode an audio file (any container/codec the browser can decode) and
- * resample it to mono PCM16 at `targetRate` — the format the server's STT
- * side expects on the wire. Returns the raw clip; any endpointing padding
- * is the caller's concern (the one-shot upload path needs none).
+ * Clamp-and-convert Float32 samples to PCM16. The one main-thread home of the
+ * asymmetric-rounding convention (negative × 0x8000, positive × 0x7fff) —
+ * the capture worklet's `accumulate` embeds the same math, which cannot
+ * import it (worklet source is a string).
  *
- * @throws If the browser cannot decode the payload.
+ * @public
  */
-export async function decodeAudioToPcm16(
-  data: ArrayBuffer,
-  targetRate: number,
-): Promise<Int16Array> {
-  // Decode on a throwaway 1-frame offline context: decodeAudioData lives on
-  // BaseAudioContext, and an offline context needs no audio-hardware handle
-  // (browsers cap concurrent realtime AudioContexts).
-  const decoded = await new OfflineAudioContext(1, 1, targetRate).decodeAudioData(data);
-  const frames = Math.ceil(decoded.duration * targetRate);
-  const offline = new OfflineAudioContext(1, frames, targetRate);
-  const source = offline.createBufferSource();
-  source.buffer = decoded;
-  source.connect(offline.destination);
-  source.start();
-  const rendered = await offline.startRendering();
-  const f32 = rendered.getChannelData(0);
-  const pcm = new Int16Array(f32.length);
+export function floatToPcm16(samples: Float32Array): Int16Array {
+  const pcm = new Int16Array(samples.length);
   // for-of over the typed array: every sample is in bounds, so this avoids
   // a per-sample undefined check that indexed access would require.
   let i = 0;
-  for (const sample of f32) {
+  for (const sample of samples) {
     const s = Math.max(-1, Math.min(1, sample));
     pcm[i++] = s < 0 ? s * 0x80_00 : s * 0x7f_ff;
   }
@@ -127,12 +100,94 @@ export type VoiceIO = AsyncDisposable & {
   close(): Promise<void>;
 };
 
-/** Throw unless the browser honored a requested context sample rate. */
-function assertGranted(granted: number, requested: number, side: string): void {
+/**
+ * Throw unless the browser honored a requested context sample rate. The
+ * requested rates are never advisory: captured audio is tagged with the
+ * requested rate on the wire, so a context running at some other rate ships
+ * audio that only sounds like speech to the wrong decoder. Every capture
+ * path must call this after context creation.
+ */
+export function assertGranted(granted: number, requested: number, side: string): void {
   if (granted === requested) return;
   throw new Error(
     `Browser refused the ${side} sample rate: asked for ${requested} Hz, got ${granted} Hz`,
   );
+}
+
+/**
+ * Release a microphone that was (or later gets) granted while another init
+ * step failed; if `getUserMedia` itself rejected, this is a no-op. Without
+ * it, a mic granted after a failed init keeps the browser's recording
+ * indicator lit with no way to turn it off.
+ */
+export function releaseStreamOnFailure(streamPromise: Promise<MediaStream>): void {
+  void streamPromise
+    .then((s) => {
+      for (const t of s.getTracks()) t.stop();
+    })
+    .catch(() => {
+      /* rejected with the same error */
+    });
+}
+
+/** Handle to one capture worklet node (`worklets/capture-processor.ts`). */
+export type CaptureNode = {
+  node: AudioWorkletNode;
+  /** Begin accumulating — the worklet gates capture on its start/stop protocol. */
+  start(): void;
+  /**
+   * Stop accumulating and wait (bounded by {@link CAPTURE_STOP_ACK_TIMEOUT_MS})
+   * for the 'stopped' ack that follows the worklet's final flush, so the tail
+   * of speech reaches `onChunk` before the node is torn down.
+   */
+  stop(): Promise<void>;
+};
+
+/**
+ * Wire one capture worklet node: node construction, the chunk/silent/stopped
+ * port protocol, and the stop→ack handshake — one spelling for both the
+ * WebSocket mic and the push-to-talk recorder. No `processorOptions`: the
+ * worklet reads the context rate from its global scope (callers assert the
+ * granted rate first) and owns its own batching default — re-spelling
+ * defaults caller-side is drift.
+ */
+export function createCaptureNode(
+  ctx: AudioContext,
+  onChunk: (pcm16: ArrayBuffer) => void,
+  onSilent?: () => void,
+): CaptureNode {
+  const node = new AudioWorkletNode(ctx, "capture-processor", {
+    channelCount: 1,
+    channelCountMode: "explicit",
+  });
+  let onStopped: (() => void) | null = null;
+  node.port.onmessage = (e: MessageEvent) => {
+    const d = e.data as { event?: string; buffer?: ArrayBuffer };
+    if (d.event === "chunk" && d.buffer) {
+      onChunk(d.buffer);
+    } else if (d.event === "silent") {
+      onSilent?.();
+    } else if (d.event === "stopped") {
+      onStopped?.();
+      onStopped = null;
+    }
+  };
+  return {
+    node,
+    start() {
+      node.port.postMessage({ event: "start" });
+    },
+    stop() {
+      return new Promise((resolve) => {
+        const cap = setTimeout(resolve, CAPTURE_STOP_ACK_TIMEOUT_MS);
+        onStopped = () => {
+          clearTimeout(cap);
+          resolve();
+        };
+        node.port.postMessage({ event: "stop" });
+      });
+    },
+  };
 }
 
 /**
@@ -214,52 +269,24 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     assertGranted(capCtx.sampleRate, sttSampleRate, "capture");
     assertGranted(ctx.sampleRate, ttsSampleRate, "playback");
   } catch (err: unknown) {
-    // If the mic was (or later gets) granted while another step failed,
-    // release it; if getUserMedia itself rejected, the catch is a no-op.
-    void streamPromise
-      .then((s) => {
-        for (const t of s.getTracks()) t.stop();
-      })
-      .catch(() => {
-        /* rejected with the same error */
-      });
+    releaseStreamOnFailure(streamPromise);
     await closeContexts();
     throw err;
   }
 
   const mic = capCtx.createMediaStreamSource(stream);
-  const capNode = new AudioWorkletNode(capCtx, "capture-processor", {
-    channelCount: 1,
-    channelCountMode: "explicit",
-    processorOptions: { sampleRate: sttSampleRate, bufferSeconds: MIC_BUFFER_SECONDS },
-  });
-  mic.connect(capNode);
+  const capture = createCaptureNode(capCtx, onMicData, onMicSilent);
+  mic.connect(capture.node);
 
   // A processor exception permanently kills the worklet — no further mic
   // chunks will ever arrive. Surface it rather than staying silently deaf.
-  capNode.onprocessorerror = () => {
+  capture.node.onprocessorerror = () => {
     const err = new Error("Audio capture worklet crashed");
     console.error("[aai-ui]", err.message);
     onError?.(err);
   };
 
-  capNode.port.postMessage({ event: "start" });
-
-  let onCaptureStopped: (() => void) | null = null;
-
-  // The worklet batches ~MIC_BUFFER_SECONDS of PCM16 at the STT rate and posts
-  // one transferred ArrayBuffer per flush — just forward it. 'stopped' acks
-  // the final flush during close().
-  capNode.port.onmessage = (e: MessageEvent) => {
-    if (e.data.event === "chunk") {
-      onMicData(e.data.buffer as ArrayBuffer);
-    } else if (e.data.event === "silent") {
-      onMicSilent?.();
-    } else if (e.data.event === "stopped") {
-      onCaptureStopped?.();
-      onCaptureStopped = null;
-    }
-  };
+  capture.start();
 
   let playNode: AudioWorkletNode | null = null;
   let onPlaybackStop: (() => void) | null = null;
@@ -271,9 +298,10 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
   // its own per-turn state after each 'stop'.
   function ensurePlayNode(): AudioWorkletNode {
     if (playNode) return playNode;
-    const node = new AudioWorkletNode(ctx, "playback-processor", {
-      processorOptions: { sampleRate: ctx.sampleRate },
-    });
+    // No processorOptions: the worklet reads the context rate from its
+    // global scope, and this node's context is the (rate-asserted) playback
+    // context.
+    const node = new AudioWorkletNode(ctx, "playback-processor");
     node.connect(ctx.destination);
     node.port.onmessage = (e: MessageEvent) => {
       if (e.data.event === "stop") {
@@ -314,6 +342,11 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
 
     done() {
       if (!playNode) return Promise.resolve();
+      // The turn is over — always tell the worklet, whether or not we wait:
+      // without the 'done' the buffered reply strands (isDone stays false),
+      // and on resume the processor conceals forever after the drain, with
+      // its per-turn state and stats bleeding into the next reply.
+      playNode.port.postMessage({ event: "done" });
       // The worklet reports completion from process(), which only runs while
       // the context is rendering. If it's suspended/closed (e.g. a backgrounded
       // tab), the 'stop' round-trip never happens — resolve now rather than hang.
@@ -325,7 +358,8 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
         // dies, the 'stop' message never arrives — resolve anyway so session
         // state can't be stuck in "speaking". The poll catches a suspension
         // quickly; the hard cap covers a silently dead processor and sits
-        // just past the worklet's 60s buffer (the longest legitimate drain).
+        // just past the worklet's PLAYBACK_BUFFER_SECONDS ring (the longest
+        // legitimate drain).
         const settle = (): void => {
           clearInterval(poll);
           clearTimeout(cap);
@@ -334,10 +368,9 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
         };
         const poll = setInterval(() => {
           if (ctx.state !== "running") settle();
-        }, DONE_POLL_INTERVAL_MS);
-        const cap = setTimeout(settle, DONE_MAX_WAIT_MS);
+        }, PLAYBACK_DONE_POLL_MS);
+        const cap = setTimeout(settle, PLAYBACK_DONE_MAX_WAIT_MS);
         onPlaybackStop = settle;
-        playNode?.port.postMessage({ event: "done" });
       });
     },
 
@@ -354,19 +387,12 @@ export async function createVoiceIO(opts: VoiceIOOptions): Promise<VoiceIO> {
     async close() {
       if (lifecycle.signal.aborted) return;
       lifecycle.abort();
-      // Wait (bounded) for the worklet to ack the final flush, so the tail
-      // of speech reaches onMicData before the port is torn down with the
-      // context — otherwise the last ~100ms of an utterance is dropped.
-      await new Promise<void>((resolve) => {
-        const cap = setTimeout(resolve, CAPTURE_STOP_ACK_TIMEOUT_MS);
-        onCaptureStopped = () => {
-          clearTimeout(cap);
-          resolve();
-        };
-        capNode.port.postMessage({ event: "stop" });
-      });
+      // Bounded stop→ack wait, so the tail of speech reaches onMicData
+      // before the port is torn down with the context — otherwise the last
+      // ~100ms of an utterance is dropped.
+      await capture.stop();
       mic.disconnect();
-      capNode.disconnect();
+      capture.node.disconnect();
       if (playNode) playNode.disconnect();
       for (const t of stream.getTracks()) t.stop();
       await closeContexts();

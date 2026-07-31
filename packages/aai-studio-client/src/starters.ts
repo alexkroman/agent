@@ -26,14 +26,14 @@ export const STARTERS: { label: string; prompt: string }[] = [
   },
   {
     label: "A pizza-ordering agent with a real cart",
-    // Modeled on the pizza-ordering template: tools that mutate KV state,
-    // keyed by session ID so concurrent callers don't share a cart.
+    // Modeled on the pizza-ordering template: tools that mutate per-session
+    // ctx.state, so concurrent callers don't share a cart.
     prompt:
       "A pizza-ordering voice agent for Pizza Palace. Give it tools to add a " +
       "pizza (size, crust, toppings, quantity), remove one, list the current " +
       "order with a running total, and place the order. Keep the cart in " +
-      "ctx.kv, prefixing every key with ctx.sessionId so concurrent customers " +
-      "each get their own cart.",
+      "ctx.state — the per-session scratch, so concurrent customers each get " +
+      "their own cart.",
   },
   {
     label: "An agent that solves problems by writing code",
@@ -99,8 +99,9 @@ export const STARTERS: { label: string; prompt: string }[] = [
       "A dispatch command center voice agent: tools to create, triage, " +
       "escalate, annotate, and update incidents, plus tools to list and " +
       "dispatch available resources (units, crews) and an ops dashboard " +
-      "summarizing active incidents. Persist everything in ctx.kv and give " +
-      "it a calm, procedural radio-operator persona.",
+      "summarizing active incidents. Keep everything in ctx.state, the " +
+      "per-session scratch, and give it a calm, procedural radio-operator " +
+      "persona.",
   },
   {
     label: "A text adventure in the style of Infocom",
@@ -108,8 +109,8 @@ export const STARTERS: { label: string; prompt: string }[] = [
     prompt:
       "A voice text-adventure game in the classic Infocom style: the agent " +
       "narrates a cave-exploration world and tracks real game state in " +
-      "ctx.kv via tools — inventory (take/drop), location, and puzzle flags " +
-      "— keyed by ctx.sessionId. Rooms, items, and puzzles should be " +
+      "ctx.state via tools — inventory (take/drop), location, and puzzle " +
+      "flags — per-session by construction. Rooms, items, and puzzles should be " +
       "consistent because the tools, not the narration, own the state.",
   },
   {
@@ -119,7 +120,9 @@ export const STARTERS: { label: string; prompt: string }[] = [
       "A solo tabletop-RPG game master voice agent: tools for character " +
       "setup, action rolls (2d10 vs 1d6 plus stat — strong hit, weak hit, " +
       "miss), a momentum resource that can be burned, a yes/no oracle for " +
-      "story questions, and save/load of the whole game state in ctx.kv. " +
+      "story questions, and save/load of the whole game state via " +
+      "ctx.db.query(sql, params) — durable storage that needs the project's " +
+      "Storage toggle enabled. " +
       "Add an sttPrompt listing the RPG jargon so speech recognition " +
       "catches terms like 'weak hit' and 'momentum'.",
   },
@@ -131,15 +134,5 @@ export const STARTERS: { label: string; prompt: string }[] = [
       "a movie, music, or a book and what mood I'm in (chill, intense, cozy, " +
       "spooky, funny), then picks from a curated in-code catalog via a tool " +
       "— no web access. Give it a warm night-owl persona.",
-  },
-  {
-    label: "A one-shot dictation transform (no TTS)",
-    // Modeled on the pipeline-text-only template.
-    prompt:
-      "A one-shot speech-to-text transform (text-only, tts: none()): I speak or " +
-      "upload a short audio file and get back structured notes as text — not a " +
-      "chat. An LLM transform turns each dictation independently into clean " +
-      "notes (output only the notes), and JavaScript tools compute word counts " +
-      "and extract action items",
   },
 ];

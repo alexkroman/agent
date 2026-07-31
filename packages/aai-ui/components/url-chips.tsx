@@ -16,9 +16,6 @@ const COPIED_FEEDBACK_MS = 1500;
  * The label is what makes a pair of these readable — on its own a bare URL
  * leaves you guessing whether it's the page or the socket.
  *
- * Exported for the sync-transport shell, which labels its HTTP endpoint
- * without a session snapshot to read from.
- *
  * @internal
  */
 export function UrlChip({
@@ -122,7 +119,7 @@ export function ApiUrlChip({ className }: { className?: string | undefined }) {
  * The UI and API URLs side by side. They answer the same question — "how do I
  * reach this agent?" — so they belong together and each needs its label to be
  * told apart. Rendered by the default shell in every session mode (S2S,
- * pipeline, text-only).
+ * pipeline).
  *
  * @public
  */

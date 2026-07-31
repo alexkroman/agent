@@ -1,6 +1,6 @@
 {
   "name": "aai-server",
-  "version": "1.3.7",
+  "version": "2.0.0",
   "private": true,
   "type": "module",
   "main": "dist/index.mjs",
@@ -13,12 +13,10 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "test:integration": "VITEST_INCLUDE=orchestrator-integration.test.ts,ws-integration.test.ts,fake-vm-integration*.test.ts,gvisor-integration*.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:integration": "VITEST_INCLUDE=orchestrator-integration.test.ts,ws-integration.test.ts vitest run -c ../../vitest.slow.config.ts",
     "check:integration": "pnpm run test:integration",
-    "test:docker": "VITEST_PROFILE=docker VITEST_INCLUDE=docker-build.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "test:gvisor": "VITEST_PROFILE=gvisor VITEST_INCLUDE=packages/aai-server/gvisor-integration*.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "test:evals": "VITEST_PROFILE=e2e VITEST_INCLUDE=studio/studio-eval.test.ts vitest run -c ../../vitest.slow.config.ts",
-    "push-dashboards": "node --conditions=@dev/source grafana/push-dashboards.ts"
+    "deploy:modal": "modal deploy modal_deploy.py",
+    "test:evals": "VITEST_PROFILE=e2e VITEST_INCLUDE=studio/studio-eval.test.ts vitest run -c ../../vitest.slow.config.ts"
   },
   "dependencies": {
     "@ai-sdk/mcp": "^2.0.18",
@@ -38,11 +36,10 @@
     "diff": "^9.0.0",
     "hono": "^4.12.31",
     "human-id": "^4.2.0",
-    "iron-webcrypto": "^2.0.0",
     "is-network-error": "^1.3.2",
     "json-rpc-2.0": "^1.7.1",
     "mime-types": "^3.0.2",
-    "nanoid": "^6.0.0",
+    "modal": "^0.9.0",
     "p-retry": "^8.0.0",
     "picomatch": "^4.0.5",
     "prom-client": "^15.1.3",

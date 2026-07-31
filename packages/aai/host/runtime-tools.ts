@@ -4,20 +4,18 @@
  *
  * {@link setupTools} builds the runtime's tool dispatcher, schemas, and LLM
  * guidance for both execution modes — RPC-backed sandbox mode (platform)
- * and in-process self-hosted mode — including the `send_message` builtin
- * registered when the agent declares a send channel.
+ * and in-process self-hosted mode.
  */
 
 import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
-import type { Kv } from "../sdk/kv.ts";
+import type { Db } from "../sdk/db.ts";
+import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
-import { openSender } from "../sdk/providers/send/open.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
-import { resolveSendBuiltin, SEND_MESSAGE_TOOL } from "./builtin-send.ts";
-import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS, safeFetch } from "./builtin-tools.ts";
+import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
 import { exemptFromToolEgress, installToolFetchGuard, runInToolEgress } from "./tool-egress.ts";
@@ -53,23 +51,6 @@ function resolveSandboxBuiltins(
   };
 }
 
-/**
- * Resolve the agent's send channel into the `send_message` builtin, or null
- * when no channel is declared. A custom or relayed tool with the same name
- * wins — the builtin is skipped, matching the collision rule every other
- * builtin follows. Credentials resolve from `providerEnv`; the network side
- * goes through the runtime's (SSRF-guarded) fetch.
- */
-function resolveSendMessage(
-  agent: AgentDef,
-  providerEnv: Record<string, string>,
-  fetchImpl: typeof globalThis.fetch,
-  takenNames: ReadonlySet<string>,
-): ReturnType<typeof resolveSendBuiltin> | null {
-  if (!agent.send || takenNames.has(SEND_MESSAGE_TOOL)) return null;
-  return resolveSendBuiltin(openSender(agent.send, providerEnv, { fetch: fetchImpl }));
-}
-
 /** The runtime's resolved tool surface: dispatcher, schemas, and LLM guidance. */
 type ToolSetup = {
   executeTool: ExecuteTool;
@@ -81,9 +62,11 @@ type ToolSetup = {
 type ToolSetupDeps = {
   agent: AgentDef;
   opts: RuntimeOptions;
-  env: Record<string, string>;
-  providerEnv: Record<string, string>;
-  resolvedKv: Kv;
+  /** Becomes `ctx.env` (frozen) — agent-owned only, see sdk/env-types.ts. */
+  env: AgentEnv;
+  providerEnv: ProviderEnv;
+  /** ctx.db when storage is enabled; undefined makes ctx.db access throw. */
+  resolvedDb: Db | undefined;
   resolvedVector: Vector;
   logger: NonNullable<RuntimeOptions["logger"]>;
   sinkMap: Map<string, ClientSink>;
@@ -91,14 +74,12 @@ type ToolSetupDeps = {
   stateMap: Map<string, Record<string, unknown>>;
 };
 
-type SendTool = ReturnType<typeof resolveSendBuiltin> | null;
-
 /**
  * Build the ctx.generate implementation for this runtime: the agent's
  * effective LLM descriptor (platform passes it as a runtime option, `aai dev`
  * reads the agent's own field) with credentials from `providerEnv` — the same
- * env KV/Vector descriptors resolve from. Provider HTTP traffic is exempt
- * from the tool-egress guard like ctx.kv/ctx.vector: the call executes on the
+ * env Vector descriptors resolve from. Provider HTTP traffic is exempt
+ * from the tool-egress guard like ctx.db/ctx.vector: the call executes on the
  * host (over RPC in production), so `allowedHosts` never applies to it.
  */
 function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
@@ -110,27 +91,19 @@ function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
 }
 
 /** Sandbox mode — custom tools are RPC-backed; builtins run host-side. */
-function setupSandboxTools(
-  deps: ToolSetupDeps,
-  rpcExecuteTool: ExecuteTool,
-  sendTool: SendTool,
-): ToolSetup {
-  const { agent, opts, env, resolvedKv, resolvedVector, logger } = deps;
+function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): ToolSetup {
+  const { agent, opts, env, resolvedDb, resolvedVector, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const generate = setupGenerate(deps);
   const resolved = resolveSandboxBuiltins(agent, opts, builtinFetchOpt);
   const builtinDefs = resolved.defs;
-  let toolSchemas = resolved.schemas;
-  if (sendTool) {
-    builtinDefs[SEND_MESSAGE_TOOL] = sendTool.def;
-    toolSchemas = [...toolSchemas, sendTool.schema];
-  }
+  const toolSchemas = resolved.schemas;
   const frozenEnv = Object.freeze({ ...env });
 
   const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
     // Handle builtins on the host (where SSRF-safe fetch lives) — EXCEPT
     // sandbox-only builtins (see SANDBOX_ONLY_BUILTINS), which execute
-    // untrusted JS and must run inside the guest sandbox (gVisor/Deno),
+    // untrusted JS and must run inside the guest sandbox (Modal/Deno),
     // never on the host. They are delegated via RPC like custom tools;
     // the guest harness runs them directly.
     if (builtinDefs[name] && !SANDBOX_ONLY_BUILTINS.has(name)) {
@@ -139,7 +112,7 @@ function setupSandboxTools(
         tool,
         env: frozenEnv,
         sessionId: sessionId ?? "",
-        kv: resolvedKv,
+        db: resolvedDb,
         vector: resolvedVector,
         messages,
         generate,
@@ -161,8 +134,8 @@ function setupSandboxTools(
  * same name as a builtin wins: the builtin is dropped from both dispatch
  * and schemas rather than emitting a duplicate schema name to the LLM.
  */
-function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetup {
-  const { agent, opts, env, resolvedKv, resolvedVector, logger, sinkMap, stateMap } = deps;
+function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
+  const { agent, opts, env, resolvedDb, resolvedVector, logger, sinkMap, stateMap } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const customNames = new Set(Object.keys(agent.tools ?? {}));
   const builtinNames = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
@@ -175,10 +148,6 @@ function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetu
   };
   const customSchemas = agentToolsToSchemas(agent.tools ?? {});
   const toolSchemas = [...customSchemas, ...builtins.schemas];
-  if (sendTool) {
-    allTools[SEND_MESSAGE_TOOL] = sendTool.def;
-    toolSchemas.push(sendTool.schema);
-  }
 
   const getState = (sid: string) => {
     if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());
@@ -188,11 +157,10 @@ function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetu
 
   // There is no sandbox on this path, so `allowedHosts` has nothing enforcing
   // it: tool code would reach any host locally and then fail once deployed.
-  // See tool-egress.ts — builtins and ctx.kv/ctx.vector stay exempt, matching
+  // See tool-egress.ts — builtins and ctx.db/ctx.vector stay exempt, matching
   // what the platform actually restricts.
   installToolFetchGuard();
   const allowedHosts = agent.allowedHosts ?? [];
-  const kv = exemptFromToolEgress(resolvedKv);
   const vector = exemptFromToolEgress(resolvedVector);
   const generate = setupGenerate(deps);
 
@@ -206,7 +174,9 @@ function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetu
         env: frozenEnv,
         state: getState(sessionId ?? ""),
         sessionId: sessionId ?? "",
-        kv,
+        // db traffic is a TCP socket, not fetch, so the egress guard never
+        // sees it — no exemption wrapper needed (unlike HTTP-backed vector).
+        db: resolvedDb,
         vector,
         messages,
         generate,
@@ -223,19 +193,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps, sendTool: SendTool): ToolSetu
 /** Pick the tool path: RPC-backed sandbox mode when overrides are provided. */
 export function setupTools(deps: ToolSetupDeps): ToolSetup {
   const { executeTool, toolSchemas } = deps.opts;
-  // Resolve the send builtin once for either path. Which names are "taken"
-  // differs by mode: relayed schemas in sandbox mode, custom tools otherwise.
-  const takenNames =
-    executeTool && toolSchemas
-      ? new Set(toolSchemas.map((s) => s.name))
-      : new Set(Object.keys(deps.agent.tools ?? {}));
-  const sendTool = resolveSendMessage(
-    deps.agent,
-    deps.providerEnv,
-    deps.opts.fetch ?? safeFetch,
-    takenNames,
-  );
   return executeTool && toolSchemas
-    ? setupSandboxTools(deps, executeTool, sendTool)
-    : setupSelfHostedTools(deps, sendTool);
+    ? setupSandboxTools(deps, executeTool)
+    : setupSelfHostedTools(deps);
 }

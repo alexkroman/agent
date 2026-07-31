@@ -64,12 +64,14 @@
     },
     "packages/aai-server": {
       "entry": [
-        "**/*.test.ts",
-        "guest/fake-vm.ts"
+        "**/*.test.ts"
       ],
       "includeEntryExports": true,
       "ignoreDependencies": [
         "@types/json-schema"
+      ],
+      "ignoreBinaries": [
+        "modal"
       ]
     },
     "packages/aai-studio-client": {

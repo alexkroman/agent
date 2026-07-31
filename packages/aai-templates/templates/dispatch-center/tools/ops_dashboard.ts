@@ -5,7 +5,7 @@ export const opsDashboard = tool({
   description:
     "Get the full operational dashboard: alert level, resource utilization, active incidents, and available resources.",
   async execute(_args, ctx) {
-    const state = await getState(ctx.kv, ctx.sessionId);
+    const state = getState(ctx);
 
     const activeIncidents = Object.values(state.incidents)
       .filter((i) => i.status !== "resolved")

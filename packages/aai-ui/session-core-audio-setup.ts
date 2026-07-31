@@ -56,6 +56,12 @@ export async function initAudioCapture(
   const stale = (): boolean =>
     conn.generation !== gen || !conn.ws || conn.ws.readyState !== WS_OPEN;
   const reportAudioFailure = (message: string): void => {
+    // Either way the dead audio path is released — a playback-worklet crash
+    // must not leave the healthy capture worklet streaming into the socket
+    // with the mic indicator lit. The branches differ only in what the
+    // session becomes: fatal ends it, non-fatal keeps the socket (and
+    // text/upload controls) usable behind an error banner.
+    deps.cleanupAudio();
     if (fatal) {
       deps.updateState({
         state: "error",
@@ -64,9 +70,6 @@ export async function initAudioCapture(
         recording: false,
       });
     } else {
-      // The session survives: show the banner, release the dead audio path,
-      // and leave the socket (and text/upload controls) usable.
-      deps.cleanupAudio();
       deps.updateState({ error: { code: "audio", message }, recording: false });
     }
   };

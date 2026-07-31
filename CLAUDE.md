@@ -24,7 +24,7 @@ pnpm check:affected      # Only check packages affected by changes since main
 | Tier | Command | Scope | Timeout |
 | --- | --- | --- | --- |
 | Unit | `pnpm test` | Fast, mocked, co-located | 5s |
-| Integration | `pnpm test:integration` | Real subsystems (Deno sandboxes, HTTP servers) | 30s |
+| Integration | `pnpm test:integration` | Real subsystems (HTTP servers, WebSockets) | 30s |
 | E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
 | Templates | `pnpm test:templates` | Template agent example tests | 5s |
 | Evals | `pnpm --filter aai-server test:evals` | LLM-in-the-loop studio codegen evals (vitest-evals) | 300s |
@@ -117,7 +117,7 @@ Six workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
-| `packages/aai/` | `@alexkroman1/aai` | Shared core: manifest, types, protocol, S2S, session, KV |
+| `packages/aai/` | `@alexkroman1/aai` | Shared core: manifest, types, protocol, S2S, session, Db |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
 | `packages/aai-server/` | `aai-server` | Managed platform server (private): sandbox, sidecar, auth, SSRF |
@@ -143,16 +143,14 @@ script enforces this at CI time.
 
 Subpath exports consumed by sibling packages and user agents:
 
-- `.` — `agent()`, `tool()` helpers, `Kv`, types, utils, constants
+- `.` — `agent()`, `tool()` helpers, `Db`, types, utils, constants
 - `./utils` — zod-free utilities + platform slug contract (fast CLI startup path)
 - `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
 - `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
 - `./manifest` — `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`
 - `./stt` — pipeline-mode STT provider factories (e.g. `assemblyAI`)
 - `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
-- `./kv` — KV provider factories (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`)
 - `./vector` — Vector provider factories (`pinecone`, `inMemoryVector`)
-- `./send` — Send-channel factories + resolver (`slack`, `openSender`)
 
 #### `aai-ui` (UI)
 
@@ -171,7 +169,7 @@ boundary** — this split is critical for sandbox security:
 
 - **`sdk/`** — shared modules with **zero Node.js dependencies**. Safe to
   run in browsers, Deno, and sandboxed environments. Contains:
-  `types.ts`, `kv.ts`, `hooks.ts`, `utils.ts`, `constants.ts`,
+  `types.ts`, `db.ts`, `hooks.ts`, `utils.ts`, `constants.ts`,
   `protocol.ts`, `system-prompt.ts`, `manifest.ts`,
   `ws-upgrade.ts`, `_internal-types.ts`, `define.ts` (`agent()` and
   `tool()` helpers for authoring `agent.ts` files).
@@ -185,14 +183,14 @@ boundary** — this split is critical for sandbox security:
   implementations, including `pipeline-turn-outcome.ts` — the three ways a
   pipeline turn ends: interrupted by barge-in, failed, or spoken), `to-vercel-tools.ts`,
   `providers/` (STT/TTS openers + descriptor→instance resolvers),
-  `builtin-tools.ts`, `unstorage-kv.ts`.
+  `builtin-tools.ts`, `postgres-db.ts`.
 
 **Rule**: When adding new SDK code, place it in `sdk/` if it has no
 `node:` dependencies. Moving code from `sdk/` → `host/` is safe;
 moving `host/` → `sdk/` requires removing all Node.js imports first.
 
 The guest harness (`guest/deno-harness.ts`) runs Deno inside each
-gVisor sandbox, loading the agent's ESM bundle directly — no import
+Modal Sandbox, loading the agent's ESM bundle directly — no import
 restrictions apply there.
 
 ### Key files
@@ -229,41 +227,54 @@ restrictions apply there.
 - `default-client.tsx` / `build-default-client.ts` — the default UI shipped
   to agents with no `client.tsx`, and its build step
 - `types.ts` — UI type definitions
-- `sync-session.ts` / `sync-mic.ts` — `POST /sync` turn client and
-  push-to-talk capture, the plumbing under the workflow run surface
-- `components/` — UI components (console-shell — the shared chrome both
-  chat-view and workflow-view compose, chat-view, workflow-view, controls,
+- `components/` — UI components (console-shell, chat-view, controls,
   message-list, start-screen, sidebar-layout, tool-call-block, button,
   aai-logo, tool-config-context)
 
 #### packages/aai-server/
 
 - `orchestrator.ts` — HTTP + WebSocket routing
-- `sandbox.ts` — gVisor sandbox management
+- `sandbox.ts` — agent sandbox management
 - `sandbox-vm.ts` — per-agent sandbox lifecycle (start, teardown)
-- `sandbox-agent-config.ts` — maps the deploy-time `IsolateConfig` onto the
-  runtime's agent definition + provider options (`toRuntimeAgent`,
-  `pipelineProviderOpts`, `toHostBaseAgent`)
-- `sandbox-guest-rpc.ts` — guest→host KV/Vector/fetch RPC schemas + handler registration
+- `sandbox-agent-config.ts` — the deploy-time `IsolateConfig` → runtime-agent
+  boundary: `toRuntimeAgent` passes the config through unchanged minus the
+  `WIRE_ONLY_CONFIG_FIELDS` deny-list (see "One canonical config schema")
+- `sandbox-guest-rpc.ts` — guest→host db/Vector/fetch RPC schemas + handler registration
 - `sandbox-pool.ts` — pool of pre-warmed Deno harnesses for fast cold starts
 - `sandbox-network.ts` — network proxying for sandbox
 - `sandbox-slots.ts` — slot allocation for concurrent sessions
-- `gvisor.ts` — gVisor (runsc) OCI runtime integration
-- `guest/deno-harness.ts` — Deno guest entry point (runs inside gVisor sandbox)
-- `guest/fake-vm.ts` — lightweight fake-VM fallback for macOS dev mode
-- `ndjson-transport.ts` — NDJSON-over-stdio transport for host↔guest RPC
+- `modal-sandbox.ts` — Modal Sandbox backend: creates remote sandboxes via
+  the `modal` SDK, writes the harness, execs Deno, adapts web streams to the
+  NDJSON transport
+- `guest/deno-harness.ts` — Deno guest entry point (runs inside a Modal Sandbox)
+- `modal_deploy.py` — Modal deployment of the server itself (`@modal.web_server`
+  wrapping the node process); `pnpm --filter aai-server deploy:modal`
+- `ndjson-transport.ts` — NDJSON-over-stdio transport for host↔guest RPC.
+  Connections are typed by a per-direction method map (`RpcSchema`); the
+  sandbox link's concrete map is `GuestRpcSchema` in `rpc-schemas.ts`, so
+  method names and outgoing request params are compile-checked at every
+  call site while results/incoming params stay `unknown` (untrusted wire
+  data — Zod at the receiving site is the contract)
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
-- `bundle-store.ts` — agent bundle storage (S3/memory). Redeploy
-  (`putAgent`) replaces the bundle objects but **preserves** the agent's
-  platform-default KV data under `agentKvPrefix`; only `deleteAgent`
-  (the delete route) wipes KV.
+- `bundle-store.ts` — agent bundle storage (Supabase Storage via its
+  S3-compatible endpoint in production, memory in dev/tests). Agent env
+  lives in Supabase Vault through the injected `SecretStore`, not in the
+  manifest blob.
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
-- `kv-handler.ts` — KV store HTTP API
+- `secret-store.ts` — `SecretStore` interface: Supabase Vault
+  (`createVaultSecretStore`, over the `SUPABASE_DB_URL` Postgres
+  connection) in production, in-memory for local dev/tests. Holds agent
+  env (`agent-env:<slug>`) and app-database credentials (`app-db:<slug>`)
+- `app-database.ts` — per-app Postgres schema/role provisioning in the
+  platform Supabase database (`provisionAppDatabase`,
+  `deprovisionAppDatabase`, `openAppDb`)
+- `storage-handler.ts` — `GET/POST/DELETE /:slug/storage` (owner-auth'd)
+  toggling the app's database
 - `metrics.ts` — Prometheus metrics registry and definitions; mounted at
-  `/metrics` (internal-only). Dashboards live in `grafana/`.
+  `/metrics` (internal-only).
 - `studio/` — the browser studio server side (see "Browser studio"):
   `studio-routes.ts` (HTTP surface), `studio-agent.ts` (coding-agent LLM
   loop + tools), `studio-llm.ts` (provider/model selection + the picker's
@@ -294,17 +305,31 @@ browser-based coding agent (TypeScript agent loop on the Vercel AI SDK,
 the same `streamText` stack pipeline mode uses) that builds and deploys
 voice agents without the CLI:
 
-- **Workspaces** are small server-side file trees stored one JSON doc per
-  project under `studio/{scope}/{project}` in the platform `Storage`.
-  `scope` is a *deterministic* SHA-256 of the caller's API key
-  (`studioScope`) — unlike the salted PBKDF2 ownership hashes, it must be
-  stable so a browser session can find its projects again.
+- **Workspaces** are small server-side file trees stored one row per
+  project in Postgres (`aai_platform.studio_workspaces`, over the same
+  platform `SqlExec` Vault uses; in-memory store in dev/tests —
+  `studio/workspace-store.ts`, same two-implementation pattern as
+  `SecretStore`). Blob `Storage` serves only deploy artifacts. Rows carry an
+  optimistic `version`: writes go through `createWorkspace` /
+  `mutateWorkspace` (`studio-workspace.ts`), which retry a conflicted write
+  once — the in-process keyed lock (`studio-workspace-lock.ts`) still
+  serializes local writers, so a conflict means another replica. `scope` is
+  a *deterministic* SHA-256 of the caller's API key (`studioScope`) — unlike
+  the salted PBKDF2 ownership hashes, it must be stable so a browser session
+  can find its projects again.
 - **Chat** (`POST /studio/chat`) runs one agent turn with file tools
   (list/read/write/edit/delete/grep) plus `test_agent`, streamed as the AI SDK **UI
   message stream** (SSE) that the client's `useChat` consumes directly.
   The system prompt embeds the same `aai-templates/scaffold/CLAUDE.md` the
   CLI ships to user projects (`studio-prompt.ts`) plus studio-specific
-  overrides.
+  overrides. Conversations persist per project in
+  `aai_platform.studio_chats` (`studio/chat-store.ts` — plain upsert, no
+  version column: one writer surface, always the full snapshot), written
+  server-side when the turn's UI stream settles (finish *and* client abort;
+  `originalMessages`/`onFinish` in `runStudioChat`) and restored on project
+  open via `GET /studio/projects/:project/chat`. Rows are capped at
+  `MAX_STUDIO_CHAT_STORE_BYTES` (512 KB) by trimming whole messages from
+  the front; project delete removes the chat row.
 - **Docs MCP** (`studio-mcp.ts`). The system prompt embeds a *snapshot* of
   the scaffold guide, so anything outside it — a voice, a newly added
   gateway model, a provider option — was previously a guess. The agent now
@@ -383,30 +408,44 @@ voice agents without the CLI:
   default falls to `claude-sonnet-4-6`. Ordering the one
   `ASSEMBLYAI_GATEWAY_MODELS` array is what sets both defaults: the first
   entry surviving the region filter wins.
-- **Per-request model switching, provider-bound.** The *provider* is still
-  resolved once from host env (`studio-llm.ts`), but `POST /studio/chat`
-  accepts an optional `model` that must be on `studioLlmModels()` — the
-  configured provider's own known-model list (gateway list region-filtered,
-  plus any explicit `STUDIO_LLM_MODEL`), every entry of which runs on the
-  same host-held key. The route rejects anything else with a 400 *before*
-  streaming, so nothing new is reachable — only the choice among models the
-  host could already run. `GET /studio/status` returns the list as `models`
-  and the client's header picker (`ModelPicker` in `chat.tsx`) renders
-  exactly that, sending no `model` field while the default is selected.
-  **A client can never name a provider and never supplies a key** — keep it
-  that way: any widening of the accepted set must stay validated against
-  host-held keys.
+- **No per-request model switching.** `POST /studio/chat` accepts no
+  `model` field (a stray one is stripped by the body schema, never
+  honored): every turn runs on the host-configured default —
+  `gpt-5.5` on the gateway. **A client can never name a provider or a
+  model and never supplies a key** — keep it that way: reintroducing any
+  request-side choice must stay validated against host-held keys.
 - **Session sandboxes run the agent's code work on production infra**:
   each chat request lazily provisions one sandbox (`studio-sandbox.ts`)
   through the same warm-pool/`spawnWarmHarness` path deployed agents use
-  (gVisor in production). `test_agent` builds the workspace, loads the
+  (a remote Modal Sandbox). `test_agent` builds the workspace, loads the
   bundle there (repeat `bundle/load` replaces it), validates the config,
   and can trial-run one of the agent's tools via `tool/execute` against a
-  scratch KV/Vector — no tenant data, no secrets in the guest. Deploy
+  scratch Vector (no db — ctx.db reports storage-not-enabled) — no tenant
+  data, no secrets in the guest. Deploy
   config extraction reuses the same sandbox; the standalone deploy route
   uses a throwaway one (`describeBundle` in `sandbox-vm.ts`). The LLM
   orchestration itself stays host-side — the guest has no network device
   by design.
+- **Builds never run in the server's process.** Every studio build executes
+  the build entry (`studio/studio-build-entry.ts`, wire contract in
+  `studio-build-protocol.ts`) out of process, selected by
+  `studio-build-runner.ts`: in production `STUDIO_BUILD_BACKEND=modal` (set
+  by `modal_deploy.py`'s image env) ships the build to the `studio_build`
+  Modal Function — same image, separate container, **no secrets attached** —
+  while dev/tests default to spawning the same entry as a local child
+  process (`subprocess` backend). Vite/Rollup over untrusted workspace trees
+  therefore never competes with live voice sessions for the web container's
+  CPU, and never runs in the process holding platform credentials; it also
+  moots the `withPreservedNodeEnv` hazard for studio builds, since the
+  `NODE_ENV` mutation dies with the build process. There is deliberately
+  **no in-process build path and no fallback between backends** — a failed
+  backend is a failed build, loudly. Compile errors cross the process
+  boundary as classified wire data and are rethrown host-side as
+  `StudioBuildError`, so the coding agent still gets a message it can act
+  on. `STUDIO_BUILD_TIMEOUT_MS` bounds each build (default 180s; the
+  subprocess is killed on the deadline), and
+  `STUDIO_BUILD_MODAL_APP`/`STUDIO_BUILD_MODAL_FUNCTION`/
+  `STUDIO_BUILD_ENTRY_PATH` override the backend wiring.
 - **Builds run through the CLI's bundlers, not copies of them.**
   `withWorkspaceDir` (`studio-workspace-dir.ts`) materializes the
   workspace to one scratch dir and both builds read it. The scratch dir
@@ -441,10 +480,10 @@ voice agents without the CLI:
   effect on the calling process. Both CLI bundlers therefore wrap the
   build in `withPreservedNodeEnv` (`aai-cli/_vite-env.ts`), which
   snapshots and restores it. Without that, the first studio build in a
-  `pnpm dev:aai-server` process flips the server to "production" and
-  every later deploy dies with *"gVisor (runsc) is required in production
-  but not found on PATH"*; `aai dev`, which rebuilds on every file change,
-  has the same problem. Keep any new Vite invocation inside that wrapper.
+  `pnpm dev:aai-server` process flips the server to "production", where
+  strict credential and storage checks break every later deploy; `aai dev`,
+  which rebuilds on every file change, has the same problem. Keep any new
+  Vite invocation inside that wrapper.
 - **Client build** (`studio-client-build.ts`) handles a workspace
   `client.tsx`, built by `buildClient` from
   `@alexkroman1/aai-cli/client-bundler` — the same Vite pass
@@ -456,17 +495,15 @@ voice agents without the CLI:
 - **`buildClient` dedupes React** (`resolve.dedupe`), because `aai-ui`
   declares it as a *peer* dependency while the bundler resolves the bare
   `react/jsx-runtime` inside `aai-ui/dist/**` from *that file's* real path.
-  Locally aai-ui's own devDependency satisfies it; the production image
-  installs prod deps only, so the sole React left is `aai-server`'s — which
-  the build root (the scratch dir under that package) reaches and
+  Locally aai-ui's own devDependency satisfies it; a pruned production
+  install can leave `aai-server`'s copy as the only React — which the build
+  root (the scratch dir under that package) reaches and
   `packages/aai-ui/dist` does not. Publishing died with *"Rolldown failed to
-  resolve import react/jsx-runtime"* while every local build passed. Two unit
-  tests hold the halves of this: `aai-cli/client-bundler.test.ts` (every
-  non-optional aai-ui peer is deduped) and the peer-dependency case in
-  `dockerfile-packaging.test.ts` (each one is an aai-server *prod* dep, so it
-  survives `--prod`). Same failure shape as the `styles.css` COPY above —
-  anything the studio's client build reaches has to exist, and be
-  resolvable, in the pruned image.
+  resolve import react/jsx-runtime"* while every local build passed.
+  `aai-cli/client-bundler.test.ts` guards this (every non-optional aai-ui
+  peer is deduped). The Modal image installs the full workspace (dev deps
+  included), so the old pruned-image packaging tests are gone with the
+  Dockerfile.
 - **Deployed-agent credentials.** The studio has no secrets UI, so a
   published agent would otherwise start with an empty env — its S2S
   connect sends an empty bearer token (`runtime-transport.ts`:
@@ -489,52 +526,10 @@ voice agents without the CLI:
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
   the deploy core.
 
-### App modes: agents and workflows
-
-The SDK defines two kinds of app, marked by `AgentDef.kind`
-(`"agent"` default | `"workflow"`, type `AgentKind` in `sdk/config-rules.ts`):
-
-- **Agents** (`agent()`) are conversational chat/voice interfaces — an open
-  WebSocket session the user talks with turn by turn. Everything under
-  "Session modes" below applies.
-- **Workflows** (`workflow()` in `sdk/define.ts`) are **audio in → action
-  out**: the user records one instruction (push to talk) or uploads an audio
-  file, presses Go, one agentic loop transcribes and executes it with the
-  workflow's tools, and the run ends with a written report. No conversation,
-  no history between runs. A workflow is always a **pipeline** (`stt` + `llm`
-  required; `tts` defaults to `none()`); each run is one history-less
-  `POST /sync`. `assertAgentKind` (`sdk/config-rules.ts`) enforces the
-  pipeline rule in `parseManifest`, `toAgentConfig`, and the server's
-  `IsolateConfigSchema`. **`workflow()` is the only author-facing way to set
-  the kind** — `agent()` deliberately doesn't accept a `kind` parameter
-  (`define.test-d.ts` pins the exclusion), so a workflow can't be hand-rolled
-  without its defaults.
-
-The two modes speak from **different default system prompts**
-(`sdk/agent-defaults.ts`): agents get the conversational customer-service
-prompt; workflows get `DEFAULT_WORKFLOW_SYSTEM_PROMPT` (one-shot semantics —
-never ask clarifying questions, state assumptions, end with a run report).
-`buildSystemPrompt` (`sdk/system-prompt.ts`) keys the base prompt off
-`config.kind` and skips the spoken tool preamble + voice output rules for
-workflows, so `toRuntimeAgent` **must** copy `config.kind` (it does — the
-usual dropped-field failure would run a deployed workflow on the
-conversational prompt, asking questions nobody can answer).
-
-The marker reaches the browser via `GET /client-config` (`kind`, default
-`"agent"` for older servers); `client()`'s `DefaultRoot` renders
-`WorkflowView` (aai-ui) for workflows — hold-to-talk (`createPttRecorder`) /
-audio upload (`decodeAudioToPcm16`) staging one clip, a Go button, and the
-run record: the transcript plus the tool calls the run executed
-(`SyncTurnResponse.toolCalls`, collected by `runSyncTurn` from the
-stream's tool-call/tool-result parts). Deliberately **no greeting and no
-assistant prose** — a workflow is an execution surface, not a chat, so the
-reply text stays on the wire (it is still the LLM's run report) but the
-default view never renders it.
-
-### `ctx.generate` and workflow patterns (`@alexkroman1/aai/patterns`)
+### `ctx.generate` and pattern combinators (`@alexkroman1/aai/patterns`)
 
 Tool `execute` code gets one-shot LLM generation via `ctx.generate` — a
-**host capability like `ctx.kv`**: the guest has no network, so the platform
+**host capability like `ctx.db`**: the guest has no network, so the platform
 proxies it over the `llm/generate` guest RPC (`sandbox-guest-rpc.ts` +
 `guest/harness-rpc.ts:generateAdapter`), while `aai dev` runs it in-process.
 One implementation, `createGenerateFn` (`host/generate.ts`, exported from
@@ -542,7 +537,7 @@ One implementation, `createGenerateFn` (`host/generate.ts`, exported from
 the pipeline model, credentials from the agent env only. Defaults to the
 agent's own pipeline `llm`; a per-call `llm` descriptor works for S2S agents
 holding that provider's key. In self-hosted mode the fn is exempted from the
-tool-egress fetch guard (like kv/vector) — provider traffic is
+tool-egress fetch guard (like db/vector) — provider traffic is
 infrastructure, not agent egress.
 
 `GenerateOptions.schema` is **plain JSON Schema, never a Zod schema** — the
@@ -555,8 +550,8 @@ dispatch), `orchestrate` (plan → workers → synthesize), and
 `evaluatorOptimizer` (generate → judge → retry with feedback) — plus
 `generateStructured`, which converts Zod → JSON Schema caller-side and
 re-validates the result. The subpath was renamed from
-`@alexkroman1/aai/workflow`, which collided with the `workflow()` app kind
-despite being unrelated to it.
+`@alexkroman1/aai/workflow` (a name that collided with a since-removed
+`workflow()` app kind).
 
 ### Session modes
 
@@ -579,99 +574,43 @@ Each agent runs in one of two session modes, selected at parse time by
 Partial provider configs are rejected at parse time — `parseManifest()`
 requires either zero or all three of `stt`/`llm`/`tts`.
 
-- **Sync turns** (pipeline agents only) are a connectionless *transport*,
-  not a third session mode: `POST /sync` on the self-hosted server runs one
-  complete conversational turn per HTTP request with **no WebSockets on
-  either leg** — not browser→server, not server→providers. It is the
-  substrate workflow runs execute on, and remains available as a
-  programmatic API for pipeline agents (there is deliberately **no
-  per-agent client-transport switch** anymore — the default browser client
-  always uses the WebSocket session for agents, and the workflow surface
-  for workflows). The caller endpoints speech itself and sends one
-  utterance (base64 PCM16) or
-  committed text plus the conversation history (the server holds no session
-  state between turns); the response carries the transcript, the reply, and
-  the spoken reply when available. Provider calls are all one-shot HTTP:
-  STT via `SttOpener.transcribeClip` (AssemblyAI Sync API — providers
-  without it 422 on audio input), the LLM loop via `streamText` drained
-  server-side (tools execute exactly as on the pipeline path), TTS via
-  `TtsOpener.synthesizeClip` (Cartesia `/tts/bytes`; providers without it
-  degrade to a text-only reply, a synthesis *failure* degrades to
-  `ttsError` alongside the intact text reply). Key files:
-  `host/sync-turn.ts` (runner + `SyncTurnError` status mapping),
-  `sdk/sync.ts` (wire schemas, exported from `/protocol`),
-  `runtime.runSyncTurn` (rejects 409 for S2S agents). In `aai-ui`:
-  `createSyncSession` (HTTP turns, client-held history bounded by
-  `DEFAULT_MAX_HISTORY` — the server trims to the same window, and past
-  `MAX_SYNC_HISTORY_MESSAGES` it rejects the request outright, so an
-  unbounded client eventually broke every later turn; plus a turn queue)
-  and `createPttRecorder` (`sync-mic.ts`, WebRTC push-to-talk capture
-  through an inline blob-URL AudioWorklet — the button is the endpointing).
+- **Tool-call args must be coerced before they hit a wire schema.** The AI
+  SDK surfaces an unparsable/unknown tool call as a `tool-call` stream part
+  whose `input` is the *raw argument string*, not a parsed object. The
+  WebSocket `tool_call` event requires a record for `args`, so every emitter
+  routes args through `toArgsRecord` (`sdk/utils.ts`; non-records become
+  `{}`), and a failed/invalid call is recorded with an error `result` rather
+  than left dangling.
 
-  **A capture worklet must never re-read a view it just transferred.**
-  `postMessage(msg, [buf])` detaches `buf`, so every view onto it becomes
-  zero-length *immediately*. `sync-mic.ts`'s processor sized its next batch
-  as `new Float32Array(out.length)` after transferring `out.buffer` — that
-  is `0`, which made `n = Math.min(ch.length - read, 0)` zero, so `read`
-  stopped advancing and `process()` spun forever posting empty chunks —
-  the mic went permanently deaf on its
-  first flush (measured: 1.88M messages
-  in 6s at 100% on the render thread, zero `POST /sync`). The batch size is
-  now a processor field. The WebSocket worklet
-  (`worklets/capture-processor.ts`) transfers a `slice()` copy and keeps its
-  own buffer, which is why it was never affected. Two guards hold this:
-  `instantiateWorklet`'s harness now honors the transfer list
-  (`structuredClone` with `transfer`, which really detaches) and caps posted
-  messages so a runaway loop is a named failure rather than a hang — the
-  harness ignoring `transfer` is precisely what let this ship — and
-  `sync-mic-worklet.test.ts` exercises the processor source, which the mock
-  node in `sync-mic.test.ts` never does.
+- **The capture worklet** (`worklets/capture-processor.ts`) is the single
+  mic-capture processor. It flushes a `slice()` copy and keeps its own
+  buffer (re-reading a just-transferred view is how a mic once went
+  permanently deaf), with start/stop gating, a stop → flush → `stopped`-ack
+  protocol, and the dead-mic probe. Two guards remain load-bearing:
+  `instantiateWorklet`'s harness honors the transfer list (`structuredClone`
+  with `transfer`, which really detaches) and caps posted messages so a
+  runaway loop is a named failure rather than a hang, and
+  `worklets/capture-processor.test.ts` exercises the processor source.
 
-  On the platform, `POST /:slug/sync`
-  (unauthenticated, parity with the agent WebSocket) runs the turn through
-  the deployed agent's sandbox — `Sandbox.runSyncTurn` wraps the runtime
-  call so the guest's per-session tool state is released after the turn
-  (`session/end`, message-delta cache), and the studio exposes
-  `POST /studio/projects/:project/sync` (bearer-auth'd) against a project's
-  *published* slug; both share `sync-turn-handler.ts`.
-
-  **App-kind selection for the default client**: the default client page is
+- **Pre-connection client config**: the default client page is
   byte-identical for every agent and the CSP bars inline scripts, so the
-  kind reaches the browser via a pre-connection endpoint:
-  `GET /client-config` (dev server) / `GET /:slug/client-config` (platform,
-  unauthenticated — parity with the page and the WebSocket) returns
-  `{ kind, name, greeting }` (`sdk/client-config.ts`, re-exported from
+  agent's display name and greeting reach the browser via a pre-connection
+  endpoint: `GET /client-config` (dev server) / `GET /:slug/client-config`
+  (platform, unauthenticated — parity with the page and the WebSocket)
+  returns `{ name, greeting }` (`sdk/client-config.ts`, re-exported from
   `/protocol`). **Every server builds the body through one helper**,
-  `buildClientConfig` — two servers once derived a workflow's fields
-  differently, masked only by the client's check ordering; the platform's
-  handler lives in `aai-server/client-config-handler.ts`. In `aai-ui`,
-  `client()`'s config tier renders `DefaultRoot`, which fetches the config
-  (any failure degrades to the agent kind, so older servers keep working)
-  and mounts the chat shell or `WorkflowView`; the chat shell uses the
-  server-declared `name` unless `client({ name })` overrides it. A custom
-  `component` ignores all of it.
-  The `aai dev` Vite proxy forwards `/client-config` *and* `/sync` to the
-  backend — without the latter, custom sync clients 404'd under dev.
+  `buildClientConfig`; the platform's handler lives in
+  `aai-server/client-config-handler.ts`. In `aai-ui`, `client()`'s config
+  tier renders `DefaultRoot`, which fetches the config (any failure degrades
+  to the empty default, so older servers keep working) and mounts the chat
+  shell; the shell uses the server-declared `name` unless `client({ name })`
+  overrides it. A custom `component` ignores all of it. The `aai dev` Vite
+  proxy forwards `/client-config` to the backend.
 
-- **Text-only mode** (`tts: none()` from `@alexkroman1/aai/tts`) is
-  pipeline mode without a synthesis side: speech in (STT → LLM), text out.
-  The sentinel descriptor keeps the all-or-none triple rule intact (a
-  *forgotten* `tts` stays a loud error) while `isTextOnlyTts()` flags the
-  mode wherever it matters: the runtime resolves `tts: null` (no opener,
-  no TTS credential — `requiredProviderEnvVars` skips it since `none` has
-  no registry entry), the pipeline transport skips the TTS side entirely
-  (`openTtsSide` fires `onAudioReady` immediately; `flushTtsAndWait`
-  early-returns; `holdPhrase` is forced off and rejected at config time
-  via `assertTextOnlyTuning` — enforced in `parseManifest`,
-  `toAgentConfig`, and the server's `IsolateConfigSchema`), and the
-  `config` protocol message stamps `audioOut: false` so the client skips
-  the playback pipeline. In `aai-ui`, a text-only session makes the mic
-  opt-in (`startRecording()`/`stopRecording()` on `SessionCore`), adds
-  `sendAudioFile()` (decode → resample → PCM16 stream with trailing
-  silence for endpointing), and the default `ChatView` swaps `Controls`
-  for `TextControls` (record + upload + text replies). The snapshot's
-  `apiUrl` field carries the programmatic WebSocket endpoint, shown by
-  `ApiUrlChip` in every mode. Template: `pipeline-text-only`.
+- **There is no text-only mode.** Every pipeline agent declares a real TTS
+  provider, and the default `ChatView` always renders the voice `Controls`.
+  The snapshot's `apiUrl` field carries the programmatic WebSocket endpoint,
+  shown by `ApiUrlChip`.
 
 Reference providers shipped today:
 
@@ -802,48 +741,24 @@ voices on AssemblyAI's S2S API:
 | `sophie` | UK | Clear, smooth, instructive, simple |
 | `oliver` | UK | Narrative, conversational |
 
-### Pluggable storage (KV + Vector)
+### Storage (`ctx.db`) + Vector
 
-Each session resolves its `Kv` and `Vector` instances at start. If `agent.ts`
-declares `kv:` / `vector:`, the descriptor resolves with the agent's env (BYO
-Redis, BYO Pinecone, etc.). If omitted, the platform default is used: Tigris S3
-for KV, Pinecone (or in-memory) for Vector.
+There is no KV store anymore. Persistent state is the opt-in **app
+database**: enabling storage for an app (CLI `aai storage enable`, the
+studio's Storage toggle, or `DATABASE_URL` in the project `.env` under
+`aai dev`) gives its tools `ctx.db` — a SQL handle
+(`query<T>(sql, params?)`, `$1` placeholders) backed by a per-app schema in
+the platform's Supabase Postgres. Accessing `ctx.db` without storage
+enabled throws with that enablement guidance. On the platform each app
+gets its own schema + login role (search_path pinned, 10s
+statement_timeout); credentials live in Supabase Vault. Session-scoped
+scratch belongs in `ctx.state` (or the `remember`/`recall` builtins, now
+in-memory per-session).
 
-Both are available to tool `execute` functions via `ctx.kv` and `ctx.vector`
-(see `ToolContext` in `packages/aai/sdk/types.ts`).
-
-Provider factories are imported from the `@alexkroman1/aai/kv` and
-`@alexkroman1/aai/vector` subpath exports (both resolve to `sdk/providers/`
-so they carry no Node.js dependencies and are safe in sandboxed environments).
-
-### Send channels (`send: slack()`)
-
-An agent's outbound channel has **two independent sides**, and a deployed
-agent needs both wired or the failure is silent:
-
-- **Host side** — `createRuntime` registers the `send_message` builtin only
-  when `agent.send` is set (`host/runtime-tools.ts:resolveSendMessage`). The
-  platform builds its agent object with `toRuntimeAgent`
-  (`sandbox-agent-config.ts`), so
-  that mapper must copy `config.send`; when it didn't, a deployed
-  `send: slack()` was a no-op — the tool never entered the LLM's schema
-  list, so the symptom was a reply that simply didn't send, with no error
-  anywhere. The builtin executes host-side with `safeFetch` and resolves
-  `SLACK_WEBHOOK_URL` from the agent env *per send*, so a missing secret is
-  a tool error mid-conversation rather than a session-start failure.
-- **Guest side** — tool code calling `openSender(slack(), ctx.env)` posts
-  through the sandbox's proxied `fetch`, which the host validates against
-  `allowedHosts`. `resolveAgentAllowedHosts` (`sandbox.ts`) unions the
-  agent's declared hosts with the channel's webhook host, derived from the
-  *validated descriptor* host-side rather than trusting a bundle-supplied
-  field. Getting this wrong disables guest fetch **entirely**, not just
-  Slack: `registerGuestRpcHandlers` registers no `fetch/request` handler for
-  an empty list.
-
-Both sides are covered by `packages/aai-server/sandbox-egress.test.ts`. When
-adding a channel kind, the registry entry in `sdk/providers/send/open.ts`
-(env var + hosts + opener) is the only place that needs the hostname —
-everything above derives from it.
+`Vector` is unchanged: `agent.ts` may declare `vector:` (BYO Pinecone,
+resolved with the agent's env), else the platform default applies. Both
+`ctx.db` and `ctx.vector` reach the guest as host-proxied RPC
+(`db/query`, `vector/*`).
 
 ### Guest egress (`allowedHosts`)
 
@@ -868,8 +783,8 @@ literals, bare `*`, and `.internal`/`.local`/`.localhost` TLDs are refused.
 
 ### Dev/prod parity for tool fetches
 
-An agent's tool code runs in two very different places — a gVisor guest with
-no network device on the platform, the plain Node host process under
+An agent's tool code runs in two very different places — a network-blocked
+Modal/Deno guest on the platform, the plain Node host process under
 `aai dev` — and the policy governing its `fetch` must not differ, or the
 first time a developer learns about a limit is a production incident.
 
@@ -897,58 +812,74 @@ exemptions, both matching what the platform actually restricts:
 - **Built-in network tools** (`fetch_json`, `visit_webpage`,
   `get_page_design`, `web_search`)
   execute host-side in production too, where `allowedHosts` never applies.
-- **`ctx.kv` / `ctx.vector`** are RPC methods in the guest, not `fetch`, so
-  a BYO `s3Kv`/`pinecone` provider's endpoint needs no declaration.
+- **`ctx.db` / `ctx.vector`** are RPC methods in the guest, not `fetch`, so
+  the database (and a BYO `pinecone` endpoint) needs no declaration.
   `exemptFromToolEgress()` proxies them to run outside the scope.
 
 `node:async_hooks` is banned in `sdk/` (which must stay Node-free) but
 allowed in `host/` — the biome override was package-wide, with a
 guest-VM-availability rationale that never applied to host-only code.
 
-**Guest permissions match too.** The dev sandbox spawn
-(`sandbox-vm.ts:devSandboxSpawnArgs`, `guest/fake-vm.ts`) passes
-`--no-prompt` and nothing else, exactly like production's OCI spec. It used
-to add `--allow-env` and `--allow-read`, which the harness never needs (the
-bundle arrives over RPC and loads from a `blob:` URL; sibling harness
-modules are static imports) — so agent code touching `Deno.env` or the
-filesystem worked on a macOS dev box and failed once deployed.
+**Guest permissions are identical everywhere** — dev and production run
+the same Modal spawn (`modal-sandbox.ts`), which passes `--no-prompt` and
+nothing else. The harness needs no Deno grants: the bundle arrives over RPC
+and loads from a `blob:` URL, and sibling harness modules are bundled in.
 
 **Known remaining asymmetries**, none closable without larger work:
 
 | Divergence | Direction | Why it stands |
 | --- | --- | --- |
 | `aai dev` runs tools in **Node**, production in **Deno** with no permissions | works in dev, fails in prod | `process.env`, `node:fs`, `child_process` are all reachable locally. Closing it means running dev tool code in a Deno sandbox — a dev-server redesign, not a tweak. |
-| cgroup limits (64 MB, 32 PIDs) and `--max-heap-size` | works in dev, fails in prod | A memory-hungry tool OOMs only when deployed. Enforcing locally would need a container. |
+| Modal memory/CPU limits (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) | works in dev, fails in prod | `aai dev` runs tools in the host process with no caps; a memory-hungry tool OOMs only when deployed. |
 | `run_code` | fails in dev, works in prod | The host-side guard refuses rather than evaluating in-process. Fail-closed, so harmless. |
 | `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. The prod failure is a loud auth error at session start. |
-| KV/Vector defaults (memory vs Tigris/Pinecone), KV prefix `""` vs `kv:{hash}:{slug}:` | prod is stricter | Data doesn't persist across dev restarts; prod is the more isolated side. |
-| gVisor unavailable on macOS | prod is stricter | Platform capability, documented under "gVisor notes". |
+| `ctx.db` backing (BYO `DATABASE_URL` in dev vs platform-provisioned schema+role) | prod is stricter | Dev connects wherever the developer points it; prod pins search_path + statement_timeout on a per-app role. |
+| Platform sandboxes need Modal credentials | prod is stricter | `aai dev` runs tools in-process; the platform (any machine with `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`) spawns real Modal sandboxes — see "Modal sandbox notes". |
 
-**`agent()` re-declares its parameter shape inline** rather than deriving it
-from `AgentDef`, and returns `{...defaults, ...def}`. A field added to
-`AgentDef` alone therefore *works at runtime* while being a TS2353
-excess-property error for the author — and neither bundler typechecks, so
-nothing catches it. `send` and `state` both shipped in that state.
-`define.test-d.ts` now asserts
-`Exclude<keyof AgentDef, keyof Parameters<typeof agent>[0]>` is `never`.
+**One canonical config schema, deny-list boundaries.** The dropped-field bug
+family (`builtinTools` — deployed agents silently lost the default cognitive
+builtins; `send`; the provider triple; `allowedHosts`) all came from
+allow-list mappers re-declaring the config field list, where every field is
+optional and an omission is valid TypeScript. Every such bug presents as a
+*working* agent quietly ignoring part of its own config. The design is now
+inverted — one canonical serializable schema flows CLI → server → runtime
+unchanged, and each boundary subtracts an explicit deny-list instead of
+copying fields:
 
-`toRuntimeAgent` copies ~14 optional fields through a `defined({...})` helper
-rather than one conditional spread each. That shape is deliberate: the
-per-field form is how `builtinTools` (deployed agents silently lost the
-default cognitive builtins) and then `send` came to be dropped, since every
-field is optional and an omission is valid TypeScript.
+- **`AgentConfigSchema`** (`sdk/_internal-types.ts`) is the canonical shape.
+  `toAgentConfig` strips `HOST_ONLY_AGENT_FIELDS` (`tools`, `state`) plus
+  undefined values and validates through the schema — no per-field copies.
+  `_internal-types.test.ts` asserts the one subtraction:
+  `Exclude<keyof AgentDef, keyof AgentConfig | HostOnlyAgentField>` is `never`.
+- **`agent()`** derives its parameter shape from `AgentDef`
+  (`AgentParams` = `Omit` + `Partial<Pick>` of the defaulted fields) instead
+  of re-declaring it inline — the inline form is how `send` and `state`
+  shipped as runtime-working but excess-property errors for authors
+  (neither bundler typechecks user code). `define.test-d.ts` locks this.
+- **`IsolateConfigSchema`** (`aai-server/rpc-schemas.ts`) is
+  `AgentConfigSchema.extend({...})` — the extensions are wire-tolerance
+  loosenings (a stored bundle from an older CLI must keep loading), wire
+  defaults, and the wire-only `toolSchemas`; none may drop a field.
+- **`toRuntimeAgent`** (`aai-server/sandbox-agent-config.ts`) passes the
+  whole config through minus `WIRE_ONLY_CONFIG_FIELDS` (`toolSchemas`,
+  `mode`). The provider descriptors ride on the runtime agent itself
+  (`createRuntime` resolves `opts.stt ?? agent.stt`), keyed off the
+  descriptors' own presence — never `config.mode`, which is optional: a
+  config carrying all three providers with no `mode` once hit a
+  `config.mode === "pipeline"` gate and lost every one of them, so
+  `createRuntime` resolved S2S and ran a healthy S2S session on the agent's
+  own key, nothing logged. `superRefine` rejects a `mode` that disagrees
+  with the descriptors. Host mode (`ws-host-mode.ts`) uses the same
+  function, so a pipeline agent driven over `?host=1` stays pipeline.
+  `rpc-schemas.test.ts` asserts both subtractions:
+  `Exclude<keyof AgentConfig, keyof IsolateConfig>` and
+  `Exclude<keyof IsolateConfig, keyof AgentDef | WireOnlyConfigField>` are
+  `never`.
 
-This mapping lives in **`sandbox-agent-config.ts`**, split out of `sandbox.ts`
-because it has its own history of dropping fields, and every such bug presents
-as a *working* agent quietly ignoring part of its own config. The third was the
-provider triple: `pipelineProviderOpts` forwards stt/llm/tts keyed off the
-**descriptors**, never `config.mode`, which is optional in
-`IsolateConfigSchema`. A config carrying all three providers with no `mode` hit
-the old `config.mode === "pipeline"` gate and lost every one of them, so
-`createRuntime` resolved S2S and ran a healthy S2S session on the agent's own
-key — nothing logged, the configured providers simply ignored. The descriptors
-are the safe source because `superRefine` rejects a `mode` that disagrees with
-them.
+A new serializable agent field therefore needs exactly two edits — `AgentDef`
+(docs + type) and `AgentConfigSchema` (shape) — and the type guards fail
+loudly if either half is missing; no mapper edits, and the field reaches the
+server, the wire, and the runtime by default.
 
 **Never let S2S be a fallback.** `buildTransport`
 (`host/runtime-transport.ts`) reaches `buildAssemblyS2sTransport` by
@@ -1155,7 +1086,7 @@ of subpath exports in `aai/package.json`:
 
 | Import path | Resolves to | What it contains |
 | --- | --- | --- |
-| `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, KV, utils, constants, `agent()`/`tool()` helpers |
+| `@alexkroman1/aai` | `packages/aai/index.ts` → 6 modules | Types, Db, utils, constants, `agent()`/`tool()` helpers |
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …) + the slug contract (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`). Deliberately dependency-free so the CLI can load it on every invocation without paying zod's startup cost |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
@@ -1163,14 +1094,14 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
 | `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `gateway`) |
 | `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
-| `@alexkroman1/aai/kv` | `sdk/providers/kv-barrel.ts` | KV provider factories + types (`memoryKv`, `fsKv`, `s3Kv`, `redisKv`) |
 | `@alexkroman1/aai/vector` | `sdk/providers/vector-barrel.ts` | Vector provider factories + types (`pinecone`, `inMemoryVector`) |
-| `@alexkroman1/aai/send` | `sdk/providers/send-barrel.ts` | Send-channel factories + resolver (`slack`, `openSender`, `Sender`) |
-| `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox. Renamed from `./workflow` (which collided with the `workflow()` app kind) |
+| `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox |
 
 ### Default values and magic numbers
 
-All numeric constants live in `packages/aai/sdk/constants.ts`. Key
+All numeric constants live in `packages/aai/sdk/constants.ts` (client-audio
+budgets are split into `sdk/client-audio-constants.ts` for file-length reasons
+and re-exported from `constants.ts`, so the import path is unchanged). Key
 defaults that affect agent behavior:
 
 | Default | Value | Where applied | Notes |
@@ -1184,10 +1115,11 @@ defaults that affect agent behavior:
 | Deepgram `endpointing` | 100 (`DEFAULT_DEEPGRAM_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Provider endpointing serializes with the transport settle windows, so it stays low; override via `deepgram({ endpointing })`. |
 | `endpointSettleMs` | 1500 (`DEFAULT_ENDPOINT_SETTLE_MS`) | `constants.ts` | Pipeline only: wait after an STT final before committing the turn, aggregating disfluent multi-final utterances. `completeSettleMs` (500) is the shorter window for clearly-complete finals. 0 disables. |
 | `holdPhrase` | `"One moment."` (`DEFAULT_HOLD_PHRASE`) | `pipeline-stream.ts` | Pipeline only: spoken when a turn opens with a tool call and no speech. `""` disables. |
-| `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. Unlike `holdPhrase` it is **allowed** with `tts: none()` — an error is meaningful as text. `""` disables. |
+| `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. `""` disables. |
 | dead-air cover | 2000 ms (`DEFAULT_DEAD_AIR_COVER_MS`) | `pipeline-stream.ts` | Pipeline only: tool execution that sends nothing to TTS for this long gets a `DEAD_AIR_COVER_PHRASES` filler — unlike `holdPhrase` this is time-based, so it still fires after the model has spoken, and repeats across a tool chain with the wait doubling each time. `holdPhrase: ""` disables both. |
 | `falseInterruptionTimeoutMs` | 2000 (`DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS`) | `constants.ts` | Pipeline only: a partial-triggered barge-in that never commits a user turn (STT noise) resumes the interrupted reply via a synthetic continuation turn (`DEFAULT_FALSE_INTERRUPTION_PROMPT`) after this window. 0 disables. |
 | `maxHistory` | 200 | `constants.ts:52` | Sliding window of conversation messages retained. |
+| resume grace | 120,000 (`SESSION_RESUME_GRACE_MS`) | `constants.ts` | How long a disconnected session's per-session tool state (`ctx.state`) survives awaiting a `?sessionId=<id>` resume — the host runtime's stateMap sweep and the platform's deferred guest `session/end` both wait it out, cancelled when the session resumes. Sized above the browser client's worst-case automatic-reconnect span (~105s); the client reconnects with the sessionId from the `config` frame, so the resumed session finds its state under the same key. |
 | `builtinTools` | `DEFAULT_BUILTIN_TOOLS` (`think`, `remember`, `recall`, `calculate`) | `constants.ts` | Cognitive built-ins on by default: private reasoning scratchpad, session notes, safe calculator. Set `builtinTools` explicitly (including `[]`) to override. `web_search`/`visit_webpage`/`get_page_design`/`fetch_json`/`run_code` remain opt-in. A custom or relayed tool with the same name wins — the built-in is dropped. |
 
 ### Fixed release coupling
@@ -1237,8 +1169,7 @@ Tests can behave differently based on environment variables set in
 package.json scripts (not always obvious from test code alone):
 
 - `VITEST_PROFILE` — switches timeout/retry profiles in
-  `vitest.slow.config.ts`: `integration` (30s), `e2e` (300s),
-  `docker` (600s), `gvisor` (30s)
+  `vitest.slow.config.ts`: `integration` (30s), `e2e` (300s)
 - `VITEST_INCLUDE` — filters which test files to include
 - `VITEST_POOL` — can override pool strategy at runtime
 - `AAI_TEST_PM` — package manager the e2e suite installs the scaffolded
@@ -1257,11 +1188,15 @@ behind, using [vitest-evals](https://github.com/getsentry/vitest-evals)
   build through `bundleWorkspaceWorker` — the exact Vite/Rollup pass
   Publish runs. This is the "one-shot produces syntactically valid code"
   gate.
-- **`SandboxLoadJudge`** (asserted via `toSatisfyJudge` when Deno + the
-  built guest harness are available): the built worker must load in a
-  real studio sandbox, self-describe a valid `IsolateConfigSchema`
-  config, and expose the tools the prompt asked for — the "code actually
-  works" gate.
+- **`SandboxLoadJudge`** (asserted via `toSatisfyJudge` when Modal
+  credentials + the built guest harness are available): the built worker
+  must load in a real studio sandbox and self-describe a valid
+  `IsolateConfigSchema` config — the "code actually works" gate. It also
+  asserts whatever **config facts** the case declares: expected tool
+  names, which provider kind backs each pipeline stage (or that none is
+  declared, i.e. S2S), and that every host the agent's tool code fetches
+  is covered by an `allowedHosts` pattern (matched with the runtime's own
+  `matchesAllowedHost`, so `*.example.com` counts).
 - **`TemplateParityJudge`** (threshold 0.8): the workspace must be
   functionally equivalent to a hand-written template — the "built the
   *right* thing" gate. Most cases are template-parity cases: the prompt is
@@ -1289,10 +1224,45 @@ behind, using [vitest-evals](https://github.com/getsentry/vitest-evals)
   shown to the judge (it read "run_code only" as a requirement and failed an
   agent for keeping the defaults), and the `ONE_SHOT` suffix is stripped
   from the judge's view of the prompt (it instructs the *builder*, and the
-  judge graded the voice agent's persona against it). When a case regresses,
-  suspect the rubric before the studio prompt. `temperature: 0` is
-  deliberately absent — the default studio model is a reasoning model that
-  rejects it, and generation variance dominates anyway.
+  judge graded the voice agent's persona against it). The mirror-image
+  false negative is why `capabilities` grades coverage of the **prompt**,
+  not of the reference: the templates are fuller than the starter prompts
+  they pair with (the pizza reference also updates a cart line and takes the
+  customer's name; its starter prompt asks for neither), so demanding every
+  reference capability failed agents that built exactly what was asked.
+  When a case regresses, suspect the rubric before the studio prompt.
+  `temperature: 0` is deliberately absent — the default studio model is a
+  reasoning model that rejects it, and generation variance dominates anyway.
+
+The corpus has a second family with no reference and no parity judge:
+**`CONFIG_CASES`**, graded only on what the built worker reports about
+itself. They cover the two rules a resemblance grader is the wrong
+instrument for, because they are about whether a *published* agent can run
+at all rather than whether it looks like a template:
+
+- **AssemblyAI is the default provider.** `ASSEMBLYAI_API_KEY` is the only
+  key publishing seeds (`studio-deploy.ts`'s `defaultEnv`), so an agent
+  that reaches for Anthropic or Cartesia unbidden cannot start until the
+  user supplies a key. Cases assert S2S when no provider is named at all,
+  all-`assemblyai` descriptors when cascaded mode is requested without
+  naming providers, and — when the prompt names one stage's provider — that
+  stage honored plus AssemblyAI for the two the prompt left open. Parity
+  can't grade this: several references legitimately use other providers, so
+  "matches the reference" and "runs when published" disagree. The `mode`
+  rubric criterion states the same rule as the judge-side backstop for
+  template cases.
+
+  The first run of this case is what forced the studio preamble to split the
+  rule in two — **which mode** (leave stt/llm/tts unset; S2S is the default
+  for anything that just asks for a voice agent) before **which providers**
+  (AssemblyAI for every stage the user didn't assign). The single combined
+  "default to AssemblyAI for every provider" bullet listed the three
+  descriptors to use, so a plain "build me a voice agent" reliably produced
+  an all-AssemblyAI *pipeline* — correct on credentials, wrong on mode, and
+  invisible to every other judge.
+- **Egress needs `allowedHosts`.** A tool fetching an undeclared host
+  builds, loads, and passes every rubric criterion, then fails at runtime —
+  the one failure mode invisible from the studio's Code pane.
 
 Run with `pnpm --filter aai-server test:evals` (the e2e profile of
 `vitest.slow.config.ts`). The suite is excluded from the unit project and
@@ -1417,17 +1387,41 @@ bumped automatically.
   fails (new deps added on the branch).
 - Never edit `pnpm-lock.yaml` directly — always use `pnpm install`.
 
-### gVisor notes
+### Modal sandbox notes
 
-- gVisor integration tests run via: `./packages/aai-server/guest/docker-test.sh`
-- That script uses the repo-wide test image (`Dockerfile.test`, which ships
-  runsc) — the same image CI's `docker-test` job builds to run unit,
-  integration, and gVisor tests in a container. One image, no drift.
-- No KVM required — uses systrap platform (works on Fly.io, any Linux)
-- Docker needs `--security-opt seccomp=unconfined` (or `--privileged`) for gVisor
-- On macOS (dev), gVisor is unavailable; sandbox falls back to a plain child
-  process with no isolation. This is expected — the security boundary only
-  applies in Linux production deployments.
+- Guest sandboxes are **remote Modal Sandboxes** (`modal-sandbox.ts`) on every
+  platform — macOS dev boxes and production alike. There is no local
+  child-process or gVisor fallback; without `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`
+  (or a `~/.modal.toml` profile) sandbox creation fails loudly.
+- The guest image defaults to `denoland/deno:latest`; pin via
+  `MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
+  Modal App sandboxes are created under (default `aai-server`).
+- Sandboxes are created with `blockNetwork: true` and a bounded lifetime
+  (`SANDBOX_TIMEOUT_SECS`, default 4h). Memory/CPU caps come from
+  `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT`.
+- **Orphan cleanup is heartbeat + watchdog + Modal's `idleTimeoutMs`, not
+  host code** (`SANDBOX_IDLE_TIMEOUT_SECS`, default 15 min). A host that dies
+  without running `shutdown()`'s teardown (crash, OOM, SIGKILL past the drain
+  deadline, a scaledown that never reaches the node process) strands its
+  remote sandboxes with no record of them. The original design relied on
+  stdin EOF alone ("host death closes the exec'd harness's stdin, the harness
+  exits, the sandbox goes idle") — in production that chain did not hold:
+  EOF is not reliably delivered to the exec when the host dies, and even
+  when it is, a loaded bundle's own timers could keep Deno's event loop (and
+  therefore the exec, and therefore the sandbox) alive to the 4h lifetime
+  cap. Orphan detection is now the guest's own job: the host pings every
+  harness (`ping` notification each `HARNESS_HEARTBEAT_INTERVAL_MS`, wired in
+  `modal-sandbox.ts:warmFromModal` so pooled/resident/studio harnesses are
+  all covered), the harness self-exits after `HARNESS_ORPHAN_TIMEOUT_MS` of
+  host silence and hard-exits (`Deno.exit`) on stdin EOF
+  (`guest/deno-harness.ts`, constants in `guest/limits.ts`). Once the exec
+  has exited, Modal's `idleTimeoutMs` terminates the sandbox. A healthy
+  sandbox always has the harness exec running and its host pinging, so its
+  idle timer never starts — host-side eviction (`sandbox-slots.ts`) stays
+  the authority on session-aware idleness (Modal can't see sessions).
+- The server itself deploys to Modal too (`modal_deploy.py`,
+  `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
+  Fly.io deployment anymore.
 
 ### Updating CLAUDE.md
 
@@ -1476,59 +1470,61 @@ catches the most common issues that historically required follow-up commits:
 
 ## Security architecture
 
-### gVisor sandbox isolation
+### Modal sandbox isolation
 
-Each agent session runs in its own **gVisor sandbox** (runsc OCI runtime).
-The guest runs a Deno process executing the bundled agent code
-(`guest/deno-harness.ts`). Host↔guest communication is via NDJSON over
-stdio.
+Each agent session runs in its own **Modal Sandbox** — a remote, isolated
+container on Modal's infrastructure (`modal-sandbox.ts`). The guest runs a
+Deno process executing the bundled agent code (`guest/deno-harness.ts`).
+Host↔guest communication is NDJSON over the exec'd process's stdio streams
+(Modal's command router).
 
 Key properties:
 
-- **Userspace kernel**: gVisor Sentry intercepts all syscalls in systrap mode.
-  No KVM required — works on Fly.io, any Linux.
-- **No shared memory between agents**: separate Sentry per sandbox.
-- **Minimal rootfs**: only the Deno binary and harness are visible.
-  The agent cannot see the host filesystem.
-- **cgroup limits**: 64 MB memory, 32 PIDs per sandbox.
+- **Remote isolation**: each sandbox is its own container on Modal — no
+  shared kernel surface with the platform host, no shared state between
+  agents.
+- **No guest network**: sandboxes are created with `blockNetwork: true`;
+  all external calls proxy through host-side RPC.
+- **Minimal filesystem**: the guest sees the Deno image plus the harness
+  file written into it — never the host filesystem.
+- **Resource limits**: Modal per-sandbox memory/CPU caps
+  (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) and a bounded lifetime
+  (`SANDBOX_TIMEOUT_SECS`, default 4h).
 - **Deno guest**: the agent's ESM bundle is loaded directly by Deno.
-  Deno's permission model provides defense-in-depth: in production
-  (gVisor, `oci-spec.ts`) the harness runs with `--no-prompt` and **no**
-  `--allow-*` flags at all; the dev-mode child-process fallbacks
-  (`sandbox-vm.ts`, `guest/fake-vm.ts`) add `--allow-env`.
-- **Dev mode (macOS)**: gVisor unavailable; sandbox falls back to a plain
-  child process with no isolation.
+  Deno's permission model provides defense-in-depth: the harness runs with
+  `--no-prompt` and **no** `--allow-*` flags at all, in dev and prod alike.
 
 ### Warm sandbox pool
 
 The server can pre-spawn a pool of "warm" Deno harnesses (process running,
 NDJSON wired, no bundle loaded) so first-session cold starts skip the
-slow `spawn → JIT init → gVisor bootstrap` path. On acquire, the
-harness is finalized for the requesting agent by registering KV/fetch
+slow `Modal sandbox create → Deno JIT init` path. On acquire, the
+harness is finalized for the requesting agent by registering db/fetch
 handlers and sending `bundle/load` — a single round-trip.
 
 - **Enable**: set `SANDBOX_POOL_SIZE` to a positive integer (max 16).
   Disabled when unset.
-- **Files**: `sandbox-pool.ts` (pool), `sandbox-vm.ts:spawnWarmHarness`
-  (backend-agnostic spawn), `configureSandbox` (per-agent finalization).
-- **Security**: the pool spawns harnesses with the same OCI spec / dev
-  config as on-demand sandboxes. Bundle code and agent env vars are
-  injected per-acquire — no agent secrets enter a warm process.
+- **Files**: `sandbox-pool.ts` (pool), `sandbox-vm.ts:spawnWarmHarness` /
+  `modal-sandbox.ts:spawnModalWarm` (spawn), `configureSandbox` (per-agent
+  finalization).
+- **Security**: the pool spawns harnesses with the same Modal sandbox
+  parameters as on-demand sandboxes. Bundle code and agent env vars are
+  injected per-acquire — no agent secrets enter a warm sandbox.
 - **Failure mode**: if the pool is empty or returns a dead harness,
   `createSandboxVm` falls back to a fresh spawn (the pre-pool path).
 
 ### Platform sandbox (aai-server)
 
-Agent code runs in **per-agent gVisor sandboxes**. Key files:
-`packages/aai-server/sandbox.ts`, `sandbox-vm.ts`, `gvisor.ts`,
+Agent code runs in **per-agent Modal Sandboxes**. Key files:
+`packages/aai-server/sandbox.ts`, `sandbox-vm.ts`, `modal-sandbox.ts`,
 `guest/deno-harness.ts`, `ndjson-transport.ts`.
 
 **Isolation layers:**
 
-- **Filesystem**: minimal rootfs with only Deno binary + harness. No host
+- **Filesystem**: the Deno image plus the harness file. No host
   filesystem access.
-- **Network**: no network device in sandbox. All external calls proxy through host.
-- **Memory**: cgroup limits (64 MB per sandbox). Separate Sentry per sandbox.
+- **Network**: `blockNetwork: true` — all external calls proxy through host.
+- **Memory/CPU**: Modal per-sandbox limits; separate container per sandbox.
 - **Env vars**: agent env is delivered to the guest via the `bundle/load`
   RPC params, never as process environment variables. Platform secrets
   stay host-side.
@@ -1544,19 +1540,22 @@ stored env at sandbox creation time and kept host-side only.
 - **Vector store**: `PINECONE_API_KEY` is platform-owned by default. Agents
   that declare `vector: pinecone(...)` use their own key via
   `aai secret put PINECONE_API_KEY=...`.
-- **KV store**: same model — platform default uses platform creds; agent
-  descriptors (`redisKv`, `s3Kv`) read from agent env (`REDIS_URL`,
-  `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`).
+- **App database**: per-app Postgres role/schema credentials are
+  platform-provisioned and held in Supabase Vault — never in the agent's
+  env, so tenant code can't read them.
+- **Agent secrets**: stored in Supabase Vault (`agent-env:<slug>`), not
+  encrypted blobs — the old master-key envelope encryption
+  (`KV_SCOPE_SECRET`) is gone.
 - **Credential resolution reads the agent env only — never `process.env`.**
   The platform host process holds its own credentials under exactly the names a
   tenant descriptor resolves (`AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY` for
-  the shared Tigris bucket, `PINECONE_API_KEY`), so a fallback let an agent that
-  declared `s3Kv`/`pinecone` with no credential of its own borrow the
-  platform's, aimed at a bucket/endpoint/index it chose.
+  Supabase storage, `PINECONE_API_KEY`), so a fallback let an agent that
+  declared `pinecone` with no credential of its own borrow the
+  platform's, aimed at an endpoint/index it chose.
 
   There are **two** such helpers and both must stay sealed — closing only one
   leaves the leak open, since between them they cover every provider:
-  - `resolveApiKey` (`providers/resolve.ts`) — `s3Kv`, `redisKv`.
+  - `resolveApiKey` (`providers/resolve.ts`) — descriptor-declared env keys.
   - `requireApiKey` (`providers/_utils.ts`) — every STT/TTS opener, every LLM
     (via `resolve.ts`'s `requireKey`), and Pinecone.
 
@@ -1567,17 +1566,27 @@ stored env at sandbox creation time and kept host-side only.
   `ctx.env`, both so agent code can't read them and so dev keeps parity with
   production in what `ctx.env` contains.
 
+  The providerEnv-not-env rule is **type-enforced** via the branded env
+  records in `sdk/env-types.ts`: `withHostCredentialFallback` is the only
+  minter of `HostCredentialEnv`, which satisfies
+  `RuntimeOptions.providerEnv` (`ProviderEnv`) but is a compile error for
+  `RuntimeOptions.env` (`AgentEnv`) and everything else that becomes
+  `ctx.env`. Plain records stay assignable to both, so only the dangerous
+  flow needs ceremony; `env-types.test-d.ts` locks the assignability matrix.
+  The brand is advisory against *deliberate* re-annotation — the point is
+  that leaking host credentials into `ctx.env` can no longer be silent.
+
 **Cross-agent isolation:**
 
-- KV keys prefixed `kv:{keyHash}:{slug}:{key}` — agents cannot access
-  each other's data.
+- App databases are separate Postgres schemas with per-app login roles —
+  agents cannot access each other's data.
 - Each sandbox communicates via isolated NDJSON over stdio.
 - Sessions are per-sandbox (`Map<string, Session>`).
 - No shared mutable state between sandboxes.
 
 **`run_code` built-in tool (aai/builtin-tools.ts):**
 
-- Executes **only inside the guest sandbox** (gVisor/Deno): it is listed in
+- Executes **only inside the guest sandbox** (Modal/Deno): it is listed in
   `SANDBOX_ONLY_BUILTINS`, so the platform runtime delegates it over RPC to
   `deno-harness`, which runs it there. The old host-side `node:vm` execution
   was removed — `node:vm` is not a security boundary.
@@ -1644,23 +1653,12 @@ stored env at sandbox creation time and kept host-side only.
   `instanceof` against **its own** class, so a `globalThis.FormData` (an
   instance of Node's *internal* undici's class) matches no branch, falls
   through to the string conversion, and goes out as `Content-Type: text/plain`
-  with the 17-byte body `[object FormData]`. AssemblyAI's Sync API answered
-  `415 Unsupported Media Type` and the browser saw `Sync turn failed: HTTP
-  502` — **every sync turn was broken**, on the platform and under `aai dev`
-  alike, since `syncTranscribe` is handed `RuntimeOptions.fetch`.
-  `assemblyai-sync.ts` therefore encodes the multipart body by hand into a
-  `Uint8Array` and sets `Content-Type` itself: a `BufferSource` is a realm
-  intrinsic with no per-copy class to disagree about, so it encodes identically
-  on every `fetch`. That module is in `sdk/`, which must stay Node-free, so
-  importing undici's own `FormData` was never an option.
+  with the 17-byte body `[object FormData]` — the server answers
+  `415 Unsupported Media Type` and the caller sees an opaque HTTP failure.
 
   The rule that generalizes: **never hand a `FormData`, `Blob`, `File`,
   `Headers`, or `Request` to a `fetch` that might not be the one your realm's
-  global came from** — pass bytes. And the guard has to send real bytes over a
-  real socket: the sdk specs inject a fake fetch and assert on the body
-  *object*, which is exactly why this shipped. `host/sync-transcribe-wire.test.ts`
-  posts through the actual `pinnedFetch` to a loopback server and reads what
-  arrived.
+  global came from** — pass bytes.
 - The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
   `fetch_json`) take a
   model-controlled URL and **default** to this via `safeFetch` in
@@ -1691,7 +1689,7 @@ is multi-tenant and an agent's WebSocket is deliberately **unauthenticated** —
 anyone with the URL can talk to it. Allowing prompt/tool overrides on that
 footing would make every deployed agent an open LLM proxy billed to its owner.
 So `?host=1` requires `Authorization: Bearer <api key>` on the upgrade,
-verified against slug ownership (the check `/:slug/secret` and `/:slug/kv`
+verified against slug ownership (the check `/:slug/secret` and `/:slug/storage`
 already use). `startHostSession` gained an `allowHost` option so the platform
 can gate on ownership instead of the env flag, which would be all-or-nothing
 across tenants.
@@ -1706,12 +1704,12 @@ Details worth keeping:
   the socket; a bare RST is indistinguishable from a network fault.
 - **Unknown slug and forbidden slug return the same thing**, so a non-owner
   gets no existence oracle.
-- **Runs in the server process, not the gVisor sandbox.** Host mode replaces
+- **Runs in the server process, not the guest sandbox.** Host mode replaces
   the agent's tools with ones relayed to the caller, so there is no tenant
-  code to isolate. `toHostBaseAgent` carries the provider descriptors on the
-  agent object (unlike `toRuntimeAgent`, which omits them because
-  `createSandbox` passes them as options) — otherwise a pipeline agent would
-  silently fall back to S2S when driven over `?host=1`.
+  code to isolate. It builds its base agent with the same `toRuntimeAgent`
+  the sandbox path uses, which keeps the provider descriptors on the agent
+  object — otherwise a pipeline agent would silently fall back to S2S when
+  driven over `?host=1`.
 - Plain connections are untouched and stay unauthenticated.
 
 ### Self-hosted server defaults (`aai/host/server.ts`)
@@ -1769,11 +1767,10 @@ TTY before implicitly deploying.
 
 ### Testing security boundaries
 
-- `gvisor-integration.test.ts` — sandbox isolation e2e: network, filesystem,
-  process, env isolation inside gVisor sandboxes. No KVM required.
-  Run via: `./packages/aai-server/guest/docker-test.sh`
-- `sandbox-integration.test.ts` — sandbox lifecycle and slot management e2e.
-  Run: `pnpm --filter aai-server test:integration`
+- `modal-sandbox.test.ts` — Modal spawn flow against an injected fake
+  context: blockNetwork, harness delivery, exec permissions, teardown on
+  failure. (Isolation itself — network, filesystem, memory — is enforced by
+  Modal's sandbox boundary, not host code.)
 - `builtin-tools.test.ts` — `run_code` sandbox security boundaries
   (network, filesystem, process, env, constructor chain bypass,
   cross-invocation isolation).
@@ -1818,5 +1815,5 @@ session start, so `opened.length === 1` can hold while every sandbox fails.
 ### Known limitations
 
 - **Type-level tests**: Cover public entry points of `aai` (`.`, `./types`)
-  and `aai-ui` (`.`). Subpath exports (e.g. `./kv`,
+  and `aai-ui` (`.`). Subpath exports (e.g. `./vector`,
   `./protocol`) are not covered by type tests.

@@ -3,22 +3,19 @@
 // tool plumbing (including sandbox mode), and executeToolCall. Session
 // lifecycle/routing specs live in runtime-lifecycle.test.ts.
 
-import { createStorage } from "unstorage";
 import { describe, expect, test, vi } from "vitest";
 import { z } from "zod";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
-import { fetchMock } from "../sdk/_test-utils.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
+import type { Db } from "../sdk/db.ts";
 import { anthropic } from "../sdk/providers/llm/anthropic.ts";
 import { assemblyAI } from "../sdk/providers/stt/assemblyai.ts";
 import { cartesia } from "../sdk/providers/tts/cartesia.ts";
-import { none } from "../sdk/providers/tts/none.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
 import { makeAgent } from "./_test-utils.ts";
 import { createRuntime } from "./runtime.ts";
 import { executeToolCall } from "./tool-executor.ts";
-import { createUnstorageKv } from "./unstorage-kv.ts";
 
 function makeLogger() {
   return { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() };
@@ -84,19 +81,23 @@ describe("createRuntime", () => {
     expect(await exec.executeTool("add", { a: 3, b: 4 }, "s1", [])).toBe("7");
   });
 
-  test("executeTool passes KV to tool context", async () => {
-    const kv = createUnstorageKv({ storage: createStorage() });
-    await kv.set("key1", "value1");
+  test("executeTool passes db to tool context", async () => {
+    const db: Db = {
+      query: async <T>() => [{ value: "value1" }] as T[],
+    };
     const agent = makeAgent({
       tools: {
-        read_kv: {
-          description: "Read from KV",
-          execute: async (_args, ctx) => (await ctx.kv.get<string>("key1")) ?? "missing",
+        read_db: {
+          description: "Read from the database",
+          execute: async (_args, ctx) => {
+            const rows = await ctx.db.query<{ value: string }>("select value from t");
+            return rows[0]?.value ?? "missing";
+          },
         },
       },
     });
-    const exec = createRuntime({ agent, env: {}, kv });
-    expect(await exec.executeTool("read_kv", {}, "s1", [])).toBe("value1");
+    const exec = createRuntime({ agent, env: {}, db });
+    expect(await exec.executeTool("read_db", {}, "s1", [])).toBe("value1");
   });
 
   // providerEnv exists so a self-hosted caller can feed shell-exported
@@ -335,18 +336,18 @@ describe("executeToolCall", () => {
     }
   });
 
-  test("throws KV not available when kv is not provided and tool accesses it", async () => {
+  test("throws storage-not-enabled when db is not provided and tool accesses it", async () => {
     const tool: ToolDef = {
-      description: "Access KV",
+      description: "Access the database",
       execute: async (_args, ctx) => {
-        await ctx.kv.get("key");
+        await ctx.db.query("select 1");
         return "ok";
       },
     };
     const logger = makeLogger();
-    const result = await executeToolCall("kvTool", {}, { tool, env: {}, logger });
+    const result = await executeToolCall("dbTool", {}, { tool, env: {}, logger });
     expect(result).toContain("error");
-    expect(result).toContain("KV not available");
+    expect(result).toContain("Storage is not enabled for this app");
   });
 
   test("uses default empty state when state not provided", async () => {
@@ -493,97 +494,20 @@ testRuntime("direct", () => ({
   executeTool: directExec.executeTool,
 }));
 
-describe("createRuntime — send channel (send_message builtin)", () => {
-  const send = { kind: "slack", options: {} };
-
-  test("declaring send: registers the send_message tool", () => {
-    const exec = createRuntime({ agent: makeAgent({ send }), env: {} });
-    expect(exec.toolSchemas.map((s) => s.name)).toContain("send_message");
-  });
-
-  test("no send channel, no send_message tool", () => {
-    const exec = createRuntime({ agent: makeAgent(), env: {} });
-    expect(exec.toolSchemas.map((s) => s.name)).not.toContain("send_message");
-  });
-
-  test("send_message posts through the sender using the agent env credential", async () => {
-    const fetchFn = fetchMock(() => new Response("ok", { status: 200 }));
-    const exec = createRuntime({
-      agent: makeAgent({ send }),
-      env: { SLACK_WEBHOOK_URL: "https://hooks.slack.com/services/T/B/x" },
-      fetch: fetchFn,
-    });
-    const result = await exec.executeTool("send_message", { text: "hi" }, "s1", []);
-    expect(JSON.parse(result)).toEqual({ sent: true, channel: "slack" });
-    const [url, init] = fetchFn.mock.calls[0] ?? [];
-    expect(url).toBe("https://hooks.slack.com/services/T/B/x");
-    expect(JSON.parse(init?.body as string)).toEqual({ text: "hi" });
-  });
-
-  test("a missing webhook secret surfaces as a tool error, not a crash", async () => {
-    const exec = createRuntime({ agent: makeAgent({ send }), env: {} });
-    const result = await exec.executeTool("send_message", { text: "hi" }, "s1", []);
-    expect(result).toContain("SLACK_WEBHOOK_URL");
-  });
-
-  test("a custom tool named send_message wins over the builtin", async () => {
-    const exec = createRuntime({
-      agent: makeAgent({
-        send,
-        tools: {
-          send_message: { description: "Custom sender", execute: () => "custom ran" },
-        },
-      }),
-      env: {},
-    });
-    expect(await exec.executeTool("send_message", {}, "s1", [])).toBe("custom ran");
-    expect(exec.toolSchemas.filter((s) => s.name === "send_message")).toHaveLength(1);
-  });
-});
-
-describe("createRuntime — text-only readyConfig", () => {
+describe("createRuntime — provider resolution seams", () => {
   // Providers resolve eagerly, so the runtime needs keys to construct at all.
   const PROVIDER_KEYS = {
     ASSEMBLYAI_API_KEY: "k",
     ANTHROPIC_API_KEY: "k",
     CARTESIA_API_KEY: "k",
   };
-  const textOnlyAgent = {
+  const baseAgent = {
     name: "Notes",
     systemPrompt: "x",
     greeting: "",
     maxSteps: 1,
     tools: {},
   };
-
-  test("tts: none() on the agent declares audioOut: false", () => {
-    const runtime = createRuntime({
-      agent: {
-        ...textOnlyAgent,
-        stt: assemblyAI({ model: "u3pro-rt" }),
-        llm: anthropic({ model: "claude-haiku-4-5" }),
-        tts: none(),
-      },
-      env: PROVIDER_KEYS,
-    });
-    expect(runtime.readyConfig.audioOut).toBe(false);
-  });
-
-  test("tts: none() passed as a runtime option also declares audioOut: false", () => {
-    // The platform does not put providers on the agent object — it hands them
-    // to createRuntime as options (see sandbox.ts toRuntimeAgent). Reading
-    // agent.tts alone meant a deployed text-only agent told the browser to
-    // expect audio, so it rendered the voice UI and waited for playback that
-    // never came.
-    const runtime = createRuntime({
-      agent: textOnlyAgent,
-      env: PROVIDER_KEYS,
-      stt: assemblyAI({ model: "u3pro-rt" }),
-      llm: anthropic({ model: "claude-haiku-4-5" }),
-      tts: none(),
-    });
-    expect(runtime.readyConfig.audioOut).toBe(false);
-  });
 
   test.each([
     ["holdPhrase", { holdPhrase: "One moment." }],
@@ -593,7 +517,7 @@ describe("createRuntime — text-only readyConfig", () => {
     ["completeSettleMs", { completeSettleMs: 300 }],
     ["falseInterruptionTimeoutMs", { falseInterruptionTimeoutMs: 1500 }],
   ])("accepts %s when the providers arrive as runtime options", (_name, tuning) => {
-    // Same seam as the audioOut case above: the platform strips stt/llm/tts off
+    // The platform strips stt/llm/tts off
     // the agent object and passes them as options, so validating the agent's
     // own fields resolved mode "s2s" and rejected every pipeline tuning knob —
     // a deployed pipeline agent with `holdPhrase` failed at session start with
@@ -601,7 +525,7 @@ describe("createRuntime — text-only readyConfig", () => {
     // `aai dev`, which does hand over the descriptors, worked fine.
     expect(() =>
       createRuntime({
-        agent: { ...textOnlyAgent, ...tuning },
+        agent: { ...baseAgent, ...tuning },
         env: PROVIDER_KEYS,
         stt: assemblyAI({ model: "u3pro-rt" }),
         llm: anthropic({ model: "claude-haiku-4-5" }),
@@ -616,7 +540,7 @@ describe("createRuntime — text-only readyConfig", () => {
     // rather than inferred from the shape of the message stream.
     const logger = makeLogger();
     createRuntime({
-      agent: textOnlyAgent,
+      agent: baseAgent,
       env: PROVIDER_KEYS,
       logger,
       stt: assemblyAI({ model: "u3pro-rt" }),
@@ -636,7 +560,7 @@ describe("createRuntime — text-only readyConfig", () => {
 
   test("logs s2s mode for an agent that declares no providers", () => {
     const logger = makeLogger();
-    createRuntime({ agent: textOnlyAgent, env: PROVIDER_KEYS, logger });
+    createRuntime({ agent: baseAgent, env: PROVIDER_KEYS, logger });
     expect(logger.info).toHaveBeenCalledWith(
       "Session mode resolved",
       expect.objectContaining({ mode: "s2s" }),
@@ -647,20 +571,9 @@ describe("createRuntime — text-only readyConfig", () => {
     // The assertion must keep firing where it is right: no providers anywhere.
     expect(() =>
       createRuntime({
-        agent: { ...textOnlyAgent, holdPhrase: "One moment." },
+        agent: { ...baseAgent, holdPhrase: "One moment." },
         env: PROVIDER_KEYS,
       }),
     ).toThrow(/holdPhrase requires pipeline mode/);
-  });
-
-  test("a speaking agent leaves audioOut alone", () => {
-    const runtime = createRuntime({
-      agent: textOnlyAgent,
-      env: PROVIDER_KEYS,
-      stt: assemblyAI({ model: "u3pro-rt" }),
-      llm: anthropic({ model: "claude-haiku-4-5" }),
-      tts: cartesia(),
-    });
-    expect(runtime.readyConfig.audioOut).toBeUndefined();
   });
 });

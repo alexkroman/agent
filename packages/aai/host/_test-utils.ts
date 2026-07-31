@@ -21,7 +21,7 @@ export function createMockToolContext(overrides?: Partial<ToolContext>): ToolCon
   return {
     env: {},
     state: {},
-    kv: {} as never,
+    db: {} as never,
     vector: {} as never,
     generate: () => Promise.reject(new Error("generate not mocked")),
     messages: [],
@@ -65,8 +65,6 @@ export function makeMockCore(overrides?: Partial<SessionCore>): SessionCore {
     stop: vi.fn(() => Promise.resolve()),
     onAudio: vi.fn(),
     onAudioReady: vi.fn(),
-    onTranscribeFileStart: vi.fn(),
-    onTranscribeFileEnd: vi.fn(),
     onCancel: vi.fn(),
     onReset: vi.fn(),
     onHistory: vi.fn(),

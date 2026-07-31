@@ -7,24 +7,20 @@
  * lifecycle hooks, and session management.
  */
 
-import { randomUUID } from "node:crypto";
 import pTimeout, { TimeoutError } from "p-timeout";
-import { createStorage } from "unstorage";
 import { toAgentConfig } from "../sdk/_internal-types.ts";
 import { assertProviderTriple, type SessionMode } from "../sdk/config-rules.ts";
 import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
-import type { Kv } from "../sdk/kv.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
-import { isTextOnlyTts } from "../sdk/providers/tts/none.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type { Vector } from "../sdk/vector.ts";
 import { createMemoryVector } from "./memory-vector.ts";
+import { createPostgresDb } from "./postgres-db.ts";
 import { descriptorKind, resolveLlm, resolveStt, resolveTts } from "./providers/resolve.ts";
-import { resolveKv } from "./providers/resolve-kv.ts";
 import { resolveVector } from "./providers/resolve-vector.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
 import { setupTools } from "./runtime-tools.ts";
@@ -35,9 +31,8 @@ import {
 } from "./runtime-transport.ts";
 import type { Runtime, RuntimeOptions, SessionStartOptions } from "./runtime-types.ts";
 import { createSessionCore, type SessionCore } from "./session-core.ts";
-import { createSyncTurnRunner, SyncTurnError } from "./sync-turn.ts";
+import { createStateSweeps } from "./session-state-sweeps.ts";
 import type { TransportCallbacks } from "./transports/types.ts";
-import { createUnstorageKv } from "./unstorage-kv.ts";
 import { type SessionWebSocket, wireSessionSocket } from "./ws-handler.ts";
 
 export type {
@@ -90,15 +85,8 @@ function resolvePipelineProviders(
   return {
     stt: resolveStt(p.stt),
     llm: resolveLlm(p.llm, env),
-    // `tts: none()` = text-only replies: no opener, no credential — the
-    // pipeline transport runs with a null TTS session.
-    tts: isTextOnlyTts(p.tts) ? null : resolveTts(p.tts),
+    tts: resolveTts(p.tts),
   };
-}
-
-/** Create an in-memory KV store (default for self-hosted). */
-function createLocalKv(): Kv {
-  return createUnstorageKv({ storage: createStorage() });
 }
 
 /** Create an in-memory Vector store (default for self-hosted). */
@@ -122,7 +110,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const {
     agent,
     env,
-    kv,
     vector,
     createWebSocket,
     createOpenaiRealtimeWebSocket,
@@ -142,25 +129,29 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // Credentials resolve from `providerEnv` (defaults to `env`); `env` alone is
   // what agent tool code sees as `ctx.env`. See RuntimeOptions.providerEnv.
   const providerEnv = opts.providerEnv ?? env;
-  // Lazy default: only construct the local unstorage KV when neither the
-  // agent manifest nor the caller supplied one — a declared `kv:` descriptor
-  // would otherwise shadow (and waste) an eagerly-built instance.
-  const resolvedKv = agent.kv ? resolveKv(agent.kv, providerEnv, "") : (kv ?? createLocalKv());
-  // The runtime owns (and must close) the KV only when it built it — from a
-  // declared `kv:` descriptor (e.g. redisKv → a live connection) or the local
-  // fallback. A caller-injected `kv` stays the caller's to dispose.
-  const ownsKv = agent.kv !== undefined || kv === undefined;
+  // ctx.db: a caller-injected Db wins (the platform passes one when storage
+  // is enabled for the app); otherwise a DATABASE_URL in the provider env
+  // (self-hosted `aai dev` reads the project .env) connects one here.
+  // Neither means ctx.db access throws (see tool-executor.ts).
+  // The runtime owns — and must close on dispose — only the connection it
+  // opened itself; an injected Db stays the caller's to dispose. Without the
+  // close, `aai dev` (which rebuilds the runtime on every file save) strands
+  // the previous pool on each reload.
+  const ownedDb =
+    !opts.db && providerEnv.DATABASE_URL
+      ? createPostgresDb({ url: providerEnv.DATABASE_URL })
+      : undefined;
+  const resolvedDb = opts.db ?? ownedDb;
   const resolvedVector = agent.vector
     ? resolveVector(agent.vector, providerEnv, slug)
     : (vector ?? createLocalVector(slug));
 
   // Validate against the *effective* providers, not the agent's own fields.
-  // Same seam as `readyConfig` below: the platform never puts providers on the
-  // agent object, it passes them as runtime options (see sandbox.ts
-  // `toRuntimeAgent`). Reading `agent` alone resolved mode "s2s" for every
-  // deployed pipeline agent, so `assertPipelineTuning` rejected all six voice
-  // tuning knobs at session start — a deployed agent with `holdPhrase` died
-  // with "holdPhrase requires pipeline mode (stt, llm, and tts all set)" while
+  // Providers may arrive as runtime options rather than on the agent object,
+  // and reading `agent` alone once resolved mode "s2s" for every deployed
+  // pipeline agent, so `assertPipelineTuning` rejected all six voice tuning
+  // knobs at session start — a deployed agent with `holdPhrase` died with
+  // "holdPhrase requires pipeline mode (stt, llm, and tts all set)" while
   // listing all three providers — and left `agentConfig.mode` wrong for
   // everything downstream that reads it.
   const agentConfig = toAgentConfig({
@@ -172,7 +163,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
 
   // Report the resolved mode once per runtime. A pipeline agent whose providers
   // fail to reach the runtime does not error — it runs a perfectly healthy S2S
-  // session instead (see sandbox.ts `pipelineProviderOpts` for how that
+  // session instead (see aai-server's sandbox-agent-config.ts for how that
   // happened), so "which transport is this agent on" has to be answerable from
   // one log line rather than inferred from the shape of the message stream.
   logger.info("Session mode resolved", {
@@ -188,29 +179,19 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   });
   const sessions = new Map<string, SessionCore>();
   const sinkMap = new Map<string, ClientSink>();
-  // Text-only agents (tts: none()) tell the client up front that no audio
-  // frames will arrive, so it renders text replies instead of playback.
-  //
-  // Reads the *effective* tts, not `agent.tts`: the platform never puts
-  // providers on the agent object, it passes them as runtime options (see
-  // sandbox.ts `toRuntimeAgent`). Checking `agent.tts` alone meant every
-  // deployed text-only agent told the browser to expect audio, so it rendered
-  // the voice UI and waited for playback that never came — while `aai dev`,
-  // which does hand over the agent's own descriptors, worked fine.
-  const readyConfig: ReadyConfig = buildReadyConfig(
-    s2sConfig,
-    isTextOnlyTts(effectiveProviders.tts) ? { audioOut: false } : {},
-  );
+  const readyConfig: ReadyConfig = buildReadyConfig(s2sConfig);
 
-  // Per-session tool state (self-hosted mode only); cleaned up on session end.
+  // Per-session tool state (self-hosted mode only); cleaned up on session
+  // end, but only after the resume grace window — see session-state-sweeps.ts.
   const stateMap = new Map<string, Record<string, unknown>>();
+  const stateSweeps = createStateSweeps(stateMap);
 
   const { executeTool, toolSchemas, toolGuidance } = setupTools({
     agent,
     opts,
     env,
     providerEnv,
-    resolvedKv,
+    resolvedDb,
     resolvedVector,
     logger,
     sinkMap,
@@ -235,7 +216,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     env: providerEnv,
     s2sConfig,
     pipelineProviders,
-    fetch: opts.fetch,
     createWebSocket,
     createOpenaiRealtimeWebSocket,
     logger,
@@ -264,40 +244,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     return promptCache.text;
   }
 
-  // Sync turns (`POST /sync`) reuse the same resolved pipeline providers,
-  // tool executor, and cached system prompt the WebSocket sessions run on —
-  // one credential path, one tool surface, two transports.
-  const syncTurnRunner = pipelineProviders
-    ? createSyncTurnRunner({
-        agentConfig,
-        providers: pipelineProviders,
-        env: providerEnv,
-        toolSchemas,
-        executeTool,
-        systemPrompt: () => systemPromptForToday(),
-        fetch: opts.fetch,
-        ttsSampleRate: s2sConfig.outputSampleRate,
-        logger,
-      })
-    : null;
-  const runSyncTurn: Runtime["runSyncTurn"] = async (req, syncOpts) => {
-    if (!syncTurnRunner) {
-      throw new SyncTurnError("sync turns require pipeline mode (stt, llm, and tts all set)", {
-        status: 409,
-      });
-    }
-    const sessionId = syncOpts?.sessionId ?? `sync:${randomUUID()}`;
-    try {
-      return await syncTurnRunner(req, sessionId);
-    } finally {
-      // A tool that touched ctx.state created a per-session entry under this
-      // id; a sync turn has no session teardown path, so release it here.
-      stateMap.delete(sessionId);
-      sinkMap.delete(sessionId);
-    }
-  };
-
   function createSession(sessionOpts: TransportSessionOpts): SessionCore {
+    // A resume under this id (same key, new socket) reclaims its tool state —
+    // cancel the sweep the previous session's stop() scheduled.
+    stateSweeps.cancel(sessionOpts.id);
     sinkMap.set(sessionOpts.id, sessionOpts.client);
 
     const isPipeline = Boolean(pipelineProviders);
@@ -391,7 +341,9 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       } finally {
         if (sinkMap.get(sessionOpts.id) === sessionOpts.client) {
           sinkMap.delete(sessionOpts.id);
-          stateMap.delete(sessionOpts.id);
+          // Tool state outlives the socket: keep it for the resume grace
+          // window so a `?sessionId=<id>` reconnect finds its ctx.state.
+          stateSweeps.schedule(sessionOpts.id);
         }
       }
     };
@@ -437,10 +389,12 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // cleanup (its sink-identity check fails against the cleared map), so clear
     // it here too or timed-out sessions leak their tool state permanently.
     stateMap.clear();
-    // Release a runtime-owned KV (e.g. redisKv's connection). Without this,
-    // `aai dev` — which rebuilds the runtime on every file save — strands the
-    // previous connection on each reload.
-    if (ownsKv) resolvedKv.close?.();
+    // Pending grace-window sweeps have nothing left to reclaim.
+    stateSweeps.clear();
+    // Release a runtime-owned DB pool (see the resolution comment above).
+    // Fire-and-forget: releaseResources is sync and a drain failure on a
+    // dying pool is not actionable.
+    void ownedDb?.close().catch(() => undefined);
   }
 
   async function shutdown(): Promise<void> {
@@ -474,7 +428,6 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     toolSchemas,
     createSession,
     startSession,
-    runSyncTurn,
     shutdown,
     readyConfig,
   };

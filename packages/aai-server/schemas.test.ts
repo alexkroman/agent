@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import {
   ClientMessageSchema,
-  KvRequestSchema,
   ReadyConfigSchema,
   ServerMessageSchema,
 } from "@alexkroman1/aai/protocol";
@@ -11,7 +10,6 @@ import {
   DeployBodySchema,
   EnvSchema,
   RESERVED_SLUGS,
-  SafeKvKeySchema,
   SafePathSchema,
   SecretUpdatesSchema,
 } from "./schemas.ts";
@@ -263,24 +261,6 @@ describe("SafePathSchema", () => {
   });
 });
 
-// ── SafeKvKeySchema ────────────────────────────────────────────────────
-
-describe("SafeKvKeySchema", () => {
-  test.each([
-    ["plain key", "user-123", true],
-    ["redis-style hierarchical key", "incident:INC-0001", true],
-    ["dots that are not traversal", "v1.2.3", true],
-    ["empty string", "", false],
-    ["slash (prefix separator)", "a/b", false],
-    ["backslash", "a\\b", false],
-    ["parent traversal", "..", false],
-    ["embedded parent traversal", "a..b", false],
-    ["null byte", "a\0b", false],
-  ] as const)("%s → %s", (_label, input, expected) => {
-    expect(SafeKvKeySchema.safeParse(input).success).toBe(expected);
-  });
-});
-
 // ── EnvSchema ──────────────────────────────────────────────────────────
 
 describe("EnvSchema", () => {
@@ -330,30 +310,6 @@ describe("AgentMetadataSchema", () => {
   test("rejects non-object", () => {
     expect(AgentMetadataSchema.safeParse("agent").success).toBe(false);
     expect(AgentMetadataSchema.safeParse(null).success).toBe(false);
-  });
-});
-
-// ── KvRequestSchema ────────────────────────────────────────────────────
-
-describe("KvRequestSchema", () => {
-  test.each([
-    ["valid get request", { op: "get", key: "mykey" }, true],
-    ["get with empty key", { op: "get", key: "" }, false],
-    ["get with missing key", { op: "get" }, false],
-    ["valid set request", { op: "set", key: "k", value: "v" }, true],
-    ["set with expireIn", { op: "set", key: "k", value: "v", expireIn: 60_000 }, true],
-    ["set with negative expireIn", { op: "set", key: "k", value: "v", expireIn: -1 }, false],
-    ["set with non-integer expireIn", { op: "set", key: "k", value: "v", expireIn: 1.5 }, false],
-    ["valid del request", { op: "del", key: "k" }, true],
-    ["list with negative limit", { op: "list", prefix: "", limit: -1 }, false],
-    ["unknown op", { op: "drop_table" }, false],
-  ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
-    expect(KvRequestSchema.safeParse(input).success).toBe(expected);
-  });
-
-  test("rejects non-object", () => {
-    expect(KvRequestSchema.safeParse("get").success).toBe(false);
-    expect(KvRequestSchema.safeParse(null).success).toBe(false);
   });
 });
 

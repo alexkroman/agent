@@ -19,6 +19,10 @@ describe("loadScaffoldGuide", () => {
     // Markers proving it is the real CLI authoring guide, not a copy.
     expect(guide).toContain("## `agent()` API");
     expect(guide).toContain("AssemblyAI LLM");
+    // Concrete design rules for client.tsx live in the guide (one source of
+    // truth for CLI and studio) — the studio preamble points at this heading
+    // by name, so a rename here would silently break that reference.
+    expect(guide).toContain("### Design guidelines");
   });
 
   test("returns null for a missing path", () => {
@@ -33,8 +37,11 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("AssemblyAI App Builder coding agent");
     expect(prompt).toContain("test_agent");
     // Any non-AssemblyAI provider needs a key the user must supply, so a
-    // generated agent should default to the one key publishing guarantees.
-    expect(prompt).toContain("Default to AssemblyAI for every provider");
+    // generated agent should default to the one key publishing guarantees —
+    // and S2S, which needs no provider declared at all, is the default mode.
+    // Both are graded by the CONFIG_CASES half of the studio codegen evals.
+    expect(prompt).toContain("Default to the AssemblyAI voice agent API");
+    expect(prompt).toContain("In a pipeline, default every stage to AssemblyAI");
     // Real gateway ids are interpolated so the agent can't invent one
     // (a made-up id only fails at runtime, with a 400 "model not found").
     // gpt-5.2 appears nowhere in the preamble literal, so it can only be here
@@ -48,12 +55,41 @@ describe("studioSystemPrompt", () => {
     // into chat, and respect edits the user makes in the code editor.
     expect(prompt).toContain("Act, don't propose");
     expect(prompt).toContain("treat changes you didn't make as");
+    // Context-gathering discipline: parallel independent tool calls, and
+    // don't pick an edit site off the first grep hit. Hard-wrapped prose,
+    // so assert against a whitespace-normalized copy.
+    const flat = prompt.replace(/\s+/g, " ");
+    expect(flat).toContain("don't stop at the first match");
+    // Custom UI gets concrete design constraints, not just "look nice" —
+    // the preamble names the guide section that carries the full rules.
+    expect(flat).toContain('"Design guidelines" section of the reference');
     expect(prompt).not.toContain("deploy_agent");
     expect(prompt).toContain("no `aai` CLI");
     // The full scaffold reference follows.
     expect(prompt).toContain("# aai framework reference (scaffold CLAUDE.md)");
     expect(prompt).toContain("## `agent()` API");
     expect(prompt).toContain("Voice rules for systemPrompt");
+  });
+
+  test("lists the SDK's real subpaths and corrects the /workflow guess", () => {
+    const prompt = studioSystemPrompt().replace(/\s+/g, " ");
+    expect(prompt).toContain("Never invent an SDK subpath");
+    // Interpolated from the package's own exports map, so it can't drift.
+    // "patterns" appears nowhere in the preamble literal, only in that list.
+    expect(prompt).toContain("@alexkroman1/aai/patterns");
+    // The combinators' subpath was renamed from /workflow, so the old name is
+    // in the model's priors and in any pre-rename docs snapshot. A list alone
+    // doesn't dislodge a wrong belief; the contradiction is stated outright.
+    expect(prompt).toContain('**not** "@alexkroman1/aai/workflow", which does not exist');
+  });
+
+  test("excludes the CLI Workflow section by its precise contents", () => {
+    const guide = loadScaffoldGuide();
+    expect(guide).toContain("## Workflow\n");
+
+    const prompt = studioSystemPrompt().replace(/\s+/g, " ");
+    // The exclusion has to name what it means precisely.
+    expect(prompt).toContain("`pnpm dev` / `pnpm test` / `pnpm build` loop");
   });
 
   test("is cached across calls", () => {
@@ -64,6 +100,9 @@ describe("studioSystemPrompt", () => {
     const prompt = composeStudioPrompt(null);
     expect(prompt).toContain("AssemblyAI App Builder coding agent");
     expect(prompt).toContain("agent() essentials");
+    // The preamble points at a "Design guidelines" section; the fallback is
+    // the only guide on this path, so it must carry one of its own.
+    expect(prompt).toContain("## Design guidelines (client.tsx)");
     expect(prompt).not.toContain("## `agent()` API"); // scaffold-only heading
   });
 });

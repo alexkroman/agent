@@ -1,34 +1,29 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expectTypeOf, test } from "vitest";
 import { agent } from "./define.ts";
-import type { LlmProvider, SendProvider, SttProvider, TtsProvider } from "./providers.ts";
+import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { AgentDef } from "./types.ts";
 
 /**
- * Every `AgentDef` field must be declarable through `agent()` — except
- * `kind`, which is deliberately excluded: `workflow()` is the only
- * author-facing way to make a workflow, so `agent({ kind: "workflow" })`
- * stays a type error instead of a second, defaults-free path to one.
+ * Every `AgentDef` field must be declarable through `agent()`.
  *
- * `agent()` re-declares its parameter shape inline and returns `{...defaults,
- * ...def}`, so a field added to `AgentDef` alone still *works* at runtime
- * while being a TS2353 excess-property error for the author — and the CLI and
- * studio bundlers don't typecheck, so nothing catches it. `send` and `state`
- * both shipped that way.
+ * `AgentParams` is now *derived* from `AgentDef` (Omit + Partial<Pick>), so
+ * this holds by construction — the test stays as a regression lock against
+ * anyone reintroducing an inline re-declaration, which is how `state` once
+ * shipped as a runtime-working but excess-property-error field (the CLI and
+ * studio bundlers don't typecheck user code, so nothing caught it).
  */
-test("agent() accepts every AgentDef field except the internal kind marker", () => {
+test("agent() accepts every AgentDef field", () => {
   type MissingFromParam = Exclude<keyof AgentDef, keyof Parameters<typeof agent>[0]>;
-  expectTypeOf<MissingFromParam>().toEqualTypeOf<"kind">();
+  expectTypeOf<MissingFromParam>().toEqualTypeOf<never>();
 });
 
-test("agent() accepts send and allowedHosts", () => {
+test("agent() accepts allowedHosts and state", () => {
   const def = agent({
     name: "t",
-    send: {} as SendProvider,
     allowedHosts: ["api.example.com", "*.example.org"],
     state: () => ({ count: 0 }),
   });
-  expectTypeOf(def.send).toEqualTypeOf<SendProvider | undefined>();
   expectTypeOf(def.allowedHosts).toEqualTypeOf<string[] | undefined>();
 });
 

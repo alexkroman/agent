@@ -1,4 +1,4 @@
-import type { Kv } from "@alexkroman1/aai";
+import type { ToolContext } from "@alexkroman1/aai";
 
 export type GameState = {
   inventory: string[];
@@ -18,21 +18,21 @@ export const DEFAULT_GAME_STATE: GameState = {
   history: [],
 };
 
-// KV is scoped per deployment, not per session — key the game state by
-// session ID so concurrent players each get their own game.
-const gameStateKey = (sessionId: string) => `game_state:${sessionId}`;
+// The game lives in `ctx.state`, the agent's per-session mutable state — each
+// session is its own playthrough, so concurrent players never see each
+// other's game and a fresh session starts a fresh adventure.
+type StateSlot = { game?: GameState };
 
-export async function getGameState(kv: Kv, sessionId: string): Promise<GameState> {
-  const saved = await kv.get<GameState>(gameStateKey(sessionId));
-  return saved ?? structuredClone(DEFAULT_GAME_STATE);
+/** The session's live game. Mutations to the returned object stick — it is
+ *  the object stored in `ctx.state`. */
+export function getGameState(ctx: ToolContext): GameState {
+  const slot = ctx.state as StateSlot;
+  slot.game ??= structuredClone(DEFAULT_GAME_STATE);
+  return slot.game;
 }
 
-export async function saveGameState(kv: Kv, sessionId: string, state: GameState): Promise<void> {
-  await kv.set(gameStateKey(sessionId), state);
-}
-
-export async function resetGameState(kv: Kv, sessionId: string): Promise<GameState> {
-  const fresh = structuredClone(DEFAULT_GAME_STATE);
-  await kv.set(gameStateKey(sessionId), fresh);
-  return fresh;
+export function resetGameState(ctx: ToolContext): GameState {
+  const slot = ctx.state as StateSlot;
+  slot.game = structuredClone(DEFAULT_GAME_STATE);
+  return slot.game;
 }

@@ -1,6 +1,6 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import type { AgentDef, Kv, ToolDef } from "../index.ts";
+import type { AgentDef, Db, ToolDef } from "../index.ts";
 import { agent, tool } from "../index.ts";
 import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
 
@@ -50,20 +50,17 @@ describe("type contracts", () => {
     expectTypeOf(def).toEqualTypeOf<AgentDef>();
   });
 
-  test("Kv.get returns Promise<unknown> by default", () => {
-    expectTypeOf<Kv["get"]>().returns.toEqualTypeOf<Promise<unknown>>();
+  test("Db.query returns Promise<Record<string, unknown>[]> by default", () => {
+    const query: Db["query"] = () => Promise.resolve([]);
+    expectTypeOf(query("select 1")).toEqualTypeOf<Promise<Record<string, unknown>[]>>();
   });
 
-  test("Kv.set accepts various value types", () => {
-    expectTypeOf<Kv["set"]>().toBeCallableWith("key", "string-value");
-    expectTypeOf<Kv["set"]>().toBeCallableWith("key", 42);
-    expectTypeOf<Kv["set"]>().toBeCallableWith("key", { nested: true });
-    expectTypeOf<Kv["set"]>().returns.toEqualTypeOf<Promise<void>>();
-  });
-
-  test("Kv.delete accepts string or string[]", () => {
-    expectTypeOf<Kv["delete"]>().toBeCallableWith("single-key");
-    expectTypeOf<Kv["delete"]>().toBeCallableWith(["key1", "key2"]);
-    expectTypeOf<Kv["delete"]>().returns.toEqualTypeOf<Promise<void>>();
+  test("Db.query accepts sql alone or with params, and a row type argument", () => {
+    expectTypeOf<Db["query"]>().toBeCallableWith("select 1");
+    expectTypeOf<Db["query"]>().toBeCallableWith("select * from t where id = $1", [42]);
+    const query: Db["query"] = () => Promise.resolve([]);
+    expectTypeOf(query<{ id: number }>("select id from t")).toEqualTypeOf<
+      Promise<{ id: number }[]>
+    >();
   });
 });

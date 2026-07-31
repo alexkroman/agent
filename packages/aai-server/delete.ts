@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import type { AppContext } from "./context.ts";
 import { deleteSlot, terminateSlot, withSlugLock } from "./sandbox-slots.ts";
@@ -14,6 +15,18 @@ async function handleDeleteInner(c: AppContext): Promise<Response> {
   const existing = c.env.slots.get(slug);
   if (existing) await terminateSlot(existing);
   deleteSlot(c.env.slots, slug);
+
+  // Deprovision the app's database (schema + role) before deleteAgent wipes
+  // the stored credentials. Idempotent (a no-op when nothing was provisioned)
+  // and best-effort: a failed drop must not leave the agent half-deleted, and
+  // a later retry can finish the job. deleteAgent owns the secret sweep.
+  if (c.env.appDb) {
+    try {
+      await c.env.appDb.deprovision(slug);
+    } catch (err) {
+      console.warn(`Failed to deprovision app database for ${slug}: ${errorMessage(err)}`);
+    }
+  }
 
   await c.env.store.deleteAgent(slug);
 

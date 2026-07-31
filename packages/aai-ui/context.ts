@@ -35,18 +35,7 @@ export function SessionProvider({ value, children }: { value: SessionCore; child
 /** The session snapshot merged with the core's control methods. Method
  *  signatures come from {@link SessionCore} — one source of truth. */
 export type Session = SessionSnapshot &
-  Pick<
-    SessionCore,
-    | "start"
-    | "cancel"
-    | "resetState"
-    | "reset"
-    | "disconnect"
-    | "toggle"
-    | "startRecording"
-    | "stopRecording"
-    | "sendAudioFile"
-  >;
+  Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "disconnect" | "toggle">;
 
 /**
  * Return the raw {@link SessionCore} from context without subscribing to
@@ -78,9 +67,6 @@ export function useSession(): Session {
       reset: core.reset,
       disconnect: core.disconnect,
       toggle: core.toggle,
-      startRecording: core.startRecording,
-      stopRecording: core.stopRecording,
-      sendAudioFile: core.sendAudioFile,
     }),
     [snapshot, core],
   );

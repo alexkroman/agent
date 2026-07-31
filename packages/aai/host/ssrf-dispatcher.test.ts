@@ -8,7 +8,7 @@
  * fetch is rejected by a v8 `Agent` with `invalid onRequestStart method`,
  * surfacing as a bare `TypeError: fetch failed`.
  *
- * Every host-side network builtin (`send_message`, `web_search`,
+ * Every host-side network builtin (`web_search`,
  * `visit_webpage`, `get_page_design`, `fetch_json`) and the platform's
  * guest-fetch proxy route through `safeFetch`, which pins DNS on every
  * hostname — so that mismatch takes out all host egress at once. The rest of

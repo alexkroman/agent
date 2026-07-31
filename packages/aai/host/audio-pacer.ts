@@ -24,7 +24,7 @@
  *   The client drops its own buffer on the cancel event, so anything still
  *   held here would arrive afterwards and play as an orphan fragment.
  */
-import { CLIENT_AUDIO_LEAD_MS } from "../sdk/constants.ts";
+import { CLIENT_AUDIO_LEAD_MS, PACER_BURST_MS } from "../sdk/constants.ts";
 
 /** PCM16 — the wire format for client audio in both directions. */
 const BYTES_PER_SAMPLE = 2;
@@ -72,11 +72,18 @@ export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
 
   const leadAt = (now: number): number => Math.max(0, playoutMs - now);
 
+  // Wake only after the lead has drained PACER_BURST_MS below the ceiling and
+  // release that whole span per fire, rather than one timer callback per audio
+  // frame — at typical TTS frame sizes that is ~50 wakeups/second per speaking
+  // session for smoothness the client's jitter buffer doesn't need. Clamped so
+  // a small custom lead still leaves the client half its cushion.
+  const burstMs = Math.min(PACER_BURST_MS, leadMs / 2);
+
   function schedule(now: number): void {
     if (timer !== null) return;
-    // Wake when the lead has drained back to the ceiling. At least 1ms so a
-    // rounding artifact cannot schedule a zero-delay loop.
-    const waitMs = Math.max(1, Math.ceil(leadAt(now) - leadMs));
+    // Wake when the lead has drained a burst below the ceiling. At least 1ms
+    // so a rounding artifact cannot schedule a zero-delay loop.
+    const waitMs = Math.max(1, Math.ceil(leadAt(now) - (leadMs - burstMs)));
     timer = setTimeout(drain, waitMs);
     timer.unref?.();
   }
@@ -111,6 +118,15 @@ export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
     timer = null;
   }
 
+  // Shared by clear() and stop(): drop everything held and reset the lead.
+  // The turn is over on both ends — audio already sent was discarded
+  // client-side, so none of it is still playing.
+  function reset(): void {
+    queue.length = 0;
+    cancelTimer();
+    playoutMs = 0;
+  }
+
   return {
     push(chunk) {
       if (stopped || chunk.byteLength === 0) return;
@@ -127,18 +143,12 @@ export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
     },
 
     clear() {
-      queue.length = 0;
-      cancelTimer();
-      // The turn is over on both ends: audio already sent was discarded
-      // client-side, so none of it is still playing and the lead is gone.
-      playoutMs = 0;
+      reset();
     },
 
     stop() {
       stopped = true;
-      queue.length = 0;
-      cancelTimer();
-      playoutMs = 0;
+      reset();
     },
   };
 }

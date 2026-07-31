@@ -1,4 +1,4 @@
-import type { Kv } from "@alexkroman1/aai";
+import type { ToolContext } from "@alexkroman1/aai";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
 export const MAX_SESSION_LOG = 50;
@@ -320,25 +320,75 @@ export const DEFAULT_STATE: GameState = {
   kidMode: false,
 };
 
-// ── KV helpers ───────────────────────────────────────────────────────────────
-// The platform KV store is scoped per AGENT, not per session — every visitor
-// to a deployed agent shares it. All keys therefore embed the sessionId so
-// concurrent players get independent games.
-export function gameStateKey(sessionId: string): string {
-  return `rpg:state:${sessionId}`;
+// ── Live game state (ctx.state) ─────────────────────────────────────────────
+// The in-play game lives in `ctx.state`, the agent's per-session mutable
+// state — concurrent players get independent games by construction, and the
+// live game needs no persistence of its own (that's what save slots are for).
+type StateSlot = { game?: GameState };
+
+/** The session's live game. Mutations to the returned object stick — it is
+ *  the object stored in `ctx.state`. */
+export function getGameState(ctx: ToolContext): GameState {
+  const slot = ctx.state as StateSlot;
+  slot.game ??= structuredClone(DEFAULT_STATE);
+  return slot.game;
 }
 
-export async function getGameState(kv: Kv, sessionId: string): Promise<GameState> {
-  const saved = await kv.get<GameState>(gameStateKey(sessionId));
-  return saved ?? structuredClone(DEFAULT_STATE);
+/** Replace the session's live game wholesale (setup, load). */
+export function saveGameState(ctx: ToolContext, state: GameState): void {
+  (ctx.state as StateSlot).game = state;
 }
 
-export async function saveGameState(kv: Kv, sessionId: string, state: GameState): Promise<void> {
-  await kv.set(gameStateKey(sessionId), state);
+// ── Persistent save slots (ctx.db) ───────────────────────────────────────────
+// save_game / load_game are genuine cross-session persistence, so they use
+// the app's SQL database. Requires storage: `aai storage enable` (or the
+// Storage toggle in the studio); under `aai dev`, set DATABASE_URL in .env.
+//
+// Slots are keyed by name alone — the whole point of a save is loading it in
+// a LATER session, whose sessionId differs, so the key can't embed one. The
+// storage is per app, so every player of one deployment shares the slot
+// namespace; without player identity that is the price of resumability.
+export function saveSlotKey(slot?: string): string {
+  return `save:${slot ?? "autosave"}`;
 }
 
-export function saveSlotKey(sessionId: string, slot?: string): string {
-  return `save:${sessionId}:${slot ?? "autosave"}`;
+const ENSURE_APP_STATE = `create table if not exists app_state (
+  key text primary key,
+  value jsonb not null,
+  updated_at timestamptz not null default now()
+)`;
+
+// Memoized per process (each session's tools run in a fresh sandbox, so this
+// is at most one round-trip per session); a failure clears the memo so the
+// next call retries instead of caching the error forever.
+let ensureP: Promise<unknown> | null = null;
+function ensureTable(ctx: ToolContext): Promise<unknown> {
+  ensureP ??= ctx.db.query(ENSURE_APP_STATE).catch((err) => {
+    ensureP = null;
+    throw err;
+  });
+  return ensureP;
+}
+
+/** Read one saved value. jsonb columns come back from the postgres driver
+ *  already parsed, so the value needs no JSON.parse here. */
+export async function loadState<T>(ctx: ToolContext, key: string): Promise<T | null> {
+  await ensureTable(ctx);
+  const rows = await ctx.db.query<{ value: T }>("select value from app_state where key = $1", [
+    key,
+  ]);
+  return rows[0]?.value ?? null;
+}
+
+/** Upsert one value. Serialized explicitly and cast with `::jsonb` so the
+ *  write is driver-agnostic about object parameters. */
+export async function saveState(ctx: ToolContext, key: string, value: unknown): Promise<void> {
+  await ensureTable(ctx);
+  await ctx.db.query(
+    "insert into app_state (key, value, updated_at) values ($1, $2::jsonb, now()) " +
+      "on conflict (key) do update set value = excluded.value, updated_at = now()",
+    [key, JSON.stringify(value)],
+  );
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────

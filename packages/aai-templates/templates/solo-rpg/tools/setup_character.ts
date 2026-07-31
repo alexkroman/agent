@@ -190,7 +190,7 @@ export const setupCharacter = tool({
     state.phase = "playing";
     state.sceneCount = 1;
 
-    await saveGameState(ctx.kv, ctx.sessionId, state);
+    saveGameState(ctx, state);
     ctx.send("game_state", state);
 
     return {

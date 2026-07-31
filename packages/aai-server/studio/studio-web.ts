@@ -19,7 +19,7 @@
  * a page the user pasted.
  */
 
-import type { Kv, ToolContext, ToolDef } from "@alexkroman1/aai";
+import type { ToolContext, ToolDef } from "@alexkroman1/aai";
 import { createMemoryVector, resolveAllBuiltins } from "@alexkroman1/aai/runtime";
 import { jsonSchema, type ToolSet, tool } from "ai";
 import type { z } from "zod";
@@ -32,33 +32,20 @@ const BRAVE_API_KEY_ENV = "BRAVE_API_KEY";
 
 const SESSION_ID = "studio-web";
 
-/** Throwaway KV — these builtins don't use it, but ToolContext requires one. */
-function scratchKv(): Kv {
-  const map = new Map<string, unknown>();
-  return {
-    get: (key) => Promise.resolve((map.get(key) as never) ?? null),
-    set: (key, value) => {
-      map.set(key, value);
-      return Promise.resolve();
-    },
-    delete: (keys) => {
-      for (const key of Array.isArray(keys) ? keys : [keys]) map.delete(key);
-      return Promise.resolve();
-    },
-  };
-}
-
 /**
  * The context a builtin's `execute` receives. Deliberately bare: the coding
- * agent is not a deployed agent, so there is no session state, no tenant KV,
- * and no client to `send` to. Only `env` carries anything, and only the
- * search key.
+ * agent is not a deployed agent, so there is no session state, no app
+ * database, and no client to `send` to. Only `env` carries anything, and
+ * only the search key.
  */
 function toolContext(env: NodeJS.ProcessEnv): ToolContext {
   return {
     env: env[BRAVE_API_KEY_ENV] ? { [BRAVE_API_KEY_ENV]: env[BRAVE_API_KEY_ENV] } : {},
     state: {},
-    kv: scratchKv(),
+    // The web builtins never touch ctx.db; a coding turn has no app database.
+    db: {
+      query: () => Promise.reject(new Error("Storage is not available in studio web tools")),
+    },
     vector: createMemoryVector({ namespace: SESSION_ID }),
     // The web builtins never call ctx.generate; the studio's own LLM loop is
     // the generation surface for a coding turn.

@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Agent configuration rules: the derived session mode, the app kind, and the
+ * Agent configuration rules: the derived session mode and the
  * cross-field validation every config layer runs.
  *
  * Each rule is deliberately shared by `parseManifest`, `toAgentConfig`, and
@@ -10,8 +10,6 @@
  * rules stop sharing a module — these functions are about agent *shape*,
  * not providers.
  */
-
-import { isTextOnlyTts } from "./providers/tts/none.ts";
 
 /**
  * Session mode derived from which provider triple is set.
@@ -53,33 +51,6 @@ export function assertProviderTriple(
 }
 
 /**
- * What kind of app this definition is — the two modes of the SDK.
- *
- * - `"agent"` (default): a conversational chat/voice interface — an open
- *   WebSocket session the user talks with turn by turn.
- * - `"workflow"`: audio in, action out — one push-to-talk or uploaded
- *   instruction runs a single agentic loop to completion and the run ends.
- *   Built by the `workflow()` helper (the only author-facing way to set
- *   this); each run is one history-less `POST /sync` turn.
- */
-export type AgentKind = "agent" | "workflow";
-
-/**
- * Enforce the workflow-kind config rule: a workflow is one sync turn over
- * an STT→LLM pipeline, so it requires pipeline mode (the `workflow()`
- * helper guarantees it; this catches hand-rolled manifests).
- *
- * Shared by `parseManifest`, `toAgentConfig`, and the server's
- * `IsolateConfigSchema` — one source of truth for the validation.
- */
-export function assertAgentKind(mode: SessionMode, kind: AgentKind | undefined): void {
-  if (kind !== "workflow") return;
-  if (mode !== "pipeline") {
-    throw new Error('kind: "workflow" requires pipeline mode (stt, llm, and tts all set)');
-  }
-}
-
-/**
  * Enforce the silence-nudge config rules. `silenceTimeoutMs` makes the
  * assistant proactively take a turn after that much user silence — only the
  * pipeline transport implements it, so it's rejected in S2S mode rather than
@@ -118,25 +89,6 @@ export type PipelineTuning = {
 };
 
 /**
- * Reject tuning fields that only make sense when replies are spoken.
- * `holdPhrase` is literally synthesized filler ("One moment.") — with
- * `tts: none()` it would be injected into the *text* reply instead, so an
- * explicit value is a configuration error rather than a silent oddity.
- *
- * Shared by `parseManifest`, `toAgentConfig`, and the server's
- * `IsolateConfigSchema` — one source of truth, mirroring
- * {@link assertPipelineTuning}.
- */
-export function assertTextOnlyTuning(
-  tts: unknown,
-  tuning: Pick<PipelineTuning, "holdPhrase">,
-): void {
-  if (isTextOnlyTts(tts) && tuning.holdPhrase !== undefined) {
-    throw new Error("holdPhrase requires a speaking TTS provider (remove it or drop tts: none())");
-  }
-}
-
-/**
  * Reject pipeline-only voice-UX tuning fields in S2S mode — the S2S provider
  * owns endpointing/barge-in service-side, so these would be silently ignored.
  *
@@ -152,8 +104,6 @@ export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning):
     endpointSettleMs: tuning.endpointSettleMs,
     completeSettleMs: tuning.completeSettleMs,
     holdPhrase: tuning.holdPhrase,
-    // Unlike holdPhrase this is NOT rejected by assertTextOnlyTuning: an error
-    // message is meaningful as text, where synthesized dead-air filler is not.
     errorPhrase: tuning.errorPhrase,
     falseInterruptionTimeoutMs: tuning.falseInterruptionTimeoutMs,
   };

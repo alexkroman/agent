@@ -3,42 +3,40 @@
 // parseManifest/toAgentConfig validations (one source of truth in
 // @alexkroman1/aai/manifest, three enforcement points).
 
-import { describe, expect, test } from "vitest";
-import { IsolateConfigSchema } from "./rpc-schemas.ts";
+import type { AgentDef } from "@alexkroman1/aai";
+import type { AgentConfig } from "@alexkroman1/aai/manifest";
+import { describe, expect, expectTypeOf, test } from "vitest";
+import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
+import type { WireOnlyConfigField } from "./sandbox-agent-config.ts";
+
+// ── Config pass-through guards ────────────────────────────────────────────
+// The wire schema is derived from the canonical AgentConfigSchema and the
+// runtime agent is the config minus a deny-list, so the only way a field can
+// go missing is one of these two subtractions growing. See
+// sandbox-agent-config.ts for the dropped-field bug family this guards.
+
+test("IsolateConfig carries every canonical AgentConfig field", () => {
+  expectTypeOf<Exclude<keyof AgentConfig, keyof IsolateConfig>>().toEqualTypeOf<never>();
+});
+
+test("every IsolateConfig field reaches the runtime agent or is wire-only", () => {
+  type Dropped = Exclude<keyof IsolateConfig, keyof AgentDef | WireOnlyConfigField>;
+  expectTypeOf<Dropped>().toEqualTypeOf<never>();
+});
 
 const pipelineFields = {
   stt: { kind: "assemblyai", options: { model: "u3pro-rt" } },
   llm: { kind: "anthropic", options: { model: "claude-haiku-4-5" } },
 };
 
-describe("IsolateConfigSchema — text-only (tts: none)", () => {
-  test("accepts a text-only pipeline config", () => {
-    const result = IsolateConfigSchema.safeParse({
-      name: "x",
-      ...pipelineFields,
-      tts: { kind: "none", options: {} },
-    });
-    expect(result.success).toBe(true);
-  });
-
-  test("rejects holdPhrase alongside tts: none", () => {
-    const result = IsolateConfigSchema.safeParse({
-      name: "x",
-      ...pipelineFields,
-      tts: { kind: "none", options: {} },
-      holdPhrase: "One sec.",
-    });
-    expect(result.success).toBe(false);
-    expect(result.error?.issues[0]?.message).toMatch(/holdPhrase requires a speaking TTS provider/);
-  });
-
-  test("still rejects an incomplete triple (none must be explicit)", () => {
+describe("IsolateConfigSchema — provider triple", () => {
+  test("rejects an incomplete triple", () => {
     const result = IsolateConfigSchema.safeParse({ name: "x", ...pipelineFields });
     expect(result.success).toBe(false);
     expect(result.error?.issues[0]?.message).toMatch(/stt, llm, and tts must be set together/);
   });
 
-  test("holdPhrase stays valid with a speaking TTS provider", () => {
+  test("holdPhrase is valid with a complete pipeline triple", () => {
     const result = IsolateConfigSchema.safeParse({
       name: "x",
       ...pipelineFields,
@@ -73,7 +71,7 @@ describe("IsolateConfigSchema — allowedHosts", () => {
     expect(result.data?.allowedHosts).toEqual([]);
   });
 
-  test.each([["api.example.com"], ["*.example.com"], ["hooks.slack.com"]])("accepts %s", (host) => {
+  test.each([["api.example.com"], ["*.example.com"], ["api.other.com"]])("accepts %s", (host) => {
     expect(parse([host]).success).toBe(true);
   });
 

@@ -2,14 +2,11 @@
 /**
  * Studio chat LLM selection.
  *
- * The provider is chosen entirely from **platform-owned host configuration**
- * (never tenant env) via the SDK's own provider descriptors + `resolveLlm`,
- * so the studio can run on any pipeline-mode LLM provider. A chat request may
- * pick a *model* — but only from `studioLlmModels()`, the host-configured
- * provider's own known-model list (region-filtered for the gateway), all of
- * which run on the one host-held key for that provider. A client can never
- * name a provider, never supplies a key, and an unknown model is rejected
- * before anything streams.
+ * The provider and model are chosen entirely from **platform-owned host
+ * configuration** (never tenant env, never the request) via the SDK's own
+ * provider descriptors + `resolveLlm`, so the studio can run on any
+ * pipeline-mode LLM provider. A client can never name a provider or model
+ * and never supplies a key — every turn runs on the host default.
  *
  * Defaults: the AssemblyAI LLM Gateway when `ASSEMBLYAI_API_KEY` is set,
  * else Anthropic direct (`ANTHROPIC_API_KEY`). `STUDIO_LLM_PROVIDER` /
@@ -178,18 +175,8 @@ export type StudioLlmSelection = {
   envVar: string;
 };
 
-/**
- * The host-configured provider/model, or null when no key selects one.
- *
- * `modelOverride` is the per-request selection (the studio's model picker).
- * It never changes the provider — only which of that provider's known models
- * runs the turn — and must be on `studioLlmModels()` or this throws. Callers
- * exposing it to a request should pre-validate and 400 instead.
- */
-export function selectStudioLlm(
-  env: NodeJS.ProcessEnv = process.env,
-  modelOverride?: string,
-): StudioLlmSelection | null {
+/** The host-configured provider/model, or null when no key selects one. */
+export function selectStudioLlm(env: NodeJS.ProcessEnv = process.env): StudioLlmSelection | null {
   const explicit = env.STUDIO_LLM_PROVIDER?.toLowerCase();
   let provider: string | undefined;
   if (explicit) {
@@ -209,42 +196,11 @@ export function selectStudioLlm(
   // Guarded above for the explicit path; AUTO_PROVIDER_ORDER names are keys.
   const entry = STUDIO_LLM_PROVIDERS[provider] as StudioLlmEntry;
   // `||` not `??`: an empty-string env var means "unset".
-  const defaultModel = env.STUDIO_LLM_MODEL || entry.models(env)[0];
-  if (!defaultModel) {
+  const model = env.STUDIO_LLM_MODEL || entry.models(env)[0];
+  if (!model) {
     throw new Error(`STUDIO_LLM_MODEL is required for STUDIO_LLM_PROVIDER "${provider}"`);
   }
-  let model = defaultModel;
-  if (modelOverride !== undefined && modelOverride !== defaultModel) {
-    // Validated against the provider's *own* list, not just "non-empty": the
-    // override is request-supplied, and this is what keeps the chat route
-    // from becoming an arbitrary-model proxy on the host's key.
-    if (!entry.models(env).includes(modelOverride)) {
-      throw new Error(`Model "${modelOverride}" is not available on provider "${provider}"`);
-    }
-    model = modelOverride;
-  }
   return { provider, model, descriptor: entry.make(model, env), envVar: entry.envVar };
-}
-
-/**
- * Models a chat request may switch between: the host-configured default plus
- * the configured provider's known models (region-filtered for the gateway).
- * Empty when the studio LLM is unconfigured. Every entry runs on the same
- * host-held key, so offering the list grants nothing a request didn't
- * already have — except the choice.
- */
-export function studioLlmModels(env: NodeJS.ProcessEnv = process.env): string[] {
-  let selection: StudioLlmSelection | null;
-  try {
-    selection = selectStudioLlm(env);
-  } catch {
-    return [];
-  }
-  if (!(selection && env[selection.envVar])) return [];
-  const entry = STUDIO_LLM_PROVIDERS[selection.provider] as StudioLlmEntry;
-  // The default leads (it may be an explicit STUDIO_LLM_MODEL outside the
-  // curated list); Set dedupes when it is the list's own head.
-  return [...new Set([selection.model, ...entry.models(env)])];
 }
 
 /** True when the platform host is configured to run the studio LLM. */
@@ -257,31 +213,19 @@ export function isStudioLlmConfigured(env: NodeJS.ProcessEnv = process.env): boo
   }
 }
 
-/**
- * Provider/model info for the status endpoint; null when unconfigured.
- * `models` is the switchable list (`studioLlmModels`) — the client's model
- * picker renders exactly this, so it can never offer a model the chat route
- * would refuse.
- */
+/** Provider/model info for the status endpoint; null when unconfigured. */
 export function studioLlmInfo(
   env: NodeJS.ProcessEnv = process.env,
-): { provider: string; model: string; models: string[] } | null {
+): { provider: string; model: string } | null {
   if (!isStudioLlmConfigured(env)) return null;
   // isStudioLlmConfigured just proved this select succeeds and is non-null.
   const selection = selectStudioLlm(env) as StudioLlmSelection;
-  return { provider: selection.provider, model: selection.model, models: studioLlmModels(env) };
+  return { provider: selection.provider, model: selection.model };
 }
 
-/**
- * Resolve the host-configured selection to a live `LanguageModel`.
- * `modelOverride` (the chat request's picker choice) must be on
- * `studioLlmModels(env)` — see `selectStudioLlm`.
- */
-export function studioModel(
-  env: NodeJS.ProcessEnv = process.env,
-  modelOverride?: string,
-): LanguageModel {
-  const selection = selectStudioLlm(env, modelOverride);
+/** Resolve the host-configured selection to a live `LanguageModel`. */
+export function studioModel(env: NodeJS.ProcessEnv = process.env): LanguageModel {
+  const selection = selectStudioLlm(env);
   if (!selection) {
     throw new Error(
       "Studio LLM not configured: set ASSEMBLYAI_API_KEY (LLM Gateway) or " +
