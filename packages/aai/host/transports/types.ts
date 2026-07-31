@@ -22,6 +22,19 @@ export type TransportCallbacks = {
    */
   onUserTranscriptPartial?(text: string): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
+  /**
+   * The reply's transcript *so far*, cumulative — called each time more of it
+   * becomes audible, so a client's captions keep pace with the speech instead
+   * of landing in one lump when the reply ends.
+   *
+   * Pipeline mode calls this as text reaches TTS. It matters most for a reply
+   * that spends 10+ seconds in a tool chain: the hold phrase and the dead-air
+   * cover are spoken minutes before `onAgentTranscript` fires, and a client
+   * pairing text with audio has already played that audio by then. S2S
+   * transports leave it unset — their providers surface a reply's transcript
+   * once, when it is complete.
+   */
+  onAgentTranscriptPartial?(text: string): void;
   onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
   /**
    * Tool execution finished. Pipeline mode invokes this from the

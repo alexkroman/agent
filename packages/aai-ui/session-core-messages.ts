@@ -136,7 +136,29 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
     });
   }
 
+  /**
+   * `agent_transcript` carries the reply's text *so far* and is cumulative
+   * within a reply (see the protocol schema), so it renders as the live
+   * assistant bubble and only becomes a message when the reply closes. Pipeline
+   * mode sends one per piece of speech, so appending each would break a single
+   * reply into a message per sentence.
+   */
   function handleAgentTranscriptEvent(text: string): void {
+    updateState({ agentTranscript: text });
+  }
+
+  /**
+   * The reply is over (`reply_done`, or `cancelled` for a barge-in): move
+   * whatever was spoken into the conversation. A cancelled reply still keeps its
+   * text — the caller heard that much, and dropping it would leave the
+   * transcript claiming the agent never spoke.
+   */
+  function commitAgentTranscript(): void {
+    const text = getSnapshot().agentTranscript;
+    if (text === null || text.length === 0) {
+      updateState({ agentTranscript: null });
+      return;
+    }
     updateState({
       agentTranscript: null,
       messages: appendCapped(
@@ -238,14 +260,15 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
         break;
       }
       case "reply_done":
+        commitAgentTranscript();
         updateState({ state: "listening" });
         break;
       case "cancelled":
         handlerGeneration++;
         conn.voiceIO?.flush();
+        commitAgentTranscript();
         updateState({
           userTranscript: null,
-          agentTranscript: null,
           state: "listening",
         });
         break;

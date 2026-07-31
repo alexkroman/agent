@@ -98,6 +98,15 @@ export const DEFAULT_SILENCE_PROMPT =
  * tool-heavy conversations (cf. Anthropic's tau-bench "think" tool results).
  * They are side-effect-free outside the session, so they are safe defaults.
  * Setting `builtinTools` explicitly (including `[]`) overrides this list.
+ *
+ * Trimming this to `["calculate"]` was tried, on the theory that each of the
+ * others costs an LLM round trip before the agent says anything and a call
+ * cannot afford that. The theory did not survive measurement: on tau2's voice
+ * tasks the model under test never invoked `think` or `calculate` at all — not
+ * even when the prompt demanded a calculator for a dollar figure it was about
+ * to quote — so an unused builtin costs nothing, and the one paired comparison
+ * available favoured keeping `think` (4/5 correct writes with it, 3/5 without).
+ * A latency argument needs a latency measurement; that one had none.
  */
 export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [
   "think",
@@ -107,6 +116,13 @@ export const DEFAULT_BUILTIN_TOOLS: readonly BuiltinTool[] = [
 ];
 
 export const MAX_TOOL_RESULT_CHARS = 4000;
+
+/**
+ * Appended to a tool result trimmed by {@link capToolResult}, so a model reading
+ * it can tell the record is incomplete rather than answering from a partial list
+ * as though it were the whole one.
+ */
+export const TOOL_RESULT_TRUNCATION_MARKER = "\n[truncated]";
 /**
  * Wire cap on a single transcript event's text (matches the per-message
  * `history` content cap). Bounds what a hostile/buggy server can push into
@@ -156,6 +172,37 @@ export const DEFAULT_MAX_STEPS = 10;
  */
 export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
 /**
+ * Spoken when the session cannot start at all — a provider failed to open, so
+ * there is no conversation to have (pipeline mode).
+ *
+ * STT and TTS open concurrently and each goes live on its own, so the common
+ * case is that TTS connected and STT did not: the agent has a working voice and
+ * nothing to listen with. Saying nothing leaves the caller holding a line that
+ * sounds connected and never responds — indistinguishable, from their side,
+ * from a dead call. One sentence tells them to hang up and try again, which is
+ * the only useful thing left to do. Set `startFailurePhrase: ""` to disable.
+ */
+export const DEFAULT_START_FAILURE_PHRASE =
+  "I'm sorry, I'm having trouble with my connection and can't hear you. " +
+  "Please hang up and call back.";
+
+/**
+ * Minimum sustained speech before an interim-triggered barge-in aborts the
+ * agent's reply (pipeline mode) — measured from the utterance's first partial,
+ * LiveKit's `min_interruption_duration` analog. A companion to
+ * {@link DEFAULT_MIN_BARGE_IN_WORDS}: that one asks "is this enough words to be
+ * an interruption", this one asks "has it lasted long enough to be speech at
+ * all". Committed turns (STT finals) are never gated, so nothing the caller
+ * actually said is lost — a gated barge-in only means the agent finishes its
+ * sentence first.
+ *
+ * Non-zero by default because the alternative is worse than the latency: room
+ * noise and the tail of the agent's own audio both produce short interim
+ * transcripts, and every one of them used to abandon a reply mid-word. Callers
+ * heard the agent give up on its own sentences.
+ */
+export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
+/**
  * Endpoint settle window (pipeline mode): after an STT `final`, how long to
  * wait for the speaker to continue before committing the turn. Disfluent,
  * in-the-wild speech (mid-utterance pauses, self-corrections, false starts)
@@ -167,7 +214,7 @@ export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
  * {@link DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS} window instead. Set to 0 to
  * disable settling entirely (commit every final at once).
  */
-export const DEFAULT_ENDPOINT_SETTLE_MS = 1500;
+export const DEFAULT_ENDPOINT_SETTLE_MS = 2500;
 
 /**
  * Settle window for a clearly-complete final (pipeline mode). Hesitant
@@ -176,10 +223,19 @@ export const DEFAULT_ENDPOINT_SETTLE_MS = 1500;
  * makes the agent talk over the continuation and act on half the request.
  * A short window lets an immediate continuation (an STT partial extends it)
  * aggregate into the same turn while keeping added latency small on genuinely
- * finished requests. 500 matches LiveKit's `min_endpointing_delay` default.
- * Set to 0 to commit complete finals immediately.
+ * finished requests. Set to 0 to commit complete finals immediately.
+ *
+ * 1500 rather than the 500 this used to be (LiveKit's `min_endpointing_delay`
+ * default), because one sentence is very often not the whole request. A caller
+ * saying "How many t-shirt options do you have? Also, I want to return three
+ * items." produces a complete-looking final at the question mark; committing
+ * there had the agent answer half the request while the other half was still
+ * being spoken — and the rest of that same breath then barged in and cancelled
+ * the reply. Measured on tau2's retail voice tasks, every turn of every call
+ * died that way. The cost is added latency on a request that really did end at
+ * the first sentence; the failure it prevents costs the whole call.
  */
-export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 500;
+export const DEFAULT_COMPLETE_ENDPOINT_SETTLE_MS = 1500;
 
 /**
  * False-interruption recovery window (pipeline mode). A barge-in triggered by

@@ -31,6 +31,7 @@ export function makeCallbacks(): TransportCallbacks {
     onUserTranscript: vi.fn(),
     onUserTranscriptPartial: vi.fn(),
     onAgentTranscript: vi.fn(),
+    onAgentTranscriptPartial: vi.fn(),
     onToolCall: vi.fn(),
     onError: vi.fn(),
     onSpeechStarted: vi.fn(),
@@ -65,6 +66,13 @@ export function makeOpts(
     // final commit the turn immediately (the pre-endpointing behavior most
     // specs assume). Settle-window specs opt in via an explicit endpointSettleMs.
     endpointSettleMs: 0,
+    // Same reasoning for the barge-in duration gate: a spec that fires one
+    // partial and asserts the reply was cancelled is testing the cancel path,
+    // not the gate, and the real default would make every one of them wait out
+    // 500 ms of "sustained speech" it never simulates. The gate's own specs set
+    // it explicitly, and `pipeline-transport-options.test.ts` pins the shipped
+    // default so this override cannot hide a bad one.
+    interruptionMinDurationMs: 0,
     ...overrides,
   };
   return { opts, stt, tts, callbacks };
@@ -91,6 +99,20 @@ export function inFlightReplyScript(): ScriptedPart[] {
 export function firstCallArg<T>(fn: unknown): T {
   // biome-ignore lint/style/noNonNullAssertion: caller asserts the spy was invoked
   return (fn as ReturnType<typeof vi.fn>).mock.calls[0]![0] as T;
+}
+
+/**
+ * The interim-transcript spy. `onAgentTranscriptPartial` is optional on
+ * {@link TransportCallbacks} (S2S transports never call it) but {@link
+ * makeCallbacks} always sets it, so this narrows once instead of asserting at
+ * every call site.
+ */
+export function partialTranscriptSpy(
+  callbacks: TransportCallbacks,
+): ReturnType<typeof vi.fn<(text: string) => void>> {
+  const fn = callbacks.onAgentTranscriptPartial;
+  if (fn === undefined) throw new Error("harness callbacks are missing onAgentTranscriptPartial");
+  return vi.mocked(fn);
 }
 
 export const noopToolSchema = {

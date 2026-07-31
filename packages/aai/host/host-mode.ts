@@ -25,6 +25,7 @@ import type { ClientEvent, HostConfig } from "../sdk/protocol.ts";
 import { HostConfigMessageSchema } from "../sdk/protocol.ts";
 import type { AgentDef } from "../sdk/types.ts";
 import { errorMessage, safeJsonParse, toolError } from "../sdk/utils.ts";
+import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import { createRuntime, type RuntimeOptions, type SessionStartOptions } from "./runtime.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
@@ -327,6 +328,17 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     ws.addEventListener("close", () => relay.dispose());
 
     log.info("host-mode session starting", { tools: host.tools.length });
-    runtime.startSession(ws, opts.startOpts);
+    // A host-mode client is programmatic by construction — it supplies the
+    // agent definition and executes the tools, and browsers cannot even open
+    // one (the platform requires an `Authorization` header on the upgrade). It
+    // therefore owns its own playback clock, so relaying audio at the wall
+    // clock's pace only starves it: a harness whose timeline advances per
+    // processed tick sees the agent trail off mid-sentence and answers as if
+    // the line went quiet. Overridable — a caller that really does play in real
+    // time can set its own lead.
+    runtime.startSession(ws, {
+      audioLeadMs: UNPACED_AUDIO_LEAD_MS,
+      ...opts.startOpts,
+    });
   });
 }

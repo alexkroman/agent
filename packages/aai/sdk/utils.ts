@@ -8,7 +8,7 @@
  * measurable startup cost.
  */
 
-import { MAX_TOOL_RESULT_CHARS } from "./constants.ts";
+import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "./constants.ts";
 
 export { RESERVED_SLUGS, VALID_SLUG_RE } from "./slug.ts";
 
@@ -53,7 +53,15 @@ export function toolError(message: string): string {
  * every emitter must cap through here; the provider still gets the full value.
  */
 export function capToolResult(result: string): string {
-  return result.length > MAX_TOOL_RESULT_CHARS ? result.slice(0, MAX_TOOL_RESULT_CHARS) : result;
+  if (result.length <= MAX_TOOL_RESULT_CHARS) return result;
+  // Mark the cut. A silently shortened result reads as complete data — a model
+  // asked "how many variants" would count what survived and answer confidently
+  // wrong — and whoever debugs it has no way to tell truncation from a short
+  // record. The marker costs its own length back so the total still fits.
+  return (
+    result.slice(0, MAX_TOOL_RESULT_CHARS - TOOL_RESULT_TRUNCATION_MARKER.length) +
+    TOOL_RESULT_TRUNCATION_MARKER
+  );
 }
 
 /**

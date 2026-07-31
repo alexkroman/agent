@@ -46,6 +46,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     completeSettleMs,
     holdPhrase,
     errorPhrase,
+    startFailurePhrase,
     falseInterruptionTimeoutMs,
     toolChoice,
     toolSchemas,
@@ -229,10 +230,24 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     terminate();
   }
 
+  /**
+   * Text the current reply has handed to TTS, i.e. everything the caller either
+   * has heard or is about to. Reset per reply in {@link runReply}; the source of
+   * the cumulative interim transcript below.
+   */
+  let replySpoken = "";
+
   /** Forward turn text to TTS, reopening the audio gate for the new turn. */
   function sendTtsText(text: string): void {
     ttsAudioOpen = true;
     providers.tts?.sendText(text);
+    // Publish the transcript as it becomes audible rather than only when the
+    // reply ends. A reply that opens with a tool chain speaks its hold phrase
+    // and dead-air cover many seconds before the model's answer exists, and a
+    // client that pairs text with audio (captions, a voice harness) has already
+    // played that audio by the time one end-of-reply transcript arrives.
+    replySpoken += text;
+    callbacks.onAgentTranscriptPartial?.(replySpoken);
   }
 
   // How a turn is wrapped up once its stream settles — interrupted, failed, or
@@ -242,9 +257,10 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     callbacks,
     providers,
     gate,
-    holdPhrase,
     errorPhrase,
+    startFailurePhrase,
     sendTtsText,
+    drainTts: () => drainTts(sessionAbort.signal),
   });
 
   const consumeLlmStream = (
@@ -302,6 +318,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     const unlink = linkAbort(sessionAbort.signal, ctl);
     turnController = ctl;
     turnSpoke = false;
+    replySpoken = "";
 
     try {
       const spoke = await body(ctl);
@@ -385,10 +402,12 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       // live) tears the whole transport down.
       startPromise = providers.open();
       if ((await startPromise) === "failed") {
-        // terminate() already emitted the provider error + `cancelled` and
-        // aborted the session. Do NOT go on to signal session-ready — that
+        // Say something first, while the socket is still up and TTS may still
+        // be live — see speakStartFailure. terminate() then emits `cancelled`
+        // and aborts the session; do NOT go on to signal session-ready, which
         // would hand the runtime a "started" session that is actually dead,
         // holding it open until the idle timeout.
+        await outcome.speakStartFailure();
         terminate();
         return;
       }

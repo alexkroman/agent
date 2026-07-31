@@ -291,6 +291,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       onUserTranscript: (text) => bindCore().onUserTranscript(text),
       onUserTranscriptPartial: (text) => bindCore().onUserTranscriptPartial(text),
       onAgentTranscript: (text, interrupted) => bindCore().onAgentTranscript(text, interrupted),
+      onAgentTranscriptPartial: (text) => bindCore().onAgentTranscriptPartial(text),
       onToolCall,
       // Pipeline: emit `tool_call_done` when streamText surfaces the
       // `tool-result` part so the UI can flip status from pending → done.
@@ -371,6 +372,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
       ...(startOpts?.onOpen ? { onOpen: startOpts.onOpen } : {}),
       ...(startOpts?.onClose ? { onClose: startOpts.onClose } : {}),
       ...(startOpts?.onSinkCreated ? { onSinkCreated: startOpts.onSinkCreated } : {}),
+      ...(startOpts?.audioLeadMs !== undefined ? { audioLeadMs: startOpts.audioLeadMs } : {}),
       // sinkMap/stateMap cleanup lives in the identity-guarded stop() wrapper
       // (createSession) — a key delete here would hit the resumed session's
       // entries when an old session's stop settles after a reconnect.

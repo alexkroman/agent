@@ -9,7 +9,7 @@
  */
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { CLIENT_AUDIO_LEAD_MS, PACER_BURST_MS, PLAYBACK_JITTER_MS } from "../sdk/constants.ts";
-import { createAudioPacer } from "./audio-pacer.ts";
+import { createAudioPacer, UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 
 const SAMPLE_RATE = 24_000;
 /** 24 kHz PCM16 is 48 bytes/ms, so this is exactly 100ms of audio. */
@@ -95,6 +95,33 @@ describe("createAudioPacer", () => {
 
     vi.advanceTimersByTime(900);
     expect(audio).toHaveLength(15);
+    expect(dones).toHaveLength(1);
+    pacer.stop();
+  });
+
+  test("keeps an end-of-reply frame behind the audio it closes", () => {
+    const { pacer, audio } = makePacer();
+    const frames: number[] = [];
+    pushChunks(pacer, 15);
+    pacer.pushAfterAudio(() => frames.push(audio.length));
+
+    // A `reply_done` that overtakes the tail tells the client the turn is over
+    // while seconds of it are still in the queue here — everything after it
+    // then belongs, as far as the client can tell, to the next reply.
+    expect(frames).toHaveLength(0);
+
+    vi.advanceTimersByTime(900);
+    expect(frames).toEqual([15]);
+    pacer.stop();
+  });
+
+  test("an unpaced client gets every frame as it arrives", () => {
+    // A programmatic client meters playback itself; holding audio to the wall
+    // clock starves it instead of protecting it.
+    const { pacer, audio, dones } = makePacer(UNPACED_AUDIO_LEAD_MS);
+    pushChunks(pacer, 50); // 5s of audio against a 1s real-time lead
+    pacer.pushDone();
+    expect(audio).toHaveLength(50);
     expect(dones).toHaveLength(1);
     pacer.stop();
   });

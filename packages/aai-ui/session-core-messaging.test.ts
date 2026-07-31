@@ -423,9 +423,10 @@ describe("createSessionCore", () => {
       expect(core.getSnapshot().state).toBe("thinking");
       expect(core.getSnapshot().messages).toHaveLength(1);
 
-      // Agent responds with text
+      // Agent responds with text -- the live caption, not a message yet
       lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "It is 3pm." }));
-      expect(core.getSnapshot().messages).toHaveLength(2);
+      expect(core.getSnapshot().agentTranscript).toBe("It is 3pm.");
+      expect(core.getSnapshot().messages).toHaveLength(1);
 
       // Audio starts playing (raw binary)
       lastSocket?.simulateMessage(new Uint8Array(320).buffer);
@@ -435,9 +436,10 @@ describe("createSessionCore", () => {
       lastSocket?.simulateMessage(JSON.stringify({ type: "audio_done" }));
       expect(core.getSnapshot().state).toBe("listening");
 
-      // Reply done
+      // Reply done -- the caption becomes the assistant turn
       lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
       expect(core.getSnapshot().state).toBe("listening");
+      expect(core.getSnapshot().messages).toHaveLength(2);
     });
 
     it("handles a turn with tool calls", () => {
@@ -469,6 +471,7 @@ describe("createSessionCore", () => {
       lastSocket?.simulateMessage(
         JSON.stringify({ type: "agent_transcript", text: "I found 42 cats." }),
       );
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
       expect(core.getSnapshot().messages).toHaveLength(2);
     });
 
@@ -476,6 +479,7 @@ describe("createSessionCore", () => {
       // Three messages first (ids 1, 2, 3)
       lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "msg1" }));
       lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "reply1" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
       lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "msg2" }));
       expect(core.getSnapshot().messages).toHaveLength(3);
 

@@ -20,6 +20,7 @@ exports[`manifest schema shapes > AgentConfigSchema shape 1`] = `
   "s2s",
   "silencePrompt",
   "silenceTimeoutMs",
+  "startFailurePhrase",
   "stt",
   "sttPrompt",
   "systemPrompt",

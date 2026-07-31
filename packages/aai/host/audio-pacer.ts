@@ -14,20 +14,45 @@
  * cushion, so pacing at exactly real time would trade one failure mode for
  * another.
  *
- * Pacing introduces two ordering rules that did not exist when every frame
- * went out immediately, both enforced here:
+ * Pacing introduces three ordering rules that did not exist when every frame
+ * went out immediately, all enforced here:
  *
  * - **`audio_done` may not overtake queued audio.** It is a turn boundary; the
  *   client's worklet takes it as "this is all there is" and plays out only
  *   what it holds, so an early `audio_done` truncates the reply.
+ * - **Neither may any other end-of-reply frame** ({@link
+ *   PacedAudioSink.pushAfterAudio}). `reply_done` says the turn is over while
+ *   seconds of its audio are still held here, so a client that closes the
+ *   turn's books on it — attributing later audio to the *next* reply — loses
+ *   most of the reply. That is not hypothetical: the tau2 voice harness pairs
+ *   each reply's transcript with its audio by exactly that boundary, so every
+ *   agent turn reached the simulated caller as speech carrying no words.
  * - **A barge-in must discard held audio** ({@link PacedAudioSink.clear}).
  *   The client drops its own buffer on the cancel event, so anything still
- *   held here would arrive afterwards and play as an orphan fragment.
+ *   held here would arrive afterwards and play as an orphan fragment. Queued
+ *   frames go with it: `cancelled` is itself the turn boundary, and a
+ *   `reply_done` arriving after it would contradict the event the client
+ *   already acted on.
  */
 import { CLIENT_AUDIO_LEAD_MS, PACER_BURST_MS } from "../sdk/constants.ts";
 
 /** PCM16 — the wire format for client audio in both directions. */
 const BYTES_PER_SAMPLE = 2;
+
+/**
+ * The lead for a client that is not a real-time player: no pacing at all, every
+ * frame relayed as it arrives.
+ *
+ * Pacing exists because a browser plays a reply at exactly one second per
+ * second, so anything past a small lead is queue the server cannot see into. A
+ * programmatic client keeps its own clock and its own buffer — a telephony
+ * bridge, a test, a simulation harness whose timeline advances per processed
+ * tick rather than per wall-clock second. Metering audio to the wall clock for
+ * one of those does not protect it; it starves it, and it does so invisibly,
+ * since the frames all arrive eventually. The socket backpressure guard in
+ * `ws-handler.ts` still covers a genuinely stalled link.
+ */
+export const UNPACED_AUDIO_LEAD_MS = Number.POSITIVE_INFINITY;
 
 /** Options for {@link createAudioPacer}. */
 export type AudioPacerOptions = {
@@ -37,7 +62,11 @@ export type AudioPacerOptions = {
   sendDone: () => void;
   /** Sample rate of the relayed PCM16, used to convert bytes to duration. */
   sampleRate: number;
-  /** Lead ceiling; defaults to {@link CLIENT_AUDIO_LEAD_MS}. */
+  /**
+   * Lead ceiling; defaults to {@link CLIENT_AUDIO_LEAD_MS}.
+   * {@link UNPACED_AUDIO_LEAD_MS} disables pacing while keeping the ordering
+   * rules (a queued frame still follows the audio pushed before it).
+   */
   leadMs?: number;
 };
 
@@ -47,13 +76,22 @@ export type PacedAudioSink = {
   push(chunk: Uint8Array): void;
   /** Queue the turn's `audio_done`, ordered behind any held audio. */
   pushDone(): void;
-  /** Drop everything held (barge-in) and reset the lead. */
+  /**
+   * Queue a non-audio send behind any held audio — for a frame that closes out
+   * the reply the held audio belongs to (see the module doc). Everything else
+   * (`cancelled`, `error`, `user_transcript`, a relayed `tool_call`) must go out
+   * immediately; delaying those by the lead would delay the conversation.
+   */
+  pushAfterAudio(send: () => void): void;
+  /** Drop held audio (barge-in), flush queued frames, and reset the lead. */
   clear(): void;
   /** Drop everything held and refuse further sends (socket closing). */
   stop(): void;
 };
 
-type QueueItem = { kind: "audio"; chunk: Uint8Array; durationMs: number } | { kind: "done" };
+type QueueItem =
+  | { kind: "audio"; chunk: Uint8Array; durationMs: number }
+  | { kind: "frame"; send: () => void };
 
 export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
   const { sendAudio, sendDone, sampleRate } = opts;
@@ -94,9 +132,9 @@ export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
     while (queue.length > 0) {
       const item = queue[0];
       if (item === undefined) return;
-      if (item.kind === "done") {
+      if (item.kind === "frame") {
         queue.shift();
-        sendDone();
+        item.send();
         continue;
       }
       const now = Date.now();
@@ -127,19 +165,26 @@ export function createAudioPacer(opts: AudioPacerOptions): PacedAudioSink {
     playoutMs = 0;
   }
 
+  function enqueue(item: QueueItem): void {
+    if (stopped) return;
+    queue.push(item);
+    // A pending timer already owns the drain; pushing must not jump the
+    // queue, and FIFO order is what keeps the reply intact.
+    if (timer === null) drain();
+  }
+
   return {
     push(chunk) {
-      if (stopped || chunk.byteLength === 0) return;
-      queue.push({ kind: "audio", chunk, durationMs: chunk.byteLength * msPerByte });
-      // A pending timer already owns the drain; pushing must not jump the
-      // queue, and FIFO order is what keeps the reply intact.
-      if (timer === null) drain();
+      if (chunk.byteLength === 0) return;
+      enqueue({ kind: "audio", chunk, durationMs: chunk.byteLength * msPerByte });
     },
 
     pushDone() {
-      if (stopped) return;
-      queue.push({ kind: "done" });
-      if (timer === null) drain();
+      enqueue({ kind: "frame", send: sendDone });
+    },
+
+    pushAfterAudio(send) {
+      enqueue({ kind: "frame", send });
     },
 
     clear() {

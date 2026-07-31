@@ -9,11 +9,9 @@ import pTimeout from "p-timeout";
 import {
   DEFAULT_SESSION_START_TIMEOUT_MS,
   LOG_PREVIEW_CHARS,
-  MAX_CLIENT_WS_BUFFERED_BYTES,
   MAX_MESSAGE_BUFFER_SIZE,
   MAX_WS_PAYLOAD_BYTES,
   SESSION_KEEPALIVE_INTERVAL_MS,
-  WS_OPEN,
 } from "../sdk/constants.ts";
 import {
   CLIENT_MESSAGE_TYPES,
@@ -23,48 +21,14 @@ import {
   type ReadyConfig,
 } from "../sdk/protocol.ts";
 import { errorDetail, errorMessage, safeJsonParse } from "../sdk/utils.ts";
-import { createAudioPacer } from "./audio-pacer.ts";
+
 import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { SessionCore } from "./session-core.ts";
+import { createClientSink } from "./ws-client-sink.ts";
+import { type SessionWebSocket, safeSend, WS_OPEN } from "./ws-frames.ts";
 
-/**
- * Minimal WebSocket interface accepted by {@link wireSessionSocket}.
- *
- * Satisfied by the standard `WebSocket` and the `ws` npm package's WebSocket.
- */
-export type SessionWebSocket = {
-  readonly readyState: number;
-  /**
-   * Bytes queued by `send()` but not yet transmitted (standard WebSocket /
-   * `ws` property). Optional so minimal test doubles remain assignable; when
-   * absent, the audio backpressure guard is skipped.
-   */
-  readonly bufferedAmount?: number;
-  send(data: string | ArrayBuffer | Uint8Array): void;
-  /** Close the connection (standard WebSocket / `ws` method). */
-  close?(code?: number, reason?: string): void;
-  /**
-   * Send a WebSocket ping frame (`ws`-only; the browser API has no equivalent).
-   * Optional so test doubles and any non-`ws` socket stay assignable — when
-   * absent the keepalive is skipped rather than emulated with a protocol
-   * message, which would reach the client as unexpected session traffic.
-   */
-  ping?(): void;
-  addEventListener(type: "open", listener: () => void): void;
-  /**
-   * Split from `"open"` so the close listener can read the frame's `code` and
-   * `reason` — the only evidence of *why* a session ended. Both are optional:
-   * an abrupt drop arrives with no close frame at all, and minimal test
-   * doubles that invoke the listener with no argument stay assignable.
-   */
-  addEventListener(
-    type: "close",
-    listener: (event: { code?: number; reason?: string }) => void,
-  ): void;
-  addEventListener(type: "message", listener: (event: { data: unknown }) => void): void;
-  addEventListener(type: "error", listener: (event: { message?: string }) => void): void;
-};
+export { type SessionWebSocket, safeSend } from "./ws-frames.ts";
 
 /** Options for wiring a WebSocket to a session. */
 type WsSessionOptions = {
@@ -86,6 +50,13 @@ type WsSessionOptions = {
   onSinkCreated?: (sessionId: string, sink: ClientSink) => void;
   /** Logger instance. Defaults to console. */
   logger?: Logger;
+  /**
+   * Audio pacing lead for this connection. Defaults to
+   * {@link CLIENT_AUDIO_LEAD_MS}, which suits a client that plays the reply in
+   * real time; pass {@link UNPACED_AUDIO_LEAD_MS} for a programmatic client
+   * that meters playback itself.
+   */
+  audioLeadMs?: number;
   /** Timeout in ms for session.start(). Defaults to 10 000 (10s). */
   sessionStartTimeoutMs?: number;
   /**
@@ -98,94 +69,7 @@ type WsSessionOptions = {
   resumeFrom?: string;
 };
 
-const AUDIO_DONE_FRAME = JSON.stringify({
-  type: "audio_done",
-} satisfies { type: "audio_done" });
-
-/** Send on a session socket, tolerating the close race between the readyState check and send. */
-export function safeSend(ws: SessionWebSocket, data: string | Uint8Array, log: Logger): void {
-  try {
-    if (ws.readyState !== WS_OPEN) return;
-    ws.send(data);
-  } catch (err) {
-    log.debug?.("safeSend: socket closed between readyState check and send", {
-      error: errorMessage(err),
-    });
-  }
-}
-
-/** WebSocket close code sent when a stalled client is disconnected (policy violation). */
-const WS_CLOSE_POLICY_VIOLATION = 1008;
 const WS_CLOSE_INTERNAL = 1011;
-
-/**
- * Creates a {@link ClientSink} backed by a plain WebSocket.
- *
- * Session events are sent as JSON text frames; audio chunks are sent as raw
- * PCM16 binary frames.
- *
- * Audio pacing: TTS synthesis outruns real-time playback, so audio goes out
- * through an {@link createAudioPacer} at a bounded lead rather than the instant
- * a provider frame arrives — otherwise a whole reply lands in the socket buffer
- * at once and a slow link turns that into seconds of invisible queue. The pacer
- * owns two ordering rules that follow from holding audio back: `audio_done` is
- * queued behind it (an early turn boundary truncates the reply client-side),
- * and a `cancelled`/`reset` event discards it (the client flushes its own
- * buffer on those, so held audio would arrive as an orphan fragment).
- *
- * Audio backpressure: the pacer keeps the socket buffer small in the ordinary
- * case, so `bufferedAmount` past {@link MAX_CLIENT_WS_BUFFERED_BYTES} (~87 s of
- * 24 kHz PCM16) now means a genuinely stalled link — the sink logs once and
- * closes the connection, which runs the normal session teardown. The client may
- * reconnect and resume via its sessionId. Sockets without `bufferedAmount` skip
- * the guard.
- */
-function createClientSink(
-  ws: SessionWebSocket,
-  log: Logger,
-  ttsSampleRate: number,
-): { client: ClientSink; stopPacing: () => void } {
-  let closedForBackpressure = false;
-  const pacer = createAudioPacer({
-    sendAudio: (chunk) => safeSend(ws, chunk, log),
-    sendDone: () => safeSend(ws, AUDIO_DONE_FRAME, log),
-    sampleRate: ttsSampleRate,
-  });
-  const client: ClientSink = {
-    get open() {
-      return ws.readyState === WS_OPEN;
-    },
-    event(e) {
-      // Both events tell the client to drop its playback buffer, so whatever
-      // this turn still has queued here is dead audio.
-      if (e.type === "cancelled" || e.type === "reset") pacer.clear();
-      safeSend(ws, JSON.stringify(e), log);
-    },
-    playAudioChunk(chunk) {
-      const buffered = ws.bufferedAmount;
-      if (buffered !== undefined && buffered > MAX_CLIENT_WS_BUFFERED_BYTES) {
-        if (!closedForBackpressure) {
-          closedForBackpressure = true;
-          log.warn("ws: client audio backlog exceeded; closing stalled connection", {
-            bufferedBytes: buffered,
-            maxBufferedBytes: MAX_CLIENT_WS_BUFFERED_BYTES,
-          });
-          try {
-            ws.close?.(WS_CLOSE_POLICY_VIOLATION, "audio backlog exceeded");
-          } catch (err) {
-            log.debug("ws: close after audio backlog failed", { error: errorMessage(err) });
-          }
-        }
-        return;
-      }
-      pacer.push(chunk);
-    },
-    playAudioDone() {
-      pacer.pushDone();
-    },
-  };
-  return { client, stopPacing: pacer.stop };
-}
 
 function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: string): void {
   if (data instanceof Uint8Array) {
@@ -367,7 +251,12 @@ export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions):
     log.info("Session connected", { ...ctx, sid });
     startKeepalive();
 
-    const { client, stopPacing } = createClientSink(ws, log, opts.readyConfig.ttsSampleRate);
+    const { client, stopPacing } = createClientSink(
+      ws,
+      log,
+      opts.readyConfig.ttsSampleRate,
+      opts.audioLeadMs,
+    );
     stopPacingCurrent = stopPacing;
     // createSession runs synchronously from the 'open'/handleUpgrade callback;
     // a throw here (e.g. buildTransport rejecting an unregistered transport

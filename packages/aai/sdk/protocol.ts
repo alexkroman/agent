@@ -15,6 +15,7 @@ import {
   MAX_TOOL_RESULT_CHARS,
   MAX_TRANSCRIPT_CHARS,
 } from "./constants.ts";
+import { capToolResult } from "./utils.ts";
 
 // The pre-connection client-config endpoint's wire format is part of the
 // same protocol surface — re-exported so clients import one subpath.
@@ -163,6 +164,14 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
     type: z.literal("user_transcript_partial"),
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
   }),
+  /**
+   * The current reply's transcript **so far** — cumulative, and the last one
+   * before `reply_done` is the whole reply. Pipeline mode sends one as each
+   * piece of text reaches TTS, so captions track the speech; S2S sends a single
+   * one per reply, when its provider reports the finished transcript. Either
+   * way a client renders the latest text for the reply in progress and commits
+   * it on `reply_done`/`cancelled` — never appending them as separate turns.
+   */
   z.object({
     type: z.literal("agent_transcript"),
     text: z.string().max(MAX_TRANSCRIPT_CHARS),
@@ -268,7 +277,15 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
   z.object({
     type: z.literal("tool_result"),
     toolCallId: z.string().min(1),
-    result: z.string().max(MAX_TOOL_RESULT_CHARS),
+    /**
+     * Truncated rather than rejected. A `.max()` here made an oversized result
+     * fail validation, and a failed client message is *dropped* — so the relay
+     * call it was answering never settled and hung to
+     * `DEFAULT_RELAY_TOOL_TIMEOUT_MS`, presenting as a stuck tool rather than as
+     * data that didn't fit. The transform bounds host memory the same way while
+     * letting the turn continue on the part that fits (marked `[truncated]`).
+     */
+    result: z.string().transform(capToolResult),
     error: z.string().optional(),
   }),
 ]);

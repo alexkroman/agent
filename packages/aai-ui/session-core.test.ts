@@ -199,16 +199,34 @@ describe("createSessionCore", () => {
       expect(snap.state).toBe("thinking");
     });
 
-    it("agent_transcript appends assistant message", () => {
+    it("agent_transcript renders live and commits on reply_done", () => {
+      // Cumulative within a reply: pipeline mode sends one per piece of speech,
+      // so each is the caption to show, not a turn of its own.
+      lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "Hi" }));
       lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "Hi there" }));
+      expect(core.getSnapshot().agentTranscript).toBe("Hi there");
+      expect(core.getSnapshot().messages).toEqual([]);
+
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
       const snap = core.getSnapshot();
       expect(snap.messages).toEqual([{ id: 1, role: "assistant", content: "Hi there" }]);
       expect(snap.agentTranscript).toBe(null);
     });
 
+    it("keeps what the caller heard when a reply is cancelled", () => {
+      lastSocket?.simulateMessage(
+        JSON.stringify({ type: "agent_transcript", text: "The total is" }),
+      );
+      lastSocket?.simulateMessage(JSON.stringify({ type: "cancelled" }));
+      expect(core.getSnapshot().messages).toEqual([
+        { id: 1, role: "assistant", content: "The total is" },
+      ]);
+    });
+
     it("assigns monotonic ids to messages across roles", () => {
       lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "one" }));
       lastSocket?.simulateMessage(JSON.stringify({ type: "agent_transcript", text: "two" }));
+      lastSocket?.simulateMessage(JSON.stringify({ type: "reply_done" }));
       lastSocket?.simulateMessage(JSON.stringify({ type: "user_transcript", text: "three" }));
       expect(core.getSnapshot().messages.map((m) => m.id)).toEqual([1, 2, 3]);
     });

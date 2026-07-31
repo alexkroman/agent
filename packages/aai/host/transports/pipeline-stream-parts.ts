@@ -144,7 +144,22 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
   let coverCount = 0;
   const coverEnabled = holdPhrase.length > 0;
 
-  function emitText(delta: string): void {
+  /**
+   * Send text to the caller.
+   *
+   * `record: false` marks filler — the hold phrase and the dead-air cover. Those
+   * are timing artifacts, not dialogue: they exist so a tool chain doesn't sound
+   * like a dropped call. They still go to TTS (the caller hears them) and to the
+   * interim transcript built from what reaches TTS (the caption matches the
+   * audio), but they are kept out of `onDelta`, which accumulates the turn's
+   * text for the conversation history, `ctx.messages`, session resume, and the
+   * STT provider's agent-context hint.
+   *
+   * Recording them cost twice: context spent restating "Still working on that.
+   * Just a moment longer." across every later turn, and a model shown its own
+   * filler as an example of what its turns look like.
+   */
+  function emitText(delta: string, record = true): void {
     if (delta.length === 0) return;
     let out = delta;
     if (pendingSeparator) {
@@ -153,7 +168,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
       if (!boundaryHasSpace) out = ` ${out}`;
     }
     lastChar = out.slice(-1);
-    onDelta(out);
+    if (record) onDelta(out);
     sendTtsText(out);
   }
 
@@ -171,7 +186,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
     if (signal?.aborted) return;
     const phrase = DEAD_AIR_COVER_PHRASES[coverCount % DEAD_AIR_COVER_PHRASES.length] ?? "";
     coverCount += 1;
-    emitText(phrase);
+    emitText(phrase, false);
     pendingSeparator = true;
     ttsBoundary();
     armCover();
@@ -236,7 +251,7 @@ export function createStreamPartHandler(deps: StreamPartHandlerDeps): StreamPart
         // the model's later reply so they don't fuse.
         if (!(spokeText || holdEmitted) && holdPhrase.length > 0) {
           holdEmitted = true;
-          emitText(holdPhrase);
+          emitText(holdPhrase, false);
           pendingSeparator = true;
         }
         // Belt-and-braces for a tool call not preceded by `text-end`: the
