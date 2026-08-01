@@ -11,6 +11,12 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    agent to verify behavior end-to-end. This is the primary feedback loop.
 2. **Run `pnpm test` after logic changes** — vitest. Co-locate tests as
    `agent.test.ts` (see `pipeline-simple` template for a reference).
+   **The project starts with an `agent.test.ts`, and it is yours to
+   maintain.** It asserts the agent's shape — name, providers, tool names —
+   so rewriting the agent without updating it leaves a test asserting an
+   agent that no longer exists. When a test fails after your change, decide
+   which side is stale: updating the test to match the new agent is a normal
+   fix, not a workaround. Do not delete a test to make it pass.
 3. **Run `pnpm build` before declaring done** — bundles `agent.ts`,
    type-checks, and validates the manifest. Catches issues `dev` won't.
 4. **Make small, focused changes** — verify each one before stacking the
@@ -298,34 +304,56 @@ ctx.send(event: string, data: unknown): void   // push custom event to browser c
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 ```
 
-**Typing `ctx.state`.** `ctx.state` is untyped by default, so
-`ctx.state.cart.push(item)` compiles and runs as-is — you do not have to
-declare anything. To get real checking (recommended for anything non-trivial),
-declare the state type once and annotate the context in tools that touch it:
+**Typing `ctx.state`.** `ctx.state` is untyped by default. Write it plainly
+and it compiles and runs:
 
 ```ts
+export default agent({
+  name: "Shop",
+  state: () => ({ cart: [] as string[] }),
+  tools: {
+    addItem: tool({
+      description: "Add an item to the cart",
+      parameters: z.object({ item: z.string() }),
+      execute: ({ item }, ctx) => {
+        ctx.state.cart.push(item); // no annotation needed
+        return ctx.state.cart.length;
+      },
+    }),
+  },
+});
+```
+
+**Do that unless you specifically want the state checked.** If you do, name
+the type and annotate the context — and note the import is `import type`,
+because this project sets `verbatimModuleSyntax`:
+
+```ts
+import { agent, tool } from "@alexkroman1/aai";
+import type { ToolContext } from "@alexkroman1/aai"; // ← type-only import
+import { z } from "zod";
+
 type State = { cart: string[] };
 
 const addItem = tool({
   description: "Add an item to the cart",
   parameters: z.object({ item: z.string() }),
-  execute: ({ item }, ctx: ToolContext<State>) => {   // ← the annotation
+  execute: ({ item }, ctx: ToolContext<State>) => {
     ctx.state.cart.push(item);
     return ctx.state.cart.length;
   },
 });
 
-export default agent({
-  name: "Shop",
-  state: (): State => ({ cart: [] }),
-  tools: { addItem },
-});
+export default agent({ name: "Shop", state: (): State => ({ cart: [] }), tools: { addItem } });
 ```
 
-With the annotation, `ctx.state.cart` is `string[]` and a typo is caught;
-without it, `ctx.state` is permissive. Tools that never read `ctx.state` need
-no annotation either way. A tool annotated with a state shape the agent's
-factory doesn't produce is a compile error.
+A tool annotated with a state shape the agent's factory doesn't produce is a
+compile error. Tools that never read `ctx.state` need no annotation either way.
+
+**`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
+`ToolDef`, `Message`, `ToolResultMap`, provider types. A plain
+`import { ToolContext }` fails; use `import type { ToolContext }`, or
+`import { agent, type ToolContext }` to combine with value imports.
 
 `ctx.generate({ prompt, system?, llm?, schema?, temperature?, maxOutputTokens? })`
 runs one LLM generation on the host. It defaults to the agent's pipeline
