@@ -84,14 +84,19 @@ export const STARTERS: { label: string; prompt: string }[] = [
   {
     label: "A 911-style dispatch command center",
     // Modeled on the dispatch-center template.
+    // Said "an ops dashboard" in the tool list AND "a client.tsx ops
+    // dashboard" one sentence later, so agents reasonably built it once, as
+    // the screen, and shipped with no way to answer "what's the situation?"
+    // out loud. The two are now named differently and asked for separately.
     prompt:
       "A dispatch command center voice agent: tools to create, triage, " +
       "escalate, annotate, and update incidents, plus tools to list and " +
-      "dispatch available resources (units, crews) and an ops dashboard " +
-      "summarizing active incidents. Keep everything in ctx.state, the " +
-      "per-session scratch. Build a custom client.tsx ops dashboard showing " +
-      "active incidents, their triage level, and which units are assigned, " +
-      "updating live as the tools run. " +
+      "dispatch available resources (units, crews). Include a status tool " +
+      "that summarizes the active incidents out loud, so the agent can " +
+      "answer 'what's the current situation?' by voice. Keep everything in " +
+      "ctx.state, the per-session scratch. Separately, build a custom " +
+      "client.tsx ops dashboard showing active incidents, their triage " +
+      "level, and which units are assigned, updating live as the tools run. " +
       "Give it a calm, procedural radio-operator " +
       "persona.",
   },

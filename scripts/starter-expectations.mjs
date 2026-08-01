@@ -105,10 +105,12 @@ export const EXPECTATIONS = [
       ["update", "status"],
       ["resource", "unit", "crew"],
       ["dispatch", "assign"],
-      ["dashboard", "summary", "overview"],
+      // The spoken one. The screen is checked by `ui` below — they are two
+      // deliverables, and the prompt used to call both "the ops dashboard",
+      // which is how agents shipped only the screen.
+      ["status", "situation", "dashboard", "summary", "overview"],
     ],
     minTools: 6,
-    // "ops dashboard summarizing active incidents" is a screen, not speech.
     ui: true,
   },
   {
