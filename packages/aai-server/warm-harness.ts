@@ -28,10 +28,10 @@ const GUEST_DIAL_TIMEOUT_MS = 30_000;
 const GUEST_DIAL_RETRY_MS = 250;
 
 /**
- * Ask the OS for a free loopback port, used by the two host-local backends
- * (Apple containers publish to it, the subprocess harness binds it directly).
- * Racy by nature — the port is released before the guest claims it — which is
- * fine on a single-user dev machine and is why no production backend uses it.
+ * Ask the OS for a free loopback port, which the Apple container backend
+ * publishes the guest's port to. Racy by nature — the port is released before
+ * the guest claims it — which is fine on a single-user dev machine and is why
+ * no production backend uses it.
  */
 export function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {

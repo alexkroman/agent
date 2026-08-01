@@ -13,7 +13,7 @@ const PROD_ENV: NodeJS.ProcessEnv = { SUPABASE_S3_ENDPOINT: "https://s3.example"
 
 describe("resolveSandboxBackend", () => {
   it("honors an explicit SANDBOX_BACKEND override for every backend", () => {
-    for (const backend of ["modal", "apple-container", "subprocess"] as const) {
+    for (const backend of ["modal", "apple-container"] as const) {
       expect(resolveSandboxBackend({ ...DEV_ENV, SANDBOX_BACKEND: backend })).toBe(backend);
     }
   });
@@ -34,12 +34,16 @@ describe("resolveSandboxBackend", () => {
     );
   });
 
-  it("defaults local dev to the subprocess backend", () => {
-    // The regression this replaced: with no Modal credentials and no
-    // `container` CLI, selection used to land on Modal and the developer's
-    // first publish died on a 30s dial timeout naming a backend they never
-    // chose. Local dev must resolve to something that always works.
-    expect(resolveSandboxBackend(DEV_ENV)).toBe("subprocess");
+  it("rejects the removed subprocess backend", () => {
+    // The isolation-free child-process backend is gone; a stale
+    // SANDBOX_BACKEND=subprocess must fail loudly, not fall back.
+    expect(() => resolveSandboxBackend({ SANDBOX_BACKEND: "subprocess" })).toThrow(
+      /Unknown SANDBOX_BACKEND "subprocess"/,
+    );
+  });
+
+  it("defaults local dev to the apple-container backend", () => {
+    expect(resolveSandboxBackend(DEV_ENV)).toBe("apple-container");
   });
 
   it("never selects a host-local backend outside local dev", () => {
@@ -47,7 +51,7 @@ describe("resolveSandboxBackend", () => {
   });
 
   it("treats AAI_LOCAL_DEV=1 as local dev even with storage configured", () => {
-    expect(resolveSandboxBackend({ ...PROD_ENV, AAI_LOCAL_DEV: "1" })).toBe("subprocess");
+    expect(resolveSandboxBackend({ ...PROD_ENV, AAI_LOCAL_DEV: "1" })).toBe("apple-container");
   });
 });
 

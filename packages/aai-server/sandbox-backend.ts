@@ -2,11 +2,10 @@
 /**
  * Which backend guest sandboxes run on, and why.
  *
- * | Backend           | Guest runs in                     | Isolation | Selected           |
- * | ----------------- | --------------------------------- | --------- | ------------------ |
- * | `modal`           | a remote Modal Sandbox            | full      | always, in prod    |
- * | `subprocess`      | a child process on the host       | **none**  | default, local dev |
- * | `apple-container` | a local Apple container (macOS)   | full      | opt-in only        |
+ * | Backend           | Guest runs in                   | Isolation | Selected           |
+ * | ----------------- | ------------------------------- | --------- | ------------------ |
+ * | `modal`           | a remote Modal Sandbox          | full      | always, in prod    |
+ * | `apple-container` | a local Apple container (macOS) | full      | default, local dev |
  *
  * ## The policy
  *
@@ -17,34 +16,30 @@
  *    set, so a production replica can never resolve a host-local backend, and
  *    fails loudly without Modal credentials rather than quietly running tenant
  *    code on the host.
- * 3. Local dev → `subprocess`.
+ * 3. Local dev → `apple-container`.
  *
- * ## Why `subprocess` is the dev default rather than a fallback
+ * ## Why there is no isolation-free backend
  *
- * Both isolating backends have prerequisites a laptop may not have — Modal
- * credentials and a working network for one, Apple's `container` CLI *and* its
- * downloaded guest kernel for the other. Making either the default means the
- * common path for a developer who has neither is a 30-second dial timeout on
- * their first publish, reported as a spawn failure in a backend they did not
- * know they were using. The default is therefore the one backend that always
- * works, and the isolating ones are named explicitly when wanted:
+ * A `subprocess` backend (the harness as a plain child process of the server)
+ * used to be the local-dev default, chosen because it always worked. It also
+ * had **no isolation at all** — tenant code ran with the server's uid,
+ * filesystem, and network — and anything relying on being *contained* behaved
+ * differently once deployed. Every guest now runs behind a real container
+ * boundary, at the cost of a hard local prerequisite: Apple's `container` CLI
+ * (or `SANDBOX_BACKEND=modal` with credentials). Boot names the selected
+ * backend and checks its prerequisite up front (`assertSandboxBackendOrWarn`),
+ * so a missing CLI surfaces as a boot-time message rather than a 30-second
+ * dial timeout on the first publish.
  *
  *     SANDBOX_BACKEND=apple-container   # local containers, needs the CLI
  *     SANDBOX_BACKEND=modal             # remote sandboxes, needs credentials
- *
- * `subprocess` trades away the entire security boundary for that reliability,
- * which is only acceptable because rule 2 makes it unreachable in production.
- * It keeps the *shape* of a real sandbox — separate OS process, real `/ws`
- * JSON-RPC control channel, real `bundle/load`, real `/websocket` sessions —
- * so it still catches the integration bugs a dev backend exists to catch. See
- * `subprocess-sandbox.ts` for what it does and does not reproduce.
  */
 
 import { isLocalDev } from "./_boot.ts";
 
-export type SandboxBackend = "modal" | "apple-container" | "subprocess";
+export type SandboxBackend = "modal" | "apple-container";
 
-const BACKENDS: readonly SandboxBackend[] = ["modal", "apple-container", "subprocess"];
+const BACKENDS: readonly SandboxBackend[] = ["modal", "apple-container"];
 
 /** The selected backend plus the human-readable reason, for the boot log. */
 export type BackendChoice = {
@@ -70,7 +65,7 @@ export function describeSandboxBackend(env: NodeJS.ProcessEnv): BackendChoice {
     return { backend: override, reason: "SANDBOX_BACKEND override" };
   }
   return isLocalDev(env)
-    ? { backend: "subprocess", reason: "local dev default" }
+    ? { backend: "apple-container", reason: "local dev default" }
     : { backend: "modal", reason: "not local dev" };
 }
 
