@@ -40,6 +40,7 @@ import type { z } from "zod";
 import { hostRequest } from "./harness-rpc.ts";
 import { buildWorkspaceDir, workspacesRoot } from "./studio-build.ts";
 import { ensureProjectShape } from "./studio-project-shape.ts";
+import { createToolCallRepair } from "./studio-tool-repair.ts";
 import {
   createStudioTools,
   materializeWorkspace,
@@ -232,6 +233,11 @@ async function runTurn(
     },
     abortSignal: abort.signal,
     stopWhen: stepCountIs(session.maxSteps),
+    // The default studio model regularly emits tool arguments that are not
+    // valid JSON — a whole source file inside a JSON string is the usual
+    // trigger. Without this the call is lost and the model apologizes for a
+    // "JSON parsing error" and retries, burning steps on the same mistake.
+    repairToolCall: createToolCallRepair(model),
   });
 
   void result.pipeUIMessageStreamToResponse(res, {
