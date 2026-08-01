@@ -1,78 +1,75 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Probe every model in `ASSEMBLYAI_GATEWAY_MODELS` against the live gateway.
+ * Is the committed gateway catalog still what the gateway says?
  *
- * The list is hand-maintained and had drifted in both directions before this
- * existed: `kimi-k2.5` had been deprecated and `gemini-3.1-flash-lite-preview`
- * had never existed, and both were being offered as choices — one of them
- * reachable through `STUDIO_LLM_MODEL`.
- *
- * A stale entry is worse here than it sounds, because the gateway hides the
- * reason on the path we actually use. Non-streaming, a dead model answers
- * `410 the model version you are trying to access has been deprecated`.
- * Streaming — which every real turn does — it answers `500 "something went
- * wrong"`, which the AI SDK retries three times before surfacing "Internal
- * Server Error". So a wrong entry in this list presents as a provider outage,
- * or as a model that ran for twelve seconds and did nothing.
+ * Regenerates from `/v1/models` (both regions, plus a liveness probe per
+ * model) and diffs against the checked-in file, rather than re-implementing
+ * the probe — two implementations of "which models exist" is how the list got
+ * wrong in the first place.
  *
  * Deliberately NOT in CI: it spends (a trivial amount of) real tokens on the
- * caller's own key and depends on a third-party service being up. Run it when
- * adding a model, and when one starts misbehaving.
+ * caller's own key and depends on a third-party service being reachable, so a
+ * gateway blip would redden unrelated pull requests. Run it when adding a
+ * model, when one misbehaves, and periodically — a model going away is
+ * invisible until someone selects it.
  *
- *   node scripts/check-gateway-models.mjs
+ *   pnpm check:gateway-models
  *
- * Exits non-zero if any listed model is unreachable.
+ * Exits non-zero when the catalog is out of date; regenerate with
+ * `node scripts/gen-gateway-models.mjs --write`.
  */
 
+import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { homedir } from "node:os";
-import path from "node:path";
 
-const GATEWAY = "https://llm-gateway.assemblyai.com/v1/chat/completions";
+const TARGET = new URL("../packages/aai/sdk/providers/llm/gateway-models.ts", import.meta.url);
+const GENERATOR = new URL("./gen-gateway-models.mjs", import.meta.url);
 
-function apiKey() {
-  if (process.env.ASSEMBLYAI_API_KEY) return process.env.ASSEMBLYAI_API_KEY;
-  const cfg = path.join(homedir(), ".config", "aai", "config.json");
-  const key = JSON.parse(readFileSync(cfg, "utf-8")).apiKey;
-  if (!key) throw new Error("no apiKey in ~/.config/aai/config.json");
-  return key;
-}
+const fresh = execFileSync(process.execPath, [GENERATOR.pathname], { encoding: "utf-8" });
+const committed = readFileSync(TARGET, "utf-8");
 
-const { ASSEMBLYAI_GATEWAY_MODELS } = await import(
-  new URL("../packages/aai-studio-server/studio-llm.ts", import.meta.url).href
-);
-
-const key = apiKey();
-const dead = [];
-
-for (const model of ASSEMBLYAI_GATEWAY_MODELS) {
-  // One token, no streaming: the cheapest request that still proves the model
-  // resolves, and the non-streaming path is the one that reports WHY it does
-  // not.
-  const res = await fetch(GATEWAY, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
-    body: JSON.stringify({
-      model,
-      max_tokens: 1,
-      messages: [{ role: "user", content: "hi" }],
-    }),
-  });
-  if (res.ok) {
-    console.log(`  ok    ${model}`);
-    continue;
-  }
-  const detail = (await res.text()).replace(/\s+/g, " ").slice(0, 160);
-  console.log(`  ${res.status}   ${model}  ${detail}`);
-  dead.push(model);
-}
-
-if (dead.length > 0) {
-  console.error(
-    `\ncheck-gateway-models: ${dead.length} unreachable model(s): ${dead.join(", ")}.\n` +
-      "Remove them from ASSEMBLYAI_GATEWAY_MODELS — an unreachable entry reaches\n" +
-      "users as a retried 500, not as a clear error.",
+/**
+ * Compare the model DATA, not the file bytes. The committed copy is
+ * biome-formatted and the generator's output is not, so a byte comparison
+ * reports a difference on every run and teaches everyone to ignore it.
+ */
+const entries = (text) =>
+  new Map(
+    [...text.matchAll(/^\s*"([^"]+)": (\{[^}]*\}),$/gm)].map(([, id, info]) => [
+      id,
+      info
+        // Biome rewrites `200000` as `200_000` and adds a trailing comma, so
+        // normalize both — otherwise the check reports a difference on every
+        // run and everyone learns to ignore it.
+        .replace(/(\d)_(\d)/g, "$1$2")
+        .replace(/,\s*\}/, " }")
+        .replace(/\s+/g, " "),
+    ]),
   );
-  process.exit(1);
+const before = entries(committed);
+const after = entries(fresh);
+
+const changes = [];
+for (const [id, info] of after) {
+  if (!before.has(id)) changes.push(`  + ${id} ${info}`);
+  else if (before.get(id) !== info) {
+    changes.push(`  ~ ${id}\n      was ${before.get(id)}\n      now ${info}`);
+  }
 }
-console.log(`\ncheck-gateway-models: all ${ASSEMBLYAI_GATEWAY_MODELS.length} models reachable. ✓`);
+for (const id of before.keys()) if (!after.has(id)) changes.push(`  - ${id}`);
+
+if (changes.length === 0) {
+  const usable = [...before.values()].filter((i) => /live: true/.test(i)).length;
+  console.log(
+    `check-gateway-models: catalog current — ${before.size} advertised, ${usable} usable. ✓`,
+  );
+  process.exit(0);
+}
+console.log(changes.join("\n"));
+
+console.error(
+  "\ncheck-gateway-models: the catalog no longer matches the gateway.\n" +
+    "Regenerate: node scripts/gen-gateway-models.mjs --write\n" +
+    "A model that has gone away reaches users as a retried 500, not a clear error.",
+);
+process.exit(1);

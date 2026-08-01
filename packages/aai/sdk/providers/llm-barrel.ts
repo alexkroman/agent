@@ -11,10 +11,14 @@ export type { LlmProvider } from "../providers.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./llm/anthropic.ts";
 export {
+  ASSEMBLYAI_GATEWAY_MODELS,
   ASSEMBLYAI_LLM_API_KEY_ENV,
+  ASSEMBLYAI_LLM_DEFAULT_MODEL,
+  type AssemblyAIGatewayModel,
   type AssemblyAILlmOptions,
   type AssemblyAILlmProvider,
   assemblyAI,
+  gatewayModelIds,
 } from "./llm/assemblyai.ts";
 export {
   GATEWAY_API_KEY_ENV,
@@ -22,6 +26,7 @@ export {
   type GatewayProvider,
   gateway,
 } from "./llm/gateway.ts";
+export type { GatewayModelInfo } from "./llm/gateway-models.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./llm/google.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
