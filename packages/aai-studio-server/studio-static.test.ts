@@ -54,8 +54,8 @@ describe("studioCsp", () => {
     expect(allowsOrigin(csp, chatUrl)).toBe(true);
   });
 
-  it("permits the loopback sandbox chat origin under apple-container", () => {
-    const csp = studioCsp({ SANDBOX_BACKEND: "apple-container" });
+  it("permits the loopback sandbox chat origin under subprocess", () => {
+    const csp = studioCsp({ SANDBOX_BACKEND: "subprocess" });
     const chatUrl = chatUrlFromSessionUrl("ws://127.0.0.1:55251/websocket");
     expect(allowsOrigin(csp, chatUrl)).toBe(true);
   });
@@ -66,7 +66,7 @@ describe("studioCsp", () => {
   });
 
   it("does not permit arbitrary third-party origins", () => {
-    for (const backend of ["modal", "apple-container"]) {
+    for (const backend of ["modal", "subprocess"]) {
       const csp = studioCsp({ SANDBOX_BACKEND: backend });
       expect(allowsOrigin(csp, "https://evil.example.com/studio/chat")).toBe(false);
     }
