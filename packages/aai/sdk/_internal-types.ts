@@ -52,6 +52,7 @@ export const AgentConfigSchema = z.object({
   tts: ProviderDescriptorSchema.optional(),
   s2s: ProviderDescriptorSchema.optional(),
   mode: z.enum(["s2s", "pipeline"]).optional(),
+  requiredEnv: z.array(z.string()).readonly().optional(),
 });
 
 export type AgentConfig = z.infer<typeof AgentConfigSchema>;

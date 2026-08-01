@@ -10,8 +10,49 @@ import { writeFile } from "node:fs/promises";
 import path from "node:path";
 import getPort from "get-port";
 import { describe, expect, test } from "vitest";
-import { startDevServer, viteDevConfig } from "./_dev-server.ts";
+import { agentEnvWarnings, startDevServer, viteDevConfig } from "./_dev-server.ts";
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
+
+describe("agentEnvWarnings", () => {
+  const S2S_AGENT = {}; // no descriptors → S2S → needs ASSEMBLYAI_API_KEY
+
+  test("warns when a provider key is missing everywhere", () => {
+    const warnings = agentEnvWarnings(S2S_AGENT, {}, {});
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("Missing provider credential");
+    expect(warnings[0]).toContain("ASSEMBLYAI_API_KEY");
+  });
+
+  test("warns about the deploy cliff when a key resolves from the shell only", () => {
+    const warnings = agentEnvWarnings(S2S_AGENT, {}, { ASSEMBLYAI_API_KEY: "sk-shell" });
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("resolved from your shell, not .env");
+    expect(warnings[0]).toContain("ASSEMBLYAI_API_KEY");
+    expect(warnings[0]).toContain("aai deploy");
+  });
+
+  test("silent when the key is declared in .env", () => {
+    expect(agentEnvWarnings(S2S_AGENT, { ASSEMBLYAI_API_KEY: "sk-env" }, {})).toEqual([]);
+  });
+
+  test("a requiredEnv key is flagged even when the shell exports it", () => {
+    const agent = { requiredEnv: ["STRIPE_KEY"] };
+    const warnings = agentEnvWarnings(
+      agent,
+      { ASSEMBLYAI_API_KEY: "sk-env" },
+      { STRIPE_KEY: "sk-shell" }, // custom keys never fall back to the shell
+    );
+    expect(warnings).toHaveLength(1);
+    expect(warnings[0]).toContain("requiredEnv");
+    expect(warnings[0]).toContain("STRIPE_KEY");
+  });
+
+  test("a requiredEnv key present in .env is silent", () => {
+    const agent = { requiredEnv: ["STRIPE_KEY"] };
+    const env = { ASSEMBLYAI_API_KEY: "sk-env", STRIPE_KEY: "sk-env" };
+    expect(agentEnvWarnings(agent, env, {})).toEqual([]);
+  });
+});
 
 describe("viteDevConfig", () => {
   test("proxies /websocket with ws:true and /health to the backend", () => {

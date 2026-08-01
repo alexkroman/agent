@@ -8,7 +8,10 @@ import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-
 import type { BundleStore } from "./store-types.ts";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "./workspace-store.ts";
 
-export const VALID_ENV: Record<string, string> = {};
+// Deploys preflight the agent's required credentials against the merged env
+// (see `missingCredentials` in deploy.ts); the default S2S test config needs
+// the AssemblyAI key, so the standard test env carries one.
+export const VALID_ENV: Record<string, string> = { ASSEMBLYAI_API_KEY: "test-key" };
 
 /**
  * Sync in-memory BundleStore for tests. No encryption — stores env as plain

@@ -831,10 +831,27 @@ The bundle arrives over RPC and loads from a temp-file `file:` URL.
 | --- | --- | --- |
 | Modal memory/CPU limits (`SANDBOX_MEMORY_LIMIT_MB`, `SANDBOX_CPU_LIMIT`) | works in dev, fails in prod | `aai dev` runs tools in the host process with no caps; a memory-hungry tool OOMs only when deployed. |
 | `run_code` | fails in dev, works in prod | The host-side guard refuses rather than evaluating in-process. Fail-closed, so harmless. |
-| `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. The prod failure is a loud auth error at session start. |
+| `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. Two guards keep the cliff visible: the dev server warns when a required key resolved from the shell only (`agentEnvWarnings` in `_dev-server.ts` — it won't survive `aai deploy`, which uploads `.env`), and the deploy core preflights required credentials (below), so the failure surfaces at deploy time, not as an auth error at first session. |
 | `ctx.db` backing (BYO `DATABASE_URL` in dev vs platform-provisioned schema+role) | prod is stricter | Dev connects wherever the developer points it; prod pins search_path + statement_timeout on a per-app role. |
 | Platform sandboxes need Modal credentials in production only | prod is stricter | `aai dev` runs tools in-process; the platform spawns real sandboxes — Modal in production (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`), a child process or Apple container in local dev — see "Modal sandbox notes". |
 | Guest isolation on the `subprocess` backend (the local-dev default) | works in dev, fails in prod | The container boundary is absent: tenant code runs with the server's uid, filesystem, and network. Anything relying on being *contained* (egress reachability, filesystem scope, a hard OOM) behaves differently once deployed. Use `SANDBOX_BACKEND=apple-container` locally to close this. |
+
+**Deploy-time credential preflight** (`missingCredentials` in
+`aai-server/deploy.ts`). The classic dev/prod credential failure — an agent
+that ran locally on shell-exported keys dies at first session start after
+deploy with what looks like a provider outage — is caught at the deploy
+boundary instead. The required key set is derived from the bundle's
+self-described config (never from anything a client sent):
+`requiredProviderEnvVars` over the stt/llm/tts/s2s descriptors (the same
+registry-backed derivation the runtime resolves keys with) plus the agent's
+declared `requiredEnv` (an `agent()` field for custom keys tools read from
+`ctx.env`, which no static derivation can see). A key whose merged stored
+value is absent or empty fails `POST /deploy` with a 400 naming the keys
+(`credentialPolicy: "require"`, the default). The studio deploys with
+`credentialPolicy: "warn"` instead — it has no secrets UI, so a hard failure
+would leave its user with no path to publish at all; the warning rides back
+on the deploy response. The check runs before any side effect, so a rejected
+deploy leaves the live sandbox untouched.
 
 **One canonical config schema, deny-list boundaries.** The dropped-field bug
 family (`builtinTools` — deployed agents silently lost the default cognitive

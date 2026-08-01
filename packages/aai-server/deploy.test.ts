@@ -11,6 +11,7 @@ import {
   deployAgent,
   deployBody,
   TEST_AGENT_CONFIG,
+  VALID_ENV,
 } from "./test-utils.ts";
 
 test("hashApiKey produces argon2 PHC format and verifies", async () => {
@@ -53,7 +54,7 @@ describe("POST /deploy body handling", () => {
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
       body: JSON.stringify({
         slug: "my-agent",
-        env: { MY_SECRET: "value" },
+        env: { MY_SECRET: "value", ...VALID_ENV },
         worker: esmWorker,
         clientFiles: { "index.html": "<html></html>" },
         agentConfig: TEST_AGENT_CONFIG,
@@ -72,7 +73,7 @@ describe("POST /deploy body handling", () => {
     const res = await fetch("/deploy", {
       method: "POST",
       headers: { Authorization: "Bearer key1", "Content-Type": "application/json" },
-      body: deployBody({ slug: "my-agent", env: { EXISTING: "new-value" } }),
+      body: deployBody({ slug: "my-agent", env: { ...VALID_ENV, EXISTING: "new-value" } }),
     });
     expect(res.status).toBe(200);
     const env = await store.getEnv("my-agent");
@@ -98,7 +99,7 @@ describe("POST /deploy body handling", () => {
     const { fetch, store } = await createTestOrchestrator();
     await store.putAgent({
       slug: "pre-stored",
-      env: { MY_SECRET: "stored-secret" },
+      env: { MY_SECRET: "stored-secret", ...VALID_ENV },
       worker: "w",
       clientFiles: { "index.html": "<html></html>" },
       credential_hashes: [await hashApiKey("key1")],
@@ -197,6 +198,7 @@ describe("deployAgentBundle ownership resolution", () => {
     apiKey: "key1",
     worker: "w",
     clientFiles: {},
+    env: VALID_ENV,
     agentConfig: TEST_AGENT_CONFIG,
   };
 
@@ -434,6 +436,105 @@ describe("POST /deploy", () => {
   });
 });
 
+// ── Credential preflight ───────────────────────────────────────────────────
+
+describe("deploy credential preflight", () => {
+  const PIPELINE_CONFIG: IsolateConfig = {
+    name: "pipeline-agent",
+    systemPrompt: "Test",
+    toolSchemas: [],
+    stt: { kind: "assemblyai", options: {} },
+    llm: { kind: "anthropic", options: { model: "claude-sonnet-4-5" } },
+    tts: { kind: "cartesia", options: {} },
+  };
+
+  function deployWith(params: {
+    config?: IsolateConfig;
+    env?: Record<string, string>;
+    credentialPolicy?: "require" | "warn";
+  }) {
+    return deployAgentBundle(
+      { store: createTestStore(), slots: createSlotCache() },
+      {
+        slug: "my-agent",
+        apiKey: "key1",
+        worker: "w",
+        clientFiles: {},
+        agentConfig: params.config ?? TEST_AGENT_CONFIG,
+        ...(params.env && { env: params.env }),
+        ...(params.credentialPolicy && { credentialPolicy: params.credentialPolicy }),
+      },
+    );
+  }
+
+  test("rejects an S2S agent deployed without its AssemblyAI key", async () => {
+    const outcome = await deployWith({ env: {} });
+    expect(outcome).toMatchObject({ ok: false, status: 400 });
+    if (!outcome.ok) expect(outcome.error).toContain("ASSEMBLYAI_API_KEY");
+  });
+
+  test("rejects a pipeline agent naming every missing provider key", async () => {
+    const outcome = await deployWith({
+      config: PIPELINE_CONFIG,
+      env: { ASSEMBLYAI_API_KEY: "k" },
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) {
+      expect(outcome.error).toContain("ANTHROPIC_API_KEY");
+      expect(outcome.error).toContain("CARTESIA_API_KEY");
+      expect(outcome.error).not.toContain("ASSEMBLYAI_API_KEY");
+    }
+  });
+
+  test("accepts a pipeline agent once every provider key is present", async () => {
+    const outcome = await deployWith({
+      config: PIPELINE_CONFIG,
+      env: { ASSEMBLYAI_API_KEY: "a", ANTHROPIC_API_KEY: "b", CARTESIA_API_KEY: "c" },
+    });
+    expect(outcome).toMatchObject({ ok: true, slug: "my-agent" });
+    if (outcome.ok) expect(outcome.warnings).toBeUndefined();
+  });
+
+  test("an empty-string credential counts as missing", async () => {
+    const outcome = await deployWith({ env: { ASSEMBLYAI_API_KEY: "" } });
+    expect(outcome).toMatchObject({ ok: false, status: 400 });
+  });
+
+  test("enforces the agent's declared requiredEnv keys", async () => {
+    const outcome = await deployWith({
+      config: { ...TEST_AGENT_CONFIG, requiredEnv: ["STRIPE_KEY"] },
+      env: VALID_ENV,
+    });
+    expect(outcome.ok).toBe(false);
+    if (!outcome.ok) expect(outcome.error).toContain("STRIPE_KEY");
+  });
+
+  test("credentialPolicy 'warn' deploys anyway and reports the missing keys", async () => {
+    const outcome = await deployWith({ env: {}, credentialPolicy: "warn" });
+    expect(outcome.ok).toBe(true);
+    if (outcome.ok) {
+      expect(outcome.warnings).toHaveLength(1);
+      expect(outcome.warnings?.[0]).toContain("ASSEMBLYAI_API_KEY");
+    }
+  });
+
+  test("a rejected deploy stores nothing", async () => {
+    const store = createTestStore();
+    const outcome = await deployAgentBundle(
+      { store, slots: createSlotCache() },
+      {
+        slug: "unstored",
+        apiKey: "key1",
+        worker: "w",
+        clientFiles: {},
+        agentConfig: TEST_AGENT_CONFIG,
+      },
+    );
+    expect(outcome.ok).toBe(false);
+    expect(await store.getManifest("unstored")).toBeNull();
+  });
+});
+
 // ── Cross-service invalidation (split deployment) ─────────────────────────
 
 describe("deployAgentBundle epoch bump", () => {
@@ -447,6 +548,7 @@ describe("deployAgentBundle epoch bump", () => {
         apiKey: "key1",
         worker: "w",
         clientFiles: {},
+        env: VALID_ENV,
         agentConfig: TEST_AGENT_CONFIG,
       },
     );
