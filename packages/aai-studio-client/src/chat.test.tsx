@@ -6,7 +6,7 @@
 import type { UIMessage } from "ai";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { ChatPanel, Composer } from "./chat.tsx";
+import { ChatPanel, Composer, notifyDispatch } from "./chat.tsx";
 import { toBlocks } from "./tool-row.tsx";
 
 function message(parts: Record<string, unknown>[]): UIMessage {
@@ -159,5 +159,28 @@ describe("ChatPanel (pre-project)", () => {
     );
     expect(html).not.toContain('aria-label="Model"');
     expect(html).not.toContain("Model:");
+  });
+});
+
+describe("notifyDispatch", () => {
+  const ready = { busy: false, llmReady: true };
+
+  test("a plain note is appended, never a turn", () => {
+    // Publish success and secret changes: visible in the transcript and
+    // carried into the next turn, but not worth spending a turn on.
+    expect(notifyDispatch(undefined, ready)).toBe("append");
+    expect(notifyDispatch({}, ready)).toBe("append");
+    expect(notifyDispatch({ respond: false }, ready)).toBe("append");
+  });
+
+  test("respond runs a turn so the agent engages with a failed publish", () => {
+    expect(notifyDispatch({ respond: true }, ready)).toBe("turn");
+  });
+
+  test("falls back to appending rather than dropping the message", () => {
+    // A turn mid-flight or an LLM that isn't up must not lose a publish
+    // failure — an appended message still reaches the agent next turn.
+    expect(notifyDispatch({ respond: true }, { busy: true, llmReady: true })).toBe("append");
+    expect(notifyDispatch({ respond: true }, { busy: false, llmReady: false })).toBe("append");
   });
 });

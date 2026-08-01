@@ -9,7 +9,7 @@ import clsx from "clsx";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { ApiError, api, type ChatSession, type ProjectData, type StudioStatus } from "./api.ts";
 import logoUrl from "./assets/assemblyai-logomark.svg";
-import { ChatPanel } from "./chat.tsx";
+import { ChatPanel, type NotifyChat } from "./chat.tsx";
 import { PreviewPane } from "./preview.tsx";
 import { SecretsPanel } from "./secrets.tsx";
 
@@ -323,11 +323,11 @@ export function App({ apiKey, onSignOut }: AppProps) {
     },
   });
 
-  // Injected by the mounted ProjectChat: appends a message to the live
-  // conversation WITHOUT triggering a turn — how publish output and secret
-  // changes reach the coding agent.
-  const notifyChatRef = useRef<((text: string) => void) | null>(null);
-  const notifyChat = (text: string) => notifyChatRef.current?.(text);
+  // Injected by the mounted ProjectChat: posts a message into the live
+  // conversation — how publish output and secret changes reach the coding
+  // agent. Silent by default; `{ respond: true }` runs a turn (see NotifyChat).
+  const notifyChatRef = useRef<NotifyChat | null>(null);
+  const notifyChat: NotifyChat = (text, opts) => notifyChatRef.current?.(text, opts);
 
   const publish = useMutation({
     mutationFn: () => api.deploy(apiKey, project as string),
@@ -344,10 +344,12 @@ export function App({ apiKey, onSignOut }: AppProps) {
     },
     onError: (err) => {
       // Deploy errors are CLI output too — the coding agent is the one who
-      // can fix a failed build or deploy, so it must see them.
+      // can fix a failed build or deploy, so it must see them AND act. This
+      // one runs a turn rather than waiting to be noticed on the next.
       const message = err instanceof Error ? err.message : String(err);
       notifyChat(
         `I tried to publish with the Publish button, but aai deploy failed:\n\n${message}`,
+        { respond: true },
       );
     },
   });
