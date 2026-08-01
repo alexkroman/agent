@@ -39,6 +39,7 @@ import {
 import type { z } from "zod";
 import { hostRequest } from "./harness-rpc.ts";
 import { buildWorkspaceDir, typecheckWorkspaceDir, workspacesRoot } from "./studio-build.ts";
+import { compactMessages, needsCompaction } from "./studio-compaction.ts";
 import { ensureProjectShape } from "./studio-project-shape.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import { createToolCallRepair } from "./studio-tool-repair.ts";
@@ -239,6 +240,14 @@ async function runTurn(
     },
     abortSignal: abort.signal,
     stopWhen: stepCountIs(session.maxSteps),
+    // A long repair loop accumulates bulky tool results (tsc dumps, build
+    // logs) — one per attempt. Without this the raised step cap would just
+    // trade a step-cap failure for a context-overflow one.
+    prepareStep: async ({ messages: stepMessages }) => {
+      if (!needsCompaction(stepMessages)) return {};
+      const compacted = await compactMessages(model, stepMessages);
+      return compacted === stepMessages ? {} : { messages: compacted };
+    },
     // The default studio model regularly emits tool arguments that are not
     // valid JSON — a whole source file inside a JSON string is the usual
     // trigger. Without this the call is lost and the model apologizes for a
