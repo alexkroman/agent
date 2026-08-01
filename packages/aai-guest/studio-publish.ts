@@ -131,11 +131,17 @@ function parseCliResult(stdout: string): CliResult | null {
  */
 export async function deployWorkspaceDir(
   dir: string,
-  opts: { serverUrl: string; apiKey: string; slug?: string | undefined },
+  opts: {
+    serverUrl: string;
+    apiKey: string;
+    slug?: string | undefined;
+    /** Test seam: entry script spawned instead of the resolved CLI. */
+    cliEntry?: string | undefined;
+  },
 ): Promise<GuestPublishResult> {
   let cliEntry: string;
   try {
-    cliEntry = await resolveCliEntry();
+    cliEntry = opts.cliEntry ?? (await resolveCliEntry());
   } catch (err) {
     return {
       ok: false,

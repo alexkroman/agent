@@ -165,6 +165,13 @@ describe("api", () => {
     expect((err as ApiError).message).toBe("Server returned an invalid response");
   });
 
+  test("a JSON error body without an `error` field keeps the status message", async () => {
+    stubFetch(() => jsonResponse({ detail: "something else" }, 500));
+    const err = await api.listProjects("k").catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(ApiError);
+    expect((err as ApiError).message).toBe("Request failed (500)");
+  });
+
   test("non-JSON error bodies fall back to the status message", async () => {
     stubFetch(() => new Response("<html>gateway timeout</html>", { status: 502 }));
     const err = await api.listProjects("k").catch((e: unknown) => e);

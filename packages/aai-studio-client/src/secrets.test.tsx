@@ -86,6 +86,59 @@ describe("SecretsPanel", () => {
     expect(note).not.toContain("super-secret-value");
   });
 
+  test("saving multiple secrets pluralizes the chat note", async () => {
+    stubFetch({
+      "GET /demo/secret": () => jsonResponse({ vars: [] }),
+      "PUT /demo/secret": () => jsonResponse({ ok: true, keys: ["A", "B"] }),
+    });
+    const notify = renderPanel("demo");
+    fireEvent.change(screen.getByPlaceholderText("OPENAI_API_KEY=..."), {
+      target: { value: "A=1\nB=2" },
+    });
+    fireEvent.click(screen.getByText("Save secrets"));
+    await waitFor(() => {
+      expect(notify).toHaveBeenCalledTimes(1);
+    });
+    expect(notify.mock.calls[0]?.[0]).toContain("secrets A, B");
+  });
+
+  test("saving an empty draft is a no-op — no request, no note", async () => {
+    const fetchMock = stubFetch({ "GET /demo/secret": () => jsonResponse({ vars: [] }) });
+    const notify = renderPanel("demo");
+    await waitFor(() => {
+      expect(fetchMock).toHaveBeenCalledTimes(1);
+    });
+    fireEvent.click(screen.getByText("Save secrets"));
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(notify).not.toHaveBeenCalled();
+  });
+
+  test("a failed listing surfaces the server's error message", async () => {
+    stubFetch({
+      "GET /demo/secret": () => jsonResponse({ error: "unauthorized" }, 401),
+    });
+    renderPanel("demo");
+    await waitFor(() => {
+      expect(screen.getByText("unauthorized")).toBeTruthy();
+    });
+  });
+
+  test("a failed save surfaces its error and posts no note", async () => {
+    stubFetch({
+      "GET /demo/secret": () => jsonResponse({ vars: [] }),
+      "PUT /demo/secret": () => jsonResponse({ error: "vault unavailable" }, 503),
+    });
+    const notify = renderPanel("demo");
+    fireEvent.change(screen.getByPlaceholderText("OPENAI_API_KEY=..."), {
+      target: { value: "A=1" },
+    });
+    fireEvent.click(screen.getByText("Save secrets"));
+    await waitFor(() => {
+      expect(screen.getByText("vault unavailable")).toBeTruthy();
+    });
+    expect(notify).not.toHaveBeenCalled();
+  });
+
   test("deleting a secret posts a chat note", async () => {
     stubFetch({
       "GET /demo/secret": () => jsonResponse({ vars: ["OLD_KEY"] }),
