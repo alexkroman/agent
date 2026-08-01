@@ -22,6 +22,7 @@ import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { scrubDir } from "./studio-build.ts";
+import { ensureProjectShape } from "./studio-project-shape.ts";
 
 /** Wall-clock cap for one `aai deploy` run (cold build + upload). */
 const DEPLOY_TIMEOUT_MS = 300_000;
@@ -35,28 +36,6 @@ export type GuestPublishResult = {
   /** CLI output for the chat — success summary, or the failure diagnostics. */
   output: string;
 };
-
-/**
- * The vite.config.ts a real scaffolded project ships. Written into the
- * build dir only when the workspace has none, so `aai deploy`'s client
- * build gets its React/Tailwind plugins exactly as on a laptop; a config
- * the coding agent wrote itself is honored, also as on a laptop.
- */
-const SCAFFOLD_VITE_CONFIG = `import react from "@vitejs/plugin-react";
-import tailwindcss from "@tailwindcss/vite";
-import { defineConfig } from "vite";
-
-export default defineConfig({
-  plugins: [react(), tailwindcss()],
-  build: {
-    target: "es2022",
-    minify: true,
-  },
-  ssr: {
-    noExternal: true,
-  },
-});
-`;
 
 /**
  * Resolve the aai CLI's executable entry from the toolchain next to the
@@ -164,13 +143,11 @@ export async function deployWorkspaceDir(
     };
   }
 
-  // A real project's shape: scaffold vite config (client build plugins) when
-  // the workspace didn't write its own, the CLI's config home, and the slug
-  // pin in .aai/project.json so redeploys keep the agent's URL.
-  const viteConfigPath = path.join(dir, "vite.config.ts");
-  if (!(await exists(viteConfigPath))) {
-    await writeFile(viteConfigPath, SCAFFOLD_VITE_CONFIG, "utf-8");
-  }
+  // A real project's shape (package.json, tsconfig, vite config — see
+  // studio-project-shape.ts; `aai deploy` typechecks against the tsconfig),
+  // the CLI's config home, and the slug pin in .aai/project.json so
+  // redeploys keep the agent's URL.
+  await ensureProjectShape(dir);
   const configHome = path.join(dir, ".aai-home");
   await mkdir(configHome, { recursive: true });
   await writeFile(path.join(configHome, "config.json"), JSON.stringify({ apiKey: opts.apiKey }), {

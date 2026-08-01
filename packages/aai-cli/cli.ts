@@ -162,6 +162,7 @@ const build = defineCommand({
   args: {
     json: sharedArgs.json,
     skipTests: { type: "boolean", description: "Skip running tests before build" },
+    skipTypecheck: { type: "boolean", description: "Skip type checking before build" },
   },
   async run({ args }) {
     await runCommand(args, async () => {
@@ -182,6 +183,10 @@ const build = defineCommand({
           throw toCliError(err);
         }
       }
+      if (!args.skipTypecheck) {
+        const { assertTypechecks } = await import("./_typecheck-gate.ts");
+        await assertTypechecks(cwd);
+      }
       const { executeBuild } = await import("./_bundler.ts");
       return executeBuild(cwd);
     });
@@ -199,6 +204,7 @@ const deploy = defineCommand({
         "Deploy even when the agent's providers are missing credentials " +
         "(the server warns instead of rejecting; set them afterwards with `aai secret put`)",
     },
+    skipTypecheck: { type: "boolean", description: "Skip type checking before deploy" },
   },
   async run({ args }) {
     await runCommand(args, async () => {
@@ -208,6 +214,7 @@ const deploy = defineCommand({
         cwd,
         ...(args.server ? { server: args.server } : {}),
         ...(args.allowMissingSecrets ? { allowMissingSecrets: true } : {}),
+        ...(args.skipTypecheck ? { skipTypecheck: true } : {}),
       });
     });
   },

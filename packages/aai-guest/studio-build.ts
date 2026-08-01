@@ -38,6 +38,9 @@ type Toolchain = {
     opts: { configFile?: false; plugins?: unknown[] },
   ) => Promise<Record<string, string>>;
   clientPlugins: () => unknown[];
+  typecheckProject: (
+    cwd: string,
+  ) => Promise<{ ok: true; skipped: boolean } | { ok: false; output: string }>;
 };
 
 /**
@@ -55,9 +58,10 @@ export function workspacesRoot(): string {
 let toolchain: Promise<Toolchain> | null = null;
 function loadToolchain(): Promise<Toolchain> {
   toolchain ??= (async (): Promise<Toolchain> => {
-    const [worker, client, react, tailwind] = await Promise.all([
+    const [worker, client, typecheck, react, tailwind] = await Promise.all([
       import("@alexkroman1/aai-cli/worker-bundler"),
       import("@alexkroman1/aai-cli/client-bundler"),
+      import("@alexkroman1/aai-cli/typecheck"),
       import("@vitejs/plugin-react"),
       import("@tailwindcss/vite"),
     ]);
@@ -66,6 +70,7 @@ function loadToolchain(): Promise<Toolchain> {
       buildClient: client.buildClient as Toolchain["buildClient"],
       // Fresh plugin instances per build — Vite plugins are stateful.
       clientPlugins: () => [react.default(), tailwind.default()],
+      typecheckProject: typecheck.typecheckProject,
     };
   })().catch((err: unknown) => {
     toolchain = null;
@@ -91,6 +96,11 @@ export async function buildWorkspaceDir(
   } catch (err) {
     return { buildError: `Build toolchain unavailable in this sandbox: ${errMessage(err)}` };
   }
+  // Type errors first, as their own failure: the bundlers strip types
+  // unchecked, so this is the only gate that catches runtime-working-but-
+  // wrong code — and the message is exactly what the coding agent needs.
+  const typed = await tc.typecheckProject(dir);
+  if (!typed.ok) return { buildError: scrubDir(typed.output, dir) };
   try {
     const [worker, clientFiles] = await Promise.all([
       want.worker ? tc.buildWorker(dir, { minify: true, configFile: false }) : undefined,

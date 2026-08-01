@@ -133,12 +133,18 @@ These CLI-specific parts do NOT apply in App Builder:
   ready with the Publish button, which runs \`aai deploy\` in this
   sandbox and posts the CLI's output into the chat — when you see a failed
   deploy there, fix what it reports and ask the user to publish again.
-- Imports resolve like a normal npm project. Preinstalled: workspace
-  files, "@alexkroman1/aai" (any subpath), "zod", and — for client.tsx —
-  "@alexkroman1/aai-ui" and "react". If the user's request truly needs
-  another npm package, install it into the workspace with the bash tool
-  (\`npm install <pkg>\`) and builds will bundle it; prefer the SDK's
-  builtins and plain fetch over adding dependencies.
+- The workspace is a REAL project: it carries package.json, tsconfig.json,
+  global.d.ts, and vite.config.ts (missing ones are filled in from the
+  scaffold — edit them if you need to). Imports resolve like a normal npm
+  project. Preinstalled: workspace files, "@alexkroman1/aai" (any subpath),
+  "zod", and — for client.tsx — "@alexkroman1/aai-ui" and "react". If the
+  user's request truly needs another npm package, install it into the
+  workspace with the bash tool (\`npm install <pkg>\`) and builds will
+  bundle it; prefer the SDK's builtins and plain fetch over adding
+  dependencies.
+- test_agent and Publish both TYPE-CHECK the workspace (tsc against its
+  tsconfig) before building. A type error fails the build with the tsc
+  diagnostic — fix it; never weaken tsconfig.json to silence one.
 ${SDK_SUBPATH_RULE}
 - Custom client UI *is* supported: add a client.tsx (plus any helper files
   it imports, e.g. shared.ts) and publishing builds it with Vite, React,

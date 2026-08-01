@@ -39,6 +39,7 @@ import {
 import type { z } from "zod";
 import { hostRequest } from "./harness-rpc.ts";
 import { buildWorkspaceDir, workspacesRoot } from "./studio-build.ts";
+import { ensureProjectShape } from "./studio-project-shape.ts";
 import {
   createStudioTools,
   materializeWorkspace,
@@ -86,6 +87,10 @@ export async function initStudioSession(params: StudioSessionParams): Promise<St
   // node_modules above it for the workspace's bare imports to resolve.
   const dir = path.join(workspacesRoot(), `session-${process.pid}`);
   await materializeWorkspace(dir, params.files);
+  // Complete the workspace into a real project (package.json, tsconfig,
+  // …) — same shape `aai init` scaffolds; the files sync back to the
+  // store at end of turn like everything else in the workspace.
+  await ensureProjectShape(dir);
   return { ...params, dir };
 }
 

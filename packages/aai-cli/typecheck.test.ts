@@ -1,0 +1,68 @@
+// Copyright 2026 the AAI authors. MIT license.
+// The build/deploy typecheck gate: projects with a tsconfig are checked
+// with their own compiler; projects without one are skipped (they never
+// declared a type discipline). Failures carry tsc's diagnostics — the
+// message the studio's coding agent acts on.
+
+import { symlink, writeFile } from "node:fs/promises";
+import path from "node:path";
+import { describe, expect, test } from "vitest";
+import { withTempDir } from "./_test-utils.ts";
+import { typecheckProject } from "./typecheck.ts";
+
+/**
+ * TypeScript resolves from the project like any dep — link the repo root's
+ * node_modules (where pnpm hoists the workspace's TypeScript); this
+ * package's own node_modules doesn't carry it.
+ */
+async function linkNodeModules(dir: string): Promise<void> {
+  await symlink(
+    path.resolve(import.meta.dirname, "../../node_modules"),
+    path.join(dir, "node_modules"),
+  );
+}
+
+const TSCONFIG = JSON.stringify({
+  compilerOptions: { strict: true, noEmit: true, skipLibCheck: true, types: [] },
+});
+
+describe("typecheckProject", () => {
+  test("skips projects without a tsconfig.json", async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(path.join(dir, "agent.ts"), "export default { name: 1 };");
+      await expect(typecheckProject(dir)).resolves.toEqual({ ok: true, skipped: true });
+    });
+  });
+
+  test("passes a well-typed project", { timeout: 60_000 }, async () => {
+    await withTempDir(async (dir) => {
+      await linkNodeModules(dir);
+      await writeFile(path.join(dir, "tsconfig.json"), TSCONFIG);
+      await writeFile(path.join(dir, "agent.ts"), "export const n: number = 1;\n");
+      await expect(typecheckProject(dir)).resolves.toEqual({ ok: true, skipped: false });
+    });
+  });
+
+  test("fails with tsc diagnostics on a type error", { timeout: 60_000 }, async () => {
+    await withTempDir(async (dir) => {
+      await linkNodeModules(dir);
+      await writeFile(path.join(dir, "tsconfig.json"), TSCONFIG);
+      await writeFile(path.join(dir, "agent.ts"), `export const n: number = "nope";\n`);
+      const result = await typecheckProject(dir);
+      expect(result.ok).toBe(false);
+      if (!result.ok) {
+        expect(result.output).toContain("Type check failed");
+        expect(result.output).toContain("agent.ts");
+      }
+    });
+  });
+
+  test("a tsconfig without an installed TypeScript is a loud failure", async () => {
+    await withTempDir(async (dir) => {
+      await writeFile(path.join(dir, "tsconfig.json"), TSCONFIG);
+      const result = await typecheckProject(dir);
+      expect(result.ok).toBe(false);
+      if (!result.ok) expect(result.output).toContain("TypeScript is not installed");
+    });
+  });
+});

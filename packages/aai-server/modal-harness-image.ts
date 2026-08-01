@@ -65,10 +65,12 @@ const TOOLCHAIN_PACKAGES = [
   "@alexkroman1/aai-cli",
   "@alexkroman1/aai-ui",
   "@tailwindcss/vite",
+  "@types/node",
   "@vitejs/plugin-react",
   "react",
   "react-dom",
   "tailwindcss",
+  "typescript",
   "vite",
   "zod",
 ] as const;

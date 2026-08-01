@@ -6,6 +6,7 @@ import { writeProjectConfig } from "./_config.ts";
 import { runDeploy } from "./_deploy.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { resolveServerEnv } from "./_server-common.ts";
+import { assertTypechecks } from "./_typecheck-gate.ts";
 import { fmtUrl, log } from "./_ui.ts";
 import { errorMessage } from "./_utils.ts";
 
@@ -16,9 +17,12 @@ export async function executeDeploy(opts: {
   server?: string;
   /** See DeployOpts.allowMissingSecrets (`--allow-missing-secrets`). */
   allowMissingSecrets?: boolean;
+  /** `--skipTypecheck`: deploy without the tsc gate. */
+  skipTypecheck?: boolean;
 }): Promise<CommandResult<DeployData>> {
   const { cwd } = opts;
   const { config: projectConfig, serverUrl, apiKey } = await resolveDeployTarget(cwd, opts.server);
+  if (!opts.skipTypecheck) await assertTypechecks(cwd);
   // Minify the worker for deploy — smaller upload and stored bundle. Dev
   // builds (`aai dev`) stay unminified for readable stack traces.
   const bundle = await buildAgentBundle(cwd, { minify: true });

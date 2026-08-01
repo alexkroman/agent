@@ -479,13 +479,17 @@ voice agents without the CLI:
   - **Publish is the LITERAL `aai deploy` CLI**, spawned in the project's
     sandbox (`aai-guest/studio-publish.ts`, the host→guest
     `workspace/deploy` RPC on the session broker — live sandbox reused,
-    else an ephemeral spawn torn down after). The guest materializes the
-    workspace like a project (scaffold `vite.config.ts` written when the
-    workspace has none; a dir-local `AAI_CONFIG_DIR` carries the caller's
-    key; `.aai/project.json` pins the slug) and runs `aai deploy --server
-    <public origin> --json --allow-missing-secrets`. Build, upload, config
-    extraction (`describeBundle` on the platform's standard `POST /deploy`
-    route), ownership, reserved slugs, the ASSEMBLYAI_API_KEY env floor,
+    else an ephemeral spawn torn down after). The guest completes the
+    workspace into a REAL project (`ensureProjectShape` in
+    `aai-guest/studio-project-shape.ts`: package.json, tsconfig.json,
+    global.d.ts, and vite.config.ts filled in from scaffold-mirroring
+    copies when absent — drift-guarded against the scaffold by
+    `studio-project-shape.test.ts`; a dir-local `AAI_CONFIG_DIR` carries
+    the caller's key; `.aai/project.json` pins the slug) and runs
+    `aai deploy --server <origin> --json --allow-missing-secrets`. Build,
+    upload, config extraction (`describeBundle` on the platform's standard
+    `POST /deploy` route), ownership, reserved slugs, the
+    ASSEMBLYAI_API_KEY env floor,
     and the credential preflight are therefore byte-for-byte the laptop
     path. The CLI's output — success, build diagnostics, deploy errors,
     preflight warnings — returns to the client, which **posts it into the
@@ -516,6 +520,14 @@ voice agents without the CLI:
   snapshots and restores it. Without that, `aai dev`, which rebuilds on
   every file change, flips itself to "production" on the first rebuild.
   Keep any new Vite invocation inside that wrapper.
+- **Builds and deploys are TYPE-CHECKED.** `aai build` and `aai deploy`
+  run the project's own `tsc --noEmit` (`aai-cli/typecheck.ts`, gated on a
+  `tsconfig.json`, `--skipTypecheck` opts out), and the guest's
+  `test_agent` build does the same before bundling — the bundlers strip
+  types unchecked, which is exactly how the `send`/`state`
+  runtime-working-but-wrong bugs shipped. Type errors reach the studio's
+  coding agent as build/deploy output it can act on. The dev watch loop
+  deliberately does NOT typecheck (editor/CI feedback is faster there).
 - **`buildClient` runs with no `client.tsx` → `{}`** → the agent gets the
   default UI.
 - **`buildClient` dedupes React** (`resolve.dedupe`), because `aai-ui`

@@ -149,8 +149,12 @@ describe("guest workspace/deploy (Publish = aai deploy in the sandbox)", () => {
   });
 
   test("compile errors come back as CLI output for the chat", { timeout: 300_000 }, async () => {
+    // The guest completes the workspace into a real project (tsconfig
+    // included), so `aai deploy`'s typecheck gate reports this before the
+    // bundler would — either way, diagnostics the coding agent can act on.
     const result = await deployInGuest({ "agent.ts": "const nope = {" });
     expect(result.ok).toBe(false);
-    expect(result.output).toContain("Build failed");
+    expect(result.output).toMatch(/Type check failed|Build failed/);
+    expect(result.output).toContain("agent.ts");
   });
 });
