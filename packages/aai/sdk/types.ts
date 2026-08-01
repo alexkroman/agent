@@ -108,9 +108,7 @@ export type ToolContext<S = Record<string, unknown>> = {
    * One-shot LLM generation, executed on the host (like `db`).
    * Defaults to the agent's pipeline `llm`; pass `llm` in the options to use
    * another provider (its API key must be in the agent's env). Throws when
-   * no LLM is configured or named. Powers the `@alexkroman1/aai/patterns`
-   * combinators (sequential, parallel, route, orchestrate,
-   * evaluatorOptimizer).
+   * no LLM is configured or named.
    */
   generate(options: GenerateOptions): Promise<GenerateResult>;
   /** Read-only snapshot of conversation messages so far. */

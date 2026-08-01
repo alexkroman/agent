@@ -43,11 +43,6 @@
       "types": "./dist/sdk/providers/llm-barrel.d.ts",
       "import": "./dist/sdk/providers/llm-barrel.js"
     },
-    "./patterns": {
-      "@dev/source": "./sdk/patterns.ts",
-      "types": "./dist/sdk/patterns.d.ts",
-      "import": "./dist/sdk/patterns.js"
-    },
     "./s2s": {
       "@dev/source": "./sdk/providers/s2s-barrel.ts",
       "types": "./dist/sdk/providers/s2s-barrel.d.ts",

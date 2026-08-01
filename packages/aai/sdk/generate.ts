@@ -35,8 +35,7 @@ export type GenerateOptions = {
    * to the schema and the result's `object` carries the parsed value.
    * Pass a plain JSON Schema object (e.g. via Zod v4's `z.toJSONSchema`),
    * not a Zod schema — the options must serialize across the sandbox RPC
-   * boundary. The `@alexkroman1/aai/patterns` helpers accept Zod and
-   * convert for you.
+   * boundary.
    */
   schema?: Record<string, unknown>;
   /** Sampling temperature passed through to the provider. */
@@ -53,8 +52,5 @@ export type GenerateResult = {
   object?: unknown;
 };
 
-/**
- * One-shot LLM generation. The signature of `ctx.generate` and the sole
- * dependency of the `@alexkroman1/aai/patterns` combinators.
- */
+/** One-shot LLM generation. The signature of `ctx.generate`. */
 export type GenerateFn = (options: GenerateOptions) => Promise<GenerateResult>;

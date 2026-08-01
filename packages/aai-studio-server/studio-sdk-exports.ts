@@ -13,9 +13,10 @@
  * which names neither the right subpath nor any of the alternatives — it points
  * at a file the agent cannot read. So the agent has nothing to correct toward
  * and, being told to work through build errors itself, invents something else.
- * `/workflow` in particular is not a wild guess: it *was* the real name until
- * the combinators moved to `/patterns`, so it's in every model's priors and in
- * any documentation snapshot taken before the rename.
+ * `/workflow` in particular is not a wild guess: it *was* a real subpath (the
+ * pattern combinators, later `/patterns`, both since removed), so it's in
+ * every model's priors and in any documentation snapshot taken before the
+ * removal.
  *
  * Two consumers use this list, and both exist so no copy of it can go stale:
  * `studio-bundle.ts` turns a bad subpath into an error that names the valid
@@ -58,7 +59,7 @@ let cached: string[] | undefined;
 
 /**
  * Subpaths importable from the SDK, as they appear after the package name:
- * `""` for the root entry, then `"stt"`, `"patterns"`, … — sorted, with the
+ * `""` for the root entry, then `"llm"`, `"stt"`, … — sorted, with the
  * root first.
  *
  * Returns `[]` when the package.json can't be found or parsed. Callers must
@@ -95,7 +96,7 @@ function readSubpaths(from: string): string[] {
   }
 }
 
-/** Full specifiers the agent may import, e.g. `@alexkroman1/aai/patterns`. */
+/** Full specifiers the agent may import, e.g. `@alexkroman1/aai/llm`. */
 export function sdkSpecifiers(from?: string): string[] {
   return sdkSubpaths(from).map((sub) => (sub === "" ? SDK_PACKAGE : `${SDK_PACKAGE}/${sub}`));
 }

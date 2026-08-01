@@ -24,7 +24,7 @@
  * type-only exports are covered too.
  *
  * Scope is the agent-authoring surface a template can legitimately import:
- * `@alexkroman1/aai` root plus the `stt`/`tts`/`llm`/`s2s`/`patterns`
+ * `@alexkroman1/aai` root plus the `stt`/`tts`/`llm`/`s2s`
  * subpaths, and the `@alexkroman1/aai-ui` root. Host-side subpaths
  * (`runtime`, `manifest`, `protocol`, `utils`) are deliberately out of
  * scope — their consumers are the CLI and the platform, not agents.
@@ -48,7 +48,6 @@ const SCOPED_MODULES: Record<string, { pkg: string; subpath: string }> = {
   "@alexkroman1/aai/tts": { pkg: "aai", subpath: "./tts" },
   "@alexkroman1/aai/llm": { pkg: "aai", subpath: "./llm" },
   "@alexkroman1/aai/s2s": { pkg: "aai", subpath: "./s2s" },
-  "@alexkroman1/aai/patterns": { pkg: "aai", subpath: "./patterns" },
   "@alexkroman1/aai-ui": { pkg: "aai-ui", subpath: "." },
 };
 

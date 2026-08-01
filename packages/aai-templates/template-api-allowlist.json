@@ -217,21 +217,6 @@
     "S2sProvider",
     "openaiRealtime"
   ],
-  "@alexkroman1/aai/patterns": [
-    "Evaluation",
-    "GenerateRequest",
-    "Iteration",
-    "Plan",
-    "Route",
-    "SequentialStep",
-    "Subtask",
-    "evaluatorOptimizer",
-    "generateStructured",
-    "orchestrate",
-    "parallel",
-    "route",
-    "sequential"
-  ],
   "@alexkroman1/aai-ui": [
     "AgentState",
     "ApiUrlChip",

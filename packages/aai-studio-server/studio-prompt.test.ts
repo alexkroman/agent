@@ -77,16 +77,18 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("Voice rules for systemPrompt");
   });
 
-  test("lists the SDK's real subpaths and corrects the /workflow guess", () => {
+  test("lists the SDK's real subpaths and contradicts the removed combinator subpaths", () => {
     const prompt = studioSystemPrompt().replace(/\s+/g, " ");
     expect(prompt).toContain("Never invent an SDK subpath");
     // Interpolated from the package's own exports map, so it can't drift.
-    // "patterns" appears nowhere in the preamble literal, only in that list.
-    expect(prompt).toContain("@alexkroman1/aai/patterns");
-    // The combinators' subpath was renamed from /workflow, so the old name is
-    // in the model's priors and in any pre-rename docs snapshot. A list alone
-    // doesn't dislodge a wrong belief; the contradiction is stated outright.
-    expect(prompt).toContain('**not** "@alexkroman1/aai/workflow", which does not exist');
+    expect(prompt).toContain("@alexkroman1/aai/llm");
+    // The combinators shipped under two names (/workflow, then /patterns)
+    // before being removed, so both sit in the model's priors and in any
+    // pre-removal docs snapshot. A list alone doesn't dislodge a wrong
+    // belief; the contradiction is stated outright.
+    expect(prompt).toContain(
+      '"@alexkroman1/aai/patterns" and "@alexkroman1/aai/workflow" both **do not exist**',
+    );
   });
 
   test("excludes the CLI Workflow section by its precise contents", () => {

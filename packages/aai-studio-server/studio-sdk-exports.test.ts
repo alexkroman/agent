@@ -18,13 +18,14 @@ describe("sdkSubpaths", () => {
     const subpaths = sdkSubpaths();
     // The root entry sorts first and is spelled "" (not ".").
     expect(subpaths[0]).toBe("");
-    // A representative spread of the map. `patterns` is the one this module
-    // exists for: it was `workflow` until the combinators moved.
-    expect(subpaths).toContain("patterns");
+    // A representative spread of the map.
+    expect(subpaths).toContain("llm");
     expect(subpaths).toContain("stt");
     expect(subpaths).toContain("manifest");
-    // The old name must NOT appear — if it ever does, the studio's prompt and
-    // its build error would both start advertising it again.
+    // The removed combinator subpaths must NOT appear — if either ever does,
+    // the studio's prompt and its build error would both start advertising
+    // it again.
+    expect(subpaths).not.toContain("patterns");
     expect(subpaths).not.toContain("workflow");
   });
 
@@ -38,7 +39,7 @@ describe("sdkSpecifiers", () => {
   test("renders full bare specifiers, root as the bare package name", () => {
     const specs = sdkSpecifiers();
     expect(specs[0]).toBe(SDK_PACKAGE);
-    expect(specs).toContain(`${SDK_PACKAGE}/patterns`);
+    expect(specs).toContain(`${SDK_PACKAGE}/llm`);
     expect(specs).not.toContain(`${SDK_PACKAGE}/workflow`);
     // No "@alexkroman1/aai/" with an empty tail.
     expect(specs.every((s) => !s.endsWith("/"))).toBe(true);
@@ -48,7 +49,7 @@ describe("sdkSpecifiers", () => {
 describe("isKnownSdkSpecifier", () => {
   test("accepts the root and real subpaths", () => {
     expect(isKnownSdkSpecifier(SDK_PACKAGE)).toBe(true);
-    expect(isKnownSdkSpecifier(`${SDK_PACKAGE}/patterns`)).toBe(true);
+    expect(isKnownSdkSpecifier(`${SDK_PACKAGE}/llm`)).toBe(true);
     expect(isKnownSdkSpecifier(`${SDK_PACKAGE}/tts`)).toBe(true);
   });
 

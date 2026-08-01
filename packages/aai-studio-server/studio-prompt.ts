@@ -27,10 +27,11 @@ import { sdkSpecifiers } from "./studio-sdk-exports.ts";
  * can't be read — a truncated "these are the only ones:" with no list would be
  * worse than saying nothing.
  *
- * `/patterns` is called out by name because `/workflow` *was* its name until
- * the combinators moved, so it sits in the model's priors and in any docs
- * snapshot predating the rename; a bare list doesn't correct a wrong belief
- * the way a contradiction does. Same for the removed `workflow()` app mode.
+ * The removed pattern-combinator subpath is contradicted by name because it
+ * shipped under two names (`/workflow`, then `/patterns`), so both sit in the
+ * model's priors and in any docs snapshot predating the removal; a bare list
+ * doesn't correct a wrong belief the way a contradiction does. Same for the
+ * removed `workflow()` app mode.
  */
 const SDK_SUBPATH_RULE = (() => {
   const specs = sdkSpecifiers();
@@ -38,9 +39,9 @@ const SDK_SUBPATH_RULE = (() => {
   return `- **Never invent an SDK subpath.** These are the only importable ones, and a
   wrong guess is a build error, not a fallback:
   ${specs.join(", ")}
-  The pattern combinators (sequential, parallel, route, orchestrate,
-  evaluatorOptimizer, generateStructured) live in "@alexkroman1/aai/patterns" —
-  **not** "@alexkroman1/aai/workflow", which does not exist.`;
+  There is no pattern-combinator subpath: "@alexkroman1/aai/patterns" and
+  "@alexkroman1/aai/workflow" both **do not exist** — compose multi-step LLM
+  calls with ctx.generate directly.`;
 })();
 
 const STUDIO_PREAMBLE = `You are the AssemblyAI App Builder coding agent. You help the user build and deploy \
