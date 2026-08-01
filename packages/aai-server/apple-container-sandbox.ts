@@ -11,10 +11,11 @@
  * over the same `/ws` control channel, serving sessions on the same
  * `/websocket` endpoint.
  *
- * Backend selection lives in `sandbox-backend.ts`, which calls this module's
- * {@link isAppleContainerCliAvailable} probe: local dev on darwin picks this
- * backend when the `container` CLI is on PATH, falls back to the isolation-free
- * `subprocess` backend when it is not, and never auto-switches production.
+ * Backend selection lives in `sandbox-backend.ts`: this backend is the
+ * local-dev default (production always resolves Modal). Boot probes the CLI
+ * via this module's {@link isAppleContainerCliAvailable} and warns — or, on an
+ * explicit `SANDBOX_BACKEND=apple-container`, fails — when it is missing;
+ * there is no fallback backend.
  *
  * Differences from the Modal backend, all acceptable because this only runs
  * on a single-user dev machine:

@@ -244,13 +244,11 @@ model) is the security boundary.
   of it: `sessionUrl()` (the public tunnel endpoint the broker hands to
   clients), `activeSessions()` (the idle-eviction probe), `shutdown()`
 - `sandbox-vm.ts` — per-agent sandbox configuration (bundle/load, teardown)
-  and the one `spawnWarmHarness` dispatch over the three backends
+  and the one `spawnWarmHarness` dispatch over the two backends
 - `sandbox-backend.ts` — backend selection policy (`SANDBOX_BACKEND` override,
-  production → `modal`, local dev → `subprocess`) plus the reason string the
-  boot log prints, so "which backend am I on, and why" is one log line
-- `subprocess-sandbox.ts` — the local-dev default backend: the harness as a
-  child process on a loopback port. **No isolation** — see "Modal sandbox notes"
-- `warm-harness.ts` — backend-independent guest wiring shared by all three:
+  production → `modal`, local dev → `apple-container`) plus the reason string
+  the boot log prints, so "which backend am I on, and why" is one log line
+- `warm-harness.ts` — backend-independent guest wiring shared by both backends:
   dial-with-retry, stdio draining, free-port allocation, `WarmHarness` exit and
   cleanup semantics
 - `sandbox-agent-config.ts` — the deploy-time `IsolateConfig` → runtime-agent
@@ -833,8 +831,7 @@ The bundle arrives over RPC and loads from a temp-file `file:` URL.
 | `run_code` | fails in dev, works in prod | The host-side guard refuses rather than evaluating in-process. Fail-closed, so harmless. |
 | `withHostCredentialFallback` (`providers/host-env.ts`) | works in dev, fails in prod | Deliberate ergonomic: an exported `ANTHROPIC_API_KEY` should work for `aai dev`. The prod failure is a loud auth error at session start. |
 | `ctx.db` backing (BYO `DATABASE_URL` in dev vs platform-provisioned schema+role) | prod is stricter | Dev connects wherever the developer points it; prod pins search_path + statement_timeout on a per-app role. |
-| Platform sandboxes need Modal credentials in production only | prod is stricter | `aai dev` runs tools in-process; the platform spawns real sandboxes — Modal in production (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`), a child process or Apple container in local dev — see "Modal sandbox notes". |
-| Guest isolation on the `subprocess` backend (the local-dev default) | works in dev, fails in prod | The container boundary is absent: tenant code runs with the server's uid, filesystem, and network. Anything relying on being *contained* (egress reachability, filesystem scope, a hard OOM) behaves differently once deployed. Use `SANDBOX_BACKEND=apple-container` locally to close this. |
+| Platform sandboxes need Modal credentials in production only | prod is stricter | `aai dev` runs tools in-process; the platform spawns real sandboxes — Modal in production (`MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET`), an Apple container in local dev — see "Modal sandbox notes". |
 
 **One canonical config schema, deny-list boundaries.** The dropped-field bug
 family (`builtinTools` — deployed agents silently lost the default cognitive
@@ -1176,7 +1173,7 @@ you only need to list one package.
   test. Staleness tracks aai-guest sources only (not the bundled SDK);
   `GUEST_HARNESS_PATH` skips the check. The same script also runs as
   `predev` in aai-server and aai-studio-server (so `pnpm dev:aai-server`
-  always boots with a fresh harness for subprocess-backend sandboxes) and
+  always boots with a fresh harness for local-dev sandboxes) and
   as `predeploy:modal` in both server packages (a fail-fast before the
   remote Modal image build, which rebuilds the harness itself). Also
   runnable directly: `node scripts/ensure-guest-harness.mjs`.
@@ -1523,48 +1520,32 @@ service's control work is light — and one container served both badly.
 
 ### Modal sandbox notes
 
-- **Three backends, selected by `sandbox-backend.ts`.** Guest sandboxes are
-  **remote Modal Sandboxes** (`modal-sandbox.ts`) in production, and in local
-  dev either a plain **child process** (`subprocess-sandbox.ts`, the default)
-  or a local **Apple container** (`apple-container-sandbox.ts`, opt-in). The
+- **Two backends, selected by `sandbox-backend.ts`.** Guest sandboxes are
+  **remote Modal Sandboxes** (`modal-sandbox.ts`) in production and local
+  **Apple containers** (`apple-container-sandbox.ts`) in local dev. The
   policy is three rules: an explicit `SANDBOX_BACKEND`
-  (`modal` | `apple-container` | `subprocess`) always wins (unknown values
-  throw — a silent fallback would look like the override not working);
-  otherwise not-local-dev → `modal`, unconditionally; otherwise → `subprocess`.
+  (`modal` | `apple-container`) always wins (unknown values throw — a silent
+  fallback would look like the override not working); otherwise
+  not-local-dev → `modal`, unconditionally; otherwise → `apple-container`.
   `isLocalDev` is false whenever `SUPABASE_S3_ENDPOINT` is set, so **production
   can never resolve a host-local backend**, and fails loudly without
   `MODAL_TOKEN_ID`/`MODAL_TOKEN_SECRET` (or a `~/.modal.toml` profile) rather
   than degrading. There is **no fallback between backends at spawn time**: a
-  failed spawn is a failed spawn.
-- **Subprocess backend (the local-dev default)** — `subprocess-sandbox.ts`
-  runs the harness as a child process of the server on a loopback port. It has
-  **no isolation at all**: tenant code gets the server's uid, filesystem, and
-  network. It is the default anyway because both isolating backends have
-  prerequisites a laptop may lack (Modal credentials; the `container` CLI *and*
-  its downloaded guest kernel), and making either the default meant a
-  developer who had neither got a 30-second dial timeout on their first
-  publish, reported as a failure in a backend they never chose. What it *does*
-  preserve is shape: a separate OS process, the real `/ws` JSON-RPC control
-  channel, the real `bundle/load`, real `/websocket` client sessions, real
-  dial-retry and orphan-timeout behavior. Two deliberate parity choices carry
-  weight — the guest gets a **minimal env** (`AAI_GUEST_TOKEN`,
-  `AAI_GUEST_PORT`, `AAI_GUEST_HOST`, `PATH`) rather than `process.env`,
-  because production gives the guest no host env at all and inheriting it
-  would both hand tenant code the platform's credentials and let agent code
-  that wrongly reads `process.env` pass locally and fail in production; and
-  the harness binds **loopback** via `AAI_GUEST_HOST`, because `/websocket` is
-  auth-free by design and a bare subprocess has no container namespace to
-  contain a `0.0.0.0` bind. `SANDBOX_MEMORY_LIMIT_MB` maps onto V8's
-  `--max-old-space-size` (JS heap only, so the caps row of the parity table
-  below narrows but does not close); `SANDBOX_CPU_LIMIT` has no analog.
-- **Apple container backend (opt-in via `SANDBOX_BACKEND=apple-container`)** —
+  failed spawn is a failed spawn. (The isolation-free `subprocess` backend —
+  the harness as a plain child process of the server — was removed; every
+  guest now runs behind a real container boundary, and a stale
+  `SANDBOX_BACKEND=subprocess` throws at boot.)
+- **Apple container backend (the local-dev default)** —
   `apple-container-sandbox.ts` runs the same guest harness in a local
   container via Apple's [`container`](https://github.com/apple/container)
   CLI (each container a lightweight VM under the Containerization
-  framework). Selecting it without the CLI on PATH is a **boot error**, not a
-  fallback (`assertSandboxBackendOrWarn`). Differences from Modal, all dev-only:
-  the published port binds 127.0.0.1 (plain `ws://` loopback URLs, no
-  tunnel), the bearer token rides the container env rather than an exec
+  framework). The CLI is a hard local prerequisite: boot probes for it
+  (`assertSandboxBackendOrWarn`) and warns that sandbox creation will fail
+  when it is missing — or, when `SANDBOX_BACKEND=apple-container` was set
+  explicitly, throws (the override not working must not look like it
+  worked). There is no fallback backend. Differences from Modal, all
+  dev-only: the published port binds 127.0.0.1 (plain `ws://` loopback URLs,
+  no tunnel), the bearer token rides the container env rather than an exec
   env (visible to `container inspect` on the same machine only), the
   harness is copied to a per-spawn temp dir and mounted rather than baked
   into a snapshot image (a per-spawn copy so one guest can't tamper with
@@ -1574,7 +1555,7 @@ service's control work is light — and one container served both badly.
   (default `node:24-slim`); `SANDBOX_MEMORY_LIMIT_MB`/`SANDBOX_CPU_LIMIT`
   map onto `--memory`/`--cpus`. The shared harness lifecycle (exit fan-out,
   memoized cleanup, guest dial retry, stdio draining, loopback port
-  allocation) lives in `warm-harness.ts`, used by all three backends.
+  allocation) lives in `warm-harness.ts`, used by both backends.
 - The guest base image defaults to `node:24-slim`; pin via
   `MODAL_SANDBOX_IMAGE` for reproducible guests. `MODAL_APP_NAME` selects the
   Modal App sandboxes are created under (default `aai-server`).
@@ -1677,12 +1658,13 @@ Host↔guest control traffic is JSON-RPC over a WebSocket the host dials
 through the same tunnel (`/ws`), authenticated by a per-sandbox bearer
 token.
 
-**In production.** Local dev defaults to the `subprocess` backend, which has
-none of the isolation described below — see "Modal sandbox notes". Selection
-(`sandbox-backend.ts`) makes that unreachable outside local dev: any
-environment with `SUPABASE_S3_ENDPOINT` set resolves `modal` unconditionally.
-When reasoning about the security model, the backend is the first thing to
-establish, and the boot log names it.
+**In production.** Local dev defaults to the `apple-container` backend —
+local containers with the same boundary shape, but a single-user dev
+machine, not the properties described below — see "Modal sandbox notes".
+Selection (`sandbox-backend.ts`) makes host-local backends unreachable
+outside local dev: any environment with `SUPABASE_S3_ENDPOINT` set resolves
+`modal` unconditionally. When reasoning about the security model, the
+backend is the first thing to establish, and the boot log names it.
 
 Key properties:
 

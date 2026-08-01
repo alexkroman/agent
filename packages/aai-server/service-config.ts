@@ -185,9 +185,10 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
  * surfaced instead as a spawn failure naming an unexpected backend.
  *
  * Each backend then gets the check that can only fail at boot:
- * - `subprocess` warns, loudly: it has no isolation.
- * - `apple-container` is opt-in, so a missing CLI is a hard error rather than
- *   a fallback — the override not working must not look like it worked.
+ * - `apple-container` needs the `container` CLI: fatal when the backend was
+ *   named explicitly (the override not working must not look like it worked),
+ *   a warning when it was the local-dev default so non-sandbox surfaces stay
+ *   usable.
  * - `modal` needs credentials: fatal in production, a warning in local dev so
  *   non-sandbox surfaces stay usable.
  */
@@ -195,21 +196,20 @@ export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
   const { backend, reason } = describeSandboxBackend(env);
   console.info(`[sandbox] backend=${backend} (${reason})`);
 
-  if (backend === "subprocess") {
-    console.warn(
-      "[sandbox] WARNING: guests run as plain child processes with NO isolation. " +
-        "Developer mode only. Set SANDBOX_BACKEND=apple-container (local containers) " +
-        "or SANDBOX_BACKEND=modal (remote sandboxes) for a real boundary.",
-    );
-    return;
-  }
-
   if (backend === "apple-container") {
     if (!isAppleContainerCliAvailable()) {
-      throw new Error(
-        "SANDBOX_BACKEND=apple-container but Apple's `container` CLI is not on PATH. " +
-          "Install it from https://github.com/apple/container/releases and run " +
-          "`container system start`, or unset SANDBOX_BACKEND to use the subprocess backend.",
+      const remedy =
+        "Install it from https://github.com/apple/container/releases and run " +
+        "`container system start`, or set SANDBOX_BACKEND=modal (remote sandboxes, " +
+        "needs MODAL_TOKEN_ID/MODAL_TOKEN_SECRET).";
+      if (env.SANDBOX_BACKEND) {
+        throw new Error(
+          `SANDBOX_BACKEND=apple-container but Apple's \`container\` CLI is not on PATH. ${remedy}`,
+        );
+      }
+      console.warn(
+        "[sandbox] WARNING: Apple's `container` CLI is not on PATH. " +
+          `Sandbox creation will fail. ${remedy}`,
       );
     }
     return;
