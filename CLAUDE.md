@@ -506,8 +506,9 @@ voice agents without the CLI:
   `react/jsx-runtime` inside `aai-ui/dist/**` from *that file's* real path.
   Locally aai-ui's own devDependency satisfies it; a pruned production
   install can leave the build root's walk-up copy as the only React —
-  reachable from the workspace root but not from `packages/aai-ui/dist`. Publishing died with *"Rolldown failed to
-  resolve import react/jsx-runtime"* while every local build passed.
+  reachable from the workspace root but not from `packages/aai-ui/dist`.
+  Publishing died with *"Rolldown failed to resolve import
+  react/jsx-runtime"* while every local build passed.
   `aai-cli/client-bundler.test.ts` guards this (every non-optional aai-ui
   peer is deduped). The Modal image installs the full workspace (dev deps
   included), so the old pruned-image packaging tests are gone with the
