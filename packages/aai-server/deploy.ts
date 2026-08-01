@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { errorMessage } from "@alexkroman1/aai";
+import { requiredProviderEnvVars } from "@alexkroman1/aai/runtime";
 import { humanId } from "human-id";
 import { debug } from "./_debug-log.ts";
 import type { ValidatedAppContext } from "./context.ts";
@@ -44,10 +45,19 @@ export type DeployParams = {
    */
   defaultEnv?: Record<string, string> | undefined;
   agentConfig: IsolateConfig;
+  /**
+   * What to do when the agent's config requires a credential the merged env
+   * doesn't hold (see {@link missingCredentials}). `"require"` (the default)
+   * rejects the deploy with a 400 naming the keys — the fix is one `.env`
+   * edit away for CLI callers. `"warn"` deploys anyway and returns the names
+   * in `DeployOutcome.warnings`: the studio uses this because it has no
+   * secrets UI, so a hard failure would leave its user with no path forward.
+   */
+  credentialPolicy?: "require" | "warn" | undefined;
 };
 
 export type DeployOutcome =
-  | { ok: true; slug: string; message: string }
+  | { ok: true; slug: string; message: string; warnings?: string[] }
   | { ok: false; status: 400 | 403 | 409; error: string };
 
 /**
@@ -144,6 +154,32 @@ async function matchAnyHash(apiKey: string, hashes: string[]): Promise<string | 
   return results.find((h) => h !== null) ?? null;
 }
 
+/**
+ * Env var names the agent needs but the merged env doesn't supply (empty
+ * values count as missing — an empty credential authenticates nothing).
+ *
+ * Two sources, both from the bundle's self-described config so a client
+ * can't understate them: provider credentials derived from the
+ * stt/llm/tts/s2s descriptors (the same registry-backed derivation the
+ * runtime resolves keys with), and the agent's own declared `requiredEnv`.
+ * This is what turns "works locally, dies at first session after deploy" —
+ * an agent that ran on shell-exported keys `aai dev` falls back to but the
+ * platform never will — into a deploy-time message naming the key.
+ */
+export function missingCredentials(config: IsolateConfig, env: Record<string, string>): string[] {
+  const required = new Set([...requiredProviderEnvVars(config), ...(config.requiredEnv ?? [])]);
+  return [...required].filter((name) => !env[name]);
+}
+
+function missingCredentialMessage(missing: string[]): string {
+  const plural = missing.length > 1;
+  return (
+    `Missing credential${plural ? "s" : ""} the agent needs to start: ${missing.join(", ")}. ` +
+    `Declare ${plural ? "them" : "it"} in .env and redeploy ` +
+    "(an already-deployed agent can also be updated with `aai secret put`)."
+  );
+}
+
 /** Persist the bundle for a slug the caller is entitled to. Runs under the slug lock. */
 async function deployLocked(
   deps: DeployDeps,
@@ -165,6 +201,14 @@ async function deployLocked(
   const envParsed = EnvSchema.safeParse(env);
   if (!envParsed.success) {
     return { ok: false, status: 400, error: `Invalid platform config: ${envParsed.error.message}` };
+  }
+
+  // Credential preflight: the config is the bundle's own self-description,
+  // so the required set can't be understated by the client. Checked before
+  // any side effect — a rejected deploy must leave the live sandbox running.
+  const missing = missingCredentials(params.agentConfig, env);
+  if (missing.length > 0 && (params.credentialPolicy ?? "require") === "require") {
+    return { ok: false, status: 400, error: missingCredentialMessage(missing) };
   }
 
   const existingSlot = deps.slots.get(slug);
@@ -197,7 +241,12 @@ async function deployLocked(
 
   debug("Deploy received", { slug });
 
-  return { ok: true, slug, message: `Deployed ${slug}` };
+  return {
+    ok: true,
+    slug,
+    message: `Deployed ${slug}`,
+    ...(missing.length > 0 ? { warnings: [missingCredentialMessage(missing)] } : {}),
+  };
 }
 
 // ── HTTP handlers ────────────────────────────────────────────────────────────

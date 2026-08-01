@@ -354,6 +354,32 @@ describe("deployStudioProject", () => {
     expect(after?.deployedHash).toBe(filesHash(before?.files ?? {}));
   });
 
+  test("a missing non-AssemblyAI credential publishes with a warning, not a failure", async () => {
+    // The studio has no secrets UI, so the shared deploy core's credential
+    // preflight must not hard-fail here — the warning rides to the client.
+    const deps = makeDeps({
+      inspect: async () => ({
+        ...TEST_AGENT_CONFIG,
+        stt: { kind: "assemblyai", options: {} },
+        llm: { kind: "anthropic", options: { model: "claude-sonnet-4-5" } },
+        tts: { kind: "cartesia", options: {} },
+      }),
+    });
+    await seedProject(deps, "p1");
+    const result = await deployStudioProject(deps, {
+      apiKey: "caller-key",
+      scope: SCOPE,
+      project: "p1",
+    });
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.warning).toContain("ANTHROPIC_API_KEY");
+      expect(result.warning).toContain("CARTESIA_API_KEY");
+      // The seeded caller key satisfies the AssemblyAI stage.
+      expect(result.warning).not.toContain("ASSEMBLYAI_API_KEY");
+    }
+  });
+
   test("a project named after a reserved slug cannot claim it", async () => {
     const deps = makeDeps();
     await seedProject(deps, "studio");

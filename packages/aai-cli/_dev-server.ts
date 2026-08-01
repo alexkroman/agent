@@ -32,27 +32,74 @@ import { buildWorker } from "./worker-bundler.ts";
 
 // ─── Env loading ────────────────────────────────────────────────────────────
 
-async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record<string, string>> {
-  const env = await resolveServerEnv(root);
+/**
+ * Warnings about the agent's credentials, computed against the `.env`-derived
+ * env and the shell. Pure so it is directly testable; `resolveAgentEnv` logs
+ * each entry. Three cases, in increasing subtlety:
+ *
+ * - a provider key found nowhere → the first session will fail auth;
+ * - a provider key found only in the shell → works here (the
+ *   `withHostCredentialFallback` ergonomic) but is invisible to `aai deploy`,
+ *   which uploads `.env` — the classic "works locally, dead on deploy";
+ * - a declared `requiredEnv` key absent from `.env` → `ctx.env` won't contain
+ *   it at all: custom keys never fall back to the shell, so a shell export
+ *   can't mask one that would be missing both here and after deploy.
+ */
+export function agentEnvWarnings(
+  agentDef: Pick<AgentDef, "stt" | "llm" | "tts" | "s2s" | "requiredEnv">,
+  env: Record<string, string>,
+  shellEnv: Record<string, string | undefined> = process.env,
+): string[] {
+  // Pluralize by count: "s"/"" for nouns, "them"/"it" for pronouns.
+  const s = (names: string[]) => (names.length > 1 ? "s" : "");
+  const them = (names: string[]) => (names.length > 1 ? "them" : "it");
+
   // Derived from the provider registries rather than matched against hardcoded
   // kinds, so a new provider needs no change here and nothing is missed. (The
   // previous check looked only at `stt`/`llm` and only for AssemblyAI.)
   const required = requiredProviderEnvVars(agentDef);
+  const warnings: string[] = [];
+
+  const missing = required.filter((name) => !(env[name] || shellEnv[name]));
+  if (missing.length > 0) {
+    warnings.push(
+      `Missing provider credential${s(missing)}: ${missing.join(", ")}. ` +
+        `Set ${them(missing)} in .env or the environment.`,
+    );
+  }
+
+  const shellOnly = required.filter((name) => !env[name] && shellEnv[name]);
+  if (shellOnly.length > 0) {
+    warnings.push(
+      `${shellOnly.join(", ")} resolved from your shell, not .env — ` +
+        `deployed agents won't have ${them(shellOnly)}. ` +
+        `Declare ${them(shellOnly)} in .env before \`aai deploy\`.`,
+    );
+  }
+
+  const declared = (agentDef.requiredEnv ?? []).filter((name) => !env[name]);
+  if (declared.length > 0) {
+    warnings.push(
+      `Missing requiredEnv key${s(declared)} declared by the agent: ${declared.join(", ")}. ` +
+        `Set ${them(declared)} in .env — ctx.env will not contain ${them(declared)} otherwise.`,
+    );
+  }
+  return warnings;
+}
+
+async function resolveAgentEnv(root: string, agentDef: AgentDef): Promise<Record<string, string>> {
+  const env = await resolveServerEnv(root);
 
   // Only AssemblyAI's key has an interactive setup flow (it doubles as the
   // platform credential), so that one is prompted for.
+  const required = requiredProviderEnvVars(agentDef);
   if (required.includes("ASSEMBLYAI_API_KEY") && !env.ASSEMBLYAI_API_KEY) {
     env.ASSEMBLYAI_API_KEY = await ensureApiKey();
   }
 
-  // The rest would otherwise surface as an auth failure on the first session.
-  const missing = required.filter((name) => !(env[name] || process.env[name]));
-  if (missing.length > 0) {
-    log.warn(
-      `Missing provider credential${missing.length > 1 ? "s" : ""}: ${missing.join(", ")}. ` +
-        `Set ${missing.length > 1 ? "them" : "it"} in .env or the environment.`,
-    );
-  }
+  // Anything still unresolved would otherwise surface as an auth failure on
+  // the first session (or a deploy-time rejection) — warn now.
+  for (const warning of agentEnvWarnings(agentDef, env)) log.warn(warning);
   return env;
 }
 

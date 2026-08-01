@@ -20,7 +20,7 @@ import { currentFilesHash, getWorkspace, mutateWorkspace } from "./studio-worksp
 import { withWorkspaceLock } from "./studio-workspace-lock.ts";
 
 export type StudioDeployResult =
-  | { ok: true; slug: string; url: string }
+  | { ok: true; slug: string; url: string; warning?: string }
   | { ok: false; error: string };
 
 export type StudioDeployDeps = DeployDeps & {
@@ -132,6 +132,10 @@ export async function deployStudioProject(
       // user set explicitly (here or via `aai secret put`) always wins.
       defaultEnv: { [ASSEMBLYAI_API_KEY_ENV]: params.apiKey },
       agentConfig: extraction.config,
+      // Warn, never reject: the studio has no secrets UI, so a hard failure
+      // on a missing non-AssemblyAI key would leave its user with no way to
+      // publish at all. The warning rides back to the client instead.
+      credentialPolicy: "warn",
     },
   );
   if (!outcome.ok) return { ok: false, error: outcome.error };
@@ -154,5 +158,12 @@ export async function deployStudioProject(
       deployedHash: hash,
     })),
   );
-  return { ok: true, slug: outcome.slug, url: `/${outcome.slug}/` };
+  return {
+    ok: true,
+    slug: outcome.slug,
+    url: `/${outcome.slug}/`,
+    ...(outcome.warnings && outcome.warnings.length > 0
+      ? { warning: outcome.warnings.join(" ") }
+      : {}),
+  };
 }

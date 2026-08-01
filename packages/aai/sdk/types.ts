@@ -312,6 +312,14 @@ export type AgentDef<S = Record<string, unknown>> = {
    * pipeline triple.
    */
   s2s?: S2sProvider;
+  /**
+   * Env var names this agent's tools read from `ctx.env` (beyond provider
+   * credentials, which are derived from the `stt`/`llm`/`tts`/`s2s`
+   * descriptors automatically). Deploys check that every listed name is
+   * present in the agent's stored env, so a missing key surfaces at deploy
+   * time instead of as a runtime failure on the first tool call.
+   */
+  requiredEnv?: readonly string[];
 };
 
 // ─── Zod schemas ────────────────────────────────────────────────────────────

@@ -36,7 +36,8 @@ test("secret list returns var names for deployed agent", async () => {
   const { fetch, key } = await deployAndAuth();
   const res = await fetch(...secretReq("my-agent", key, "GET"));
   expect(res.status).toBe(200);
-  expect(((await res.json()) as Record<string, unknown>).vars).toEqual([]);
+  // The standard test deploy seeds the AssemblyAI key (VALID_ENV).
+  expect(((await res.json()) as Record<string, unknown>).vars).toEqual(["ASSEMBLYAI_API_KEY"]);
 });
 
 test("secret set rejects without auth", async () => {
@@ -58,7 +59,10 @@ test("secret set merges new vars", async () => {
   expect(setRes.status).toBe(200);
   const setBody = (await setRes.json()) as Record<string, unknown>;
   expect(setBody.ok).toBe(true);
-  expect((setBody.keys as string[]).sort((a, b) => a.localeCompare(b))).toEqual(["MY_KEY"]);
+  expect((setBody.keys as string[]).sort((a, b) => a.localeCompare(b))).toEqual([
+    "ASSEMBLYAI_API_KEY",
+    "MY_KEY",
+  ]);
 });
 
 test("secret set rejects non-object body", async () => {
@@ -90,7 +94,7 @@ test("secret delete removes a key", async () => {
   expect(delRes.status).toBe(200);
   expect(((await delRes.json()) as Record<string, unknown>).ok).toBe(true);
   const listRes = await fetch(...secretReq("my-agent", key, "GET"));
-  expect(((await listRes.json()) as Record<string, unknown>).vars).toEqual([]);
+  expect(((await listRes.json()) as Record<string, unknown>).vars).toEqual(["ASSEMBLYAI_API_KEY"]);
 });
 
 test("secret set allows overwriting ASSEMBLYAI_API_KEY", async () => {
