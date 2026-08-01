@@ -32,6 +32,7 @@ import { withTimeout } from "./harness-rpc.ts";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./limits.ts";
 import { applyEdit, StudioEditError } from "./studio-edit.ts";
 import { grepWorkspace, StudioGrepError } from "./studio-grep.ts";
+import { formatTestRun, runWorkspaceTests } from "./studio-test.ts";
 import {
   BASH_TIMEOUT_MAX_MS,
   BASH_TIMEOUT_MS,
@@ -441,12 +442,17 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
           return `Bundle failed to load: ${err instanceof Error ? err.message : String(err)}`;
         }
         const { summary, toolNames } = describeConfig(loaded.config);
-        if (!trialTool) return summary;
+        // Reported after the config rather than gating on it: a failing test
+        // usually means the test and the agent drifted, which the agent can
+        // only judge with the config in front of it.
+        const tests = formatTestRun(await runWorkspaceTests(deps.dir));
+        const base = `${summary}\n${tests}`;
+        if (!trialTool) return base;
         if (!toolNames.includes(trialTool)) {
-          return `${summary}\nCannot invoke "${trialTool}": not one of the agent's tools.`;
+          return `${base}\nCannot invoke "${trialTool}": not one of the agent's tools.`;
         }
         const output = await deps.executeTool(trialTool, args ?? {});
-        return `${summary}\n${trialTool}(${JSON.stringify(args ?? {})}) → ${output}`;
+        return `${base}\n${trialTool}(${JSON.stringify(args ?? {})}) → ${output}`;
       },
     }),
   };

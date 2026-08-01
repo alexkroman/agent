@@ -76,7 +76,8 @@ export default agent({
   interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 0 = off)
   holdPhrase?: string;                       // pipeline only — spoken before a silent tool-call turn (default "One moment."; "" disables)
   falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
-  state?: () => Record<string, unknown>;     // per-session mutable state, exposed as ctx.state
+  state?: () => S;                           // per-session mutable state, exposed as ctx.state
+                                             // (S is inferred; see "Typing ctx.state")
 });
 ```
 
@@ -296,6 +297,35 @@ ctx.sessionId: string                          // unique session ID
 ctx.send(event: string, data: unknown): void   // push custom event to browser client
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 ```
+
+**Typing `ctx.state`.** `ctx.state` is untyped by default, so
+`ctx.state.cart.push(item)` compiles and runs as-is — you do not have to
+declare anything. To get real checking (recommended for anything non-trivial),
+declare the state type once and annotate the context in tools that touch it:
+
+```ts
+type State = { cart: string[] };
+
+const addItem = tool({
+  description: "Add an item to the cart",
+  parameters: z.object({ item: z.string() }),
+  execute: ({ item }, ctx: ToolContext<State>) => {   // ← the annotation
+    ctx.state.cart.push(item);
+    return ctx.state.cart.length;
+  },
+});
+
+export default agent({
+  name: "Shop",
+  state: (): State => ({ cart: [] }),
+  tools: { addItem },
+});
+```
+
+With the annotation, `ctx.state.cart` is `string[]` and a typo is caught;
+without it, `ctx.state` is permissive. Tools that never read `ctx.state` need
+no annotation either way. A tool annotated with a state shape the agent's
+factory doesn't produce is a compile error.
 
 `ctx.generate({ prompt, system?, llm?, schema?, temperature?, maxOutputTokens? })`
 runs one LLM generation on the host. It defaults to the agent's pipeline
