@@ -90,12 +90,24 @@ export default agent({
 > When `stt`, `llm`, and `tts` are all provided, the agent runs in
 > **Pipeline mode** — see the section below.
 
-Minimal agent:
+Minimal agent — a cascaded pipeline, which is what you should build unless
+the user asks for the speech-to-speech API:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-export default agent({ name: "My Agent" });
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "My Agent",
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
+  llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
+  tts: assemblyAITts({ voice: "vera" }),
+});
 ```
+
+`agent({ name })` alone is legal and gives you S2S mode instead — see below.
 
 System prompt from file:
 
@@ -107,12 +119,14 @@ export default agent({ name: "My Agent", systemPrompt });
 
 ## Pipeline mode
 
-By default an agent runs in **S2S mode**: AssemblyAI's speech-to-speech
-service handles STT, the LLM loop, and TTS in one socket. This is the
-simplest path and what `agent({ name })` gives you.
+Omitting `stt`/`llm`/`tts` gives **S2S mode**: AssemblyAI's speech-to-speech
+service handles STT, the LLM loop, and TTS in one socket. Fewer moving
+parts, but you cannot choose the model, swap a provider, or tune a stage.
 
-**Pipeline mode** is opt-in. The host runs the LLM loop locally (Vercel AI
-SDK) and you choose your own STT, LLM, and TTS providers. Use it when:
+**Prefer pipeline mode** — declare all three — unless the user specifically
+asks for the speech-to-speech API. Nearly every template ships this way, and
+it is what the App Builder defaults to. The host runs the LLM loop locally
+(Vercel AI SDK) with your chosen STT, LLM, and TTS. You need it when:
 
 - you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq,
   hundreds of models via OpenRouter, or 25+ models via the AssemblyAI

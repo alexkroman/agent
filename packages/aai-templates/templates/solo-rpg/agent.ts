@@ -1,4 +1,7 @@
 import { agent } from "@alexkroman1/aai";
+import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
 import systemPrompt from "./system-prompt.md?raw";
 import { actionRoll } from "./tools/action_roll.ts";
 import { burnMomentum } from "./tools/burn_momentum.ts";
@@ -11,6 +14,9 @@ import { updateState } from "./tools/update_state.ts";
 
 export default agent({
   name: "Solo RPG",
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
+  llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
+  tts: assemblyAITts({ voice: "vera" }),
   systemPrompt,
   greeting:
     "Welcome. Tell me your name, or describe the kind of story you want, and we will begin. You can say something like, dark fantasy warrior named Kael, or just give me a name and I will build a world around you.",

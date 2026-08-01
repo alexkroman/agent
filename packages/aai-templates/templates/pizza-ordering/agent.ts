@@ -1,4 +1,7 @@
 import { agent, tool } from "@alexkroman1/aai";
+import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
 import { z } from "zod";
 import { CRUSTS, calculateTotal, getOrder, type Pizza, resetOrder, SIZES } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
@@ -11,6 +14,9 @@ const crusts = z.enum(CRUSTS);
 
 export default agent({
   name: "Pizza Palace",
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
+  llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
+  tts: assemblyAITts({ voice: "vera" }),
   systemPrompt,
   greeting:
     "Welcome to Pizza Palace. I can help you build your perfect pizza. What would you like to order?",

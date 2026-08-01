@@ -1,4 +1,7 @@
 import { agent, tool } from "@alexkroman1/aai";
+import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { assemblyAI } from "@alexkroman1/aai/stt";
+import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
 import { z } from "zod";
 import knowledge from "./knowledge.json" with { type: "json" };
 
@@ -7,6 +10,9 @@ const faqs: FaqEntry[] = knowledge.faqs;
 
 export default agent({
   name: "FAQ Bot",
+  stt: assemblyAI({ model: "universal-3-5-pro" }),
+  llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
+  tts: assemblyAITts({ voice: "vera" }),
   systemPrompt:
     "You are a friendly FAQ assistant. Answer questions using ONLY the information from your embedded knowledge base. If the user asks something not covered by your knowledge base, say you don't have that information and suggest they check the official documentation.\n\nRules:\n- Keep answers concise and conversational — this is a voice agent\n- Quote the knowledge base accurately, do not embellish\n- If a question is ambiguous, ask the user to clarify\n- Use 'search_knowledge' to find answers to specific questions\n- Use 'list_topics' to see all available FAQ topics\n- Always be helpful and polite",
   greeting:

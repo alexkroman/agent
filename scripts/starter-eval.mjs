@@ -21,11 +21,32 @@ import {
   EXPECTATIONS,
   parseLoadedConfig,
 } from "./starter-expectations.mjs";
+import { createRequire } from "node:module";
 import { homedir } from "node:os";
 import path from "node:path";
 
 const ORIGIN = process.env.AAI_ORIGIN ?? "http://127.0.0.1:8080";
+
+/**
+ * A turn can now legitimately run for many minutes (the step cap is 80), and
+ * undici's default 300s body timeout kills the SSE stream mid-run — which
+ * shows up as `TypeError: terminated` and looks exactly like the guest
+ * crashing. It is the CLIENT giving up, so the client is what needs the
+ * longer leash; the turn's real bound is TURN_TIMEOUT_MS below.
+ */
+const { Agent, fetch: undiciFetch } = await import(
+  createRequire(import.meta.url).resolve("undici", { paths: ["packages/aai"] })
+);
+const streamDispatcher = new Agent({ bodyTimeout: 0, headersTimeout: 0 });
+/**
+ * undici's OWN fetch, not the global. A dispatcher from this undici handed to
+ * Node's internal (different-major) fetch fails as a bare
+ * `TypeError: fetch failed` — the trap documented in CLAUDE.md's SSRF notes.
+ */
+const streamFetch = undiciFetch;
 const TURN_TIMEOUT_MS = 15 * 60_000;
+/** Roughly the server's MAX_CHAT_STEPS; only used to flag long runs. */
+const STEP_CAP_HINT = Number(process.env.AAI_STEP_CAP_HINT ?? 80);
 
 function apiKey() {
   if (process.env.ASSEMBLYAI_API_KEY) return process.env.ASSEMBLYAI_API_KEY;
@@ -69,13 +90,14 @@ async function api(key, endpoint, init = {}) {
  */
 async function runTurn(key, url, prompt) {
   const started = Date.now();
-  const res = await fetch(url, {
+  const res = await streamFetch(url, {
     method: "POST",
     headers: { Authorization: `Bearer ${key}`, "Content-Type": "application/json" },
     body: JSON.stringify({
       messages: [{ id: "m1", role: "user", parts: [{ type: "text", text: prompt }] }],
     }),
     signal: AbortSignal.timeout(TURN_TIMEOUT_MS),
+    dispatcher: streamDispatcher,
   });
   if (!res.ok || !res.body) {
     throw new Error(`chat -> ${res.status}: ${(await res.text()).slice(0, 300)}`);
@@ -182,7 +204,9 @@ function verdict(s, expectation, files) {
   if (caps.tooFewTools) reasons.push(`too-few-tools:${caps.toolCount}`);
   if (!mode.ok) reasons.push(mode.note);
   if (!ui.ok) reasons.push(ui.note);
-  if (s.toolCalls.length >= 16) reasons.push("step-capped");
+  // Tool calls, not steps: a step may issue several in parallel, so this is a
+  // heuristic flag for "ran long", not proof the cap was hit.
+  if (s.toolCalls.length >= STEP_CAP_HINT) reasons.push("ran-long");
 
   return {
     // The headline: built, loaded, and covers the ask.

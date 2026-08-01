@@ -189,7 +189,6 @@
     "XAI_KIND",
     "XaiOptions",
     "XaiProvider",
-    "assemblyAI",
     "gateway",
     "google",
     "groq",
