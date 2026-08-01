@@ -43,12 +43,41 @@ type ChatPanelProps = {
   /** The key was rejected — same global handling as the REST queries. */
   onUnauthorized: () => void;
   /**
-   * Hands the app a function that appends a message to the conversation
-   * WITHOUT triggering a turn — how publish output and secret changes are
-   * posted into the chat for the coding agent to see on its next turn.
+   * Hands the app a function that posts a message into the conversation —
+   * how publish output and secret changes reach the coding agent. See
+   * {@link NotifyChat} for the two modes.
    */
-  registerNotify?: ((fn: ((text: string) => void) | null) => void) | undefined;
+  registerNotify?: ((fn: NotifyChat | null) => void) | undefined;
 };
+
+/**
+ * Post a message into the live conversation.
+ *
+ * Default is a silent append: the message shows in the transcript and rides
+ * along with the agent's *next* turn, which is what a successful publish or a
+ * secret change wants — neither needs an answer, and spending a turn on
+ * "published fine" invites the agent to go do unrequested work.
+ *
+ * `respond: true` sends it as a real turn instead. A FAILED publish needs
+ * that: the CLI output is only useful if the agent actually engages with it,
+ * and as a silent note it would sit there until the user typed something,
+ * which reads as the agent ignoring a build break it was told about.
+ */
+export type NotifyChat = (text: string, opts?: { respond?: boolean }) => void;
+
+/**
+ * How a notification should reach the conversation.
+ *
+ * Falls back to `"append"` rather than dropping when a turn is already in
+ * flight or the LLM isn't up: a publish failure has to survive either way,
+ * and the next turn still carries an appended message.
+ */
+export function notifyDispatch(
+  opts: { respond?: boolean } | undefined,
+  state: { busy: boolean; llmReady: boolean },
+): "turn" | "append" {
+  return opts?.respond === true && !state.busy && state.llmReady ? "turn" : "append";
+}
 
 function MessageView({
   message,
@@ -257,12 +286,30 @@ function ProjectChat({
     onFinish: onWorkspaceChanged,
   });
 
+  const busy = status === "submitted" || status === "streaming";
+  const llmReady = llmStatus?.llm === true;
+
+  // Read through refs so the registration below stays stable: re-registering
+  // on every status tick would swap the function the app holds mid-publish.
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const llmReadyRef = useRef(llmReady);
+  llmReadyRef.current = llmReady;
+
   // Publish output and secret changes arrive as injected user messages —
   // visible in the transcript, carried into the agent's next turn, and
   // persisted with the conversation when that turn settles.
   useEffect(() => {
     if (!registerNotify) return;
-    registerNotify((text: string) => {
+    registerNotify((text, opts) => {
+      const mode = notifyDispatch(opts, {
+        busy: busyRef.current,
+        llmReady: llmReadyRef.current,
+      });
+      if (mode === "turn") {
+        void sendMessage({ text });
+        return;
+      }
       setMessages((current) => [
         ...current,
         {
@@ -273,10 +320,7 @@ function ProjectChat({
       ]);
     });
     return () => registerNotify(null);
-  }, [registerNotify, setMessages]);
-
-  const busy = status === "submitted" || status === "streaming";
-  const llmReady = llmStatus?.llm === true;
+  }, [registerNotify, setMessages, sendMessage]);
 
   const handleStop = () => {
     // Aborts the SSE fetch; the server sees the request signal fire and

@@ -68,13 +68,39 @@ export type Message = {
 };
 
 /**
+ * Default type of `ctx.state` when an agent does not declare one.
+ *
+ * `any`, deliberately. Session state is a genuinely dynamic bag created by
+ * the agent's `state` factory, and `tool()` can only learn its real shape
+ * from an annotated context — so a stricter default (`Record<string, unknown>`,
+ * which this was) makes the ordinary spelling
+ *
+ * ```ts
+ * agent({ state: () => ({ cart: [] }), tools: { add } })
+ * // add: execute: (a, ctx) => ctx.state.cart.push(a)
+ * ```
+ *
+ * a compile error (`'ctx.state.cart' is of type 'unknown'`) even though it
+ * runs correctly. That mattered once `aai build`/`aai deploy` started running
+ * the project's own `tsc`: the strict default did not catch bugs, it refused
+ * to publish working agents.
+ *
+ * Opt into real checking by annotating the context — `ctx: ToolContext<Cart>`
+ * — which also makes the agent verify the tool against its own state shape.
+ *
+ * @public
+ */
+export type DefaultSessionState = any;
+
+/**
  * Context passed to tool `execute` functions.
  *
  * Provides access to the session environment, state, database, and
  * conversation history from within a tool's execute handler.
  *
  * @typeParam S - The shape of per-session state created by the agent's
- *   `state` factory. Defaults to `Record<string, unknown>`.
+ *   `state` factory. Defaults to {@link DefaultSessionState}; annotate the
+ *   context (`ctx: ToolContext<MyState>`) to get real checking.
  *
  * @example
  * ```ts
@@ -93,7 +119,7 @@ export type Message = {
  *
  * @public
  */
-export type ToolContext<S = Record<string, unknown>> = {
+export type ToolContext<S = DefaultSessionState> = {
   /** Environment variables declared in the agent config. */
   env: Readonly<Record<string, string>>;
   /** Mutable per-session state created by the agent's `state` factory. */
@@ -160,7 +186,7 @@ export type ToolContext<S = Record<string, unknown>> = {
  */
 export type ToolDef<
   P extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawShape>,
-  S = Record<string, unknown>,
+  S = DefaultSessionState,
 > = {
   /** Human-readable description shown to the LLM. */
   description: string;
@@ -221,7 +247,7 @@ export { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
  *
  * @public
  */
-export type AgentDef<S = Record<string, unknown>> = {
+export type AgentDef<S = DefaultSessionState> = {
   name: string;
   systemPrompt: string;
   greeting: string;
@@ -229,7 +255,14 @@ export type AgentDef<S = Record<string, unknown>> = {
   maxSteps: number;
   toolChoice?: ToolChoice;
   builtinTools?: readonly BuiltinTool[];
-  tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
+  /**
+   * `NoInfer` so `state` is the ONLY thing `S` is inferred from. Without it a
+   * single tool written without the state type (the common case — `tool()`
+   * only learns `S` from an annotated context) drags `S` back to
+   * `Record<string, unknown>` for the whole agent, and `ctx.state.x` silently
+   * becomes `unknown` again. Tools are still *checked* against `S`.
+   */
+  tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
   state?: () => S;
   idleTimeoutMs?: number;
   /**

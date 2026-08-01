@@ -130,6 +130,7 @@ WHEN TO USE:
 
 WHAT IT REPORTS:
 - Type errors and build errors (with diagnostics to act on), load errors, and the agent's self-described config (name, mode, tools).
+- The result of the workspace's own tests (any *.test.ts), run after the build. A failure usually means the test and the agent have drifted — updating the test is as legitimate a fix as changing the agent.
 
 TRIAL RUNS:
 - Pass tool and args to also invoke one of the agent's tools with sample arguments and see its real output.

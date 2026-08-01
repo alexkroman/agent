@@ -30,7 +30,37 @@ export default agent({
 });
 `;
 
+/**
+ * Mirrors the templates' `agent.test.ts` style: validate the config through
+ * the same conversion `aai deploy` runs, then assert the shape that makes
+ * this agent what it is. Shipped in the starter so the coding agent has an
+ * existing test to extend rather than a blank slate — it runs in the sandbox
+ * with `npx @alexkroman1/aai-cli test`.
+ */
+const STARTER_AGENT_TEST_TS = `import { toAgentConfig } from "@alexkroman1/aai/manifest";
+import { describe, expect, test } from "vitest";
+import agentDef from "./agent.ts";
+
+// Keep these in step with agent.ts as the agent changes — a failing test
+// here means the two have drifted, not that the test is wrong.
+describe("my voice agent", () => {
+  test("config passes the validation aai deploy runs", () => {
+    expect(() => toAgentConfig(agentDef)).not.toThrow();
+  });
+
+  test("runs as a cascaded stt -> llm -> tts pipeline", () => {
+    expect(agentDef.stt).toBeDefined();
+    expect(agentDef.llm).toBeDefined();
+    expect(agentDef.tts).toBeDefined();
+  });
+
+  test("exposes its tools to the model", () => {
+    expect(Object.keys(agentDef.tools)).toContain("roll_dice");
+  });
+});
+`;
+
 /** Files a new studio project starts with. */
 export function starterFiles(): Record<string, string> {
-  return { "agent.ts": STARTER_AGENT_TS };
+  return { "agent.ts": STARTER_AGENT_TS, "agent.test.ts": STARTER_AGENT_TEST_TS };
 }
