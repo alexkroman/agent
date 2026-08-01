@@ -34,6 +34,16 @@ export const ASSEMBLYAI_LLM_GATEWAY_URL = "https://llm-gateway.assemblyai.com/v1
 /** EU LLM Gateway endpoint — keeps data within the European Union. */
 export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.com/v1";
 
+/**
+ * The gateway model to reach for when an agent has no opinion.
+ *
+ * A default exists because the gateway rejects an unknown model id with a
+ * 400 that only appears at the first session — so "invent a plausible model
+ * name" is a failure mode with no compile-time or deploy-time guard, and one
+ * that a code-generating agent falls into readily.
+ */
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
+
 export interface AssemblyAILlmOptions {
   /**
    * Gateway model id, e.g. `"claude-sonnet-4-6"`, `"gpt-4.1"`,
@@ -41,8 +51,10 @@ export interface AssemblyAILlmOptions {
    * https://www.assemblyai.com/docs/llm-gateway/quickstart#available-models
    * for the full list. Pipeline mode streams LLM output; check the gateway
    * docs for which models support streamed responses.
+   *
+   * Defaults to {@link ASSEMBLYAI_LLM_DEFAULT_MODEL}.
    */
-  model: string;
+  model?: string;
   /**
    * Gateway region. `"eu"` routes through the EU endpoint for data
    * residency (Claude and most Gemini models only). Defaults to `"us"`.
@@ -52,7 +64,7 @@ export interface AssemblyAILlmOptions {
 
 export type AssemblyAILlmProvider = LlmProvider & {
   readonly kind: typeof ASSEMBLYAI_LLM_KIND;
-  readonly options: AssemblyAILlmOptions;
+  readonly options: AssemblyAILlmOptions & { model: string };
 };
 
 /**
@@ -62,6 +74,9 @@ export type AssemblyAILlmProvider = LlmProvider & {
  * (`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
  * descriptor stays free of secrets and safe to serialize.
  */
-export function assemblyAI(opts: AssemblyAILlmOptions): AssemblyAILlmProvider {
-  return { kind: ASSEMBLYAI_LLM_KIND, options: { ...opts } };
+export function assemblyAI(opts: AssemblyAILlmOptions = {}): AssemblyAILlmProvider {
+  return {
+    kind: ASSEMBLYAI_LLM_KIND,
+    options: { ...opts, model: opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL },
+  };
 }

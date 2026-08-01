@@ -24,6 +24,7 @@ import type { ProviderEnv } from "../../sdk/env-types.ts";
 import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import {
   ASSEMBLYAI_LLM_API_KEY_ENV,
+  ASSEMBLYAI_LLM_DEFAULT_MODEL,
   ASSEMBLYAI_LLM_GATEWAY_EU_URL,
   ASSEMBLYAI_LLM_GATEWAY_URL,
   ASSEMBLYAI_LLM_KIND,
@@ -350,7 +351,10 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
         baseURL,
         name: "assemblyai",
         fetch: repairOpenAiStream(),
-      }).chat(opts.model);
+        // A descriptor reaching the host with no model is either an older
+        // bundle or a hand-built config; the factory's default is the right
+        // answer for both, and better than a runtime 400 from the gateway.
+      }).chat(opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL);
     },
   },
 };

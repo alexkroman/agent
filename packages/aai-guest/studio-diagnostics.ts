@@ -30,31 +30,37 @@ const HINTS: Record<string, string> = {
     "indexing with a variable fails and any field missing from one entry fails too.",
   TS2538: "Same fix as TS7053: annotate the map as `Record<string, T>`.",
   TS2339:
-    "If the type is `never`, see the `null`/`[]` note below — the variable was " +
-    "declared empty and filled inside a callback, so it never widened. " +
+    "If the type is `never`, see the empty-initializer note below. " +
     "Otherwise, if this is a value read out of an object literal map, the map needs " +
     "`Record<string, T>` with `T` declaring every field (optional ones as `field?: X`). " +
     "Without it the inferred type is a union of the entries and only fields common to all of them exist.",
-  // The `null`/`[]` widening family. TypeScript widens `let x = null` and
-  // `const xs = []` as you assign to them — but that inference is control-flow
-  // based and stops dead at a function boundary, so populating them inside a
-  // `.forEach`/`.map`/`.filter` callback leaves them `null` and `never[]`.
-  // This produced a four-round repair loop on one starter, re-reporting the
-  // same line each time, because none of the three codes it raises says what
-  // the actual rule is.
+  // The empty-initializer family.
+  //
+  // Get the RULE right here, because the first version of these hints did not
+  // and it cost more than saying nothing. It blamed a function boundary — true
+  // under `noImplicitAny`, where TypeScript widens `let x = null` and
+  // `const xs = []` from later assignments along straight-line code only. This
+  // project turns `noImplicitAny` OFF (see WORKSPACE_TSCONFIG), and that
+  // *disables the widening entirely*: `[]` is `never[]` and `null` is `null`
+  // from the declaration on, callback or not.
+  //
+  // So an agent read "this is inside a callback", looked, found no callback,
+  // and concluded the hint did not apply — then chased use sites one at a
+  // time. One starter spent sixteen type checks that way and never built. A
+  // hint whose explanation does not match the compiler's actual configuration
+  // is worse than none: it is a confident wrong lead.
   TS2322:
-    "If the target is `null`, this is a `let x = null` being assigned inside a " +
-    "callback. TypeScript only widens such a variable along straight-line code, " +
-    "never across a function boundary. Annotate the declaration: " +
+    "If the target type is `null`, the variable was declared `let x = null` " +
+    "with no annotation, which makes its type exactly `null` — assigning " +
+    "anything else is this error. Annotate the DECLARATION: " +
     "`let best: Match | null = null`.",
   TS2345:
-    "If the parameter is `never`, an empty array never widened. In agent.ts " +
-    "that is `const xs = []` pushed to inside a callback — the widening that " +
-    "would make it `string[]` does not cross a function boundary. In a React " +
-    "client it is a `useState` initialized to `[]`, which stays `never[]` for " +
-    "good. Fix it where the variable is DECLARED, not where it is used — " +
-    "`const items: string[] = []`, or a type argument on the useState call. " +
-    "Rebuilding without moving the annotation reports the same line again.",
+    "If the parameter type is `never`, an array was declared empty with no " +
+    "annotation, which makes it `never[]` — nothing can be pushed into it. " +
+    "Annotate the DECLARATION, not the call — `const items: string[] = []`, " +
+    "or a type argument on the useState call in a client. Fixing the push " +
+    "site instead leaves the declaration wrong, and the next build reports " +
+    "the next push.",
   TS2740:
     "A function annotated with a success shape is also returning an error " +
     "object. Widen the return type to a union (`Promise<Info | { error: string }>`) " +

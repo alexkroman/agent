@@ -112,6 +112,7 @@ async function runTurn(key, url, prompt) {
     text: "",
     testAgentRuns: [],
     redChecks: [],
+    redExcerpts: [],
     lastTestAgentOutput: "",
     ms: 0,
   };
@@ -164,6 +165,11 @@ async function runTurn(key, url, prompt) {
         // number for both is how you end up congratulating yourself.
         if ((name === "test_agent" || name === "check_types") && /error TS\d/i.test(out)) {
           summary.redChecks.push(name);
+          // Keep the text, not just the count. A run that thrashes on
+          // check_types and never builds reports zero `repairs` while being
+          // the worst run of the set — without the excerpt there is nothing
+          // to diagnose it from afterwards.
+          summary.redExcerpts.push(`${name}: ${out.slice(0, 240).replace(/\s+/g, " ")}`);
         }
       }
       if (part.type === "error") summary.errors.push(String(part.errorText ?? "error"));
@@ -240,6 +246,7 @@ function verdict(s, expectation, files) {
     failures: s.testAgentRuns.filter((r) => r.buildFailed || r.testsFailed).map((r) => r.excerpt),
     // Every red verification, not just the expensive one — see redChecks.
     redChecks: s.redChecks.length,
+    redExcerpts: s.redExcerpts,
     firstTryClean: s.redChecks.length === 0,
     errorTexts: s.errors.slice(0, 3),
   };

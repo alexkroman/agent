@@ -751,31 +751,30 @@ Adding a provider means: descriptor factory there, an opener in
 `host/providers/_utils.ts`), and one registry/switch entry in
 `host/providers/resolve.ts`.
 
-### S2S voices
+### Voices
 
-S2S mode selects a voice via the `voice:` field on `agent()`. Available
-voices on AssemblyAI's S2S API:
+**`ASSEMBLYAI_TTS_VOICES` in `sdk/providers/tts/assemblyai.ts` is the list.**
+Read it there; do not restate it here, and do not trust a voice name that
+isn't in it.
 
-| Voice | Accent | Description |
-| --- | --- | --- |
-| `ivy` | US | Professional, deliberate, smooth |
-| `james` | US | Conversational, professional, male |
-| `tyler` | US | Theatrical, energetic, chatty, jagged |
-| `winter` | US | Empathetic, aesthetic, conversational |
-| `sam` | US | Soft, conversational, young |
-| `mia` | US | Smooth, conversational, young |
-| `bella` | US | High-pitched, chatty |
-| `david` | US | Deep, calming, conversational |
-| `jack` | US | Smooth, direct, clear, fast-paced |
-| `kyle` | US | Chatty, nasal, expressive |
-| `helen` | US | Soft, older, calming |
-| `martha` | US | Southern, older, warm |
-| `river` | US | Slow, calming, ASMR |
-| `emma` | US | Lively, young, conversational |
-| `victor` | US | Deep, older |
-| `eleanor` | US | Deeper, older, calming |
-| `sophie` | UK | Clear, smooth, instructive, simple |
-| `oliver` | UK | Narrative, conversational |
+That instruction is the whole point of the constant. This section used to
+carry its own table — `ivy`, `sam`, `mia`, `jack`, `sophie`, `oliver` and a
+dozen more — of which every entry was either deprecated or had never
+existed, and it claimed a `voice:` field on `agent()` that the SDK does not
+have. The provider's doc comment carried a *different* wrong list
+(`azelma`, `cosette`, `fantine`, `javert`, …, none published). Two
+hand-maintained lists, both fiction, both pointed at by anyone looking for a
+voice.
+
+The failure they cause is invisible at authoring time: a wrong voice id is
+rejected in-band after the TTS socket opens, so the agent connects, reports
+ready, and is permanently silent. Nothing before a live session catches it.
+Hence one checkable constant, with the accent alongside each name and the
+deprecated set kept separately in `ASSEMBLYAI_TTS_DEPRECATED_VOICES`.
+
+Pipeline mode picks the voice with `assemblyAI({ voice })` from
+`@alexkroman1/aai/tts` (or `assemblyAIPipeline({ voice })`). S2S mode's
+voice rides on the `s2s` descriptor — there is no top-level `voice:` field.
 
 ### Storage (`ctx.db`)
 

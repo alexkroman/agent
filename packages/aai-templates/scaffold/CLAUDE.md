@@ -275,9 +275,21 @@ Override with `{ voice, model, language }`.
 
 **AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the
 LLM Gateway, so an all-AssemblyAI pipeline needs exactly one secret. Each
-voice speaks one language — English includes `vera`, `michael`, `alba`,
-`jane`, `george`, `mary`, `paul`; non-English are `estelle` (fr),
-`giovanni` (it), `juergen` (de), `lola` (es), `rafael` (pt). Set
+voice speaks one language, and this is the whole catalog — **a voice not on
+this list is rejected after the socket opens, which leaves the agent
+connected, "ready", and permanently silent**, so pick one from here rather
+than guessing a plausible name:
+
+- **English, US accent**: `alba`, `anna`, `charles`, `eve`, `george`,
+  `jane`, `jean`, `mary`, `michael`
+- **English, UK accent**: `paul`, `vera` (the default)
+- **Native accent, code-switches with English**: `estelle` (fr),
+  `giovanni` (it), `juergen` (de), `lola` (es), `rafael` (pt)
+
+There is no separate age/gender/style axis — match the persona by picking a
+name and accent, and put the delivery in the system prompt instead.
+
+Set
 `language` only alongside a voice that speaks it, as an ISO 639-1 code —
 `"en"`, `"fr"`, `"de"`, `"it"`, `"pt"`, `"es"` are the six the catalog
 covers, and the SDK translates each to the full name the service wants.
@@ -327,8 +339,28 @@ ctx.state.count++;
 ctx.state.incidents.filter((i) => i.status === "open");
 ```
 
-Write the code first. Do NOT add type annotations defensively — nothing
-requires them, and time spent on them is time not spent on the agent.
+Write the code first. Do NOT add type annotations defensively — almost
+nothing requires them, and time spent on them is time not spent on the agent.
+
+**The one exception, and it is not optional: annotate any variable you
+declare empty.** With `noImplicitAny` off, TypeScript does not widen an empty
+initializer from what you later assign, so `[]` stays `never[]` and `null`
+stays `null` — forever, whether or not a callback is involved:
+
+```ts
+const items = [];            // never[]  → items.push(x) is an error
+let best = null;             // null     → best = {...} is an error
+const [picks, set] = useState([]);  // never[] in a client, same thing
+
+const items: Pick[] = [];    // ✅ annotate the DECLARATION
+let best: Pick | null = null;       // ✅
+const [picks, set] = useState<Pick[]>([]);  // ✅
+```
+
+Annotating the *use* instead does not help — the declaration is still wrong,
+so the next push reports the next line, and you can burn a whole session
+fixing one call site at a time. This is the single most common way a
+generated agent fails to build.
 
 Declaring a state type is still worth it once the shape is settled, because
 it turns a misspelled field into a compile error instead of `undefined` at
