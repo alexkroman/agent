@@ -139,9 +139,6 @@ image = (
             "NODE_ENV": "production",
             "PORT": str(PORT),
             "GUEST_HARNESS_PATH": "/app/packages/aai-guest/dist/harness.mjs",
-            # Studio builds run in the studio app's studio_build function,
-            # never in the web server's process (see studio-build-runner.ts).
-            "STUDIO_BUILD_BACKEND": "modal",
             # Guest sandboxes are pinned to the web server's region (above).
             "MODAL_SANDBOX_REGION": REGION,
             # Per-replica WebSocket cap, kept in lockstep with the autoscaler

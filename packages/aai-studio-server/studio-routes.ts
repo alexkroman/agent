@@ -246,7 +246,10 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
           slugLock: c.env.slugLock,
           slugEpochs: c.env.slugEpochs,
           workspaces: c.env.workspaces,
-          pool: options.pool,
+          // Publish builds in a guest sandbox via the session broker —
+          // reusing the project's live coding-agent sandbox when one exists.
+          buildWorkspace: (buildScope, buildProject, files) =>
+            ensureBroker(c).buildWorkspace(buildScope, buildProject, files),
         },
         { apiKey: c.var.apiKey, scope, project, env },
       );

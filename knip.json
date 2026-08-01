@@ -63,7 +63,13 @@
       "entry": [
         "**/*.test.ts"
       ],
-      "includeEntryExports": true
+      "includeEntryExports": true,
+      "ignoreDependencies": [
+        "@alexkroman1/aai-ui",
+        "react",
+        "react-dom",
+        "tailwindcss"
+      ]
     },
     "packages/aai-server": {
       "entry": [
@@ -71,8 +77,7 @@
       ],
       "includeEntryExports": true,
       "ignoreDependencies": [
-        "@types/json-schema",
-        "aai-guest"
+        "@types/json-schema"
       ],
       "ignoreBinaries": [
         "modal",

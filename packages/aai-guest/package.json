@@ -16,9 +16,16 @@
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
+    "@alexkroman1/aai-cli": "workspace:*",
+    "@alexkroman1/aai-ui": "workspace:*",
+    "@tailwindcss/vite": "^4.3.3",
+    "@vitejs/plugin-react": "^6.0.4",
     "ai": "^7.0.41",
     "diff": "^9.0.0",
     "picomatch": "^4.0.4",
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8",
+    "tailwindcss": "^4.3.2",
     "ws": "^8.21.1",
     "zod": "^4.4.3"
   },

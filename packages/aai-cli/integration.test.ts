@@ -266,7 +266,9 @@ describe("secrets against mock API", () => {
 // persistence" tests wrote .aai/project.json themselves "like deploy.ts
 // does" and kept passing with executeDeploy deleted entirely.
 
-describe("executeDeploy end to end", () => {
+// Each deploy here bundles the SDK runtime into the worker (the deploy
+// artifact shape), which takes seconds under parallel suite load.
+describe("executeDeploy end to end", { timeout: 120_000 }, () => {
   /** Scaffold a minimal agent project in `dir`. */
   async function writeAgentProject(dir: string): Promise<void> {
     await linkSdkNodeModules(dir);

@@ -1,21 +1,18 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Studio deploy flow: bundle the workspace, extract the agent config inside
- * a throwaway sandbox (never on the host), validate it, and hand the result
- * to the shared deploy core. Failures come back as plain-text messages so
- * the coding agent (and the UI) can show — and fix — them.
+ * Studio deploy flow: build the workspace IN a guest sandbox — the broker's
+ * `workspace/build`, which runs the same aai CLI bundler pass `aai deploy`
+ * runs and loads the built worker in place for its config self-description
+ * — validate that config, and hand the result to the shared deploy core.
+ * The host never builds and never evaluates tenant code. Failures come back
+ * as plain-text messages so the coding agent (and the UI) can show — and
+ * fix — them.
  */
 
 import { ASSEMBLYAI_API_KEY_ENV } from "@alexkroman1/aai/stt";
-import { resolveHarnessPath } from "aai-server/constants";
-import { type DeployDeps, deployAgentBundle, extractAgentConfig } from "aai-server/deploy";
-import type { SandboxPool } from "aai-server/sandbox-pool";
-import { describeBundle } from "aai-server/sandbox-vm";
+import { type DeployDeps, deployAgentBundle, validateAgentConfig } from "aai-server/deploy";
 import type { WorkspaceStore } from "aai-server/workspace-store";
-import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
-import type { StudioBuildRunner } from "./studio-build-protocol.ts";
-import { resolveStudioBuildRunner } from "./studio-build-runner.ts";
-import { StudioBuildError } from "./studio-errors.ts";
+import type { WorkspaceBuildOutcome } from "./studio-session-broker.ts";
 import { currentFilesHash, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
 import { withWorkspaceLock } from "./studio-workspace-lock.ts";
 
@@ -25,16 +22,12 @@ export type StudioDeployResult =
 
 export type StudioDeployDeps = DeployDeps & {
   workspaces: WorkspaceStore;
-  /** Warm harness pool — config extraction acquires from it when present. */
-  pool?: SandboxPool | undefined;
-  /**
-   * Injectable for tests — defaults to the env-selected out-of-process build
-   * runner (a local build subprocess in dev, the Modal build worker in
-   * production; see `studio-build-runner.ts`).
-   */
-  build?: StudioBuildRunner;
-  /** Injectable for tests — defaults to sandboxed `describeBundle`. */
-  inspect?: (workerCode: string) => Promise<unknown>;
+  /** The session broker's `buildWorkspace` — Publish's in-sandbox build. */
+  buildWorkspace: (
+    scope: string,
+    project: string,
+    files: Record<string, string>,
+  ) => Promise<WorkspaceBuildOutcome>;
 };
 
 export type StudioDeployParams = {
@@ -45,43 +38,6 @@ export type StudioDeployParams = {
   env?: Record<string, string> | undefined;
 };
 
-/**
- * Build (or reuse) the deployable artifacts for one workspace content hash.
- *
- * Content-hash keyed build reuse: `test_agent` already built this exact
- * worker during the chat turn, and a repeat Publish of unchanged files built
- * both artifacts. A full hit skips materialize + both Vite passes; a
- * worker-only hit (the test_agent case) pays just the client build.
- *
- * @throws {StudioBuildError} on compile errors, exactly like the builders.
- */
-async function buildArtifacts(
-  deps: StudioDeployDeps,
-  files: Record<string, string>,
-  hash: string,
-): Promise<{ worker: string; clientFiles: Record<string, string> }> {
-  const build = deps.build ?? resolveStudioBuildRunner();
-  const cached = getCachedBuild(hash);
-  let worker = cached?.worker;
-  let clientFiles = cached?.clientFiles;
-  if (worker === undefined || clientFiles === undefined) {
-    // One runner call builds whatever the cache is missing — one materialize
-    // feeds both Vite passes (and on the Modal backend, one remote hop).
-    const built = await build({
-      files,
-      worker: worker === undefined,
-      client: clientFiles === undefined,
-    });
-    worker ??= built.worker;
-    clientFiles ??= built.clientFiles;
-  }
-  if (worker === undefined || clientFiles === undefined) {
-    throw new Error("Build runner returned incomplete artifacts");
-  }
-  putCachedBuild(hash, { worker, clientFiles });
-  return { worker, clientFiles };
-}
-
 export async function deployStudioProject(
   deps: StudioDeployDeps,
   params: StudioDeployParams,
@@ -89,24 +45,15 @@ export async function deployStudioProject(
   const workspace = await getWorkspace(deps.workspaces, params.scope, params.project);
   if (!workspace) return { ok: false, error: `Project not found: ${params.project}` };
 
-  // Computed once and reused for the build cache and `deployedHash` below.
+  // Computed once and stamped as `deployedHash` below.
   const hash = currentFilesHash(workspace);
-  let worker: string;
-  let clientFiles: Record<string, string>;
-  try {
-    // A build failure is a message the coding agent can act on, not an
-    // exception.
-    ({ worker, clientFiles } = await buildArtifacts(deps, workspace.files, hash));
-  } catch (err) {
-    if (err instanceof StudioBuildError) return { ok: false, error: err.message };
-    throw err;
-  }
+  // A build failure is a message the coding agent can act on, not an
+  // exception; transport failures (dead sandbox, malformed frames) throw.
+  const built = await deps.buildWorkspace(params.scope, params.project, workspace.files);
+  if (!built.ok) return { ok: false, error: built.error };
+  const { worker, clientFiles } = built;
 
-  const inspect =
-    deps.inspect ??
-    ((code: string) =>
-      describeBundle({ harnessPath: resolveHarnessPath(), workerCode: code, pool: deps.pool }));
-  const extraction = await extractAgentConfig(inspect, worker);
+  const extraction = validateAgentConfig(built.config);
   if (!extraction.ok) return { ok: false, error: extraction.error };
 
   const outcome = await deployAgentBundle(

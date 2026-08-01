@@ -23,7 +23,6 @@
 
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
-import os from "node:os";
 import path from "node:path";
 import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAI } from "@alexkroman1/aai/llm";
 import { resolveAllBuiltins, resolveLlm } from "@alexkroman1/aai/runtime";
@@ -39,6 +38,7 @@ import {
 } from "ai";
 import type { z } from "zod";
 import { hostRequest } from "./harness-rpc.ts";
+import { buildWorkspaceDir, workspacesRoot } from "./studio-build.ts";
 import {
   createStudioTools,
   materializeWorkspace,
@@ -48,8 +48,6 @@ import {
 
 /** Matches the host store's whole-conversation byte cap (4 MB). */
 const MAX_CHAT_BODY_BYTES = 4_000_000;
-/** Guest→host build deadline — a cold Vite pass takes tens of seconds. */
-const BUILD_RPC_TIMEOUT_MS = 200_000;
 /** Deadline for the end-of-turn workspace sync / chat persist RPCs. */
 const SYNC_RPC_TIMEOUT_MS = 30_000;
 
@@ -83,7 +81,10 @@ export type StudioChatDeps = {
  * page session so the sandbox never serves a stale tree).
  */
 export async function initStudioSession(params: StudioSessionParams): Promise<StudioSession> {
-  const dir = path.join(os.tmpdir(), `aai-studio-ws-${process.pid}`);
+  // Under the workspaces root, NOT os.tmpdir(): builds run in-guest through
+  // the aai CLI bundlers, and only this root has the toolchain's
+  // node_modules above it for the workspace's bare imports to resolve.
+  const dir = path.join(workspacesRoot(), `session-${process.pid}`);
   await materializeWorkspace(dir, params.files);
   return { ...params, dir };
 }
@@ -217,11 +218,9 @@ async function runTurn(
       ...createGuestWebTools(),
       ...createStudioTools({
         dir: session.dir,
-        build: async (files) =>
-          (await hostRequest("studio/build", { files }, BUILD_RPC_TIMEOUT_MS)) as {
-            worker?: string;
-            buildError?: string;
-          },
+        // Build the live session workspace in place, in THIS sandbox,
+        // through the same CLI bundler pass `aai deploy` runs.
+        build: () => buildWorkspaceDir(session.dir, { worker: true, client: false }),
         loadBundle: deps.loadBundle,
         executeTool: deps.executeTool,
       }),

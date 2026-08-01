@@ -71,20 +71,12 @@ export type BundleInspector = (workerCode: string) => Promise<unknown>;
 export type ConfigExtraction = { ok: true; config: IsolateConfig } | { ok: false; error: string };
 
 /**
- * Derive and validate an agent's config from its worker bundle. Shared by
- * the HTTP deploy route and the studio's deploy flow, so a deployed config
- * always comes from the bundle itself — never from anything a client sent.
+ * Validate a bundle-extracted raw config. The raw value always comes from
+ * evaluating the bundle inside a guest sandbox — via `describeBundle` on
+ * the HTTP deploy path, or riding back with the artifacts from the guest's
+ * `workspace/build` on the studio path — never from anything a client sent.
  */
-export async function extractAgentConfig(
-  inspect: BundleInspector,
-  worker: string,
-): Promise<ConfigExtraction> {
-  let raw: unknown;
-  try {
-    raw = await inspect(worker);
-  } catch (err) {
-    return { ok: false, error: `Agent bundle failed to load: ${errorMessage(err)}` };
-  }
+export function validateAgentConfig(raw: unknown): ConfigExtraction {
   if (raw === undefined) {
     return {
       ok: false,
@@ -98,6 +90,23 @@ export async function extractAgentConfig(
     return { ok: false, error: `Invalid agent config: ${issues}` };
   }
   return { ok: true, config: parsed.data };
+}
+
+/**
+ * Derive and validate an agent's config from its worker bundle by loading
+ * it in a throwaway guest sandbox (the HTTP deploy route's path).
+ */
+export async function extractAgentConfig(
+  inspect: BundleInspector,
+  worker: string,
+): Promise<ConfigExtraction> {
+  let raw: unknown;
+  try {
+    raw = await inspect(worker);
+  } catch (err) {
+    return { ok: false, error: `Agent bundle failed to load: ${errorMessage(err)}` };
+  }
+  return validateAgentConfig(raw);
 }
 
 /**

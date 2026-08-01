@@ -14,12 +14,14 @@
  * agent's `/websocket`; chat turns never pass through this service.
  *
  * The control channel stays host↔guest and serves the guest's callbacks:
- * - `studio/build` — Vite never runs in the guest (no node_modules there);
- *   builds go through the out-of-process build runner, content-hash cached
- *   so a Publish right after a test_agent reuses the worker.
  * - `studio/sync-workspace` — end-of-turn write-back into the project
  *   store, so the editor and Publish see what the agent did.
  * - `studio/persist-chat` — end-of-turn conversation snapshot.
+ *
+ * Builds run IN the guest, through the aai CLI's own bundlers (see
+ * aai-guest/studio-build.ts): `test_agent` builds locally during chat
+ * turns, and Publish's build is the host→guest `workspace/build` request
+ * (`buildWorkspace` below) — the one build path `aai deploy` also runs.
  *
  * Sandboxes are per (scope, project), reused across turns, and evicted
  * after an idle window — a per-replica accelerator exactly like the agent
@@ -28,21 +30,17 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { resolveHarnessPath } from "aai-server/constants";
+import { MAX_WORKER_SIZE, resolveHarnessPath } from "aai-server/constants";
 import { registerGuestRpcHandlers } from "aai-server/sandbox-guest-rpc";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { SafePathSchema } from "aai-server/schemas";
 import { z } from "zod";
-import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
-import type { StudioBuildRunner } from "./studio-build-protocol.ts";
-import { resolveStudioBuildRunner } from "./studio-build-runner.ts";
-import { StudioBuildError } from "./studio-errors.ts";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./studio-limits.ts";
 import { studioLlmModelId } from "./studio-llm.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import { MAX_STUDIO_CHAT_MESSAGES, UiMessageSchema } from "./studio-schemas.ts";
-import { filesHash, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
+import { getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
 
 /** Max tool-loop steps per chat turn (Claude-Code-scale agentic budget). */
 export const MAX_CHAT_STEPS = 16;
@@ -50,6 +48,8 @@ export const MAX_CHAT_STEPS = 16;
 export const STUDIO_SESSION_IDLE_MS = 15 * 60_000;
 /** Deadline for installing a session in the guest (workspace transfer). */
 const SESSION_INIT_TIMEOUT_MS = 60_000;
+/** Deadline for one in-guest Publish build (two cold Vite passes). */
+const WORKSPACE_BUILD_TIMEOUT_MS = 300_000;
 
 /** Guest-supplied workspace files — validated exactly like a client PUT. */
 const GuestFilesSchema = z.object({
@@ -67,6 +67,23 @@ const GuestChatSchema = z.object({
   messages: z.array(UiMessageSchema).max(MAX_STUDIO_CHAT_MESSAGES),
 });
 
+/**
+ * Response of the guest's `workspace/build` (guest-asserted wire data).
+ * `config` stays `unknown` here — the deploy flow validates it with
+ * `validateAgentConfig` (IsolateConfigSchema), same contract as
+ * `describeBundle`'s result on the HTTP deploy path.
+ */
+const WorkspaceBuildResponseSchema = z.object({
+  worker: z.string().max(MAX_WORKER_SIZE).optional(),
+  clientFiles: z.record(SafePathSchema, z.string().max(MAX_WORKER_SIZE)).optional(),
+  config: z.unknown().optional(),
+  buildError: z.string().optional(),
+});
+
+export type WorkspaceBuildOutcome =
+  | { ok: true; worker: string; clientFiles: Record<string, string>; config: unknown }
+  | { ok: false; error: string };
+
 type BrokerStores = {
   workspaces: import("aai-server/workspace-store").WorkspaceStore;
   chats: import("aai-server/chat-store").ChatStore;
@@ -77,8 +94,6 @@ export type StudioSessionBrokerOptions = BrokerStores & {
   harnessPath?: string;
   /** Injectable for tests — defaults to the shared warm-harness spawner. */
   spawn?: typeof spawnWarmHarness;
-  /** Injectable for tests — defaults to the env-selected build runner. */
-  build?: StudioBuildRunner;
   env?: NodeJS.ProcessEnv;
   idleMs?: number;
 };
@@ -90,6 +105,16 @@ export type StudioSessionBroker = {
    * Null when the project doesn't exist.
    */
   ensureSession(scope: string, project: string, apiKey: string): Promise<{ url: string } | null>;
+  /**
+   * Build one workspace snapshot in a guest sandbox (`workspace/build`) —
+   * the Publish build. Reuses the project's live sandbox when one exists;
+   * otherwise a sandbox is spawned for the build and torn down after.
+   */
+  buildWorkspace(
+    scope: string,
+    project: string,
+    files: Record<string, string>,
+  ): Promise<WorkspaceBuildOutcome>;
   /** Tear down every live sandbox (tests, shutdown). */
   dispose(): Promise<void>;
 };
@@ -106,6 +131,15 @@ export function chatUrlFromSessionUrl(sessionUrl: string): string {
   url.protocol = url.protocol === "ws:" ? "http:" : "https:";
   url.pathname = "/studio/chat";
   return url.toString();
+}
+
+/**
+ * Session-map key. NUL separator: neither a scope hash nor a validated
+ * project name can contain it, so distinct (scope, project) pairs can never
+ * collide the way a printable separator would allow.
+ */
+function sessionKey(scope: string, project: string): string {
+  return `${scope}\u0000${project}`;
 }
 
 export function createStudioSessionBroker(
@@ -134,25 +168,6 @@ export function createStudioSessionBroker(
   }, 60_000);
   sweeper.unref?.();
 
-  /** Run one workspace build for the guest, content-hash cached. */
-  async function buildForGuest(
-    files: Record<string, string>,
-  ): Promise<{ worker?: string; buildError?: string }> {
-    const hash = filesHash(files);
-    const cached = getCachedBuild(hash)?.worker;
-    if (cached !== undefined) return { worker: cached };
-    const build = options.build ?? resolveStudioBuildRunner();
-    try {
-      const { worker } = await build({ files, worker: true, client: false });
-      if (worker === undefined) return { buildError: "Build produced no worker bundle" };
-      putCachedBuild(hash, { worker });
-      return { worker };
-    } catch (err) {
-      if (err instanceof StudioBuildError) return { buildError: err.message };
-      throw err;
-    }
-  }
-
   /** Wire the control channel for one project's sandbox. */
   function wire(warm: WarmHarness, key: string, scope: string, project: string): void {
     // No db — trial tool runs report storage-not-enabled, same as before.
@@ -161,12 +176,6 @@ export function createStudioSessionBroker(
       const entry = sessions.get(key);
       if (entry && entry.warm === warm) entry.lastUsed = Date.now();
     };
-    warm.conn.onRequest("studio/build", async (params) => {
-      touch();
-      const parsed = GuestFilesSchema.safeParse(params);
-      if (!parsed.success) return { buildError: `Invalid build request: ${parsed.error.message}` };
-      return await buildForGuest(parsed.data.files);
-    });
     warm.conn.onRequest("studio/sync-workspace", async (params) => {
       touch();
       const parsed = GuestFilesSchema.safeParse(params);
@@ -213,9 +222,31 @@ export function createStudioSessionBroker(
     return true;
   }
 
+  /** Send one `workspace/build` and validate the guest's response. */
+  async function requestBuild(
+    warm: WarmHarness,
+    files: Record<string, string>,
+  ): Promise<WorkspaceBuildOutcome> {
+    const raw = await warm.conn.sendRequest(
+      "workspace/build",
+      { files, worker: true, client: true },
+      WORKSPACE_BUILD_TIMEOUT_MS,
+    );
+    const parsed = WorkspaceBuildResponseSchema.safeParse(raw);
+    if (!parsed.success) {
+      return { ok: false, error: `Malformed build response from sandbox: ${parsed.error.message}` };
+    }
+    const built = parsed.data;
+    if (built.buildError !== undefined) return { ok: false, error: built.buildError };
+    if (built.worker === undefined || built.clientFiles === undefined) {
+      return { ok: false, error: "Sandbox build returned incomplete artifacts" };
+    }
+    return { ok: true, worker: built.worker, clientFiles: built.clientFiles, config: built.config };
+  }
+
   return {
     async ensureSession(scope, project, apiKey) {
-      const key = `${scope} ${project}`;
+      const key = sessionKey(scope, project);
       const existing = sessions.get(key);
       if (existing) {
         // Re-init on every broker call: the workspace may have changed in
@@ -255,6 +286,42 @@ export function createStudioSessionBroker(
       const url = chatUrlFromSessionUrl(warm.sessionUrl);
       sessions.set(key, { warm, url, lastUsed: Date.now() });
       return { url };
+    },
+
+    async buildWorkspace(scope, project, files) {
+      const key = sessionKey(scope, project);
+      const existing = sessions.get(key);
+      if (existing) {
+        try {
+          const outcome = await requestBuild(existing.warm, files);
+          existing.lastUsed = Date.now();
+          return outcome;
+        } catch (err) {
+          // Dead sandbox — replace it with a fresh one for this build; the
+          // next chat broker call heals the session itself.
+          console.warn("Studio build: live sandbox failed; using a fresh one", {
+            project,
+            error: errorMessage(err),
+          });
+          await disposeEntry(key);
+        }
+      }
+      // No (live) session sandbox — spawn one for the build and tear it
+      // down after; Publish from the editor shouldn't leave a sandbox
+      // running that no chat session owns.
+      const warm =
+        (await options.pool?.acquire()) ??
+        (await spawn({
+          harnessPath: options.harnessPath ?? resolveHarnessPath(),
+          slug: "studio-build",
+        }));
+      try {
+        registerGuestRpcHandlers(warm.conn, {});
+        warm.conn.listen();
+        return await requestBuild(warm, files);
+      } finally {
+        await warm[Symbol.asyncDispose]().catch(() => undefined);
+      }
     },
 
     async dispose() {

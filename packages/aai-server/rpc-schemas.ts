@@ -146,18 +146,30 @@ export type StudioSessionInitParams = {
   maxSteps: number;
 };
 
+/**
+ * Params of the host→guest `workspace/build` request — Publish's build: the
+ * guest materializes the files under its toolchain root and runs the aai
+ * CLI's own bundlers (see aai-guest/studio-build.ts), then loads the built
+ * worker in place so its config self-description rides back with the
+ * artifacts. Builds run only in the tenant's sandbox — never on the host.
+ */
+export type WorkspaceBuildParams = {
+  files: Record<string, string>;
+  worker: boolean;
+  client: boolean;
+};
+
 export type GuestRpcSchema = {
   requestsOut: {
     "bundle/load": { params: BundleLoadParams; result: unknown };
     "tool/execute": { params: ToolExecuteParams; result: unknown };
     "studio/session-init": { params: StudioSessionInitParams; result: unknown };
+    "workspace/build": { params: WorkspaceBuildParams; result: unknown };
     /** Session-aware idleness: the host's idle eviction asks before killing. */
     status: { params: undefined; result: unknown };
   };
   requestsIn: {
     "db/query": { params: unknown; result: unknown };
-    /** Guest coding agent asks the host to build its workspace (Vite). */
-    "studio/build": { params: unknown; result: unknown };
     /** End-of-turn workspace write-back into the project store. */
     "studio/sync-workspace": { params: unknown; result: unknown };
     /** End-of-turn conversation snapshot into the project's chat row. */

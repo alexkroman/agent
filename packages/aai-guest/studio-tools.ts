@@ -16,9 +16,10 @@
  * bearer token, so workspace code can't impersonate the host on a future
  * connection.
  *
- * `test_agent` builds through the HOST (guest→host `studio/build` — Vite
- * never runs in the guest, which has no node_modules) and then loads and
- * trials the bundle locally via the harness's own loader.
+ * `test_agent` builds IN THE GUEST through the aai CLI's own bundlers
+ * (studio-build.ts — the toolchain's node_modules are baked next to the
+ * harness) and then loads and trials the bundle locally via the harness's
+ * own loader. One build path with `aai deploy`, exercised on every call.
  */
 
 import { spawn } from "node:child_process";
@@ -72,8 +73,8 @@ export const STUDIO_TOOL_LABELS: Readonly<Record<string, string>> = {
 export type StudioToolDeps = {
   /** Absolute workspace root the session materialized. */
   dir: string;
-  /** Build the workspace into a worker bundle — proxied to the host. */
-  build: (files: Record<string, string>) => Promise<{ worker?: string; buildError?: string }>;
+  /** Build the session workspace into a worker bundle, in this sandbox. */
+  build: () => Promise<{ worker?: string; buildError?: string }>;
   /** Load a built worker bundle into this harness; returns its config. */
   loadBundle: (code: string) => Promise<{ config?: unknown }>;
   /** Trial-run one tool of the loaded bundle. */
@@ -450,8 +451,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
           .describe("Arguments for the invoked tool"),
       }),
       execute: async ({ tool: trialTool, args }) => {
-        const { files } = await snapshotWorkspace(dir);
-        const built = await deps.build(files);
+        const built = await deps.build();
         if (built.buildError) return built.buildError;
         if (!built.worker) return "Error: build returned no worker bundle";
         let loaded: { config?: unknown };

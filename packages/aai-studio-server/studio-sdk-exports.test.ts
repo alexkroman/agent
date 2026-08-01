@@ -3,7 +3,6 @@
 import { afterEach, describe, expect, test } from "vitest";
 import {
   _resetSdkSubpathCache,
-  isKnownSdkSpecifier,
   SDK_PACKAGE,
   sdkSpecifiers,
   sdkSubpaths,
@@ -43,31 +42,5 @@ describe("sdkSpecifiers", () => {
     expect(specs).not.toContain(`${SDK_PACKAGE}/workflow`);
     // No "@alexkroman1/aai/" with an empty tail.
     expect(specs.every((s) => !s.endsWith("/"))).toBe(true);
-  });
-});
-
-describe("isKnownSdkSpecifier", () => {
-  test("accepts the root and real subpaths", () => {
-    expect(isKnownSdkSpecifier(SDK_PACKAGE)).toBe(true);
-    expect(isKnownSdkSpecifier(`${SDK_PACKAGE}/llm`)).toBe(true);
-    expect(isKnownSdkSpecifier(`${SDK_PACKAGE}/tts`)).toBe(true);
-  });
-
-  test("rejects the subpath that produced the unactionable rolldown error", () => {
-    expect(isKnownSdkSpecifier(`${SDK_PACKAGE}/workflow`)).toBe(false);
-    expect(isKnownSdkSpecifier(`${SDK_PACKAGE}/nope`)).toBe(false);
-  });
-
-  test("ignores specifiers for other packages", () => {
-    // Not this module's business — `ALLOWED_PACKAGES` polices which packages
-    // are importable at all.
-    expect(isKnownSdkSpecifier("zod")).toBe(true);
-    expect(isKnownSdkSpecifier("@alexkroman1/aai-ui")).toBe(true);
-  });
-
-  test("fails open when the exports map cannot be read", () => {
-    // Diagnostics must never become policy: an unresolvable package.json has
-    // to let the build proceed and report whatever Vite finds.
-    expect(isKnownSdkSpecifier(`${SDK_PACKAGE}/workflow`, "/")).toBe(true);
   });
 });

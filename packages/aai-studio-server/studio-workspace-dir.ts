@@ -2,9 +2,10 @@
 /**
  * Materialize an in-memory studio workspace to a scratch directory.
  *
- * Both studio builds — the worker (`studio-bundle.ts`) and the client
- * (`studio-client-build.ts`) — run through the CLI's Vite bundlers, which
- * take a directory. One materialize serves both.
+ * Production studio builds run in the guest sandbox now (see
+ * aai-guest/studio-build.ts); this host-side materializer remains for the
+ * eval suite, whose build gate runs the same CLI bundler over a workspace
+ * directory.
  *
  * The scratch dir lives under the server package rather than `os.tmpdir()`
  * so Node resolves `@alexkroman1/aai`, `zod`, `react`, and

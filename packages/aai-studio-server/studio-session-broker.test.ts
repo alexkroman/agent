@@ -26,6 +26,13 @@ function fakeGuest(sessionUrl = "wss://tunnel.example:443/websocket"): FakeGuest
     sendRequest: async (method: string, params?: unknown) => {
       if (disposed) throw new Error("Connection disposed");
       requests.push({ method, params });
+      if (method === "workspace/build") {
+        return {
+          worker: "export default {};",
+          clientFiles: { "index.html": "<html>built</html>" },
+          config: { name: "built-agent", systemPrompt: "p" },
+        };
+      }
       return { ok: true };
     },
     sendNotification: () => undefined,
@@ -64,7 +71,6 @@ async function makeBroker(guests: FakeGuest[]) {
     chats,
     spawn: spawn as never,
     harnessPath: "/fake/harness.mjs",
-    build: async () => ({ worker: "export default {}" }),
   });
   return { broker, workspaces, chats, spawn };
 }
@@ -151,18 +157,52 @@ describe("studio session broker", () => {
     await broker.dispose();
   });
 
-  test("guest build requests run the build runner and classify failures", async () => {
+  test("buildWorkspace reuses the project's live sandbox", async () => {
     const guest = fakeGuest();
-    const { broker } = await makeBroker([guest]);
+    const { broker, spawn } = await makeBroker([guest]);
     await broker.ensureSession(SCOPE, PROJECT, "k");
-    const build = guest.handlers.get("studio/build");
-    expect(await build?.({ files: { "agent.ts": "x" } })).toEqual({
-      worker: "export default {}",
+    const outcome = await broker.buildWorkspace(SCOPE, PROJECT, { "agent.ts": "x" });
+    expect(outcome).toEqual({
+      ok: true,
+      worker: "export default {};",
+      clientFiles: { "index.html": "<html>built</html>" },
+      config: { name: "built-agent", systemPrompt: "p" },
     });
-    expect(await build?.({ files: "nope" })).toMatchObject({
-      buildError: expect.stringContaining("Invalid build request"),
+    // Rode the live session sandbox — nothing new spawned.
+    expect(spawn).toHaveBeenCalledTimes(1);
+    const build = guest.requests.find((r) => r.method === "workspace/build");
+    expect(build?.params).toEqual({ files: { "agent.ts": "x" }, worker: true, client: true });
+  });
+
+  test("buildWorkspace without a live session uses an ephemeral sandbox", async () => {
+    const guest = fakeGuest();
+    const { broker, spawn } = await makeBroker([guest]);
+    const outcome = await broker.buildWorkspace(SCOPE, PROJECT, { "agent.ts": "x" });
+    expect(outcome.ok).toBe(true);
+    expect(spawn).toHaveBeenCalledTimes(1);
+    // Torn down after the build — no orphaned sandbox for the broker to own.
+    expect(guest.disposed()).toBe(true);
+  });
+
+  test("buildWorkspace surfaces guest buildError as a failed outcome", async () => {
+    const guest = fakeGuest();
+    (guest.warm.conn as { sendRequest: unknown }).sendRequest = async () => ({
+      buildError: "Build failed:\nagent.ts:1: oops",
     });
-    await broker.dispose();
+    const { broker } = await makeBroker([guest]);
+    const outcome = await broker.buildWorkspace(SCOPE, PROJECT, { "agent.ts": "x" });
+    expect(outcome).toEqual({ ok: false, error: "Build failed:\nagent.ts:1: oops" });
+  });
+
+  test("buildWorkspace rejects a malformed guest response", async () => {
+    const guest = fakeGuest();
+    (guest.warm.conn as { sendRequest: unknown }).sendRequest = async () => ({ worker: 42 });
+    const { broker } = await makeBroker([guest]);
+    const outcome = await broker.buildWorkspace(SCOPE, PROJECT, { "agent.ts": "x" });
+    expect(outcome).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("Malformed build response"),
+    });
   });
 });
 

@@ -30,10 +30,20 @@ vi.mock("./studio-deploy.ts", async (importOriginal) => {
 const ensureSessionMock = vi.fn(async (_scope: string, project: string, _apiKey: string) =>
   project === "ghost" ? null : { url: "https://tunnel.example/studio/chat" },
 );
+const buildWorkspaceMock = vi.fn(
+  async (_scope: string, _project: string, _files: Record<string, string>) => ({
+    ok: true as const,
+    worker: "export default {};",
+    clientFiles: {},
+    config: { name: "built", systemPrompt: "p" },
+  }),
+);
 const brokerMock = vi.fn(
   (): StudioSessionBroker => ({
     ensureSession: (...args: Parameters<StudioSessionBroker["ensureSession"]>) =>
       ensureSessionMock(...args),
+    buildWorkspace: (...args: Parameters<StudioSessionBroker["buildWorkspace"]>) =>
+      buildWorkspaceMock(...args),
     dispose: async () => undefined,
   }),
 );

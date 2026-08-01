@@ -7,7 +7,7 @@
  * judges the workspace it leaves behind:
  *
  * - `WorkerBuildJudge` (always): the workspace must survive the exact
- *   Vite/Rollup pass Publish runs (`bundleWorkspaceWorker`) — i.e. the agent
+ *   Vite/Rollup pass Publish runs (the CLI's `buildWorker`) — i.e. the agent
  *   one-shot produced syntactically valid code with legal imports.
  * - `SandboxLoadJudge` (when Modal credentials + the built guest harness are
  *   available): the built worker must load in a real studio sandbox and
@@ -47,6 +47,7 @@
  */
 
 import { existsSync, readdirSync } from "node:fs";
+import { buildWorker as cliBuildWorker } from "@alexkroman1/aai-cli/worker-bundler";
 import { createMemoryChatStore } from "aai-server/chat-store";
 import { resolveHarnessPath } from "aai-server/constants";
 import { isModalConfigured } from "aai-server/modal-sandbox";
@@ -68,9 +69,6 @@ import {
   TEMPLATES_DIR,
   UNCOVERED,
 } from "./_studio-eval-test-utils.ts";
-import { getCachedBuild, putCachedBuild } from "./studio-build-cache.ts";
-import { bundleWorkspaceWorker } from "./studio-bundle.ts";
-import { StudioBuildError } from "./studio-errors.ts";
 import { studioLlmInfo, studioModel } from "./studio-llm.ts";
 import { createStudioSessionBroker } from "./studio-session-broker.ts";
 import { starterFiles } from "./studio-template.ts";
@@ -94,14 +92,22 @@ type StudioEvalOutput = {
   assistantText: string;
 };
 
-/** Build the workspace's worker, sharing the studio's content-hash cache. */
-async function buildWorker(files: Record<string, string>): Promise<string> {
+/**
+ * Build the workspace's worker through the CLI bundler — the same function
+ * the guest's `workspace/build` runs (studio builds have no other path now).
+ * Memoized per content hash so the two judges share one build.
+ */
+const builtWorkers = new Map<string, Promise<string>>();
+function buildWorker(files: Record<string, string>): Promise<string> {
   const hash = filesHash(files);
-  const cached = getCachedBuild(hash)?.worker;
-  if (cached !== undefined) return cached;
-  const worker = await withWorkspaceDir(files, bundleWorkspaceWorker);
-  putCachedBuild(hash, { worker });
-  return worker;
+  let pending = builtWorkers.get(hash);
+  if (!pending) {
+    pending = withWorkspaceDir(files, (dir) =>
+      cliBuildWorker(dir, { minify: true, configFile: false }),
+    );
+    builtWorkers.set(hash, pending);
+  }
+  return pending;
 }
 
 function userMessage(text: string): UIMessage {
@@ -223,10 +229,10 @@ const WorkerBuildJudge = createJudge<string, StudioEvalOutput>(
       await buildWorker(output.files);
       return { score: 1, metadata: { rationale: "workspace builds" } };
     } catch (err) {
-      if (err instanceof StudioBuildError) {
-        return { score: 0, metadata: { rationale: err.message } };
-      }
-      throw err;
+      return {
+        score: 0,
+        metadata: { rationale: err instanceof Error ? err.message : String(err) },
+      };
     }
   },
 );
