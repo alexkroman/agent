@@ -301,11 +301,13 @@ describe("deployStudioProject", () => {
     // The studio has no secrets UI, so the shared deploy core's credential
     // preflight must not hard-fail here — the warning rides to the client.
     const deps = makeDeps({
-      inspect: async () => ({
-        ...TEST_AGENT_CONFIG,
-        stt: { kind: "assemblyai", options: {} },
-        llm: { kind: "anthropic", options: { model: "claude-sonnet-4-5" } },
-        tts: { kind: "cartesia", options: {} },
+      buildWorkspace: fakeBuildWorkspace({
+        config: {
+          ...TEST_AGENT_CONFIG,
+          stt: { kind: "assemblyai", options: {} },
+          llm: { kind: "anthropic", options: { model: "claude-sonnet-4-5" } },
+          tts: { kind: "cartesia", options: {} },
+        },
       }),
     });
     await seedProject(deps, "p1");

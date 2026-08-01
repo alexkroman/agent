@@ -21,7 +21,8 @@
  * resolve by the normal walk-up, exactly as in a user project.
  *
  * Versions come from aai-guest's own dependency declarations (the same ones
- * dev-mode subprocess guests resolve through the workspace), with
+ * the integration test's direct harness spawn resolves through the
+ * workspace), with
  * `workspace:*` entries pinned to the locally installed package versions —
  * one source of truth, so the baked toolchain and the dev toolchain cannot
  * drift silently.

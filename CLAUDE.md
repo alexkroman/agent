@@ -1587,12 +1587,17 @@ service's control work is light — and one container served both badly.
   one `images.fromName` call. A new harness build, base-image change, or
   toolchain bump mints a new tag. This is the only harness-delivery path; a
   failed build fails the spawn loudly (memo cleared, next spawn retries).
-  In dev (subprocess backend) the harness runs from
-  `packages/aai-guest/dist/`, so the toolchain resolves through aai-guest's
-  own `node_modules`; the apple-container backend copies only the harness
-  file into the container, so **in-guest workspace builds are unavailable
-  there** (they fail with a "build toolchain unavailable" message — voice
-  sessions are unaffected).
+  The apple-container backend (the local-dev default) copies only the
+  harness file into the container, so **in-guest workspace builds are
+  unavailable there** (they fail with a "build toolchain unavailable"
+  message the coding agent sees; voice sessions are unaffected) — use
+  `SANDBOX_BACKEND=modal` locally when working on studio builds, or extend
+  the backend to mount aai-guest's `node_modules`. The
+  `workspace-build-integration.test.ts` suite keeps the path covered on any
+  runner by spawning the harness directly from
+  `packages/aai-guest/dist/`, where the toolchain resolves through
+  aai-guest's own `node_modules` — the same walk-up shape as `/opt/aai` in
+  the baked image.
 - Sandboxes are created with open egress and a bounded lifetime
   (`SANDBOX_TIMEOUT_SECS`, default 4h). Memory/CPU caps come from
   `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT`.

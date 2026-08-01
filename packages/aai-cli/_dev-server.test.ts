@@ -371,7 +371,9 @@ describe("dev server bind host", () => {
   });
 });
 
-describe("dev server host mode gate", () => {
+// 30s, not the 5s default: sibling suites now run multi-second
+// runtime-inlining builds, and CPU starvation was flaking these under load.
+describe("dev server host mode gate", { timeout: 30_000 }, () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });

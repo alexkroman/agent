@@ -73,7 +73,9 @@ beforeEach(() => {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-describe("startDevServer restart behavior", () => {
+// 30s, not the 5s default: sibling suites now run multi-second
+// runtime-inlining builds, and CPU starvation was flaking these under load.
+describe("startDevServer restart behavior", { timeout: 30_000 }, () => {
   test("watcher triggers restart on agent file change", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);
