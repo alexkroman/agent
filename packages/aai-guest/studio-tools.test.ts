@@ -20,6 +20,7 @@ afterEach(async () => {
 
 async function makeTools(
   files: Record<string, string>,
+  config: Record<string, unknown> = { name: "A", toolSchemas: [] },
 ): Promise<{ tools: ReturnType<typeof createStudioTools>; dir: string }> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "aai-studio-tools-"));
   dirs.push(dir);
@@ -27,7 +28,7 @@ async function makeTools(
   const deps: StudioToolDeps = {
     dir,
     build: async () => ({ worker: "export default {}" }),
-    loadBundle: async () => ({ config: { name: "A", toolSchemas: [] } }),
+    loadBundle: async () => ({ config }),
     executeTool: async (name) => `ran ${name}`,
   };
   return { tools: createStudioTools(deps), dir };
@@ -127,5 +128,24 @@ describe("guest workspace tools", () => {
       await tools.test_agent?.execute?.({ tool: undefined, args: undefined }, toolOpts()),
     );
     expect(out).toContain('Agent "A"');
+  });
+
+  test("test_agent flags an S2S build, and stays quiet on a pipeline one", async () => {
+    const s2s = await makeTools({ "agent.ts": "x" }, { name: "A", toolSchemas: [] });
+    const flagged = String(
+      await s2s.tools.test_agent?.execute?.({ tool: undefined, args: undefined }, toolOpts()),
+    );
+    expect(flagged).toContain("s2s mode");
+    expect(flagged).toContain("voice agent API");
+
+    const pipeline = await makeTools(
+      { "agent.ts": "x" },
+      { name: "A", mode: "pipeline", toolSchemas: [] },
+    );
+    const quiet = String(
+      await pipeline.tools.test_agent?.execute?.({ tool: undefined, args: undefined }, toolOpts()),
+    );
+    expect(quiet).toContain("pipeline mode");
+    expect(quiet).not.toContain("voice agent API");
   });
 });

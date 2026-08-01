@@ -229,6 +229,26 @@ function renderTodos(todos: z.infer<typeof TodoItemSchema>[]): string {
   return `${todos.map((t) => `${TODO_MARKS[t.status]} ${t.content}`).join("\n")}\n\n${remaining} remaining`;
 }
 
+/**
+ * Shown when a built agent turns out to be S2S.
+ *
+ * The preamble states the cascaded-pipeline default about as plainly as prose
+ * can, and agents still shipped S2S in roughly one run in seven — a rule read
+ * once at the top of a long turn loses to the fact that S2S is simply less to
+ * write. This fires at the only moment the mistake is visible and cheap: the
+ * agent has just seen its own config and has not yet told the user it is done.
+ *
+ * It asks the agent to re-read the request rather than to switch, because S2S
+ * is correct when it was asked for, and a nudge that overrode that would trade
+ * one wrong mode for another.
+ */
+const S2S_NOTICE =
+  "\nNote: this agent is S2S because it declares no stt/llm/tts. That is " +
+  "right ONLY if the request asked for the voice agent API (or " +
+  "speech-to-speech) by name. Re-read the request: if it did not, this is " +
+  "the wrong mode — add all three assemblyAI providers and build again. If " +
+  "it did, S2S is correct and there is nothing to change.";
+
 /** Summarize a loaded bundle's self-described config without server schemas. */
 function describeConfig(config: unknown): { summary: string; toolNames: string[] } {
   const cfg = (config ?? {}) as {
@@ -240,10 +260,11 @@ function describeConfig(config: unknown): { summary: string; toolNames: string[]
     ? cfg.toolSchemas.map((schema) => String(schema?.name ?? "")).filter(Boolean)
     : [];
   const name = typeof cfg.name === "string" ? cfg.name : "(unnamed)";
-  const mode = cfg.mode === "pipeline" ? "pipeline" : "s2s";
+  const isPipeline = cfg.mode === "pipeline";
   const summary =
-    `Bundle loaded in the sandbox. Agent "${name}" (${mode} mode), ` +
-    `tools: ${toolNames.length > 0 ? toolNames.join(", ") : "(none)"}.`;
+    `Bundle loaded in the sandbox. Agent "${name}" (${isPipeline ? "pipeline" : "s2s"} mode), ` +
+    `tools: ${toolNames.length > 0 ? toolNames.join(", ") : "(none)"}.` +
+    (isPipeline ? "" : S2S_NOTICE);
   return { summary, toolNames };
 }
 

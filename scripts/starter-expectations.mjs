@@ -65,6 +65,13 @@ export const EXPECTATIONS = [
     // call them, so an agent that writes custom tools using plain fetch has
     // satisfied the ask by another valid design. Requiring the declaration
     // failed two good agents. The capability check above covers the substance.
+    //
+    // The other valid design is the one the reference template actually uses:
+    // no custom tools at all, just these two builtins and a system prompt
+    // telling the model what to do with them. Graded on tool names that run
+    // fails, and it failed three iterations running while being a near copy
+    // of templates/personal-finance/agent.ts. See `builtinDelegation`.
+    builtinDelegation: ["fetch_json", "run_code"],
   },
   {
     label: "A web researcher that cites its sources",
@@ -235,12 +242,43 @@ export function checkUi(expectation, files) {
   return reactive ? { ok: true } : { ok: false, note: "client.tsx shows no live state" };
 }
 
+/**
+ * The prose an agent ships — system prompt and greeting.
+ *
+ * Where a capability lives when it is delegated to a builtin rather than
+ * written as a tool: there is no tool name to match, only the instruction
+ * that tells the model to use `fetch_json` for a currency lookup.
+ */
+function agentProse(source) {
+  return String(source ?? "").toLowerCase();
+}
+
 export function checkCapabilities(expectation, { config, source }) {
   const declared = [...(config?.tools ?? []), ...toolNamesFromSource(source)].map(norm);
   const builtins = new Set([...(config?.tools ?? []), ...builtinsFromSource(source)]);
+  /**
+   * A prompt that PRESCRIBES builtins ("use the fetch_json builtin for live
+   * data") is asking for an agent with no custom tools at all — which is what
+   * the matching reference template is. Grading such a run on tool names
+   * failed it three iterations running while it matched the template almost
+   * line for line. So for those starters a capability also counts as covered
+   * when the agent both declared the enabling builtins and instructed the
+   * model to use them for that task.
+   *
+   * The two halves are both required, and that is what keeps it honest: the
+   * greeting alone names all three capabilities, so prose by itself would
+   * pass anything, and the builtins by themselves say nothing about what the
+   * agent was told to do with them.
+   */
+  const delegable =
+    (expectation.builtinDelegation ?? []).length > 0 &&
+    expectation.builtinDelegation.every((b) => builtins.has(b));
+  const prose = delegable ? agentProse(source) : "";
   const missing = [];
   for (const synonyms of expectation.capabilities ?? []) {
-    const hit = synonyms.some((s) => declared.some((d) => d.includes(norm(s))));
+    const hit =
+      synonyms.some((s) => declared.some((d) => d.includes(norm(s)))) ||
+      (delegable && synonyms.some((s) => prose.includes(s.toLowerCase())));
     if (!hit) missing.push(synonyms[0]);
   }
   const missingBuiltins = (expectation.builtins ?? []).filter((b) => !builtins.has(b));

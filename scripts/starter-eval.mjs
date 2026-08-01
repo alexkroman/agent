@@ -258,6 +258,21 @@ for (const e of EXPECTATIONS) {
       throw new Error(`expectation requires builtin ${b} but the prompt never names it: ${e.label}`);
     }
   }
+  for (const b of e.builtinDelegation ?? []) {
+    if (!starter.prompt.includes(b)) {
+      throw new Error(`builtinDelegation names ${b}, which the prompt never asks for: ${e.label}`);
+    }
+  }
+  // The other direction: a grader that says yes to everything measures
+  // nothing. `builtinDelegation` accepts prose as evidence, so prove that an
+  // agent with the prose and none of the machinery still fails.
+  if (e.builtinDelegation && (e.capabilities ?? []).length > 0) {
+    const proseOnly = `greeting: "${(e.capabilities ?? []).map((syn) => syn[0]).join(" and ")}"`;
+    const { missing } = checkCapabilities(e, { config: null, source: proseOnly });
+    if (missing.length !== e.capabilities.length) {
+      throw new Error(`builtinDelegation passes on prose alone: ${e.label}`);
+    }
+  }
 }
 
 const cases = allStarters.filter((c) => !only || c.label.toLowerCase().includes(only.toLowerCase()));
