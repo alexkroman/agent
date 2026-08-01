@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
  * Backend-independent guest-harness wiring, shared by the sandbox backends
- * (Modal in `modal-sandbox.ts`, Apple container in
- * `apple-container-sandbox.ts`): dialing the harness WebSocket while its
+ * (Modal in `modal-sandbox.ts`, the local child process in
+ * `subprocess-sandbox.ts`): dialing the harness WebSocket while its
  * server boots, draining guest stdio into host logs, and wrapping a running
  * guest process + dialed socket into the `WarmHarness` shape the pool and
  * slot layers consume.
@@ -28,10 +28,10 @@ const GUEST_DIAL_TIMEOUT_MS = 30_000;
 const GUEST_DIAL_RETRY_MS = 250;
 
 /**
- * Ask the OS for a free loopback port, which the Apple container backend
- * publishes the guest's port to. Racy by nature — the port is released before
- * the guest claims it — which is fine on a single-user dev machine and is why
- * no production backend uses it.
+ * Ask the OS for a free loopback port, which the subprocess backend's harness
+ * binds directly. Racy by nature — the port is released before the guest
+ * claims it — which is fine on a single-user dev machine and is why no
+ * production backend uses it.
  */
 export function getFreePort(): Promise<number> {
   return new Promise((resolve, reject) => {

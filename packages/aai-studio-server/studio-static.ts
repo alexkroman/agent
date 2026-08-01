@@ -37,8 +37,8 @@ import mime from "mime-types";
 const SANDBOX_CONNECT_SRC: Record<SandboxBackend, string> = {
   // Modal tunnels: `https://<tunnel>.modal.host:<port>` (port is not fixed).
   modal: "https://*.modal.host:*",
-  // apple-container publishes the guest port on loopback with a random port.
-  "apple-container": "http://127.0.0.1:*",
+  // The subprocess backend's harness binds a random loopback port directly.
+  subprocess: "http://127.0.0.1:*",
 };
 
 /**

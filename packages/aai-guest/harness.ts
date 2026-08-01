@@ -356,12 +356,13 @@ function main(): void {
     process.exit(1);
   }
   const port = Number(process.env.AAI_GUEST_PORT ?? "8080");
-  // Every backend (Modal, Apple containers) gives the guest its own network
-  // namespace, so binding every interface reaches no further than the
-  // container — and a container that cannot be reached on its published port
-  // is the more damaging failure. AAI_GUEST_HOST exists for the integration
-  // tests, which run the harness as a bare child process with no namespace
-  // around its auth-free /websocket and so pass loopback.
+  // Modal gives the guest its own network namespace, so binding every
+  // interface reaches no further than the sandbox — and a sandbox that cannot
+  // be reached on its published port is the more damaging failure, hence the
+  // default. AAI_GUEST_HOST is for the hosts that have no namespace around the
+  // auth-free /websocket and so must pass loopback: the subprocess backend and
+  // the integration tests, both of which run the harness as a bare child
+  // process on the dev machine's own interfaces.
   const host = process.env.AAI_GUEST_HOST ?? "0.0.0.0";
 
   const state: HarnessState = {

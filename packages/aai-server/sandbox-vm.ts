@@ -2,7 +2,7 @@
 /**
  * Sandbox implementation backed by Modal Sandboxes (see modal-sandbox.ts) in
  * production, and in local dev by local Apple containers
- * (apple-container-sandbox.ts). `sandbox-backend.ts` owns the selection
+ * (subprocess-sandbox.ts). `sandbox-backend.ts` owns the selection
  * policy.
  *
  * Provides the `SandboxHandle` abstraction that `sandbox.ts` delegates to.
@@ -18,12 +18,12 @@ import { performance } from "node:perf_hooks";
 import type { Db } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
-import { spawnAppleContainerWarm } from "./apple-container-sandbox.ts";
 import { spawnModalWarm } from "./modal-sandbox.ts";
 import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
 import { registerGuestRpcHandlers } from "./sandbox-guest-rpc.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
+import { spawnSubprocessWarm } from "./subprocess-sandbox.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -132,22 +132,22 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
  *
  * Single dispatch point for the backend policy, used by both the sandbox pool
  * and on-demand sandbox creation. `resolveSandboxBackend` (see
- * `sandbox-backend.ts`) picks Modal in production and Apple containers in
- * local dev. Spawning fails loudly when the chosen backend's prerequisites
- * are absent — there is no fallback *between* backends at spawn time, only at
- * selection time, and selection can never reach a host-local backend outside
- * local dev.
+ * `sandbox-backend.ts`) picks Modal in production and the isolation-free
+ * `subprocess` backend in local dev. Spawning fails loudly when the chosen
+ * backend's prerequisites are absent — there is no fallback *between* backends
+ * at spawn time, only at selection time, and selection can never reach
+ * `subprocess` outside local dev.
  *
  * `slug` only affects the sandbox's observability tag (pool spawns default
- * to "pool"); the security boundary is the backend's container isolation.
+ * to "pool"); under Modal the security boundary is the sandbox container.
  */
 export async function spawnWarmHarness(opts: {
   harnessPath: string;
   slug?: string;
 }): Promise<WarmHarness> {
   switch (resolveSandboxBackend(process.env)) {
-    case "apple-container":
-      return spawnAppleContainerWarm(opts);
+    case "subprocess":
+      return spawnSubprocessWarm(opts);
     default:
       return spawnModalWarm(opts);
   }

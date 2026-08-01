@@ -13,19 +13,19 @@ const PROD_ENV: NodeJS.ProcessEnv = { SUPABASE_S3_ENDPOINT: "https://s3.example"
 
 describe("resolveSandboxBackend", () => {
   it("honors an explicit SANDBOX_BACKEND override for every backend", () => {
-    for (const backend of ["modal", "apple-container"] as const) {
+    for (const backend of ["modal", "subprocess"] as const) {
       expect(resolveSandboxBackend({ ...DEV_ENV, SANDBOX_BACKEND: backend })).toBe(backend);
     }
   });
 
   it("lets the override win over the production default", () => {
-    expect(resolveSandboxBackend({ ...PROD_ENV, SANDBOX_BACKEND: "apple-container" })).toBe(
-      "apple-container",
+    expect(resolveSandboxBackend({ ...PROD_ENV, SANDBOX_BACKEND: "subprocess" })).toBe(
+      "subprocess",
     );
   });
 
   it("normalizes SANDBOX_BACKEND whitespace and case", () => {
-    expect(resolveSandboxBackend({ SANDBOX_BACKEND: " Apple-Container " })).toBe("apple-container");
+    expect(resolveSandboxBackend({ SANDBOX_BACKEND: " SubProcess " })).toBe("subprocess");
   });
 
   it("throws on an unknown SANDBOX_BACKEND instead of silently picking a default", () => {
@@ -34,16 +34,16 @@ describe("resolveSandboxBackend", () => {
     );
   });
 
-  it("rejects the removed subprocess backend", () => {
-    // The isolation-free child-process backend is gone; a stale
-    // SANDBOX_BACKEND=subprocess must fail loudly, not fall back.
-    expect(() => resolveSandboxBackend({ SANDBOX_BACKEND: "subprocess" })).toThrow(
-      /Unknown SANDBOX_BACKEND "subprocess"/,
+  it("rejects the removed apple-container backend", () => {
+    // The local-container middle tier is gone; a stale
+    // SANDBOX_BACKEND=apple-container must fail loudly, not fall back.
+    expect(() => resolveSandboxBackend({ SANDBOX_BACKEND: "apple-container" })).toThrow(
+      /Unknown SANDBOX_BACKEND "apple-container"/,
     );
   });
 
-  it("defaults local dev to the apple-container backend", () => {
-    expect(resolveSandboxBackend(DEV_ENV)).toBe("apple-container");
+  it("defaults local dev to the subprocess backend", () => {
+    expect(resolveSandboxBackend(DEV_ENV)).toBe("subprocess");
   });
 
   it("never selects a host-local backend outside local dev", () => {
@@ -51,7 +51,7 @@ describe("resolveSandboxBackend", () => {
   });
 
   it("treats AAI_LOCAL_DEV=1 as local dev even with storage configured", () => {
-    expect(resolveSandboxBackend({ ...PROD_ENV, AAI_LOCAL_DEV: "1" })).toBe("apple-container");
+    expect(resolveSandboxBackend({ ...PROD_ENV, AAI_LOCAL_DEV: "1" })).toBe("subprocess");
   });
 });
 

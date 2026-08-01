@@ -11,7 +11,6 @@ import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { createStorage } from "unstorage";
 import { isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
-import { isAppleContainerCliAvailable } from "./apple-container-sandbox.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
@@ -179,39 +178,27 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
  * where the cause is obvious instead of on the first session's spawn.
  *
  * The selected backend is logged unconditionally. Previously this only spoke
- * up for Apple containers or missing Modal credentials, so the most confusing
- * configuration of all — auto-selection quietly landing on a backend the
- * developer did not choose — was the one that produced no output at all, and
- * surfaced instead as a spawn failure naming an unexpected backend.
+ * up for missing Modal credentials, so the most confusing configuration of
+ * all — auto-selection quietly landing on a backend the developer did not
+ * choose — was the one that produced no output at all, and surfaced instead
+ * as a spawn failure naming an unexpected backend. That log line also carries
+ * the isolation warning: `subprocess` runs tenant code (and the studio coding
+ * agent's `bash`/`run_code`) with this process's uid.
  *
- * Each backend then gets the check that can only fail at boot:
- * - `apple-container` needs the `container` CLI: fatal when the backend was
- *   named explicitly (the override not working must not look like it worked),
- *   a warning when it was the local-dev default so non-sandbox surfaces stay
- *   usable.
- * - `modal` needs credentials: fatal in production, a warning in local dev so
- *   non-sandbox surfaces stay usable.
+ * `subprocess` has no prerequisite to check — that is the point of it being
+ * the local-dev default. `modal` needs credentials: fatal in production, a
+ * warning in local dev so non-sandbox surfaces stay usable.
  */
 export function assertSandboxBackendOrWarn(env: NodeJS.ProcessEnv): void {
   const { backend, reason } = describeSandboxBackend(env);
   console.info(`[sandbox] backend=${backend} (${reason})`);
 
-  if (backend === "apple-container") {
-    if (!isAppleContainerCliAvailable()) {
-      const remedy =
-        "Install it from https://github.com/apple/container/releases and run " +
-        "`container system start`, or set SANDBOX_BACKEND=modal (remote sandboxes, " +
-        "needs MODAL_TOKEN_ID/MODAL_TOKEN_SECRET).";
-      if (env.SANDBOX_BACKEND) {
-        throw new Error(
-          `SANDBOX_BACKEND=apple-container but Apple's \`container\` CLI is not on PATH. ${remedy}`,
-        );
-      }
-      console.warn(
-        "[sandbox] WARNING: Apple's `container` CLI is not on PATH. " +
-          `Sandbox creation will fail. ${remedy}`,
-      );
-    }
+  if (backend === "subprocess") {
+    console.warn(
+      "[sandbox] WARNING: guests run as child processes with NO isolation — " +
+        "agent code and the studio agent's shell tools share this process's uid, " +
+        "filesystem, and network. Set SANDBOX_BACKEND=modal for real sandboxes.",
+    );
     return;
   }
 
