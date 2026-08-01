@@ -397,6 +397,12 @@ export default agent({
 });
 ```
 
+**Do not annotate `execute`'s return type.** Nothing needs it — the result
+is serialized to the model either way — and it reliably breaks the moment
+the tool also returns an error, because `Promise<DrugInfo>` does not accept
+`{ error: "not found" }`. Every such annotation eventually costs a build
+round to widen into a union. Let it infer.
+
 ### Separate file pattern
 
 For complex tools — `tools/` is a convention, any import path works:

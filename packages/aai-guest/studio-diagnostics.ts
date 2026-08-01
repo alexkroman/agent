@@ -71,8 +71,10 @@ const HINTS: Record<string, string> = {
     "A syntax error usually means an edit landed mid-expression. Read the file " +
     "around this line before editing again — do not patch blind.",
   TS2353:
-    "This property is not part of the `agent()` config. Check the framework " +
-    "reference for the field list rather than inventing one.",
+    "This property does not exist on the config you passed it to. The error " +
+    "text above lists the fields that DO exist — read that list rather than " +
+    "guessing again. `tool()` takes exactly `description`, `parameters`, and " +
+    "`execute`; there is no result schema, no name, and no output type.",
 };
 
 /** Codes where naming the module's real exports is the whole fix. */
