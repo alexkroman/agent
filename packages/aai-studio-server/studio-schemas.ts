@@ -17,9 +17,6 @@ export const MAX_STUDIO_CHAT_MESSAGES = 80;
  * message carrying a couple of full-file tool outputs still fits.
  */
 export const MAX_STUDIO_MESSAGE_BYTES = 600_000;
-/** Max serialized bytes for the whole resent history. */
-export const MAX_STUDIO_CHAT_BYTES = 4_000_000;
-
 /**
  * Project names share the slug grammar so they can double as deploy slugs.
  * This is the *identifier* form — used for path params and chat bodies, where
@@ -70,10 +67,10 @@ export const StudioFileSchema = z.object({
 /**
  * Summed lengths of every string reachable inside `value` — the size that
  * matters in a chat message, counted without re-serializing it. The old
- * per-message `JSON.stringify(...).length` refine re-built up to
- * `MAX_STUDIO_CHAT_BYTES` of string per request (twice, with the aggregate
- * refine) on a body that had *just* been parsed from a string; this walk
- * allocates nothing. Structural overhead (keys, punctuation, numbers) is not
+ * per-message `JSON.stringify(...).length` refine re-built megabytes of
+ * string per request on a body that had *just* been parsed from a string;
+ * this walk allocates nothing.
+ * Structural overhead (keys, punctuation, numbers) is not
  * counted, so the cap is enforced on slightly less than serialized size —
  * string content is what dominates a near-limit message either way.
  */
@@ -96,8 +93,9 @@ function totalStringLength(value: unknown): number {
  * One `useChat` UIMessage. Validated structurally (role + parts) with a
  * content-size cap; the AI SDK's `convertToModelMessages` performs the
  * full part-level validation. The aggregate (whole-conversation) cap is
- * enforced by the chat route on the raw request body *before* JSON parsing —
- * see `studio-routes.ts` — so it is deliberately absent here.
+ * enforced in the guest's chat surface on the raw request body *before*
+ * JSON parsing (`MAX_CHAT_BODY_BYTES` in `aai-guest/studio-chat.ts`) — so
+ * it is deliberately absent here.
  */
 export const UiMessageSchema = z
   .looseObject({
@@ -109,11 +107,6 @@ export const UiMessageSchema = z
     (message) => totalStringLength(message.parts) <= MAX_STUDIO_MESSAGE_BYTES,
     "Message too large",
   );
-
-export const ChatBodySchema = z.object({
-  project: ProjectNameSchema,
-  messages: z.array(UiMessageSchema).min(1).max(MAX_STUDIO_CHAT_MESSAGES),
-});
 
 /** Env/secrets to merge into the agent's stored env at deploy time. */
 export const StudioDeployBodySchema = z.object({

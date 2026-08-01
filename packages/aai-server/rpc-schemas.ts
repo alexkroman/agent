@@ -18,8 +18,6 @@ import {
 import { z } from "zod";
 import type { RpcConnection } from "./rpc-transport.ts";
 
-export { ToolSchemaSchema } from "@alexkroman1/aai/manifest";
-
 /**
  * The host↔guest wire format for an agent's config — the canonical
  * `AgentConfigSchema` (sdk/_internal-types.ts) plus the wire-only

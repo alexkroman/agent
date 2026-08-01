@@ -20,7 +20,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { resolveHarnessPath } from "aai-server/constants";
-import type { BundleLoadResult } from "aai-server/rpc-schemas";
+import { type BundleLoadResult, ToolCallResponseSchema } from "aai-server/rpc-schemas";
 import { registerGuestRpcHandlers } from "aai-server/sandbox-guest-rpc";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
@@ -136,15 +136,19 @@ export async function createStudioSandbox(opts: StudioSandboxOptions = {}): Prom
     executeTool(name: string, args: Record<string, unknown>) {
       return track(() =>
         withPooledRetry(async () => {
-          const response = (await live.conn.sendRequest("tool/execute", {
+          const raw = await live.conn.sendRequest("tool/execute", {
             name,
             args,
             sessionId: TRIAL_SESSION_ID,
             // Trial runs are one-shot: fresh state per call.
             state: null,
-          })) as { result?: string; error?: string } | undefined;
-          if (response?.error) return `Tool error: ${response.error}`;
-          return response?.result ?? "(no result)";
+          });
+          // Untrusted wire data — Zod at the receiving site is the contract
+          // (see the GuestRpcSchema notes in rpc-schemas.ts).
+          const response = ToolCallResponseSchema.safeParse(raw);
+          if (!response.success) return "Tool error: malformed trial response from sandbox";
+          if (response.data.error) return `Tool error: ${response.data.error}`;
+          return response.data.result ?? "(no result)";
         }),
       );
     },
