@@ -595,6 +595,12 @@ client({ component: MyApp });
 | `target` | `string \| HTMLElement` | `"#app"` | Mount target |
 | `tools` | `ToolDisplayConfig` | — | Icon/label overrides per tool name |
 
+**The two tiers are exclusive.** `name`, `sidebar`, `sidebarWidth`, and
+`tools` configure the default shell, so passing any of them alongside
+`component` is a type error — and a cryptic one, reported as *"Type 'string'
+is not assignable to type 'undefined'"*. With a custom component you own the
+whole page, so pass `component` alone and render the title yourself.
+
 ### `useSession()` return type
 
 | Field | Type | Description |

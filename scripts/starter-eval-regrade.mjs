@@ -35,11 +35,16 @@ function summarize(file) {
   const shippable = runs.filter((r) => r.shippable).length;
   const calls = runs.reduce((n, r) => n + (r.tools?.length ?? 0), 0);
   const repairs = runs.reduce((n, r) => n + (r.failures?.length ?? 0), 0);
+  // `firstTryClean` is absent on runs recorded before the counter existed;
+  // report it only where it was actually measured rather than guessing.
+  const measured = runs.filter((r) => r.firstTryClean !== undefined);
+  const clean = measured.filter((r) => r.firstTryClean).length;
   const seconds = runs.reduce((n, r) => n + (Number.isFinite(r.seconds) ? r.seconds : 0), 0);
   console.log(`\n${file}`);
   console.log(
     `  shippable ${shippable}/${runs.length}   tool calls ${calls}   ` +
-      `repairs ${repairs}   ${Math.round(seconds / 60)} min`,
+      `repairs ${repairs}   ${Math.round(seconds / 60)} min` +
+      (measured.length > 0 ? `   first-try clean ${clean}/${measured.length}` : ""),
   );
   for (const r of runs.filter((x) => !x.shippable)) {
     console.log(`  FAIL ${r.label} — ${(r.reasons ?? []).join(" | ") || "(no reason recorded)"}`);

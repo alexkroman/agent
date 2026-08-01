@@ -58,6 +58,14 @@ export const WORKSPACE_GLOBAL_DTS = `/// <reference types="vite/client" />
  * without offering any checking in return — pure churn on a gate that blocks
  * publishing. Everything that catches a real mistake (TS2339, TS2345, TS2353
  * — wrong field, wrong argument, wrong option) is unaffected.
+ *
+ * `useUnknownInCatchVariables` goes for a narrower version of the same reason.
+ * Every `catch (err)` in a generated agent ends in "turn this into a string
+ * for the model", and an `unknown` binding makes that a two-branch
+ * `instanceof` at every site. It cost three repairs in one iteration. What it
+ * buys is a degraded message in the rare case something throws a non-Error —
+ * cheaper than the ceremony, and `errorMessage()` from the SDK handles it for
+ * anyone who cares.
  */
 export const WORKSPACE_TSCONFIG = `${JSON.stringify(
   {
@@ -67,6 +75,7 @@ export const WORKSPACE_TSCONFIG = `${JSON.stringify(
       moduleResolution: "bundler",
       strict: true,
       noImplicitAny: false,
+      useUnknownInCatchVariables: false,
       verbatimModuleSyntax: true,
       allowImportingTsExtensions: true,
       noEmit: true,

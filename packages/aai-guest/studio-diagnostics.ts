@@ -30,12 +30,36 @@ const HINTS: Record<string, string> = {
     "indexing with a variable fails and any field missing from one entry fails too.",
   TS2538: "Same fix as TS7053: annotate the map as `Record<string, T>`.",
   TS2339:
-    "If this is a value read out of an object literal map, the map needs " +
+    "If the type is `never`, see the `null`/`[]` note below — the variable was " +
+    "declared empty and filled inside a callback, so it never widened. " +
+    "Otherwise, if this is a value read out of an object literal map, the map needs " +
     "`Record<string, T>` with `T` declaring every field (optional ones as `field?: X`). " +
-    "Otherwise the inferred type is a union of the entries and only fields common to all of them exist.",
+    "Without it the inferred type is a union of the entries and only fields common to all of them exist.",
+  // The `null`/`[]` widening family. TypeScript widens `let x = null` and
+  // `const xs = []` as you assign to them — but that inference is control-flow
+  // based and stops dead at a function boundary, so populating them inside a
+  // `.forEach`/`.map`/`.filter` callback leaves them `null` and `never[]`.
+  // This produced a four-round repair loop on one starter, re-reporting the
+  // same line each time, because none of the three codes it raises says what
+  // the actual rule is.
+  TS2322:
+    "If the target is `null`, this is a `let x = null` being assigned inside a " +
+    "callback. TypeScript only widens such a variable along straight-line code, " +
+    "never across a function boundary. Annotate the declaration: " +
+    "`let best: Match | null = null`.",
   TS2345:
-    "Often an empty array that inferred `never[]`. Give it a type at the " +
-    "declaration: `const items: string[] = []`.",
+    "If the parameter is `never`, this is a `const xs = []` being pushed to " +
+    "inside a callback — the widening that would make it `string[]` does not " +
+    "cross a function boundary. Annotate the declaration: " +
+    "`const items: string[] = []`.",
+  TS2740:
+    "A function annotated with a success shape is also returning an error " +
+    "object. Widen the return type to a union (`Promise<Info | { error: string }>`) " +
+    "or drop the annotation and let it infer.",
+  TS18046:
+    "This value is `unknown`. If it came from `JSON.parse` or a `fetch` body, " +
+    "annotate it at the boundary (`const data = (await res.json()) as Quote`) " +
+    "rather than casting at every use.",
   TS7006: "Annotate the callback parameter, e.g. `(sum: number, item: Item) => ...`.",
   TS2304: "The name is not imported. Add the import; a TYPE needs `import type` here.",
   TS1361:

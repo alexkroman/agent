@@ -111,6 +111,7 @@ async function runTurn(key, url, prompt) {
     errors: [],
     text: "",
     testAgentRuns: [],
+    redChecks: [],
     lastTestAgentOutput: "",
     ms: 0,
   };
@@ -142,14 +143,27 @@ async function runTurn(key, url, prompt) {
       }
       if (typeof part.type === "string" && part.type.startsWith("tool-output-available")) {
         const name = pending.get(part.toolCallId);
+        const out =
+          typeof part.output === "string" ? part.output : JSON.stringify(part.output ?? "");
         if (name === "test_agent") {
-          const out = typeof part.output === "string" ? part.output : JSON.stringify(part.output);
           summary.testAgentRuns.push({
             buildFailed: /error TS\d|Type check failed|Build failed|failed to load/i.test(out),
             testsFailed: /Tests: FAILED/i.test(out),
             excerpt: out.slice(0, 300),
           });
           summary.lastTestAgentOutput = out;
+        }
+        // Any verification that came back red, whichever tool ran it.
+        //
+        // Counting only test_agent makes the metric movable by reordering
+        // tools: an agent that runs the cheap `check_types` first, fixes what
+        // it finds, and only then builds scores zero repairs while having
+        // written exactly the same wrong code. That reordering IS worth
+        // something — check_types is far cheaper than a full build — but it is
+        // a different thing from getting the code right, and optimizing one
+        // number for both is how you end up congratulating yourself.
+        if ((name === "test_agent" || name === "check_types") && /error TS\d/i.test(out)) {
+          summary.redChecks.push(name);
         }
       }
       if (part.type === "error") summary.errors.push(String(part.errorText ?? "error"));
@@ -224,6 +238,9 @@ function verdict(s, expectation, files) {
     errors: s.errors.length,
     seconds: Math.round(s.ms / 1000),
     failures: s.testAgentRuns.filter((r) => r.buildFailed || r.testsFailed).map((r) => r.excerpt),
+    // Every red verification, not just the expensive one — see redChecks.
+    redChecks: s.redChecks.length,
+    firstTryClean: s.redChecks.length === 0,
     errorTexts: s.errors.slice(0, 3),
   };
 }
@@ -315,7 +332,7 @@ for (const [i, c] of plan.entries()) {
     });
     process.stderr.write(
       `${v.shippable ? "SHIPPABLE" : "NOT-SHIPPABLE"}  tools=${v.toolCalls} ` +
-        `repairs=${v.failedTestAgentRuns}  ${v.seconds}s` +
+        `repairs=${v.failedTestAgentRuns} red=${v.redChecks}  ${v.seconds}s` +
         (v.reasons.length ? `  [${v.reasons.join(" ")}]` : "") +
         `\n`,
     );

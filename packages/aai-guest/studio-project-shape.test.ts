@@ -40,7 +40,7 @@ describe("ensureProjectShape", () => {
 
   test("tsconfig excludes tests and pins node types (studio variant)", () => {
     const parsed = JSON.parse(WORKSPACE_TSCONFIG) as {
-      compilerOptions: { types: string[]; strict: boolean; noImplicitAny: boolean };
+      compilerOptions: Record<string, unknown> & { types: string[] };
       exclude: string[];
     };
     expect(parsed.compilerOptions.strict).toBe(true);
@@ -49,6 +49,7 @@ describe("ensureProjectShape", () => {
     // Deliberate: implicit-any diagnostics are churn on an `any` receiver and
     // catch nothing. See the WORKSPACE_TSCONFIG doc.
     expect(parsed.compilerOptions.noImplicitAny).toBe(false);
+    expect(parsed.compilerOptions.useUnknownInCatchVariables).toBe(false);
   });
 });
 
@@ -75,7 +76,16 @@ describe("scaffold parity (drift guard)", () => {
     const of = (text: string) => (JSON.parse(text) as { compilerOptions: Opts }).compilerOptions;
     const mine = of(WORKSPACE_TSCONFIG);
     const theirs = of(await scaffold("tsconfig.json"));
-    for (const key of ["strict", "noImplicitAny", "verbatimModuleSyntax", "target", "lib", "jsx"]) {
+    const shared = [
+      "strict",
+      "noImplicitAny",
+      "useUnknownInCatchVariables",
+      "verbatimModuleSyntax",
+      "target",
+      "lib",
+      "jsx",
+    ];
+    for (const key of shared) {
       expect({ [key]: mine[key] }).toEqual({ [key]: theirs[key] });
     }
   });
