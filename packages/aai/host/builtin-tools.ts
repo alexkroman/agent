@@ -31,10 +31,6 @@ import { createGetPageDesign } from "./page-design.ts";
 import { readNotes, writeNote } from "./session-notes.ts";
 import { safeFetch } from "./ssrf.ts";
 
-export type { RunCodeExecutor } from "./builtin-run-code.ts";
-// Re-exported for callers that inject it themselves (runtime-tools, sandbox).
-export { safeFetch } from "./ssrf.ts";
-
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
 const htmlToText = (html: string): string => convert(html, { wordwrap: false });

@@ -51,7 +51,6 @@ export type {
   SessionErrorCode,
   ToolCallInfo,
   VoiceSessionOptions,
-  WebSocketConstructor,
 } from "./types.ts";
 // Capture constraints, exported so a custom client that opens its own
 // microphone gets the same signal the built-in paths do.

@@ -26,8 +26,6 @@ import { consoleLogger } from "./runtime-config.ts";
 import type { AgentRuntime } from "./runtime-types.ts";
 import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 
-export { createRuntime, type Runtime, type RuntimeOptions } from "./runtime.ts";
-
 /**
  * The session-facing slice of a runtime — all `createServer` actually drives.
  * `readyConfig` is a property of a *constructed* runtime (`AgentRuntime`), so
