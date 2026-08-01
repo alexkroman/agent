@@ -40,6 +40,7 @@ import type { z } from "zod";
 import { hostRequest } from "./harness-rpc.ts";
 import { buildWorkspaceDir, workspacesRoot } from "./studio-build.ts";
 import { ensureProjectShape } from "./studio-project-shape.ts";
+import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import {
   createStudioTools,
   materializeWorkspace,
@@ -221,6 +222,8 @@ async function runTurn(
     // Studio tools last: a web builtin may never shadow write_file.
     tools: {
       ...createGuestWebTools(),
+      ...createDesignInspirationTool(model),
+      ...createProjectTools(session.dir),
       ...createStudioTools({
         dir: session.dir,
         // Build the live session workspace in place, in THIS sandbox,

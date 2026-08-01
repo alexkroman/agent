@@ -32,21 +32,22 @@ import { withTimeout } from "./harness-rpc.ts";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./limits.ts";
 import { applyEdit, StudioEditError } from "./studio-edit.ts";
 import { grepWorkspace, StudioGrepError } from "./studio-grep.ts";
+import {
+  BASH_TIMEOUT_MAX_MS,
+  BASH_TIMEOUT_MS,
+  GLOB_LIMIT,
+  READ_LIMIT,
+  STUDIO_TOOL_DESCRIPTIONS,
+} from "./studio-tool-descriptions.ts";
 
 /** Per-call deadline for every tool; bash carries its own tighter default. */
 const TOOL_TIMEOUT_MS = 120_000;
-/** Default and max wall-clock for one bash command. */
-const BASH_TIMEOUT_MS = 60_000;
-const BASH_TIMEOUT_MAX_MS = 300_000;
 /** Output cap per stream; beyond it the tail is kept (errors print last). */
 const BASH_OUTPUT_CAP = 16_000;
 /** Directories never listed, grepped, or synced back to the workspace. */
 const IGNORED_DIRS = new Set(["node_modules", ".git", "dist", ".aai"]);
-/** read_file paging defaults — opencode's read-tool semantics. */
-const READ_LIMIT = 2000;
+/** Per-line length cap for read_file's windowed view. */
 const READ_MAX_LINE = 2000;
-/** Max glob results before truncation. */
-const GLOB_LIMIT = 100;
 
 /**
  * User-friendly labels for every studio tool, web builtins included —
@@ -63,6 +64,10 @@ export const STUDIO_TOOL_LABELS: Readonly<Record<string, string>> = {
   grep: "Search code",
   glob: "Find files",
   bash: "Run command",
+  add_dependency: "Add dependency",
+  remove_dependency: "Remove dependency",
+  download_to_workspace: "Download file",
+  generate_design_inspiration: "Design inspiration",
   todo_write: "Update plan",
   test_agent: "Test agent",
   web_search: "Search the web",
@@ -82,7 +87,7 @@ export type StudioToolDeps = {
 };
 
 /** Resolve a workspace-relative path, refusing escapes from the root. */
-function resolveInside(dir: string, rel: string): string {
+export function resolveInside(dir: string, rel: string): string {
   const abs = path.resolve(dir, rel);
   if (abs !== dir && !abs.startsWith(dir + path.sep)) {
     throw new Error(`Path escapes the workspace: ${rel}`);
@@ -254,7 +259,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
   const { dir } = deps;
   const raw: ToolSet = {
     list_files: tool({
-      description: "List the files in the project workspace",
+      description: STUDIO_TOOL_DESCRIPTIONS.list_files,
       inputSchema: jsonSchema<Record<string, never>>({ type: "object", properties: {} }),
       execute: async () => {
         const paths = await walkWorkspace(dir);
@@ -262,9 +267,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
       },
     }),
     read_file: tool({
-      description:
-        "Read a file from the project workspace. Returns numbered lines; " +
-        "use offset/limit to page through large files.",
+      description: STUDIO_TOOL_DESCRIPTIONS.read_file,
       inputSchema: z.object({
         path: z.string().describe("Workspace-relative path"),
         offset: z.number().optional().describe("1-indexed line to start reading from"),
@@ -281,9 +284,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
       },
     }),
     glob: tool({
-      description:
-        "Find workspace files matching a glob pattern (e.g. **/*.ts), newest " +
-        "first. Use this to locate files by name; use grep to search contents.",
+      description: STUDIO_TOOL_DESCRIPTIONS.glob,
       inputSchema: z.object({
         pattern: z.string().describe("The glob pattern to match files against"),
       }),
@@ -309,9 +310,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
       },
     }),
     write_file: tool({
-      description:
-        "Create a new file, or fully replace one. For edits to an existing " +
-        "file prefer edit_file.",
+      description: STUDIO_TOOL_DESCRIPTIONS.write_file,
       inputSchema: z.object({
         path: z.string().describe("Workspace-relative path"),
         content: z.string().describe("Full new file contents"),
@@ -324,12 +323,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
       },
     }),
     edit_file: tool({
-      description:
-        "Replace an exact snippet in a workspace file. Prefer this over " +
-        "write_file for changes to an existing file. oldText must appear " +
-        "exactly once; include surrounding lines if it would otherwise be " +
-        "ambiguous, or set replaceAll to change every occurrence. Returns a " +
-        "diff of what changed.",
+      description: STUDIO_TOOL_DESCRIPTIONS.edit_file,
       inputSchema: z.object({
         path: z.string().describe("Workspace-relative path"),
         oldText: z.string().describe("Exact text to replace; must be unique in the file"),
@@ -361,7 +355,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
       },
     }),
     delete_file: tool({
-      description: "Delete a file from the project workspace",
+      description: STUDIO_TOOL_DESCRIPTIONS.delete_file,
       inputSchema: z.object({ path: z.string() }),
       execute: async ({ path: rel }) => {
         const abs = resolveInside(dir, rel);
@@ -375,10 +369,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
       },
     }),
     grep: tool({
-      description:
-        "Search file contents across the workspace. Returns `path:line: text` " +
-        "for each match. Cheaper than reading whole files to find where " +
-        "something is defined.",
+      description: STUDIO_TOOL_DESCRIPTIONS.grep,
       inputSchema: z.object({
         pattern: z.string().describe("Regex, or plain text when literal is true"),
         glob: z.string().optional().describe("Only search paths matching this glob, e.g. *.ts"),
@@ -398,11 +389,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
       },
     }),
     bash: tool({
-      description:
-        "Run a bash command in the workspace directory (network access " +
-        "available). Use it to run node scripts, install packages, or " +
-        "inspect files. Output is capped; long-running commands are killed " +
-        "at the timeout.",
+      description: STUDIO_TOOL_DESCRIPTIONS.bash,
       inputSchema: z.object({
         command: z.string().describe("The bash command to run"),
         timeoutMs: z
@@ -424,11 +411,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
       },
     }),
     todo_write: tool({
-      description:
-        "Replace your todo list for the current request. Use it for " +
-        "multi-step work so no step gets dropped: write the steps up front, " +
-        "then resend the full list as statuses change. Keep exactly one item " +
-        "in_progress at a time. Skip it for single-step changes and questions.",
+      description: STUDIO_TOOL_DESCRIPTIONS.todo_write,
       inputSchema: z.object({
         todos: z
           .array(TodoItemSchema)
@@ -437,12 +420,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
       execute: async ({ todos }) => renderTodos(todos),
     }),
     test_agent: tool({
-      description:
-        "Build the workspace and load it into the production agent runtime. " +
-        "Reports build errors, load errors, and the agent config. Pass " +
-        "`tool` and `args` to also invoke one of the agent's tools with " +
-        "sample arguments and see its result. Secrets are NOT available in " +
-        "test runs (ctx.env is empty); ctx.db is unavailable.",
+      description: STUDIO_TOOL_DESCRIPTIONS.test_agent,
       inputSchema: z.object({
         tool: z.string().optional().describe("Name of an agent tool to invoke after loading"),
         args: z
