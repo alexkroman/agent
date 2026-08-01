@@ -29,6 +29,7 @@
     "check:affected": "turbo run build typecheck lint test --affected --continue",
     "check:hatches": "node scripts/check-escape-hatches.mjs",
     "check:file-length": "node scripts/check-file-length.mjs",
+    "check:gateway-models": "node --conditions=@dev/source scripts/check-gateway-models.mjs",
     "check:knip": "knip",
     "check:publint": "turbo run check:publint",
     "check:publish-names": "node scripts/check-publish-names.mjs",

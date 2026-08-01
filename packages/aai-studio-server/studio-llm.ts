@@ -29,6 +29,23 @@ import type { LanguageModel } from "ai";
  * documents streamed responses for OpenAI models only; non-OpenAI streams run
  * through the repair wrapper (`_openai-stream-repair.ts` in the SDK), which
  * fills in id-less `tool_calls` deltas and the null `choices` usage frame.
+ *
+ * **Verify with `node scripts/check-gateway-models.mjs` before adding to this
+ * list, and re-run it when a model misbehaves.** The list is ours to maintain
+ * and it had gone stale in both directions: `kimi-k2.5` was deprecated (410)
+ * and `gemini-3.1-flash-lite-preview` had never existed (400 "model not
+ * found"), yet both were offered, and one was reachable via
+ * `STUDIO_LLM_MODEL`.
+ *
+ * Staleness here is expensive because the gateway hides the reason on the
+ * path we use. Ask for a dead model WITHOUT `stream` and it says plainly
+ * `410 the model version you are trying to access has been deprecated`; ask
+ * WITH `stream: true` — which every studio and pipeline turn does — and it
+ * answers `500 "something went wrong"`. A 500 is retryable, so the AI SDK
+ * tries three times and surfaces "Internal Server Error". From the outside
+ * that is indistinguishable from a provider outage: measured, the agent ran
+ * for 12 seconds, called no tools, and looked like a lazy model rather than
+ * a misconfigured one.
  */
 export const ASSEMBLYAI_GATEWAY_MODELS = [
   "qwen3-next-80b-a3b",
@@ -49,28 +66,24 @@ export const ASSEMBLYAI_GATEWAY_MODELS = [
   "claude-sonnet-4-5-20250929",
   "claude-haiku-4-5-20251001",
   "gemini-3.5-flash",
-  "gemini-3.1-flash-lite-preview",
   "gemini-2.5-pro",
   "gemini-2.5-flash",
   "gemini-2.5-flash-lite",
   "qwen3-32B",
-  "kimi-k2.5",
 ] as const;
 
 /**
  * Gateway models the EU endpoint does not serve. Per the docs only Anthropic
- * Claude and most Gemini models are available in the EU; OpenAI is US-only,
- * as is Gemini 3.1 Flash Lite Preview. Qwen/Kimi are undocumented for the EU
- * and excluded conservatively — hiding a model is harmless, offering one
- * that 404s is not.
+ * Claude and most Gemini models are available in the EU; OpenAI is US-only.
+ * Qwen is undocumented for the EU and excluded conservatively — hiding a
+ * model is harmless, offering one that 404s is not.
+ *
+ * The `kimi` prefix matches nothing today (the one Kimi model was deprecated)
+ * and is kept because the reasoning applies to whichever Kimi model returns.
  */
 const GATEWAY_US_ONLY_MODELS: ReadonlySet<string> = new Set(
   ASSEMBLYAI_GATEWAY_MODELS.filter(
-    (model) =>
-      model.startsWith("gpt-") ||
-      model.startsWith("qwen") ||
-      model.startsWith("kimi") ||
-      model === "gemini-3.1-flash-lite-preview",
+    (model) => model.startsWith("gpt-") || model.startsWith("qwen") || model.startsWith("kimi"),
   ),
 );
 
