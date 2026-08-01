@@ -66,6 +66,8 @@
       "includeEntryExports": true,
       "ignoreDependencies": [
         "@alexkroman1/aai-ui",
+        "@types/react",
+        "@types/react-dom",
         "react",
         "react-dom",
         "tailwindcss"
@@ -80,8 +82,7 @@
         "@types/json-schema"
       ],
       "ignoreBinaries": [
-        "modal",
-        "container"
+        "modal"
       ]
     },
     "packages/aai-studio-client": {

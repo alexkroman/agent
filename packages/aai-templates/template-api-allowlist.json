@@ -33,6 +33,7 @@
     "DEFAULT_STT_SAMPLE_RATE",
     "DEFAULT_SYSTEM_PROMPT",
     "DEFAULT_TTS_SAMPLE_RATE",
+    "DefaultSessionState",
     "Epoch",
     "FETCH_TIMEOUT_MS",
     "GenerateFn",

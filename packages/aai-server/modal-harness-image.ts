@@ -68,12 +68,21 @@ const TOOLCHAIN_PACKAGES = [
   "@alexkroman1/aai-ui",
   "@tailwindcss/vite",
   "@types/node",
+  // Without these, every workspace with a client.tsx fails its typecheck on
+  // TS7016 ("could not find a declaration file for module 'react'") — the
+  // bundlers don't care, but the typecheck gate in front of them does.
+  "@types/react",
+  "@types/react-dom",
   "@vitejs/plugin-react",
   "react",
   "react-dom",
   "tailwindcss",
   "typescript",
   "vite",
+  // The starter workspace ships an agent.test.ts, so `aai test` has to find
+  // a local vitest — without it the CLI falls back to `npx vitest` and pays
+  // a network fetch inside the sandbox.
+  "vitest",
   "zod",
 ] as const;
 
