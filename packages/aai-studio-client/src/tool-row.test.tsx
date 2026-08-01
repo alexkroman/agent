@@ -5,7 +5,7 @@
 
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { prettyToolName, ToolRow } from "./chat.tsx";
+import { prettyToolName, ToolRow } from "./tool-row.tsx";
 
 const render = (part: Record<string, unknown> & { type: string }): string =>
   renderToStaticMarkup(<ToolRow part={part} />);
