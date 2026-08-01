@@ -4,7 +4,7 @@
  * included) and the guest WebSocket dial against a real loopback server.
  * The WarmHarness lifecycle itself (exit fan-out, memoized cleanup) is
  * exercised through both backends' suites — modal-sandbox.test.ts and
- * apple-container-sandbox.test.ts.
+ * subprocess-sandbox.test.ts.
  */
 
 import type { AddressInfo } from "node:net";
