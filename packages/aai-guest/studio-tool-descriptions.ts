@@ -78,6 +78,18 @@ RULES:
 - The workspace ships without node_modules, and only workspace source files (never node_modules, dist, or .git) sync back to the project.
 - Output is capped with the tail kept; long-running commands are killed at the timeout (default ${BASH_TIMEOUT_MS}ms, max ${BASH_TIMEOUT_MAX_MS}ms).`,
 
+  check_types: `Run only the project's TypeScript check (tsc --noEmit against the workspace tsconfig) and report the diagnostics.
+
+WHEN TO USE:
+- Iterating on type errors after edits — much cheaper than test_agent, which runs the same check but then also bundles and loads.
+- Still finish with test_agent before telling the user the work is ready: a clean check_types proves the types, not the build.`,
+
+  npm_info: `Look up a package on the npm registry: name, version, description, homepage, exports, and peerDependencies.
+
+WHEN TO USE:
+- BEFORE add_dependency, to confirm the package exists and see its real import surface instead of guessing an API from memory.
+- After installing, ground truth is local: read node_modules/<pkg>/package.json with read_file, or search inside it with bash.`,
+
   add_dependency: `Add an npm dependency to the project. The package should be a valid npm package name, optionally with a version (e.g. "lodash@4", "date-fns").
 
 GUIDELINES:

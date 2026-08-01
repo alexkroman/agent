@@ -64,6 +64,8 @@ export const STUDIO_TOOL_LABELS: Readonly<Record<string, string>> = {
   grep: "Search code",
   glob: "Find files",
   bash: "Run command",
+  check_types: "Check types",
+  npm_info: "Look up package",
   add_dependency: "Add dependency",
   remove_dependency: "Remove dependency",
   download_to_workspace: "Download file",

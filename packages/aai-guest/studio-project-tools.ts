@@ -43,6 +43,19 @@ const DOWNLOAD_TIMEOUT_MS = 30_000;
  */
 const PACKAGE_SPEC_RE = /^(@[a-z0-9~][\w.~-]*\/)?[a-z0-9~][\w.~-]*(@[\w.^~<>=* -]+)?$/;
 
+/**
+ * The registry fields `npm_info` reports: enough to confirm a package and
+ * its real import surface without guessing, small enough to stay readable.
+ */
+const NPM_INFO_FIELDS = [
+  "name",
+  "version",
+  "description",
+  "homepage",
+  "exports",
+  "peerDependencies",
+];
+
 function runNpm(dir: string, args: string[]): Promise<{ exitCode: number | null; output: string }> {
   const env = { ...process.env };
   delete env.AAI_GUEST_TOKEN;
@@ -116,9 +129,53 @@ async function downloadToWorkspace(dir: string, url: string, rel: string): Promi
   return `Downloaded ${url} to ${rel} (${bytes.byteLength} bytes)`;
 }
 
-/** Build the dependency + asset tools over the session workspace dir. */
-export function createProjectTools(dir: string): ToolSet {
+export type ProjectToolDeps = {
+  /** Absolute workspace root the session materialized. */
+  dir: string;
+  /** Types-only check of the workspace (`typecheckWorkspaceDir`). */
+  typecheck: () => Promise<{ ok: true; skipped: boolean } | { ok: false; output: string }>;
+};
+
+/** Build the dependency + asset + typecheck tools over the session workspace. */
+export function createProjectTools(deps: ProjectToolDeps): ToolSet {
+  const { dir } = deps;
   return {
+    check_types: tool({
+      description: STUDIO_TOOL_DESCRIPTIONS.check_types,
+      inputSchema: z.object({}),
+      execute: async () => {
+        try {
+          const result = await deps.typecheck();
+          if (!result.ok) return result.output;
+          return result.skipped
+            ? "Typecheck skipped: the workspace has no tsconfig.json"
+            : "No type errors";
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      },
+    }),
+    npm_info: tool({
+      description: STUDIO_TOOL_DESCRIPTIONS.npm_info,
+      inputSchema: z.object({
+        package: z.string().describe('npm package to look up, e.g. "date-fns" or "zod@3"'),
+      }),
+      execute: async ({ package: spec }) => {
+        if (!PACKAGE_SPEC_RE.test(spec)) {
+          return `Error: "${spec}" is not a valid npm package spec (expected name, @scope/name, or name@version)`;
+        }
+        try {
+          const { exitCode, output } = await runNpm(dir, ["view", spec, ...NPM_INFO_FIELDS]);
+          const body = output.trim();
+          if (exitCode !== 0) {
+            return `npm view ${spec} failed [exit code ${exitCode}]\n${body || "(no output)"}`;
+          }
+          return body || `No registry metadata for ${spec}`;
+        } catch (err) {
+          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+        }
+      },
+    }),
     add_dependency: tool({
       description: STUDIO_TOOL_DESCRIPTIONS.add_dependency,
       inputSchema: z.object({

@@ -38,7 +38,7 @@ import {
 } from "ai";
 import type { z } from "zod";
 import { hostRequest } from "./harness-rpc.ts";
-import { buildWorkspaceDir, workspacesRoot } from "./studio-build.ts";
+import { buildWorkspaceDir, typecheckWorkspaceDir, workspacesRoot } from "./studio-build.ts";
 import { ensureProjectShape } from "./studio-project-shape.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import {
@@ -223,7 +223,10 @@ async function runTurn(
     tools: {
       ...createGuestWebTools(),
       ...createDesignInspirationTool(model),
-      ...createProjectTools(session.dir),
+      ...createProjectTools({
+        dir: session.dir,
+        typecheck: () => typecheckWorkspaceDir(session.dir),
+      }),
       ...createStudioTools({
         dir: session.dir,
         // Build the live session workspace in place, in THIS sandbox,

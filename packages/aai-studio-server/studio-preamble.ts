@@ -138,10 +138,16 @@ placeholders or guess missing parameters.
   \`console.log("[aai] API response:", data)\`.
 - Use descriptive messages that say what you're checking, and log both
   the success path and the error path.
+- check_types runs just the project's tsc pass — much cheaper than
+  test_agent when iterating on type errors after edits.
 - test_agent is the ground truth for whether the workspace builds and
   loads. Pass \`tool\` and \`args\` to trial-run one of the agent's tools
   and see its real output (ctx.env is empty and ctx.db is unavailable in
   trials, so exercise the parts that don't need them).
+- Debugging an installed dependency? Ground truth is local: read
+  node_modules/<pkg>/package.json with read_file (its exports map says
+  what is importable), or search inside the package with bash — glob and
+  grep deliberately skip node_modules.
 - Delete scratch scripts and debug statements once the issue is resolved
   — workspace source files sync back to the project, so leftovers ship.
 
@@ -221,15 +227,17 @@ These CLI-specific parts do NOT apply in App Builder:
   project. Preinstalled: workspace files, "@alexkroman1/aai" (any subpath),
   "zod", and — for client.tsx — "@alexkroman1/aai-ui" and "react".
 - Adding dependencies: if the request truly needs another npm package,
-  FIRST install it with add_dependency and THEN write the code that
-  imports it — builds will bundle it (remove_dependency uninstalls one
-  nothing imports anymore). Prefer the SDK's builtins and plain fetch
-  over adding dependencies. Note the workspace ships without
-  node_modules, and only workspace source files (never node_modules,
-  dist, or .git) sync back to the project.
+  check it with npm_info (real version and exports, not a guess), FIRST
+  install it with add_dependency, and THEN write the code that imports
+  it — builds will bundle it (remove_dependency uninstalls one nothing
+  imports anymore). Prefer the SDK's builtins and plain fetch over
+  adding dependencies. Note the workspace ships without node_modules,
+  and only workspace source files (never node_modules, dist, or .git)
+  sync back to the project.
 - test_agent and Publish both TYPE-CHECK the workspace (tsc against its
   tsconfig) before building. A type error fails the build with the tsc
-  diagnostic — fix it; never weaken tsconfig.json to silence one.
+  diagnostic — fix it (check_types reruns just that pass, cheaply);
+  never weaken tsconfig.json to silence one.
 - Do not add a vite.config.ts or index.html; App Builder supplies both and
   ignores any you write.
 - agent.test.ts is not runnable here; skip tests unless the user plans to
