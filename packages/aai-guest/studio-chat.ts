@@ -252,6 +252,16 @@ async function runTurn(
       const base = needsCompaction(stepMessages)
         ? await compactMessages(model, stepMessages)
         : stepMessages;
+      // Past the hard deadline the turn gets exactly one more step, with
+      // tools off, so it ends on something the user can read rather than on
+      // whatever tool call happened to be in flight.
+      const final = budget.takeFinalNotice();
+      if (final) {
+        return {
+          messages: [...base, { role: "user" as const, content: final }],
+          toolChoice: "none",
+        };
+      }
       const wrapUp = budget.takeWrapUpNotice();
       const next = wrapUp ? [...base, { role: "user" as const, content: wrapUp }] : base;
       return next === stepMessages ? {} : { messages: next };

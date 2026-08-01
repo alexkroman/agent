@@ -32,7 +32,15 @@ export const SOFT_TURN_MS = 5 * 60_000;
 export const HARD_TURN_MS = 12 * 60_000;
 
 export type TurnBudget = {
-  /** True once the loop must stop. */
+  /**
+   * True once the loop must stop — which is one step AFTER the hard deadline,
+   * not at it. Stopping cold at the deadline ends the turn wherever the agent
+   * happened to be, and if that was a tool call the reply carries no text at
+   * all: the user gets a stopped spinner and no account of what happened,
+   * which is the failure this whole module exists to prevent. So the deadline
+   * buys one final tool-free step (see {@link TurnBudget.takeFinalNotice}) and
+   * the loop ends after it.
+   */
   expired: () => boolean;
   /**
    * The wrap-up instruction, returned exactly once, else null. Once only
@@ -40,6 +48,12 @@ export type TurnBudget = {
    * save — and an agent told to hurry on every step stops making progress.
    */
   takeWrapUpNotice: () => string | null;
+  /**
+   * The closing instruction for the one step past the hard deadline, returned
+   * exactly once. The caller must run this step with tools disabled, so the
+   * turn is guaranteed to end on a message the user can read.
+   */
+  takeFinalNotice: () => string | null;
   elapsedMs: () => number;
 };
 
@@ -50,10 +64,11 @@ export function createTurnBudget(
 ): TurnBudget {
   const started = now();
   let warned = false;
+  let closing = false;
   const elapsed = () => now() - started;
   return {
     elapsedMs: elapsed,
-    expired: () => elapsed() >= hard,
+    expired: () => closing && elapsed() >= hard,
     takeWrapUpNotice: () => {
       if (warned || elapsed() < soft) return null;
       warned = true;
@@ -64,6 +79,17 @@ export function createTurnBudget(
         "A verified partial agent is worth more than an unverified complete one — " +
         "the user cannot tell the difference and will publish either. If something " +
         "is still broken, say so plainly instead of implying it is done."
+      );
+    },
+    takeFinalNotice: () => {
+      if (closing || elapsed() < hard) return null;
+      closing = true;
+      return (
+        `[${Math.round(elapsed() / 60_000)} minutes into this turn] Out of time — ` +
+        "this is your last message and you cannot call any more tools. Tell the " +
+        "user plainly what you built, what you verified, and what is still " +
+        "unfinished or broken, so they know where to pick it up. Do not claim " +
+        "anything works that you did not test."
       );
     },
   };

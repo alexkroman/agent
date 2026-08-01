@@ -46,12 +46,30 @@ describe("createTurnBudget", () => {
     expect(b.takeWrapUpNotice()).toBeNull();
   });
 
-  test("expires at the hard bound", () => {
+  test("spends one closing step at the hard bound, then expires", () => {
+    // Never `expired` before the closing step is taken: stopping cold there
+    // can end the turn on a tool call, leaving the user no text at all.
     const c = clock();
     const b = createTurnBudget(c.now);
     c.advance(HARD_TURN_MS - 1);
+    expect(b.takeFinalNotice()).toBeNull();
     expect(b.expired()).toBe(false);
+
     c.advance(1);
+    expect(b.expired()).toBe(false);
+    const closing = b.takeFinalNotice();
+    expect(closing).toMatch(/cannot call any more tools/i);
+    expect(closing).toMatch(/still unfinished or broken/i);
+    expect(b.expired()).toBe(true);
+  });
+
+  test("the closing step is offered once", () => {
+    const c = clock();
+    const b = createTurnBudget(c.now);
+    c.advance(HARD_TURN_MS);
+    expect(b.takeFinalNotice()).toBeDefined();
+    c.advance(60_000);
+    expect(b.takeFinalNotice()).toBeNull();
     expect(b.expired()).toBe(true);
   });
 
