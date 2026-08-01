@@ -68,6 +68,11 @@ const TOOLCHAIN_PACKAGES = [
   "@alexkroman1/aai-ui",
   "@tailwindcss/vite",
   "@types/node",
+  // Without these, every workspace with a client.tsx fails its typecheck on
+  // TS7016 ("could not find a declaration file for module 'react'") — the
+  // bundlers don't care, but the typecheck gate in front of them does.
+  "@types/react",
+  "@types/react-dom",
   "@vitejs/plugin-react",
   "react",
   "react-dom",

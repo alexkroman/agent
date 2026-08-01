@@ -298,11 +298,10 @@ ctx.send(event: string, data: unknown): void   // push custom event to browser c
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 ```
 
-**Typing `ctx.state`.** `S` is inferred from the agent's `state` factory, but
-a `tool()` written on its own can't see it — there, `ctx.state` defaults to
-`Record<string, unknown>` and `ctx.state.cart` is `unknown`, which **fails the
-build** (`aai build`/`aai deploy` typecheck the project). Declare the state
-type once and annotate the context in tools that touch it:
+**Typing `ctx.state`.** `ctx.state` is untyped by default, so
+`ctx.state.cart.push(item)` compiles and runs as-is — you do not have to
+declare anything. To get real checking (recommended for anything non-trivial),
+declare the state type once and annotate the context in tools that touch it:
 
 ```ts
 type State = { cart: string[] };
@@ -323,8 +322,10 @@ export default agent({
 });
 ```
 
-Tools that never read `ctx.state` need no annotation. A tool annotated with a
-state shape the agent's factory doesn't produce is a compile error.
+With the annotation, `ctx.state.cart` is `string[]` and a typo is caught;
+without it, `ctx.state` is permissive. Tools that never read `ctx.state` need
+no annotation either way. A tool annotated with a state shape the agent's
+factory doesn't produce is a compile error.
 
 `ctx.generate({ prompt, system?, llm?, schema?, temperature?, maxOutputTokens? })`
 runs one LLM generation on the host. It defaults to the agent's pipeline

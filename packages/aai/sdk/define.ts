@@ -6,6 +6,7 @@ import {
   type AgentDef,
   DEFAULT_GREETING,
   DEFAULT_SYSTEM_PROMPT,
+  type DefaultSessionState,
   type ToolContext,
   type ToolDef,
 } from "./types.ts";
@@ -51,7 +52,7 @@ import {
  *
  * @public
  */
-export function tool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(def: {
+export function tool<P extends z.ZodObject<z.ZodRawShape>, S = DefaultSessionState>(def: {
   description: string;
   parameters?: P;
   execute(args: z.infer<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
@@ -74,7 +75,7 @@ type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
  *
  * @public
  */
-export type AgentParams<S = Record<string, unknown>> = Omit<AgentDef<S>, DefaultedAgentField> &
+export type AgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAgentField> &
   Partial<Pick<AgentDef<S>, DefaultedAgentField>>;
 
 /**
@@ -112,7 +113,7 @@ export type AgentParams<S = Record<string, unknown>> = Omit<AgentDef<S>, Default
  *
  * @public
  */
-export function agent<S = Record<string, unknown>>(def: AgentParams<S>): AgentDef<S> {
+export function agent<S = DefaultSessionState>(def: AgentParams<S>): AgentDef<S> {
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,

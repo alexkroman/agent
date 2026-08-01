@@ -3,7 +3,7 @@ import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
 import { agent, tool } from "./define.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
-import type { AgentDef, ToolContext, ToolDef } from "./types.ts";
+import type { AgentDef, DefaultSessionState, ToolContext, ToolDef } from "./types.ts";
 
 /**
  * Every `AgentDef` field must be declarable through `agent()`.
@@ -29,9 +29,26 @@ test("agent() infers the state shape from the state factory", () => {
   expectTypeOf(def.state).toEqualTypeOf<(() => { count: number }) | undefined>();
 });
 
-test("agent() without a state factory keeps the untyped default", () => {
+test("agent() without a state factory falls back to the permissive default", () => {
+  // `any`, so the ordinary unannotated `ctx.state.foo` compiles rather than
+  // failing the build gate on correct code. See DefaultSessionState.
   const def = agent({ name: "t" });
-  expectTypeOf(def.state).toEqualTypeOf<(() => Record<string, unknown>) | undefined>();
+  expectTypeOf(def.state).toEqualTypeOf<(() => DefaultSessionState) | undefined>();
+});
+
+test("an unannotated tool can read state without a type error", () => {
+  // The regression this whole change exists for: `ctx.state.cart` used to be
+  // `unknown`, which failed `aai build`'s typecheck on a working agent.
+  const add = tool({
+    description: "add",
+    parameters: z.object({ item: z.string() }),
+    execute: ({ item }, ctx) => {
+      expectTypeOf(ctx.state).toEqualTypeOf<DefaultSessionState>();
+      ctx.state.cart.push(item); // the exact line that used to be TS18046
+      return ctx.state.cart.length;
+    },
+  });
+  expectTypeOf(add.description).toEqualTypeOf<string>();
 });
 
 test("tool() types ctx.state from an annotated context", () => {

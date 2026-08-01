@@ -270,6 +270,10 @@
           }
         }
       }
+    },
+    {
+      "includes": ["packages/aai/sdk/types.ts"],
+      "linter": { "rules": { "suspicious": { "noExplicitAny": "off" } } }
     }
   ],
   "formatter": {
