@@ -46,6 +46,7 @@ import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
+import { installCrashGuards } from "./harness-crash-guards.ts";
 import {
   dbAdapter,
   errMsg,
@@ -350,6 +351,7 @@ export function lazyRuntime(state: HarnessState): SessionRuntime {
 }
 
 function main(): void {
+  installCrashGuards();
   const token = process.env.AAI_GUEST_TOKEN;
   if (!token) {
     console.error("AAI_GUEST_TOKEN is required");

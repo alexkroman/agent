@@ -1,0 +1,100 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Turning tsc diagnostics into diagnostics the coding agent can act on.
+ *
+ * Measured across the studio starter prompts, a handful of TypeScript codes
+ * account for most of the repair rounds — and they repeat because a bare
+ * diagnostic states what is wrong without stating the idiom that fixes it.
+ * The agent then guesses, guesses again, and burns its step budget.
+ *
+ * The obvious remedies both have a flaw. Putting the idioms in the system
+ * prompt charges every request for guidance almost every request does not
+ * need, and prompt text is demonstrably skippable. Putting them behind a
+ * lookup tool assumes the agent knows to ask, which the same evidence says
+ * it often does not — most tools are never called at all.
+ *
+ * So the hint rides on the failure itself: zero tokens until it fires, and
+ * unmissable when it does, because it arrives inside the error the agent is
+ * already reading. One hint per distinct code, appended once, so a file with
+ * forty instances of the same mistake does not produce forty paragraphs.
+ */
+
+/** Hint per diagnostic code — keyed on the codes the evals actually surfaced. */
+const HINTS: Record<string, string> = {
+  // Indexing an object literal with a variable. By far the most expensive
+  // one: it also causes the TS2339 cascade below.
+  TS7053:
+    "Annotate the lookup table instead of letting it infer: " +
+    "`const ROOMS: Record<string, Room> = { ... }` (declare `type Room` first). " +
+    "Without it TypeScript infers a union of each entry's literal shape, so " +
+    "indexing with a variable fails and any field missing from one entry fails too.",
+  TS2538: "Same fix as TS7053: annotate the map as `Record<string, T>`.",
+  TS2339:
+    "If this is a value read out of an object literal map, the map needs " +
+    "`Record<string, T>` with `T` declaring every field (optional ones as `field?: X`). " +
+    "Otherwise the inferred type is a union of the entries and only fields common to all of them exist.",
+  TS2345:
+    "Often an empty array that inferred `never[]`. Give it a type at the " +
+    "declaration: `const items: string[] = []`.",
+  TS7006: "Annotate the callback parameter, e.g. `(sum: number, item: Item) => ...`.",
+  TS2304: "The name is not imported. Add the import; a TYPE needs `import type` here.",
+  TS1361:
+    "This is a type being used as a value. Import it with `import type` and " +
+    "use it only in type positions.",
+  TS2880:
+    'Import attributes replaced import assertions: use `with { type: "json" }`, not `assert`.',
+  TS1005:
+    "A syntax error usually means an edit landed mid-expression. Read the file " +
+    "around this line before editing again — do not patch blind.",
+  TS2353:
+    "This property is not part of the `agent()` config. Check the framework " +
+    "reference for the field list rather than inventing one.",
+};
+
+/** Codes where naming the module's real exports is the whole fix. */
+const EXPORT_CODES = new Set(["TS2305", "TS2724"]);
+
+const CODE_RE = /error (TS\d+):/g;
+/** `Module '"@alexkroman1/aai"' has no exported member 'Foo'.` */
+const MODULE_RE = /Module '"([^"]+)"' has no exported member|'"([^"]+)"' has no exported member/g;
+
+/** Resolves a specifier's exported names; an empty array means "unknown". */
+export type ExportResolver = (specifier: string) => readonly string[];
+
+/**
+ * A wrong import name is answerable exactly, so answer it rather than
+ * hinting: the agent guessed, and the real list ends the guessing.
+ */
+function exportHints(output: string, resolveExports: ExportResolver): string[] {
+  const out: string[] = [];
+  for (const m of output.matchAll(MODULE_RE)) {
+    const specifier = m[1] ?? m[2];
+    if (!specifier) continue;
+    const names = resolveExports(specifier);
+    if (names.length > 0) out.push(`Exports of "${specifier}": ${[...names].sort().join(", ")}`);
+  }
+  return out;
+}
+
+/**
+ * Append actionable hints to a failed typecheck's output.
+ *
+ * `resolveExports` is injected so the caller decides how a specifier is
+ * resolved (and so this stays testable without a real node_modules).
+ */
+export function annotateDiagnostics(output: string, resolveExports?: ExportResolver): string {
+  const codes = new Set([...output.matchAll(CODE_RE)].flatMap((m) => (m[1] ? [m[1]] : [])));
+  if (codes.size === 0) return output;
+
+  const hints: string[] = [];
+  for (const code of codes) {
+    const hint = HINTS[code];
+    if (hint !== undefined) hints.push(`${code}: ${hint}`);
+  }
+
+  if ([...codes].some((c) => EXPORT_CODES.has(c)) && resolveExports) {
+    hints.push(...exportHints(output, resolveExports));
+  }
+
+  return hints.length === 0 ? output : `${output}\n\nHints:\n- ${hints.join("\n- ")}`;
+}

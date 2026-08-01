@@ -27,7 +27,6 @@ pnpm check:affected      # Only check packages affected by changes since main
 | Integration | `pnpm test:integration` | Real subsystems (HTTP servers, WebSockets) | 30s |
 | E2E | `pnpm test:e2e` | Full process spawn + Playwright browser | 300s |
 | Templates | `pnpm test:templates` | Template agent example tests | 5s |
-| Evals | `pnpm --filter aai-server test:evals` | LLM-in-the-loop studio codegen evals (vitest-evals) | 300s |
 
 ### Single-package shortcuts
 
@@ -1267,97 +1266,46 @@ package.json scripts (not always obvious from test code alone):
   project with (`pnpm` | `npm` | `yarn`; default `pnpm`). **CI only runs
   `pnpm`** — see below.
 
-#### Studio codegen evals (aai-server)
+#### Studio starter evals (scripts/starter-eval.mjs)
 
-`packages/aai-studio-server/studio-eval.test.ts` runs the real studio
-coding agent (`runStudioChat` with the host-env selected LLM) one-shot
-against fresh starter workspaces and judges the workspace it leaves
-behind, using [vitest-evals](https://github.com/getsentry/vitest-evals)
-(`describeEval` + `createHarness` + `createJudge`):
+The LLM-judge codegen suite (`studio-eval.test.ts`, vitest-evals) was
+removed in favour of a harness that drives the studio's REAL surface —
+create project, broker a sandbox session, stream a chat turn to the guest —
+rather than calling the codegen path directly:
 
-- **`WorkerBuildJudge`** (suite judge, threshold 1): the workspace must
-  build through `bundleWorkspaceWorker` — the exact Vite/Rollup pass
-  Publish runs. This is the "one-shot produces syntactically valid code"
-  gate.
-- **`SandboxLoadJudge`** (asserted via `toSatisfyJudge` when Modal
-  credentials + the built guest harness are available): the built worker
-  must load in a real studio sandbox and self-describe a valid
-  `IsolateConfigSchema` config — the "code actually works" gate. It also
-  asserts whatever **config facts** the case declares: expected tool
-  names and which provider kind backs each pipeline stage (or that none is
-  declared, i.e. S2S).
-- **`TemplateParityJudge`** (threshold 0.8): the workspace must be
-  functionally equivalent to a hand-written template — the "built the
-  *right* thing" gate. Most cases are template-parity cases: the prompt is
-  one of the studio's own starter prompts
-  (`aai-studio-client/src/starters.ts`, each modeled on a template) and the
-  matching `aai-templates/templates/<name>/` is the reference. The
-  reference is read off disk as **text**, never imported — evaluating it
-  would need the templates package's own raw-`.md` import plugin. The
-  prompts are duplicated rather than shared because aai-server and
-  aai-studio-client talk over HTTP only, with no code imports either way.
+```sh
+node scripts/starter-eval.mjs [--only <substring>] [--repeat N] [--out f.json]
+node scripts/starter-eval-report.mjs run.json [baseline.json]
+```
 
-  Grading is one LLM call on the host-selected studio model over a fixed
-  5-criterion rubric with stable ids (`mode`, `capabilities`, `state`,
-  `assets`, `persona`); the score is the fraction passed, and a criterion
-  the judge skips counts as a failure. `TEMPLATE_CASES` holds one case per
-  distinct agent shape and `UNCOVERED` records why each remaining template
-  has none, with a non-LLM guard test asserting every template is in one or
-  the other — both directions, so a rename can't leave a dangling entry.
+It spends real tokens on the caller's own key, so it is not in CI. Three
+things it measures that the judge suite did not:
 
-  Much of the rubric's wording exists because a **false negative** was
-  observed: left to itself the judge fails a generated agent for doing
-  *more* than the reference — extra tools, the framework's default cognitive
-  builtins on top of an explicit `builtinTools`, a stricter system prompt.
-  Two related traps: the per-case `shape` string is deliberately **not**
-  shown to the judge (it read "run_code only" as a requirement and failed an
-  agent for keeping the defaults), and the `ONE_SHOT` suffix is stripped
-  from the judge's view of the prompt (it instructs the *builder*, and the
-  judge graded the voice agent's persona against it). The mirror-image
-  false negative is why `capabilities` grades coverage of the **prompt**,
-  not of the reference: the templates are fuller than the starter prompts
-  they pair with (the pizza reference also updates a cart line and takes the
-  customer's name; its starter prompt asks for neither), so demanding every
-  reference capability failed agents that built exactly what was asked.
-  When a case regresses, suspect the rubric before the studio prompt.
-  `temperature: 0` is deliberately absent — the default studio model is a
-  reasoning model that rejects it, and generation variance dominates anyway.
+- **Shippable, not just green.** The agent writes its own tests, so "the
+  tests passed" is a measure it can satisfy by weakening an assertion. The
+  primary verdict is instead whether the built agent covers the capabilities
+  the PROMPT enumerated (`scripts/starter-expectations.mjs`), checked
+  against the loaded config and agent.ts — neither of which the agent can
+  edit to make the check pass.
+- **Cost**: tool calls, repair rounds (failed `test_agent` runs), wall
+  clock. Repair rounds are the number worth optimizing; they were what the
+  starter prompts actually burned their step budget on.
+- **A failure taxonomy** — never-verified / verified-broken / missing
+  capability / step-capped — because "RED" was hiding three problems that
+  want three different fixes.
 
-The corpus has a second family with no reference and no parity judge:
-**`CONFIG_CASES`**, graded only on what the built worker reports about
-itself. They cover the two rules a resemblance grader is the wrong
-instrument for, because they are about whether a *published* agent can run
-at all rather than whether it looks like a template:
+**Run-to-run variance is large, and single runs cannot adjudicate a prompt
+change.** Measured on one starter with an identical config: tool calls
+varied 9–14 and repairs 1–4, which is the size of the effect most prompt
+edits produce. Use `--repeat 3` and compare arms, and expect a plausible
+change to show no effect — one A/B of a TypeScript-idioms preamble block
+came back flat and the block was removed rather than kept on the strength
+of a single flattering run.
 
-- **An all-AssemblyAI cascaded pipeline is the default.** The studio
-  preamble tells the agent to default every build to pipeline mode with
-  AssemblyAI backing all three stages — `assemblyAI` STT,
-  `qwen3-next-80b-a3b` on the AssemblyAI LLM Gateway, `assemblyAI` TTS —
-  and to use the S2S voice agent API (no stt/llm/tts declared) only when
-  the user asks for it.
-  `ASSEMBLYAI_API_KEY` is the only key publishing seeds
-  (`studio-deploy.ts`'s `defaultEnv`), so an agent that reaches for
-  Anthropic or Cartesia unbidden cannot start until the user supplies a
-  key. Cases assert an all-`assemblyai` pipeline when no provider or mode
-  is named at all (and when cascaded mode is requested without naming
-  providers), S2S when the prompt asks for the voice agent API, and — when
-  the prompt names one stage's provider — that stage honored plus
-  AssemblyAI for the two the prompt left open. Parity can't grade this:
-  several references legitimately run S2S or use other providers, so
-  "matches the reference" and "runs when published" disagree. The `mode`
-  rubric criterion states the same rule as the judge-side backstop for
-  template cases (a pipeline agent is correct against an S2S reference
-  unless the prompt asked for S2S).
-
-Run with `pnpm --filter aai-server test:evals` (the e2e profile of
-`vitest.slow.config.ts`). The suite is excluded from the unit project and
-**skips entirely without an LLM key** (`ASSEMBLYAI_API_KEY` or
-`ANTHROPIC_API_KEY`, or `STUDIO_LLM_PROVIDER`/`STUDIO_LLM_MODEL`), so
-`pnpm test` stays hermetic. For the sandbox judge, build the guest
-harness first (`pnpm --filter aai-server build`, or point
-`GUEST_HARNESS_PATH` at one). An errored
-agent turn fails the run loudly — judging the leftover starter workspace
-(which builds fine) would be a false pass.
+What the deleted suite did that this does not: an LLM judge scoring the
+workspace against a reference template for persona, state use, and assets
+(`TemplateParityJudge`). Capability coverage is checked; resemblance to a
+hand-written template is not.
 
 #### The e2e suite is pnpm-only in CI
 

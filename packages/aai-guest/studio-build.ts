@@ -20,9 +20,12 @@
  * the normal node_modules walk-up, exactly as in a user project.
  */
 
+import { readFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { stripVTControlCharacters } from "node:util";
+import { annotateDiagnostics, type ExportResolver } from "./studio-diagnostics.ts";
 
 /** Result of one guest build; `buildError` is prose the coding agent can act on. */
 export type GuestBuildResult = {
@@ -100,7 +103,12 @@ export async function buildWorkspaceDir(
   // unchecked, so this is the only gate that catches runtime-working-but-
   // wrong code — and the message is exactly what the coding agent needs.
   const typed = await tc.typecheckProject(dir);
-  if (!typed.ok) return { buildError: scrubDir(typed.output, dir) };
+  if (!typed.ok) {
+    // Attach the fixing idiom to the diagnostic rather than carrying it in
+    // the system prompt: it costs nothing until a build actually fails, and
+    // it arrives inside the error the agent is already reading.
+    return { buildError: annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)) };
+  }
   try {
     const [worker, clientFiles] = await Promise.all([
       want.worker ? tc.buildWorker(dir, { minify: true, configFile: false }) : undefined,
@@ -183,4 +191,57 @@ export function scrubDir(message: string, dir: string): string {
     out = out.split(`${form}${path.sep}`).join("").split(form).join(".");
   }
   return out;
+}
+
+/** The .d.ts a package points at, from `types` or its `.` export. */
+function typesEntry(pkg: {
+  types?: string;
+  exports?: Record<string, { types?: string } | string>;
+}): string | undefined {
+  if (pkg.types) return pkg.types;
+  const root = pkg.exports?.["."];
+  return typeof root === "object" ? root.types : undefined;
+}
+
+/** Exported names declared in a .d.ts, both declaration and `export {}` forms. */
+function exportedNamesFromDts(dts: string): string[] {
+  const names = new Set<string>();
+  const decl =
+    /export\s+(?:declare\s+)?(?:type|interface|const|function|class)\s+([A-Za-z_$][\w$]*)/g;
+  for (const m of dts.matchAll(decl)) if (m[1]) names.add(m[1]);
+  for (const m of dts.matchAll(/export\s*\{([^}]*)\}/g)) {
+    for (const part of (m[1] ?? "").split(",")) {
+      const name = part
+        .trim()
+        .split(/\s+as\s+/)
+        .pop()
+        ?.trim();
+      if (name && /^[A-Za-z_$][\w$]*$/.test(name)) names.add(name);
+    }
+  }
+  return [...names];
+}
+
+/**
+ * Exported names of a bare specifier, as seen from the workspace.
+ *
+ * Reads the package's .d.ts rather than importing it: the names the agent
+ * gets wrong are usually TYPES (`ToolContext`), which have no runtime
+ * presence, so `Object.keys(await import(...))` would miss exactly the ones
+ * that matter. Best-effort — an unresolvable module yields no list and the
+ * diagnostic goes out unannotated.
+ */
+function moduleExports(dir: string): ExportResolver {
+  return (specifier) => {
+    try {
+      const require = createRequire(path.join(dir, "package.json"));
+      const pkgPath = require.resolve(`${specifier}/package.json`);
+      const entry = typesEntry(JSON.parse(readFileSync(pkgPath, "utf-8")));
+      if (!entry) return [];
+      return exportedNamesFromDts(readFileSync(path.join(path.dirname(pkgPath), entry), "utf-8"));
+    } catch {
+      // Unresolvable module: the diagnostic goes out unannotated.
+      return [];
+    }
+  };
 }

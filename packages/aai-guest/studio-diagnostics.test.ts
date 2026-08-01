@@ -1,0 +1,61 @@
+// Copyright 2026 the AAI authors. MIT license.
+
+import { describe, expect, test } from "vitest";
+import { annotateDiagnostics } from "./studio-diagnostics.ts";
+
+const TS7053 =
+  "Type check failed:\nagent.ts(124,18): error TS7053: Element implicitly has an 'any' type " +
+  "because expression of type 'string' can't be used to index type '{ entrance: ... }'.";
+
+describe("annotateDiagnostics", () => {
+  test("attaches the fixing idiom to the diagnostic that needs it", () => {
+    const out = annotateDiagnostics(TS7053);
+    expect(out).toContain(TS7053); // never replaces the original diagnostic
+    expect(out).toContain("Record<string, Room>");
+  });
+
+  test("leaves output untouched when nothing is recognized", () => {
+    const plain = "Type check failed:\nagent.ts(1,1): error TS9999: something new.";
+    expect(annotateDiagnostics(plain)).toBe(plain);
+  });
+
+  test("passes through output with no diagnostics at all", () => {
+    expect(annotateDiagnostics("Tests: passed.")).toBe("Tests: passed.");
+  });
+
+  test("hints once per code, not once per occurrence", () => {
+    // A file with the same mistake forty times must not produce forty
+    // paragraphs — the point is to inform, not to flood the context.
+    const many = Array.from(
+      { length: 5 },
+      (_, i) => `agent.ts(${i},1): error TS7006: Parameter 'x' implicitly has an 'any' type.`,
+    ).join("\n");
+    const hints = annotateDiagnostics(many).split("Annotate the callback parameter").length - 1;
+    expect(hints).toBe(1);
+  });
+
+  test("answers a wrong import by naming the module's real exports", () => {
+    // The agent guessed a name; the list is the fix, so give the list rather
+    // than advice about how to look it up.
+    const err = `agent.ts(2,10): error TS2305: Module '"@alexkroman1/aai"' has no exported member 'ToolCtx'.`;
+    const out = annotateDiagnostics(err, (spec) =>
+      spec === "@alexkroman1/aai" ? ["tool", "agent", "ToolContext"] : [],
+    );
+    expect(out).toContain('Exports of "@alexkroman1/aai"');
+    expect(out).toContain("ToolContext");
+  });
+
+  test("omits the export list when the module cannot be resolved", () => {
+    const err = `agent.ts(2,10): error TS2305: Module '"mystery"' has no exported member 'X'.`;
+    expect(annotateDiagnostics(err, () => [])).not.toContain("Exports of");
+  });
+
+  test("covers every code the starter evals actually produced", () => {
+    // Regression lock on the measured failure set: if a code loses its hint,
+    // the repair loop it caused comes back.
+    for (const code of ["TS7053", "TS2538", "TS2339", "TS2345", "TS7006", "TS2304", "TS2880"]) {
+      const out = annotateDiagnostics(`agent.ts(1,1): error ${code}: whatever.`);
+      expect(out, `${code} should carry a hint`).toContain("Hints:");
+    }
+  });
+});

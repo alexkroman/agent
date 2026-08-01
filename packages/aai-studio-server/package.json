@@ -22,12 +22,10 @@
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "predeploy:modal": "node ../../scripts/ensure-guest-harness.mjs",
-    "deploy:modal": "modal deploy modal_deploy.py",
-    "test:evals": "VITEST_PROFILE=e2e VITEST_INCLUDE=studio-eval.test.ts vitest run -c ../../vitest.slow.config.ts"
+    "deploy:modal": "modal deploy modal_deploy.py"
   },
   "dependencies": {
     "@alexkroman1/aai": "workspace:*",
-    "@alexkroman1/aai-cli": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@hono/node-server": "^2.0.11",
     "@hono/zod-validator": "^0.9.0",
@@ -47,7 +45,6 @@
     "tsdown": "^0.22.13",
     "typescript": "^7.0.2",
     "vite": "^8.1.5",
-    "vitest": "^4.1.10",
-    "vitest-evals": "^0.15.0"
+    "vitest": "^4.1.10"
   }
 }
