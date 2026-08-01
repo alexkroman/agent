@@ -266,8 +266,9 @@ model) is the security boundary.
   entry point (runs inside a Modal Sandbox) that runs the COMPLETE agent.
   Serves three surfaces on the tunneled port: `/ws` (bearer-token host
   control channel — JSON-RPC `bundle/load`, one-shot `tool/execute`
-  trials, `status`, `studio/session-init`; guest→host `db/query`,
-  `studio/build`, `studio/sync-workspace`, `studio/persist-chat`),
+  trials, `workspace/build` (Publish's in-guest build), `status`,
+  `studio/session-init`; guest→host `db/query`,
+  `studio/sync-workspace`, `studio/persist-chat`),
   `/session` (PUBLIC client voice sessions, connected directly by
   browsers — the embedded SDK runtime drives STT/LLM/TTS in-guest), and
   `/studio/chat` + `/studio/tools` (the studio coding agent's PUBLIC chat
@@ -389,10 +390,11 @@ voice agents without the CLI:
   workspace source files — never node_modules/dist/.git — sync, under the
   same file caps) and `studio/persist-chat` (the settled conversation →
   `aai_platform.studio_chats`, restored on project open via
-  `GET /studio/projects/:project/chat`). `test_agent` builds via
-  guest→host `studio/build` (Vite stays out of the guest, which has no
-  node_modules; content-hash cached so Publish reuses the worker) and
-  loads/trials the bundle in place. Sandboxes are per (scope, project)
+  `GET /studio/projects/:project/chat`). `test_agent` builds the live
+  workspace IN the guest through the aai CLI's own bundlers
+  (`aai-guest/studio-build.ts` — the toolchain node_modules are baked next
+  to the harness) and loads/trials the bundle in place; Publish builds the
+  same way via the host→guest `workspace/build` RPC. Sandboxes are per (scope, project)
   with a 15-min idle eviction; a dead one heals on the next broker call,
   and the client re-brokers on a 409 from the chat surface.
 - **No MCP.** The studio's coding agent has no MCP integration (the docs
