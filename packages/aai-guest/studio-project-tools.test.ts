@@ -3,7 +3,7 @@
 import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import type { Tool } from "ai";
+import type { ToolSet } from "ai";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 
@@ -17,7 +17,7 @@ afterEach(async () => {
   await rm(dir, { recursive: true, force: true });
 });
 
-function execute(tools: Record<string, Tool>, name: string, args: unknown): Promise<unknown> {
+function execute(tools: ToolSet, name: string, args: unknown): Promise<unknown> {
   const t = tools[name];
   if (!t?.execute) throw new Error(`no such tool: ${name}`);
   return Promise.resolve(t.execute(args as never, {} as never));
