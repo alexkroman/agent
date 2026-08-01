@@ -8,6 +8,6 @@ export default defineConfig({
   ...sharedConfig,
   test: {
     restoreMocks: true,
-    include: ["templates.test.ts", "templates/*/agent.test.ts"],
+    include: ["templates.test.ts", "template-api-coverage.test.ts", "templates/*/agent.test.ts"],
   },
 });
