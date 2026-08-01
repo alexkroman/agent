@@ -143,10 +143,12 @@ export function formatBuildFailure(err: unknown, dir: string): string {
   const e = err as { message?: string; id?: string; loc?: { file?: string; line?: number } };
   const file = e?.loc?.file ?? e?.id;
   const where = file ? `${path.basename(file)}${e.loc?.line ? `:${e.loc.line}` : ""}: ` : "";
-  return scrub(`Build failed:\n${where}${e?.message ?? String(err)}`, dir);
+  return scrubDir(`Build failed:\n${where}${e?.message ?? String(err)}`, dir);
 }
 
-function scrub(message: string, dir: string): string {
+/** Strip build-dir paths and ANSI codes from a diagnostic (also used by
+ * the publish module for `aai deploy` output). */
+export function scrubDir(message: string, dir: string): string {
   const forms = [dir, path.relative(process.cwd(), dir)].filter(Boolean);
   let out = stripVTControlCharacters(message);
   for (const form of forms) {

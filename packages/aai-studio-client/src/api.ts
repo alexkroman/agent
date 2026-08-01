@@ -11,8 +11,6 @@ export type ProjectData = {
   unpublished?: boolean;
 };
 
-export type StorageStatus = { enabled: boolean };
-
 /** The project's coding-agent sandbox, brokered by the platform. */
 export type ChatSession = { url: string };
 
@@ -54,6 +52,23 @@ async function handleResponse<T>(res: Response): Promise<T> {
 
 async function request<T>(key: string, path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(`/studio${path}`, {
+    ...init,
+    headers: {
+      Authorization: `Bearer ${key}`,
+      ...(init.body != null && { "Content-Type": "application/json" }),
+      ...init.headers,
+    },
+  });
+  return handleResponse<T>(res);
+}
+
+/**
+ * Same-origin request against the platform's own agent routes (`/:slug/…`)
+ * rather than the studio surface — the secrets panel talks to the exact
+ * routes `aai secret` uses.
+ */
+async function agentRequest<T>(key: string, path: string, init: RequestInit = {}): Promise<T> {
+  const res = await fetch(path, {
     ...init,
     headers: {
       Authorization: `Bearer ${key}`,
@@ -112,24 +127,35 @@ export const api = {
       (r) => r.messages,
     ),
 
-  getStorage: (key: string, project: string) =>
-    request<StorageStatus>(key, `/projects/${encodeURIComponent(project)}/storage`),
-
-  enableStorage: (key: string, project: string) =>
-    request<{ ok: true; enabled: true }>(key, `/projects/${encodeURIComponent(project)}/storage`, {
-      method: "POST",
-    }),
-
-  disableStorage: (key: string, project: string) =>
-    request<{ ok: true; enabled: false }>(key, `/projects/${encodeURIComponent(project)}/storage`, {
-      method: "DELETE",
-    }),
-
-  deploy: (key: string, project: string, env: Record<string, string>) =>
-    request<{ ok: true; slug: string; url: string }>(
+  /**
+   * Publish: the project's sandbox runs `aai deploy`; `output` is the CLI's
+   * output (post it into the chat so the coding agent sees it).
+   */
+  deploy: (key: string, project: string) =>
+    request<{ ok: true; slug: string; url: string; output: string }>(
       key,
       `/projects/${encodeURIComponent(project)}/deploy`,
-      { method: "POST", body: JSON.stringify({ env }) },
+      { method: "POST", body: "{}" },
+    ),
+
+  // Deployed-agent secrets — the same platform routes `aai secret` uses.
+
+  listSecrets: (key: string, slug: string) =>
+    agentRequest<{ vars: string[] }>(key, `/${encodeURIComponent(slug)}/secret`).then(
+      (r) => r.vars,
+    ),
+
+  putSecrets: (key: string, slug: string, updates: Record<string, string>) =>
+    agentRequest<{ ok: true; keys: string[] }>(key, `/${encodeURIComponent(slug)}/secret`, {
+      method: "PUT",
+      body: JSON.stringify(updates),
+    }),
+
+  deleteSecret: (key: string, slug: string, name: string) =>
+    agentRequest<{ ok: true }>(
+      key,
+      `/${encodeURIComponent(slug)}/secret/${encodeURIComponent(name)}`,
+      { method: "DELETE" },
     ),
 };
 

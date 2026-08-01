@@ -193,12 +193,22 @@ const deploy = defineCommand({
   args: {
     server: sharedArgs.server,
     json: sharedArgs.json,
+    allowMissingSecrets: {
+      type: "boolean",
+      description:
+        "Deploy even when the agent's providers are missing credentials " +
+        "(the server warns instead of rejecting; set them afterwards with `aai secret put`)",
+    },
   },
   async run({ args }) {
     await runCommand(args, async () => {
       const cwd = await setup({ agent: true });
       const { executeDeploy } = await import("./deploy.ts");
-      return executeDeploy({ cwd, ...(args.server ? { server: args.server } : {}) });
+      return executeDeploy({
+        cwd,
+        ...(args.server ? { server: args.server } : {}),
+        ...(args.allowMissingSecrets ? { allowMissingSecrets: true } : {}),
+      });
     });
   },
 });

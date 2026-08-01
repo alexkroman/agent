@@ -45,6 +45,11 @@ vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts"))
 import { loadAgentDef, startDevServer, watchDirectory } from "./_dev-server.ts";
 import { log } from "./_ui.ts";
 
+// 30s, not the 5s default: sibling suites run multi-second runtime-inlining
+// builds now, and CPU starvation under full-repo parallel runs was flaking
+// these otherwise-fast tests.
+vi.setConfig({ testTimeout: 30_000 });
+
 describe("watchDirectory", () => {
   test("logs watcher errors, with an inotify hint for ENOSPC", () => {
     watchDirectory("/tmp/watched", () => undefined);
@@ -371,9 +376,7 @@ describe("dev server bind host", () => {
   });
 });
 
-// 30s, not the 5s default: sibling suites now run multi-second
-// runtime-inlining builds, and CPU starvation was flaking these under load.
-describe("dev server host mode gate", { timeout: 30_000 }, () => {
+describe("dev server host mode gate", () => {
   afterEach(() => {
     vi.unstubAllEnvs();
   });

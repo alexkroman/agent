@@ -147,16 +147,21 @@ export type StudioSessionInitParams = {
 };
 
 /**
- * Params of the host→guest `workspace/build` request — Publish's build: the
- * guest materializes the files under its toolchain root and runs the aai
- * CLI's own bundlers (see aai-guest/studio-build.ts), then loads the built
- * worker in place so its config self-description rides back with the
- * artifacts. Builds run only in the tenant's sandbox — never on the host.
+ * Params of the host→guest `workspace/deploy` request — Publish: the guest
+ * materializes the files under its toolchain root and runs the literal
+ * `aai deploy` CLI against `serverUrl` on the CALLER'S OWN key (see
+ * aai-guest/studio-publish.ts). Build, config extraction, ownership, and
+ * the credential preflight all run exactly as for a laptop deploy; the
+ * CLI's output rides back for the chat.
  */
-export type WorkspaceBuildParams = {
+export type WorkspaceDeployParams = {
   files: Record<string, string>;
-  worker: boolean;
-  client: boolean;
+  /** Public platform origin the guest's CLI deploys to. */
+  serverUrl: string;
+  /** The caller's own API key — never a platform credential. */
+  apiKey: string;
+  /** Existing slug to redeploy; omit and the deploy claims/generates one. */
+  slug?: string;
 };
 
 export type GuestRpcSchema = {
@@ -164,7 +169,7 @@ export type GuestRpcSchema = {
     "bundle/load": { params: BundleLoadParams; result: unknown };
     "tool/execute": { params: ToolExecuteParams; result: unknown };
     "studio/session-init": { params: StudioSessionInitParams; result: unknown };
-    "workspace/build": { params: WorkspaceBuildParams; result: unknown };
+    "workspace/deploy": { params: WorkspaceDeployParams; result: unknown };
     /** Session-aware idleness: the host's idle eviction asks before killing. */
     status: { params: undefined; result: unknown };
   };

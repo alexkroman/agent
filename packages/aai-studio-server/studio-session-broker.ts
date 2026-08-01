@@ -30,7 +30,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { MAX_WORKER_SIZE, resolveHarnessPath } from "aai-server/constants";
+import { resolveHarnessPath } from "aai-server/constants";
 import { registerGuestRpcHandlers } from "aai-server/sandbox-guest-rpc";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
@@ -48,8 +48,8 @@ export const MAX_CHAT_STEPS = 16;
 export const STUDIO_SESSION_IDLE_MS = 15 * 60_000;
 /** Deadline for installing a session in the guest (workspace transfer). */
 const SESSION_INIT_TIMEOUT_MS = 60_000;
-/** Deadline for one in-guest Publish build (two cold Vite passes). */
-const WORKSPACE_BUILD_TIMEOUT_MS = 300_000;
+/** Deadline for one in-guest Publish (`aai deploy`: cold build + upload). */
+const WORKSPACE_DEPLOY_TIMEOUT_MS = 330_000;
 
 /** Guest-supplied workspace files — validated exactly like a client PUT. */
 const GuestFilesSchema = z.object({
@@ -68,21 +68,25 @@ const GuestChatSchema = z.object({
 });
 
 /**
- * Response of the guest's `workspace/build` (guest-asserted wire data).
- * `config` stays `unknown` here — the deploy flow validates it with
- * `validateAgentConfig` (IsolateConfigSchema), same contract as
- * `describeBundle`'s result on the HTTP deploy path.
+ * Response of the guest's `workspace/deploy` (guest-asserted wire data):
+ * the guest ran the literal `aai deploy` CLI, and `output` is what the
+ * chat shows — a success summary or the CLI's failure diagnostics.
  */
-const WorkspaceBuildResponseSchema = z.object({
-  worker: z.string().max(MAX_WORKER_SIZE).optional(),
-  clientFiles: z.record(SafePathSchema, z.string().max(MAX_WORKER_SIZE)).optional(),
-  config: z.unknown().optional(),
-  buildError: z.string().optional(),
+const WorkspaceDeployResponseSchema = z.object({
+  ok: z.boolean(),
+  slug: z.string().optional(),
+  url: z.string().optional(),
+  output: z.string().max(64_000),
 });
 
-export type WorkspaceBuildOutcome =
-  | { ok: true; worker: string; clientFiles: Record<string, string>; config: unknown }
-  | { ok: false; error: string };
+export type WorkspaceDeployOutcome = z.infer<typeof WorkspaceDeployResponseSchema>;
+
+/** What Publish hands the guest's CLI: the platform origin + caller key. */
+export type WorkspaceDeployTarget = {
+  serverUrl: string;
+  apiKey: string;
+  slug?: string | undefined;
+};
 
 type BrokerStores = {
   workspaces: import("aai-server/workspace-store").WorkspaceStore;
@@ -106,15 +110,16 @@ export type StudioSessionBroker = {
    */
   ensureSession(scope: string, project: string, apiKey: string): Promise<{ url: string } | null>;
   /**
-   * Build one workspace snapshot in a guest sandbox (`workspace/build`) —
-   * the Publish build. Reuses the project's live sandbox when one exists;
-   * otherwise a sandbox is spawned for the build and torn down after.
+   * Publish one workspace snapshot: the guest runs `aai deploy` against
+   * the platform (`workspace/deploy`). Reuses the project's live sandbox
+   * when one exists; otherwise a sandbox is spawned and torn down after.
    */
-  buildWorkspace(
+  deployWorkspace(
     scope: string,
     project: string,
     files: Record<string, string>,
-  ): Promise<WorkspaceBuildOutcome>;
+    target: WorkspaceDeployTarget,
+  ): Promise<WorkspaceDeployOutcome>;
   /** Tear down every live sandbox (tests, shutdown). */
   dispose(): Promise<void>;
 };
@@ -222,26 +227,30 @@ export function createStudioSessionBroker(
     return true;
   }
 
-  /** Send one `workspace/build` and validate the guest's response. */
-  async function requestBuild(
+  /** Send one `workspace/deploy` and validate the guest's response. */
+  async function requestDeploy(
     warm: WarmHarness,
     files: Record<string, string>,
-  ): Promise<WorkspaceBuildOutcome> {
+    target: WorkspaceDeployTarget,
+  ): Promise<WorkspaceDeployOutcome> {
     const raw = await warm.conn.sendRequest(
-      "workspace/build",
-      { files, worker: true, client: true },
-      WORKSPACE_BUILD_TIMEOUT_MS,
+      "workspace/deploy",
+      {
+        files,
+        serverUrl: target.serverUrl,
+        apiKey: target.apiKey,
+        ...(target.slug ? { slug: target.slug } : {}),
+      },
+      WORKSPACE_DEPLOY_TIMEOUT_MS,
     );
-    const parsed = WorkspaceBuildResponseSchema.safeParse(raw);
+    const parsed = WorkspaceDeployResponseSchema.safeParse(raw);
     if (!parsed.success) {
-      return { ok: false, error: `Malformed build response from sandbox: ${parsed.error.message}` };
+      return {
+        ok: false,
+        output: `Malformed deploy response from sandbox: ${parsed.error.message}`,
+      };
     }
-    const built = parsed.data;
-    if (built.buildError !== undefined) return { ok: false, error: built.buildError };
-    if (built.worker === undefined || built.clientFiles === undefined) {
-      return { ok: false, error: "Sandbox build returned incomplete artifacts" };
-    }
-    return { ok: true, worker: built.worker, clientFiles: built.clientFiles, config: built.config };
+    return parsed.data;
   }
 
   return {
@@ -288,37 +297,37 @@ export function createStudioSessionBroker(
       return { url };
     },
 
-    async buildWorkspace(scope, project, files) {
+    async deployWorkspace(scope, project, files, target) {
       const key = sessionKey(scope, project);
       const existing = sessions.get(key);
       if (existing) {
         try {
-          const outcome = await requestBuild(existing.warm, files);
+          const outcome = await requestDeploy(existing.warm, files, target);
           existing.lastUsed = Date.now();
           return outcome;
         } catch (err) {
-          // Dead sandbox — replace it with a fresh one for this build; the
-          // next chat broker call heals the session itself.
-          console.warn("Studio build: live sandbox failed; using a fresh one", {
+          // Dead sandbox — replace it with a fresh one for this publish;
+          // the next chat broker call heals the session itself.
+          console.warn("Studio publish: live sandbox failed; using a fresh one", {
             project,
             error: errorMessage(err),
           });
           await disposeEntry(key);
         }
       }
-      // No (live) session sandbox — spawn one for the build and tear it
+      // No (live) session sandbox — spawn one for the publish and tear it
       // down after; Publish from the editor shouldn't leave a sandbox
       // running that no chat session owns.
       const warm =
         (await options.pool?.acquire()) ??
         (await spawn({
           harnessPath: options.harnessPath ?? resolveHarnessPath(),
-          slug: "studio-build",
+          slug: "studio-publish",
         }));
       try {
         registerGuestRpcHandlers(warm.conn, {});
         warm.conn.listen();
-        return await requestBuild(warm, files);
+        return await requestDeploy(warm, files, target);
       } finally {
         await warm[Symbol.asyncDispose]().catch(() => undefined);
       }

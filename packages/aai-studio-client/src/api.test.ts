@@ -100,7 +100,7 @@ describe("api", () => {
     const fetchMock = stubFetch(() => jsonResponse({ ok: true, slug: "s", url: "u", files: {} }));
     await api.getProject("k", "p");
     await api.writeFile("k", "p", "agent.ts", "code");
-    await api.deploy("k", "p", { A: "1" });
+    await api.deploy("k", "p");
     const calls = fetchMock.mock.calls.map((c) => {
       const [url, init] = c as [string, RequestInit | undefined];
       return `${init?.method ?? "GET"} ${url}`;
@@ -122,21 +122,21 @@ describe("api", () => {
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer sk-123");
   });
 
-  test("storage endpoints hit their routes with the right methods", async () => {
-    const fetchMock = stubFetch(() => jsonResponse({ ok: true, enabled: true }));
-    await api.getStorage("k", "p");
-    await api.enableStorage("k", "p");
-    await api.disableStorage("k", "p");
+  test("secret endpoints hit the platform's own agent routes", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ ok: true, vars: ["A"], keys: ["A"] }));
+    await api.listSecrets("k", "my-agent");
+    await api.putSecrets("k", "my-agent", { OPENAI_API_KEY: "x" });
+    await api.deleteSecret("k", "my-agent", "OPENAI_API_KEY");
     const calls = fetchMock.mock.calls.map((c) => {
       const [url, init] = c as [string, RequestInit | undefined];
       return `${init?.method ?? "GET"} ${url}`;
     });
     expect(calls).toEqual([
-      "GET /studio/projects/p/storage",
-      "POST /studio/projects/p/storage",
-      "DELETE /studio/projects/p/storage",
+      "GET /my-agent/secret",
+      "PUT /my-agent/secret",
+      "DELETE /my-agent/secret/OPENAI_API_KEY",
     ]);
-    // Bearer-authenticated like the other project routes.
+    // Bearer-authenticated like the studio project routes.
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer k");
   });

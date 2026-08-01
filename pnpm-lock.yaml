@@ -268,6 +268,9 @@ importers:
       tailwindcss:
         specifier: ^4.3.2
         version: 4.3.3
+      vite:
+        specifier: ^8.1.5
+        version: 8.1.5(@types/node@26.1.1)(esbuild@0.28.1)(jiti@2.7.0)(tsx@4.23.1)(yaml@2.9.0)
       ws:
         specifier: ^8.21.1
         version: 8.21.1

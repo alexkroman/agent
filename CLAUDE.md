@@ -277,7 +277,8 @@ model) is the security boundary.
   one-shot tool trials), `harness-rpc.ts` (guest→host request proxy),
   `studio-chat.ts`/`studio-tools.ts`/`studio-edit.ts`/`studio-grep.ts`
   (the in-guest coding agent), `studio-build.ts` (in-guest workspace
-  builds through the aai CLI bundlers), `limits.ts` (import-free constants
+  builds through the aai CLI bundlers), `studio-publish.ts` (Publish =
+  the literal `aai deploy` CLI, run in-sandbox), `limits.ts` (import-free constants
   mirroring the SDK's). The harness embeds NO agent runtime — every worker
   bundle ships its own (`__aaiCreateRuntime`, see "User-shipped runtime"
   below) — and tsdown bundles the harness (server shell + studio coding
@@ -461,37 +462,53 @@ voice agents without the CLI:
   filesystem, and `test_agent` loads the built bundle in place and can
   trial-run its tools (no db — ctx.db reports storage-not-enabled): no
   tenant data and no platform secrets in the guest.
-- **Builds run IN the guest sandbox, through the aai CLI's own bundlers —
-  one build path.** There is no host-side, out-of-process, or Modal-Function
+- **Builds AND publishes run IN the guest sandbox, through the aai CLI —
+  one path.** There is no host-side, out-of-process, or Modal-Function
   build backend anymore (`studio-build-runner/-entry/-protocol/-cache`,
   `studio-bundle.ts`'s import allowlist, and `studio-client-build.ts` are
-  all deleted). `aai-guest/studio-build.ts` dynamic-imports
-  `@alexkroman1/aai-cli/worker-bundler` + `/client-bundler` — the exact
-  functions `aai deploy` runs — from the **toolchain `node_modules` baked
-  next to the harness** (see "Modal sandbox notes"), and workspaces
-  materialize under that same root (`workspacesRoot()`) so their bare
-  imports (`@alexkroman1/aai`, `zod`, `react`, `@alexkroman1/aai-ui`)
-  resolve by the normal walk-up, exactly as in a user project. `test_agent`
-  builds the live session workspace in place during chat turns; Publish is
-  the host→guest `workspace/build` RPC (`buildWorkspace` on the session
-  broker — reuses the project's live sandbox, else an ephemeral spawn torn
-  down after), which also **loads the built worker in place and returns its
-  `__aaiConfig` self-description with the artifacts**, so the studio deploy
-  path needs no throwaway inspection sandbox (`validateAgentConfig` in
-  `aai-server/deploy.ts` validates it host-side). A hostile or pathological
-  workspace burns the tenant's own sandbox CPU — never the web container's
-  — and the old allowlist/`../`-climb concerns are moot: the build root has
-  no server source above it, only the container. Vite's `NODE_ENV`
-  mutation dies with the sandbox too, though the CLI bundlers still wrap
-  builds in `withPreservedNodeEnv` for `aai dev`'s sake. Diagnostics are
-  scrubbed guest-side (`formatBuildFailure` in `aai-guest/studio-build.ts`)
-  of the build-dir prefix and ANSI codes, and arrive as `buildError` prose
-  the coding agent can act on. `configFile: false` on both passes: a
-  workspace has no `vite.config.ts` (the client build injects
-  `@vitejs/plugin-react` + `@tailwindcss/vite` instead), and one the coding
-  agent invents must not change how Publish builds. Covered end-to-end by
+  all deleted). Two guest entry points:
+  - `test_agent` builds the live session workspace in place via
+    `aai-guest/studio-build.ts`, which dynamic-imports
+    `@alexkroman1/aai-cli/worker-bundler` from the **toolchain
+    `node_modules` baked next to the harness** (see "Modal sandbox notes");
+    workspaces materialize under that root (`workspacesRoot()`) so bare
+    imports (`@alexkroman1/aai`, `zod`, `react`, `@alexkroman1/aai-ui`)
+    resolve by the normal walk-up, exactly as in a user project. Diagnostics
+    are scrubbed guest-side (`formatBuildFailure`) and arrive as
+    `buildError` prose the coding agent can act on.
+  - **Publish is the LITERAL `aai deploy` CLI**, spawned in the project's
+    sandbox (`aai-guest/studio-publish.ts`, the host→guest
+    `workspace/deploy` RPC on the session broker — live sandbox reused,
+    else an ephemeral spawn torn down after). The guest materializes the
+    workspace like a project (scaffold `vite.config.ts` written when the
+    workspace has none; a dir-local `AAI_CONFIG_DIR` carries the caller's
+    key; `.aai/project.json` pins the slug) and runs `aai deploy --server
+    <public origin> --json --allow-missing-secrets`. Build, upload, config
+    extraction (`describeBundle` on the platform's standard `POST /deploy`
+    route), ownership, reserved slugs, the ASSEMBLYAI_API_KEY env floor,
+    and the credential preflight are therefore byte-for-byte the laptop
+    path. The CLI's output — success, build diagnostics, deploy errors,
+    preflight warnings — returns to the client, which **posts it into the
+    chat** so the coding agent sees and can fix failures.
+    `--allow-missing-secrets` (new CLI flag → `credentialPolicy: "warn"`
+    in the deploy body) exists because the Secrets panel needs a deployed
+    slug to attach secrets to — a hard preflight failure would deadlock
+    first publishes. The public origin comes from `requestPublicOrigin`
+    (studio-routes.ts): `AAI_PUBLIC_ORIGIN` env override, else the
+    `x-forwarded-host`/`-proto` headers the agent service's studio proxy
+    sets, else the request origin (combined/dev).
+  A hostile or pathological workspace burns the tenant's own sandbox CPU —
+  never the web container's. Covered end-to-end by
   `aai-server/workspace-build-integration.test.ts` (a real harness process
-  building a workspace over the RPC).
+  publishing through the real CLI to a real listening orchestrator).
+- **Secrets have their own panel; storage has none.** Deployed-agent
+  secrets are managed in the studio client's Secrets panel
+  (`secrets.tsx`), which talks to the platform's own `/:slug/secret`
+  routes — the exact ones `aai secret` uses — and posts a note into the
+  chat on every change (key names only, values withheld) so the coding
+  agent knows which keys exist. Storage (`ctx.db`) is CLI-only
+  (`aai storage enable <slug>`): the studio's storage routes and toggle
+  were removed, and the prompt tells the agent to direct users to the CLI.
 - **Vite must not be allowed to mutate `process.env`.** Vite's `build()`
   sets `NODE_ENV=production` when it is unset — a permanent, global side
   effect on the calling process. Both CLI bundlers therefore wrap the
@@ -752,8 +769,9 @@ voices on AssemblyAI's S2S API:
 ### Storage (`ctx.db`)
 
 There is no KV store anymore. Persistent state is the opt-in **app
-database**: enabling storage for an app (CLI `aai storage enable`, the
-studio's Storage toggle, or `DATABASE_URL` in the project `.env` under
+database**: enabling storage for an app (CLI `aai storage enable` — the
+studio deliberately has NO storage toggle, so this is a CLI-only action;
+or `DATABASE_URL` in the project `.env` under
 `aai dev`) gives its tools `ctx.db` — a SQL handle
 (`query<T>(sql, params?)`, `$1` placeholders) backed by a per-app schema in
 the platform's Supabase Postgres. Accessing `ctx.db` without storage

@@ -42,6 +42,11 @@ vi.mock("./_utils.ts", async () => (await import("./_dev-server-test-utils.ts"))
 import { startDevServer } from "./_dev-server.ts";
 import { log } from "./_ui.ts";
 
+// 30s, not the 5s default: sibling suites run multi-second runtime-inlining
+// builds now, and CPU starvation under full-repo parallel runs was flaking
+// these otherwise-fast tests.
+vi.setConfig({ testTimeout: 30_000 });
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 /** Write a minimal agent.ts in the given directory. */
@@ -73,9 +78,7 @@ beforeEach(() => {
 
 // ─── Tests ──────────────────────────────────────────────────────────────────
 
-// 30s, not the 5s default: sibling suites now run multi-second
-// runtime-inlining builds, and CPU starvation was flaking these under load.
-describe("startDevServer restart behavior", { timeout: 30_000 }, () => {
+describe("startDevServer restart behavior", () => {
   test("watcher triggers restart on agent file change", async () => {
     await withTempDir(async (dir) => {
       await writeAgentTs(dir);

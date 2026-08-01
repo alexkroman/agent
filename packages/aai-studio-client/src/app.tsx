@@ -6,19 +6,12 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
 import clsx from "clsx";
-import { lazy, Suspense, useEffect, useState } from "react";
-import {
-  ApiError,
-  api,
-  type ChatSession,
-  type ProjectData,
-  parseSecrets,
-  type StudioStatus,
-} from "./api.ts";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
+import { ApiError, api, type ChatSession, type ProjectData, type StudioStatus } from "./api.ts";
 import logoUrl from "./assets/assemblyai-logomark.svg";
 import { ChatPanel } from "./chat.tsx";
 import { PreviewPane } from "./preview.tsx";
-import { StorageControl, storageQueryKey } from "./storage.tsx";
+import { SecretsPanel } from "./secrets.tsx";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the
 // default (Live) path shouldn't pay for it.
@@ -45,12 +38,10 @@ function agentUrl(slug: string): string {
 type PublishMenuProps = {
   open: boolean;
   busy: boolean;
+  /** `aai deploy`'s output from the last publish (success or failure). */
+  output?: string | undefined;
   error?: string | undefined;
   deployedSlug?: string | undefined;
-  apiKey: string;
-  project: string | null;
-  secrets: string;
-  onSecretsChange: (value: string) => void;
   onPublish: () => void;
   onClose: () => void;
 };
@@ -58,19 +49,13 @@ type PublishMenuProps = {
 function PublishMenu(props: PublishMenuProps) {
   if (!props.open) return null;
   return (
-    <div className="absolute top-14 right-5 z-10 flex w-80 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md">
+    <div className="absolute top-14 right-5 z-10 flex w-96 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md">
       <span className="eyebrow">Publish</span>
       <p className="m-0 text-[13px] leading-5 text-muted">
-        Builds the workspace, verifies it in a sandbox, and puts it live. ASSEMBLYAI_API_KEY is
-        added for you — add third-party keys here, one KEY=value per line.
+        Runs <code className="font-mono">aai deploy</code> in the project's sandbox and puts the
+        agent live. The CLI output lands in the chat, so the agent can fix any errors. Third-party
+        keys live in the Secrets panel.
       </p>
-      <textarea
-        className="field h-16 resize-none py-2 font-mono text-xs"
-        value={props.secrets}
-        onChange={(e) => props.onSecretsChange(e.target.value)}
-        placeholder="OPENAI_API_KEY=..."
-        spellCheck={false}
-      />
       <div className="flex items-center gap-2">
         <button
           type="button"
@@ -84,7 +69,13 @@ function PublishMenu(props: PublishMenuProps) {
           Close
         </button>
       </div>
-      {props.error && <p className="m-0 text-xs text-err">{props.error}</p>}
+      {(props.output ?? props.error) && (
+        <pre
+          className={`m-0 max-h-40 overflow-auto rounded-md border border-line bg-cream p-2 font-mono text-[11px] whitespace-pre-wrap ${props.error ? "text-err" : ""}`}
+        >
+          {props.error ?? props.output}
+        </pre>
+      )}
       {props.deployedSlug && !props.error && (
         <a
           className="font-mono text-xs break-all text-indigo"
@@ -95,9 +86,6 @@ function PublishMenu(props: PublishMenuProps) {
           Live at {agentUrl(props.deployedSlug)}
         </a>
       )}
-      {/* Storage is a setting on the *published* agent, so it lives with
-          the Publish affordance — the same menu that lifts its 409 gate. */}
-      {props.project && <StorageControl apiKey={props.apiKey} project={props.project} />}
     </div>
   );
 }
@@ -113,6 +101,7 @@ type TopBarProps = {
   onSelectTab: (tab: "preview" | "code") => void;
   onSignOut: () => void;
   onTogglePublish: () => void;
+  onToggleSecrets: () => void;
 };
 
 /** Shared 60px top bar (all 1x options): brand, switcher, segmented, actions. */
@@ -188,6 +177,15 @@ function TopBar(props: TopBarProps) {
       </button>
       <button
         type="button"
+        className="btn"
+        onClick={props.onToggleSecrets}
+        disabled={!props.deployedSlug}
+        title={props.deployedSlug ? undefined : "Secrets unlock after the first publish"}
+      >
+        Secrets
+      </button>
+      <button
+        type="button"
         className="btn btn-primary px-[18px]"
         onClick={props.onTogglePublish}
         disabled={!props.hasBuild}
@@ -205,7 +203,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [tab, setTab] = useState<"preview" | "code">("preview");
   const [publishOpen, setPublishOpen] = useState(false);
-  const [secrets, setSecrets] = useState("");
+  const [secretsOpen, setSecretsOpen] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
@@ -325,16 +323,32 @@ export function App({ apiKey, onSignOut }: AppProps) {
     },
   });
 
+  // Injected by the mounted ProjectChat: appends a message to the live
+  // conversation WITHOUT triggering a turn — how publish output and secret
+  // changes reach the coding agent.
+  const notifyChatRef = useRef<((text: string) => void) | null>(null);
+  const notifyChat = (text: string) => notifyChatRef.current?.(text);
+
   const publish = useMutation({
-    mutationFn: () => api.deploy(apiKey, project as string, parseSecrets(secrets)),
-    onSuccess: () => {
+    mutationFn: () => api.deploy(apiKey, project as string),
+    onSuccess: (result) => {
       invalidateWorkspace();
-      // A first publish lifts the storage toggle's "publish first" gate.
-      if (project) void queryClient.invalidateQueries({ queryKey: storageQueryKey(project) });
       // The published agent changed — reload the live iframe.
       setPreviewNonce((n) => n + 1);
-      setPublishOpen(false);
       setTab("preview");
+      // The CLI's output goes to the chat so the agent knows what shipped
+      // (warnings included — e.g. the missing-credential preflight).
+      notifyChat(
+        `I published the project with the Publish button. aai deploy output:\n\n${result.output}`,
+      );
+    },
+    onError: (err) => {
+      // Deploy errors are CLI output too — the coding agent is the one who
+      // can fix a failed build or deploy, so it must see them.
+      const message = err instanceof Error ? err.message : String(err);
+      notifyChat(
+        `I tried to publish with the Publish button, but aai deploy failed:\n\n${message}`,
+      );
     },
   });
 
@@ -358,6 +372,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
   if (publish.error) {
     publishError = publish.error instanceof Error ? publish.error.message : String(publish.error);
   }
+  const publishOutput = publish.data?.output;
 
   // A failed workspace fetch would otherwise render as an empty project (and
   // a misleading "Publish unlocks after your first build" tooltip).
@@ -382,20 +397,32 @@ export function App({ apiKey, onSignOut }: AppProps) {
         onNewProject={newProject}
         onSelectTab={setTab}
         onSignOut={onSignOut}
-        onTogglePublish={() => setPublishOpen((v) => !v)}
+        onTogglePublish={() => {
+          setSecretsOpen(false);
+          setPublishOpen((v) => !v);
+        }}
+        onToggleSecrets={() => {
+          setPublishOpen(false);
+          setSecretsOpen((v) => !v);
+        }}
       />
       <PublishMenu
         open={publishOpen}
         busy={publish.isPending}
+        output={publishOutput}
         error={publishError}
         deployedSlug={deployedSlug}
-        apiKey={apiKey}
-        project={project}
-        secrets={secrets}
-        onSecretsChange={setSecrets}
         onPublish={() => publish.mutate()}
         onClose={() => setPublishOpen(false)}
       />
+      {secretsOpen && (
+        <SecretsPanel
+          apiKey={apiKey}
+          slug={deployedSlug}
+          onNotifyChat={notifyChat}
+          onClose={() => setSecretsOpen(false)}
+        />
+      )}
       {workspaceError && (
         <div className="border-b border-line bg-panel px-5 py-2 text-xs text-err">
           Failed to load project: {workspaceError}
@@ -421,6 +448,9 @@ export function App({ apiKey, onSignOut }: AppProps) {
           onStartWithPrompt={startWithPrompt}
           onWorkspaceChanged={invalidateWorkspace}
           onUnauthorized={onSignOut}
+          registerNotify={(fn) => {
+            notifyChatRef.current = fn;
+          }}
         />
         {tab === "preview" ? (
           <PreviewPane

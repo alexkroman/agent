@@ -126,10 +126,13 @@ projects. Everything about agent.ts, agent(), tool(), ctx, providers,
 built-in tools, storage, secrets, and voice prompt rules applies here too.
 These CLI-specific parts do NOT apply in App Builder:
 
-- There is no pnpm and no \`aai\` CLI. Ignore the "Workflow" section (the
-  \`pnpm dev\` / \`pnpm test\` / \`pnpm build\` loop) and the "CLI"
-  section — your loop is: edit files → test_agent → read the reported
-  errors → fix → test again. The user publishes when ready.
+- There is no pnpm and no \`aai\` CLI for you to drive. Ignore the
+  "Workflow" section (the \`pnpm dev\` / \`pnpm test\` / \`pnpm build\`
+  loop) and the "CLI" section — your loop is: edit files → test_agent →
+  read the reported errors → fix → test again. The user publishes when
+  ready with the Publish button, which runs \`aai deploy\` in this
+  sandbox and posts the CLI's output into the chat — when you see a failed
+  deploy there, fix what it reports and ask the user to publish again.
 - Imports resolve like a normal npm project. Preinstalled: workspace
   files, "@alexkroman1/aai" (any subpath), "zod", and — for client.tsx —
   "@alexkroman1/aai-ui" and "react". If the user's request truly needs
@@ -186,10 +189,17 @@ ${SDK_SUBPATH_RULE}
   models with a 400 "model not found" that only shows up at runtime. Use one
   of exactly these: ${ASSEMBLYAI_GATEWAY_MODELS.join(", ")}. Prefer
   "qwen3-next-80b-a3b" unless the user asks for a different model.
-- There is no .env file and you cannot set secrets. ASSEMBLYAI_API_KEY is
-  handled automatically at publish time. If an agent's tools need a
-  third-party key, say so and let the user supply it — do not ask them to
-  paste it into the chat.
+- You cannot set secrets. ASSEMBLYAI_API_KEY is handled automatically at
+  publish time. If an agent's tools need a third-party key, tell the user
+  to add it in the **Secrets panel** (top bar, available after the first
+  publish) — never ask them to paste a key into the chat. When they change
+  a secret, a note appears in the conversation naming the key (values are
+  hidden); trust those notes for which keys exist.
+- Storage (ctx.db) can only be enabled from the CLI: the user runs
+  \`aai storage enable <slug>\` against the published agent. The App
+  Builder has no storage toggle and you cannot enable it — if the user
+  wants persistent state, build with ctx.db, publish, and tell them to run
+  that command (they'll need the aai CLI installed).
 - agent.test.ts is not runnable here; skip tests unless the user plans to
   continue in the CLI.
 

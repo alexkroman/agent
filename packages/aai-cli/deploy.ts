@@ -9,11 +9,13 @@ import { resolveServerEnv } from "./_server-common.ts";
 import { fmtUrl, log } from "./_ui.ts";
 import { errorMessage } from "./_utils.ts";
 
-type DeployData = { slug: string; url: string };
+type DeployData = { slug: string; url: string; warnings?: string[] };
 
 export async function executeDeploy(opts: {
   cwd: string;
   server?: string;
+  /** See DeployOpts.allowMissingSecrets (`--allow-missing-secrets`). */
+  allowMissingSecrets?: boolean;
 }): Promise<CommandResult<DeployData>> {
   const { cwd } = opts;
   const { config: projectConfig, serverUrl, apiKey } = await resolveDeployTarget(cwd, opts.server);
@@ -33,6 +35,7 @@ export async function executeDeploy(opts: {
     // must win — matching the server's own defaultEnv merge semantics.
     env: { ASSEMBLYAI_API_KEY: apiKey, ...env },
     ...(slug ? { slug } : {}),
+    ...(opts.allowMissingSecrets ? { allowMissingSecrets: true } : {}),
     apiKey,
   });
 
@@ -51,7 +54,12 @@ export async function executeDeploy(opts: {
     );
   }
 
+  for (const warning of deployed.warnings ?? []) log.warn(warning);
   log.success(`Deployed ${fmtUrl(agentUrl)}`);
 
-  return ok({ slug: deployed.slug, url: agentUrl });
+  return ok({
+    slug: deployed.slug,
+    url: agentUrl,
+    ...(deployed.warnings ? { warnings: deployed.warnings } : {}),
+  });
 }

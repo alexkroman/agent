@@ -12,6 +12,14 @@ export type DeployOpts = {
   /** Existing slug for redeployment. Omit for first deploy — server generates one. */
   slug?: string;
   apiKey: string;
+  /**
+   * Ask the server to WARN (in `warnings`) instead of rejecting when the
+   * agent's providers are missing credentials — `aai deploy
+   * --allow-missing-secrets`, for setting them post-deploy with
+   * `aai secret put` (the studio's publish flow relies on this: its Secrets
+   * panel needs a deployed slug to attach secrets to).
+   */
+  allowMissingSecrets?: boolean;
   /** Retry delay override for tests (0 = no real sleeps on retry paths). */
   retryDelay?: number;
   /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
@@ -20,6 +28,8 @@ export type DeployOpts = {
 
 export type DeployResult = {
   slug: string;
+  /** Server-side deploy warnings (e.g. the missing-credential preflight). */
+  warnings?: string[];
 };
 
 export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
@@ -29,12 +39,13 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
   const body = gzipSync(
     JSON.stringify({
       ...(opts.slug ? { slug: opts.slug } : {}),
+      ...(opts.allowMissingSecrets ? { credentialPolicy: "warn" } : {}),
       env: opts.env,
       worker: opts.bundle.worker,
       clientFiles: opts.bundle.clientFiles,
     }),
   );
-  const data = await apiRequest<{ slug: string }>(`${opts.url}/deploy`, {
+  const data = await apiRequest<{ slug: string; warnings?: string[] }>(`${opts.url}/deploy`, {
     method: "POST",
     body,
     headers: { "Content-Type": "application/json", "Content-Encoding": "gzip" },
@@ -52,5 +63,5 @@ export async function runDeploy(opts: DeployOpts): Promise<DeployResult> {
     ...(opts.fetch ? { fetch: opts.fetch } : {}),
   });
 
-  return { slug: data.slug };
+  return { slug: data.slug, ...(data.warnings ? { warnings: data.warnings } : {}) };
 }

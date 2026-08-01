@@ -42,6 +42,12 @@ type ChatPanelProps = {
   onWorkspaceChanged: () => void;
   /** The key was rejected — same global handling as the REST queries. */
   onUnauthorized: () => void;
+  /**
+   * Hands the app a function that appends a message to the conversation
+   * WITHOUT triggering a turn — how publish output and secret changes are
+   * posted into the chat for the coding agent to see on its next turn.
+   */
+  registerNotify?: ((fn: ((text: string) => void) | null) => void) | undefined;
 };
 
 function toolPartName(part: { type: string; toolName?: string }): string {
@@ -336,6 +342,7 @@ function ProjectChat({
   onWorkspaceChanged,
   onUnauthorized,
   onSessionStale,
+  registerNotify,
 }: Omit<
   ChatPanelProps,
   "project" | "chatHistory" | "onStartWithPrompt" | "creating" | "chatSession" | "sessionError"
@@ -368,11 +375,29 @@ function ProjectChat({
       }),
   );
 
-  const { messages, sendMessage, status, error, stop } = useChat({
+  const { messages, sendMessage, setMessages, status, error, stop } = useChat({
     transport,
     messages: initialMessages,
     onFinish: onWorkspaceChanged,
   });
+
+  // Publish output and secret changes arrive as injected user messages —
+  // visible in the transcript, carried into the agent's next turn, and
+  // persisted with the conversation when that turn settles.
+  useEffect(() => {
+    if (!registerNotify) return;
+    registerNotify((text: string) => {
+      setMessages((current) => [
+        ...current,
+        {
+          id: `note-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role: "user",
+          parts: [{ type: "text", text }],
+        },
+      ]);
+    });
+    return () => registerNotify(null);
+  }, [registerNotify, setMessages]);
 
   const busy = status === "submitted" || status === "streaming";
   const llmReady = llmStatus?.llm === true;
@@ -463,6 +488,7 @@ export function ChatPanel(props: ChatPanelProps) {
           onWorkspaceChanged={props.onWorkspaceChanged}
           onUnauthorized={props.onUnauthorized}
           onSessionStale={props.onSessionStale}
+          registerNotify={props.registerNotify}
         />
       )}
       {!props.project && (

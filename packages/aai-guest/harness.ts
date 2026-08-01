@@ -65,13 +65,14 @@ import type {
   JsonRpcResponse,
 } from "./harness-types.ts";
 import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
-import { buildWorkspaceDir, withBuildDir } from "./studio-build.ts";
+import { withBuildDir } from "./studio-build.ts";
 import {
   handleStudioRequest,
   initStudioSession,
   type StudioSession,
   type StudioSessionParams,
 } from "./studio-chat.ts";
+import { deployWorkspaceDir } from "./studio-publish.ts";
 import { materializeWorkspace } from "./studio-tools.ts";
 import { executeTool, runCode, type ToolCallRequest } from "./trial.ts";
 
@@ -231,37 +232,32 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
       break;
     }
 
-    // Build a workspace snapshot IN THIS SANDBOX through the aai CLI's own
-    // bundlers (see studio-build.ts) — the host's Publish path. The built
-    // worker is then loaded in place so its `__aaiConfig` self-description
-    // rides back with the artifacts: no throwaway inspection sandbox, and
-    // the host never evaluates tenant code.
-    case "workspace/build": {
+    // Publish: run `aai deploy` IN THIS SANDBOX against a materialized
+    // snapshot of the workspace (see studio-publish.ts) — the literal CLI,
+    // so studio publishes and laptop deploys are one path, and the CLI's
+    // output rides back for the chat.
+    case "workspace/deploy": {
       const params = req.params as
-        | { files?: unknown; worker?: boolean; client?: boolean }
+        | { files?: unknown; serverUrl?: unknown; apiKey?: unknown; slug?: unknown }
         | undefined;
-      if (!params || typeof params.files !== "object" || params.files === null) {
-        sendError(req.id, -32_602, "workspace/build requires { files }");
+      if (
+        !params ||
+        typeof params.files !== "object" ||
+        params.files === null ||
+        typeof params.serverUrl !== "string" ||
+        typeof params.apiKey !== "string"
+      ) {
+        sendError(req.id, -32_602, "workspace/deploy requires { files, serverUrl, apiKey }");
         break;
       }
-      const want = { worker: params.worker !== false, client: params.client !== false };
       const files = params.files as Record<string, string>;
-      const result = await withBuildDir(files, materializeWorkspace, async (dir) => {
-        const built = await buildWorkspaceDir(dir, want);
-        if (built.buildError !== undefined || !want.worker || built.worker === undefined) {
-          return built;
-        }
-        try {
-          const loaded = await loadBundle(state, {
-            code: built.worker,
-            env: {},
-            storageEnabled: false,
-          });
-          return { ...built, ...(loaded.config !== undefined && { config: loaded.config }) };
-        } catch (err) {
-          return { ...built, buildError: `Agent bundle failed to load: ${errMsg(err)}` };
-        }
-      });
+      const result = await withBuildDir(files, materializeWorkspace, (dir) =>
+        deployWorkspaceDir(dir, {
+          serverUrl: params.serverUrl as string,
+          apiKey: params.apiKey as string,
+          slug: typeof params.slug === "string" ? params.slug : undefined,
+        }),
+      );
       sendResponse(req.id, result);
       break;
     }
@@ -363,8 +359,10 @@ function main(): void {
   // Every backend (Modal, Apple containers) gives the guest its own network
   // namespace, so binding every interface reaches no further than the
   // container — and a container that cannot be reached on its published port
-  // is the more damaging failure.
-  const host = "0.0.0.0";
+  // is the more damaging failure. AAI_GUEST_HOST exists for the integration
+  // tests, which run the harness as a bare child process with no namespace
+  // around its auth-free /websocket and so pass loopback.
+  const host = process.env.AAI_GUEST_HOST ?? "0.0.0.0";
 
   const state: HarnessState = {
     agent: null,

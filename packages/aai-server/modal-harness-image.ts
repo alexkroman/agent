@@ -69,6 +69,7 @@ const TOOLCHAIN_PACKAGES = [
   "react",
   "react-dom",
   "tailwindcss",
+  "vite",
   "zod",
 ] as const;
 

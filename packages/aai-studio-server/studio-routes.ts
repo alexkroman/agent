@@ -10,9 +10,12 @@
  * - `DELETE /studio/projects/:project`        — delete a project (and its chat)
  * - `PUT  /studio/projects/:project/file`     — write one file
  * - `DELETE /studio/projects/:project/file`   — delete one file (`?path=`)
- * - `POST /studio/projects/:project/deploy`   — build + deploy the workspace
- * - `GET/POST/DELETE /studio/projects/:project/storage` — per-app database
- *   storage on the published agent (409 until published)
+ * - `POST /studio/projects/:project/deploy`   — the project's sandbox runs
+ *   `aai deploy`; the CLI output rides back for the chat
+ *
+ * Storage (per-app database) is deliberately NOT exposed here: enabling it
+ * is a CLI action (`aai storage enable`), and deployed-agent secrets are
+ * managed by the client against the platform's own `/:slug/secret` routes.
  * - `POST /studio/projects/:project/session`  — boot the project's coding-agent
  *   sandbox; the browser then streams chat turns DIRECTLY to the sandbox's
  *   public `/studio/chat` (see studio-session-broker.ts)
@@ -27,7 +30,6 @@ import { zValidator } from "@hono/zod-validator";
 import type { HonoEnv } from "aai-server/context";
 import { authMw } from "aai-server/middleware";
 import type { SandboxPool } from "aai-server/sandbox-pool";
-import { disableStorage, enableStorage, storageStatus } from "aai-server/storage-handler";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -40,12 +42,7 @@ import {
   type RateLimiter,
   type StudioRateLimiters,
 } from "./studio-rate-limit.ts";
-import {
-  CreateProjectSchema,
-  ProjectNameSchema,
-  StudioDeployBodySchema,
-  StudioFileSchema,
-} from "./studio-schemas.ts";
+import { CreateProjectSchema, ProjectNameSchema, StudioFileSchema } from "./studio-schemas.ts";
 import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
 import { starterFiles } from "./studio-template.ts";
 import {
@@ -76,6 +73,25 @@ export type StudioRouteOptions = {
     chats: HonoEnv["Bindings"]["chats"];
   }) => StudioSessionBroker;
 };
+
+/**
+ * The public platform origin the guest's `aai deploy` must dial — the
+ * browser-facing origin, not this service's own. `AAI_PUBLIC_ORIGIN` wins
+ * (explicit config); otherwise the forwarding headers the agent service's
+ * studio proxy sets (split deployment); otherwise the request URL's origin
+ * (combined/dev, where they are the same thing).
+ */
+export function requestPublicOrigin(
+  c: Context<HonoEnv>,
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const configured = env.AAI_PUBLIC_ORIGIN?.trim();
+  if (configured) return configured.replace(/\/$/, "");
+  const url = new URL(c.req.url);
+  const host = c.req.header("x-forwarded-host") ?? url.host;
+  const proto = c.req.header("x-forwarded-proto") ?? url.protocol.replace(/:$/, "");
+  return `${proto}://${host}`;
+}
 
 function validateProject(name: string | undefined): string {
   const parsed = ProjectNameSchema.safeParse(name);
@@ -232,66 +248,24 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     });
   });
 
-  studio.post(
-    "/projects/:project/deploy",
-    zValidator("json", StudioDeployBodySchema),
-    async (c) => {
-      const scope = studioScope(c.var.apiKey);
-      const project = validateProject(c.req.param("project"));
-      const { env } = c.req.valid("json");
-      const result = await deploy(
-        {
-          store: c.env.store,
-          slots: c.env.slots,
-          slugLock: c.env.slugLock,
-          slugEpochs: c.env.slugEpochs,
-          workspaces: c.env.workspaces,
-          // Publish builds in a guest sandbox via the session broker —
-          // reusing the project's live coding-agent sandbox when one exists.
-          buildWorkspace: (buildScope, buildProject, files) =>
-            ensureBroker(c).buildWorkspace(buildScope, buildProject, files),
-        },
-        { apiKey: c.var.apiKey, scope, project, env },
-      );
-      if (!result.ok) return c.json({ error: result.error }, 400);
-      return c.json(result);
-    },
-  );
-
-  // Resolve a project's *published* slug, throwing the HTTPException the
-  // shared error handler renders as `{ error: message }` with the same
-  // status. Unpublished project → 409: the routes below operate on the
-  // deployed agent, so Publish comes first.
-  const publishedSlug = async (c: Context<HonoEnv>): Promise<string> => {
+  studio.post("/projects/:project/deploy", async (c) => {
     const scope = studioScope(c.var.apiKey);
     const project = validateProject(c.req.param("project"));
-    const workspace = await getWorkspace(c.env.workspaces, scope, project);
-    if (!workspace) throw new HTTPException(404, { message: "Project not found" });
-    if (!workspace.deployedSlug) {
-      throw new HTTPException(409, { message: "Project has not been published yet" });
-    }
-    return workspace.deployedSlug;
-  };
-
-  // Storage (per-app database) for the project's *published* agent —
-  // resolved by project name, delegating to the same core the owner
-  // `/:slug/storage` routes use.
-
-  studio.get("/projects/:project/storage", async (c) => {
-    const slug = await publishedSlug(c);
-    return c.json(await storageStatus(c.env, slug));
-  });
-
-  studio.post("/projects/:project/storage", async (c) => {
-    const slug = await publishedSlug(c);
-    const { enabled } = await enableStorage(c.env, slug);
-    return c.json({ ok: true, enabled });
-  });
-
-  studio.delete("/projects/:project/storage", async (c) => {
-    const slug = await publishedSlug(c);
-    const { enabled } = await disableStorage(c.env, slug);
-    return c.json({ ok: true, enabled });
+    const result = await deploy(
+      {
+        workspaces: c.env.workspaces,
+        // Publish runs `aai deploy` in a guest sandbox via the session
+        // broker — reusing the project's live coding-agent sandbox when one
+        // exists. The guest's CLI dials back to this platform's public
+        // origin; everything server-side (build inspection, ownership,
+        // epochs, the env floor) happens on the standard POST /deploy path.
+        deployWorkspace: (deployScope, deployProject, files, target) =>
+          ensureBroker(c).deployWorkspace(deployScope, deployProject, files, target),
+      },
+      { apiKey: c.var.apiKey, scope, project, serverUrl: requestPublicOrigin(c) },
+    );
+    if (!result.ok) return c.json({ error: result.error }, 400);
+    return c.json(result);
   });
 
   // Boot (or refresh) the project's coding-agent sandbox and return its

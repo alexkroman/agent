@@ -262,7 +262,12 @@ async function deployLocked(
 
 function outcomeToResponse(c: ValidatedAppContext<DeployBody>, outcome: DeployOutcome): Response {
   if (!outcome.ok) return c.json({ error: outcome.error }, outcome.status);
-  return c.json({ ok: true, slug: outcome.slug, message: outcome.message });
+  return c.json({
+    ok: true,
+    slug: outcome.slug,
+    message: outcome.message,
+    ...(outcome.warnings ? { warnings: outcome.warnings } : {}),
+  });
 }
 
 /**
@@ -293,6 +298,7 @@ export async function handleDeployNew(
     clientFiles: body.clientFiles,
     env: body.env,
     agentConfig: extraction.config,
+    credentialPolicy: body.credentialPolicy,
   });
   return outcomeToResponse(c, outcome);
 }

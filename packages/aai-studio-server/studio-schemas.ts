@@ -108,7 +108,7 @@ export const UiMessageSchema = z
     "Message too large",
   );
 
-/** Env/secrets to merge into the agent's stored env at deploy time. */
-export const StudioDeployBodySchema = z.object({
-  env: z.record(z.string(), z.string()).optional(),
+export const ChatBodySchema = z.object({
+  project: ProjectNameSchema,
+  messages: z.array(UiMessageSchema).min(1).max(MAX_STUDIO_CHAT_MESSAGES),
 });
