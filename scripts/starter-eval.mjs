@@ -44,7 +44,10 @@ const streamDispatcher = new Agent({ bodyTimeout: 0, headersTimeout: 0 });
  * `TypeError: fetch failed` — the trap documented in CLAUDE.md's SSRF notes.
  */
 const streamFetch = undiciFetch;
-const TURN_TIMEOUT_MS = 15 * 60_000;
+// Above the guest's HARD_TURN_MS (12 min) so the SERVER decides when a turn
+// ends, not the measuring client — an aborted stream reads as a crash and
+// loses the run.
+const TURN_TIMEOUT_MS = 20 * 60_000;
 /** Roughly the server's MAX_CHAT_STEPS; only used to flag long runs. */
 const STEP_CAP_HINT = Number(process.env.AAI_STEP_CAP_HINT ?? 80);
 

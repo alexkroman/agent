@@ -49,6 +49,7 @@ import {
   STUDIO_TOOL_LABELS,
   snapshotWorkspace,
 } from "./studio-tools.ts";
+import { createTurnBudget } from "./studio-turn-budget.ts";
 
 /** Matches the host store's whole-conversation byte cap (4 MB). */
 const MAX_CHAT_BODY_BYTES = 4_000_000;
@@ -217,6 +218,10 @@ async function runTurn(
       { [ASSEMBLYAI_LLM_API_KEY_ENV]: session.apiKey },
     );
 
+  // Wall clock, not just steps: the step cap says nothing about how long a
+  // user waits, and turns were reaching fifteen minutes.
+  const budget = createTurnBudget();
+
   const result = streamText({
     model,
     system: session.system,
@@ -239,14 +244,17 @@ async function runTurn(
       }),
     },
     abortSignal: abort.signal,
-    stopWhen: stepCountIs(session.maxSteps),
+    stopWhen: [stepCountIs(session.maxSteps), () => budget.expired()],
     // A long repair loop accumulates bulky tool results (tsc dumps, build
     // logs) — one per attempt. Without this the raised step cap would just
     // trade a step-cap failure for a context-overflow one.
     prepareStep: async ({ messages: stepMessages }) => {
-      if (!needsCompaction(stepMessages)) return {};
-      const compacted = await compactMessages(model, stepMessages);
-      return compacted === stepMessages ? {} : { messages: compacted };
+      const base = needsCompaction(stepMessages)
+        ? await compactMessages(model, stepMessages)
+        : stepMessages;
+      const wrapUp = budget.takeWrapUpNotice();
+      const next = wrapUp ? [...base, { role: "user" as const, content: wrapUp }] : base;
+      return next === stepMessages ? {} : { messages: next };
     },
     // The default studio model regularly emits tool arguments that are not
     // valid JSON — a whole source file inside a JSON string is the usual

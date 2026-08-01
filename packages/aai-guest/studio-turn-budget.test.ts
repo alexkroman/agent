@@ -1,0 +1,63 @@
+// Copyright 2026 the AAI authors. MIT license.
+
+import { describe, expect, test } from "vitest";
+import { createTurnBudget, HARD_TURN_MS, SOFT_TURN_MS } from "./studio-turn-budget.ts";
+
+/** A controllable clock — the budget must not depend on real time in tests. */
+function clock(start = 0) {
+  let t = start;
+  return {
+    now: () => t,
+    advance: (ms: number) => {
+      t += ms;
+    },
+  };
+}
+
+describe("createTurnBudget", () => {
+  test("says nothing and does not expire early in a turn", () => {
+    const c = clock();
+    const b = createTurnBudget(c.now);
+    c.advance(60_000);
+    expect(b.takeWrapUpNotice()).toBeNull();
+    expect(b.expired()).toBe(false);
+  });
+
+  test("asks the agent to wrap up past the soft threshold", () => {
+    const c = clock();
+    const b = createTurnBudget(c.now);
+    c.advance(SOFT_TURN_MS);
+    const notice = b.takeWrapUpNotice();
+    expect(notice).toBeDefined();
+    // It must rank verified-partial above unverified-complete, and require
+    // an honest report — a rushed agent claiming success is the failure
+    // this is meant to prevent, not just a slow one.
+    expect(notice).toMatch(/verified partial/i);
+    expect(notice).toMatch(/say so plainly/i);
+  });
+
+  test("warns once, not on every step", () => {
+    // Repeating it would crowd the context it exists to protect.
+    const c = clock();
+    const b = createTurnBudget(c.now);
+    c.advance(SOFT_TURN_MS);
+    expect(b.takeWrapUpNotice()).toBeDefined();
+    c.advance(30_000);
+    expect(b.takeWrapUpNotice()).toBeNull();
+  });
+
+  test("expires at the hard bound", () => {
+    const c = clock();
+    const b = createTurnBudget(c.now);
+    c.advance(HARD_TURN_MS - 1);
+    expect(b.expired()).toBe(false);
+    c.advance(1);
+    expect(b.expired()).toBe(true);
+  });
+
+  test("the hard bound clears the slowest run that actually succeeded", () => {
+    // A 578s turn ended shippable; cutting that off would fail work that was
+    // nearly done. The bound is for pathology, not for slow-but-working.
+    expect(HARD_TURN_MS).toBeGreaterThan(578_000);
+  });
+});
