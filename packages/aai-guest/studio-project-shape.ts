@@ -40,8 +40,13 @@ export const WORKSPACE_GLOBAL_DTS = `/// <reference types="vite/client" />
 `;
 
 /**
- * The scaffold tsconfig minus vitest (tests don't run here): same
- * strictness, node types for tool code, test files excluded.
+ * The scaffold tsconfig, minus vitest types and with test files excluded.
+ *
+ * Tests DO run here (the starter ships an `agent.test.ts` and the toolchain
+ * carries vitest) — they are kept out of the *typecheck* because that gate
+ * runs on every build and Publish. A sample test that drifted from an edited
+ * agent should fail `aai test`, where the coding agent can see and fix it,
+ * not block the user from going live.
  */
 export const WORKSPACE_TSCONFIG = `${JSON.stringify(
   {

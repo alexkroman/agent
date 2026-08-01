@@ -79,6 +79,10 @@ const TOOLCHAIN_PACKAGES = [
   "tailwindcss",
   "typescript",
   "vite",
+  // The starter workspace ships an agent.test.ts, so `aai test` has to find
+  // a local vitest — without it the CLI falls back to `npx vitest` and pays
+  // a network fetch inside the sandbox.
+  "vitest",
   "zod",
 ] as const;
 

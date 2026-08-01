@@ -1,0 +1,108 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Running a studio workspace's own tests, in the guest, for `test_agent`.
+ *
+ * The starter workspace ships an `agent.test.ts` (studio-template.ts) and the
+ * guest toolchain carries vitest, so the coding agent can get the same signal
+ * a CLI user gets from `aai test` — from the tool it already reaches for.
+ *
+ * Two things here are load-bearing:
+ *
+ * - **`--root` is not optional.** Workspaces materialize under the harness
+ *   directory, which in local dev sits INSIDE this repo. Without pinning the
+ *   root, vitest walks up, finds the repo's own config, and runs the entire
+ *   monorepo suite inside the tenant's sandbox.
+ * - **A missing vitest is not an error.** Tests are a bonus signal; a
+ *   workspace whose toolchain predates vitest, or one with no test files,
+ *   reports "skipped" so `test_agent` still returns its build/load result.
+ */
+
+import { spawn } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { readdir } from "node:fs/promises";
+import { createRequire } from "node:module";
+import path from "node:path";
+import { scrubDir } from "./studio-build.ts";
+
+/** Wall clock for the run. The tool deadline above is 120s and the build
+ *  has already spent part of it, so leave headroom. */
+const TEST_TIMEOUT_MS = 45_000;
+
+/** Tail kept from vitest output — enough for failures, not a context dump. */
+const OUTPUT_CAP = 4000;
+
+export type TestRunResult =
+  | { ran: false; reason: string }
+  | { ran: true; passed: boolean; output: string };
+
+/** Test files at the workspace root (studio workspaces are flat). */
+async function testFiles(dir: string): Promise<string[]> {
+  const entries = await readdir(dir).catch(() => [] as string[]);
+  return entries.filter((f) => /\.test\.tsx?$/.test(f));
+}
+
+/**
+ * The workspace's own vitest binary, resolved by the same node_modules
+ * walk-up everything else in the guest uses.
+ */
+function resolveVitestBin(dir: string): string | null {
+  try {
+    const require = createRequire(path.join(dir, "package.json"));
+    const pkgPath = require.resolve("vitest/package.json");
+    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as {
+      bin?: string | Record<string, string>;
+    };
+    const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.vitest;
+    return bin ? path.join(path.dirname(pkgPath), bin) : null;
+  } catch {
+    // No vitest resolvable above the workspace. Reported as a skip: tests
+    // are extra signal and must not turn a good build into a failure.
+    return null;
+  }
+}
+
+/** Run the workspace's tests. Never throws — the result is prose for the agent. */
+export async function runWorkspaceTests(dir: string): Promise<TestRunResult> {
+  const files = await testFiles(dir);
+  if (files.length === 0) return { ran: false, reason: "no test files in the workspace" };
+
+  const bin = resolveVitestBin(dir);
+  if (!bin) return { ran: false, reason: "vitest is not available in this sandbox" };
+
+  const result = await new Promise<{ code: number | null; output: string }>((resolve) => {
+    // `run` (never watch) and `--root` so vitest cannot escape the workspace.
+    const child = spawn(process.execPath, [bin, "run", "--root", dir], {
+      cwd: dir,
+      timeout: TEST_TIMEOUT_MS,
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, CI: "true" },
+    });
+    let output = "";
+    const keep = (s: string) => (s.length > OUTPUT_CAP ? `…${s.slice(-OUTPUT_CAP)}` : s);
+    const collect = (chunk: Buffer) => {
+      output = keep(output + chunk.toString());
+    };
+    child.stdout.on("data", collect);
+    child.stderr.on("data", collect);
+    child.once("error", (err) => resolve({ code: -1, output: `${output}\n${err.message}` }));
+    child.once("close", (code) => resolve({ code, output }));
+  });
+
+  return {
+    ran: true,
+    passed: result.code === 0,
+    // The scratch path is an implementation detail the coding agent must not
+    // see (and must not start writing absolute paths against).
+    output: scrubDir(result.output.trim(), dir),
+  };
+}
+
+/** One-line-ish summary of a test run for `test_agent`'s reply. */
+export function formatTestRun(result: TestRunResult): string {
+  if (!result.ran) return `Tests: skipped (${result.reason}).`;
+  if (result.passed) return `Tests: passed.\n${result.output}`;
+  return `Tests: FAILED — fix these or update them to match the agent.\n${result.output}`;
+}
+
+/** Exported for the unit test: the file-detection rule. */
+export const _internals = { testFiles };
