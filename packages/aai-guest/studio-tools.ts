@@ -30,8 +30,9 @@ import picomatch from "picomatch";
 import { z } from "zod";
 import { withTimeout } from "./harness-rpc.ts";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./limits.ts";
-import { applyEdit, StudioEditError } from "./studio-edit.ts";
+import { applyEdit, clearEditMisses, rewriteHint, StudioEditError } from "./studio-edit.ts";
 import { grepWorkspace, StudioGrepError } from "./studio-grep.ts";
+import { formatRejection, syntaxError } from "./studio-syntax.ts";
 import { formatTestRun, runWorkspaceTests } from "./studio-test.ts";
 import {
   BASH_TIMEOUT_MAX_MS,
@@ -320,8 +321,14 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
       }),
       execute: async ({ path: rel, content }) => {
         const abs = resolveInside(dir, rel);
+        // Parse BEFORE persisting. A file that does not parse cannot be
+        // edited back into shape by text matching, so writing it strands the
+        // turn (see studio-syntax.ts).
+        const bad = await syntaxError(dir, rel, content);
+        if (bad !== undefined) return formatRejection(rel, bad);
         await mkdir(path.dirname(abs), { recursive: true });
         await writeFile(abs, content, "utf-8");
+        clearEditMisses(rel);
         return `Wrote ${rel} (${content.length} bytes)`;
       },
     }),
@@ -348,11 +355,14 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
           const { content, diff, replacements } = applyEdit(rel, current, oldText, newText, {
             replaceAll,
           });
+          const bad = await syntaxError(dir, rel, content);
+          if (bad !== undefined) return formatRejection(rel, bad);
           await writeFile(abs, content, "utf-8");
+          clearEditMisses(rel);
           const label = replacements === 1 ? "" : ` (${replacements} replacements)`;
           return `Edited ${rel}${label}\n\n${diff}`;
         } catch (err) {
-          if (err instanceof StudioEditError) return `Error: ${err.message}`;
+          if (err instanceof StudioEditError) return `Error: ${err.message}${rewriteHint(rel)}`;
           throw err;
         }
       },

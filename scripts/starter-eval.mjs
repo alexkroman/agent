@@ -17,6 +17,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import {
   checkCapabilities,
   checkMode,
+  checkUi,
   EXPECTATIONS,
   parseLoadedConfig,
 } from "./starter-expectations.mjs";
@@ -168,6 +169,7 @@ function verdict(s, expectation, files) {
     ? checkCapabilities(expectation, { config, source })
     : { covered: true, missing: [], missingBuiltins: [], toolCount: 0, tooFewTools: false };
   const mode = checkMode(config, source);
+  const ui = checkUi(expectation, files);
   // "Ends by asking" is a real outcome, not a failure: it costs the user a
   // turn, which is the thing being minimized, so it is counted separately.
   const askedQuestion = /\?\s*$/.test(s.text.trim());
@@ -179,11 +181,13 @@ function verdict(s, expectation, files) {
   if (caps.missingBuiltins.length) reasons.push(`missing-builtin:${caps.missingBuiltins.join("/")}`);
   if (caps.tooFewTools) reasons.push(`too-few-tools:${caps.toolCount}`);
   if (!mode.ok) reasons.push(mode.note);
+  if (!ui.ok) reasons.push(ui.note);
   if (s.toolCalls.length >= 16) reasons.push("step-capped");
 
   return {
     // The headline: built, loaded, and covers the ask.
-    shippable: built && caps.covered && !caps.tooFewTools && mode.ok,
+    shippable: built && caps.covered && !caps.tooFewTools && mode.ok && ui.ok,
+    builtClient: files?.["client.tsx"] !== undefined,
     endedGreen: built,
     reasons,
     askedQuestion,
@@ -206,7 +210,30 @@ const outFile = args.includes("--out") ? args[args.indexOf("--out") + 1] : undef
 const repeat = args.includes("--repeat") ? Number(args[args.indexOf("--repeat") + 1]) : 1;
 
 const key = apiKey();
-const cases = (await starters()).filter((c) => !only || c.label.toLowerCase().includes(only.toLowerCase()));
+const allStarters = await starters();
+
+/**
+ * Fail fast if an expectation demands something its prompt never asked for.
+ *
+ * This is the bug class that already bit once: a required `inventory` tool
+ * for a prompt whose parenthetical DEFINED inventory as take/drop, which
+ * failed a perfectly good agent. An expectation is a claim about the ask, so
+ * it has to be checkable against the ask.
+ */
+for (const e of EXPECTATIONS) {
+  const starter = allStarters.find((s) => s.label === e.label);
+  if (!starter) throw new Error(`expectation for unknown starter: ${e.label}`);
+  if (e.ui && !/client\.tsx|custom UI/i.test(starter.prompt)) {
+    throw new Error(`expectation requires a UI but the prompt never asks for one: ${e.label}`);
+  }
+  for (const b of e.builtins ?? []) {
+    if (!starter.prompt.includes(b)) {
+      throw new Error(`expectation requires builtin ${b} but the prompt never names it: ${e.label}`);
+    }
+  }
+}
+
+const cases = allStarters.filter((c) => !only || c.label.toLowerCase().includes(only.toLowerCase()));
 if (cases.length === 0) throw new Error(`no starter matched ${only}`);
 
 const results = [];
@@ -238,7 +265,11 @@ for (const [i, c] of plan.entries()) {
       project,
       ...v,
       tools: summary.toolCalls,
-      ...(workspace && !v.shippable ? { files: workspace.files } : {}),
+      // Kept for every run, not just failures: the questions worth asking of
+      // this data — did it build a client, which builtins did it reach for
+      // unprompted — are answered by the runs that SUCCEEDED, and capturing
+      // only failures biases every count that follows.
+      ...(workspace ? { files: workspace.files } : {}),
     });
     process.stderr.write(
       `${v.shippable ? "SHIPPABLE" : "NOT-SHIPPABLE"}  tools=${v.toolCalls} ` +

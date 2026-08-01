@@ -19,7 +19,15 @@
  * pipeline unless the user asked for the S2S voice-agent API).
  */
 
-/** @typedef {{ label: string, capabilities: string[][], builtins?: string[], minTools?: number }} Expectation */
+/**
+ * `ui: true` means the starter should produce a custom client.tsx. Set it
+ * where the agent has state a person would want to watch — a cart, a
+ * dashboard, an inventory. The default UI hides all of it, so an agent that
+ * mutates visible state and ships no client is thinner than the ask.
+ *
+ * @typedef {{ label: string, capabilities: string[][], builtins?: string[],
+ *   minTools?: number, ui?: boolean }} Expectation
+ */
 
 /** @type {Expectation[]} */
 export const EXPECTATIONS = [
@@ -32,6 +40,8 @@ export const EXPECTATIONS = [
       ["place", "submit", "checkout", "confirm"],
     ],
     minTools: 4,
+    // The prompt asks for a themed cart view outright.
+    ui: true,
   },
   {
     label: "An agent that solves problems by writing code",
@@ -50,12 +60,17 @@ export const EXPECTATIONS = [
       ["price", "quote", "crypto", "bitcoin"],
       ["split", "tip", "bill"],
     ],
-    builtins: ["fetch_json", "run_code"],
+    // Deliberately NO `builtins` requirement, despite the prompt naming
+    // fetch_json and run_code. Those are MODEL-facing tools; tool code cannot
+    // call them, so an agent that writes custom tools using plain fetch has
+    // satisfied the ask by another valid design. Requiring the declaration
+    // failed two good agents. The capability check above covers the substance.
   },
   {
     label: "A web researcher that cites its sources",
     capabilities: [],
     builtins: ["web_search", "visit_webpage"],
+    ui: true,
   },
   {
     label: "An FAQ bot over an embedded knowledge base",
@@ -86,6 +101,8 @@ export const EXPECTATIONS = [
       ["dashboard", "summary", "overview"],
     ],
     minTools: 6,
+    // "ops dashboard summarizing active incidents" is a screen, not speech.
+    ui: true,
   },
   {
     label: "A text adventure in the style of Infocom",
@@ -100,6 +117,7 @@ export const EXPECTATIONS = [
       ["puzzle", "flag", "solve"],
     ],
     minTools: 4,
+    ui: true,
   },
   {
     label: "A solo RPG with dice and a story oracle",
@@ -111,11 +129,14 @@ export const EXPECTATIONS = [
       ["save", "load"],
     ],
     minTools: 5,
+    // A character sheet and momentum track are state you watch.
+    ui: true,
   },
   {
     label: "A late-night movie, music, and book picker",
     capabilities: [["recommend", "pick", "suggest", "choose"]],
     minTools: 1,
+    ui: true,
   },
 ];
 
@@ -203,6 +224,17 @@ export function checkMode(config, source) {
  * exists to catch is a capability that is simply absent, not one spelled
  * differently than expected.
  */
+/** Did the run produce a custom client, when the starter wanted one? */
+export function checkUi(expectation, files) {
+  if (!expectation?.ui) return { ok: true };
+  const client = files?.["client.tsx"];
+  if (client === undefined) return { ok: false, note: "no client.tsx (custom UI expected)" };
+  // A client that never reads a tool result is decoration: the point is
+  // showing state as it changes, which goes through the SDK's hooks.
+  const reactive = /useToolResult|useEvent|useSession/.test(client);
+  return reactive ? { ok: true } : { ok: false, note: "client.tsx shows no live state" };
+}
+
 export function checkCapabilities(expectation, { config, source }) {
   const declared = [...(config?.tools ?? []), ...toolNamesFromSource(source)].map(norm);
   const builtins = new Set([...(config?.tools ?? []), ...builtinsFromSource(source)]);

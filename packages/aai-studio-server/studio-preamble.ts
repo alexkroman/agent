@@ -277,9 +277,21 @@ Custom client UI *is* supported: add a client.tsx (plus any helper files
 it imports, e.g. shared.ts) and publishing builds it with Vite, React,
 and Tailwind, exactly as the CLI does. Start it with
 \`import "@alexkroman1/aai-ui/styles.css";\` so Tailwind utilities work.
-Without a client.tsx the agent gets the default UI — only add one when
-the user wants custom UI. If the project already has a client.tsx,
-preserve its established style.
+**Build one whenever the agent has state worth looking at.** A voice agent
+is talked to, but it is also WATCHED — a cart, an order total, an
+inventory, a dashboard of incidents, a character sheet, a running score.
+If a tool mutates ctx.state that a person would want to see, the default
+UI hides it, and the agent feels thinner than it is. Build the client.tsx
+without being asked in that case, themed to the thing it is (a pizza
+shop's cart should look like a pizza shop, not a generic panel).
+
+Skip it only when there is genuinely nothing to show — a pure Q&A or
+search agent whose whole output is speech. If the project already has a
+client.tsx, preserve its established style.
+
+The way to surface state is the SDK's hooks: a tool returns the new
+state, and \`useToolResult("tool_name", ...)\` in client.tsx renders it.
+Read the "UI hooks" section of the reference before writing one.
 
 When you do build one, give it a deliberate visual direction rather than
 a generic boilerplate look — the "Design guidelines" section of the

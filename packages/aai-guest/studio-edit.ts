@@ -301,3 +301,37 @@ export function applyEdit(
     replacements,
   };
 }
+
+/**
+ * Consecutive `edit_file` misses per file, for the escape hatch below.
+ * Cleared by any successful write to that file.
+ */
+const editMisses = new Map<string, number>();
+
+/** Misses before the agent is told to stop matching and rewrite. */
+const MAX_EDIT_MISSES = 2;
+
+/**
+ * After repeated failures to match, tell the agent to stop trying.
+ *
+ * Observed: three "could not find that text" errors on one file, each
+ * followed by a re-read and another identical failure, until the step cap.
+ * Re-reading does not help when the file's real content differs from what
+ * the agent believes it wrote — the only way out is a wholesale rewrite, and
+ * nothing was saying so.
+ */
+export function rewriteHint(rel: string): string {
+  const misses = (editMisses.get(rel) ?? 0) + 1;
+  editMisses.set(rel, misses);
+  if (misses < MAX_EDIT_MISSES) return "";
+  return (
+    `\n\nThis is ${misses} failed matches on ${rel}. Its real content is not what ` +
+    "you expect, so further edits will keep missing: read it once more and " +
+    "replace the whole file with write_file instead of matching against it."
+  );
+}
+
+/** Forget a file's miss count after a successful write. */
+export function clearEditMisses(rel: string): void {
+  editMisses.delete(rel);
+}
