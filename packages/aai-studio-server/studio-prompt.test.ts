@@ -60,7 +60,11 @@ describe("studioSystemPrompt", () => {
     // don't pick an edit site off the first grep hit. Hard-wrapped prose,
     // so assert against a whitespace-normalized copy.
     const flat = prompt.replace(/\s+/g, " ");
-    expect(flat).toContain("don't stop at the first match");
+    expect(flat).toContain("Don't stop at the first match");
+    // The v0-style arc: refusals and alignment examples close the preamble.
+    expect(prompt).toContain("## Refusals");
+    expect(prompt).toContain("REFUSAL_MESSAGE");
+    expect(prompt).toContain("## Alignment");
     // Pipeline is the default; the S2S voice agent API is opt-in only.
     expect(flat).toContain(
       "Use the AssemblyAI voice agent API (S2S mode) only when the user asks for it",
@@ -77,18 +81,15 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("Voice rules for systemPrompt");
   });
 
-  test("lists the SDK's real subpaths and contradicts the removed combinator subpaths", () => {
+  test("lists the SDK's real subpaths without naming removed ones", () => {
     const prompt = studioSystemPrompt().replace(/\s+/g, " ");
     expect(prompt).toContain("Never invent an SDK subpath");
     // Interpolated from the package's own exports map, so it can't drift.
     expect(prompt).toContain("@alexkroman1/aai/llm");
-    // The combinators shipped under two names (/workflow, then /patterns)
-    // before being removed, so both sit in the model's priors and in any
-    // pre-removal docs snapshot. A list alone doesn't dislodge a wrong
-    // belief; the contradiction is stated outright.
-    expect(prompt).toContain(
-      '"@alexkroman1/aai/patterns" and "@alexkroman1/aai/workflow" both **do not exist**',
-    );
+    // The removed combinator subpaths are not mentioned at all — not even
+    // as a contradiction — so the prompt can't teach their names.
+    expect(prompt).not.toContain("@alexkroman1/aai/patterns");
+    expect(prompt).not.toContain("@alexkroman1/aai/workflow");
   });
 
   test("excludes the CLI Workflow section by its precise contents", () => {

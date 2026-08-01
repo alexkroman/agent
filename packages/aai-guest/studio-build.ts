@@ -117,6 +117,24 @@ export async function buildWorkspaceDir(
   }
 }
 
+/**
+ * Run only the project's tsc pass — the `check_types` tool's backend. The
+ * same `typecheckProject` gate every build runs, without paying for the
+ * bundle, so the coding agent can iterate on type errors cheaply.
+ */
+export async function typecheckWorkspaceDir(
+  dir: string,
+): Promise<{ ok: true; skipped: boolean } | { ok: false; output: string }> {
+  let tc: Toolchain;
+  try {
+    tc = await loadToolchain();
+  } catch (err) {
+    return { ok: false, output: `Build toolchain unavailable in this sandbox: ${errMessage(err)}` };
+  }
+  const typed = await tc.typecheckProject(dir);
+  return typed.ok ? typed : { ok: false, output: scrubDir(typed.output, dir) };
+}
+
 let buildSeq = 0;
 
 /**

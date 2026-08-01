@@ -1,0 +1,139 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Descriptions for the studio coding agent's workspace tools — the prose
+ * the model reads, kept out of `studio-tools.ts` so it can be tuned
+ * without touching execution code (and so that file stays under the
+ * repo's length cap).
+ *
+ * The numeric limits a description quotes live here too and are imported
+ * back by `studio-tools.ts` for enforcement — a description that names a
+ * different number than the code enforces is worse than no number at all.
+ */
+
+/** read_file paging defaults — opencode's read-tool semantics. */
+export const READ_LIMIT = 2000;
+/** Max glob results before truncation. */
+export const GLOB_LIMIT = 100;
+/** Default and max wall-clock for one bash command. */
+export const BASH_TIMEOUT_MS = 60_000;
+export const BASH_TIMEOUT_MAX_MS = 300_000;
+
+export const STUDIO_TOOL_DESCRIPTIONS = {
+  list_files: `List every file in the project workspace (node_modules, dist, and .git are excluded).
+
+WHEN TO USE:
+- Orienting at the start of a request, or when unsure what exists.
+- For targeted lookups prefer glob (find by name) or grep (search contents).`,
+
+  read_file: `Read a file from the project workspace. Returns numbered lines ("NNNNN| text"); use offset/limit to page through large files.
+
+GUIDELINES:
+- Read a file before editing it, and read multiple files in parallel when gathering context.
+- Do NOT re-read a file after a successful edit_file — the diff it returned already shows the result.
+- Only pass offset/limit when a previous read said the file continues.`,
+
+  glob: `Find workspace files whose path matches a glob pattern (e.g. **/*.ts, "*.tsx"), newest first, capped at ${GLOB_LIMIT} results.
+
+WHEN TO USE:
+- Locating files by name or extension.
+- Use grep instead when you are searching by contents.`,
+
+  write_file: `Create a new file, or fully replace an existing one. Parent directories are created automatically.
+
+IMPORTANT — minimize full rewrites:
+- PREFER edit_file for changes to an existing file; use write_file only for new files or genuine wholesale rewrites.
+- When creating multiple new files, issue the write_file calls in parallel — it is much faster than one by one.
+- Never rewrite a file you have not read this conversation; the user may have edited it since.`,
+
+  edit_file: `The PREFERRED and PRIMARY tool for modifying an existing file: replaces one exact snippet and returns a diff of what changed.
+
+GUIDELINES:
+- oldText must match the file exactly — whitespace and indentation included — and appear exactly once. Include a few surrounding lines when the snippet alone would be ambiguous.
+- Set replaceAll: true to change every occurrence (e.g. renaming a symbol).
+- Multiple independent edits? Invoke edit_file several times in parallel.
+- Trust the returned diff; do not re-read the file just to confirm the edit applied.`,
+
+  delete_file: `Delete a file from the project workspace.
+
+WHEN TO USE:
+- Removing scratch scripts, debug artifacts, or files nothing imports anymore.
+- Deleting is permanent — check what a file is before removing something you didn't create.`,
+
+  grep: `Regex-based code search across workspace file contents. Returns "path:line: text" for each match.
+
+GUIDELINES:
+- Filter which files are searched with glob (e.g. "*.ts"), and set literal: true to match plain text without regex escaping.
+- Cheaper than reading whole files — use it to find where something is defined, then read_file just that file.
+- When matches span several files, check each before deciding where a change belongs.`,
+
+  bash: `Run a bash command in the workspace directory (network access available).
+
+COMMONLY USED FOR:
+- node one-liners and scratch scripts to check logic or probe an API's response shape
+- Inspecting files and directories (ls, cat, wc)
+- For npm packages, prefer the dedicated add_dependency / remove_dependency tools
+
+RULES:
+- Make source changes with edit_file/write_file, not shell redirection — the dedicated tools show the user a diff.
+- The workspace ships without node_modules, and only workspace source files (never node_modules, dist, or .git) sync back to the project.
+- Output is capped with the tail kept; long-running commands are killed at the timeout (default ${BASH_TIMEOUT_MS}ms, max ${BASH_TIMEOUT_MAX_MS}ms).`,
+
+  check_types: `Run only the project's TypeScript check (tsc --noEmit against the workspace tsconfig) and report the diagnostics.
+
+WHEN TO USE:
+- Iterating on type errors after edits — much cheaper than test_agent, which runs the same check but then also bundles and loads.
+- Still finish with test_agent before telling the user the work is ready: a clean check_types proves the types, not the build.`,
+
+  npm_info: `Look up a package on the npm registry: name, version, description, homepage, exports, and peerDependencies.
+
+WHEN TO USE:
+- BEFORE add_dependency, to confirm the package exists and see its real import surface instead of guessing an API from memory.
+- After installing, ground truth is local: read node_modules/<pkg>/package.json with read_file, or search inside it with bash.`,
+
+  add_dependency: `Add an npm dependency to the project. The package should be a valid npm package name, optionally with a version (e.g. "lodash@4", "date-fns").
+
+GUIDELINES:
+- FIRST install the package, THEN write the code that imports it — builds bundle whatever package.json declares.
+- Prefer the SDK's builtins and plain fetch over adding dependencies; reach for a package only when the request truly needs one.`,
+
+  remove_dependency: `Uninstall an npm package from the project.
+
+WHEN TO USE:
+- Removing a dependency nothing imports anymore — check with grep before uninstalling.`,
+
+  download_to_workspace: `Download a TEXT file from a URL and save it into the workspace (e.g. a JSON dataset, an SVG logo, a CSV menu).
+
+RULES:
+- Text only: the workspace syncs as utf-8, so binary responses (images, audio) are refused — reference those by URL in client.tsx instead.
+- Not for npm packages (use add_dependency) and not for reading pages (use visit_webpage).`,
+
+  generate_design_inspiration: `Generate a design brief before any client.tsx design work, to ensure the UI is visually appealing rather than boilerplate.
+
+WHEN TO USE:
+- Vague design requests ("make it look nice", "modern UI") that need direction.
+- New custom UIs with no established style to follow.
+
+SKIP WHEN:
+- The change is a minor styling tweak, or the user gave a specific design/site to copy (use get_page_design for sites).
+- The project already has a client.tsx with an established style — preserve it instead.
+
+IMPORTANT: if you generate a design brief, you MUST follow it.`,
+
+  todo_write: `Replace your todo list for the current request. The user sees the list, so it doubles as a progress report.
+
+WHEN TO USE:
+- Multi-step work: several named capabilities, or a build plus a redesign. Write the steps up front, then resend the full list as statuses change.
+- Keep exactly one item in_progress at a time, and use milestone-level steps, not micro-steps.
+- SKIP it for single-step changes and questions.`,
+
+  test_agent: `Build the workspace and load it into the production agent runtime — the same build path Publish runs, so a clean test_agent means the publish will build.
+
+WHAT IT REPORTS:
+- Type errors and build errors (with diagnostics to act on), load errors, and the agent's self-described config (name, mode, tools).
+
+TRIAL RUNS:
+- Pass tool and args to also invoke one of the agent's tools with sample arguments and see its real output.
+- Secrets are NOT available in trials (ctx.env is empty) and ctx.db is unavailable — exercise the parts that don't need them.
+
+Run it after every meaningful change, before telling the user the work is ready.`,
+} as const;
