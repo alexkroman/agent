@@ -34,6 +34,7 @@
     "DEFAULT_SYSTEM_PROMPT",
     "DEFAULT_TTS_SAMPLE_RATE",
     "DefaultSessionState",
+    "DefaultToolResult",
     "Epoch",
     "FETCH_TIMEOUT_MS",
     "GenerateFn",

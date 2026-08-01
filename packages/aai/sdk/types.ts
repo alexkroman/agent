@@ -93,6 +93,23 @@ export type Message = {
 export type DefaultSessionState = any;
 
 /**
+ * Default type of a tool result observed on the client (`useToolResult`).
+ *
+ * The client half of {@link DefaultSessionState}'s problem, and `any` for the
+ * same reason. A tool result is the author's own return value round-tripped
+ * through JSON; the client already knows its shape, and the framework cannot.
+ * With the strict default (`unknown`, which this was), reading one field off
+ * it was a compile error in a client that runs correctly — and since
+ * `aai build` type-checks, that error blocked publishing rather than
+ * preventing a bug.
+ *
+ * Pass the shape — `useToolResult<Quote>("get_quote", …)` — for real checking.
+ *
+ * @public
+ */
+export type DefaultToolResult = any;
+
+/**
  * Context passed to tool `execute` functions.
  *
  * Provides access to the session environment, state, database, and

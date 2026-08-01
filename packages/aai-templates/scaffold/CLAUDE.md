@@ -318,22 +318,21 @@ ctx.send(event: string, data: unknown): void   // push custom event to browser c
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 ```
 
-**Typing `ctx.state`.** `ctx.state` is untyped by default, so
-`ctx.state.count++` compiles with no ceremony. That is fine for a scalar.
-
-**But TYPE THE STATE the moment it holds a collection you iterate.**
-Untyped state makes every callback over it an implicit `any`, and under
-`strict` that is an error per callback:
+**Typing `ctx.state` is optional.** `ctx.state` is untyped by default, and
+the project's tsconfig turns off `noImplicitAny`, so both of these compile
+with no annotations and no errors:
 
 ```ts
-// Untyped state: ctx.state.incidents is `any`, so `i` is an implicit any.
+ctx.state.count++;
 ctx.state.incidents.filter((i) => i.status === "open");
-//                           ^ error TS7006, once per callback in the file
 ```
 
-One agent hit fifteen of these in a single file and spent three build cycles
-annotating them one at a time. Declaring the type removes all of them at
-once, because the element type is then known:
+Write the code first. Do NOT add type annotations defensively — nothing
+requires them, and time spent on them is time not spent on the agent.
+
+Declaring a state type is still worth it once the shape is settled, because
+it turns a misspelled field into a compile error instead of `undefined` at
+runtime:
 
 ```ts
 import { agent, tool } from "@alexkroman1/aai";
@@ -346,7 +345,7 @@ type State = { incidents: Incident[] };
 const listOpen = tool({
   description: "List open incidents",
   execute: (_args, ctx: ToolContext<State>) => {
-    // `i` infers as Incident — no annotation, no TS7006.
+    // `i` infers as Incident, and `i.staus` would now be an error.
     return ctx.state.incidents.filter((i) => i.status === "open");
   },
 });
@@ -357,11 +356,6 @@ export default agent({
   tools: { listOpen },
 });
 ```
-
-The rule: **scalar state, skip it; arrays or records in state, declare the
-type and annotate the context in tools that touch them.** It is one type
-declaration and one annotation per tool, and it is cheaper than the repair
-loop it prevents.
 
 A tool annotated with a state shape the agent's factory doesn't produce is a
 compile error, which is the point.
@@ -624,9 +618,14 @@ Methods: `start()`, `toggle()`, `reset()`, `cancel()`, `disconnect()`,
 callId):
 
 ```ts
+useToolResult("tool_name", (result, toolCall) => { ... })          // one tool
 useToolResult((toolName, result, toolCall) => { ... })             // all tools
-useToolResult<ResultType>("tool_name", (result, toolCall) => { })  // single tool, typed
+useToolResult<ResultType>("tool_name", (result) => { ... })        // typed (optional)
 ```
+
+`result` is the tool's return value, already JSON-parsed and untyped — read
+fields off it directly (`result.price`). The type parameter is optional; add
+it only when you want the shape checked.
 
 **`useEvent`** — fires for custom events from `ctx.send()`:
 

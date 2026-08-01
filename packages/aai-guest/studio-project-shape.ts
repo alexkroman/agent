@@ -47,6 +47,17 @@ export const WORKSPACE_GLOBAL_DTS = `/// <reference types="vite/client" />
  * runs on every build and Publish. A sample test that drifted from an edited
  * agent should fail `aai test`, where the coding agent can see and fix it,
  * not block the user from going live.
+ *
+ * `strict` minus `noImplicitAny` — the scaffold's setting, kept in step here.
+ * Measured over the starter evals, TS7006 and its siblings (TS7053, TS7034)
+ * were 57% of every diagnostic the coding agent had to repair, and not one
+ * marked a real defect. They are all downstream of a receiver that is already
+ * `any` by design (`ctx.state`, a tool result): `state.cart.reduce((sum, p) =>
+ * …)` reports both lambda parameters, and typing them buys nothing, because
+ * the body is `any`-checked either way. The rule asks for an annotation
+ * without offering any checking in return — pure churn on a gate that blocks
+ * publishing. Everything that catches a real mistake (TS2339, TS2345, TS2353
+ * — wrong field, wrong argument, wrong option) is unaffected.
  */
 export const WORKSPACE_TSCONFIG = `${JSON.stringify(
   {
@@ -55,6 +66,7 @@ export const WORKSPACE_TSCONFIG = `${JSON.stringify(
       module: "ESNext",
       moduleResolution: "bundler",
       strict: true,
+      noImplicitAny: false,
       verbatimModuleSyntax: true,
       allowImportingTsExtensions: true,
       noEmit: true,

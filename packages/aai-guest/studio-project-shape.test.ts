@@ -40,12 +40,15 @@ describe("ensureProjectShape", () => {
 
   test("tsconfig excludes tests and pins node types (studio variant)", () => {
     const parsed = JSON.parse(WORKSPACE_TSCONFIG) as {
-      compilerOptions: { types: string[]; strict: boolean };
+      compilerOptions: { types: string[]; strict: boolean; noImplicitAny: boolean };
       exclude: string[];
     };
     expect(parsed.compilerOptions.strict).toBe(true);
     expect(parsed.compilerOptions.types).toEqual(["node"]);
     expect(parsed.exclude).toContain("**/*.test.ts");
+    // Deliberate: implicit-any diagnostics are churn on an `any` receiver and
+    // catch nothing. See the WORKSPACE_TSCONFIG doc.
+    expect(parsed.compilerOptions.noImplicitAny).toBe(false);
   });
 });
 
@@ -59,5 +62,21 @@ describe("scaffold parity (drift guard)", () => {
 
   test("global.d.ts matches the scaffold's byte for byte", async () => {
     await expect(scaffold("global.d.ts")).resolves.toBe(WORKSPACE_GLOBAL_DTS);
+  });
+
+  /**
+   * The tsconfigs differ deliberately (`types`, `exclude`), so they cannot be
+   * compared byte for byte — but the settings that decide whether a given file
+   * type-checks must agree, or a workspace that builds in the studio fails
+   * `aai build` on the user's laptop after they export it.
+   */
+  test("tsconfig strictness matches the scaffold's", async () => {
+    type Opts = Record<string, unknown>;
+    const of = (text: string) => (JSON.parse(text) as { compilerOptions: Opts }).compilerOptions;
+    const mine = of(WORKSPACE_TSCONFIG);
+    const theirs = of(await scaffold("tsconfig.json"));
+    for (const key of ["strict", "noImplicitAny", "verbatimModuleSyntax", "target", "lib", "jsx"]) {
+      expect({ [key]: mine[key] }).toEqual({ [key]: theirs[key] });
+    }
   });
 });
