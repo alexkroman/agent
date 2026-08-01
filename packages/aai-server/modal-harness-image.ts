@@ -58,7 +58,9 @@ const MAX_INSTALL_STDERR = 4000;
  * The packages `npm install`ed into the image — everything guest builds
  * resolve at runtime: the CLI bundlers plus the workspace-facing packages a
  * scaffolded project depends on. Must stay a subset of aai-guest's own
- * `dependencies` (where the versions come from).
+ * `dependencies`/`devDependencies` (where the versions come from —
+ * `@types/node` lives in devDependencies because sherif forbids `@types/*`
+ * in a private package's dependencies).
  */
 const TOOLCHAIN_PACKAGES = [
   "@alexkroman1/aai",
@@ -87,9 +89,10 @@ export function resolveToolchainSpecs(): string[] {
   const guestDir = path.dirname(guestPkgPath);
   const guestPkg = JSON.parse(readFileSync(guestPkgPath, "utf-8")) as {
     dependencies?: Record<string, string>;
+    devDependencies?: Record<string, string>;
   };
   return TOOLCHAIN_PACKAGES.map((name) => {
-    const declared = guestPkg.dependencies?.[name];
+    const declared = guestPkg.dependencies?.[name] ?? guestPkg.devDependencies?.[name];
     if (!declared) {
       throw new Error(`aai-guest package.json no longer declares toolchain package ${name}`);
     }

@@ -19,7 +19,6 @@
     "@alexkroman1/aai-cli": "workspace:*",
     "@alexkroman1/aai-ui": "workspace:*",
     "@tailwindcss/vite": "^4.3.3",
-    "@types/node": "^26.1.1",
     "@vitejs/plugin-react": "^6.0.4",
     "ai": "^7.0.41",
     "diff": "^9.0.0",
@@ -33,6 +32,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@types/node": "^26.1.1",
     "@types/picomatch": "^4.0.2",
     "@types/ws": "^8.18.1",
     "tsdown": "^0.22.13",
