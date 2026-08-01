@@ -23,7 +23,13 @@
  * error goes back as-is.
  */
 
-import { generateObject, InvalidToolInputError, jsonSchema, type LanguageModel } from "ai";
+import {
+  generateObject,
+  InvalidToolInputError,
+  jsonSchema,
+  type LanguageModel,
+  parsePartialJson,
+} from "ai";
 
 /** Fenced code blocks the model sometimes wraps arguments in. */
 const FENCE = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/;
@@ -31,42 +37,33 @@ const FENCE = /^\s*```(?:json)?\s*([\s\S]*?)\s*```\s*$/;
 /**
  * Best-effort repair of *nearly* valid JSON, without an LLM round trip.
  *
- * Handles, in order: a code fence around the object, trailing commas, raw
- * control characters inside strings (the common one — a real newline where
- * `\n` belonged), and an unterminated tail (closing any string and brackets
- * still open). Returns null when the result still does not parse, so a
- * caller never acts on a half-repaired object.
+ * The SDK's own `parsePartialJson` (the streaming partial-object parser) does
+ * the structural work — truncated strings, unclosed brackets, trailing
+ * commas — so none of that is reimplemented here. It does NOT handle the two
+ * shapes the studio model actually produces, which is all this adds:
+ *
+ * - a raw newline/tab inside a string literal, where `\n` belonged. This is
+ *   the common `write_file` break and `parsePartialJson` reports it as a
+ *   failed parse.
+ * - a markdown fence wrapped around the arguments.
+ *
+ * Returns null when the result still does not parse, or parses to something
+ * that is not an object, so a caller never hands a fragment to a tool.
  */
-export function salvageJson(input: string): string | null {
+export async function salvageJson(input: string): Promise<string | null> {
   let text = input.trim();
   const fenced = FENCE.exec(text);
   if (fenced?.[1]) text = fenced[1].trim();
 
-  const attempts = [text, escapeControlCharsInStrings(text)];
-  for (const attempt of attempts) {
-    const candidates = [attempt, dropTrailingCommas(attempt)];
-    for (const candidate of candidates) {
-      const parsed = tryParse(candidate) ?? tryParse(closeOpenStructures(candidate));
-      if (parsed !== null) return parsed;
-    }
+  for (const candidate of [text, escapeControlCharsInStrings(text)]) {
+    const { value, state } = await parsePartialJson(candidate);
+    if (state !== "successful-parse" && state !== "repaired-parse") continue;
+    // Tool inputs are always objects; a scalar or array means the salvage
+    // latched onto a fragment rather than the arguments.
+    if (typeof value !== "object" || value === null || Array.isArray(value)) continue;
+    return JSON.stringify(value);
   }
   return null;
-}
-
-function tryParse(text: string): string | null {
-  try {
-    const value: unknown = JSON.parse(text);
-    // Tool inputs are always objects; a bare string or number means the
-    // salvage latched onto a fragment rather than the arguments.
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
-    return JSON.stringify(value);
-  } catch {
-    return null;
-  }
-}
-
-function dropTrailingCommas(text: string): string {
-  return text.replace(/,(\s*[}\]])/g, "$1");
 }
 
 /** Raw control characters that are illegal inside a JSON string literal. */
@@ -91,44 +88,6 @@ function escapeControlCharsInStrings(text: string): string {
       inString = !inString;
     }
   }
-  return out;
-}
-
-/** Lexical state after walking a (possibly truncated) JSON payload. */
-type JsonScanState = { inString: boolean; escaped: boolean; open: string[] };
-
-/** Push/pop the bracket stack for one structural character. */
-function trackBracket(open: string[], ch: string): void {
-  if (ch === "{" || ch === "[") open.push(ch);
-  else if (ch === "}" || ch === "]") open.pop();
-}
-
-function scanJsonState(text: string): JsonScanState {
-  const open: string[] = [];
-  let inString = false;
-  let escaped = false;
-  for (const ch of text) {
-    if (escaped) escaped = false;
-    else if (ch === "\\") escaped = true;
-    else if (ch === '"') inString = !inString;
-    else if (!inString) trackBracket(open, ch);
-  }
-  return { inString, escaped, open };
-}
-
-/**
- * Close whatever a truncated payload left open: an unterminated string, then
- * any `{`/`[` still on the stack. Recovers the arguments up to the cut, which
- * for a truncated `write_file` is a partial file — wrong, but the model sees
- * the result and can continue rather than losing the turn.
- */
-function closeOpenStructures(text: string): string {
-  const { inString, escaped, open } = scanJsonState(text);
-  if (!inString && open.length === 0) return text;
-  // A dangling backslash would escape the quote we are about to add.
-  let out = escaped ? text.slice(0, -1) : text;
-  if (inString) out += '"';
-  for (let i = open.length - 1; i >= 0; i--) out += open[i] === "{" ? "}" : "]";
   return out;
 }
 
@@ -162,7 +121,7 @@ export function createToolCallRepair(model: LanguageModel) {
     // destructive misread.
     if (!InvalidToolInputError.isInstance(error)) return null;
 
-    const salvaged = salvageJson(toolCall.input);
+    const salvaged = await salvageJson(toolCall.input);
     if (salvaged !== null) return { ...toolCall, input: salvaged };
 
     try {
