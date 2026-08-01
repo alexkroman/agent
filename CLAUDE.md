@@ -807,10 +807,31 @@ platform's Modal outbound-domain allowlist, `guest-egress.ts`) were removed:
 the agent's own code runs in the guest with open egress, exactly as it does
 under `aai dev`. The Modal container is the isolation boundary — a tenant
 can reach the internet, not the platform. Tool code and providers `fetch`
-directly; the network builtins (`web_search`, `visit_webpage`,
-`get_page_design`, `fetch_json`) keep their SSRF screen (`safeFetch`)
-because their URLs are model-controlled and the same builtins also run on
-the `aai dev` host.
+directly.
+
+**The network builtins follow one rule: screen only when there is no
+container around us** (`builtinFetch` in `host/ssrf.ts`).
+
+- **Contained** (a Modal Sandbox) → plain `pinnedFetch`, no SSRF screen. The
+  screen guards nothing a tenant cannot bypass in one line, because their own
+  tool code has open egress by design — so it constrains the *model*, not the
+  author. The container is the boundary, it holds no platform credentials, and
+  `ctx.db` is host-proxied RPC.
+- **Not contained** (`aai dev`, and the subprocess backend) → `safeFetch`.
+  Here the host IS someone's machine: these same builtins run in the
+  developer's own process, where a model-controlled URL can reach localhost,
+  the LAN, or cloud metadata. That is the case the screen exists for.
+
+Containment is **declared by the spawner**, never inferred by the guest:
+`modal-sandbox.ts` sets `AAI_SANDBOX_CONTAINED=1` in the exec env and the
+subprocess backend does not. "Am I a guest" and "am I contained" are
+different questions — the subprocess backend runs a guest with no container
+at all, so a guest-token sniff would open egress on a developer's laptop.
+`ssrf.test.ts` pins that distinction.
+
+The residual risk in a container is prompt injection steering the model at an
+internal endpoint; accepted, because the sandbox has nothing internal worth
+reaching and an author who wants that can already write it.
 
 ### Dev/prod parity
 

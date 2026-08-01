@@ -133,6 +133,20 @@ async function runTurn(key, url, prompt) {
   return summary;
 }
 
+/** Wait for the guest's end-of-turn workspace sync to land. */
+async function waitForWorkspace(key, project, timeoutMs = 20_000) {
+  const deadline = Date.now() + timeoutMs;
+  let last;
+  for (;;) {
+    last = await api(key, `/projects/${project}`).catch(() => undefined);
+    // agent.ts is the file every starter must produce; its presence means
+    // the sync has happened rather than merely that the project exists.
+    if (last?.files?.["agent.ts"] !== undefined) return last;
+    if (Date.now() >= deadline) return last;
+    await new Promise((r) => setTimeout(r, 500));
+  }
+}
+
 /**
  * Did this turn produce something the user could actually ship?
  *
@@ -210,7 +224,12 @@ for (const [i, c] of plan.entries()) {
     const summary = await runTurn(key, session.url, c.prompt);
     // Always snapshot: the capability check reads agent.ts, and the store is
     // in-memory, so a restart erases the evidence.
-    const workspace = await api(key, `/projects/${project}`).catch(() => undefined);
+    //
+    // POLL, do not read once. The guest syncs the workspace back to the host
+    // in its onFinish handler, which can land after the stream closes — a
+    // single read races it and returns the pre-turn state, which now means
+    // an empty project and a capability check that fails everything.
+    const workspace = await waitForWorkspace(key, project);
     const expectation = EXPECTATIONS.find((e) => e.label === c.label);
     const v = verdict(summary, expectation, workspace?.files);
     results.push({

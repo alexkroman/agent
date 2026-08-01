@@ -14,7 +14,15 @@
 
 import fc from "fast-check";
 import { describe, expect, test, vi } from "vitest";
-import { isPrivateIp, resolveAndAssertPublic, ssrfSafeFetch } from "./ssrf.ts";
+import {
+  builtinFetch,
+  CONTAINED_ENV,
+  isPrivateIp,
+  pinnedFetch,
+  resolveAndAssertPublic,
+  safeFetch,
+  ssrfSafeFetch,
+} from "./ssrf.ts";
 
 // ── IP Encoding Bypass Attempts ────────────────────────────────────────
 
@@ -487,5 +495,28 @@ describe("property: isPrivateIp", () => {
         expect(isPrivateIp(`127.${b}.${c}.${d}`)).toBe(true);
       }),
     );
+  });
+});
+
+describe("builtinFetch", () => {
+  // One rule: screen only when there is no container around us.
+  test("screens by default — the self-hosted host is someone's machine", () => {
+    expect(builtinFetch({})).toBe(safeFetch);
+  });
+
+  test("opens up only when a spawner declares a real container", () => {
+    expect(builtinFetch({ [CONTAINED_ENV]: "1" })).toBe(pinnedFetch);
+  });
+
+  test("a guest is not automatically contained", () => {
+    // The subprocess backend runs a guest as a child process on the dev
+    // machine with no container: having a guest token must not open egress.
+    expect(builtinFetch({ AAI_GUEST_TOKEN: "tok" })).toBe(safeFetch);
+  });
+
+  test("only an exact 1 opts in", () => {
+    for (const v of ["0", "true", "yes", ""]) {
+      expect(builtinFetch({ [CONTAINED_ENV]: v })).toBe(safeFetch);
+    }
   });
 });

@@ -33,6 +33,7 @@ import { randomBytes } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { performance } from "node:perf_hooks";
 import { errorMessage } from "@alexkroman1/aai";
+import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
 import { ModalClient, type SandboxCreateParams } from "modal";
 import { debug } from "./_debug-log.ts";
 import { createHarnessImageResolver, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
@@ -262,7 +263,17 @@ export async function spawnModalWarm(
       mode: "binary",
       stdout: "pipe",
       stderr: "pipe",
-      env: { AAI_GUEST_TOKEN: token, AAI_GUEST_PORT: String(GUEST_PORT) },
+      // CONTAINED: a Modal Sandbox is a real container, so the network
+      // builtins drop their SSRF screen — it guards nothing a tenant cannot
+      // bypass with a raw fetch from their own tool code, and the container
+      // holds no platform credentials. Deliberately NOT set by the
+      // subprocess backend, whose "guest" is a child process on the
+      // developer's own machine.
+      env: {
+        AAI_GUEST_TOKEN: token,
+        AAI_GUEST_PORT: String(GUEST_PORT),
+        [CONTAINED_ENV]: "1",
+      },
     });
 
     const tunnels = await sb.tunnels();

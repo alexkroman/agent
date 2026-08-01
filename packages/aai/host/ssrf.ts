@@ -193,3 +193,31 @@ function requestUrl(input: Parameters<typeof globalThis.fetch>[0]): string {
  */
 export const safeFetch: typeof globalThis.fetch = (input, init) =>
   ssrfSafeFetch(requestUrl(input), init ?? {}, pinnedFetch);
+
+/**
+ * Env flag a SPAWNER sets when the runtime is wrapped in a real container.
+ * Declared by the spawner, never inferred by the guest: "am I a guest" and
+ * "am I contained" are different questions, and the subprocess backend runs
+ * a guest with no container around it at all.
+ */
+export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
+
+/**
+ * The fetch the network builtins should use.
+ *
+ * One rule: **screen only when there is no container around us.**
+ *
+ * Inside a real sandbox the screen protects nothing a tenant cannot bypass in
+ * one line — their own tool code has open egress by design, so a guard on
+ * `visit_webpage` constrains the model, not the author. The container is the
+ * boundary, it holds no platform credentials, and `ctx.db` goes through host
+ * RPC.
+ *
+ * Everywhere else the host IS someone's machine — `aai dev` runs these same
+ * builtins in the developer's own process, where a model-controlled URL can
+ * reach localhost, the LAN, or cloud metadata. That is where the screen earns
+ * its keep, so that is where it stays.
+ */
+export function builtinFetch(env: NodeJS.ProcessEnv = process.env): typeof globalThis.fetch {
+  return env[CONTAINED_ENV] === "1" ? pinnedFetch : safeFetch;
+}

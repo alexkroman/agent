@@ -28,6 +28,7 @@ function signature(text) {
 function summarize(rows) {
   const ok = rows.filter((r) => !r.error);
   return {
+    shippable: ok.filter((r) => r.shippable).length,
     green: ok.filter((r) => r.endedGreen).length,
     total: rows.length,
     toolCalls: ok.reduce((a, r) => a + (r.toolCalls ?? 0), 0),
@@ -55,17 +56,18 @@ for (const r of rows) {
   const delta = (now, was) => (was === undefined ? "" : now === was ? " (=)" : ` (${was}→${now})`);
   console.log(
     pad(r.label.slice(0, 44), 46),
-    pad(r.endedGreen ? "green" : "RED", 8),
+    pad(r.shippable ? "SHIP" : r.endedGreen ? "built" : "RED", 8),
     pad(`${r.toolCalls}${delta(r.toolCalls, b?.toolCalls)}`, 7),
     pad(`${r.failedTestAgentRuns}${delta(r.failedTestAgentRuns, b?.failedTestAgentRuns)}`, 9),
     r.seconds,
+    (r.reasons ?? []).length ? ` [${r.reasons.join(" ")}]` : "",
   );
 }
 
 const s = summarize(rows);
 console.log("-".repeat(80));
 console.log(
-  `TOTAL  green ${s.green}/${s.total}  toolCalls ${s.toolCalls}  repairs ${s.repairs}  ` +
+  `TOTAL  shippable ${s.shippable}/${s.total}  built ${s.green}/${s.total}  toolCalls ${s.toolCalls}  repairs ${s.repairs}  ` +
     `${Math.round(s.seconds / 60)}min` +
     (s.harnessErrors ? `  harnessErrors ${s.harnessErrors}` : ""),
 );

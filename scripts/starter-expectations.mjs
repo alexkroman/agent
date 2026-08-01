@@ -89,11 +89,15 @@ export const EXPECTATIONS = [
   },
   {
     label: "A text adventure in the style of Infocom",
+    // The prompt reads "inventory (take/drop), location, and puzzle flags" —
+    // the parenthetical DEFINES inventory as take/drop, so requiring a
+    // separate inventory tool over-specifies the ask (it wrongly failed an
+    // agent with take_item/drop_item/look_around/move/solve_puzzle).
     capabilities: [
       ["take", "get", "pick"],
       ["drop"],
       ["move", "go", "walk", "travel", "look"],
-      ["inventory", "items"],
+      ["puzzle", "flag", "solve"],
     ],
     minTools: 4,
   },

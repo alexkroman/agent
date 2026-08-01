@@ -7,7 +7,8 @@
  *
  * The network-capable builtins (`web_search`, `visit_webpage`,
  * `get_page_design`, `fetch_json`)
- * take a fully model-controlled URL, so they default to {@link safeFetch} —
+ * take a fully model-controlled URL, so they default to {@link builtinFetch} —
+ * SSRF-screened unless a spawner has declared a real container around us —
  * SSRF-protected by construction. Callers may inject a different `fetch` for
  * tests, but omitting it can no longer silently yield an unprotected
  * `globalThis.fetch`: that default previously left the self-hosted path
@@ -29,7 +30,7 @@ import { calculate } from "./_calculate.ts";
 import { createRunCode, type RunCodeExecutor } from "./builtin-run-code.ts";
 import { createGetPageDesign } from "./page-design.ts";
 import { readNotes, writeNote } from "./session-notes.ts";
-import { safeFetch } from "./ssrf.ts";
+import { builtinFetch } from "./ssrf.ts";
 
 const fetchSignal = () => AbortSignal.timeout(FETCH_TIMEOUT_MS);
 
@@ -132,7 +133,7 @@ function parseDuckDuckGoHtml(html: string): SearchResult[] {
 }
 
 function createWebSearch(
-  fetchFn = safeFetch,
+  fetchFn = builtinFetch(),
 ): ToolDef<typeof webSearchParams> & { guidance: string } {
   return {
     guidance:
@@ -168,7 +169,7 @@ const visitWebpageParams = z.object({
 });
 
 function createVisitWebpage(
-  fetchFn = safeFetch,
+  fetchFn = builtinFetch(),
 ): ToolDef<typeof visitWebpageParams> & { guidance: string } {
   return {
     guidance:
@@ -240,7 +241,7 @@ function sanitizeHeaders(
 }
 
 function createFetchJson(
-  fetchFn = safeFetch,
+  fetchFn = builtinFetch(),
 ): ToolDef<typeof fetchJsonParams> & { guidance: string } {
   return {
     guidance: "Use fetch_json to call REST APIs and retrieve structured JSON data.",
@@ -383,7 +384,7 @@ function createCalculate(): ToolDef<typeof calculateParams> & { guidance: string
 type BuiltinToolOptions = {
   /**
    * Override the fetch implementation. Defaults to the SSRF-protected
-   * {@link safeFetch} — override only in tests.
+   * {@link builtinFetch} — override only in tests.
    */
   fetch?: typeof globalThis.fetch;
   /**
@@ -412,7 +413,7 @@ const FETCH_BUILTINS: Record<
 > = {
   web_search: createWebSearch,
   visit_webpage: createVisitWebpage,
-  get_page_design: (fetchImpl = safeFetch) => createGetPageDesign(fetchImpl),
+  get_page_design: (fetchImpl = builtinFetch()) => createGetPageDesign(fetchImpl),
   fetch_json: createFetchJson,
 };
 
