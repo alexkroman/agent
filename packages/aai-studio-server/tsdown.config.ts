@@ -13,13 +13,4 @@ export default defineConfig([
     outDir: "dist",
     deps: { alwaysBundle: [/^aai$/, /^aai-server$/] },
   },
-  {
-    // Build-worker CLI: run by the `studio_build` Modal Function.
-    entry: ["studio-build-entry.ts"],
-    format: "esm",
-    platform: "node",
-    target: "node22",
-    outDir: "dist",
-    deps: { alwaysBundle: [/^aai$/, /^aai-server$/] },
-  },
 ]);

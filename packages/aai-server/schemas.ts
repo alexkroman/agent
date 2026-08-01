@@ -31,6 +31,11 @@ export const DeployBodySchema = z.object({
     .refine((s) => !RESERVED_SLUGS.has(s), "Reserved slug")
     .optional(),
   env: z.record(z.string(), z.string()).optional(),
+  // "warn" downgrades the missing-credential preflight to warnings in the
+  // response (`aai deploy --allow-missing-secrets`) — the caller's own
+  // agent, so letting them opt into a not-yet-startable deploy is safe;
+  // secrets attach to the slug afterwards via `aai secret put`.
+  credentialPolicy: z.enum(["require", "warn"]).optional(),
   worker: z.string().min(1).max(MAX_WORKER_SIZE),
   clientFiles: z
     .record(SafePathSchema, z.string().max(MAX_WORKER_SIZE))

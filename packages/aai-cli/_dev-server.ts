@@ -143,7 +143,10 @@ export async function loadAgentDef(
   cwd: string,
   evaluate: (code: string) => Promise<AgentDef>,
 ): Promise<AgentDef> {
-  return evaluate(await buildWorker(cwd));
+  // `runtime: false`: the dev server builds its runtime in-process from the
+  // same installed SDK the wrapper would bundle, and inlining the runtime +
+  // provider SDKs on every file-watch rebuild would make reloads multi-second.
+  return evaluate(await buildWorker(cwd, { runtime: false }));
 }
 
 // ─── File watching ──────────────────────────────────────────────────────────

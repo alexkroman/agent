@@ -19,8 +19,9 @@ exports[`cli usage snapshots > aai build --help 1`] = `
 "Bundle agent without deploying (build)
 USAGE build [OPTIONS]
 OPTIONS
-       --json    Output JSON (auto-detected in non-TTY)
-  --skipTests    Skip running tests before build"
+           --json    Output JSON (auto-detected in non-TTY)
+      --skipTests    Skip running tests before build
+  --skipTypecheck    Skip type checking before build"
 `;
 
 exports[`cli usage snapshots > aai delete --help 1`] = `
@@ -36,7 +37,9 @@ exports[`cli usage snapshots > aai deploy --help 1`] = `
 USAGE deploy [OPTIONS]
 OPTIONS
   -s, --server=<server>    Platform server URL
-                 --json    Output JSON (auto-detected in non-TTY)"
+                 --json    Output JSON (auto-detected in non-TTY)
+  --allowMissingSecrets    Deploy even when the agent's providers are missing credentials (the server warns instead of rejecting; set them afterwards with \`aai secret put\`)
+        --skipTypecheck    Skip type checking before deploy"
 `;
 
 exports[`cli usage snapshots > aai dev --help 1`] = `

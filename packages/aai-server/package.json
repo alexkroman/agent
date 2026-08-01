@@ -13,7 +13,7 @@
     "build": "tsdown",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
-    "test:integration": "VITEST_INCLUDE=orchestrator-integration.test.ts,ws-integration.test.ts vitest run -c ../../vitest.slow.config.ts",
+    "test:integration": "VITEST_INCLUDE=orchestrator-integration.test.ts,ws-integration.test.ts,workspace-build-integration.test.ts vitest run -c ../../vitest.slow.config.ts",
     "check:integration": "pnpm run test:integration",
     "predeploy:modal": "node ../../scripts/ensure-guest-harness.mjs",
     "deploy:modal": "modal deploy modal_deploy.py",

@@ -45,9 +45,9 @@ const CLIENT_FILE_CACHE_MAX = 64;
 // invalidate() — so on this replica a long TTL is safe. The TTL exists only
 // to bound cross-replica staleness (a deploy landing on another replica
 // invalidates *its* cache, not ours); 10 minutes keeps that window short
-// while sparing hosts the up-to-10 MB S3 refetch on every cold start.
+// while sparing hosts the up-to-MAX_WORKER_SIZE S3 refetch on every cold start.
 const WORKER_CODE_CACHE_TTL_MS = 10 * 60 * 1000;
-// Bundles range from KBs to MAX_WORKER_SIZE (10 MB), so an entry-count cap
+// Bundles range from KBs to MAX_WORKER_SIZE (30 MB), so an entry-count cap
 // is either too tight for many small agents or too loose for a few large
 // ones — budget by total bytes instead and evict LRU until under budget.
 const WORKER_CODE_CACHE_MAX_BYTES = 128 * 1024 * 1024;

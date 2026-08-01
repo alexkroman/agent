@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
+import { MAX_WORKER_SIZE } from "./constants.ts";
 import { createTestOrchestrator, deployAgent } from "./test-utils.ts";
 
 // ── E2E HTTP Malformed Payload Rejection ───────────────────────────────
@@ -60,7 +61,7 @@ describe("e2e HTTP malformed payload rejection", () => {
       },
       body: JSON.stringify({
         env: { MY_SECRET: "value" },
-        worker: "x".repeat(20_000_001), // Likely exceeds MAX_WORKER_SIZE
+        worker: "x".repeat(MAX_WORKER_SIZE + 1),
         clientFiles: {},
       }),
     });

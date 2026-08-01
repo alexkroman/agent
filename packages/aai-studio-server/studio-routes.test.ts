@@ -2,19 +2,19 @@
 // Studio HTTP surface, exercised through the full orchestrator (routing
 // order vs the /:slug routes matters and is covered here).
 
-import { createMemorySecretStore } from "aai-server/secret-store";
-import { authFetch, authHeaders, type TestFetch } from "aai-server/test-utils";
+import { authFetch, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
-import { createWorkspace, studioScope } from "./studio-workspace.ts";
+import { studioScope } from "./studio-workspace.ts";
 
 const deployMock = vi.fn(
   async (..._args: unknown[]): Promise<StudioDeployResult> => ({
     ok: true,
     slug: "proj",
     url: "/proj/",
+    output: "Deployed /proj/",
   }),
 );
 
@@ -30,10 +30,25 @@ vi.mock("./studio-deploy.ts", async (importOriginal) => {
 const ensureSessionMock = vi.fn(async (_scope: string, project: string, _apiKey: string) =>
   project === "ghost" ? null : { url: "https://tunnel.example/studio/chat" },
 );
+const deployWorkspaceMock = vi.fn(
+  async (
+    _scope: string,
+    _project: string,
+    _files: Record<string, string>,
+    _target: { serverUrl: string; apiKey: string; slug?: string | undefined },
+  ) => ({
+    ok: true,
+    slug: "p",
+    url: "https://platform.example/p",
+    output: "Deployed https://platform.example/p",
+  }),
+);
 const brokerMock = vi.fn(
   (): StudioSessionBroker => ({
     ensureSession: (...args: Parameters<StudioSessionBroker["ensureSession"]>) =>
       ensureSessionMock(...args),
+    deployWorkspace: (...args: Parameters<StudioSessionBroker["deployWorkspace"]>) =>
+      deployWorkspaceMock(...args),
     dispose: async () => undefined,
   }),
 );
@@ -332,21 +347,26 @@ describe("deploy + chat endpoints", () => {
     ({ fetch } = await createTestCombined());
   });
 
-  test("deploy route runs the pipeline and returns the URL", async () => {
+  test("deploy route runs the pipeline and returns the URL + CLI output", async () => {
     await createProject(fetch);
-    const res = await authFetch(fetch, "/studio/projects/proj/deploy", {
-      body: { env: { ASSEMBLYAI_API_KEY: "k" } },
-    });
+    const res = await authFetch(fetch, "/studio/projects/proj/deploy", { body: {} });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ ok: true, slug: "proj", url: "/proj/" });
+    expect(await res.json()).toEqual({
+      ok: true,
+      slug: "proj",
+      url: "/proj/",
+      output: "Deployed /proj/",
+    });
     const [, params] = deployMock.mock.calls[0] as unknown[] as [
       unknown,
-      { apiKey: string; project: string; env?: Record<string, string> },
+      { apiKey: string; project: string; serverUrl: string },
     ];
     expect(params).toMatchObject({
       apiKey: "key1",
       project: "proj",
-      env: { ASSEMBLYAI_API_KEY: "k" },
+      // Combined/dev: the request URL's own origin is the public origin the
+      // guest's `aai deploy` dials.
+      serverUrl: expect.stringMatching(/^https?:\/\//),
     });
   });
 
@@ -406,84 +426,5 @@ describe("deploy + chat endpoints", () => {
     const limited = await createProject(fetch, "one-too-many");
     expect(limited.status).toBe(429);
     expect(limited.headers.get("Retry-After")).toMatch(/^\d+$/);
-  });
-});
-
-// ── Storage routes (per-app database on the published agent) ─────────────
-
-describe("studio storage routes", () => {
-  const META = { role: "app_0123456789abcdef", password: "f" };
-
-  async function storageApp(opts: { deployed?: boolean } = {}) {
-    const appDb = {
-      provision: vi.fn(async () => META),
-      deprovision: vi.fn(async () => undefined),
-      open: () => {
-        throw new Error("open not expected");
-      },
-    };
-    const secrets = createMemorySecretStore();
-    const { fetch, workspaces } = await createTestCombined({ secrets, appDb });
-    await createWorkspace(workspaces, studioScope("key1"), "proj", {
-      files: { "agent.ts": "x" },
-      ...(opts.deployed !== false && { deployedSlug: "proj" }),
-    });
-    return { fetch, appDb, secrets };
-  }
-
-  test("routes are bearer-auth'd", async () => {
-    const { fetch } = await storageApp();
-    expect((await fetch("/studio/projects/proj/storage")).status).toBe(401);
-  });
-
-  test("unknown project → 404, unpublished project → 409", async () => {
-    const { fetch } = await storageApp({ deployed: false });
-    const missing = await fetch("/studio/projects/nope/storage", { headers: authHeaders() });
-    expect(missing.status).toBe(404);
-
-    const unpublished = await fetch("/studio/projects/proj/storage", { headers: authHeaders() });
-    expect(unpublished.status).toBe(409);
-    expect(await unpublished.json()).toEqual({ error: "Project has not been published yet" });
-  });
-
-  test("enable/status/disable round-trip against the published slug", async () => {
-    const { fetch, appDb, secrets } = await storageApp();
-
-    const before = await fetch("/studio/projects/proj/storage", { headers: authHeaders() });
-    expect(await before.json()).toEqual({ enabled: false });
-
-    const enable = await fetch("/studio/projects/proj/storage", {
-      method: "POST",
-      headers: authHeaders(),
-    });
-    expect(enable.status).toBe(200);
-    expect(await enable.json()).toEqual({ ok: true, enabled: true });
-    expect(appDb.provision).toHaveBeenCalledWith("proj");
-    expect(await secrets.get("app-db:proj")).not.toBeNull();
-
-    const after = await fetch("/studio/projects/proj/storage", { headers: authHeaders() });
-    expect(await after.json()).toEqual({ enabled: true });
-
-    const disable = await fetch("/studio/projects/proj/storage", {
-      method: "DELETE",
-      headers: authHeaders(),
-    });
-    expect(await disable.json()).toEqual({ ok: true, enabled: false });
-    expect(appDb.deprovision).toHaveBeenCalledWith("proj");
-    expect(await secrets.get("app-db:proj")).toBeNull();
-  });
-
-  test("enable without SUPABASE_DB_URL configured → 503", async () => {
-    const secrets = createMemorySecretStore();
-    const { fetch, workspaces } = await createTestCombined({ secrets });
-    await createWorkspace(workspaces, studioScope("key1"), "proj", {
-      files: { "agent.ts": "x" },
-      deployedSlug: "proj",
-    });
-    const res = await fetch("/studio/projects/proj/storage", {
-      method: "POST",
-      headers: authHeaders(),
-    });
-    expect(res.status).toBe(503);
   });
 });

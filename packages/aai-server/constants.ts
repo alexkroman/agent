@@ -28,8 +28,12 @@ export const SANDBOX_MAX_SESSIONS = Number(process.env.SANDBOX_MAX_SESSIONS) || 
  */
 export const SANDBOX_MAX_REPLICAS = Number(process.env.SANDBOX_MAX_REPLICAS) || 4;
 
-/** 10 MB. */
-export const MAX_WORKER_SIZE = 10_000_000;
+/**
+ * 30 MB. Workers ship their own SDK runtime + provider SDKs (the CLI
+ * wrapper's `__aaiCreateRuntime` — see worker-bundler.ts), which is ~8 MB
+ * minified before any user code; the cap bounds user code + assets on top.
+ */
+export const MAX_WORKER_SIZE = 30_000_000;
 
 /**
  * How long shutdown waits for live sessions to end before force-closing them.

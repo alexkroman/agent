@@ -19,7 +19,7 @@
  * removal.
  *
  * Two consumers use this list, and both exist so no copy of it can go stale:
- * `studio-bundle.ts` turns a bad subpath into an error that names the valid
+ * the studio system prompt names the valid
  * ones, and `studio-prompt.ts` interpolates it into the system prompt so the
  * agent doesn't have to guess at all. Hard-coding either would just move the
  * drift somewhere new — the next rename would leave the studio confidently
@@ -65,7 +65,7 @@ let cached: string[] | undefined;
  * Returns `[]` when the package.json can't be found or parsed. Callers must
  * treat an empty list as "unknown" and skip their check rather than reject:
  * this module improves diagnostics and prompt accuracy, it is not the import
- * *policy* (`ALLOWED_PACKAGES` in `studio-bundle.ts` is), so a failure to read
+ * *policy*, so a failure to read
  * it must never turn a legal import into a build error.
  */
 export function sdkSubpaths(from: string = import.meta.dirname): string[] {
@@ -99,19 +99,6 @@ function readSubpaths(from: string): string[] {
 /** Full specifiers the agent may import, e.g. `@alexkroman1/aai/llm`. */
 export function sdkSpecifiers(from?: string): string[] {
   return sdkSubpaths(from).map((sub) => (sub === "" ? SDK_PACKAGE : `${SDK_PACKAGE}/${sub}`));
-}
-
-/**
- * Is `spec` an SDK import that resolves? `false` only for a *known-bad*
- * subpath — an unreadable exports map yields `true` so the build proceeds and
- * Vite reports whatever it finds.
- */
-export function isKnownSdkSpecifier(spec: string, from?: string): boolean {
-  const known = sdkSubpaths(from);
-  if (known.length === 0) return true;
-  if (spec === SDK_PACKAGE) return known.includes("");
-  const sub = spec.startsWith(`${SDK_PACKAGE}/`) ? spec.slice(SDK_PACKAGE.length + 1) : undefined;
-  return sub === undefined || known.includes(sub);
 }
 
 /** Test-only: clear the memoized exports list. */

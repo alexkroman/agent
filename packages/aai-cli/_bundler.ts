@@ -1,6 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { hash } from "node:crypto";
+import { mkdtemp, rm, writeFile } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import path from "node:path";
+import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai";
 import { type CommandResult, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
@@ -33,23 +37,35 @@ export async function buildAgentBundle(
 }
 
 /**
- * Import the worker ESM via a `data:` URL and return the AgentDef default
- * export. All dependencies are bundled in, so the module needs no filesystem
- * presence to evaluate.
+ * Import the worker ESM from a uniquely named temp file and return the
+ * AgentDef default export. A real `file:` URL, not a `data:` URL: deploy
+ * bundles ship the SDK runtime, whose CJS interop calls
+ * `createRequire(import.meta.url)` — which rejects anything that isn't a
+ * file URL or absolute path. (The guest harness imports bundles the same
+ * way, for the same reason.) The file is removed after import; the module
+ * lives on in memory.
  *
- * Each call imports a uniquely-shaped URL, and Node's ESM registry never
- * evicts — so every call retains one bundle for the process lifetime. That is
- * fine for one-shot commands (`aai build`); long-lived callers must go
- * through `createWorkerEvaluator` to at least dedupe identical builds.
- * Evaluating in a discardable context is not an option: tool `execute`
- * functions from the returned AgentDef are called in-process by the dev
- * runtime, which rules out worker threads, and `node:vm` ESM evaluation is
- * still flagged experimental.
+ * Each call imports a unique URL, and Node's ESM registry never evicts — so
+ * every call retains one bundle for the process lifetime. That is fine for
+ * one-shot commands (`aai build`); long-lived callers must go through
+ * `createWorkerEvaluator` to at least dedupe identical builds. Evaluating in
+ * a discardable context is not an option: tool `execute` functions from the
+ * returned AgentDef are called in-process by the dev runtime, which rules
+ * out worker threads, and `node:vm` ESM evaluation is still flagged
+ * experimental.
  */
 export async function evalWorkerBundle(code: string): Promise<AgentDef> {
-  // Import errors propagate as-is: they carry the agent code's own failure
-  // (syntax error, throwing top-level code), which is the useful message.
-  const mod = await import(`data:text/javascript;base64,${Buffer.from(code).toString("base64")}`);
+  const dir = await mkdtemp(path.join(tmpdir(), "aai-worker-"));
+  const file = path.join(dir, "worker.mjs");
+  let mod: { default?: unknown };
+  try {
+    await writeFile(file, code, "utf-8");
+    // Import errors propagate as-is: they carry the agent code's own failure
+    // (syntax error, throwing top-level code), which is the useful message.
+    mod = await import(pathToFileURL(file).href);
+  } finally {
+    await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+  }
   const agentDef = (mod.default ?? mod) as AgentDef;
 
   validateAgentExport(agentDef);

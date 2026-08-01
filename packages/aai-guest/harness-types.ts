@@ -55,6 +55,31 @@ export type AgentDef = {
   maxSteps?: number;
 };
 
+// ---- Bundle-shipped runtime --------------------------------------------------
+
+/**
+ * The session runtime a worker bundle constructs for itself — the return
+ * value of its `__aaiCreateRuntime` export, backed by the SDK version the
+ * bundle was BUILT with (bundled in by the CLI's worker wrapper), never by
+ * an SDK the harness ships. Deliberately loose: the harness only drives the
+ * two-method surface, and the ws/opts shapes belong to the bundle's SDK.
+ */
+export type GuestRuntime = {
+  startSession(ws: unknown, opts: unknown): void;
+  shutdown(): Promise<void>;
+};
+
+/**
+ * The bundle's `__aaiCreateRuntime` export. The harness↔bundle contract,
+ * kept deliberately tiny so it can stay stable across SDK versions:
+ * `{ env, db?, runCode? }` in, `{ startSession, shutdown }` out.
+ */
+export type CreateGuestRuntime = (opts: {
+  env: Record<string, string>;
+  db?: DbAdapter;
+  runCode?: (code: string) => Promise<string | { error: string }>;
+}) => GuestRuntime;
+
 // ---- JSON-RPC 2.0 message shapes --------------------------------------------
 
 export type JsonRpcRequest = {

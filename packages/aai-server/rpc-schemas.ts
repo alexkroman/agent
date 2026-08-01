@@ -146,18 +146,35 @@ export type StudioSessionInitParams = {
   maxSteps: number;
 };
 
+/**
+ * Params of the host→guest `workspace/deploy` request — Publish: the guest
+ * materializes the files under its toolchain root and runs the literal
+ * `aai deploy` CLI against `serverUrl` on the CALLER'S OWN key (see
+ * aai-guest/studio-publish.ts). Build, config extraction, ownership, and
+ * the credential preflight all run exactly as for a laptop deploy; the
+ * CLI's output rides back for the chat.
+ */
+export type WorkspaceDeployParams = {
+  files: Record<string, string>;
+  /** Public platform origin the guest's CLI deploys to. */
+  serverUrl: string;
+  /** The caller's own API key — never a platform credential. */
+  apiKey: string;
+  /** Existing slug to redeploy; omit and the deploy claims/generates one. */
+  slug?: string;
+};
+
 export type GuestRpcSchema = {
   requestsOut: {
     "bundle/load": { params: BundleLoadParams; result: unknown };
     "tool/execute": { params: ToolExecuteParams; result: unknown };
     "studio/session-init": { params: StudioSessionInitParams; result: unknown };
+    "workspace/deploy": { params: WorkspaceDeployParams; result: unknown };
     /** Session-aware idleness: the host's idle eviction asks before killing. */
     status: { params: undefined; result: unknown };
   };
   requestsIn: {
     "db/query": { params: unknown; result: unknown };
-    /** Guest coding agent asks the host to build its workspace (Vite). */
-    "studio/build": { params: unknown; result: unknown };
     /** End-of-turn workspace write-back into the project store. */
     "studio/sync-workspace": { params: unknown; result: unknown };
     /** End-of-turn conversation snapshot into the project's chat row. */

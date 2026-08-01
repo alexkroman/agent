@@ -62,6 +62,7 @@ function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
 function makeState(overrides?: Partial<HarnessState>): HarnessState {
   return {
     agent: null,
+    createRuntime: null,
     env: Object.freeze({}),
     storageEnabled: false,
     runtime: null,
@@ -70,6 +71,14 @@ function makeState(overrides?: Partial<HarnessState>): HarnessState {
     ...overrides,
   };
 }
+
+/**
+ * The factory export every real bundle carries (the CLI wrapper bundles the
+ * user's SDK runtime behind it) — the fixture version returns an inert
+ * two-method runtime, which is all the harness contract demands.
+ */
+const FAKE_RUNTIME_EXPORT = `export const __aaiCreateRuntime = () =>
+  ({ startSession: () => undefined, shutdown: () => Promise.resolve() });`;
 
 const TRIAL_OPTS = { storageEnabled: false, env: Object.freeze({}) };
 
@@ -228,6 +237,7 @@ describe("bundle/load + dispatch", () => {
     const state = makeState();
     const code = `
       export const __aaiConfig = { name: "from-bundle" };
+      ${FAKE_RUNTIME_EXPORT}
       export default {
         name: "from-bundle",
         systemPrompt: "p",
@@ -271,7 +281,8 @@ describe("bundle/load + dispatch", () => {
   test("a repeat bundle/load replaces the loaded agent", async () => {
     const state = makeState();
     const mk = (reply: string) =>
-      `export default { name: "x", systemPrompt: "p", greeting: "g",
+      `${FAKE_RUNTIME_EXPORT}
+      export default { name: "x", systemPrompt: "p", greeting: "g",
         tools: { t: { description: "t", execute: () => ${JSON.stringify(reply)} } } };`;
     await handleRequest(
       { jsonrpc: "2.0", id: 1, method: "bundle/load", params: { code: mk("v1"), env: {} } },
@@ -304,7 +315,8 @@ describe("bundle/load + dispatch", () => {
         id: 1,
         method: "bundle/load",
         params: {
-          code: "export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };",
+          code: `${FAKE_RUNTIME_EXPORT}
+            export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };`,
           env: {},
         },
       },
@@ -313,6 +325,29 @@ describe("bundle/load + dispatch", () => {
     expect(shutdown).toHaveBeenCalledOnce();
     // The next session builds a fresh runtime from the NEW bundle.
     expect(state.runtime).toBeNull();
+  });
+
+  test("a bundle without __aaiCreateRuntime is rejected at load", async () => {
+    const state = makeState();
+    dispatchMessage(
+      {
+        jsonrpc: "2.0",
+        id: 9,
+        method: "bundle/load",
+        params: {
+          code: "export default { name: 'x', systemPrompt: 'p', greeting: 'g', tools: {} };",
+          env: {},
+        },
+      } as JsonRpcMessage,
+      state,
+    );
+    await vi.waitFor(() => {
+      const last = sent.at(-1) as { id?: number; error?: { message: string } };
+      expect(last?.id).toBe(9);
+      expect(last?.error?.message).toContain("__aaiCreateRuntime");
+    });
+    // Nothing was installed — the next session cannot run stale state.
+    expect(state.agent).toBeNull();
   });
 
   test("bundle/load without code answers -32602", async () => {
@@ -384,7 +419,10 @@ describe("ensureRuntime", () => {
   });
 
   test("is created once and reused across sessions", () => {
-    const state = makeState({ agent: makeAgent() });
+    const state = makeState({
+      agent: makeAgent(),
+      createRuntime: () => ({ startSession: () => undefined, shutdown: () => Promise.resolve() }),
+    });
     const first = ensureRuntime(state);
     expect(state.runtime).toBe(first);
     expect(ensureRuntime(state)).toBe(first);

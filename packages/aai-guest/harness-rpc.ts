@@ -82,7 +82,7 @@ export const pendingHostRequests = new Map<
 
 /**
  * Send an RPC request to the host and wait for its response. Exported for
- * the studio session (guest→host `studio/build`, `studio/sync-workspace`,
+ * the studio session (guest→host `studio/sync-workspace`,
  * `studio/persist-chat`); `timeoutMs` exists because a workspace build
  * legitimately outlives the default deadline.
  */

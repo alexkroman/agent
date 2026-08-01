@@ -5,6 +5,7 @@ import {
   ServerMessageSchema,
 } from "@alexkroman1/aai/protocol";
 import { describe, expect, test } from "vitest";
+import { MAX_WORKER_SIZE } from "./constants.ts";
 import { IsolateConfigSchema } from "./rpc-schemas.ts";
 import {
   AgentMetadataSchema,
@@ -168,7 +169,7 @@ describe("DeployBodySchema", () => {
   test("rejects oversized client file", () => {
     const result = DeployBodySchema.safeParse({
       worker: "code",
-      clientFiles: { "huge.js": "x".repeat(10_000_001) },
+      clientFiles: { "huge.js": "x".repeat(MAX_WORKER_SIZE + 1) },
       agentConfig: TEST_AGENT_CONFIG,
     });
     expect(result.success).toBe(false);

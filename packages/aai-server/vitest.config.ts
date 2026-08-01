@@ -20,7 +20,13 @@ export default defineConfig({
     // parallel — the tests then fail as timeouts with nothing actually wrong.
     // The headroom keeps that signal honest; it is not covering a slow test.
     testTimeout: 20_000,
-    exclude: ["orchestrator-integration.test.ts", "ws-integration.test.ts", "node_modules", "dist"],
+    exclude: [
+      "orchestrator-integration.test.ts",
+      "ws-integration.test.ts",
+      "workspace-build-integration.test.ts",
+      "node_modules",
+      "dist",
+    ],
     coverage: {
       exclude: [...sharedCoverageExclude],
       // Ratchet: floors only move up (functions eased 88→85 once, when the

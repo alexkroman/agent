@@ -93,6 +93,11 @@ export function createStudioProxy(
       // Headers iteration yields lowercased names per the Fetch spec.
       if (!STRIP_REQUEST_HEADERS.has(name)) headers.set(name, value);
     }
+    // The studio service needs the PUBLIC origin (this service's), not its
+    // own upstream address — Publish hands it to the guest's `aai deploy`
+    // as the platform to dial (see studio-routes' requestPublicOrigin).
+    headers.set("x-forwarded-host", url.host);
+    headers.set("x-forwarded-proto", url.protocol.replace(/:$/, ""));
 
     const method = c.req.method;
     const hasBody = method !== "GET" && method !== "HEAD";

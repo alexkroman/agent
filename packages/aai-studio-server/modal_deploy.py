@@ -10,10 +10,10 @@ package's version changed, i.e. when a changeset touched it.
 Wiring: deploy this app, copy the printed web URL into the ``aai-server``
 Modal Secret as ``STUDIO_UPSTREAM_URL``, and redeploy the agent app — its
 ``server`` function then boots in agent mode and reverse-proxies the studio
-surface here, keeping one public origin. Studio builds run in this app's
-``studio_build`` function (STUDIO_BUILD_MODAL_APP env overrides), so the
-build entry's code — which lives in this package — deploys with it: a
-changeset touching this package ships both, and they cannot skew.
+surface here, keeping one public origin. Studio builds run INSIDE each
+project's guest sandbox through the aai CLI's own bundlers (see
+aai-guest/studio-build.ts) — there is no build function or build backend
+anymore.
 
     modal deploy packages/aai-studio-server/modal_deploy.py
     # or: pnpm --filter aai-studio-server deploy:modal
@@ -75,7 +75,6 @@ image = (
             "NODE_ENV": "production",
             "PORT": str(PORT),
             "GUEST_HARNESS_PATH": "/app/packages/aai-guest/dist/harness.mjs",
-            "STUDIO_BUILD_BACKEND": "modal",
             "MODAL_SANDBOX_REGION": REGION,
         }
     )
@@ -105,43 +104,3 @@ def studio() -> None:
     subprocess.Popen(
         ["node", "packages/aai-studio-server/dist/index.mjs"], cwd="/app", env=env
     )
-
-
-# The studio build worker. Both services ship each studio build here (see
-# studio-build-runner.ts) so Vite/Rollup over untrusted workspace trees
-# never competes with live voice sessions for a web container's CPU — and
-# never runs in a process that holds platform credentials. Deliberately
-# **no secrets attached**: a build needs the image's node_modules and
-# nothing else. Same image as the services, so the build sees exactly the
-# dependency tree the in-process path used.
-@app.function(image=image, region=REGION, cpu=2, memory=2048, timeout=300)
-def studio_build(request: str) -> str:
-    """Run one studio workspace build (worker and/or client) out of process.
-
-    ``request``/return value are the JSON wire format defined in
-    studio-build-protocol.ts. Build failures come back as data in the
-    response (the coding agent acts on them); a raised error here means the
-    build entry itself broke.
-    """
-    with tempfile.TemporaryDirectory() as td:
-        request_path = Path(td) / "request.json"
-        response_path = Path(td) / "response.json"
-        request_path.write_text(request)
-        proc = subprocess.run(
-            [
-                "node",
-                "packages/aai-studio-server/dist/studio-build-entry.mjs",
-                str(request_path),
-                str(response_path),
-            ],
-            cwd="/app",
-            capture_output=True,
-            text=True,
-            timeout=280,
-        )
-        if response_path.exists():
-            return response_path.read_text()
-        raise RuntimeError(
-            f"studio build entry wrote no response (exit {proc.returncode}): "
-            f"{proc.stderr[-2000:]}"
-        )

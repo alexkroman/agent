@@ -6,7 +6,8 @@
 import type { UIMessage } from "ai";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { ChatPanel, Composer, toBlocks } from "./chat.tsx";
+import { ChatPanel, Composer } from "./chat.tsx";
+import { toBlocks } from "./tool-row.tsx";
 
 function message(parts: Record<string, unknown>[]): UIMessage {
   return { id: "m1", role: "assistant", parts } as UIMessage;

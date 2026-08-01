@@ -2,8 +2,11 @@
 /**
  * Node guest-side harness entrypoint — runs the COMPLETE agent.
  *
- * The harness embeds the SDK runtime (`createRuntime`) and serves two
- * WebSocket surfaces on its tunneled port:
+ * The harness embeds NO agent runtime: the worker bundle ships its own
+ * (`__aaiCreateRuntime`, the user's installed SDK bundled in by the CLI
+ * wrapper), so a deployed agent runs exactly the runtime version it was
+ * built against and platform SDK drift cannot break it. The harness serves
+ * two WebSocket surfaces on its tunneled port:
  *
  * - `/ws` — the host control channel, authenticated by the per-sandbox
  *   bearer token (AAI_GUEST_TOKEN, delivered via the exec env; the tunnel
@@ -32,7 +35,7 @@
  * Network egress is open — the Modal container is the isolation boundary;
  * tool code and providers dial out directly, exactly as under `aai dev`.
  *
- * The harness (with the SDK runtime and provider SDKs) is bundled into one
+ * The harness (server shell + studio coding agent) is bundled into one
  * self-contained artifact and baked into the guest snapshot image.
  *
  * Run with: node harness.mjs
@@ -41,12 +44,7 @@
 import { timingSafeEqual } from "node:crypto";
 import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
-import {
-  type AgentRuntime,
-  createRuntime,
-  createServer,
-  type SessionRuntime,
-} from "@alexkroman1/aai/runtime";
+import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
 import {
   dbAdapter,
@@ -59,18 +57,23 @@ import {
 } from "./harness-rpc.ts";
 import type {
   AgentDef,
+  CreateGuestRuntime,
+  GuestRuntime,
   JsonRpcMessage,
   JsonRpcNotification,
   JsonRpcRequest,
   JsonRpcResponse,
 } from "./harness-types.ts";
 import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
+import { withBuildDir } from "./studio-build.ts";
 import {
   handleStudioRequest,
   initStudioSession,
   type StudioSession,
   type StudioSessionParams,
 } from "./studio-chat.ts";
+import { deployWorkspaceDir } from "./studio-publish.ts";
+import { materializeWorkspace } from "./studio-tools.ts";
 import { executeTool, runCode, type ToolCallRequest } from "./trial.ts";
 
 // ---- bundle/load ------------------------------------------------------------
@@ -95,6 +98,13 @@ async function importBundleModule(code: string): Promise<Record<string, unknown>
 /** Mutable state shared across requests within a single harness instance. */
 export type HarnessState = {
   agent: AgentDef | null;
+  /**
+   * The bundle's own runtime factory (`__aaiCreateRuntime`) — the SDK
+   * runtime SHIPS IN THE BUNDLE, pinned by the user's lockfile; the harness
+   * embeds none. Required at bundle/load: every deployable bundle is built
+   * by the CLI's wrapper, which always exports it.
+   */
+  createRuntime: CreateGuestRuntime | null;
   env: Readonly<Record<string, string>>;
   storageEnabled: boolean;
   /**
@@ -103,7 +113,7 @@ export type HarnessState = {
    * credentials, and inspection loads (describeBundle, the studio) carry an
    * empty env that must not fail the load.
    */
-  runtime: AgentRuntime | null;
+  runtime: GuestRuntime | null;
   /** Live client-session connections (host idle eviction asks). */
   activeSessions: number;
   /**
@@ -117,10 +127,15 @@ export type HarnessState = {
 /**
  * Load an agent ESM bundle delivered as raw JS source code.
  *
- * Bundles built by the browser studio also export `__aaiConfig` — the agent
- * config extracted *inside* the bundle (by `@alexkroman1/aai/manifest`
- * helpers bundled in). Returning it lets the host obtain the config without
- * ever evaluating user code outside the sandbox.
+ * Bundles export `__aaiConfig` — the agent config extracted *inside* the
+ * bundle (by `@alexkroman1/aai/manifest` helpers bundled in). Returning it
+ * lets the host obtain the config without ever evaluating user code outside
+ * the sandbox.
+ *
+ * Bundles also export `__aaiCreateRuntime` — the factory over THEIR OWN
+ * bundled SDK's `createRuntime` (see the CLI's worker wrapper). The harness
+ * ships no runtime of its own, so a bundle without the factory is not
+ * loadable: fail here, at load, rather than as a dangling first session.
  */
 async function loadBundle(
   state: HarnessState,
@@ -138,8 +153,16 @@ async function loadBundle(
   if (!agent || typeof agent !== "object") {
     throw new Error("Agent bundle must export an object");
   }
+  const createRuntime = (mod as { __aaiCreateRuntime?: unknown }).__aaiCreateRuntime;
+  if (typeof createRuntime !== "function") {
+    throw new Error(
+      "Agent bundle does not export __aaiCreateRuntime (the bundle-shipped SDK runtime) — " +
+        "rebuild it with a current @alexkroman1/aai-cli",
+    );
+  }
 
   state.agent = agent;
+  state.createRuntime = createRuntime as CreateGuestRuntime;
   state.env = Object.freeze({ ...params.env });
   state.storageEnabled = params.storageEnabled;
 
@@ -148,19 +171,18 @@ async function loadBundle(
 }
 
 /**
- * The runtime for the loaded bundle, created on first use. This is the
- * SDK's self-hosted path running INSIDE the sandbox: tools execute
- * in-process, providers and tool-code fetch dial out directly (open
- * egress — the container is the boundary), exactly as `aai dev` does.
- * ctx.db proxies to the host over the control channel; run_code gets this
- * guest's real executor.
+ * The runtime for the loaded bundle, created on first use — by the BUNDLE'S
+ * OWN `createRuntime` (its `__aaiCreateRuntime` export), so a deployed agent
+ * runs exactly the SDK version it was built and tested against; the harness
+ * embeds no runtime. This is the SDK's self-hosted path running INSIDE the
+ * sandbox: tools execute in-process, providers and tool-code fetch dial out
+ * directly (open egress — the container is the boundary), exactly as
+ * `aai dev` does. ctx.db proxies to the host over the control channel;
+ * run_code gets this guest's real executor.
  */
-export function ensureRuntime(state: HarnessState): AgentRuntime {
-  if (!state.agent) throw new Error("Agent not loaded");
-  state.runtime ??= createRuntime({
-    // The bundle's default export is the full agent definition (providers,
-    // tools, hooks); the harness's own AgentDef type is just its loose view.
-    agent: state.agent as never,
+export function ensureRuntime(state: HarnessState): GuestRuntime {
+  if (!(state.agent && state.createRuntime)) throw new Error("Agent not loaded");
+  state.runtime ??= state.createRuntime({
     env: { ...state.env },
     ...(state.storageEnabled ? { db: dbAdapter } : {}),
     runCode,
@@ -207,6 +229,36 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
 
     case "status": {
       sendResponse(req.id, { activeSessions: state.activeSessions });
+      break;
+    }
+
+    // Publish: run `aai deploy` IN THIS SANDBOX against a materialized
+    // snapshot of the workspace (see studio-publish.ts) — the literal CLI,
+    // so studio publishes and laptop deploys are one path, and the CLI's
+    // output rides back for the chat.
+    case "workspace/deploy": {
+      const params = req.params as
+        | { files?: unknown; serverUrl?: unknown; apiKey?: unknown; slug?: unknown }
+        | undefined;
+      if (
+        !params ||
+        typeof params.files !== "object" ||
+        params.files === null ||
+        typeof params.serverUrl !== "string" ||
+        typeof params.apiKey !== "string"
+      ) {
+        sendError(req.id, -32_602, "workspace/deploy requires { files, serverUrl, apiKey }");
+        break;
+      }
+      const files = params.files as Record<string, string>;
+      const result = await withBuildDir(files, materializeWorkspace, (dir) =>
+        deployWorkspaceDir(dir, {
+          serverUrl: params.serverUrl as string,
+          apiKey: params.apiKey as string,
+          slug: typeof params.slug === "string" ? params.slug : undefined,
+        }),
+      );
+      sendResponse(req.id, result);
       break;
     }
 
@@ -278,7 +330,7 @@ export function lazyRuntime(state: HarnessState): SessionRuntime {
       socket.on("close", () => {
         state.activeSessions = Math.max(0, state.activeSessions - 1);
       });
-      let runtime: AgentRuntime;
+      let runtime: GuestRuntime;
       try {
         runtime = ensureRuntime(state);
       } catch (err) {
@@ -307,11 +359,14 @@ function main(): void {
   // Every backend (Modal, Apple containers) gives the guest its own network
   // namespace, so binding every interface reaches no further than the
   // container — and a container that cannot be reached on its published port
-  // is the more damaging failure.
-  const host = "0.0.0.0";
+  // is the more damaging failure. AAI_GUEST_HOST exists for the integration
+  // tests, which run the harness as a bare child process with no namespace
+  // around its auth-free /websocket and so pass loopback.
+  const host = process.env.AAI_GUEST_HOST ?? "0.0.0.0";
 
   const state: HarnessState = {
     agent: null,
+    createRuntime: null,
     env: Object.freeze({}),
     storageEnabled: false,
     runtime: null,
@@ -322,7 +377,8 @@ function main(): void {
   let lastConnectedAt = Date.now();
 
   // The control channel keeps ws's default payload cap — bundle/load frames
-  // run to ~10 MB; client sessions get the protocol's own cap (applied by
+  // run to ~30 MB (workers ship their runtime); client sessions get the
+  // protocol's own cap (applied by
   // createServer's WebSocketServer).
   const controlWss = new WebSocketServer({ noServer: true });
 

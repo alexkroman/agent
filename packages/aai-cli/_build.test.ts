@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
 import { buildAgentBundle, evalWorkerBundle, executeBuild } from "./_bundler.ts";
 import { silenced, withTempDir } from "./_test-utils.ts";
@@ -20,6 +21,13 @@ async function extractConfig(worker: string): Promise<Record<string, unknown>> {
   return mod.__aaiConfig as Record<string, unknown>;
 }
 
+/**
+ * Most cases below pass `runtime: false`: they assert config self-description
+ * and bundle shape, which are orthogonal to the runtime, and inlining the
+ * runtime + provider SDKs takes ~10s per build. The deploy-shaped build
+ * (runtime included) is covered by the dedicated "ships its runtime" test
+ * and `executeBuild`, each with an explicit timeout.
+ */
 describe("buildAgentBundle", () => {
   test("throws when no agent.ts found", async () => {
     await withTempDir(async (dir) => {
@@ -36,7 +44,7 @@ describe("buildAgentBundle", () => {
           path.join(dir, "agent.ts"),
           `export default { name: "build-test-agent", systemPrompt: "Test prompt", greeting: "Hello", maxSteps: 5, tools: {} };`,
         );
-        const bundle = await buildAgentBundle(dir);
+        const bundle = await buildAgentBundle(dir, { runtime: false });
         const config = await extractConfig(bundle.worker);
         expect(config.name).toBe("build-test-agent");
         expect(config.systemPrompt).toBe("Test prompt");
@@ -73,7 +81,7 @@ export default {
 };
 `,
         );
-        const bundle = await buildAgentBundle(dir);
+        const bundle = await buildAgentBundle(dir, { runtime: false });
         const config = await extractConfig(bundle.worker);
         expect(config.name).toBe("tool-test-agent");
         expect(config.toolSchemas).toEqual([
@@ -100,8 +108,8 @@ export default {
           `const longDescriptiveVariableName = "Test prompt";
 export default { name: "minify-test-agent", systemPrompt: longDescriptiveVariableName, greeting: "Hello", maxSteps: 5, tools: {} };`,
         );
-        const plain = await buildAgentBundle(dir);
-        const minified = await buildAgentBundle(dir, { minify: true });
+        const plain = await buildAgentBundle(dir, { runtime: false });
+        const minified = await buildAgentBundle(dir, { minify: true, runtime: false });
         // Minified bundle still evaluates to the same agent config.
         const config = await extractConfig(minified.worker);
         expect(config.name).toBe("minify-test-agent");
@@ -120,7 +128,7 @@ export default { name: "minify-test-agent", systemPrompt: longDescriptiveVariabl
           path.join(dir, "agent.ts"),
           `export default { name: "vite-test", systemPrompt: "Test", greeting: "Hi", maxSteps: 5, tools: {} };`,
         );
-        const bundle = await buildAgentBundle(dir);
+        const bundle = await buildAgentBundle(dir, { runtime: false });
         // Worker must be valid ESM — check for export syntax
         expect(bundle.worker).toMatch(/export/);
         // Must be a non-trivial bundle
@@ -130,8 +138,42 @@ export default { name: "minify-test-agent", systemPrompt: longDescriptiveVariabl
   });
 });
 
+describe("deploy-shaped build (runtime included)", () => {
+  test("ships a working __aaiCreateRuntime factory", { timeout: 120_000 }, async () => {
+    await withTempDir(
+      silenced(async (dir) => {
+        await linkNodeModules(dir);
+        await writeFile(
+          path.join(dir, "agent.ts"),
+          `export default { name: "runtime-ship", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
+        );
+        const bundle = await buildAgentBundle(dir);
+        // Evaluate exactly as the guest harness does: a real file import
+        // (the bundled runtime's CJS interop rejects data: URLs).
+        const agentDef = await evalWorkerBundle(bundle.worker);
+        expect(agentDef.name).toBe("runtime-ship");
+
+        const workerPath = path.join(dir, "worker-under-test.mjs");
+        await writeFile(workerPath, bundle.worker, "utf-8");
+        const mod = await import(pathToFileURL(workerPath).href);
+        const factory = mod.__aaiCreateRuntime as (opts: Record<string, unknown>) => {
+          startSession: unknown;
+          shutdown: () => Promise<void>;
+        };
+        expect(typeof factory).toBe("function");
+        // The factory builds a real runtime from the BUNDLED SDK — the
+        // harness↔bundle contract: { env, db?, runCode? } in,
+        // { startSession, shutdown } out.
+        const runtime = factory({ env: { ASSEMBLYAI_API_KEY: "test-key" } });
+        expect(typeof runtime.startSession).toBe("function");
+        await runtime.shutdown();
+      }),
+    );
+  });
+});
+
 describe("executeBuild", () => {
-  test("returns the agent name and worker size", async () => {
+  test("returns the agent name and worker size", { timeout: 120_000 }, async () => {
     await withTempDir(
       silenced(async (dir) => {
         await linkNodeModules(dir);

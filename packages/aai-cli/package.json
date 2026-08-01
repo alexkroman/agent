@@ -18,6 +18,10 @@
     "./worker-bundler": {
       "@dev/source": "./worker-bundler.ts",
       "import": "./dist/worker-bundler.mjs"
+    },
+    "./typecheck": {
+      "@dev/source": "./typecheck.ts",
+      "import": "./dist/typecheck.mjs"
     }
   },
   "files": [
