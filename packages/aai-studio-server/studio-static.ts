@@ -15,19 +15,46 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type { AppContext } from "aai-server/context";
 import { createCachedDirReader } from "aai-server/platform-barrel";
+import { resolveSandboxBackend, type SandboxBackend } from "aai-server/sandbox-backend";
 import { SafePathSchema } from "aai-server/schemas";
 import { HTTPException } from "hono/http-exception";
 import mime from "mime-types";
 
 /**
- * All assets are same-origin; scripts are external files (no inline JS).
- * `frame-src 'self'` lets the studio preview deployed agents in an iframe;
+ * `connect-src` sources for the guest sandbox, per sandbox backend.
+ *
+ * Every asset the studio loads is same-origin, but the coding agent's chat
+ * and tool-label calls are NOT: the browser talks straight to the project's
+ * sandbox (`chatUrlFromSessionUrl` in studio-session-broker.ts), the same way
+ * voice sessions connect directly to a deployed agent. Those origins have to
+ * be here or the browser refuses the request before it is sent — which
+ * presents as a bare "Failed to fetch" in the client with NOTHING on the
+ * server, since no request was ever made.
+ *
+ * Keyed by backend rather than listing both unconditionally so a production
+ * policy never trusts loopback.
+ */
+const SANDBOX_CONNECT_SRC: Record<SandboxBackend, string> = {
+  // Modal tunnels: `https://<tunnel>.modal.host:<port>` (port is not fixed).
+  modal: "https://*.modal.host:*",
+  // apple-container publishes the guest port on loopback with a random port.
+  "apple-container": "http://127.0.0.1:*",
+};
+
+/**
+ * The studio page's CSP. Scripts are external files (no inline JS);
+ * `frame-src 'self'` lets the studio preview deployed agents in an iframe
+ * (they are served through the agent service's proxy, so same-origin);
  * `font-src 'self'` serves the self-hosted brand fonts.
  */
-const STUDIO_CSP =
-  "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
-  "connect-src 'self'; img-src 'self' data:; frame-src 'self'; font-src 'self'; " +
-  "base-uri 'none'; form-action 'none'";
+export function studioCsp(env: NodeJS.ProcessEnv = process.env): string {
+  const sandbox = SANDBOX_CONNECT_SRC[resolveSandboxBackend(env)];
+  return (
+    "default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; " +
+    `connect-src 'self' ${sandbox}; img-src 'self' data:; frame-src 'self'; font-src 'self'; ` +
+    "base-uri 'none'; form-action 'none'"
+  );
+}
 
 const FALLBACK_HTML = `<!DOCTYPE html>
 <html lang="en"><head><meta charset="utf-8"><title>AssemblyAI App Builder</title></head>
@@ -54,7 +81,7 @@ const readClientFile = createCachedDirReader(clientDir);
 
 /** `GET /` — the studio app shell (or the not-built fallback). */
 export async function handleStudioPage(c: AppContext): Promise<Response> {
-  const headers = { "Content-Security-Policy": STUDIO_CSP };
+  const headers = { "Content-Security-Policy": studioCsp() };
   const html = await readClientFile("index.html");
   return c.html(html ? html.toString("utf-8") : FALLBACK_HTML, 200, headers);
 }
