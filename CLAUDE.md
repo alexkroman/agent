@@ -1174,8 +1174,12 @@ you only need to list one package.
   missing or older than the guest package's sources — `createSandbox`
   resolves it eagerly, so an unbuilt harness otherwise fails every sandbox
   test. Staleness tracks aai-guest sources only (not the bundled SDK);
-  `GUEST_HARNESS_PATH` skips the check. Also runnable directly:
-  `node scripts/ensure-guest-harness.mjs`.
+  `GUEST_HARNESS_PATH` skips the check. The same script also runs as
+  `predev` in aai-server and aai-studio-server (so `pnpm dev:aai-server`
+  always boots with a fresh harness for subprocess-backend sandboxes) and
+  as `predeploy:modal` in both server packages (a fail-fast before the
+  remote Modal image build, which rebuilds the harness itself). Also
+  runnable directly: `node scripts/ensure-guest-harness.mjs`.
 - Unit test projects (aai, aai-ui, aai-cli, aai-server) are defined in the
   root `vitest.config.ts`. Use `--project <name>` to run a specific project.
 - Slow/integration tests have separate per-package configs

@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/index.mjs",
   "scripts": {
-    "predev": "node -e \"const [maj] = process.versions.node.split('.').map(Number); if (maj < 24) { console.error('Node >=24 required (got ' + process.version + '). Run: fnm use 24'); process.exit(1); }\" && pnpm --filter aai-guest build",
+    "predev": "node -e \"const [maj] = process.versions.node.split('.').map(Number); if (maj < 24) { console.error('Node >=24 required (got ' + process.version + '). Run: fnm use 24'); process.exit(1); }\" && node ../../scripts/ensure-guest-harness.mjs",
     "dev": "node --conditions=@dev/source index.ts",
     "start": "node dist/index.mjs",
     "test": "vitest run",
@@ -15,6 +15,7 @@
     "lint": "biome check .",
     "test:integration": "VITEST_INCLUDE=orchestrator-integration.test.ts,ws-integration.test.ts vitest run -c ../../vitest.slow.config.ts",
     "check:integration": "pnpm run test:integration",
+    "predeploy:modal": "node ../../scripts/ensure-guest-harness.mjs",
     "deploy:modal": "modal deploy modal_deploy.py",
     "test:evals": "VITEST_PROFILE=e2e VITEST_INCLUDE=studio/studio-eval.test.ts vitest run -c ../../vitest.slow.config.ts"
   },
