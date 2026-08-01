@@ -318,51 +318,53 @@ ctx.send(event: string, data: unknown): void   // push custom event to browser c
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 ```
 
-**Typing `ctx.state`.** `ctx.state` is untyped by default. Write it plainly
-and it compiles and runs:
+**Typing `ctx.state`.** `ctx.state` is untyped by default, so
+`ctx.state.count++` compiles with no ceremony. That is fine for a scalar.
+
+**But TYPE THE STATE the moment it holds a collection you iterate.**
+Untyped state makes every callback over it an implicit `any`, and under
+`strict` that is an error per callback:
 
 ```ts
-export default agent({
-  name: "Shop",
-  state: () => ({ cart: [] as string[] }),
-  tools: {
-    addItem: tool({
-      description: "Add an item to the cart",
-      parameters: z.object({ item: z.string() }),
-      execute: ({ item }, ctx) => {
-        ctx.state.cart.push(item); // no annotation needed
-        return ctx.state.cart.length;
-      },
-    }),
-  },
-});
+// Untyped state: ctx.state.incidents is `any`, so `i` is an implicit any.
+ctx.state.incidents.filter((i) => i.status === "open");
+//                           ^ error TS7006, once per callback in the file
 ```
 
-**Do that unless you specifically want the state checked.** If you do, name
-the type and annotate the context — and note the import is `import type`,
-because this project sets `verbatimModuleSyntax`:
+One agent hit fifteen of these in a single file and spent three build cycles
+annotating them one at a time. Declaring the type removes all of them at
+once, because the element type is then known:
 
 ```ts
 import { agent, tool } from "@alexkroman1/aai";
-import type { ToolContext } from "@alexkroman1/aai"; // ← type-only import
+import type { ToolContext } from "@alexkroman1/aai"; // types need `import type`
 import { z } from "zod";
 
-type State = { cart: string[] };
+type Incident = { id: string; status: "open" | "closed" };
+type State = { incidents: Incident[] };
 
-const addItem = tool({
-  description: "Add an item to the cart",
-  parameters: z.object({ item: z.string() }),
-  execute: ({ item }, ctx: ToolContext<State>) => {
-    ctx.state.cart.push(item);
-    return ctx.state.cart.length;
+const listOpen = tool({
+  description: "List open incidents",
+  execute: (_args, ctx: ToolContext<State>) => {
+    // `i` infers as Incident — no annotation, no TS7006.
+    return ctx.state.incidents.filter((i) => i.status === "open");
   },
 });
 
-export default agent({ name: "Shop", state: (): State => ({ cart: [] }), tools: { addItem } });
+export default agent({
+  name: "Dispatch",
+  state: (): State => ({ incidents: [] }),
+  tools: { listOpen },
+});
 ```
 
+The rule: **scalar state, skip it; arrays or records in state, declare the
+type and annotate the context in tools that touch them.** It is one type
+declaration and one annotation per tool, and it is cheaper than the repair
+loop it prevents.
+
 A tool annotated with a state shape the agent's factory doesn't produce is a
-compile error. Tools that never read `ctx.state` need no annotation either way.
+compile error, which is the point.
 
 **`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
 `ToolDef`, `Message`, `ToolResultMap`, provider types. A plain

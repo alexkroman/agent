@@ -103,7 +103,8 @@ export function formatRejection(file: string, detail: string): string {
   return (
     `Error: refused to write ${file} — it does not parse, so NOTHING was saved ` +
     `and the file on disk is unchanged:\n\n${detail}\n\n` +
-    "Send the whole file again with the syntax fixed. A common cause is " +
+    "Send the whole file again with the syntax fixed, and do NOT run " +
+    "test_agent first — there is nothing new to test. A common cause is " +
     'over-escaping: the content should contain `"`, not `\\"` — the tool call ' +
     "is already JSON, so the file content must not be escaped a second time."
   );

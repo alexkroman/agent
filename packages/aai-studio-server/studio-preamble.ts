@@ -144,7 +144,14 @@ placeholders or guess missing parameters.
 - Use descriptive messages that say what you're checking, and log both
   the success path and the error path.
 - check_types runs just the project's tsc pass — much cheaper than
-  test_agent when iterating on type errors after edits.
+  test_agent when iterating on type errors after edits. USE IT AS THE INNER
+  LOOP: after a batch of edits run check_types, and only reach for
+  test_agent once it is clean. A full build per fix is the single most
+  expensive habit here — one turn spent three builds annotating the same
+  error fifteen times.
+- When a diagnostic repeats, it is ONE mistake made N times. Fix every
+  instance in one pass before rebuilding; fixing one and rebuilding costs a
+  cycle per instance and often introduces a fresh error each round.
 - test_agent is the ground truth for whether the workspace builds and
   loads. Pass \`tool\` and \`args\` to trial-run one of the agent's tools
   and see its real output (ctx.env is empty and ctx.db is unavailable in

@@ -54,6 +54,9 @@ const HINTS: Record<string, string> = {
 /** Codes where naming the module's real exports is the whole fix. */
 const EXPORT_CODES = new Set(["TS2305", "TS2724"]);
 
+/** At or above this many instances of one code, advise a single-pass fix. */
+const BATCH_THRESHOLD = 3;
+
 const CODE_RE = /error (TS\d+):/g;
 /** `Module '"@alexkroman1/aai"' has no exported member 'Foo'.` */
 const MODULE_RE = /Module '"([^"]+)"' has no exported member|'"([^"]+)"' has no exported member/g;
@@ -83,13 +86,27 @@ function exportHints(output: string, resolveExports: ExportResolver): string[] {
  * resolved (and so this stays testable without a real node_modules).
  */
 export function annotateDiagnostics(output: string, resolveExports?: ExportResolver): string {
-  const codes = new Set([...output.matchAll(CODE_RE)].flatMap((m) => (m[1] ? [m[1]] : [])));
-  if (codes.size === 0) return output;
+  const all = [...output.matchAll(CODE_RE)].flatMap((m) => (m[1] ? [m[1]] : []));
+  if (all.length === 0) return output;
+  const counts = new Map<string, number>();
+  for (const c of all) counts.set(c, (counts.get(c) ?? 0) + 1);
+  const codes = new Set(all);
 
   const hints: string[] = [];
   for (const code of codes) {
     const hint = HINTS[code];
-    if (hint !== undefined) hints.push(`${code}: ${hint}`);
+    if (hint === undefined) continue;
+    const n = counts.get(code) ?? 1;
+    // Repeated instances of ONE code are a single mistake made N times, and
+    // fixing them one edit at a time costs a build cycle per pass. Observed:
+    // fifteen TS7006 in one file repaired across three rounds.
+    const batched =
+      n >= BATCH_THRESHOLD
+        ? ` There are ${n} of these — they are one mistake repeated, so fix ` +
+          "them all in a single pass (rewrite the file if that is simpler) " +
+          "rather than one edit and one rebuild at a time."
+        : "";
+    hints.push(`${code} (x${n}): ${hint}${batched}`);
   }
 
   if ([...codes].some((c) => EXPORT_CODES.has(c)) && resolveExports) {

@@ -59,3 +59,24 @@ describe("annotateDiagnostics", () => {
     }
   });
 });
+
+describe("batched failures", () => {
+  test("tells the agent to fix a repeated code in one pass", () => {
+    // Fifteen instances of one code is one mistake repeated, not fifteen
+    // problems — repairing them one rebuild at a time is what burned a turn.
+    const many = Array.from(
+      { length: 15 },
+      (_, i) => `agent.ts(${i},1): error TS7006: Parameter 'x' implicitly has an 'any' type.`,
+    ).join("\n");
+    const out = annotateDiagnostics(many);
+    expect(out).toContain("x15");
+    expect(out).toMatch(/single pass/i);
+  });
+
+  test("stays quiet about batching for a one-off", () => {
+    const one = "agent.ts(1,1): error TS7006: Parameter 'x' implicitly has an 'any' type.";
+    const out = annotateDiagnostics(one);
+    expect(out).toContain("x1");
+    expect(out).not.toMatch(/single pass/i);
+  });
+});
