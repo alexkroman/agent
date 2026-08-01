@@ -13,7 +13,6 @@
  * `@cartesia/cartesia-js`.
  */
 
-import { createRequire } from "node:module";
 import { createAnthropic } from "@ai-sdk/anthropic";
 import { createGoogleGenerativeAI } from "@ai-sdk/google";
 import { createGroq } from "@ai-sdk/groq";
@@ -371,29 +370,6 @@ export function resolveLlm(descriptor: LlmProvider, env: Record<string, string>)
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────
-
-const requireFromHere = createRequire(import.meta.url);
-
-/**
- * Lazy-load a package via createRequire so the package is a true optional
- * peer dependency — if it's not installed the error surfaces only when the
- * provider is actually used, not at module load time.
- */
-export function loadProviderPackage<T>(name: string, label: string): T {
-  try {
-    return requireFromHere(name) as T;
-  } catch (err) {
-    const code = (err as NodeJS.ErrnoException | undefined)?.code;
-    const isMissing =
-      err instanceof Error &&
-      (code === "MODULE_NOT_FOUND" || code === "ERR_MODULE_NOT_FOUND") &&
-      err.message.includes(name);
-    if (!isMissing) throw err;
-    throw new Error(`${label}: package \`${name}\` is not installed. Run \`pnpm add ${name}\`.`, {
-      cause: err,
-    });
-  }
-}
 
 function requireKey(env: Record<string, string>, name: string, label: string): string {
   // Reads the agent env only — never process.env (see the credential

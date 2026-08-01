@@ -41,7 +41,7 @@
  * Build `@alexkroman1/aai` too (`pnpm --filter @alexkroman1/aai build`): the
  * worker build resolves a workspace's SDK imports through the package's
  * `import` condition, i.e. `dist/`, never `@dev/source`. A stale dist makes a
- * newly added subpath (`@alexkroman1/aai/patterns`) unresolvable and every
+ * newly added subpath unresolvable and every
  * case that imports it fails `WorkerBuildJudge` — with a rolldown "not
  * exported under the conditions" error that reads like generated-code trouble.
  */

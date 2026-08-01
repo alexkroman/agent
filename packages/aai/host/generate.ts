@@ -53,7 +53,7 @@ function assertJsonSchema(schema: Record<string, unknown>): void {
   if (typeof (schema as { safeParse?: unknown }).safeParse === "function") {
     throw new Error(
       "generate: `schema` must be a plain JSON Schema object, not a Zod schema — " +
-        "convert with z.toJSONSchema(), or use the @alexkroman1/aai/patterns helpers.",
+        "convert with z.toJSONSchema().",
     );
   }
 }

@@ -9,8 +9,6 @@ export {
   type AgentConfig,
   AgentConfigSchema,
   agentToolsToSchemas,
-  EMPTY_PARAMS,
-  type ExecuteTool,
   type ToolSchema,
   ToolSchemaSchema,
   toAgentConfig,
@@ -19,6 +17,5 @@ export {
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
-  type SessionMode,
 } from "./config-rules.ts";
 export { ProviderDescriptorSchema } from "./manifest.ts";

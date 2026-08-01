@@ -41,7 +41,7 @@ import { StudioBuildError } from "./studio-errors.ts";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./studio-limits.ts";
 import { studioLlmModelId } from "./studio-llm.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
-import { MAX_STUDIO_CHAT_MESSAGES } from "./studio-schemas.ts";
+import { MAX_STUDIO_CHAT_MESSAGES, UiMessageSchema } from "./studio-schemas.ts";
 import { filesHash, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
 
 /** Max tool-loop steps per chat turn (Claude-Code-scale agentic budget). */
@@ -60,8 +60,11 @@ const GuestFilesSchema = z.object({
     }),
 });
 
+// Guest-sent wire data: the settled conversation is validated per message
+// (structure + content-size cap) before it lands in the chat store, not
+// accepted as a blob of unknowns.
 const GuestChatSchema = z.object({
-  messages: z.array(z.unknown()).max(MAX_STUDIO_CHAT_MESSAGES),
+  messages: z.array(UiMessageSchema).max(MAX_STUDIO_CHAT_MESSAGES),
 });
 
 type BrokerStores = {

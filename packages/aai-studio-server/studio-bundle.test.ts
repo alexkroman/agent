@@ -108,17 +108,17 @@ export default { name: String(typeof sequential) };`,
     const message = (err as Error).message;
     expect(message).toContain('Cannot import "@alexkroman1/aai/combinators"');
     expect(message).toContain("has no such subpath");
-    // The actionable half: the correct subpath is in the message.
-    expect(message).toContain("@alexkroman1/aai/patterns");
+    // The actionable half: real subpaths are listed in the message.
+    expect(message).toContain("@alexkroman1/aai/llm");
     // And the root entry.
     expect(message).toContain("@alexkroman1/aai,");
   }, 30_000);
 
   test("accepts every subpath the SDK really exports", async () => {
     const code = await bundleWorkspace({
-      "agent.ts": `import { sequential } from "@alexkroman1/aai/patterns";
+      "agent.ts": `import { deepgram } from "@alexkroman1/aai/stt";
 import { agent } from "@alexkroman1/aai";
-export default { name: String(typeof sequential) + String(typeof agent) };`,
+export default { name: String(typeof deepgram) + String(typeof agent) };`,
     });
     expect(code).toBeTruthy();
   }, 30_000);

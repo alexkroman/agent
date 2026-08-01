@@ -560,7 +560,7 @@ voice agents without the CLI:
   the studio routes. Enforced in `validateSlug`, `DeployBodySchema`, and
   the deploy core.
 
-### `ctx.generate` and pattern combinators (`@alexkroman1/aai/patterns`)
+### `ctx.generate` (one-shot LLM generation)
 
 Tool `execute` code gets one-shot LLM generation via `ctx.generate` — a
 **runtime capability like `ctx.db`**. One implementation,
@@ -572,17 +572,12 @@ only. Defaults to the agent's own pipeline `llm`; a per-call `llm`
 descriptor works for S2S agents holding that provider's key.
 
 `GenerateOptions.schema` is **plain JSON Schema, never a Zod schema** — the
-options must survive the RPC boundary, and both implementations
-reject Zod schemas so dev and prod cannot drift. The typed ergonomics live
-in `sdk/patterns.ts` (subpath `@alexkroman1/aai/patterns`, Node-free): the
-five Vercel-AI-SDK workflow patterns as pure combinators over a
-`GenerateFn` — `sequential` (chains), `parallel`, `route` (classify +
-dispatch), `orchestrate` (plan → workers → synthesize), and
-`evaluatorOptimizer` (generate → judge → retry with feedback) — plus
-`generateStructured`, which converts Zod → JSON Schema caller-side and
-re-validates the result. The subpath was renamed from
-`@alexkroman1/aai/workflow` (a name that collided with a since-removed
-`workflow()` app kind).
+options must survive the RPC boundary, and the implementation rejects Zod
+schemas so dev and prod cannot drift; convert with `z.toJSONSchema()`.
+(The pattern-combinator layer that once wrapped this —
+`@alexkroman1/aai/patterns`, earlier `@alexkroman1/aai/workflow` — was
+removed unused; multi-step orchestration is composed directly over
+`ctx.generate`.)
 
 ### Session modes
 
@@ -1112,7 +1107,6 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
 | `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway`) |
 | `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
-| `@alexkroman1/aai/patterns` | `sdk/patterns.ts` (direct, not a barrel) | Workflow-pattern combinators over `ctx.generate` (`sequential`, `parallel`, `route`, `orchestrate`, `evaluatorOptimizer`, `generateStructured`). Node-free — runs in the guest sandbox |
 
 ### Concurrency primitives (use these, don't hand-roll)
 

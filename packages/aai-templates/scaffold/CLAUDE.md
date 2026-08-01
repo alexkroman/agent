@@ -302,51 +302,7 @@ runs one LLM generation on the host. It defaults to the agent's pipeline
 `llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) to use another
 provider whose API key is in the agent's secrets — that's also how S2S
 agents use it. `schema` must be a **plain JSON Schema object** (use
-`z.toJSONSchema(...)`, or the pattern helpers below), never a Zod schema.
-
-### Pattern combinators — `@alexkroman1/aai/patterns`
-
-Multi-step LLM orchestration inside a tool, as pure helpers over
-`ctx.generate`:
-
-```ts
-import {
-  sequential, parallel, route, orchestrate, evaluatorOptimizer,
-  generateStructured,
-} from "@alexkroman1/aai/patterns";
-
-// Chain: each step sees the previous output
-const { output } = await sequential(ctx.generate, [
-  `Draft marketing copy for: ${product}`,
-  (draft) => `Tighten this to under 100 words:\n${draft}`,
-]);
-
-// Independent tasks in parallel (keyed results)
-const reviews = await parallel(ctx.generate, {
-  security: `Review for security issues:\n${code}`,
-  perf: `Review for performance issues:\n${code}`,
-});
-
-// Classify, then dispatch to the matching handler
-const routed = await route(ctx.generate, {
-  input: query,
-  routes: {
-    refund: { description: "Refund requests", handler: (q) => `...${q}` },
-    other: { description: "Everything else", handler: "..." },
-  },
-});
-
-// Plan → parallel workers → synthesize
-const report = await orchestrate(ctx.generate, { task: "..." });
-
-// Generate → judge → retry with feedback (default 3 attempts)
-const refined = await evaluatorOptimizer(ctx.generate, {
-  task: "...", criteria: "Plain text, under 200 words, cites a tool result",
-});
-
-// Typed structured output (Zod in, parsed object out)
-const parsed = await generateStructured(ctx.generate, z.object({ n: z.number() }), "…");
-```
+`z.toJSONSchema(...)`), never a Zod schema.
 
 ### Inline tool example
 

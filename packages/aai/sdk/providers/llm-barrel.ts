@@ -12,16 +12,12 @@ export type { LlmProvider } from "../providers.ts";
 export * from "./llm/anthropic.ts";
 export {
   ASSEMBLYAI_LLM_API_KEY_ENV,
-  ASSEMBLYAI_LLM_GATEWAY_EU_URL,
-  ASSEMBLYAI_LLM_GATEWAY_URL,
-  ASSEMBLYAI_LLM_KIND,
   type AssemblyAILlmOptions,
   type AssemblyAILlmProvider,
   assemblyAI,
 } from "./llm/assemblyai.ts";
 export {
   GATEWAY_API_KEY_ENV,
-  GATEWAY_KIND,
   type GatewayOptions,
   type GatewayProvider,
   gateway,
@@ -36,8 +32,6 @@ export * from "./llm/mistral.ts";
 export * from "./llm/openai.ts";
 export {
   OPENROUTER_API_KEY_ENV,
-  OPENROUTER_BASE_URL,
-  OPENROUTER_KIND,
   type OpenRouterOptions,
   type OpenRouterProvider,
   openrouter,

@@ -15,25 +15,18 @@
 export type { TtsError, TtsEvents, TtsOpenOptions, TtsProvider, TtsSession } from "../providers.ts";
 export {
   ASSEMBLYAI_TTS_API_KEY_ENV,
-  ASSEMBLYAI_TTS_DEFAULT_VOICE,
-  ASSEMBLYAI_TTS_HOST,
-  ASSEMBLYAI_TTS_KIND,
   type AssemblyAITtsOptions,
   type AssemblyAITtsProvider,
   assemblyAI,
 } from "./tts/assemblyai.ts";
 export {
   CARTESIA_API_KEY_ENV,
-  CARTESIA_DEFAULT_VOICE,
-  CARTESIA_KIND,
   type CartesiaOptions,
   type CartesiaProvider,
   cartesia,
 } from "./tts/cartesia.ts";
 export {
   RIME_API_KEY_ENV,
-  RIME_DEFAULT_VOICE,
-  RIME_KIND,
   type RimeOptions,
   type RimeProvider,
   rime,
