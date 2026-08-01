@@ -48,10 +48,13 @@ const HINTS: Record<string, string> = {
     "never across a function boundary. Annotate the declaration: " +
     "`let best: Match | null = null`.",
   TS2345:
-    "If the parameter is `never`, this is a `const xs = []` being pushed to " +
-    "inside a callback — the widening that would make it `string[]` does not " +
-    "cross a function boundary. Annotate the declaration: " +
-    "`const items: string[] = []`.",
+    "If the parameter is `never`, an empty array never widened. In agent.ts " +
+    "that is `const xs = []` pushed to inside a callback — the widening that " +
+    "would make it `string[]` does not cross a function boundary. In a React " +
+    "client it is a `useState` initialized to `[]`, which stays `never[]` for " +
+    "good. Fix it where the variable is DECLARED, not where it is used — " +
+    "`const items: string[] = []`, or a type argument on the useState call. " +
+    "Rebuilding without moving the annotation reports the same line again.",
   TS2740:
     "A function annotated with a success shape is also returning an error " +
     "object. Widen the return type to a union (`Promise<Info | { error: string }>`) " +
