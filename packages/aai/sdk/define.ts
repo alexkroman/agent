@@ -28,13 +28,34 @@ import {
  * });
  * ```
  *
+ * @typeParam S - The agent's per-session state, so `ctx.state` is typed
+ *   rather than `Record<string, unknown>`. Inferred when the handler
+ *   annotates its context; otherwise pass it explicitly. A tool defined
+ *   without it still composes into a stateful agent — `execute` is declared
+ *   method-style, so it stays assignable — it just sees untyped state.
+ *
+ * @example Typed session state
+ * ```ts
+ * type Cart = { items: string[] };
+ *
+ * const add = tool({
+ *   description: "Add an item to the cart",
+ *   parameters: z.object({ item: z.string() }),
+ *   // The annotation is what infers S; `ctx.state.items` is string[] here.
+ *   execute: ({ item }, ctx: ToolContext<Cart>) => {
+ *     ctx.state.items.push(item);
+ *     return ctx.state.items.length;
+ *   },
+ * });
+ * ```
+ *
  * @public
  */
-export function tool<P extends z.ZodObject<z.ZodRawShape>>(def: {
+export function tool<P extends z.ZodObject<z.ZodRawShape>, S = Record<string, unknown>>(def: {
   description: string;
   parameters?: P;
-  execute(args: z.infer<P>, ctx: ToolContext): Promise<unknown> | unknown;
-}): ToolDef<P> {
+  execute(args: z.infer<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+}): ToolDef<P, S> {
   return def;
 }
 
@@ -53,8 +74,8 @@ type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
  *
  * @public
  */
-export type AgentParams = Omit<AgentDef, DefaultedAgentField> &
-  Partial<Pick<AgentDef, DefaultedAgentField>>;
+export type AgentParams<S = Record<string, unknown>> = Omit<AgentDef<S>, DefaultedAgentField> &
+  Partial<Pick<AgentDef<S>, DefaultedAgentField>>;
 
 /**
  * Define an agent with tools, system prompt, and configuration.
@@ -79,6 +100,10 @@ export type AgentParams = Omit<AgentDef, DefaultedAgentField> &
  * });
  * ```
  *
+ * @typeParam S - Per-session state, inferred from the `state` factory. Tools
+ *   are then checked against it, so a tool reading `ctx.state` under a
+ *   different shape is a compile error rather than a runtime surprise.
+ *
  * @remarks
  * Pipeline mode: pass `stt`, `llm`, and `tts` together to switch from the
  * default AssemblyAI Streaming Speech-to-Speech path to a pluggable
@@ -87,7 +112,7 @@ export type AgentParams = Omit<AgentDef, DefaultedAgentField> &
  *
  * @public
  */
-export function agent(def: AgentParams): AgentDef {
+export function agent<S = Record<string, unknown>>(def: AgentParams<S>): AgentDef<S> {
   return {
     systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,

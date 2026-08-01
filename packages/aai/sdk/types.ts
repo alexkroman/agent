@@ -229,7 +229,14 @@ export type AgentDef<S = Record<string, unknown>> = {
   maxSteps: number;
   toolChoice?: ToolChoice;
   builtinTools?: readonly BuiltinTool[];
-  tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, S>>>;
+  /**
+   * `NoInfer` so `state` is the ONLY thing `S` is inferred from. Without it a
+   * single tool written without the state type (the common case — `tool()`
+   * only learns `S` from an annotated context) drags `S` back to
+   * `Record<string, unknown>` for the whole agent, and `ctx.state.x` silently
+   * becomes `unknown` again. Tools are still *checked* against `S`.
+   */
+  tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
   state?: () => S;
   idleTimeoutMs?: number;
   /**

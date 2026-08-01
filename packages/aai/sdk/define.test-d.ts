@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expectTypeOf, test } from "vitest";
-import { agent } from "./define.ts";
+import { z } from "zod";
+import { agent, tool } from "./define.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
-import type { AgentDef } from "./types.ts";
+import type { AgentDef, ToolContext, ToolDef } from "./types.ts";
 
 /**
  * Every `AgentDef` field must be declarable through `agent()`.
@@ -18,12 +19,58 @@ test("agent() accepts every AgentDef field", () => {
   expectTypeOf<MissingFromParam>().toEqualTypeOf<never>();
 });
 
-test("agent() accepts state", () => {
+test("agent() infers the state shape from the state factory", () => {
   const def = agent({
     name: "t",
     state: () => ({ count: 0 }),
   });
+  // Inferred, not widened to Record<string, unknown> — this is what makes
+  // `ctx.state.count` a number in tools rather than `unknown`.
+  expectTypeOf(def.state).toEqualTypeOf<(() => { count: number }) | undefined>();
+});
+
+test("agent() without a state factory keeps the untyped default", () => {
+  const def = agent({ name: "t" });
   expectTypeOf(def.state).toEqualTypeOf<(() => Record<string, unknown>) | undefined>();
+});
+
+test("tool() types ctx.state from an annotated context", () => {
+  type Cart = { items: string[] };
+  const add = tool({
+    description: "add",
+    parameters: z.object({ item: z.string() }),
+    execute: ({ item }, ctx: ToolContext<Cart>) => {
+      expectTypeOf(ctx.state).toEqualTypeOf<Cart>();
+      expectTypeOf(item).toEqualTypeOf<string>();
+      return ctx.state.items.length;
+    },
+  });
+  expectTypeOf(add).toMatchObjectType<ToolDef<z.ZodObject<{ item: z.ZodString }>, Cart>>();
+});
+
+test("a tool expecting a different state shape is not an accepted tool", () => {
+  // Asserted as non-assignability rather than as a suppressed type error, so
+  // the escape-hatch ratchet stays at its baseline.
+  type Cart = { items: string[] };
+  type Slot = ToolDef<z.ZodObject<z.ZodRawShape>, Cart>;
+  type Mismatched = ToolDef<z.ZodObject<z.ZodRawShape>, { totallyDifferent: number }>;
+  expectTypeOf<Mismatched>().not.toExtend<Slot>();
+  // ...while a tool that ignores state entirely still fits.
+  expectTypeOf<ToolDef<z.ZodObject<z.ZodRawShape>>>().toExtend<Slot>();
+});
+
+test("an unannotated tool still composes into a stateful agent", () => {
+  // `execute` is declared method-style (bivariant), so a tool written without
+  // the state type is not a hard error inside a typed agent — it just sees
+  // untyped state. Locking this keeps the generic from becoming viral.
+  type Cart = { items: string[] };
+  const ping = tool({ description: "p", execute: () => "pong" });
+  const def = agent({
+    name: "t",
+    state: (): Cart => ({ items: [] }),
+    tools: { ping },
+  });
+  expectTypeOf(def.state).toEqualTypeOf<(() => Cart) | undefined>();
 });
 
 test("agent() accepts stt/llm/tts optional fields", () => {
