@@ -35,12 +35,17 @@ Required Modal Secret named ``aai-server`` with (at least):
 
 import os
 import subprocess
+import sys
 from pathlib import Path
 
 import modal
 
+# The image recipe is shared with the studio app so the two services can never
+# run different dependency trees — see scripts/modal_image.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
+from modal_image import build_image  # noqa: E402
+
 PORT = 8080
-PNPM_VERSION = "10.29.3"
 
 # One region for the web server AND the guest sandboxes it creates (see the
 # co-location rationale in CLAUDE.md's Modal notes). The studio app pins the
@@ -98,55 +103,16 @@ MAX_INPUTS = 150  # sessions at cap + short-request headroom
 # see packages/aai-studio-server/modal_deploy.py. CI deploys each app only
 # when its package version changed (changeset-driven).
 
-# Repo root (this file lives at packages/aai-server/modal_deploy.py).
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
-# Build artifacts and local state must not leak into the image build context —
-# the image installs and builds from a clean tree.
-BUILD_IGNORE = [
-    "**/node_modules",
-    "**/dist",
-    "**/.turbo",
-    ".git",
-    ".tsbuildinfo",
-    "**/*.local",
-    "**/.env",
-    "**/.env.*",
-]
-
-image = (
-    # ``add_python`` layers the Modal runtime's Python next to Node — the
-    # container entrypoint is Modal's Python runtime, which then spawns node.
-    modal.Image.from_registry("node:24-slim", add_python="3.13")
-    .apt_install("ca-certificates")
-    .run_commands(f"corepack enable && corepack prepare pnpm@{PNPM_VERSION} --activate")
-    .add_local_dir(REPO_ROOT, remote_path="/app", copy=True, ignore=BUILD_IGNORE)
-    .workdir("/app")
-    .run_commands(
-        "pnpm install --frozen-lockfile --ignore-scripts --prod=false",
-        # SDK + UI (default client) + CLI (client bundler) + studio client +
-        # server + studio server
-        "pnpm --filter aai build"
-        " && pnpm --filter aai-ui build"
-        " && pnpm --filter @alexkroman1/aai-cli build"
-        " && pnpm --filter aai-guest build"
-        " && pnpm --filter aai-studio-client build"
-        " && pnpm --filter aai-server build"
-        " && pnpm --filter aai-studio-server build",
-    )
-    .env(
-        {
-            "NODE_ENV": "production",
-            "PORT": str(PORT),
-            "GUEST_HARNESS_PATH": "/app/packages/aai-guest/dist/harness.mjs",
-            # Guest sandboxes are pinned to the web server's region (above).
-            "MODAL_SANDBOX_REGION": REGION,
-            # Per-replica WebSocket cap, kept in lockstep with the autoscaler
-            # numbers above (TARGET_INPUTS / MAX_INPUTS) — the server refuses
-            # upgrades past it, so Modal must scale out before it is reached.
-            "MAX_CONNECTIONS": str(MAX_CONNECTIONS),
-        }
-    )
+image = build_image(
+    port=PORT,
+    # Guest sandboxes are pinned to the web server's region (above).
+    region=REGION,
+    extra_env={
+        # Per-replica WebSocket cap, kept in lockstep with the autoscaler
+        # numbers above (TARGET_INPUTS / MAX_INPUTS) — the server refuses
+        # upgrades past it, so Modal must scale out before it is reached.
+        "MAX_CONNECTIONS": str(MAX_CONNECTIONS),
+    },
 )
 
 app = modal.App("aai-server-web")

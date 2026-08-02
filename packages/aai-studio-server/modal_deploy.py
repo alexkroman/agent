@@ -21,13 +21,17 @@ anymore.
 
 import os
 import subprocess
-import tempfile
+import sys
 from pathlib import Path
 
 import modal
 
+# The image recipe is shared with the agent app so the two services can never
+# run different dependency trees — see scripts/modal_image.py.
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
+from modal_image import build_image  # noqa: E402
+
 PORT = 8080
-PNPM_VERSION = "10.29.3"
 REGION = "us-east-2"  # co-located with the agent app and guest sandboxes
 
 # Chat turns are bounded HTTP/SSE requests — heavier per request than a voice
@@ -38,47 +42,10 @@ STUDIO_MAX_CONTAINERS = 5
 STUDIO_TARGET_INPUTS = 20
 STUDIO_MAX_INPUTS = 40
 
-REPO_ROOT = Path(__file__).resolve().parent.parent.parent
-
-# Mirrors the agent app's image (packages/aai-server/modal_deploy.py) — same
-# clean-tree install + workspace build, so both services run the exact
+# Byte-for-byte the agent app's image (see scripts/modal_image.py): the same
+# clean-tree install and workspace build, so both services run the exact
 # dependency tree the tests exercised.
-BUILD_IGNORE = [
-    "**/node_modules",
-    "**/dist",
-    "**/.turbo",
-    ".git",
-    ".tsbuildinfo",
-    "**/*.local",
-    "**/.env",
-    "**/.env.*",
-]
-
-image = (
-    modal.Image.from_registry("node:24-slim", add_python="3.13")
-    .apt_install("ca-certificates")
-    .run_commands(f"corepack enable && corepack prepare pnpm@{PNPM_VERSION} --activate")
-    .add_local_dir(REPO_ROOT, remote_path="/app", copy=True, ignore=BUILD_IGNORE)
-    .workdir("/app")
-    .run_commands(
-        "pnpm install --frozen-lockfile --ignore-scripts --prod=false",
-        "pnpm --filter aai build"
-        " && pnpm --filter aai-ui build"
-        " && pnpm --filter @alexkroman1/aai-cli build"
-        " && pnpm --filter aai-guest build"
-        " && pnpm --filter aai-studio-client build"
-        " && pnpm --filter aai-server build"
-        " && pnpm --filter aai-studio-server build",
-    )
-    .env(
-        {
-            "NODE_ENV": "production",
-            "PORT": str(PORT),
-            "GUEST_HARNESS_PATH": "/app/packages/aai-guest/dist/harness.mjs",
-            "MODAL_SANDBOX_REGION": REGION,
-        }
-    )
-)
+image = build_image(port=PORT, region=REGION)
 
 app = modal.App("aai-studio-web")
 

@@ -48,6 +48,16 @@ export const DEFAULT_SHUTDOWN_DRAIN_MS = 120_000;
 /** How often the drain loop re-checks the live-session count. */
 export const DRAIN_POLL_MS = 250;
 
+/**
+ * After the drain and sandbox teardown, how long to wait for the HTTP server's
+ * remaining connections to close before exiting anyway.
+ *
+ * Distinct from {@link DEFAULT_SHUTDOWN_DRAIN_MS}, which bounds waiting for
+ * live *sessions*: by the time this timer arms, sandboxes are already down and
+ * a straggling connection is not a failed shutdown — so the fallback exits 0.
+ */
+export const SHUTDOWN_CLOSE_FALLBACK_MS = 3000;
+
 // ── Storage layout ──
 // Single source of truth for the `agents/{slug}` storage namespace.
 

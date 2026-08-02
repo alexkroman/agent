@@ -17,10 +17,9 @@
  * The agent-only service is the aai-server package's own entry.
  */
 
-import { serve } from "@hono/node-server";
 import { DEFAULT_PORT } from "aai-server/constants";
 import { createOrchestrator } from "aai-server/orchestrator";
-import { resolveDrainMs, waitForIdle } from "aai-server/platform-barrel";
+import { drainActiveSessions, startService } from "aai-server/serve-lifecycle";
 import {
   assertSandboxBackendOrWarn,
   buildServiceConfig,
@@ -93,34 +92,26 @@ async function main(): Promise<void> {
   );
 
   if (mode === "studio") {
-    const nodeServer = serve({ fetch: studioApp.fetch, port });
-    nodeServer.on("error", (err) => {
-      console.error("HTTP server error:", err);
-      process.exit(1);
+    await startService({
+      label: "AAI studio service",
+      fetch: studioApp.fetch,
+      port,
+      // No session drain here, unlike the agent and combined entries: this
+      // service serves no voice sessions, and chat turns are bounded HTTP/SSE
+      // requests, so there is nothing long-lived to wait out.
+      onShutdown: async () => {
+        draining = true;
+        console.info("Studio service shutting down...");
+        // The broker's per-project coding-agent sandboxes are this service's
+        // to release: without the dispose they outlive the process and burn
+        // their orphan timeout (billed, on Modal) on every scale-in.
+        await teardownSandboxes({
+          slots: base.slots,
+          pool: base.pool,
+          broker: { dispose: disposeStudio },
+        });
+      },
     });
-    await new Promise<void>((resolve) => {
-      nodeServer.on("listening", resolve);
-    });
-    console.info(`AAI studio service listening on http://localhost:${port}`);
-    let stopping = false;
-    const stopStudio = async () => {
-      if (stopping) return;
-      stopping = true;
-      draining = true;
-      console.info("Studio service shutting down...");
-      // The broker's per-project coding-agent sandboxes are this service's
-      // to release: without the dispose they outlive the process and burn
-      // their orphan timeout (billed, on Modal) on every scale-in.
-      await teardownSandboxes({
-        slots: base.slots,
-        pool: base.pool,
-        broker: { dispose: disposeStudio },
-      });
-      nodeServer.close(() => process.exit(0));
-      setTimeout(() => process.exit(0), 3000).unref();
-    };
-    process.on("SIGINT", () => void stopStudio());
-    process.on("SIGTERM", () => void stopStudio());
     return;
   }
 
@@ -131,48 +122,25 @@ async function main(): Promise<void> {
   const combinedFetch = (req: Request): Response | Promise<Response> =>
     isStudioPath(new URL(req.url).pathname) ? studioApp.fetch(req) : orchestrator.app.fetch(req);
 
-  const nodeServer = serve({ fetch: combinedFetch, port });
-  orchestrator.injectWebSocket(nodeServer as import("node:http").Server);
-  nodeServer.on("error", (err) => {
-    console.error("HTTP server error:", err);
-    process.exit(1);
+  await startService({
+    label: "AAI server (combined)",
+    fetch: combinedFetch,
+    port,
+    injectWebSocket: (server) => orchestrator.injectWebSocket(server),
+    // Same drain posture as the agent service's entry — and now literally the
+    // same code path, so the two can no longer drift.
+    onShutdown: async () => {
+      draining = true;
+      await drainActiveSessions({ activeCount: orchestrator.activeSessionCount, env });
+      console.info("Shutting down...");
+      orchestrator.closeActiveSockets();
+      await teardownSandboxes({
+        slots: base.slots,
+        pool: base.pool,
+        broker: { dispose: disposeStudio },
+      });
+    },
   });
-  await new Promise<void>((resolve) => {
-    nodeServer.on("listening", resolve);
-  });
-  console.info(`AAI server (combined) listening on http://localhost:${port}`);
-
-  let shuttingDown = false;
-  async function shutdown() {
-    if (shuttingDown) return;
-    shuttingDown = true;
-    // Same drain posture as the agent service's entry: stop taking work,
-    // let live voice sessions end on their own, then tear down.
-    draining = true;
-    const drainMs = resolveDrainMs(env.SHUTDOWN_DRAIN_MS);
-    console.info("Draining active sessions...", {
-      active: orchestrator.activeSessionCount(),
-      drainMs,
-    });
-    const { drained, remaining } = await waitForIdle({
-      activeCount: orchestrator.activeSessionCount,
-      timeoutMs: drainMs,
-    });
-    if (!drained) {
-      console.warn("Drain deadline reached; closing sessions still in flight", { remaining });
-    }
-    console.info("Shutting down...");
-    orchestrator.closeActiveSockets();
-    await teardownSandboxes({
-      slots: base.slots,
-      pool: base.pool,
-      broker: { dispose: disposeStudio },
-    });
-    nodeServer.close(() => process.exit(0));
-    setTimeout(() => process.exit(0), 3000).unref();
-  }
-  process.on("SIGINT", () => void shutdown());
-  process.on("SIGTERM", () => void shutdown());
 }
 
 // Only boot when executed as an entry (not when imported by tests).
