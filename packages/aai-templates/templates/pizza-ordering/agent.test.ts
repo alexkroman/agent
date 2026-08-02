@@ -1,7 +1,7 @@
 import type { Db, ToolContext, ToolDef } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import agentDef from "./agent.ts";
-import { calculateTotal, type Pizza, pizzaPrice } from "./shared.ts";
+import { calculateTotal, orderView, type Pizza, pizzaPrice, type StateSlot } from "./shared.ts";
 
 // ─── Test doubles ────────────────────────────────────────────────────────────
 
@@ -184,74 +184,26 @@ describe("tool flow (add → update → remove → place_order)", () => {
   });
 });
 
-// ─── 3. Wire-shape contract with client.tsx ──────────────────────────────────
+// ─── 3. The projection contract with client.tsx ─────────────────────────────
 //
-// The sidebar (client.tsx) discriminates "order" events by key shape in an
-// if/else chain: added → removed → updated → array-pizzas → orderNumber.
-// Pin each payload to exactly one branch so agent and client can't drift.
+// `syncState: orderView` is now the ONLY thing the sidebar reads, which makes
+// the contract a pure function of state rather than an if/else chain over
+// event shapes. What used to need six event-shape assertions is three.
 
-function matchedBranch(data: Record<string, unknown>): string {
-  if ("added" in data && data.added) return "added";
-  if ("removed" in data && data.removed) return "removed";
-  if ("updated" in data && data.updated) return "updated";
-  if ("pizzas" in data && Array.isArray(data.pizzas)) return "view";
-  if ("orderNumber" in data && data.orderNumber) return "placed";
-  return "none";
-}
-
-describe('"order" event contract', () => {
-  test("each mutating tool emits exactly one event, matching its client branch", async () => {
-    const { ctx, sent } = makeCtx();
-
-    await run(
-      "add_pizza",
-      { size: "medium", crust: "regular", toppings: ["ham"], quantity: 1 },
-      ctx,
-    );
-    await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, ctx);
-    await run("update_pizza", { pizza_id: 1, toppings: ["chicken"] }, ctx);
-    await run("view_order", {}, ctx);
-    await run("remove_pizza", { pizza_id: 2 }, ctx);
-    await run("place_order", {}, ctx);
-
-    expect(sent.every((s) => s.event === "order")).toBe(true);
-    const branches = sent.map((s) => matchedBranch(s.data as Record<string, unknown>));
-    expect(branches).toEqual(["added", "added", "updated", "view", "removed", "placed"]);
-  });
-
-  test("place_order's `pizzas` is a count, not an array — it must not hit the view branch", async () => {
-    const { ctx, sent } = makeCtx();
-    await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, ctx);
-    await run("place_order", {}, ctx);
-
-    const last = sent.at(-1);
-    if (!last) throw new Error("no event captured");
-    const placed = last.data as Record<string, unknown>;
-    expect(typeof placed.pizzas).toBe("number");
-    expect(matchedBranch(placed)).toBe("placed");
-    expect(placed).toMatchObject({
-      customerName: "Guest",
-      total: expect.stringMatching(/^\$\d+\.\d{2}$/),
-      estimatedMinutes: 20,
-    });
-  });
-
-  test("view_order items carry every field the sidebar renders", async () => {
-    const { ctx, sent } = makeCtx();
+describe("orderView projection", () => {
+  test("reflects the live cart", async () => {
+    const { ctx } = makeCtx();
     await run(
       "add_pizza",
       { size: "large", crust: "stuffed", toppings: ["pepperoni", "extra_cheese"], quantity: 2 },
       ctx,
     );
-    await run("view_order", {}, ctx);
 
-    const last = sent.at(-1);
-    if (!last) throw new Error("no event captured");
-    const view = last.data as { pizzas: Pizza[]; orderTotal: string };
-    expect(Array.isArray(view.pizzas)).toBe(true);
+    const view = orderView(ctx.state as StateSlot);
+    expect(view.orderPlaced).toBe(false);
     const item = view.pizzas[0];
-    if (!item) throw new Error("no pizza in view payload");
-    // The client casts these items to Pizza and calls pizzaPrice on them.
+    if (!item) throw new Error("no pizza in the projection");
+    // The client renders these fields directly and calls pizzaPrice on them.
     expect(item).toMatchObject({
       id: 1,
       size: "large",
@@ -259,6 +211,25 @@ describe('"order" event contract', () => {
       toppings: ["pepperoni", "extra_cheese"],
       quantity: 2,
     });
-    expect(view.orderTotal).toBe(`$${pizzaPrice(item).toFixed(2)}`);
+    expect(view.total).toBe(`$${pizzaPrice(item).toFixed(2)}`);
+  });
+
+  test("survives checkout, which clears the cart but keeps the confirmation", async () => {
+    // The reason `placed` lives in state at all: the cart is emptied on
+    // checkout, and the UI still has to show the order that was just placed.
+    const { ctx } = makeCtx();
+    await run("add_pizza", { size: "small", crust: "thin", toppings: [], quantity: 1 }, ctx);
+    await run("place_order", {}, ctx);
+
+    const view = orderView(ctx.state as StateSlot);
+    expect(view.orderPlaced).toBe(true);
+    expect(view.pizzas).toEqual([]);
+    expect(view.estimatedMinutes).toBe(20);
+    expect(view.total).toMatch(/^\$\d+\.\d{2}$/);
+  });
+
+  test("an untouched session projects an empty cart, not undefined", async () => {
+    // The client renders before any tool has run; `state.order` is absent.
+    expect(orderView({})).toMatchObject({ pizzas: [], total: "$0.00", orderPlaced: false });
   });
 });

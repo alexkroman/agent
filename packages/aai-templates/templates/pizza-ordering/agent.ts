@@ -1,9 +1,14 @@
-import { agent, tool } from "@alexkroman1/aai";
-import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
-import { assemblyAI } from "@alexkroman1/aai/stt";
-import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+import { agent, assemblyAIPipeline, tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { CRUSTS, calculateTotal, getOrder, type Pizza, resetOrder, SIZES } from "./shared.ts";
+import {
+  CRUSTS,
+  calculateTotal,
+  getOrder,
+  orderView,
+  type Pizza,
+  resetOrder,
+  SIZES,
+} from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
 
 const sizes = z.enum(SIZES);
@@ -14,9 +19,11 @@ const crusts = z.enum(CRUSTS);
 
 export default agent({
   name: "Pizza Palace",
-  stt: assemblyAI({ model: "universal-3-5-pro" }),
-  llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
-  tts: assemblyAITts({ voice: "vera" }),
+  ...assemblyAIPipeline(),
+  // The cart, pushed to the client after every tool call. Replaces a
+  // `ctx.send("order", ...)` in each of the five order tools, and the
+  // event-diffing the client had to do to rebuild the cart from them.
+  syncState: orderView,
   systemPrompt,
   greeting:
     "Welcome to Pizza Palace. I can help you build your perfect pizza. What would you like to order?",
@@ -51,7 +58,6 @@ export default agent({
           orderTotal: `$${total.toFixed(2)}`,
           itemCount: order.pizzas.length,
         };
-        ctx.send("order", result);
         return result;
       },
     }),
@@ -68,18 +74,18 @@ export default agent({
         const total = calculateTotal(pizzas);
         const orderNumber = Math.floor(1000 + Math.random() * 9000);
 
-        // The order is submitted — clear the cart so a follow-up order
-        // starts fresh instead of inheriting these pizzas.
-        resetOrder(ctx);
+        const estimatedMinutes = 15 + pizzas.length * 5;
+        // The order is submitted — clear the cart so a follow-up order starts
+        // fresh, but keep the confirmation in state so the UI can show it.
+        resetOrder(ctx, { orderNumber, total: `$${total.toFixed(2)}`, estimatedMinutes });
 
         const result = {
           orderNumber,
           customerName,
           pizzas: pizzas.length,
           total: `$${total.toFixed(2)}`,
-          estimatedMinutes: 15 + pizzas.length * 5,
+          estimatedMinutes,
         };
-        ctx.send("order", result);
         return result;
       },
     }),
@@ -102,7 +108,6 @@ export default agent({
           orderTotal: `$${total.toFixed(2)}`,
           itemCount: order.pizzas.length,
         };
-        ctx.send("order", result);
         return result;
       },
     }),
@@ -145,7 +150,6 @@ export default agent({
           updated: pizza,
           orderTotal: `$${total.toFixed(2)}`,
         };
-        ctx.send("order", result);
         return result;
       },
     }),
@@ -168,7 +172,6 @@ export default agent({
           })),
           orderTotal: `$${total.toFixed(2)}`,
         };
-        ctx.send("order", result);
         return result;
       },
     }),

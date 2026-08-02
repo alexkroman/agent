@@ -1,6 +1,4 @@
-import { agent, tool } from "@alexkroman1/aai";
-import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
-import { assemblyAI } from "@alexkroman1/aai/stt";
+import { agent, assemblyAIPipeline, tool } from "@alexkroman1/aai";
 import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
 import { z } from "zod";
 import { getGameState, resetGameState } from "./shared.ts";
@@ -8,9 +6,10 @@ import systemPrompt from "./system-prompt.md?raw";
 
 export default agent({
   name: "Cavern Adventure",
-  stt: assemblyAI({ model: "universal-3-5-pro" }),
-  llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
-  tts: assemblyAITts({ voice: "vera" }),
+  ...assemblyAIPipeline(),
+  // Overriding one stage of the preset: a narrator wants a narrative voice,
+  // and the other two stages stay as the preset set them.
+  tts: assemblyAITts({ voice: "paul" }),
   systemPrompt,
   greeting:
     "Welcome, adventurer. You are standing at the mouth of a weathered cave at the edge of a pine forest. A cold wind carries the smell of damp stone up from the darkness below. A rusted lantern hangs from an iron hook beside the entrance. What would you like to do?",

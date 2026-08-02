@@ -85,10 +85,13 @@ export interface DispatchState {
 }
 
 /**
- * Trimmed, non-PII incident view sent to the browser via
- * `ctx.send("incidents", ...)`. Never include caller name/phone here — events
- * are broadcast to the connected browser client, which only renders these
- * fields.
+ * Trimmed, non-PII incident view sent to the browser. Never include caller
+ * name/phone here — this reaches the connected browser client, which only
+ * renders these fields.
+ *
+ * This is precisely why `syncState` takes a projection rather than a flag:
+ * `DispatchState` holds caller details, and the author decides what leaves
+ * the server.
  */
 export interface IncidentSummary {
   id: string;
@@ -101,14 +104,18 @@ export function incidentSummary(inc: Incident): IncidentSummary {
   return { id: inc.id, severity: inc.severity, status: inc.status, location: inc.location };
 }
 
-/** Payload shape for every `ctx.send("incidents", ...)` event. */
-export function dashboardEvent(state: DispatchState): {
+/** One incident as the browser sees it — see `dashboardView`. */
+export interface DashboardView {
   systemAlertLevel: DispatchState["alertLevel"];
   incidents: IncidentSummary[];
-} {
+}
+
+/** The `syncState` projection — the whole contract with client.tsx. */
+export function dashboardView(state: StateSlot): DashboardView {
+  const dispatch = state.dispatch;
   return {
-    systemAlertLevel: state.alertLevel,
-    incidents: Object.values(state.incidents).map(incidentSummary),
+    systemAlertLevel: dispatch?.alertLevel ?? "green",
+    incidents: Object.values(dispatch?.incidents ?? {}).map(incidentSummary),
   };
 }
 
@@ -117,7 +124,7 @@ export function dashboardEvent(state: DispatchState): {
 // state — sessions must not see each other's incidents, and ctx.state gives
 // that isolation by construction. Nothing here needs to outlive the session.
 
-type StateSlot = { dispatch?: DispatchState };
+export type StateSlot = { dispatch?: DispatchState };
 
 // ─── Resource generation ────────────────────────────────────────────────────
 
@@ -204,13 +211,12 @@ const sessionLocks = new Map<string, Promise<unknown>>();
  * centralizes the shared bookkeeping every mutating tool needs: pruning and
  * alert-level recalculation.
  *
- * `onSaved` runs after the recalculated state settles — the place to
- * `ctx.send` a dashboard event reflecting the final alert level.
+ * There is no post-save callback: pushing the board to the client used to
+ * need one, and `syncState` now does it after every tool call.
  */
 export async function updateState<R>(
   ctx: ToolContext,
   mutator: (state: DispatchState) => R | Promise<R>,
-  onSaved?: (state: DispatchState) => void,
 ): Promise<R> {
   const prev = sessionLocks.get(ctx.sessionId) ?? Promise.resolve();
   const run = prev.then(async () => {
@@ -218,7 +224,6 @@ export async function updateState<R>(
     const result = await mutator(state);
     pruneState(state);
     recalculateAlertLevel(state);
-    onSaved?.(state);
     return result;
   });
   // Keep the chain alive across failures, and drop it once idle.

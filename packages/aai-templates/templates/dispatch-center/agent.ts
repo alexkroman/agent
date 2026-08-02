@@ -1,7 +1,6 @@
-import { agent } from "@alexkroman1/aai";
-import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
 import { assemblyAI } from "@alexkroman1/aai/stt";
-import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+import { dashboardView } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
 import { incidentAddNote } from "./tools/incident_add_note.ts";
 import { incidentCreate } from "./tools/incident_create.ts";
@@ -18,9 +17,14 @@ import { resourcesUpdateStatus } from "./tools/resources_update_status.ts";
 
 export default agent({
   name: "Dispatch Command Center",
-  stt: assemblyAI({ model: "universal-3-5-pro" }),
-  llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
-  tts: assemblyAITts({ voice: "vera" }),
+  ...assemblyAIPipeline(),
+  // One projection replaces eleven `ctx.send("incidents", ...)` calls, and
+  // is the single place that decides caller PII stays server-side.
+  syncState: dashboardView,
+  // Overriding the STT stage: a dispatcher reads addresses and unit numbers
+  // in bursts with pauses inside one message, so end-of-turn silence has to
+  // be longer than the default or "unit twelve … respond to" splits in two.
+  stt: assemblyAI({ minTurnSilenceMs: 2200 }),
   systemPrompt,
   greeting:
     "Dispatch Command Center online. Restoring operational state. I'm ready to take incoming calls, manage active incidents, or run dispatch operations. Say 'dashboard' for a full status report. What do we have.",

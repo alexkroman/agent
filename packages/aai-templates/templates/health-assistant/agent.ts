@@ -1,7 +1,4 @@
-import { agent, tool } from "@alexkroman1/aai";
-import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
-import { assemblyAI } from "@alexkroman1/aai/stt";
-import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+import { agent, assemblyAIPipeline, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import systemPrompt from "./system-prompt.md?raw";
 
@@ -59,9 +56,7 @@ function excerptAround(text: string, alias: string): string {
 
 export default agent({
   name: "Dr. Sage",
-  stt: assemblyAI({ model: "universal-3-5-pro" }),
-  llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
-  tts: assemblyAITts({ voice: "vera" }),
+  ...assemblyAIPipeline(),
   systemPrompt,
   greeting:
     "Hey, I'm Dr. Sage. Try asking me something like, what are the side effects of ibuprofen, can I take aspirin and warfarin together, or calculate my BMI. Just remember, I'm not a real doctor, so always check with your healthcare provider.",

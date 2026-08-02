@@ -3,7 +3,6 @@ import { z } from "zod";
 import {
   calculateTriageScore,
   createIncident,
-  dashboardEvent,
   getApplicableProtocols,
   recommendResources,
   recommendSeverity,
@@ -31,57 +30,53 @@ export const incidentCreate = tool({
       .optional(),
   }),
   async execute(args, ctx) {
-    return updateState(
-      ctx,
-      (state) => {
-        const recSeverity = recommendSeverity(args.description);
-        const recType = recommendType(args.description);
-        const triageScore = calculateTriageScore(
-          recSeverity,
-          recType,
-          args.estimatedCasualties ?? 0,
-          args.hazards?.length ?? 0,
-        );
+    return updateState(ctx, (state) => {
+      const recSeverity = recommendSeverity(args.description);
+      const recType = recommendType(args.description);
+      const triageScore = calculateTriageScore(
+        recSeverity,
+        recType,
+        args.estimatedCasualties ?? 0,
+        args.hazards?.length ?? 0,
+      );
 
-        const incident = createIncident(state, {
-          type: recType,
-          severity: recSeverity,
-          location: args.location,
-          description: args.description,
-          callerName: args.callerName ?? "Unknown",
-          callerPhone: args.callerPhone ?? "Unknown",
-          triageScore,
-          timeline: [{ time: Date.now(), event: `Incident created: ${args.description}` }],
-          casualties: {
-            confirmed: 0,
-            estimated: args.estimatedCasualties ?? 0,
-            treated: 0,
-          },
-          hazards: args.hazards ?? [],
-        });
-        const id = incident.id;
+      const incident = createIncident(state, {
+        type: recType,
+        severity: recSeverity,
+        location: args.location,
+        description: args.description,
+        callerName: args.callerName ?? "Unknown",
+        callerPhone: args.callerPhone ?? "Unknown",
+        triageScore,
+        timeline: [{ time: Date.now(), event: `Incident created: ${args.description}` }],
+        casualties: {
+          confirmed: 0,
+          estimated: args.estimatedCasualties ?? 0,
+          treated: 0,
+        },
+        hazards: args.hazards ?? [],
+      });
+      const id = incident.id;
 
-        const protocols = getApplicableProtocols(recType, recSeverity);
-        const recommended = recommendResources(recType, recSeverity, state);
+      const protocols = getApplicableProtocols(recType, recSeverity);
+      const recommended = recommendResources(recType, recSeverity, state);
 
-        return {
-          incidentId: id,
-          recommendedSeverity: recSeverity,
-          recommendedType: recType,
-          triageScore,
-          applicableProtocols: protocols.map((p) => p.name),
-          recommendedResources: recommended.map((r) => ({
-            callsign: r.callsign,
-            type: r.type,
-            capabilities: r.capabilities,
-          })),
-          message:
-            recSeverity === "critical"
-              ? `PRIORITY ONE — ${id} created. Immediate dispatch recommended. ${protocols.length} protocol(s) applicable.`
-              : `${id} created. Triage score ${triageScore}. ${recommended.length} resource(s) recommended.`,
-        };
-      },
-      (state) => ctx.send("incidents", dashboardEvent(state)),
-    );
+      return {
+        incidentId: id,
+        recommendedSeverity: recSeverity,
+        recommendedType: recType,
+        triageScore,
+        applicableProtocols: protocols.map((p) => p.name),
+        recommendedResources: recommended.map((r) => ({
+          callsign: r.callsign,
+          type: r.type,
+          capabilities: r.capabilities,
+        })),
+        message:
+          recSeverity === "critical"
+            ? `PRIORITY ONE — ${id} created. Immediate dispatch recommended. ${protocols.length} protocol(s) applicable.`
+            : `${id} created. Triage score ${triageScore}. ${recommended.length} resource(s) recommended.`,
+      };
+    });
   },
 });
