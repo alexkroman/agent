@@ -56,6 +56,12 @@ export type SessionSnapshot = {
   readonly messages: ChatMessage[];
   readonly toolCalls: ToolCallInfo[];
   readonly customEvents: CustomEvent[];
+  /**
+   * Latest state the agent projected via `syncState`, or `null` before the
+   * first push. A value, not a log — a component that mounts mid-session
+   * reads current state rather than replaying events it missed.
+   */
+  readonly agentState: unknown;
   readonly userTranscript: string | null;
   readonly agentTranscript: string | null;
   readonly error: SessionError | null;

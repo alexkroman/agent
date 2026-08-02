@@ -176,6 +176,18 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
     event: z.string().min(1).max(MAX_CLIENT_EVENT_NAME_LENGTH),
     data: z.unknown(),
   }),
+  /**
+   * The agent's projected session state (see `AgentDef.syncState`).
+   *
+   * Its own frame rather than a `custom_event` for two reasons: the client
+   * keeps the LATEST value rather than appending to an event log, so a
+   * component mounting late still sees current state; and a reserved type
+   * cannot collide with an event name the author chose.
+   */
+  z.object({
+    type: z.literal("agent_state"),
+    state: z.unknown(),
+  }),
 ]);
 
 /** Discriminated union of all server→client session events. */

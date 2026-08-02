@@ -191,7 +191,6 @@ export const setupCharacter = tool({
     state.sceneCount = 1;
 
     saveGameState(ctx, state);
-    ctx.send("game_state", state);
 
     return {
       success: true,

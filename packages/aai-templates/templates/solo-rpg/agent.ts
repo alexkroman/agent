@@ -2,6 +2,7 @@ import { agent } from "@alexkroman1/aai";
 import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
 import { assemblyAI } from "@alexkroman1/aai/stt";
 import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+import { DEFAULT_STATE, type StateSlot } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
 import { actionRoll } from "./tools/action_roll.ts";
 import { burnMomentum } from "./tools/burn_momentum.ts";
@@ -24,6 +25,10 @@ export default agent({
     "Solo RPG terms: strong hit, weak hit, miss, momentum, chaos factor, clock, disposition, bond, edge, heart, iron, shadow, wits, face danger, compel, gather information, secure advantage, clash, strike, endure harm, endure stress, make connection, test bond, resupply, world shaping",
   maxSteps: 8,
 
+  // One declaration replaces a `ctx.send("game_state", state)` in every
+  // state-mutating tool — six of them, and adding a seventh meant
+  // remembering to push or watching the UI quietly fall out of sync.
+  syncState: (s: StateSlot) => s.game ?? DEFAULT_STATE,
   tools: {
     action_roll: actionRoll,
     burn_momentum: burnMomentum,

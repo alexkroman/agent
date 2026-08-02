@@ -33,6 +33,7 @@
     "check:knip": "knip",
     "check:publint": "turbo run check:publint",
     "check:publish-names": "node scripts/check-publish-names.mjs",
+    "check:template-types": "node scripts/check-template-types.mjs",
     "check:sherif": "sherif",
     "check:syncpack": "syncpack lint",
     "check:ls-lint": "ls-lint",

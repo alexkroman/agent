@@ -84,6 +84,8 @@ export default agent({
   falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
   state?: () => S;                           // per-session mutable state, exposed as ctx.state
                                              // (S is inferred; see "Typing ctx.state")
+  syncState?: (state: S) => unknown;         // push a projection of state to the client
+                                             // (read it with useAgentState; see UI hooks)
 });
 ```
 
@@ -393,7 +395,7 @@ A tool annotated with a state shape the agent's factory doesn't produce is a
 compile error, which is the point.
 
 **`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
-`ToolDef`, `Message`, `ToolResultMap`, provider types. A plain
+`ToolDef`, `Message`, provider types. A plain
 `import { ToolContext }` fails; use `import type { ToolContext }`, or
 `import { agent, type ToolContext }` to combine with value imports.
 
@@ -677,6 +679,32 @@ useToolResult<ResultType>("tool_name", (result) => { ... })        // typed (opt
 `result` is the tool's return value, already JSON-parsed and untyped — read
 fields off it directly (`result.price`). The type parameter is optional; add
 it only when you want the shape checked.
+
+**`useAgentState`** — the agent's session state, pushed automatically:
+
+```ts
+// agent.ts
+export default agent({
+  state: () => ({ cart: [] as Item[], staffPin: "" }),
+  syncState: (s) => ({ cart: s.cart }),   // staffPin never leaves the server
+  tools: { ... },
+});
+
+// client.tsx
+const view = useAgentState<{ cart: Item[] }>();   // null until the first push
+return <Cart items={view?.cart ?? []} />;
+```
+
+**Reach for this before wiring `useToolResult` into `useState`.** Without
+it the pattern is: return a cart snapshot from every tool, declare a type
+describing what those tools return, and mirror it into `useState` — three
+things to keep in step, and the usual source of drift when you add a tool
+and forget to return the snapshot from it.
+
+`syncState` is a projection, not a flag, because state often holds things
+that should not reach a browser (keys, PINs, scratch) or cannot be
+serialized. Whatever it returns is exactly what the client receives. It runs
+after every tool call and is sent only when the result changed.
 
 **`useEvent`** — fires for custom events from `ctx.send()`:
 

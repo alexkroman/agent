@@ -1,8 +1,17 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { ChatView, client, SidebarLayout, StartScreen, useEvent } from "@alexkroman1/aai-ui";
-import { type ReactNode, useState } from "react";
-import type { Clock, Disposition, GameState, NPC, StoryBlueprint } from "./shared.ts";
-import { DEFAULT_STATE, GENRES, MAX_RESOURCE, MIN_MOMENTUM } from "./shared.ts";
+import { ChatView, client, SidebarLayout, StartScreen, useAgentState } from "@alexkroman1/aai-ui";
+import type { ReactNode } from "react";
+import {
+  type Clock,
+  DEFAULT_STATE,
+  type Disposition,
+  type GameState,
+  GENRES,
+  MAX_RESOURCE,
+  MIN_MOMENTUM,
+  type NPC,
+  type StoryBlueprint,
+} from "./shared.ts";
 
 // ── Color Palette ────────────────────────────────────────────────────────────
 const C = {
@@ -99,7 +108,7 @@ function ResourceBar({
   colorBright: string;
   icon: string;
 }) {
-  const pips = [];
+  const pips: ReactNode[] = [];
   for (let i = 0; i < max; i++) {
     const filled = i < current;
     pips.push(
@@ -285,7 +294,7 @@ function ClockDisplay({ clock }: { clock: Clock }) {
       : clock.clockType === "progress"
         ? C.progress
         : C.scheme;
-  const segments = [];
+  const segments: ReactNode[] = [];
   for (let i = 0; i < clock.segments; i++) {
     segments.push(
       <div
@@ -756,10 +765,10 @@ function Sidebar({ game }: { game: GameState }) {
 // ── App ──────────────────────────────────────────────────────────────────────
 
 function SoloRPGApp() {
-  const [game, setGame] = useState<GameState>(structuredClone(DEFAULT_STATE));
-
-  // The server always sends the complete state object.
-  useEvent<GameState>("game_state", setGame);
+  // The agent's own session state, projected by `syncState` and pushed after
+  // every tool call — no per-tool `ctx.send`, and nothing to keep in step
+  // when a new tool starts mutating the game.
+  const game = useAgentState<GameState>() ?? DEFAULT_STATE;
 
   return (
     <StartScreen

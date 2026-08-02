@@ -19,6 +19,7 @@ import type { OwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
+import { createStateSync } from "./_state-sync.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
@@ -173,6 +174,26 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
     sink.event({ type: "custom_event", event, data });
   };
 
+  /**
+   * Push the agent's projected state to the client when it changed. The
+   * decision (project, compare, cap) lives in `_state-sync.ts`; this is the
+   * wiring and the logging.
+   */
+  const stateSync = agent.syncState ? createStateSync(agent.syncState) : undefined;
+  const syncStateToClient = (sink: ClientSink | undefined, state: object): void => {
+    if (!(sink && stateSync)) return;
+    const result = stateSync(state);
+    if (result.push) {
+      sink.event({ type: "agent_state", state: result.state });
+      return;
+    }
+    if (result.reason === "failed") {
+      logger?.warn?.(`syncState projection failed: ${result.detail}`);
+    } else if (result.reason === "too-large") {
+      logger?.warn?.(`syncState projection is ${result.bytes} bytes; not sent`);
+    }
+  };
+
   const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
     const tool = allTools[name];
     if (!tool) return toolError(`Unknown tool: ${name}`);
@@ -193,7 +214,14 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
         signal: callOpts?.signal,
       });
-    return run();
+    try {
+      return await run();
+    } finally {
+      // In `finally` so a throwing tool still publishes what it changed
+      // before it failed — a half-applied mutation the UI is not showing is
+      // worse than one it is.
+      syncStateToClient(sink, getState(sessionId ?? ""));
+    }
   };
   return { executeTool, toolSchemas, toolGuidance: builtins.guidance };
 }

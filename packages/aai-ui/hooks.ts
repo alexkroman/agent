@@ -140,6 +140,30 @@ export function useToolResult(...args: unknown[]): void {
   });
 }
 
+/**
+ * The agent's projected session state, or `null` before the first push.
+ *
+ * The counterpart to `syncState` on the agent: whatever that projection
+ * returns is what arrives here. It replaces the pattern this exists to
+ * remove — returning a state snapshot from every tool, declaring a type for
+ * what those tools happen to return, and mirroring it into `useState` through
+ * `useToolResult`, which was three things to keep in step and which 58% of
+ * measured generated agents built by hand.
+ *
+ * ```tsx
+ * const cart = useAgentState<{ cart: Item[] }>();
+ * return <Cart items={cart?.cart ?? []} />;
+ * ```
+ *
+ * Typed by the caller for the same reason `useToolResult` is: the shape is
+ * the author's own projection, which the framework cannot see. It is
+ * nullable on purpose — nothing has been pushed before the first tool call,
+ * and a UI has to render that moment.
+ */
+export function useAgentState<S = DefaultToolResult>(): S | null {
+  return useSessionSelector((snapshot) => snapshot.agentState) as S | null;
+}
+
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void {
   const customEvents = useSessionSelector((s) => s.customEvents);
   // Watermark over the monotonic event `id`: only the tail with id above it

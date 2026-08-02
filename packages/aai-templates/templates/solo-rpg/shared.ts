@@ -324,7 +324,7 @@ export const DEFAULT_STATE: GameState = {
 // The in-play game lives in `ctx.state`, the agent's per-session mutable
 // state — concurrent players get independent games by construction, and the
 // live game needs no persistence of its own (that's what save slots are for).
-type StateSlot = { game?: GameState };
+export type StateSlot = { game?: GameState };
 
 /** The session's live game. Mutations to the returned object stick — it is
  *  the object stored in `ctx.state`. */

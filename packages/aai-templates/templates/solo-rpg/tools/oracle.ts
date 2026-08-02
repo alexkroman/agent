@@ -228,7 +228,6 @@ export const oracle = tool({
       const state = getGameState(ctx);
       const interrupt = checkChaosInterrupt(state);
       saveGameState(ctx, state);
-      ctx.send("game_state", state);
       return {
         type: "chaos_check",
         chaosFactor: state.chaosFactor,

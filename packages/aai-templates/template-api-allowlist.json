@@ -96,7 +96,6 @@
     "TTS_RECONNECT_TIMEOUT_MS",
     "ToolChoice",
     "ToolChoiceSchema",
-    "ToolResultMap",
     "VALID_SLUG_RE",
     "WS_OPEN",
     "capToolResult",

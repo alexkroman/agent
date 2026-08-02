@@ -161,7 +161,6 @@ export const updateState = tool({
     updateCrisisFlags(state);
 
     saveGameState(ctx, state);
-    ctx.send("game_state", state);
 
     return {
       success: true,

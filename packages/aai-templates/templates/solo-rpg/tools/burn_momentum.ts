@@ -50,7 +50,6 @@ export const burnMomentum = tool({
     state.lastRoll = null;
 
     saveGameState(ctx, state);
-    ctx.send("game_state", state);
 
     return {
       burned: true,

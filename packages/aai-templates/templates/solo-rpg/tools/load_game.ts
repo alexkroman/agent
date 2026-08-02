@@ -18,7 +18,6 @@ export const loadGame = tool({
     const saved = await loadState<GameState>(ctx, saveSlotKey(args.slot));
     if (!saved) return { error: "No save found." };
     saveGameState(ctx, saved);
-    ctx.send("game_state", saved);
     return {
       loaded: true,
       playerName: saved.playerName,
