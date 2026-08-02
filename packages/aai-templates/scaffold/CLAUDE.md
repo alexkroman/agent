@@ -119,6 +119,12 @@ import systemPrompt from "./system-prompt.md?raw";
 export default agent({ name: "My Agent", systemPrompt });
 ```
 
+**JSON imports need no attribute.** `resolveJsonModule` is on, so
+`import data from "./knowledge.json"` is all it takes. Do NOT write
+`assert { type: "json" }` — import assertions were replaced by import
+attributes and TypeScript rejects them (`TS2880`). If you want to be
+explicit the modern spelling is `with { type: "json" }`, but plain is fine.
+
 ## Pipeline mode
 
 Omitting `stt`/`llm`/`tts` gives **S2S mode**: AssemblyAI's speech-to-speech
@@ -431,6 +437,23 @@ export default agent({
 });
 ```
 
+**Calling the network builtins from your own tool code.** `web_search`,
+`visit_webpage` and `fetch_json` are declared to the MODEL — the LLM calls
+them, and they are not on `ctx`. When your own `execute` needs one, import
+it:
+
+```ts
+import { fetchJson, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
+
+execute: async ({ city }) => await fetchJson(`https://api.example.com/${city}`),
+```
+
+Same implementations the builtins use, so you get URL screening, credential-
+header stripping, size caps and timeouts rather than a bare `fetch`. Plain
+`fetch` still works when you want none of that. There is no callable
+`run_code`: it exists to run code the model wrote, and tool code that wants
+to compute something can just compute it.
+
 **A tool with no arguments omits `parameters` entirely.** The field is
 optional and typed as a Zod *object*, so reaching for `z.undefined()` or
 `z.void()` to mean "no arguments" is a type error
@@ -679,6 +702,11 @@ useToolResult<ResultType>("tool_name", (result) => { ... })        // typed (opt
 `result` is the tool's return value, already JSON-parsed and untyped — read
 fields off it directly (`result.price`). The type parameter is optional; add
 it only when you want the shape checked.
+
+**There is no global `JSX` namespace.** React 19 removed it, so
+`JSX.Element` is `Cannot find namespace 'JSX'` (`TS2503`). Type a component's
+return as `ReactNode` — `import type { ReactNode } from "react"` — which is
+also what you want for anything that can be a string, an array, or null.
 
 **`useAgentState`** — the agent's session state, pushed automatically:
 

@@ -429,7 +429,7 @@ const STATIC_BUILTINS: Record<string, ToolDef & { guidance?: string }> = {
   calculate: createCalculate(),
 };
 
-function resolveBuiltin(
+export function resolveBuiltin(
   name: string,
   opts?: BuiltinToolOptions,
 ): (ToolDef & { guidance?: string }) | undefined {

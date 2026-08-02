@@ -160,6 +160,7 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "requiredProviderEnvVars",
   "resolveAllBuiltins",
   "resolveAndAssertPublic",
+  "resolveBuiltin",
   "resolveLlm",
   "safeFetch",
   "safeSend",
