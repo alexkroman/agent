@@ -2,8 +2,8 @@
 
 /** @jsxImportSource react */
 
-import { memo, type ReactNode } from "react";
-import ReactMarkdown from "react-markdown";
+import { memo, type ReactNode, useMemo } from "react";
+import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
 import { useTheme } from "../context.ts";
 import { SURFACE_TINT, TEXT_MUTED } from "./_colors.ts";
@@ -57,82 +57,86 @@ function escapeBareListMarkers(text: string): string {
  */
 export const Markdown = memo(function Markdown({ text }: { text: string }): ReactNode {
   const theme = useTheme();
-  return (
-    <ReactMarkdown
-      remarkPlugins={[remarkGfm]}
-      components={{
-        p: (props) => <p className="my-1.5 first:mt-0 last:mb-0" {...props} />,
-        ul: (props) => <ul className="my-1.5 list-disc pl-5" {...props} />,
-        ol: (props) => <ol className="my-1.5 list-decimal pl-5" {...props} />,
-        li: (props) => <li className="my-0.5" {...props} />,
-        h1: (props) => <h1 className="mt-3 mb-1.5 text-[17px] font-semibold" {...props} />,
-        h2: (props) => <h2 className="mt-3 mb-1.5 text-[16px] font-semibold" {...props} />,
-        h3: (props) => <h3 className="mt-3 mb-1.5 text-[15px] font-semibold" {...props} />,
-        a: ({ style, ...props }) => (
-          <a
-            className="underline underline-offset-2"
-            style={{ color: theme.primary, ...style }}
-            target="_blank"
-            rel="noreferrer noopener"
-            {...props}
-          />
-        ),
-        code: ({ className, style, children, ...rest }) => {
-          // react-markdown marks fenced blocks with a language- class and
-          // wraps them in <pre>; anything else is an inline span.
-          const fenced = /language-/.test(className ?? "");
-          return fenced ? (
-            <code className="font-aai-mono text-[12.5px]" {...rest}>
-              {children}
-            </code>
-          ) : (
-            <code
-              className="rounded-sm border px-1 py-0.5 font-aai-mono text-[12.5px]"
-              style={{ borderColor: theme.border, background: SURFACE_TINT, ...style }}
-              {...rest}
-            >
-              {children}
-            </code>
-          );
-        },
-        pre: ({ style, ...props }) => (
-          <pre
-            className="my-1.5 overflow-x-auto rounded-md border p-2.5 whitespace-pre-wrap wrap-break-word"
+  // The renderer map is ~20 closures — rebuild it only when the theme
+  // changes (identity-stable via ThemeProvider), not on every streamed
+  // delta of the live assistant bubble.
+  const components = useMemo<Components>(
+    () => ({
+      p: (props) => <p className="my-1.5 first:mt-0 last:mb-0" {...props} />,
+      ul: (props) => <ul className="my-1.5 list-disc pl-5" {...props} />,
+      ol: (props) => <ol className="my-1.5 list-decimal pl-5" {...props} />,
+      li: (props) => <li className="my-0.5" {...props} />,
+      h1: (props) => <h1 className="mt-3 mb-1.5 text-[17px] font-semibold" {...props} />,
+      h2: (props) => <h2 className="mt-3 mb-1.5 text-[16px] font-semibold" {...props} />,
+      h3: (props) => <h3 className="mt-3 mb-1.5 text-[15px] font-semibold" {...props} />,
+      a: ({ style, ...props }) => (
+        <a
+          className="underline underline-offset-2"
+          style={{ color: theme.primary, ...style }}
+          target="_blank"
+          rel="noreferrer noopener"
+          {...props}
+        />
+      ),
+      code: ({ className, style, children, ...rest }) => {
+        // react-markdown marks fenced blocks with a language- class and
+        // wraps them in <pre>; anything else is an inline span.
+        const fenced = /language-/.test(className ?? "");
+        return fenced ? (
+          <code className="font-aai-mono text-[12.5px]" {...rest}>
+            {children}
+          </code>
+        ) : (
+          <code
+            className="rounded-sm border px-1 py-0.5 font-aai-mono text-[12.5px]"
             style={{ borderColor: theme.border, background: SURFACE_TINT, ...style }}
-            {...props}
-          />
-        ),
-        blockquote: ({ style, ...props }) => (
-          <blockquote
-            className="my-1.5 border-l-2 pl-3"
-            style={{ borderColor: theme.border, color: TEXT_MUTED, ...style }}
-            {...props}
-          />
-        ),
-        table: (props) => <table className="my-1.5 w-full border-collapse text-sm" {...props} />,
-        th: ({ style, ...props }) => (
-          <th
-            className="border px-2 py-1 text-left font-medium"
-            style={{ borderColor: theme.border, ...style }}
-            {...props}
-          />
-        ),
-        td: ({ style, ...props }) => (
-          <td
-            className="border px-2 py-1"
-            style={{ borderColor: theme.border, ...style }}
-            {...props}
-          />
-        ),
-        hr: ({ style, ...props }) => (
-          <hr
-            className="my-2.5 border-t"
-            style={{ borderColor: theme.border, ...style }}
-            {...props}
-          />
-        ),
-      }}
-    >
+            {...rest}
+          >
+            {children}
+          </code>
+        );
+      },
+      pre: ({ style, ...props }) => (
+        <pre
+          className="my-1.5 overflow-x-auto rounded-md border p-2.5 whitespace-pre-wrap wrap-break-word"
+          style={{ borderColor: theme.border, background: SURFACE_TINT, ...style }}
+          {...props}
+        />
+      ),
+      blockquote: ({ style, ...props }) => (
+        <blockquote
+          className="my-1.5 border-l-2 pl-3"
+          style={{ borderColor: theme.border, color: TEXT_MUTED, ...style }}
+          {...props}
+        />
+      ),
+      table: (props) => <table className="my-1.5 w-full border-collapse text-sm" {...props} />,
+      th: ({ style, ...props }) => (
+        <th
+          className="border px-2 py-1 text-left font-medium"
+          style={{ borderColor: theme.border, ...style }}
+          {...props}
+        />
+      ),
+      td: ({ style, ...props }) => (
+        <td
+          className="border px-2 py-1"
+          style={{ borderColor: theme.border, ...style }}
+          {...props}
+        />
+      ),
+      hr: ({ style, ...props }) => (
+        <hr
+          className="my-2.5 border-t"
+          style={{ borderColor: theme.border, ...style }}
+          {...props}
+        />
+      ),
+    }),
+    [theme],
+  );
+  return (
+    <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>
       {escapeBareListMarkers(text)}
     </ReactMarkdown>
   );

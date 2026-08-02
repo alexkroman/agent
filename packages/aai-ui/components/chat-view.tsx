@@ -42,7 +42,7 @@ export function ChatView({
   title?: string | undefined;
   className?: string | undefined;
 }): ReactNode {
-  // Narrow subscriptions: the shell only reads these three fields, so it must
+  // Narrow subscriptions: the shell only reads these two fields, so it must
   // not re-render at STT-partial rate the way a full useSession() would —
   // that cascades into every child below.
   const state = useSessionSelector((s) => s.state);

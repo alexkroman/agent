@@ -6,7 +6,6 @@
  */
 
 import type { SessionCore, SessionSnapshot } from "./session-core-types.ts";
-import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./types.ts";
 
 /**
  * Create a mock SessionCore for React component tests.
@@ -16,33 +15,23 @@ import type { AgentState, ChatMessage, SessionError, ToolCallInfo } from "./type
  * triggering React re-renders.
  */
 export function createMockSessionCore(
-  overrides?: Partial<{
-    state: AgentState;
-    messages: ChatMessage[];
-    toolCalls: ToolCallInfo[];
-    userTranscript: string | null;
-    agentTranscript: string | null;
-    error: SessionError | null;
-    started: boolean;
-    running: boolean;
-    recording: boolean;
-    apiUrl: string;
-  }>,
+  overrides?: Partial<SessionSnapshot>,
 ): SessionCore & { update(partial: Partial<SessionSnapshot>): void } {
   let snapshot: SessionSnapshot = {
-    state: overrides?.state ?? "disconnected",
+    state: "disconnected",
     contentVersion: 0,
-    messages: overrides?.messages ?? [],
-    toolCalls: overrides?.toolCalls ?? [],
+    messages: [],
+    toolCalls: [],
     customEvents: [],
     agentState: null,
-    userTranscript: overrides?.userTranscript ?? null,
-    agentTranscript: overrides?.agentTranscript ?? null,
-    error: overrides?.error ?? null,
-    started: overrides?.started ?? false,
-    running: overrides?.running ?? true,
-    recording: overrides?.recording ?? false,
-    apiUrl: overrides?.apiUrl ?? "ws://test.local/websocket",
+    userTranscript: null,
+    agentTranscript: null,
+    error: null,
+    started: false,
+    running: true,
+    recording: false,
+    apiUrl: "ws://test.local/websocket",
+    ...overrides,
   };
 
   const subscribers = new Set<() => void>();
@@ -143,15 +132,6 @@ export class MockAudioNode {
   }
 }
 
-export class MockGainNode extends MockAudioNode {
-  gain = {
-    value: 1,
-    setTargetAtTime(value: number, _startTime: number, _tc: number) {
-      this.value = value;
-    },
-  };
-}
-
 export class MockAudioWorkletNode {
   port = new MockMessagePort();
   connected: MockAudioNode[] = [];
@@ -195,9 +175,6 @@ export class MockAudioContext {
   }
   createMediaStreamSource(_stream: unknown) {
     return new MockAudioNode();
-  }
-  createGain() {
-    return new MockGainNode();
   }
   close() {
     this.closed = true;

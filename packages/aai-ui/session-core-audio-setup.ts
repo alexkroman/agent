@@ -17,7 +17,7 @@ import type { ConnState, SessionSnapshot } from "./session-core-types.ts";
 /** Dependencies `initAudioCapture` needs from the owning session core. */
 export type AudioSetupDeps = {
   sendJson: (msg: ClientMessage) => void;
-  sendAudio: (bytes: Uint8Array) => void;
+  sendAudio: (bytes: ArrayBuffer) => void;
   updateState: (partial: Partial<SessionSnapshot>) => void;
   /** Turn-boundary-guarded drain from the message handlers — replays a
    *  buffered `audio_done` without stomping a barge-in's state. */
@@ -25,6 +25,28 @@ export type AudioSetupDeps = {
   /** Release the mic/VoiceIO (used when the audio path dies non-fatally). */
   cleanupAudio: () => void;
 };
+
+type AudioModules = [typeof import("./audio.ts"), string, string];
+
+let audioModulesPromise: Promise<AudioModules> | null = null;
+
+/**
+ * Load the audio module and worklet sources, memoized so a prefetch at
+ * `connect()` time overlaps the chunk fetch with the WebSocket handshake
+ * instead of serializing it behind the server's `config` frame. A failed
+ * load clears the memo so the next attempt retries the import.
+ */
+export function loadAudioModules(): Promise<AudioModules> {
+  audioModulesPromise ??= Promise.all([
+    import("./audio.ts"),
+    import("./worklets/capture-processor.ts").then((m) => m.default),
+    import("./worklets/playback-processor.ts").then((m) => m.default),
+  ]).catch((err: unknown) => {
+    audioModulesPromise = null;
+    throw err;
+  });
+  return audioModulesPromise;
+}
 
 /**
  * Initialize audio capture and playback after the server sends a ready config.
@@ -64,11 +86,7 @@ export async function initAudioCapture(
     });
   };
   try {
-    const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await Promise.all([
-      import("./audio.ts"),
-      import("./worklets/capture-processor.ts").then((m) => m.default),
-      import("./worklets/playback-processor.ts").then((m) => m.default),
-    ]);
+    const [{ createVoiceIO }, captureWorklet, playbackWorklet] = await loadAudioModules();
     const io = await createVoiceIO({
       sttSampleRate: msg.sampleRate,
       ttsSampleRate: msg.ttsSampleRate,
@@ -76,25 +94,10 @@ export async function initAudioCapture(
       playbackWorkletSrc: playbackWorklet,
       onMicData: (pcm16: ArrayBuffer) => {
         try {
-          deps.sendAudio(new Uint8Array(pcm16));
+          deps.sendAudio(pcm16);
         } catch {
           console.debug("[aai-ui] sendAudio dropped: connection closed");
         }
-      },
-      // Underruns are otherwise completely silent: the session still reports
-      // "speaking" and done() still settles normally, so a reply that came
-      // out in fragments leaves no trace anywhere. Only turns that actually
-      // concealed something reach this callback.
-      onPlaybackStats: (stats) => {
-        console.warn("[aai-ui] playback concealed a gap in this turn", stats);
-      },
-      // A dead input device looks identical to a quiet user from every other
-      // vantage point: the socket is up, the session is listening, and no
-      // turn ever commits.
-      onMicSilent: () => {
-        console.warn(
-          "[aai-ui] microphone is delivering only silence — check the selected input device",
-        );
       },
       // A worklet processor crash after setup: the audio path is dead even
       // though the socket is fine, so surface it instead of staying in a
@@ -119,7 +122,7 @@ export async function initAudioCapture(
     conn.voiceIO = io;
     if (conn.preInitAudio.length > 0) {
       for (const chunk of conn.preInitAudio) {
-        io.enqueue(chunk.buffer as ArrayBuffer);
+        io.enqueue(chunk);
       }
       conn.preInitAudio = [];
     }

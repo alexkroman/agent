@@ -10,7 +10,7 @@
  * exclusively through the injected `getSnapshot`/`updateState` deps.
  */
 
-import { createEpoch, DEFAULT_MAX_HISTORY, safeJsonParse } from "@alexkroman1/aai";
+import { createEpoch, DEFAULT_MAX_HISTORY, safeJsonParse, toArgsRecord } from "@alexkroman1/aai";
 import {
   type ClientEvent,
   lenientParse,
@@ -240,7 +240,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
             {
               callId: e.toolCallId,
               name: e.toolName,
-              args: (e.args ?? {}) as Record<string, unknown>,
+              args: toArgsRecord(e.args),
               status: "pending",
               seq: ++toolCallSeq,
               afterMessageId: getSnapshot().messages.at(-1)?.id ?? -1,
@@ -298,7 +298,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
   }
 
   /** Enqueue a PCM16 audio chunk for playback. Transitions state to `"speaking"` on the first chunk. */
-  function playAudioChunk(chunk: Uint8Array): void {
+  function playAudioChunk(chunk: ArrayBuffer): void {
     const snap = getSnapshot();
     // Binary frames bypass clearRecoveredError on purpose — a straggler chunk
     // must not flip an errored (or error-disconnected) session to "speaking".
@@ -307,7 +307,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       updateState({ state: "speaking" });
     }
     if (conn.voiceIO) {
-      conn.voiceIO.enqueue(chunk.buffer as ArrayBuffer);
+      conn.voiceIO.enqueue(chunk);
     } else if (conn.preInitAudio.length < MAX_PREINIT_AUDIO_CHUNKS) {
       conn.preInitAudio.push(chunk);
     }
@@ -351,7 +351,7 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
 
   function handleMessage(data: unknown): SessionConfigMessage | undefined {
     if (data instanceof ArrayBuffer) {
-      playAudioChunk(new Uint8Array(data));
+      playAudioChunk(data);
       return;
     }
     if (typeof data !== "string") {

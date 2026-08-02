@@ -4,6 +4,7 @@
 
 import clsx from "clsx";
 import { useEffect, useRef, useState } from "react";
+import { pageBaseUrl } from "../_utils.ts";
 import { useSessionSelector, useTheme } from "../context.ts";
 import { SURFACE_TINT, TEXT_FAINT, TEXT_MUTED } from "./_colors.ts";
 
@@ -73,14 +74,9 @@ function UrlChip({
   );
 }
 
-/** The page this UI is served from — what you'd send someone to talk to the agent. */
-function pageUrl(): string {
-  if (typeof window === "undefined") return "";
-  return `${window.location.origin}${window.location.pathname}`;
-}
-
 /**
- * The session's shareable UI URL.
+ * The session's shareable UI URL — the page this UI is served from, what
+ * you'd send someone to talk to the agent.
  *
  * @public
  */
@@ -88,7 +84,7 @@ export function UiUrlChip({ className }: { className?: string | undefined }) {
   return (
     <UrlChip
       label="UI"
-      url={pageUrl()}
+      url={pageBaseUrl()}
       hint="Shareable UI"
       testId="ui-url-chip"
       className={className}

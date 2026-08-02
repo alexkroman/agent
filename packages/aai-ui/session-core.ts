@@ -16,7 +16,7 @@
 import { createEpoch, WS_OPEN } from "@alexkroman1/aai";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
 import { loadClientConfig } from "./client-config.ts";
-import { initAudioCapture } from "./session-core-audio-setup.ts";
+import { initAudioCapture, loadAudioModules } from "./session-core-audio-setup.ts";
 import {
   CLEARED_SESSION_STATE,
   createMessageHandlers,
@@ -147,13 +147,13 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     }
   }
 
-  function sendAudio(bytes: Uint8Array): void {
+  function sendAudio(bytes: ArrayBuffer): void {
     if (!conn.ws || conn.ws.readyState !== WS_OPEN) return;
     // Backpressure: if the socket's send queue is backed up (slow network),
     // drop this frame instead of queueing. Queued mic audio only adds latency
     // and flushes stale speech into STT once the connection recovers.
     if (conn.ws.bufferedAmount > MIC_SEND_MAX_BUFFERED_BYTES) return;
-    conn.ws.send(bytes as unknown as ArrayBuffer);
+    conn.ws.send(bytes);
   }
 
   // ─── Message handling ─────────────────────────────────────────────────────
@@ -261,6 +261,13 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
       return;
     }
     updateState({ state: "connecting", error: null });
+    // Prefetch the audio module + worklet sources so the chunk fetch overlaps
+    // the WebSocket handshake instead of starting only when the server's
+    // `config` frame arrives. Failures are reported by initAudioCapture,
+    // which awaits the same memoized load.
+    void loadAudioModules().catch(() => {
+      /* surfaced by initAudioCapture */
+    });
     teardownConnection();
     conn.generation.bump();
     const controller = new AbortController();

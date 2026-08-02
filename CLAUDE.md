@@ -1107,7 +1107,7 @@ like breakage rather than a pause.
 **Underruns are reported, in WebRTC's counter shape.** Each turn's `stop`
 message carries `concealedSamples`, `silentConcealedSamples` (a subset, as in
 `getStats()`), `concealmentEvents`, and `silentConcealmentEvents`, surfaced as
-`VoiceIOOptions.onPlaybackStats` and logged by the default session. Nothing
+`VoiceIOOptions.onPlaybackStats` (the default session leaves it unwired). Nothing
 else marks an underrun — the session still reports `"speaking"` and `done()`
 still settles — so this is the only way to tell a turn that needed its cushion
 from one that didn't, and the only honest basis for retuning

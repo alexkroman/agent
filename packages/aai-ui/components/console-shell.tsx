@@ -6,7 +6,7 @@ import clsx from "clsx";
 import type { ReactNode } from "react";
 import { useTheme } from "../context.ts";
 import type { AgentState } from "../types.ts";
-import { ERROR_COLOR, TEXT_FAINT } from "./_colors.ts";
+import { ERROR_COLOR, TEXT_FAINT, THINKING_COLOR } from "./_colors.ts";
 import { AaiLogo } from "./aai-logo.tsx";
 import { Eyebrow } from "./eyebrow.tsx";
 
@@ -22,7 +22,7 @@ function stateColor(state: AgentState, primary: string): string {
     case "ready":
       return primary;
     case "thinking":
-      return "#B98900";
+      return THINKING_COLOR;
     case "error":
       return ERROR_COLOR;
     default:

@@ -1,10 +1,11 @@
 // Copyright 2025 the AAI authors. MIT license.
 // WebSocket URL construction for the browser session core.
 
+import { buildAgentUrl } from "./client-config.ts";
+
 /** Build the session WebSocket URL from the platform URL and resume state. */
 export function buildWsUrl(platformUrl: string, resume: boolean, sessionId?: string): URL {
-  const wsUrl = new URL("websocket", platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
-  return applyResumeParams(wsUrl, resume, sessionId);
+  return applyResumeParams(buildAgentUrl(platformUrl, "websocket"), resume, sessionId);
 }
 
 /**
