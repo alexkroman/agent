@@ -10,6 +10,11 @@ import { defineConfig } from "vite";
 export default defineConfig({
   root: import.meta.dirname,
   base: "/studio-assets/",
+  // Errors only: the default `info` level prints the full per-asset listing
+  // plus the >500 kB chunk-size warning on every build. The two big chunks
+  // (CodeMirror's code-view split and the main bundle) are ~180 kB gzipped —
+  // acceptable for a load-once internal SPA, so the warning is pure noise.
+  logLevel: "error",
   plugins: [tailwindcss()],
   build: {
     outDir: "dist",
