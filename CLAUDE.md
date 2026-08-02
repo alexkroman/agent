@@ -1351,6 +1351,14 @@ you only need to list one package.
   as `predeploy:modal` in both server packages (a fail-fast before the
   remote Modal image build, which rebuilds the harness itself). Also
   runnable directly: `node scripts/ensure-guest-harness.mjs`.
+- **`predev` also rebuilds the studio front-end**: aai-studio-server's
+  `predev` ends with `pnpm --filter aai-studio-client build`, so
+  `pnpm dev:aai-server` always serves a current client. `studio-static.ts`
+  serves whatever is in that package's `dist/` — nothing checks its age —
+  so without this a stale (or absent) bundle is served silently and the
+  studio looks unchanged no matter what you edit. Unconditional rather than
+  staleness-gated like the harness above: the build is sub-second, which is
+  cheaper than the check would be worth.
 - **Each suite is defined once, in its own package's `vitest.config.ts`.**
   The root `vitest.config.ts` discovers them with `projects: ["packages/*"]`
   and adds only the typecheck-only `aai-types` project. Use
