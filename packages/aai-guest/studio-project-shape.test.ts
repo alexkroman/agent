@@ -9,6 +9,7 @@ import {
   WORKSPACE_GLOBAL_DTS,
   WORKSPACE_TSCONFIG,
   WORKSPACE_VITE_CONFIG,
+  WORKSPACE_VITEST_CONFIG,
 } from "./studio-project-shape.ts";
 
 let dir: string;
@@ -21,7 +22,13 @@ describe("ensureProjectShape", () => {
   test("writes the missing project files", async () => {
     dir = await mkdtemp(path.join(tmpdir(), "aai-shape-"));
     await ensureProjectShape(dir);
-    for (const rel of ["package.json", "tsconfig.json", "global.d.ts", "vite.config.ts"]) {
+    for (const rel of [
+      "package.json",
+      "tsconfig.json",
+      "global.d.ts",
+      "vite.config.ts",
+      "vitest.config.ts",
+    ]) {
       await expect(readFile(path.join(dir, rel), "utf-8")).resolves.toBeTruthy();
     }
     const pkg = JSON.parse(await readFile(path.join(dir, "package.json"), "utf-8")) as {
@@ -63,6 +70,21 @@ describe("scaffold parity (drift guard)", () => {
 
   test("global.d.ts matches the scaffold's byte for byte", async () => {
     await expect(scaffold("global.d.ts")).resolves.toBe(WORKSPACE_GLOBAL_DTS);
+  });
+
+  /**
+   * Compared on the config body, not byte for byte: the scaffold's copy
+   * carries a long doc comment explaining why the test config is separate
+   * from the vite one, which a generated workspace does not need.
+   */
+  test("vitest config enables globals, in both copies", async () => {
+    const body = (text: string) => text.slice(text.indexOf("export default"));
+    expect(body(WORKSPACE_VITEST_CONFIG)).toBe(body(await scaffold("vitest.config.ts")));
+    expect(WORKSPACE_VITEST_CONFIG).toContain("globals: true");
+    // It must not import the client build's plugins — that is the whole
+    // reason it exists apart from vite.config.ts.
+    expect(WORKSPACE_VITEST_CONFIG).not.toContain("plugin-react");
+    expect(WORKSPACE_VITEST_CONFIG).not.toContain("tailwindcss");
   });
 
   /**

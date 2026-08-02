@@ -111,7 +111,7 @@ describe("studio page + routing", () => {
     expect(await res.json()).toEqual({
       llm: true,
       provider: "assemblyai",
-      model: "qwen3-next-80b-a3b",
+      model: "gpt-5-mini",
     });
   });
 
@@ -123,7 +123,7 @@ describe("studio page + routing", () => {
     expect(await (await fetch("/studio/status")).json()).toEqual({
       llm: true,
       provider: "assemblyai",
-      model: "qwen3-next-80b-a3b",
+      model: "gpt-5-mini",
     });
   });
 

@@ -35,6 +35,25 @@ export default defineConfig({
 });
 `;
 
+/**
+ * Mirrors packages/aai-templates/scaffold/vitest.config.ts (drift-guarded).
+ *
+ * Separate from the vite config on purpose — see that file. Vitest prefers
+ * this one, so the test run stops depending on the client build's plugin
+ * imports resolving, and `globals: true` makes an un-imported `describe`
+ * work. Five of the seven repairs in one measured arm were test suites that
+ * failed to LOAD (zero assertion failures), which cost a build round each
+ * and taught the agent nothing about its own code.
+ */
+export const WORKSPACE_VITEST_CONFIG = `import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globals: true,
+  },
+});
+`;
+
 /** Mirrors the scaffold's global.d.ts (drift-guarded). */
 export const WORKSPACE_GLOBAL_DTS = `/// <reference types="vite/client" />
 `;
@@ -109,6 +128,7 @@ const SHAPE_FILES: Record<string, string> = {
   "tsconfig.json": WORKSPACE_TSCONFIG,
   "global.d.ts": WORKSPACE_GLOBAL_DTS,
   "vite.config.ts": WORKSPACE_VITE_CONFIG,
+  "vitest.config.ts": WORKSPACE_VITEST_CONFIG,
 };
 
 /** Write any missing project-shape files into `dir` (existing files win). */

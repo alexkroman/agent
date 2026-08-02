@@ -10,7 +10,7 @@
     "allowImportingTsExtensions": true,
     "noEmit": true,
     "skipLibCheck": true,
-    "types": ["vitest"],
+    "types": ["vitest/globals"],
     "resolveJsonModule": true,
     "jsx": "react-jsx",
     "jsxImportSource": "react",
