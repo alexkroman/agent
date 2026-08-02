@@ -26,7 +26,6 @@
 import type { AppDatabases } from "aai-server/app-database";
 import { applyPlatformMiddleware } from "aai-server/app-middleware";
 import type { ChatStore } from "aai-server/chat-store";
-import type { HonoEnv } from "aai-server/context";
 import { createMemorySlugEpochs, type SlugEpochs } from "aai-server/platform-epoch";
 import { localSlugLock, type SlugMutationLock } from "aai-server/platform-lock";
 import type { SandboxPool } from "aai-server/sandbox-pool";
@@ -35,6 +34,7 @@ import { createMemorySecretStore, type SecretStore } from "aai-server/secret-sto
 import type { BundleStore } from "aai-server/store-types";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import { Hono } from "hono";
+import type { StudioHonoEnv } from "./studio-context.ts";
 import type { StudioRateLimiters } from "./studio-rate-limit.ts";
 import { createStudioRoutes } from "./studio-routes.ts";
 import { handleStudioClientAsset, handleStudioFavicon, handleStudioPage } from "./studio-static.ts";
@@ -60,11 +60,11 @@ export type StudioAppOpts = {
 };
 
 export function createStudioApp(opts: StudioAppOpts): {
-  app: Hono<HonoEnv>;
+  app: Hono<StudioHonoEnv>;
   /** Release the studio's per-project coding-agent sandboxes on shutdown. */
   dispose: () => Promise<void>;
 } {
-  const app = new Hono<HonoEnv>();
+  const app = new Hono<StudioHonoEnv>();
   applyPlatformMiddleware(app, opts.allowedOrigins);
 
   app.get("/health", (c) =>
@@ -81,7 +81,7 @@ export function createStudioApp(opts: StudioAppOpts): {
   app.route("/studio", studioRoutes.routes);
   app.get("/studio/", (c) => c.redirect("/", 302));
 
-  const bindings: HonoEnv["Bindings"] = {
+  const bindings: StudioHonoEnv["Bindings"] = {
     // This service runs no voice sandboxes; an empty cache makes the shared
     // mutation cores' local terminateSlot/restartSlotSandbox calls no-ops,
     // while the epoch bump they also perform reaches the agent service.

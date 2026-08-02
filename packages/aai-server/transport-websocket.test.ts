@@ -3,7 +3,6 @@ import http from "node:http";
 import net, { type AddressInfo } from "node:net";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
-import { createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createMemorySlugEpochs } from "./platform-epoch.ts";
 import type { Sandbox } from "./sandbox.ts";
@@ -15,7 +14,6 @@ import {
   deployAgent,
   TEST_AGENT_CONFIG,
 } from "./test-utils.ts";
-import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 // Partial mock: the real guardHostModeUpgrade/wantsHostMode gate runs (that
 // wiring is what these tests cover), but startDeployedHostSession is a spy —
@@ -197,8 +195,6 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
   const { injectWebSocket, activeSessionCount } = createOrchestrator({
     slots,
     store,
-    workspaces: createMemoryWorkspaceStore(),
-    chats: createMemoryChatStore(),
     ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),
   });
   const server = http.createServer((_req, res) => {

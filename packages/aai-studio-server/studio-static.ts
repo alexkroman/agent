@@ -25,7 +25,7 @@ import mime from "mime-types";
  *
  * Every asset the studio loads is same-origin, but the coding agent's chat
  * and tool-label calls are NOT: the browser talks straight to the project's
- * sandbox (`chatUrlFromSessionUrl` in studio-session-broker.ts), the same way
+ * sandbox (`chatUrlForGuest` in studio-session-broker.ts), the same way
  * voice sessions connect directly to a deployed agent. Those origins have to
  * be here or the browser refuses the request before it is sent — which
  * presents as a bare "Failed to fetch" in the client with NOTHING on the

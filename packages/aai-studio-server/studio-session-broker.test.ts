@@ -5,7 +5,7 @@ import type { GuestConnection } from "aai-server/rpc-schemas";
 import type { WarmHarness } from "aai-server/sandbox-vm";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, test, vi } from "vitest";
-import { chatUrlFromSessionUrl, createStudioSessionBroker } from "./studio-session-broker.ts";
+import { chatUrlForGuest, createStudioSessionBroker } from "./studio-session-broker.ts";
 import { createWorkspace, getWorkspace } from "./studio-workspace.ts";
 
 const SCOPE = "scope";
@@ -18,7 +18,7 @@ type FakeGuest = {
   disposed: () => boolean;
 };
 
-function fakeGuest(sessionUrl = "wss://tunnel.example:443/websocket"): FakeGuest {
+function fakeGuest(guestOrigin = "wss://tunnel.example:443"): FakeGuest {
   const requests: FakeGuest["requests"] = [];
   const handlers = new Map<string, (params: unknown) => unknown>();
   let disposed = false;
@@ -48,7 +48,8 @@ function fakeGuest(sessionUrl = "wss://tunnel.example:443/websocket"): FakeGuest
   } as unknown as GuestConnection;
   const warm = {
     conn,
-    sessionUrl,
+    guestOrigin,
+    sessionUrl: `${guestOrigin}/websocket`,
     [Symbol.asyncDispose]: async () => {
       disposed = true;
     },
@@ -125,7 +126,7 @@ describe("studio session broker", () => {
 
   test("a dead sandbox is replaced on the next broker call", async () => {
     const first = fakeGuest();
-    const second = fakeGuest("wss://tunnel2.example:443/websocket");
+    const second = fakeGuest("wss://tunnel2.example:443");
     const { broker, spawn } = await makeBroker([first, second]);
     await broker.ensureSession(SCOPE, PROJECT, "k");
     // Kill the first sandbox (idle eviction / crash) — re-init will reject.
@@ -220,13 +221,11 @@ describe("studio session broker", () => {
   });
 });
 
-describe("chatUrlFromSessionUrl", () => {
+describe("chatUrlForGuest", () => {
   test("maps the voice endpoint to the https chat endpoint", () => {
-    expect(chatUrlFromSessionUrl("wss://h.modal.host:12345/websocket")).toBe(
+    expect(chatUrlForGuest("wss://h.modal.host:12345")).toBe(
       "https://h.modal.host:12345/studio/chat",
     );
-    expect(chatUrlFromSessionUrl("ws://127.0.0.1:8080/websocket")).toBe(
-      "http://127.0.0.1:8080/studio/chat",
-    );
+    expect(chatUrlForGuest("ws://127.0.0.1:8080")).toBe("http://127.0.0.1:8080/studio/chat");
   });
 });

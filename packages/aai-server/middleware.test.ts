@@ -1,19 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { createMemoryChatStore } from "./chat-store.ts";
 import { requireOwner } from "./middleware.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { createTestOrchestrator, createTestStore, deployAgent, deployBody } from "./test-utils.ts";
-import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
   const store = createTestStore();
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    workspaces: createMemoryWorkspaceStore(),
-    chats: createMemoryChatStore(),
   });
   const res = await app.fetch(new Request("http://localhost/health"));
   expect(res.headers.get("Cross-Origin-Opener-Policy")).toBe("same-origin");
@@ -25,8 +21,6 @@ test("orchestrator returns 401 on deploy without auth", async () => {
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    workspaces: createMemoryWorkspaceStore(),
-    chats: createMemoryChatStore(),
   });
   const res = await app.fetch(new Request("http://localhost/deploy", { method: "POST" }));
   expect(res.status).toBe(401);

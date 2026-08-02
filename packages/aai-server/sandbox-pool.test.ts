@@ -18,6 +18,7 @@ function makeFakeWarm(): FakeWarm {
   const exitListeners: (() => void)[] = [];
   const warm: FakeWarm = {
     conn: {} as WarmHarness["conn"],
+    guestOrigin: "wss://guest.test:443",
     sessionUrl: "wss://tunnel.test:443/websocket",
     cleanup: vi.fn(async () => {
       cleanedUp = true;

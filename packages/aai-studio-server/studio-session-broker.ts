@@ -30,10 +30,10 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { resolveHarnessPath } from "aai-server/constants";
+import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
 import { registerGuestRpcHandlers } from "aai-server/sandbox-guest-rpc";
 import type { SandboxPool } from "aai-server/sandbox-pool";
-import { spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
+import { acquireWarmHarness, spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { SafePathSchema } from "aai-server/schemas";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./studio-limits.ts";
@@ -144,12 +144,16 @@ type SessionEntry = {
   lastUsed: number;
 };
 
-/** `wss://host:port/websocket` (the voice endpoint) → the chat URL. */
-export function chatUrlFromSessionUrl(sessionUrl: string): string {
-  const url = new URL(sessionUrl);
-  url.protocol = url.protocol === "ws:" ? "http:" : "https:";
-  url.pathname = "/studio/chat";
-  return url.toString();
+/**
+ * The guest's chat URL, derived from the origin the backend reported.
+ *
+ * This used to reverse-engineer `sessionUrl` — swap the scheme, overwrite the
+ * pathname — to reach a surface this package was never handed. Deriving from
+ * the origin means a guest route rename is one edit in `guest-routes.ts`
+ * rather than two backends plus URL surgery in another package.
+ */
+export function chatUrlForGuest(guestOrigin: string): string {
+  return guestHttpUrl(guestOrigin, GUEST_ROUTES.studioChat);
 }
 
 /**
@@ -312,13 +316,10 @@ export function createStudioSessionBroker(
       const workspace = await getWorkspace(options.workspaces, scope, project);
       if (!workspace) return null;
 
-      const pooled = (await options.pool?.acquire()) ?? null;
-      const warm =
-        pooled ??
-        (await spawn({
-          harnessPath: options.harnessPath ?? resolveHarnessPath(),
-          slug: "studio-session",
-        }));
+      const warm = await acquireWarmHarness(
+        { pool: options.pool, harnessPath: options.harnessPath, slug: "studio-session" },
+        spawn,
+      );
       try {
         wire(warm, key, scope, project);
         const ok = await initSession(warm, scope, project, apiKey, workspace);
@@ -330,7 +331,7 @@ export function createStudioSessionBroker(
         await warm[Symbol.asyncDispose]().catch(() => undefined);
         throw err;
       }
-      const url = chatUrlFromSessionUrl(warm.sessionUrl);
+      const url = chatUrlForGuest(warm.guestOrigin);
       sessions.set(key, { warm, url, lastUsed: Date.now() });
       return { url };
     },
@@ -356,12 +357,10 @@ export function createStudioSessionBroker(
       // No (live) session sandbox — spawn one for the publish and tear it
       // down after; Publish from the editor shouldn't leave a sandbox
       // running that no chat session owns.
-      const warm =
-        (await options.pool?.acquire()) ??
-        (await spawn({
-          harnessPath: options.harnessPath ?? resolveHarnessPath(),
-          slug: "studio-publish",
-        }));
+      const warm = await acquireWarmHarness(
+        { pool: options.pool, harnessPath: options.harnessPath, slug: "studio-publish" },
+        spawn,
+      );
       try {
         registerGuestRpcHandlers(warm.conn, {});
         warm.conn.listen();

@@ -8,17 +8,17 @@
  * so the next session picks up `ctx.db`. Disabling drops the schema (with
  * all its data) and the role.
  *
- * Owner-authenticated exactly like the secret routes. The studio's
- * `/studio/projects/:project/storage` routes delegate to the same core
- * functions against the project's published slug.
+ * Owner-authenticated exactly like the secret routes. Storage is CLI-only
+ * (`aai storage enable`) — the studio deliberately has no toggle, so these
+ * Hono handlers are the only callers.
  */
 
 import { HTTPException } from "hono/http-exception";
 import type { AppDatabases } from "./app-database.ts";
 import type { AppContext } from "./context.ts";
-import { bumpSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
-import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
-import { restartSlotSandbox, type SlotCache } from "./sandbox-slots.ts";
+import type { SlugEpochs } from "./platform-epoch.ts";
+import type { SlugMutationLock } from "./platform-lock.ts";
+import { invalidateSlug, type SlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
 
 /** What the storage core needs from the server bindings. */
@@ -26,10 +26,8 @@ export type StorageEnv = {
   slots: SlotCache;
   secrets: SecretStore;
   appDb?: AppDatabases | undefined;
-  /** Per-slug mutation lock; defaults to in-process for direct callers. */
-  slugLock?: SlugMutationLock | undefined;
-  /** Invalidation epochs; absent means local-only sandbox restarts. */
-  slugEpochs?: SlugEpochs | undefined;
+  slugLock: SlugMutationLock;
+  slugEpochs: SlugEpochs;
 };
 
 const UNCONFIGURED_MESSAGE =
@@ -45,16 +43,10 @@ export async function storageStatus(env: StorageEnv, slug: string): Promise<{ en
 export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled: true }> {
   const appDb = env.appDb;
   if (!appDb) throw new HTTPException(503, { message: UNCONFIGURED_MESSAGE });
-  return (env.slugLock ?? localSlugLock)(slug, async () => {
+  return env.slugLock(slug, async () => {
     const meta = await appDb.provision(slug);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
-    // Independent work, run together: see the note in secret-handler.ts —
-    // serializing them holds this slug's cross-replica lease across a Modal
-    // terminate round trip for no reason.
-    await Promise.all([
-      restartSlotSandbox(env.slots, slug, "storage enable"),
-      env.slugEpochs ? bumpSlugEpoch(env.slugEpochs, slug) : undefined,
-    ]);
+    await invalidateSlug(env, slug, "storage enable");
     console.info("Storage enabled", { slug, role: meta.role });
     return { enabled: true as const };
   });
@@ -64,16 +56,10 @@ export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled:
 export function disableStorage(env: StorageEnv, slug: string): Promise<{ enabled: false }> {
   const appDb = env.appDb;
   if (!appDb) throw new HTTPException(503, { message: UNCONFIGURED_MESSAGE });
-  return (env.slugLock ?? localSlugLock)(slug, async () => {
+  return env.slugLock(slug, async () => {
     await appDb.deprovision(slug);
     await env.secrets.delete(appDbSecretName(slug));
-    // Independent work, run together: see the note in secret-handler.ts —
-    // serializing them holds this slug's cross-replica lease across a Modal
-    // terminate round trip for no reason.
-    await Promise.all([
-      restartSlotSandbox(env.slots, slug, "storage disable"),
-      env.slugEpochs ? bumpSlugEpoch(env.slugEpochs, slug) : undefined,
-    ]);
+    await invalidateSlug(env, slug, "storage disable");
     console.info("Storage disabled", { slug });
     return { enabled: false as const };
   });

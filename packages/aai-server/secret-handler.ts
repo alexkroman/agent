@@ -14,8 +14,7 @@
 
 import { HTTPException } from "hono/http-exception";
 import type { AppContext, ValidatedAppContext } from "./context.ts";
-import { bumpSlugEpoch } from "./platform-epoch.ts";
-import { restartSlotSandbox } from "./sandbox-slots.ts";
+import { invalidateSlug } from "./sandbox-slots.ts";
 import { SecretKeySchema } from "./schemas.ts";
 
 export async function handleSecretList(c: AppContext): Promise<Response> {
@@ -36,14 +35,7 @@ export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>):
     const merged = { ...existing, ...updates };
     await c.env.store.putEnv(slug, merged);
 
-    // Independent: the local teardown ends in a Modal terminate round trip,
-    // and the epoch bump only needs the store write (already landed) to have
-    // happened. Serializing them stretched the window this slug's
-    // cross-replica lease is held, blocking every other replica's mutation.
-    await Promise.all([
-      restartSlotSandbox(c.env.slots, slug, "secret update"),
-      bumpSlugEpoch(c.env.slugEpochs, slug),
-    ]);
+    await invalidateSlug(c.env, slug, "secret update");
     console.info("Secret updated", { slug, keyCount: Object.keys(updates).length });
     return c.json({ ok: true, keys: Object.keys(merged) });
   });
@@ -63,8 +55,7 @@ export function handleSecretDelete(c: AppContext): Promise<Response> {
     }
     delete existing[key];
     await c.env.store.putEnv(slug, existing);
-    await restartSlotSandbox(c.env.slots, slug, "secret delete");
-    await bumpSlugEpoch(c.env.slugEpochs, slug);
+    await invalidateSlug(c.env, slug, "secret delete");
     console.info("Secret deleted", { slug });
     return c.json({ ok: true });
   });

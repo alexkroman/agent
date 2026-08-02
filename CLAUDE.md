@@ -545,14 +545,17 @@ voice agents without the CLI:
   published agent would otherwise start with an empty env — its S2S
   connect sends an empty bearer token (`runtime-transport.ts`:
   `env[ASSEMBLYAI_API_KEY_ENV] ?? ""`) and AssemblyAI answers
-  `unauthorized`. The bearer token a studio caller
-  authenticates with *is* their AssemblyAI key (see `aai-cli/_config.ts`),
-  so `studio-deploy.ts` seeds it as the agent's `ASSEMBLYAI_API_KEY` via
-  `DeployParams.defaultEnv`. `defaultEnv` is an env **floor**, not an
-  override: `deployLocked` merges it as `{...defaultEnv, ...storedEnv, ...env}`,
-  so a key the user set deliberately (deploy-time `env`, or `aai secret put`
-  afterwards) always wins. This stays inside the credential-separation
-  rule — it forwards *the caller's own* key, never a platform-owned one.
+  `unauthorized`. The bearer token a studio caller authenticates with *is*
+  their AssemblyAI key (see `aai-cli/_config.ts`), so it is seeded as the
+  agent's `ASSEMBLYAI_API_KEY`. That seeding is the **CLI's** job
+  (`aai-cli/deploy.ts`: `env: { ASSEMBLYAI_API_KEY: apiKey, ...env }`), and
+  studio Publish runs that same CLI in-guest — so it is an env **floor**, not
+  an override: a key the user declared in `.env` targets a different account
+  and wins. The server-side `DeployParams.defaultEnv` that used to do this
+  was removed once Publish stopped calling the deploy core; `deployLocked`
+  now merges only `{...storedEnv, ...env}`. This stays inside the
+  credential-separation rule — it forwards *the caller's own* key, never a
+  platform-owned one.
 - **Client**: `packages/aai-studio-client` is a Vite-built React app;
   `studio-static.ts` resolves its `dist/` via `require.resolve` and serves
   it at `/` with hashed assets under `/studio-assets/`. When it hasn't

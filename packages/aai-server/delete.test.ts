@@ -1,6 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test, vi } from "vitest";
-import { createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
@@ -10,7 +9,6 @@ import {
   TEST_AGENT_CONFIG,
   type TestFetch,
 } from "./test-utils.ts";
-import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 async function setup() {
   const store = createTestStore();
@@ -18,8 +16,6 @@ async function setup() {
   const { app } = createOrchestrator({
     slots,
     store,
-    workspaces: createMemoryWorkspaceStore(),
-    chats: createMemoryChatStore(),
     inspect: async () => TEST_AGENT_CONFIG,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);

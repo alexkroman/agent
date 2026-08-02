@@ -17,6 +17,7 @@
 import { createServer } from "node:net";
 import { errorMessage } from "@alexkroman1/aai";
 import { WebSocket } from "ws";
+import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
@@ -139,9 +140,10 @@ export function warmFromGuest(opts: {
   proc: GuestProcLike;
   terminate: () => Promise<unknown>;
   ws: RpcWebSocket;
-  sessionUrl: string;
+  /** The guest's origin, e.g. `wss://host:port` — routes derive from it. */
+  origin: string;
 }): WarmHarness {
-  const { label, proc, ws, sessionUrl } = opts;
+  const { label, proc, ws, origin } = opts;
   void drainProcStream(proc.stdout, `[${label}] stdout`);
   void drainProcStream(proc.stderr, `[${label}] stderr`);
 
@@ -184,7 +186,8 @@ export function warmFromGuest(opts: {
 
   return {
     conn,
-    sessionUrl,
+    guestOrigin: origin,
+    sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session),
     cleanup,
     alive: () => !dead,
     onExit: (cb) => {

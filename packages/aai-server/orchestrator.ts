@@ -30,7 +30,6 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import type { AppDatabases } from "./app-database.ts";
 import { applyPlatformMiddleware } from "./app-middleware.ts";
-import type { ChatStore } from "./chat-store.ts";
 import { handleAgentClientConfig } from "./client-config-handler.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import type { HonoEnv } from "./context.ts";
@@ -60,15 +59,10 @@ import {
   handleAgentPage,
   handleClientAsset,
 } from "./transport-websocket.ts";
-import type { WorkspaceStore } from "./workspace-store.ts";
 
 export type OrchestratorOpts = {
   slots: SlotCache;
   store: BundleStore;
-  /** Studio project workspaces (Postgres in production, memory in dev/tests). */
-  workspaces: WorkspaceStore;
-  /** Studio project chat histories (Postgres in production, memory in dev/tests). */
-  chats: ChatStore;
   /** Named secret storage (Supabase Vault in production, memory in tests). */
   secrets?: SecretStore;
   /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
@@ -218,8 +212,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const bindings = {
     slots: opts.slots,
     store: opts.store,
-    workspaces: opts.workspaces,
-    chats: opts.chats,
     // Tests build orchestrators without a secret store; default to memory so
     // the storage-status route (and anything else reading secrets) works.
     secrets: opts.secrets ?? createMemorySecretStore(),

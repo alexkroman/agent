@@ -11,22 +11,25 @@
 
 import type { Context } from "hono";
 import type { AppDatabases } from "./app-database.ts";
-import type { ChatStore } from "./chat-store.ts";
 import type { SlugEpochs } from "./platform-epoch.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
-import type { WorkspaceStore } from "./workspace-store.ts";
 
+/**
+ * Bindings every platform route gets. Deliberately holds NOTHING
+ * studio-specific: the studio's workspace and chat stores live in
+ * `StudioHonoEnv` (aai-studio-server), which extends this. They used to be
+ * required here, so the agent service's route context and orchestrator
+ * options were coupled to the studio's data model — any studio store change
+ * was a compile-time change to aai-server, and the agent-only service
+ * constructed Postgres stores it never queried.
+ */
 export type HonoEnv = {
   Bindings: {
     slots: SlotCache;
     store: BundleStore;
-    /** Studio project workspaces (Postgres in production, memory in dev/tests). */
-    workspaces: WorkspaceStore;
-    /** Studio project chat histories (Postgres in production, memory in dev/tests). */
-    chats: ChatStore;
     /** Named secret storage (Supabase Vault in production). */
     secrets: SecretStore;
     /** Per-app database provisioning. Absent when SUPABASE_DB_URL is unset. */

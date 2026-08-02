@@ -38,12 +38,6 @@ export type DeployParams = {
   worker: string;
   clientFiles: Record<string, string>;
   env?: Record<string, string> | undefined;
-  /**
-   * Env floor: applied only where neither the agent's stored env nor `env`
-   * already supplies the key. Lets a caller seed a credential without ever
-   * clobbering one the user set deliberately (`aai secret put`).
-   */
-  defaultEnv?: Record<string, string> | undefined;
   agentConfig: IsolateConfig;
   /**
    * What to do when the agent's config requires a credential the merged env
@@ -204,8 +198,12 @@ async function deployLocked(
 ): Promise<DeployOutcome> {
   const { slug, existing, matchedHash, keyHash } = ctx;
 
+  // The env floor (seeding a caller's own key where nothing else supplies it)
+  // is the CLI's job now — `aai deploy` merges it into `env` client-side, and
+  // studio Publish runs that same CLI in-guest. The server-side `defaultEnv`
+  // that used to do it had no caller left.
   const storedEnv = existing?.env ?? {};
-  const env = { ...params.defaultEnv, ...storedEnv, ...params.env };
+  const env = { ...storedEnv, ...params.env };
 
   const envParsed = EnvSchema.safeParse(env);
   if (!envParsed.success) {

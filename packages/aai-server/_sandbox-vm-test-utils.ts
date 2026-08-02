@@ -81,6 +81,7 @@ export function createTestConn(): {
 export function makeWarm(conn: GuestConnection, cleanup: () => Promise<void>): WarmHarness {
   return {
     conn,
+    guestOrigin: "wss://guest.test:443",
     sessionUrl: "wss://tunnel.test:443/websocket",
     cleanup,
     alive: () => true,

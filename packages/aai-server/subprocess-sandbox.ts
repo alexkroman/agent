@@ -55,6 +55,7 @@ import { performance } from "node:perf_hooks";
 import { Readable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
+import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import {
@@ -198,7 +199,8 @@ export async function spawnSubprocessWarm(
     };
 
     try {
-      const ws = await dial(`ws://127.0.0.1:${port}/ws`, token);
+      const origin = `ws://127.0.0.1:${port}`;
+      const ws = await dial(guestWsUrl(origin, GUEST_ROUTES.control), token);
       debug("Subprocess sandbox spawned", {
         slug,
         port,
@@ -209,9 +211,7 @@ export async function spawnSubprocessWarm(
         proc,
         terminate,
         ws,
-        // The PUBLIC client-session endpoint — handed to browsers by the
-        // client-config broker, loopback-only here.
-        sessionUrl: `ws://127.0.0.1:${port}/websocket`,
+        origin,
       });
     } catch (err) {
       // Never leak a harness whose control channel failed to come up.
