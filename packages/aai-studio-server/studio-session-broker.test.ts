@@ -153,6 +153,51 @@ describe("studio session broker", () => {
     await broker.dispose();
   });
 
+  /**
+   * The auto preview trigger is the guest's TURN-COMPLETE sync (`done:
+   * true`, the analog of opencode's `session.idle` / codex's
+   * `agent-turn-complete`). Mid-turn checkpoints share the RPC method but
+   * carry no flag — deploying those would ship half-finished trees.
+   */
+  test("a done sync auto-deploys a preview; checkpoints do not", async () => {
+    const guest = fakeGuest();
+    const { broker, workspaces } = await makeBroker([guest]);
+    // Brokered WITH a serverUrl — that is what arms preview deploys.
+    await broker.ensureSession(SCOPE, PROJECT, "caller-key", "https://platform.example");
+    const sync = guest.handlers.get("studio/sync-workspace");
+
+    // Mid-turn checkpoint: files land, no preview deploy.
+    await sync?.({ files: { "agent.ts": "// checkpoint" } });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(guest.requests.some((r) => r.method === "workspace/deploy")).toBe(false);
+
+    // Turn-complete sync: the preview deploys to `<project>-preview`, on
+    // the live session sandbox, and stamps the workspace metadata.
+    await sync?.({ files: { "agent.ts": "// settled" }, done: true });
+    await vi.waitFor(async () => {
+      expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
+    });
+    const deploy = guest.requests.find((r) => r.method === "workspace/deploy");
+    expect(deploy?.params).toMatchObject({
+      serverUrl: "https://platform.example",
+      apiKey: "caller-key",
+      slug: `${PROJECT}-preview`,
+      files: { "agent.ts": "// settled" },
+    });
+    await broker.dispose();
+  });
+
+  test("a done sync without a brokered serverUrl never auto-deploys", async () => {
+    const guest = fakeGuest();
+    const { broker } = await makeBroker([guest]);
+    await broker.ensureSession(SCOPE, PROJECT, "k");
+    const sync = guest.handlers.get("studio/sync-workspace");
+    await sync?.({ files: { "agent.ts": "// settled" }, done: true });
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    expect(guest.requests.some((r) => r.method === "workspace/deploy")).toBe(false);
+    await broker.dispose();
+  });
+
   test("guest persist-chat writes the conversation row", async () => {
     const guest = fakeGuest();
     const { broker, chats } = await makeBroker([guest]);

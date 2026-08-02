@@ -170,11 +170,19 @@ export function createGuestWebTools(): ToolSet {
   return out;
 }
 
-/** Push the workspace and settled conversation back to the host's stores. */
+/**
+ * Push the workspace and settled conversation back to the host's stores.
+ *
+ * `done: true` marks this sync as the TURN-COMPLETE one — the guest's analog
+ * of opencode's `session.idle` / codex's `agent-turn-complete`. The host
+ * keys auto preview deploys off it; mid-turn checkpoints (below) share the
+ * RPC method but never carry the flag, so a half-finished workspace is never
+ * preview-deployed.
+ */
 async function settleTurn(session: StudioSession, messages: UIMessage[]): Promise<void> {
   const { files, warnings } = await snapshotWorkspace(session.dir);
   for (const warning of warnings) console.error(`studio sync: ${warning}`);
-  await hostRequest("studio/sync-workspace", { files }, SYNC_RPC_TIMEOUT_MS);
+  await hostRequest("studio/sync-workspace", { files, done: true }, SYNC_RPC_TIMEOUT_MS);
   await hostRequest("studio/persist-chat", { messages }, SYNC_RPC_TIMEOUT_MS);
 }
 

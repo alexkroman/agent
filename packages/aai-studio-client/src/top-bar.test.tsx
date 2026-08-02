@@ -45,12 +45,12 @@ describe("TopBar", () => {
     expect(onSelectProject).toHaveBeenCalledTimes(1);
   });
 
-  test("tab buttons switch between Live and Code", () => {
+  test("tab buttons switch between Preview and Code", () => {
     const onSelectTab = vi.fn();
     render(<TopBar {...barProps} onSelectTab={onSelectTab} />);
     fireEvent.click(screen.getByRole("button", { name: "Code" }));
     expect(onSelectTab).toHaveBeenCalledWith("code");
-    fireEvent.click(screen.getByRole("button", { name: "Live" }));
+    fireEvent.click(screen.getByRole("button", { name: "Preview" }));
     expect(onSelectTab).toHaveBeenCalledWith("preview");
   });
 
@@ -62,10 +62,12 @@ describe("TopBar", () => {
     expect((secrets as HTMLButtonElement).disabled).toBe(true);
   });
 
-  test("a deployed slug shows the live link and unlocks Secrets", () => {
+  test("a deployed slug shows the production link and unlocks Secrets", () => {
     render(<TopBar {...barProps} deployedSlug="my-agent" />);
+    // The production URL is a plain link that opens in a new tab.
     const link = screen.getByRole("link");
     expect(link.getAttribute("href")).toBe(agentUrl("my-agent"));
+    expect(link.getAttribute("target")).toBe("_blank");
     const secrets = screen.getByRole("button", { name: "Secrets" });
     expect((secrets as HTMLButtonElement).disabled).toBe(false);
   });

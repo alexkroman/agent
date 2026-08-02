@@ -58,6 +58,7 @@ import {
   createWorkspace,
   deleteWorkspace,
   getWorkspace,
+  hasPreviewChanges,
   hasUnpublishedChanges,
   listProjects,
   mutateWorkspace,
@@ -202,6 +203,14 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       ...(workspace.deployedSlug && { deployedSlug: workspace.deployedSlug }),
       // Computed here so the client never has to hash files itself.
       unpublished: hasUnpublishedChanges(workspace),
+      // The auto preview deploy's state: slug + a version token the client
+      // keys the Preview iframe by (changes on every successful preview),
+      // stale = an edit hasn't reached the preview yet (deploy in flight or
+      // failed), and the last failed preview's CLI output for the banner.
+      ...(workspace.previewSlug && { previewSlug: workspace.previewSlug }),
+      ...(workspace.previewHash && { previewVersion: workspace.previewHash }),
+      previewStale: hasPreviewChanges(workspace),
+      ...(workspace.previewError && { previewError: workspace.previewError }),
     });
   });
 
@@ -227,6 +236,15 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     return c.json({ ok: true });
   });
 
+  // A manual edit is a settled edit — schedule an auto preview deploy, same
+  // as the coding agent's end-of-turn sync (fire-and-forget, coalesced).
+  const schedulePreview = (c: Context<StudioHonoEnv>, scope: string, project: string): void => {
+    ensureBroker(c).schedulePreview(scope, project, {
+      serverUrl: requestPublicOrigin(c),
+      apiKey: c.var.apiKey,
+    });
+  };
+
   studio.put("/projects/:project/file", zValidator("json", StudioFileSchema), async (c) => {
     const scope = studioScope(c.var.apiKey);
     const project = validateProject(c.req.param("project"));
@@ -244,6 +262,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
       } catch (err) {
         return c.json({ error: errorMessage(err) }, 400);
       }
+      schedulePreview(c, scope, project);
       return c.json({ ok: true });
     });
   });
@@ -265,6 +284,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
         return { ...current, files };
       });
       if (!(workspace && deleted)) return c.json({ error: "File not found" }, 404);
+      schedulePreview(c, scope, project);
       return c.json({ ok: true });
     });
   });
@@ -298,7 +318,14 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     if (limited) return limited;
     const project = validateProject(c.req.param("project"));
     const scope = studioScope(c.var.apiKey);
-    const session = await ensureBroker(c).ensureSession(scope, project, c.var.apiKey);
+    // The public origin arms auto preview deploys: the guest's end-of-turn
+    // sync makes the broker ship the edited workspace to the preview slug.
+    const session = await ensureBroker(c).ensureSession(
+      scope,
+      project,
+      c.var.apiKey,
+      requestPublicOrigin(c),
+    );
     if (!session) return c.json({ error: "Project not found" }, 404);
     return c.json({ url: session.url });
   });

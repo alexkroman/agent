@@ -6,9 +6,18 @@ import { parse } from "dotenv";
 
 export type ProjectData = {
   files: Record<string, string>;
+  /** Production slug — updated only by Publish. */
   deployedSlug?: string;
-  /** Workspace has edits the running agent does not have yet. */
+  /** Workspace has edits the production agent does not have yet. */
   unpublished?: boolean;
+  /** Preview slug — auto-deployed after agent turns and editor saves. */
+  previewSlug?: string;
+  /** Changes on every successful preview deploy; the iframe's reload key. */
+  previewVersion?: string;
+  /** Workspace has edits the preview has not deployed yet. */
+  previewStale?: boolean;
+  /** CLI output of the last failed preview deploy. */
+  previewError?: string;
 };
 
 /** The project's coding-agent sandbox, brokered by the platform. */

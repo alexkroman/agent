@@ -17,12 +17,25 @@ type SecretsPanelProps = {
   apiKey: string;
   /** The project's published slug; undefined until the first publish. */
   slug: string | undefined;
+  /**
+   * The project's auto-deployed preview slug, when one exists. Secrets are
+   * MIRRORED to it best-effort so the preview agent runs with the same
+   * third-party keys as production — the panel itself reads/attaches to the
+   * production slug.
+   */
+  previewSlug?: string | undefined;
   /** Post a note into the chat so the coding agent knows what changed. */
   onNotifyChat: (text: string) => void;
   onClose: () => void;
 };
 
-export function SecretsPanel({ apiKey, slug, onNotifyChat, onClose }: SecretsPanelProps) {
+export function SecretsPanel({
+  apiKey,
+  slug,
+  previewSlug,
+  onNotifyChat,
+  onClose,
+}: SecretsPanelProps) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
 
@@ -36,9 +49,19 @@ export function SecretsPanel({ apiKey, slug, onNotifyChat, onClose }: SecretsPan
     if (slug) void queryClient.invalidateQueries({ queryKey: secretsQueryKey(slug) });
   };
 
+  // Best-effort mirror to the preview agent: a missing preview (not yet
+  // deployed, or the preview slug 404s) must never fail the real write.
+  const mirrorToPreview = async (fn: (mirror: string) => Promise<unknown>): Promise<void> => {
+    if (!previewSlug || previewSlug === slug) return;
+    await fn(previewSlug).catch(() => undefined);
+  };
+
   const save = useMutation({
-    mutationFn: (updates: Record<string, string>) =>
-      api.putSecrets(apiKey, slug as string, updates),
+    mutationFn: async (updates: Record<string, string>) => {
+      const result = await api.putSecrets(apiKey, slug as string, updates);
+      await mirrorToPreview((mirror) => api.putSecrets(apiKey, mirror, updates));
+      return result;
+    },
     onSuccess: (_data, updates) => {
       invalidate();
       setDraft("");
@@ -52,7 +75,11 @@ export function SecretsPanel({ apiKey, slug, onNotifyChat, onClose }: SecretsPan
   });
 
   const remove = useMutation({
-    mutationFn: (name: string) => api.deleteSecret(apiKey, slug as string, name),
+    mutationFn: async (name: string) => {
+      const result = await api.deleteSecret(apiKey, slug as string, name);
+      await mirrorToPreview((mirror) => api.deleteSecret(apiKey, mirror, name));
+      return result;
+    },
     onSuccess: (_data, name) => {
       invalidate();
       onNotifyChat(`I deleted the secret ${name} from the deployed agent via the Secrets panel.`);

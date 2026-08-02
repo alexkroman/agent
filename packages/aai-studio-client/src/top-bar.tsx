@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's shared 60px top bar (brand, project switcher, Live/Code
+// The studio's shared 60px top bar (brand, project switcher, Preview/Code
 // segmented control, actions) and the Publish dropdown it opens. Split from
 // app.tsx, which owns all the state these render.
 
@@ -34,8 +34,9 @@ export function PublishMenu(props: PublishMenuProps) {
     <div className="absolute top-14 right-5 z-10 flex w-96 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md">
       <span className="eyebrow">Publish</span>
       <p className="m-0 text-[13px] leading-5 text-muted">
-        Runs <code className="font-mono">aai deploy</code> in the project's sandbox and puts the
-        agent live. The CLI output lands in the chat, so the agent can fix any errors. Third-party
+        Runs <code className="font-mono">aai deploy</code> in the project's sandbox and ships the
+        agent to PRODUCTION — the preview updates on its own as you edit; only Publish touches
+        production. The CLI output lands in the chat, so the agent can fix any errors. Third-party
         keys live in the Secrets panel.
       </p>
       <div className="flex items-center gap-2">
@@ -65,7 +66,7 @@ export function PublishMenu(props: PublishMenuProps) {
           target="_blank"
           rel="noreferrer"
         >
-          Live at {agentUrl(props.deployedSlug)}
+          Production at {agentUrl(props.deployedSlug)}
         </a>
       )}
     </div>
@@ -139,7 +140,7 @@ export function TopBar(props: TopBarProps) {
           className={segClass(props.tab === "preview")}
           onClick={() => props.onSelectTab("preview")}
         >
-          Live
+          Preview
         </button>
         <button
           type="button"
@@ -150,13 +151,15 @@ export function TopBar(props: TopBarProps) {
         </button>
       </div>
       <div className="flex-1" />
+      {/* The PRODUCTION URL (Publish's slug, never the preview's) — a plain
+          link that opens the deployed agent in a new tab. */}
       {props.deployedSlug && (
         <a
           className="font-mono text-xs text-muted hover:text-indigo"
           href={agentUrl(props.deployedSlug)}
           target="_blank"
           rel="noreferrer"
-          title={agentUrl(props.deployedSlug)}
+          title={`Production: ${agentUrl(props.deployedSlug)}`}
         >
           {agentUrl(props.deployedSlug)} ↗
         </a>

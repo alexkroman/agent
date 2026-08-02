@@ -40,6 +40,7 @@ import { SafePathSchema } from "aai-server/schemas";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./studio-limits.ts";
 import { studioLlmModelId } from "./studio-llm.ts";
+import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import { MAX_STUDIO_CHAT_MESSAGES, UiMessageSchema } from "./studio-schemas.ts";
 import { getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
@@ -74,6 +75,13 @@ const GuestFilesSchema = z.object({
     .refine((files) => Object.keys(files).length <= MAX_STUDIO_FILES, {
       message: `Too many files (max ${MAX_STUDIO_FILES})`,
     }),
+  /**
+   * True only on the TURN-COMPLETE sync (the guest's `settleTurn`, its
+   * analog of opencode's `session.idle` / codex's `agent-turn-complete`).
+   * Mid-turn checkpoints omit it, so preview deploys are keyed
+   * deterministically to settled turns — never to a half-finished tree.
+   */
+  done: z.boolean().optional(),
 });
 
 // Guest-sent wire data: the settled conversation is validated per message
@@ -123,8 +131,24 @@ export type StudioSessionBroker = {
    * Boot or reuse the project's sandbox, (re-)install the session with the
    * workspace's current files, and return the guest's public chat URL.
    * Null when the project doesn't exist.
+   *
+   * `serverUrl` (the public platform origin) arms auto preview deploys: the
+   * guest's end-of-turn `studio/sync-workspace` schedules a deploy of the
+   * edited workspace to the project's preview slug (studio-preview.ts).
+   * Omitted, agent edits sync without auto-previewing.
    */
-  ensureSession(scope: string, project: string, apiKey: string): Promise<{ url: string } | null>;
+  ensureSession(
+    scope: string,
+    project: string,
+    apiKey: string,
+    serverUrl?: string,
+  ): Promise<{ url: string } | null>;
+  /**
+   * Fire-and-forget: deploy the workspace's current files to the project's
+   * PREVIEW slug (editor saves take this path; agent turns schedule via the
+   * sync-workspace callback). Coalesced per project.
+   */
+  schedulePreview(scope: string, project: string, target: PreviewTarget): void;
   /**
    * Publish one workspace snapshot: the guest runs `aai deploy` against
    * the platform (`workspace/deploy`). Reuses the project's live sandbox
@@ -144,6 +168,13 @@ type SessionEntry = {
   warm: WarmHarness;
   url: string;
   lastUsed: number;
+  /**
+   * Where this session's auto preview deploys go — the public origin and
+   * caller key captured at broker time. Absent when the session was brokered
+   * without a `serverUrl` (tests, programmatic callers): then agent edits
+   * sync without auto-previewing.
+   */
+  previewTarget?: PreviewTarget;
 };
 
 /**
@@ -229,6 +260,15 @@ export function createStudioSessionBroker(
         files: parsed.data.files,
       }));
       if (!doc) throw new Error(`Project ${project} not found`);
+      // The turn settled with edits — ship the workspace to the preview slug
+      // so the Preview pane picks it up without a Publish. Only on the
+      // `done` sync: mid-turn checkpoints would preview half-finished trees.
+      // Fire-and-forget: the sync must settle now; the deploy stamps its
+      // outcome later.
+      const entry = sessions.get(key);
+      if (parsed.data.done && entry && entry.warm === warm && entry.previewTarget) {
+        previews.schedule(scope, project, entry.previewTarget);
+      }
       return { ok: true };
     });
     warm.conn.onRequest("studio/persist-chat", async (params) => {
@@ -304,6 +344,7 @@ export function createStudioSessionBroker(
     scope: string,
     project: string,
     apiKey: string,
+    serverUrl?: string,
   ): Promise<{ url: string } | null> {
     const existing = sessions.get(key);
     if (!existing) return null;
@@ -311,6 +352,7 @@ export function createStudioSessionBroker(
       const ok = await initSession(existing.warm, scope, project, apiKey);
       if (!ok) return null;
       existing.lastUsed = Date.now();
+      if (serverUrl) existing.previewTarget = { serverUrl, apiKey };
       return { url: existing.url };
     } catch (err) {
       // Dead sandbox (idle-killed, crashed) — drop it so the caller respawns.
@@ -329,8 +371,9 @@ export function createStudioSessionBroker(
     scope: string,
     project: string,
     apiKey: string,
+    serverUrl?: string,
   ): Promise<{ url: string } | null> {
-    const reused = await reuseSession(key, scope, project, apiKey);
+    const reused = await reuseSession(key, scope, project, apiKey, serverUrl);
     if (reused) return reused;
 
     // Check the project exists BEFORE taking a sandbox. Spawning first and
@@ -356,51 +399,78 @@ export function createStudioSessionBroker(
       throw err;
     }
     const url = chatUrlForGuest(warm.guestOrigin);
-    sessions.set(key, { warm, url, lastUsed: Date.now() });
+    sessions.set(key, {
+      warm,
+      url,
+      lastUsed: Date.now(),
+      ...(serverUrl ? { previewTarget: { serverUrl, apiKey } } : {}),
+    });
     return { url };
   }
 
+  /** One deploy (publish or preview): live sandbox first, else ephemeral. */
+  async function deployWorkspaceImpl(
+    scope: string,
+    project: string,
+    files: Record<string, string>,
+    target: WorkspaceDeployTarget,
+  ): Promise<WorkspaceDeployOutcome> {
+    const key = sessionKey(scope, project);
+    const existing = sessions.get(key);
+    if (existing) {
+      try {
+        const outcome = await requestDeploy(existing.warm, files, target);
+        existing.lastUsed = Date.now();
+        return outcome;
+      } catch (err) {
+        // Dead sandbox — replace it with a fresh one for this publish;
+        // the next chat broker call heals the session itself.
+        console.warn("Studio publish: live sandbox failed; using a fresh one", {
+          project,
+          error: errorMessage(err),
+        });
+        await disposeEntry(key, existing);
+      }
+    }
+    // No (live) session sandbox — spawn one for the publish and tear it
+    // down after; Publish from the editor shouldn't leave a sandbox
+    // running that no chat session owns.
+    const warm = await acquireWarmHarness(
+      { pool: options.pool, harnessPath: options.harnessPath, slug: "studio-publish" },
+      spawn,
+    );
+    try {
+      registerGuestRpcHandlers(warm.conn, {});
+      warm.conn.listen();
+      return await requestDeploy(warm, files, target);
+    } finally {
+      await warm[Symbol.asyncDispose]().catch(() => undefined);
+    }
+  }
+
+  // Auto preview deploys ride the same deploy path Publish uses — a live
+  // session sandbox when one exists (the common case: the agent's own
+  // sandbox, right after its turn), else an ephemeral spawn.
+  const previews = createPreviewDeployer({
+    workspaces: options.workspaces,
+    deployWorkspace: deployWorkspaceImpl,
+  });
+
   return {
-    ensureSession(scope, project, apiKey) {
+    ensureSession(scope, project, apiKey, serverUrl) {
       const key = sessionKey(scope, project);
       // Per project, not global: brokering one project must never queue
       // behind another project's Modal spawn.
-      return withLock(sessionLock, key, () => ensureSessionLocked(key, scope, project, apiKey));
+      return withLock(sessionLock, key, () =>
+        ensureSessionLocked(key, scope, project, apiKey, serverUrl),
+      );
     },
 
-    async deployWorkspace(scope, project, files, target) {
-      const key = sessionKey(scope, project);
-      const existing = sessions.get(key);
-      if (existing) {
-        try {
-          const outcome = await requestDeploy(existing.warm, files, target);
-          existing.lastUsed = Date.now();
-          return outcome;
-        } catch (err) {
-          // Dead sandbox — replace it with a fresh one for this publish;
-          // the next chat broker call heals the session itself.
-          console.warn("Studio publish: live sandbox failed; using a fresh one", {
-            project,
-            error: errorMessage(err),
-          });
-          await disposeEntry(key, existing);
-        }
-      }
-      // No (live) session sandbox — spawn one for the publish and tear it
-      // down after; Publish from the editor shouldn't leave a sandbox
-      // running that no chat session owns.
-      const warm = await acquireWarmHarness(
-        { pool: options.pool, harnessPath: options.harnessPath, slug: "studio-publish" },
-        spawn,
-      );
-      try {
-        registerGuestRpcHandlers(warm.conn, {});
-        warm.conn.listen();
-        return await requestDeploy(warm, files, target);
-      } finally {
-        await warm[Symbol.asyncDispose]().catch(() => undefined);
-      }
+    schedulePreview(scope, project, target) {
+      previews.schedule(scope, project, target);
     },
+
+    deployWorkspace: deployWorkspaceImpl,
 
     async dispose() {
       clearInterval(sweeper);

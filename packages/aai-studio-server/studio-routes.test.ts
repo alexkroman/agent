@@ -28,8 +28,9 @@ vi.mock("./studio-deploy.ts", async (importOriginal) => {
 
 // Session broker: replace sandbox provisioning with an observable fake so
 // the route's gating/wiring is exercised without Modal.
-const ensureSessionMock = vi.fn(async (_scope: string, project: string, _apiKey: string) =>
-  project === "ghost" ? null : { url: "https://tunnel.example/studio/chat" },
+const ensureSessionMock = vi.fn(
+  async (_scope: string, project: string, _apiKey: string, _serverUrl?: string) =>
+    project === "ghost" ? null : { url: "https://tunnel.example/studio/chat" },
 );
 const deployWorkspaceMock = vi.fn(
   async (
@@ -44,10 +45,13 @@ const deployWorkspaceMock = vi.fn(
     output: "Deployed https://platform.example/p",
   }),
 );
+const schedulePreviewMock = vi.fn();
 const brokerMock = vi.fn(
   (): StudioSessionBroker => ({
     ensureSession: (...args: Parameters<StudioSessionBroker["ensureSession"]>) =>
       ensureSessionMock(...args),
+    schedulePreview: (...args: Parameters<StudioSessionBroker["schedulePreview"]>) =>
+      schedulePreviewMock(...args),
     deployWorkspace: (...args: Parameters<StudioSessionBroker["deployWorkspace"]>) =>
       deployWorkspaceMock(...args),
     dispose: async () => undefined,
@@ -276,12 +280,20 @@ describe("project CRUD", () => {
   });
 
   test("file write, delete, and delete-missing behave", async () => {
+    schedulePreviewMock.mockClear();
     await createProject(fetch);
     const put = await authFetch(fetch, "/studio/projects/proj/file", {
       method: "PUT",
       body: { path: "extra.ts", content: "export {};" },
     });
     expect(put.status).toBe(200);
+    // A manual save is a settled edit — it schedules an auto preview deploy
+    // with the caller's key and the public origin the guest's CLI dials.
+    expect(schedulePreviewMock).toHaveBeenCalledWith(
+      studioScope("key1"),
+      "proj",
+      expect.objectContaining({ apiKey: "key1", serverUrl: expect.stringMatching(/^https?:/) }),
+    );
     const files = (
       (await (await authFetch(fetch, "/studio/projects/proj", { method: "GET" })).json()) as {
         files: Record<string, string>;
@@ -289,14 +301,19 @@ describe("project CRUD", () => {
     ).files;
     expect(files["extra.ts"]).toBe("export {};");
 
+    schedulePreviewMock.mockClear();
     const del = await authFetch(fetch, "/studio/projects/proj/file?path=extra.ts", {
       method: "DELETE",
     });
     expect(del.status).toBe(200);
+    expect(schedulePreviewMock).toHaveBeenCalledTimes(1);
+    schedulePreviewMock.mockClear();
     expect(
       (await authFetch(fetch, "/studio/projects/proj/file?path=extra.ts", { method: "DELETE" }))
         .status,
     ).toBe(404);
+    // A rejected delete is not an edit — nothing to preview.
+    expect(schedulePreviewMock).not.toHaveBeenCalled();
     expect(
       (await authFetch(fetch, "/studio/projects/proj/file", { method: "DELETE" })).status,
     ).toBe(400);
