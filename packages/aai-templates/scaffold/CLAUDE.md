@@ -429,6 +429,13 @@ export default agent({
 });
 ```
 
+**A tool with no arguments omits `parameters` entirely.** The field is
+optional and typed as a Zod *object*, so reaching for `z.undefined()` or
+`z.void()` to mean "no arguments" is a type error
+(`Type 'ZodUndefined' is not assignable to type 'ZodObject<...>'`). Write
+`tool({ description, execute })`, or `parameters: z.object({})` if you
+prefer it explicit.
+
 **Do not annotate `execute`'s return type.** Nothing needs it — the result
 is serialized to the model either way — and it reliably breaks the moment
 the tool also returns an error, because `Promise<DrugInfo>` does not accept
@@ -633,11 +640,11 @@ client({ component: MyApp });
 | `target` | `string \| HTMLElement` | `"#app"` | Mount target |
 | `tools` | `ToolDisplayConfig` | — | Icon/label overrides per tool name |
 
-**The two tiers are exclusive.** `name`, `sidebar`, `sidebarWidth`, and
+**The two tiers are mostly exclusive.** `sidebar`, `sidebarWidth`, and
 `tools` configure the default shell, so passing any of them alongside
-`component` is a type error — and a cryptic one, reported as *"Type 'string'
-is not assignable to type 'undefined'"*. With a custom component you own the
-whole page, so pass `component` alone and render the title yourself.
+`component` is a type error. `name` is the exception — it is allowed with a
+custom component and becomes the page title, since there is no shell header
+to put it in.
 
 ### `useSession()` return type
 

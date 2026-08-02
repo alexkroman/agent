@@ -169,4 +169,31 @@ describe("client", () => {
     handle.dispose();
     vi.unstubAllGlobals();
   });
+
+  /**
+   * `name` alongside `component` used to be `never`, which failed with
+   * "Type 'string' is not assignable to type 'undefined'" — a message that
+   * explains nothing, on the most natural thing to write. Two different
+   * models wrote it and each spent a build round on it. It is allowed now,
+   * and it means something: the page title, since a custom component has no
+   * shell header to show it in.
+   */
+  it("uses name as the page title, including with a custom component", () => {
+    const before = document.title;
+    const handle = client({
+      name: "Pizza Palace",
+      component: () => null,
+      target: container,
+    });
+    expect(document.title).toBe("Pizza Palace");
+    handle.dispose();
+    document.title = before;
+  });
+
+  it("leaves the page title alone when no name is given", () => {
+    document.title = "Shipped by the HTML";
+    const handle = client({ component: () => null, target: container });
+    expect(document.title).toBe("Shipped by the HTML");
+    handle.dispose();
+  });
 });
