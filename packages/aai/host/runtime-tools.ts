@@ -211,20 +211,39 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
   const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
     const tool = allTools[name];
     if (!tool) return toolError(`Unknown tool: ${name}`);
-    const sink = sinkMap.get(sessionId ?? "");
+    const sid = sessionId ?? "";
+    /**
+     * Resolved per send, never captured at dispatch. A tool call routinely
+     * outlives the socket that issued it (it may run for the whole tool
+     * timeout, and a session survives a disconnect through the resume grace
+     * window), so by the time it sends, `sinkMap` may hold the RESUMED
+     * connection's sink under the same id — captured, both sends below went
+     * to the superseded socket instead. For `syncState` that is worse than a
+     * dropped frame: the push records the projection as delivered
+     * (`lastSent` in _state-sync.ts, keyed by the state object the resume
+     * shares), so the next unchanged projection is skipped and the
+     * reconnected client stays stale with no further push coming.
+     */
+    const liveSink = (): ClientSink | undefined => sinkMap.get(sid);
     const run = () =>
       executeToolCall(name, args, {
         tool,
         env: frozenEnv,
-        state: getState(sessionId ?? ""),
-        sessionId: sessionId ?? "",
+        state: getState(sid),
+        sessionId: sid,
         // db traffic is a TCP socket, not fetch, so the egress guard never
         // sees it — no exemption wrapper needed.
         db: resolvedDb,
         messages,
         generate,
         logger,
-        send: sink ? (event, data) => sendToClient(sink, event, data) : undefined,
+        // Always defined: `ctx.send` is a no-op when no socket holds the id
+        // (the same shape a missing sink produced before), and binding it
+        // late is what lets a resumed client receive it.
+        send: (event, data) => {
+          const sink = liveSink();
+          if (sink) sendToClient(sink, event, data);
+        },
         // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
         signal: callOpts?.signal,
       });
@@ -234,7 +253,7 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
       // In `finally` so a throwing tool still publishes what it changed
       // before it failed — a half-applied mutation the UI is not showing is
       // worse than one it is.
-      syncStateToClient(sink, getState(sessionId ?? ""));
+      syncStateToClient(liveSink(), getState(sid));
     }
   };
   /**
