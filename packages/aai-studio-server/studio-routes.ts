@@ -28,6 +28,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
 import { authMw } from "aai-server/middleware";
+import { resolvePublicOrigin } from "aai-server/public-origin";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
@@ -76,21 +77,16 @@ export type StudioRouteOptions = {
 
 /**
  * The public platform origin the guest's `aai deploy` must dial — the
- * browser-facing origin, not this service's own. `AAI_PUBLIC_ORIGIN` wins
- * (explicit config); otherwise the forwarding headers the agent service's
- * studio proxy sets (split deployment); otherwise the request URL's origin
- * (combined/dev, where they are the same thing).
+ * browser-facing origin, not this service's own. See `resolvePublicOrigin`
+ * for the resolution order and for why the request URL's own scheme is
+ * never trusted (it is always cleartext behind Modal, and publishing
+ * `http://` cost every Publish its Authorization header on the redirect).
  */
 export function requestPublicOrigin(
   c: Context<StudioHonoEnv>,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
-  const configured = env.AAI_PUBLIC_ORIGIN?.trim();
-  if (configured) return configured.replace(/\/$/, "");
-  const url = new URL(c.req.url);
-  const host = c.req.header("x-forwarded-host") ?? url.host;
-  const proto = c.req.header("x-forwarded-proto") ?? url.protocol.replace(/:$/, "");
-  return `${proto}://${host}`;
+  return resolvePublicOrigin(c.req.raw, env);
 }
 
 function validateProject(name: string | undefined): string {

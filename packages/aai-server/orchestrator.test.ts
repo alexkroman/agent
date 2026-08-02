@@ -124,7 +124,17 @@ test("agent page redirects bare slug to trailing slash", async () => {
   const { fetch } = await createTestOrchestrator();
   const res = await fetch("/my-agent");
   expect(res.status).toBe(301);
-  expect(res.headers.get("Location")).toBe("http://localhost/my-agent/");
+  // Relative, so the redirect can never downgrade the scheme: behind a
+  // TLS-terminating proxy the request URL is cleartext http, and echoing it
+  // back sent an https browser to http:// (and then back again).
+  expect(res.headers.get("Location")).toBe("/my-agent/");
+});
+
+test("the bare-slug redirect preserves the query string", async () => {
+  const { fetch } = await createTestOrchestrator();
+  const res = await fetch("/my-agent?sessionId=abc");
+  expect(res.status).toBe(301);
+  expect(res.headers.get("Location")).toBe("/my-agent/?sessionId=abc");
 });
 
 test("agent page returns 404 for unknown agent", async () => {

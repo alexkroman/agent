@@ -514,9 +514,7 @@ voice agents without the CLI:
     in the deploy body) exists because the Secrets panel needs a deployed
     slug to attach secrets to — a hard preflight failure would deadlock
     first publishes. The public origin comes from `requestPublicOrigin`
-    (studio-routes.ts): `AAI_PUBLIC_ORIGIN` env override, else the
-    `x-forwarded-host`/`-proto` headers the agent service's studio proxy
-    sets, else the request origin (combined/dev).
+    (studio-routes.ts) → `resolvePublicOrigin` (aai-server/public-origin.ts).
   A hostile or pathological workspace burns the tenant's own sandbox CPU —
   never the web container's. Covered end-to-end by
   `aai-server/workspace-build-integration.test.ts` (a real harness process
@@ -655,6 +653,18 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   shell; the shell uses the server-declared `name` unless `client({ name })`
   overrides it. A custom `component` ignores all of it. The `aai dev` Vite
   proxy forwards `/client-config` to the backend.
+
+  **The session's per-attempt broker lookup uses `loadClientConfig`, not
+  `fetchClientConfig`** — it returns `null` for a lookup that produced no
+  answer, keeping that distinct from a server that answered and named no
+  `sessionUrl`. Degrading both to `{}` is fine for name/greeting and wrong
+  here: `session-core.ts` latches `serverIsBroker = false` on a config with
+  no `sessionUrl`, and that latch skips the broker fetch on every later
+  attempt. So one 503 — a sandbox mid-boot, or one that failed to start —
+  pinned the client to the platform's `/:slug/websocket`, which answers
+  `410 Gone` forever (sessions go straight to the sandbox now), with no route
+  back even after the agent recovered. Only an ANSWERED lookup may set the
+  latch.
 
 - **There is no text-only mode.** Every pipeline agent declares a real TTS
   provider, and the default `ChatView` always renders the voice `Controls`.
@@ -1571,6 +1581,26 @@ service's control work is light — and one container served both badly.
   `accept-encoding`) because undici's fetch decompresses bodies but leaves
   `content-encoding` headers in place. Shared base middleware lives in
   `app-middleware.ts` so the two apps can't drift on CORS/framing policy.
+- **Never derive the public scheme from the request URL** — use
+  `resolvePublicOrigin` (`aai-server/public-origin.ts`). Modal terminates TLS
+  at its edge and forwards plain HTTP to the container (its ASGI proxy adds
+  only `X-Forwarded-For`, never `X-Forwarded-Proto`), so `new URL(c.req.url)`
+  is **always** `http:` in a handler, whatever the browser used. Resolution
+  order: `AAI_PUBLIC_ORIGIN` → `x-forwarded-host`/`-proto` (a real proxy in
+  front, including this platform's own studio proxy, which sets both *from
+  this resolver*) → infer, loopback being the only `http`.
+
+  Both places that had rolled their own cost real outages. Studio **Publish
+  died on `401 Missing Authorization header` from its own platform**: the
+  guest was handed `http://<public host>`, its `aai deploy` POST was
+  308-redirected to `https://`, and `fetch` strips `Authorization` across a
+  scheme change (different origin per the Fetch spec). The request arrived
+  unauthenticated, so the CLI reported an invalid API key it had in fact sent
+  correctly — and the studio proxy's own `x-forwarded-proto: http` propagated
+  the same wrong answer into split mode. The bare-slug redirect
+  (`/:slug` → `/:slug/`) separately echoed the cleartext URL back as an
+  absolute `Location`, bouncing https browsers through `http://`; it is now
+  relative, which no scheme can taint.
 - **Cross-service invalidation is slug epochs** (`platform-epoch.ts`,
   `aai_platform.slug_epochs`). A local `terminateSlot`/`restartSlotSandbox`
   only fixes the replica that handled the mutation; every deploy/delete/
