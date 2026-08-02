@@ -479,7 +479,7 @@ voice agents without the CLI:
   the guest via `studio/session-init` and resolved there (`resolveLlm` +
   the SDK's `assemblyAI` LLM factory); the platform holds no studio LLM
   credential. The *model* (never the key) stays host config: default
-  `qwen3-next-80b-a3b`, `STUDIO_LLM_MODEL` overrides,
+  `gpt-5.5`, `STUDIO_LLM_MODEL` overrides,
   `STUDIO_LLM_REGION=eu` region-filters. The caller's key doubles as the
   guest chat surface's bearer — same trust, no new secret.
 - **Gateway regions.** `STUDIO_LLM_REGION=eu` selects the EU endpoint,
@@ -491,7 +491,7 @@ voice agents without the CLI:
 - **No per-request model switching.** `POST /studio/chat` accepts no
   `model` field (a stray one is stripped by the body schema, never
   honored): every turn runs on the host-configured default —
-  `qwen3-next-80b-a3b` on the gateway. **A client can never name a provider or a
+  `gpt-5.5` on the gateway. **A client can never name a provider or a
   model** — the only request-side credential is the caller's own bearer,
   which selects nothing: keep any future request-side choice validated
   host-side.

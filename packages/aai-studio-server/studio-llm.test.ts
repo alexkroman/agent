@@ -8,12 +8,12 @@ const env = (vars: Record<string, string>): NodeJS.ProcessEnv => vars as NodeJS.
 describe("studioLlmModelId", () => {
   test("defaults to the first gateway model", () => {
     expect(studioLlmModelId(env({}))).toBe(ASSEMBLYAI_GATEWAY_MODELS[0]);
-    expect(studioLlmModelId(env({}))).toBe("gpt-5-mini");
+    expect(studioLlmModelId(env({}))).toBe("gpt-5.5");
   });
 
   test("STUDIO_LLM_MODEL overrides; empty string means unset", () => {
-    expect(studioLlmModelId(env({ STUDIO_LLM_MODEL: "gpt-5.5" }))).toBe("gpt-5.5");
-    expect(studioLlmModelId(env({ STUDIO_LLM_MODEL: "" }))).toBe("gpt-5-mini");
+    expect(studioLlmModelId(env({ STUDIO_LLM_MODEL: "gpt-5-mini" }))).toBe("gpt-5-mini");
+    expect(studioLlmModelId(env({ STUDIO_LLM_MODEL: "" }))).toBe("gpt-5.5");
   });
 
   test("the EU region default skips US-only models", () => {
@@ -24,7 +24,7 @@ describe("studioLlmModelId", () => {
 
 describe("studioLlmInfo", () => {
   test("reports the gateway provider and resolved model", () => {
-    expect(studioLlmInfo(env({}))).toEqual({ provider: "assemblyai", model: "gpt-5-mini" });
+    expect(studioLlmInfo(env({}))).toEqual({ provider: "assemblyai", model: "gpt-5.5" });
     expect(studioLlmInfo(env({ STUDIO_LLM_MODEL: "gpt-5" }))).toEqual({
       provider: "assemblyai",
       model: "gpt-5",

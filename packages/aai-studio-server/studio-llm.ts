@@ -37,20 +37,19 @@ import { gatewayModelIds } from "@alexkroman1/aai/llm";
  *
  * Order is ours, not the gateway's: PREFERRED names the defaults we have
  * actually measured, and anything else follows in catalog order. The first
- * entry available in the configured region wins — `gpt-5-mini` in the US,
+ * entry available in the configured region wins — `gpt-5.5` in the US,
  * `claude-sonnet-4-6` in the EU, where OpenAI is not served.
  *
- * `gpt-5-mini` leads on measurement, not price list. Over the eleven starter
- * prompts, same window, same everything else: it shipped 11/11 against
- * `qwen3-next-80b-a3b`'s 10/11, and wrote code that compiled first time in
- * 9 runs against qwen's 5. It also does not produce the malformed tool-call
- * JSON that `studio-tool-repair.ts` exists to salvage. Nominally it lists
- * ~1.7x qwen on both token axes, but qwen has NO prompt caching on this
- * gateway while gpt-5-mini reads cache at a tenth of its input price — and
- * an agent loop resends a growing conversation every step, so the sticker
- * comparison is the wrong one. (`gpt-5.5` was cleaner still — 10/11
- * first-try clean, zero repairs — at roughly 20x the price. Not worth it
- * for a turn that already succeeds.)
+ * `gpt-5.5` leads on measurement, not price list. Over the eleven starter
+ * prompts, same window, same everything else: it shipped 10/11 first-try
+ * clean with zero repair rounds — it never produces the malformed tool-call
+ * JSON that `studio-tool-repair.ts` exists to salvage. `gpt-5-mini` (the
+ * previous default, kept second) shipped 11/11 with 9/11 compiling first
+ * time at roughly a twentieth of the price; the price is accepted here for
+ * the cleaner agentic behavior. (`qwen3-next-80b-a3b`, the default before
+ * that, shipped 10/11 with only 5 first-try compiles — and has NO prompt
+ * caching on this gateway, so its sticker price undercounts what an agent
+ * loop resending a growing conversation actually pays.)
  *
  * Being listed is a weaker claim than working — the gateway advertises
  * `kimi-k2.5` and answers 410 for it — so `pnpm check:gateway-models` probes
@@ -62,7 +61,7 @@ import { gatewayModelIds } from "@alexkroman1/aai/llm";
  * a provider outage. Measured, the agent ran 12 seconds, called no tools,
  * and read as a lazy model rather than a misconfigured one.
  */
-const PREFERRED = ["gpt-5-mini", "claude-sonnet-4-6"] as const;
+const PREFERRED = ["gpt-5.5", "gpt-5-mini", "claude-sonnet-4-6"] as const;
 
 function ordered(ids: readonly string[]): readonly string[] {
   const preferred: readonly string[] = PREFERRED.filter((id) => ids.includes(id));
