@@ -2,7 +2,7 @@
 // Studio shell (design 1b): shared top bar. Landing always shows the home
 // page — a project sidebar plus a centered hero prompt box (home.tsx) whose
 // first message creates a project; opening a project swaps to the 360px chat
-// panel on the left with the Live/Code pane on the right. TanStack Query
+// panel on the left with the Preview/Code pane on the right. TanStack Query
 // owns all server state, invalidated after agent turns / publishes.
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -16,7 +16,7 @@ import { SecretsPanel } from "./secrets.tsx";
 import { PublishMenu, TopBar } from "./top-bar.tsx";
 
 // CodeMirror is the bulk of the bundle and only the Code tab needs it — the
-// default (Live) path shouldn't pay for it.
+// default (Preview) path shouldn't pay for it.
 const CodeView = lazy(() => import("./code-view.tsx").then((m) => ({ default: m.CodeView })));
 
 type AppProps = { apiKey: string; onSignOut: () => void };
@@ -33,6 +33,11 @@ function projectFromPath(pathname: string): string | null {
 function projectPath(name: string | null): string {
   return name ? `/studio/chat/${encodeURIComponent(name)}` : "/";
 }
+
+/** How often to poll for a fresh preview after an edit. */
+const PREVIEW_POLL_MS = 2500;
+/** Stop polling this long after the last local edit (covers a cold deploy). */
+const PREVIEW_POLL_WINDOW_MS = 6 * 60_000;
 
 /** A query/mutation error as displayable text; undefined when there is none. */
 function errorText(err: unknown): string | undefined {
@@ -66,10 +71,20 @@ export function App({ apiKey, onSignOut }: AppProps) {
     if (projects.error instanceof ApiError && projects.error.status === 401) onSignOut();
   }, [projects.error, onSignOut]);
 
+  // While an auto preview deploy is in flight (an edit landed and the
+  // preview is stale), poll the project so the new preview shows up as soon
+  // as it exists. Bounded by an activity window so a project whose preview
+  // never catches up (a persistent build failure, an old never-edited
+  // project) doesn't poll forever.
+  const lastEditRef = useRef(0);
   const workspace = useQuery<ProjectData>({
     queryKey: ["project", project],
     queryFn: () => api.getProject(apiKey, project as string),
     enabled: project != null,
+    refetchInterval: (query) =>
+      query.state.data?.previewStale && Date.now() - lastEditRef.current < PREVIEW_POLL_WINDOW_MS
+        ? PREVIEW_POLL_MS
+        : false,
   });
 
   // Same global handling for the workspace fetch (see projects above).
@@ -155,10 +170,13 @@ export function App({ apiKey, onSignOut }: AppProps) {
     setCurrentFile(entry);
   }, [files, currentFile]);
 
-  // Refresh server state after agent turns / saves. Deliberately does NOT
-  // bump previewNonce: only Publish can change what the live iframe shows,
-  // and a reload there kills any in-progress voice session.
+  // Refresh server state after agent turns / saves, and arm the preview
+  // poll — an edit means an auto preview deploy is (about to be) in flight.
+  // Deliberately does NOT bump previewNonce: the preview iframe reloads by
+  // itself when `previewVersion` changes, and a forced reload here would
+  // kill any in-progress voice session for nothing.
   const invalidateWorkspace = () => {
+    lastEditRef.current = Date.now();
     void queryClient.invalidateQueries({ queryKey: ["project", project] });
     void queryClient.invalidateQueries({ queryKey: ["projects"] });
   };
@@ -199,7 +217,8 @@ export function App({ apiKey, onSignOut }: AppProps) {
     mutationFn: () => api.deploy(apiKey, project as string),
     onSuccess: (result) => {
       invalidateWorkspace();
-      // The published agent changed — reload the live iframe.
+      // The PRODUCTION agent changed — reload the pane's production-fallback
+      // iframe (projects that predate auto previews frame production).
       setPreviewNonce((n) => n + 1);
       setTab("preview");
       // The CLI's output goes to the chat so the agent knows what shipped
@@ -277,6 +296,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
         <SecretsPanel
           apiKey={apiKey}
           slug={deployedSlug}
+          previewSlug={workspace.data?.previewSlug}
           onNotifyChat={notifyChat}
           onClose={() => setSecretsOpen(false)}
         />
@@ -328,6 +348,10 @@ export function App({ apiKey, onSignOut }: AppProps) {
           />
           {tab === "preview" ? (
             <PreviewPane
+              previewSlug={workspace.data?.previewSlug}
+              previewVersion={workspace.data?.previewVersion}
+              previewStale={workspace.data?.previewStale}
+              previewError={workspace.data?.previewError}
               deployedSlug={deployedSlug}
               unpublished={workspace.data?.unpublished}
               nonce={previewNonce}

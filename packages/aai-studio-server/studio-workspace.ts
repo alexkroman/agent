@@ -44,6 +44,21 @@ export type StudioWorkspace = {
    * because editing a file and undoing it should not count as a change.
    */
   deployedHash?: string;
+  /**
+   * Slug of the last successful PREVIEW deploy. Previews are auto-deployed
+   * after edits (agent turns, editor saves) to a separate `-preview` slug so
+   * the Preview pane can show the workspace's current state without touching
+   * the production agent (`deployedSlug`), which only Publish updates.
+   */
+  previewSlug?: string;
+  /** `filesHash` at the last successful preview deploy (see `deployedHash`). */
+  previewHash?: string;
+  /**
+   * CLI output of the last FAILED preview deploy; cleared on the next
+   * success. Surfaced by the Preview pane — auto-deploys have no chat
+   * turn to carry their failure output.
+   */
+  previewError?: string;
   updatedAt: number;
 };
 
@@ -72,6 +87,16 @@ export function hasUnpublishedChanges(workspace: StudioWorkspace): boolean {
   // says "nothing published yet" rather than showing a stale banner.
   if (!workspace.deployedSlug) return false;
   return workspace.deployedHash !== currentFilesHash(workspace);
+}
+
+/**
+ * True when the workspace has edits the preview deploy has not shipped yet.
+ * Unlike {@link hasUnpublishedChanges} this is deliberately true before the
+ * first preview exists: "no preview yet" IS stale — the client uses it to
+ * poll while the first auto-deploy is in flight.
+ */
+export function hasPreviewChanges(workspace: StudioWorkspace): boolean {
+  return workspace.previewHash !== currentFilesHash(workspace);
 }
 
 /**

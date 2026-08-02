@@ -443,21 +443,37 @@ voice agents without the CLI:
   studio-chat.ts`). They run in the guest with open egress like all tenant
   code; `safeFetch` still screens the model-controlled URLs, and the tool
   context carries an empty env.
-- **The preview shows the *published* agent**, so edits look like they did
-  nothing until Publish. `hasUnpublishedChanges` (`studio-workspace.ts`)
-  compares a `filesHash` of the workspace against `deployedHash`, recorded
-  on every successful deploy, and `GET /studio/projects/:project` returns it
-  as `unpublished` so the client never hashes anything. The preview then
-  says so, with a Publish button in the banner. A hash rather than a
-  timestamp for two reasons: publishing itself writes the workspace (which
-  bumps `updatedAt`), and editing a file then undoing it should not leave
-  the project permanently "stale".
+- **The Preview pane shows an auto-deployed PREVIEW agent; Publish is
+  production.** Every settled edit — the guest's TURN-COMPLETE
+  `studio/sync-workspace` (flagged `done: true`, the analog of opencode's
+  `session.idle` / codex's `agent-turn-complete`; mid-turn checkpoints
+  share the RPC but never carry the flag, so a half-finished tree is never
+  deployed) and editor file PUT/DELETEs — schedules a deploy of the
+  workspace to the project's preview slug (`<project>-preview`) through
+  the same in-guest `aai deploy` path Publish uses (`studio-preview.ts`:
+  fire-and-forget, coalesced per project, no-op when the preview already
+  matches). Success stamps `previewSlug`/`previewHash` on the workspace;
+  failure stamps `previewError` for the pane's banner (an auto-deploy has
+  no chat turn to carry CLI output). `GET /studio/projects/:project`
+  returns `previewSlug`/`previewVersion`/`previewStale`/`previewError`,
+  and the client polls while stale (bounded by an edit-activity window)
+  and keys the iframe by `previewVersion`, so a fresh preview reloads the
+  frame exactly once. `hasUnpublishedChanges` (`studio-workspace.ts`)
+  still compares `filesHash` against `deployedHash` — the PRODUCTION
+  staleness — returned as `unpublished` for the pane's Publish nudge. A
+  hash rather than a timestamp for two reasons: deploys themselves write
+  the workspace (which bumps `updatedAt`), and editing a file then undoing
+  it should not leave the project permanently "stale". The Secrets panel
+  mirrors writes to the preview slug best-effort so previews run with the
+  same third-party keys.
 - **The coding agent cannot publish.** There is deliberately no deploy
-  tool: going live is the user's call, made with the Publish button
-  (`POST /studio/projects/:project/deploy`). The prompt states this
-  outright so the agent doesn't claim to have deployed or invent a live
-  URL. Keep it that way — an agent that ships to a public URL on its own
-  read of "make it live" is a surprise nobody asked for.
+  tool: going to production is the user's call, made with the Publish
+  button (`POST /studio/projects/:project/deploy`) — the only path that
+  touches `deployedSlug`. The prompt states this outright so the agent
+  doesn't claim to have deployed or invent a production URL (the preview
+  auto-deploy is platform-triggered, not an agent capability). Keep it
+  that way — an agent that ships to a public URL on its own read of "make
+  it live" is a surprise nobody asked for.
 - **LLM selection** (`studio-llm.ts`): every studio turn runs on the
   AssemblyAI LLM Gateway **with the caller's own API key** — delivered to
   the guest via `studio/session-init` and resolved there (`resolveLlm` +
