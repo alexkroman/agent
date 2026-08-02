@@ -17,15 +17,17 @@
  *   reports "skipped" so `test_agent` still returns its build/load result.
  */
 
-import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { readdir } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
+import { errMsg } from "./harness-rpc.ts";
 import { scrubDir } from "./studio-build.ts";
+import { runCapped } from "./studio-spawn.ts";
 
-/** Wall clock for the run. The tool deadline above is 120s and the build
- *  has already spent part of it, so leave headroom. */
+/** Wall clock for the run. The per-tool deadline (STUDIO_TOOL_TIMEOUT_MS,
+ *  studio-tools.ts) is 120s and the build has already spent part of it, so
+ *  leave headroom. */
 const TEST_TIMEOUT_MS = 45_000;
 
 /** Tail kept from vitest output — enough for failures, not a context dump. */
@@ -69,31 +71,32 @@ export async function runWorkspaceTests(dir: string): Promise<TestRunResult> {
   const bin = resolveVitestBin(dir);
   if (!bin) return { ran: false, reason: "vitest is not available in this sandbox" };
 
-  const result = await new Promise<{ code: number | null; output: string }>((resolve) => {
+  let code: number | null;
+  let output: string;
+  try {
     // `run` (never watch) and `--root` so vitest cannot escape the workspace.
-    const child = spawn(process.execPath, [bin, "run", "--root", dir], {
+    const result = await runCapped(process.execPath, [bin, "run", "--root", dir], {
       cwd: dir,
-      timeout: TEST_TIMEOUT_MS,
-      stdio: ["ignore", "pipe", "pipe"],
       env: { ...process.env, CI: "true" },
+      timeoutMs: TEST_TIMEOUT_MS,
+      cap: OUTPUT_CAP,
+      combineStreams: true,
     });
-    let output = "";
-    const keep = (s: string) => (s.length > OUTPUT_CAP ? `…${s.slice(-OUTPUT_CAP)}` : s);
-    const collect = (chunk: Buffer) => {
-      output = keep(output + chunk.toString());
-    };
-    child.stdout.on("data", collect);
-    child.stderr.on("data", collect);
-    child.once("error", (err) => resolve({ code: -1, output: `${output}\n${err.message}` }));
-    child.once("close", (code) => resolve({ code, output }));
-  });
+    code = result.exitCode;
+    output = result.signal
+      ? `${result.stdout}\n[killed by ${result.signal} after ${TEST_TIMEOUT_MS}ms]`
+      : result.stdout;
+  } catch (err) {
+    code = -1;
+    output = errMsg(err);
+  }
 
   return {
     ran: true,
-    passed: result.code === 0,
+    passed: code === 0,
     // The scratch path is an implementation detail the coding agent must not
     // see (and must not start writing absolute paths against).
-    output: scrubDir(result.output.trim(), dir),
+    output: scrubDir(output.trim(), dir),
   };
 }
 

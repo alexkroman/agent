@@ -18,6 +18,7 @@
 
 import { writeFile } from "node:fs/promises";
 import path from "node:path";
+import { errMsg } from "./harness-rpc.ts";
 import { type BuildEnvelope, formatBuildFailure, moduleExports, scrubDir } from "./studio-build.ts";
 import { annotateDiagnostics } from "./studio-diagnostics.ts";
 
@@ -74,7 +75,7 @@ async function build(args: string[]): Promise<BuildEnvelope> {
   try {
     tc = await loadToolchain();
   } catch (err) {
-    return { ok: false, buildError: `Build toolchain unavailable in this sandbox: ${msg(err)}` };
+    return { ok: false, buildError: `Build toolchain unavailable in this sandbox: ${errMsg(err)}` };
   }
 
   // Type errors first, as their own failure: the bundlers strip types
@@ -128,13 +129,9 @@ export async function runBuildChild(args: string[]): Promise<void> {
   } catch (err) {
     // A throw here would exit non-zero with no envelope, which the parent
     // can only report as a crash; an envelope is strictly more useful.
-    envelope = { ok: false, buildError: `Build failed: ${msg(err)}` };
+    envelope = { ok: false, buildError: `Build failed: ${errMsg(err)}` };
   }
   process.stdout.write(`${JSON.stringify(envelope)}\n`, () => {
     process.exit(envelope.ok ? 0 : 1);
   });
-}
-
-function msg(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

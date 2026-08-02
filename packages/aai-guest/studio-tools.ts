@@ -22,16 +22,16 @@
  * own loader. One build path with `aai deploy`, exercised on every call.
  */
 
-import { spawn } from "node:child_process";
-import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { jsonSchema, type Tool, type ToolSet, tool } from "ai";
 import picomatch from "picomatch";
 import { z } from "zod";
-import { withTimeout } from "./harness-rpc.ts";
-import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./limits.ts";
+import { errMsg, withTimeout } from "./harness-rpc.ts";
+import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { applyEdit, clearEditMisses, rewriteHint, StudioEditError } from "./studio-edit.ts";
-import { grepWorkspace, StudioGrepError } from "./studio-grep.ts";
+import { globMatcher, grepWorkspace, StudioGrepError } from "./studio-grep.ts";
+import { envWithoutGuestToken, runCapped } from "./studio-spawn.ts";
 import { formatRejection, syntaxError } from "./studio-syntax.ts";
 import { formatTestRun, runWorkspaceTests } from "./studio-test.ts";
 import {
@@ -41,13 +41,16 @@ import {
   READ_LIMIT,
   STUDIO_TOOL_DESCRIPTIONS,
 } from "./studio-tool-descriptions.ts";
+import { resolveInside, walkWorkspace } from "./studio-workspace-fs.ts";
 
-/** Per-call deadline for every tool; bash carries its own tighter default. */
-const TOOL_TIMEOUT_MS = 120_000;
+/**
+ * Per-call deadline for every coding-agent tool (applied over the MERGED
+ * tool set by `withToolDeadlines` — studio, project, web, and design tools
+ * alike); bash carries its own tighter default.
+ */
+const STUDIO_TOOL_TIMEOUT_MS = 120_000;
 /** Output cap per stream; beyond it the tail is kept (errors print last). */
 const BASH_OUTPUT_CAP = 16_000;
-/** Directories never listed, grepped, or synced back to the workspace. */
-const IGNORED_DIRS = new Set(["node_modules", ".git", "dist", ".aai"]);
 /** Per-line length cap for read_file's windowed view. */
 const READ_MAX_LINE = 2000;
 
@@ -90,15 +93,6 @@ export type StudioToolDeps = {
   executeTool: (name: string, args: Record<string, unknown>) => Promise<string>;
 };
 
-/** Resolve a workspace-relative path, refusing escapes from the root. */
-export function resolveInside(dir: string, rel: string): string {
-  const abs = path.resolve(dir, rel);
-  if (abs !== dir && !abs.startsWith(dir + path.sep)) {
-    throw new Error(`Path escapes the workspace: ${rel}`);
-  }
-  return abs;
-}
-
 /**
  * Numbered, windowed file view (ported shape from opencode's read tool):
  * `NNNNN| line`, with offset/limit paging and per-line length truncation, so
@@ -124,94 +118,25 @@ function windowedRead(content: string, offset = 1, limit = READ_LIMIT): string {
   return body + note;
 }
 
-/** Workspace-relative paths of all non-ignored files under `dir`. */
-async function walkWorkspace(dir: string): Promise<string[]> {
-  const out: string[] = [];
-  async function walk(current: string): Promise<void> {
-    const entries = await readdir(current, { withFileTypes: true });
-    for (const entry of entries) {
-      if (entry.isSymbolicLink()) continue;
-      if (entry.isDirectory()) {
-        if (!IGNORED_DIRS.has(entry.name)) await walk(path.join(current, entry.name));
-        continue;
-      }
-      if (entry.isFile()) out.push(path.relative(dir, path.join(current, entry.name)));
-    }
-  }
-  await walk(dir);
-  return out.sort((a, b) => a.localeCompare(b));
-}
-
-/**
- * Snapshot the workspace as a path→content record — the shape builds, grep,
- * and the host sync speak. Files over the store's byte cap are skipped with
- * a warning entry so a `bash`-generated artifact can't wedge every sync.
- */
-export async function snapshotWorkspace(
-  dir: string,
-): Promise<{ files: Record<string, string>; warnings: string[] }> {
-  const files: Record<string, string> = {};
-  const warnings: string[] = [];
-  const paths = await walkWorkspace(dir);
-  if (paths.length > MAX_STUDIO_FILES) {
-    warnings.push(
-      `Workspace has ${paths.length} files; only the first ${MAX_STUDIO_FILES} sync to the project ` +
-        "(delete extras, and keep generated artifacts out of the workspace root).",
-    );
-  }
-  for (const rel of paths.slice(0, MAX_STUDIO_FILES)) {
-    const st = await stat(path.join(dir, rel));
-    if (st.size > MAX_STUDIO_FILE_BYTES) {
-      warnings.push(`${rel} is ${st.size} bytes (max ${MAX_STUDIO_FILE_BYTES}) — not synced.`);
-      continue;
-    }
-    files[rel] = await readFile(path.join(dir, rel), "utf-8");
-  }
-  return { files, warnings };
-}
-
-/** Materialize a files record into `dir`, replacing whatever was there. */
-export async function materializeWorkspace(
-  dir: string,
-  files: Record<string, string>,
-): Promise<void> {
-  await rm(dir, { recursive: true, force: true });
-  await mkdir(dir, { recursive: true });
-  for (const [rel, content] of Object.entries(files)) {
-    const abs = resolveInside(dir, rel);
-    await mkdir(path.dirname(abs), { recursive: true });
-    await writeFile(abs, content, "utf-8");
-  }
-}
-
-const keepTail = (text: string): string =>
-  text.length > BASH_OUTPUT_CAP ? `…${text.slice(-BASH_OUTPUT_CAP)}` : text;
-
 /** Run one bash command in the workspace; the token never enters its env. */
-function runBash(
+async function runBash(
   dir: string,
   command: string,
   timeoutMs: number,
 ): Promise<{ exitCode: number | null; output: string }> {
-  const env = { ...process.env };
-  delete env.AAI_GUEST_TOKEN;
-  return new Promise((resolve, reject) => {
-    const child = spawn("bash", ["-c", command], { cwd: dir, env, timeout: timeoutMs });
-    let out = "";
-    child.stdout.on("data", (chunk: Buffer) => {
-      out = keepTail(out + chunk.toString());
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      out = keepTail(out + chunk.toString());
-    });
-    child.on("error", reject);
-    child.on("close", (code, signal) => {
-      resolve({
-        exitCode: code,
-        output: signal ? `${out}\n[killed by ${signal} after ${timeoutMs}ms]` : out,
-      });
-    });
+  const result = await runCapped("bash", ["-c", command], {
+    cwd: dir,
+    env: envWithoutGuestToken(),
+    timeoutMs,
+    cap: BASH_OUTPUT_CAP,
+    combineStreams: true,
   });
+  return {
+    exitCode: result.exitCode,
+    output: result.signal
+      ? `${result.stdout}\n[killed by ${result.signal} after ${timeoutMs}ms]`
+      : result.stdout,
+  };
 }
 
 const TodoItemSchema = z.object({
@@ -273,10 +198,26 @@ function deadline(t: ToolSet[string]): ToolSet[string] {
   const execute = t.execute;
   if (!execute) return t;
   const wrapped: Tool["execute"] = (args, opts) =>
-    withTimeout(Promise.resolve(execute(args as never, opts)), TOOL_TIMEOUT_MS, "Tool call").catch(
-      (err: unknown) => `Error: ${err instanceof Error ? err.message : String(err)}`,
-    );
+    withTimeout(
+      Promise.resolve(execute(args as never, opts)),
+      STUDIO_TOOL_TIMEOUT_MS,
+      "Tool call",
+    ).catch((err: unknown) => `Error: ${errMsg(err)}`);
   return { ...t, execute: wrapped } as ToolSet[string];
+}
+
+/**
+ * Apply the shared per-call deadline to EVERY tool in a set. The chat loop
+ * wraps the merged tool set (studio + project + web + design tools) with
+ * this, so the "every coding-agent tool runs under a 120s deadline"
+ * invariant holds at one place instead of once per tool family — a hung
+ * fetch or gateway call resolves to an error tool result rather than
+ * hanging the turn.
+ */
+export function withToolDeadlines(tools: ToolSet): ToolSet {
+  const out: ToolSet = {};
+  for (const [name, t] of Object.entries(tools)) out[name] = deadline(t);
+  return out;
 }
 
 /** Build the coding agent's workspace tool set over the session dir. */
@@ -318,7 +259,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
         try {
           match = picomatch(pattern, { dot: true });
         } catch (err) {
-          return `Error: invalid glob: ${err instanceof Error ? err.message : String(err)}`;
+          return `Error: invalid glob: ${errMsg(err)}`;
         }
         // Not `.filter(match)`: filter's index argument would land in
         // picomatch's `returnObject` parameter and match everything.
@@ -413,8 +354,20 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
         limit: z.number().optional().describe("Max matches (default 100)"),
       }),
       execute: async ({ pattern, ...opts }) => {
-        const { files } = await snapshotWorkspace(dir);
         try {
+          // Read only what the glob selects — a data or generated file the
+          // filter excludes must not cost I/O and memory on every search.
+          const filter = opts.glob ? globMatcher(opts.glob) : null;
+          const paths = (await walkWorkspace(dir)).filter((p) => !filter || filter(p));
+          const files: Record<string, string> = {};
+          await Promise.all(
+            paths.map(async (rel) => {
+              const st = await stat(path.join(dir, rel));
+              // Oversized artifacts are never searched (nor synced).
+              if (st.size > MAX_STUDIO_FILE_BYTES) return;
+              files[rel] = await readFile(path.join(dir, rel), "utf-8");
+            }),
+          );
           return grepWorkspace(files, pattern, opts);
         } catch (err) {
           if (err instanceof StudioGrepError) return `Error: ${err.message}`;
@@ -440,7 +393,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
           const body = output.trim() || "(no output)";
           return exitCode === 0 ? body : `[exit code ${exitCode}]\n${body}`;
         } catch (err) {
-          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+          return `Error: ${errMsg(err)}`;
         }
       },
     }),
@@ -470,7 +423,7 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
         try {
           loaded = await deps.loadBundle(built.worker);
         } catch (err) {
-          return `Bundle failed to load: ${err instanceof Error ? err.message : String(err)}`;
+          return `Bundle failed to load: ${errMsg(err)}`;
         }
         const { summary, toolNames } = describeConfig(loaded.config);
         // Reported after the config rather than gating on it: a failing test
@@ -488,7 +441,5 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
     }),
   };
 
-  const out: ToolSet = {};
-  for (const [name, t] of Object.entries(raw)) out[name] = deadline(t);
-  return out;
+  return raw;
 }

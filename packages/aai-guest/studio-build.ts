@@ -31,7 +31,6 @@
  * the normal node_modules walk-up, exactly as in a user project.
  */
 
-import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
@@ -39,7 +38,9 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
+import { errMsg } from "./harness-rpc.ts";
 import type { ExportResolver } from "./studio-diagnostics.ts";
+import { CLI_OUTPUT_CAP, parseLastJsonLine, pathOnlyEnv, runCapped } from "./studio-spawn.ts";
 
 /** Result of one guest build; `buildError` is prose the coding agent can act on. */
 export type GuestBuildResult = {
@@ -50,8 +51,6 @@ export type GuestBuildResult = {
 
 /** Wall-clock backstop for one build child (typecheck gate + bundle). */
 const BUILD_TIMEOUT_MS = 240_000;
-/** Output tail kept per stream when the child dies without an envelope. */
-const OUTPUT_CAP = 32_000;
 
 /** Argv flag that puts the harness entry into build-child mode. */
 export const BUILD_CHILD_FLAG = "--build-workspace";
@@ -89,47 +88,6 @@ export type BuildEnvelope =
   | { ok: true; worker?: boolean; client?: boolean }
   | { ok: false; buildError: string };
 
-function parseEnvelope(stdout: string): BuildEnvelope | null {
-  const line = stdout
-    .split("\n")
-    .filter((l) => l.trim().length > 0)
-    .at(-1);
-  if (!line) return null;
-  try {
-    return JSON.parse(line) as BuildEnvelope;
-  } catch {
-    return null;
-  }
-}
-
-/** Run one child process, capturing capped output tails. */
-function run(
-  cmd: string,
-  args: string[],
-  opts: { cwd: string; env: Record<string, string> },
-): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { ...opts, timeout: BUILD_TIMEOUT_MS });
-    let stdout = "";
-    let stderr = "";
-    const keep = (s: string) => (s.length > OUTPUT_CAP ? `…${s.slice(-OUTPUT_CAP)}` : s);
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout = keep(stdout + chunk.toString());
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr = keep(stderr + chunk.toString());
-    });
-    child.on("error", reject);
-    child.on("close", (code, signal) => {
-      if (signal) {
-        reject(new Error(`build killed by ${signal} after ${BUILD_TIMEOUT_MS}ms`));
-        return;
-      }
-      resolve({ exitCode: code, stdout, stderr });
-    });
-  });
-}
-
 /**
  * Build a materialized workspace directory into deploy artifacts, in a
  * one-shot child process (see this module's header for why).
@@ -146,7 +104,7 @@ export async function buildWorkspaceDir(
 ): Promise<GuestBuildResult> {
   const out = await mkdtemp(path.join(tmpdir(), "aai-build-out-"));
   try {
-    const result = await run(
+    const result = await runCapped(
       process.execPath,
       [
         opts.buildEntry ?? harnessEntry(),
@@ -157,14 +115,14 @@ export async function buildWorkspaceDir(
         ...(want.worker ? ["--worker"] : []),
         ...(want.client ? ["--client"] : []),
       ],
-      {
-        cwd: dir,
-        // Nothing from this process's env: the build needs no credentials,
-        // and the guest's bearer token must not reach it.
-        env: process.env.PATH === undefined ? {} : { PATH: process.env.PATH },
-      },
+      // Nothing from this process's env: the build needs no credentials,
+      // and the guest's bearer token must not reach it.
+      { cwd: dir, env: pathOnlyEnv(), timeoutMs: BUILD_TIMEOUT_MS, cap: CLI_OUTPUT_CAP },
     );
-    const envelope = parseEnvelope(result.stdout);
+    if (result.signal) {
+      throw new Error(`build killed by ${result.signal} after ${BUILD_TIMEOUT_MS}ms`);
+    }
+    const envelope = parseLastJsonLine<BuildEnvelope>(result.stdout);
     if (envelope === null) {
       // The child died before reporting (OOM, a crash in the bundler's
       // native half) — surface everything, since nothing else will.
@@ -186,7 +144,7 @@ export async function buildWorkspaceDir(
       }),
     };
   } catch (err) {
-    return { buildError: `Build failed to run: ${errMessage(err)}` };
+    return { buildError: `Build failed to run: ${errMsg(err)}` };
   } finally {
     await rm(out, { recursive: true, force: true }).catch(() => undefined);
   }
@@ -210,7 +168,7 @@ export async function typecheckWorkspaceDir(
   try {
     ({ typecheckProject } = await import("@alexkroman1/aai-cli/typecheck"));
   } catch (err) {
-    return { ok: false, output: `Build toolchain unavailable in this sandbox: ${errMessage(err)}` };
+    return { ok: false, output: `Build toolchain unavailable in this sandbox: ${errMsg(err)}` };
   }
   const typed = await typecheckProject(dir);
   return typed.ok ? typed : { ok: false, output: scrubDir(typed.output, dir) };
@@ -236,10 +194,6 @@ export async function withBuildDir<T>(
   } finally {
     await rm(dir, { recursive: true, force: true }).catch(() => undefined);
   }
-}
-
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }
 
 /**

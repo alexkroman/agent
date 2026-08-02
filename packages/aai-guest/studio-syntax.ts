@@ -28,6 +28,7 @@
  */
 
 import path from "node:path";
+import { errMsg } from "./harness-rpc.ts";
 
 /** Extensions oxc can parse. JSON is skipped — it is not a script. */
 const CHECKED = new Set([".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs"]);
@@ -94,7 +95,7 @@ export async function syntaxError(
   try {
     await transform(content, file);
   } catch (err) {
-    return tidy(err instanceof Error ? err.message : String(err));
+    return tidy(errMsg(err));
   }
 }
 

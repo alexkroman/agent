@@ -41,10 +41,10 @@
  * Run with: node harness.mjs
  */
 
-import { timingSafeEqual } from "node:crypto";
 import { pathToFileURL } from "node:url";
 import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
+import { verifyBearer } from "./harness-auth.ts";
 import { ensureRuntime, type HarnessState, loadBundle } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
 import {
@@ -66,7 +66,7 @@ import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
 import { BUILD_CHILD_FLAG, withBuildDir } from "./studio-build.ts";
 import { handleStudioRequest, initStudioSession, type StudioSessionParams } from "./studio-chat.ts";
 import { deployWorkspaceDir } from "./studio-publish.ts";
-import { materializeWorkspace } from "./studio-tools.ts";
+import { materializeWorkspace } from "./studio-workspace-fs.ts";
 import { executeTool, type ToolCallRequest } from "./trial.ts";
 
 // ---- Control-channel dispatch -----------------------------------------------
@@ -183,17 +183,6 @@ export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void 
 }
 
 // ---- Servers -------------------------------------------------------------
-
-function constantTimeEquals(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ab.length === bb.length && timingSafeEqual(ab, bb);
-}
-
-export function bearerToken(header: string | undefined): string | null {
-  if (!header?.startsWith("Bearer ")) return null;
-  return header.slice("Bearer ".length);
-}
 
 /**
  * The session-facing runtime handed to `createServer` — a lazy facade over
@@ -326,8 +315,7 @@ function main(): void {
 
       // The control channel: the tunnel URL is public — an upgrade without
       // the per-sandbox bearer token is rejected before the handshake.
-      const supplied = bearerToken(req.headers.authorization);
-      if (!(supplied && constantTimeEquals(supplied, token))) {
+      if (!verifyBearer(req.headers.authorization, token)) {
         socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
         socket.destroy();
         return true;

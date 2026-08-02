@@ -5,7 +5,8 @@
  */
 
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { bearerToken, dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
+import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
+import { bearerToken } from "./harness-auth.ts";
 import { ensureRuntime, type HarnessState } from "./harness-bundle.ts";
 import { rejectAllPendingHostRequests, setHostSend } from "./harness-rpc.ts";
 import type { AgentDef, JsonRpcMessage } from "./harness-types.ts";
