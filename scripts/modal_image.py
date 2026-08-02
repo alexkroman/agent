@@ -15,6 +15,11 @@ numbers, region, and any extra env — because that is precisely what the split
 into two services exists to let diverge.
 """
 
+import atexit
+import contextlib
+import os
+import signal
+import subprocess
 from pathlib import Path
 
 import modal
@@ -50,6 +55,76 @@ BUILD_COMMAND = (
 )
 
 GUEST_HARNESS_PATH = "/app/packages/aai-guest/dist/harness.mjs"
+
+# How long a container stop waits for the node child to finish its own
+# shutdown before force-killing it. Sized to cover the node server's session
+# drain (SHUTDOWN_DRAIN_MS, default 120s) plus guest-sandbox teardown slack;
+# Modal's SIGKILL backstop still bounds the container's real grace period.
+NODE_STOP_TIMEOUT_SECS = 150
+
+
+def run_node(entry: str, env: dict[str, str]) -> subprocess.Popen:
+    """Spawn the node server and hand container stop signals to it.
+
+    Modal stops a container by signaling this Python runtime process — a
+    child spawned with a bare ``subprocess.Popen`` receives nothing of its
+    own. That meant the node server's SIGTERM handler — the session drain
+    plus ``teardownSandboxes`` (packages/aai-server/teardown-sandboxes.ts),
+    the only thing that terminates the replica's warm-pool and resident
+    guest sandboxes — never ran on a scale-in or redeploy. Every guest the
+    replica owned was orphaned: its harness self-exits after the 5-minute
+    orphan timeout, and the sandbox then lingers as a 2-3 MiB
+    ``sleep infinity`` shell until Modal's 15-minute idle timer reaps it —
+    ~20 minutes of billed zombie per guest, on every deploy.
+
+    Two hooks, because neither alone is reliable:
+
+    - a SIGTERM/SIGINT handler (chained to whatever was installed before it)
+      forwards the signal to node and waits for it to exit — but
+      ``signal.signal`` only works on the main thread, and Modal may run
+      this off it;
+    - an ``atexit`` fallback catches the runtime handling the signal itself
+      and exiting normally.
+
+    Both paths funnel into one memoized ``stop()``, and the node shutdown
+    handler is idempotent, so double delivery is harmless.
+    """
+    proc = subprocess.Popen(["node", entry], cwd="/app", env=env)
+    stopped = False
+
+    def stop() -> None:
+        nonlocal stopped
+        if stopped or proc.poll() is not None:
+            return
+        stopped = True
+        with contextlib.suppress(ProcessLookupError):
+            proc.send_signal(signal.SIGTERM)
+        with contextlib.suppress(subprocess.TimeoutExpired):
+            proc.wait(timeout=NODE_STOP_TIMEOUT_SECS)
+        if proc.poll() is None:
+            proc.kill()
+
+    def install_forwarder(signum: int) -> None:
+        previous = signal.getsignal(signum)
+
+        def handler(sig: int, frame: object) -> None:
+            stop()
+            if callable(previous):
+                previous(sig, frame)
+            elif previous == signal.SIG_DFL:
+                # Re-deliver with the default disposition so the runtime
+                # still dies the way the platform expects.
+                signal.signal(sig, signal.SIG_DFL)
+                os.kill(os.getpid(), sig)
+
+        signal.signal(signum, handler)
+
+    for signum in (signal.SIGTERM, signal.SIGINT):
+        with contextlib.suppress(ValueError):  # not the main thread
+            install_forwarder(signum)
+
+    atexit.register(stop)
+    return proc
 
 
 def build_image(*, port: int, region: str, extra_env: dict[str, str] | None = None):

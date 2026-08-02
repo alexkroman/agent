@@ -20,7 +20,6 @@ anymore.
 """
 
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -29,7 +28,7 @@ import modal
 # The image recipe is shared with the agent app so the two services can never
 # run different dependency trees — see scripts/modal_image.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
-from modal_image import build_image  # noqa: E402
+from modal_image import build_image, run_node  # noqa: E402
 
 PORT = 8080
 REGION = "us-east-2"  # co-located with the agent app and guest sandboxes
@@ -79,6 +78,7 @@ def studio() -> None:
     env = os.environ.copy()
     env.pop("MODAL_SERVER_URL", None)  # same JS-SDK footgun as the agent app
     env["AAI_SERVICE"] = "studio"
-    subprocess.Popen(
-        ["node", "packages/aai-studio-server/dist/index.mjs"], cwd="/app", env=env
-    )
+    # run_node (not a bare Popen) so container stop signals reach the node
+    # process — its shutdown handler is what disposes the session broker's
+    # per-project coding-agent sandboxes (see modal_image.run_node).
+    run_node("packages/aai-studio-server/dist/index.mjs", env)

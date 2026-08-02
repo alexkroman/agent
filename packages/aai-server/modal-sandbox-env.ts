@@ -24,17 +24,18 @@ export const DEFAULT_SANDBOX_TIMEOUT_MS = 4 * 60 * 60 * 1000;
  * running in a sandbox, Modal's idle timer reaps it after this window instead
  * of billing until the 4h lifetime cap.
  *
- * Idle detection can only kick in once the harness exec has actually exited,
- * and that is the link that failed in production: stdin EOF is not reliably
- * delivered to the exec'd process when the host dies, and even when it is, a
- * loaded bundle's own timers could hold Deno's event loop open — so orphaned
- * harnesses kept "running" and their sandboxes never read as idle, surviving
- * for hours. The guest therefore no longer relies on EOF: the host heartbeats
- * every harness (`ping` each `HARNESS_HEARTBEAT_INTERVAL_MS`, wired in
- * `modal-sandbox.ts:warmFromModal`), and the harness self-exits after
- * `HARNESS_ORPHAN_TIMEOUT_MS` of host silence and hard-exits on EOF
- * (`guest/deno-harness.ts`) — after which this timer is what terminates the
- * sandbox.
+ * Idle detection can only kick in once the harness exec has actually exited
+ * (Modal counts a running exec, stdin writes, and open tunnel TCP connections
+ * as activity — the `sleep infinity` entrypoint does not count). The host's
+ * control WebSocket is the liveness signal: a host that dies drops it, and
+ * the harness self-exits after `HARNESS_ORPHAN_TIMEOUT_MS` (5 min) with no
+ * host connected (`aai-guest/harness.ts`) — after which this timer is what
+ * terminates the sandbox. So an ungracefully killed replica's guests linger
+ * as ~2-3 MiB `sleep infinity` shells for orphan timeout + idle window
+ * (~20 min) before Modal reaps them. That window is the backstop, not the
+ * normal path: `run_node` in scripts/modal_image.py forwards container stop
+ * signals to the node process so `teardownSandboxes` terminates guests
+ * immediately on scale-in/redeploy.
  *
  * A *healthy* resident sandbox always has the harness exec running (and its
  * host pinging), so its idle timer never starts; host-side eviction
