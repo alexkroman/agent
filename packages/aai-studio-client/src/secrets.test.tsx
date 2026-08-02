@@ -8,29 +8,8 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { jsonResponse, stubFetch } from "./_test-utils.ts";
 import { SecretsPanel } from "./secrets.tsx";
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-/** Route fetch by "METHOD /path" — each call gets a fresh Response. */
-function stubFetch(routes: Record<string, () => Response>) {
-  const fetchMock = vi
-    .fn()
-    .mockImplementation((input: RequestInfo | URL, init?: RequestInit | undefined) => {
-      const path = new URL(String(input), "http://studio.test").pathname;
-      const route = `${init?.method ?? "GET"} ${path}`;
-      const make = routes[route];
-      if (!make) throw new Error(`Unexpected fetch: ${route}`);
-      return Promise.resolve(make());
-    });
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
-}
 
 function renderPanel(slug: string | undefined, onNotifyChat = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });

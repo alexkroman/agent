@@ -6,6 +6,7 @@ import { StrictMode, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { App } from "./app.tsx";
 import logoUrl from "./assets/assemblyai-logomark.svg";
+import { isEnterSubmit } from "./send-button.tsx";
 import "./styles.css";
 
 // The platform API key is the caller's full account credential (it is also
@@ -73,8 +74,7 @@ function Gate({ onEnter }: { onEnter: (key: string) => void }) {
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {
-            // isComposing: Enter confirms an IME candidate, not the form.
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) enter();
+            if (isEnterSubmit(e)) enter();
           }}
           placeholder="API key"
           spellCheck={false}

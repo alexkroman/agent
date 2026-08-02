@@ -53,7 +53,10 @@ export function PublishMenu(props: PublishMenuProps) {
       </div>
       {(props.output ?? props.error) && (
         <pre
-          className={`m-0 max-h-40 overflow-auto rounded-md border border-line bg-cream p-2 font-mono text-[11px] whitespace-pre-wrap ${props.error ? "text-err" : ""}`}
+          className={clsx(
+            "m-0 max-h-40 overflow-auto rounded-md border border-line bg-cream p-2 font-mono text-[11px] whitespace-pre-wrap",
+            props.error && "text-err",
+          )}
         >
           {props.error ?? props.output}
         </pre>
@@ -90,7 +93,7 @@ type TopBarProps = {
 /** Shared 60px top bar (all 1x options): brand, project name, segmented, actions. */
 export function TopBar(props: TopBarProps) {
   const segClass = (active: boolean) =>
-    `seg ${active ? "bg-fg text-cream" : "bg-panel text-muted hover:text-fg"}`;
+    clsx("seg", active ? "bg-fg text-cream" : "bg-panel text-muted hover:text-fg");
   return (
     <header className="flex h-[60px] flex-none items-center gap-3.5 border-b border-line bg-panel px-5">
       <button

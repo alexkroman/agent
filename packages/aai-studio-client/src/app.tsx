@@ -7,11 +7,19 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { UIMessage } from "ai";
-import { lazy, Suspense, useEffect, useRef, useState } from "react";
-import { ApiError, api, type ChatSession, type ProjectData, type StudioStatus } from "./api.ts";
+import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import {
+  ApiError,
+  api,
+  type ChatSession,
+  errorText,
+  type ProjectData,
+  type StudioStatus,
+} from "./api.ts";
 import { ChatPanel, type NotifyChat } from "./chat.tsx";
 import { HomeHero, HomeSidebar } from "./home.tsx";
 import { PreviewPane } from "./preview.tsx";
+import { queryKeys } from "./query-keys.ts";
 import { SecretsPanel } from "./secrets.tsx";
 import { PublishMenu, TopBar } from "./top-bar.tsx";
 
@@ -39,11 +47,8 @@ const PREVIEW_POLL_MS = 2500;
 /** Stop polling this long after the last local edit (covers a cold deploy). */
 const PREVIEW_POLL_WINDOW_MS = 6 * 60_000;
 
-/** A query/mutation error as displayable text; undefined when there is none. */
-function errorText(err: unknown): string | undefined {
-  if (!err) return;
-  return err instanceof Error ? err.message : String(err);
-}
+/** Stable identity while the workspace loads, so effects keyed on it don't churn. */
+const EMPTY_FILES: Record<string, string> = {};
 
 export function App({ apiKey, onSignOut }: AppProps) {
   const queryClient = useQueryClient();
@@ -59,17 +64,12 @@ export function App({ apiKey, onSignOut }: AppProps) {
   const [previewNonce, setPreviewNonce] = useState(0);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
 
-  const status = useQuery<StudioStatus>({ queryKey: ["status"], queryFn: api.status });
+  const status = useQuery<StudioStatus>({ queryKey: queryKeys.status, queryFn: api.status });
 
   const projects = useQuery({
-    queryKey: ["projects"],
+    queryKey: queryKeys.projects,
     queryFn: () => api.listProjects(apiKey),
   });
-
-  // A stale key is the one auth failure worth handling globally.
-  useEffect(() => {
-    if (projects.error instanceof ApiError && projects.error.status === 401) onSignOut();
-  }, [projects.error, onSignOut]);
 
   // While an auto preview deploy is in flight (an edit landed and the
   // preview is stale), poll the project so the new preview shows up as soon
@@ -78,7 +78,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
   // project) doesn't poll forever.
   const lastEditRef = useRef(0);
   const workspace = useQuery<ProjectData>({
-    queryKey: ["project", project],
+    queryKey: queryKeys.project(project),
     queryFn: () => api.getProject(apiKey, project as string),
     enabled: project != null,
     refetchInterval: (query) =>
@@ -86,11 +86,6 @@ export function App({ apiKey, onSignOut }: AppProps) {
         ? PREVIEW_POLL_MS
         : false,
   });
-
-  // Same global handling for the workspace fetch (see projects above).
-  useEffect(() => {
-    if (workspace.error instanceof ApiError && workspace.error.status === 401) onSignOut();
-  }, [workspace.error, onSignOut]);
 
   // Persisted chat history, re-fetched on every project open. `useChat`
   // owns the live conversation after hydration, but the server rewrites the
@@ -103,10 +98,9 @@ export function App({ apiKey, onSignOut }: AppProps) {
   // making every open a fresh fetch behind the loading pane. Focus
   // refetches are pointless for the same reason the cache is.
   const chat = useQuery<UIMessage[]>({
-    queryKey: ["chat", project],
+    queryKey: queryKeys.chat(project),
     queryFn: () => api.getChat(apiKey, project as string),
     enabled: project != null,
-    staleTime: 0,
     gcTime: 0,
     refetchOnWindowFocus: false,
   });
@@ -115,7 +109,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
   // held for the session; a dead sandbox (evicted, replaced) surfaces as a
   // failed chat send, which invalidates this query to re-broker.
   const chatSession = useQuery<ChatSession>({
-    queryKey: ["chat-session", project],
+    queryKey: queryKeys.chatSession(project),
     queryFn: () => api.createChatSession(apiKey, project as string),
     enabled: project != null,
     staleTime: Number.POSITIVE_INFINITY,
@@ -126,16 +120,21 @@ export function App({ apiKey, onSignOut }: AppProps) {
   // Friendly tool labels, served by the sandbox (single source of truth —
   // the guest owns the tool set). Sticky: labels are static per build.
   const toolLabels = useQuery<Record<string, string>>({
-    queryKey: ["tool-labels", chatSession.data?.url],
+    queryKey: queryKeys.toolLabels(chatSession.data?.url),
     queryFn: () => api.sandboxToolLabels(apiKey, chatSession.data?.url as string),
     enabled: chatSession.data?.url != null,
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
   });
 
+  // A stale key is the one auth failure worth handling globally — one check
+  // over every REST query rather than a copy-pasted effect per query.
+  const authError = [projects.error, workspace.error, chat.error].find(
+    (err) => err instanceof ApiError && err.status === 401,
+  );
   useEffect(() => {
-    if (chat.error instanceof ApiError && chat.error.status === 401) onSignOut();
-  }, [chat.error, onSignOut]);
+    if (authError) onSignOut();
+  }, [authError, onSignOut]);
 
   // Deliberately no auto-select: landing always shows the hero, and existing
   // projects are one click away in the home sidebar.
@@ -158,7 +157,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
     return () => window.removeEventListener("popstate", onPop);
   }, []);
 
-  const files = workspace.data?.files ?? {};
+  const files = workspace.data?.files ?? EMPTY_FILES;
   const deployedSlug = workspace.data?.deployedSlug;
   // "Publish unlocks after your first build" — there must be an agent to ship.
   const hasBuild = project != null && "agent.ts" in files;
@@ -177,8 +176,8 @@ export function App({ apiKey, onSignOut }: AppProps) {
   // kill any in-progress voice session for nothing.
   const invalidateWorkspace = () => {
     lastEditRef.current = Date.now();
-    void queryClient.invalidateQueries({ queryKey: ["project", project] });
-    void queryClient.invalidateQueries({ queryKey: ["projects"] });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.project(project) });
+    void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
   };
 
   const createProject = useMutation({
@@ -188,11 +187,11 @@ export function App({ apiKey, onSignOut }: AppProps) {
     mutationFn: (prompt: string) => api.createProject(apiKey, { prompt }),
     onSuccess: (created) => {
       selectProject(created.name);
-      void queryClient.invalidateQueries({ queryKey: ["projects"] });
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
     },
     onError: (err) => {
       setPendingPrompt(null);
-      alert(err instanceof Error ? err.message : String(err));
+      alert(errorText(err));
     },
   });
 
@@ -212,6 +211,11 @@ export function App({ apiKey, onSignOut }: AppProps) {
   // agent. Silent by default; `{ respond: true }` runs a turn (see NotifyChat).
   const notifyChatRef = useRef<NotifyChat | null>(null);
   const notifyChat: NotifyChat = (text, opts) => notifyChatRef.current?.(text, opts);
+  // Stable identity: ProjectChat's registration effect depends on this, and
+  // it only writes to a ref, so empty deps are correct.
+  const registerNotify = useCallback((fn: NotifyChat | null) => {
+    notifyChatRef.current = fn;
+  }, []);
 
   const publish = useMutation({
     mutationFn: () => api.deploy(apiKey, project as string),
@@ -231,7 +235,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
       // Deploy errors are CLI output too — the coding agent is the one who
       // can fix a failed build or deploy, so it must see them AND act. This
       // one runs a turn rather than waiting to be noticed on the next.
-      const message = err instanceof Error ? err.message : String(err);
+      const message = errorText(err);
       notifyChat(
         `I tried to publish with the Publish button, but aai deploy failed:\n\n${message}`,
         { respond: true },
@@ -328,16 +332,14 @@ export function App({ apiKey, onSignOut }: AppProps) {
             sessionError={chatSession.isError}
             toolLabels={toolLabels.data}
             onSessionStale={() =>
-              void queryClient.invalidateQueries({ queryKey: ["chat-session"] })
+              void queryClient.invalidateQueries({ queryKey: queryKeys.chatSessions })
             }
             llmStatus={status.data}
             initialPrompt={pendingPrompt}
             onInitialPromptSent={() => setPendingPrompt(null)}
             onWorkspaceChanged={invalidateWorkspace}
             onUnauthorized={onSignOut}
-            registerNotify={(fn) => {
-              notifyChatRef.current = fn;
-            }}
+            registerNotify={registerNotify}
           />
           {tab === "preview" ? (
             <PreviewPane

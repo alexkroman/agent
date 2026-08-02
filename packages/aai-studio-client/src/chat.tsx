@@ -6,11 +6,14 @@
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
-import { useEffect, useRef, useState } from "react";
+import clsx from "clsx";
+import { memo, useEffect, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
 import type { ChatSession, StudioStatus } from "./api.ts";
+import { LlmStatusNote } from "./llm-status-note.tsx";
 import { Markdown } from "./markdown.tsx";
 import { createResilientFetch } from "./resilient-fetch.ts";
+import { isEnterSubmit, SEND_BUTTON_CLASS, SendIcon, StopIcon } from "./send-button.tsx";
 import { ToolRow, toBlocks } from "./tool-row.tsx";
 
 type ChatPanelProps = {
@@ -75,7 +78,10 @@ export function notifyDispatch(
   return opts?.respond === true && !state.busy && state.llmReady ? "turn" : "append";
 }
 
-function MessageView({
+// Memoized: while a turn streams, useChat updates dozens of times a second
+// but only the streaming message's identity changes — settled messages must
+// not re-run their markdown parse on every chunk.
+const MessageView = memo(function MessageView({
   message,
   busy = false,
   labels,
@@ -108,7 +114,7 @@ function MessageView({
       )}
     </div>
   );
-}
+});
 
 type ComposerProps = {
   disabled: boolean;
@@ -142,8 +148,7 @@ export function Composer({ disabled, placeholder, onSend, busy = false, onStop }
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            // isComposing: Enter confirms an IME candidate, not the message.
-            if (e.key === "Enter" && !e.nativeEvent.isComposing) submit();
+            if (isEnterSubmit(e)) submit();
           }}
           disabled={disabled || busy}
           placeholder={placeholder}
@@ -151,28 +156,11 @@ export function Composer({ disabled, placeholder, onSend, busy = false, onStop }
         <button
           type="button"
           aria-label={showStop ? "Stop" : "Send"}
-          className="flex h-10 w-10 flex-none cursor-pointer items-center justify-center rounded-sm border-none bg-indigo text-white hover:bg-indigo-hover disabled:cursor-not-allowed disabled:bg-disabled disabled:text-line-strong"
+          className={clsx("h-10 w-10", SEND_BUTTON_CLASS)}
           onClick={showStop ? onStop : submit}
           disabled={!showStop && (disabled || busy)}
         >
-          {showStop ? (
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor" aria-hidden>
-              <rect x="6" y="6" width="12" height="12" rx="1.5" />
-            </svg>
-          ) : (
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              aria-hidden
-            >
-              <path d="M12 19V5" />
-              <path d="m5 12 7-7 7 7" />
-            </svg>
-          )}
+          {showStop ? <StopIcon /> : <SendIcon />}
         </button>
       </div>
     </div>
@@ -188,17 +176,7 @@ function EmptyStateBody({ status }: { status: StudioStatus | undefined }) {
           the first version.
         </p>
       </div>
-      {/* No status yet is loading or a network failure — either way, don't
-          claim the server is misconfigured. */}
-      {status === undefined && (
-        <p className="m-0 text-xs leading-4 text-subtle">Checking the server's chat status…</p>
-      )}
-      {status !== undefined && !status.llm && (
-        <p className="m-0 text-xs leading-4 text-subtle">
-          Chat is disabled: this server has no LLM key (ASSEMBLYAI_API_KEY or ANTHROPIC_API_KEY).
-          The Code view and Publish still work.
-        </p>
-      )}
+      <LlmStatusNote status={status} />
     </>
   );
 }
