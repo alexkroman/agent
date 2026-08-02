@@ -81,4 +81,11 @@ def build_image(*, port: int, region: str, extra_env: dict[str, str] | None = No
                 **(extra_env or {}),
             }
         )
+        # The container entrypoint re-imports the deploy script (Modal >= 1.0
+        # no longer auto-mounts locally imported modules), and there this
+        # module's `scripts/` directory does not exist — the deploy script's
+        # sys.path insert resolves to /scripts inside the container. Mount
+        # this module next to the entrypoint (/root/modal_image.py) so
+        # `from modal_image import build_image` resolves at container start.
+        .add_local_python_source("modal_image")
     )
