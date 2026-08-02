@@ -1,5 +1,61 @@
 # @alexkroman1/aai
 
+## 5.0.0
+
+### Major Changes
+
+- e8fef4b: Narrow the public export surface: remove registry/wire internals from the provider barrels (ASSEMBLYAI_LLM_KIND, GATEWAY_KIND, OPENROUTER_KIND, ASSEMBLYAI_TTS_KIND, CARTESIA_KIND, RIME_KIND, gateway URLs, ASSEMBLYAI_TTS_HOST, OPENROUTER_BASE_URL, default-voice constants), EMPTY_PARAMS/ExecuteTool/SessionMode from the manifest barrel, duplicate createRuntime/Runtime/RuntimeOptions/safeFetch/RunCodeExecutor re-export paths from the runtime barrel, and the WebSocketConstructor test-seam type from aai-ui. Provider factories, their Options/Provider types, and \*\_API_KEY_ENV constants are unchanged.
+- 30914c9: Remove the Vector store: ctx.vector, the vector: agent field, the @alexkroman1/aai/vector subpath (pinecone/inMemoryVector), the vector/\* guest RPC, the platform POST /:slug/vector route, and the platform-owned PINECONE_API_KEY. A future retrieval feature will be a Supabase (pgvector) store following the same path as ctx.db.
+- e8fef4b: Remove the @alexkroman1/aai/patterns subpath (sequential, parallel, route, orchestrate, evaluatorOptimizer, generateStructured). The combinators had no template coverage and no known consumers; compose multi-step LLM orchestration directly over ctx.generate, converting Zod schemas with z.toJSONSchema() where structured output is needed.
+- 30914c9: Guest architecture v2: the sandbox guest now runs Node (same runtime as the host and aai dev), from a harness-baked Modal snapshot image, and runs the COMPLETE agent — the harness (its own private workspace package, `aai-guest`, built into one self-contained `dist/harness.mjs`) embeds the SDK runtime and wraps the same `createServer` the dev server runs, so what executes in the guest matches `aai dev` almost exactly. Client voice sessions connect DIRECTLY to the sandbox's public `/websocket` tunnel endpoint (the same path `aai dev` serves), discovered via the `GET /:slug/client-config` broker; the platform's own `WS /:slug/websocket` serves host-mode only and answers plain upgrades with 410 + guidance. The host keeps a token-authenticated control channel (`/ws`, attached via the new `ServerOptions.upgrade` hook) for bundle loading, one-shot tool trials, the session-count probe idle eviction consults, and the guest's ctx.db proxy.
+
+  BREAKING: `allowedHosts` and the entire per-agent egress policy are removed — `agent({ allowedHosts })` is no longer a field, and the SDK's tool-egress guard, guest-fetch-policy limits (`TOOL_FETCH_*`), and `AllowedHostsSchema` are gone. Tool code and providers `fetch` directly with open egress, identical in dev and production; the Modal container is the isolation boundary, and the network builtins keep their SSRF screen. Also removed: the NDJSON stdio transport, fetch relay, message delta protocol, heartbeat/watchdog machinery, per-call state shipping, and the host-side session relay. `RuntimeOptions.runCode` injects a real `run_code` executor (the guest supplies one; `aai dev` still refuses), and the client-config response gains an optional `sessionUrl` that aai-ui's session core re-fetches per reconnect attempt.
+
+### Minor Changes
+
+- c36ad60: Deploy-time credential preflight: deploys are rejected (400) when the agent's config requires a credential its stored env doesn't hold, derived from the provider descriptors plus the new optional `requiredEnv` field on `agent()`. The studio publishes with a warning instead (it has no secrets UI). `aai dev` now also warns when a required key resolved from the shell only, since it won't survive `aai deploy`.
+- 9b95fc9: Type ctx.state: agent() infers the state shape from its state factory and tool() carries it, so ctx.state.foo is typed instead of unknown.
+- 0c2bdbd: Add assemblyAIPipeline(), a one-call preset for the all-AssemblyAI cascaded pipeline; default the LLM gateway model; and replace the AssemblyAI TTS voice list with a checkable constant (the old doc-comment list named voices that do not exist).
+- 25938b2: Extract shared concurrency primitives and adopt them across the stack: new `createEpoch` (staleness guard for async continuations) and `createOwnedMap` (map entries released by ownership token, so a stale teardown can't evict a successor's entry) exports, adopted in the host runtime's session/sink maps, the WebSocket handler, the platform slot cache, and the browser session core's generation counters. The pipeline transport's turn lifecycle (`turnController`/`turnSpoke`/`ttsAudioOpen`) is now an explicit state machine (`pipeline-turn-state.ts`) whose named transitions are the only mutation path, per-turn abort wiring uses native `AbortSignal.any` instead of the hand-rolled `linkAbort`, and the bespoke `Promise.race` timeout implementations were consolidated onto `p-timeout`.
+- 293da11: `web_search` no longer requires `BRAVE_API_KEY`: it is now backed by
+  DuckDuckGo's keyless HTML endpoint (scraping approach ported from
+  openclaw's duckduckgo plugin, MIT). Every agent gets web search with zero
+  configuration; the Brave Search implementation and its key handling are
+  removed.
+- 0c2bdbd: Network builtins skip the SSRF screen inside a real container; the screen stays for self-hosted runs where the host is someone's machine.
+- 0c2bdbd: Generate the AssemblyAI gateway model catalog from the gateway's /v1/models endpoint, with per-model tools/stream/EU/liveness flags, and type assemblyAI({ model }) against it.
+- 01cecc1: Simplify the default system prompt into a general-purpose voice agent base (speaking, listening, and tool-use fundamentals) instead of a phone customer-service/domain-policy prompt, so it works across many kinds of voice agents
+- 0c2bdbd: Add agent syncState + useAgentState: the agent projects its session state and the client reads it, replacing the hand-rolled return-a-snapshot-from-every-tool pattern. Removes ToolResultMap.
+- 293da11: The studio coding agent is now a Claude-Code-style agentic agent that runs
+  INSIDE the project's own Modal sandbox, with the browser connected to it
+  directly — mirroring the voice path. `POST /studio/projects/:project/
+session` boots (or reuses) a guest sandbox through the same warm-pool
+  machinery deployed agents use and returns the sandbox's public chat URL;
+  turns stream browser→sandbox over SSE and never pass through the platform
+  host. The loop runs in the guest on the caller's own key with tools over a
+  real filesystem workspace — list/read (windowed)/write/edit/delete, glob,
+  grep, bash (a real shell in the container), todo_write, test_agent, and
+  the keyless web builtins — each with a user-friendly label served by the
+  sandbox (`GET /studio/tools`) and rendered in the studio UI. End of turn,
+  the guest syncs workspace edits and the conversation back over the
+  authenticated control channel; test_agent builds via a guest→host RPC to
+  the out-of-process build runner. The host-side chat loop, scan worker
+  thread, and host tool implementations are removed — the SDK's
+  `createServer` gains a `request` hook so the harness can serve the chat
+  surface without a second HTTP server.
+- fdd64ef: Add snapshotSessionNotes/restoreSessionNotes to the runtime for cross-replica session resume: the platform server can now persist a disconnected session's remember/recall notes and restore them when the session resumes on another host.
+- 0c2bdbd: Add @alexkroman1/aai/tools: fetchJson, visitWebpage and webSearch callable from your own tool code, with the same screening and caps the model-facing builtins get.
+
+### Patch Changes
+
+- 5a599b2: Route a tool's `ctx.send` and `syncState` pushes to whichever client socket currently holds the session id, rather than the one captured when the tool was dispatched. A reconnect landing mid-tool-call sent both to the superseded socket; for `syncState` the lost push also recorded the projection as delivered, leaving the resumed client stale indefinitely.
+- 0c2bdbd: Stop the type gate from blocking working agents: useToolResult defaults to a permissive result type, and generated projects run strict without noImplicitAny — the implicit-any family was 57% of the diagnostics coding agents had to repair and caught no real defects.
+- 6fb3bc3: Fix hot-path concurrency bugs: TTS reconnect deadline + clean-close mute + stale FlushDone pairing, session resume takeover/overlap races, host-mode handshake frame loss + per-connection runtime leak, post-stop transport events, client-cancel tool abort, drain-window barge-in classification, false-interruption resume vs committed final, S2S error-before-close and tool.result redelivery after resume, tool timeout firing ctx.signal, per-agent tool-fetch concurrency parity, sandbox teardown closing live session sockets, orchestrator re-resolve identity re-check, NDJSON/pool/cold-spawn hardening
+- 55e045b: Replace hand-rolled patterns with newer Node built-ins: util.styleText instead of picocolors in the CLI (dependency removed), one-shot crypto.hash() for SHA-256 digests, node:timers/promises for the dev-server listen retry, and an async-disposable WarmHarness (Symbol.asyncDispose + await using) that unifies the sandbox teardown triple across describeBundle, configureSandbox failure paths, and the studio sandbox.
+- 0c2bdbd: Strip $schema and propertyNames from tool schemas sent to the AssemblyAI LLM Gateway — without it every Gemini model 500s on any agent that has tools.
+- d4c2a10: Add voice-agent prompt rules drawn from EVA's itsm voice tasks: a policy-required follow-up write (assign the tier, log the interaction) is part of the action and must happen in the same turn as the write; an unmet prerequisite becomes the job, worked in order from step one and without narrating the policy; a date, time, window, or urgency is never the agent's to invent; and a validation error that spells out a required prefix has already answered the question, so correct a one-character confusable difference rather than asking the caller to confirm it.
+- e8fef4b: Remove the internal loadProviderPackage helper (dead since provider SDKs became regular dependencies)
+
 ## 4.0.0
 
 ### Major Changes
