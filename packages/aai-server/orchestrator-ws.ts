@@ -10,22 +10,42 @@
  * server process on the agent's stored config and env (ws-host-mode.ts).
  * Plain client sessions do not pass through the platform host at all:
  * clients connect DIRECTLY to the agent's sandbox (its public `/websocket`
- * tunnel endpoint), discovered via `GET /:slug/client-config` — a plain
- * upgrade here is answered with guidance, not a session.
+ * tunnel endpoint). `/:slug/websocket` is the LONG-LIVING programmatic
+ * endpoint: a plain upgrade here resolves the agent's live sandbox (booting
+ * it if needed, exactly like the `GET /:slug/client-config` broker) and
+ * answers with a redirect to the sandbox's current session URL — never a
+ * session. WebSocket clients that follow handshake redirects (`ws` with
+ * `followRedirects`, websocat, most non-browser clients) land on the live
+ * sandbox even as it is replaced across evictions and redeploys; browsers
+ * don't follow WebSocket redirects, which is fine — the browser path is the
+ * client-config broker.
  */
 
 import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai";
 import type { SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { WebSocketServer } from "ws";
+import type { AppDatabases } from "./app-database.ts";
 import { MAX_CONNECTIONS } from "./constants.ts";
+import type { SlugEpochs } from "./platform-epoch.ts";
+import type { SandboxPool } from "./sandbox-pool.ts";
+import { resolveSandbox } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { VALID_SLUG_RE } from "./schemas.ts";
+import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 import { guardHostModeUpgrade, startDeployedHostSession, wantsHostMode } from "./ws-host-mode.ts";
 
 export type WsUpgradeOpts = {
   slots: SlotCache;
   store: BundleStore;
+  /** Named secret storage — read for the app's `app-db:` credentials. */
+  secrets?: SecretStore;
+  /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
+  appDb?: AppDatabases;
+  /** Cross-replica invalidation epochs (see platform-epoch.ts). */
+  slugEpochs?: SlugEpochs;
+  /** Pre-warmed harness pool shared with the rest of the platform. */
+  pool?: SandboxPool;
   /** Max concurrent WebSocket connections. Defaults to MAX_CONNECTIONS. */
   maxConnections?: number;
   /**
@@ -47,6 +67,58 @@ export type WsUpgrades = {
   /** Live host-mode sockets. Shutdown polls this while draining. */
   activeSessionCount: () => number;
 };
+
+/**
+ * Answer a plain (non-host) upgrade on the long-living `/:slug/websocket`
+ * endpoint: resolve the agent's live sandbox — booting it on demand, exactly
+ * like the `GET /:slug/client-config` broker — and redirect the handshake to
+ * its current session URL, with the caller's query preserved so
+ * `?sessionId=` resumes survive the hop. Clients that can't follow a
+ * WebSocket redirect get the broker guidance in the body either way; an
+ * unknown slug answers 404 and a sandbox that failed to start answers 503
+ * (retryable), mirroring the broker's semantics.
+ */
+async function answerPlainUpgrade(
+  rawUrl: string,
+  slug: string,
+  socket: import("node:stream").Duplex,
+  opts: WsUpgradeOpts,
+): Promise<void> {
+  let sessionUrl: string | undefined;
+  let status = "302 Found";
+  try {
+    const sandbox = await resolveSandbox(slug, {
+      slots: opts.slots,
+      store: opts.store,
+      ...(opts.secrets && { secrets: opts.secrets }),
+      ...(opts.appDb && { appDb: opts.appDb }),
+      ...(opts.slugEpochs && { slugEpochs: opts.slugEpochs }),
+      ...(opts.pool && { pool: opts.pool }),
+    });
+    if (sandbox) sessionUrl = await sandbox.sessionUrl();
+    else status = "404 Not Found";
+  } catch {
+    // The sandbox VM failed to start; the failure hook detaches it so the
+    // next attempt rebuilds. Retryable, exactly like the broker's 503.
+    status = "503 Service Unavailable";
+  }
+  const headers = ["Connection: close", "Content-Type: text/plain"];
+  if (sessionUrl) {
+    const location = new URL(sessionUrl);
+    const qIdx = rawUrl.indexOf("?");
+    if (qIdx !== -1) {
+      for (const [k, v] of new URLSearchParams(rawUrl.slice(qIdx + 1))) {
+        location.searchParams.set(k, v);
+      }
+    }
+    headers.push(`Location: ${location}`);
+  }
+  const body = sessionUrl
+    ? `sessions connect directly to the agent: follow the Location redirect, or GET /${slug}/client-config names the current sessionUrl\n`
+    : `sessions connect directly to the agent: GET /${slug}/client-config names the current sessionUrl\n`;
+  socket.write(`HTTP/1.1 ${status}\r\n${headers.join("\r\n")}\r\n\r\n${body}`);
+  socket.destroy();
+}
 
 export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
   const maxConnections = opts.maxConnections ?? MAX_CONNECTIONS;
@@ -98,16 +170,12 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
     const slug = slugMatch[1] as string;
 
     // Plain client sessions connect directly to the agent's sandbox — the
-    // platform no longer terminates them. Answer the handshake with
-    // guidance; a bare RST would read as a network fault.
+    // platform never terminates them. This path is the stable, long-living
+    // programmatic endpoint: upgrade the caller to the sandbox's current
+    // session URL via a handshake redirect. Answering the handshake (rather
+    // than a bare RST) is what keeps failures diagnosable.
     if (!wantsHostMode(rawUrl)) {
-      socket.write(
-        "HTTP/1.1 410 Gone\r\n" +
-          "Connection: close\r\n" +
-          "Content-Type: text/plain\r\n\r\n" +
-          `sessions connect directly to the agent: GET /${slug}/client-config names the current sessionUrl\n`,
-      );
-      socket.destroy();
+      await answerPlainUpgrade(rawUrl, slug, socket, opts);
       return;
     }
 

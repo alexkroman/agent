@@ -66,8 +66,9 @@ describe("loadClientConfig", () => {
   // The session's broker decision hangs on this distinction. Collapsing a
   // FAILED lookup into `{}` made it indistinguishable from a server that
   // answered and named no sessionUrl, so one 503 (a sandbox that failed to
-  // boot) latched the session onto the platform's `/:slug/websocket` — which
-  // answers 410 forever — with no path back even once the agent recovered.
+  // boot) latched the session onto the platform's `/:slug/websocket` — a
+  // WebSocket redirect browsers can't follow — with no path back even once
+  // the agent recovered.
   it("reports a successful lookup that named no sessionUrl", async () => {
     const fetchFn = vi.fn(async () => jsonResponse({ name: "a" }));
     await expect(loadClientConfig("http://h/", fetchFn)).resolves.toEqual({ name: "a" });

@@ -41,9 +41,13 @@ export type SessionSnapshot = {
   /** True while the microphone is live and streaming to the server. */
   readonly recording: boolean;
   /**
-   * The WebSocket URL a program can connect to directly (the same endpoint
-   * this session uses), e.g. `wss://host/my-agent/websocket`. Derived from
-   * `platformUrl` at construction — available before connecting.
+   * The WebSocket URL a program can connect to directly — the long-living
+   * platform endpoint, e.g. `wss://host/my-agent/websocket`. Derived from
+   * `platformUrl` at construction — available before connecting — and never
+   * replaced by the brokered sandbox tunnel URL the session may actually be
+   * connected to: that URL is ephemeral (it dies when the sandbox is
+   * replaced), while the platform endpoint is stable and upgrades
+   * programmatic clients to the current sandbox endpoint itself.
    */
   readonly apiUrl: string;
   /**

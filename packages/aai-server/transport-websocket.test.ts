@@ -294,15 +294,53 @@ function wsError(ws: WsClient): Promise<Error> {
 }
 
 describe("plain session upgrades (direct-to-tunnel)", () => {
-  test("a plain upgrade is answered 410 with broker guidance, not a session", async () => {
+  test("a plain upgrade is redirected to the sandbox's live session URL, not a session", async () => {
     const ctx = await startServerWithOrchestrator();
     try {
       const response = await rawUpgrade(ctx.port, `/${ctx.slug}/websocket`);
-      expect(response).toMatch(/^HTTP\/1\.1 410 Gone/);
+      expect(response).toMatch(/^HTTP\/1\.1 302 Found/);
+      expect(response).toContain("Location: wss://tunnel.test/websocket");
       expect(response).toContain(`/${ctx.slug}/client-config`);
-      // The sandbox is never consulted: clients dial its tunnel directly.
-      expect(ctx.sandbox.sessionUrl).not.toHaveBeenCalled();
+      // The long-living endpoint resolves the sandbox like the broker does.
+      expect(ctx.sandbox.sessionUrl).toHaveBeenCalled();
       expect(ctx.activeSessionCount()).toBe(0);
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test("the redirect preserves the caller's query (sessionId resume)", async () => {
+    const ctx = await startServerWithOrchestrator();
+    try {
+      const response = await rawUpgrade(ctx.port, `/${ctx.slug}/websocket?sessionId=abc123`);
+      expect(response).toMatch(/^HTTP\/1\.1 302 Found/);
+      expect(response).toContain("Location: wss://tunnel.test/websocket?sessionId=abc123");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test("an unknown slug is answered 404 with broker guidance", async () => {
+    const ctx = await startServerWithOrchestrator();
+    try {
+      const response = await rawUpgrade(ctx.port, "/no-such-agent/websocket");
+      expect(response).toMatch(/^HTTP\/1\.1 404 Not Found/);
+      expect(response).toContain("/no-such-agent/client-config");
+      expect(response).not.toContain("Location:");
+    } finally {
+      await ctx.close();
+    }
+  });
+
+  test("a sandbox that failed to start is answered 503 (retryable)", async () => {
+    const ctx = await startServerWithOrchestrator();
+    try {
+      vi.mocked(ctx.sandbox.sessionUrl).mockImplementation(() =>
+        Promise.reject(new Error("spawn failed")),
+      );
+      const response = await rawUpgrade(ctx.port, `/${ctx.slug}/websocket`);
+      expect(response).toMatch(/^HTTP\/1\.1 503 Service Unavailable/);
+      expect(response).not.toContain("Location:");
     } finally {
       await ctx.close();
     }

@@ -56,8 +56,12 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     started: false,
     running: false,
     recording: false,
-    // The programmatic endpoint — same URL the session connects to, minus
-    // resume params. Derived up front so UIs can show it before connecting.
+    // The programmatic endpoint — the LONG-LIVING platform URL
+    // (`wss://host/my-agent/websocket`), derived up front so UIs can show it
+    // before connecting. Deliberately NOT the brokered sandbox tunnel URL the
+    // session may actually connect to: that URL dies with the sandbox (idle
+    // eviction, redeploy), while the platform endpoint is stable and upgrades
+    // callers to the current sandbox endpoint itself.
     apiUrl: buildWsUrl(options.platformUrl, false).toString(),
   };
 
@@ -223,19 +227,16 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     // Only an ANSWERED lookup says anything about the server. A failed one
     // (the broker 503s while the sandbox boots, or a network blip) must not
     // latch `serverIsBroker = false`: that skips brokering on every later
-    // attempt and pins the client to the platform's `/:slug/websocket`,
-    // which answers 410 Gone forever — so a single bad boot cost the session
-    // its only route back even after the agent recovered.
+    // attempt and pins the client to the platform's `/:slug/websocket` —
+    // browsers don't follow its WebSocket redirect, so that route never
+    // recovers even after the agent does. Only an answered lookup may latch.
     if (cfg) serverIsBroker = cfg.sessionUrl !== undefined;
     const url = cfg?.sessionUrl
       ? buildBrokeredWsUrl(cfg.sessionUrl, hasConnected, sessionId)
       : buildWsUrl(options.platformUrl, hasConnected, sessionId);
-    // Keep the programmatic-endpoint display current (minus resume params).
-    const display = new URL(url);
-    display.search = "";
-    if (display.toString() !== currentSnapshot.apiUrl) {
-      updateState({ apiUrl: display.toString() });
-    }
+    // `apiUrl` deliberately stays the long-living platform endpoint set at
+    // construction — never the brokered sandbox tunnel URL, which is
+    // ephemeral (dies on idle eviction/redeploy) and useless to share.
     return url.toString();
   }
 
