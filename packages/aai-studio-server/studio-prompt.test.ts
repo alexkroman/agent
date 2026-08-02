@@ -1,10 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { existsSync } from "node:fs";
+import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   _resetStudioPromptCache,
   composeStudioPrompt,
   loadScaffoldGuide,
+  scaffoldGuidePath,
   studioSystemPrompt,
 } from "./studio-prompt.ts";
 
@@ -27,6 +30,20 @@ describe("loadScaffoldGuide", () => {
 
   test("returns null for a missing path", () => {
     expect(loadScaffoldGuide("/nonexistent/CLAUDE.md")).toBeNull();
+  });
+
+  // Regression: the path used to be a relative `../aai-templates/...` walk
+  // from import.meta.dirname, which is only correct for the SOURCE layout.
+  // From the built bundle (`dist/`) it pointed inside aai-studio-server, so
+  // production silently served FALLBACK_GUIDE. Asserting the resolved path
+  // lands in the aai-templates package catches that regardless of where the
+  // module runs from — the previous test could not, because it runs from
+  // source, where the broken path happened to work.
+  test("resolves into the aai-templates package, not relative to the bundle", () => {
+    const resolved = scaffoldGuidePath();
+    expect(resolved).toContain(`${path.sep}aai-templates${path.sep}scaffold${path.sep}`);
+    expect(resolved).not.toContain(`${path.sep}aai-studio-server${path.sep}aai-templates`);
+    expect(existsSync(resolved)).toBe(true);
   });
 });
 

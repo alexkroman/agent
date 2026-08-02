@@ -184,7 +184,7 @@ export async function describeBundle(
 ): Promise<unknown> {
   // Prefer a pre-warmed harness when the caller holds a pool — the studio's
   // Publish path does — falling back to a cold spawn exactly like
-  // `createStudioSandbox`. `acquire()` returns null when the pool is empty.
+  // `createSandboxVm` above. `acquire()` returns null when the pool is empty.
   await using warm =
     (await opts.pool?.acquire()) ??
     (await spawn({ harnessPath: opts.harnessPath, slug: "studio-inspect" }));

@@ -23,6 +23,7 @@
  * why platform-internal tables get their own namespace).
  */
 
+import { ensureTableOnce } from "./pg-ensure.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 /**
@@ -68,7 +69,6 @@ export function trimChatToByteBudget(
 
 const TABLE = "aai_platform.studio_chats";
 
-const ENSURE_SCHEMA_SQL = "create schema if not exists aai_platform";
 const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
   scope text not null,
   project text not null,
@@ -83,17 +83,7 @@ const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
  * string-or-object jsonb read tolerance as the workspace store.
  */
 export function createPgChatStore(sql: SqlExec): ChatStore {
-  let ensured: Promise<void> | null = null;
-  const ensure = (): Promise<void> => {
-    ensured ??= (async () => {
-      await sql(ENSURE_SCHEMA_SQL);
-      await sql(ENSURE_TABLE_SQL);
-    })().catch((err: unknown) => {
-      ensured = null;
-      throw err;
-    });
-    return ensured;
-  };
+  const ensure = ensureTableOnce(sql, ENSURE_TABLE_SQL);
 
   return {
     async getChat(scope, project) {

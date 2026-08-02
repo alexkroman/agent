@@ -76,7 +76,13 @@ export type SandboxPool = {
 
 // ── Implementation ───────────────────────────────────────────────────────
 
-const POOL_SIZE_MAX = 16;
+/**
+ * Hard ceiling on the warm sandbox pool. Exported because `_boot.ts` clamps
+ * `SANDBOX_POOL_SIZE` to it before logging the boot line and the
+ * `warm_pool_target` metric: two copies meant raising the ceiling in one file
+ * made those report a size the pool would not actually run at.
+ */
+export const POOL_SIZE_MAX = 16;
 
 /** Base cooldown after a spawn failure before replenishment resumes. */
 export const SPAWN_FAILURE_COOLDOWN_MS = 30_000;

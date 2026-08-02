@@ -48,8 +48,13 @@ export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled:
   return (env.slugLock ?? localSlugLock)(slug, async () => {
     const meta = await appDb.provision(slug);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
-    await restartSlotSandbox(env.slots, slug, "storage enable");
-    if (env.slugEpochs) await bumpSlugEpoch(env.slugEpochs, slug);
+    // Independent work, run together: see the note in secret-handler.ts —
+    // serializing them holds this slug's cross-replica lease across a Modal
+    // terminate round trip for no reason.
+    await Promise.all([
+      restartSlotSandbox(env.slots, slug, "storage enable"),
+      env.slugEpochs ? bumpSlugEpoch(env.slugEpochs, slug) : undefined,
+    ]);
     console.info("Storage enabled", { slug, role: meta.role });
     return { enabled: true as const };
   });
@@ -62,8 +67,13 @@ export function disableStorage(env: StorageEnv, slug: string): Promise<{ enabled
   return (env.slugLock ?? localSlugLock)(slug, async () => {
     await appDb.deprovision(slug);
     await env.secrets.delete(appDbSecretName(slug));
-    await restartSlotSandbox(env.slots, slug, "storage disable");
-    if (env.slugEpochs) await bumpSlugEpoch(env.slugEpochs, slug);
+    // Independent work, run together: see the note in secret-handler.ts —
+    // serializing them holds this slug's cross-replica lease across a Modal
+    // terminate round trip for no reason.
+    await Promise.all([
+      restartSlotSandbox(env.slots, slug, "storage disable"),
+      env.slugEpochs ? bumpSlugEpoch(env.slugEpochs, slug) : undefined,
+    ]);
     console.info("Storage disabled", { slug });
     return { enabled: false as const };
   });

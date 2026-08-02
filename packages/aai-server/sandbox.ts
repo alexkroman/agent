@@ -98,11 +98,18 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   // it gets one flag and one notification. Without the exit half, a guest
   // killed mid-life stayed installed in its slot and the broker handed its
   // dead sessionUrl to every new client until idle eviction reclaimed it.
+  //
+  // Read the callback into a local rather than closing over `opts`: capturing
+  // the options object would context-allocate it into the scope every returned
+  // closure shares, so a resident sandbox would pin `opts.workerCode` — the
+  // whole ~8 MB deploy bundle — in host heap for its entire life, long after
+  // bundle/load shipped it to the guest.
+  const onSandboxLost = opts.onSandboxLost;
   let lost = false;
   const markLost = (err?: unknown): void => {
     if (lost) return;
     lost = true;
-    opts.onSandboxLost?.(err);
+    onSandboxLost?.(err);
   };
 
   vmReady

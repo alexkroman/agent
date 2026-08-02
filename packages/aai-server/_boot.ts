@@ -6,6 +6,7 @@
  */
 
 import { DEFAULT_SHUTDOWN_DRAIN_MS } from "./constants.ts";
+import { POOL_SIZE_MAX } from "./sandbox-pool.ts";
 
 export function requireEnv<const K extends string>(
   env: NodeJS.ProcessEnv,
@@ -21,13 +22,6 @@ export function requireEnv<const K extends string>(
 export function isLocalDev(env: NodeJS.ProcessEnv): boolean {
   return env.AAI_LOCAL_DEV === "1" || !env.SUPABASE_S3_ENDPOINT;
 }
-
-/**
- * Hard ceiling on the warm sandbox pool. Mirrors `POOL_SIZE_MAX` in
- * sandbox-pool.ts (which clamps again defensively) so the boot log and the
- * `warm_pool_target` metric report the size the pool will actually run at.
- */
-const POOL_SIZE_MAX = 16;
 
 /**
  * Parse `SANDBOX_POOL_SIZE`: null (pool disabled) for unset, non-numeric,

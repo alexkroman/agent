@@ -222,8 +222,10 @@ export function createStudioSessionBroker(
     scope: string,
     project: string,
     apiKey: string,
+    /** Pre-read workspace; the cold path reads it BEFORE spawning a sandbox. */
+    known?: Awaited<ReturnType<typeof getWorkspace>>,
   ): Promise<boolean> {
-    const workspace = await getWorkspace(options.workspaces, scope, project);
+    const workspace = known ?? (await getWorkspace(options.workspaces, scope, project));
     if (!workspace) return false;
     await warm.conn.sendRequest(
       "studio/session-init",
@@ -267,27 +269,49 @@ export function createStudioSessionBroker(
     return parsed.data;
   }
 
+  /**
+   * Reuse the project's live sandbox, re-installing the session so a fresh
+   * page never sees a stale tree. Resolves `null` when there is no live
+   * sandbox to reuse (absent, or dead and now disposed) — the caller then
+   * takes the cold path.
+   */
+  async function reuseSession(
+    key: string,
+    scope: string,
+    project: string,
+    apiKey: string,
+  ): Promise<{ url: string } | null> {
+    const existing = sessions.get(key);
+    if (!existing) return null;
+    try {
+      const ok = await initSession(existing.warm, scope, project, apiKey);
+      if (!ok) return null;
+      existing.lastUsed = Date.now();
+      return { url: existing.url };
+    } catch (err) {
+      // Dead sandbox (idle-killed, crashed) — drop it so the caller respawns.
+      console.warn("Studio session: re-init failed; respawning sandbox", {
+        project,
+        error: errorMessage(err),
+      });
+      await disposeEntry(key);
+      return null;
+    }
+  }
+
   return {
     async ensureSession(scope, project, apiKey) {
       const key = sessionKey(scope, project);
-      const existing = sessions.get(key);
-      if (existing) {
-        // Re-init on every broker call: the workspace may have changed in
-        // the editor, and a fresh page session must never see a stale tree.
-        try {
-          const ok = await initSession(existing.warm, scope, project, apiKey);
-          if (!ok) return null;
-          existing.lastUsed = Date.now();
-          return { url: existing.url };
-        } catch (err) {
-          // Dead sandbox (idle-killed, crashed) — replace it below.
-          console.warn("Studio session: re-init failed; respawning sandbox", {
-            project,
-            error: errorMessage(err),
-          });
-          await disposeEntry(key);
-        }
-      }
+      const reused = await reuseSession(key, scope, project, apiKey);
+      if (reused) return reused;
+
+      // Check the project exists BEFORE taking a sandbox. Spawning first and
+      // discovering the 404 inside initSession burned a full Modal spawn +
+      // teardown per bogus project id — and each one either drained a warm-pool
+      // slot (making a real session pay a cold start) or billed a create.
+      const workspace = await getWorkspace(options.workspaces, scope, project);
+      if (!workspace) return null;
+
       const pooled = (await options.pool?.acquire()) ?? null;
       const warm =
         pooled ??
@@ -297,7 +321,7 @@ export function createStudioSessionBroker(
         }));
       try {
         wire(warm, key, scope, project);
-        const ok = await initSession(warm, scope, project, apiKey);
+        const ok = await initSession(warm, scope, project, apiKey, workspace);
         if (!ok) {
           await warm[Symbol.asyncDispose]().catch(() => undefined);
           return null;
