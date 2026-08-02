@@ -50,10 +50,44 @@ STUDIO_MAX_INPUTS = 40
 # wedged request is still reaped in reasonable time.
 STUDIO_FUNCTION_TIMEOUT_SECS = 30 * 60
 
+# ── Guest-sandbox resources ──────────────────────────────────────────────────
+#
+# The studio spawns its OWN guest sandboxes (per-project coding-agent
+# sessions, Publish's ephemeral deploy sandboxes, config extraction), and
+# their load is even more build-heavy than the agent app's: `test_agent` and
+# Publish run the aai CLI's bundler in-guest, which peaks near 1.7 GB across
+# several cores. These are the same burst-range numbers as the agent app's
+# guest-sandbox block (packages/aai-server/modal_deploy.py — see the full
+# rationale there): reserve the idle shape, cap the build shape. Without
+# them, a pinned 1 GiB / 1 core guest wedges at its cgroup ceiling in
+# permanent direct-reclaim mid-build — it reads as a hung build, not an OOM.
+# Keep the two apps' values in lockstep unless the divergence is deliberate.
+#
+# No SANDBOX_MAX_SESSIONS / SANDBOX_MAX_REPLICAS here: per-slug session
+# scaling is the agent broker's knob — studio sandboxes are one coding-agent
+# session per (scope, project).
+SANDBOX_CPU = 1  # per-guest core reservation (Modal cpu)
+SANDBOX_CPU_LIMIT = 4  # hard per-guest core cap, for builds (Modal cpuLimit)
+SANDBOX_MEMORY_MB = 1024  # per-guest memory reservation (Modal memoryMiB)
+SANDBOX_MEMORY_LIMIT_MB = 4096  # hard per-guest memory cap (Modal memoryLimitMiB)
+
 # Byte-for-byte the agent app's image (see scripts/modal_image.py): the same
 # clean-tree install and workspace build, so both services run the exact
 # dependency tree the tests exercised.
-image = build_image(port=PORT, region=REGION)
+image = build_image(
+    port=PORT,
+    region=REGION,
+    extra_env={
+        # Guest-sandbox burst range — see the block above. Values in the
+        # aai-server Secret override these (secrets layer over image env).
+        # A cap without its reservation throws at spawn (Modal rejects a bare
+        # cap), so these four move together — see modal-sandbox-env.ts.
+        "SANDBOX_CPU": str(SANDBOX_CPU),
+        "SANDBOX_CPU_LIMIT": str(SANDBOX_CPU_LIMIT),
+        "SANDBOX_MEMORY_MB": str(SANDBOX_MEMORY_MB),
+        "SANDBOX_MEMORY_LIMIT_MB": str(SANDBOX_MEMORY_LIMIT_MB),
+    },
+)
 
 app = modal.App("aai-studio-web")
 

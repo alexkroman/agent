@@ -1786,6 +1786,17 @@ service's control work is light — and one container served both badly.
   because the memory is native, not V8's. The session cap
   (`SANDBOX_MAX_SESSIONS`) is sized against the RESERVATION — the resources a
   guest always has — while the cap only has to clear the bundler's peak.
+
+  **BOTH Modal apps set the burst range in their image env** — the agent
+  app's guest-sandbox autoscaling block (`aai-server/modal_deploy.py`) and
+  the studio app's guest-sandbox resources block
+  (`aai-studio-server/modal_deploy.py`). The studio spawns its own sandboxes
+  (coding-agent sessions, Publish, config extraction), whose `test_agent`/
+  Publish builds are exactly the workload the cap exists for — for a while
+  only the agent app set the range, so studio-spawned sandboxes ran on Modal
+  defaults. Keep the two blocks' values in lockstep unless the divergence is
+  deliberate; the session-scaling pair (`SANDBOX_MAX_SESSIONS`/
+  `SANDBOX_MAX_REPLICAS`) stays agent-only.
 - **Every sandbox is tagged with a `role`** (`sandbox-role.ts`: `agent`,
   `preview`, `studio`, `studio-publish`, `inspect`, `pool`) plus the `slug`
   (studio sandboxes carry the project name), so the Modal dashboard can tell
