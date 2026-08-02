@@ -60,6 +60,16 @@ type ToolSetup = {
   executeTool: ExecuteTool;
   toolSchemas: ToolSchema[];
   toolGuidance: string[];
+  /**
+   * Send the current `syncState` projection to a client that just connected.
+   *
+   * Only meaningful on RESUME. A session's state survives a disconnect
+   * through the grace window, so a reconnecting browser is looking at a live
+   * cart it cannot see — nothing would push again until the next tool call,
+   * and there may not be one. Absent on the sandbox path, where the runtime
+   * holds no state.
+   */
+  pushStateSnapshot?: (sessionId: string, sink: ClientSink) => void;
 };
 
 /** Runtime state the tool-setup paths close over. */
@@ -180,9 +190,13 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
    * wiring and the logging.
    */
   const stateSync = agent.syncState ? createStateSync(agent.syncState) : undefined;
-  const syncStateToClient = (sink: ClientSink | undefined, state: object): void => {
+  const syncStateToClient = (
+    sink: ClientSink | undefined,
+    state: object,
+    options?: { force?: boolean },
+  ): void => {
     if (!(sink && stateSync)) return;
-    const result = stateSync(state);
+    const result = stateSync(state, options);
     if (result.push) {
       sink.event({ type: "agent_state", state: result.state });
       return;
@@ -223,7 +237,18 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
       syncStateToClient(sink, getState(sessionId ?? ""));
     }
   };
-  return { executeTool, toolSchemas, toolGuidance: builtins.guidance };
+  /**
+   * Forced, and only for a session that ALREADY has state — i.e. a resume.
+   * A brand-new session has nothing to show, and calling `getState` here
+   * would run the agent's `state()` factory at connect time rather than at
+   * the first tool call, which is a semantic change nobody asked for.
+   */
+  const pushStateSnapshot = (sessionId: string, sink: ClientSink): void => {
+    if (!(stateSync && stateMap.has(sessionId))) return;
+    syncStateToClient(sink, getState(sessionId), { force: true });
+  };
+
+  return { executeTool, toolSchemas, toolGuidance: builtins.guidance, pushStateSnapshot };
 }
 
 /** Pick the tool path: RPC-backed sandbox mode when overrides are provided. */

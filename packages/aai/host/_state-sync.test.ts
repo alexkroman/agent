@@ -83,4 +83,24 @@ describe("createStateSync", () => {
     expect(sync(state)).toEqual({ push: true, state: null });
     expect(sync(state)).toEqual({ push: false, reason: "unchanged" });
   });
+
+  test("force sends an unchanged projection, for a client that just arrived", () => {
+    // The resume case. State survives a disconnect, so the object and its
+    // projection are identical — but the socket is new and has seen nothing.
+    // Staleness is a property of the client, not of the state.
+    const sync = createStateSync((s: { n: number }) => s);
+    const state = { n: 7 };
+    expect(sync(state)).toEqual({ push: true, state: { n: 7 } });
+    expect(sync(state)).toEqual({ push: false, reason: "unchanged" });
+    expect(sync(state, { force: true })).toEqual({ push: true, state: { n: 7 } });
+    // And the forced send still updates the record, so the next ordinary
+    // call is quiet again rather than re-sending.
+    expect(sync(state)).toEqual({ push: false, reason: "unchanged" });
+  });
+
+  test("force does not bypass the payload cap", () => {
+    // A resume must not become the one path that can blow the wire budget.
+    const sync = createStateSync(() => "x".repeat(MAX_CLIENT_EVENT_PAYLOAD_BYTES));
+    expect(sync({}, { force: true })).toMatchObject({ push: false, reason: "too-large" });
+  });
 });

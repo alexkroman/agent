@@ -24,7 +24,20 @@ export type StateSyncSkip =
 
 export type StateSyncResult = { push: true; state: unknown } | StateSyncSkip;
 
-export type StateSync = (state: object) => StateSyncResult;
+export type StateSyncOptions = {
+  /**
+   * Send even when the projection is unchanged.
+   *
+   * For a RESUMED session: the state object is the same one the previous
+   * socket used, so the last-sent record still matches and the ordinary path
+   * would correctly report "unchanged" — but the client on the other end is
+   * new and has seen nothing. Staleness is a property of the client, not of
+   * the state, and only the caller knows a client just arrived.
+   */
+  force?: boolean;
+};
+
+export type StateSync = (state: object, options?: StateSyncOptions) => StateSyncResult;
 
 /**
  * Build the per-runtime sync decision for one `syncState` projection.
@@ -35,7 +48,7 @@ export type StateSync = (state: object) => StateSyncResult;
  */
 export function createStateSync(project: (state: never) => unknown): StateSync {
   const lastSent = new WeakMap<object, string>();
-  return (state) => {
+  return (state, options) => {
     let serialized: string;
     try {
       // `?? null` so a projection returning undefined is a valid, comparable
@@ -46,7 +59,9 @@ export function createStateSync(project: (state: never) => unknown): StateSync {
       // author's bug — but it must not take the tool call down with it.
       return { push: false, reason: "failed", detail: errorMessage(err) };
     }
-    if (serialized === lastSent.get(state)) return { push: false, reason: "unchanged" };
+    if (!options?.force && serialized === lastSent.get(state)) {
+      return { push: false, reason: "unchanged" };
+    }
     const bytes = Buffer.byteLength(serialized);
     if (bytes > MAX_CLIENT_EVENT_PAYLOAD_BYTES) return { push: false, reason: "too-large", bytes };
     lastSent.set(state, serialized);
