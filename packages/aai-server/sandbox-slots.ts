@@ -13,6 +13,12 @@ export type SlotSandbox = {
    * the guest before killing (see evictIdleSandbox).
    */
   activeSessions?: () => Promise<number>;
+  /**
+   * False once the sandbox's guest is gone (see `Sandbox.alive`). Optional so
+   * test doubles and non-guest-backed stand-ins stay assignable; absent is
+   * read as alive.
+   */
+  alive?: () => boolean;
 };
 
 export type AgentSlot = {

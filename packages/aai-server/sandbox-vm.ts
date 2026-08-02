@@ -31,6 +31,14 @@ export type SandboxHandle = {
   conn: GuestConnection;
   /** Public client-session endpoint on the sandbox's tunnel. */
   sessionUrl: string;
+  /** True while the underlying guest process is alive. */
+  alive(): boolean;
+  /**
+   * Register a listener for guest exit. Fires exactly once, and immediately
+   * when the guest is already gone (see `warmFromGuest`) — so a caller that
+   * registers late still learns the sandbox is unusable.
+   */
+  onExit(cb: () => void): void;
   shutdown(): Promise<void>;
 };
 
@@ -116,6 +124,11 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
   return {
     conn,
     sessionUrl: warm.sessionUrl,
+    // Liveness passes straight through from the harness: the pool already
+    // reaps on these, and forwarding them is what lets the per-agent sandbox
+    // (and through it the slot cache) notice a guest that dies mid-life.
+    alive: () => warm.alive(),
+    onExit: (cb) => warm.onExit(cb),
     // One teardown definition (`WarmHarness[Symbol.asyncDispose]`) so this
     // handle and every error path below can't drift on the shutdown-notify /
     // dispose / cleanup triple.
