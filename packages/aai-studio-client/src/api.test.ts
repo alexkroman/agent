@@ -81,12 +81,20 @@ describe("api", () => {
   });
 
   test("POST bodies are JSON with Content-Type set", async () => {
-    const fetchMock = stubFetch(() => jsonResponse({ name: "p", files: {} }));
-    await api.createProject("k", "p");
+    const fetchMock = stubFetch(() => jsonResponse({ name: "contact-form-x7k2mq", files: {} }));
+    await api.createProject("k", { prompt: "build a contact form" });
     const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
     expect(init.method).toBe("POST");
-    expect(init.body).toBe(JSON.stringify({ name: "p" }));
+    // The prompt seeds the server-generated name — the client never names.
+    expect(init.body).toBe(JSON.stringify({ prompt: "build a contact form" }));
     expect(new Headers(init.headers).get("Content-Type")).toBe("application/json");
+  });
+
+  test("createProject with no prompt sends an empty body (server picks words)", async () => {
+    const fetchMock = stubFetch(() => jsonResponse({ name: "brave-cats-fly-a1b2c3", files: {} }));
+    await api.createProject("k", {});
+    const [, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(init.body).toBe("{}");
   });
 
   test("project segments are URL-encoded", async () => {

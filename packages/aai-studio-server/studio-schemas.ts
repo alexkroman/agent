@@ -44,6 +44,77 @@ function slugifyProjectName(input: string): string {
   return slugifyLib(input, { decamelize: false }).slice(0, 64).replace(/-+$/g, "");
 }
 
+/** Upper bound on the prompt excerpt a generated name derives from. */
+const MAX_NAME_PROMPT = 2000;
+
+/** Longest prompt-derived readable base (the random suffix rides after it). */
+const MAX_PROMPT_BASE = 30;
+
+/**
+ * Readable base for a server-generated project name, derived from the chat
+ * prompt that created it — v0-style ("Build me a contact form agent" →
+ * `contact-form`). The caller appends the random suffix
+ * (`generatedSlug(base)` in aai-server), which is what guarantees
+ * uniqueness; this only has to produce something recognizable. Filler words
+ * are dropped so the name carries the prompt's subject, not its phrasing.
+ * Empty in, empty out — the generator falls back to word-triple names.
+ */
+export function projectBaseFromPrompt(prompt: string): string {
+  const words = slugifyLib(prompt.slice(0, MAX_NAME_PROMPT), { decamelize: false })
+    .split("-")
+    .filter((word) => word.length > 0 && !PROMPT_FILLER_WORDS.has(word));
+  let base = "";
+  for (const word of words.slice(0, 4)) {
+    const next = base ? `${base}-${word}` : word;
+    if (next.length > MAX_PROMPT_BASE) break;
+    base = next;
+  }
+  return base;
+}
+
+/** Leading filler in "build me a …" prompts — never the memorable part. */
+const PROMPT_FILLER_WORDS: ReadonlySet<string> = new Set([
+  "a",
+  "an",
+  "the",
+  "i",
+  "am",
+  "is",
+  "are",
+  "me",
+  "my",
+  "we",
+  "want",
+  "need",
+  "would",
+  "like",
+  "please",
+  "can",
+  "you",
+  "to",
+  "for",
+  "of",
+  "and",
+  "that",
+  "this",
+  "with",
+  "build",
+  "make",
+  "create",
+  "write",
+  "voice",
+  "agent",
+  "app",
+  "bot",
+]);
+
+/**
+ * Create a project. `name` is the legacy explicit path (slugified,
+ * validated); when absent the server GENERATES the name — from `prompt`
+ * when one is given (the guided chat-first flow), else from random words.
+ * Name generation deliberately lives server-side so the studio and the CLI
+ * deploy path (`POST /deploy` with no slug) share one generator.
+ */
 export const CreateProjectSchema = z.object({
   name: z
     .string()
@@ -56,7 +127,10 @@ export const CreateProjectSchema = z.object({
     )
     // Caught here rather than at publish: a project that can never go live is
     // a dead end the user only discovers after building in it.
-    .refine((name) => !RESERVED_SLUGS.has(name), "That name is reserved"),
+    .refine((name) => !RESERVED_SLUGS.has(name), "That name is reserved")
+    .optional(),
+  /** First chat message — seeds the generated name when `name` is absent. */
+  prompt: z.string().max(MAX_NAME_PROMPT).optional(),
 });
 
 export const StudioFileSchema = z.object({

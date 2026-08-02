@@ -86,10 +86,16 @@ export const api = {
   listProjects: (key: string) =>
     request<{ projects: string[] }>(key, "/projects").then((r) => r.projects),
 
-  createProject: (key: string, name: string) =>
+  /**
+   * Create a project. The server generates the name — a readable base
+   * derived from the creating chat prompt plus a random suffix, v0-style
+   * (`contact-form-x7k2mq`) — so names are minted in exactly one place,
+   * shared with the CLI's slugless deploy path.
+   */
+  createProject: (key: string, opts: { prompt?: string }) =>
     request<{ name: string; files: Record<string, string> }>(key, "/projects", {
       method: "POST",
-      body: JSON.stringify({ name }),
+      body: JSON.stringify(opts.prompt ? { prompt: opts.prompt } : {}),
     }),
 
   getProject: (key: string, project: string) =>

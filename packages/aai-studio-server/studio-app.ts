@@ -72,6 +72,11 @@ export function createStudioApp(opts: StudioAppOpts): {
   );
 
   app.get("/", handleStudioPage);
+  // v0-style project URLs (`/studio/chat/<project>`) serve the same shell —
+  // the client reads the project from the path. Registered before the API
+  // mount so the page wins over the `/studio` router (which has no route
+  // here, but does hang auth middleware under `/studio/*`).
+  app.get("/studio/chat/:project", handleStudioPage);
   app.get("/favicon.ico", handleStudioFavicon);
   app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
   const studioRoutes = createStudioRoutes({
