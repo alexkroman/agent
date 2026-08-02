@@ -197,6 +197,33 @@ export function toolNamesFromSource(source) {
   return [...names];
 }
 
+/**
+ * The `description` strings of the agent's tools.
+ *
+ * A tool's description is the model-facing statement of what it does, and it
+ * is where a capability lives when the identifier does not carry it. Grading
+ * on names alone failed two agents that both implemented the same feature
+ * properly: one shipped `use_item` described as "Use an inventory item on the
+ * current room's puzzle. This owns puzzle flags" and set four puzzle flags;
+ * the other tracked them from `move_location`. Neither used the word in an
+ * identifier, so both were marked `missing:puzzle` — the same false negative
+ * as the finance starter, one layer down.
+ *
+ * Not more gameable than matching names: both are agent-authored, while the
+ * capability list comes from the prompt, which the agent cannot edit.
+ */
+export function toolDescriptionsFromSource(source) {
+  const out = [];
+  // Single, double and template quotes; descriptions routinely contain
+  // apostrophes, so the character class per quote style matters.
+  for (const m of (source ?? "").matchAll(
+    /description\s*:\s*(?:"([^"]*)"|'([^']*)'|`([^`]*)`)/g,
+  )) {
+    out.push(m[1] ?? m[2] ?? m[3] ?? "");
+  }
+  return out;
+}
+
 /** Builtins the agent declared, e.g. `builtinTools: ["run_code"]`. */
 export function builtinsFromSource(source) {
   const m = /builtinTools\s*:\s*\[([^\]]*)\]/.exec(source ?? "");
@@ -257,6 +284,8 @@ function agentProse(source) {
 
 export function checkCapabilities(expectation, { config, source }) {
   const declared = [...(config?.tools ?? []), ...toolNamesFromSource(source)].map(norm);
+  // Tool descriptions count as evidence too — see toolDescriptionsFromSource.
+  const described = toolDescriptionsFromSource(source).map((d) => d.toLowerCase());
   const builtins = new Set([...(config?.tools ?? []), ...builtinsFromSource(source)]);
   /**
    * A prompt that PRESCRIBES builtins ("use the fetch_json builtin for live
@@ -280,6 +309,7 @@ export function checkCapabilities(expectation, { config, source }) {
   for (const synonyms of expectation.capabilities ?? []) {
     const hit =
       synonyms.some((s) => declared.some((d) => d.includes(norm(s)))) ||
+      synonyms.some((s) => described.some((d) => d.includes(s.toLowerCase()))) ||
       (delegable && synonyms.some((s) => prose.includes(s.toLowerCase())));
     if (!hit) missing.push(synonyms[0]);
   }
