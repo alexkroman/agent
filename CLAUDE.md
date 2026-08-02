@@ -396,7 +396,20 @@ voice agents without the CLI:
   (real shell in the container, guest token scrubbed from its env),
   `todo_write`, `test_agent`, and the keyless web builtins. Tool CPU —
   regex, diff, whatever `bash` runs — burns the tenant's own sandbox,
-  which is why the host-side scan worker was deleted. The guest chat
+  which is why the host-side scan worker was deleted. Every successful
+  `write_file`/`edit_file` type-checks the workspace and appends the
+  (hint-annotated, capped) diagnostics to the tool result
+  (`aai-guest/studio-write-diagnostics.ts`) — TS7's native tsc checks a
+  studio workspace in well under a second, so this is a cold spawn per
+  settled write burst (concurrent writes coalesce), NOT a resident LSP
+  server: opencode's post-edit-diagnostics loop without a ~200 MB
+  language-server process in a memory-capped sandbox. The write is never
+  rejected on type errors (mid-refactor states are legitimate — the
+  syntax gate in `studio-syntax.ts` owns the unrecoverable class), and a
+  slow or missing compiler degrades to the plain write result. This
+  replaced the standalone `check_types` tool — evals showed agents
+  thrashing on it (sixteen checks, zero builds); `test_agent` is the one
+  verification tool. The guest chat
   surface is bearer-gated by the caller's key (the tunnel URL is public)
   and CORS-open; `GET /studio/tools` on the same surface serves the
   user-friendly tool labels (`STUDIO_TOOL_LABELS`) the client renders.

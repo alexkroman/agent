@@ -42,6 +42,7 @@ import {
   STUDIO_TOOL_DESCRIPTIONS,
 } from "./studio-tool-descriptions.ts";
 import { resolveInside, walkWorkspace } from "./studio-workspace-fs.ts";
+import { createPostWriteDiagnostics, type TypecheckFn } from "./studio-write-diagnostics.ts";
 
 /**
  * Per-call deadline for every coding-agent tool (applied over the MERGED
@@ -69,7 +70,6 @@ export const STUDIO_TOOL_LABELS: Readonly<Record<string, string>> = {
   grep: "Search code",
   glob: "Find files",
   bash: "Run command",
-  check_types: "Check types",
   npm_info: "Look up package",
   add_dependency: "Add dependency",
   remove_dependency: "Remove dependency",
@@ -85,6 +85,8 @@ export const STUDIO_TOOL_LABELS: Readonly<Record<string, string>> = {
 export type StudioToolDeps = {
   /** Absolute workspace root the session materialized. */
   dir: string;
+  /** Types-only check of the workspace — feeds post-write diagnostics. */
+  typecheck: TypecheckFn;
   /** Build the session workspace into a worker bundle, in this sandbox. */
   build: () => Promise<{ worker?: string; buildError?: string }>;
   /** Load a built worker bundle into this harness; returns its config. */
@@ -223,6 +225,7 @@ export function withToolDeadlines(tools: ToolSet): ToolSet {
 /** Build the coding agent's workspace tool set over the session dir. */
 export function createStudioTools(deps: StudioToolDeps): ToolSet {
   const { dir } = deps;
+  const postWriteDiagnostics = createPostWriteDiagnostics(deps.typecheck);
   const raw: ToolSet = {
     list_files: tool({
       description: STUDIO_TOOL_DESCRIPTIONS.list_files,
@@ -291,7 +294,8 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
         await mkdir(path.dirname(abs), { recursive: true });
         await writeFile(abs, content, "utf-8");
         clearEditMisses(rel);
-        return `Wrote ${rel} (${content.length} bytes)`;
+        const diagnostics = await postWriteDiagnostics(rel);
+        return `Wrote ${rel} (${content.length} bytes)${diagnostics ?? ""}`;
       },
     }),
     edit_file: tool({
@@ -322,7 +326,8 @@ export function createStudioTools(deps: StudioToolDeps): ToolSet {
           await writeFile(abs, content, "utf-8");
           clearEditMisses(rel);
           const label = replacements === 1 ? "" : ` (${replacements} replacements)`;
-          return `Edited ${rel}${label}\n\n${diff}`;
+          const diagnostics = await postWriteDiagnostics(rel);
+          return `Edited ${rel}${label}\n\n${diff}${diagnostics ?? ""}`;
         } catch (err) {
           if (err instanceof StudioEditError) return `Error: ${err.message}${rewriteHint(rel)}`;
           throw err;

@@ -24,12 +24,14 @@ afterEach(async () => {
 async function makeTools(
   files: Record<string, string>,
   config: Record<string, unknown> = { name: "A", toolSchemas: [] },
+  typecheck: StudioToolDeps["typecheck"] = async () => ({ ok: true, skipped: false }),
 ): Promise<{ tools: ReturnType<typeof createStudioTools>; dir: string }> {
   const dir = await mkdtemp(path.join(os.tmpdir(), "aai-studio-tools-"));
   dirs.push(dir);
   await materializeWorkspace(dir, files);
   const deps: StudioToolDeps = {
     dir,
+    typecheck,
     build: async () => ({ worker: "export default {}" }),
     loadBundle: async () => ({ config }),
     executeTool: async (name) => `ran ${name}`,
@@ -115,6 +117,41 @@ describe("guest workspace tools", () => {
     expect(await readFile(path.join(dir, "a.ts"), "utf-8")).toBe("const x = 2;\n");
   });
 
+  test("write_file and edit_file report post-write type errors, saving anyway", async () => {
+    const red = async () =>
+      ({ ok: false, output: "Type check failed:\na.ts(1,7): error TS2322: nope" }) as const;
+    const { tools, dir } = await makeTools({ "a.ts": "const x = 1;\n" }, undefined, red);
+    const wrote = String(
+      await tools.write_file?.execute?.({ path: "a.ts", content: "const x = 2;\n" }, toolOpts()),
+    );
+    expect(wrote).toContain("Wrote a.ts");
+    expect(wrote).toContain("error TS2322");
+    expect(wrote).toContain("WAS saved");
+    expect(await readFile(path.join(dir, "a.ts"), "utf-8")).toBe("const x = 2;\n");
+
+    const edited = String(
+      await tools.edit_file?.execute?.(
+        { path: "a.ts", oldText: "x = 2", newText: "x = 3" },
+        toolOpts(),
+      ),
+    );
+    expect(edited).toContain("Edited a.ts");
+    expect(edited).toContain("error TS2322");
+    expect(await readFile(path.join(dir, "a.ts"), "utf-8")).toBe("const x = 3;\n");
+  });
+
+  test("post-write diagnostics skip non-source files", async () => {
+    let calls = 0;
+    const { tools } = await makeTools({}, undefined, async () => {
+      calls++;
+      return { ok: true, skipped: false };
+    });
+    await tools.write_file?.execute?.({ path: "data/menu.json", content: "{}" }, toolOpts());
+    expect(calls).toBe(0);
+    await tools.write_file?.execute?.({ path: "a.ts", content: "const a = 1;\n" }, toolOpts());
+    expect(calls).toBe(1);
+  });
+
   test("snapshotWorkspace skips ignored dirs and oversized files", async () => {
     const { dir } = await makeTools({ "a.ts": "x" });
     await materializeWorkspace(dir, {
@@ -133,7 +170,7 @@ describe("guest workspace tools", () => {
     const merged = {
       ...createGuestWebTools(),
       ...createDesignInspirationTool({} as never),
-      ...createProjectTools({ dir, typecheck: async () => ({ ok: true, skipped: true }) }),
+      ...createProjectTools({ dir }),
       ...tools,
     };
     const names = Object.keys(merged).sort();

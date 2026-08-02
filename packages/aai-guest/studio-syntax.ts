@@ -17,8 +17,9 @@
  * into shape by text matching.
  *
  * Type errors are deliberately NOT caught here: a file can legitimately be
- * mid-refactor and not yet type-correct, and `check_types` / `test_agent`
- * already own that. Unparseable is different — it is never a valid
+ * mid-refactor and not yet type-correct, and the post-write diagnostics
+ * (studio-write-diagnostics.ts) / `test_agent` already own that — reported,
+ * never blocking. Unparseable is different — it is never a valid
  * intermediate state.
  *
  * The parser is oxc, reached through vite's `transformWithOxc` — the same one
