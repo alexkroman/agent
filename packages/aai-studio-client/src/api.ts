@@ -37,6 +37,12 @@ export class ApiError extends Error {
   }
 }
 
+/** A query/mutation error as displayable text; undefined when there is none. */
+export function errorText(err: unknown): string | undefined {
+  if (!err) return;
+  return err instanceof Error ? err.message : String(err);
+}
+
 /** Throw an {@link ApiError} on non-2xx responses, else parse the JSON body. */
 async function handleResponse<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -59,22 +65,9 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return parsed as T;
 }
 
-async function request<T>(key: string, path: string, init: RequestInit = {}): Promise<T> {
-  const res = await fetch(`/studio${path}`, {
-    ...init,
-    headers: {
-      Authorization: `Bearer ${key}`,
-      ...(init.body != null && { "Content-Type": "application/json" }),
-      ...init.headers,
-    },
-  });
-  return handleResponse<T>(res);
-}
-
 /**
- * Same-origin request against the platform's own agent routes (`/:slug/…`)
- * rather than the studio surface — the secrets panel talks to the exact
- * routes `aai secret` uses.
+ * Same-origin request against the platform's own agent routes (`/:slug/…`) —
+ * the secrets panel talks to the exact routes `aai secret` uses.
  */
 async function agentRequest<T>(key: string, path: string, init: RequestInit = {}): Promise<T> {
   const res = await fetch(path, {
@@ -86,6 +79,11 @@ async function agentRequest<T>(key: string, path: string, init: RequestInit = {}
     },
   });
   return handleResponse<T>(res);
+}
+
+/** The same request, against the studio surface (`/studio/…`). */
+function request<T>(key: string, path: string, init: RequestInit = {}): Promise<T> {
+  return agentRequest<T>(key, `/studio${path}`, init);
 }
 
 export const api = {

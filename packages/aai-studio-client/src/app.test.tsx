@@ -6,6 +6,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { jsonResponse, stubFetch } from "./_test-utils.ts";
 import { App } from "./app.tsx";
 
 // jsdom has no ResizeObserver; use-stick-to-bottom (mounted once a project
@@ -20,25 +21,6 @@ class ResizeObserverStub {
   disconnect(): void {
     // jsdom stub.
   }
-}
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-/** Route fetch by path — each call gets a fresh Response (bodies are single-use). */
-function stubFetch(routes: Record<string, () => Response>) {
-  const fetchMock = vi.fn().mockImplementation((input: RequestInfo | URL) => {
-    const path = new URL(String(input), "http://studio.test").pathname;
-    const make = routes[path];
-    if (!make) throw new Error(`Unexpected fetch: ${path}`);
-    return Promise.resolve(make());
-  });
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
 }
 
 function renderApp(onSignOut: () => void) {

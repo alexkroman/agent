@@ -6,6 +6,8 @@
 
 import { useState } from "react";
 import type { StudioStatus } from "./api.ts";
+import { LlmStatusNote } from "./llm-status-note.tsx";
+import { isEnterSubmit, SendButton } from "./send-button.tsx";
 import { sampleStarters } from "./starters.ts";
 
 /** How many starter examples the hero shows — a taste, not the catalog. */
@@ -85,9 +87,8 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => {
-            // Enter sends, Shift+Enter makes a newline; isComposing means
-            // Enter is confirming an IME candidate, not the message.
-            if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+            // Enter sends, Shift+Enter makes a newline.
+            if (isEnterSubmit(e) && !e.shiftKey) {
               e.preventDefault();
               submit();
             }
@@ -98,26 +99,7 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
           }
         />
         <div className="flex items-center justify-end">
-          <button
-            type="button"
-            aria-label="Send"
-            className="flex h-9 w-9 flex-none cursor-pointer items-center justify-center rounded-sm border-none bg-indigo text-white hover:bg-indigo-hover disabled:cursor-not-allowed disabled:bg-disabled disabled:text-line-strong"
-            onClick={submit}
-            disabled={disabled}
-          >
-            <svg
-              width="15"
-              height="15"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="1.5"
-              aria-hidden
-            >
-              <path d="M12 19V5" />
-              <path d="m5 12 7-7 7 7" />
-            </svg>
-          </button>
+          <SendButton className="h-9 w-9" onClick={submit} disabled={disabled} />
         </div>
       </div>
       {llmReady && (
@@ -138,17 +120,7 @@ export function HomeHero({ status, creating, onStart }: HomeHeroProps) {
           </div>
         </div>
       )}
-      {/* No status yet is loading or a network failure — either way, don't
-          claim the server is misconfigured. */}
-      {status === undefined && (
-        <p className="m-0 text-xs leading-4 text-subtle">Checking the server's chat status…</p>
-      )}
-      {status !== undefined && !status.llm && (
-        <p className="m-0 max-w-md text-center text-xs leading-4 text-subtle">
-          Chat is disabled: this server has no LLM key (ASSEMBLYAI_API_KEY or ANTHROPIC_API_KEY).
-          The Code view and Publish still work.
-        </p>
-      )}
+      <LlmStatusNote status={status} className="max-w-md text-center" />
     </main>
   );
 }

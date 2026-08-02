@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { afterEach, describe, expect, test, vi } from "vitest";
+import { jsonResponse, stubFetch } from "./_test-utils.ts";
 import { ApiError, api, parseSecrets } from "./api.ts";
 
 describe("parseSecrets", () => {
@@ -52,20 +53,6 @@ describe("parseSecrets", () => {
     expect(parseSecrets("=novalue\njusttext\nA=1")).toEqual({ A: "1" });
   });
 });
-
-function jsonResponse(body: unknown, status = 200): Response {
-  return new Response(JSON.stringify(body), {
-    status,
-    headers: { "Content-Type": "application/json" },
-  });
-}
-
-function stubFetch(makeResponse: () => Response) {
-  // A Response body is single-use, so mint a fresh one per call.
-  const fetchMock = vi.fn().mockImplementation(() => Promise.resolve(makeResponse()));
-  vi.stubGlobal("fetch", fetchMock);
-  return fetchMock;
-}
 
 describe("api", () => {
   afterEach(() => {

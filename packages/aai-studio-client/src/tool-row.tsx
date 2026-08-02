@@ -7,6 +7,10 @@ import type { UIMessage } from "ai";
 import clsx from "clsx";
 import { useState } from "react";
 
+/** Caps on the expanded row's raw JSON — a peek, not a document viewer. */
+const ARGS_PREVIEW_CHARS = 300;
+const OUTPUT_PREVIEW_CHARS = 600;
+
 function toolPartName(part: { type: string; toolName?: string }): string {
   if (part.type === "dynamic-tool") return part.toolName ?? "tool";
   return part.type.replace(/^tool-/, "");
@@ -87,12 +91,15 @@ export function ToolRow({
         <div className="border-t border-line bg-panel px-3 py-2 text-subtle">
           {part.input != null && (
             <code className="block overflow-x-auto font-mono text-[10px] break-all whitespace-pre-wrap">
-              {JSON.stringify(part.input).slice(0, 300)}
+              {JSON.stringify(part.input).slice(0, ARGS_PREVIEW_CHARS)}
             </code>
           )}
           {done && output != null && (
             <pre className="m-0 mt-1 block overflow-x-auto font-mono text-[10px] break-all whitespace-pre-wrap">
-              {(typeof output === "string" ? output : JSON.stringify(output)).slice(0, 600)}
+              {(typeof output === "string" ? output : JSON.stringify(output)).slice(
+                0,
+                OUTPUT_PREVIEW_CHARS,
+              )}
             </pre>
           )}
         </div>

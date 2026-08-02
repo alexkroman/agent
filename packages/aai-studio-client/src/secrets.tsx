@@ -7,11 +7,8 @@
 
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { useState } from "react";
-import { api, parseSecrets } from "./api.ts";
-
-export function secretsQueryKey(slug: string): readonly unknown[] {
-  return ["secrets", slug];
-}
+import { api, errorText, parseSecrets } from "./api.ts";
+import { queryKeys } from "./query-keys.ts";
 
 type SecretsPanelProps = {
   apiKey: string;
@@ -40,13 +37,13 @@ export function SecretsPanel({
   const [draft, setDraft] = useState("");
 
   const secrets = useQuery({
-    queryKey: slug ? secretsQueryKey(slug) : ["secrets", "unpublished"],
+    queryKey: queryKeys.secrets(slug),
     queryFn: () => api.listSecrets(apiKey, slug as string),
     enabled: slug != null,
   });
 
   const invalidate = () => {
-    if (slug) void queryClient.invalidateQueries({ queryKey: secretsQueryKey(slug) });
+    if (slug) void queryClient.invalidateQueries({ queryKey: queryKeys.secrets(slug) });
   };
 
   // Best-effort mirror to the preview agent: a missing preview (not yet
@@ -92,29 +89,21 @@ export function SecretsPanel({
     save.mutate(updates);
   };
 
-  const error = secrets.error ?? save.error ?? remove.error;
-  let errorText: string | undefined;
-  if (error) {
-    errorText = error instanceof Error ? error.message : String(error);
-  }
+  const message = errorText(secrets.error ?? save.error ?? remove.error);
+  const names = secrets.data ?? [];
 
   return (
     <div className="absolute top-14 right-5 z-10 flex w-80 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md">
       <span className="eyebrow">Settings · Secrets</span>
-      {!slug && (
-        <p className="m-0 text-[13px] leading-5 text-muted">
-          Publish the project first — secrets attach to the deployed agent.
-        </p>
-      )}
-      {slug && (
+      {slug ? (
         <>
           <p className="m-0 text-[13px] leading-5 text-muted">
             Environment variables for the deployed agent (ctx.env). ASSEMBLYAI_API_KEY is set for
             you at publish; add third-party keys here, one KEY=value per line.
           </p>
-          {(secrets.data ?? []).length > 0 && (
+          {names.length > 0 && (
             <ul className="m-0 flex list-none flex-col gap-1 p-0">
-              {(secrets.data ?? []).map((name) => (
+              {names.map((name) => (
                 <li key={name} className="flex items-center gap-2">
                   <code className="min-w-0 flex-1 truncate font-mono text-xs">{name}</code>
                   <button
@@ -150,13 +139,17 @@ export function SecretsPanel({
             </button>
           </div>
         </>
+      ) : (
+        <>
+          <p className="m-0 text-[13px] leading-5 text-muted">
+            Publish the project first — secrets attach to the deployed agent.
+          </p>
+          <button type="button" className="btn self-start" onClick={onClose}>
+            Close
+          </button>
+        </>
       )}
-      {!slug && (
-        <button type="button" className="btn self-start" onClick={onClose}>
-          Close
-        </button>
-      )}
-      {errorText && <p className="m-0 text-xs text-err">{errorText}</p>}
+      {message && <p className="m-0 text-xs text-err">{message}</p>}
     </div>
   );
 }

@@ -37,8 +37,9 @@ export function useFileDraft(serverContent: string): {
     if (dirty) {
       setConflict(true);
     } else {
+      // A clean buffer is never in conflict (only markSaved clears `dirty`,
+      // and it clears `conflict` too), so adopting is all that's needed.
       setDraft(serverContent);
-      setConflict(false);
     }
   }
 
