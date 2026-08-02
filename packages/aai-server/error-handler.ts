@@ -1,18 +1,17 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { errorDetail, errorMessage } from "@alexkroman1/aai";
+import { errorDetail } from "@alexkroman1/aai";
 import type { ErrorHandler } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { z } from "zod";
 import { SlugLockTimeoutError } from "./platform-lock.ts";
 
 /**
- * Shared Hono error handler for the platform server and sidecars.
- *
- * @param opts.exposeErrors - When true, return the original error message
- *   in 500 responses. Safe for loopback-only services like the sidecar.
+ * Shared Hono error handler for the platform services. Unhandled errors are
+ * logged with full detail but answered with an opaque 500 — raw messages
+ * can leak internals to unauthenticated callers.
  */
-export function createErrorHandler(opts?: { exposeErrors?: boolean }): ErrorHandler {
+export function createErrorHandler(): ErrorHandler {
   return (err, c) => {
     if (err instanceof HTTPException) {
       return c.json({ error: err.message }, err.status);
@@ -26,6 +25,6 @@ export function createErrorHandler(opts?: { exposeErrors?: boolean }): ErrorHand
       return c.json({ error: err.message }, 409);
     }
     console.error(`Unhandled error on ${c.req.path}: ${errorDetail(err)}`);
-    return c.json({ error: opts?.exposeErrors ? errorMessage(err) : "Internal server error" }, 500);
+    return c.json({ error: "Internal server error" }, 500);
   };
 }

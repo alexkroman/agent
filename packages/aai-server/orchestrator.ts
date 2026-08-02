@@ -29,6 +29,7 @@
 import { zValidator } from "@hono/zod-validator";
 import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
+import { z } from "zod";
 import type { AppDatabases } from "./app-database.ts";
 import { applyPlatformMiddleware } from "./app-middleware.ts";
 import { handleAgentClientConfig } from "./client-config-handler.ts";
@@ -44,7 +45,12 @@ import { createMutationLock, localSlugLock, type SlugMutationLock } from "./plat
 import type { SandboxPool } from "./sandbox-pool.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { describeBundle } from "./sandbox-vm.ts";
-import { DeployBodySchema, SecretUpdatesSchema, VALID_SLUG_RE } from "./schemas.ts";
+import {
+  DeployBodySchema,
+  SecretKeySchema,
+  SecretUpdatesSchema,
+  SLUG_PATTERN_SOURCE,
+} from "./schemas.ts";
 import { handleSecretDelete, handleSecretList, handleSecretSet } from "./secret-handler.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
 import {
@@ -88,7 +94,7 @@ export type OrchestratorOpts = {
   studioUpstream?: string;
   /** Test seam for the studio proxy's outbound fetch. */
   studioProxyFetch?: typeof globalThis.fetch;
-  /** Optional pre-warmed Deno harness pool for faster cold starts. */
+  /** Optional pre-warmed Node harness pool for faster cold starts. */
   pool?: SandboxPool;
   /**
    * Extracts an agent config from an uploaded worker bundle. Defaults to
@@ -142,7 +148,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     const proxy = createStudioProxy(opts.studioUpstream, opts.studioProxyFetch);
     // Registered from the shared predicate, so this list can never drift
     // from the combined dispatcher's.
-    app.use("*", (c, next) => (isStudioPath(new URL(c.req.url).pathname) ? proxy(c) : next()));
+    app.use("*", (c, next) => (isStudioPath(c.req.path) ? proxy(c) : next()));
   } else {
     app.get("/", (c) => c.json({ service: "aai-agent", studio: "not served by this deployment" }));
   }
@@ -173,9 +179,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   );
 
   // Bare-slug redirect — registered before sub-router so it takes priority.
-  // Pattern derived from VALID_SLUG_RE (anchors stripped) so the slug
-  // grammar has a single source of truth.
-  app.get(`/:slug{${VALID_SLUG_RE.source.slice(1, -1)}}`, (c) => {
+  // Pattern composed from the shared slug grammar (SLUG_PATTERN_SOURCE).
+  app.get(`/:slug{${SLUG_PATTERN_SOURCE}}`, (c) => {
     const url = new URL(c.req.url);
     // Relative Location (RFC 7231 §7.1.2): behind Modal's TLS termination
     // the request URL is always cleartext http, so echoing an absolute URL
@@ -193,7 +198,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   agents.delete("/", existingOwnerMw, handleDelete);
   agents.get("/secret", existingOwnerMw, handleSecretList);
   agents.put("/secret", existingOwnerMw, zValidator("json", SecretUpdatesSchema), handleSecretSet);
-  agents.delete("/secret/:key", existingOwnerMw, handleSecretDelete);
+  agents.delete(
+    "/secret/:key",
+    existingOwnerMw,
+    zValidator("param", z.object({ key: SecretKeySchema })),
+    handleSecretDelete,
+  );
   // Per-app database storage — same auth posture as the secret routes.
   agents.get("/storage", existingOwnerMw, handleStorageStatus);
   agents.post("/storage", existingOwnerMw, handleStorageEnable);

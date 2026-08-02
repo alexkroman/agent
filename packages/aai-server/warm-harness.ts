@@ -17,6 +17,7 @@
 import { createServer } from "node:net";
 import { errorMessage } from "@alexkroman1/aai";
 import { WebSocket } from "ws";
+import { sleep } from "./_sleep.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import type { GuestRpcSchema } from "./rpc-schemas.ts";
 import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
@@ -122,7 +123,7 @@ export async function dialGuest(url: string, token: string): Promise<RpcWebSocke
           { cause: err },
         );
       }
-      await new Promise((r) => setTimeout(r, GUEST_DIAL_RETRY_MS));
+      await sleep(GUEST_DIAL_RETRY_MS);
     }
   }
 }
@@ -132,7 +133,7 @@ export async function dialGuest(url: string, token: string): Promise<RpcWebSocke
 /**
  * Wrap a running guest process + dialed harness socket into the WarmHarness
  * shape. `terminate` is the backend's kill switch (Modal `terminate()`,
- * `container stop` + child kill) — best-effort, awaited by cleanup.
+ * subprocess child kill) — best-effort, awaited by cleanup.
  */
 export function warmFromGuest(opts: {
   /** Log prefix for guest stdio, e.g. `modal:sb-123`. */

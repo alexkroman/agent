@@ -10,7 +10,7 @@ import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { type SlotCache, setSlot, terminateSlot } from "./sandbox-slots.ts";
 import type { AgentMetadata, DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
-import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
+import { hashApiKey, matchAnyHash } from "./secrets.ts";
 import { generatedSlug, slugBaseFromName } from "./slug-generate.ts";
 import type { BundleStore } from "./store-types.ts";
 
@@ -149,16 +149,6 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
     // no second read, no second argon2 sweep.
     return deployLocked(deps, params, { slug, existing, matchedHash, keyHash });
   });
-}
-
-/** Resolve the first stored hash `apiKey` matches, or null when none do. */
-async function matchAnyHash(apiKey: string, hashes: string[]): Promise<string | null> {
-  // Verify concurrently — each cache miss costs an expensive argon2
-  // derivation that runs off the main thread.
-  const results = await Promise.all(
-    hashes.map(async (h) => ((await verifyApiKeyHash(apiKey, h)) ? h : null)),
-  );
-  return results.find((h) => h !== null) ?? null;
 }
 
 /**

@@ -153,7 +153,7 @@ async function spawnReplicaSandbox(
   if (!parts) return null;
   return buildSandboxFromParts(slug, parts, opts, (sandbox) => {
     void withSlugLock(slug, async () => {
-      if (opts.slots.get(slug) !== slot) return;
+      if (!opts.slots.owns(slug, slot)) return;
       const idx = slot.replicas?.indexOf(sandbox) ?? -1;
       if (idx === -1) return;
       slot.replicas?.splice(idx, 1);
@@ -297,4 +297,29 @@ export async function resolveSandbox(
     scale,
     spawnReplica: () => spawnReplicaSandbox(slug, slot, opts),
   });
+}
+
+export type BrokeredSession =
+  | { ok: true; sessionUrl: string }
+  | { ok: false; status: 404 | 503; cause?: unknown };
+
+/**
+ * The session-broker sequence shared by `GET /:slug/client-config` and the
+ * plain `/:slug/websocket` upgrade: resolve the slug's live sandbox (booting
+ * it on demand) and ask it for its public session URL. One failure taxonomy
+ * for both callers — no bundle/sandbox is a 404; a sandbox VM that failed to
+ * start is a retryable 503 (the failure hook detaches it, so the next
+ * attempt rebuilds).
+ */
+export async function brokerSessionUrl(
+  slug: string,
+  opts: ResolveSandboxOpts,
+): Promise<BrokeredSession> {
+  const sandbox = await resolveSandbox(slug, opts);
+  if (!sandbox) return { ok: false, status: 404 };
+  try {
+    return { ok: true, sessionUrl: await sandbox.sessionUrl() };
+  } catch (err) {
+    return { ok: false, status: 503, cause: err };
+  }
 }

@@ -20,12 +20,8 @@ function getDefaultClientDir(): string {
 }
 
 // Cached, containment-checked reads over aai-ui's built default client.
+// Cached Buffers are served as bytes — no per-request UTF-8 round trip.
 const readDefaultClient = createCachedDirReader(getDefaultClientDir);
-
-async function readDefaultClientFile(relPath: string): Promise<string | null> {
-  const content = await readDefaultClient(relPath);
-  return content === null ? null : content.toString("utf-8");
-}
 
 export async function handleAgentHealth(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
@@ -45,9 +41,12 @@ export async function handleAgentPage(c: AppContext): Promise<Response> {
 
   const manifest = await c.env.store.getManifest(slug);
   if (!manifest) throw new HTTPException(404, { message: "HTML not found" });
-  const html = await readDefaultClientFile("index.html");
+  const html = await readDefaultClient("index.html");
   if (!html) throw new HTTPException(500, { message: "Default client not built" });
-  return c.html(html, 200, cspHeaders);
+  return c.body(new Uint8Array(html), 200, {
+    ...cspHeaders,
+    "Content-Type": "text/html; charset=UTF-8",
+  });
 }
 
 /**
@@ -95,9 +94,9 @@ export async function handleClientAsset(c: AppContext): Promise<Response> {
     return c.body(body, 200, headers);
   }
 
-  // Default client assets are read from disk as text (the shipped client is
-  // JS/CSS/HTML only).
-  const fallback = await readDefaultClientFile(relPath);
+  // Default client assets served straight from the cached Buffers (the
+  // shipped client is JS/CSS/HTML only).
+  const fallback = await readDefaultClient(relPath);
   if (!fallback) throw new HTTPException(404, { message: "Asset not found" });
-  return c.body(fallback, 200, headers);
+  return c.body(new Uint8Array(fallback), 200, headers);
 }

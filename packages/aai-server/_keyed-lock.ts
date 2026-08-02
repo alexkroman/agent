@@ -42,3 +42,17 @@ export function createKeyedLock(): KeyedLock {
   Object.defineProperty(lock, "size", { get: () => tails.size });
   return lock as KeyedLock;
 }
+
+/** Run `fn` while holding a keyed lock, releasing it in every outcome. */
+export const withLock = <T>(
+  lock: (key: string) => Promise<() => void>,
+  key: string,
+  fn: () => Promise<T>,
+): Promise<T> =>
+  lock(key).then(async (release) => {
+    try {
+      return await fn();
+    } finally {
+      release();
+    }
+  });

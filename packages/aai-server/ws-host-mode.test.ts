@@ -94,23 +94,9 @@ describe("guardHostModeUpgrade", () => {
     };
   }
 
-  test("a plain (non-host) upgrade passes without touching the store", async () => {
-    const { socket, writes } = fakeSocket();
-    const ok = await guardHostModeUpgrade({
-      rawUrl: "/my-agent/websocket",
-      slug: "my-agent",
-      headers: {},
-      store: createTestStore(),
-      socket,
-    });
-    expect(ok).toBe(true);
-    expect(writes).toEqual([]);
-  });
-
   test("the owner's host-mode upgrade proceeds", async () => {
     const { socket, writes } = fakeSocket();
     const ok = await guardHostModeUpgrade({
-      rawUrl: "/my-agent/websocket?host=1",
       slug: "my-agent",
       headers: { authorization: "Bearer key1" },
       store: await storeOwnedBy("key1"),
@@ -124,7 +110,6 @@ describe("guardHostModeUpgrade", () => {
     // A bare RST is indistinguishable from a network fault to the caller.
     const { socket, writes, isDestroyed } = fakeSocket();
     const ok = await guardHostModeUpgrade({
-      rawUrl: "/my-agent/websocket?host=1",
       slug: "my-agent",
       headers: { authorization: "Bearer not-the-owner" },
       store: await storeOwnedBy("key1"),
@@ -138,7 +123,6 @@ describe("guardHostModeUpgrade", () => {
   test("a keyless host-mode upgrade gets a 401 that says what to send", async () => {
     const { socket, writes } = fakeSocket();
     const ok = await guardHostModeUpgrade({
-      rawUrl: "/my-agent/websocket?host=1",
       slug: "my-agent",
       headers: {},
       store: await storeOwnedBy("key1"),

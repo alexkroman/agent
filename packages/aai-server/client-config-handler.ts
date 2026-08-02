@@ -15,7 +15,7 @@ import { buildClientConfig } from "@alexkroman1/aai/protocol";
 import { HTTPException } from "hono/http-exception";
 import type { AppContext } from "./context.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
-import { resolveSandbox } from "./sandbox-resolve.ts";
+import { brokerSessionUrl } from "./sandbox-resolve.ts";
 
 export type ClientConfigOpts = {
   /** Pre-warmed harness pool shared with the rest of the platform. */
@@ -32,7 +32,7 @@ export async function handleAgentClientConfig(
     throw new HTTPException(404, { message: `Not found: ${slug}` });
   }
 
-  const sandbox = await resolveSandbox(slug, {
+  const brokered = await brokerSessionUrl(slug, {
     slots: c.env.slots,
     store: c.env.store,
     secrets: c.env.secrets,
@@ -40,22 +40,24 @@ export async function handleAgentClientConfig(
     ...(c.env.appDb && { appDb: c.env.appDb }),
     ...(opts.pool && { pool: opts.pool }),
   });
-  if (!sandbox) {
-    throw new HTTPException(404, { message: `Not found: ${slug}` });
-  }
-
-  let sessionUrl: string;
-  try {
-    sessionUrl = await sandbox.sessionUrl();
-  } catch (err) {
+  if (!brokered.ok) {
+    if (brokered.status === 404) {
+      throw new HTTPException(404, { message: `Not found: ${slug}` });
+    }
     // The sandbox VM failed to start; the failure hook detaches it so the
     // next request rebuilds. Tell this client to retry rather than handing
     // it a session URL that will never answer.
     throw new HTTPException(503, {
       message: "agent unavailable, retry shortly",
-      cause: err,
+      cause: brokered.cause,
     });
   }
 
-  return c.json(buildClientConfig({ name: config.name, greeting: config.greeting, sessionUrl }));
+  return c.json(
+    buildClientConfig({
+      name: config.name,
+      greeting: config.greeting,
+      sessionUrl: brokered.sessionUrl,
+    }),
+  );
 }

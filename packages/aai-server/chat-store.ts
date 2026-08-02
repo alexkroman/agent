@@ -23,6 +23,7 @@
  * why platform-internal tables get their own namespace).
  */
 
+import { safeJsonParse } from "@alexkroman1/aai";
 import { ensureTableOnce } from "./pg-ensure.ts";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -52,19 +53,31 @@ export function trimChatToByteBudget(
   messages: unknown[],
   budget = MAX_STUDIO_CHAT_STORE_BYTES,
 ): unknown[] {
+  return trimChat(messages, budget).trimmed;
+}
+
+/**
+ * The trim core, keeping the per-message serializations it already computed
+ * so `putChat` can build the row payload without a second stringify pass
+ * over the same messages.
+ */
+function trimChat(messages: unknown[], budget: number): { trimmed: unknown[]; parts: string[] } {
   // `[]` serializes to 2 bytes; per-element separators are 1 byte each. Close
   // enough to count per-message bytes + a comma, which slightly overcounts —
   // erring under the budget, never over.
   let total = 2;
   let start = messages.length;
+  const parts: string[] = [];
   while (start > 0) {
-    const candidate = messages[start - 1];
-    const size = Buffer.byteLength(JSON.stringify(candidate)) + 1;
+    const json = JSON.stringify(messages[start - 1]);
+    const size = Buffer.byteLength(json) + 1;
     if (total + size > budget) break;
+    parts.push(json);
     total += size;
     start -= 1;
   }
-  return start === 0 ? messages : messages.slice(start);
+  parts.reverse();
+  return { trimmed: start === 0 ? messages : messages.slice(start), parts };
 }
 
 const TABLE = "aai_platform.studio_chats";
@@ -94,14 +107,14 @@ export function createPgChatStore(sql: SqlExec): ChatStore {
       ]);
       const value = rows[0]?.messages;
       if (value === undefined) return null;
-      const parsed: unknown = typeof value === "string" ? JSON.parse(value) : value;
+      const parsed: unknown = typeof value === "string" ? safeJsonParse(value) : value;
       // A malformed row reads as "no chat" rather than surfacing downstream.
       return Array.isArray(parsed) ? parsed : null;
     },
 
     async putChat(scope, project, messages) {
       await ensure();
-      const json = JSON.stringify(trimChatToByteBudget(messages));
+      const json = `[${trimChat(messages, MAX_STUDIO_CHAT_STORE_BYTES).parts.join(",")}]`;
       await sql(
         `insert into ${TABLE} (scope, project, messages) values ($1, $2, $3::jsonb)
          on conflict (scope, project) do update set messages = excluded.messages, updated_at = now()`,

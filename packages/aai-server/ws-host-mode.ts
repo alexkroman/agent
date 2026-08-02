@@ -24,6 +24,7 @@
 import type { SessionStartOptions, SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { startHostSession } from "@alexkroman1/aai/runtime";
 import { parseBearer } from "./_bearer.ts";
+import { answerUpgrade, type UpgradeReplySocket } from "./_upgrade-reply.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { toRuntimeAgent } from "./sandbox-agent-config.ts";
 import { verifySlugOwner } from "./secrets.ts";
@@ -82,35 +83,24 @@ export async function authorizeHostMode(
   return { allowed: true };
 }
 
-/** Minimal socket surface an upgrade rejection needs. */
-type UpgradeSocket = { write: (data: string) => unknown; destroy: () => unknown };
-
 /**
- * Gate a WebSocket upgrade for host mode.
+ * Gate a host-mode WebSocket upgrade (the caller has already established
+ * `wantsHostMode`).
  *
- * Returns true when the connection may proceed — either it never asked for
- * host mode, or it proved ownership. On refusal it answers the handshake with
- * a real HTTP status and destroys the socket, because a bare RST is
- * indistinguishable from a network fault to the caller.
+ * Returns true when the connection proved ownership. On refusal it answers
+ * the handshake with a real HTTP status and destroys the socket, because a
+ * bare RST is indistinguishable from a network fault to the caller.
  */
 export async function guardHostModeUpgrade(opts: {
-  rawUrl: string;
   slug: string;
   headers: Record<string, string | string[] | undefined>;
   store: BundleStore;
-  socket: UpgradeSocket;
+  socket: UpgradeReplySocket;
 }): Promise<boolean> {
-  if (!wantsHostMode(opts.rawUrl)) return true;
   const auth = await authorizeHostMode(opts.slug, opts.headers, opts.store);
   if (auth.allowed) return true;
   const status = auth.code === 401 ? "Unauthorized" : "Forbidden";
-  opts.socket.write(
-    `HTTP/1.1 ${auth.code} ${status}\r\n` +
-      "Connection: close\r\n" +
-      "Content-Type: text/plain\r\n\r\n" +
-      `${auth.reason}\n`,
-  );
-  opts.socket.destroy();
+  answerUpgrade(opts.socket, `${auth.code} ${status}`, `${auth.reason}\n`);
   return false;
 }
 

@@ -60,3 +60,10 @@ export type ValidatedAppContext<T> = Context<
   string,
   { in: { json: T }; out: { json: T } }
 >;
+
+/** Context for handlers whose route params were pre-validated by `zValidator`. */
+export type ValidatedParamContext<T> = Context<
+  HonoEnv,
+  string,
+  { in: { param: T }; out: { param: T } }
+>;

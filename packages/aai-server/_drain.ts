@@ -15,6 +15,7 @@
  */
 
 import { performance } from "node:perf_hooks";
+import { sleep as defaultSleep } from "./_sleep.ts";
 import { DRAIN_POLL_MS } from "./constants.ts";
 
 export type DrainResult = {
@@ -40,7 +41,7 @@ export async function waitForIdle(opts: {
   now?: () => number;
 }): Promise<DrainResult> {
   const pollMs = opts.pollMs ?? DRAIN_POLL_MS;
-  const sleep = opts.sleep ?? ((ms: number) => new Promise<void>((r) => setTimeout(r, ms)));
+  const sleep = opts.sleep ?? defaultSleep;
   const now = opts.now ?? (() => performance.now());
 
   const startedAt = now();
