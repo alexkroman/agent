@@ -176,8 +176,11 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // grammar has a single source of truth.
   app.get(`/:slug{${VALID_SLUG_RE.source.slice(1, -1)}}`, (c) => {
     const url = new URL(c.req.url);
-    url.pathname += "/";
-    return c.redirect(url.toString(), 301);
+    // Relative Location (RFC 7231 §7.1.2): behind Modal's TLS termination
+    // the request URL is always cleartext http, so echoing an absolute URL
+    // back bounced an https browser to `http://…` and then straight back
+    // through the edge's upgrade redirect. A path can't downgrade anything.
+    return c.redirect(`${url.pathname}/${url.search}`, 301);
   });
 
   const agents = new Hono<HonoEnv>();

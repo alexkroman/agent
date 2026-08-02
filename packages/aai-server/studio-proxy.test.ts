@@ -129,3 +129,34 @@ describe("orchestrator with studioUpstream", () => {
     expect(forwarded).toHaveLength(2);
   });
 });
+
+describe("createStudioProxy forwarded origin", () => {
+  test("forwards the PUBLIC scheme, not the cleartext hop it received", async () => {
+    // Behind Modal this service is reached over plain HTTP, so forwarding
+    // `url.protocol` told the studio the platform was http:// — and the
+    // guest's `aai deploy` then lost its Authorization on the redirect.
+    let seen: Request | undefined;
+    const proxy = createStudioProxy("http://studio.internal:8080", async (input, init) => {
+      seen = new Request(input as string, init);
+      return Response.json({ ok: true });
+    });
+
+    await proxy(makeContext(new Request("http://agent.example.modal.run/studio/projects")));
+
+    expect(seen?.headers.get("x-forwarded-proto")).toBe("https");
+    expect(seen?.headers.get("x-forwarded-host")).toBe("agent.example.modal.run");
+  });
+
+  test("a loopback origin keeps http (local combined dev)", async () => {
+    let seen: Request | undefined;
+    const proxy = createStudioProxy("http://studio.internal:8080", async (input, init) => {
+      seen = new Request(input as string, init);
+      return Response.json({ ok: true });
+    });
+
+    await proxy(makeContext(new Request("http://localhost:8080/studio/projects")));
+
+    expect(seen?.headers.get("x-forwarded-proto")).toBe("http");
+    expect(seen?.headers.get("x-forwarded-host")).toBe("localhost:8080");
+  });
+});

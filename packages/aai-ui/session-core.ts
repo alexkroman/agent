@@ -15,7 +15,7 @@
 
 import { createEpoch, WS_OPEN } from "@alexkroman1/aai";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
-import { fetchClientConfig } from "./client-config.ts";
+import { loadClientConfig } from "./client-config.ts";
 import { initAudioCapture } from "./session-core-audio-setup.ts";
 import {
   CLEARED_SESSION_STATE,
@@ -219,9 +219,15 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
   async function currentWsUrl(): Promise<string> {
     // Known non-broker: skip the fetch and go straight to the same-origin
     // path (the fetch could only return no `sessionUrl` again).
-    const cfg = serverIsBroker === false ? {} : await fetchClientConfig(options.platformUrl);
-    serverIsBroker = cfg.sessionUrl !== undefined;
-    const url = cfg.sessionUrl
+    const cfg = serverIsBroker === false ? null : await loadClientConfig(options.platformUrl);
+    // Only an ANSWERED lookup says anything about the server. A failed one
+    // (the broker 503s while the sandbox boots, or a network blip) must not
+    // latch `serverIsBroker = false`: that skips brokering on every later
+    // attempt and pins the client to the platform's `/:slug/websocket`,
+    // which answers 410 Gone forever — so a single bad boot cost the session
+    // its only route back even after the agent recovered.
+    if (cfg) serverIsBroker = cfg.sessionUrl !== undefined;
+    const url = cfg?.sessionUrl
       ? buildBrokeredWsUrl(cfg.sessionUrl, hasConnected, sessionId)
       : buildWsUrl(options.platformUrl, hasConnected, sessionId);
     // Keep the programmatic-endpoint display current (minus resume params).

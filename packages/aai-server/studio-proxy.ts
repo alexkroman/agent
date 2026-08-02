@@ -26,6 +26,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import type { Context } from "hono";
 import type { HonoEnv } from "./context.ts";
+import { publicForwardedHeaders } from "./public-origin.ts";
 
 /**
  * Hop-by-hop headers (RFC 9110 §7.6.1) plus the ones the proxy must own:
@@ -96,8 +97,12 @@ export function createStudioProxy(
     // The studio service needs the PUBLIC origin (this service's), not its
     // own upstream address — Publish hands it to the guest's `aai deploy`
     // as the platform to dial (see studio-routes' requestPublicOrigin).
-    headers.set("x-forwarded-host", url.host);
-    headers.set("x-forwarded-proto", url.protocol.replace(/:$/, ""));
+    // Resolved rather than copied off `url`: this service is itself reached
+    // over cleartext behind Modal's TLS termination, so forwarding
+    // `url.protocol` told the studio the platform was `http://`.
+    const forwarded = publicForwardedHeaders(c.req.raw);
+    headers.set("x-forwarded-host", forwarded.host);
+    headers.set("x-forwarded-proto", forwarded.proto);
 
     const method = c.req.method;
     const hasBody = method !== "GET" && method !== "HEAD";
