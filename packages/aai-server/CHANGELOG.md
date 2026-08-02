@@ -1,5 +1,30 @@
 # @alexkroman1/aai-server
 
+## 3.2.0
+
+### Minor Changes
+
+- 3bc83bb: The API URL shown in the studio preview (and every default client) is now the
+  long-living platform endpoint (`wss://host/:slug/websocket`) instead of the
+  ephemeral sandbox tunnel URL, which dies on idle eviction or redeploy. The
+  platform endpoint upgrades callers to the sandbox API itself: a plain
+  WebSocket upgrade on `/:slug/websocket` resolves the agent's live sandbox
+  (booting it on demand, like the client-config broker) and answers a 302
+  redirect to the sandbox's current session URL, query preserved so
+  `?sessionId=` resumes survive the hop.
+
+### Patch Changes
+
+- fa3f3fd: Enable per-slug guest-sandbox autoscaling in the production Modal deploy (8 sessions per sandbox, 4 replicas) with pinned 1-core/1-GiB guest resource limits
+- 57c8b03: Forward Modal container stop signals to the node server so guest-sandbox teardown actually runs on scale-in/redeploy — orphaned sandboxes no longer linger as 2-3 MiB sleep-infinity shells for the ~20-minute orphan + idle window on every deploy
+- Updated dependencies [8fb0a0d]
+- Updated dependencies [ac21a90]
+- Updated dependencies [3bc83bb]
+- Updated dependencies [d1fc1c0]
+  - @alexkroman1/aai@5.1.0
+  - @alexkroman1/aai-ui@5.1.0
+  - aai-guest@0.2.2
+
 ## 3.1.2
 
 ### Patch Changes
