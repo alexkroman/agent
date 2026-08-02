@@ -57,6 +57,17 @@ describe("typecheckProject", () => {
     });
   });
 
+  /**
+   * Also the regression test for resolving TypeScript through Node's GLOBAL
+   * paths. This temp dir has no `node_modules`, but vitest points `NODE_PATH`
+   * at pnpm's hidden store — and Node appends `Module.globalPaths` to every
+   * `require.resolve`, with no option to suppress them. So while the gate used
+   * `require.resolve("typescript")` it found the repo's compiler from an
+   * unrelated directory: this branch was unreachable, and a real user project
+   * would have been checked with a compiler it never pinned. Keep the
+   * resolution a walk-up (`findTypescriptPackage`), or this silently passes
+   * again by typechecking against whatever TypeScript the host happens to have.
+   */
   test("a tsconfig without an installed TypeScript is a loud failure", async () => {
     await withTempDir(async (dir) => {
       await writeFile(path.join(dir, "tsconfig.json"), TSCONFIG);

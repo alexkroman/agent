@@ -15,9 +15,8 @@
  */
 
 import { spawn } from "node:child_process";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { readFile } from "node:fs/promises";
-import { createRequire } from "node:module";
 import path from "node:path";
 
 /** Bound on one typecheck run — a hung compiler must not wedge a deploy. */
@@ -27,30 +26,46 @@ const OUTPUT_CAP = 16_000;
 
 export type TypecheckResult = { ok: true; skipped: boolean } | { ok: false; output: string };
 
+/**
+ * The project's own TypeScript package root — `node_modules/typescript`,
+ * walking up from `cwd` exactly as a bare import would.
+ *
+ * Deliberately NOT `require.resolve("typescript")`. Node appends
+ * `Module.globalPaths` — `NODE_PATH`, `~/.node_modules`, the install prefix —
+ * to EVERY lookup, and the `paths` option does not suppress them, so an
+ * ambient TypeScript anywhere on the host silently satisfies a project that
+ * never declared one. That breaks the promise in this module's header twice
+ * over: the gate would check a user's build with a compiler their project
+ * doesn't pin, and the "TypeScript is not installed" branch below would be
+ * unreachable on any host that sets NODE_PATH — which is how vitest runs its
+ * workers (it points NODE_PATH at pnpm's hidden store), so the test for that
+ * branch could not fail honestly either.
+ *
+ * The walk-up follows symlinks, which is what pnpm's `node_modules/typescript
+ * -> .pnpm/typescript@x/node_modules/typescript` link needs, and what lets a
+ * guest sandbox workspace reach the toolchain baked next to the harness.
+ */
+function findTypescriptPackage(cwd: string): string | undefined {
+  let dir = path.resolve(cwd);
+  for (;;) {
+    const candidate = path.join(dir, "node_modules", "typescript");
+    if (existsSync(path.join(candidate, "package.json"))) return candidate;
+    const parent = path.dirname(dir);
+    if (parent === dir) return;
+    dir = parent;
+  }
+}
+
 /** Resolve the project's TypeScript compiler entry (its own `tsc` bin). */
 function resolveTscEntry(cwd: string): string {
-  const require = createRequire(path.join(cwd, "package.json"));
-  // Resolve the package entry, then walk up to its package.json — the
-  // exports map does not expose "./package.json" directly.
-  let dir = path.dirname(require.resolve("typescript"));
-  for (let i = 0; i < 5; i++) {
-    const pkgPath = path.join(dir, "package.json");
-    try {
-      const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as {
-        name?: string;
-        bin?: string | Record<string, string>;
-      };
-      if (pkg.name === "typescript") {
-        const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.tsc;
-        if (!bin) throw new Error("installed typescript package declares no tsc bin");
-        return path.join(dir, bin);
-      }
-    } catch (err) {
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
-    }
-    dir = path.dirname(dir);
-  }
-  throw new Error("could not locate the installed typescript package root");
+  const dir = findTypescriptPackage(cwd);
+  if (dir === undefined) throw new Error("no typescript package in the project's node_modules");
+  const pkg = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf-8")) as {
+    bin?: string | Record<string, string>;
+  };
+  const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.tsc;
+  if (!bin) throw new Error("installed typescript package declares no tsc bin");
+  return path.join(dir, bin);
 }
 
 /**
