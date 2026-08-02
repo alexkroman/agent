@@ -1,5 +1,5 @@
 import { defineConfig } from "vitest/config";
-import { sharedConfig } from "../../vitest.shared.ts";
+import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
 
 // Template agents import prompt files with Vite's native `?raw` suffix
 // (`import systemPrompt from "./system-prompt.md?raw"`), which vitest
@@ -7,7 +7,22 @@ import { sharedConfig } from "../../vitest.shared.ts";
 export default defineConfig({
   ...sharedConfig,
   test: {
+    // Project name for `--project aai-templates`; the workspace root discovers this
+    // file by glob, so the name must live here (else it defaults to the
+    // package.json name).
+    name: "aai-templates",
     restoreMocks: true,
     include: ["templates.test.ts", "template-api-coverage.test.ts", "templates/*/agent.test.ts"],
+    coverage: {
+      exclude: [...sharedCoverageExclude, "scaffold/**"],
+      // This package had NO floors at all — the only one in the repo — while
+      // running `test:coverage` in the CI matrix, so its numbers were measured
+      // and then discarded. Seeded ~2-3 points below the first measurement
+      // (2026-08: stmts 67.0, branch 53.2, funcs 59.3, lines 69.8); floors
+      // only move up from here. They are lower than every other package's on
+      // purpose: templates are example agents whose value is being READ, and
+      // each one's tests cover its own tools rather than every branch.
+      thresholds: { lines: 67, functions: 56, branches: 50, statements: 64 },
+    },
   },
 });

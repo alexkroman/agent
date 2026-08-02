@@ -61,7 +61,9 @@
     "check:integration": "pnpm run test:integration",
     "build": "tsdown && tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit && tsc -p sdk/tsconfig.json",
-    "lint": "biome check ."
+    "lint": "biome check .",
+    "check:publint": "publint",
+    "check:attw": "attw --pack --profile esm-only"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^4.0.23",

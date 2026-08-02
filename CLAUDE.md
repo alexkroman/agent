@@ -74,9 +74,12 @@ for packages changed since the default branch.
 
 ### Quality ratchets
 
-Beyond lint/typecheck/test, `scripts/check.sh` runs two **ratchet gates**
-(both also runnable standalone) that hold the line on technical debt by
-comparing the branch against its merge-base with `origin/main`:
+Beyond lint/typecheck/test, `scripts/check.sh` **and the CI check job** run
+two **ratchet gates** (both also runnable standalone) that hold the line on
+technical debt by comparing the branch against its merge-base with
+`origin/main`. They must stay wired into BOTH: for a long time they lived
+only in `check.sh`, which CI never invokes, so the only thing enforcing them
+was the pre-push hook — and `git push --no-verify` skipped them entirely.
 
 - **`pnpm check:hatches`** (`scripts/check-escape-hatches.mjs`) — counts
   static-analysis escape hatches (`@ts-expect-error`, `@ts-ignore`,
@@ -99,7 +102,9 @@ file-length allowlist and delete escape hatches — both baselines are
 designed to only move one direction.
 
 A third ratchet lives in the vitest configs: **coverage thresholds**.
-Each package's `vitest.config.ts` declares per-package coverage floors
+Every package has floors — `aai-templates` was for a while the one that did
+not, so CI measured its coverage and threw the number away. Each package's
+`vitest.config.ts` declares per-package coverage floors
 (lines/functions/branches/statements) that CI enforces via
 `pnpm test:coverage` (the `test` job runs it per package), and the root
 `vitest.config.ts` holds combined floors for whole-repo runs. Like the
@@ -1082,6 +1087,13 @@ mid-session.
 - **Runtime**: Node everywhere (host, platform server, and guest sandbox)
 - **Frameworks**: React (client UI), Tailwind CSS v4 (compiled at bundle time)
 - **Linting**: Biome. Auto-runs on staged files via lefthook pre-commit hook.
+  **Every package needs a `lint` script** (`biome check .`) or `turbo run
+  lint` — and so `pnpm check` — silently skips it; `aai-templates` had none.
+  Filename conventions are Biome's job too (`useFilenamingConvention`,
+  kebab-case), which replaced a never-invoked `ls-lint` whose config existed
+  but which no pipeline ran and which blocked for 30+ minutes at repo root.
+  Template tool files are exempted by an override: their names mirror
+  snake_case LLM tool names.
 - **Exports**: In dev mode, package.json exports point to `.ts` source for
   seamless workspace resolution. Update to compiled `.js` dist paths before
   publishing.
@@ -1257,8 +1269,18 @@ you only need to list one package.
   as `predeploy:modal` in both server packages (a fail-fast before the
   remote Modal image build, which rebuilds the harness itself). Also
   runnable directly: `node scripts/ensure-guest-harness.mjs`.
-- Unit test projects (aai, aai-ui, aai-cli, aai-server) are defined in the
-  root `vitest.config.ts`. Use `--project <name>` to run a specific project.
+- **Each suite is defined once, in its own package's `vitest.config.ts`.**
+  The root `vitest.config.ts` discovers them with `projects: ["packages/*"]`
+  and adds only the typecheck-only `aai-types` project. Use
+  `--project <name>` to run one; the name is declared in the package config
+  (a bare glob would otherwise name the project after package.json, e.g.
+  `@alexkroman1/aai`). Do NOT re-declare a suite at the root: it used to
+  hold a second inline copy of all eight, and they silently drifted — the
+  aai-cli copy lost `_test-setup.ts`, so `--project aai-cli` ran the CLI
+  suite against the developer's real `~/.config/aai/config.json`; the server
+  copies lost their 20s argon2 timeout; the aai-server excludes named two
+  deleted files while missing a live integration test; and the templates
+  copy skipped two of its four test files.
 - Slow/integration tests have separate per-package configs
   (`vitest.slow.config.ts`, `vitest.integration.config.ts`) to avoid running
   during `vitest run`.
@@ -1270,8 +1292,17 @@ you only need to list one package.
   `expectTypeOf` from vitest to assert on type shapes. Projects:
   `aai-types`.
 - **Package validation**: `publint` runs post-build to verify package.json
-  exports resolve to real files. `attw` validates export types. Both run
-  in the check pipeline.
+  exports resolve to real files. `attw` validates export types. Both run in
+  the check pipeline AND in CI, and **all three publishable packages
+  (`aai`, `aai-ui`, `aai-cli`) must define both scripts** — for a long time
+  only `aai-ui` did, leaving `aai`'s ten subpath exports ungated. That is
+  the gap the deleted npm/yarn e2e legs were retired *in favour of* (see
+  "The e2e suite is pnpm-only in CI"), so it has to actually hold.
+- **Typechecking covers test files**, because every package's tsconfig
+  includes them. Turbo's `typecheck` task must therefore keep `**/*.test.ts`
+  in its `inputs`: excluding them (as it once did) meant a type error in a
+  test could not invalidate the cache, and `turbo run typecheck` replayed a
+  green FULL TURBO while `tsc --noEmit` failed.
 - **Coverage**: `pnpm test:coverage` (root or per package) runs vitest with
   v8 coverage and enforces the per-package threshold ratchet (see
   "Quality ratchets" above). CI runs it for every package in the test
@@ -1286,7 +1317,7 @@ you only need to list one package.
 | aai-cli | threads | node | — | `restoreMocks: true` |
 | aai-server | **forks** | node | — | Forks for process isolation; excludes integration tests |
 | aai-studio-client | threads | node | — | `.tsx` tests via `react-dom/server` (no jsdom) |
-| aai-templates | threads | node | — | Only matches `templates/*/agent.test.ts` |
+| aai-templates | threads | node | — | Also matches `templates.test.ts` + `template-api-coverage.test.ts` |
 
 #### Test environment variables
 

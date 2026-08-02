@@ -1,12 +1,31 @@
-import { fileURLToPath } from "node:url";
 import { defineConfig } from "vitest/config";
 import { sharedConfig, sharedCoverageExclude } from "./vitest.shared.ts";
 
-// Auto-builds the aai-guest harness bundle createSandbox resolves eagerly.
-const ensureGuestHarness = fileURLToPath(
-  new URL("./scripts/ensure-guest-harness.mjs", import.meta.url),
-);
-
+/**
+ * Workspace root config.
+ *
+ * The suites themselves are defined ONCE, in each package's own
+ * `vitest.config.ts`, and discovered here by glob. This file used to
+ * re-declare all eight of them inline, which made every suite two configs
+ * that had to be kept in step by hand — and they had already drifted:
+ *
+ * - the aai-cli project omitted `_test-setup.ts`, the setup file that points
+ *   AAI_CONFIG_DIR at a temp dir. `pnpm vitest run --project aai-cli` therefore
+ *   ran the CLI suite against the developer's REAL ~/.config/aai/config.json
+ *   (and with their shell's provider keys still in the environment)
+ * - aai-server/aai-studio-server lost the 20s testTimeout their configs raise
+ *   for argon2 under a contended check run, so the shortcut flaked on timeouts
+ * - the aai-server excludes named two files that no longer exist and missed
+ *   `orchestrator-integration.test.ts`, which the shortcut then ran
+ * - the templates project matched only the per-template `agent.test.ts` glob,
+ *   silently skipping `templates.test.ts` and `template-api-coverage.test.ts`
+ * - several projects dropped `restoreMocks`
+ *
+ * None of that is reachable now: `--project <name>` and `pnpm --filter <pkg>
+ * test` load the same file. Project names live in the package configs so the
+ * documented shortcuts (`--project aai`) keep working — a package.json name
+ * like `@alexkroman1/aai` would otherwise become the project name.
+ */
 export default defineConfig({
   ...sharedConfig,
   test: {
@@ -31,109 +50,9 @@ export default defineConfig({
       },
     },
     projects: [
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai",
-          root: "packages/aai",
-          include: ["**/*.test.ts"],
-          exclude: [
-            "**/pentest.test.ts",
-            "**/run-code-sandbox.test.ts",
-            "**/integration.test.ts",
-            "**/*.integration.test.ts",
-            "node_modules",
-            "dist",
-          ],
-          setupFiles: ["./sdk/_test-matchers.ts"],
-        },
-      },
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai-ui",
-          root: "packages/aai-ui",
-          globals: true,
-          include: ["**/*.test.{ts,tsx}"],
-          setupFiles: ["./_jsdom-setup.ts"],
-        },
-      },
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai-cli",
-          root: "packages/aai-cli",
-          include: ["**/*.test.ts"],
-          exclude: [
-            "e2e*.test.ts",
-            "node_modules",
-            "dist",
-          ],
-        },
-      },
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai-guest",
-          root: "packages/aai-guest",
-          include: ["**/*.test.ts"],
-          exclude: ["node_modules", "dist"],
-        },
-      },
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai-server",
-          root: "packages/aai-server",
-          pool: "forks",
-          globalSetup: [ensureGuestHarness],
-          include: ["**/*.test.ts"],
-          exclude: [
-            // LLM-in-the-loop evals: pnpm --filter aai-server test:evals
-            // (studio tests live in the aai-studio-server project)
-            "sandbox-integration.test.ts",
-            "sandbox-lifecycle.test.ts",
-            "ws-integration.test.ts",
-            "workspace-build-integration.test.ts",
-            "node_modules",
-            "dist",
-          ],
-        },
-      },
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai-studio-server",
-          root: "packages/aai-studio-server",
-          pool: "forks",
-          include: ["**/*.test.ts"],
-          exclude: [
-            // LLM-in-the-loop evals: pnpm --filter aai-studio-server test:evals
-            "studio-eval.test.ts",
-            "node_modules",
-            "dist",
-          ],
-        },
-      },
-      {
-        ...sharedConfig,
-        test: {
-          name: "aai-studio-client",
-          root: "packages/aai-studio-client",
-          // Node by default (react-dom/server); interaction tests opt into
-          // jsdom via a per-file `@vitest-environment` pragma.
-          include: ["**/*.test.{ts,tsx}"],
-          exclude: ["node_modules", "dist"],
-        },
-      },
-      {
-        ...sharedConfig,
-        test: {
-          name: "templates",
-          root: "packages/aai-templates",
-          include: ["templates/*/agent.test.ts"],
-        },
-      },
+      // Every package's own vitest.config.ts — the single definition of each
+      // suite. Adding a package needs no edit here.
+      "packages/*",
       {
         ...sharedConfig,
         test: {
