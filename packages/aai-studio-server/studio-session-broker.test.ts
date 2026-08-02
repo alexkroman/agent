@@ -90,11 +90,16 @@ describe("studio session broker", () => {
     await broker.dispose();
   });
 
-  test("returns null for a missing project without leaking a sandbox", async () => {
+  // Stronger than "spawns then disposes": a missing project must not consume
+  // a sandbox at all. Spawning first and discovering the 404 inside
+  // session-init burned a Modal create+teardown per bogus project id, and
+  // drained a warm-pool slot that a real session then had to cold-start for.
+  test("returns null for a missing project without spawning a sandbox", async () => {
     const guest = fakeGuest();
-    const { broker } = await makeBroker([guest]);
+    const { broker, spawn } = await makeBroker([guest]);
     expect(await broker.ensureSession(SCOPE, "ghost", "k")).toBeNull();
-    expect(guest.disposed()).toBe(true);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(guest.disposed()).toBe(false);
     await broker.dispose();
   });
 

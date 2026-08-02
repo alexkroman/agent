@@ -186,12 +186,30 @@ export function createHarnessImageResolver(deps: {
     }
   }
 
+  // Both inputs are invariant per process — the harness code is itself
+  // memoized, and the toolchain specs come from package.json files on disk —
+  // so the tag is the same value every time. Computing it inside the resolver
+  // meant SHA-256 over the ~12.8 MB harness bundle (13-15ms, synchronous, so
+  // it stalls the event loop) plus a handful of readFileSync+JSON.parse on
+  // EVERY spawn: pool replenishment, every cold session, every studio broker
+  // call, every describeBundle. Cache it by harness code instead.
+  const tagMemo = new Map<string, string>();
+  const tagOnce = (code: string): string => {
+    let tag = tagMemo.get(code);
+    if (tag === undefined) {
+      tag = tagFor(code, resolveToolchainSpecs());
+      tagMemo.set(code, tag);
+    }
+    return tag;
+  };
+
   return (code: string): Promise<Image> => {
-    const specs = resolveToolchainSpecs();
-    const tag = tagFor(code, specs);
+    const tag = tagOnce(code);
     let pending = memo.get(tag);
     if (!pending) {
-      pending = build(tag, code, specs).catch((err: unknown) => {
+      // Re-resolving the specs here costs a few readFileSync calls, but only
+      // on the once-per-tag build path rather than once per spawn.
+      pending = build(tag, code, resolveToolchainSpecs()).catch((err: unknown) => {
         memo.delete(tag);
         throw err;
       });

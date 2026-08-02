@@ -36,8 +36,14 @@ export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>):
     const merged = { ...existing, ...updates };
     await c.env.store.putEnv(slug, merged);
 
-    await restartSlotSandbox(c.env.slots, slug, "secret update");
-    await bumpSlugEpoch(c.env.slugEpochs, slug);
+    // Independent: the local teardown ends in a Modal terminate round trip,
+    // and the epoch bump only needs the store write (already landed) to have
+    // happened. Serializing them stretched the window this slug's
+    // cross-replica lease is held, blocking every other replica's mutation.
+    await Promise.all([
+      restartSlotSandbox(c.env.slots, slug, "secret update"),
+      bumpSlugEpoch(c.env.slugEpochs, slug),
+    ]);
     console.info("Secret updated", { slug, keyCount: Object.keys(updates).length });
     return c.json({ ok: true, keys: Object.keys(merged) });
   });
