@@ -44,7 +44,11 @@ import { log } from "./_ui.ts";
 
 // 30s, not the 5s default: sibling suites run multi-second runtime-inlining
 // builds now, and CPU starvation under full-repo parallel runs was flaking
-// these otherwise-fast tests.
+// these otherwise-fast tests. The inner vi.waitFor ceilings below are 15s
+// for the same reason — each restart runs a REAL bundler build, so a 1-2s
+// bound that always holds standalone flakes under a contended `turbo run
+// test`. waitFor settles as soon as the condition holds, so the generous
+// ceiling costs nothing on the happy path.
 vi.setConfig({ testTimeout: 30_000 });
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -101,7 +105,7 @@ describe("startDevServer restart behavior", () => {
           expect(mockCreateServer).toHaveBeenCalled();
           expect(mockListen).toHaveBeenCalled();
         },
-        { timeout: 1000 },
+        { timeout: 15_000 },
       );
 
       await cleanup();
@@ -124,7 +128,7 @@ describe("startDevServer restart behavior", () => {
         () => {
           expect(mockListen).toHaveBeenCalled();
         },
-        { timeout: 2000 },
+        { timeout: 15_000 },
       );
 
       // Build (createServer) completes BEFORE the old server closes, so the
@@ -170,7 +174,7 @@ describe("startDevServer restart behavior", () => {
       const cleanup = await startPromise;
 
       await vi.waitFor(() => expect(mockCreateServer).toHaveBeenCalledTimes(2), {
-        timeout: 5000,
+        timeout: 15_000,
       });
 
       await cleanup();
@@ -194,7 +198,7 @@ describe("startDevServer restart behavior", () => {
       fireChange(dir, "agent.ts");
 
       await vi.waitFor(() => expect(log.success).toHaveBeenCalledWith("Restarted"), {
-        timeout: 5000,
+        timeout: 15_000,
       });
       expect(mockListen).toHaveBeenCalledTimes(3);
 
@@ -221,7 +225,7 @@ describe("startDevServer restart behavior", () => {
 
       await vi.waitFor(
         () => expect(log.error).toHaveBeenCalledWith(expect.stringContaining("save a file")),
-        { timeout: 5000 },
+        { timeout: 15_000 },
       );
       expect(mockListen).toHaveBeenCalledTimes(3);
 
@@ -270,7 +274,7 @@ describe("startDevServer restart behavior", () => {
         () => {
           expect(log.error).toHaveBeenCalledWith(expect.stringContaining("Restart failed"));
         },
-        { timeout: 2000 },
+        { timeout: 15_000 },
       );
 
       // A failed build must leave the previous server running: no close.
