@@ -4,6 +4,7 @@ import { createOwnedMap, errorMessage, type OwnedMap } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import { createKeyedLock } from "./_keyed-lock.ts";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
+import { bumpSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
 
 export type SlotSandbox = {
   shutdown(): Promise<void>;
@@ -121,6 +122,34 @@ export async function restartSlotSandbox(
     console.info(`Restarting sandbox for ${reason}`, { slug });
     await terminateSlot(slot);
   }
+}
+
+/**
+ * Invalidate a slug everywhere after a mutation to it has landed.
+ *
+ * Two halves that must always travel together: this replica tears down its own
+ * resident sandbox, and the slug's epoch bump tells every OTHER replica — and
+ * the sibling service — to do the same on their next session start. Each
+ * mutation route used to spell both out, and they had already diverged on
+ * whether the bump was conditional; a route that pairs only the first half
+ * produces no error anywhere, it just leaves other replicas serving the
+ * previous version of the agent until idle eviction.
+ *
+ * Call AFTER the store write. An early bump makes peers rebuild from
+ * pre-mutation artifacts. Both halves are best-effort and independent, so
+ * they run together rather than serialized — `restartSlotSandbox` ends in a
+ * Modal terminate round trip, and callers hold the cross-replica slug lease
+ * while this runs.
+ */
+export async function invalidateSlug(
+  deps: { slots: SlotCache; slugEpochs: SlugEpochs },
+  slug: string,
+  reason: string,
+): Promise<void> {
+  await Promise.all([
+    restartSlotSandbox(deps.slots, slug, reason),
+    bumpSlugEpoch(deps.slugEpochs, slug),
+  ]);
 }
 
 export function setSlot(slots: SlotCache, slot: AgentSlot): void {

@@ -19,13 +19,9 @@ async function createRealOrchestrator() {
   const storage = createStorage();
   const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
   const { createSlotCache } = await import("./sandbox-slots.ts");
-  const { createMemoryWorkspaceStore } = await import("./workspace-store.ts");
-  const { createMemoryChatStore } = await import("./chat-store.ts");
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    workspaces: createMemoryWorkspaceStore(),
-    chats: createMemoryChatStore(),
   });
   const fetch = async (input: string | Request, init?: RequestInit) => app.request(input, init);
   return { fetch, store };

@@ -51,6 +51,14 @@ function parseExtraAppDbTargets(raw: string | undefined): AppDbTarget[] {
 /** buildOpts plus what service entries need beyond the orchestrator's opts. */
 export type ServiceConfig = OrchestratorOpts & {
   /**
+   * Studio project workspaces and chat histories. Built here because this is
+   * the one place that wires the platform database, but deliberately NOT part
+   * of `OrchestratorOpts`/`HonoEnv` — only the studio service reads them, and
+   * it injects them through its own `StudioHonoEnv` bindings.
+   */
+  workspaces: WorkspaceStore;
+  chats: ChatStore;
+  /**
    * The platform admin SQL executor when a platform database is configured
    * and this is not local dev — the studio entry builds its Postgres rate
    * limiters on it. Absent means "use in-memory equivalents".

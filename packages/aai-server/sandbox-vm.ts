@@ -18,6 +18,7 @@ import { performance } from "node:perf_hooks";
 import type { Db } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
+import { resolveHarnessPath } from "./constants.ts";
 import { spawnModalWarm } from "./modal-sandbox.ts";
 import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
@@ -53,6 +54,11 @@ export type SandboxHandle = {
  */
 export type WarmHarness = {
   conn: GuestConnection;
+  /**
+   * The guest's origin (`ws(s)://host:port`). Every guest surface derives
+   * from this via GUEST_ROUTES, rather than each consumer rebuilding URLs.
+   */
+  guestOrigin: string;
   /** Public client-session endpoint on the sandbox's tunnel. */
   sessionUrl: string;
   cleanup: () => Promise<void>;
@@ -166,6 +172,34 @@ export async function spawnWarmHarness(opts: {
   }
 }
 
+// ── Warm-harness acquisition ─────────────────────────────────────────────────
+
+/**
+ * Get a warm harness: a pooled one when the caller holds a pool, else a cold
+ * spawn. `acquire()` returns null when the pool is empty or its harnesses are
+ * dead.
+ *
+ * Every guest consumer needs this and each used to write it out, so the
+ * `harnessPath ?? resolveHarnessPath()` default was restated per site and the
+ * naive form was what a new consumer got by default. Note this covers only
+ * *acquisition* — the pooled-harness-died-before-first-use retry stays in
+ * `createSandboxVm`, because recovering from it means redoing that caller's
+ * whole configure step, which differs per consumer.
+ */
+export function acquireWarmHarness(
+  opts: {
+    pool?: { acquire(): Promise<WarmHarness | null> } | undefined;
+    harnessPath?: string | undefined;
+    slug: string;
+  },
+  spawn: typeof spawnWarmHarness = spawnWarmHarness,
+): Promise<WarmHarness> {
+  const harnessPath = opts.harnessPath ?? resolveHarnessPath();
+  return Promise.resolve(opts.pool?.acquire() ?? null).then(
+    (pooled) => pooled ?? spawn({ harnessPath, slug: opts.slug }),
+  );
+}
+
 // ── Bundle inspection ────────────────────────────────────────────────────────
 
 /**
@@ -182,12 +216,10 @@ export async function describeBundle(
   opts: { harnessPath: string; workerCode: string; pool?: SandboxPool | undefined },
   spawn: typeof spawnWarmHarness = spawnWarmHarness,
 ): Promise<unknown> {
-  // Prefer a pre-warmed harness when the caller holds a pool — the studio's
-  // Publish path does — falling back to a cold spawn exactly like
-  // `createSandboxVm` above. `acquire()` returns null when the pool is empty.
-  await using warm =
-    (await opts.pool?.acquire()) ??
-    (await spawn({ harnessPath: opts.harnessPath, slug: "studio-inspect" }));
+  await using warm = await acquireWarmHarness(
+    { pool: opts.pool, harnessPath: opts.harnessPath, slug: "studio-inspect" },
+    spawn,
+  );
   // Register the standard guest-RPC handlers (with no db bound) so a
   // bundle whose top level issues a guest→host request gets an error reply
   // instead of wedging the load until the RPC timeout.

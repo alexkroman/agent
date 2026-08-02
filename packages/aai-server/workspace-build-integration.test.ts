@@ -23,7 +23,6 @@ import type { AddressInfo } from "node:net";
 import { Readable } from "node:stream";
 import { type ServerType, serve } from "@hono/node-server";
 import { afterAll, beforeAll, describe, expect, test } from "vitest";
-import { createMemoryChatStore } from "./chat-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { registerGuestRpcHandlers } from "./sandbox-guest-rpc.ts";
@@ -31,7 +30,6 @@ import { createSlotCache } from "./sandbox-slots.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import { createTestStore, TEST_AGENT_CONFIG } from "./test-utils.ts";
 import { dialGuest, getFreePort, warmFromGuest } from "./warm-harness.ts";
-import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 const AGENT_TS = `import { agent } from "@alexkroman1/aai";
 
@@ -81,7 +79,7 @@ async function spawnTestHarness(): Promise<WarmHarness> {
       proc,
       terminate,
       ws,
-      sessionUrl: `ws://127.0.0.1:${port}/websocket`,
+      origin: `ws://127.0.0.1:${port}`,
     });
   } catch (err) {
     await terminate();
@@ -101,8 +99,6 @@ describe("guest workspace/deploy (Publish = aai deploy in the sandbox)", () => {
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      workspaces: createMemoryWorkspaceStore(),
-      chats: createMemoryChatStore(),
       inspect: async () => TEST_AGENT_CONFIG,
     });
     const port = await new Promise<number>((resolve) => {

@@ -6,7 +6,6 @@
  * orchestrator-security.test.ts.
  */
 import { describe, expect, test } from "vitest";
-import { createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
@@ -16,7 +15,6 @@ import {
   deployAgent,
   deployBody,
 } from "./test-utils.ts";
-import { createMemoryWorkspaceStore } from "./workspace-store.ts";
 
 // ── Slug Validation & Path Traversal ───────────────────────────────────
 
@@ -109,8 +107,6 @@ describe("security headers on all response types", () => {
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      workspaces: createMemoryWorkspaceStore(),
-      chats: createMemoryChatStore(),
     });
     const res = await app.fetch(new Request("http://localhost/health"));
 
@@ -126,8 +122,6 @@ describe("security headers on all response types", () => {
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      workspaces: createMemoryWorkspaceStore(),
-      chats: createMemoryChatStore(),
     });
     const res = await app.fetch(new Request("http://localhost/nonexistent"));
 
@@ -160,8 +154,6 @@ describe("security headers on all response types", () => {
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      workspaces: createMemoryWorkspaceStore(),
-      chats: createMemoryChatStore(),
       allowedOrigins: ["https://trusted.example.com"],
     });
 
@@ -189,8 +181,6 @@ describe("security headers on all response types", () => {
     const { app } = createOrchestrator({
       slots: createSlotCache(),
       store,
-      workspaces: createMemoryWorkspaceStore(),
-      chats: createMemoryChatStore(),
     });
 
     const res = await app.fetch(

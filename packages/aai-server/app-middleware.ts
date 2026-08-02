@@ -13,8 +13,11 @@ import { secureHeaders } from "hono/secure-headers";
 import type { HonoEnv } from "./context.ts";
 import { createErrorHandler } from "./error-handler.ts";
 
-export function applyPlatformMiddleware(
-  app: Hono<HonoEnv>,
+export function applyPlatformMiddleware<E extends HonoEnv>(
+  // Generic over the env so a service that ADDS bindings (the studio's
+  // StudioHonoEnv) can share this: Hono's env parameter is invariant, so a
+  // concrete `Hono<HonoEnv>` would reject a superset.
+  app: Hono<E>,
   allowedOrigins: string[] | undefined,
 ): void {
   app.use(

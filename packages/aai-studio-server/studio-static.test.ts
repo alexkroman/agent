@@ -4,12 +4,12 @@
  * does: talk straight to the project's guest sandbox (chat + tool labels).
  * A `connect-src` that omits it fails in the browser as a bare
  * "Failed to fetch" with nothing at all on the server, so these tests tie
- * the policy to the URL `chatUrlFromSessionUrl` really produces for each
+ * the policy to the URL `chatUrlForGuest` really produces for each
  * backend rather than to a hand-copied hostname literal.
  */
 
 import { describe, expect, it } from "vitest";
-import { chatUrlFromSessionUrl } from "./studio-session-broker.ts";
+import { chatUrlForGuest } from "./studio-session-broker.ts";
 import { studioCsp } from "./studio-static.ts";
 
 /** The `connect-src` sources from a CSP string. */
@@ -50,13 +50,13 @@ describe("studioCsp", () => {
 
   it("permits the Modal sandbox chat origin in production", () => {
     const csp = studioCsp({ SANDBOX_BACKEND: "modal" });
-    const chatUrl = chatUrlFromSessionUrl("wss://ab12cd-8080.modal.host:443/websocket");
+    const chatUrl = chatUrlForGuest("wss://ab12cd-8080.modal.host:443");
     expect(allowsOrigin(csp, chatUrl)).toBe(true);
   });
 
   it("permits the loopback sandbox chat origin under subprocess", () => {
     const csp = studioCsp({ SANDBOX_BACKEND: "subprocess" });
-    const chatUrl = chatUrlFromSessionUrl("ws://127.0.0.1:55251/websocket");
+    const chatUrl = chatUrlForGuest("ws://127.0.0.1:55251");
     expect(allowsOrigin(csp, chatUrl)).toBe(true);
   });
 

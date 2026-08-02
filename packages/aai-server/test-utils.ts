@@ -148,8 +148,6 @@ export async function createTestOrchestrator(
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
-    workspaces,
-    chats,
     // The real default spins a Modal sandbox to read the worker's
     // `__aaiConfig` self-description; tests answer with the standard config.
     inspect: async () => TEST_AGENT_CONFIG,

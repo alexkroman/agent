@@ -7,13 +7,23 @@
  * mounted the studio routes in-process.
  */
 
+import type { ChatStore } from "aai-server/chat-store";
 import type { OrchestratorOpts } from "aai-server/orchestrator";
 import { createMemorySecretStore } from "aai-server/secret-store";
 import { isStudioPath } from "aai-server/studio-proxy";
 import { createTestOrchestrator, type TestFetch } from "aai-server/test-utils";
+import type { WorkspaceStore } from "aai-server/workspace-store";
 import { createStudioApp } from "./studio-app.ts";
 
-export async function createTestCombined(overrides: Partial<OrchestratorOpts> = {}) {
+/** Combined-mode harness: agent orchestrator + studio app in one fetch. */
+type CombinedOverrides = Partial<OrchestratorOpts> & {
+  // The studio stores are the studio's, not the orchestrator's — see
+  // StudioHonoEnv. Accepted here because this harness builds both apps.
+  workspaces?: WorkspaceStore;
+  chats?: ChatStore;
+};
+
+export async function createTestCombined(overrides: CombinedOverrides = {}) {
   const secrets = overrides.secrets ?? createMemorySecretStore();
   const orch = await createTestOrchestrator({ ...overrides, secrets });
   const { app: studioApp } = createStudioApp({

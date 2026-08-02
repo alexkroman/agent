@@ -120,12 +120,15 @@ describe("POST /deploy body handling", () => {
   });
 });
 
-// ── defaultEnv (deployAgentBundle) ────────────────────────────────────────
+// ── Env merge (deployAgentBundle) ─────────────────────────────────────────
+// The server-side `defaultEnv` floor is gone — seeding a caller's own key is
+// the CLI's job (`aai deploy` merges it client-side, and studio Publish runs
+// that same CLI in-guest). What the server still owns is the precedence
+// between what is already stored and what this deploy sends.
 
-describe("deployAgentBundle defaultEnv", () => {
+describe("deployAgentBundle env merge", () => {
   async function deployWith(params: {
     store: ReturnType<typeof createTestStore>;
-    defaultEnv?: Record<string, string>;
     env?: Record<string, string>;
   }) {
     return await deployAgentBundle(
@@ -137,56 +140,42 @@ describe("deployAgentBundle defaultEnv", () => {
         clientFiles: {},
         agentConfig: TEST_AGENT_CONFIG,
         ...(params.env && { env: params.env }),
-        ...(params.defaultEnv && { defaultEnv: params.defaultEnv }),
       },
     );
   }
 
-  test("fills in a key absent from both stored and explicit env", async () => {
-    const store = createTestStore();
-    const outcome = await deployWith({ store, defaultEnv: { ASSEMBLYAI_API_KEY: "fallback" } });
-    expect(outcome.ok).toBe(true);
-    expect(await store.getEnv("my-agent")).toEqual({ ASSEMBLYAI_API_KEY: "fallback" });
-  });
-
-  test("a stored value wins over defaultEnv", async () => {
+  test("an explicit deploy-time value wins over the stored one", async () => {
     const store = createTestStore();
     await store.putAgent({
       slug: "my-agent",
-      env: { ASSEMBLYAI_API_KEY: "user-set" },
+      env: { ASSEMBLYAI_API_KEY: "stored" },
       worker: "w",
       clientFiles: {},
       credential_hashes: [await hashApiKey("key1")],
       agentConfig: TEST_AGENT_CONFIG,
     });
-    await deployWith({ store, defaultEnv: { ASSEMBLYAI_API_KEY: "fallback" } });
-    expect(await store.getEnv("my-agent")).toEqual({ ASSEMBLYAI_API_KEY: "user-set" });
-  });
 
-  test("an explicit deploy-time value wins over defaultEnv", async () => {
-    const store = createTestStore();
-    await deployWith({
-      store,
-      defaultEnv: { ASSEMBLYAI_API_KEY: "fallback" },
-      env: { ASSEMBLYAI_API_KEY: "explicit" },
-    });
+    await deployWith({ store, env: { ASSEMBLYAI_API_KEY: "explicit" } });
+
     expect(await store.getEnv("my-agent")).toEqual({ ASSEMBLYAI_API_KEY: "explicit" });
   });
 
-  test("defaultEnv does not disturb unrelated stored keys", async () => {
+  test("a deploy keeps stored keys it does not mention", async () => {
     const store = createTestStore();
     await store.putAgent({
       slug: "my-agent",
-      env: { OTHER: "kept" },
+      env: { OTHER: "kept", ASSEMBLYAI_API_KEY: "stored" },
       worker: "w",
       clientFiles: {},
       credential_hashes: [await hashApiKey("key1")],
       agentConfig: TEST_AGENT_CONFIG,
     });
-    await deployWith({ store, defaultEnv: { ASSEMBLYAI_API_KEY: "fallback" } });
+
+    await deployWith({ store, env: { ASSEMBLYAI_API_KEY: "explicit" } });
+
     expect(await store.getEnv("my-agent")).toEqual({
       OTHER: "kept",
-      ASSEMBLYAI_API_KEY: "fallback",
+      ASSEMBLYAI_API_KEY: "explicit",
     });
   });
 });

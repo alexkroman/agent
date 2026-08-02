@@ -36,6 +36,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
 import { ModalClient, type SandboxCreateParams } from "modal";
 import { debug } from "./_debug-log.ts";
+import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { createHarnessImageResolver, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import {
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
@@ -206,14 +207,14 @@ function warmFromModal(
   sb: ModalSandboxLike,
   proc: ModalProcLike,
   ws: RpcWebSocket,
-  sessionUrl: string,
+  origin: string,
 ): WarmHarness {
   return warmFromGuest({
     label: `modal:${sb.sandboxId}`,
     proc,
     terminate: () => sb.terminate(),
     ws,
-    sessionUrl,
+    origin,
   });
 }
 
@@ -281,11 +282,11 @@ export async function spawnModalWarm(
     if (!tunnel) {
       throw new Error(`no tunnel for guest port ${GUEST_PORT}`);
     }
-    const ws = await dial(`wss://${tunnel.host}:${tunnel.port}/ws`, token);
-    // The PUBLIC client-session endpoint on the same tunnel — handed to
-    // browsers by the platform's client-config broker. Auth-free by design
-    // (parity with the platform's always-public agent WebSocket).
-    const sessionUrl = `wss://${tunnel.host}:${tunnel.port}/websocket`;
+    // One origin; every guest surface (the bearer-gated control channel, the
+    // PUBLIC auth-free client-session endpoint, the studio chat) derives from
+    // it via GUEST_ROUTES.
+    const origin = `wss://${tunnel.host}:${tunnel.port}`;
+    const ws = await dial(guestWsUrl(origin, GUEST_ROUTES.control), token);
 
     debug("Modal sandbox spawned", {
       sandboxId: sb.sandboxId,
@@ -293,7 +294,7 @@ export async function spawnModalWarm(
       ms: Math.round(performance.now() - t0),
     });
 
-    return warmFromModal(sb, proc, ws, sessionUrl);
+    return warmFromModal(sb, proc, ws, origin);
   } catch (err) {
     // Never leak a sandbox whose harness failed to start.
     await sb.terminate().catch(() => undefined);

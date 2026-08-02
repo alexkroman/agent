@@ -27,12 +27,12 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
-import type { HonoEnv } from "aai-server/context";
 import { authMw } from "aai-server/middleware";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import type { StudioHonoEnv } from "./studio-context.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
 import {
@@ -69,8 +69,8 @@ export type StudioRouteOptions = {
   deployProject?: typeof deployStudioProject;
   /** Test seam: swap the coding-agent session broker. */
   broker?: (stores: {
-    workspaces: HonoEnv["Bindings"]["workspaces"];
-    chats: HonoEnv["Bindings"]["chats"];
+    workspaces: StudioHonoEnv["Bindings"]["workspaces"];
+    chats: StudioHonoEnv["Bindings"]["chats"];
   }) => StudioSessionBroker;
 };
 
@@ -82,7 +82,7 @@ export type StudioRouteOptions = {
  * (combined/dev, where they are the same thing).
  */
 export function requestPublicOrigin(
-  c: Context<HonoEnv>,
+  c: Context<StudioHonoEnv>,
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const configured = env.AAI_PUBLIC_ORIGIN?.trim();
@@ -100,7 +100,7 @@ function validateProject(name: string | undefined): string {
 }
 
 export function createStudioRoutes(options: StudioRouteOptions = {}): {
-  routes: Hono<HonoEnv>;
+  routes: Hono<StudioHonoEnv>;
   /**
    * Tear down the broker's per-project sandboxes. A no-op when no session
    * request ever built the lazy broker.
@@ -111,7 +111,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // One broker per app instance, created lazily on the first session request
   // (the stores ride on the request env). Per-replica, like the slot cache.
   let broker: StudioSessionBroker | undefined;
-  const ensureBroker = (c: Context<HonoEnv>): StudioSessionBroker => {
+  const ensureBroker = (c: Context<StudioHonoEnv>): StudioSessionBroker => {
     broker ??= (options.broker ?? createStudioSessionBroker)({
       workspaces: c.env.workspaces,
       chats: c.env.chats,
@@ -120,7 +120,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     return broker;
   };
 
-  const studio = new Hono<HonoEnv>();
+  const studio = new Hono<StudioHonoEnv>();
 
   // Per-scope fixed-window limits (see studio-rate-limit.ts). The LLM runs
   // on the caller's own key, so the limiter is no longer guarding a

@@ -93,3 +93,53 @@ describe("failure posture", () => {
     warn.mockRestore();
   });
 });
+
+// ── Read caching (Postgres implementation) ────────────────────────────────
+
+describe("createPgSlugEpochs read cache", () => {
+  function countingSql(epoch = 3) {
+    const calls: string[] = [];
+    const sql = (text: string) => {
+      calls.push(text);
+      return Promise.resolve(text.startsWith("select") ? [{ epoch }] : []);
+    };
+    return {
+      sql: sql as unknown as SqlExec,
+      selects: () => calls.filter((c) => c.startsWith("select")).length,
+    };
+  }
+
+  test("repeated reads of one slug hit the database once", async () => {
+    const { sql, selects } = countingSql();
+    const epochs = createPgSlugEpochs(sql);
+
+    expect(await epochs.get("a")).toBe(3);
+    expect(await epochs.get("a")).toBe(3);
+    expect(await epochs.get("a")).toBe(3);
+
+    expect(selects()).toBe(1);
+  });
+
+  test("distinct slugs are cached separately", async () => {
+    const { sql, selects } = countingSql();
+    const epochs = createPgSlugEpochs(sql);
+
+    await epochs.get("a");
+    await epochs.get("b");
+
+    expect(selects()).toBe(2);
+  });
+
+  // The TTL may hide another replica's bump for up to a second; it must never
+  // hide this replica's own.
+  test("a local bump invalidates the cached read immediately", async () => {
+    const { sql, selects } = countingSql();
+    const epochs = createPgSlugEpochs(sql);
+
+    await epochs.get("a");
+    await epochs.bump("a");
+    await epochs.get("a");
+
+    expect(selects()).toBe(2);
+  });
+});
