@@ -18,6 +18,7 @@
  */
 
 import picomatch from "picomatch";
+import { errMsg } from "./harness-rpc.ts";
 import { MAX_STUDIO_FILES } from "./limits.ts";
 
 /** Matches returned before the result is capped. */
@@ -28,7 +29,7 @@ const MAX_LINE_LENGTH = 200;
  * Lines longer than this are not matched against at all — a perf guard so a
  * minified or data line doesn't dominate the scan budget. (It is NOT the
  * backtracking bound: catastrophic patterns explode at tens of characters;
- * the scan worker's terminate deadline is what bounds those.)
+ * the per-tool deadline in studio-tools.ts is what bounds those.)
  */
 const MAX_SEARCHABLE_LINE = 10_000;
 
@@ -43,11 +44,6 @@ export type GrepOptions = {
 /** Thrown for an input the caller can fix (a bad regex); surfaced to the agent. */
 export class StudioGrepError extends Error {}
 
-// Local rather than aai's errorMessage: this module loads in the worker
-// thread, where an import of the SDK barrel would drag its whole graph
-// through node's type stripping for two catch blocks.
-const messageOf = (err: unknown): string => (err instanceof Error ? err.message : String(err));
-
 const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 
 /**
@@ -55,11 +51,11 @@ const escapeRegex = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/g
  * segment, `**` across segments, `?`, braces, extglobs). `dot: true` because
  * workspace files like `.env` must match `*` the way `path:` output implies.
  */
-function globMatcher(glob: string): (path: string) => boolean {
+export function globMatcher(glob: string): (path: string) => boolean {
   try {
     return picomatch(glob, { dot: true });
   } catch (err) {
-    throw new StudioGrepError(`Invalid glob ${JSON.stringify(glob)}: ${messageOf(err)}`, {
+    throw new StudioGrepError(`Invalid glob ${JSON.stringify(glob)}: ${errMsg(err)}`, {
       cause: err,
     });
   }
@@ -71,7 +67,7 @@ function buildMatcher(pattern: string, opts: GrepOptions): RegExp {
     return new RegExp(source, opts.ignoreCase ? "i" : "");
   } catch (err) {
     throw new StudioGrepError(
-      `Invalid regex ${JSON.stringify(pattern)}: ${messageOf(err)}. ` +
+      `Invalid regex ${JSON.stringify(pattern)}: ${errMsg(err)}. ` +
         "Pass literal: true to search for it as plain text.",
       { cause: err },
     );

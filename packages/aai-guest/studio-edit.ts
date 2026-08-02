@@ -93,10 +93,6 @@ function normalizeWithMap(text: string): NormalizedText {
   return { normalized: out.join(""), map };
 }
 
-function normalizeForFuzzyMatch(text: string): string {
-  return normalizeWithMap(text).normalized;
-}
-
 type Match = {
   /** Replacement region in the original text: `[start, end)`. */
   start: number;
@@ -119,7 +115,7 @@ function findText(haystack: string, needle: string): Match | null {
   }
 
   const { normalized, map } = normalizeWithMap(haystack);
-  const fuzzyNeedle = normalizeForFuzzyMatch(needle);
+  const fuzzyNeedle = normalizeWithMap(needle).normalized;
   if (fuzzyNeedle.length === 0) return null;
   const fuzzy = normalized.indexOf(fuzzyNeedle);
   if (fuzzy === -1) return null;

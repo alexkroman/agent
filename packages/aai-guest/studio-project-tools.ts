@@ -19,15 +19,16 @@
  * client.tsx) rather than writing a file that breaks at publish time.
  */
 
-import { spawn } from "node:child_process";
 import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { safeFetch } from "@alexkroman1/aai/runtime";
 import { generateText, type LanguageModel, type ToolSet, tool } from "ai";
 import { z } from "zod";
+import { errMsg } from "./harness-rpc.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
+import { envWithoutGuestToken, runCapped } from "./studio-spawn.ts";
 import { STUDIO_TOOL_DESCRIPTIONS } from "./studio-tool-descriptions.ts";
-import { resolveInside } from "./studio-tools.ts";
+import { resolveInside } from "./studio-workspace-fs.ts";
 
 /** Wall-clock limit for one npm install/uninstall. */
 const NPM_TIMEOUT_MS = 110_000;
@@ -56,29 +57,23 @@ const NPM_INFO_FIELDS = [
   "peerDependencies",
 ];
 
-function runNpm(dir: string, args: string[]): Promise<{ exitCode: number | null; output: string }> {
-  const env = { ...process.env };
-  delete env.AAI_GUEST_TOKEN;
-  return new Promise((resolve, reject) => {
-    const child = spawn("npm", [...args, "--no-audit", "--no-fund", "--loglevel=error"], {
-      cwd: dir,
-      env,
-      timeout: NPM_TIMEOUT_MS,
-    });
-    let out = "";
-    const keep = (chunk: Buffer) => {
-      out = (out + chunk.toString()).slice(-NPM_OUTPUT_CAP);
-    };
-    child.stdout.on("data", keep);
-    child.stderr.on("data", keep);
-    child.on("error", reject);
-    child.on("close", (code, signal) => {
-      resolve({
-        exitCode: code,
-        output: signal ? `${out}\n[killed by ${signal} after ${NPM_TIMEOUT_MS}ms]` : out,
-      });
-    });
+async function runNpm(
+  dir: string,
+  args: string[],
+): Promise<{ exitCode: number | null; output: string }> {
+  const result = await runCapped("npm", [...args, "--no-audit", "--no-fund", "--loglevel=error"], {
+    cwd: dir,
+    env: envWithoutGuestToken(),
+    timeoutMs: NPM_TIMEOUT_MS,
+    cap: NPM_OUTPUT_CAP,
+    combineStreams: true,
   });
+  return {
+    exitCode: result.exitCode,
+    output: result.signal
+      ? `${result.stdout}\n[killed by ${result.signal} after ${NPM_TIMEOUT_MS}ms]`
+      : result.stdout,
+  };
 }
 
 async function npmTool(dir: string, verb: "install" | "uninstall", spec: string): Promise<string> {
@@ -93,7 +88,7 @@ async function npmTool(dir: string, verb: "install" | "uninstall", spec: string)
     }
     return `npm ${verb} ${spec} failed [exit code ${exitCode}]\n${body || "(no output)"}`;
   } catch (err) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`;
+    return `Error: ${errMsg(err)}`;
   }
 }
 
@@ -102,13 +97,13 @@ async function downloadToWorkspace(dir: string, url: string, rel: string): Promi
   try {
     abs = resolveInside(dir, rel);
   } catch (err) {
-    return `Error: ${err instanceof Error ? err.message : String(err)}`;
+    return `Error: ${errMsg(err)}`;
   }
   let response: Response;
   try {
     response = await safeFetch(url, { signal: AbortSignal.timeout(DOWNLOAD_TIMEOUT_MS) });
   } catch (err) {
-    return `Error: fetch failed: ${err instanceof Error ? err.message : String(err)}`;
+    return `Error: fetch failed: ${errMsg(err)}`;
   }
   if (!response.ok) return `Error: ${url} answered ${response.status} ${response.statusText}`;
   const bytes = new Uint8Array(await response.arrayBuffer());
@@ -151,7 +146,7 @@ export function createProjectTools(deps: ProjectToolDeps): ToolSet {
             ? "Typecheck skipped: the workspace has no tsconfig.json"
             : "No type errors";
         } catch (err) {
-          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+          return `Error: ${errMsg(err)}`;
         }
       },
     }),
@@ -172,7 +167,7 @@ export function createProjectTools(deps: ProjectToolDeps): ToolSet {
           }
           return body || `No registry metadata for ${spec}`;
         } catch (err) {
-          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+          return `Error: ${errMsg(err)}`;
         }
       },
     }),
@@ -238,7 +233,7 @@ export function createDesignInspirationTool(model: LanguageModel): ToolSet {
           });
           return text;
         } catch (err) {
-          return `Error: ${err instanceof Error ? err.message : String(err)}`;
+          return `Error: ${errMsg(err)}`;
         }
       },
     }),

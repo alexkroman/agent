@@ -17,17 +17,22 @@
  * deadlock first publishes of agents that need third-party keys.
  */
 
-import { spawn } from "node:child_process";
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
+import { errMsg } from "./harness-rpc.ts";
 import { scrubDir } from "./studio-build.ts";
-import { ensureProjectShape } from "./studio-project-shape.ts";
+import { ensureProjectShape, fileExists } from "./studio-project-shape.ts";
+import {
+  CLI_OUTPUT_CAP,
+  parseLastJsonLine,
+  pathOnlyEnv,
+  runCapped,
+  type SpawnCappedResult,
+} from "./studio-spawn.ts";
 
 /** Wall-clock cap for one `aai deploy` run (cold build + upload). */
 const DEPLOY_TIMEOUT_MS = 300_000;
-/** Output tail kept per stream. */
-const OUTPUT_CAP = 32_000;
 
 export type GuestPublishResult = {
   ok: boolean;
@@ -64,7 +69,7 @@ export async function resolveCliEntry(): Promise<string> {
           .filter((bin): bin is string => Boolean(bin))
           .map((bin) => path.join(dir, bin));
         for (const candidate of candidates) {
-          if (await exists(candidate)) return candidate;
+          if (await fileExists(candidate)) return candidate;
         }
         throw new Error(`@alexkroman1/aai-cli's bin entry is missing (tried ${candidates.length})`);
       }
@@ -76,51 +81,10 @@ export async function resolveCliEntry(): Promise<string> {
   throw new Error("Could not locate @alexkroman1/aai-cli's package root");
 }
 
-/** Run one child process, capturing capped output tails. */
-function run(
-  cmd: string,
-  args: string[],
-  opts: { cwd: string; env: Record<string, string> },
-): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
-  return new Promise((resolve, reject) => {
-    const child = spawn(cmd, args, { ...opts, timeout: DEPLOY_TIMEOUT_MS });
-    let stdout = "";
-    let stderr = "";
-    const keep = (s: string) => (s.length > OUTPUT_CAP ? `…${s.slice(-OUTPUT_CAP)}` : s);
-    child.stdout.on("data", (chunk: Buffer) => {
-      stdout = keep(stdout + chunk.toString());
-    });
-    child.stderr.on("data", (chunk: Buffer) => {
-      stderr = keep(stderr + chunk.toString());
-    });
-    child.on("error", reject);
-    child.on("close", (code, signal) => {
-      if (signal) {
-        reject(new Error(`aai deploy killed by ${signal} after ${DEPLOY_TIMEOUT_MS}ms`));
-        return;
-      }
-      resolve({ exitCode: code, stdout, stderr });
-    });
-  });
-}
-
 /** The CLI's one-line `--json` result (see aai-cli/_output.ts). */
 type CliResult =
   | { ok: true; data: { slug: string; url: string; warnings?: string[] } }
   | { ok: false; error: string; code: string; hint?: string };
-
-function parseCliResult(stdout: string): CliResult | null {
-  const line = stdout
-    .split("\n")
-    .filter((l) => l.trim().length > 0)
-    .at(-1);
-  if (!line) return null;
-  try {
-    return JSON.parse(line) as CliResult;
-  } catch {
-    return null;
-  }
-}
 
 /**
  * Run `aai deploy` against a materialized workspace directory.
@@ -145,7 +109,7 @@ export async function deployWorkspaceDir(
   } catch (err) {
     return {
       ok: false,
-      output: `Publish toolchain unavailable in this sandbox: ${errMessage(err)}`,
+      output: `Publish toolchain unavailable in this sandbox: ${errMsg(err)}`,
     };
   }
 
@@ -168,24 +132,26 @@ export async function deployWorkspaceDir(
     );
   }
 
-  let result: Awaited<ReturnType<typeof run>>;
+  let result: SpawnCappedResult;
   try {
-    result = await run(
+    result = await runCapped(
       process.execPath,
       [cliEntry, "deploy", "--server", opts.serverUrl, "--json", "--allow-missing-secrets"],
       {
         cwd: dir,
-        env: {
-          AAI_CONFIG_DIR: configHome,
-          ...(process.env.PATH === undefined ? {} : { PATH: process.env.PATH }),
-        },
+        env: { AAI_CONFIG_DIR: configHome, ...pathOnlyEnv() },
+        timeoutMs: DEPLOY_TIMEOUT_MS,
+        cap: CLI_OUTPUT_CAP,
       },
     );
+    if (result.signal) {
+      throw new Error(`aai deploy killed by ${result.signal} after ${DEPLOY_TIMEOUT_MS}ms`);
+    }
   } catch (err) {
-    return { ok: false, output: `aai deploy failed to run: ${errMessage(err)}` };
+    return { ok: false, output: `aai deploy failed to run: ${errMsg(err)}` };
   }
 
-  const parsed = parseCliResult(result.stdout);
+  const parsed = parseLastJsonLine<CliResult>(result.stdout);
   const stderrTail = result.stderr.trim();
   if (parsed?.ok) {
     const warnings = parsed.data.warnings ?? [];
@@ -213,15 +179,4 @@ export async function deployWorkspaceDir(
       dir,
     ),
   };
-}
-
-async function exists(p: string): Promise<boolean> {
-  return await readFile(p, "utf-8").then(
-    () => true,
-    () => false,
-  );
-}
-
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

@@ -21,7 +21,6 @@
  * here).
  */
 
-import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
 import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAI } from "@alexkroman1/aai/llm";
@@ -37,19 +36,16 @@ import {
   type UIMessage,
 } from "ai";
 import type { z } from "zod";
-import { hostRequest } from "./harness-rpc.ts";
+import { verifyBearer } from "./harness-auth.ts";
+import { errMsg, hostRequest } from "./harness-rpc.ts";
 import { buildWorkspaceDir, typecheckWorkspaceDir, workspacesRoot } from "./studio-build.ts";
 import { compactMessages, needsCompaction } from "./studio-compaction.ts";
 import { ensureProjectShape } from "./studio-project-shape.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import { createToolCallRepair } from "./studio-tool-repair.ts";
-import {
-  createStudioTools,
-  materializeWorkspace,
-  STUDIO_TOOL_LABELS,
-  snapshotWorkspace,
-} from "./studio-tools.ts";
+import { createStudioTools, STUDIO_TOOL_LABELS, withToolDeadlines } from "./studio-tools.ts";
 import { createTurnBudget } from "./studio-turn-budget.ts";
+import { materializeWorkspace, snapshotWorkspace } from "./studio-workspace-fs.ts";
 
 /** Matches the host store's whole-conversation byte cap (4 MB). */
 const MAX_CHAT_BODY_BYTES = 4_000_000;
@@ -96,12 +92,6 @@ export async function initStudioSession(params: StudioSessionParams): Promise<St
   // store at end of turn like everything else in the workspace.
   await ensureProjectShape(dir);
   return { ...params, dir };
-}
-
-function constantTimeEquals(a: string, b: string): boolean {
-  const ab = Buffer.from(a);
-  const bb = Buffer.from(b);
-  return ab.length === bb.length && timingSafeEqual(ab, bb);
 }
 
 const CORS_HEADERS: Record<string, string> = {
@@ -182,8 +172,11 @@ export function createGuestWebTools(): ToolSet {
 async function settleTurn(session: StudioSession, messages: UIMessage[]): Promise<void> {
   const { files, warnings } = await snapshotWorkspace(session.dir);
   for (const warning of warnings) console.error(`studio sync: ${warning}`);
-  await hostRequest("studio/sync-workspace", { files, done: true }, SYNC_RPC_TIMEOUT_MS);
-  await hostRequest("studio/persist-chat", { messages }, SYNC_RPC_TIMEOUT_MS);
+  // Independent stores — no reason to pay two 30s worst cases in sequence.
+  await Promise.all([
+    hostRequest("studio/sync-workspace", { files, done: true }, SYNC_RPC_TIMEOUT_MS),
+    hostRequest("studio/persist-chat", { messages }, SYNC_RPC_TIMEOUT_MS),
+  ]);
 }
 
 /**
@@ -192,7 +185,7 @@ async function settleTurn(session: StudioSession, messages: UIMessage[]): Promis
  * Read-only tools are excluded so a turn that only searches and reads never
  * pays for a snapshot.
  */
-const MUTATING_TOOLS = new Set([
+export const MUTATING_TOOLS: ReadonlySet<string> = new Set([
   "write_file",
   "edit_file",
   "delete_file",
@@ -235,11 +228,7 @@ function createWorkspaceCheckpointer(session: StudioSession): () => void {
       .catch((err: unknown) => {
         // Never fatal — a lost checkpoint costs recoverable work, while a
         // thrown one would kill a reply that is otherwise fine.
-        console.error(
-          `studio chat: workspace checkpoint failed: ${
-            err instanceof Error ? err.message : String(err)
-          }`,
-        );
+        console.error(`studio chat: workspace checkpoint failed: ${errMsg(err)}`);
       })
       .finally(() => {
         inFlight = null;
@@ -302,11 +291,7 @@ async function runTurn(
   // killed first turn erased the whole transcript.
   void hostRequest("studio/persist-chat", { messages }, SYNC_RPC_TIMEOUT_MS).catch(
     (err: unknown) => {
-      console.error(
-        `studio chat: failed to persist inbound messages: ${
-          err instanceof Error ? err.message : String(err)
-        }`,
-      );
+      console.error(`studio chat: failed to persist inbound messages: ${errMsg(err)}`);
     },
   );
 
@@ -316,8 +301,10 @@ async function runTurn(
     model,
     system: session.system,
     messages: await convertToModelMessages(messages, { ignoreIncompleteToolCalls: true }),
-    // Studio tools last: a web builtin may never shadow write_file.
-    tools: {
+    // Studio tools last: a web builtin may never shadow write_file. The
+    // deadline wrap goes around the MERGED set so every tool family — web,
+    // design, project, studio — shares the per-call timeout.
+    tools: withToolDeadlines({
       ...createGuestWebTools(),
       ...createDesignInspirationTool(model),
       ...createProjectTools({
@@ -332,7 +319,7 @@ async function runTurn(
         loadBundle: deps.loadBundle,
         executeTool: deps.executeTool,
       }),
-    },
+    }),
     abortSignal: abort.signal,
     // Checkpoint after any step that touched the filesystem — see
     // createWorkspaceCheckpointer for why this is not left to onFinish.
@@ -376,12 +363,10 @@ async function runTurn(
     // logged, never fatal: losing one snapshot must not kill the reply.
     onFinish: ({ messages: updated }) => {
       void settleTurn(session, updated).catch((err: unknown) => {
-        console.error(
-          `studio chat: failed to settle turn: ${err instanceof Error ? err.message : String(err)}`,
-        );
+        console.error(`studio chat: failed to settle turn: ${errMsg(err)}`);
       });
     },
-    onError: (error) => (error instanceof Error ? error.message : String(error)),
+    onError: (error) => errMsg(error),
   });
   await result.consumeStream({ onError: () => undefined });
 }
@@ -408,9 +393,7 @@ export function handleStudioRequest(
     sendJson(res, 409, { error: "No studio session loaded — re-open the project" });
     return true;
   }
-  const header = req.headers.authorization ?? "";
-  const bearer = header.startsWith("Bearer ") ? header.slice("Bearer ".length) : "";
-  if (!(bearer && constantTimeEquals(bearer, session.apiKey))) {
+  if (!verifyBearer(req.headers.authorization, session.apiKey)) {
     sendJson(res, 401, { error: "Unauthorized" });
     return true;
   }
@@ -429,7 +412,7 @@ export function handleStudioRequest(
     return true;
   }
   void runTurn(session, deps, req, res).catch((err: unknown) => {
-    const message = err instanceof Error ? err.message : String(err);
+    const message = errMsg(err);
     console.error(`studio chat: turn failed: ${message}`);
     if (!res.headersSent) sendJson(res, 500, { error: message });
     else res.destroy();

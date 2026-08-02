@@ -4,12 +4,15 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
+import { createGuestWebTools, MUTATING_TOOLS } from "./studio-chat.ts";
+import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import {
   createStudioTools,
-  materializeWorkspace,
+  STUDIO_TOOL_LABELS,
   type StudioToolDeps,
-  snapshotWorkspace,
+  withToolDeadlines,
 } from "./studio-tools.ts";
+import { materializeWorkspace, snapshotWorkspace } from "./studio-workspace-fs.ts";
 
 const toolOpts = () => ({ toolCallId: "t1", messages: [] }) as never;
 
@@ -31,7 +34,9 @@ async function makeTools(
     loadBundle: async () => ({ config }),
     executeTool: async (name) => `ran ${name}`,
   };
-  return { tools: createStudioTools(deps), dir };
+  // Wrapped exactly as the chat loop wraps the merged set: the deadline
+  // wrapper also converts thrown errors (path escapes) to error strings.
+  return { tools: withToolDeadlines(createStudioTools(deps)), dir };
 }
 
 describe("guest workspace tools", () => {
@@ -120,6 +125,24 @@ describe("guest workspace tools", () => {
     const { files, warnings } = await snapshotWorkspace(dir);
     expect(Object.keys(files)).toEqual(["a.ts"]);
     expect(warnings.join("\n")).toContain("big.bin");
+  });
+
+  test("tool labels and the mutating set track the merged tool set", async () => {
+    const { tools, dir } = await makeTools({});
+    // The same merge runTurn performs — every family, studio tools last.
+    const merged = {
+      ...createGuestWebTools(),
+      ...createDesignInspirationTool({} as never),
+      ...createProjectTools({ dir, typecheck: async () => ({ ok: true, skipped: true }) }),
+      ...tools,
+    };
+    const names = Object.keys(merged).sort();
+    // A tool without a label renders as raw snake_case in the UI; a label
+    // without a tool is dead weight. Keep the two lists identical.
+    expect(Object.keys(STUDIO_TOOL_LABELS).sort()).toEqual(names);
+    // A file-touching tool missing here loses its edits on a mid-turn crash
+    // (the checkpointer never fires for it).
+    for (const name of MUTATING_TOOLS) expect(names).toContain(name);
   });
 
   test("test_agent builds via the host and trials a tool in place", async () => {

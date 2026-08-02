@@ -15,8 +15,16 @@
  * test files, because agent.test.ts is not runnable in the studio sandbox.
  */
 
-import { readFile, writeFile } from "node:fs/promises";
+import { access, writeFile } from "node:fs/promises";
 import path from "node:path";
+
+/** True when `p` exists (any kind of entry) — no read, just an access probe. */
+export function fileExists(p: string): Promise<boolean> {
+  return access(p).then(
+    () => true,
+    () => false,
+  );
+}
 
 /** Mirrors packages/aai-templates/scaffold/vite.config.ts (drift-guarded). */
 export const WORKSPACE_VITE_CONFIG = `import react from "@vitejs/plugin-react";
@@ -133,12 +141,10 @@ const SHAPE_FILES: Record<string, string> = {
 
 /** Write any missing project-shape files into `dir` (existing files win). */
 export async function ensureProjectShape(dir: string): Promise<void> {
-  for (const [rel, content] of Object.entries(SHAPE_FILES)) {
-    const abs = path.join(dir, rel);
-    const exists = await readFile(abs, "utf-8").then(
-      () => true,
-      () => false,
-    );
-    if (!exists) await writeFile(abs, content, "utf-8");
-  }
+  await Promise.all(
+    Object.entries(SHAPE_FILES).map(async ([rel, content]) => {
+      const abs = path.join(dir, rel);
+      if (!(await fileExists(abs))) await writeFile(abs, content, "utf-8");
+    }),
+  );
 }
