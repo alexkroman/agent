@@ -253,7 +253,15 @@ export function checkMode(config, source) {
   }
   // The three stages must each be declared; the source is the only place the
   // provider kind is visible, since the loaded-config line reports mode only.
-  const missing = ["stt", "llm", "tts"].filter((k) => !new RegExp(`\\b${k}\\s*:`).test(source ?? ""));
+  //
+  // `assemblyAIPipeline()` sets all three at once, so spreading it satisfies
+  // every stage. Without this the check reported "missing stt, llm, tts" for
+  // an agent that had all three — a false negative created the moment the
+  // guide started recommending the preset, which is exactly what it is for.
+  const src = source ?? "";
+  const missing = /assemblyAIPipeline\s*\(/.test(src)
+    ? []
+    : ["stt", "llm", "tts"].filter((k) => !new RegExp(`\\b${k}\\s*:`).test(src));
   return missing.length
     ? { ok: false, note: `pipeline missing stage(s): ${missing.join(", ")}` }
     : { ok: true };

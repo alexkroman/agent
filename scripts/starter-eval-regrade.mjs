@@ -15,10 +15,10 @@
  */
 
 import { readFileSync } from "node:fs";
-import { checkCapabilities, checkUi, EXPECTATIONS } from "./starter-expectations.mjs";
+import { checkCapabilities, checkMode, checkUi, EXPECTATIONS } from "./starter-expectations.mjs";
 
 /** Reasons this script recomputes; anything else is carried through as-is. */
-const RECOMPUTED = /^missing:|^no client\.tsx|shows no live state/;
+const RECOMPUTED = /^missing:|^no client\.tsx|shows no live state|^mode=|^pipeline missing/;
 
 function regrade(run) {
   const expectation = EXPECTATIONS.find((e) => e.label === run.label);
@@ -26,9 +26,13 @@ function regrade(run) {
   if (!expectation || source === undefined) return run;
   const { missing } = checkCapabilities(expectation, { config: null, source });
   const ui = checkUi(expectation, run.files);
+  // Mode is recomputed too: the preset satisfies all three stages, and the
+  // old check only looked for literal `stt:`/`llm:`/`tts:` in source.
+  const mode = checkMode({ mode: "pipeline" }, source);
   const reasons = (run.reasons ?? []).filter((r) => !RECOMPUTED.test(r));
   if (missing.length > 0) reasons.push(`missing:${missing.join("/")}`);
   if (!ui.ok && ui.note) reasons.push(ui.note);
+  if (!mode.ok && mode.note) reasons.push(mode.note);
   return { ...run, reasons, shippable: reasons.length === 0 };
 }
 
