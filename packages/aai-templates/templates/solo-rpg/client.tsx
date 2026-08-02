@@ -11,6 +11,7 @@ import {
   MIN_MOMENTUM,
   type NPC,
   type StoryBlueprint,
+  type TIME_PHASES,
 } from "./shared.ts";
 
 // ── Color Palette ────────────────────────────────────────────────────────────
@@ -53,6 +54,8 @@ const DISP_ICON: Record<Disposition, string> = {
   loyal: "\u2726",
 };
 
+// `satisfies` pins this map to TIME_PHASES, so a renamed or added phase is a
+// compile error here instead of a silently unlabeled time of day.
 const TIME_LABELS: Record<string, string> = {
   early_morning: "Dawn",
   morning: "Morning",
@@ -62,7 +65,7 @@ const TIME_LABELS: Record<string, string> = {
   late_evening: "Twilight",
   night: "Night",
   deep_night: "Witching Hour",
-};
+} satisfies Record<(typeof TIME_PHASES)[number], string>;
 
 const PHASE_LABELS: Record<string, string> = {
   setup: "Act I",

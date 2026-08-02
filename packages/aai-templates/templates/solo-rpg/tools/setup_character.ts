@@ -4,6 +4,7 @@ import {
   ARCHETYPES,
   chooseStoryStructure,
   creativitySeed,
+  DEFAULT_CLOCK_SEGMENTS,
   DEFAULT_STATE,
   DISPOSITIONS,
   GENRES,
@@ -45,7 +46,7 @@ export const setupCharacter = tool({
       .int()
       .min(MIN_CLOCK_SEGMENTS)
       .max(MAX_CLOCK_SEGMENTS)
-      .describe("Segments for threat clock, default 6")
+      .describe(`Segments for threat clock, default ${DEFAULT_CLOCK_SEGMENTS}`)
       .optional(),
     backstory: z.string().max(2000).optional(),
     wishes: z.string().max(1000).optional(),
@@ -114,7 +115,7 @@ export const setupCharacter = tool({
       id: "clock_1",
       name: args.threatClockName,
       clockType: "threat",
-      segments: args.threatClockSegments ?? 6,
+      segments: args.threatClockSegments ?? DEFAULT_CLOCK_SEGMENTS,
       filled: 0,
       triggerDescription: args.threatClockDesc,
     });

@@ -18,6 +18,7 @@
  * own agent.test.ts.
  */
 
+import { DEFAULT_MAX_STEPS, TOOL_EXECUTION_TIMEOUT_MS } from "@alexkroman1/aai";
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
 import { ASSEMBLYAI_TTS_DEPRECATED_VOICES, ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
@@ -86,5 +87,22 @@ describe("scaffold guide voice catalog", () => {
   test("points at no deprecated voice", () => {
     const stale = ASSEMBLYAI_TTS_DEPRECATED_VOICES.filter((v) => guide.includes(`\`${v}\``));
     expect(stale).toEqual([]);
+  });
+});
+
+/**
+ * Same drift class as the voice catalog: the guide hand-restates SDK
+ * defaults, so pin the restated numbers to the constants they quote.
+ */
+describe("scaffold guide SDK defaults", () => {
+  test("quotes the real maxSteps default", () => {
+    expect(scaffoldGuide).toContain(`default: ${DEFAULT_MAX_STEPS}`);
+    expect(scaffoldGuide).toContain(`(default ${DEFAULT_MAX_STEPS})`);
+  });
+
+  test("quotes the real tool execution timeout", () => {
+    expect(scaffoldGuide).toContain(
+      `Tool execution timeout: ${TOOL_EXECUTION_TIMEOUT_MS / 1000} seconds`,
+    );
   });
 });

@@ -9,7 +9,6 @@ import {
   MOVES,
   RESULT_LABELS,
   rollAction,
-  saveGameState,
   updateChaosFactor,
 } from "../shared.ts";
 
@@ -61,8 +60,6 @@ export const actionRoll = tool({
 
     // Can burn momentum?
     const burnTarget = canBurnMomentum(state, roll);
-
-    saveGameState(ctx, state);
 
     return {
       purpose: args.purpose,

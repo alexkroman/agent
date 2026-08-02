@@ -11,6 +11,8 @@ export default agent({
   // and the other two stages stay as the preset set them.
   tts: assemblyAITts({ voice: "paul" }),
   systemPrompt,
+  // The opening scene here must agree with DEFAULT_GAME_STATE.currentRoom
+  // (shared.ts) and the world map in system-prompt.md.
   greeting:
     "Welcome, adventurer. You are standing at the mouth of a weathered cave at the edge of a pine forest. A cold wind carries the smell of damp stone up from the darkness below. A rusted lantern hangs from an iron hook beside the entrance. What would you like to do?",
 

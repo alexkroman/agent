@@ -257,6 +257,16 @@
       }
     },
     {
+      "includes": ["packages/aai-templates/*.ts"],
+      "linter": {
+        "rules": {
+          "correctness": {
+            "useImportExtensions": "off"
+          }
+        }
+      }
+    },
+    {
       "includes": [
         "**/*.test.ts",
         "**/*.test.tsx",

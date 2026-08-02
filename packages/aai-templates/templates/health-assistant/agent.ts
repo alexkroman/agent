@@ -11,9 +11,29 @@ type FdaLabel = Record<string, unknown> & { openfda?: Record<string, string[]> }
 /**
  * Fetch a drug's FDA label (generic OR brand name match) from openFDA.
  * Returns null when the drug can't be found or the API is unreachable.
+ *
+ * Memoized per drug name: a voice session naturally asks several questions
+ * about the same drugs, and labels are static, so repeats skip the network
+ * round-trip. A null result (not found, or a transient network failure) is
+ * NOT cached, so the next call retries instead of pinning the failure.
  */
-async function fetchFdaLabel(name: string): Promise<FdaLabel | null> {
-  const q = encodeURIComponent(name.toLowerCase());
+const labelCache = new Map<string, Promise<FdaLabel | null>>();
+
+function fetchFdaLabel(name: string): Promise<FdaLabel | null> {
+  const key = name.toLowerCase();
+  let p = labelCache.get(key);
+  if (!p) {
+    p = fetchFdaLabelUncached(key).then((label) => {
+      if (label === null) labelCache.delete(key);
+      return label;
+    });
+    labelCache.set(key, p);
+  }
+  return p;
+}
+
+async function fetchFdaLabelUncached(name: string): Promise<FdaLabel | null> {
+  const q = encodeURIComponent(name);
   try {
     const resp = await fetch(
       `https://api.fda.gov/drug/label.json?search=openfda.generic_name:"${q}"+openfda.brand_name:"${q}"&limit=1`,
@@ -67,13 +87,13 @@ export default agent({
       description:
         "Check for interactions between two or more medications using FDA drug label data. Looks up each drug's official label and reports where one drug's Drug Interactions section mentions another. Absence of a mention does not guarantee safety.",
       parameters: z.object({
-        drugs: z.string().describe("Comma-separated medication names (e.g. 'ibuprofen, warfarin')"),
+        drugs: z
+          .array(z.string().min(1))
+          .min(2)
+          .describe("Medication names to check, e.g. ['ibuprofen', 'warfarin']"),
       }),
       async execute(args) {
-        const names = args.drugs
-          .split(",")
-          .map((d) => d.trim().toLowerCase())
-          .filter((d) => d.length > 0);
+        const names = args.drugs.map((d) => d.trim().toLowerCase()).filter((d) => d.length > 0);
         if (names.length < 2) {
           return { error: "Provide at least two medication names to check." };
         }
@@ -88,11 +108,8 @@ export default agent({
           };
         }
 
-        const drugs: DrugInfo[] = [];
-        for (const [i, name] of names.entries()) {
-          const label = labels[i];
-          if (label) drugs.push(toDrugInfo(name, label));
-        }
+        // The unresolved check above guarantees every label resolved.
+        const drugs = names.map((name, i) => toDrugInfo(name, labels[i]!));
 
         const interactions: Array<{ drug: string; mentions: string; excerpt: string }> = [];
         for (const a of drugs) {

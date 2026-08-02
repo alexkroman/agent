@@ -61,6 +61,8 @@ function InfocomAdventure() {
   // view follows the conversation instead of scrolling once on mount.
   const contentVersion = session.messages.length + (session.userTranscript?.length ?? 0);
   useEffect(() => {
+    // Never true — contentVersion only drives the dependency array, and this
+    // reference keeps the exhaustive-deps lint satisfied.
     if (contentVersion < 0) return;
     bottom.current?.scrollIntoView({ behavior: "smooth" });
   }, [contentVersion]);

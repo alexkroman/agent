@@ -279,6 +279,20 @@ export function logEvent(inc: Incident, event: string): void {
   inc.updatedAt = time;
 }
 
+/** Minutes since the incident was created, rounded. */
+export function incidentAgeMinutes(inc: Incident): number {
+  return Math.round((Date.now() - inc.createdAt) / 60_000);
+}
+
+/** A resource as tool results describe it to the LLM. */
+export function resourceBrief(r: Resource): {
+  callsign: string;
+  type: Resource["type"];
+  capabilities: string[];
+} {
+  return { callsign: r.callsign, type: r.type, capabilities: r.capabilities };
+}
+
 /**
  * Status-transition guard. `resolved` is terminal: a resolved incident's
  * resources have been released (and possibly reassigned), so escalating,
@@ -587,19 +601,25 @@ export function recommendResources(
 
 // ─── System alert level calculation ──────────────────────────────────────────
 
+/** Fraction of resources not currently available, 0–1. The alert level and
+ *  the dashboard's displayed utilization both derive from this, so they can
+ *  never disagree about what "utilization" means. */
+export function resourceUtilization(state: DispatchState): number {
+  const available = state.resources.filter((r) => r.status === "available").length;
+  return 1 - available / state.resources.length;
+}
+
 export function recalculateAlertLevel(state: DispatchState): void {
   const activeIncidents = Object.values(state.incidents).filter((i) => i.status !== "resolved");
   const criticalCount = activeIncidents.filter((i) => i.severity === "critical").length;
   const totalActive = activeIncidents.length;
-  const availableResources = state.resources.filter((r) => r.status === "available").length;
-  const totalResources = state.resources.length;
-  const resourceUtilization = 1 - availableResources / totalResources;
+  const utilization = resourceUtilization(state);
 
-  if (criticalCount >= 3 || resourceUtilization > 0.85 || totalActive >= 8) {
+  if (criticalCount >= 3 || utilization > 0.85 || totalActive >= 8) {
     state.alertLevel = "red";
-  } else if (criticalCount >= 2 || resourceUtilization > 0.65 || totalActive >= 5) {
+  } else if (criticalCount >= 2 || utilization > 0.65 || totalActive >= 5) {
     state.alertLevel = "orange";
-  } else if (criticalCount >= 1 || resourceUtilization > 0.4 || totalActive >= 3) {
+  } else if (criticalCount >= 1 || utilization > 0.4 || totalActive >= 3) {
     state.alertLevel = "yellow";
   } else {
     state.alertLevel = "green";

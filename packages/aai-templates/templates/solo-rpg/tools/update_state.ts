@@ -1,6 +1,7 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
+  DEFAULT_CLOCK_SEGMENTS,
   DISPOSITIONS,
   getGameState,
   MAX_BOND,
@@ -13,7 +14,6 @@ import {
   MIN_MOMENTUM,
   makeNpc,
   nextSeqId,
-  saveGameState,
   stateSummary,
   TIME_PHASES,
   updateCrisisFlags,
@@ -45,7 +45,7 @@ export const updateState = tool({
       .int()
       .min(MIN_CLOCK_SEGMENTS)
       .max(MAX_CLOCK_SEGMENTS)
-      .describe("Number of segments, default 6")
+      .describe(`Number of segments, default ${DEFAULT_CLOCK_SEGMENTS}`)
       .optional(),
     addClockTrigger: z.string().max(300).describe("What happens when clock fills").optional(),
     advanceClockName: z.string().max(100).describe("Clock name to advance by 1").optional(),
@@ -111,7 +111,7 @@ export const updateState = tool({
           id: nextSeqId(state.clocks, "clock"),
           name: args.addClockName,
           clockType: args.addClockType ?? "threat",
-          segments: args.addClockSegments ?? 6,
+          segments: args.addClockSegments ?? DEFAULT_CLOCK_SEGMENTS,
           filled: 0,
           triggerDescription: args.addClockTrigger ?? "",
         });
@@ -159,8 +159,6 @@ export const updateState = tool({
 
     // Crisis check
     updateCrisisFlags(state);
-
-    saveGameState(ctx, state);
 
     return {
       success: true,

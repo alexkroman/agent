@@ -1,4 +1,5 @@
 import type { ToolContext } from "@alexkroman1/aai";
+import { z } from "zod";
 
 // ── Tuning Constants ─────────────────────────────────────────────────────────
 export const MAX_SESSION_LOG = 50;
@@ -10,6 +11,7 @@ export const MAX_NPCS = 12;
 export const MAX_CLOCKS = 8;
 export const MIN_CLOCK_SEGMENTS = 2;
 export const MAX_CLOCK_SEGMENTS = 12;
+export const DEFAULT_CLOCK_SEGMENTS = 6;
 
 // ── Creativity Seeds ─────────────────────────────────────────────────────────
 const SEED_WORDS = [
@@ -123,20 +125,18 @@ export const MOVES = [
 export const COMBAT_MOVES = new Set(["clash", "strike"]);
 export const SOCIAL_MOVES = new Set(["compel", "make_connection", "test_bond"]);
 
-export const MOVE_LABELS: Record<string, string> = {
-  face_danger: "Face Danger",
-  compel: "Compel",
-  gather_information: "Gather Information",
-  secure_advantage: "Secure Advantage",
-  clash: "Clash",
-  strike: "Strike",
-  endure_harm: "Endure Harm",
-  endure_stress: "Endure Stress",
-  make_connection: "Make Connection",
-  test_bond: "Test Bond",
-  resupply: "Resupply",
-  world_shaping: "World Shaping",
-};
+/** Title-case an id like "face_danger" into "Face Danger". */
+function labelFromId(id: string): string {
+  return id
+    .split("_")
+    .map((w) => (w ? w[0]!.toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+// Derived from MOVES so adding a move never means updating a second list.
+export const MOVE_LABELS: Record<(typeof MOVES)[number], string> = Object.fromEntries(
+  MOVES.map((m) => [m, labelFromId(m)]),
+) as Record<(typeof MOVES)[number], string>;
 
 // ── Time Phases ──────────────────────────────────────────────────────────────
 export const TIME_PHASES = [
@@ -352,6 +352,14 @@ export function saveSlotKey(slot?: string): string {
   return `save:${slot ?? "autosave"}`;
 }
 
+/** The slot-name grammar, shared by save_game and load_game so a name that
+ *  can be saved can always be loaded. */
+export const saveSlotParam = z
+  .string()
+  .regex(/^[A-Za-z0-9_-]{1,32}$/, "letters, digits, dashes, underscores; max 32 chars")
+  .describe("Save slot name, defaults to autosave")
+  .optional();
+
 const ENSURE_APP_STATE = `create table if not exists app_state (
   key text primary key,
   value jsonb not null,
@@ -433,18 +441,6 @@ export function makeNpc(opts: {
   };
 }
 
-export function npcSummary(n: NPC) {
-  return {
-    id: n.id,
-    name: n.name,
-    disposition: n.disposition,
-    bond: n.bond,
-    agenda: n.agenda,
-    status: n.status,
-    description: n.description,
-  };
-}
-
 export function clockSummary(c: Clock) {
   return {
     id: c.id,
@@ -493,7 +489,9 @@ export function stateSummary(state: GameState) {
     chaosFactor: state.chaosFactor,
     crisisMode: state.crisisMode,
     gameOver: state.gameOver,
-    npcs: state.npcs.filter((n) => n.status !== "deceased").map(npcSummary),
+    // NPCs go to the LLM whole (nothing withheld) — copied so a mutation of
+    // the summary can't reach live state.
+    npcs: state.npcs.filter((n) => n.status !== "deceased").map((n) => ({ ...n })),
     clocks: state.clocks.map(clockSummary),
     storyBlueprint: state.storyBlueprint
       ? {

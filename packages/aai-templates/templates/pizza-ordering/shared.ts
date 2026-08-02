@@ -37,6 +37,31 @@ export function calculateTotal(pizzas: Pizza[]): number {
   return pizzas.reduce((total, pizza) => total + pizzaPrice(pizza), 0);
 }
 
+/** The one money format. Tool results, the projection, and the sidebar all
+ *  show prices through this, so they can never disagree on rounding. */
+export function formatPrice(amount: number): string {
+  return `$${amount.toFixed(2)}`;
+}
+
+/**
+ * The menu as prompt prose, generated from `MENU` so the agent can never
+ * quote a price the pricing code doesn't charge.
+ */
+export function menuText(): string {
+  const price = (amount: number, upcharge = false) =>
+    amount === 0 ? "free" : `${upcharge ? "+" : ""}${formatPrice(amount)}`;
+  const list = (items: Record<string, number>, upcharge = false) =>
+    Object.entries(items)
+      .map(([name, amount]) => `${name.replaceAll("_", " ")} (${price(amount, upcharge)})`)
+      .join(", ");
+  return [
+    "Menu info:",
+    `- Sizes: ${list(MENU.sizes)}`,
+    `- Crusts: ${list(MENU.crusts, true)}`,
+    `- Toppings: ${list(MENU.toppings)}`,
+  ].join("\n");
+}
+
 export function pizzaPrice(p: Pizza): number {
   const base = MENU.sizes[p.size];
   const crust = MENU.crusts[p.crust];
@@ -108,7 +133,7 @@ export function orderView(state: StateSlot): OrderView {
   const placed = order?.placed;
   return {
     pizzas,
-    total: placed?.total ?? `$${calculateTotal(pizzas).toFixed(2)}`,
+    total: placed?.total ?? formatPrice(calculateTotal(pizzas)),
     orderPlaced: Boolean(placed),
     ...(placed
       ? { orderNumber: placed.orderNumber, estimatedMinutes: placed.estimatedMinutes }
