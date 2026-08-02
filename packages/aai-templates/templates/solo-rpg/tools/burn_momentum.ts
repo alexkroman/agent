@@ -6,7 +6,6 @@ import {
   MOMENTUM_RESET,
   RESULT_LABELS,
   revertConsequences,
-  saveGameState,
 } from "../shared.ts";
 
 export const burnMomentum = tool({
@@ -48,8 +47,6 @@ export const burnMomentum = tool({
     // Burning always resets momentum, overriding any gain from the upgrade.
     state.momentum = MOMENTUM_RESET;
     state.lastRoll = null;
-
-    saveGameState(ctx, state);
 
     return {
       burned: true,

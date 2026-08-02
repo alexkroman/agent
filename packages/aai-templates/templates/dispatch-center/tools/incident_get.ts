@@ -1,6 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { findIncident, getApplicableProtocols, getState } from "../shared.ts";
+import { findIncident, getApplicableProtocols, getState, incidentAgeMinutes } from "../shared.ts";
 
 export const incidentGet = tool({
   description: "Get full details on a specific incident including timeline and assigned resources.",
@@ -26,11 +26,9 @@ export const incidentGet = tool({
       })
       .filter(Boolean);
 
-    const ageMinutes = Math.round((Date.now() - inc.createdAt) / 60_000);
-
     return {
       ...inc,
-      ageMinutes,
+      ageMinutes: incidentAgeMinutes(inc),
       assignedResourceDetails,
       applicableProtocols: getApplicableProtocols(inc.type, inc.severity).map((p) => p.name),
     };

@@ -3,16 +3,19 @@ import { z } from "zod";
 import type { Incident, IncidentType, Severity } from "../shared.ts";
 import { calculateTriageScore, createIncident, updateState } from "../shared.ts";
 
-type ScenarioDef = { narrative: string; incidents: Partial<Incident>[] };
+type ScenarioIncident = Pick<Incident, "location" | "description" | "type" | "severity">;
+type ScenarioDef = { narrative: string; incidents: ScenarioIncident[] };
 
 const inc = (
   location: string,
   description: string,
   type: IncidentType,
   severity: Severity,
-): Partial<Incident> => ({ location, description, type, severity });
+): ScenarioIncident => ({ location, description, type, severity });
 
-const scenarios: Record<string, ScenarioDef> = {
+// `satisfies` keeps the keys literal, so the tool's enum below is derived —
+// adding a scenario here is the only edit needed.
+const scenarios = {
   mass_casualty: {
     narrative:
       "Bus crash at Main and 5th. School bus vs delivery truck. Multiple pediatric patients. Fuel spill.",
@@ -109,41 +112,27 @@ const scenarios: Record<string, ScenarioDef> = {
       ),
     ],
   },
-};
+} satisfies Record<string, ScenarioDef>;
+
+type ScenarioName = keyof typeof scenarios;
+const SCENARIO_NAMES = Object.keys(scenarios) as [ScenarioName, ...ScenarioName[]];
 
 export const opsRunScenario = tool({
   description: "Run a training scenario that creates simulated incidents for dispatch practice.",
   parameters: z.object({
-    scenario: z
-      .enum([
-        "mass_casualty",
-        "multi_alarm_fire",
-        "active_shooter",
-        "natural_disaster",
-        "highway_pileup",
-      ])
-      .describe("Scenario type to simulate"),
+    scenario: z.enum(SCENARIO_NAMES).describe("Scenario type to simulate"),
   }),
   async execute(args, ctx) {
     return updateState(ctx, (state) => {
-      // The zod enum guarantees the scenario key exists.
-      const s = scenarios[args.scenario] as ScenarioDef;
+      const s = scenarios[args.scenario];
 
       const created: string[] = [];
       for (const scenarioInc of s.incidents) {
         const fullInc = createIncident(state, {
-          type: scenarioInc.type || "other",
-          severity: scenarioInc.severity || "moderate",
-          location: scenarioInc.location || "Unknown",
-          description: scenarioInc.description || "",
+          ...scenarioInc,
           callerName: "Scenario",
           callerPhone: "N/A",
-          triageScore: calculateTriageScore(
-            scenarioInc.severity || "moderate",
-            scenarioInc.type || "other",
-            0,
-            0,
-          ),
+          triageScore: calculateTriageScore(scenarioInc.severity, scenarioInc.type, 0, 0),
           timeline: [{ time: Date.now(), event: `SCENARIO: ${scenarioInc.description}` }],
         });
         created.push(fullInc.id);

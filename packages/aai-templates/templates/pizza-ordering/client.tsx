@@ -1,9 +1,11 @@
 import "@alexkroman1/aai-ui/styles.css";
 import { client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
 import type { OrderView } from "./shared.ts";
-import { pizzaPrice } from "./shared.ts";
+import { formatPrice, orderView, pizzaPrice } from "./shared.ts";
 
-const EMPTY_ORDER: OrderView = { pizzas: [], total: "$0.00", orderPlaced: false };
+// Derived from the projection so a new OrderView field can't silently miss
+// the pre-first-tool-call render.
+const EMPTY_ORDER = orderView({});
 
 function PizzaIcon({ size }: { size: string }) {
   const dim = size === "small" ? 36 : size === "large" ? 52 : 44;
@@ -82,7 +84,7 @@ function OrderSidebar() {
             </p>
           </div>
           <p className="text-sm font-bold whitespace-nowrap" style={{ color: theme.primary }}>
-            ${pizzaPrice(p).toFixed(2)}
+            {formatPrice(pizzaPrice(p))}
           </p>
         </div>
       ))}

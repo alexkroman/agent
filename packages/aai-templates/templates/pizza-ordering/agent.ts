@@ -3,7 +3,9 @@ import { z } from "zod";
 import {
   CRUSTS,
   calculateTotal,
+  formatPrice,
   getOrder,
+  menuText,
   orderView,
   type Pizza,
   resetOrder,
@@ -24,7 +26,9 @@ export default agent({
   // `ctx.send("order", ...)` in each of the five order tools, and the
   // event-diffing the client had to do to rebuild the cart from them.
   syncState: orderView,
-  systemPrompt,
+  // The menu section is generated from MENU so the prompt can never quote a
+  // price the pricing code doesn't charge.
+  systemPrompt: `${systemPrompt}\n${menuText()}`,
   greeting:
     "Welcome to Pizza Palace. I can help you build your perfect pizza. What would you like to order?",
 
@@ -52,13 +56,11 @@ export default agent({
         order.pizzas.push(pizza);
         order.nextId++;
 
-        const total = calculateTotal(order.pizzas);
-        const result = {
+        return {
           added: pizza,
-          orderTotal: `$${total.toFixed(2)}`,
+          orderTotal: formatPrice(calculateTotal(order.pizzas)),
           itemCount: order.pizzas.length,
         };
-        return result;
       },
     }),
 
@@ -71,22 +73,21 @@ export default agent({
         if (pizzas.length === 0) return { error: "Cannot place an empty order." };
 
         const customerName = order.customerName ?? "Guest";
-        const total = calculateTotal(pizzas);
+        const total = formatPrice(calculateTotal(pizzas));
         const orderNumber = Math.floor(1000 + Math.random() * 9000);
 
         const estimatedMinutes = 15 + pizzas.length * 5;
         // The order is submitted — clear the cart so a follow-up order starts
         // fresh, but keep the confirmation in state so the UI can show it.
-        resetOrder(ctx, { orderNumber, total: `$${total.toFixed(2)}`, estimatedMinutes });
+        resetOrder(ctx, { orderNumber, total, estimatedMinutes });
 
-        const result = {
+        return {
           orderNumber,
           customerName,
           pizzas: pizzas.length,
-          total: `$${total.toFixed(2)}`,
+          total,
           estimatedMinutes,
         };
-        return result;
       },
     }),
 
@@ -102,13 +103,11 @@ export default agent({
 
         const [removed] = order.pizzas.splice(idx, 1);
 
-        const total = calculateTotal(order.pizzas);
-        const result = {
+        return {
           removed,
-          orderTotal: `$${total.toFixed(2)}`,
+          orderTotal: formatPrice(calculateTotal(order.pizzas)),
           itemCount: order.pizzas.length,
         };
-        return result;
       },
     }),
 
@@ -145,12 +144,10 @@ export default agent({
 
         order.pizzas[idx] = pizza;
 
-        const total = calculateTotal(order.pizzas);
-        const result = {
+        return {
           updated: pizza,
-          orderTotal: `$${total.toFixed(2)}`,
+          orderTotal: formatPrice(calculateTotal(order.pizzas)),
         };
-        return result;
       },
     }),
 
@@ -160,8 +157,7 @@ export default agent({
         const pizzas = getOrder(ctx).pizzas;
         if (pizzas.length === 0) return { message: "The order is empty." };
 
-        const total = calculateTotal(pizzas);
-        const result = {
+        return {
           pizzas: pizzas.map((p) => ({
             id: p.id,
             description: `${p.quantity}x ${p.size} ${p.crust} crust with ${p.toppings.length > 0 ? p.toppings.join(", ") : "cheese only"}`,
@@ -170,9 +166,8 @@ export default agent({
             toppings: p.toppings,
             quantity: p.quantity,
           })),
-          orderTotal: `$${total.toFixed(2)}`,
+          orderTotal: formatPrice(calculateTotal(pizzas)),
         };
-        return result;
       },
     }),
   },

@@ -543,7 +543,7 @@ set `builtinTools` explicitly (including `[]`) to override.
 | `visit_webpage` | Fetch URL to plain text | `url` |
 | `get_page_design` | Fetch URL's raw HTML + CSS (style blocks and linked stylesheets) to study/mimic a site's design | `url` |
 | `fetch_json` | HTTP GET a JSON API | `url`, `headers?` |
-| `run_code` | Execute JS in sandbox (no net/fs, 5s timeout) | `code` |
+| `run_code` | Execute JS in the agent's sandbox — same authority as the agent's own tool code, output is what it logs (5s timeout) | `code` |
 | `think` | Private reasoning scratchpad, no side effects (on by default) | `thought` |
 | `remember` | Save a confirmed fact to session notes (on by default) | `key`, `value` |
 | `recall` | Read session notes saved with `remember` (on by default) | `key?` |

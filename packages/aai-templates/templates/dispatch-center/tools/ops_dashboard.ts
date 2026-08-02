@@ -1,5 +1,5 @@
 import { tool } from "@alexkroman1/aai";
-import { getState } from "../shared.ts";
+import { getState, incidentAgeMinutes, resourceBrief, resourceUtilization } from "../shared.ts";
 
 export const opsDashboard = tool({
   description:
@@ -24,7 +24,7 @@ export const opsDashboard = tool({
       returning: state.resources.filter((r) => r.status === "returning").length,
     };
 
-    const utilization = Math.round((1 - resourceSummary.available / resourceSummary.total) * 100);
+    const utilization = Math.round(resourceUtilization(state) * 100);
 
     return {
       systemAlertLevel: state.alertLevel,
@@ -41,16 +41,12 @@ export const opsDashboard = tool({
         location: i.location,
         triageScore: i.triageScore,
         assignedResourceCount: i.assignedResources.length,
-        ageMinutes: Math.round((Date.now() - i.createdAt) / 60_000),
+        ageMinutes: incidentAgeMinutes(i),
         casualties: i.casualties,
       })),
       availableResources: state.resources
         .filter((r) => r.status === "available")
-        .map((r) => ({
-          callsign: r.callsign,
-          type: r.type,
-          capabilities: r.capabilities,
-        })),
+        .map(resourceBrief),
     };
   },
 });

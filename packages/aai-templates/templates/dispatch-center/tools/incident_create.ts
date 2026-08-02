@@ -7,6 +7,7 @@ import {
   recommendResources,
   recommendSeverity,
   recommendType,
+  resourceBrief,
   updateState,
 } from "../shared.ts";
 
@@ -67,11 +68,7 @@ export const incidentCreate = tool({
         recommendedType: recType,
         triageScore,
         applicableProtocols: protocols.map((p) => p.name),
-        recommendedResources: recommended.map((r) => ({
-          callsign: r.callsign,
-          type: r.type,
-          capabilities: r.capabilities,
-        })),
+        recommendedResources: recommended.map(resourceBrief),
         message:
           recSeverity === "critical"
             ? `PRIORITY ONE — ${id} created. Immediate dispatch recommended. ${protocols.length} protocol(s) applicable.`

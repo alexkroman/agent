@@ -5,6 +5,13 @@ import knowledge from "./knowledge.json" with { type: "json" };
 type FaqEntry = { question: string; answer: string };
 const faqs: FaqEntry[] = knowledge.faqs;
 
+// Search text is static, so it's normalized once at module load — per-call
+// work stays O(query) even when the knowledge base grows.
+const searchable = faqs.map((entry) => ({
+  entry,
+  text: `${entry.question} ${entry.answer}`.toLowerCase(),
+}));
+
 export default agent({
   name: "FAQ Bot",
   ...assemblyAIPipeline(),
@@ -37,8 +44,7 @@ export default agent({
         if (words.length === 0) return { result: "No matching FAQ found." };
 
         let best: { entry: FaqEntry; score: number } | null = null;
-        for (const entry of faqs) {
-          const text = `${entry.question} ${entry.answer}`.toLowerCase();
+        for (const { entry, text } of searchable) {
           const score = words.filter((w) => text.includes(w)).length;
           if (score > 0 && (!best || score > best.score)) best = { entry, score };
         }

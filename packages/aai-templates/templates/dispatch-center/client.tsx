@@ -2,7 +2,8 @@ import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
 import { client, useAgentState, useSession } from "@alexkroman1/aai-ui";
 import { useEffect, useRef } from "react";
-import type { DashboardView, IncidentSummary } from "./shared.ts";
+import type { DashboardView, DispatchState, IncidentSummary, Severity, Status } from "./shared.ts";
+import { dashboardView } from "./shared.ts";
 
 const CSS = `
 @keyframes dc-pulse {
@@ -24,19 +25,22 @@ const CSS = `
 }
 `;
 
+// Each color map is `satisfies`-pinned to the shared union it renders, so a
+// renamed or added level/severity/status is a compile error here instead of
+// a silently gray badge.
 const alertColors: Record<string, string> = {
   green: "#22c55e",
   yellow: "#eab308",
   orange: "#f97316",
   red: "#ef4444",
-};
+} satisfies Record<DispatchState["alertLevel"], string>;
 
 const severityColors: Record<string, string> = {
   critical: "#ef4444",
   urgent: "#f97316",
   moderate: "#eab308",
   minor: "#22c55e",
-};
+} satisfies Record<Severity, string>;
 
 const statusColors: Record<string, string> = {
   incoming: "#818cf8",
@@ -46,11 +50,11 @@ const statusColors: Record<string, string> = {
   on_scene: "#22c55e",
   resolved: "#6b7280",
   escalated: "#ef4444",
-};
+} satisfies Record<Status, string>;
 
-// The board before the first tool call. `DashboardView` itself lives in
-// shared.ts, where `syncState` produces it — one definition for both sides.
-const EMPTY_DASH: DashboardView = { systemAlertLevel: "green", incidents: [] };
+// The board before the first tool call — derived from the projection so a
+// new DashboardView field can't silently miss the pre-first-tool-call render.
+const EMPTY_DASH = dashboardView({});
 
 function stateColor(state: string): string {
   return state === "listening"
