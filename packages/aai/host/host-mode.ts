@@ -20,6 +20,7 @@ import type { ExecuteTool, ToolSchema } from "../sdk/_internal-types.ts";
 import {
   DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS,
   DEFAULT_RELAY_TOOL_TIMEOUT_MS,
+  WS_OPEN,
 } from "../sdk/constants.ts";
 import type { ClientEvent, HostConfig } from "../sdk/protocol.ts";
 import { HostConfigMessageSchema } from "../sdk/protocol.ts";
@@ -29,7 +30,6 @@ import { UNPACED_AUDIO_LEAD_MS } from "./audio-pacer.ts";
 import { createRuntime, type RuntimeOptions, type SessionStartOptions } from "./runtime.ts";
 import type { Logger, S2SConfig } from "./runtime-config.ts";
 import { consoleLogger, DEFAULT_S2S_CONFIG } from "./runtime-config.ts";
-import { WS_OPEN } from "./ws-frames.ts";
 import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 
 /**
@@ -64,12 +64,8 @@ type ToolCallEvent = Extract<ClientEvent, { type: "tool_call" }>;
  * clean text, but leave object/array JSON (and non-JSON) untouched.
  */
 function normalizeResult(raw: string): string {
-  try {
-    const parsed: unknown = JSON.parse(raw);
-    return typeof parsed === "string" ? parsed : raw;
-  } catch {
-    return raw;
-  }
+  const parsed = safeJsonParse(raw);
+  return typeof parsed === "string" ? parsed : raw;
 }
 
 /**

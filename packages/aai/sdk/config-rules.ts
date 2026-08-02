@@ -74,16 +74,36 @@ export function assertSilencePolicy(
 }
 
 /**
+ * Voice-UX tuning fields that only the pipeline transport implements, with
+ * each field's value shape. The one declaration both {@link PipelineTuning}
+ * and {@link assertPipelineTuning} derive from, so a new pipeline-only field
+ * cannot be added to the type but skip validation (which is how
+ * `startFailurePhrase` once slipped through).
+ */
+const PIPELINE_ONLY_TUNING = {
+  minBargeInWords: "number",
+  interruptionMinDurationMs: "number",
+  holdPhrase: "string",
+  errorPhrase: "string",
+  startFailurePhrase: "string",
+  falseInterruptionTimeoutMs: "number",
+} as const;
+
+type PipelineTuningField = keyof typeof PIPELINE_ONLY_TUNING;
+
+const PIPELINE_ONLY_TUNING_FIELDS = Object.keys(
+  PIPELINE_ONLY_TUNING,
+) as readonly PipelineTuningField[];
+
+/**
  * Voice-UX tuning fields that only the pipeline transport implements.
  * Shared by {@link assertPipelineTuning} and the config layers that carry
  * these fields (AgentDef → manifest → AgentConfig → IsolateConfig).
  */
 export type PipelineTuning = {
-  minBargeInWords?: number | undefined;
-  interruptionMinDurationMs?: number | undefined;
-  holdPhrase?: string | undefined;
-  errorPhrase?: string | undefined;
-  falseInterruptionTimeoutMs?: number | undefined;
+  [K in PipelineTuningField]?:
+    | ((typeof PIPELINE_ONLY_TUNING)[K] extends "number" ? number : string)
+    | undefined;
 };
 
 /**
@@ -96,15 +116,8 @@ export type PipelineTuning = {
  */
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void {
   if (mode === "pipeline") return;
-  const fields: Record<string, unknown> = {
-    minBargeInWords: tuning.minBargeInWords,
-    interruptionMinDurationMs: tuning.interruptionMinDurationMs,
-    holdPhrase: tuning.holdPhrase,
-    errorPhrase: tuning.errorPhrase,
-    falseInterruptionTimeoutMs: tuning.falseInterruptionTimeoutMs,
-  };
-  for (const [key, value] of Object.entries(fields)) {
-    if (value !== undefined) {
+  for (const key of PIPELINE_ONLY_TUNING_FIELDS) {
+    if (tuning[key] !== undefined) {
       throw new Error(`${key} requires pipeline mode (stt, llm, and tts all set)`);
     }
   }

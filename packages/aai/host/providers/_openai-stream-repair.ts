@@ -41,6 +41,7 @@
  * Remove each repair once the gateway emits conformant frames.
  */
 
+import { safeJsonParse } from "../../sdk/utils.ts";
 import { stripUnsupportedToolSchemaKeywords } from "./_gateway-tool-schema.ts";
 
 /** Structural `fetch`, kept loose so it satisfies the AI SDK's option type. */
@@ -187,13 +188,8 @@ function repairLine(line: string, ids: Map<string, string>, newId: () => string)
   if (body === "" || body === "[DONE]") return line;
   if (!mayNeedRepair(body)) return line;
 
-  let payload: unknown;
-  try {
-    payload = JSON.parse(body);
-  } catch {
-    return line;
-  }
-  if (!repairChunk(payload, ids, newId)) return line;
+  const payload = safeJsonParse(body);
+  if (payload === undefined || !repairChunk(payload, ids, newId)) return line;
   return `${DATA_PREFIX} ${JSON.stringify(payload)}${carriageReturn ? "\r" : ""}`;
 }
 

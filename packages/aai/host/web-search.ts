@@ -111,8 +111,6 @@ type EndpointFormat = {
   resultMarker: RegExp;
   /** Matches one result anchor: [1] = attributes, [2] = title markup. */
   resultRegex: RegExp;
-  /** Finds the next result anchor, to scope each snippet search. */
-  nextResultRegex: RegExp;
   /** Matches the snippet element within one result's scope. */
   snippetRegex: RegExp;
 };
@@ -122,7 +120,6 @@ type EndpointFormat = {
 const HTML_FORMAT: EndpointFormat = {
   resultMarker: /class="[^"]*\bresult__a\b[^"]*"/i,
   resultRegex: /<a\b(?=[^>]*\bclass="[^"]*\bresult__a\b[^"]*")([^>]*)>([\s\S]*?)<\/a>/gi,
-  nextResultRegex: /<a\b(?=[^>]*\bclass="[^"]*\bresult__a\b[^"]*")[^>]*>/i,
   snippetRegex: /<a\b(?=[^>]*\bclass="[^"]*\bresult__snippet\b[^"]*")[^>]*>([\s\S]*?)<\/a>/i,
 };
 
@@ -132,19 +129,19 @@ const HTML_FORMAT: EndpointFormat = {
 const LITE_FORMAT: EndpointFormat = {
   resultMarker: /class=['"][^'"]*\bresult-link\b[^'"]*['"]/i,
   resultRegex: /<a\b(?=[^>]*\bclass=['"][^'"]*\bresult-link\b[^'"]*['"])([^>]*)>([\s\S]*?)<\/a>/gi,
-  nextResultRegex: /<a\b(?=[^>]*\bclass=['"][^'"]*\bresult-link\b[^'"]*['"])[^>]*>/i,
   snippetRegex:
     /<td\b(?=[^>]*\bclass=['"][^'"]*\bresult-snippet\b[^'"]*['"])[^>]*>([\s\S]*?)<\/td>/i,
 };
 
 function parseResults(html: string, format: EndpointFormat): SearchResult[] {
   const results: SearchResult[] = [];
-  for (const match of html.matchAll(format.resultRegex)) {
+  const matches = [...html.matchAll(format.resultRegex)];
+  for (const [i, match] of matches.entries()) {
     const rawUrl = /\bhref=["']([^"']*)["']/i.exec(match[1] ?? "")?.[1] ?? "";
-    // The snippet element sits between this result link and the next one.
-    const trailing = html.slice((match.index ?? 0) + match[0].length);
-    const nextAt = trailing.search(format.nextResultRegex);
-    const scoped = nextAt >= 0 ? trailing.slice(0, nextAt) : trailing;
+    // The snippet element sits between this result link and the next one —
+    // and "the next result link" is exactly the next resultRegex match, so
+    // scope by its index instead of re-scanning the document tail.
+    const scoped = html.slice((match.index ?? 0) + match[0].length, matches[i + 1]?.index);
     const title = decodeHtmlEntities(stripHtml(match[2] ?? ""));
     const url = decodeDuckDuckGoUrl(decodeHtmlEntities(rawUrl));
     const description = decodeHtmlEntities(stripHtml(format.snippetRegex.exec(scoped)?.[1] ?? ""));

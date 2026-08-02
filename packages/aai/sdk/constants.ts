@@ -47,6 +47,17 @@ export const SESSION_KEEPALIVE_INTERVAL_MS = 15_000;
  */
 export const SESSION_RESUME_GRACE_MS = 120_000;
 export const FETCH_TIMEOUT_MS = 15_000;
+
+/**
+ * Identity the network builtins (`visit_webpage`, `get_page_design`) present
+ * when fetching model-controlled URLs — one definition so every builtin shows
+ * the same identity in server logs.
+ */
+export const TOOL_USER_AGENT =
+  "Mozilla/5.0 (compatible; VoiceAgent/1.0; +https://github.com/AssemblyAI/aai)";
+
+/** The `Accept` header the HTML-fetching builtins send. */
+export const HTML_ACCEPT = "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8";
 /**
  * Max consecutive S2S `session.resume` attempts before giving up and surfacing
  * a fatal connection error. The counter resets on real conversational progress
@@ -160,6 +171,8 @@ export const DEFAULT_MAX_HISTORY = 200;
  * chains mid-request.
  */
 export const DEFAULT_MAX_STEPS = 10;
+/** Default `toolChoice`: the LLM decides when to call tools vs respond directly. */
+export const DEFAULT_TOOL_CHOICE = "auto" as const;
 /**
  * Minimum number of words in an interim STT transcript before a barge-in
  * aborts the agent's in-flight turn (pipeline mode). Default 2 so a single
@@ -467,6 +480,13 @@ export const TTS_RECONNECT_TIMEOUT_MS = 8000;
 export const DEFAULT_STT_PROMPT = "";
 
 export const WS_OPEN = 1;
+
+/**
+ * RFC 6455 Normal Closure — sent on every intentional close. `close()` with no
+ * code sends a statusless frame that both ends report as 1005 "No Status
+ * Received", making a deliberate teardown look like the peer dropping us.
+ */
+export const WS_NORMAL_CLOSURE = 1000;
 
 /**
  * Single source of truth — used by `secureHeaders` middleware and

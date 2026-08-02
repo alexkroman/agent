@@ -21,11 +21,14 @@ import { z } from "zod";
 import { EMPTY_PARAMS, type ToolSchema, toToolJsonSchema } from "../sdk/_internal-types.ts";
 import {
   FETCH_TIMEOUT_MS,
+  HTML_ACCEPT,
   MAX_HTML_BYTES,
   MAX_JSON_BYTES,
   MAX_PAGE_CHARS,
+  TOOL_USER_AGENT,
 } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
+import { safeJsonParse } from "../sdk/utils.ts";
 import { calculate } from "./_calculate.ts";
 import { createRunCode, type RunCodeExecutor } from "./builtin-run-code.ts";
 import { createGetPageDesign } from "./page-design.ts";
@@ -60,11 +63,7 @@ function createVisitWebpage(
     async execute(args, _ctx) {
       const { url } = args;
       const resp = await fetchFn(url, {
-        headers: {
-          "User-Agent":
-            "Mozilla/5.0 (compatible; VoiceAgent/1.0; +https://github.com/AssemblyAI/aai)",
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
+        headers: { "User-Agent": TOOL_USER_AGENT, Accept: HTML_ACCEPT },
         signal: fetchSignal(),
       });
       if (!resp.ok) {
@@ -143,11 +142,8 @@ function createFetchJson(
       if (Number.isFinite(declared) && declared > max) return { error: "Response too large", url };
       const body = await resp.text();
       if (body.length > max) return { error: "Response too large", url };
-      try {
-        return JSON.parse(body);
-      } catch {
-        return { error: "Response was not valid JSON", url };
-      }
+      const parsed = safeJsonParse(body);
+      return parsed === undefined ? { error: "Response was not valid JSON", url } : parsed;
     },
   };
 }

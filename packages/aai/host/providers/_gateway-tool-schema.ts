@@ -36,6 +36,8 @@
  * accepts standard JSON Schema or reports what it rejected.
  */
 
+import { safeJsonParse } from "../../sdk/utils.ts";
+
 /** Keywords the gateway's Gemini path rejects outright, with a 500. */
 const UNSUPPORTED = new Set(["$schema", "propertyNames"]);
 
@@ -62,12 +64,7 @@ export function stripUnsupportedToolSchemaKeywords(body: string): string {
   // Cheap reject before parsing: most requests in a long agent loop are large,
   // and only ones declaring tools can carry the offending keywords.
   if (!body.includes('"tools"')) return body;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(body);
-  } catch {
-    return body;
-  }
+  const parsed = safeJsonParse(body);
   if (typeof parsed !== "object" || parsed === null) return body;
   const request = parsed as { tools?: unknown };
   if (!Array.isArray(request.tools)) return body;

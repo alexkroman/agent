@@ -10,6 +10,7 @@
 
 import type { LanguageModel } from "ai";
 import type { AgentConfig, ToolSchema } from "../sdk/_internal-types.ts";
+import { DEFAULT_TOOL_CHOICE } from "../sdk/constants.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { OPENAI_API_KEY_ENV } from "../sdk/providers/llm/openai.ts";
 import {
@@ -140,7 +141,7 @@ export function createTransportFactory(
         ...(agentConfig.greeting !== undefined ? { greeting: agentConfig.greeting } : {}),
       },
       toolSchemas,
-      toolChoice: agentConfig.toolChoice ?? "auto",
+      toolChoice: agentConfig.toolChoice ?? DEFAULT_TOOL_CHOICE,
       callbacks,
       sid: sessionOpts.id,
       inputSampleRate: s2sConfig.inputSampleRate,
@@ -154,7 +155,7 @@ export function createTransportFactory(
   function buildAssemblyS2sTransport(args: BuildTransportArgs): Transport {
     const { sessionOpts, systemPrompt, callbacks } = args;
     return createS2sTransport({
-      apiKey: env[ASSEMBLYAI_API_KEY_ENV] ?? "",
+      apiKey: resolveApiKey(ASSEMBLYAI_API_KEY_ENV, env),
       s2sConfig,
       sessionConfig: {
         systemPrompt,

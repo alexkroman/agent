@@ -2,9 +2,9 @@
 // OpenAI Realtime API transport — implements Transport.
 
 import type { ToolSchema } from "../../sdk/_internal-types.ts";
-import { LOG_PREVIEW_CHARS, WS_OPEN } from "../../sdk/constants.ts";
+import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE, WS_OPEN } from "../../sdk/constants.ts";
 import type { OpenaiRealtimeOptions } from "../../sdk/providers/s2s/openai-realtime.ts";
-import { errorMessage, safeJsonParse } from "../../sdk/utils.ts";
+import { errorMessage, safeJsonParse, toArgsRecord } from "../../sdk/utils.ts";
 import { createAudioSendGate } from "../_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
 import {
@@ -16,9 +16,6 @@ import {
 import type { Logger } from "../runtime-config.ts";
 import { consoleLogger } from "../runtime-config.ts";
 import type { Transport, TransportCallbacks, TransportSessionConfig } from "./types.ts";
-
-/** RFC 6455 Normal Closure. */
-const WS_NORMAL_CLOSURE = 1000;
 
 const DEFAULT_MODEL = "gpt-realtime-2";
 const DEFAULT_VOICE = "alloy";
@@ -260,10 +257,7 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
       log.warn("OpenAI Realtime: invalid tool args JSON", { name, callId });
       return {};
     }
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>;
-    }
-    return {};
+    return toArgsRecord(parsed);
   }
 
   function handleFunctionCallArgsDone(obj: Record<string, unknown>): void {

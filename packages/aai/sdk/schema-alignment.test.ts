@@ -2,6 +2,7 @@
 import { describe, expect, expectTypeOf, test } from "vitest";
 import type { z } from "zod";
 import { type AgentConfig, AgentConfigSchema, ToolSchemaSchema } from "./_internal-types.ts";
+import type { Manifest } from "./manifest.ts";
 import { type ReadyConfig, ReadyConfigSchema } from "./protocol.ts";
 import { type BuiltinTool, BuiltinToolSchema, type ToolChoice, ToolChoiceSchema } from "./types.ts";
 
@@ -130,5 +131,18 @@ describe("type ↔ schema alignment", () => {
 
   test.each(["invalid", "none"])("ToolChoiceSchema rejects %s", (v) => {
     expect(ToolChoiceSchema.safeParse(v).success).toBe(false);
+  });
+
+  // ManifestSchema is a second hand-written copy of the agent-config surface
+  // (it cannot derive from AgentConfigSchema without an import cycle), so pin
+  // the two shapes together: a field added to one and not the other is the
+  // silently-dropped-config bug family CLAUDE.md documents. `startFailurePhrase`
+  // and `requiredEnv` had already gone missing from the manifest this way.
+  test("every AgentConfig field appears on Manifest", () => {
+    expectTypeOf<Exclude<keyof AgentConfig, keyof Manifest>>().toEqualTypeOf<never>();
+  });
+
+  test("Manifest adds only `tools` beyond AgentConfig", () => {
+    expectTypeOf<Exclude<keyof Manifest, keyof AgentConfig | "tools">>().toEqualTypeOf<never>();
   });
 });

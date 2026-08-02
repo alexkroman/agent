@@ -315,3 +315,35 @@ export function createSessionShell<E extends Error>(opts: {
     },
   };
 }
+
+/** Per-turn `done` latch — see {@link createDoneLatch}. */
+export interface DoneLatch {
+  /** True once this turn's `done` has been emitted (until `rearm()`). */
+  emitted(): boolean;
+  /** Emit `done` at most once per turn, and never after the shell closed. */
+  emitOnce(): void;
+  /** Reset for a new turn (call when the next turn's text arrives). */
+  rearm(): void;
+}
+
+/**
+ * Create the `done`-once-per-turn latch every TTS opener needs: the pipeline
+ * orchestrator advances the turn on `done`, so a duplicate emission — a
+ * provider ack racing a barge-in cancel — would advance it mid-reply. The
+ * latch keeps that invariant in one place instead of a hand-kept flag per
+ * opener.
+ */
+export function createDoneLatch(shell: SessionShell, emitDone: () => void): DoneLatch {
+  let emitted = false;
+  return {
+    emitted: () => emitted,
+    emitOnce(): void {
+      if (emitted || shell.isClosed()) return;
+      emitted = true;
+      emitDone();
+    },
+    rearm(): void {
+      emitted = false;
+    },
+  };
+}

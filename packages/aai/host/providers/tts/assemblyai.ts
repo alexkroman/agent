@@ -114,6 +114,7 @@ import {
 import { errorMessage, safeJsonParse } from "../../../sdk/utils.ts";
 import { base64ToUint8 } from "../../_base64.ts";
 import { bytesToPcm16 } from "../../_pcm.ts";
+import { hasMinWords } from "../../transports/pipeline-text.ts";
 import {
   assertPcm16Rate,
   closeOnAbort,
@@ -166,28 +167,23 @@ const SEGMENT_BOUNDARY_RE = /[.!?…]["')\]]*(?:\s|$)/g;
  */
 const MIN_SEGMENT_WORDS = 2;
 
-/** Word count, used to keep abbreviation fragments out of their own utterance. */
-function wordCount(text: string): number {
-  const trimmed = text.trim();
-  return trimmed.length === 0 ? 0 : trimmed.split(/\s+/).length;
-}
-
 /**
  * Split `buffered` at the LAST sentence boundary whose head is a big enough
  * utterance, returning the text to synthesize now and the remainder to hold.
  *
  * The *last* boundary rather than the first: when several sentences arrive
  * before a flush, one larger segment sounds better than several small ones and
- * costs fewer round trips.
+ * costs fewer round trips. Word count only grows with prefix length, so the
+ * last boundary's head qualifies exactly when any boundary's head does — one
+ * early-exit word scan replaces a per-boundary count (this runs on every
+ * coalesced chunk of every reply).
  */
 function splitSegment(buffered: string): { head: string; tail: string } | undefined {
   let end: number | undefined;
   // matchAll clones the regex, so the shared `lastIndex` is never mutated here.
-  for (const m of buffered.matchAll(SEGMENT_BOUNDARY_RE)) {
-    const candidate = m.index + m[0].length;
-    if (wordCount(buffered.slice(0, candidate)) >= MIN_SEGMENT_WORDS) end = candidate;
-  }
+  for (const m of buffered.matchAll(SEGMENT_BOUNDARY_RE)) end = m.index + m[0].length;
   if (end === undefined) return;
+  if (!hasMinWords(buffered.slice(0, end), MIN_SEGMENT_WORDS)) return;
   return { head: buffered.slice(0, end), tail: buffered.slice(end) };
 }
 
