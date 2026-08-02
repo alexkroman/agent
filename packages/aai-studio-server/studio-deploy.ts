@@ -11,7 +11,7 @@
  */
 
 import type { WorkspaceStore } from "aai-server/workspace-store";
-import type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-session-broker.ts";
+import type { StudioSessionBroker } from "./studio-session-broker.ts";
 import { currentFilesHash, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
 import { withWorkspaceLock } from "./studio-workspace-lock.ts";
 
@@ -22,12 +22,7 @@ export type StudioDeployResult =
 export type StudioDeployDeps = {
   workspaces: WorkspaceStore;
   /** The session broker's `deployWorkspace` — Publish's in-sandbox CLI run. */
-  deployWorkspace: (
-    scope: string,
-    project: string,
-    files: Record<string, string>,
-    target: WorkspaceDeployTarget,
-  ) => Promise<WorkspaceDeployOutcome>;
+  deployWorkspace: StudioSessionBroker["deployWorkspace"];
 };
 
 export type StudioDeployParams = {

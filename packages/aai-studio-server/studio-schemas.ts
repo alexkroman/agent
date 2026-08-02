@@ -1,22 +1,20 @@
 // Copyright 2025 the AAI authors. MIT license.
 // Zod schemas + limits for the browser studio (coding agent) HTTP surface.
 
+import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
 import slugifyLib from "@sindresorhus/slugify";
 import { RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/schemas";
 import { z } from "zod";
-import { MAX_STUDIO_FILE_BYTES } from "./studio-limits.ts";
+import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_MESSAGE_BYTES } from "./studio-limits.ts";
 
-// Re-exported from studio-limits.ts (dependency-free) for the scan worker.
-export { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./studio-limits.ts";
-/** Max total bytes across a workspace (guards the single-doc storage model). */
-export const MAX_STUDIO_WORKSPACE_BYTES = 1_000_000;
-/** Max messages accepted per chat turn (client resends full history). */
-export const MAX_STUDIO_CHAT_MESSAGES = 80;
-/**
- * Max serialized bytes for a single chat message. Sized so an assistant
- * message carrying a couple of full-file tool outputs still fits.
- */
-export const MAX_STUDIO_MESSAGE_BYTES = 600_000;
+// Re-exported from studio-limits.ts (the dependency-free limits home).
+export {
+  MAX_STUDIO_CHAT_MESSAGES,
+  MAX_STUDIO_FILE_BYTES,
+  MAX_STUDIO_FILES,
+  MAX_STUDIO_MESSAGE_BYTES,
+  MAX_STUDIO_WORKSPACE_BYTES,
+} from "./studio-limits.ts";
 /**
  * Project names share the slug grammar so they can double as deploy slugs.
  * This is the *identifier* form — used for path params and chat bodies, where
@@ -41,7 +39,7 @@ const MAX_TYPED_PROJECT_NAME = 100;
  * name is an identifier the user typed, not a symbol to be prettified.
  */
 function slugifyProjectName(input: string): string {
-  return slugifyLib(input, { decamelize: false }).slice(0, 64).replace(/-+$/g, "");
+  return slugifyLib(input, { decamelize: false }).slice(0, MAX_SLUG_LENGTH).replace(/-+$/g, "");
 }
 
 /** Upper bound on the prompt excerpt a generated name derives from. */
@@ -181,8 +179,3 @@ export const UiMessageSchema = z
     (message) => totalStringLength(message.parts) <= MAX_STUDIO_MESSAGE_BYTES,
     "Message too large",
   );
-
-export const ChatBodySchema = z.object({
-  project: ProjectNameSchema,
-  messages: z.array(UiMessageSchema).min(1).max(MAX_STUDIO_CHAT_MESSAGES),
-});

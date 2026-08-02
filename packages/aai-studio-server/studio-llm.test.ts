@@ -1,12 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import {
-  ASSEMBLYAI_GATEWAY_MODELS,
-  studioLlmInfo,
-  studioLlmModelId,
-  studioModel,
-} from "./studio-llm.ts";
+import { ASSEMBLYAI_GATEWAY_MODELS, studioLlmInfo, studioLlmModelId } from "./studio-llm.ts";
 
 const env = (vars: Record<string, string>): NodeJS.ProcessEnv => vars as NodeJS.ProcessEnv;
 
@@ -24,24 +19,6 @@ describe("studioLlmModelId", () => {
   test("the EU region default skips US-only models", () => {
     // qwen/gpt lead the US list but are not served by the EU endpoint.
     expect(studioLlmModelId(env({ STUDIO_LLM_REGION: "eu" }))).toBe("claude-sonnet-4-6");
-  });
-});
-
-describe("studioModel", () => {
-  test("resolves a gateway model on the caller's key — no host env needed", () => {
-    const model = studioModel("caller-key", env({}));
-    expect((model as { modelId: string }).modelId).toBe("gpt-5-mini");
-  });
-
-  test("refuses an empty caller key", () => {
-    expect(() => studioModel("", env({}))).toThrow(/caller's AssemblyAI API key/);
-  });
-
-  test("never reads a platform key from env", () => {
-    // A host ASSEMBLYAI_API_KEY in env must be irrelevant: only the caller
-    // key argument selects and authenticates the model.
-    const hostEnv = env({ ASSEMBLYAI_API_KEY: "platform-key-should-be-ignored" });
-    expect(() => studioModel("", hostEnv)).toThrow(/caller's AssemblyAI API key/);
   });
 });
 

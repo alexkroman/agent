@@ -487,9 +487,6 @@ importers:
       aai-studio-client:
         specifier: workspace:*
         version: link:../aai-studio-client
-      ai:
-        specifier: ^7.0.41
-        version: 7.0.41(zod@4.4.3)
       hono:
         specifier: ^4.12.31
         version: 4.12.32

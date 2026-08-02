@@ -16,9 +16,7 @@
  * is stripped by the body schema, never honored.
  */
 
-import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAI, gatewayModelIds } from "@alexkroman1/aai/llm";
-import { resolveLlm } from "@alexkroman1/aai/runtime";
-import type { LanguageModel } from "ai";
+import { gatewayModelIds } from "@alexkroman1/aai/llm";
 
 /**
  * The models offered for studio chat, in preference order.
@@ -67,8 +65,8 @@ import type { LanguageModel } from "ai";
 const PREFERRED = ["gpt-5-mini", "claude-sonnet-4-6"] as const;
 
 function ordered(ids: readonly string[]): readonly string[] {
-  const preferred = PREFERRED.filter((id) => ids.includes(id));
-  return [...preferred, ...ids.filter((id) => !preferred.includes(id as never))];
+  const preferred: readonly string[] = PREFERRED.filter((id) => ids.includes(id));
+  return [...preferred, ...ids.filter((id) => !preferred.includes(id))];
 }
 
 export const ASSEMBLYAI_GATEWAY_MODELS = ordered(gatewayModelIds());
@@ -92,19 +90,4 @@ export function studioLlmInfo(env: NodeJS.ProcessEnv = process.env): {
   model: string;
 } {
   return { provider: "assemblyai", model: studioLlmModelId(env) };
-}
-
-/**
- * Resolve the live `LanguageModel` for one caller's turn. `apiKey` is the
- * caller's AssemblyAI key (the studio request's bearer) — the only
- * credential the studio LLM ever runs on; host env never reaches the
- * resolver.
- */
-export function studioModel(apiKey: string, env: NodeJS.ProcessEnv = process.env): LanguageModel {
-  if (!apiKey) throw new Error("Studio LLM requires the caller's AssemblyAI API key");
-  const descriptor = assemblyAI({
-    model: studioLlmModelId(env),
-    ...(isEuGateway(env) ? { region: "eu" as const } : {}),
-  });
-  return resolveLlm(descriptor, { [ASSEMBLYAI_LLM_API_KEY_ENV]: apiKey });
 }

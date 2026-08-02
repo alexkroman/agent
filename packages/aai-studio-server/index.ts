@@ -90,6 +90,12 @@ async function main(): Promise<void> {
   const { app: studioApp, dispose: disposeStudio } = createStudioApp(
     studioAppOpts(base, () => draining),
   );
+  // The broker's per-project coding-agent sandboxes are this process's to
+  // release: without the dispose they outlive it and burn their orphan
+  // timeout (billed, on Modal) on every scale-in. Shared by both modes so
+  // the two shutdown paths cannot drift.
+  const teardown = (): Promise<void> =>
+    teardownSandboxes({ slots: base.slots, pool: base.pool, broker: { dispose: disposeStudio } });
 
   if (mode === "studio") {
     await startService({
@@ -102,14 +108,7 @@ async function main(): Promise<void> {
       onShutdown: async () => {
         draining = true;
         console.info("Studio service shutting down...");
-        // The broker's per-project coding-agent sandboxes are this service's
-        // to release: without the dispose they outlive the process and burn
-        // their orphan timeout (billed, on Modal) on every scale-in.
-        await teardownSandboxes({
-          slots: base.slots,
-          pool: base.pool,
-          broker: { dispose: disposeStudio },
-        });
+        await teardown();
       },
     });
     return;
@@ -134,11 +133,7 @@ async function main(): Promise<void> {
       await drainActiveSessions({ activeCount: orchestrator.activeSessionCount, env });
       console.info("Shutting down...");
       orchestrator.closeActiveSockets();
-      await teardownSandboxes({
-        slots: base.slots,
-        pool: base.pool,
-        broker: { dispose: disposeStudio },
-      });
+      await teardown();
     },
   });
 }

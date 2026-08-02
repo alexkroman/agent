@@ -31,7 +31,6 @@
     "@sindresorhus/slugify": "^3.0.0",
     "aai-server": "workspace:*",
     "aai-studio-client": "workspace:*",
-    "ai": "^7.0.41",
     "hono": "^4.12.31",
     "mime-types": "^3.0.2",
     "react": "^19.2.8",

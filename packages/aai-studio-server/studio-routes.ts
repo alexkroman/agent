@@ -140,17 +140,14 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   const chatLimiter = options.rateLimiters?.chat ?? createRateLimiter(CHAT_RATE_LIMIT);
   const projectCreateLimiter =
     options.rateLimiters?.projectCreate ?? createRateLimiter(PROJECT_CREATE_RATE_LIMIT);
-  const rateLimited = async (apiKey: string, limiter: RateLimiter): Promise<Response | null> => {
-    const verdict = await limiter.check(studioScope(apiKey));
+  const rateLimited = async (scope: string, limiter: RateLimiter): Promise<Response | null> => {
+    const verdict = await limiter.check(scope);
     if (verdict.ok) return null;
     return Response.json(
       { error: "Rate limit exceeded — try again later" },
       { status: 429, headers: { "Retry-After": String(verdict.retryAfterSeconds) } },
     );
   };
-
-  // `GET /studio` (no trailing path) — send the browser to the studio page.
-  studio.get("/", (c) => c.redirect("/", 302));
 
   // `llm: true` is legacy shape — chat always runs now, on the caller's key.
   studio.get("/status", (c) => c.json({ llm: true, ...studioLlmInfo() }));
@@ -160,7 +157,6 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // hash itself.
   studio.use("/projects", authMw);
   studio.use("/projects/*", authMw);
-  studio.use("/chat", authMw);
 
   studio.get("/projects", async (c) => {
     const scope = studioScope(c.var.apiKey);
@@ -168,9 +164,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   });
 
   studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
-    const limited = await rateLimited(c.var.apiKey, projectCreateLimiter);
-    if (limited) return limited;
     const scope = studioScope(c.var.apiKey);
+    const limited = await rateLimited(scope, projectCreateLimiter);
+    if (limited) return limited;
     const { name, prompt } = c.req.valid("json");
     // No explicit name: the server generates one, v0-style — a readable base
     // from the creating prompt plus a random suffix, via the same generator
@@ -219,10 +215,12 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   studio.get("/projects/:project/chat", async (c) => {
     const scope = studioScope(c.var.apiKey);
     const project = validateProject(c.req.param("project"));
-    if (!(await getWorkspace(c.env.workspaces, scope, project))) {
-      return c.json({ error: "Project not found" }, 404);
-    }
-    const messages = await c.env.chats.getChat(scope, project);
+    // Independent reads — the chat fetch doesn't depend on the existence check.
+    const [workspace, messages] = await Promise.all([
+      getWorkspace(c.env.workspaces, scope, project),
+      c.env.chats.getChat(scope, project),
+    ]);
+    if (!workspace) return c.json({ error: "Project not found" }, 404);
     return c.json({ messages: messages ?? [] });
   });
 
@@ -231,8 +229,10 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     const project = validateProject(c.req.param("project"));
     // No lock needed: a racing versioned write cannot resurrect the project —
     // `mutateWorkspace` only ever replaces an existing row.
-    await deleteWorkspace(c.env.workspaces, scope, project);
-    await c.env.chats.deleteChat(scope, project);
+    await Promise.all([
+      deleteWorkspace(c.env.workspaces, scope, project),
+      c.env.chats.deleteChat(scope, project),
+    ]);
     return c.json({ ok: true });
   });
 
@@ -314,10 +314,10 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // on (SSE), mirroring how voice clients connect straight to a deployed
   // agent's /websocket. Rate-limited: each call can spawn a Modal sandbox.
   studio.post("/projects/:project/session", async (c) => {
-    const limited = await rateLimited(c.var.apiKey, chatLimiter);
+    const scope = studioScope(c.var.apiKey);
+    const limited = await rateLimited(scope, chatLimiter);
     if (limited) return limited;
     const project = validateProject(c.req.param("project"));
-    const scope = studioScope(c.var.apiKey);
     // The public origin arms auto preview deploys: the guest's end-of-turn
     // sync makes the broker ship the edited workspace to the preview slug.
     const session = await ensureBroker(c).ensureSession(

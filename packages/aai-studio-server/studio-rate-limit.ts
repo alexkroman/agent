@@ -3,10 +3,11 @@
  * Per-scope rate limiting for the studio's expensive routes.
  *
  * Studio auth accepts any non-empty bearer key (workspace scoping is all it
- * needs), so without a cap `POST /studio/chat` is an unmetered LLM proxy
- * running on platform-owned provider keys, and project creation is unmetered
- * storage growth. A small fixed-window limiter keyed by the caller's
- * `studioScope` bounds both.
+ * needs), so without a cap session brokering is unmetered Modal sandbox
+ * spawning and project creation is unmetered storage growth. (Chat turns
+ * themselves run browser→guest on the caller's own LLM key, so they need no
+ * platform metering.) A small fixed-window limiter keyed by the caller's
+ * `studioScope` bounds both routes.
  *
  * Two implementations behind one async interface:
  *
@@ -25,7 +26,7 @@ import { ensureTableOnce } from "aai-server/pg-ensure";
 import { TtlCache } from "aai-server/platform-barrel";
 import type { SqlExec } from "aai-server/secret-store";
 
-/** `POST /studio/chat` — each request is an LLM turn on platform keys. */
+/** `POST /studio/projects/:project/session` — each request can spawn a Modal sandbox. */
 export const CHAT_RATE_LIMIT = { limit: 30, windowMs: 5 * 60_000 } as const;
 /** `POST /studio/projects` — each request writes a new workspace document. */
 export const PROJECT_CREATE_RATE_LIMIT = { limit: 60, windowMs: 60 * 60_000 } as const;

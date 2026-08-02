@@ -23,13 +23,12 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
 import type { WorkspaceStore } from "aai-server/workspace-store";
-import type { WorkspaceDeployOutcome, WorkspaceDeployTarget } from "./studio-session-broker.ts";
-import { currentFilesHash, getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
+import type { StudioSessionBroker } from "./studio-session-broker.ts";
+import { currentFilesHash, getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts";
 import { withWorkspaceLock } from "./studio-workspace-lock.ts";
 
-/** Longest platform slug (see VALID_SLUG_RE in the shared SDK). */
-const MAX_SLUG_LENGTH = 64;
 const PREVIEW_SUFFIX = "-preview";
 /** Cap on the stored preview failure output (it renders in a banner). */
 const MAX_PREVIEW_ERROR = 16_000;
@@ -65,12 +64,7 @@ export type PreviewDeployer = {
 export type PreviewDeployerOptions = {
   workspaces: WorkspaceStore;
   /** The broker's `deployWorkspace` — the in-sandbox `aai deploy` run. */
-  deployWorkspace: (
-    scope: string,
-    project: string,
-    files: Record<string, string>,
-    target: WorkspaceDeployTarget,
-  ) => Promise<WorkspaceDeployOutcome>;
+  deployWorkspace: StudioSessionBroker["deployWorkspace"];
 };
 
 export function createPreviewDeployer(options: PreviewDeployerOptions): PreviewDeployer {
@@ -114,9 +108,7 @@ export function createPreviewDeployer(options: PreviewDeployerOptions): PreviewD
 
   return {
     schedule(scope, project, target) {
-      // NUL separator, as in the broker's session key: neither half can
-      // contain it, so distinct pairs can never collide.
-      const key = `${scope}\u0000${project}`;
+      const key = projectKey(scope, project);
       const existing = inflight.get(key);
       if (existing) {
         existing.dirty = true;

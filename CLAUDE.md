@@ -481,8 +481,7 @@ voice agents without the CLI:
   credential. The *model* (never the key) stays host config: default
   `qwen3-next-80b-a3b`, `STUDIO_LLM_MODEL` overrides,
   `STUDIO_LLM_REGION=eu` region-filters. The caller's key doubles as the
-  guest chat surface's bearer — same trust, no new secret. Host-side
-  `studioModel(apiKey)` remains only for the eval judge.
+  guest chat surface's bearer — same trust, no new secret.
 - **Gateway regions.** `STUDIO_LLM_REGION=eu` selects the EU endpoint,
   which serves only Claude and most Gemini models. The gateway model list
   is therefore region-filtered (`GATEWAY_US_ONLY_MODELS`) and the EU

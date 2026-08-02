@@ -84,6 +84,8 @@ export function createStudioApp(opts: StudioAppOpts): {
     ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
   });
   app.route("/studio", studioRoutes.routes);
+  // Bare `/studio` and `/studio/` — send the browser to the studio page.
+  app.get("/studio", (c) => c.redirect("/", 302));
   app.get("/studio/", (c) => c.redirect("/", 302));
 
   const bindings: StudioHonoEnv["Bindings"] = {
@@ -105,7 +107,7 @@ export function createStudioApp(opts: StudioAppOpts): {
 
   const original = app.fetch.bind(app);
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
-    original(req, { ...bindings, ...env });
+    original(req, env ? { ...bindings, ...env } : bindings);
 
   return { app, dispose: studioRoutes.dispose };
 }

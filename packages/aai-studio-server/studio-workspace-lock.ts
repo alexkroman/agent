@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Serializes studio workspace mutations per `{scope}/{project}`.
+ * Serializes studio workspace mutations per (scope, project).
  *
  * Every workspace write is a read-modify-write of the whole document
  * (`mutateWorkspace`), and writers genuinely race: the AI SDK executes
@@ -23,19 +23,16 @@
  */
 
 import { createKeyedLock } from "aai-server/platform-barrel";
+import { withLock } from "aai-server/sandbox-slots";
+import { projectKey } from "./studio-workspace.ts";
 
 const workspaceLock = createKeyedLock();
 
 /** Run `work` while holding this workspace's mutation lock. */
-export async function withWorkspaceLock<T>(
+export function withWorkspaceLock<T>(
   scope: string,
   project: string,
   work: () => Promise<T>,
 ): Promise<T> {
-  const release = await workspaceLock(`${scope}/${project}`);
-  try {
-    return await work();
-  } finally {
-    release();
-  }
+  return withLock(workspaceLock, projectKey(scope, project), work);
 }
