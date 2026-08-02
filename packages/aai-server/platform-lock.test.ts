@@ -1,8 +1,16 @@
 // Copyright 2026 the AAI authors. MIT license.
 
+import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
-import { createPgSlugLock, localSlugLock, SlugLockTimeoutError } from "./platform-lock.ts";
-import type { SqlExec } from "./secret-store.ts";
+import { createBundleStore } from "./bundle-store.ts";
+import {
+  createMutationLock,
+  createPgSlugLock,
+  localSlugLock,
+  SlugLockTimeoutError,
+} from "./platform-lock.ts";
+import { createMemorySecretStore, type SqlExec } from "./secret-store.ts";
+import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 /**
  * Fake `SqlExec` reproducing the lease-table semantics of the lock's two
@@ -155,5 +163,71 @@ describe("localSlugLock", () => {
       }),
     ]);
     expect(order).toEqual(["first-start", "first-end", "second"]);
+  });
+});
+
+describe("createMutationLock", () => {
+  /**
+   * The lease serializes writers across replicas, but each replica's bundle
+   * store is a read-through cache with its own TTL. A mutation that reads
+   * through that cache computes its merge from a pre-lock snapshot, so two
+   * correctly-serialized secret writes on different replicas still lose one
+   * of the two values.
+   */
+  test("a mutation reads durable state, not this replica's cached view", async () => {
+    const storage = createStorage();
+    const secrets = createMemorySecretStore();
+    // Two replicas over one shared backend, plus a cold reader for the truth.
+    const a = createBundleStore(storage, { secrets });
+    const b = createBundleStore(storage, { secrets });
+    const durableEnv = () => createBundleStore(storage, { secrets }).getEnv("x");
+
+    await a.putAgent({
+      slug: "x",
+      env: { BASE: "1" },
+      worker: "w",
+      clientFiles: {},
+      credential_hashes: ["h"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+
+    const lockA = createMutationLock(localSlugLock, a);
+    const lockB = createMutationLock(localSlugLock, b);
+
+    // Replica B warms its manifest cache (any read: page load, WS upgrade).
+    expect(await b.getEnv("x")).toEqual({ BASE: "1" });
+
+    // `PUT /x/secret {FOO:1}` lands on replica A.
+    await lockA("x", async () => {
+      await a.putEnv("x", { ...((await a.getEnv("x")) ?? {}), FOO: "1" });
+    });
+    // Lease released; `PUT /x/secret {BAR:2}` lands on replica B.
+    await lockB("x", async () => {
+      await b.putEnv("x", { ...((await b.getEnv("x")) ?? {}), BAR: "2" });
+    });
+
+    expect(await durableEnv()).toEqual({ BASE: "1", FOO: "1", BAR: "2" });
+  });
+
+  test("still serializes writers for the same slug", async () => {
+    const order: string[] = [];
+    const lock = createMutationLock(localSlugLock, { invalidate: () => undefined });
+    await Promise.all([
+      lock("s", async () => {
+        order.push("first-start");
+        await new Promise((resolve) => setImmediate(resolve));
+        order.push("first-end");
+      }),
+      lock("s", () => {
+        order.push("second");
+        return Promise.resolve();
+      }),
+    ]);
+    expect(order).toEqual(["first-start", "first-end", "second"]);
+  });
+
+  test("tolerates a store without invalidate (test doubles)", async () => {
+    const lock = createMutationLock(localSlugLock, {});
+    expect(await lock("s", () => Promise.resolve("ok"))).toBe("ok");
   });
 });

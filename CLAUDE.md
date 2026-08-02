@@ -397,6 +397,18 @@ voice agents without the CLI:
   same way via the host→guest `workspace/build` RPC. Sandboxes are per (scope, project)
   with a 15-min idle eviction; a dead one heals on the next broker call,
   and the client re-brokers on a 409 from the chat surface.
+  **`ensureSession` is serialized per (scope, project), and entries are
+  disposed by identity, not by key.** Overlapping brokers for one project are
+  routine (a double-click, a StrictMode double effect, a refresh landing on
+  an in-flight one); unserialized, both take the cold path and the loser's
+  sandbox is ORPHANED — absent from `sessions`, so neither the idle sweeper
+  nor `dispose()` can ever reach it. It burns its orphan timeout plus Modal's
+  idle window billed, and its `wire()` handlers stay live, so its end-of-turn
+  `studio/sync-workspace` keeps writing the project behind the tracked
+  sandbox's back. The identity check matters for the same reason
+  `createOwnedMap` exists on the agent side: every cleanup runs after an
+  await (a rejected re-init, a publish whose sandbox died mid-request), by
+  which point the key may hold a replacement that must not be evicted.
 - **No MCP.** The studio's coding agent has no MCP integration (the docs
   MCP server it once connected to was removed). The system prompt embeds a
   *snapshot* of the scaffold guide; anything outside it — a voice, a newly
@@ -1465,6 +1477,22 @@ coordination lives in the same Postgres over `SUPABASE_DB_URL`:
   past the acquire deadline surfaces as `SlugLockTimeoutError` → 409.
   `sandbox-resolve.ts` stays on the in-process lock deliberately: it guards
   this replica's slot cache, a legitimately process-local resource.
+
+  **The binding is wrapped in `createMutationLock`, and must stay wrapped:
+  taking the lock also drops this replica's cached view of the slug.** The
+  lease alone is not enough, because every mutation is a read-modify-write
+  over a read-through cache — `handleSecretSet` merges onto `getEnv`,
+  `deployLocked` merges the stored env *and* `credential_hashes` off
+  `getManifest` — and `putEnv` drops only the writing replica's entry. A
+  write that landed on replica A is invisible to replica B for the 60s
+  manifest TTL, so B computes its merge from a pre-lock snapshot and writes
+  the older value back. The two writes were serialized perfectly and one of
+  them still vanished, silently: a secret reverts, or a deploy drops a
+  co-owner's credential hash. Invalidation belongs at lock acquisition (one
+  place, in `platform-lock.ts`) rather than per route, for the same reason
+  `invalidateSlug` exists — a route that forgets produces no error at all.
+  Note the broker path deliberately does NOT go through this wrapper, so
+  brokering a session never drops the up-to-30 MB worker-code cache.
 - **Studio rate limits** (`aai-studio-server/studio-rate-limit.ts`): the
   chat and project-create windows are rows in
   `aai_platform.studio_rate_limits` (`createPgRateLimiter`, one atomic

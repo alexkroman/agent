@@ -219,6 +219,97 @@ describe("studio session broker", () => {
       output: expect.stringContaining("Malformed deploy response"),
     });
   });
+
+  /**
+   * Two `POST /studio/projects/:project/session` calls for one project can
+   * overlap (double-click, a StrictMode double-effect, a refresh landing on
+   * an in-flight broker). Unserialized, both take the cold path and the
+   * loser's sandbox is orphaned: it never lands in `sessions`, so neither
+   * the idle sweeper nor `dispose()` can reach it — it burns its orphan
+   * timeout billed, while its still-wired `studio/sync-workspace` handler
+   * keeps writing the project behind the tracked sandbox's back.
+   */
+  test("concurrent sessions for one project share a single sandbox", async () => {
+    const first = fakeGuest();
+    const second = fakeGuest("wss://tunnel2.example:443");
+    const { broker, spawn } = await makeBroker([first, second]);
+
+    const [a, b] = await Promise.all([
+      broker.ensureSession(SCOPE, PROJECT, "k"),
+      broker.ensureSession(SCOPE, PROJECT, "k"),
+    ]);
+
+    expect(spawn).toHaveBeenCalledTimes(1);
+    expect(a?.url).toBe(b?.url);
+    // The unused guest was never spawned, so nothing is left untracked.
+    expect(second.disposed()).toBe(false);
+    await broker.dispose();
+    expect(first.disposed()).toBe(true);
+  });
+
+  test("sessions for different projects are not serialized against each other", async () => {
+    const first = fakeGuest();
+    const second = fakeGuest("wss://tunnel2.example:443");
+    const { broker, workspaces, spawn } = await makeBroker([first, second]);
+    await createWorkspace(workspaces, SCOPE, "other", { files: { "agent.ts": "// o" } });
+
+    const [a, b] = await Promise.all([
+      broker.ensureSession(SCOPE, PROJECT, "k"),
+      broker.ensureSession(SCOPE, "other", "k"),
+    ]);
+
+    expect(spawn).toHaveBeenCalledTimes(2);
+    expect(a?.url).not.toBe(b?.url);
+    await broker.dispose();
+  });
+
+  /**
+   * `deployWorkspace` drops the project's entry when its sandbox fails
+   * mid-publish. That cleanup runs after an await, so it must remove its OWN
+   * entry — by then the client may have re-brokered and installed a
+   * replacement, and evicting that one strands a live sandbox nothing owns.
+   */
+  test("a failed publish does not evict a session installed while it ran", async () => {
+    const first = fakeGuest();
+    const second = fakeGuest("wss://tunnel2.example:443");
+    let failDeploy!: (err: Error) => void;
+    (first.warm.conn as { sendRequest: unknown }).sendRequest = (method: string) => {
+      if (method === "workspace/deploy") {
+        return new Promise((_resolve, reject) => {
+          failDeploy = reject;
+        });
+      }
+      // Once the sandbox is gone, re-init rejects — as the real one does.
+      return first.disposed()
+        ? Promise.reject(new Error("Connection disposed"))
+        : Promise.resolve({ ok: true });
+    };
+
+    // 3rd: the ephemeral sandbox the failed publish retries on. A 4th is
+    // only ever reached if the publish's cleanup evicted the replacement.
+    const ephemeral = fakeGuest("wss://tunnel3.example:443");
+    const fourth = fakeGuest("wss://tunnel4.example:443");
+    const { broker } = await makeBroker([first, second, ephemeral, fourth]);
+    await broker.ensureSession(SCOPE, PROJECT, "k");
+
+    // Publish starts against the live sandbox and stalls.
+    const publish = broker.deployWorkspace(SCOPE, PROJECT, { "agent.ts": "x" }, TARGET);
+    // The sandbox dies, the client re-brokers, a replacement is installed.
+    await first.warm[Symbol.asyncDispose]();
+    const replacement = await broker.ensureSession(SCOPE, PROJECT, "k");
+    expect(replacement?.url).toBe("https://tunnel2.example/studio/chat");
+
+    // Only now does the stalled publish notice and run its cleanup.
+    failDeploy(new Error("sandbox gone"));
+    await publish.catch(() => undefined);
+
+    // The replacement must still be the project's session — reusable, and
+    // reachable by dispose().
+    const after = await broker.ensureSession(SCOPE, PROJECT, "k");
+    expect(after?.url).toBe("https://tunnel2.example/studio/chat");
+    await broker.dispose();
+    expect(second.disposed()).toBe(true);
+  });
 });
 
 describe("chatUrlForGuest", () => {

@@ -10,7 +10,7 @@
 // decrypt path — this migration supersedes the old "never delete a legacy
 // read path" rule for env blobs.
 
-import { errorMessage } from "@alexkroman1/aai";
+import { createEpoch, errorMessage } from "@alexkroman1/aai";
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import { createKeyedLock } from "./_keyed-lock.ts";
@@ -136,7 +136,33 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     WORKER_CODE_CACHE_MAX_BYTES,
   );
 
+  /**
+   * Staleness guard for reads that are already in flight when a mutation
+   * lands. Clearing the caches does not fence them: a read that missed before
+   * the write and settles after it would otherwise write its PRE-mutation
+   * value straight back in, under a fresh TTL — 10 minutes for worker code.
+   * That one is not merely stale, it is undetectable: `rebuildSlot` stamps
+   * the post-bump slug epoch on the sandbox it builds from the poisoned
+   * entry, so the resident reads as current while running the previous
+   * deploy's code, and the epoch mechanism never fires.
+   *
+   * Deliberately ONE epoch for the store rather than one per slug: a bump
+   * only costs concurrently-in-flight reads their cache write (the values
+   * they return are unaffected), invalidations are per-mutation and rare
+   * next to reads, and a per-slug counter would be a map that only ever
+   * grows. See `createEpoch` in @alexkroman1/aai — the sanctioned primitive
+   * for this, rather than a hand-rolled counter.
+   */
+  const readEpoch = createEpoch();
+
+  /** Drop the manifest alone (env changed; bundle artifacts did not). */
+  function invalidateManifest(slug: string): void {
+    readEpoch.bump();
+    manifestCache.delete(slug);
+  }
+
   function invalidate(slug: string): void {
+    readEpoch.bump();
     manifestCache.delete(slug);
     configCache.delete(slug);
     workerCodeCache.delete(slug);
@@ -225,8 +251,9 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
   async function getManifestCached(slug: string): Promise<AgentMetadata | null> {
     const cached = manifestCache.get(slug);
     if (cached !== undefined) return cached;
+    const gen = readEpoch.current();
     const value = await loadManifest(slug);
-    manifestCache.set(slug, value);
+    if (readEpoch.isCurrent(gen)) manifestCache.set(slug, value);
     return value;
   }
 
@@ -272,8 +299,9 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     async getWorkerCode(slug) {
       const cached = workerCodeCache.get(slug);
       if (cached !== undefined) return cached;
+      const gen = readEpoch.current();
       const value = await readItem(agentObjectKey(slug, "worker.js"));
-      workerCodeCache.set(slug, value, value?.length ?? 0);
+      if (readEpoch.isCurrent(gen)) workerCodeCache.set(slug, value, value?.length ?? 0);
       return value;
     },
 
@@ -281,8 +309,9 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
       const key = agentObjectKey(slug, `client/${filePath}`);
       const cached = clientFileCache.get(key);
       if (cached !== undefined) return cached;
+      const gen = readEpoch.current();
       const value = await readItem(key);
-      clientFileCache.set(key, value);
+      if (readEpoch.isCurrent(gen)) clientFileCache.set(key, value);
       return value;
     },
 
@@ -310,7 +339,7 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
         const manifest = await getManifestCached(slug);
         if (!manifest) throw new Error(`Agent ${slug} not found`);
         await writeEnv(slug, env);
-        manifestCache.delete(slug);
+        invalidateManifest(slug);
       });
     },
 
@@ -319,15 +348,17 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     async getAgentConfig(slug) {
       const cached = configCache.get(slug);
       if (cached !== undefined) return cached;
+      const gen = readEpoch.current();
       const json = await readJson(agentObjectKey(slug, "config.json"));
+      const fresh = readEpoch.isCurrent(gen);
       if (json == null) {
-        configCache.set(slug, null);
+        if (fresh) configCache.set(slug, null);
         return null;
       }
       // Don't cache parse failures — transient corruption shouldn't stick.
       const parsed = IsolateConfigSchema.safeParse(json);
       if (!parsed.success) return null;
-      configCache.set(slug, parsed.data);
+      if (fresh) configCache.set(slug, parsed.data);
       return parsed.data;
     },
   };

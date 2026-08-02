@@ -27,7 +27,7 @@ import type { AppDatabases } from "aai-server/app-database";
 import { applyPlatformMiddleware } from "aai-server/app-middleware";
 import type { ChatStore } from "aai-server/chat-store";
 import { createMemorySlugEpochs, type SlugEpochs } from "aai-server/platform-epoch";
-import { localSlugLock, type SlugMutationLock } from "aai-server/platform-lock";
+import { createMutationLock, localSlugLock, type SlugMutationLock } from "aai-server/platform-lock";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { createSlotCache } from "aai-server/sandbox-slots";
 import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
@@ -91,7 +91,10 @@ export function createStudioApp(opts: StudioAppOpts): {
     chats: opts.chats,
     secrets: opts.secrets ?? createMemorySecretStore(),
     ...(opts.appDb && { appDb: opts.appDb }),
-    slugLock: opts.slugLock ?? localSlugLock,
+    // Wrapped exactly as the agent service wraps it: holding the lock must
+    // also drop this replica's cached view of the slug, or a mutation
+    // read-modify-writes off a pre-lock snapshot (see createMutationLock).
+    slugLock: createMutationLock(opts.slugLock ?? localSlugLock, opts.store),
     slugEpochs: opts.slugEpochs ?? createMemorySlugEpochs(),
   };
 

@@ -39,7 +39,7 @@ import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
 import { createMemorySlugEpochs, type SlugEpochs } from "./platform-epoch.ts";
-import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
+import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { describeBundle } from "./sandbox-vm.ts";
@@ -217,8 +217,12 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     secrets: opts.secrets ?? createMemorySecretStore(),
     ...(opts.appDb && { appDb: opts.appDb }),
     // Same default posture as secrets: tests build orchestrators without a
-    // platform database, where in-process exclusion is exact.
-    slugLock: opts.slugLock ?? localSlugLock,
+    // platform database, where in-process exclusion is exact. Wrapped so
+    // taking the lock also drops this replica's cached view of the slug —
+    // every mutation route read-modify-writes, and the cache is what makes a
+    // correctly-serialized write compute its merge from a stale base (see
+    // createMutationLock).
+    slugLock: createMutationLock(opts.slugLock ?? localSlugLock, opts.store),
     slugEpochs: opts.slugEpochs ?? createMemorySlugEpochs(),
   };
 
