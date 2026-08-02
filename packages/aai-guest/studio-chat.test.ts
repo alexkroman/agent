@@ -199,6 +199,70 @@ describe("guest studio chat surface", () => {
     }
   });
 
+  // A guest killed mid-turn used to lose everything: sync-workspace and
+  // persist-chat ran only in onFinish, so an observed kill during test_agent
+  // left the project at {"files":{}} with no transcript, after the agent had
+  // written a complete agent.ts.
+  test("checkpoints the workspace mid-turn, not only when the turn settles", async () => {
+    const host = fakeHost();
+    const session = await makeSession({ "agent.ts": "// original" });
+    const model = scriptedModel([
+      toolStep("write_file", { path: "agent.ts", content: "// checkpointed" }),
+      textStep("Done."),
+    ]);
+    const { url, close } = await serve(session, deps(model));
+    try {
+      await post(url, chatBody("update the agent"));
+      await vi.waitFor(() => {
+        const syncs = host.calls.filter((c) => c.method === "studio/sync-workspace");
+        // One from the mutating step's checkpoint, one from the settle.
+        expect(syncs.length).toBeGreaterThanOrEqual(2);
+        const checkpoint = syncs[0]?.params as { files?: Record<string, string> };
+        expect(checkpoint.files?.["agent.ts"]).toBe("// checkpointed");
+      });
+    } finally {
+      await close();
+    }
+  });
+
+  test("persists the inbound conversation before the turn runs", async () => {
+    const host = fakeHost();
+    const session = await makeSession({ "agent.ts": "x" });
+    const { url, close } = await serve(session, deps(scriptedModel([textStep("Hi.")])));
+    try {
+      await post(url, chatBody("remember this prompt"));
+      await vi.waitFor(() => {
+        const persists = host.calls.filter((c) => c.method === "studio/persist-chat");
+        // Start-of-turn snapshot plus the settled one.
+        expect(persists.length).toBeGreaterThanOrEqual(2);
+      });
+      const first = host.calls.find((c) => c.method === "studio/persist-chat");
+      expect(JSON.stringify(first?.params)).toContain("remember this prompt");
+    } finally {
+      await close();
+    }
+  });
+
+  test("a turn with no file edits does not checkpoint the workspace mid-turn", async () => {
+    const host = fakeHost();
+    const session = await makeSession({ "agent.ts": "x" });
+    const { url, close } = await serve(session, deps(scriptedModel([textStep("Just talking.")])));
+    try {
+      await post(url, chatBody("say hi"));
+      // Wait for the SETTLE, not just any persist — the inbound snapshot now
+      // fires at turn start, so it lands long before the turn is done.
+      await vi.waitFor(() => {
+        const persists = host.calls.filter((c) => c.method === "studio/persist-chat");
+        expect(persists.length).toBeGreaterThanOrEqual(2);
+      });
+      // Only the settle's sync — a read-only turn must not spam the host.
+      const syncs = host.calls.filter((c) => c.method === "studio/sync-workspace");
+      expect(syncs.length).toBe(1);
+    } finally {
+      await close();
+    }
+  });
+
   test("bash runs real commands inside the workspace", async () => {
     fakeHost();
     const session = await makeSession({ "data.txt": "alpha\nbeta\n" });
