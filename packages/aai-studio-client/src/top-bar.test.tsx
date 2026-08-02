@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 // Copyright 2026 the AAI authors. MIT license.
-// Top bar wiring: brand → home, the project switcher's three outcomes
-// (select, new-project sentinel, deselect), and the Publish menu states.
+// Top bar wiring: brand → home, the project name label, and the Publish
+// menu states.
 
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, test, vi } from "vitest";
@@ -13,16 +13,14 @@ const noop = (): void => undefined;
 
 const barProps = {
   project: "demo" as string | null,
-  projects: ["demo", "other"],
   tab: "preview" as const,
   hasBuild: true,
-  onSelectProject: noop,
-  onNewProject: noop,
+  settingsOpen: false,
   onGoHome: noop,
   onSelectTab: noop,
-  onSignOut: noop,
+  onLogOut: noop,
   onTogglePublish: noop,
-  onToggleSecrets: noop,
+  onToggleSettings: noop,
 };
 
 describe("TopBar", () => {
@@ -33,16 +31,15 @@ describe("TopBar", () => {
     expect(onGoHome).toHaveBeenCalled();
   });
 
-  test("the switcher selects a project, and the sentinel starts a new one", () => {
-    const onSelectProject = vi.fn();
-    const onNewProject = vi.fn();
-    render(<TopBar {...barProps} onSelectProject={onSelectProject} onNewProject={onNewProject} />);
-    const select = screen.getByRole("combobox");
-    fireEvent.change(select, { target: { value: "other" } });
-    expect(onSelectProject).toHaveBeenCalledWith("other");
-    fireEvent.change(select, { target: { value: "__new__" } });
-    expect(onNewProject).toHaveBeenCalled();
-    expect(onSelectProject).toHaveBeenCalledTimes(1);
+  test("shows the open project's name, and no switcher", () => {
+    render(<TopBar {...barProps} />);
+    expect(screen.getByText("demo")).toBeDefined();
+    expect(screen.queryByRole("combobox")).toBeNull();
+  });
+
+  test("no project → no name label", () => {
+    render(<TopBar {...barProps} project={null} />);
+    expect(screen.queryByText("demo")).toBeNull();
   });
 
   test("tab buttons switch between Preview and Code", () => {
@@ -54,22 +51,32 @@ describe("TopBar", () => {
     expect(onSelectTab).toHaveBeenCalledWith("preview");
   });
 
-  test("Publish and Secrets lock until there is a build / a deploy", () => {
+  test("Publish and Settings lock until there is a build / a deploy", () => {
     render(<TopBar {...barProps} hasBuild={false} />);
     const publish = screen.getByRole("button", { name: "Publish" });
-    const secrets = screen.getByRole("button", { name: "Secrets" });
+    const settings = screen.getByRole("button", { name: "Settings" });
     expect((publish as HTMLButtonElement).disabled).toBe(true);
-    expect((secrets as HTMLButtonElement).disabled).toBe(true);
+    expect((settings as HTMLButtonElement).disabled).toBe(true);
   });
 
-  test("a deployed slug shows the production link and unlocks Secrets", () => {
-    render(<TopBar {...barProps} deployedSlug="my-agent" />);
+  test("a deployed slug shows the production link and unlocks Settings", () => {
+    const onToggleSettings = vi.fn();
+    render(<TopBar {...barProps} deployedSlug="my-agent" onToggleSettings={onToggleSettings} />);
     // The production URL is a plain link that opens in a new tab.
     const link = screen.getByRole("link");
     expect(link.getAttribute("href")).toBe(agentUrl("my-agent"));
     expect(link.getAttribute("target")).toBe("_blank");
-    const secrets = screen.getByRole("button", { name: "Secrets" });
-    expect((secrets as HTMLButtonElement).disabled).toBe(false);
+    const settings = screen.getByRole("button", { name: "Settings" });
+    expect((settings as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(settings);
+    expect(onToggleSettings).toHaveBeenCalled();
+  });
+
+  test("Log out is wired to the sign-out handler", () => {
+    const onLogOut = vi.fn();
+    render(<TopBar {...barProps} onLogOut={onLogOut} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    expect(onLogOut).toHaveBeenCalled();
   });
 });
 

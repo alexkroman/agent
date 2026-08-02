@@ -15,11 +15,11 @@ type HomeSidebarProps = {
   /** Undefined while the project list is loading. */
   projects: string[] | undefined;
   onSelectProject: (name: string) => void;
-  onNewProject: () => void;
 };
 
-/** Home-page sidebar: previous projects (each one a chat) + new project. */
-export function HomeSidebar({ projects, onSelectProject, onNewProject }: HomeSidebarProps) {
+/** Home-page sidebar: previous projects (each one a chat). New projects are
+ * created by the hero prompt box, so there is no button for it. */
+export function HomeSidebar({ projects, onSelectProject }: HomeSidebarProps) {
   return (
     <aside className="flex w-[240px] flex-none flex-col gap-4 border-r border-line bg-panel px-4 py-5">
       <span className="eyebrow ml-2">Projects</span>
@@ -43,9 +43,6 @@ export function HomeSidebar({ projects, onSelectProject, onNewProject }: HomeSid
           </button>
         ))}
       </div>
-      <button type="button" className="btn" onClick={onNewProject}>
-        + New project
-      </button>
     </aside>
   );
 }

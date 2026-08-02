@@ -89,7 +89,7 @@ describe("App auth handling", () => {
     const onSignOut = vi.fn();
     renderApp(onSignOut);
     await waitFor(() => expect(screen.getByText("What should your voice agent do?")).toBeDefined());
-    expect(screen.getByText("No project yet")).toBeDefined();
+    await waitFor(() => expect(screen.getByText(/No projects yet/)).toBeDefined());
     expect(onSignOut).not.toHaveBeenCalled();
   });
 

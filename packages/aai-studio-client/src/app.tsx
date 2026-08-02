@@ -239,10 +239,6 @@ export function App({ apiKey, onSignOut }: AppProps) {
     },
   });
 
-  // Not a naming dialog: "+ New project" just returns to the home hero —
-  // the first message typed there creates (and names) the project.
-  const newProject = () => selectProject(null);
-
   // Hero start: typing the first message creates a project (named from the
   // prompt server-side) and forwards it as the first chat turn.
   const startWithPrompt = (prompt: string) => {
@@ -265,20 +261,21 @@ export function App({ apiKey, onSignOut }: AppProps) {
     <div className="relative flex h-full flex-col">
       <TopBar
         project={project}
-        projects={projects.data ?? []}
         tab={tab}
         deployedSlug={deployedSlug}
         hasBuild={hasBuild}
-        onSelectProject={selectProject}
-        onNewProject={newProject}
+        settingsOpen={secretsOpen}
         onGoHome={() => selectProject(null)}
-        onSelectTab={setTab}
-        onSignOut={onSignOut}
+        onSelectTab={(next) => {
+          setSecretsOpen(false);
+          setTab(next);
+        }}
+        onLogOut={onSignOut}
         onTogglePublish={() => {
           setSecretsOpen(false);
           setPublishOpen((v) => !v);
         }}
-        onToggleSecrets={() => {
+        onToggleSettings={() => {
           setPublishOpen(false);
           setSecretsOpen((v) => !v);
         }}
@@ -311,11 +308,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
         // prompt box — typing creates a project and forwards the message as
         // its first turn. Landing always starts here (no auto-select).
         <div className="flex min-h-0 flex-1">
-          <HomeSidebar
-            projects={projects.data}
-            onSelectProject={selectProject}
-            onNewProject={newProject}
-          />
+          <HomeSidebar projects={projects.data} onSelectProject={selectProject} />
           <HomeHero
             status={status.data}
             creating={createProject.isPending}
