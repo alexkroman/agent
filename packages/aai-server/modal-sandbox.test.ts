@@ -402,6 +402,61 @@ describe("spawnModalWarm", () => {
     }
   });
 
+  it("passes a matching reservation alongside each hard cap (Modal rejects a bare cap)", async () => {
+    // Modal's SDK throws "must also specify cpu when cpuLimit is specified"
+    // (and the memoryMiB analog) at sandbox creation, so a bare cap would
+    // fail every guest spawn in environments that set SANDBOX_CPU_LIMIT /
+    // SANDBOX_MEMORY_LIMIT_MB — which production does.
+    vi.stubEnv("SANDBOX_CPU_LIMIT", "1");
+    vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", "1024");
+    try {
+      const fake = makeFakeProc();
+      const sb = makeFakeSandbox(fake);
+      const createParams: Record<string, unknown>[] = [];
+      const ctx: ModalSpawnContext = {
+        createGuestSandbox: async (_code, params) => {
+          createParams.push(params as unknown as Record<string, unknown>);
+          return sb;
+        },
+      };
+      const harnessPath = await makeHarnessFile();
+      const socket = createFakeGuestSocket();
+      const { dial } = makeFakeDial(socket);
+
+      const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
+      expect(createParams[0]).toMatchObject({
+        cpu: 1,
+        cpuLimit: 1,
+        memoryMiB: 1024,
+        memoryLimitMiB: 1024,
+      });
+      await warm.cleanup();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("omits cpu/memory reservations entirely when no limits are configured", async () => {
+    const fake = makeFakeProc();
+    const sb = makeFakeSandbox(fake);
+    const createParams: Record<string, unknown>[] = [];
+    const ctx: ModalSpawnContext = {
+      createGuestSandbox: async (_code, params) => {
+        createParams.push(params as unknown as Record<string, unknown>);
+        return sb;
+      },
+    };
+    const harnessPath = await makeHarnessFile();
+    const socket = createFakeGuestSocket();
+    const { dial } = makeFakeDial(socket);
+
+    const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
+    for (const key of ["cpu", "cpuLimit", "memoryMiB", "memoryLimitMiB"]) {
+      expect(createParams[0]).not.toHaveProperty(key);
+    }
+    await warm.cleanup();
+  });
+
   it("honors SANDBOX_IDLE_TIMEOUT_SECS over the default idle timeout", async () => {
     vi.stubEnv("SANDBOX_IDLE_TIMEOUT_SECS", "600");
     try {
