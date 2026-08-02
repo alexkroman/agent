@@ -19,6 +19,7 @@ import {
   spawnModalWarm,
 } from "./modal-sandbox.ts";
 import {
+  assertModalResourcePairs,
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
   parseSandboxLimitsFromEnv,
@@ -122,21 +123,82 @@ describe("parseSandboxLimitsFromEnv", () => {
     expect(parseSandboxLimitsFromEnv({})).toEqual({});
   });
 
+  // Caps are read with their reservation alongside, as production sets them;
+  // these exercise the clamp, not the pairing (covered separately below).
+  const withMemCap = (mb: string) =>
+    parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_MB: "128", SANDBOX_MEMORY_LIMIT_MB: mb });
+  const withCpuCap = (cores: string) =>
+    parseSandboxLimitsFromEnv({ SANDBOX_CPU: "0.125", SANDBOX_CPU_LIMIT: cores });
+
   it("parses SANDBOX_MEMORY_LIMIT_MB", () => {
-    expect(parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_LIMIT_MB: "256" }).memoryLimitMiB).toBe(256);
+    expect(withMemCap("256").memoryLimitMiB).toBe(256);
   });
 
   it("clamps SANDBOX_MEMORY_LIMIT_MB to [128, 4096]", () => {
-    expect(parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_LIMIT_MB: "1" }).memoryLimitMiB).toBe(128);
-    expect(parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_LIMIT_MB: "99999" }).memoryLimitMiB).toBe(
-      4096,
-    );
+    expect(withMemCap("1").memoryLimitMiB).toBe(128);
+    expect(withMemCap("99999").memoryLimitMiB).toBe(4096);
   });
 
   it("parses and clamps SANDBOX_CPU_LIMIT to [0.125, 16]", () => {
-    expect(parseSandboxLimitsFromEnv({ SANDBOX_CPU_LIMIT: "2" }).cpuLimit).toBe(2);
-    expect(parseSandboxLimitsFromEnv({ SANDBOX_CPU_LIMIT: "0.01" }).cpuLimit).toBe(0.125);
-    expect(parseSandboxLimitsFromEnv({ SANDBOX_CPU_LIMIT: "64" }).cpuLimit).toBe(16);
+    expect(withCpuCap("2").cpuLimit).toBe(2);
+    expect(withCpuCap("0.01").cpuLimit).toBe(0.125);
+    expect(withCpuCap("64").cpuLimit).toBe(16);
+  });
+
+  it("clamps the reservation vars to the same bounds as their caps", () => {
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_MB: "1" }).memoryMiB).toBe(128);
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_MB: "99999" }).memoryMiB).toBe(4096);
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_CPU: "0.01" }).cpu).toBe(0.125);
+    expect(parseSandboxLimitsFromEnv({ SANDBOX_CPU: "64" }).cpu).toBe(16);
+  });
+
+  it("passes a bare cap through — pairing is Modal's rule, not the parser's", () => {
+    // The subprocess backend honors memoryLimitMiB alone and has nothing to
+    // reserve, so the parser stays backend-agnostic; assertModalResourcePairs
+    // (below) is what rejects a bare cap, at the Modal spawn.
+    const limits = parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_LIMIT_MB: "4096" });
+    expect(limits).toEqual({ memoryLimitMiB: 4096 });
+  });
+
+  it("rejects a cap with no matching reservation, naming the env var to set", () => {
+    // Modal fails creation on a bare cap either way; this names the variable.
+    expect(() => assertModalResourcePairs({ memoryLimitMiB: 4096 })).toThrow(
+      /SANDBOX_MEMORY_LIMIT_MB requires SANDBOX_MEMORY_MB/,
+    );
+    expect(() => assertModalResourcePairs({ cpuLimit: 4 })).toThrow(
+      /SANDBOX_CPU_LIMIT requires SANDBOX_CPU/,
+    );
+    expect(() =>
+      assertModalResourcePairs({ memoryMiB: 1024, memoryLimitMiB: 4096, cpu: 1, cpuLimit: 4 }),
+    ).not.toThrow();
+  });
+
+  it("keeps a reservation below its cap — the burst range builds need", () => {
+    // A guest idles as a voice session (~260 MB) and spikes to ~1.7 GB only
+    // while rolldown bundles. Reserving the peak would bill every idle
+    // sandbox for it; the cap is what has to clear the peak.
+    const limits = parseSandboxLimitsFromEnv({
+      SANDBOX_MEMORY_MB: "1024",
+      SANDBOX_MEMORY_LIMIT_MB: "4096",
+      SANDBOX_CPU: "1",
+      SANDBOX_CPU_LIMIT: "4",
+    });
+    expect(limits).toMatchObject({ memoryMiB: 1024, memoryLimitMiB: 4096, cpu: 1, cpuLimit: 4 });
+  });
+
+  it("clamps a reservation that exceeds its cap (Modal rejects reservation > limit)", () => {
+    const limits = parseSandboxLimitsFromEnv({
+      SANDBOX_MEMORY_MB: "4096",
+      SANDBOX_MEMORY_LIMIT_MB: "1024",
+      SANDBOX_CPU: "8",
+      SANDBOX_CPU_LIMIT: "2",
+    });
+    expect(limits).toMatchObject({ memoryMiB: 1024, memoryLimitMiB: 1024, cpu: 2, cpuLimit: 2 });
+  });
+
+  it("allows a bare reservation with no cap", () => {
+    const limits = parseSandboxLimitsFromEnv({ SANDBOX_MEMORY_MB: "512", SANDBOX_CPU: "2" });
+    expect(limits).toEqual({ memoryMiB: 512, cpu: 2 });
   });
 
   it("parses SANDBOX_TIMEOUT_SECS into milliseconds, clamped to [300, 86400] secs", () => {
@@ -467,7 +529,9 @@ describe("spawnModalWarm", () => {
     // (and the memoryMiB analog) at sandbox creation, so a bare cap would
     // fail every guest spawn in environments that set SANDBOX_CPU_LIMIT /
     // SANDBOX_MEMORY_LIMIT_MB — which production does.
+    vi.stubEnv("SANDBOX_CPU", "1");
     vi.stubEnv("SANDBOX_CPU_LIMIT", "1");
+    vi.stubEnv("SANDBOX_MEMORY_MB", "1024");
     vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", "1024");
     try {
       const fake = makeFakeProc();
@@ -489,6 +553,41 @@ describe("spawnModalWarm", () => {
         cpuLimit: 1,
         memoryMiB: 1024,
         memoryLimitMiB: 1024,
+      });
+      await warm.cleanup();
+    } finally {
+      vi.unstubAllEnvs();
+    }
+  });
+
+  it("forwards a burst range — reservation below cap — when both are configured", async () => {
+    // The guest must be able to burst to the bundler's ~1.7 GB peak without
+    // every idle voice sandbox reserving it. Pinning reservation == cap made
+    // the cap the only affordable number, and 1 GiB does not fit a build.
+    vi.stubEnv("SANDBOX_CPU", "1");
+    vi.stubEnv("SANDBOX_CPU_LIMIT", "4");
+    vi.stubEnv("SANDBOX_MEMORY_MB", "1024");
+    vi.stubEnv("SANDBOX_MEMORY_LIMIT_MB", "4096");
+    try {
+      const fake = makeFakeProc();
+      const sb = makeFakeSandbox(fake);
+      const createParams: Record<string, unknown>[] = [];
+      const ctx: ModalSpawnContext = {
+        createGuestSandbox: async (_code, params) => {
+          createParams.push(params as unknown as Record<string, unknown>);
+          return sb;
+        },
+      };
+      const harnessPath = await makeHarnessFile();
+      const socket = createFakeGuestSocket();
+      const { dial } = makeFakeDial(socket);
+
+      const warm = await spawnModalWarm({ harnessPath }, ctx, dial);
+      expect(createParams[0]).toMatchObject({
+        cpu: 1,
+        cpuLimit: 4,
+        memoryMiB: 1024,
+        memoryLimitMiB: 4096,
       });
       await warm.cleanup();
     } finally {

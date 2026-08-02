@@ -45,8 +45,12 @@ export const DEFAULT_SANDBOX_TIMEOUT_MS = 4 * 60 * 60 * 1000;
 export const DEFAULT_SANDBOX_IDLE_TIMEOUT_MS = 15 * 60 * 1000;
 
 export type ModalSandboxLimits = {
+  /** Memory *reservation* in MiB (Modal `memoryMiB`) — what the guest is billed. */
+  memoryMiB?: number;
   /** Hard memory cap in MiB (Modal `memoryLimitMiB`). */
   memoryLimitMiB?: number;
+  /** CPU-core *reservation* (Modal `cpu`), can be fractional. */
+  cpu?: number;
   /** Hard CPU-core cap, can be fractional (Modal `cpuLimit`). */
   cpuLimit?: number;
   /** Max sandbox lifetime in ms (Modal `timeoutMs`). */
@@ -70,16 +74,74 @@ const LIMIT_SPECS: readonly [
   max: number,
   scale: number,
 ][] = [
+  ["SANDBOX_MEMORY_MB", "memoryMiB", 128, 4096, 1],
   ["SANDBOX_MEMORY_LIMIT_MB", "memoryLimitMiB", 128, 4096, 1],
+  ["SANDBOX_CPU", "cpu", 0.125, 16, 1],
   ["SANDBOX_CPU_LIMIT", "cpuLimit", 0.125, 16, 1],
   ["SANDBOX_TIMEOUT_SECS", "timeoutMs", 300, 86_400, 1000],
   ["SANDBOX_IDLE_TIMEOUT_SECS", "idleTimeoutMs", 60, 86_400, 1000],
 ];
 
+/** Reservation → cap pairs, and the env vars that set them. */
+const RESOURCE_PAIRS: readonly [
+  reservation: "memoryMiB" | "cpu",
+  reservationVar: string,
+  cap: "memoryLimitMiB" | "cpuLimit",
+  capVar: string,
+][] = [
+  ["memoryMiB", "SANDBOX_MEMORY_MB", "memoryLimitMiB", "SANDBOX_MEMORY_LIMIT_MB"],
+  ["cpu", "SANDBOX_CPU", "cpuLimit", "SANDBOX_CPU_LIMIT"],
+];
+
+/**
+ * Modal rejects a reservation above its own cap, so pull each one down. Kept
+ * out of {@link assertModalResourcePairs} because it is backend-agnostic
+ * arithmetic — the subprocess backend reads `memoryLimitMiB` too.
+ */
+function clampReservationsToCaps(limits: ModalSandboxLimits): void {
+  for (const [reservation, , cap] of RESOURCE_PAIRS) {
+    const capped = limits[cap];
+    const reserved = limits[reservation];
+    if (capped !== undefined && reserved !== undefined) {
+      limits[reservation] = Math.min(reserved, capped);
+    }
+  }
+}
+
+/**
+ * Rejects a hard cap with no reservation beside it — a MODAL rule, which is
+ * why it lives at that backend's spawn and not in the shared parser: the
+ * subprocess backend honors `memoryLimitMiB` alone and has nothing to
+ * reserve. Modal's SDK fails creation with "must also specify cpu when
+ * cpuLimit is specified", so the spawn dies either way; the choice is only
+ * between naming the env var to set and surfacing Modal's message about
+ * parameters the operator never wrote.
+ */
+export function assertModalResourcePairs(limits: ModalSandboxLimits): void {
+  for (const [reservation, reservationVar, cap, capVar] of RESOURCE_PAIRS) {
+    if (limits[cap] !== undefined && limits[reservation] === undefined) {
+      throw new Error(`${capVar} requires ${reservationVar} to be set (Modal rejects a bare cap)`);
+    }
+  }
+}
+
 /**
  * Parses operator sandbox limit overrides from environment variables.
  * Unset or non-numeric vars are ignored (Modal defaults / our default
  * lifetime apply). Values are clamped, then scaled to the field's unit.
+ *
+ * **Reservation and cap are separate knobs on purpose** — `SANDBOX_MEMORY_MB`
+ * / `SANDBOX_CPU` reserve, `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT`
+ * cap. A guest's load is bimodal: it idles as a voice session at ~260 MB on a
+ * fraction of a core, then spikes to ~1.7 GB across several cores for the
+ * seconds a `test_agent` or Publish build spends in the bundler. While the
+ * reservation was pinned equal to the cap, those two numbers had to be one
+ * number, and the affordable one (1 GiB / 1 core) could not fit a build: the
+ * guest wedged at its cgroup ceiling in permanent direct-reclaim, burning a
+ * core on back-to-back full GCs that could never free rolldown's *native*
+ * Rust allocations. It reads as a hang, not an OOM, and it takes down both
+ * build paths at once — the cap is on the cgroup, so moving the bundler into
+ * a child process cannot escape it.
  */
 export function parseSandboxLimitsFromEnv(
   env: Record<string, string | undefined>,
@@ -89,6 +151,7 @@ export function parseSandboxLimitsFromEnv(
     const value = Number(env[envVar]);
     if (Number.isFinite(value)) limits[key] = clamp(value, min, max) * scale;
   }
+  clampReservationsToCaps(limits);
   return limits;
 }
 
