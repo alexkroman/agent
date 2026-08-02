@@ -4,12 +4,12 @@
 // each goes out. Split out of `ws-handler.ts`, which owns the socket
 // lifecycle (handshake, keepalive, resume, teardown).
 
-import { MAX_CLIENT_WS_BUFFERED_BYTES } from "../sdk/constants.ts";
+import { MAX_CLIENT_WS_BUFFERED_BYTES, WS_OPEN } from "../sdk/constants.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import { createAudioPacer } from "./audio-pacer.ts";
 import type { Logger } from "./runtime-config.ts";
-import { AUDIO_DONE_FRAME, type SessionWebSocket, safeSend, WS_OPEN } from "./ws-frames.ts";
+import { AUDIO_DONE_FRAME, type SessionWebSocket, safeSend } from "./ws-frames.ts";
 
 /** WebSocket close code sent when a stalled client is disconnected (policy violation). */
 const WS_CLOSE_POLICY_VIOLATION = 1008;

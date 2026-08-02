@@ -12,6 +12,7 @@ import {
   MAX_MESSAGE_BUFFER_SIZE,
   MAX_WS_PAYLOAD_BYTES,
   SESSION_KEEPALIVE_INTERVAL_MS,
+  WS_OPEN,
 } from "../sdk/constants.ts";
 import type { OwnedMap } from "../sdk/owned-map.ts";
 import {
@@ -27,7 +28,7 @@ import type { Logger } from "./runtime-config.ts";
 import { consoleLogger } from "./runtime-config.ts";
 import type { SessionCore } from "./session-core.ts";
 import { createClientSink } from "./ws-client-sink.ts";
-import { type SessionWebSocket, safeSend, WS_OPEN } from "./ws-frames.ts";
+import { type SessionWebSocket, safeSend } from "./ws-frames.ts";
 
 export { type SessionWebSocket, safeSend } from "./ws-frames.ts";
 

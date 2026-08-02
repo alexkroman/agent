@@ -13,10 +13,15 @@ import {
   assertSilencePolicy,
   type SessionMode,
 } from "./config-rules.ts";
-import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS } from "./constants.ts";
+import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS, DEFAULT_TOOL_CHOICE } from "./constants.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
-import { BuiltinToolSchema, DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./types.ts";
+import {
+  BuiltinToolSchema,
+  DEFAULT_GREETING,
+  DEFAULT_SYSTEM_PROMPT,
+  ToolChoiceSchema,
+} from "./types.ts";
 
 /**
  * Tool definition as it appears in the serialized manifest JSON.
@@ -64,7 +69,7 @@ const ManifestSchema = z.object({
   // Function default so parses never share (or expose for mutation) one array.
   builtinTools: z.array(BuiltinToolSchema).default(() => [...DEFAULT_BUILTIN_TOOLS]),
   maxSteps: z.number().int().positive().default(DEFAULT_MAX_STEPS),
-  toolChoice: z.enum(["auto", "required"]).default("auto"),
+  toolChoice: ToolChoiceSchema.default(DEFAULT_TOOL_CHOICE),
   // 0 is the documented "disable the idle timer" value — allow it (the runtime
   // and AgentConfigSchema both treat 0 as disabled), so use nonnegative().
   idleTimeoutMs: z.number().int().nonnegative().optional(),
@@ -78,7 +83,10 @@ const ManifestSchema = z.object({
   holdPhrase: z.string().optional(),
   // "" is the documented "disable the error phrase" value — no min(1).
   errorPhrase: z.string().optional(),
+  // "" is the documented "disable the start-failure phrase" value — no min(1).
+  startFailurePhrase: z.string().optional(),
   falseInterruptionTimeoutMs: z.number().int().nonnegative().optional(),
+  requiredEnv: z.array(z.string()).readonly().optional(),
   tools: z.record(z.string(), ToolManifestSchema).default({}),
   stt: ProviderDescriptorSchema.optional(),
   llm: ProviderDescriptorSchema.optional(),

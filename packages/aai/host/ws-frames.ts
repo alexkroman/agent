@@ -4,11 +4,9 @@
 // runtime accepts, the `audio_done` frame, and a send that tolerates the close
 // race. Split out so those two modules need not import from each other.
 
+import { WS_OPEN } from "../sdk/constants.ts";
 import { errorMessage } from "../sdk/utils.ts";
 import type { Logger } from "./runtime-config.ts";
-
-/** `WebSocket.OPEN` — the readyState both the browser API and `ws` use. */
-export const WS_OPEN = 1;
 
 /**
  * Minimal WebSocket interface accepted by {@link wireSessionSocket}.

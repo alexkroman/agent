@@ -5,7 +5,7 @@
 
 import { z } from "zod";
 import type { ToolSchema } from "../sdk/_internal-types.ts";
-import { LOG_PREVIEW_CHARS, WS_OPEN } from "../sdk/constants.ts";
+import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE, WS_OPEN } from "../sdk/constants.ts";
 import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import { createAudioSendGate } from "./_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
@@ -157,9 +157,6 @@ function dispatchS2sMessage(
       break;
   }
 }
-
-/** RFC 6455 Normal Closure. Sent on an intentional close — see `close()`. */
-const WS_NORMAL_CLOSURE = 1000;
 
 export type S2sSessionConfig = {
   systemPrompt: string;

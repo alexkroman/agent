@@ -16,6 +16,7 @@ import {
   DEFAULT_MIN_BARGE_IN_WORDS,
   DEFAULT_START_FAILURE_PHRASE,
   DEFAULT_STT_SAMPLE_RATE,
+  DEFAULT_TOOL_CHOICE,
   DEFAULT_TTS_SAMPLE_RATE,
 } from "../../sdk/constants.ts";
 import type { SttOpener, TtsOpener } from "../../sdk/providers.ts";
@@ -144,7 +145,7 @@ export function resolvePipelineOptions(opts: PipelineTransportOptions): Resolved
     startFailurePhrase: opts.startFailurePhrase ?? DEFAULT_START_FAILURE_PHRASE,
     falseInterruptionTimeoutMs:
       opts.falseInterruptionTimeoutMs ?? DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS,
-    toolChoice: opts.toolChoice ?? "auto",
+    toolChoice: opts.toolChoice ?? DEFAULT_TOOL_CHOICE,
     toolSchemas: opts.toolSchemas ?? [],
     executeTool: opts.executeTool,
   };

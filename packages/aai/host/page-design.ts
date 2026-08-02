@@ -20,24 +20,32 @@
 import { z } from "zod";
 import {
   FETCH_TIMEOUT_MS,
+  HTML_ACCEPT,
   MAX_DESIGN_CSS_CHARS,
   MAX_DESIGN_HTML_CHARS,
   MAX_DESIGN_STYLESHEETS,
   MAX_HTML_BYTES,
+  TOOL_USER_AGENT,
 } from "../sdk/constants.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { errorMessage } from "../sdk/utils.ts";
-
-const USER_AGENT = "Mozilla/5.0 (compatible; VoiceAgent/1.0; +https://github.com/AssemblyAI/aai)";
 
 const SCRIPT_RE = /<script\b[^>]*>[\s\S]*?<\/script>/gi;
 const STYLE_RE = /<style\b[^>]*>([\s\S]*?)<\/style>/gi;
 const COMMENT_RE = /<!--[\s\S]*?-->/g;
 const LINK_TAG_RE = /<link\b[^>]*>/gi;
 
-/** Read one attribute out of a raw tag string (quoted or bare value). */
-function attr(tag: string, name: string): string | undefined {
-  const match = tag.match(new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i"));
+/** Match one attribute in a raw tag string (quoted or bare value). */
+function attrRegExp(name: string): RegExp {
+  return new RegExp(`\\b${name}\\s*=\\s*(?:"([^"]*)"|'([^']*)'|([^\\s>]+))`, "i");
+}
+
+const REL_ATTR_RE = attrRegExp("rel");
+const HREF_ATTR_RE = attrRegExp("href");
+
+/** Read one attribute out of a raw tag string. */
+function attr(tag: string, re: RegExp): string | undefined {
+  const match = tag.match(re);
   return match?.[1] ?? match?.[2] ?? match?.[3];
 }
 
@@ -49,9 +57,9 @@ export function extractStylesheetUrls(html: string, baseUrl: string): string[] {
   const urls: string[] = [];
   for (const match of html.matchAll(LINK_TAG_RE)) {
     const tag = match[0];
-    const rel = attr(tag, "rel");
+    const rel = attr(tag, REL_ATTR_RE);
     if (!(rel && /(?:^|\s)stylesheet(?:\s|$)/i.test(rel))) continue;
-    const href = attr(tag, "href");
+    const href = attr(tag, HREF_ATTR_RE);
     if (!href) continue;
     let resolved: URL;
     try {
@@ -81,7 +89,7 @@ async function fetchStylesheet(
 ): Promise<StylesheetResult> {
   try {
     const resp = await fetchFn(url, {
-      headers: { "User-Agent": USER_AGENT, Accept: "text/css,*/*;q=0.1" },
+      headers: { "User-Agent": TOOL_USER_AGENT, Accept: "text/css,*/*;q=0.1" },
       signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
     });
     if (!resp.ok) return { url, error: `HTTP ${resp.status} ${resp.statusText}` };
@@ -121,10 +129,7 @@ export function createGetPageDesign(
     async execute(args, _ctx) {
       const { url } = args;
       const resp = await fetchFn(url, {
-        headers: {
-          "User-Agent": USER_AGENT,
-          Accept: "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-        },
+        headers: { "User-Agent": TOOL_USER_AGENT, Accept: HTML_ACCEPT },
         signal: AbortSignal.timeout(FETCH_TIMEOUT_MS),
       });
       if (!resp.ok) {
@@ -138,10 +143,14 @@ export function createGetPageDesign(
         .join("\n\n");
 
       const sheetUrls = extractStylesheetUrls(rawHtml, url);
-      const stylesheets: StylesheetResult[] = [];
-      for (const sheetUrl of sheetUrls.slice(0, MAX_DESIGN_STYLESHEETS)) {
-        stylesheets.push(await fetchStylesheet(fetchFn, sheetUrl));
-      }
+      // Independent fetches, each already degrading to a per-sheet error —
+      // run them concurrently so a slow sheet costs the slowest fetch, not
+      // the sum of every fetch's timeout budget, inside a voice turn.
+      const stylesheets: StylesheetResult[] = await Promise.all(
+        sheetUrls
+          .slice(0, MAX_DESIGN_STYLESHEETS)
+          .map((sheetUrl) => fetchStylesheet(fetchFn, sheetUrl)),
+      );
 
       // <style> bodies are returned separately as `inlineCss`, so drop them
       // from the markup rather than sending the same bytes twice.

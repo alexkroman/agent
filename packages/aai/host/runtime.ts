@@ -115,9 +115,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   // dev` path calls createRuntime({ agent, env }) with no provider opts).
   const effectiveProviders = resolveEffectiveProviders(opts, agent);
 
-  // Resolve descriptors from manifest if present; otherwise use the
-  // supplied (or default) instances.
-  const slug = agent.name ?? "local";
+  const slug = agent.name;
   // Credentials resolve from `providerEnv` (defaults to `env`); `env` alone is
   // what agent tool code sees as `ctx.env`. See RuntimeOptions.providerEnv.
   const providerEnv = opts.providerEnv ?? env;
@@ -182,6 +180,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot } = setupTools({
     agent,
     opts,
+    llm: effectiveProviders.llm,
     env,
     providerEnv,
     resolvedDb,

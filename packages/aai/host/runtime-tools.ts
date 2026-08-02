@@ -17,6 +17,7 @@ import type { Db } from "../sdk/db.ts";
 import type { AgentEnv, ProviderEnv } from "../sdk/env-types.ts";
 import type { OwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
+import type { LlmProvider } from "../sdk/providers.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
 import { createStateSync } from "./_state-sync.ts";
@@ -26,32 +27,31 @@ import type { RuntimeOptions } from "./runtime-types.ts";
 import { type ExecuteTool, executeToolCall } from "./tool-executor.ts";
 
 /**
- * Resolve builtins for the sandbox/relay tool path — the single owner of that
- * decision for every caller (platform sandbox, relay/host mode, self-hosted).
- * Callers supply the tools they dispatch themselves via `toolSchemas`; a
- * supplied tool with the same name as a builtin wins, and the colliding builtin
- * is dropped from both dispatch and schemas so the host never shadows a tool
- * the caller expects to execute and the LLM never sees a duplicate name.
+ * Merge the agent's builtins with the tools a mode dispatches itself — the
+ * single owner of the collision policy for both tool paths (sandbox/relay
+ * and self-hosted). A provided tool with the same name as a builtin wins,
+ * and the colliding builtin is dropped from both dispatch and schemas so the
+ * host never shadows a tool the caller expects to execute and the LLM never
+ * sees a duplicate name. Provided schemas/guidance come first, builtins after.
  */
-function resolveSandboxBuiltins(
+function mergeBuiltinSurface(
   agent: AgentDef,
-  opts: RuntimeOptions,
-  fetchOpt: { fetch: typeof globalThis.fetch } | undefined,
+  builtinOpts: Parameters<typeof resolveAllBuiltins>[1],
+  provided: { schemas: ToolSchema[]; guidance?: string[] },
 ): {
   defs: Record<string, ToolDef>;
   schemas: ToolSchema[];
   guidance: string[];
 } {
-  const providedSchemas = opts.toolSchemas ?? [];
-  const providedNames = new Set(providedSchemas.map((s) => s.name));
+  const providedNames = new Set(provided.schemas.map((s) => s.name));
   const names = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
     (name) => !providedNames.has(name),
   );
-  const builtins = resolveAllBuiltins(names, fetchOpt);
+  const builtins = resolveAllBuiltins(names, builtinOpts);
   return {
     defs: builtins.defs,
-    schemas: [...providedSchemas, ...builtins.schemas],
-    guidance: [...(opts.toolGuidance ?? []), ...builtins.guidance],
+    schemas: [...provided.schemas, ...builtins.schemas],
+    guidance: [...(provided.guidance ?? []), ...builtins.guidance],
   };
 }
 
@@ -76,6 +76,14 @@ type ToolSetup = {
 type ToolSetupDeps = {
   agent: AgentDef;
   opts: RuntimeOptions;
+  /**
+   * The agent's EFFECTIVE LLM descriptor, already resolved by
+   * `resolveEffectiveProviders` in runtime.ts — the one owner of the
+   * option-vs-agent-field precedence. Passed in rather than re-derived here
+   * so ctx.generate can never resolve a different provider than the
+   * pipeline runs on.
+   */
+  llm: LlmProvider | undefined;
   /** Becomes `ctx.env` (frozen) — agent-owned only, see sdk/env-types.ts. */
   env: AgentEnv;
   providerEnv: ProviderEnv;
@@ -89,12 +97,11 @@ type ToolSetupDeps = {
 
 /**
  * Build the ctx.generate implementation for this runtime: the agent's
- * effective LLM descriptor (platform passes it as a runtime option, `aai dev`
- * reads the agent's own field) with credentials from `providerEnv`.
+ * effective LLM descriptor with credentials from `providerEnv`.
  */
 function setupGenerate(deps: ToolSetupDeps): HostGenerateFn {
   return createGenerateFn({
-    llm: deps.opts.llm ?? deps.agent.llm,
+    llm: deps.llm,
     env: deps.providerEnv,
   });
 }
@@ -104,7 +111,10 @@ function setupSandboxTools(deps: ToolSetupDeps, rpcExecuteTool: ExecuteTool): To
   const { agent, opts, env, resolvedDb, logger } = deps;
   const builtinFetchOpt = opts.fetch ? { fetch: opts.fetch } : undefined;
   const generate = setupGenerate(deps);
-  const resolved = resolveSandboxBuiltins(agent, opts, builtinFetchOpt);
+  const resolved = mergeBuiltinSurface(agent, builtinFetchOpt, {
+    schemas: opts.toolSchemas ?? [],
+    ...(opts.toolGuidance ? { guidance: opts.toolGuidance } : {}),
+  });
   const builtinDefs = resolved.defs;
   const toolSchemas = resolved.schemas;
   const frozenEnv = Object.freeze({ ...env });
@@ -150,17 +160,13 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
     // real run_code executor; without one the builtin refuses (aai dev).
     ...(opts.runCode ? { runCode: opts.runCode } : {}),
   };
-  const customNames = new Set(Object.keys(agent.tools ?? {}));
-  const builtinNames = (agent.builtinTools ?? DEFAULT_BUILTIN_TOOLS).filter(
-    (name) => !customNames.has(name),
-  );
-  const builtins = resolveAllBuiltins(builtinNames, builtinOpts);
+  const customSchemas = agentToolsToSchemas(agent.tools ?? {});
+  const builtins = mergeBuiltinSurface(agent, builtinOpts, { schemas: customSchemas });
   const allTools: Record<string, AgentDef["tools"][string]> = {
     ...builtins.defs,
     ...agent.tools,
   };
-  const customSchemas = agentToolsToSchemas(agent.tools ?? {});
-  const toolSchemas = [...customSchemas, ...builtins.schemas];
+  const toolSchemas = builtins.schemas;
 
   const getState = (sid: string) => {
     if (!stateMap.has(sid) && agent.state) stateMap.set(sid, agent.state());

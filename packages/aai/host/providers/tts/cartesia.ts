@@ -43,6 +43,7 @@ import {
   assertPcm16Rate,
   closeOnAbort,
   connectOrThrow,
+  createDoneLatch,
   createSessionShell,
   type Pcm16Rate,
   requireApiKey,
@@ -125,7 +126,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
         ws.context({ ...contextOptions, contextId: randomUUID() });
 
       let context = mintContext();
-      let doneEmitted = false;
+      const doneLatch = createDoneLatch(shell, () => emitter.emit("done"));
       // Defer minting after flush/cancel until next sendText so late audio
       // chunks + Cartesia's real `done` (tagged with the flushed context's id)
       // still pass the filter. Rotating eagerly would drop in-flight audio.
@@ -139,14 +140,9 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
       const rotateIfPending = () => {
         if (!rotatePending) return;
         context = mintContext();
-        doneEmitted = false;
+        doneLatch.rearm();
         rotatePending = false;
         activeContextCancelled = false;
-      };
-      const emitDoneOnce = () => {
-        if (doneEmitted || shell.isClosed()) return;
-        doneEmitted = true;
-        emitter.emit("done");
       };
 
       // TTSWS fires events globally across all contexts on the shared
@@ -167,7 +163,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
 
       ws.on("done", (event) => {
         if (shell.isClosed() || event.context_id !== context.contextId) return;
-        emitDoneOnce();
+        doneLatch.emitOnce();
       });
 
       // Cartesia streams per-context error frames over the shared socket. A
@@ -220,7 +216,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
           // Cartesia's side: cancelling a retired context returns a 400
           // ("context ID does not exist") which surfaces as a fatal
           // tts_stream_error for a benign race.
-          if (!doneEmitted) {
+          if (!doneLatch.emitted()) {
             void context.cancel().catch(ignoreRejection);
           }
           // Emit synchronously: barge-in advances the orchestrator on `done`;
@@ -228,7 +224,7 @@ export function openCartesia(opts: CartesiaOptions): TtsOpener {
           // cancelled so any chunks already on the wire are dropped rather than
           // emitted after `done`.
           activeContextCancelled = true;
-          emitDoneOnce();
+          doneLatch.emitOnce();
           rotatePending = true;
         },
         on(event, fn) {

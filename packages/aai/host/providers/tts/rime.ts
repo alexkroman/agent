@@ -37,6 +37,7 @@ import {
   assertPcm16Rate,
   closeOnAbort,
   connectOrThrow,
+  createDoneLatch,
   createGuardedWs,
   createSessionShell,
   dropSocket,
@@ -129,7 +130,6 @@ export function openRime(opts: RimeOptions): TtsOpener {
       }
 
       const emitter: Emitter<TtsEvents> = createNanoEvents<TtsEvents>();
-      let doneEmitted = false;
       // One timer serving both windows: whichever was armed last wins, which is
       // the intent — the first-audio deadline is replaced by the quiescence
       // deadline as soon as audio starts flowing.
@@ -146,11 +146,10 @@ export function openRime(opts: RimeOptions): TtsOpener {
         },
       });
 
+      const doneLatch = createDoneLatch(shell, () => emitter.emit("done"));
       const emitDoneOnce = () => {
         quiescence.clear();
-        if (doneEmitted || shell.isClosed()) return;
-        doneEmitted = true;
-        emitter.emit("done");
+        doneLatch.emitOnce();
       };
 
       const armQuiescence = () => quiescence.arm(QUIESCENCE_MS);
@@ -182,7 +181,7 @@ export function openRime(opts: RimeOptions): TtsOpener {
         sendText(text: string) {
           if (shell.isClosed() || text.length === 0) return;
           if (ws.readyState !== WebSocket.OPEN) return;
-          doneEmitted = false;
+          doneLatch.rearm();
           ws.send(JSON.stringify({ text }));
         },
 
