@@ -10,17 +10,11 @@
  * workspace burns this sandbox's CPU and nothing else — the container is the
  * isolation boundary, exactly as for the tools.
  *
- * **The bundler runs in a ONE-SHOT CHILD PROCESS** (`studio-build-child.ts`,
- * spawned via `harnessEntry()`), for one reason: Rolldown does its work in
- * Rust, outside V8, and never returns that memory to the OS. Measured in a
- * production sandbox, a single in-process `buildWorker` took the harness from
- * 258 MB to 1.7 GB RSS — of which V8's heap was 51 MB — and because the
- * harness is long-lived and reused across `test_agent` calls, that peak
- * became the floor and climbed with every build (1.7 → 2.1 → 2.2 GB).
- * `global.gc()` recovered 75 MB and `MALLOC_ARENA_MAX=2` recovered 35 MB, so
- * neither GC nor allocator tuning is a fix; process exit is. Publish already
- * had this shape (it spawns the literal CLI — see studio-publish.ts), so this
- * makes the two build paths agree. Keep the bundler out of this process.
+ * The bundler runs IN this process. A one-shot child-process variant (#845,
+ * motivated by Rolldown's native memory staying resident in the long-lived
+ * harness — ~1.5 GB per build, reclaimed only on process exit) was reverted
+ * after it didn't work in practice; see that PR for the measurements if
+ * revisiting.
  *
  * The toolchain is NOT bundled into the harness: it resolves at runtime
  * from the `node_modules` that live next to the harness — baked into the
@@ -32,15 +26,12 @@
  */
 
 import { readFileSync } from "node:fs";
-import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
+import { mkdir, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
-import { tmpdir } from "node:os";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
 import { errMsg } from "./harness-rpc.ts";
-import type { ExportResolver } from "./studio-diagnostics.ts";
-import { CLI_OUTPUT_CAP, parseLastJsonLine, pathOnlyEnv, runCapped } from "./studio-spawn.ts";
+import { annotateDiagnostics, type ExportResolver } from "./studio-diagnostics.ts";
 
 /** Result of one guest build; `buildError` is prose the coding agent can act on. */
 export type GuestBuildResult = {
@@ -49,11 +40,17 @@ export type GuestBuildResult = {
   buildError?: string;
 };
 
-/** Wall-clock backstop for one build child (typecheck gate + bundle). */
-const BUILD_TIMEOUT_MS = 240_000;
-
-/** Argv flag that puts the harness entry into build-child mode. */
-export const BUILD_CHILD_FLAG = "--build-workspace";
+type Toolchain = {
+  buildWorker: (cwd: string, opts: { minify?: boolean; configFile?: false }) => Promise<string>;
+  buildClient: (
+    cwd: string,
+    opts: { configFile?: false; plugins?: unknown[] },
+  ) => Promise<Record<string, string>>;
+  clientPlugins: () => unknown[];
+  typecheckProject: (
+    cwd: string,
+  ) => Promise<{ ok: true; skipped: boolean } | { ok: false; output: string }>;
+};
 
 /**
  * Root under which workspaces materialize: a dot-directory next to this
@@ -64,89 +61,78 @@ export function workspacesRoot(): string {
   return path.join(import.meta.dirname, ".workspaces");
 }
 
-/**
- * The script to spawn for a build child — the harness entry itself, which
- * dispatches on `BUILD_CHILD_FLAG` instead of starting its server.
- *
- * Reusing the harness entry rather than shipping a second script is what
- * keeps the guest ONE artifact: tsdown emits a single `harness.mjs` with
- * `inlineDynamicImports`, and aai-server's modal-harness-image.ts bakes
- * exactly that one file. Bundled, this module IS that entry, so
- * `import.meta.url` already points at it; from TypeScript source (dev,
- * tests) the entry is its sibling `harness.ts`, which Node runs directly
- * (the repo is `erasableSyntaxOnly`).
- */
-export function harnessEntry(): string {
-  const self = fileURLToPath(import.meta.url);
-  return path.basename(self).startsWith("studio-build")
-    ? path.join(path.dirname(self), "harness.ts")
-    : self;
+// Memoized lazy load: pool-spawned warm harnesses must not pay the Vite
+// import at boot, and a missing toolchain should fail the BUILD (a message
+// the coding agent sees), not the harness.
+let toolchain: Promise<Toolchain> | null = null;
+function loadToolchain(): Promise<Toolchain> {
+  toolchain ??= (async (): Promise<Toolchain> => {
+    const [worker, client, typecheck, react, tailwind] = await Promise.all([
+      import("@alexkroman1/aai-cli/worker-bundler"),
+      import("@alexkroman1/aai-cli/client-bundler"),
+      import("@alexkroman1/aai-cli/typecheck"),
+      import("@vitejs/plugin-react"),
+      import("@tailwindcss/vite"),
+    ]);
+    return {
+      buildWorker: worker.buildWorker,
+      buildClient: client.buildClient as Toolchain["buildClient"],
+      // Fresh plugin instances per build — Vite plugins are stateful.
+      clientPlugins: () => [react.default(), tailwind.default()],
+      typecheckProject: typecheck.typecheckProject,
+    };
+  })().catch((err: unknown) => {
+    toolchain = null;
+    throw err;
+  });
+  return toolchain;
 }
 
-/** The build child's one-line stdout result, mirroring the CLI's `--json`. */
-export type BuildEnvelope =
-  | { ok: true; worker?: boolean; client?: boolean }
-  | { ok: false; buildError: string };
-
 /**
- * Build a materialized workspace directory into deploy artifacts, in a
- * one-shot child process (see this module's header for why).
+ * Build a materialized workspace directory into deploy artifacts.
  *
- * Artifacts come back through a scratch directory rather than stdout: the
- * worker bundle runs to ~8 MB, which JSON-escaping would roughly double in
- * transit and buffer twice. The scratch dir lives outside the workspace so
- * it can never be picked up by the end-of-turn `studio/sync-workspace`.
+ * `configFile: false` on both passes: a studio workspace has no
+ * `vite.config.ts` (the scaffold's plugins are injected here instead), and
+ * one the coding agent invents must not change how Publish builds.
  */
 export async function buildWorkspaceDir(
   dir: string,
   want: { worker: boolean; client: boolean },
-  opts: { /** Test seam: entry script spawned instead of the harness. */ buildEntry?: string } = {},
 ): Promise<GuestBuildResult> {
-  const out = await mkdtemp(path.join(tmpdir(), "aai-build-out-"));
+  let tc: Toolchain;
   try {
-    const result = await runCapped(
-      process.execPath,
-      [
-        opts.buildEntry ?? harnessEntry(),
-        BUILD_CHILD_FLAG,
-        dir,
-        "--out",
-        out,
-        ...(want.worker ? ["--worker"] : []),
-        ...(want.client ? ["--client"] : []),
-      ],
-      // Nothing from this process's env: the build needs no credentials,
-      // and the guest's bearer token must not reach it.
-      { cwd: dir, env: pathOnlyEnv(), timeoutMs: BUILD_TIMEOUT_MS, cap: CLI_OUTPUT_CAP },
-    );
-    if (result.signal) {
-      throw new Error(`build killed by ${result.signal} after ${BUILD_TIMEOUT_MS}ms`);
-    }
-    const envelope = parseLastJsonLine<BuildEnvelope>(result.stdout);
-    if (envelope === null) {
-      // The child died before reporting (OOM, a crash in the bundler's
-      // native half) — surface everything, since nothing else will.
-      return {
-        buildError: scrubDir(
-          `Build process exited with ${result.exitCode}\n${result.stdout.trim()}\n${result.stderr.trim()}`.trim(),
-          dir,
-        ),
-      };
-    }
-    if (!envelope.ok) return { buildError: envelope.buildError };
+    tc = await loadToolchain();
+  } catch (err) {
+    return { buildError: `Build toolchain unavailable in this sandbox: ${errMsg(err)}` };
+  }
+  // Type errors first, as their own failure: the bundlers strip types
+  // unchecked, so this is the only gate that catches runtime-working-but-
+  // wrong code — and the message is exactly what the coding agent needs.
+  const typed = await tc.typecheckProject(dir);
+  if (!typed.ok) {
+    // Attach the fixing idiom to the diagnostic rather than carrying it in
+    // the system prompt: it costs nothing until a build actually fails, and
+    // it arrives inside the error the agent is already reading.
+    return { buildError: annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)) };
+  }
+  try {
+    // Sequential, not Promise.all (#864): two concurrent Rolldown passes
+    // peak at roughly the SUM of their native allocations in the one
+    // process a sandbox memory cap would OOM-kill mid-build. Rolldown is
+    // internally multi-threaded (and the sandbox has 1 CPU of affinity
+    // anyway), so serializing costs no meaningful wall clock.
+    const worker = want.worker
+      ? await tc.buildWorker(dir, { minify: true, configFile: false })
+      : undefined;
+    const clientFiles = want.client
+      ? await tc.buildClient(dir, { configFile: false, plugins: tc.clientPlugins() })
+      : undefined;
     return {
-      ...(envelope.worker && { worker: await readFile(path.join(out, "worker.mjs"), "utf-8") }),
-      ...(envelope.client && {
-        clientFiles: JSON.parse(await readFile(path.join(out, "client.json"), "utf-8")) as Record<
-          string,
-          string
-        >,
-      }),
+      ...(worker !== undefined && { worker }),
+      ...(clientFiles !== undefined && { clientFiles }),
     };
   } catch (err) {
-    return { buildError: `Build failed to run: ${errMsg(err)}` };
-  } finally {
-    await rm(out, { recursive: true, force: true }).catch(() => undefined);
+    return { buildError: formatBuildFailure(err, dir) };
   }
 }
 
@@ -155,11 +141,8 @@ export async function buildWorkspaceDir(
  * same `typecheckProject` gate every build runs, without paying for the
  * bundle, so the coding agent can iterate on type errors cheaply.
  *
- * Stays in-process, and imports ONLY the typecheck module: it spawns the
- * project's own `tsc` as a child, so the memory that matters is already
- * outside this process. Do not widen this to the bundler toolchain —
- * importing Vite/Rolldown here would put ~90 MB and ~29 threads into the
- * harness permanently, for a tool that never bundles.
+ * Imports ONLY the typecheck module: it spawns the project's own `tsc` as a
+ * child, so a `check_types`-only session never pays the bundler import.
  */
 export async function typecheckWorkspaceDir(
   dir: string,
@@ -258,7 +241,7 @@ function exportedNamesFromDts(dts: string): string[] {
  * that matter. Best-effort — an unresolvable module yields no list and the
  * diagnostic goes out unannotated.
  */
-export function moduleExports(dir: string): ExportResolver {
+function moduleExports(dir: string): ExportResolver {
   return (specifier) => {
     try {
       const require = createRequire(path.join(dir, "package.json"));

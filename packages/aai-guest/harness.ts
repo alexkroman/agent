@@ -63,7 +63,7 @@ import type {
   JsonRpcResponse,
 } from "./harness-types.ts";
 import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
-import { BUILD_CHILD_FLAG, withBuildDir } from "./studio-build.ts";
+import { withBuildDir } from "./studio-build.ts";
 import { handleStudioRequest, initStudioSession, type StudioSessionParams } from "./studio-chat.ts";
 import { deployWorkspaceDir } from "./studio-publish.ts";
 import { materializeWorkspace } from "./studio-workspace-fs.ts";
@@ -354,15 +354,5 @@ function main(): void {
 
 // Only start the server when executed directly (not when imported in tests).
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  // This same entry doubles as the one-shot build child (see
-  // studio-build.ts): the guest ships ONE artifact, so `buildWorkspaceDir`
-  // re-spawns the harness with BUILD_CHILD_FLAG rather than a sibling script.
-  // The bundler's module graph is imported only down this branch, and only in
-  // that child — never in the long-lived server process.
-  if (process.argv.includes(BUILD_CHILD_FLAG)) {
-    const { runBuildChild } = await import("./studio-build-child.ts");
-    await runBuildChild(process.argv.slice(2));
-  } else {
-    main();
-  }
+  main();
 }
