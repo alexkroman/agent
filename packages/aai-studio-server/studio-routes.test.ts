@@ -124,7 +124,7 @@ describe("studio page + routing", () => {
     expect(await res.json()).toEqual({
       llm: true,
       provider: "assemblyai",
-      model: "gpt-5-mini",
+      model: "gpt-5.5",
     });
   });
 
@@ -136,7 +136,7 @@ describe("studio page + routing", () => {
     expect(await (await fetch("/studio/status")).json()).toEqual({
       llm: true,
       provider: "assemblyai",
-      model: "gpt-5-mini",
+      model: "gpt-5.5",
     });
   });
 
