@@ -114,6 +114,30 @@ MAX_INPUTS = 150  # sessions at cap + short-request headroom
 # unlike a wall-clock cap it re-arms on every inbound audio frame.
 FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 
+# ── Guest-sandbox autoscaling ────────────────────────────────────────────────
+#
+# Horizontal per-slug sandbox scaling (sandbox-scale.ts): the broker routes
+# each new session to the least-loaded of a slug's sandboxes and spawns an
+# overflow replica when all are at SANDBOX_MAX_SESSIONS. The session cap only
+# makes sense against pinned resources, so the two go together — unset, a
+# guest runs on Modal's sandbox defaults (0.125 core / 128 MiB reserved,
+# burstable), which is not a denominator you can size a cap against.
+#
+# 8 sessions on 1 core budgets ~5% core per session for the audio relay path
+# and leaves ~half the core for tool-call spikes (tool code shares the guest's
+# one event loop with every co-resident session — same-tenant only, since
+# scaling is per slug). Broker counts are sampled, not reserved, so the cap
+# needs that slack: simultaneous brokers can land a session or two past it.
+# 1 GiB covers the ~250 MB harness+bundle baseline plus sessions with ~3×
+# headroom. With SANDBOX_MAX_REPLICAS=4 this is 32 sessions per slug per web
+# replica — saturating well inside MAX_CONNECTIONS above. If sessions stutter
+# at load, the playback stats (concealedSamples per turn) are the signal to
+# lower the cap; raise it only off those same measurements.
+SANDBOX_MAX_SESSIONS = 8  # live sessions per guest sandbox before scale-out
+SANDBOX_MAX_REPLICAS = 4  # sandboxes per slug (primary included) per replica
+SANDBOX_CPU_LIMIT = 1  # hard per-guest core cap (Modal cpuLimit)
+SANDBOX_MEMORY_LIMIT_MB = 1024  # hard per-guest memory cap (Modal memoryLimitMiB)
+
 # The studio service deploys as its OWN Modal app from its own package —
 # see packages/aai-studio-server/modal_deploy.py. CI deploys each app only
 # when its package version changed (changeset-driven).
@@ -127,6 +151,12 @@ image = build_image(
         # numbers above (TARGET_INPUTS / MAX_INPUTS) — the server refuses
         # upgrades past it, so Modal must scale out before it is reached.
         "MAX_CONNECTIONS": str(MAX_CONNECTIONS),
+        # Guest-sandbox autoscaling — see the block above. Values in the
+        # aai-server Secret override these (secrets layer over image env).
+        "SANDBOX_MAX_SESSIONS": str(SANDBOX_MAX_SESSIONS),
+        "SANDBOX_MAX_REPLICAS": str(SANDBOX_MAX_REPLICAS),
+        "SANDBOX_CPU_LIMIT": str(SANDBOX_CPU_LIMIT),
+        "SANDBOX_MEMORY_LIMIT_MB": str(SANDBOX_MEMORY_LIMIT_MB),
     },
 )
 

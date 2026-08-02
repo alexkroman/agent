@@ -1905,7 +1905,11 @@ sending `bundle/load`.
 
 Opt-in: set `SANDBOX_MAX_SESSIONS` (live sessions per guest sandbox) to
 enable; `SANDBOX_MAX_REPLICAS` caps sandboxes per slug (default 4). Unset,
-a slug has exactly one sandbox — the pre-scaling behavior.
+a slug has exactly one sandbox — the pre-scaling behavior. **Production
+enables it** via the agent app's image env (`modal_deploy.py`'s
+guest-sandbox autoscaling block: 8 sessions/sandbox, 4 replicas, alongside
+pinned 1-core/1-GiB guest limits — the session cap is sized against those
+pins, so change them together); Secret values override the image env.
 
 The broker (`GET /:slug/client-config` → `resolveSandbox`) is the only
 routing point: sessions connect directly to a sandbox tunnel, so once a
