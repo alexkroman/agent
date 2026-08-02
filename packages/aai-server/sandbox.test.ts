@@ -12,7 +12,7 @@ import { createTestStore } from "./test-utils.ts";
 // vi.mock factory is hoisted, so we cannot reference top-level variables.
 // Instead, use vi.hoisted to create the mock objects.
 
-const { mockConn, mockShutdown, mockCreateSandboxVm } = vi.hoisted(() => {
+const { mockConn, mockShutdown, mockOnExit, mockCreateSandboxVm } = vi.hoisted(() => {
   const mockConn: RpcConnection = {
     sendRequest: vi.fn().mockResolvedValue(undefined),
     sendNotification: vi.fn(),
@@ -22,13 +22,23 @@ const { mockConn, mockShutdown, mockCreateSandboxVm } = vi.hoisted(() => {
     dispose: vi.fn(),
   };
   const mockShutdown = vi.fn().mockResolvedValue(undefined);
+  const mockOnExit = vi.fn();
   const mockCreateSandboxVm = vi.fn().mockResolvedValue({
     conn: mockConn,
     sessionUrl: "wss://tunnel.test:443/websocket",
     shutdown: mockShutdown,
+    onExit: mockOnExit,
+    alive: () => true,
   });
-  return { mockConn, mockShutdown, mockCreateSandboxVm };
+  return { mockConn, mockShutdown, mockOnExit, mockCreateSandboxVm };
 });
+
+/** Fire the exit callback `createSandbox` registered on the guest handle. */
+function fireGuestExit(): void {
+  const cb = mockOnExit.mock.calls.at(-1)?.[0] as (() => void) | undefined;
+  if (!cb) throw new Error("createSandbox never registered an exit listener");
+  cb();
+}
 
 vi.mock("./sandbox-vm.ts", async (importOriginal) => {
   const orig = await importOriginal<typeof import("./sandbox-vm.ts")>();
@@ -256,16 +266,76 @@ describe("createSandbox", () => {
     await expect(sandbox.shutdown()).resolves.toBeUndefined();
   });
 
-  it("invokes onVmFailed when the VM fails to start", async () => {
+  it("invokes onSandboxLost when the VM fails to start", async () => {
     mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
-    const onVmFailed = vi.fn();
+    const onSandboxLost = vi.fn();
 
-    const sandbox = createSandbox(makeSandboxOptions({ onVmFailed }));
+    const sandbox = createSandbox(makeSandboxOptions({ onSandboxLost }));
 
     await vi.waitFor(() => {
-      expect(onVmFailed).toHaveBeenCalledOnce();
+      expect(onSandboxLost).toHaveBeenCalledOnce();
     });
     await sandbox.shutdown();
+  });
+
+  // ── Guest death AFTER a successful start ─────────────────────────────────
+  // The failure this closes: nothing subscribed to the harness's exit, so a
+  // guest killed mid-life stayed installed in its slot and the broker kept
+  // handing its dead sessionUrl to every new client (measured: 182s).
+
+  describe("guest exit after a successful start", () => {
+    it("reports alive() true while the guest is running", async () => {
+      const sandbox = createSandbox(makeSandboxOptions());
+      await sandbox.sessionUrl();
+
+      expect(sandbox.alive()).toBe(true);
+      await sandbox.shutdown();
+    });
+
+    it("reports alive() false and invokes onSandboxLost once the guest exits", async () => {
+      const onSandboxLost = vi.fn();
+      const sandbox = createSandbox(makeSandboxOptions({ onSandboxLost }));
+      await sandbox.sessionUrl();
+
+      fireGuestExit();
+
+      expect(sandbox.alive()).toBe(false);
+      expect(onSandboxLost).toHaveBeenCalledOnce();
+      await sandbox.shutdown();
+    });
+
+    it("reports alive() true while the VM is still booting", () => {
+      const d = Promise.withResolvers<never>();
+      mockCreateSandboxVm.mockReturnValueOnce(d.promise);
+
+      // Pending is not dead — a booting sandbox must not be torn down.
+      const sandbox = createSandbox(makeSandboxOptions());
+
+      expect(sandbox.alive()).toBe(true);
+      d.reject(new Error("cleanup"));
+    });
+
+    it("reports alive() false when the VM failed to start", async () => {
+      mockCreateSandboxVm.mockReturnValueOnce(Promise.reject(new Error("VM spawn failed")));
+      const sandbox = createSandbox(makeSandboxOptions());
+
+      await vi.waitFor(() => {
+        expect(sandbox.alive()).toBe(false);
+      });
+      await sandbox.shutdown();
+    });
+
+    it("notifies onSandboxLost only once when exit and failure both fire", async () => {
+      const onSandboxLost = vi.fn();
+      const sandbox = createSandbox(makeSandboxOptions({ onSandboxLost }));
+      await sandbox.sessionUrl();
+
+      fireGuestExit();
+      fireGuestExit();
+
+      expect(onSandboxLost).toHaveBeenCalledOnce();
+      await sandbox.shutdown();
+    });
   });
 
   // ── resolveSandbox: poisoned-sandbox detach (rejected vmReady) ────────────
@@ -328,6 +398,25 @@ describe("createSandbox", () => {
 
       expect(deps.slots.get("raced")?.sandbox).toBe(replacement);
       expect(replacement.shutdown).not.toHaveBeenCalled();
+    });
+
+    it("rebuilds rather than re-serving a resident whose guest exited", async () => {
+      const deps = await seedAgent("zombie");
+
+      const first = await resolveSandbox("zombie", deps);
+      expect(first).not.toBeNull();
+      await first?.sessionUrl();
+
+      // The guest dies under the host — the exact case that used to leave a
+      // dead sessionUrl in the slot until idle eviction reclaimed it.
+      fireGuestExit();
+      expect(first?.alive()).toBe(false);
+
+      const second = await resolveSandbox("zombie", deps);
+
+      expect(second).not.toBeNull();
+      expect(second).not.toBe(first);
+      expect(second?.alive()).toBe(true);
     });
   });
 

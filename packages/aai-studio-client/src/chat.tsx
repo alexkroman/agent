@@ -9,6 +9,7 @@ import { useEffect, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
 import type { ChatSession, StudioStatus } from "./api.ts";
 import { Markdown } from "./markdown.tsx";
+import { createResilientFetch } from "./resilient-fetch.ts";
 import { STARTERS } from "./starters.ts";
 import { ToolRow, toBlocks } from "./tool-row.tsx";
 
@@ -270,13 +271,12 @@ function ProjectChat({
         headers: { Authorization: `Bearer ${apiKey}` },
         // A rejected key gets the same global handling as the REST queries
         // (app.tsx) — useChat only surfaces a generic Error otherwise. A 409
-        // means the sandbox was replaced under us: re-broker.
-        fetch: (async (input: RequestInfo | URL, init?: RequestInit) => {
-          const res = await fetch(input, init);
-          if (res.status === 401) unauthorizedRef.current();
-          if (res.status === 409) staleRef.current();
-          return res;
-        }) as typeof fetch,
+        // (replaced) or an unreachable sandbox (killed/evicted) both mean
+        // re-broker; see resilient-fetch.ts for why the second needs saying.
+        fetch: createResilientFetch({
+          onUnauthorized: () => unauthorizedRef.current(),
+          onStale: () => staleRef.current(),
+        }),
       }),
   );
 

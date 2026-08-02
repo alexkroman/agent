@@ -41,6 +41,8 @@ const { mockCreateSandboxVm, guests } = vi.hoisted(() => {
       },
       sessionUrl: guest.sessionUrl,
       shutdown: guest.shutdown,
+      alive: () => true,
+      onExit: vi.fn(),
     });
   });
   return { mockCreateSandboxVm, guests };

@@ -92,19 +92,21 @@ function loadBundleParts(slug: string, opts: ResolveSandboxOpts): Promise<Bundle
 }
 
 /**
- * Build one sandbox from loaded bundle parts. `onVmFailed` is the caller's
- * poisoned-sandbox detach: a rejected vmReady leaves the sandbox permanently
- * broken (every tool call fails) while live traffic keeps clearing its idle
- * timer, so it would never self-heal — the callback must detach it from
- * wherever it was installed so the next connection rebuilds. (createSandbox
- * returns synchronously and the caller installs the sandbox in the same
- * task, so the async failure callback can only fire after the install.)
+ * Build one sandbox from loaded bundle parts. `onSandboxLost` is the caller's
+ * dead-sandbox detach, for both ways a sandbox becomes unusable: a rejected
+ * vmReady leaves it permanently broken (every tool call fails), and a guest
+ * that exits later leaves its sessionUrl pointing at nothing. Either way live
+ * traffic keeps clearing the idle timer, so it would never self-heal — the
+ * callback must detach it from wherever it was installed so the next
+ * connection rebuilds. (createSandbox returns synchronously and the caller
+ * installs the sandbox in the same task, so the async callback can only fire
+ * after the install.)
  */
 function buildSandboxFromParts(
   slug: string,
   parts: BundleParts,
   opts: ResolveSandboxOpts,
-  onVmFailed: (sandbox: Sandbox) => void,
+  onSandboxLost: (sandbox: Sandbox) => void,
 ): Sandbox {
   // Open the app db here — cheap, postgres connects on first query; the
   // sandbox owns the handle and closes it on shutdown.
@@ -117,15 +119,16 @@ function buildSandboxFromParts(
     agentConfig: parts.agentConfig,
     ...(db && { db }),
     ...(opts.pool && { pool: opts.pool }),
-    onVmFailed: () => onVmFailed(sandbox),
+    onSandboxLost: () => onSandboxLost(sandbox),
   });
   return sandbox;
 }
 
 /**
- * Build the slot's primary sandbox — a failed VM tears the whole slot down
- * (identity-checked under the slug lock so a deploy/delete that already
- * replaced the slot is never raced).
+ * Build the slot's primary sandbox — a lost sandbox (failed VM, or a guest
+ * that exited later) tears the whole slot down (identity-checked under the
+ * slug lock so a deploy/delete that already replaced the slot is never
+ * raced).
  */
 function buildSlotSandbox(slug: string, parts: BundleParts, opts: ResolveSandboxOpts): Sandbox {
   return buildSandboxFromParts(slug, parts, opts, (sandbox) => {
@@ -157,6 +160,17 @@ async function spawnReplicaSandbox(
       await sandbox.shutdown().catch(() => undefined);
     });
   });
+}
+
+/**
+ * Is this sandbox still usable? A sandbox whose guest exited keeps a
+ * `sessionUrl` pointing at a dead endpoint, so serving it would hand every
+ * new client a corpse. `onSandboxLost` detaches it too, but asynchronously
+ * and under the slug lock — this is the synchronous guard that makes the
+ * window unobservable. A stand-in without `alive` reads as live.
+ */
+function isLive(sandbox: NonNullable<AgentSlot["sandbox"]>): boolean {
+  return sandbox.alive?.() !== false;
 }
 
 /**
@@ -220,9 +234,9 @@ async function rebuildSlot(
 async function resolvePrimary(slug: string, opts: ResolveSandboxOpts): Promise<Sandbox | null> {
   const { slots, store } = opts;
 
-  // Fast path: a current resident sandbox needs no locking.
+  // Fast path: a current, live resident sandbox needs no locking.
   const resident = slots.get(slug);
-  if (resident?.sandbox && (await residentIsCurrent(resident, opts))) {
+  if (resident?.sandbox && isLive(resident.sandbox) && (await residentIsCurrent(resident, opts))) {
     return resident.sandbox as Sandbox;
   }
 
@@ -234,16 +248,24 @@ async function resolvePrimary(slug: string, opts: ResolveSandboxOpts): Promise<S
     const slot = slots.get(slug);
     if (slot?.sandbox) {
       // Re-check under the lock — another waiter may have already rebuilt.
-      if (await residentIsCurrent(slot, opts)) return slot.sandbox as Sandbox;
-      // Stale: a mutation landed elsewhere. Tear down the old sandbox and
-      // drop this replica's bundle caches so the rebuild below reads the
-      // freshly stored artifacts, not cached pre-mutation ones. Sessions
-      // still live on the old sandbox get their sockets closed by the
-      // teardown; clients re-broker via client-config and reconnect onto
-      // the rebuilt sandbox's tunnel.
-      debug("Resident sandbox stale (slug epoch advanced); rebuilding", { slug });
+      const live = isLive(slot.sandbox);
+      if (live && (await residentIsCurrent(slot, opts))) return slot.sandbox as Sandbox;
+      if (live) {
+        // Stale: a mutation landed elsewhere. Tear down the old sandbox and
+        // drop this replica's bundle caches so the rebuild below reads the
+        // freshly stored artifacts, not cached pre-mutation ones. Sessions
+        // still live on the old sandbox get their sockets closed by the
+        // teardown; clients re-broker via client-config and reconnect onto
+        // the rebuilt sandbox's tunnel.
+        debug("Resident sandbox stale (slug epoch advanced); rebuilding", { slug });
+        store.invalidate?.(slug);
+      } else {
+        // Dead guest: the bundle is unchanged, so the caches stay warm —
+        // only the sandbox is replaced. Reached when the guest died between
+        // the exit notification and its asynchronous detach.
+        debug("Resident sandbox lost (guest exited); rebuilding", { slug });
+      }
       await terminateSlot(slot);
-      store.invalidate?.(slug);
     }
     return rebuildSlot(slug, slot, opts);
   });

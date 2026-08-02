@@ -178,6 +178,72 @@ async function settleTurn(session: StudioSession, messages: UIMessage[]): Promis
   await hostRequest("studio/persist-chat", { messages }, SYNC_RPC_TIMEOUT_MS);
 }
 
+/**
+ * Tools whose success changes files on disk. `bash` is in the set because it
+ * is a real shell — a redirect or `mv` is as much an edit as `write_file`.
+ * Read-only tools are excluded so a turn that only searches and reads never
+ * pays for a snapshot.
+ */
+const MUTATING_TOOLS = new Set([
+  "write_file",
+  "edit_file",
+  "delete_file",
+  "bash",
+  "add_dependency",
+  "remove_dependency",
+  "download_to_workspace",
+]);
+
+/**
+ * Mid-turn workspace checkpointing.
+ *
+ * `settleTurn` runs from `onFinish`, which a killed guest never reaches — so
+ * before this, a sandbox that died mid-turn lost every edit the turn had
+ * made, and the user reloaded to an empty project having watched the agent
+ * write the file. Checkpointing after each mutating step caps that loss at
+ * the step in flight.
+ *
+ * Snapshots are serialized rather than concurrent: two overlapping walks of
+ * the same workspace can interleave into a torn tree, and the host applies
+ * whichever lands last. A checkpoint requested while one is running sets a
+ * trailing flag instead of queueing without bound, so a long tool chain
+ * issues at most one extra sync after the current one, never a backlog.
+ */
+function createWorkspaceCheckpointer(session: StudioSession): () => void {
+  let inFlight: Promise<void> | null = null;
+  let trailing = false;
+
+  const run = async (): Promise<void> => {
+    const { files } = await snapshotWorkspace(session.dir);
+    await hostRequest("studio/sync-workspace", { files }, SYNC_RPC_TIMEOUT_MS);
+  };
+
+  const pump = (): void => {
+    if (inFlight !== null) {
+      trailing = true;
+      return;
+    }
+    inFlight = run()
+      .catch((err: unknown) => {
+        // Never fatal — a lost checkpoint costs recoverable work, while a
+        // thrown one would kill a reply that is otherwise fine.
+        console.error(
+          `studio chat: workspace checkpoint failed: ${
+            err instanceof Error ? err.message : String(err)
+          }`,
+        );
+      })
+      .finally(() => {
+        inFlight = null;
+        if (!trailing) return;
+        trailing = false;
+        pump();
+      });
+  };
+
+  return pump;
+}
+
 /** Run one coding-agent turn, streaming the UI message stream to `res`. */
 async function runTurn(
   session: StudioSession,
@@ -222,6 +288,22 @@ async function runTurn(
   // user waits, and turns were reaching fifteen minutes.
   const budget = createTurnBudget();
 
+  // Persist the conversation as it stands BEFORE the turn runs, so a guest
+  // that dies mid-turn still leaves the user's prompt and the history behind
+  // it. Without this the settle in `onFinish` was the only writer, and a
+  // killed first turn erased the whole transcript.
+  void hostRequest("studio/persist-chat", { messages }, SYNC_RPC_TIMEOUT_MS).catch(
+    (err: unknown) => {
+      console.error(
+        `studio chat: failed to persist inbound messages: ${
+          err instanceof Error ? err.message : String(err)
+        }`,
+      );
+    },
+  );
+
+  const checkpointWorkspace = createWorkspaceCheckpointer(session);
+
   const result = streamText({
     model,
     system: session.system,
@@ -244,6 +326,11 @@ async function runTurn(
       }),
     },
     abortSignal: abort.signal,
+    // Checkpoint after any step that touched the filesystem — see
+    // createWorkspaceCheckpointer for why this is not left to onFinish.
+    onStepFinish: ({ toolCalls }) => {
+      if (toolCalls?.some((call) => MUTATING_TOOLS.has(call.toolName))) checkpointWorkspace();
+    },
     stopWhen: [stepCountIs(session.maxSteps), () => budget.expired()],
     // A long repair loop accumulates bulky tool results (tsc dumps, build
     // logs) — one per attempt. Without this the raised step cap would just

@@ -99,7 +99,14 @@ function validateProject(name: string | undefined): string {
   return parsed.data;
 }
 
-export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoEnv> {
+export function createStudioRoutes(options: StudioRouteOptions = {}): {
+  routes: Hono<HonoEnv>;
+  /**
+   * Tear down the broker's per-project sandboxes. A no-op when no session
+   * request ever built the lazy broker.
+   */
+  dispose: () => Promise<void>;
+} {
   const deploy = options.deployProject ?? deployStudioProject;
   // One broker per app instance, created lazily on the first session request
   // (the stores ride on the request env). Per-replica, like the slot cache.
@@ -282,5 +289,10 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): Hono<HonoE
     return c.json({ url: session.url });
   });
 
-  return studio;
+  return {
+    routes: studio,
+    dispose: async () => {
+      await broker?.dispose();
+    },
+  };
 }

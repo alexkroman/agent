@@ -28,6 +28,8 @@ const { mockCreateSandboxVm } = vi.hoisted(() => {
     conn: mockConn,
     sessionUrl: "wss://tunnel.test:443/websocket",
     shutdown: vi.fn().mockResolvedValue(undefined),
+    alive: () => true,
+    onExit: vi.fn(),
   });
   return { mockCreateSandboxVm };
 });

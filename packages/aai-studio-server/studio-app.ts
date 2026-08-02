@@ -59,7 +59,11 @@ export type StudioAppOpts = {
   isDraining?: () => boolean;
 };
 
-export function createStudioApp(opts: StudioAppOpts): { app: Hono<HonoEnv> } {
+export function createStudioApp(opts: StudioAppOpts): {
+  app: Hono<HonoEnv>;
+  /** Release the studio's per-project coding-agent sandboxes on shutdown. */
+  dispose: () => Promise<void>;
+} {
   const app = new Hono<HonoEnv>();
   applyPlatformMiddleware(app, opts.allowedOrigins);
 
@@ -70,13 +74,11 @@ export function createStudioApp(opts: StudioAppOpts): { app: Hono<HonoEnv> } {
   app.get("/", handleStudioPage);
   app.get("/favicon.ico", handleStudioFavicon);
   app.get("/studio-assets/:path{.+}", handleStudioClientAsset);
-  app.route(
-    "/studio",
-    createStudioRoutes({
-      pool: opts.pool,
-      ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
-    }),
-  );
+  const studioRoutes = createStudioRoutes({
+    pool: opts.pool,
+    ...(opts.studioRateLimiters && { rateLimiters: opts.studioRateLimiters }),
+  });
+  app.route("/studio", studioRoutes.routes);
   app.get("/studio/", (c) => c.redirect("/", 302));
 
   const bindings: HonoEnv["Bindings"] = {
@@ -97,5 +99,5 @@ export function createStudioApp(opts: StudioAppOpts): { app: Hono<HonoEnv> } {
   app.fetch = (req: Request, env?: Record<string, unknown>) =>
     original(req, { ...bindings, ...env });
 
-  return { app };
+  return { app, dispose: studioRoutes.dispose };
 }

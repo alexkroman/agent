@@ -20,6 +20,7 @@ import {
   buildServiceConfig,
   installProcessSafetyNets,
 } from "./service-config.ts";
+import { teardownSandboxes } from "./teardown-sandboxes.ts";
 
 async function main(): Promise<void> {
   installProcessSafetyNets();
@@ -89,14 +90,7 @@ async function main(): Promise<void> {
     // connections to end, it never ends them, so open sessions would ride
     // out the whole fallback timeout on every SIGTERM under load.
     closeActiveSockets();
-    const stops = [...opts.slots.values()].map((slot) => slot.sandbox?.shutdown()).filter(Boolean);
-    if (opts.pool) stops.push(opts.pool.shutdown());
-    const results = await Promise.allSettled(stops);
-    for (const r of results) {
-      if (r.status === "rejected") {
-        console.warn("Sandbox termination failed:", r.reason);
-      }
-    }
+    await teardownSandboxes({ slots: opts.slots, pool: opts.pool });
     nodeServer.close(() => process.exit(0));
     // Sandboxes are already down by here; a straggling connection is not a
     // failed shutdown, so the fallback exits 0 (it used to exit 1, flagging

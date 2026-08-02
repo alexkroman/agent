@@ -34,12 +34,16 @@ export type SandboxOptions = {
   /** Optional pre-warmed harness pool for faster cold starts. */
   pool?: SandboxPool;
   /**
-   * Called when the sandbox VM fails to start (rejected `vmReady`). The
-   * sandbox object was already returned synchronously by then, so this is
-   * the caller's hook to detach a now-permanently-broken sandbox from
-   * wherever it was installed.
+   * Called when the sandbox becomes permanently unusable — either the VM
+   * failed to start (rejected `vmReady`) or the guest process exited after a
+   * successful start. Both mean the same thing to a caller holding this
+   * sandbox: its `sessionUrl` points at nothing. The sandbox object was
+   * already returned synchronously by then, so this is the caller's hook to
+   * detach it from wherever it was installed.
+   *
+   * Fires at most once.
    */
-  onVmFailed?: (err: unknown) => void;
+  onSandboxLost?: (err?: unknown) => void;
 };
 
 export type Sandbox = {
@@ -55,6 +59,17 @@ export type Sandbox = {
    * unreachable guest answers 0 — eviction should proceed.
    */
   activeSessions(): Promise<number>;
+  /**
+   * False once this sandbox is unusable — the VM failed to start, or the
+   * guest process exited. A sandbox still booting reports true: pending is
+   * not dead, and tearing one down mid-boot would just cost a respawn.
+   *
+   * Callers holding a sandbox across time (the slot cache) must consult this
+   * before handing out `sessionUrl()`; the detach driven by `onSandboxLost`
+   * is asynchronous, so there is a window where a dead sandbox is still
+   * installed.
+   */
+  alive(): boolean;
   shutdown(): Promise<void>;
 };
 
@@ -79,19 +94,36 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     opts.pool,
   );
 
+  // "Unusable" is one state with two causes (never started / died later), so
+  // it gets one flag and one notification. Without the exit half, a guest
+  // killed mid-life stayed installed in its slot and the broker handed its
+  // dead sessionUrl to every new client until idle eviction reclaimed it.
+  let lost = false;
+  const markLost = (err?: unknown): void => {
+    if (lost) return;
+    lost = true;
+    opts.onSandboxLost?.(err);
+  };
+
   vmReady
-    .then(() => {
+    .then((handle) => {
       debug("Sandbox ready", { slug, agent: config.name });
+      handle.onExit(() => {
+        console.warn("Sandbox guest exited", { slug });
+        markLost();
+      });
     })
     .catch((err: unknown) => {
       console.error("Sandbox VM failed to start", { slug, error: errorMessage(err) });
-      opts.onVmFailed?.(err);
+      markLost(err);
     });
 
   debug("Sandbox initializing", { slug, agent: config.name });
 
   return {
     sessionUrl: () => vmReady.then((handle) => handle.sessionUrl),
+
+    alive: () => !lost,
 
     async activeSessions(): Promise<number> {
       try {
