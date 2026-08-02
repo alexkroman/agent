@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai-cli",
-  "version": "5.0.0",
+  "version": "5.0.1",
   "type": "module",
   "bin": {
     "aai": "bin.mjs"
