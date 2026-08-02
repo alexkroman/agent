@@ -1,5 +1,16 @@
 # aai-studio-server
 
+## 0.2.2
+
+### Patch Changes
+
+- fb4c14c: Resolve the public origin through aai-server/public-origin instead of the in-container request URL, so studio Publish deploys over https and keeps its Authorization header, and the bare-slug redirect stops downgrading the scheme. Version bump so both Modal apps redeploy.
+- Updated dependencies [fb4c14c]
+- Updated dependencies [fb4c14c]
+  - aai-server@3.1.2
+  - @alexkroman1/aai-ui@5.0.1
+  - @alexkroman1/aai@5.0.1
+
 ## 0.2.1
 
 ### Patch Changes
