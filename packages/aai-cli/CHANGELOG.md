@@ -1,5 +1,55 @@
 # @alexkroman1/aai-cli
 
+## 5.0.0
+
+### Major Changes
+
+- 9867aa3: Simplify the build pipeline: one Vite worker bundler for dev/deploy/studio (the Rolldown dev fast-path is gone), workers self-describe their config via a generated \_\_aaiConfig wrapper entry and the platform extracts it in a guest sandbox at deploy time (the deploy body no longer carries agentConfig, and 'aai deploy' no longer evaluates agent code on the host), and raw-text imports now use Vite's native ?raw suffix — update 'import prompt from "./x.md"' to 'import prompt from "./x.md?raw"'.
+
+### Minor Changes
+
+- cc71fab: Workers ship their own SDK runtime, and all studio builds run in the guest sandbox through the aai CLI's bundlers.
+
+  - `buildWorker`'s wrapper entry now bundles the user's installed SDK runtime behind an `__aaiCreateRuntime` export; the guest harness builds sessions through that factory and embeds no runtime of its own, so platform SDK drift can no longer break deployed agents. Bundles without the factory are rejected at `bundle/load`.
+  - The studio's out-of-process build subsystem (build runner/entry/protocol/cache, the import-allowlist worker build, the host client build, and the `studio_build` Modal Function) is deleted. `test_agent` builds the live workspace in the guest; Publish builds via the new host→guest `workspace/build` RPC, which also returns the bundle's config self-description — no throwaway inspection sandbox on the studio path.
+  - The guest snapshot image now bakes the build toolchain (`@alexkroman1/aai-cli` + workspace-facing packages) next to the harness; versions derive from aai-guest's own dependencies.
+  - `MAX_WORKER_SIZE` rises to 30 MB; `evalWorkerBundle` imports workers via a temp `file:` URL (the bundled runtime's CJS interop rejects `data:` URLs); the dev server opts out of runtime inlining to keep watch rebuilds fast.
+  - Studio Publish now runs the literal `aai deploy` CLI inside the project's sandbox (`workspace/deploy`), and the CLI's output is posted into the chat so the coding agent sees deploy errors. `aai deploy` gains `--allow-missing-secrets` (server-side `credentialPolicy: "warn"` in the deploy body), and deploy responses now carry preflight `warnings`.
+  - The studio's storage toggle and routes are removed — storage is CLI-only (`aai storage enable`). Deployed-agent secrets move to their own Secrets panel backed by the platform's `/:slug/secret` routes; every change posts a note into the chat (key names only).
+  - `aai build` and `aai deploy` now type-check the project (`tsc --noEmit` with its own tsconfig and compiler; `--skipTypecheck` opts out), as does the studio's `test_agent`. Studio workspaces are completed into real projects in the guest (package.json, tsconfig.json, global.d.ts, vite.config.ts — scaffold-mirroring, existing files win).
+
+### Patch Changes
+
+- 0c2bdbd: Scaffolded projects get a vitest.config.ts separate from vite.config.ts, so running tests no longer depends on the client build's plugin imports resolving, and globals work with or without an explicit vitest import.
+- 5a599b2: The build/deploy typecheck gate now resolves TypeScript from the project's own node_modules by walking up, instead of `require.resolve`, which also consulted Node's global paths (NODE_PATH, ~/.node_modules) and so could typecheck a project against a compiler it never declared.
+- Updated dependencies [c36ad60]
+- Updated dependencies [9b95fc9]
+- Updated dependencies [5a599b2]
+- Updated dependencies [e8fef4b]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [25938b2]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [6fb3bc3]
+- Updated dependencies [55e045b]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [293da11]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [30914c9]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [01cecc1]
+- Updated dependencies [d4c2a10]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [e8fef4b]
+- Updated dependencies [293da11]
+- Updated dependencies [e8fef4b]
+- Updated dependencies [30914c9]
+- Updated dependencies [fdd64ef]
+- Updated dependencies [0c2bdbd]
+  - @alexkroman1/aai@5.0.0
+  - @alexkroman1/aai-ui@5.0.0
+
 ## 4.0.0
 
 ### Patch Changes

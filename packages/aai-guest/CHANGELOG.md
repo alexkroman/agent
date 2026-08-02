@@ -1,0 +1,67 @@
+# aai-guest
+
+## 0.2.0
+
+### Minor Changes
+
+- 293da11: The studio coding agent is now a Claude-Code-style agentic agent that runs
+  INSIDE the project's own Modal sandbox, with the browser connected to it
+  directly — mirroring the voice path. `POST /studio/projects/:project/
+session` boots (or reuses) a guest sandbox through the same warm-pool
+  machinery deployed agents use and returns the sandbox's public chat URL;
+  turns stream browser→sandbox over SSE and never pass through the platform
+  host. The loop runs in the guest on the caller's own key with tools over a
+  real filesystem workspace — list/read (windowed)/write/edit/delete, glob,
+  grep, bash (a real shell in the container), todo_write, test_agent, and
+  the keyless web builtins — each with a user-friendly label served by the
+  sandbox (`GET /studio/tools`) and rendered in the studio UI. End of turn,
+  the guest syncs workspace edits and the conversation back over the
+  authenticated control channel; test_agent builds via a guest→host RPC to
+  the out-of-process build runner. The host-side chat loop, scan worker
+  thread, and host tool implementations are removed — the SDK's
+  `createServer` gains a `request` hook so the harness can serve the chat
+  surface without a second HTTP server.
+- cc71fab: Workers ship their own SDK runtime, and all studio builds run in the guest sandbox through the aai CLI's bundlers.
+
+  - `buildWorker`'s wrapper entry now bundles the user's installed SDK runtime behind an `__aaiCreateRuntime` export; the guest harness builds sessions through that factory and embeds no runtime of its own, so platform SDK drift can no longer break deployed agents. Bundles without the factory are rejected at `bundle/load`.
+  - The studio's out-of-process build subsystem (build runner/entry/protocol/cache, the import-allowlist worker build, the host client build, and the `studio_build` Modal Function) is deleted. `test_agent` builds the live workspace in the guest; Publish builds via the new host→guest `workspace/build` RPC, which also returns the bundle's config self-description — no throwaway inspection sandbox on the studio path.
+  - The guest snapshot image now bakes the build toolchain (`@alexkroman1/aai-cli` + workspace-facing packages) next to the harness; versions derive from aai-guest's own dependencies.
+  - `MAX_WORKER_SIZE` rises to 30 MB; `evalWorkerBundle` imports workers via a temp `file:` URL (the bundled runtime's CJS interop rejects `data:` URLs); the dev server opts out of runtime inlining to keep watch rebuilds fast.
+  - Studio Publish now runs the literal `aai deploy` CLI inside the project's sandbox (`workspace/deploy`), and the CLI's output is posted into the chat so the coding agent sees deploy errors. `aai deploy` gains `--allow-missing-secrets` (server-side `credentialPolicy: "warn"` in the deploy body), and deploy responses now carry preflight `warnings`.
+  - The studio's storage toggle and routes are removed — storage is CLI-only (`aai storage enable`). Deployed-agent secrets move to their own Secrets panel backed by the platform's `/:slug/secret` routes; every change posts a note into the chat (key names only).
+  - `aai build` and `aai deploy` now type-check the project (`tsc --noEmit` with its own tsconfig and compiler; `--skipTypecheck` opts out), as does the studio's `test_agent`. Studio workspaces are completed into real projects in the guest (package.json, tsconfig.json, global.d.ts, vite.config.ts — scaffold-mirroring, existing files win).
+
+### Patch Changes
+
+- Updated dependencies [c36ad60]
+- Updated dependencies [9b95fc9]
+- Updated dependencies [5a599b2]
+- Updated dependencies [e8fef4b]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [25938b2]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [6fb3bc3]
+- Updated dependencies [55e045b]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [293da11]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [30914c9]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [5a599b2]
+- Updated dependencies [01cecc1]
+- Updated dependencies [9867aa3]
+- Updated dependencies [d4c2a10]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [e8fef4b]
+- Updated dependencies [293da11]
+- Updated dependencies [e8fef4b]
+- Updated dependencies [30914c9]
+- Updated dependencies [fdd64ef]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [cc71fab]
+  - @alexkroman1/aai@5.0.0
+  - @alexkroman1/aai-ui@5.0.0
+  - @alexkroman1/aai-cli@5.0.0

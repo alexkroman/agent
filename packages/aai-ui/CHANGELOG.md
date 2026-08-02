@@ -1,5 +1,43 @@
 # @alexkroman1/aai-ui
 
+## 5.0.0
+
+### Major Changes
+
+- e8fef4b: Narrow the public export surface: remove registry/wire internals from the provider barrels (ASSEMBLYAI_LLM_KIND, GATEWAY_KIND, OPENROUTER_KIND, ASSEMBLYAI_TTS_KIND, CARTESIA_KIND, RIME_KIND, gateway URLs, ASSEMBLYAI_TTS_HOST, OPENROUTER_BASE_URL, default-voice constants), EMPTY_PARAMS/ExecuteTool/SessionMode from the manifest barrel, duplicate createRuntime/Runtime/RuntimeOptions/safeFetch/RunCodeExecutor re-export paths from the runtime barrel, and the WebSocketConstructor test-seam type from aai-ui. Provider factories, their Options/Provider types, and \*\_API_KEY_ENV constants are unchanged.
+
+### Minor Changes
+
+- 0c2bdbd: client({ name, component }) is allowed and sets the page title, instead of failing with a cryptic 'string is not assignable to undefined'.
+
+### Patch Changes
+
+- 0c2bdbd: ToolCallInfo.args carries permissive value types, matching useToolResult: reading a field off a tool call's arguments in a custom client was a compile error, and the cast agents reached for next was rejected as insufficiently overlapping.
+- Updated dependencies [c36ad60]
+- Updated dependencies [9b95fc9]
+- Updated dependencies [5a599b2]
+- Updated dependencies [e8fef4b]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [25938b2]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [6fb3bc3]
+- Updated dependencies [55e045b]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [293da11]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [30914c9]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [01cecc1]
+- Updated dependencies [d4c2a10]
+- Updated dependencies [0c2bdbd]
+- Updated dependencies [e8fef4b]
+- Updated dependencies [293da11]
+- Updated dependencies [e8fef4b]
+- Updated dependencies [30914c9]
+- Updated dependencies [fdd64ef]
+- Updated dependencies [0c2bdbd]
+  - @alexkroman1/aai@5.0.0
+
 ## 4.0.0
 
 ### Minor Changes

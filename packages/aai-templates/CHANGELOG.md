@@ -1,5 +1,11 @@
 # aai-templates
 
+## 0.3.2
+
+### Patch Changes
+
+- e8fef4b: Add template API coverage ratchet: a test that flags public aai/aai-ui exports no template exercises, held in template-api-allowlist.json (baseline may only shrink)
+
 ## 0.3.1
 
 ### Patch Changes
