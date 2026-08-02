@@ -15,11 +15,12 @@ const barProps = {
   project: "demo" as string | null,
   tab: "preview" as const,
   hasBuild: true,
+  settingsOpen: false,
   onGoHome: noop,
   onSelectTab: noop,
-  onSignOut: noop,
+  onLogOut: noop,
   onTogglePublish: noop,
-  onToggleSecrets: noop,
+  onToggleSettings: noop,
 };
 
 describe("TopBar", () => {
@@ -50,22 +51,32 @@ describe("TopBar", () => {
     expect(onSelectTab).toHaveBeenCalledWith("preview");
   });
 
-  test("Publish and Secrets lock until there is a build / a deploy", () => {
+  test("Publish and Settings lock until there is a build / a deploy", () => {
     render(<TopBar {...barProps} hasBuild={false} />);
     const publish = screen.getByRole("button", { name: "Publish" });
-    const secrets = screen.getByRole("button", { name: "Secrets" });
+    const settings = screen.getByRole("button", { name: "Settings" });
     expect((publish as HTMLButtonElement).disabled).toBe(true);
-    expect((secrets as HTMLButtonElement).disabled).toBe(true);
+    expect((settings as HTMLButtonElement).disabled).toBe(true);
   });
 
-  test("a deployed slug shows the production link and unlocks Secrets", () => {
-    render(<TopBar {...barProps} deployedSlug="my-agent" />);
+  test("a deployed slug shows the production link and unlocks Settings", () => {
+    const onToggleSettings = vi.fn();
+    render(<TopBar {...barProps} deployedSlug="my-agent" onToggleSettings={onToggleSettings} />);
     // The production URL is a plain link that opens in a new tab.
     const link = screen.getByRole("link");
     expect(link.getAttribute("href")).toBe(agentUrl("my-agent"));
     expect(link.getAttribute("target")).toBe("_blank");
-    const secrets = screen.getByRole("button", { name: "Secrets" });
-    expect((secrets as HTMLButtonElement).disabled).toBe(false);
+    const settings = screen.getByRole("button", { name: "Settings" });
+    expect((settings as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(settings);
+    expect(onToggleSettings).toHaveBeenCalled();
+  });
+
+  test("Log out is wired to the sign-out handler", () => {
+    const onLogOut = vi.fn();
+    render(<TopBar {...barProps} onLogOut={onLogOut} />);
+    fireEvent.click(screen.getByRole("button", { name: "Log out" }));
+    expect(onLogOut).toHaveBeenCalled();
   });
 });
 

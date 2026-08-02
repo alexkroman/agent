@@ -1,8 +1,8 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's shared 60px top bar (brand, project name, Preview/Code
-// segmented control, actions) and the Publish dropdown it opens. Split from
-// app.tsx, which owns all the state these render. Project switching lives in
-// the home sidebar (brand → home), not here.
+// The studio's shared 60px top bar (brand, project name, Preview/Code/Settings
+// segmented control, Publish, Log out) and the Publish dropdown it opens.
+// Split from app.tsx, which owns all the state these render. Project
+// switching lives in the home sidebar (brand → home), not here.
 
 import clsx from "clsx";
 import logoUrl from "./assets/assemblyai-logomark.svg";
@@ -36,7 +36,7 @@ export function PublishMenu(props: PublishMenuProps) {
         Runs <code className="font-mono">aai deploy</code> in the project's sandbox and ships the
         agent to PRODUCTION — the preview updates on its own as you edit; only Publish touches
         production. The CLI output lands in the chat, so the agent can fix any errors. Third-party
-        keys live in the Secrets panel.
+        keys live under Settings.
       </p>
       <div className="flex items-center gap-2">
         <button
@@ -77,12 +77,14 @@ type TopBarProps = {
   tab: "preview" | "code";
   deployedSlug?: string | undefined;
   hasBuild: boolean;
+  /** The settings (secrets) panel is open — renders its toggle as active. */
+  settingsOpen: boolean;
   /** Brand click: back to the hero home (deselects the project). */
   onGoHome: () => void;
   onSelectTab: (tab: "preview" | "code") => void;
-  onSignOut: () => void;
+  onLogOut: () => void;
   onTogglePublish: () => void;
-  onToggleSecrets: () => void;
+  onToggleSettings: () => void;
 };
 
 /** Shared 60px top bar (all 1x options): brand, project name, segmented, actions. */
@@ -113,17 +115,29 @@ export function TopBar(props: TopBarProps) {
       <div className="flex overflow-hidden rounded-sm border border-line">
         <button
           type="button"
-          className={segClass(props.tab === "preview")}
+          className={segClass(props.tab === "preview" && !props.settingsOpen)}
           onClick={() => props.onSelectTab("preview")}
         >
           Preview
         </button>
         <button
           type="button"
-          className={clsx("border-l border-line", segClass(props.tab === "code"))}
+          className={clsx(
+            "border-l border-line",
+            segClass(props.tab === "code" && !props.settingsOpen),
+          )}
           onClick={() => props.onSelectTab("code")}
         >
           Code
+        </button>
+        <button
+          type="button"
+          className={clsx("border-l border-line", segClass(props.settingsOpen))}
+          onClick={props.onToggleSettings}
+          disabled={!props.deployedSlug}
+          title={props.deployedSlug ? undefined : "Settings unlock after the first publish"}
+        >
+          Settings
         </button>
       </div>
       <div className="flex-1" />
@@ -140,18 +154,6 @@ export function TopBar(props: TopBarProps) {
           {agentUrl(props.deployedSlug)} ↗
         </a>
       )}
-      <button type="button" className="btn" onClick={props.onSignOut}>
-        Change key
-      </button>
-      <button
-        type="button"
-        className="btn"
-        onClick={props.onToggleSecrets}
-        disabled={!props.deployedSlug}
-        title={props.deployedSlug ? undefined : "Secrets unlock after the first publish"}
-      >
-        Secrets
-      </button>
       <button
         type="button"
         className="btn btn-primary px-[18px]"
@@ -160,6 +162,9 @@ export function TopBar(props: TopBarProps) {
         title={props.hasBuild ? undefined : "Publish unlocks after your first build"}
       >
         Publish
+      </button>
+      <button type="button" className="btn" onClick={props.onLogOut}>
+        Log out
       </button>
     </header>
   );

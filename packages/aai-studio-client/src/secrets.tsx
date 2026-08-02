@@ -100,7 +100,7 @@ export function SecretsPanel({
 
   return (
     <div className="absolute top-14 right-5 z-10 flex w-80 flex-col gap-3 rounded-lg border border-line bg-panel p-5 shadow-md">
-      <span className="eyebrow">Secrets</span>
+      <span className="eyebrow">Settings · Secrets</span>
       {!slug && (
         <p className="m-0 text-[13px] leading-5 text-muted">
           Publish the project first — secrets attach to the deployed agent.

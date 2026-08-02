@@ -264,14 +264,18 @@ export function App({ apiKey, onSignOut }: AppProps) {
         tab={tab}
         deployedSlug={deployedSlug}
         hasBuild={hasBuild}
+        settingsOpen={secretsOpen}
         onGoHome={() => selectProject(null)}
-        onSelectTab={setTab}
-        onSignOut={onSignOut}
+        onSelectTab={(next) => {
+          setSecretsOpen(false);
+          setTab(next);
+        }}
+        onLogOut={onSignOut}
         onTogglePublish={() => {
           setSecretsOpen(false);
           setPublishOpen((v) => !v);
         }}
-        onToggleSecrets={() => {
+        onToggleSettings={() => {
           setPublishOpen(false);
           setSecretsOpen((v) => !v);
         }}
