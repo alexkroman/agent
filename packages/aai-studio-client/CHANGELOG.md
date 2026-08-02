@@ -1,5 +1,12 @@
 # aai-studio-client
 
+## 0.2.1
+
+### Patch Changes
+
+- 675ac6d: Redesign the studio home page: replace the three-step wizard with a Lovable-style hero prompt box, always land on the hero with a project sidebar, and show a random five starter examples in the hero instead of in the chat panel
+- 38c1b97: Auto-create studio projects from the first chat message with server-generated v0-style names (prompt-derived base + random suffix) at shareable /studio/chat/<name> URLs; slugless CLI deploys now generate slugs from the agent's config name via the same shared generator.
+
 ## 0.2.0
 
 ### Minor Changes

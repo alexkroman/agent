@@ -1,5 +1,12 @@
 # @alexkroman1/aai-server
 
+## 3.2.1
+
+### Patch Changes
+
+- 38c1b97: Auto-create studio projects from the first chat message with server-generated v0-style names (prompt-derived base + random suffix) at shareable /studio/chat/<name> URLs; slugless CLI deploys now generate slugs from the agent's config name via the same shared generator.
+- 0b39214: Pass matching cpu/memoryMiB reservations alongside cpuLimit/memoryLimitMiB when creating Modal sandboxes — modal 0.9.0 rejects a bare hard cap ("must also specify cpu when cpuLimit is specified"), which broke every guest sandbox spawn in environments setting SANDBOX_CPU_LIMIT/SANDBOX_MEMORY_LIMIT_MB.
+
 ## 3.2.0
 
 ### Minor Changes
