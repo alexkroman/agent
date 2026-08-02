@@ -6,10 +6,6 @@
   "ignoreBinaries": [
     "safe-chain"
   ],
-  "ignoreUnresolved": [
-    "./_jsdom-setup.ts",
-    "./sdk/_test-matchers.ts"
-  ],
   "ignoreExportsUsedInFile": true,
   "exclude": [
     "exports",

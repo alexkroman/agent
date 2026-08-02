@@ -35,7 +35,7 @@
     },
     "typecheck": {
       "dependsOn": ["build"],
-      "inputs": ["**/*.ts", "**/*.tsx", "!**/*.test.ts", "!**/*.test.tsx", "tsconfig*.json"]
+      "inputs": ["**/*.ts", "**/*.tsx", "tsconfig*.json"]
     },
     "lint": {
       "inputs": ["**/*.ts", "**/*.tsx", "../../biome.json"]

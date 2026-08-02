@@ -5,6 +5,10 @@ import { sharedConfig, sharedCoverageExclude } from "../../vitest.shared.ts";
 export default defineConfig({
   ...sharedConfig,
   test: {
+    // Project name for `--project aai-server`; the workspace root discovers this
+    // file by glob, so the name must live here (else it defaults to the
+    // package.json name).
+    name: "aai-server",
     restoreMocks: true,
     // Auto-builds the aai-guest harness bundle createSandbox resolves eagerly.
     globalSetup: [
@@ -34,7 +38,7 @@ export default defineConfig({
       // aai-studio-server package and took its coverage with it).
       // Raise to ~2-3 points below actuals
       // whenever a coverage run shows comfortable headroom.
-      thresholds: { lines: 89, functions: 85, branches: 74, statements: 87 },
+      thresholds: { lines: 89, functions: 85, branches: 80, statements: 87 },
     },
   },
 });
