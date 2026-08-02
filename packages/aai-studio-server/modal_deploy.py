@@ -42,6 +42,15 @@ STUDIO_MAX_CONTAINERS = 5
 STUDIO_TARGET_INPUTS = 20
 STUDIO_MAX_INPUTS = 40
 
+# Modal's default function timeout (300s) bounds each input. Unlike the agent
+# service this app holds no WebSockets — chat streams browser→guest directly —
+# so nothing here is long-lived by design. Publish is the outlier: it can boot
+# a cold guest sandbox and run a full in-guest `aai deploy` (typecheck, bundle,
+# upload) inside one request. This is precautionary headroom for that, not a
+# fix for an observed failure; it stays well under the agent service's 4h so a
+# wedged request is still reaped in reasonable time.
+STUDIO_FUNCTION_TIMEOUT_SECS = 30 * 60
+
 # Byte-for-byte the agent app's image (see scripts/modal_image.py): the same
 # clean-tree install and workspace build, so both services run the exact
 # dependency tree the tests exercised.
@@ -61,6 +70,8 @@ app = modal.App("aai-studio-web")
     # Chat turns are bounded requests (no session drain); the window only
     # needs to outlast in-flight turns.
     scaledown_window=120,
+    # Per-input ceiling — see "STUDIO_FUNCTION_TIMEOUT_SECS" above.
+    timeout=STUDIO_FUNCTION_TIMEOUT_SECS,
 )
 @modal.concurrent(max_inputs=STUDIO_MAX_INPUTS, target_inputs=STUDIO_TARGET_INPUTS)
 @modal.web_server(port=PORT, startup_timeout=180)

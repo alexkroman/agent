@@ -10,15 +10,18 @@ import type { Transport } from "./transports/types.ts";
 function makeSink(): {
   events: ClientEvent[];
   audioChunks: Uint8Array[];
+  closeReasons: (string | undefined)[];
   readonly audioDoneCount: number;
   sink: ClientSink;
 } {
   const events: ClientEvent[] = [];
   const audioChunks: Uint8Array[] = [];
+  const closeReasons: (string | undefined)[] = [];
   let audioDoneCount = 0;
   return {
     events,
     audioChunks,
+    closeReasons,
     get audioDoneCount() {
       return audioDoneCount;
     },
@@ -32,6 +35,9 @@ function makeSink(): {
       },
       playAudioDone: () => {
         audioDoneCount++;
+      },
+      close: (reason) => {
+        closeReasons.push(reason);
       },
     },
   };
@@ -447,6 +453,51 @@ describe("createSessionCore — idle timeout", () => {
       expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(0);
       vi.advanceTimersByTime(300);
       expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  test("closes the client connection after emitting idle_timeout", async () => {
+    // The event alone retires nothing: aai-ui routes idle_timeout to its
+    // default branch and waits for the close handler to transition the
+    // session. Without this the socket stays open, holding the session, its
+    // provider sockets, and (on the platform) a Modal input slot.
+    vi.useFakeTimers();
+    try {
+      const { core, sink } = makeCore({
+        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+      });
+      await core.start();
+      vi.advanceTimersByTime(1001);
+      expect(sink.events.filter((e) => e.type === "idle_timeout")).toHaveLength(1);
+      expect(sink.closeReasons).toEqual(["idle timeout"]);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+  test("emits idle_timeout before closing, so the client learns why", async () => {
+    vi.useFakeTimers();
+    try {
+      const order: string[] = [];
+      const sink = makeSink();
+      const tracking: ClientSink = {
+        ...sink.sink,
+        event: (e) => {
+          order.push(`event:${e.type}`);
+          sink.sink.event(e);
+        },
+        close: (reason) => {
+          order.push("close");
+          sink.sink.close?.(reason);
+        },
+      };
+      const { core } = makeCore({
+        client: tracking,
+        agentConfig: makeAgentConfig({ name: "t", idleTimeoutMs: 1000 }),
+      });
+      await core.start();
+      vi.advanceTimersByTime(1001);
+      expect(order).toEqual(["event:idle_timeout", "close"]);
     } finally {
       vi.useRealTimers();
     }

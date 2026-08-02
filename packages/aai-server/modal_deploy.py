@@ -99,6 +99,22 @@ MAX_CONNECTIONS = 100  # per-replica WebSocket cap (node server enforces it)
 TARGET_INPUTS = 75  # scale-out set point (~75% of the session cap)
 MAX_INPUTS = 150  # sessions at cap + short-request headroom
 
+# ── Input timeout ────────────────────────────────────────────────────────────
+#
+# A WebSocket is ONE Modal input for its whole lifetime, so the function
+# timeout bounds CALL DURATION, not request latency — and Modal's default is
+# 300s. Unset, that silently severed every host-mode voice session at exactly
+# five minutes, mid-word, surfacing to the client as a bare "not connected"
+# with nothing logged server-side. (Browser sessions dial the guest sandbox's
+# tunnel directly and never touch this path; `?host=1` sessions run IN this
+# process, which is what puts them under the cap.) Same trap the sandbox layer
+# already documents in modal-sandbox-env.ts, matched to the same 4h value.
+#
+# This is a backstop, not the idle policy: session-core's own watchdog
+# (`idleTimeoutMs`, 5 min) reaps quiet sessions and closes their sockets, and
+# unlike a wall-clock cap it re-arms on every inbound audio frame.
+FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
+
 # The studio service deploys as its OWN Modal app from its own package —
 # see packages/aai-studio-server/modal_deploy.py. CI deploys each app only
 # when its package version changed (changeset-driven).
@@ -132,6 +148,8 @@ app = modal.App("aai-server-web")
     # grace period — the node process handles SIGTERM itself, persisting live
     # sessions' resume state before exiting (see sandbox.ts shutdown).
     scaledown_window=300,
+    # Bounds one WebSocket's lifetime — see "Input timeout" above.
+    timeout=FUNCTION_TIMEOUT_SECS,
 )
 @modal.concurrent(max_inputs=MAX_INPUTS, target_inputs=TARGET_INPUTS)
 @modal.web_server(port=PORT, startup_timeout=180)
