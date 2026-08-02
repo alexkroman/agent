@@ -13,7 +13,7 @@ vi.mock("./_agent.ts", () => ({
   getMonorepoRoot: vi.fn().mockReturnValue(null),
 }));
 
-const { downloadAndMergeTemplate } = await import("./_templates.ts");
+const { bundledTemplatesDir, downloadAndMergeTemplate } = await import("./_templates.ts");
 
 /** Create a fake templates root with scaffold + two templates, and point resolution at it. */
 async function useFakeRoot(dir: string): Promise<void> {
@@ -34,6 +34,26 @@ async function useFakeRoot(dir: string): Promise<void> {
 
 afterEach(() => {
   vi.unstubAllEnvs();
+});
+
+describe("bundled templates", () => {
+  // `bundle-templates.mjs` copies templates/ and scaffold/ next to the built
+  // entry, so the shipped location is the module's own directory. Published
+  // that resolves to dist/; running source in the monorepo it resolves to the
+  // package root, which has no templates — the monorepo branch covers that.
+  test("resolves alongside the module, which is where the build copies them", () => {
+    expect(bundledTemplatesDir()).toBe(import.meta.dirname);
+  });
+
+  test("is the last resort, after the env override and the monorepo", async () => {
+    await withTempDir(async (dir) => {
+      // No AAI_TEMPLATES_DIR, getMonorepoRoot() mocked to null: nothing left
+      // but the bundled dir, which has no templates/ when running source.
+      await expect(downloadAndMergeTemplate("simple", path.join(dir, "out"))).rejects.toThrow(
+        "Templates directory is missing or unreadable",
+      );
+    });
+  });
 });
 
 describe("downloadAndMergeTemplate", () => {

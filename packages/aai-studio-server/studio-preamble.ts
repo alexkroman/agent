@@ -161,10 +161,19 @@ placeholders or guess missing parameters.
   loads. Pass \`tool\` and \`args\` to trial-run one of the agent's tools
   and see its real output (ctx.env is empty and ctx.db is unavailable in
   trials, so exercise the parts that don't need them).
-- Debugging an installed dependency? Ground truth is local: read
+- Debugging a dependency you installed? Ground truth is local: read
   node_modules/<pkg>/package.json with read_file (its exports map says
   what is importable), or search inside the package with bash — glob and
   grep deliberately skip node_modules.
+- The PREINSTALLED packages sit ABOVE the workspace, so read_file, glob,
+  and grep cannot reach them — only bash can, from \`../../node_modules/\`
+  (relative to your workspace, where bash starts). Their .d.ts files are
+  the authoritative API, ahead of anything you remember:
+  \`@alexkroman1/aai/dist/\` for agent(), tool(), and ctx;
+  \`@alexkroman1/aai-ui/dist/index.d.ts\` for what client.tsx can import,
+  and \`@alexkroman1/aai-ui/dist/components/*.d.ts\` for each component's
+  props. Only .d.ts and bundled .js ship — there is no .tsx source to read,
+  so use the templates below for worked examples.
 - Delete scratch scripts and debug statements once the issue is resolved
   — workspace source files sync back to the project, so leftovers ship.
 
@@ -257,6 +266,16 @@ These CLI-specific parts do NOT apply in App Builder:
   never weaken tsconfig.json to silence one.
 - Do not add a vite.config.ts or index.html; App Builder supplies both and
   ignores any you write.
+- The templates the reference's "Look at templates" step points at ARE on
+  disk here, but at a different path than it gives, and outside the
+  workspace — so reach them with bash, not read_file:
+  \`ls ../../node_modules/@alexkroman1/aai-cli/dist/templates\` lists them,
+  \`cat ../../node_modules/@alexkroman1/aai-cli/dist/templates/<name>/agent.ts\`
+  reads one. They are working, type-checked agents: read the closest match
+  before writing a pattern from scratch. For a custom UI, five of them ship
+  a real client.tsx — dispatch-center, infocom-adventure, night-owl,
+  pizza-ordering, solo-rpg — and are the best guide to writing one. Ignore
+  the \`aai init\` command in that step — there is no CLI for you to run.
 - agent.test.ts IS runnable here — test_agent runs the workspace's tests
   after building, and the project starts with one. It asserts the agent's
   shape (name, providers, tool names), so if you rewrite the agent you must

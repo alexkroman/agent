@@ -21,11 +21,12 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    type-checks, and validates the manifest. Catches issues `dev` won't.
 4. **Make small, focused changes** — verify each one before stacking the
    next.
-5. **Look at templates before writing custom code** — the framework repo
-   ships 15 working examples under `packages/aai-templates/templates/`
-   (github.com/alexkroman/agent; `aai init --template <name>` scaffolds
-   any of them). Closest matches: `simple`, `pipeline-simple`,
-   `web-researcher`, `solo-rpg`, `pizza-ordering`.
+5. **Look at templates before writing custom code** — the CLI ships working
+   examples inside its own package, at
+   `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
+   `aai init --template <name>` scaffolds a fresh project from one. Closest
+   matches: `simple`, `pipeline-simple`, `web-researcher`, `solo-rpg`,
+   `pizza-ordering`.
 
 ## CLI
 

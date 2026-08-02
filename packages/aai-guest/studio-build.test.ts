@@ -4,6 +4,7 @@
 // aai-server's workspace-build-integration.test.ts; here we pin the pure
 // formatting and the failure paths the coding agent reads.
 
+import { existsSync } from "node:fs";
 import { readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { describe, expect, test } from "vitest";
@@ -14,6 +15,32 @@ import {
   withBuildDir,
   workspacesRoot,
 } from "./studio-build.ts";
+
+describe("workspacesRoot depth", () => {
+  // The studio preamble (aai-studio-server/studio-preamble.ts) tells the
+  // coding agent to read the SDK types, the aai-ui component types, and the
+  // CLI's bundled templates through `../../node_modules/...` with bash —
+  // read_file/glob/grep are jailed to the workspace and cannot see them.
+  // That relative depth is only right while a session workspace sits exactly
+  // two levels under the directory holding the toolchain node_modules, which
+  // holds in all three layouts: /opt/aai (baked image), packages/aai-guest/
+  // dist (subprocess backend), and packages/aai-guest (tests). Move
+  // workspacesRoot() and the prompt silently starts naming paths that do not
+  // exist — a failure the agent can only report as "file not found".
+  const PROMPT_PREFIX = path.join("..", "..", "node_modules");
+  const sessionDir = path.join(workspacesRoot(), "session-1");
+
+  // Each entry is a path the preamble literally tells the agent to read.
+  test.for([
+    ["@alexkroman1/aai/dist", "the SDK types"],
+    ["@alexkroman1/aai-ui/dist/index.d.ts", "what client.tsx can import"],
+    ["@alexkroman1/aai-ui/dist/components/chat-view.d.ts", "a component's props"],
+    ["@alexkroman1/aai-cli/dist/templates/simple/agent.ts", "a bundled template"],
+    ["@alexkroman1/aai-cli/dist/templates/night-owl/client.tsx", "a bundled client.tsx"],
+  ])("%s exists at the path the prompt gives (%s)", ([rel]) => {
+    expect(existsSync(path.resolve(sessionDir, PROMPT_PREFIX, rel as string))).toBe(true);
+  });
+});
 
 describe("scrubDir", () => {
   const dir = path.join(path.sep, "scratch", "ws-1");

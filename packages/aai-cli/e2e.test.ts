@@ -21,6 +21,7 @@ import { afterAll, beforeAll, describe, expect, test, vi } from "vitest";
 import {
   aai,
   buildCli,
+  detachedCli,
   dir,
   installDeps,
   startRegistry,
@@ -118,6 +119,27 @@ describe("pack + build: template workflows", () => {
     }
     aai(aaiBin, ["test"], projectDir);
     aai(aaiBin, ["build", "--skip-tests"], projectDir);
+  });
+});
+
+describe("bundled templates", () => {
+  // `aai init` used to giget the templates from GitHub at run time; they now
+  // ship inside dist/. Nothing in-tree can catch a regression here, because a
+  // CLI running from packages/aai-cli/dist always finds the workspace root and
+  // takes the monorepo branch — so detach the build first.
+  test("init works from a detached dist with no workspace above it", () => {
+    const detachedDir = fs.mkdtempSync(path.join(os.tmpdir(), "aai-detached-"));
+    try {
+      const detachedBin = detachedCli(aaiBin, detachedDir);
+      const projectDir = path.join(tmpDir, "bundled-templates");
+      aai(detachedBin, ["init", projectDir, "-t", "pipeline-simple", "--skip-deploy"], tmpDir);
+
+      // A template file and a scaffold file: both dirs have to ship.
+      expect(fs.existsSync(path.join(projectDir, "agent.ts"))).toBe(true);
+      expect(fs.existsSync(path.join(projectDir, "tsconfig.json"))).toBe(true);
+    } finally {
+      fs.rmSync(detachedDir, { recursive: true, force: true });
+    }
   });
 });
 

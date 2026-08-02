@@ -1,0 +1,23 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "extends": ["//"],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "inputs": [
+        "**/*.ts",
+        "**/*.tsx",
+        "!**/*.test.ts",
+        "!**/*.test.tsx",
+        "!**/*.test-d.ts",
+        "tsconfig*.json",
+        "tsdown.config.ts",
+        "bundle-templates.mjs",
+        "package.json",
+        "$TURBO_ROOT$/packages/aai-templates/templates/**",
+        "$TURBO_ROOT$/packages/aai-templates/scaffold/**"
+      ],
+      "outputs": ["dist/**"]
+    }
+  }
+}
