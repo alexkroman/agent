@@ -270,7 +270,7 @@ model) is the security boundary.
   entry point (runs inside a Modal Sandbox) that runs the COMPLETE agent.
   Serves three surfaces on the tunneled port: `/ws` (bearer-token host
   control channel — JSON-RPC `bundle/load`, one-shot `tool/execute`
-  trials, `workspace/build` (Publish's in-guest build), `status`,
+  trials, `workspace/deploy` (Publish's in-guest `aai deploy`), `status`,
   `studio/session-init`; guest→host `db/query`,
   `studio/sync-workspace`, `studio/persist-chat`),
   `/session` (PUBLIC client voice sessions, connected directly by
@@ -398,10 +398,10 @@ voice agents without the CLI:
   `GET /studio/projects/:project/chat`). `test_agent` builds the live
   workspace IN the guest through the aai CLI's own bundlers
   (`aai-guest/studio-build.ts` — the toolchain node_modules are baked next
-  to the harness) and loads/trials the bundle in place; Publish builds the
-  same way via the host→guest `workspace/build` RPC. Sandboxes are per (scope, project)
-  with a 15-min idle eviction; a dead one heals on the next broker call,
-  and the client re-brokers on a 409 from the chat surface.
+  to the harness) and loads/trials the bundle in place; Publish runs the
+  literal CLI via the host→guest `workspace/deploy` RPC. Sandboxes are per
+  (scope, project) with a 15-min idle eviction; a dead one heals on the next
+  broker call, and the client re-brokers on a 409 from the chat surface.
   **`ensureSession` is serialized per (scope, project), and entries are
   disposed by identity, not by key.** Overlapping brokers for one project are
   routine (a double-click, a StrictMode double effect, a refresh landing on
@@ -483,7 +483,7 @@ voice agents without the CLI:
   build backend anymore (`studio-build-runner/-entry/-protocol/-cache`,
   `studio-bundle.ts`'s import allowlist, and `studio-client-build.ts` are
   all deleted). Two guest entry points:
-  - `test_agent` builds the live session workspace in place via
+  - `test_agent` builds the live session workspace via
     `aai-guest/studio-build.ts`, which dynamic-imports
     `@alexkroman1/aai-cli/worker-bundler` from the **toolchain
     `node_modules` baked next to the harness** (see "Modal sandbox notes");
@@ -492,6 +492,42 @@ voice agents without the CLI:
     resolve by the normal walk-up, exactly as in a user project. Diagnostics
     are scrubbed guest-side (`formatBuildFailure`) and arrive as
     `buildError` prose the coding agent can act on.
+
+    **The bundler runs in a ONE-SHOT CHILD PROCESS, and must keep doing
+    so** (`aai-guest/studio-build-child.ts`; the parent side is
+    `buildWorkspaceDir`). Rolldown — Vite 8's bundler — does its work in
+    Rust, outside V8, and never returns that memory to the OS. Measured in
+    a production sandbox, one in-process `buildWorker` took the harness
+    from 258 MB to 1.7 GB RSS, of which V8's heap was **51 MB**; because
+    the harness is long-lived and reused across `test_agent` calls, that
+    peak became the floor and climbed with each build (1.7 → 2.1 →
+    2.2 GB). Neither `global.gc()` (recovered 75 MB) nor
+    `MALLOC_ARENA_MAX=2` (35 MB) is a fix — it is not V8's memory and not
+    glibc arena fragmentation. Process exit is the only thing that
+    reclaims it, which is the shape Publish already had.
+
+    Two constraints come with that child. **It is the harness entry
+    re-spawned with `BUILD_CHILD_FLAG`**, not a sibling script, because
+    the guest ships ONE artifact (tsdown's `inlineDynamicImports`, and
+    `modal-harness-image.ts` bakes exactly `/opt/aai/harness.mjs`);
+    `harnessEntry()` resolves it from `import.meta.url` bundled, or
+    `harness.ts` from source. And **the toolchain must not be imported
+    anywhere else in the harness process** — the import alone costs ~90 MB
+    and ~29 threads permanently, so `typecheckWorkspaceDir` (the
+    `check_types` tool) imports only `@alexkroman1/aai-cli/typecheck`,
+    which spawns the project's own `tsc` as its own child.
+
+    Two gVisor details make this worse than it looks, and neither is
+    fixable from inside the guest: `/proc/cpuinfo` reports the **host's**
+    17 CPUs while the sandbox has 1 CPU of affinity (so Rolldown's Rust
+    pool sizes for 17 — threads go 36 → 56 on the first build), and
+    `os.totalmem()` reports 242 GB, from which V8 derives a 4,288 MB heap
+    limit. Production sets neither `SANDBOX_MEMORY_LIMIT_MB` nor
+    `SANDBOX_CPU_LIMIT`, so `memory.max` is 242 GB and nothing ever
+    applies back-pressure. **Do not "fix" guest memory by setting
+    `SANDBOX_MEMORY_LIMIT_MB` alone**: a cap under ~1.8 GB OOM-kills the
+    sandbox mid-build, and `--max-old-space-size` cannot help because the
+    memory is native, not V8's.
   - **Publish is the LITERAL `aai deploy` CLI**, spawned in the project's
     sandbox (`aai-guest/studio-publish.ts`, the host→guest
     `workspace/deploy` RPC on the session broker — live sandbox reused,

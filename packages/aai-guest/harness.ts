@@ -42,13 +42,12 @@
  */
 
 import { timingSafeEqual } from "node:crypto";
-import { writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
 import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
+import { ensureRuntime, type HarnessState, loadBundle } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
 import {
-  dbAdapter,
   errMsg,
   handleHostResponse,
   rejectAllPendingHostRequests,
@@ -57,8 +56,6 @@ import {
   setHostSend,
 } from "./harness-rpc.ts";
 import type {
-  AgentDef,
-  CreateGuestRuntime,
   GuestRuntime,
   JsonRpcMessage,
   JsonRpcNotification,
@@ -66,130 +63,11 @@ import type {
   JsonRpcResponse,
 } from "./harness-types.ts";
 import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
-import { withBuildDir } from "./studio-build.ts";
-import {
-  handleStudioRequest,
-  initStudioSession,
-  type StudioSession,
-  type StudioSessionParams,
-} from "./studio-chat.ts";
+import { BUILD_CHILD_FLAG, withBuildDir } from "./studio-build.ts";
+import { handleStudioRequest, initStudioSession, type StudioSessionParams } from "./studio-chat.ts";
 import { deployWorkspaceDir } from "./studio-publish.ts";
 import { materializeWorkspace } from "./studio-tools.ts";
-import { executeTool, runCode, type ToolCallRequest } from "./trial.ts";
-
-// ---- bundle/load ------------------------------------------------------------
-
-let bundleSeq = 0;
-
-/**
- * Import raw JS source as an ES module (no Function() evaluation, top-level
- * await supported). The code lands in a uniquely named temp file and is
- * imported by file URL — the unique name matters because Node's module
- * registry caches by URL, and a repeat bundle/load (the studio's build →
- * load → try loop) must load the NEW code.
- */
-async function importBundleModule(code: string): Promise<Record<string, unknown>> {
-  const path = `/tmp/aai-bundle-${process.pid}-${++bundleSeq}.mjs`;
-  await writeFile(path, code, "utf-8");
-  return await import(pathToFileURL(path).href);
-}
-
-// ---- Harness state ----------------------------------------------------------
-
-/** Mutable state shared across requests within a single harness instance. */
-export type HarnessState = {
-  agent: AgentDef | null;
-  /**
-   * The bundle's own runtime factory (`__aaiCreateRuntime`) — the SDK
-   * runtime SHIPS IN THE BUNDLE, pinned by the user's lockfile; the harness
-   * embeds none. Required at bundle/load: every deployable bundle is built
-   * by the CLI's wrapper, which always exports it.
-   */
-  createRuntime: CreateGuestRuntime | null;
-  env: Readonly<Record<string, string>>;
-  storageEnabled: boolean;
-  /**
-   * The live runtime, created lazily on the first `/websocket` session upgrade —
-   * NEVER at bundle/load: runtime construction resolves provider
-   * credentials, and inspection loads (describeBundle, the studio) carry an
-   * empty env that must not fail the load.
-   */
-  runtime: GuestRuntime | null;
-  /** Live client-session connections (host idle eviction asks). */
-  activeSessions: number;
-  /**
-   * The studio coding-agent session, installed by `studio/session-init` —
-   * workspace dir, the caller's key (chat bearer + LLM credential), and
-   * turn config. Null on non-studio sandboxes; `/studio/chat` answers 409.
-   */
-  studio: StudioSession | null;
-};
-
-/**
- * Load an agent ESM bundle delivered as raw JS source code.
- *
- * Bundles export `__aaiConfig` — the agent config extracted *inside* the
- * bundle (by `@alexkroman1/aai/manifest` helpers bundled in). Returning it
- * lets the host obtain the config without ever evaluating user code outside
- * the sandbox.
- *
- * Bundles also export `__aaiCreateRuntime` — the factory over THEIR OWN
- * bundled SDK's `createRuntime` (see the CLI's worker wrapper). The harness
- * ships no runtime of its own, so a bundle without the factory is not
- * loadable: fail here, at load, rather than as a dangling first session.
- */
-async function loadBundle(
-  state: HarnessState,
-  params: { code: string; env: Record<string, string>; storageEnabled: boolean },
-): Promise<{ config?: unknown }> {
-  // A repeat load replaces the loaded agent; any live runtime ran the OLD
-  // code — tear it down so the next session runs the new bundle.
-  const oldRuntime = state.runtime;
-  state.runtime = null;
-  if (oldRuntime) void oldRuntime.shutdown().catch(() => undefined);
-
-  const mod = await importBundleModule(params.code);
-  const agent = (mod.default ?? mod) as AgentDef;
-
-  if (!agent || typeof agent !== "object") {
-    throw new Error("Agent bundle must export an object");
-  }
-  const createRuntime = (mod as { __aaiCreateRuntime?: unknown }).__aaiCreateRuntime;
-  if (typeof createRuntime !== "function") {
-    throw new Error(
-      "Agent bundle does not export __aaiCreateRuntime (the bundle-shipped SDK runtime) — " +
-        "rebuild it with a current @alexkroman1/aai-cli",
-    );
-  }
-
-  state.agent = agent;
-  state.createRuntime = createRuntime as CreateGuestRuntime;
-  state.env = Object.freeze({ ...params.env });
-  state.storageEnabled = params.storageEnabled;
-
-  const config = (mod as { __aaiConfig?: unknown }).__aaiConfig;
-  return config === undefined ? {} : { config };
-}
-
-/**
- * The runtime for the loaded bundle, created on first use — by the BUNDLE'S
- * OWN `createRuntime` (its `__aaiCreateRuntime` export), so a deployed agent
- * runs exactly the SDK version it was built and tested against; the harness
- * embeds no runtime. This is the SDK's self-hosted path running INSIDE the
- * sandbox: tools execute in-process, providers and tool-code fetch dial out
- * directly (open egress — the container is the boundary), exactly as
- * `aai dev` does. ctx.db proxies to the host over the control channel;
- * run_code gets this guest's real executor.
- */
-export function ensureRuntime(state: HarnessState): GuestRuntime {
-  if (!(state.agent && state.createRuntime)) throw new Error("Agent not loaded");
-  state.runtime ??= state.createRuntime({
-    env: { ...state.env },
-    ...(state.storageEnabled ? { db: dbAdapter } : {}),
-    runCode,
-  });
-  return state.runtime;
-}
+import { executeTool, type ToolCallRequest } from "./trial.ts";
 
 // ---- Control-channel dispatch -----------------------------------------------
 
@@ -488,5 +366,15 @@ function main(): void {
 
 // Only start the server when executed directly (not when imported in tests).
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  main();
+  // This same entry doubles as the one-shot build child (see
+  // studio-build.ts): the guest ships ONE artifact, so `buildWorkspaceDir`
+  // re-spawns the harness with BUILD_CHILD_FLAG rather than a sibling script.
+  // The bundler's module graph is imported only down this branch, and only in
+  // that child — never in the long-lived server process.
+  if (process.argv.includes(BUILD_CHILD_FLAG)) {
+    const { runBuildChild } = await import("./studio-build-child.ts");
+    await runBuildChild(process.argv.slice(2));
+  } else {
+    main();
+  }
 }

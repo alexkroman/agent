@@ -12,7 +12,7 @@
  *
  * ## The toolchain
  *
- * Guest sandboxes BUILD workspaces now — `workspace/build` and the studio's
+ * Guest sandboxes BUILD workspaces now — `workspace/deploy` and the studio's
  * `test_agent` run the aai CLI's own bundlers in-guest (see
  * aai-guest/studio-build.ts). The harness bundle keeps that toolchain
  * external, resolving it at runtime from the `node_modules` installed here,

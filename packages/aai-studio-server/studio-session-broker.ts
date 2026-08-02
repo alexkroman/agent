@@ -20,7 +20,7 @@
  *
  * Builds run IN the guest, through the aai CLI's own bundlers (see
  * aai-guest/studio-build.ts): `test_agent` builds locally during chat
- * turns, and Publish's build is the host→guest `workspace/build` request
+ * turns, and Publish is the host→guest `workspace/deploy` request
  * (`buildWorkspace` below) — the one build path `aai deploy` also runs.
  *
  * Sandboxes are per (scope, project), reused across turns, and evicted
