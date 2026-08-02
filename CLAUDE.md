@@ -661,15 +661,25 @@ requires either zero or all three of `stt`/`llm`/`tts`.
   here: `session-core.ts` latches `serverIsBroker = false` on a config with
   no `sessionUrl`, and that latch skips the broker fetch on every later
   attempt. So one 503 — a sandbox mid-boot, or one that failed to start —
-  pinned the client to the platform's `/:slug/websocket`, which answers
-  `410 Gone` forever (sessions go straight to the sandbox now), with no route
-  back even after the agent recovered. Only an ANSWERED lookup may set the
-  latch.
+  pinned the client to the platform's `/:slug/websocket`, whose WebSocket
+  redirect browsers do not follow (sessions go straight to the sandbox now),
+  with no route back even after the agent recovered. Only an ANSWERED lookup
+  may set the latch.
 
 - **There is no text-only mode.** Every pipeline agent declares a real TTS
   provider, and the default `ChatView` always renders the voice `Controls`.
   The snapshot's `apiUrl` field carries the programmatic WebSocket endpoint,
-  shown by `ApiUrlChip`.
+  shown by `ApiUrlChip`. **It is the LONG-LIVING platform endpoint**
+  (`wss://host/:slug/websocket`), never the brokered sandbox tunnel URL the
+  session actually connects to — the tunnel URL dies with the sandbox (idle
+  eviction, redeploy), so surfacing it hands users a link that rots. The
+  platform endpoint stays valid: a plain upgrade on it resolves the live
+  sandbox (booting it like the client-config broker) and answers a 302
+  redirect to the sandbox's current session URL (`orchestrator-ws.ts`,
+  query preserved so `?sessionId=` resumes survive). Programmatic WebSocket
+  clients that follow handshake redirects land on the sandbox; browsers
+  don't follow WebSocket redirects, which is fine — the browser path is the
+  client-config broker.
 
 Reference providers shipped today:
 

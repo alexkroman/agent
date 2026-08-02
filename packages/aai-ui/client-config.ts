@@ -39,8 +39,9 @@ const AGENT_DEFAULT: ClientConfigResponse = {};
  * server) — a durable fact worth latching. A lookup that FAILED means
  * nothing about the server, and treating the two alike is how a single 503
  * (a sandbox mid-boot, or one that failed to start) pinned a session to the
- * platform's `/:slug/websocket` — answered `410 Gone` on every retry, with
- * no re-brokering even after the agent recovered.
+ * platform's `/:slug/websocket` — a WebSocket redirect browsers don't
+ * follow, so every retry failed with no re-brokering even after the agent
+ * recovered.
  */
 export async function loadClientConfig(
   platformUrl: string,

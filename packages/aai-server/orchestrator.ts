@@ -18,8 +18,9 @@
  * - `DELETE /:slug/`             — owner: delete agent
  * - `GET/PUT/DELETE /:slug/secret` — owner: manage secrets
  * - `GET/POST/DELETE /:slug/storage` — owner: per-app database storage
- * - `WS   /:slug/websocket`     — host-mode (`?host=1`) upgrades only; plain
- *   voice sessions connect directly to the agent's sandbox (410 + guidance)
+ * - `WS   /:slug/websocket`     — the long-living programmatic endpoint:
+ *   plain upgrades are redirected (302) to the agent's live sandbox session
+ *   URL; host-mode (`?host=1`) upgrades run in-process
  *
  * Auth: `authMw` validates API key; `existingOwnerMw` verifies slug ownership.
  * Slugs: `[a-z0-9][a-z0-9_-]*[a-z0-9]` — enforced by regex for multi-tenant isolation.
@@ -212,12 +213,15 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.route("/:slug", agents);
   app.get("/:slug/", slugMw, handleAgentPage);
 
+  // Tests build orchestrators without a secret store; default to memory so
+  // the storage-status route (and anything else reading secrets) works.
+  const secrets = opts.secrets ?? createMemorySecretStore();
+  const slugEpochs = opts.slugEpochs ?? createMemorySlugEpochs();
+
   const bindings = {
     slots: opts.slots,
     store: opts.store,
-    // Tests build orchestrators without a secret store; default to memory so
-    // the storage-status route (and anything else reading secrets) works.
-    secrets: opts.secrets ?? createMemorySecretStore(),
+    secrets,
     ...(opts.appDb && { appDb: opts.appDb }),
     // Same default posture as secrets: tests build orchestrators without a
     // platform database, where in-process exclusion is exact. Wrapped so
@@ -226,7 +230,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // correctly-serialized write compute its merge from a stale base (see
     // createMutationLock).
     slugLock: createMutationLock(opts.slugLock ?? localSlugLock, opts.store),
-    slugEpochs: opts.slugEpochs ?? createMemorySlugEpochs(),
+    slugEpochs,
   };
 
   const original = app.fetch.bind(app);
@@ -236,6 +240,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const { injectWebSocket, closeActiveSockets, activeSessionCount } = createWsUpgrades({
     slots: opts.slots,
     store: opts.store,
+    // Plain upgrades on /:slug/websocket resolve the live sandbox (the
+    // long-living endpoint redirects to its session URL), which needs the
+    // same dependencies the client-config broker uses.
+    secrets,
+    slugEpochs,
+    ...(opts.appDb && { appDb: opts.appDb }),
+    ...(opts.pool && { pool: opts.pool }),
     ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),
     ...(opts.isDraining && { isDraining: opts.isDraining }),
   });
