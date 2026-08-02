@@ -13,7 +13,7 @@
     }
   },
   "scripts": {
-    "predev": "node -e \"const [maj] = process.versions.node.split('.').map(Number); if (maj < 24) { console.error('Node >=24 required (got ' + process.version + '). Run: fnm use 24'); process.exit(1); }\" && node ../../scripts/ensure-guest-harness.mjs",
+    "predev": "node -e \"const [maj] = process.versions.node.split('.').map(Number); if (maj < 24) { console.error('Node >=24 required (got ' + process.version + '). Run: fnm use 24'); process.exit(1); }\" && node ../../scripts/ensure-guest-harness.mjs && pnpm --filter aai-studio-client build",
     "dev": "node --conditions=@dev/source index.ts",
     "start": "node dist/index.mjs",
     "test": "vitest run",
