@@ -12,6 +12,9 @@
 /** Slug shape accepted by the platform: lowercase letters, digits, `-`, `_` (2–64 chars). */
 export const VALID_SLUG_RE = /^[a-z0-9][a-z0-9_-]{0,62}[a-z0-9]$/;
 
+/** Longest slug `VALID_SLUG_RE` accepts — for callers that truncate to fit. */
+export const MAX_SLUG_LENGTH = 64;
+
 /**
  * Slugs that collide with top-level platform routes and can never be claimed
  * by an agent. `/studio` is the browser coding-agent UI's API namespace;

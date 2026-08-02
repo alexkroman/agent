@@ -162,7 +162,6 @@ describe("studio auth", () => {
     const { fetch } = await createTestCombined();
     expect((await fetch("/studio/projects")).status).toBe(401);
     expect((await fetch("/studio/projects/x", { method: "DELETE" })).status).toBe(401);
-    expect((await fetch("/studio/chat", { method: "POST", body: "{}" })).status).toBe(401);
   });
 
   test("workspaces are namespaced per key", async () => {

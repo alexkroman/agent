@@ -49,6 +49,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "MAX_MESSAGE_BUFFER_SIZE",
   "MAX_PAGE_CHARS",
   "MAX_PROVIDER_WS_BUFFERED_BYTES",
+  "MAX_SLUG_LENGTH",
   "MAX_TOOL_RESULT_CHARS",
   "MAX_TRANSCRIPT_CHARS",
   "MAX_WS_PAYLOAD_BYTES",
@@ -180,6 +181,7 @@ exports[`export surface stability > @alexkroman1/aai/s2s export 1`] = `
 
 exports[`export surface stability > @alexkroman1/aai/utils export 1`] = `
 [
+  "MAX_SLUG_LENGTH",
   "RESERVED_SLUGS",
   "VALID_SLUG_RE",
   "capToolResult",

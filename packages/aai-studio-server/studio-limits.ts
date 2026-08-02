@@ -1,15 +1,24 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Workspace size limits, in their own dependency-free module.
- *
- * Split from `studio-schemas.ts` (which re-exports them) so the scan
- * worker's import graph stays free of zod and the server packages: the
- * worker entry (`studio-scan-worker.ts`) is loaded by a bare `node`
- * worker thread — in dev straight from `.ts` source under type
- * stripping — where every transitive import is a load-time liability.
+ * Studio size limits, in their own dependency-free module — the single
+ * home for the studio's workspace/chat caps. Kept import-free so any
+ * consumer (schemas, the workspace store, the session broker) can load
+ * them without dragging zod along, and because `aai-guest/limits.ts`
+ * deliberately mirrors the workspace caps by value (asserted against this
+ * file's source in `aai-guest/limits.test.ts` rather than imported — the
+ * guest harness bundles no host packages).
  */
 
 /** Max files per studio project workspace. */
 export const MAX_STUDIO_FILES = 30;
 /** Max bytes for a single workspace file. */
 export const MAX_STUDIO_FILE_BYTES = 256_000;
+/** Max total bytes across a workspace (guards the single-doc storage model). */
+export const MAX_STUDIO_WORKSPACE_BYTES = 1_000_000;
+/** Max messages accepted per chat turn (client resends full history). */
+export const MAX_STUDIO_CHAT_MESSAGES = 80;
+/**
+ * Max serialized bytes for a single chat message. Sized so an assistant
+ * message carrying a couple of full-file tool outputs still fits.
+ */
+export const MAX_STUDIO_MESSAGE_BYTES = 600_000;

@@ -24,7 +24,7 @@ import {
   MAX_STUDIO_FILE_BYTES,
   MAX_STUDIO_FILES,
   MAX_STUDIO_WORKSPACE_BYTES,
-} from "./studio-schemas.ts";
+} from "./studio-limits.ts";
 
 export type StudioWorkspace = {
   files: Record<string, string>;
@@ -111,6 +111,17 @@ export function studioScope(apiKey: string): string {
   return hash("sha256", `studio:${apiKey}`, "base64url");
 }
 
+/**
+ * Composite key for one project within one scope — used by the session
+ * broker's sandbox map, the preview coalescer, and the workspace mutation
+ * lock. NUL separator: neither a scope hash nor a validated project name
+ * can contain it, so distinct (scope, project) pairs can never collide the
+ * way a printable separator would allow.
+ */
+export function projectKey(scope: string, project: string): string {
+  return `${scope}\u0000${project}`;
+}
+
 /** Validate a workspace-relative file path; throws on traversal/absolute paths. */
 function assertSafeFilePath(path: string): string {
   const parsed = SafePathSchema.safeParse(path);
@@ -147,14 +158,20 @@ function parseWorkspace(doc: unknown): StudioWorkspace | null {
 }
 
 /**
- * Validate paths/limits and stamp `hash` + `updatedAt`. The hash is always
- * recomputed here — never trusted from the caller, who typically spreads a
- * stale document around a `files` replacement.
+ * Validate paths/limits and stamp `hash` + `updatedAt`. The hash is never
+ * trusted from the caller, who typically spreads a stale document around a
+ * `files` replacement — but a metadata-only mutation spreads `current`
+ * without touching `files`, so when the map is reference-equal to `prior`'s
+ * its stamped hash is reused rather than re-serializing the whole tree.
  */
-function stampWorkspace(workspace: WorkspaceInput): StudioWorkspace {
+function stampWorkspace(workspace: WorkspaceInput, prior?: StudioWorkspace): StudioWorkspace {
   for (const path of Object.keys(workspace.files)) assertSafeFilePath(path);
   assertWorkspaceLimits(workspace.files);
-  return { ...workspace, hash: filesHash(workspace.files), updatedAt: Date.now() };
+  const hashValue =
+    prior?.hash !== undefined && workspace.files === prior.files
+      ? prior.hash
+      : filesHash(workspace.files);
+  return { ...workspace, hash: hashValue, updatedAt: Date.now() };
 }
 
 export async function getWorkspace(
@@ -207,7 +224,7 @@ export async function mutateWorkspace(
     if (!(record && current)) return null;
     const next = await mutate(current);
     if (next === null) return current;
-    const doc = stampWorkspace(next);
+    const doc = stampWorkspace(next, current);
     try {
       await store.put(scope, project, doc, record.version);
       return doc;

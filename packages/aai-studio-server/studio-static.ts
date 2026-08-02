@@ -79,11 +79,20 @@ function clientDir(): string {
 // Cached, containment-checked reads over the studio client build.
 const readClientFile = createCachedDirReader(clientDir);
 
+// Both are fixed for the process lifetime (backend and build output don't
+// change under a running server), and `GET /` is the shell's hot path.
+let _pageHeaders: { "Content-Security-Policy": string } | undefined;
+let _pageHtml: { buf: Buffer; str: string } | undefined;
+
 /** `GET /` — the studio app shell (or the not-built fallback). */
 export async function handleStudioPage(c: AppContext): Promise<Response> {
-  const headers = { "Content-Security-Policy": studioCsp() };
+  _pageHeaders ??= { "Content-Security-Policy": studioCsp() };
   const html = await readClientFile("index.html");
-  return c.html(html ? html.toString("utf-8") : FALLBACK_HTML, 200, headers);
+  if (!html) return c.html(FALLBACK_HTML, 200, _pageHeaders);
+  // Decode once per cached buffer (keyed by identity, so it tracks the
+  // dir reader's own cache invalidation).
+  if (_pageHtml?.buf !== html) _pageHtml = { buf: html, str: html.toString("utf-8") };
+  return c.html(_pageHtml.str, 200, _pageHeaders);
 }
 
 /**

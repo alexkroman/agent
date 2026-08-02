@@ -29,7 +29,7 @@
  * (the client re-brokers on a dead chat URL).
  */
 
-import { errorMessage } from "@alexkroman1/aai";
+import { createOwnedMap, errorMessage } from "@alexkroman1/aai";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
 import { createKeyedLock } from "aai-server/platform-barrel";
 import { registerGuestRpcHandlers } from "aai-server/sandbox-guest-rpc";
@@ -38,14 +38,12 @@ import { withLock } from "aai-server/sandbox-slots";
 import { acquireWarmHarness, spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { SafePathSchema } from "aai-server/schemas";
 import { z } from "zod";
-import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_FILES } from "./studio-limits.ts";
 import { studioLlmModelId } from "./studio-llm.ts";
 import { createPreviewDeployer, type PreviewTarget } from "./studio-preview.ts";
 import { studioSystemPrompt } from "./studio-prompt.ts";
 import { MAX_STUDIO_CHAT_MESSAGES, UiMessageSchema } from "./studio-schemas.ts";
-import { getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
+import { getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts";
 
-/** Max tool-loop steps per chat turn (Claude-Code-scale agentic budget). */
 /**
  * Steps one chat turn may take.
  *
@@ -60,21 +58,23 @@ import { getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
  * A runaway turn is still bounded — by this cap, by each tool's own deadline,
  * and by the client's Stop button.
  */
-export const MAX_CHAT_STEPS = 80;
+const MAX_CHAT_STEPS = 80;
 /** Idle window before a project's sandbox is evicted. */
-export const STUDIO_SESSION_IDLE_MS = 15 * 60_000;
+const STUDIO_SESSION_IDLE_MS = 15 * 60_000;
 /** Deadline for installing a session in the guest (workspace transfer). */
 const SESSION_INIT_TIMEOUT_MS = 60_000;
 /** Deadline for one in-guest Publish (`aai deploy`: cold build + upload). */
 const WORKSPACE_DEPLOY_TIMEOUT_MS = 330_000;
 
-/** Guest-supplied workspace files — validated exactly like a client PUT. */
+/**
+ * Guest-supplied workspace files. Wire-shape check only (record of safe
+ * paths to strings): the size/count/total-byte limits are enforced by the
+ * single authority a client file PUT also goes through —
+ * `stampWorkspace`'s `assertWorkspaceLimits`, inside the `mutateWorkspace`
+ * call below, whose throw rejects the RPC just the same.
+ */
 const GuestFilesSchema = z.object({
-  files: z
-    .record(SafePathSchema, z.string().max(MAX_STUDIO_FILE_BYTES))
-    .refine((files) => Object.keys(files).length <= MAX_STUDIO_FILES, {
-      message: `Too many files (max ${MAX_STUDIO_FILES})`,
-    }),
+  files: z.record(SafePathSchema, z.string()),
   /**
    * True only on the TURN-COMPLETE sync (the guest's `settleTurn`, its
    * analog of opencode's `session.idle` / codex's `agent-turn-complete`).
@@ -175,6 +175,8 @@ type SessionEntry = {
    * sync without auto-previewing.
    */
   previewTarget?: PreviewTarget;
+  /** This claim's release on the `sessions` owned map (see `disposeEntry`). */
+  release: () => boolean;
 };
 
 /**
@@ -189,22 +191,13 @@ export function chatUrlForGuest(guestOrigin: string): string {
   return guestHttpUrl(guestOrigin, GUEST_ROUTES.studioChat);
 }
 
-/**
- * Session-map key. NUL separator: neither a scope hash nor a validated
- * project name can contain it, so distinct (scope, project) pairs can never
- * collide the way a printable separator would allow.
- */
-function sessionKey(scope: string, project: string): string {
-  return `${scope}\u0000${project}`;
-}
-
 export function createStudioSessionBroker(
   options: StudioSessionBrokerOptions,
 ): StudioSessionBroker {
   const spawn = options.spawn ?? spawnWarmHarness;
   const env = options.env ?? process.env;
   const idleMs = options.idleMs ?? STUDIO_SESSION_IDLE_MS;
-  const sessions = new Map<string, SessionEntry>();
+  const sessions = createOwnedMap<string, SessionEntry>();
   /**
    * Serializes a project's session installs. Two `POST …/session` calls for
    * one project overlap routinely — a double-click, a StrictMode double
@@ -222,12 +215,12 @@ export function createStudioSessionBroker(
    * Tear down `entry` and drop it from the map — but only while it is still
    * the project's session. Every caller runs its cleanup AFTER an await (a
    * re-init that rejected, a publish whose sandbox died mid-request), and by
-   * then the client may have re-brokered and installed a replacement:
-   * deleting by key alone evicts that replacement and strands a live sandbox
-   * nothing owns. Same hazard `createOwnedMap` exists for on the agent side.
+   * then the client may have re-brokered and installed a replacement: the
+   * owned map's release deletes only while this claim still holds the key,
+   * so a replacement is never evicted and never strands a live sandbox.
    */
-  async function disposeEntry(key: string, entry: SessionEntry): Promise<void> {
-    if (sessions.get(key) === entry) sessions.delete(key);
+  async function disposeEntry(entry: SessionEntry): Promise<void> {
+    entry.release();
     await entry.warm[Symbol.asyncDispose]().catch(() => undefined);
   }
 
@@ -236,8 +229,8 @@ export function createStudioSessionBroker(
   // lastUsed). Losing a live-but-quiet sandbox costs one re-broker.
   const sweeper = setInterval(() => {
     const now = Date.now();
-    for (const [key, entry] of sessions) {
-      if (now - entry.lastUsed > idleMs) void disposeEntry(key, entry);
+    for (const entry of sessions.values()) {
+      if (now - entry.lastUsed > idleMs) void disposeEntry(entry);
     }
   }, 60_000);
   sweeper.unref?.();
@@ -360,7 +353,7 @@ export function createStudioSessionBroker(
         project,
         error: errorMessage(err),
       });
-      await disposeEntry(key, existing);
+      await disposeEntry(existing);
       return null;
     }
   }
@@ -399,12 +392,14 @@ export function createStudioSessionBroker(
       throw err;
     }
     const url = chatUrlForGuest(warm.guestOrigin);
-    sessions.set(key, {
+    const entry: SessionEntry = {
       warm,
       url,
       lastUsed: Date.now(),
       ...(serverUrl ? { previewTarget: { serverUrl, apiKey } } : {}),
-    });
+      release: () => false,
+    };
+    entry.release = sessions.claim(key, entry);
     return { url };
   }
 
@@ -415,7 +410,7 @@ export function createStudioSessionBroker(
     files: Record<string, string>,
     target: WorkspaceDeployTarget,
   ): Promise<WorkspaceDeployOutcome> {
-    const key = sessionKey(scope, project);
+    const key = projectKey(scope, project);
     const existing = sessions.get(key);
     if (existing) {
       try {
@@ -429,7 +424,7 @@ export function createStudioSessionBroker(
           project,
           error: errorMessage(err),
         });
-        await disposeEntry(key, existing);
+        await disposeEntry(existing);
       }
     }
     // No (live) session sandbox — spawn one for the publish and tear it
@@ -458,7 +453,7 @@ export function createStudioSessionBroker(
 
   return {
     ensureSession(scope, project, apiKey, serverUrl) {
-      const key = sessionKey(scope, project);
+      const key = projectKey(scope, project);
       // Per project, not global: brokering one project must never queue
       // behind another project's Modal spawn.
       return withLock(sessionLock, key, () =>
@@ -474,9 +469,7 @@ export function createStudioSessionBroker(
 
     async dispose() {
       clearInterval(sweeper);
-      await Promise.allSettled(
-        [...sessions.entries()].map(([key, entry]) => disposeEntry(key, entry)),
-      );
+      await Promise.allSettled([...sessions.values()].map((entry) => disposeEntry(entry)));
     },
   };
 }
