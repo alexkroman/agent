@@ -1,12 +1,11 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's shared 60px top bar (brand, project switcher, Preview/Code
+// The studio's shared 60px top bar (brand, project name, Preview/Code
 // segmented control, actions) and the Publish dropdown it opens. Split from
-// app.tsx, which owns all the state these render.
+// app.tsx, which owns all the state these render. Project switching lives in
+// the home sidebar (brand → home), not here.
 
 import clsx from "clsx";
 import logoUrl from "./assets/assemblyai-logomark.svg";
-
-const NEW_PROJECT_SENTINEL = "__new__";
 
 /**
  * Absolute URL of a deployed agent. The href works either way, but the *text*
@@ -75,12 +74,9 @@ export function PublishMenu(props: PublishMenuProps) {
 
 type TopBarProps = {
   project: string | null;
-  projects: string[];
   tab: "preview" | "code";
   deployedSlug?: string | undefined;
   hasBuild: boolean;
-  onSelectProject: (name: string | null) => void;
-  onNewProject: () => void;
   /** Brand click: back to the hero home (deselects the project). */
   onGoHome: () => void;
   onSelectTab: (tab: "preview" | "code") => void;
@@ -89,7 +85,7 @@ type TopBarProps = {
   onToggleSecrets: () => void;
 };
 
-/** Shared 60px top bar (all 1x options): brand, switcher, segmented, actions. */
+/** Shared 60px top bar (all 1x options): brand, project name, segmented, actions. */
 export function TopBar(props: TopBarProps) {
   const segClass = (active: boolean) =>
     `seg ${active ? "bg-fg text-cream" : "bg-panel text-muted hover:text-fg"}`;
@@ -104,35 +100,15 @@ export function TopBar(props: TopBarProps) {
         <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
         <span className="font-serif text-[16px] text-fg">AssemblyAI App Builder</span>
       </button>
-      <div className="h-[22px] w-px bg-line" aria-hidden />
-      <div className="flex h-[34px] items-center gap-2 rounded-sm border border-line bg-panel pl-3 hover:border-line-strong">
-        <span
-          className={clsx(
-            "h-[7px] w-[7px] flex-none rounded-full",
-            props.project ? "bg-indigo" : "bg-warm-300",
-          )}
-          aria-hidden
-        />
-        <select
-          className="h-full cursor-pointer border-none bg-transparent pr-2 text-[13px] text-muted focus:outline-none"
-          value={props.project ?? ""}
-          onChange={(e) => {
-            if (e.target.value === NEW_PROJECT_SENTINEL) {
-              props.onNewProject();
-              return;
-            }
-            props.onSelectProject(e.target.value || null);
-          }}
-        >
-          {!props.project && <option value="">No project yet</option>}
-          {props.projects.map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-          <option value={NEW_PROJECT_SENTINEL}>+ New project…</option>
-        </select>
-      </div>
+      {props.project && (
+        <>
+          <div className="h-[22px] w-px bg-line" aria-hidden />
+          <div className="flex h-[34px] items-center gap-2 pl-1">
+            <span className="h-[7px] w-[7px] flex-none rounded-full bg-indigo" aria-hidden />
+            <span className="text-[13px] text-muted">{props.project}</span>
+          </div>
+        </>
+      )}
       <div className="flex-1" />
       <div className="flex overflow-hidden rounded-sm border border-line">
         <button
