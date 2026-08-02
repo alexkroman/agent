@@ -1,5 +1,16 @@
 # aai-studio-server
 
+## 0.2.4
+
+### Patch Changes
+
+- 38c1b97: Auto-create studio projects from the first chat message with server-generated v0-style names (prompt-derived base + random suffix) at shareable /studio/chat/<name> URLs; slugless CLI deploys now generate slugs from the agent's config name via the same shared generator.
+- Updated dependencies [675ac6d]
+- Updated dependencies [38c1b97]
+- Updated dependencies [0b39214]
+  - aai-studio-client@0.2.1
+  - aai-server@3.2.1
+
 ## 0.2.3
 
 ### Patch Changes
