@@ -49,6 +49,50 @@ export const DEFAULT_SHUTDOWN_DRAIN_MS = 120_000;
 export const DRAIN_POLL_MS = 250;
 
 /**
+ * Poll interval for the shutdown drain, whose count fans an RPC out to every
+ * guest this replica owns (`liveGuestSessions`) rather than reading a local
+ * socket set. Coarser than {@link DRAIN_POLL_MS} for that reason; a second of
+ * extra shutdown latency against a 120s budget is not worth 4× the guest
+ * chatter while a replica is going down.
+ */
+export const DRAIN_GUEST_POLL_MS = 1000;
+
+/**
+ * How long a sandbox superseded by a deploy/secret/storage mutation keeps
+ * serving the sessions it already had, before its remaining calls are cut.
+ *
+ * A mutation does not end the conversations in flight on the old sandbox, so
+ * terminating it on the spot cuts every one of them mid-word — the same
+ * failure `DEFAULT_SHUTDOWN_DRAIN_MS` exists to avoid on scale-in, arriving
+ * instead on every redeploy. Retirement detaches the sandbox from its slot
+ * (the broker is the only routing point, so no NEW session can land on it)
+ * and lets the old ones finish on the old code, which is what a client
+ * already assumes for the duration of a call.
+ *
+ * Bounded, because a retired sandbox is a billed guest still running
+ * superseded code: past the deadline the deploy wins and the stragglers are
+ * closed. 10 minutes sits above a normal call and above session-core's own
+ * 5-minute `idleTimeoutMs` (so an abandoned session self-reaps well inside
+ * it) without letting one long call pin an old bundle indefinitely.
+ * Override with `SANDBOX_RETIRE_DRAIN_MS`; 0 restores immediate termination.
+ */
+export const SANDBOX_RETIRE_DRAIN_MS = Number(process.env.SANDBOX_RETIRE_DRAIN_MS ?? 600_000);
+
+/**
+ * How often retirement re-probes a draining guest's session count.
+ *
+ * This is also the answer to "how long after the last call ends does the old
+ * sandbox die": the drain loop only notices at a probe, so the lag is at most
+ * one interval. Much coarser than {@link DRAIN_POLL_MS} because each probe is
+ * a `status` RPC to the guest rather than a local counter read — but the
+ * probe is cheap and the alternative is paying for an empty guest, so this
+ * stays seconds, not the tens of seconds the minutes-long window would
+ * otherwise invite. Note the FIRST probe happens before any sleep, so a
+ * superseded sandbox with nobody on it is terminated immediately.
+ */
+export const RETIRE_POLL_MS = 5000;
+
+/**
  * After the drain and sandbox teardown, how long to wait for the HTTP server's
  * remaining connections to close before exiting anyway.
  *

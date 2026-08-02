@@ -5,6 +5,7 @@ import { debug } from "./_debug-log.ts";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
 import { bumpSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
+import { retireSandbox } from "./sandbox-retire.ts";
 
 export type SlotSandbox = {
   shutdown(): Promise<void>;
@@ -95,18 +96,37 @@ export async function terminateSlot(slot: AgentSlot): Promise<void> {
 }
 
 /**
- * Terminate `slug`'s sandbox (if resident) so the next session picks up new
+ * Detach a slot's sandboxes and retire them gracefully (see
+ * sandbox-retire.ts): the slug is free for a rebuild the moment this returns,
+ * while the calls already in flight finish on the old code.
+ *
+ * The detach is synchronous — no await between reading the sandboxes and
+ * clearing the fields — so there is no window in which the broker could hand
+ * a superseded sandbox to a new client. The drains are deliberately NOT
+ * awaited: a deploy must not block for the length of someone else's call.
+ *
+ * For a sandbox that is gone rather than superseded (failed VM, exited guest,
+ * deleted agent) use `terminateSlot` — there is nothing to drain.
+ */
+export function retireSlot(slot: AgentSlot, reason: string): void {
+  clearIdleTimer(slot);
+  const sandboxes = [...(slot.sandbox ? [slot.sandbox] : []), ...(slot.replicas ?? [])];
+  delete slot.sandbox;
+  delete slot.replicas;
+  for (const sb of sandboxes) {
+    void retireSandbox(sb, { slug: slot.slug, reason });
+  }
+}
+
+/**
+ * Retire `slug`'s sandbox (if resident) so the next session picks up new
  * config — used by the secret and storage handlers after a mutation.
  */
-export async function restartSlotSandbox(
-  slots: SlotCache,
-  slug: string,
-  reason: string,
-): Promise<void> {
+export function restartSlotSandbox(slots: SlotCache, slug: string, reason: string): void {
   const slot = slots.get(slug);
   if (slot?.sandbox) {
-    console.info(`Restarting sandbox for ${reason}`, { slug });
-    await terminateSlot(slot);
+    console.info(`Retiring sandbox for ${reason}`, { slug });
+    retireSlot(slot, reason);
   }
 }
 
@@ -122,20 +142,18 @@ export async function restartSlotSandbox(
  * previous version of the agent until idle eviction.
  *
  * Call AFTER the store write. An early bump makes peers rebuild from
- * pre-mutation artifacts. Both halves are best-effort and independent, so
- * they run together rather than serialized — `restartSlotSandbox` ends in a
- * Modal terminate round trip, and callers hold the cross-replica slug lease
- * while this runs.
+ * pre-mutation artifacts. The local half is now synchronous (it hands the
+ * sandbox to a background drain rather than awaiting a Modal terminate), so
+ * only the bump is awaited; callers hold the cross-replica slug lease while
+ * this runs.
  */
 export async function invalidateSlug(
   deps: { slots: SlotCache; slugEpochs: SlugEpochs },
   slug: string,
   reason: string,
 ): Promise<void> {
-  await Promise.all([
-    restartSlotSandbox(deps.slots, slug, reason),
-    bumpSlugEpoch(deps.slugEpochs, slug),
-  ]);
+  restartSlotSandbox(deps.slots, slug, reason);
+  await bumpSlugEpoch(deps.slugEpochs, slug);
 }
 
 export function setSlot(slots: SlotCache, slot: AgentSlot): void {
@@ -148,20 +166,36 @@ export function deleteSlot(slots: SlotCache, slug: string): boolean {
   return slots.delete(slug);
 }
 
+/**
+ * Was the slot's resident sandbox built from artifacts a later mutation has
+ * superseded (see platform-epoch.ts)? Injected by sandbox-resolve.ts, which
+ * owns both the epoch store and the bundle caches this module knows nothing
+ * about; absent — dev, tests, any caller without epochs — means "never
+ * superseded", i.e. the pre-epoch behavior.
+ *
+ * An implementation MUST also drop whatever caches the rebuild would
+ * otherwise reuse. The worker-code cache lives 10 minutes and the idle window
+ * is 5, so an eviction that skipped that would rebuild the SAME pre-mutation
+ * bundle and stamp it with the current epoch — pinning the old code instead of
+ * clearing it, which is worse than leaving the stale sandbox up.
+ */
+export type SupersededCheck = (slot: AgentSlot) => Promise<boolean>;
+
 export function attachSandbox(
   slots: SlotCache,
   slot: AgentSlot,
   sandbox: NonNullable<AgentSlot["sandbox"]>,
+  isSuperseded?: SupersededCheck,
 ): void {
   slot.sandbox = sandbox;
-  resetIdleTimer(slots, slot);
+  resetIdleTimer(slots, slot, isSuperseded);
 }
 
-function resetIdleTimer(slots: SlotCache, slot: AgentSlot): void {
+function resetIdleTimer(slots: SlotCache, slot: AgentSlot, isSuperseded?: SupersededCheck): void {
   clearIdleTimer(slot);
   const { slug } = slot;
   const timer = setTimeout(() => {
-    void evictIdleSandbox(slots, slug);
+    void evictIdleSandbox(slots, slug, isSuperseded);
   }, IDLE_SANDBOX_MS);
   timer.unref?.();
   slot.idleTimer = timer;
@@ -192,13 +226,51 @@ function evictIdleReplicas(slot: AgentSlot, replicas: SlotSandbox[], replicaLive
   if (slot.replicas?.length === 0) delete slot.replicas;
 }
 
-async function evictIdleSandbox(slots: SlotCache, slug: string): Promise<void> {
+/**
+ * Retire a resident whose bundle a mutation elsewhere has superseded.
+ *
+ * Deliberately ahead of the session probe below, and deliberately blind to
+ * live session counts. A deploy retires the resident sandbox only on the
+ * replica that served the deploy request; every other replica learns through
+ * the slug epoch, which `resolveSandbox` reads LAZILY — at session start. With
+ * `buffer_containers` keeping a warm spare, the deploy and the replica holding
+ * the sandbox are routinely different containers, so a slug nobody re-brokers
+ * here keeps serving pre-deploy code. The probe path cannot be the backstop:
+ * it re-arms on any live count, and those sessions are ON the superseded
+ * sandbox, so gating on them means never retiring it.
+ *
+ * Retiring rather than terminating is what makes ignoring the count safe —
+ * the calls in flight finish on the old code (see sandbox-retire.ts), only
+ * new ones are barred.
+ *
+ * Returns true when it retired the slot (the caller must not also re-arm).
+ */
+async function retireSuperseded(
+  slots: SlotCache,
+  slot: AgentSlot,
+  primary: SlotSandbox,
+  isSuperseded: SupersededCheck,
+): Promise<boolean> {
+  if (!(await isSuperseded(slot))) return false;
+  // The check awaited; only the slot's CURRENT sandbox may be retired.
+  if (!slots.owns(slot.slug, slot) || slot.sandbox !== primary) return true;
+  console.info("Retiring superseded sandbox (slug epoch advanced)", { slug: slot.slug });
+  retireSlot(slot, "superseded");
+  return true;
+}
+
+async function evictIdleSandbox(
+  slots: SlotCache,
+  slug: string,
+  isSuperseded?: SupersededCheck,
+): Promise<void> {
   const slot = slots.get(slug);
   if (!slot) return;
   // The fired timer was ours; drop the field so a later attach can rearm.
   delete slot.idleTimer;
   const primary = slot.sandbox;
   if (!primary) return;
+  if (isSuperseded && (await retireSuperseded(slots, slot, primary, isSuperseded))) return;
   // Sessions connect directly to the sandboxes, so the host must ASK whether
   // any are live before killing one mid-call. A dead/unreachable guest
   // answers 0 (see Sandbox.activeSessions) — eviction proceeds.
@@ -212,7 +284,10 @@ async function evictIdleSandbox(slots: SlotCache, slug: string): Promise<void> {
   if (!slots.owns(slug, slot) || slot.sandbox !== primary) return;
   evictIdleReplicas(slot, replicas, replicaLive);
   if (primaryLive > 0 || (slot.replicas?.length ?? 0) > 0) {
-    resetIdleTimer(slots, slot);
+    // Carry the check forward: a busy slug re-arms indefinitely, and a
+    // re-arm that dropped it would leave exactly the sandboxes the sweep
+    // exists for — long-lived, never re-brokered — unchecked forever.
+    resetIdleTimer(slots, slot, isSuperseded);
     return;
   }
   debug("Evicting idle sandbox", { slug });

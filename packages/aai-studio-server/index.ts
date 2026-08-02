@@ -17,7 +17,7 @@
  * The agent-only service is the aai-server package's own entry.
  */
 
-import { DEFAULT_PORT } from "aai-server/constants";
+import { DEFAULT_PORT, DRAIN_GUEST_POLL_MS } from "aai-server/constants";
 import { createOrchestrator } from "aai-server/orchestrator";
 import { drainActiveSessions, startService } from "aai-server/serve-lifecycle";
 import {
@@ -27,7 +27,7 @@ import {
   type ServiceConfig,
 } from "aai-server/service-config";
 import { isStudioPath } from "aai-server/studio-proxy";
-import { teardownSandboxes } from "aai-server/teardown-sandboxes";
+import { liveGuestSessions, teardownSandboxes } from "aai-server/teardown-sandboxes";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import {
   CHAT_RATE_LIMIT,
@@ -130,7 +130,14 @@ async function main(): Promise<void> {
     // same code path, so the two can no longer drift.
     onShutdown: async () => {
       draining = true;
-      await drainActiveSessions({ activeCount: orchestrator.activeSessionCount, env });
+      // Guests included — see the agent entry: sessions live in the sandboxes,
+      // so the socket count alone always reads 0 and drains instantly.
+      await drainActiveSessions({
+        activeCount: async () =>
+          orchestrator.activeSessionCount() + (await liveGuestSessions(base.slots)),
+        pollMs: DRAIN_GUEST_POLL_MS,
+        env,
+      });
       console.info("Shutting down...");
       orchestrator.closeActiveSockets();
       await teardown();

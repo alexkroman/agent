@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { IDLE_SANDBOX_MS } from "./constants.ts";
+import { IDLE_SANDBOX_MS, RETIRE_POLL_MS } from "./constants.ts";
 import {
   type AgentSlot,
   attachSandbox,
@@ -65,10 +65,14 @@ describe("terminateSlot", () => {
 
 describe("idle sandbox eviction", () => {
   beforeEach(() => {
-    vi.useFakeTimers();
+    // `performance` too — retirement's drain deadline is measured with
+    // performance.now(), which vitest leaves real by default.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
   });
   afterEach(() => {
     vi.useRealTimers();
+    vi.restoreAllMocks();
   });
 
   it("evicts a sandbox after IDLE_SANDBOX_MS with no touches", async () => {
@@ -226,6 +230,72 @@ describe("idle sandbox eviction", () => {
     expect(lastReplica?.shutdown).toHaveBeenCalledOnce();
     expect(slot.replicas).toBeUndefined();
     expect(cache.get("tail")?.sandbox).toBeUndefined();
+  });
+
+  it("retires a superseded sandbox regardless of live sessions, without cutting them", async () => {
+    const cache = createSlotCache();
+    const slot = makeSlot("superseded");
+    setSlot(cache, slot);
+    // Busy: the plain idle probe would re-arm the timer forever, so the
+    // sweep must not gate on this count — but it must not cut the calls
+    // either.
+    let live = 3;
+    const sandbox = makeSandbox(() => Promise.resolve(live));
+    const replica = makeSandbox(() => Promise.resolve(live));
+    attachSandbox(cache, slot, sandbox, () => Promise.resolve(true));
+    slot.replicas = [replica];
+
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+
+    // Detached at once — no NEW session can be brokered onto it...
+    expect(cache.get("superseded")?.sandbox).toBeUndefined();
+    expect(cache.get("superseded")?.replicas).toBeUndefined();
+    // ...while the calls already on it keep running.
+    expect(sandbox.shutdown).not.toHaveBeenCalled();
+    expect(replica.shutdown).not.toHaveBeenCalled();
+
+    live = 0;
+    await vi.advanceTimersByTimeAsync(RETIRE_POLL_MS + 1);
+    expect(sandbox.shutdown).toHaveBeenCalledOnce();
+    expect(replica.shutdown).toHaveBeenCalledOnce();
+  });
+
+  it("rearms normally when the staleness check says the resident is current", async () => {
+    const cache = createSlotCache();
+    const slot = makeSlot("current");
+    setSlot(cache, slot);
+    const sandbox = makeSandbox(() => Promise.resolve(1));
+    attachSandbox(cache, slot, sandbox, () => Promise.resolve(false));
+
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+
+    expect(sandbox.shutdown).not.toHaveBeenCalled();
+    expect(slot.idleTimer).toBeDefined();
+  });
+
+  it("does not retire a replacement installed while the staleness check was in flight", async () => {
+    const cache = createSlotCache();
+    const slot = makeSlot("raced-stale");
+    setSlot(cache, slot);
+    const gate = Promise.withResolvers<boolean>();
+    const sandbox = makeSandbox(() => Promise.resolve(0));
+    attachSandbox(cache, slot, sandbox, () => gate.promise);
+
+    // Fire the idle timer; the staleness check is now awaiting the gate.
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+
+    // A redeploy replaces the slot object under the same slug mid-check.
+    await terminateSlot(slot);
+    const newSlot = makeSlot("raced-stale");
+    setSlot(cache, newSlot);
+    const newSandbox = makeSandbox(() => Promise.resolve(0));
+    attachSandbox(cache, newSlot, newSandbox, () => Promise.resolve(false));
+
+    gate.resolve(true);
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(newSandbox.shutdown).not.toHaveBeenCalled();
+    expect(cache.get("raced-stale")?.sandbox).toBe(newSandbox);
   });
 
   it("terminateSlot shuts down replicas along with the primary", async () => {
