@@ -242,6 +242,14 @@ export const MessageList = memo(function MessageList({ className }: { className?
 
   const { anchorRef, onScroll } = useAutoScroll(contentVersion, userTranscript !== null);
 
+  // Stable object for the streaming bubble: an inline literal would defeat
+  // MessageBubble's memo, re-rendering the streaming row on every unrelated
+  // list update (state flips, STT partials, tool-call updates).
+  const streamingMessage = useMemo(
+    () => (agentTranscript ? { role: "assistant" as const, content: agentTranscript } : null),
+    [agentTranscript],
+  );
+
   // Memoized rows: `MessageBubble` and `ToolCallBlock` are memo()-wrapped and
   // their inputs are referentially stable across snapshots, so appending one
   // message re-renders one row, not the whole capped list.
@@ -265,9 +273,7 @@ export const MessageList = memo(function MessageList({ className }: { className?
     >
       <div className="flex flex-col gap-4 p-7">
         {items}
-        {agentTranscript && (
-          <MessageBubble message={{ role: "assistant", content: agentTranscript }} theme={theme} />
-        )}
+        {streamingMessage && <MessageBubble message={streamingMessage} theme={theme} />}
         {userTranscript !== null && (
           <UserBubble theme={theme} color={TEXT_FAINT}>
             {userTranscript ? userTranscript : <ThinkingDots />}

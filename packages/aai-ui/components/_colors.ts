@@ -17,6 +17,8 @@ export const TEXT_FAINT = "#6F6A60";
 export const SURFACE_TINT = "rgba(20,18,12,0.03)";
 /** Error red tuned for warm light surfaces. */
 export const ERROR_COLOR = "#B3261E";
+/** Amber used by the "thinking" state indicator. */
+export const THINKING_COLOR = "#B98900";
 
 /**
  * Derive the user-bubble fill/edge from the theme primary (the mock's

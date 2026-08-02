@@ -5,6 +5,7 @@
 import { type ComponentType, createElement, useEffect, useState } from "react";
 import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
+import { pageBaseUrl } from "./_utils.ts";
 import { type ClientConfigResponse, fetchClientConfig } from "./client-config.ts";
 import { ChatView } from "./components/chat-view.tsx";
 import { SidebarLayout } from "./components/sidebar-layout.tsx";
@@ -13,28 +14,26 @@ import { ToolConfigContext, type ToolDisplayConfig } from "./components/tool-con
 import { SessionProvider, ThemeProvider } from "./context.ts";
 import { createSessionCore } from "./session-core.ts";
 import type { SessionCore } from "./session-core-types.ts";
-import type { ClientTheme, WebSocketConstructor } from "./types.ts";
+import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
 
 // ─── Config types ─────────────────────────────────────────────────────────────
 
 /**
  * Base options shared by both client tiers.
  *
+ * The session-forwarded fields are picked from {@link VoiceSessionOptions}
+ * (one source of truth for types and docs) rather than re-declared — a
+ * re-declared copy is exactly how doc comments drift.
+ *
  * @public
  */
-type BaseOptions = {
+type BaseOptions = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
   /** CSS selector or DOM element to render into. Defaults to `"#app"`. */
   target?: string | HTMLElement;
   /** Base URL of the AAI platform server. Derived from `location.href` by default. */
   platformUrl?: string;
   /** Theme color overrides. */
   theme?: ClientTheme;
-  /** Called when the server sends a session ID. Store it for reconnection. */
-  onSessionId?: (sessionId: string) => void;
-  /** Session ID from a previous connection for resuming persisted state. */
-  resumeSessionId?: string;
-  /** WebSocket constructor override. Passed through to session options. */
-  WebSocket?: WebSocketConstructor;
 };
 
 /**
@@ -209,8 +208,7 @@ function DefaultRoot({
 export function client(config: ClientConfig): ClientHandle {
   const container = resolveContainer(config.target);
 
-  const platformUrl =
-    config.platformUrl ?? globalThis.location.origin + globalThis.location.pathname;
+  const platformUrl = config.platformUrl ?? pageBaseUrl();
 
   const session = createSessionCore({
     platformUrl,
