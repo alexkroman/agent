@@ -1,5 +1,12 @@
 # @alexkroman1/aai
 
+## 5.1.0
+
+### Patch Changes
+
+- 8fb0a0d: web_search now falls back to DuckDuckGo's lite endpoint when the primary HTML endpoint returns a bot-detection challenge or HTTP error, detects the anomaly interstitial as a challenge, and sends browser-like Accept headers
+- ac21a90: Close the client socket when a session hits its idle timeout. Previously session-core emitted an `idle_timeout` event and left the connection open; clients treat that event as informational and wait for a close, so the session, its provider sockets, and (on the platform) its Modal input slot were all held indefinitely.
+
 ## 5.0.1
 
 ## 5.0.0

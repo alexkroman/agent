@@ -1,5 +1,17 @@
 # aai-guest
 
+## 0.2.2
+
+### Patch Changes
+
+- d1fc1c0: Run the studio's test_agent workspace build in a one-shot child process. Rolldown allocates outside V8 and never returns that memory to the OS, so an in-process build left ~1.5 GB permanently resident in the long-lived guest harness — measured 258 MB to 1.7 GB on one build, climbing with each later one. Publish already spawned the CLI; both build paths now exit to reclaim.
+- Updated dependencies [8fb0a0d]
+- Updated dependencies [ac21a90]
+- Updated dependencies [3bc83bb]
+  - @alexkroman1/aai@5.1.0
+  - @alexkroman1/aai-ui@5.1.0
+  - @alexkroman1/aai-cli@5.1.0
+
 ## 0.2.1
 
 ### Patch Changes

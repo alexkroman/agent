@@ -1,5 +1,19 @@
 # aai-studio-server
 
+## 0.2.3
+
+### Patch Changes
+
+- 57c8b03: Forward Modal container stop signals to the node server so guest-sandbox teardown actually runs on scale-in/redeploy — orphaned sandboxes no longer linger as 2-3 MiB sleep-infinity shells for the ~20-minute orphan + idle window on every deploy
+- Updated dependencies [8fb0a0d]
+- Updated dependencies [fa3f3fd]
+- Updated dependencies [ac21a90]
+- Updated dependencies [3bc83bb]
+- Updated dependencies [57c8b03]
+  - @alexkroman1/aai@5.1.0
+  - aai-server@3.2.0
+  - @alexkroman1/aai-ui@5.1.0
+
 ## 0.2.2
 
 ### Patch Changes
