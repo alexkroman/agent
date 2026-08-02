@@ -1778,6 +1778,13 @@ service's control work is light — and one container served both badly.
   before the first dial). Once the exec has exited, Modal's `idleTimeoutMs`
   (`SANDBOX_IDLE_TIMEOUT_SECS`, default 15 min) terminates the sandbox.
   There is no heartbeat protocol — connection presence replaces it.
+  That chain costs ~20 minutes of billed `sleep infinity` shell per orphaned
+  guest, so it is the backstop, not the normal path: Modal delivers stop
+  signals to the container's **Python** runtime, never to a bare
+  `subprocess.Popen` child, so `run_node` (scripts/modal_image.py) forwards
+  SIGTERM/SIGINT to the node process and waits — that is the only reason
+  `teardownSandboxes` (drain + terminate every guest the replica owns) runs
+  on scale-in/redeploy at all.
   Host-side eviction (`sandbox-slots.ts`) stays the authority on
   session-aware idleness — sessions connect directly to the sandbox, so the
   idle timer asks the guest (`status` RPC → live session count) before

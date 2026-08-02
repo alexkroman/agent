@@ -34,7 +34,6 @@ Required Modal Secret named ``aai-server`` with (at least):
 """
 
 import os
-import subprocess
 import sys
 from pathlib import Path
 
@@ -43,7 +42,7 @@ import modal
 # The image recipe is shared with the studio app so the two services can never
 # run different dependency trees — see scripts/modal_image.py.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent.parent / "scripts"))
-from modal_image import build_image  # noqa: E402
+from modal_image import build_image, run_node  # noqa: E402
 
 PORT = 8080
 
@@ -145,8 +144,10 @@ app = modal.App("aai-server-web")
     max_containers=MAX_CONTAINERS,
     buffer_containers=BUFFER_CONTAINERS,
     # SHUTDOWN_DRAIN_MS (120s) + sandbox teardown must fit in the container's
-    # grace period — the node process handles SIGTERM itself, persisting live
-    # sessions' resume state before exiting (see sandbox.ts shutdown).
+    # grace period. Modal signals this Python runtime, not the node child —
+    # `run_node` below forwards the stop signal and waits, which is the only
+    # reason the node SIGTERM handler (drain + guest-sandbox teardown) runs
+    # at all on scale-in/redeploy.
     scaledown_window=300,
     # Bounds one WebSocket's lifetime — see "Input timeout" above.
     timeout=FUNCTION_TIMEOUT_SECS,
@@ -170,4 +171,7 @@ def server() -> None:
     else:
         env["AAI_SERVICE"] = "combined"
         entry = "packages/aai-studio-server/dist/index.mjs"
-    subprocess.Popen(["node", entry], cwd="/app", env=env)
+    # run_node (not a bare Popen) so container stop signals reach the node
+    # process — its SIGTERM handler is what drains sessions and terminates
+    # this replica's guest sandboxes (see modal_image.run_node).
+    run_node(entry, env)
