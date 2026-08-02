@@ -1,5 +1,11 @@
 # @alexkroman1/aai-server
 
+## 3.2.3
+
+### Patch Changes
+
+- ee903c5: Give guest sandboxes a burst range (reserve idle, cap for builds) so studio builds and Publish stop wedging at the cgroup ceiling
+
 ## 3.2.2
 
 ### Patch Changes
