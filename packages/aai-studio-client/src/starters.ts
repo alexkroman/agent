@@ -8,7 +8,9 @@
  * so a pick steers the coding agent toward an agent shape the platform is
  * known to build well.
  */
-export const STARTERS: { label: string; prompt: string }[] = [
+export type Starter = { label: string; prompt: string };
+
+export const STARTERS: Starter[] = [
   {
     label: "A pizza-ordering agent with a real cart",
     // Modeled on the pizza-ordering template: tools that mutate per-session
@@ -139,3 +141,18 @@ export const STARTERS: { label: string; prompt: string }[] = [
       "the mood, and what else is queued — themed for late-night browsing.",
   },
 ];
+
+/**
+ * A random `count` starters without repeats — sampled once per page load so
+ * the hero shows a rotating taste of the catalog instead of all of it.
+ * `random` is injectable for deterministic tests.
+ */
+export function sampleStarters(count: number, random: () => number = Math.random): Starter[] {
+  const pool = [...STARTERS];
+  const picked: Starter[] = [];
+  while (picked.length < count && pool.length > 0) {
+    const [starter] = pool.splice(Math.floor(random() * pool.length), 1);
+    if (starter) picked.push(starter);
+  }
+  return picked;
+}
