@@ -28,6 +28,7 @@ import {
   type ServiceConfig,
 } from "aai-server/service-config";
 import { isStudioPath } from "aai-server/studio-proxy";
+import { teardownSandboxes } from "aai-server/teardown-sandboxes";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 import {
   CHAT_RATE_LIMIT,
@@ -87,7 +88,9 @@ async function main(): Promise<void> {
   const base = buildServiceConfig(env);
   assertSandboxBackendOrWarn(env);
 
-  const { app: studioApp } = createStudioApp(studioAppOpts(base, () => draining));
+  const { app: studioApp, dispose: disposeStudio } = createStudioApp(
+    studioAppOpts(base, () => draining),
+  );
 
   if (mode === "studio") {
     const nodeServer = serve({ fetch: studioApp.fetch, port });
@@ -105,7 +108,14 @@ async function main(): Promise<void> {
       stopping = true;
       draining = true;
       console.info("Studio service shutting down...");
-      if (base.pool) await base.pool.shutdown().catch(() => undefined);
+      // The broker's per-project coding-agent sandboxes are this service's
+      // to release: without the dispose they outlive the process and burn
+      // their orphan timeout (billed, on Modal) on every scale-in.
+      await teardownSandboxes({
+        slots: base.slots,
+        pool: base.pool,
+        broker: { dispose: disposeStudio },
+      });
       nodeServer.close(() => process.exit(0));
       setTimeout(() => process.exit(0), 3000).unref();
     };
@@ -153,11 +163,11 @@ async function main(): Promise<void> {
     }
     console.info("Shutting down...");
     orchestrator.closeActiveSockets();
-    const stops = [...base.slots.values()].map((slot) => slot.sandbox?.shutdown()).filter(Boolean);
-    if (base.pool) stops.push(base.pool.shutdown());
-    for (const r of await Promise.allSettled(stops)) {
-      if (r.status === "rejected") console.warn("Sandbox termination failed:", r.reason);
-    }
+    await teardownSandboxes({
+      slots: base.slots,
+      pool: base.pool,
+      broker: { dispose: disposeStudio },
+    });
     nodeServer.close(() => process.exit(0));
     setTimeout(() => process.exit(0), 3000).unref();
   }
