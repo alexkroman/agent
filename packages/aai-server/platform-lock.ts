@@ -43,6 +43,49 @@ export type SlugMutationLock = <T>(slug: string, fn: () => Promise<T>) => Promis
  */
 export const localSlugLock: SlugMutationLock = withSlugLock;
 
+/** The slice of the bundle store the mutation lock has to reach. */
+export type InvalidatableStore = { invalidate?: ((slug: string) => void) | undefined };
+
+/**
+ * The lock every per-slug mutation route takes: cross-replica exclusion, plus
+ * a fresh local view of the slug.
+ *
+ * The lease alone is not enough. Each replica's bundle store is a
+ * read-through cache (60s for the manifest — which carries the agent's env —
+ * and its config), and the mutations are all read-modify-write:
+ * `handleSecretSet` merges onto `getEnv`, `handleSecretDelete` deletes a key
+ * from it, and `deployLocked` merges both the stored env and the
+ * `credential_hashes` off `getManifest`. `putEnv` drops only the writing
+ * replica's cache entry, so a write that landed on replica A moments ago is
+ * invisible to replica B — which then computes its merge from a pre-lock
+ * snapshot and writes the older value back. The lease serialized the two
+ * writes perfectly and one of them still vanished, with no error anywhere: a
+ * secret silently reverts, or a deploy silently drops a co-owner's
+ * credential hash.
+ *
+ * Dropping the cache on lock ACQUISITION is the fix, and it belongs here
+ * rather than at each route for the reason `invalidateSlug` exists: a route
+ * that forgets produces no error, just an occasional lost write. Entering the
+ * critical section is exactly the moment "someone else may have just written
+ * this slug" becomes known, so it is the only correct place to distrust the
+ * cache.
+ *
+ * Cheap: an invalidation costs the next reader one storage round trip, and
+ * mutations are rare relative to reads. Note `resolveSandbox` deliberately
+ * does NOT go through this — it takes the in-process lock directly, so
+ * brokering a session never drops the (up to 30 MB) worker-code cache.
+ */
+export function createMutationLock(
+  lock: SlugMutationLock,
+  store: InvalidatableStore,
+): SlugMutationLock {
+  return (slug, fn) =>
+    lock(slug, () => {
+      store.invalidate?.(slug);
+      return fn();
+    });
+}
+
 /** Thrown when another holder keeps the lease past the acquire deadline. */
 export class SlugLockTimeoutError extends Error {
   constructor(key: string) {

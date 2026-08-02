@@ -622,3 +622,66 @@ describe("ByteBudgetTtlCache", () => {
     expect(cache.get("missing")).toBeNull();
   });
 });
+
+describe("cache invalidation fences in-flight reads", () => {
+  /**
+   * `invalidate()` clears the caches, but a read that missed BEFORE the
+   * mutation and settles after it would otherwise write its pre-mutation
+   * value back in — for `worker.js` that is a 10-minute TTL, and
+   * `rebuildSlot` stamps the post-bump epoch on the slot it builds from it,
+   * so the resident sandbox reads as current while running the old code.
+   */
+  test("a read parked across a deploy does not repopulate the worker cache", async () => {
+    const inner = createStorage();
+    let entered!: () => void;
+    let release!: () => void;
+    const atFetch = new Promise<void>((r) => {
+      entered = r;
+    });
+    const held = new Promise<void>((r) => {
+      release = r;
+    });
+    let park = false;
+
+    const storage = new Proxy(inner, {
+      get(target, prop, receiver) {
+        if (prop !== "getItem") return Reflect.get(target, prop, receiver);
+        return async (key: string) => {
+          const value = await inner.getItem(key);
+          if (park && String(key).endsWith("worker.js")) {
+            park = false;
+            entered();
+            await held;
+          }
+          return value;
+        };
+      },
+    });
+
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+    const put = (worker: string) =>
+      store.putAgent({
+        slug: "a",
+        env: {},
+        worker,
+        clientFiles: {},
+        credential_hashes: ["h"],
+        agentConfig: TEST_AGENT_CONFIG,
+      });
+
+    await put("v1");
+
+    // A cold read starts and parks mid-fetch, holding "v1".
+    park = true;
+    const parked = store.getWorkerCode("a");
+    await atFetch;
+
+    // A full deploy lands and completes while that read is in flight.
+    await put("v2");
+
+    release();
+    expect(await parked).toBe("v1"); // the parked caller still sees its snapshot
+
+    expect(await store.getWorkerCode("a")).toBe("v2");
+  });
+});

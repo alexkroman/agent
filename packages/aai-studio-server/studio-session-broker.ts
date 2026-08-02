@@ -31,8 +31,10 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
+import { createKeyedLock } from "aai-server/platform-barrel";
 import { registerGuestRpcHandlers } from "aai-server/sandbox-guest-rpc";
 import type { SandboxPool } from "aai-server/sandbox-pool";
+import { withLock } from "aai-server/sandbox-slots";
 import { acquireWarmHarness, spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { SafePathSchema } from "aai-server/schemas";
 import { z } from "zod";
@@ -172,11 +174,29 @@ export function createStudioSessionBroker(
   const env = options.env ?? process.env;
   const idleMs = options.idleMs ?? STUDIO_SESSION_IDLE_MS;
   const sessions = new Map<string, SessionEntry>();
+  /**
+   * Serializes a project's session installs. Two `POST …/session` calls for
+   * one project overlap routinely — a double-click, a StrictMode double
+   * effect, a refresh landing on an in-flight broker — and both would take
+   * the cold path, spawn a sandbox, and race `sessions.set`. The loser is
+   * then ORPHANED: absent from `sessions`, so neither the idle sweeper nor
+   * `dispose()` can ever reach it. It burns its harness orphan timeout plus
+   * Modal's idle window (billed) and, worse, its `wire()` handlers are still
+   * live, so its end-of-turn `studio/sync-workspace` keeps writing the
+   * project's files behind the tracked sandbox's back.
+   */
+  const sessionLock = createKeyedLock();
 
-  async function disposeEntry(key: string): Promise<void> {
-    const entry = sessions.get(key);
-    if (!entry) return;
-    sessions.delete(key);
+  /**
+   * Tear down `entry` and drop it from the map — but only while it is still
+   * the project's session. Every caller runs its cleanup AFTER an await (a
+   * re-init that rejected, a publish whose sandbox died mid-request), and by
+   * then the client may have re-brokered and installed a replacement:
+   * deleting by key alone evicts that replacement and strands a live sandbox
+   * nothing owns. Same hazard `createOwnedMap` exists for on the agent side.
+   */
+  async function disposeEntry(key: string, entry: SessionEntry): Promise<void> {
+    if (sessions.get(key) === entry) sessions.delete(key);
     await entry.warm[Symbol.asyncDispose]().catch(() => undefined);
   }
 
@@ -186,7 +206,7 @@ export function createStudioSessionBroker(
   const sweeper = setInterval(() => {
     const now = Date.now();
     for (const [key, entry] of sessions) {
-      if (now - entry.lastUsed > idleMs) void disposeEntry(key);
+      if (now - entry.lastUsed > idleMs) void disposeEntry(key, entry);
     }
   }, 60_000);
   sweeper.unref?.();
@@ -298,42 +318,54 @@ export function createStudioSessionBroker(
         project,
         error: errorMessage(err),
       });
-      await disposeEntry(key);
+      await disposeEntry(key, existing);
       return null;
     }
   }
 
-  return {
-    async ensureSession(scope, project, apiKey) {
-      const key = sessionKey(scope, project);
-      const reused = await reuseSession(key, scope, project, apiKey);
-      if (reused) return reused;
+  /** Reuse-or-spawn for one project. Runs under that project's session lock. */
+  async function ensureSessionLocked(
+    key: string,
+    scope: string,
+    project: string,
+    apiKey: string,
+  ): Promise<{ url: string } | null> {
+    const reused = await reuseSession(key, scope, project, apiKey);
+    if (reused) return reused;
 
-      // Check the project exists BEFORE taking a sandbox. Spawning first and
-      // discovering the 404 inside initSession burned a full Modal spawn +
-      // teardown per bogus project id — and each one either drained a warm-pool
-      // slot (making a real session pay a cold start) or billed a create.
-      const workspace = await getWorkspace(options.workspaces, scope, project);
-      if (!workspace) return null;
+    // Check the project exists BEFORE taking a sandbox. Spawning first and
+    // discovering the 404 inside initSession burned a full Modal spawn +
+    // teardown per bogus project id — and each one either drained a warm-pool
+    // slot (making a real session pay a cold start) or billed a create.
+    const workspace = await getWorkspace(options.workspaces, scope, project);
+    if (!workspace) return null;
 
-      const warm = await acquireWarmHarness(
-        { pool: options.pool, harnessPath: options.harnessPath, slug: "studio-session" },
-        spawn,
-      );
-      try {
-        wire(warm, key, scope, project);
-        const ok = await initSession(warm, scope, project, apiKey, workspace);
-        if (!ok) {
-          await warm[Symbol.asyncDispose]().catch(() => undefined);
-          return null;
-        }
-      } catch (err) {
+    const warm = await acquireWarmHarness(
+      { pool: options.pool, harnessPath: options.harnessPath, slug: "studio-session" },
+      spawn,
+    );
+    try {
+      wire(warm, key, scope, project);
+      const ok = await initSession(warm, scope, project, apiKey, workspace);
+      if (!ok) {
         await warm[Symbol.asyncDispose]().catch(() => undefined);
-        throw err;
+        return null;
       }
-      const url = chatUrlForGuest(warm.guestOrigin);
-      sessions.set(key, { warm, url, lastUsed: Date.now() });
-      return { url };
+    } catch (err) {
+      await warm[Symbol.asyncDispose]().catch(() => undefined);
+      throw err;
+    }
+    const url = chatUrlForGuest(warm.guestOrigin);
+    sessions.set(key, { warm, url, lastUsed: Date.now() });
+    return { url };
+  }
+
+  return {
+    ensureSession(scope, project, apiKey) {
+      const key = sessionKey(scope, project);
+      // Per project, not global: brokering one project must never queue
+      // behind another project's Modal spawn.
+      return withLock(sessionLock, key, () => ensureSessionLocked(key, scope, project, apiKey));
     },
 
     async deployWorkspace(scope, project, files, target) {
@@ -351,7 +383,7 @@ export function createStudioSessionBroker(
             project,
             error: errorMessage(err),
           });
-          await disposeEntry(key);
+          await disposeEntry(key, existing);
         }
       }
       // No (live) session sandbox — spawn one for the publish and tear it
@@ -372,7 +404,9 @@ export function createStudioSessionBroker(
 
     async dispose() {
       clearInterval(sweeper);
-      await Promise.allSettled([...sessions.keys()].map((key) => disposeEntry(key)));
+      await Promise.allSettled(
+        [...sessions.entries()].map(([key, entry]) => disposeEntry(key, entry)),
+      );
     },
   };
 }
