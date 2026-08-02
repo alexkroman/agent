@@ -133,10 +133,28 @@ FUNCTION_TIMEOUT_SECS = 4 * 60 * 60
 # replica — saturating well inside MAX_CONNECTIONS above. If sessions stutter
 # at load, the playback stats (concealedSamples per turn) are the signal to
 # lower the cap; raise it only off those same measurements.
+#
+# Reservation and cap are deliberately DIFFERENT numbers, because a guest's
+# load is bimodal. It idles as a voice session (~250 MB, a few % of a core),
+# then a `test_agent` or Publish build spends seconds in the aai CLI's
+# bundler, which peaks near 1.7 GB and wants several cores. Sizing one number
+# for both is a choice between an unaffordable idle sandbox and a build that
+# cannot run: pinned at 1 GiB / 1 core, guests wedged at the cgroup ceiling in
+# permanent direct-reclaim — a core burned on full GCs that can never free
+# rolldown's *native* Rust allocations. That presents as a hung build, not an
+# OOM, and it hits Publish too: the cap is on the cgroup, so spawning the
+# bundler as a child process does not escape it.
+#
+# So: reserve the idle shape, cap the build shape. The session cap above is
+# sized against the RESERVATION (the resources a guest always has), while the
+# cap only has to clear the bundler's peak with headroom for a co-resident
+# session. 4096 MiB is also the ceiling modal-sandbox-env.ts clamps to.
 SANDBOX_MAX_SESSIONS = 8  # live sessions per guest sandbox before scale-out
 SANDBOX_MAX_REPLICAS = 4  # sandboxes per slug (primary included) per replica
-SANDBOX_CPU_LIMIT = 1  # hard per-guest core cap (Modal cpuLimit)
-SANDBOX_MEMORY_LIMIT_MB = 1024  # hard per-guest memory cap (Modal memoryLimitMiB)
+SANDBOX_CPU = 1  # per-guest core reservation (Modal cpu)
+SANDBOX_CPU_LIMIT = 4  # hard per-guest core cap, for builds (Modal cpuLimit)
+SANDBOX_MEMORY_MB = 1024  # per-guest memory reservation (Modal memoryMiB)
+SANDBOX_MEMORY_LIMIT_MB = 4096  # hard per-guest memory cap (Modal memoryLimitMiB)
 
 # The studio service deploys as its OWN Modal app from its own package —
 # see packages/aai-studio-server/modal_deploy.py. CI deploys each app only
@@ -155,7 +173,11 @@ image = build_image(
         # aai-server Secret override these (secrets layer over image env).
         "SANDBOX_MAX_SESSIONS": str(SANDBOX_MAX_SESSIONS),
         "SANDBOX_MAX_REPLICAS": str(SANDBOX_MAX_REPLICAS),
+        # A cap without its reservation throws at spawn (Modal rejects a bare
+        # cap), so these four move together — see modal-sandbox-env.ts.
+        "SANDBOX_CPU": str(SANDBOX_CPU),
         "SANDBOX_CPU_LIMIT": str(SANDBOX_CPU_LIMIT),
+        "SANDBOX_MEMORY_MB": str(SANDBOX_MEMORY_MB),
         "SANDBOX_MEMORY_LIMIT_MB": str(SANDBOX_MEMORY_LIMIT_MB),
     },
 )

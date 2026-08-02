@@ -39,6 +39,7 @@ import { debug } from "./_debug-log.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { createHarnessImageResolver, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import {
+  assertModalResourcePairs,
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
   parseSandboxLimitsFromEnv,
@@ -245,6 +246,7 @@ export async function spawnModalWarm(
     ctx ? Promise.resolve(ctx) : modalContext(),
   ]);
   const limits = parseSandboxLimitsFromEnv(process.env);
+  assertModalResourcePairs(limits);
   const regions = parseSandboxRegionsFromEnv(process.env);
   const role = resolveSandboxRole(opts);
 
@@ -258,15 +260,14 @@ export async function spawnModalWarm(
     encryptedPorts: [GUEST_PORT],
     timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
     idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-    // Modal requires a reservation alongside each hard cap (`cpu` with
-    // `cpuLimit`, `memoryMiB` with `memoryLimitMiB`) — a bare cap fails
-    // sandbox creation. We pin reservation == cap: the operator's intent
-    // behind SANDBOX_*_LIMIT is "exactly this much", not a burst range.
-    ...(limits.memoryLimitMiB !== undefined && {
-      memoryMiB: limits.memoryLimitMiB,
-      memoryLimitMiB: limits.memoryLimitMiB,
-    }),
-    ...(limits.cpuLimit !== undefined && { cpu: limits.cpuLimit, cpuLimit: limits.cpuLimit }),
+    // Reservation and cap are a burst range, not one number: a guest idles
+    // as a voice session and spikes only while the bundler runs. Modal rejects
+    // a reservation above its cap (clamped at parse) and a bare cap
+    // (assertModalResourcePairs above), so pass whichever were configured.
+    ...(limits.memoryMiB !== undefined && { memoryMiB: limits.memoryMiB }),
+    ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
+    ...(limits.cpu !== undefined && { cpu: limits.cpu }),
+    ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
     // Co-locate guests with the host — see parseSandboxRegionsFromEnv.
     ...(regions && { regions }),
     tags: sandboxTags(role, opts.slug),

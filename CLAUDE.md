@@ -1756,8 +1756,36 @@ service's control work is light — and one container served both badly.
   keeps the path covered on any runner by spawning the harness there directly
   and publishing through the real CLI to a real listening orchestrator.
 - Sandboxes are created with open egress and a bounded lifetime
-  (`SANDBOX_TIMEOUT_SECS`, default 4h). Memory/CPU caps come from
-  `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT`.
+  (`SANDBOX_TIMEOUT_SECS`, default 4h).
+- **Guest resources are a BURST RANGE: reserve the idle shape, cap the build
+  shape.** `SANDBOX_MEMORY_MB` / `SANDBOX_CPU` reserve; `SANDBOX_MEMORY_LIMIT_MB`
+  / `SANDBOX_CPU_LIMIT` cap. Modal constrains the pair from both sides — a bare
+  cap fails sandbox creation ("must also specify cpu when cpuLimit is
+  specified") and a reservation above its cap is rejected — so
+  `parseSandboxLimitsFromEnv` reconciles them in one place and **throws on a
+  cap with no reservation**, naming the env var, rather than letting the spawn
+  die inside Modal on parameters the operator never set.
+
+  They must stay two numbers, because a guest's load is bimodal: it idles as a
+  voice session (~250 MB, a few % of a core) and spikes to ~1.7 GB across
+  several cores for the seconds a `test_agent` or Publish build spends in the
+  bundler. While the reservation was pinned equal to the cap, the two had to be
+  ONE number and the affordable one won: 1 GiB / 1 core. That does not fit a
+  build, and the failure is not an OOM — the guest wedges at its cgroup ceiling
+  in permanent direct-reclaim, burning its core on back-to-back full GCs that
+  can never free rolldown's **native Rust** allocations. Measured on a wedged
+  production sandbox: RSS pinned flat at 1.29 GB, ~1 core split seven ways
+  across 4 V8 GC workers + the main thread + 2 rolldown workers, **zero** I/O,
+  453 CPU-seconds and no progress, versus 253 MB / 0.97 CPU-seconds on an idle
+  sibling. It reads as a hung build.
+
+  Two corollaries. **The cap is on the CGROUP, not the process** — so it takes
+  out `test_agent` and Publish alike, and moving the bundler into a child
+  process (as #845 did, reverted in #863) cannot escape it; the child's peak is
+  charged to the same sandbox budget. And **`--max-old-space-size` cannot help**,
+  because the memory is native, not V8's. The session cap
+  (`SANDBOX_MAX_SESSIONS`) is sized against the RESERVATION — the resources a
+  guest always has — while the cap only has to clear the bundler's peak.
 - **Every sandbox is tagged with a `role`** (`sandbox-role.ts`: `agent`,
   `preview`, `studio`, `studio-publish`, `inspect`, `pool`) plus the `slug`
   (studio sandboxes carry the project name), so the Modal dashboard can tell
