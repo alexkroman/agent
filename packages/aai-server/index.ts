@@ -10,11 +10,9 @@
  * dev, pre-split deployments) live in the aai-studio-server package.
  */
 
-import { serve } from "@hono/node-server";
-import { resolveDrainMs } from "./_boot.ts";
-import { waitForIdle } from "./_drain.ts";
 import { DEFAULT_PORT } from "./constants.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
+import { drainActiveSessions, startService } from "./serve-lifecycle.ts";
 import {
   assertSandboxBackendOrWarn,
   buildServiceConfig,
@@ -42,67 +40,29 @@ async function main(): Promise<void> {
   assertSandboxBackendOrWarn(env);
 
   const { app, injectWebSocket, closeActiveSockets, activeSessionCount } = createOrchestrator(opts);
-  const nodeServer = serve({ fetch: app.fetch, port });
-  injectWebSocket(nodeServer as import("node:http").Server);
 
-  // Without a listener, a listen failure (e.g. EADDRINUSE) gets Node's
-  // default throw-from-nowhere. Log it usefully and exit.
-  nodeServer.on("error", (err) => {
-    console.error("HTTP server error:", err);
-    process.exit(1);
+  await startService({
+    label: "AAI agent service",
+    fetch: app.fetch,
+    port,
+    injectWebSocket,
+    onShutdown: async () => {
+      // Stop taking work before waiting for it to finish, then let live calls
+      // end on their own. A voice session is a long-lived socket, so closing
+      // them immediately (which this used to do) cut every conversation in
+      // flight on every deploy — both strategies replace all machines, so that
+      // was every active call, mid-sentence.
+      draining = true;
+      await drainActiveSessions({ activeCount: activeSessionCount, env });
+
+      console.info("Shutting down...");
+      // Close client WebSockets: closing the HTTP server only waits for
+      // connections to end, it never ends them, so open sessions would ride
+      // out the whole fallback timeout on every SIGTERM under load.
+      closeActiveSockets();
+      await teardownSandboxes({ slots: opts.slots, pool: opts.pool });
+    },
   });
-
-  await new Promise<void>((resolve) => {
-    nodeServer.on("listening", resolve);
-  });
-
-  console.info(`AAI agent service listening on http://localhost:${port}`);
-
-  let shuttingDown = false;
-  async function shutdown() {
-    // Re-entrancy guard: a second SIGTERM/SIGINT during teardown must not
-    // run sandbox shutdown twice.
-    if (shuttingDown) return;
-    shuttingDown = true;
-
-    // Stop taking work before waiting for it to finish, then let live calls
-    // end on their own. A voice session is a long-lived socket, so closing
-    // them immediately (which this used to do) cut every conversation in
-    // flight on every deploy — both strategies replace all machines, so that
-    // was every active call, mid-sentence.
-    draining = true;
-    const active = activeSessionCount();
-    const drainMs = resolveDrainMs(env.SHUTDOWN_DRAIN_MS);
-    console.info("Draining active sessions...", { active, drainMs });
-    const { drained, remaining } = await waitForIdle({
-      activeCount: activeSessionCount,
-      timeoutMs: drainMs,
-    });
-    if (!drained) {
-      // Deliberately loud: this is a call that got cut, and the deadline is
-      // only correct if it is rarely hit. The platform SIGKILLs when the stop
-      // grace period lapses, so waiting past it is not an option.
-      console.warn("Drain deadline reached; closing sessions still in flight", { remaining });
-    }
-
-    console.info("Shutting down...");
-    // Close client WebSockets: `nodeServer.close()` only waits for
-    // connections to end, it never ends them, so open sessions would ride
-    // out the whole fallback timeout on every SIGTERM under load.
-    closeActiveSockets();
-    await teardownSandboxes({ slots: opts.slots, pool: opts.pool });
-    nodeServer.close(() => process.exit(0));
-    // Sandboxes are already down by here; a straggling connection is not a
-    // failed shutdown, so the fallback exits 0 (it used to exit 1, flagging
-    // every busy SIGTERM as a crash).
-    setTimeout(() => {
-      console.warn("Shutdown timed out waiting for connections to close; exiting");
-      process.exit(0);
-    }, 3000).unref();
-  }
-
-  process.on("SIGINT", () => void shutdown());
-  process.on("SIGTERM", () => void shutdown());
 }
 
 main().catch((err: unknown) => {

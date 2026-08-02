@@ -475,9 +475,6 @@ importers:
       '@alexkroman1/aai-ui':
         specifier: workspace:*
         version: link:../aai-ui
-      '@hono/node-server':
-        specifier: ^2.0.11
-        version: 2.0.12(hono@4.12.32)
       '@hono/zod-validator':
         specifier: ^0.9.0
         version: 0.9.0(hono@4.12.32)(zod@4.4.3)
