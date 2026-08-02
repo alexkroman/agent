@@ -92,13 +92,15 @@ function loadBundleParts(slug: string, opts: ResolveSandboxOpts): Promise<Bundle
 }
 
 /**
- * Build one sandbox from loaded bundle parts. `onVmFailed` is the caller's
- * poisoned-sandbox detach: a rejected vmReady leaves the sandbox permanently
- * broken (every tool call fails) while live traffic keeps clearing its idle
- * timer, so it would never self-heal — the callback must detach it from
- * wherever it was installed so the next connection rebuilds. (createSandbox
- * returns synchronously and the caller installs the sandbox in the same
- * task, so the async failure callback can only fire after the install.)
+ * Build one sandbox from loaded bundle parts. `onSandboxLost` is the caller's
+ * dead-sandbox detach, for both ways a sandbox becomes unusable: a rejected
+ * vmReady leaves it permanently broken (every tool call fails), and a guest
+ * that exits later leaves its sessionUrl pointing at nothing. Either way live
+ * traffic keeps clearing the idle timer, so it would never self-heal — the
+ * callback must detach it from wherever it was installed so the next
+ * connection rebuilds. (createSandbox returns synchronously and the caller
+ * installs the sandbox in the same task, so the async callback can only fire
+ * after the install.)
  */
 function buildSandboxFromParts(
   slug: string,
