@@ -10,7 +10,7 @@ function throwError(err: Error): never {
   throw err;
 }
 
-function createApp(opts?: { exposeErrors?: boolean }) {
+function createApp() {
   const app = new Hono();
   app.get("/http-error", () => throwError(new HTTPException(403, { message: "Forbidden" })));
   app.get("/zod-error", () => {
@@ -20,7 +20,7 @@ function createApp(opts?: { exposeErrors?: boolean }) {
   });
   app.get("/syntax-error", () => throwError(new SyntaxError("Unexpected token")));
   app.get("/unknown-error", () => throwError(new Error("something broke")));
-  app.onError(createErrorHandler(opts));
+  app.onError(createErrorHandler());
   return app;
 }
 
@@ -44,17 +44,10 @@ describe("createErrorHandler", () => {
     expect(await res.json()).toEqual({ error: "Unexpected token" });
   });
 
-  test("returns generic 500 for unknown errors by default", async () => {
+  test("returns generic 500 for unknown errors", async () => {
     vi.spyOn(console, "error").mockImplementation(() => undefined);
     const res = await createApp().request("/unknown-error");
     expect(res.status).toBe(500);
     expect(await res.json()).toEqual({ error: "Internal server error" });
-  });
-
-  test("exposes error message when exposeErrors is true", async () => {
-    vi.spyOn(console, "error").mockImplementation(() => undefined);
-    const res = await createApp({ exposeErrors: true }).request("/unknown-error");
-    expect(res.status).toBe(500);
-    expect(await res.json()).toEqual({ error: "something broke" });
   });
 });

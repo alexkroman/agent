@@ -201,7 +201,7 @@ function harnessCode(harnessPath: string): Promise<string> {
 /**
  * Wrap a Modal sandbox + dialed harness socket into the WarmHarness shape.
  * The lifecycle wiring (exit fan-out, memoized cleanup) lives in
- * warm-harness.ts, shared with the Apple container backend.
+ * warm-harness.ts, shared with the subprocess backend.
  */
 function warmFromModal(
   sb: ModalSandboxLike,

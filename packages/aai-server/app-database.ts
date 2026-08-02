@@ -12,6 +12,7 @@
  */
 
 import { hash, randomBytes } from "node:crypto";
+import { safeJsonParse } from "@alexkroman1/aai";
 import { type CloseableDb, createPostgresDb } from "@alexkroman1/aai/runtime";
 import type { SqlExec } from "./secret-store.ts";
 
@@ -186,17 +187,13 @@ export function createAppDatabases(opts: {
 /** Parse a stored `app-db:<slug>` secret value. Returns null on any mismatch. */
 export function parseAppDbMeta(raw: string | null): AppDbMeta | null {
   if (raw === null) return null;
-  try {
-    const value = JSON.parse(raw) as Partial<AppDbMeta> | null;
-    if (value && typeof value.role === "string" && typeof value.password === "string") {
-      return {
-        role: value.role,
-        password: value.password,
-        ...(typeof value.url === "string" && { url: value.url }),
-      };
-    }
-  } catch {
-    // fall through
+  const value = safeJsonParse(raw) as Partial<AppDbMeta> | null | undefined;
+  if (value && typeof value.role === "string" && typeof value.password === "string") {
+    return {
+      role: value.role,
+      password: value.password,
+      ...(typeof value.url === "string" && { url: value.url }),
+    };
   }
   return null;
 }

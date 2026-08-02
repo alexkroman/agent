@@ -125,8 +125,8 @@ export function createSandboxPool(opts: SandboxPoolOptions): SandboxPool {
     // dead-entry path).
     void handle.cleanup().catch(() => undefined);
     // Do NOT auto-replenish here — if spawns die immediately (e.g. missing
-    // Deno binary) it would create a tight fail loop. The next `acquire()`
-    // tops up the pool when traffic arrives.
+    // Modal credentials) it would create a tight fail loop. The next
+    // `acquire()` tops up the pool when traffic arrives.
   }
 
   function spawnOne(): void {

@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
  * Sandbox implementation backed by Modal Sandboxes (see modal-sandbox.ts) in
- * production, and in local dev by local Apple containers
+ * production, and in local dev by a plain child process
  * (subprocess-sandbox.ts). `sandbox-backend.ts` owns the selection
  * policy.
  *
@@ -220,10 +220,9 @@ export async function describeBundle(
     { pool: opts.pool, harnessPath: opts.harnessPath, slug: "studio-inspect" },
     spawn,
   );
-  // Register the standard guest-RPC handlers (with no db bound) so a
-  // bundle whose top level issues a guest→host request gets an error reply
-  // instead of wedging the load until the RPC timeout.
-  registerGuestRpcHandlers(warm.conn, {});
+  // No handlers registered (no db bound): a bundle whose top level issues a
+  // guest→host request gets the transport's -32601 error reply instead of
+  // wedging the load until the RPC timeout.
   warm.conn.listen();
   // The reply is guest-asserted wire data (see BundleLoadResult); the
   // caller validates `config` with IsolateConfigSchema.

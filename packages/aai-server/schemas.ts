@@ -24,6 +24,15 @@ export const SafePathSchema = z
 // CLI validates against the exact rules this server enforces.
 export { RESERVED_SLUGS, VALID_SLUG_RE } from "@alexkroman1/aai";
 
+/**
+ * `VALID_SLUG_RE`'s source with its `^…$` anchors stripped, for embedding
+ * inside larger patterns (the bare-slug Hono route param, the WS upgrade
+ * path matcher). The one place that depends on the regex literally starting
+ * with `^` and ending with `$` — consumers compose from this instead of
+ * re-deriving the slice.
+ */
+export const SLUG_PATTERN_SOURCE = VALID_SLUG_RE.source.slice(1, -1);
+
 export const DeployBodySchema = z.object({
   slug: z
     .string()

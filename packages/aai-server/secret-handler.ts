@@ -13,9 +13,8 @@
  */
 
 import { HTTPException } from "hono/http-exception";
-import type { AppContext, ValidatedAppContext } from "./context.ts";
+import type { AppContext, ValidatedAppContext, ValidatedParamContext } from "./context.ts";
 import { invalidateSlug } from "./sandbox-slots.ts";
-import { SecretKeySchema } from "./schemas.ts";
 
 export async function handleSecretList(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
@@ -41,14 +40,12 @@ export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>):
   });
 }
 
-export function handleSecretDelete(c: AppContext): Promise<Response> {
+// The `:key` param is validated at the route layer (zValidator("param") in
+// orchestrator.ts), the same altitude as the sibling routes' body schemas.
+export function handleSecretDelete(c: ValidatedParamContext<{ key: string }>): Promise<Response> {
   const slug = c.var.slug;
   return c.env.slugLock(slug, async () => {
-    // biome-ignore lint/style/noNonNullAssertion: key param guaranteed by route
-    const key = c.req.param("key")!;
-    if (!SecretKeySchema.safeParse(key).success) {
-      throw new HTTPException(400, { message: "Invalid secret key name" });
-    }
+    const { key } = c.req.valid("param");
     const existing = await c.env.store.getEnv(slug);
     if (!existing) {
       throw new HTTPException(404, { message: `Agent ${slug} not found` });

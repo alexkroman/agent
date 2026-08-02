@@ -2,7 +2,7 @@
 
 import { createOwnedMap, errorMessage, type OwnedMap } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
-import { createKeyedLock } from "./_keyed-lock.ts";
+import { createKeyedLock, withLock } from "./_keyed-lock.ts";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
 import { bumpSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
 
@@ -53,20 +53,6 @@ export function createSlotCache(): SlotCache {
 // Internal keyed lock (not p-lock): entries are deleted when released, so the
 // pre-auth WS-upgrade path can't grow the map one entry per distinct slug.
 const apiLock = createKeyedLock();
-
-/** Run `fn` while holding a keyed lock, releasing it in every outcome. */
-export const withLock = <T>(
-  lock: (key: string) => Promise<() => void>,
-  key: string,
-  fn: () => Promise<T>,
-): Promise<T> =>
-  lock(key).then(async (release) => {
-    try {
-      return await fn();
-    } finally {
-      release();
-    }
-  });
 
 /** Serialize deploy/delete API calls for the same slug. */
 export const withSlugLock = <T>(slug: string, fn: () => Promise<T>): Promise<T> =>
@@ -223,7 +209,7 @@ async function evictIdleSandbox(slots: SlotCache, slug: string): Promise<void> {
   ]);
   // The probes awaited; only the slot's CURRENT sandboxes may be evicted (a
   // deploy may have replaced them while we asked).
-  if (slots.get(slug) !== slot || slot.sandbox !== primary) return;
+  if (!slots.owns(slug, slot) || slot.sandbox !== primary) return;
   evictIdleReplicas(slot, replicas, replicaLive);
   if (primaryLive > 0 || (slot.replicas?.length ?? 0) > 0) {
     resetIdleTimer(slots, slot);

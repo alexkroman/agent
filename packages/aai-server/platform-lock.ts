@@ -30,6 +30,7 @@
 
 import { randomUUID } from "node:crypto";
 import { errorMessage } from "@alexkroman1/aai";
+import { sleep } from "./_sleep.ts";
 import { ensureTableOnce } from "./pg-ensure.ts";
 import { withSlugLock } from "./sandbox-slots.ts";
 import type { SqlExec } from "./secret-store.ts";
@@ -136,11 +137,6 @@ export function createPgSlugLock(sql: SqlExec, opts: PgSlugLockOptions = {}): Sl
   const pollMs = opts.pollMs ?? ACQUIRE_POLL_MS;
 
   const ensure = ensureTableOnce(sql, ENSURE_TABLE_SQL);
-
-  const sleep = (ms: number): Promise<void> =>
-    new Promise((resolve) => {
-      setTimeout(resolve, ms).unref?.();
-    });
 
   async function acquire(key: string): Promise<string> {
     const holder = randomUUID();

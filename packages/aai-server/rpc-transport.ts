@@ -9,7 +9,7 @@
 // unknown methods and -32603 for handler failures (the guest harness speaks
 // exactly this).
 
-import { errorMessage } from "@alexkroman1/aai";
+import { errorMessage, safeJsonParse } from "@alexkroman1/aai";
 import {
   createJSONRPCErrorResponse,
   JSONRPCClient,
@@ -17,26 +17,6 @@ import {
   JSONRPCServer,
 } from "json-rpc-2.0";
 import { z } from "zod";
-
-type JsonRpcRequest = {
-  jsonrpc: "2.0";
-  id: number;
-  method: string;
-  params?: unknown;
-};
-
-type JsonRpcNotification = {
-  jsonrpc: "2.0";
-  method: string;
-  params?: unknown;
-};
-
-type JsonRpcResponse = {
-  jsonrpc: "2.0";
-  id: number;
-  result?: unknown;
-  error?: { code: number; message: string };
-};
 
 const JsonRpcResponseSchema = z.object({
   jsonrpc: z.literal("2.0"),
@@ -57,6 +37,10 @@ const JsonRpcNotificationSchema = z.object({
   method: z.string(),
   params: z.unknown().optional(),
 });
+
+type JsonRpcRequest = z.infer<typeof JsonRpcRequestSchema>;
+type JsonRpcNotification = z.infer<typeof JsonRpcNotificationSchema>;
+type JsonRpcResponse = z.infer<typeof JsonRpcResponseSchema>;
 
 /**
  * Default timeout for a host→guest request. A wedged guest (e.g. a bundle
@@ -135,28 +119,21 @@ type ParsedMessage =
   | null;
 
 function parseJsonRpcMessage(raw: unknown): ParsedMessage {
-  let value: unknown;
-  try {
-    value = JSON.parse(String(raw));
-  } catch {
-    return null;
-  }
+  const value = safeJsonParse(String(raw));
   if (typeof value !== "object" || value === null) return null;
 
   const obj = value as Record<string, unknown>;
   if ("result" in obj || "error" in obj) {
     const parsed = JsonRpcResponseSchema.safeParse(obj);
-    return parsed.success ? { kind: "response", data: parsed.data as JsonRpcResponse } : null;
+    return parsed.success ? { kind: "response", data: parsed.data } : null;
   }
   if ("id" in obj && "method" in obj) {
     const parsed = JsonRpcRequestSchema.safeParse(obj);
-    return parsed.success ? { kind: "request", data: parsed.data as JsonRpcRequest } : null;
+    return parsed.success ? { kind: "request", data: parsed.data } : null;
   }
   if ("method" in obj) {
     const parsed = JsonRpcNotificationSchema.safeParse(obj);
-    return parsed.success
-      ? { kind: "notification", data: parsed.data as JsonRpcNotification }
-      : null;
+    return parsed.success ? { kind: "notification", data: parsed.data } : null;
   }
   return null;
 }

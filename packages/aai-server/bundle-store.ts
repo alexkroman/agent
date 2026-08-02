@@ -10,15 +10,14 @@
 // decrypt path — this migration supersedes the old "never delete a legacy
 // read path" rule for env blobs.
 
-import { createEpoch, errorMessage } from "@alexkroman1/aai";
+import { createEpoch, errorMessage, safeJsonParse } from "@alexkroman1/aai";
 import type { Storage } from "unstorage";
 import { z } from "zod";
-import { createKeyedLock } from "./_keyed-lock.ts";
+import { createKeyedLock, withLock } from "./_keyed-lock.ts";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
 import { agentObjectKey, agentPrefix, MAX_ENV_SIZE } from "./constants.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
-import { withLock } from "./sandbox-slots.ts";
 import { type AgentMetadata, AgentMetadataSchema, EnvSchema } from "./schemas.ts";
 import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -191,14 +190,14 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     const data = await readItem(key);
     if (data == null) return null;
     if (typeof data !== "string") return data; // driver already parsed it
-    try {
-      return JSON.parse(data);
-    } catch {
+    const value = safeJsonParse(data);
+    if (value === undefined) {
       // Corrupt stored object — treat as missing rather than throwing on
       // every read of this key (matches getAgentConfig's safeParse posture).
       console.warn(`Corrupt JSON in stored object ${key}; treating as missing`);
       return null;
     }
+    return value;
   }
 
   async function getRawManifest(slug: string): Promise<z.infer<typeof ManifestSchema> | null> {
@@ -248,13 +247,58 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     await secrets.put(agentEnvSecretName(slug), serialized);
   }
 
-  async function getManifestCached(slug: string): Promise<AgentMetadata | null> {
-    const cached = manifestCache.get(slug);
+  /**
+   * The epoch-guarded read-through sequence every cached getter shares:
+   * record the epoch BEFORE loading, and cache only when it is still current
+   * once the load settles (see `readEpoch` above — a stale cache write here
+   * is the undetectable poisoned-worker bug). `load` may resolve `undefined`
+   * to mean "do not cache this result" (transient corruption); it is
+   * returned as-is for the caller to normalize.
+   */
+  async function epochGuarded<V>(
+    get: () => V | undefined,
+    load: () => Promise<V | undefined>,
+    set: (value: V) => void,
+  ): Promise<V | undefined> {
+    const cached = get();
     if (cached !== undefined) return cached;
     const gen = readEpoch.current();
-    const value = await loadManifest(slug);
-    if (readEpoch.isCurrent(gen)) manifestCache.set(slug, value);
+    const value = await load();
+    if (value !== undefined && readEpoch.isCurrent(gen)) set(value);
     return value;
+  }
+
+  // In-flight manifest loads, shared so concurrent cold reads (rebuildSlot
+  // deliberately overlaps its own getManifest with loadBundleParts' getEnv →
+  // getManifestCached) cost one S3 GET + one Vault query instead of two of
+  // each. An entry is reusable only while its creation epoch is current: a
+  // mutation's invalidation must not hand its own read-modify-write a
+  // pre-mutation manifest that was already in flight.
+  const manifestInflight = new Map<
+    string,
+    { gen: number; promise: Promise<AgentMetadata | null> }
+  >();
+
+  function getManifestCached(slug: string): Promise<AgentMetadata | null> {
+    const cached = manifestCache.get(slug);
+    if (cached !== undefined) return Promise.resolve(cached);
+    const inflight = manifestInflight.get(slug);
+    if (inflight && readEpoch.isCurrent(inflight.gen)) return inflight.promise;
+    // The same guard `epochGuarded` owns, inlined here because the shared
+    // promise must carry its creation epoch for the reuse check above.
+    const gen = readEpoch.current();
+    const promise = loadManifest(slug).then((value) => {
+      if (readEpoch.isCurrent(gen)) manifestCache.set(slug, value);
+      return value;
+    });
+    const entry = { gen, promise };
+    manifestInflight.set(slug, entry);
+    promise
+      .catch(() => undefined)
+      .finally(() => {
+        if (manifestInflight.get(slug) === entry) manifestInflight.delete(slug);
+      });
+    return promise;
   }
 
   return {
@@ -297,22 +341,22 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     },
 
     async getWorkerCode(slug) {
-      const cached = workerCodeCache.get(slug);
-      if (cached !== undefined) return cached;
-      const gen = readEpoch.current();
-      const value = await readItem(agentObjectKey(slug, "worker.js"));
-      if (readEpoch.isCurrent(gen)) workerCodeCache.set(slug, value, value?.length ?? 0);
-      return value;
+      const value = await epochGuarded(
+        () => workerCodeCache.get(slug),
+        () => readItem(agentObjectKey(slug, "worker.js")),
+        (v) => workerCodeCache.set(slug, v, v?.length ?? 0),
+      );
+      return value ?? null;
     },
 
     async getClientFile(slug, filePath) {
       const key = agentObjectKey(slug, `client/${filePath}`);
-      const cached = clientFileCache.get(key);
-      if (cached !== undefined) return cached;
-      const gen = readEpoch.current();
-      const value = await readItem(key);
-      if (readEpoch.isCurrent(gen)) clientFileCache.set(key, value);
-      return value;
+      const value = await epochGuarded(
+        () => clientFileCache.get(key),
+        () => readItem(key),
+        (v) => clientFileCache.set(key, v),
+      );
+      return value ?? null;
     },
 
     async deleteAgent(slug) {
@@ -346,20 +390,19 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     invalidate,
 
     async getAgentConfig(slug) {
-      const cached = configCache.get(slug);
-      if (cached !== undefined) return cached;
-      const gen = readEpoch.current();
-      const json = await readJson(agentObjectKey(slug, "config.json"));
-      const fresh = readEpoch.isCurrent(gen);
-      if (json == null) {
-        if (fresh) configCache.set(slug, null);
-        return null;
-      }
-      // Don't cache parse failures — transient corruption shouldn't stick.
-      const parsed = IsolateConfigSchema.safeParse(json);
-      if (!parsed.success) return null;
-      if (fresh) configCache.set(slug, parsed.data);
-      return parsed.data;
+      const value = await epochGuarded(
+        () => configCache.get(slug),
+        async () => {
+          const json = await readJson(agentObjectKey(slug, "config.json"));
+          if (json == null) return null;
+          // Don't cache parse failures — transient corruption shouldn't
+          // stick (`undefined` is epochGuarded's "do not cache").
+          const parsed = IsolateConfigSchema.safeParse(json);
+          return parsed.success ? parsed.data : undefined;
+        },
+        (v) => configCache.set(slug, v),
+      );
+      return value ?? null;
     },
   };
 }

@@ -70,14 +70,12 @@ function parseListPage(xml: string): ListPage {
 }
 
 /** All object keys under `prefix`, following continuation tokens. */
-async function listAllKeys(options: S3StorageOptions, base: string | undefined): Promise<string[]> {
+async function listAllKeys(
+  options: S3StorageOptions,
+  client: AwsClient,
+  base: string | undefined,
+): Promise<string[]> {
   const doFetch = options.fetch ?? globalThis.fetch;
-  const client = new AwsClient({
-    service: "s3",
-    accessKeyId: options.accessKeyId,
-    secretAccessKey: options.secretAccessKey,
-    region: options.region,
-  });
   const bucketUrl = `${options.endpoint.replace(/\/$/, "")}/${options.bucket}`;
   const prefix = toS3Prefix(base);
 
@@ -114,10 +112,18 @@ export function createS3Storage(options: S3StorageOptions): Storage {
     accessKeyId: options.accessKeyId,
     secretAccessKey: options.secretAccessKey,
   });
+  // One signing client for the store's lifetime — credentials and region
+  // are fixed at creation.
+  const client = new AwsClient({
+    service: "s3",
+    accessKeyId: options.accessKeyId,
+    secretAccessKey: options.secretAccessKey,
+    region: options.region,
+  });
   return createStorage({
     driver: {
       ...driver,
-      getKeys: (base) => listAllKeys(options, base),
+      getKeys: (base) => listAllKeys(options, client, base),
     },
   });
 }

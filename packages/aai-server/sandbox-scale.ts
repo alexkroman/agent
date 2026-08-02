@@ -99,7 +99,7 @@ export async function routeSession(args: RouteSessionArgs): Promise<Sandbox> {
     // Re-check under the lock: a deploy/delete may have replaced or torn
     // down the slot while we waited (the client will re-broker onto the
     // rebuilt sandbox), or another waiter may already have scaled out.
-    if (slots.get(slug) !== slot || slot.sandbox === undefined) return bestSandbox;
+    if (!slots.owns(slug, slot) || slot.sandbox === undefined) return bestSandbox;
     const now = allSandboxes(slot, slot.sandbox as Sandbox);
     if (now.length > candidates.length) return now.at(-1) ?? bestSandbox;
     const replica = await args.spawnReplica();

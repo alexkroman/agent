@@ -24,13 +24,14 @@
 import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai";
 import type { SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { WebSocketServer } from "ws";
+import { answerUpgrade } from "./_upgrade-reply.ts";
 import type { AppDatabases } from "./app-database.ts";
 import { MAX_CONNECTIONS } from "./constants.ts";
 import type { SlugEpochs } from "./platform-epoch.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
-import { resolveSandbox } from "./sandbox-resolve.ts";
+import { brokerSessionUrl } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
-import { VALID_SLUG_RE } from "./schemas.ts";
+import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 import { guardHostModeUpgrade, startDeployedHostSession, wantsHostMode } from "./ws-host-mode.ts";
@@ -76,7 +77,8 @@ export type WsUpgrades = {
  * `?sessionId=` resumes survive the hop. Clients that can't follow a
  * WebSocket redirect get the broker guidance in the body either way; an
  * unknown slug answers 404 and a sandbox that failed to start answers 503
- * (retryable), mirroring the broker's semantics.
+ * (retryable) — the failure taxonomy is `brokerSessionUrl`, shared with the
+ * client-config broker so the two can't drift.
  */
 async function answerPlainUpgrade(
   rawUrl: string,
@@ -84,25 +86,20 @@ async function answerPlainUpgrade(
   socket: import("node:stream").Duplex,
   opts: WsUpgradeOpts,
 ): Promise<void> {
-  let sessionUrl: string | undefined;
+  const brokered = await brokerSessionUrl(slug, {
+    slots: opts.slots,
+    store: opts.store,
+    ...(opts.secrets && { secrets: opts.secrets }),
+    ...(opts.appDb && { appDb: opts.appDb }),
+    ...(opts.slugEpochs && { slugEpochs: opts.slugEpochs }),
+    ...(opts.pool && { pool: opts.pool }),
+  });
+  const sessionUrl = brokered.ok ? brokered.sessionUrl : undefined;
   let status = "302 Found";
-  try {
-    const sandbox = await resolveSandbox(slug, {
-      slots: opts.slots,
-      store: opts.store,
-      ...(opts.secrets && { secrets: opts.secrets }),
-      ...(opts.appDb && { appDb: opts.appDb }),
-      ...(opts.slugEpochs && { slugEpochs: opts.slugEpochs }),
-      ...(opts.pool && { pool: opts.pool }),
-    });
-    if (sandbox) sessionUrl = await sandbox.sessionUrl();
-    else status = "404 Not Found";
-  } catch {
-    // The sandbox VM failed to start; the failure hook detaches it so the
-    // next attempt rebuilds. Retryable, exactly like the broker's 503.
-    status = "503 Service Unavailable";
+  if (!brokered.ok) {
+    status = brokered.status === 404 ? "404 Not Found" : "503 Service Unavailable";
   }
-  const headers = ["Connection: close", "Content-Type: text/plain"];
+  const extraHeaders: string[] = [];
   if (sessionUrl) {
     const location = new URL(sessionUrl);
     const qIdx = rawUrl.indexOf("?");
@@ -111,13 +108,12 @@ async function answerPlainUpgrade(
         location.searchParams.set(k, v);
       }
     }
-    headers.push(`Location: ${location}`);
+    extraHeaders.push(`Location: ${location}`);
   }
   const body = sessionUrl
     ? `sessions connect directly to the agent: follow the Location redirect, or GET /${slug}/client-config names the current sessionUrl\n`
     : `sessions connect directly to the agent: GET /${slug}/client-config names the current sessionUrl\n`;
-  socket.write(`HTTP/1.1 ${status}\r\n${headers.join("\r\n")}\r\n\r\n${body}`);
-  socket.destroy();
+  answerUpgrade(socket, status, body, extraHeaders);
 }
 
 export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
@@ -126,9 +122,9 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
   const wss = new WebSocketServer({ noServer: true, maxPayload: MAX_WS_PAYLOAD_BYTES });
 
   // Enforced here (not just in middleware) because WebSocket upgrades bypass
-  // Hono routing. Derived from VALID_SLUG_RE (anchors stripped) so the slug
-  // pattern has a single source of truth.
-  const SLUG_WS_RE = new RegExp(`^\\/(${VALID_SLUG_RE.source.slice(1, -1)})\\/websocket$`);
+  // Hono routing. Composed from the shared slug grammar (SLUG_PATTERN_SOURCE)
+  // so the pattern has a single source of truth.
+  const SLUG_WS_RE = new RegExp(`^\\/(${SLUG_PATTERN_SOURCE})\\/websocket$`);
 
   /**
    * Take a connection slot for this upgrade and wire its single release point.
@@ -182,13 +178,7 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
     // Draining: this machine is being replaced, so starting a host session
     // here would only get it cut when the process exits.
     if (opts.isDraining?.()) {
-      socket.write(
-        "HTTP/1.1 503 Service Unavailable\r\n" +
-          "Connection: close\r\n" +
-          "Content-Type: text/plain\r\n\r\n" +
-          "server draining\n",
-      );
-      socket.destroy();
+      answerUpgrade(socket, "503 Service Unavailable", "server draining\n");
       return;
     }
 
@@ -198,7 +188,6 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
     // requires proving ownership of the slug. The guard answers and closes
     // the socket itself when it refuses. See ws-host-mode.ts.
     const mayProceed = await guardHostModeUpgrade({
-      rawUrl,
       slug,
       headers: req.headers,
       store: opts.store,
@@ -244,17 +233,7 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
 
       void handleUpgradeRequest(req, socket, head).catch((err: unknown) => {
         console.error("WebSocket upgrade error:", err);
-        try {
-          socket.write(
-            "HTTP/1.1 500 Internal Server Error\r\n" +
-              "Connection: close\r\n" +
-              "Content-Type: text/plain\r\n\r\n" +
-              "internal error\n",
-          );
-        } catch {
-          // Socket already gone — destroy below is all that's left.
-        }
-        socket.destroy();
+        answerUpgrade(socket, "500 Internal Server Error", "internal error\n");
       });
     });
   };

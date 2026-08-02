@@ -3,9 +3,8 @@
  * Subprocess-backed sandbox spawning — the NO-ISOLATION developer backend.
  *
  * The guest harness runs as a plain child process of the platform server,
- * listening on a loopback port. It is selected only in local dev, and only
- * when neither containerized backend is available (see `sandbox-backend.ts`);
- * production always resolves `modal`.
+ * listening on a loopback port. It is selected only in local dev (see
+ * `sandbox-backend.ts`); production always resolves `modal`.
  *
  * ## What this is for
  *

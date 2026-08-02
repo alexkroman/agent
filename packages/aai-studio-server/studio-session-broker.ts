@@ -31,10 +31,9 @@
 
 import { createOwnedMap, errorMessage } from "@alexkroman1/aai";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
-import { createKeyedLock } from "aai-server/platform-barrel";
+import { createKeyedLock, withLock } from "aai-server/platform-barrel";
 import { registerGuestRpcHandlers } from "aai-server/sandbox-guest-rpc";
 import type { SandboxPool } from "aai-server/sandbox-pool";
-import { withLock } from "aai-server/sandbox-slots";
 import { acquireWarmHarness, spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { SafePathSchema } from "aai-server/schemas";
 import { z } from "zod";

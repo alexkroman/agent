@@ -65,10 +65,19 @@ export async function verifyApiKeyHash(apiKey: string, storedHash: string): Prom
   return result;
 }
 
-export type OwnerResult =
-  | { status: "unclaimed" }
-  | { status: "owned"; keyHash: string }
-  | { status: "forbidden" };
+export type OwnerResult = { status: "unclaimed" | "owned" | "forbidden" };
+
+/**
+ * Resolve the first stored hash `apiKey` matches, or null when none do.
+ * Verifies against all hashes concurrently — each cache miss costs an
+ * expensive argon2 derivation that runs off the main thread.
+ */
+export async function matchAnyHash(apiKey: string, hashes: string[]): Promise<string | null> {
+  const results = await Promise.all(
+    hashes.map(async (stored) => ((await verifyApiKeyHash(apiKey, stored)) ? stored : null)),
+  );
+  return results.find((stored) => stored !== null) ?? null;
+}
 
 export async function verifySlugOwner(
   apiKey: string,
@@ -78,25 +87,13 @@ export async function verifySlugOwner(
   const manifest = await store.getManifest(slug);
 
   if (!manifest) {
-    // No keyHash here: hashing burns real CPU (argon2) with a fresh
+    // No hashing here: it burns real CPU (argon2) with a fresh
     // salt (uncacheable), and most callers reject unclaimed slugs with a 404
     // anyway. The deploy-claim path computes the hash lazily (see
     // requireOwner in middleware.ts).
     return { status: "unclaimed" };
   }
 
-  // Verify against all stored hashes concurrently — each cache miss costs
-  // an expensive key derivation that runs off the main thread.
-  const matches = await Promise.all(
-    manifest.credential_hashes.map(async (stored) =>
-      (await verifyApiKeyHash(apiKey, stored)) ? stored : null,
-    ),
-  );
-  const matched = matches.find((stored) => stored !== null);
-  if (matched !== undefined) {
-    // Return the matched stored hash — avoids a redundant expensive rehash.
-    return { status: "owned", keyHash: matched };
-  }
-
-  return { status: "forbidden" };
+  const matched = await matchAnyHash(apiKey, manifest.credential_hashes);
+  return { status: matched !== null ? "owned" : "forbidden" };
 }

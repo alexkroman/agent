@@ -22,8 +22,7 @@
  * consume the retry.
  */
 
-import { createKeyedLock } from "aai-server/platform-barrel";
-import { withLock } from "aai-server/sandbox-slots";
+import { createKeyedLock, withLock } from "aai-server/platform-barrel";
 import { projectKey } from "./studio-workspace.ts";
 
 const workspaceLock = createKeyedLock();

@@ -9,6 +9,6 @@
 
 export { resolveDrainMs } from "./_boot.ts";
 export { waitForIdle } from "./_drain.ts";
-export { createKeyedLock } from "./_keyed-lock.ts";
+export { createKeyedLock, withLock } from "./_keyed-lock.ts";
 export { createCachedDirReader, isPathInside } from "./_static-files.ts";
 export { TtlCache } from "./_ttl-cache.ts";
