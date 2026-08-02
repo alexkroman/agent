@@ -8,7 +8,11 @@ import { downloadTemplate } from "giget";
 import { getMonorepoRoot } from "./_agent.ts";
 import { errorMessage } from "./_utils.ts";
 
-const GIGET_SOURCE = "github:alexkroman/agent/packages/aai-templates";
+/** The GitHub repo (owner/name) that hosts this project and its templates. */
+const REPO = "alexkroman/agent";
+export const REPO_URL = `https://github.com/${REPO}`;
+
+const GIGET_SOURCE = `github:${REPO}/packages/aai-templates`;
 const GIGET_REF = process.env.AAI_TEMPLATES_REF ?? "main";
 // Git ref shapes only (branch/tag/sha). The source repo is fixed, but the
 // ref is environment-controlled — a trust-sensitive override that pins init

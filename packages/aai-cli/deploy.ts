@@ -14,11 +14,11 @@ type DeployData = { slug: string; url: string; warnings?: string[] };
 
 export async function executeDeploy(opts: {
   cwd: string;
-  server?: string;
+  server?: string | undefined;
   /** See DeployOpts.allowMissingSecrets (`--allow-missing-secrets`). */
-  allowMissingSecrets?: boolean;
+  allowMissingSecrets?: boolean | undefined;
   /** `--skipTypecheck`: deploy without the tsc gate. */
-  skipTypecheck?: boolean;
+  skipTypecheck?: boolean | undefined;
 }): Promise<CommandResult<DeployData>> {
   const { cwd } = opts;
   const { config: projectConfig, serverUrl, apiKey } = await resolveDeployTarget(cwd, opts.server);

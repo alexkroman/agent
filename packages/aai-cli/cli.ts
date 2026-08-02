@@ -14,11 +14,10 @@ import {
   writeLine,
 } from "./_output.ts";
 import { log, silenceOutput } from "./_ui.ts";
-import { errorMessage, fileExists, resolveCwd } from "./_utils.ts";
+import { AGENT_ENTRY, errorMessage, fileExists, resolveCwd } from "./_utils.ts";
 
 /** Shared arg definitions for citty commands. */
 const sharedArgs = {
-  port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
   server: { type: "string", alias: "s", description: "Platform server URL" },
   yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
   json: { type: "boolean", description: "Output JSON (auto-detected in non-TTY)" },
@@ -48,9 +47,9 @@ const VERSION: string = readCliVersion(cliDir);
 async function setup(opts?: { agent?: boolean }): Promise<string> {
   const cwd = resolveCwd();
   if (opts?.agent) {
-    const hasAgent = await fileExists(path.join(cwd, "agent.ts"));
+    const hasAgent = await fileExists(path.join(cwd, AGENT_ENTRY));
     if (!hasAgent) {
-      throw new Error("No agent.ts found in the current directory. Run `aai init` first.");
+      throw new Error(`No ${AGENT_ENTRY} found in the current directory. Run \`aai init\` first.`);
     }
   }
   return cwd;
@@ -60,7 +59,6 @@ async function setup(opts?: { agent?: boolean }): Promise<string> {
  * Run a command body with standard output-mode resolution, error handling,
  * and result emission.
  *
- * - `setYes`: json mode sets `args.yes = true` (only meaningful for commands with a `yes` arg).
  * - API key acquisition is owned by `resolveDeployTarget`/`getServerInfo`
  *   inside the commands that talk to the platform — after the server-trust
  *   check, so an untrusted `serverUrl` is refused without prompting for a
@@ -71,15 +69,11 @@ async function setup(opts?: { agent?: boolean }): Promise<string> {
  * and both exit 1.
  */
 async function runCommand(
-  args: { json?: boolean | undefined; yes?: boolean | undefined },
+  args: { json?: boolean | undefined },
   fn: (mode: OutputMode) => Promise<CommandResult<unknown>>,
-  opts: { setYes?: boolean } = {},
 ): Promise<void> {
   const mode = getOutputMode(args);
-  if (mode === "json") {
-    silenceOutput();
-    if (opts.setYes) args.yes = true;
-  }
+  if (mode === "json") silenceOutput();
   let result: CommandResult<unknown>;
   try {
     result = await fn(mode);
@@ -107,31 +101,28 @@ const init = defineCommand({
     skipDeploy: { type: "boolean", description: "Skip deploy after scaffolding" },
   },
   async run({ args }) {
-    await runCommand(
-      args,
-      async (mode) => {
-        const { executeInit } = await import("./init.ts");
-        return executeInit(
-          {
-            dir: args.dir,
-            force: args.force,
-            template: args.template,
-            yes: args.yes,
-            skipDeploy: args.skipDeploy,
-            server: args.server,
-          },
-          mode === "json" ? { silent: true } : undefined,
-        );
-      },
-      { setYes: true },
-    );
+    await runCommand(args, async (mode) => {
+      const { executeInit } = await import("./init.ts");
+      return executeInit(
+        {
+          dir: args.dir,
+          force: args.force,
+          template: args.template,
+          // JSON mode is non-interactive — accept defaults as if --yes was passed.
+          yes: mode === "json" ? true : args.yes,
+          skipDeploy: args.skipDeploy,
+          server: args.server,
+        },
+        mode === "json" ? { silent: true } : undefined,
+      );
+    });
   },
 });
 
 const dev = defineCommand({
   meta: { name: "dev", description: "Start a local development server" },
   args: {
-    port: sharedArgs.port,
+    port: { type: "string", alias: "p", description: "Port to listen on", default: "3000" },
     json: sharedArgs.json,
   },
   async run({ args }) {
@@ -167,28 +158,8 @@ const build = defineCommand({
   async run({ args }) {
     await runCommand(args, async () => {
       const cwd = await setup({ agent: true });
-      if (!args.skipTests) {
-        const { classifyVitestError, runVitest } = await import("./test.ts");
-        // Distinguish a real test failure (test_failed) from the runner not
-        // spawning (spawn_failed) instead of a generic command_failed.
-        const toCliError = (err: unknown): CliError => {
-          const { code, message } = classifyVitestError(err);
-          return new CliError(code, message, "Re-run with --skipTests to build without tests", {
-            cause: err,
-          });
-        };
-        try {
-          runVitest(cwd);
-        } catch (err: unknown) {
-          throw toCliError(err);
-        }
-      }
-      if (!args.skipTypecheck) {
-        const { assertTypechecks } = await import("./_typecheck-gate.ts");
-        await assertTypechecks(cwd);
-      }
-      const { executeBuild } = await import("./_bundler.ts");
-      return executeBuild(cwd);
+      const { executeBuild } = await import("./build.ts");
+      return executeBuild({ cwd, skipTests: args.skipTests, skipTypecheck: args.skipTypecheck });
     });
   },
 });
@@ -212,9 +183,9 @@ const deploy = defineCommand({
       const { executeDeploy } = await import("./deploy.ts");
       return executeDeploy({
         cwd,
-        ...(args.server ? { server: args.server } : {}),
-        ...(args.allowMissingSecrets ? { allowMissingSecrets: true } : {}),
-        ...(args.skipTypecheck ? { skipTypecheck: true } : {}),
+        server: args.server,
+        allowMissingSecrets: args.allowMissingSecrets,
+        skipTypecheck: args.skipTypecheck,
       });
     });
   },
@@ -230,7 +201,7 @@ const del = defineCommand({
     await runCommand(args, async () => {
       const cwd = await setup();
       const { executeDelete } = await import("./delete.ts");
-      return executeDelete({ cwd, ...(args.server ? { server: args.server } : {}) });
+      return executeDelete({ cwd, server: args.server });
     });
   },
 });
@@ -245,10 +216,10 @@ const secretPut = defineCommand({
   async run({ args }) {
     await runCommand(args, async (mode) => {
       const cwd = await setup();
-      const { executeSecretPut, readStdin } = await import("./secret.ts");
+      const { executeSecretPut, NO_INPUT, readStdin } = await import("./secret.ts");
       const value = mode === "json" ? await readStdin() : undefined;
       if (mode === "json" && !value) {
-        throw new CliError("no_input", "No value provided", "Pipe secret value to stdin");
+        throw new CliError(...NO_INPUT);
       }
       return executeSecretPut(cwd, args.name, value, args.server);
     });
@@ -385,7 +356,7 @@ if (process.env.VITEST !== "true") {
   // became `deploy <flag>` and pushed to production.
   const runDefault = async (): Promise<void> => {
     if (process.argv.length > 2) return;
-    if (!existsSync(path.join(resolveCwd(), "agent.ts"))) {
+    if (!existsSync(path.join(resolveCwd(), AGENT_ENTRY))) {
       process.argv.splice(2, 0, "init");
       return;
     }

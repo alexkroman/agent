@@ -101,10 +101,9 @@ export function resolveServerUrl(
  * the project has never been deployed), server URL, and API key.
  */
 export async function resolveDeployTarget(cwd: string, explicitServer?: string) {
-  const config = await readProjectConfig(cwd);
   // Resolve (and trust-check) the target before ensureApiKey(), so an
   // untrusted serverUrl is refused without first prompting for a key.
-  const globalConfig = await readGlobalConfig();
+  const [config, globalConfig] = await Promise.all([readProjectConfig(cwd), readGlobalConfig()]);
   const serverUrl = resolveServerUrl(
     explicitServer,
     config?.serverUrl,

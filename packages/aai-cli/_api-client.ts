@@ -13,6 +13,10 @@ import { FetchError, ofetch } from "ofetch";
 export const HINT_INVALID_API_KEY =
   "Your API key may be invalid. Run `aai` to re-enter your AssemblyAI API key.";
 
+/** 404 hint for requests scoped to a deployed agent's slug. */
+export const HINT_NOT_DEPLOYED =
+  "The agent may not be deployed. Check `.aai/project.json` for the correct slug.";
+
 export type ApiRequestOptions = {
   apiKey: string;
   /** Verb used in error messages, e.g. "deploy". */

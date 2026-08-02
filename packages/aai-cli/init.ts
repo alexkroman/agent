@@ -7,7 +7,7 @@ import { execa } from "execa";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { log, unwrapCancel } from "./_ui.ts";
-import { errorMessage, fileExists, readJson, resolveCwd } from "./_utils.ts";
+import { AGENT_ENTRY, errorMessage, fileExists, readJson, resolveCwd } from "./_utils.ts";
 
 type InitData = {
   dir: string;
@@ -28,6 +28,7 @@ async function promptProjectName(yes?: boolean): Promise<string> {
       placeholder: DEFAULT_PROJECT_NAME,
       defaultValue: DEFAULT_PROJECT_NAME,
     }),
+    "Setup cancelled",
   );
   return result || DEFAULT_PROJECT_NAME;
 }
@@ -130,14 +131,10 @@ async function scaffoldProject(
   silent?: boolean,
 ): Promise<void> {
   const { runInit } = await import("./_init.ts");
-  if (silent) {
-    await runInit({ targetDir: cwd, template });
-    return;
-  }
-  const s = p.spinner();
-  s.start(`Creating ${dir}`);
+  const s = silent ? undefined : p.spinner();
+  s?.start(`Creating ${dir}`);
   await runInit({ targetDir: cwd, template });
-  s.stop("Project created");
+  s?.stop("Project created");
 }
 
 /** Print post-init instructions. */
@@ -167,9 +164,9 @@ export async function executeInit(
   const monorepoRoot = getMonorepoRoot();
   const cwd = resolveTargetDir(dir);
 
-  if (!opts.force && (await fileExists(path.join(cwd, "agent.ts")))) {
+  if (!opts.force && (await fileExists(path.join(cwd, AGENT_ENTRY)))) {
     throw new Error(
-      `agent.ts already exists in this directory. Use ${styleText("cyanBright", "--force")} to overwrite.`,
+      `${AGENT_ENTRY} already exists in this directory. Use ${styleText("cyanBright", "--force")} to overwrite.`,
     );
   }
 

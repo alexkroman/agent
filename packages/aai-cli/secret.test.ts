@@ -23,6 +23,7 @@ vi.mock("./_ui.ts", async () => ({
 const mockApiRequest = vi.fn();
 vi.mock("./_api-client.ts", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+  HINT_NOT_DEPLOYED: "not-deployed-hint",
 }));
 
 const { executeSecretList, executeSecretPut, executeSecretDelete } = await import("./secret.ts");

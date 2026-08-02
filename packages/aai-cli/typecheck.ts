@@ -15,9 +15,11 @@
  */
 
 import { spawn } from "node:child_process";
-import { existsSync, readFileSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { existsSync } from "node:fs";
 import path from "node:path";
+// Zod-free imports only — this module is the `/typecheck` subpath the guest
+// sandbox loads, so it must stay light (no build toolchain, no zod).
+import { binFromPackageJson, errorMessage } from "./_utils.ts";
 
 /** Bound on one typecheck run — a hung compiler must not wedge a deploy. */
 const TYPECHECK_TIMEOUT_MS = 120_000;
@@ -60,12 +62,9 @@ function findTypescriptPackage(cwd: string): string | undefined {
 function resolveTscEntry(cwd: string): string {
   const dir = findTypescriptPackage(cwd);
   if (dir === undefined) throw new Error("no typescript package in the project's node_modules");
-  const pkg = JSON.parse(readFileSync(path.join(dir, "package.json"), "utf-8")) as {
-    bin?: string | Record<string, string>;
-  };
-  const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.tsc;
+  const bin = binFromPackageJson(path.join(dir, "package.json"), "tsc");
   if (!bin) throw new Error("installed typescript package declares no tsc bin");
-  return path.join(dir, bin);
+  return bin;
 }
 
 /**
@@ -73,11 +72,7 @@ function resolveTscEntry(cwd: string): string {
  * Skips (ok, skipped: true) when the project has no tsconfig.json.
  */
 export async function typecheckProject(cwd: string): Promise<TypecheckResult> {
-  const hasTsconfig = await readFile(path.join(cwd, "tsconfig.json"), "utf-8").then(
-    () => true,
-    () => false,
-  );
-  if (!hasTsconfig) return { ok: true, skipped: true };
+  if (!existsSync(path.join(cwd, "tsconfig.json"))) return { ok: true, skipped: true };
 
   let tscEntry: string;
   try {
@@ -87,7 +82,7 @@ export async function typecheckProject(cwd: string): Promise<TypecheckResult> {
       ok: false,
       output:
         "tsconfig.json is present but TypeScript is not installed — " +
-        `add it (npm install -D typescript) or remove tsconfig.json: ${errMessage(err)}`,
+        `add it (npm install -D typescript) or remove tsconfig.json: ${errorMessage(err)}`,
     };
   }
 
@@ -117,8 +112,4 @@ export async function typecheckProject(cwd: string): Promise<TypecheckResult> {
 
   if (result.code === 0) return { ok: true, skipped: false };
   return { ok: false, output: `Type check failed:\n${result.output.trim()}` };
-}
-
-function errMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
 }

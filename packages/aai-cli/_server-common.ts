@@ -3,6 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { parseEnv } from "node:util";
+import { errorCode } from "./_utils.ts";
 
 /**
  * Build the `ctx.env` record that agent tools will see at runtime.
@@ -32,7 +33,7 @@ export async function resolveServerEnv(
     } catch (err) {
       // No .env file is fine; an unreadable one is not — the agent would
       // otherwise run with no secrets and fail later as an opaque auth error.
-      if ((err as NodeJS.ErrnoException).code !== "ENOENT") throw err;
+      if (errorCode(err) !== "ENOENT") throw err;
     }
     if (content !== null) {
       // Node's built-in dotenv-syntax parser (quotes, comments, multiline) —

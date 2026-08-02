@@ -24,10 +24,13 @@ export function silenceOutput(): void {
   silenced = true;
 }
 
-/** Unwrap a clack prompt result, exiting cleanly if the user cancelled. */
-export function unwrapCancel<T>(result: T | symbol): T {
+/**
+ * Unwrap a clack prompt result, exiting cleanly if the user cancelled.
+ * `message` lets the caller name what was cancelled (e.g. "Setup cancelled").
+ */
+export function unwrapCancel<T>(result: T | symbol, message = "Cancelled"): T {
   if (p.isCancel(result)) {
-    p.cancel("Setup cancelled");
+    p.cancel(message);
     process.exit(0);
   }
   return result as T;
