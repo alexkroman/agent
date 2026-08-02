@@ -162,7 +162,10 @@ export async function ensureApiKey(configDir?: string): Promise<string> {
     );
   }
 
-  const apiKey = unwrapCancel(await p.password({ message: "Enter your AssemblyAI API key" }));
+  const apiKey = unwrapCancel(
+    await p.password({ message: "Enter your AssemblyAI API key" }),
+    "Setup cancelled",
+  );
   await trySaveApiKey(dir, config, apiKey);
   return apiKey;
 }

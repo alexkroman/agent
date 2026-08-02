@@ -2,13 +2,13 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { getMonorepoRoot, isDevMode } from "./_agent.ts";
-import { downloadAndMergeTemplate } from "./_templates.ts";
+import { downloadAndMergeTemplate, REPO_URL } from "./_templates.ts";
 import { isEexist, readJson, writeJson } from "./_utils.ts";
 
 function readmeContent(slug: string): string {
   return `# ${slug}
 
-A voice agent built with [aai](https://github.com/anthropics/aai).
+A voice agent built with [aai](${REPO_URL}).
 
 ## Getting started
 

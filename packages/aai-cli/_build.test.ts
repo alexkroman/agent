@@ -3,8 +3,9 @@ import { symlink, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import { describe, expect, test } from "vitest";
-import { buildAgentBundle, evalWorkerBundle, executeBuild } from "./_bundler.ts";
+import { buildAgentBundle, evalWorkerBundle } from "./_bundler.ts";
 import { silenced, withTempDir } from "./_test-utils.ts";
+import { executeBuild } from "./build.ts";
 
 /**
  * Symlink this package's node_modules into the fixture project so the
@@ -181,7 +182,9 @@ describe("executeBuild", () => {
           path.join(dir, "agent.ts"),
           `export default { name: "exec-build", systemPrompt: "Test", greeting: "Hi", tools: {} };`,
         );
-        const result = await executeBuild(dir);
+        // Skip the gates — this test covers the bundle+eval step, and the
+        // temp project has no test file or tsconfig anyway.
+        const result = await executeBuild({ cwd: dir, skipTests: true, skipTypecheck: true });
         expect(result.ok).toBe(true);
         if (result.ok) {
           expect(result.data.name).toBe("exec-build");

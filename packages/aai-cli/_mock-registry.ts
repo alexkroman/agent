@@ -12,6 +12,7 @@ import os from "node:os";
 import path from "node:path";
 import { execaNode, execaSync, type ResultPromise } from "execa";
 import pTimeout from "p-timeout";
+import { errorMessage } from "./_utils.ts";
 
 // This file is ESM ("type": "module") — a bare `require.resolve` only worked
 // because vitest's runtime injects `require`; importing this from a plain
@@ -179,10 +180,7 @@ function patchPkgJson(originalPkg: string, pkgJsonPath: string, testVersion: str
   try {
     pkg = JSON.parse(originalPkg);
   } catch (err) {
-    throw new Error(
-      `Invalid JSON in ${pkgJsonPath}: ${err instanceof Error ? err.message : String(err)}`,
-      { cause: err },
-    );
+    throw new Error(`Invalid JSON in ${pkgJsonPath}: ${errorMessage(err)}`, { cause: err });
   }
   pkg.version = testVersion;
   delete pkg.private; // Allow publishing private packages to mock registry

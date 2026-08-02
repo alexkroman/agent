@@ -1,4 +1,5 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { readFileSync } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
 // The `/utils` subpath is deliberately zod-free, so re-exporting from it
@@ -6,6 +7,12 @@ import path from "node:path";
 import { errorMessage } from "@alexkroman1/aai/utils";
 
 export { errorDetail, errorMessage } from "@alexkroman1/aai/utils";
+
+/**
+ * The file that marks a directory as an agent project — the single source
+ * for the entry filename every command checks or scaffolds.
+ */
+export const AGENT_ENTRY = "agent.ts";
 
 /** Resolve the working directory from INIT_CWD or process.cwd(). */
 export function resolveCwd(): string {
@@ -30,6 +37,19 @@ export function validateAgentExport(mod: any): void {
   if (!mod?.name || typeof mod.name !== "string") {
     throw new Error("agent.ts must export default agent({ name: ... })");
   }
+}
+
+/**
+ * Absolute path of `binName`'s script declared by the package.json at
+ * `pkgJsonPath`, or undefined when the package declares no such bin.
+ * Handles both `"bin": "script.js"` and `"bin": { name: "script.js" }`.
+ */
+export function binFromPackageJson(pkgJsonPath: string, binName: string): string | undefined {
+  const pkg = JSON.parse(readFileSync(pkgJsonPath, "utf-8")) as {
+    bin?: string | Record<string, string>;
+  };
+  const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.[binName];
+  return bin ? path.join(path.dirname(pkgJsonPath), bin) : undefined;
 }
 
 export async function fileExists(p: string): Promise<boolean> {

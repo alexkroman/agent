@@ -3,13 +3,13 @@
  * `aai test` — run agent tests via vitest.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync } from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { execaSync } from "execa";
 import { type CommandResult, fail, ok } from "./_output.ts";
 import { log } from "./_ui.ts";
-import { errorCode, errorMessage } from "./_utils.ts";
+import { binFromPackageJson, errorCode, errorMessage } from "./_utils.ts";
 
 type TestData = { passed: boolean; skipped?: boolean };
 
@@ -28,15 +28,11 @@ export function resolveVitestCommand(
   resolve: (id: string) => string = createRequire(path.join(cwd, "package.json")).resolve,
 ): { cmd: string; args: string[] } {
   try {
-    const pkgPath = resolve("vitest/package.json");
-    const pkg = JSON.parse(readFileSync(pkgPath, "utf-8")) as {
-      bin?: string | Record<string, string>;
-    };
-    const bin = typeof pkg.bin === "string" ? pkg.bin : pkg.bin?.vitest;
+    const bin = binFromPackageJson(resolve("vitest/package.json"), "vitest");
     if (bin) {
       // Run the bin JS with the current Node executable — avoids relying on
       // node_modules/.bin shims (shell wrappers, platform differences).
-      return { cmd: process.execPath, args: [path.join(path.dirname(pkgPath), bin)] };
+      return { cmd: process.execPath, args: [bin] };
     }
   } catch {
     /* not installed locally — fall through to npx */

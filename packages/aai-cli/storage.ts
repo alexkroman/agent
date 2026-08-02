@@ -1,9 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import * as p from "@clack/prompts";
-import { getServerInfo } from "./_agent.ts";
-import { type ApiRequestOptions, apiRequest } from "./_api-client.ts";
+import type { ApiRequestOptions } from "./_api-client.ts";
 import { type CommandResult, fail, ok } from "./_output.ts";
+import { slugRequest } from "./_slug-api.ts";
 import { log } from "./_ui.ts";
 
 async function storageRequest<T = unknown>(
@@ -11,16 +11,7 @@ async function storageRequest<T = unknown>(
   init?: Pick<ApiRequestOptions, "method">,
   server?: string,
 ): Promise<{ data: T; slug: string }> {
-  const { serverUrl, slug, apiKey } = await getServerInfo(cwd, server);
-  const data = await apiRequest<T>(`${serverUrl}/${slug}/storage`, {
-    ...init,
-    apiKey,
-    action: "storage",
-    hints: {
-      404: "The agent may not be deployed. Check `.aai/project.json` for the correct slug.",
-    },
-  });
-  return { data, slug };
+  return slugRequest<T>(cwd, "/storage", { ...init, action: "storage" }, server);
 }
 
 type StorageStatusData = { slug: string; enabled: boolean };

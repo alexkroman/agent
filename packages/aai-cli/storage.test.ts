@@ -36,6 +36,7 @@ vi.mock("@clack/prompts", () => ({
 const mockApiRequest = vi.fn();
 vi.mock("./_api-client.ts", () => ({
   apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+  HINT_NOT_DEPLOYED: "not-deployed-hint",
 }));
 
 const { executeStorageStatus, executeStorageEnable, executeStorageDisable } = await import(

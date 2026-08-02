@@ -2,25 +2,15 @@
 
 import { text } from "node:stream/consumers";
 import * as p from "@clack/prompts";
-import { getServerInfo } from "./_agent.ts";
-import { type ApiRequestOptions, apiRequest } from "./_api-client.ts";
 import { type CommandResult, fail, ok } from "./_output.ts";
+import { slugRequest } from "./_slug-api.ts";
 import { log, unwrapCancel } from "./_ui.ts";
 
-async function secretRequest<T = unknown>(
-  cwd: string,
-  pathSuffix: string,
-  init?: Pick<ApiRequestOptions, "method" | "body">,
-  server?: string,
-): Promise<{ data: T; slug: string }> {
-  const { serverUrl, slug, apiKey } = await getServerInfo(cwd, server);
-  const data = await apiRequest<T>(`${serverUrl}/${slug}/secret${pathSuffix}`, {
-    ...init,
-    apiKey,
-    action: "secret",
-  });
-  return { data, slug };
-}
+/**
+ * The one `no_input` failure for `secret put`, shared by the JSON-mode stdin
+ * path (cli.ts) and the TTY prompt path below so the two can't drift.
+ */
+export const NO_INPUT = ["no_input", "No value provided", "Pipe secret value to stdin"] as const;
 
 /** Read secret value from stdin (for non-TTY / piped input). */
 export async function readStdin(): Promise<string> {
@@ -46,14 +36,14 @@ export async function executeSecretPut(
   if (!secretValue) {
     // TTY path — interactive prompt
     const result = unwrapCancel(await p.password({ message: `Enter value for ${name}` }));
-    if (!result) return fail("no_input", "No value provided", "Pipe secret value to stdin");
+    if (!result) return fail(...NO_INPUT);
     secretValue = result;
   }
 
-  const { slug } = await secretRequest(
+  const { slug } = await slugRequest(
     cwd,
-    "",
-    { method: "PUT", body: { [name]: secretValue } },
+    "/secret",
+    { method: "PUT", body: { [name]: secretValue }, action: "secret" },
     server,
   );
   log.success(`Set ${name} for ${slug}`);
@@ -67,10 +57,10 @@ export async function executeSecretDelete(
 ): Promise<CommandResult<SecretDeleteData>> {
   // Encoded so a name containing `/`, `?`, `#`, or `%` can't target a
   // different path (or truncate the request) on the server.
-  const { slug } = await secretRequest(
+  const { slug } = await slugRequest(
     cwd,
-    `/${encodeURIComponent(name)}`,
-    { method: "DELETE" },
+    `/secret/${encodeURIComponent(name)}`,
+    { method: "DELETE", action: "secret" },
     server,
   );
   log.success(`Deleted ${name} from ${slug}`);
@@ -83,7 +73,7 @@ export async function executeSecretList(
 ): Promise<CommandResult<SecretListData>> {
   const {
     data: { vars },
-  } = await secretRequest<{ vars: string[] }>(cwd, "", undefined, server);
+  } = await slugRequest<{ vars: string[] }>(cwd, "/secret", { action: "secret" }, server);
   if (vars.length === 0) {
     log.info("No secrets set. Use `aai secret put <name>` to add one.");
   } else {

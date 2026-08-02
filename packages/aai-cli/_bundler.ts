@@ -6,8 +6,6 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 import type { AgentDef } from "@alexkroman1/aai";
-import { type CommandResult, ok } from "./_output.ts";
-import { log } from "./_ui.ts";
 import { validateAgentExport } from "./_utils.ts";
 import { buildClient } from "./client-bundler.ts";
 import { type BuildWorkerOptions, buildWorker } from "./worker-bundler.ts";
@@ -91,24 +89,4 @@ export function createWorkerEvaluator(): (code: string) => Promise<AgentDef> {
     lastAgentDef = agentDef;
     return agentDef;
   };
-}
-
-type BuildData = {
-  name: string;
-  workerBytes: number;
-};
-
-export async function executeBuild(cwd: string): Promise<CommandResult<BuildData>> {
-  // `aai build` previews the deploy artifact, so build it exactly like deploy.
-  const bundle = await buildAgentBundle(cwd, { minify: true });
-  // Evaluate locally to validate the agent export and report its name —
-  // `aai build` runs the developer's own project code, unlike deploy, which
-  // leaves evaluation to the server's guest sandbox.
-  const agentDef = await evalWorkerBundle(bundle.worker);
-  log.success("Build complete");
-
-  return ok({
-    name: agentDef.name,
-    workerBytes: bundle.worker.length,
-  });
 }

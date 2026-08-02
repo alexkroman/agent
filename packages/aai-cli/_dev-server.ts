@@ -13,8 +13,12 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import { setTimeout as sleep } from "node:timers/promises";
 import type { AgentDef } from "@alexkroman1/aai";
+// One static import: the runtime barrel is already loaded for the helpers
+// below, so a dynamic import inside startDevServer would defer nothing.
 import {
   type AgentServer,
+  createRuntime,
+  createServer,
   requiredProviderEnvVars,
   withHostCredentialFallback,
 } from "@alexkroman1/aai/runtime";
@@ -270,8 +274,6 @@ export function viteDevConfig(
  */
 export async function startDevServer(opts: DevServerOptions): Promise<() => Promise<void>> {
   const { cwd, port } = opts;
-
-  const { createRuntime, createServer } = await import("@alexkroman1/aai/runtime");
 
   const hasClient = existsSync(path.join(cwd, "client.tsx"));
   // With a client, Vite owns the user-requested port and proxies to the

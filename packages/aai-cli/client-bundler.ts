@@ -18,7 +18,9 @@
 import type { Dirent } from "node:fs";
 import fs from "node:fs/promises";
 import path from "node:path";
-import { isTextAssetPath } from "@alexkroman1/aai";
+// The `/utils` subpath is deliberately zod-free — the root barrel would pull
+// zod and five other modules into the graph for one pure string helper.
+import { isTextAssetPath } from "@alexkroman1/aai/utils";
 import { build, type PluginOption } from "vite";
 import { writeTempHtml } from "./_default-html.ts";
 import { errorMessage, fileExists } from "./_utils.ts";
@@ -57,8 +59,7 @@ const DEFAULT_OUT_DIR = ".aai/client";
  *
  * Deduping states the peer contract in terms the bundler enforces, and it is
  * what a React app wants anyway: two copies of React in one bundle break
- * hooks. Guarded by `client-bundler.test.ts` and, for the half that has to
- * hold in the image, `aai-server/dockerfile-packaging.test.ts`.
+ * hooks. Guarded by `client-bundler.test.ts`.
  */
 const DEDUPED_PEERS = ["react", "react-dom"];
 
