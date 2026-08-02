@@ -2,7 +2,6 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { requiredProviderEnvVars } from "@alexkroman1/aai/runtime";
-import { humanId } from "human-id";
 import { debug } from "./_debug-log.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import { bumpSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
@@ -12,6 +11,7 @@ import { type SlotCache, setSlot, terminateSlot } from "./sandbox-slots.ts";
 import type { AgentMetadata, DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
+import { generatedSlug, slugBaseFromName } from "./slug-generate.ts";
 import type { BundleStore } from "./store-types.ts";
 
 /** Server-level dependencies the deploy core needs (a subset of Bindings). */
@@ -32,7 +32,7 @@ export type DeployDeps = {
 };
 
 export type DeployParams = {
-  /** Requested slug. Omit to generate one (`humanId`). */
+  /** Requested slug. Omit to generate one (`generatedSlug`). */
   slug?: string | undefined;
   apiKey: string;
   worker: string;
@@ -116,15 +116,19 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
   if (requested && RESERVED_SLUGS.has(requested)) {
     return Promise.resolve({ ok: false as const, status: 400 as const, error: "Reserved slug" });
   }
-  const slug = requested ?? humanId({ separator: "-", capitalize: false });
+  // No requested slug: generate one from the agent's own display name (its
+  // bundle-described config) plus a random suffix — the same generator the
+  // studio uses for prompt-derived project names. An unusable name (empty
+  // after slugification) falls back to random words inside the generator.
+  const slug = requested ?? generatedSlug(slugBaseFromName(params.agentConfig.name));
   const lock = deps.slugLock ?? localSlugLock;
   return lock(slug, async () => {
     // Ownership is checked whether the slug was requested or generated. A
-    // generated slug used to skip this entirely, so a `humanId()` collision
-    // with an existing agent would overwrite that agent's bundle and append
-    // the caller's credential hash to it — silently granting a stranger
-    // co-ownership. Collisions aren't attacker-targetable, but they are
-    // possible, and the check costs one manifest read either way.
+    // generated slug used to skip this entirely, so a generated-name
+    // collision with an existing agent would overwrite that agent's bundle
+    // and append the caller's credential hash to it — silently granting a
+    // stranger co-ownership. The random suffix makes collisions negligible
+    // but not impossible, and the check costs one manifest read either way.
     const existing = await deps.store.getManifest(slug);
     const matchedHash = existing
       ? await matchAnyHash(params.apiKey, existing.credential_hashes)

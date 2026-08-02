@@ -21,9 +21,17 @@ const CodeView = lazy(() => import("./code-view.tsx").then((m) => ({ default: m.
 
 type AppProps = { apiKey: string; onSignOut: () => void };
 
-/** Generated name for the guided "just start typing" flow. */
-function generatedProjectName(): string {
-  return `voice-agent-${Math.random().toString(36).slice(2, 6)}`;
+// v0-style project URLs: each project lives at /studio/chat/<name>, so a
+// build is linkable/bookmarkable. The server serves the same shell for the
+// path; the client owns the mapping below (pushState + popstate).
+const PROJECT_PATH_RE = /^\/studio\/chat\/([a-z0-9][a-z0-9_-]*)\/?$/;
+
+function projectFromPath(pathname: string): string | null {
+  return PROJECT_PATH_RE.exec(pathname)?.[1] ?? null;
+}
+
+function projectPath(name: string | null): string {
+  return name ? `/studio/chat/${encodeURIComponent(name)}` : "/";
 }
 
 /** A query/mutation error as displayable text; undefined when there is none. */
@@ -34,7 +42,11 @@ function errorText(err: unknown): string | undefined {
 
 export function App({ apiKey, onSignOut }: AppProps) {
   const queryClient = useQueryClient();
-  const [project, setProject] = useState<string | null>(null);
+  // The URL seeds the initial selection (a shared /studio/chat/<name> link
+  // opens that project); after that, selection drives the URL.
+  const [project, setProject] = useState<string | null>(() =>
+    projectFromPath(window.location.pathname),
+  );
   const [currentFile, setCurrentFile] = useState<string | null>(null);
   const [tab, setTab] = useState<"preview" | "code">("preview");
   const [publishOpen, setPublishOpen] = useState(false);
@@ -113,6 +125,24 @@ export function App({ apiKey, onSignOut }: AppProps) {
   // Deliberately no auto-select: landing always shows the hero, and existing
   // projects are one click away in the home sidebar.
 
+  /** Select a project (or null for the home hero) and sync the URL. */
+  const selectProject = (name: string | null) => {
+    setProject(name);
+    setCurrentFile(null);
+    const path = projectPath(name);
+    if (window.location.pathname !== path) window.history.pushState(null, "", path);
+  };
+
+  // Back/forward moves between home and projects like any other pages.
+  useEffect(() => {
+    const onPop = () => {
+      setProject(projectFromPath(window.location.pathname));
+      setCurrentFile(null);
+    };
+    window.addEventListener("popstate", onPop);
+    return () => window.removeEventListener("popstate", onPop);
+  }, []);
+
   const files = workspace.data?.files ?? {};
   const deployedSlug = workspace.data?.deployedSlug;
   // "Publish unlocks after your first build" — there must be an agent to ship.
@@ -134,9 +164,12 @@ export function App({ apiKey, onSignOut }: AppProps) {
   };
 
   const createProject = useMutation({
-    mutationFn: (name: string) => api.createProject(apiKey, name),
+    // The SERVER names the project — a base derived from the prompt plus a
+    // random suffix, v0-style, via the same generator slugless CLI deploys
+    // use (aai-server/slug-generate.ts). The client never mints names.
+    mutationFn: (prompt: string) => api.createProject(apiKey, { prompt }),
     onSuccess: (created) => {
-      setProject(created.name);
+      selectProject(created.name);
       void queryClient.invalidateQueries({ queryKey: ["projects"] });
     },
     onError: (err) => {
@@ -187,20 +220,19 @@ export function App({ apiKey, onSignOut }: AppProps) {
     },
   });
 
-  const newProject = () => {
-    const name = window.prompt("Project name (lowercase, dashes):");
-    if (name?.trim()) createProject.mutate(name.trim());
-  };
+  // Not a naming dialog: "+ New project" just returns to the home hero —
+  // the first message typed there creates (and names) the project.
+  const newProject = () => selectProject(null);
 
-  // Guided start: typing into the chat before any project exists creates
-  // one automatically and forwards the prompt once the panel mounts.
+  // Hero start: typing the first message creates a project (named from the
+  // prompt server-side) and forwards it as the first chat turn.
   const startWithPrompt = (prompt: string) => {
-    // The composer disables while pending; this guard covers the same-tick
+    // The hero disables while pending; this guard covers the same-tick
     // race (Enter twice before the re-render) so one prompt never creates
     // two projects.
     if (createProject.isPending) return;
     setPendingPrompt(prompt);
-    createProject.mutate(generatedProjectName());
+    createProject.mutate(prompt);
   };
 
   const publishError = errorText(publish.error);
@@ -218,15 +250,9 @@ export function App({ apiKey, onSignOut }: AppProps) {
         tab={tab}
         deployedSlug={deployedSlug}
         hasBuild={hasBuild}
-        onSelectProject={(name) => {
-          setProject(name);
-          setCurrentFile(null);
-        }}
+        onSelectProject={selectProject}
         onNewProject={newProject}
-        onGoHome={() => {
-          setProject(null);
-          setCurrentFile(null);
-        }}
+        onGoHome={() => selectProject(null)}
         onSelectTab={setTab}
         onSignOut={onSignOut}
         onTogglePublish={() => {
@@ -267,10 +293,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
         <div className="flex min-h-0 flex-1">
           <HomeSidebar
             projects={projects.data}
-            onSelectProject={(name) => {
-              setProject(name);
-              setCurrentFile(null);
-            }}
+            onSelectProject={selectProject}
             onNewProject={newProject}
           />
           <HomeHero

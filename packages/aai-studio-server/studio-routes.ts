@@ -4,7 +4,9 @@
  *
  * - `GET  /studio/status`                     — is the chat LLM configured?
  * - `GET  /studio/projects`                   — list the caller's projects
- * - `POST /studio/projects`                   — create a project (starter files)
+ * - `POST /studio/projects`                   — create a project (starter files;
+ *   the server generates the name from the creating `prompt` unless an
+ *   explicit `name` is sent)
  * - `GET  /studio/projects/:project`          — files + deployed slug
  * - `GET  /studio/projects/:project/chat`     — persisted chat history
  * - `DELETE /studio/projects/:project`        — delete a project (and its chat)
@@ -30,6 +32,7 @@ import { zValidator } from "@hono/zod-validator";
 import { authMw } from "aai-server/middleware";
 import { resolvePublicOrigin } from "aai-server/public-origin";
 import type { SandboxPool } from "aai-server/sandbox-pool";
+import { generatedSlug } from "aai-server/slug-generate";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
@@ -43,7 +46,12 @@ import {
   type RateLimiter,
   type StudioRateLimiters,
 } from "./studio-rate-limit.ts";
-import { CreateProjectSchema, ProjectNameSchema, StudioFileSchema } from "./studio-schemas.ts";
+import {
+  CreateProjectSchema,
+  ProjectNameSchema,
+  projectBaseFromPrompt,
+  StudioFileSchema,
+} from "./studio-schemas.ts";
 import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
 import { starterFiles } from "./studio-template.ts";
 import {
@@ -87,6 +95,11 @@ export function requestPublicOrigin(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   return resolvePublicOrigin(c.req.raw, env);
+}
+
+/** Server-generated project name: prompt-derived base + random suffix. */
+function nameFromPrompt(prompt: string | undefined): string {
+  return generatedSlug(prompt ? projectBaseFromPrompt(prompt) : undefined);
 }
 
 function validateProject(name: string | undefined): string {
@@ -157,21 +170,26 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     const limited = await rateLimited(c.var.apiKey, projectCreateLimiter);
     if (limited) return limited;
     const scope = studioScope(c.var.apiKey);
-    const { name } = c.req.valid("json");
+    const { name, prompt } = c.req.valid("json");
+    // No explicit name: the server generates one, v0-style — a readable base
+    // from the creating prompt plus a random suffix, via the same generator
+    // slugless CLI deploys use (see aai-server/slug-generate.ts). The suffix
+    // makes a same-scope collision negligible; one retry absorbs it anyway.
+    const attempts = name ? [name] : [nameFromPrompt(prompt), nameFromPrompt(prompt)];
     // Creation is atomic at the store (versioned insert): two concurrent
     // creates — even on different replicas — cannot both succeed, so the
     // loser can never reset the winner's files. No lock needed here.
-    try {
-      const workspace = await createWorkspace(c.env.workspaces, scope, name, {
-        files: starterFiles(),
-      });
-      return c.json({ name, files: workspace.files }, 201);
-    } catch (err) {
-      if (err instanceof WorkspaceConflictError) {
-        return c.json({ error: "Project already exists" }, 409);
+    for (const candidate of attempts) {
+      try {
+        const workspace = await createWorkspace(c.env.workspaces, scope, candidate, {
+          files: starterFiles(),
+        });
+        return c.json({ name: candidate, files: workspace.files }, 201);
+      } catch (err) {
+        if (!(err instanceof WorkspaceConflictError)) throw err;
       }
-      throw err;
     }
+    return c.json({ error: "Project already exists" }, 409);
   });
 
   studio.get("/projects/:project", async (c) => {

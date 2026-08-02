@@ -260,8 +260,10 @@ describe("POST /deploy", () => {
     const body = (await res.json()) as { ok: boolean; slug: string };
     expect(body.ok).toBe(true);
     expect(body.slug).toBeTruthy();
-    // Server-generated slugs are lowercase hyphenated words
-    expect(body.slug).toMatch(/^[a-z]+-[a-z]+-[a-z]+$/);
+    // Server-generated slugs carry the agent's own display name (from its
+    // bundle-described config — deployBody's worker is named "test-agent")
+    // plus the shared random suffix (slug-generate.ts).
+    expect(body.slug).toMatch(/^test-agent-[a-z0-9]{6}$/);
   });
 
   test("uses slug from body when provided", async () => {

@@ -65,6 +65,9 @@ afterEach(() => {
   // registers — unmount explicitly or renders leak across tests.
   cleanup();
   vi.unstubAllGlobals();
+  // Selection syncs the URL (v0-style project paths); jsdom keeps the
+  // location across tests, so reset it or a later render inherits it.
+  window.history.replaceState(null, "", "/");
 });
 
 describe("App auth handling", () => {
@@ -128,6 +131,33 @@ describe("chat history hydration", () => {
     await waitFor(() => expect(screen.getByText("What should your voice agent do?")).toBeDefined());
     // The previous project waits in the sidebar instead.
     await waitFor(() => expect(screen.getByRole("button", { name: "demo" })).toBeDefined());
+  });
+
+  test("opening a project syncs the v0-style URL", async () => {
+    stubFetch({
+      ...demoRoutes,
+      "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
+    });
+    renderApp(vi.fn());
+    await openProject("demo");
+    await waitFor(() => expect(window.location.pathname).toBe("/studio/chat/demo"));
+  });
+
+  test("loading a /studio/chat/<name> URL opens that project directly", async () => {
+    window.history.replaceState(null, "", "/studio/chat/demo");
+    const fetchMock = stubFetch({
+      ...demoRoutes,
+      "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
+    });
+    renderApp(vi.fn());
+    // Straight into the project chat — no hero, no sidebar click.
+    await waitFor(() =>
+      expect(screen.getByText(/Welcome to AssemblyAI App Builder/)).toBeDefined(),
+    );
+    const paths = fetchMock.mock.calls.map(
+      (c) => new URL(String(c[0]), "http://studio.test").pathname,
+    );
+    expect(paths).toContain("/studio/projects/demo");
   });
 
   test("a persisted conversation renders when the project opens", async () => {

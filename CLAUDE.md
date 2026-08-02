@@ -369,6 +369,16 @@ voice agents without the CLI:
   a *deterministic* SHA-256 of the caller's API key (`studioScope`) — unlike
   the salted argon2 ownership hashes, it must be stable so a browser session
   can find its projects again.
+- **Projects are created from the chat, not a dialog.** The client has no
+  new-project modal: typing the first message (the home hero's prompt box,
+  `home.tsx`) posts it as `prompt` to
+  `POST /studio/projects`, and the SERVER mints the name — prompt-derived
+  base + random suffix, v0-style (`contact-form-x7k2mq`), via the same
+  `aai-server/slug-generate.ts` generator slugless CLI deploys use (those
+  seed from the agent's config `name` instead). Each project lives at a
+  shareable `/studio/chat/<name>` URL: the studio serves the shell for that
+  path and the client syncs selection with pushState/popstate. An explicit
+  `name` in the create body remains for programmatic callers (evals, tests).
 - **Chat runs IN the project's sandbox, and the browser connects to it
   DIRECTLY** — mirroring the voice path. `POST /studio/projects/:project/
   session` (rate-limited; `studio-session-broker.ts`) boots or reuses a
@@ -2083,8 +2093,15 @@ stored env at sandbox creation time and kept host-side only.
 - Deploys go through the single `POST /deploy` route (slug in the body);
   the legacy `POST /:slug/deploy` route was removed.
 - Deploys check slug ownership whether the slug was requested or generated —
-  a `humanId()` collision returns 409 rather than overwriting an existing
+  a generated-slug collision returns 409 rather than overwriting an existing
   agent and appending the caller's credential hash to it.
+- **Server-generated names come from one generator**
+  (`aai-server/slug-generate.ts`): a readable base plus a random lowercase
+  base36 suffix, v0-style (`contact-form-x7k2mq`). A slugless CLI deploy
+  seeds the base from the agent's own `name` (its bundle-described config);
+  studio project creation seeds it from the creating chat prompt
+  (`projectBaseFromPrompt`); an unusable base falls back to `human-id`
+  words. Clients never generate names — creation always hits the server.
 
 ### Host mode on deployed agents (`aai-server/ws-host-mode.ts`)
 

@@ -92,6 +92,14 @@ describe("studio page + routing", () => {
     }
   });
 
+  test("GET /studio/chat/<project> serves the shell (v0-style project URLs)", async () => {
+    const { fetch } = await createTestCombined();
+    const res = await fetch("/studio/chat/contact-form-x7k2mq");
+    expect(res.status).toBe(200);
+    expect(res.headers.get("Content-Type")).toContain("text/html");
+    expect(res.headers.get("Content-Security-Policy")).toContain("default-src 'none'");
+  });
+
   test("GET /studio and /studio/ redirect to the page", async () => {
     const { fetch } = await createTestCombined();
     expect((await fetch("/studio")).status).toBe(302);
@@ -218,6 +226,39 @@ describe("project CRUD", () => {
     // Better to fail here than to let the project exist and die at publish.
     const res = await authFetch(fetch, "/studio/projects", { body: { name: "Studio" } });
     expect(res.status).toBe(400);
+  });
+
+  test("create with a prompt generates a v0-style name (base + suffix)", async () => {
+    // The chat-first flow: the client sends the first message, the SERVER
+    // names the project — same generator as slugless CLI deploys.
+    const res = await authFetch(fetch, "/studio/projects", {
+      body: { prompt: "Build me a contact form agent for my site" },
+    });
+    expect(res.status).toBe(201);
+    const { name } = (await res.json()) as { name: string };
+    expect(name).toMatch(/^contact-form(-[a-z0-9-]+)?-[a-z0-9]{6}$/);
+    // Addressable like any other project.
+    expect((await authFetch(fetch, `/studio/projects/${name}`, { method: "GET" })).status).toBe(
+      200,
+    );
+  });
+
+  test("create with the same prompt twice yields two distinct projects", async () => {
+    const make = async () => {
+      const res = await authFetch(fetch, "/studio/projects", {
+        body: { prompt: "pizza ordering" },
+      });
+      expect(res.status).toBe(201);
+      return ((await res.json()) as { name: string }).name;
+    };
+    expect(await make()).not.toBe(await make());
+  });
+
+  test("create with no name and no prompt still generates a name", async () => {
+    const res = await authFetch(fetch, "/studio/projects", { body: {} });
+    expect(res.status).toBe(201);
+    const { name } = (await res.json()) as { name: string };
+    expect(name).toMatch(/-[a-z0-9]{6}$/);
   });
 
   test("get returns the project's files; 404 when missing", async () => {
