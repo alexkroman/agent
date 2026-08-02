@@ -4,12 +4,23 @@
  *
  * Builds run here, in the tenant's own sandbox, through the aai CLI's own
  * bundlers (`@alexkroman1/aai-cli/worker-bundler` + `/client-bundler`) — the
- * exact functions `aai deploy` runs on a laptop. There is no host-side or
- * out-of-process build backend anymore: one path, exercised by every
- * `test_agent` call and every Publish, so the studio and CLI builds cannot
- * diverge. A hostile or pathological workspace burns this sandbox's CPU and
- * nothing else — the container is the isolation boundary, exactly as for
- * the tools.
+ * exact functions `aai deploy` runs on a laptop. There is no host-side build
+ * backend: one path, exercised by every `test_agent` call and every Publish,
+ * so the studio and CLI builds cannot diverge. A hostile or pathological
+ * workspace burns this sandbox's CPU and nothing else — the container is the
+ * isolation boundary, exactly as for the tools.
+ *
+ * **The bundler runs in a ONE-SHOT CHILD PROCESS** (`studio-build-child.ts`,
+ * spawned via `harnessEntry()`), for one reason: Rolldown does its work in
+ * Rust, outside V8, and never returns that memory to the OS. Measured in a
+ * production sandbox, a single in-process `buildWorker` took the harness from
+ * 258 MB to 1.7 GB RSS — of which V8's heap was 51 MB — and because the
+ * harness is long-lived and reused across `test_agent` calls, that peak
+ * became the floor and climbed with every build (1.7 → 2.1 → 2.2 GB).
+ * `global.gc()` recovered 75 MB and `MALLOC_ARENA_MAX=2` recovered 35 MB, so
+ * neither GC nor allocator tuning is a fix; process exit is. Publish already
+ * had this shape (it spawns the literal CLI — see studio-publish.ts), so this
+ * makes the two build paths agree. Keep the bundler out of this process.
  *
  * The toolchain is NOT bundled into the harness: it resolves at runtime
  * from the `node_modules` that live next to the harness — baked into the
@@ -20,12 +31,15 @@
  * the normal node_modules walk-up, exactly as in a user project.
  */
 
+import { spawn } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { mkdir, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, readFile, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
+import { tmpdir } from "node:os";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { stripVTControlCharacters } from "node:util";
-import { annotateDiagnostics, type ExportResolver } from "./studio-diagnostics.ts";
+import type { ExportResolver } from "./studio-diagnostics.ts";
 
 /** Result of one guest build; `buildError` is prose the coding agent can act on. */
 export type GuestBuildResult = {
@@ -34,17 +48,13 @@ export type GuestBuildResult = {
   buildError?: string;
 };
 
-type Toolchain = {
-  buildWorker: (cwd: string, opts: { minify?: boolean; configFile?: false }) => Promise<string>;
-  buildClient: (
-    cwd: string,
-    opts: { configFile?: false; plugins?: unknown[] },
-  ) => Promise<Record<string, string>>;
-  clientPlugins: () => unknown[];
-  typecheckProject: (
-    cwd: string,
-  ) => Promise<{ ok: true; skipped: boolean } | { ok: false; output: string }>;
-};
+/** Wall-clock backstop for one build child (typecheck gate + bundle). */
+const BUILD_TIMEOUT_MS = 240_000;
+/** Output tail kept per stream when the child dies without an envelope. */
+const OUTPUT_CAP = 32_000;
+
+/** Argv flag that puts the harness entry into build-child mode. */
+export const BUILD_CHILD_FLAG = "--build-workspace";
 
 /**
  * Root under which workspaces materialize: a dot-directory next to this
@@ -55,73 +65,130 @@ export function workspacesRoot(): string {
   return path.join(import.meta.dirname, ".workspaces");
 }
 
-// Memoized lazy load: pool-spawned warm harnesses must not pay the Vite
-// import at boot, and a missing toolchain should fail the BUILD (a message
-// the coding agent sees), not the harness.
-let toolchain: Promise<Toolchain> | null = null;
-function loadToolchain(): Promise<Toolchain> {
-  toolchain ??= (async (): Promise<Toolchain> => {
-    const [worker, client, typecheck, react, tailwind] = await Promise.all([
-      import("@alexkroman1/aai-cli/worker-bundler"),
-      import("@alexkroman1/aai-cli/client-bundler"),
-      import("@alexkroman1/aai-cli/typecheck"),
-      import("@vitejs/plugin-react"),
-      import("@tailwindcss/vite"),
-    ]);
-    return {
-      buildWorker: worker.buildWorker,
-      buildClient: client.buildClient as Toolchain["buildClient"],
-      // Fresh plugin instances per build — Vite plugins are stateful.
-      clientPlugins: () => [react.default(), tailwind.default()],
-      typecheckProject: typecheck.typecheckProject,
-    };
-  })().catch((err: unknown) => {
-    toolchain = null;
-    throw err;
+/**
+ * The script to spawn for a build child — the harness entry itself, which
+ * dispatches on `BUILD_CHILD_FLAG` instead of starting its server.
+ *
+ * Reusing the harness entry rather than shipping a second script is what
+ * keeps the guest ONE artifact: tsdown emits a single `harness.mjs` with
+ * `inlineDynamicImports`, and aai-server's modal-harness-image.ts bakes
+ * exactly that one file. Bundled, this module IS that entry, so
+ * `import.meta.url` already points at it; from TypeScript source (dev,
+ * tests) the entry is its sibling `harness.ts`, which Node runs directly
+ * (the repo is `erasableSyntaxOnly`).
+ */
+export function harnessEntry(): string {
+  const self = fileURLToPath(import.meta.url);
+  return path.basename(self).startsWith("studio-build")
+    ? path.join(path.dirname(self), "harness.ts")
+    : self;
+}
+
+/** The build child's one-line stdout result, mirroring the CLI's `--json`. */
+export type BuildEnvelope =
+  | { ok: true; worker?: boolean; client?: boolean }
+  | { ok: false; buildError: string };
+
+function parseEnvelope(stdout: string): BuildEnvelope | null {
+  const line = stdout
+    .split("\n")
+    .filter((l) => l.trim().length > 0)
+    .at(-1);
+  if (!line) return null;
+  try {
+    return JSON.parse(line) as BuildEnvelope;
+  } catch {
+    return null;
+  }
+}
+
+/** Run one child process, capturing capped output tails. */
+function run(
+  cmd: string,
+  args: string[],
+  opts: { cwd: string; env: Record<string, string> },
+): Promise<{ exitCode: number | null; stdout: string; stderr: string }> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(cmd, args, { ...opts, timeout: BUILD_TIMEOUT_MS });
+    let stdout = "";
+    let stderr = "";
+    const keep = (s: string) => (s.length > OUTPUT_CAP ? `…${s.slice(-OUTPUT_CAP)}` : s);
+    child.stdout.on("data", (chunk: Buffer) => {
+      stdout = keep(stdout + chunk.toString());
+    });
+    child.stderr.on("data", (chunk: Buffer) => {
+      stderr = keep(stderr + chunk.toString());
+    });
+    child.on("error", reject);
+    child.on("close", (code, signal) => {
+      if (signal) {
+        reject(new Error(`build killed by ${signal} after ${BUILD_TIMEOUT_MS}ms`));
+        return;
+      }
+      resolve({ exitCode: code, stdout, stderr });
+    });
   });
-  return toolchain;
 }
 
 /**
- * Build a materialized workspace directory into deploy artifacts.
+ * Build a materialized workspace directory into deploy artifacts, in a
+ * one-shot child process (see this module's header for why).
  *
- * `configFile: false` on both passes: a studio workspace has no
- * `vite.config.ts` (the scaffold's plugins are injected here instead), and
- * one the coding agent invents must not change how Publish builds.
+ * Artifacts come back through a scratch directory rather than stdout: the
+ * worker bundle runs to ~8 MB, which JSON-escaping would roughly double in
+ * transit and buffer twice. The scratch dir lives outside the workspace so
+ * it can never be picked up by the end-of-turn `studio/sync-workspace`.
  */
 export async function buildWorkspaceDir(
   dir: string,
   want: { worker: boolean; client: boolean },
+  opts: { /** Test seam: entry script spawned instead of the harness. */ buildEntry?: string } = {},
 ): Promise<GuestBuildResult> {
-  let tc: Toolchain;
+  const out = await mkdtemp(path.join(tmpdir(), "aai-build-out-"));
   try {
-    tc = await loadToolchain();
-  } catch (err) {
-    return { buildError: `Build toolchain unavailable in this sandbox: ${errMessage(err)}` };
-  }
-  // Type errors first, as their own failure: the bundlers strip types
-  // unchecked, so this is the only gate that catches runtime-working-but-
-  // wrong code — and the message is exactly what the coding agent needs.
-  const typed = await tc.typecheckProject(dir);
-  if (!typed.ok) {
-    // Attach the fixing idiom to the diagnostic rather than carrying it in
-    // the system prompt: it costs nothing until a build actually fails, and
-    // it arrives inside the error the agent is already reading.
-    return { buildError: annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)) };
-  }
-  try {
-    const [worker, clientFiles] = await Promise.all([
-      want.worker ? tc.buildWorker(dir, { minify: true, configFile: false }) : undefined,
-      want.client
-        ? tc.buildClient(dir, { configFile: false, plugins: tc.clientPlugins() })
-        : undefined,
-    ]);
+    const result = await run(
+      process.execPath,
+      [
+        opts.buildEntry ?? harnessEntry(),
+        BUILD_CHILD_FLAG,
+        dir,
+        "--out",
+        out,
+        ...(want.worker ? ["--worker"] : []),
+        ...(want.client ? ["--client"] : []),
+      ],
+      {
+        cwd: dir,
+        // Nothing from this process's env: the build needs no credentials,
+        // and the guest's bearer token must not reach it.
+        env: process.env.PATH === undefined ? {} : { PATH: process.env.PATH },
+      },
+    );
+    const envelope = parseEnvelope(result.stdout);
+    if (envelope === null) {
+      // The child died before reporting (OOM, a crash in the bundler's
+      // native half) — surface everything, since nothing else will.
+      return {
+        buildError: scrubDir(
+          `Build process exited with ${result.exitCode}\n${result.stdout.trim()}\n${result.stderr.trim()}`.trim(),
+          dir,
+        ),
+      };
+    }
+    if (!envelope.ok) return { buildError: envelope.buildError };
     return {
-      ...(worker !== undefined && { worker }),
-      ...(clientFiles !== undefined && { clientFiles }),
+      ...(envelope.worker && { worker: await readFile(path.join(out, "worker.mjs"), "utf-8") }),
+      ...(envelope.client && {
+        clientFiles: JSON.parse(await readFile(path.join(out, "client.json"), "utf-8")) as Record<
+          string,
+          string
+        >,
+      }),
     };
   } catch (err) {
-    return { buildError: formatBuildFailure(err, dir) };
+    return { buildError: `Build failed to run: ${errMessage(err)}` };
+  } finally {
+    await rm(out, { recursive: true, force: true }).catch(() => undefined);
   }
 }
 
@@ -129,17 +196,23 @@ export async function buildWorkspaceDir(
  * Run only the project's tsc pass — the `check_types` tool's backend. The
  * same `typecheckProject` gate every build runs, without paying for the
  * bundle, so the coding agent can iterate on type errors cheaply.
+ *
+ * Stays in-process, and imports ONLY the typecheck module: it spawns the
+ * project's own `tsc` as a child, so the memory that matters is already
+ * outside this process. Do not widen this to the bundler toolchain —
+ * importing Vite/Rolldown here would put ~90 MB and ~29 threads into the
+ * harness permanently, for a tool that never bundles.
  */
 export async function typecheckWorkspaceDir(
   dir: string,
 ): Promise<{ ok: true; skipped: boolean } | { ok: false; output: string }> {
-  let tc: Toolchain;
+  let typecheckProject: typeof import("@alexkroman1/aai-cli/typecheck")["typecheckProject"];
   try {
-    tc = await loadToolchain();
+    ({ typecheckProject } = await import("@alexkroman1/aai-cli/typecheck"));
   } catch (err) {
     return { ok: false, output: `Build toolchain unavailable in this sandbox: ${errMessage(err)}` };
   }
-  const typed = await tc.typecheckProject(dir);
+  const typed = await typecheckProject(dir);
   return typed.ok ? typed : { ok: false, output: scrubDir(typed.output, dir) };
 }
 
@@ -147,7 +220,7 @@ let buildSeq = 0;
 
 /**
  * Materialize `files` into a fresh directory under the workspaces root, run
- * `fn`, and clean up. Used by the host's `workspace/build` RPC (Publish) so
+ * `fn`, and clean up. Used by the host's `workspace/deploy` RPC (Publish) so
  * a store-snapshot build never clobbers the live chat session's workspace.
  */
 export async function withBuildDir<T>(
@@ -231,7 +304,7 @@ function exportedNamesFromDts(dts: string): string[] {
  * that matter. Best-effort — an unresolvable module yields no list and the
  * diagnostic goes out unannotated.
  */
-function moduleExports(dir: string): ExportResolver {
+export function moduleExports(dir: string): ExportResolver {
   return (specifier) => {
     try {
       const require = createRequire(path.join(dir, "package.json"));

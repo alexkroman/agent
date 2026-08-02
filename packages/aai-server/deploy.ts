@@ -68,7 +68,7 @@ export type ConfigExtraction = { ok: true; config: IsolateConfig } | { ok: false
  * Validate a bundle-extracted raw config. The raw value always comes from
  * evaluating the bundle inside a guest sandbox — via `describeBundle` on
  * the HTTP deploy path, or riding back with the artifacts from the guest's
- * `workspace/build` on the studio path — never from anything a client sent.
+ * `workspace/deploy` on the studio path — never from anything a client sent.
  */
 export function validateAgentConfig(raw: unknown): ConfigExtraction {
   if (raw === undefined) {
