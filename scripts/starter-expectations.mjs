@@ -123,7 +123,13 @@ export const EXPECTATIONS = [
       ["take", "get", "pick"],
       ["drop"],
       ["move", "go", "walk", "travel", "look"],
-      ["puzzle", "flag", "solve"],
+      // "use_item"/"unlock" because that is how an Infocom puzzle is
+      // actually solved, and two independent models converged on exactly
+      // that design (a `use_item` tool that lights the lamp, unlocks the
+      // door, bridges the pit, and sets the flags). The reference template
+      // uses `game_state_flag`, which the earlier synonyms matched — so the
+      // list described one valid design and failed the other.
+      ["puzzle", "flag", "solve", "unlock", "use_item"],
     ],
     minTools: 4,
     ui: true,
@@ -265,9 +271,11 @@ export function checkUi(expectation, files) {
   if (!expectation?.ui) return { ok: true };
   const client = files?.["client.tsx"];
   if (client === undefined) return { ok: false, note: "no client.tsx (custom UI expected)" };
-  // A client that never reads a tool result is decoration: the point is
-  // showing state as it changes, which goes through the SDK's hooks.
-  const reactive = /useToolResult|useEvent|useSession/.test(client);
+  // A client that never reads live data is decoration: the point is showing
+  // state as it changes, which goes through one of the SDK's hooks.
+  // `useAgentState` is listed FIRST because it is now the recommended one,
+  // and omitting it marked a correct Infocom client as "no live state".
+  const reactive = /useAgentState|useToolResult|useEvent|useSession/.test(client);
   return reactive ? { ok: true } : { ok: false, note: "client.tsx shows no live state" };
 }
 

@@ -15,18 +15,20 @@
  */
 
 import { readFileSync } from "node:fs";
-import { checkCapabilities, EXPECTATIONS } from "./starter-expectations.mjs";
+import { checkCapabilities, checkUi, EXPECTATIONS } from "./starter-expectations.mjs";
 
-/** `missing:a/b/c` is the only reason capability coverage produces. */
-const MISSING = /^missing:/;
+/** Reasons this script recomputes; anything else is carried through as-is. */
+const RECOMPUTED = /^missing:|^no client\.tsx|shows no live state/;
 
 function regrade(run) {
   const expectation = EXPECTATIONS.find((e) => e.label === run.label);
   const source = run.files?.["agent.ts"];
   if (!expectation || source === undefined) return run;
   const { missing } = checkCapabilities(expectation, { config: null, source });
-  const others = (run.reasons ?? []).filter((r) => !MISSING.test(r));
-  const reasons = missing.length > 0 ? [...others, `missing:${missing.join("/")}`] : others;
+  const ui = checkUi(expectation, run.files);
+  const reasons = (run.reasons ?? []).filter((r) => !RECOMPUTED.test(r));
+  if (missing.length > 0) reasons.push(`missing:${missing.join("/")}`);
+  if (!ui.ok && ui.note) reasons.push(ui.note);
   return { ...run, reasons, shippable: reasons.length === 0 };
 }
 

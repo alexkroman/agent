@@ -50,4 +50,27 @@ describe("callable builtins", () => {
     await expect(visitWebpage("https://example.com", { fetch })).resolves.toBeDefined();
     await expect(webSearch("anything", { maxResults: 1, fetch })).resolves.toBeDefined();
   });
+
+  test("accepts the builtin's own argument shape, not just positional", () => {
+    // Agents reach for `{ query, max_results }` because that is the shape the
+    // model-facing builtin documents; guessing wrong cost a build round.
+    const fetch = vi.fn(async () => new Response("<html>ok</html>", { status: 200 }));
+    return Promise.all([
+      expect(webSearch({ query: "x", max_results: 2, fetch })).resolves.toBeDefined(),
+      expect(webSearch({ query: "x", maxResults: 2, fetch })).resolves.toBeDefined(),
+      expect(visitWebpage({ url: "https://example.com", fetch })).resolves.toBeDefined(),
+      expect(fetchJson({ url: "https://example.com", fetch })).resolves.toBeDefined(),
+    ]);
+  });
+
+  test("the result needs no cast", async () => {
+    // `Promise<unknown>` made every real call site write `as any` — the same
+    // defect useToolResult had. Reading a field must just compile.
+    const fetch = vi.fn(async () => new Response(JSON.stringify({ price: 1 }), { status: 200 }));
+    const quote = await fetchJson("https://api.example.com/q", { fetch });
+    expect(quote.price).toBe(1);
+    // And a type argument still gives real checking when you want it.
+    const typed = await fetchJson<{ price: number }>("https://api.example.com/q", { fetch });
+    expect(typed.price).toBe(1);
+  });
 });

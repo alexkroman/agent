@@ -96,16 +96,26 @@ Minimal agent — a cascaded pipeline, which is what you should build unless
 the user asks for the speech-to-speech API:
 
 ```ts
-import { agent } from "@alexkroman1/aai";
-import { assemblyAI } from "@alexkroman1/aai/stt";
-import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+
+export default agent({
+  name: "My Agent",
+  ...assemblyAIPipeline(),
+});
+```
+
+`assemblyAIPipeline()` sets all three stages to AssemblyAI, which bill to
+the one key a published agent is guaranteed to have. Override a single stage
+by setting it after the spread — everything else stays as the preset put it:
+
+```ts
+import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
 import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  stt: assemblyAI({ model: "universal-3-5-pro" }),
-  llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
-  tts: assemblyAITts({ voice: "vera" }),
+  ...assemblyAIPipeline(),
+  tts: assemblyAITts({ voice: "paul" }),
 });
 ```
 
@@ -446,6 +456,8 @@ it:
 import { fetchJson, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 
 execute: async ({ city }) => await fetchJson(`https://api.example.com/${city}`),
+// Reading fields off the result needs no cast. Pass a shape when you want
+// it checked: `await fetchJson<Forecast>(url)`.
 ```
 
 Same implementations the builtins use, so you get URL screening, credential-
@@ -454,12 +466,35 @@ header stripping, size caps and timeouts rather than a bare `fetch`. Plain
 `run_code`: it exists to run code the model wrote, and tool code that wants
 to compute something can just compute it.
 
-**A tool with no arguments omits `parameters` entirely.** The field is
-optional and typed as a Zod *object*, so reaching for `z.undefined()` or
-`z.void()` to mean "no arguments" is a type error
-(`Type 'ZodUndefined' is not assignable to type 'ZodObject<...>'`). Write
-`tool({ description, execute })`, or `parameters: z.object({})` if you
-prefer it explicit.
+**But prefer the BUILTIN when the model should decide.** These two are not
+interchangeable:
+
+- If the agent's job is to search or browse — a research assistant, anything
+  that follows a link the user mentions — declare
+  `builtinTools: ["web_search", "visit_webpage"]` and let the model call
+  them. It can then search several times with different queries, or read one
+  specific page, as the conversation needs.
+- Import from `/tools` when YOUR tool's own logic needs a fetch: a currency
+  tool hitting one known API, a price checker with a fixed endpoint.
+
+Wrapping `webSearch` in a single custom tool is the mistake to avoid — it
+replaces "the model searches as needed" with one fixed query-and-summarize
+pipeline, and no amount of prompting gets the flexibility back.
+
+**`parameters` is a Zod object, or absent.** The field itself is optional,
+but its VALUE must be a plain `z.object(...)` — so all of these are type
+errors:
+
+```ts
+parameters: z.undefined(),                 // ✗ ZodUndefined
+parameters: z.void(),                      // ✗
+parameters: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
+```
+
+For a tool with no arguments write `tool({ description, execute })`, or
+`parameters: z.object({})` if you prefer it explicit. To make an individual
+argument optional, put `.optional()` on the FIELD, never on the object:
+`z.object({ notes: z.string().optional() })`.
 
 **Do not annotate `execute`'s return type.** Nothing needs it — the result
 is serialized to the model either way — and it reliably breaks the moment
