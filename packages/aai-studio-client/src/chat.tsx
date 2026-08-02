@@ -1,7 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Guided chat panel (design 1b): eyebrow header, welcome bubble + starter
-// prompts when empty, composer pinned at the bottom. Works before a project
-// exists — the first prompt auto-creates one (via onStartWithPrompt).
+// Chat panel (design 1b): eyebrow header, welcome bubble + starter prompts
+// when the project's conversation is empty, composer pinned at the bottom.
+// Mounted only once a project exists — the pre-project state is the HomeHero
+// (home.tsx), whose first prompt auto-creates a project.
 
 import { useChat } from "@ai-sdk/react";
 import { DefaultChatTransport, type UIMessage } from "ai";
@@ -10,12 +11,10 @@ import { StickToBottom } from "use-stick-to-bottom";
 import type { ChatSession, StudioStatus } from "./api.ts";
 import { Markdown } from "./markdown.tsx";
 import { createResilientFetch } from "./resilient-fetch.ts";
-import { STARTERS } from "./starters.ts";
 import { ToolRow, toBlocks } from "./tool-row.tsx";
 
 type ChatPanelProps = {
   apiKey: string;
-  project: string | null;
   /**
    * The project's persisted conversation, restored on open. `undefined`
    * while the fetch is in flight — the panel shows a loading state instead
@@ -32,13 +31,9 @@ type ChatPanelProps = {
   toolLabels?: Record<string, string> | undefined;
   /** The sandbox went away mid-session — re-broker. */
   onSessionStale: () => void;
-  /** A project is being created for the guided-start flow. */
-  creating: boolean;
   /** Prompt queued before the project existed — sent once on mount. */
   initialPrompt: string | null;
   onInitialPromptSent: () => void;
-  /** No project yet: create one and forward this prompt. */
-  onStartWithPrompt: (prompt: string) => void;
   /** Called after each finished assistant turn so the workspace refreshes. */
   onWorkspaceChanged: () => void;
   /** The key was rejected — same global handling as the REST queries. */
@@ -184,15 +179,7 @@ export function Composer({ disabled, placeholder, onSend, busy = false, onStop }
   );
 }
 
-function EmptyStateBody({
-  status,
-  disabled,
-  onPick,
-}: {
-  status: StudioStatus | undefined;
-  disabled?: boolean;
-  onPick: (prompt: string) => void;
-}) {
+function EmptyStateBody({ status }: { status: StudioStatus | undefined }) {
   return (
     <>
       <div className="rounded-lg border border-line bg-cream px-[18px] py-4">
@@ -201,22 +188,6 @@ function EmptyStateBody({
           the first version.
         </p>
       </div>
-      {status?.llm && (
-        <div className="flex flex-col gap-2">
-          <span className="text-xs text-subtle">Try one of these</span>
-          {STARTERS.map((starter) => (
-            <button
-              type="button"
-              key={starter.label}
-              className="starter"
-              disabled={disabled}
-              onClick={() => onPick(starter.prompt)}
-            >
-              {starter.label}
-            </button>
-          ))}
-        </div>
-      )}
       {/* No status yet is loading or a network failure — either way, don't
           claim the server is misconfigured. */}
       {status === undefined && (
@@ -249,10 +220,7 @@ function ProjectChat({
   onUnauthorized,
   onSessionStale,
   registerNotify,
-}: Omit<
-  ChatPanelProps,
-  "project" | "chatHistory" | "onStartWithPrompt" | "creating" | "chatSession" | "sessionError"
-> & {
+}: Omit<ChatPanelProps, "chatHistory" | "chatSession" | "sessionError"> & {
   session: ChatSession;
   initialMessages: UIMessage[];
 }) {
@@ -351,9 +319,7 @@ function ProjectChat({
           scrolls up to read, re-engaging once they return to the bottom. */}
       <StickToBottom className="min-h-0 flex-1" initial="instant" resize="smooth">
         <StickToBottom.Content className="flex flex-col gap-4 px-6 py-5">
-          {messages.length === 0 && !initialPrompt && (
-            <EmptyStateBody status={llmStatus} onPick={send} />
-          )}
+          {messages.length === 0 && !initialPrompt && <EmptyStateBody status={llmStatus} />}
           {messages.map((message) => (
             <MessageView key={message.id} message={message} busy={busy} labels={toolLabels} />
           ))}
@@ -378,15 +344,14 @@ export function ChatPanel(props: ChatPanelProps) {
       <div className="flex items-center justify-between gap-2 px-6 pt-5">
         <span className="eyebrow">Agent</span>
       </div>
-      {props.project && props.sessionError && (
+      {props.sessionError && (
         <div className="flex flex-1 items-center px-6 py-5">
           <p className="m-0 text-[13px] text-err">
             Could not start the project's sandbox. Reload to try again.
           </p>
         </div>
       )}
-      {props.project &&
-        !props.sessionError &&
+      {!props.sessionError &&
         (props.chatHistory === undefined || props.chatSession === undefined) && (
           // History or sandbox still loading: hold the panel rather than
           // flashing an empty "new chat" the restored conversation replaces.
@@ -396,7 +361,7 @@ export function ChatPanel(props: ChatPanelProps) {
             </p>
           </div>
         )}
-      {props.project && props.chatHistory !== undefined && props.chatSession !== undefined && (
+      {props.chatHistory !== undefined && props.chatSession !== undefined && (
         <ProjectChat
           apiKey={props.apiKey}
           session={props.chatSession}
@@ -410,24 +375,6 @@ export function ChatPanel(props: ChatPanelProps) {
           onSessionStale={props.onSessionStale}
           registerNotify={props.registerNotify}
         />
-      )}
-      {!props.project && (
-        <>
-          <div className="flex flex-1 flex-col gap-4 overflow-y-auto px-6 py-5">
-            <EmptyStateBody
-              status={props.llmStatus}
-              // While the guided-start project is being created, a second
-              // click would create a second (orphan) project.
-              disabled={props.creating}
-              onPick={props.onStartWithPrompt}
-            />
-          </div>
-          <Composer
-            disabled={props.creating || props.llmStatus?.llm !== true}
-            placeholder={props.creating ? "Creating your project…" : "Describe your agent…"}
-            onSend={props.onStartWithPrompt}
-          />
-        </>
       )}
     </div>
   );

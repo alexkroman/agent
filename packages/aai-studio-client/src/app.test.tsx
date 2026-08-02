@@ -4,7 +4,7 @@
 // (clearing the stored key) rather than strand them on dead requests.
 
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { App } from "./app.tsx";
 
@@ -50,6 +50,12 @@ function renderApp(onSignOut: () => void) {
   );
 }
 
+/** Landing always shows the hero — opening a project is a sidebar click. */
+async function openProject(name: string) {
+  await waitFor(() => expect(screen.getByRole("button", { name })).toBeDefined());
+  fireEvent.click(screen.getByRole("button", { name }));
+}
+
 beforeEach(() => {
   vi.stubGlobal("ResizeObserver", ResizeObserverStub);
 });
@@ -72,14 +78,15 @@ describe("App auth handling", () => {
     await waitFor(() => expect(onSignOut).toHaveBeenCalled());
   });
 
-  test("an authorized empty project list renders the guided start, no sign-out", async () => {
+  test("an authorized empty project list renders the hero prompt box, no sign-out", async () => {
     stubFetch({
       "/studio/status": () => jsonResponse({ llm: true }),
       "/studio/projects": () => jsonResponse({ projects: [] }),
     });
     const onSignOut = vi.fn();
     renderApp(onSignOut);
-    await waitFor(() => expect(screen.getByText("No project yet")).toBeDefined());
+    await waitFor(() => expect(screen.getByText("What should your voice agent do?")).toBeDefined());
+    expect(screen.getByText("No project yet")).toBeDefined();
     expect(onSignOut).not.toHaveBeenCalled();
   });
 
@@ -89,9 +96,13 @@ describe("App auth handling", () => {
       "/studio/projects": () => jsonResponse({ projects: ["demo"] }),
       "/studio/projects/demo": () => jsonResponse({ error: "storage exploded" }, 500),
       "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
+      "/studio/projects/demo/session": () =>
+        jsonResponse({ url: "http://studio.test/sandbox/studio/chat" }),
+      "/sandbox/studio/tools": () => jsonResponse({ tools: [] }),
     });
     const onSignOut = vi.fn();
     renderApp(onSignOut);
+    await openProject("demo");
     await waitFor(() => expect(screen.getByText(/storage exploded/)).toBeDefined());
     expect(onSignOut).not.toHaveBeenCalled();
   });
@@ -108,6 +119,17 @@ describe("chat history hydration", () => {
       jsonResponse({ tools: [{ name: "bash", label: "Run command" }] }),
   };
 
+  test("landing shows the hero even when projects exist — no auto-open", async () => {
+    stubFetch({
+      ...demoRoutes,
+      "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
+    });
+    renderApp(vi.fn());
+    await waitFor(() => expect(screen.getByText("What should your voice agent do?")).toBeDefined());
+    // The previous project waits in the sidebar instead.
+    await waitFor(() => expect(screen.getByRole("button", { name: "demo" })).toBeDefined());
+  });
+
   test("a persisted conversation renders when the project opens", async () => {
     stubFetch({
       ...demoRoutes,
@@ -120,6 +142,7 @@ describe("chat history hydration", () => {
         }),
     });
     renderApp(vi.fn());
+    await openProject("demo");
     await waitFor(() => expect(screen.getByText("build a pizza bot")).toBeDefined());
     expect(screen.getByText(/Done — pizza bot/)).toBeDefined();
     // Hydrated history means no "new chat" welcome bubble.
@@ -132,6 +155,7 @@ describe("chat history hydration", () => {
       "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
     });
     renderApp(vi.fn());
+    await openProject("demo");
     await waitFor(() =>
       expect(screen.getByText(/Welcome to AssemblyAI App Builder/)).toBeDefined(),
     );
@@ -146,6 +170,7 @@ describe("chat history hydration", () => {
         new Response(new ReadableStream(), { headers: { "Content-Type": "application/json" } }),
     });
     renderApp(vi.fn());
+    await openProject("demo");
     await waitFor(() => expect(screen.getByText("Loading conversation…")).toBeDefined());
     expect(screen.queryByText(/Welcome to AssemblyAI App Builder/)).toBeNull();
   });

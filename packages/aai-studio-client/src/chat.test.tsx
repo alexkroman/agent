@@ -1,12 +1,12 @@
 // Copyright 2026 the AAI authors. MIT license.
 // toBlocks owns React key stability for streamed messages — a key collision
-// makes tool rows swap expanded/collapsed state mid-stream. The ChatPanel
-// tests pin the pre-project states (guided start, status unknown vs. no key).
+// makes tool rows swap expanded/collapsed state mid-stream. The pre-project
+// states (hero prompt box, status unknown vs. no key) live in home.test.tsx.
 
 import type { UIMessage } from "ai";
 import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, test } from "vitest";
-import { ChatPanel, Composer, notifyDispatch } from "./chat.tsx";
+import { Composer, notifyDispatch } from "./chat.tsx";
 import { toBlocks } from "./tool-row.tsx";
 
 function message(parts: Record<string, unknown>[]): UIMessage {
@@ -72,20 +72,6 @@ describe("toBlocks", () => {
 
 const noop = (): void => undefined;
 
-const panelProps = {
-  chatSession: undefined,
-  onSessionStale: noop,
-  apiKey: "k",
-  project: null,
-  chatHistory: undefined,
-  creating: false,
-  initialPrompt: null,
-  onInitialPromptSent: noop,
-  onStartWithPrompt: noop,
-  onWorkspaceChanged: noop,
-  onUnauthorized: noop,
-};
-
 describe("Composer", () => {
   const composerProps = { disabled: false, placeholder: "p", onSend: noop };
 
@@ -110,55 +96,6 @@ describe("Composer", () => {
     const html = renderToStaticMarkup(<Composer {...composerProps} busy={true} />);
     expect(html).toContain('aria-label="Send"');
     expect(html).toMatch(/<button[^>]*\sdisabled=/);
-  });
-});
-
-describe("ChatPanel (pre-project)", () => {
-  test("shows starters and an enabled composer when the server has an LLM", () => {
-    const html = renderToStaticMarkup(<ChatPanel {...panelProps} llmStatus={{ llm: true }} />);
-    expect(html).toContain("Try one of these");
-    expect(html).toContain("Describe your agent…");
-    // The `disabled` attribute — Tailwind `disabled:` variant classes also
-    // contain the word, so match the attribute shape.
-    expect(html).not.toMatch(/<input[^>]*\sdisabled=/);
-    expect(html).not.toMatch(/<button[^>]*class="starter"[^>]*\sdisabled=/);
-  });
-
-  test("while the guided-start project is being created, everything disables", () => {
-    // A second Enter or starter click here would create a second, orphan
-    // project — the whole panel must go inert until the mutation settles.
-    const html = renderToStaticMarkup(
-      <ChatPanel {...panelProps} creating={true} llmStatus={{ llm: true }} />,
-    );
-    expect(html).toContain("Creating your project…");
-    expect(html).toMatch(/<input[^>]*\sdisabled=/);
-    expect(html).toMatch(/<button[^>]*class="starter"[^>]*\sdisabled=/);
-  });
-
-  test("unknown status reads as 'checking', not as a misconfigured server", () => {
-    // /studio/status still loading or unreachable — a network blip must not
-    // claim the server has no LLM key.
-    const html = renderToStaticMarkup(<ChatPanel {...panelProps} llmStatus={undefined} />);
-    // renderToStaticMarkup escapes the apostrophe — match around it.
-    expect(html).toContain("chat status…");
-    expect(html).not.toContain("Chat is disabled");
-  });
-
-  test("a definite no-LLM status shows the configuration message", () => {
-    const html = renderToStaticMarkup(<ChatPanel {...panelProps} llmStatus={{ llm: false }} />);
-    expect(html).toContain("Chat is disabled");
-    expect(html).not.toContain("Try one of these");
-  });
-
-  test("renders no model picker or chip — the server default always runs", () => {
-    const html = renderToStaticMarkup(
-      <ChatPanel
-        {...panelProps}
-        llmStatus={{ llm: true, provider: "assemblyai", model: "gpt-5.5" }}
-      />,
-    );
-    expect(html).not.toContain('aria-label="Model"');
-    expect(html).not.toContain("Model:");
   });
 });
 

@@ -135,15 +135,6 @@
   .seg {
     @apply h-8 cursor-pointer border-none px-4 text-[10px] font-medium tracking-[1.2px] uppercase;
   }
-  /* Outlined stencil serif numeral */
-  .stat-numeral {
-    font-family: var(--font-serif);
-    font-weight: 400;
-    line-height: 1;
-    letter-spacing: -1px;
-    -webkit-text-stroke: 1px currentColor;
-    -webkit-text-fill-color: transparent;
-  }
   /* Starter prompt button (1b) */
   .starter {
     @apply cursor-pointer rounded-md border border-line bg-panel px-3.5 py-2.5 text-left text-[13px] text-fg hover:border-indigo-300 hover:text-indigo;
