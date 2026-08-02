@@ -1289,7 +1289,7 @@ defaults that affect agent behavior:
 | --- | --- | --- | --- |
 | `maxSteps` | 10 (`DEFAULT_MAX_STEPS`) | `constants.ts` | Max tool calls per reply. Prevents runaway tool loops; sized so multi-tool chains plus a repair retry fit. |
 | `toolChoice` | `"auto"` | `manifest.ts:59` | LLM decides when to use tools vs respond directly. |
-| `idleTimeoutMs` | 300,000 (5 min) | `constants.ts:26` | `0` or non-finite disables the timer entirely. |
+| `idleTimeoutMs` | 300,000 (5 min) | `constants.ts:26` | `0` or non-finite disables the timer entirely. Re-armed on every inbound audio frame (`resetIdle`), so it measures silence, not call length. On expiry session-core emits `idle_timeout` **and closes the socket** — the event alone retires nothing (clients treat it as informational and wait for the close), so for a long time an idle session lingered and only Modal's 300s input cap reaped it. |
 | `silenceTimeoutMs` | unset (disabled) | `pipeline-silence.ts` | Pipeline only: assistant proactively takes a turn after this much user silence. Capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back nudges until the user speaks again. `silencePrompt` customizes the injected instruction (default `DEFAULT_SILENCE_PROMPT`); it is kept in LLM history but never emitted as a user transcript. |
 | `minBargeInWords` | 2 (`DEFAULT_MIN_BARGE_IN_WORDS`) | `constants.ts` | Pipeline only: interim-transcript words before user speech interrupts the in-flight reply. 2 keeps one-word backchannels from cutting the agent off; sub-threshold finals are answered after the reply. |
 | `interruptionMinDurationMs` | 500 (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`) | `constants.ts` | Pipeline only: sustained speech (ms since the utterance's first partial) required before an interim-triggered barge-in fires — LiveKit's `min_interruption_duration` analog. Non-zero by default: room noise and echo of the agent's own voice produce short interim transcripts, and each one used to abandon a reply mid-word. Finals are never gated. 0 disables. |
@@ -1669,6 +1669,20 @@ service's control work is light — and one container served both badly.
   through the service, so scale-in and redeploys never cut a call — a
   draining replica only drops control channels, and the guest's orphan
   timeout plus re-brokering cover replacement.
+- **A WebSocket is ONE Modal input, so the function `timeout` bounds CALL
+  DURATION** — not request latency. Both services therefore set it explicitly
+  (`FUNCTION_TIMEOUT_SECS` = 4h on the agent app, matching
+  `DEFAULT_SANDBOX_TIMEOUT_MS`; 30 min on the studio app, whose longest input
+  is a cold-sandbox Publish). Left unset, Modal's default is **300s**, and it
+  severed every host-mode session at exactly five minutes, mid-word — the
+  client saw a bare "not connected" and the server logged nothing, because
+  nothing in our code did it. The caveat that makes this easy to miss:
+  browser voice sessions dial the guest sandbox's tunnel directly and never
+  touch this path, so only `?host=1` sessions (which run IN the server
+  process — see "Host mode on deployed agents") are exposed. The sandbox
+  layer hit the same trap first and documents it in `modal-sandbox-env.ts`.
+  This is a backstop, never the idle policy: a wall-clock cap can't tell a
+  busy call from an abandoned one, which is `idleTimeoutMs`'s job below.
 
 ### Modal sandbox notes
 

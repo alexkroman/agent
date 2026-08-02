@@ -115,6 +115,13 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   const idleTimer = createCoalescingTimer(() => {
     log.info("session idle timeout", { sid: opts.id });
     emit({ type: "idle_timeout" });
+    // The event is a notification, not a teardown: clients treat it as
+    // informational and wait for the close (aai-ui routes it to its default
+    // branch and transitions on the close handler). Retiring the socket here
+    // is what actually reclaims the session, its provider sockets, and — on
+    // the platform — the Modal input a WebSocket occupies. Closing runs the
+    // normal teardown path via the socket's close listener.
+    opts.client.close?.("idle timeout");
   });
 
   function resetIdle(): void {
