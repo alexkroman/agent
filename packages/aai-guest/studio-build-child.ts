@@ -95,12 +95,17 @@ async function build(args: string[]): Promise<BuildEnvelope> {
   const wantWorker = args.includes("--worker");
   const wantClient = args.includes("--client");
   try {
-    const [worker, clientFiles] = await Promise.all([
-      wantWorker ? tc.buildWorker(dir, { minify: true, configFile: false }) : undefined,
-      wantClient
-        ? tc.buildClient(dir, { configFile: false, plugins: tc.clientPlugins() })
-        : undefined,
-    ]);
+    // Sequential, not Promise.all: two concurrent Rolldown passes peak at
+    // roughly the SUM of their native allocations, and this child is the
+    // process a sandbox memory cap would OOM-kill mid-build. Rolldown is
+    // internally multi-threaded (and the sandbox has 1 CPU of affinity
+    // anyway), so serializing costs no meaningful wall clock.
+    const worker = wantWorker
+      ? await tc.buildWorker(dir, { minify: true, configFile: false })
+      : undefined;
+    const clientFiles = wantClient
+      ? await tc.buildClient(dir, { configFile: false, plugins: tc.clientPlugins() })
+      : undefined;
     if (worker !== undefined) await writeFile(path.join(out, "worker.mjs"), worker, "utf-8");
     if (clientFiles !== undefined) {
       await writeFile(path.join(out, "client.json"), JSON.stringify(clientFiles), "utf-8");
