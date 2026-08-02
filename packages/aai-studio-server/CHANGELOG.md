@@ -1,5 +1,31 @@
 # aai-studio-server
 
+## 0.3.0
+
+### Minor Changes
+
+- a96e9f8: Studio preview mode: edits auto-deploy to a per-project preview agent; Publish is production-only.
+
+  - Every settled edit (the coding agent's turn-complete workspace sync — now flagged `done: true`, the analog of opencode's `session.idle` / codex's `agent-turn-complete` — and editor file writes/deletes) schedules a coalesced, fire-and-forget deploy of the workspace to `<project>-preview` through the same in-guest `aai deploy` path Publish uses. Mid-turn checkpoints never trigger deploys, so half-finished trees are never previewed.
+  - The Live tab is renamed Preview and frames the preview agent, keyed by a `previewVersion` token so a fresh preview reloads the iframe exactly once; the client polls while a preview deploy is in flight, and failed preview builds surface their CLI output in the pane banner.
+  - The production URL in the top bar stays a plain link that opens the deployed agent in a new tab, and the Secrets panel mirrors writes to the preview slug so previews run with the same third-party keys.
+
+### Patch Changes
+
+- b4cec81: Simplify aai-server internals: shared matchAnyHash/withLock/sleep/answerUpgrade/brokerSessionUrl helpers, epoch-guarded cache helper with in-flight manifest sharing, safeJsonParse adoption, OwnedMap.owns at slot identity checks, and removal of dead options and stale comments
+- 31cdbaf: Tag Modal sandboxes with a role (agent, preview, studio, studio-publish, inspect, pool) alongside the slug, and re-tag pooled sandboxes on acquire, so the Modal dashboard distinguishes production agents from previews, studio sessions, and warm-pool spares
+- Updated dependencies [e47a187]
+- Updated dependencies [b829155]
+- Updated dependencies [d78137f]
+- Updated dependencies [a96e9f8]
+- Updated dependencies [b4cec81]
+- Updated dependencies [ab577dc]
+- Updated dependencies [31cdbaf]
+  - @alexkroman1/aai-ui@5.1.1
+  - @alexkroman1/aai@5.1.1
+  - aai-studio-client@0.3.0
+  - aai-server@3.2.2
+
 ## 0.2.4
 
 ### Patch Changes

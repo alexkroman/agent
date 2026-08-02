@@ -1,5 +1,22 @@
 # @alexkroman1/aai-server
 
+## 3.2.2
+
+### Patch Changes
+
+- b4cec81: Simplify aai-server internals: shared matchAnyHash/withLock/sleep/answerUpgrade/brokerSessionUrl helpers, epoch-guarded cache helper with in-flight manifest sharing, safeJsonParse adoption, OwnedMap.owns at slot identity checks, and removal of dead options and stale comments
+- 31cdbaf: Tag Modal sandboxes with a role (agent, preview, studio, studio-publish, inspect, pool) alongside the slug, and re-tag pooled sandboxes on acquire, so the Modal dashboard distinguishes production agents from previews, studio sessions, and warm-pool spares
+- Updated dependencies [e47a187]
+- Updated dependencies [b829155]
+- Updated dependencies [b1bf017]
+- Updated dependencies [c745865]
+- Updated dependencies [a96e9f8]
+- Updated dependencies [ab577dc]
+- Updated dependencies [8b8249e]
+  - @alexkroman1/aai-ui@5.1.1
+  - @alexkroman1/aai@5.1.1
+  - aai-guest@0.3.0
+
 ## 3.2.1
 
 ### Patch Changes

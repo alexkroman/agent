@@ -1,5 +1,14 @@
 # @alexkroman1/aai-ui
 
+## 5.1.1
+
+### Patch Changes
+
+- e47a187: Internal cleanups: prefetch audio modules at connect time so the chunk load overlaps the WebSocket handshake, remove per-frame Uint8Array view allocations on both audio hot paths, memoize the streaming message bubble and Markdown renderer map, drop the default console.warn audio diagnostics wiring, and dedupe URL/base-path helpers.
+- Updated dependencies [b829155]
+- Updated dependencies [ab577dc]
+  - @alexkroman1/aai@5.1.1
+
 ## 5.1.0
 
 ### Minor Changes
