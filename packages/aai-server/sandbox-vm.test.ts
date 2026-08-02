@@ -20,7 +20,13 @@ import {
   waitForResponseId,
 } from "./_sandbox-vm-test-utils.ts";
 import type { GuestConnection } from "./rpc-schemas.ts";
-import { _internals, createSandboxVm, describeBundle, type WarmHarness } from "./sandbox-vm.ts";
+import {
+  _internals,
+  acquireWarmHarness,
+  createSandboxVm,
+  describeBundle,
+  type WarmHarness,
+} from "./sandbox-vm.ts";
 
 /** In-memory mock Db whose query fn is a spy. */
 function createMockDb(rows: Record<string, unknown>[] = []) {
@@ -163,6 +169,50 @@ describe("createSandboxVm warm-pool fallback", () => {
 
     expect(handle.conn).toBe(conn);
     handle.conn.dispose();
+  });
+
+  it("re-tags a pooled harness with the agent's role and slug", async () => {
+    const opts = baseOpts({ slug: "my-agent-preview" });
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const setTags = vi.fn().mockResolvedValue(undefined);
+    const warm = { ...makeWarm(conn, cleanup), setTags };
+    autorespondBundleLoad(socket);
+    const pool = { acquire: vi.fn(async (): Promise<WarmHarness | null> => warm) };
+
+    const handle = await createSandboxVm(opts, pool);
+
+    // Creation-time tags said "pool"; acquire stamps the real identity
+    // (preview inferred from the slug suffix).
+    expect(setTags).toHaveBeenCalledWith({
+      service: "aai-guest",
+      role: "preview",
+      slug: "my-agent-preview",
+    });
+    handle.conn.dispose();
+  });
+
+  it("acquireWarmHarness re-tags a pooled harness with the caller's role", async () => {
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const setTags = vi.fn().mockResolvedValue(undefined);
+    const warm = { ...makeWarm(conn, cleanup), setTags };
+    const pool = { acquire: vi.fn(async (): Promise<WarmHarness | null> => warm) };
+    const spawn = vi.fn(async (): Promise<WarmHarness> => {
+      throw new Error("unexpected cold spawn");
+    });
+
+    const acquired = await acquireWarmHarness(
+      { pool, harnessPath: "/tmp/harness.mjs", slug: "my-project", role: "studio" },
+      spawn,
+    );
+
+    expect(acquired).toBe(warm);
+    expect(spawn).not.toHaveBeenCalled();
+    expect(setTags).toHaveBeenCalledWith({
+      service: "aai-guest",
+      role: "studio",
+      slug: "my-project",
+    });
+    acquired.conn.dispose();
   });
 
   it("rejects when both the warm harness and the cold fallback fail bundle/load", async () => {

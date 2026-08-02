@@ -376,7 +376,9 @@ export function createStudioSessionBroker(
     if (!workspace) return null;
 
     const warm = await acquireWarmHarness(
-      { pool: options.pool, harnessPath: options.harnessPath, slug: "studio-session" },
+      // Tagged with the project name so the Modal dashboard shows WHICH
+      // studio session a sandbox serves, not a shared "studio-session" blob.
+      { pool: options.pool, harnessPath: options.harnessPath, slug: project, role: "studio" },
       spawn,
     );
     try {
@@ -430,7 +432,12 @@ export function createStudioSessionBroker(
     // down after; Publish from the editor shouldn't leave a sandbox
     // running that no chat session owns.
     const warm = await acquireWarmHarness(
-      { pool: options.pool, harnessPath: options.harnessPath, slug: "studio-publish" },
+      {
+        pool: options.pool,
+        harnessPath: options.harnessPath,
+        slug: project,
+        role: "studio-publish",
+      },
       spawn,
     );
     try {

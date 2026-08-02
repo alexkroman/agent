@@ -45,6 +45,7 @@ import {
   parseSandboxRegionsFromEnv,
 } from "./modal-sandbox-env.ts";
 import type { RpcWebSocket } from "./rpc-transport.ts";
+import { resolveSandboxRole, type SpawnIdentity, sandboxTags } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import { type DialGuest, dialGuest, warmFromGuest } from "./warm-harness.ts";
 
@@ -72,6 +73,8 @@ export type ModalSandboxLike = {
     params: { mode: "binary"; stdout: "pipe"; stderr: "pipe"; env?: Record<string, string> },
   ): Promise<ModalProcLike>;
   tunnels(timeoutMs?: number): Promise<Record<number, ModalTunnelLike>>;
+  /** Replace the sandbox's tags (observability — see sandbox-role.ts). */
+  setTags(tags: Record<string, string>): Promise<void>;
   terminate(): Promise<unknown>;
 };
 
@@ -215,6 +218,9 @@ function warmFromModal(
     terminate: () => sb.terminate(),
     ws,
     origin,
+    // Lets the acquire layers re-tag a pooled sandbox with its real
+    // role/slug — creation-time tags say "pool" (see sandbox-role.ts).
+    setTags: (tags) => sb.setTags(tags),
   });
 }
 
@@ -225,11 +231,12 @@ function warmFromModal(
  * The returned WarmHarness has a running harness process and a connected RPC
  * channel, but no listeners attached and no bundle loaded.
  *
- * `slug` is attached as a sandbox tag for observability only; the security
- * boundary is Modal's sandbox isolation + network policy.
+ * `slug` and `role` are attached as sandbox tags for observability only
+ * (see sandbox-role.ts); the security boundary is Modal's sandbox isolation
+ * + network policy.
  */
 export async function spawnModalWarm(
-  opts: { harnessPath: string; slug?: string },
+  opts: { harnessPath: string } & SpawnIdentity,
   ctx?: ModalSpawnContext,
   dial: DialGuest = dialGuest,
 ): Promise<WarmHarness> {
@@ -239,6 +246,7 @@ export async function spawnModalWarm(
   ]);
   const limits = parseSandboxLimitsFromEnv(process.env);
   const regions = parseSandboxRegionsFromEnv(process.env);
+  const role = resolveSandboxRole(opts);
 
   const t0 = performance.now();
   const sb = await context.createGuestSandbox(code, {
@@ -261,7 +269,7 @@ export async function spawnModalWarm(
     ...(limits.cpuLimit !== undefined && { cpu: limits.cpuLimit, cpuLimit: limits.cpuLimit }),
     // Co-locate guests with the host — see parseSandboxRegionsFromEnv.
     ...(regions && { regions }),
-    tags: { service: "aai-guest", slug: opts.slug ?? "pool" },
+    tags: sandboxTags(role, opts.slug),
   });
   try {
     // The per-sandbox bearer token rides the EXEC env — never the sandbox
@@ -297,6 +305,7 @@ export async function spawnModalWarm(
 
     debug("Modal sandbox spawned", {
       sandboxId: sb.sandboxId,
+      role,
       slug: opts.slug ?? "pool",
       ms: Math.round(performance.now() - t0),
     });

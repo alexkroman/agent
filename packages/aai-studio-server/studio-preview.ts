@@ -24,12 +24,15 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
+import { PREVIEW_SLUG_SUFFIX } from "aai-server/sandbox-role";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
 import { currentFilesHash, getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts";
 import { withWorkspaceLock } from "./studio-workspace-lock.ts";
 
-const PREVIEW_SUFFIX = "-preview";
+// One definition with the sandbox-tag inference (`roleForSlug`), so preview
+// deploys and the "preview" role in Modal's dashboard can't drift.
+const PREVIEW_SUFFIX = PREVIEW_SLUG_SUFFIX;
 /** Cap on the stored preview failure output (it renders in a banner). */
 const MAX_PREVIEW_ERROR = 16_000;
 

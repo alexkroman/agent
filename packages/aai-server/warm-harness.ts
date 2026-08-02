@@ -143,6 +143,11 @@ export function warmFromGuest(opts: {
   ws: RpcWebSocket;
   /** The guest's origin, e.g. `wss://host:port` — routes derive from it. */
   origin: string;
+  /**
+   * Backend hook to replace the sandbox's observability tags (Modal's
+   * `setTags`). Absent on backends with nothing to tag (subprocess).
+   */
+  setTags?: ((tags: Record<string, string>) => Promise<void>) | undefined;
 }): WarmHarness {
   const { label, proc, ws, origin } = opts;
   void drainProcStream(proc.stdout, `[${label}] stdout`);
@@ -189,6 +194,7 @@ export function warmFromGuest(opts: {
     conn,
     guestOrigin: origin,
     sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session),
+    ...(opts.setTags ? { setTags: opts.setTags } : {}),
     cleanup,
     alive: () => !dead,
     onExit: (cb) => {
