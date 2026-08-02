@@ -19,7 +19,11 @@
  */
 
 import { agentToolsToSchemas, toAgentConfig } from "@alexkroman1/aai/manifest";
+import { ASSEMBLYAI_TTS_DEPRECATED_VOICES, ASSEMBLYAI_TTS_VOICES } from "@alexkroman1/aai/tts";
 import { describe, expect, test } from "vitest";
+// `?raw` rather than node:fs — this package's tsconfig has no node types, and
+// the raw-import shape is the one the CLI bundler supports anyway.
+import scaffoldGuide from "./scaffold/CLAUDE.md?raw";
 
 /** What a template's default export must satisfy — derived from the exact
  * functions the CLI bundler feeds it to. */
@@ -63,4 +67,24 @@ describe("template build smoke", () => {
       expect(() => agentToolsToSchemas(agentDef.tools ?? {})).not.toThrow();
     },
   );
+});
+
+/**
+ * The scaffold guide is what a coding agent reads when it picks a voice, and
+ * a wrong id there is invisible until a live session goes silent. Two
+ * hand-maintained lists had already drifted into naming voices that do not
+ * exist, so the guide is pinned to the SDK catalog in both directions.
+ */
+describe("scaffold guide voice catalog", () => {
+  const guide = scaffoldGuide;
+
+  test("lists every current voice", () => {
+    const missing = Object.keys(ASSEMBLYAI_TTS_VOICES).filter((v) => !guide.includes(`\`${v}\``));
+    expect(missing).toEqual([]);
+  });
+
+  test("points at no deprecated voice", () => {
+    const stale = ASSEMBLYAI_TTS_DEPRECATED_VOICES.filter((v) => guide.includes(`\`${v}\``));
+    expect(stale).toEqual([]);
+  });
 });

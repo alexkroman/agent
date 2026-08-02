@@ -33,7 +33,7 @@ export type {
 } from "./define-client.tsx";
 // Entry
 export { client } from "./define-client.tsx";
-export { useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
+export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
 // Session core (for advanced use)
 export { createSessionCore } from "./session-core.ts";
 export type {

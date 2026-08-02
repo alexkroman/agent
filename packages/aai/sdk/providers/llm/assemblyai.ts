@@ -22,6 +22,7 @@
  */
 
 import type { LlmProvider } from "../../providers.ts";
+import type { AssemblyAIGatewayModel } from "./gateway-models.ts";
 
 export const ASSEMBLYAI_LLM_KIND = "assemblyai" as const;
 
@@ -34,25 +35,50 @@ export const ASSEMBLYAI_LLM_GATEWAY_URL = "https://llm-gateway.assemblyai.com/v1
 /** EU LLM Gateway endpoint — keeps data within the European Union. */
 export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.com/v1";
 
+/**
+ * The gateway model to reach for when an agent has no opinion.
+ *
+ * A default exists because the gateway rejects an unknown model id with a
+ * 400 that only appears at the first session — so "invent a plausible model
+ * name" is a failure mode with no compile-time or deploy-time guard, and one
+ * that a code-generating agent falls into readily.
+ */
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
+
+export {
+  ASSEMBLYAI_GATEWAY_MODELS,
+  type AssemblyAIGatewayModel,
+  gatewayModelIds,
+} from "./gateway-models.ts";
+
 export interface AssemblyAILlmOptions {
   /**
-   * Gateway model id, e.g. `"claude-sonnet-4-6"`, `"gpt-4.1"`,
-   * `"gemini-2.5-flash-lite"`. See
-   * https://www.assemblyai.com/docs/llm-gateway/quickstart#available-models
-   * for the full list. Pipeline mode streams LLM output; check the gateway
-   * docs for which models support streamed responses.
+   * Gateway model id — see {@link ASSEMBLYAI_GATEWAY_MODELS} for the catalog,
+   * which is generated from the gateway's own `/v1/models` and records which
+   * models can stream, call tools, and serve the EU region.
+   *
+   * Typed against that catalog so a name the gateway does not carry is caught
+   * where it is written, rather than as a 400 at the first session. A plain
+   * string is still accepted, because the catalog is a snapshot of a service
+   * that adds models faster than this package releases.
+   *
+   * Note two listed models (`gpt-oss-20b`, `gpt-oss-120b`) cannot stream, so
+   * they cannot drive a voice pipeline at all.
+   *
+   * Defaults to {@link ASSEMBLYAI_LLM_DEFAULT_MODEL}.
    */
-  model: string;
+  model?: AssemblyAIGatewayModel | (string & Record<never, never>);
   /**
    * Gateway region. `"eu"` routes through the EU endpoint for data
-   * residency (Claude and most Gemini models only). Defaults to `"us"`.
+   * residency — six models at time of writing, per the `eu` flag in
+   * {@link ASSEMBLYAI_GATEWAY_MODELS}. Defaults to `"us"`.
    */
   region?: "us" | "eu";
 }
 
 export type AssemblyAILlmProvider = LlmProvider & {
   readonly kind: typeof ASSEMBLYAI_LLM_KIND;
-  readonly options: AssemblyAILlmOptions;
+  readonly options: AssemblyAILlmOptions & { model: string };
 };
 
 /**
@@ -62,6 +88,9 @@ export type AssemblyAILlmProvider = LlmProvider & {
  * (`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
  * descriptor stays free of secrets and safe to serialize.
  */
-export function assemblyAI(opts: AssemblyAILlmOptions): AssemblyAILlmProvider {
-  return { kind: ASSEMBLYAI_LLM_KIND, options: { ...opts } };
+export function assemblyAI(opts: AssemblyAILlmOptions = {}): AssemblyAILlmProvider {
+  return {
+    kind: ASSEMBLYAI_LLM_KIND,
+    options: { ...opts, model: opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL },
+  };
 }

@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import type { DefaultToolResult } from "@alexkroman1/aai";
 import { useEffect, useRef } from "react";
 import { tryParseJSON } from "./_utils.ts";
 import { useSessionSelector } from "./context.ts";
@@ -105,12 +106,28 @@ function useToolCallEffect(
   }, [toolCalls, filterName, status]);
 }
 
-export function useToolResult<R = unknown>(
+/**
+ * Fire a callback when a tool call settles, with the tool's JSON result.
+ *
+ * @typeParam R - The result shape. Defaults to {@link DefaultToolResult} —
+ *   `any`, for the same reason `ctx.state` is: the value is the author's own
+ *   tool output round-tripped through JSON, so `unknown` (which this was) made
+ *   the ordinary spelling
+ *
+ *   ```tsx
+ *   useToolResult("get_quote", (r) => setPrice(r.price))
+ *   ```
+ *
+ *   a compile error on a client that runs correctly, and `aai build` refuses
+ *   to publish it. Pass the shape — `useToolResult<Quote>(…)` — to get real
+ *   checking, which also documents what the tool returns.
+ */
+export function useToolResult<R = DefaultToolResult>(
   toolName: string,
   callback: (result: R, toolCall: ToolCallInfo) => void,
 ): void;
-export function useToolResult(
-  callback: (name: string, result: unknown, toolCall: ToolCallInfo) => void,
+export function useToolResult<R = DefaultToolResult>(
+  callback: (name: string, result: R, toolCall: ToolCallInfo) => void,
 ): void;
 export function useToolResult(...args: unknown[]): void {
   useToolCallEffect("done", args, (callback, tc, filtered) => {
@@ -121,6 +138,30 @@ export function useToolResult(...args: unknown[]): void {
       (callback as (n: string, r: unknown, tc: ToolCallInfo) => void)(tc.name, parsed, tc);
     }
   });
+}
+
+/**
+ * The agent's projected session state, or `null` before the first push.
+ *
+ * The counterpart to `syncState` on the agent: whatever that projection
+ * returns is what arrives here. It replaces the pattern this exists to
+ * remove — returning a state snapshot from every tool, declaring a type for
+ * what those tools happen to return, and mirroring it into `useState` through
+ * `useToolResult`, which was three things to keep in step and which 58% of
+ * measured generated agents built by hand.
+ *
+ * ```tsx
+ * const cart = useAgentState<{ cart: Item[] }>();
+ * return <Cart items={cart?.cart ?? []} />;
+ * ```
+ *
+ * Typed by the caller for the same reason `useToolResult` is: the shape is
+ * the author's own projection, which the framework cannot see. It is
+ * nullable on purpose — nothing has been pushed before the first tool call,
+ * and a UI has to render that moment.
+ */
+export function useAgentState<S = DefaultToolResult>(): S | null {
+  return useSessionSelector((snapshot) => snapshot.agentState) as S | null;
 }
 
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void {

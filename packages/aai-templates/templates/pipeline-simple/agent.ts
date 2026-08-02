@@ -1,12 +1,13 @@
-import { agent } from "@alexkroman1/aai";
+import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
 import { anthropic } from "@alexkroman1/aai/llm";
-import { assemblyAI } from "@alexkroman1/aai/stt";
-import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "pipeline-simple",
   greeting: "Hi! I'm running in pipeline mode. What can I help with?",
-  stt: assemblyAI(), // default model: universal-3-5-pro
+  // The preset fills all three stages with AssemblyAI, billed to the one key
+  // a published agent is guaranteed to have. Spread it, then override the one
+  // stage you want elsewhere — here the LLM. Anything not overridden stays
+  // AssemblyAI, so swapping a stage never means restating the other two.
+  ...assemblyAIPipeline(),
   llm: anthropic({ model: "claude-haiku-4-5" }),
-  tts: assemblyAITts(), // default voice: vera
 });

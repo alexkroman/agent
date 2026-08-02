@@ -40,6 +40,7 @@ export const CLEARED_SESSION_STATE = {
   messages: [],
   toolCalls: [],
   customEvents: [],
+  agentState: null,
   userTranscript: null,
   agentTranscript: null,
   error: null,
@@ -280,6 +281,11 @@ export function createMessageHandlers(deps: MessageHandlerDeps): MessageHandlers
       }
       case "custom_event":
         appendCustomEvent(e.event, e.data);
+        break;
+      case "agent_state":
+        // Replace, never append: this is the current value of the agent's
+        // state, and only the newest one is meaningful.
+        updateState({ agentState: e.state });
         break;
       case "error":
         handleErrorEvent(e);

@@ -1,4 +1,4 @@
-import { agent, tool } from "@alexkroman1/aai";
+import { agent, assemblyAIPipeline, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { CATEGORIES, type Category, MOODS, type Mood } from "./shared.ts";
 
@@ -48,6 +48,7 @@ const PICKS: Record<Category, Record<Mood, string[]>> = {
 
 export default agent({
   name: "Night Owl",
+  ...assemblyAIPipeline(),
   systemPrompt:
     "You are Night Owl, a cozy evening companion. You help people wind down, recommend entertainment, and share interesting facts about the night sky. Keep your tone warm and relaxed. Use short, conversational responses.\n\nUse run_code for sleep calculations:\n- Each sleep cycle is 90 minutes, plus 15 minutes to fall asleep\n- Bedtime = wake_time - (cycles * 90 + 15) minutes\n- If result is negative, add 1440 (24 hours in minutes)\n- Format as HH:MM",
   greeting:

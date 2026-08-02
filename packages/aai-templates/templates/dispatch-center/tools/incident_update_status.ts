@@ -1,12 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import {
-  assertNotResolved,
-  dashboardEvent,
-  findIncident,
-  logEvent,
-  updateState,
-} from "../shared.ts";
+import { assertNotResolved, findIncident, logEvent, updateState } from "../shared.ts";
 
 export const incidentUpdateStatus = tool({
   description: "Update an incident's status (en_route, on_scene, resolved, escalated).",
@@ -23,56 +17,52 @@ export const incidentUpdateStatus = tool({
       .optional(),
   }),
   async execute(args, ctx) {
-    return updateState(
-      ctx,
-      (state) => {
-        const inc = findIncident(state, args.incidentId);
-        if ("error" in inc) return inc;
-        const blocked = assertNotResolved(inc, `set status to ${args.status}`);
-        if (blocked) return blocked;
+    return updateState(ctx, (state) => {
+      const inc = findIncident(state, args.incidentId);
+      if ("error" in inc) return inc;
+      const blocked = assertNotResolved(inc, `set status to ${args.status}`);
+      if (blocked) return blocked;
 
-        inc.status = args.status;
-        logEvent(inc, `Status → ${args.status}${args.notes ? `: ${args.notes}` : ""}`);
+      inc.status = args.status;
+      logEvent(inc, `Status → ${args.status}${args.notes ? `: ${args.notes}` : ""}`);
 
-        if (args.casualtyUpdate) {
-          if (args.casualtyUpdate.confirmed !== undefined) {
-            inc.casualties.confirmed = args.casualtyUpdate.confirmed;
-          }
-          if (args.casualtyUpdate.treated !== undefined) {
-            inc.casualties.treated = args.casualtyUpdate.treated;
-          }
+      if (args.casualtyUpdate) {
+        if (args.casualtyUpdate.confirmed !== undefined) {
+          inc.casualties.confirmed = args.casualtyUpdate.confirmed;
         }
-
-        // Only touch resources still assigned to THIS incident — a unit that
-        // radioed available and was re-dispatched elsewhere belongs to its
-        // new incident now.
-        const ownResources = state.resources.filter((r) => r.assignedIncident === inc.id);
-
-        if (args.status === "resolved") {
-          for (const r of ownResources) {
-            r.status = "returning";
-            r.assignedIncident = null;
-            r.eta = null;
-          }
-          inc.assignedResources = [];
-          logEvent(inc, "All resources released — incident closed");
+        if (args.casualtyUpdate.treated !== undefined) {
+          inc.casualties.treated = args.casualtyUpdate.treated;
         }
+      }
 
-        if (args.status === "en_route" || args.status === "on_scene") {
-          for (const r of ownResources) {
-            r.status = args.status;
-            if (args.status === "on_scene") r.eta = null;
-          }
+      // Only touch resources still assigned to THIS incident — a unit that
+      // radioed available and was re-dispatched elsewhere belongs to its
+      // new incident now.
+      const ownResources = state.resources.filter((r) => r.assignedIncident === inc.id);
+
+      if (args.status === "resolved") {
+        for (const r of ownResources) {
+          r.status = "returning";
+          r.assignedIncident = null;
+          r.eta = null;
         }
+        inc.assignedResources = [];
+        logEvent(inc, "All resources released — incident closed");
+      }
 
-        return {
-          incidentId: args.incidentId,
-          newStatus: args.status,
-          timeline: inc.timeline.slice(-5).map((t) => t.event),
-          casualties: inc.casualties,
-        };
-      },
-      (state) => ctx.send("incidents", dashboardEvent(state)),
-    );
+      if (args.status === "en_route" || args.status === "on_scene") {
+        for (const r of ownResources) {
+          r.status = args.status;
+          if (args.status === "on_scene") r.eta = null;
+        }
+      }
+
+      return {
+        incidentId: args.incidentId,
+        newStatus: args.status,
+        timeline: inc.timeline.slice(-5).map((t) => t.event),
+        casualties: inc.casualties,
+      };
+    });
   },
 });

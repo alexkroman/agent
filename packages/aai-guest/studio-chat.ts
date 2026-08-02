@@ -39,6 +39,7 @@ import {
 import type { z } from "zod";
 import { hostRequest } from "./harness-rpc.ts";
 import { buildWorkspaceDir, typecheckWorkspaceDir, workspacesRoot } from "./studio-build.ts";
+import { compactMessages, needsCompaction } from "./studio-compaction.ts";
 import { ensureProjectShape } from "./studio-project-shape.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 import { createToolCallRepair } from "./studio-tool-repair.ts";
@@ -48,6 +49,7 @@ import {
   STUDIO_TOOL_LABELS,
   snapshotWorkspace,
 } from "./studio-tools.ts";
+import { createTurnBudget } from "./studio-turn-budget.ts";
 
 /** Matches the host store's whole-conversation byte cap (4 MB). */
 const MAX_CHAT_BODY_BYTES = 4_000_000;
@@ -216,6 +218,10 @@ async function runTurn(
       { [ASSEMBLYAI_LLM_API_KEY_ENV]: session.apiKey },
     );
 
+  // Wall clock, not just steps: the step cap says nothing about how long a
+  // user waits, and turns were reaching fifteen minutes.
+  const budget = createTurnBudget();
+
   const result = streamText({
     model,
     system: session.system,
@@ -238,7 +244,28 @@ async function runTurn(
       }),
     },
     abortSignal: abort.signal,
-    stopWhen: stepCountIs(session.maxSteps),
+    stopWhen: [stepCountIs(session.maxSteps), () => budget.expired()],
+    // A long repair loop accumulates bulky tool results (tsc dumps, build
+    // logs) — one per attempt. Without this the raised step cap would just
+    // trade a step-cap failure for a context-overflow one.
+    prepareStep: async ({ messages: stepMessages }) => {
+      const base = needsCompaction(stepMessages)
+        ? await compactMessages(model, stepMessages)
+        : stepMessages;
+      // Past the hard deadline the turn gets exactly one more step, with
+      // tools off, so it ends on something the user can read rather than on
+      // whatever tool call happened to be in flight.
+      const final = budget.takeFinalNotice();
+      if (final) {
+        return {
+          messages: [...base, { role: "user" as const, content: final }],
+          toolChoice: "none",
+        };
+      }
+      const wrapUp = budget.takeWrapUpNotice();
+      const next = wrapUp ? [...base, { role: "user" as const, content: wrapUp }] : base;
+      return next === stepMessages ? {} : { messages: next };
+    },
     // The default studio model regularly emits tool arguments that are not
     // valid JSON — a whole source file inside a JSON string is the usual
     // trigger. Without this the call is lost and the model apologizes for a

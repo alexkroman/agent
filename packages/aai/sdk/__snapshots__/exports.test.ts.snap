@@ -85,6 +85,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "VALID_SLUG_RE",
   "WS_OPEN",
   "agent",
+  "assemblyAIPipeline",
   "capToolResult",
   "createEpoch",
   "createOwnedMap",
@@ -132,11 +133,13 @@ exports[`export surface stability > @alexkroman1/aai/protocol export 1`] = `
 
 exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
 [
+  "CONTAINED_ENV",
   "DEFAULT_S2S_CONFIG",
   "PROVIDER_CREDENTIAL_ENVS",
   "SANDBOX_ONLY_BUILTINS",
   "_internals",
   "buildHostAgent",
+  "builtinFetch",
   "consoleLogger",
   "createConsoleLogger",
   "createGenerateFn",
@@ -157,6 +160,7 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
   "requiredProviderEnvVars",
   "resolveAllBuiltins",
   "resolveAndAssertPublic",
+  "resolveBuiltin",
   "resolveLlm",
   "safeFetch",
   "safeSend",

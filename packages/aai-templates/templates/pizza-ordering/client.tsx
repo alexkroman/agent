@@ -1,15 +1,9 @@
 import "@alexkroman1/aai-ui/styles.css";
-import { client, useEvent, useTheme } from "@alexkroman1/aai-ui";
-import { useState } from "react";
-import { type Pizza, pizzaPrice } from "./shared.ts";
+import { client, useAgentState, useTheme } from "@alexkroman1/aai-ui";
+import type { OrderView } from "./shared.ts";
+import { pizzaPrice } from "./shared.ts";
 
-interface OrderInfo {
-  pizzas: Pizza[];
-  total: string;
-  orderPlaced: boolean;
-  orderNumber?: number;
-  estimatedMinutes?: number;
-}
+const EMPTY_ORDER: OrderView = { pizzas: [], total: "$0.00", orderPlaced: false };
 
 function PizzaIcon({ size }: { size: string }) {
   const dim = size === "small" ? 36 : size === "large" ? 52 : 44;
@@ -30,55 +24,11 @@ function PizzaIcon({ size }: { size: string }) {
 
 function OrderSidebar() {
   const theme = useTheme();
-  const [order, setOrder] = useState<OrderInfo>({
-    pizzas: [],
-    total: "$0.00",
-    orderPlaced: false,
-  });
-
-  useEvent("order", (raw) => {
-    const result = raw as Record<string, unknown>;
-    if ("added" in result && result.added) {
-      const added = result.added as Pizza;
-      const orderTotal = result.orderTotal as string;
-      setOrder((prev) => ({
-        ...prev,
-        pizzas: [...prev.pizzas, added],
-        total: orderTotal,
-      }));
-    } else if ("removed" in result && result.removed) {
-      const removed = result.removed as Pizza;
-      const orderTotal = result.orderTotal as string;
-      setOrder((prev) => ({
-        ...prev,
-        pizzas: prev.pizzas.filter((p) => p.id !== removed.id),
-        total: orderTotal,
-      }));
-    } else if ("updated" in result && result.updated) {
-      const updated = result.updated as Pizza;
-      const orderTotal = result.orderTotal as string;
-      setOrder((prev) => ({
-        ...prev,
-        pizzas: prev.pizzas.map((p) => (p.id === updated.id ? updated : p)),
-        total: orderTotal,
-      }));
-    } else if ("pizzas" in result && Array.isArray(result.pizzas)) {
-      // view_order carries the authoritative list — replace, don't merge.
-      const pizzas = result.pizzas as Pizza[];
-      const total =
-        (result.orderTotal as string) ||
-        `$${pizzas.reduce((s, p) => s + pizzaPrice(p), 0).toFixed(2)}`;
-      setOrder((prev) => ({ ...prev, pizzas, total }));
-    } else if ("orderNumber" in result && result.orderNumber) {
-      setOrder((prev) => ({
-        ...prev,
-        orderPlaced: true,
-        orderNumber: result.orderNumber as number,
-        total: result.total as string,
-        estimatedMinutes: result.estimatedMinutes as number,
-      }));
-    }
-  });
+  // The agent's own cart, projected by `syncState` and pushed after every
+  // tool call. This replaced ~45 lines that rebuilt the cart by diffing
+  // added/removed/updated events — where one missed event desynced the view
+  // for the rest of the session.
+  const order = useAgentState<OrderView>() ?? EMPTY_ORDER;
 
   if (order.orderPlaced) {
     return (

@@ -11,6 +11,12 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    agent to verify behavior end-to-end. This is the primary feedback loop.
 2. **Run `pnpm test` after logic changes** — vitest. Co-locate tests as
    `agent.test.ts` (see `pipeline-simple` template for a reference).
+   **The project starts with an `agent.test.ts`, and it is yours to
+   maintain.** It asserts the agent's shape — name, providers, tool names —
+   so rewriting the agent without updating it leaves a test asserting an
+   agent that no longer exists. When a test fails after your change, decide
+   which side is stale: updating the test to match the new agent is a normal
+   fix, not a workaround. Do not delete a test to make it pass.
 3. **Run `pnpm build` before declaring done** — bundles `agent.ts`,
    type-checks, and validates the manifest. Catches issues `dev` won't.
 4. **Make small, focused changes** — verify each one before stacking the
@@ -78,18 +84,42 @@ export default agent({
   falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
   state?: () => S;                           // per-session mutable state, exposed as ctx.state
                                              // (S is inferred; see "Typing ctx.state")
+  syncState?: (state: S) => unknown;         // push a projection of state to the client
+                                             // (read it with useAgentState; see UI hooks)
 });
 ```
 
 > When `stt`, `llm`, and `tts` are all provided, the agent runs in
 > **Pipeline mode** — see the section below.
 
-Minimal agent:
+Minimal agent — a cascaded pipeline, which is what you should build unless
+the user asks for the speech-to-speech API:
 
 ```ts
-import { agent } from "@alexkroman1/aai";
-export default agent({ name: "My Agent" });
+import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+
+export default agent({
+  name: "My Agent",
+  ...assemblyAIPipeline(),
+});
 ```
+
+`assemblyAIPipeline()` sets all three stages to AssemblyAI, which bill to
+the one key a published agent is guaranteed to have. Override a single stage
+by setting it after the spread — everything else stays as the preset put it:
+
+```ts
+import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+
+export default agent({
+  name: "My Agent",
+  ...assemblyAIPipeline(),
+  tts: assemblyAITts({ voice: "paul" }),
+});
+```
+
+`agent({ name })` alone is legal and gives you S2S mode instead — see below.
 
 System prompt from file:
 
@@ -99,14 +129,22 @@ import systemPrompt from "./system-prompt.md?raw";
 export default agent({ name: "My Agent", systemPrompt });
 ```
 
+**JSON imports need no attribute.** `resolveJsonModule` is on, so
+`import data from "./knowledge.json"` is all it takes. Do NOT write
+`assert { type: "json" }` — import assertions were replaced by import
+attributes and TypeScript rejects them (`TS2880`). If you want to be
+explicit the modern spelling is `with { type: "json" }`, but plain is fine.
+
 ## Pipeline mode
 
-By default an agent runs in **S2S mode**: AssemblyAI's speech-to-speech
-service handles STT, the LLM loop, and TTS in one socket. This is the
-simplest path and what `agent({ name })` gives you.
+Omitting `stt`/`llm`/`tts` gives **S2S mode**: AssemblyAI's speech-to-speech
+service handles STT, the LLM loop, and TTS in one socket. Fewer moving
+parts, but you cannot choose the model, swap a provider, or tune a stage.
 
-**Pipeline mode** is opt-in. The host runs the LLM loop locally (Vercel AI
-SDK) and you choose your own STT, LLM, and TTS providers. Use it when:
+**Prefer pipeline mode** — declare all three — unless the user specifically
+asks for the speech-to-speech API. Nearly every template ships this way, and
+it is what the App Builder defaults to. The host runs the LLM loop locally
+(Vercel AI SDK) with your chosen STT, LLM, and TTS. You need it when:
 
 - you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq,
   hundreds of models via OpenRouter, or 25+ models via the AssemblyAI
@@ -255,9 +293,21 @@ Override with `{ voice, model, language }`.
 
 **AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the
 LLM Gateway, so an all-AssemblyAI pipeline needs exactly one secret. Each
-voice speaks one language — English includes `vera`, `michael`, `alba`,
-`jane`, `george`, `mary`, `paul`; non-English are `estelle` (fr),
-`giovanni` (it), `juergen` (de), `lola` (es), `rafael` (pt). Set
+voice speaks one language, and this is the whole catalog — **a voice not on
+this list is rejected after the socket opens, which leaves the agent
+connected, "ready", and permanently silent**, so pick one from here rather
+than guessing a plausible name:
+
+- **English, US accent**: `alba`, `anna`, `charles`, `eve`, `george`,
+  `jane`, `jean`, `mary`, `michael`
+- **English, UK accent**: `paul`, `vera` (the default)
+- **Native accent, code-switches with English**: `estelle` (fr),
+  `giovanni` (it), `juergen` (de), `lola` (es), `rafael` (pt)
+
+There is no separate age/gender/style axis — match the persona by picking a
+name and accent, and put the delivery in the system prompt instead.
+
+Set
 `language` only alongside a voice that speaks it, as an ISO 639-1 code —
 `"en"`, `"fr"`, `"de"`, `"it"`, `"pt"`, `"es"` are the six the catalog
 covers, and the SDK translates each to the full name the service wants.
@@ -298,34 +348,72 @@ ctx.send(event: string, data: unknown): void   // push custom event to browser c
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 ```
 
-**Typing `ctx.state`.** `ctx.state` is untyped by default, so
-`ctx.state.cart.push(item)` compiles and runs as-is — you do not have to
-declare anything. To get real checking (recommended for anything non-trivial),
-declare the state type once and annotate the context in tools that touch it:
+**Typing `ctx.state` is optional.** `ctx.state` is untyped by default, and
+the project's tsconfig turns off `noImplicitAny`, so both of these compile
+with no annotations and no errors:
 
 ```ts
-type State = { cart: string[] };
+ctx.state.count++;
+ctx.state.incidents.filter((i) => i.status === "open");
+```
 
-const addItem = tool({
-  description: "Add an item to the cart",
-  parameters: z.object({ item: z.string() }),
-  execute: ({ item }, ctx: ToolContext<State>) => {   // ← the annotation
-    ctx.state.cart.push(item);
-    return ctx.state.cart.length;
+Write the code first. Do NOT add type annotations defensively — almost
+nothing requires them, and time spent on them is time not spent on the agent.
+
+**The one exception, and it is not optional: annotate any variable you
+declare empty.** With `noImplicitAny` off, TypeScript does not widen an empty
+initializer from what you later assign, so `[]` stays `never[]` and `null`
+stays `null` — forever, whether or not a callback is involved:
+
+```ts
+const items = [];            // never[]  → items.push(x) is an error
+let best = null;             // null     → best = {...} is an error
+const [picks, set] = useState([]);  // never[] in a client, same thing
+
+const items: Pick[] = [];    // ✅ annotate the DECLARATION
+let best: Pick | null = null;       // ✅
+const [picks, set] = useState<Pick[]>([]);  // ✅
+```
+
+Annotating the *use* instead does not help — the declaration is still wrong,
+so the next push reports the next line, and you can burn a whole session
+fixing one call site at a time. This is the single most common way a
+generated agent fails to build.
+
+Declaring a state type is still worth it once the shape is settled, because
+it turns a misspelled field into a compile error instead of `undefined` at
+runtime:
+
+```ts
+import { agent, tool } from "@alexkroman1/aai";
+import type { ToolContext } from "@alexkroman1/aai"; // types need `import type`
+import { z } from "zod";
+
+type Incident = { id: string; status: "open" | "closed" };
+type State = { incidents: Incident[] };
+
+const listOpen = tool({
+  description: "List open incidents",
+  execute: (_args, ctx: ToolContext<State>) => {
+    // `i` infers as Incident, and `i.staus` would now be an error.
+    return ctx.state.incidents.filter((i) => i.status === "open");
   },
 });
 
 export default agent({
-  name: "Shop",
-  state: (): State => ({ cart: [] }),
-  tools: { addItem },
+  name: "Dispatch",
+  state: (): State => ({ incidents: [] }),
+  tools: { listOpen },
 });
 ```
 
-With the annotation, `ctx.state.cart` is `string[]` and a typo is caught;
-without it, `ctx.state` is permissive. Tools that never read `ctx.state` need
-no annotation either way. A tool annotated with a state shape the agent's
-factory doesn't produce is a compile error.
+A tool annotated with a state shape the agent's factory doesn't produce is a
+compile error, which is the point.
+
+**`verbatimModuleSyntax` applies to every type you import** — `ToolContext`,
+`ToolDef`, `Message`, provider types. A plain
+`import { ToolContext }` fails; use `import type { ToolContext }`, or
+`import { agent, type ToolContext }` to combine with value imports.
 
 `ctx.generate({ prompt, system?, llm?, schema?, temperature?, maxOutputTokens? })`
 runs one LLM generation on the host. It defaults to the agent's pipeline
@@ -358,6 +446,61 @@ export default agent({
   },
 });
 ```
+
+**Calling the network builtins from your own tool code.** `web_search`,
+`visit_webpage` and `fetch_json` are declared to the MODEL — the LLM calls
+them, and they are not on `ctx`. When your own `execute` needs one, import
+it:
+
+```ts
+import { fetchJson, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
+
+execute: async ({ city }) => await fetchJson(`https://api.example.com/${city}`),
+// Reading fields off the result needs no cast. Pass a shape when you want
+// it checked: `await fetchJson<Forecast>(url)`.
+```
+
+Same implementations the builtins use, so you get URL screening, credential-
+header stripping, size caps and timeouts rather than a bare `fetch`. Plain
+`fetch` still works when you want none of that. There is no callable
+`run_code`: it exists to run code the model wrote, and tool code that wants
+to compute something can just compute it.
+
+**But prefer the BUILTIN when the model should decide.** These two are not
+interchangeable:
+
+- If the agent's job is to search or browse — a research assistant, anything
+  that follows a link the user mentions — declare
+  `builtinTools: ["web_search", "visit_webpage"]` and let the model call
+  them. It can then search several times with different queries, or read one
+  specific page, as the conversation needs.
+- Import from `/tools` when YOUR tool's own logic needs a fetch: a currency
+  tool hitting one known API, a price checker with a fixed endpoint.
+
+Wrapping `webSearch` in a single custom tool is the mistake to avoid — it
+replaces "the model searches as needed" with one fixed query-and-summarize
+pipeline, and no amount of prompting gets the flexibility back.
+
+**`parameters` is a Zod object, or absent.** The field itself is optional,
+but its VALUE must be a plain `z.object(...)` — so all of these are type
+errors:
+
+```ts
+parameters: z.undefined(),                 // ✗ ZodUndefined
+parameters: z.void(),                      // ✗
+parameters: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
+```
+
+For a tool with no arguments write `tool({ description, execute })`, or
+`parameters: z.object({})` if you prefer it explicit. To make an individual
+argument optional, put `.optional()` on the FIELD, never on the object:
+`z.object({ notes: z.string().optional() })`.
+
+**Do not annotate `execute`'s return type.** Nothing needs it — the result
+is serialized to the model either way — and it reliably breaks the moment
+the tool also returns an error, because `Promise<DrugInfo>` does not accept
+`{ error: "not found" }`. Every such annotation eventually costs a build
+round to widen into a union. Let it infer.
 
 ### Separate file pattern
 
@@ -406,15 +549,34 @@ set `builtinTools` explicitly (including `[]`) to override.
 | `recall` | Read session notes saved with `remember` (on by default) | `key?` |
 | `calculate` | Safe arithmetic evaluator, no code execution (on by default) | `expression` |
 
-The network builtins (`web_search`, `visit_webpage`, `get_page_design`,
-`fetch_json`) take model-controlled URLs and are SSRF-screened
-(private/loopback addresses are always blocked).
+**Every builtin in this table is a tool the MODEL calls — not a function
+your code can call.** Listing one in `builtinTools` adds it to the model's
+tool set; it does not import anything into `agent.ts`. There is no
+`fetch_json()` you can call from a tool's `execute`.
+
+So the two ways to reach an API are genuinely different designs, and both
+are valid:
+
+- **Declare the builtin** (`builtinTools: ["fetch_json"]`) when the MODEL
+  should decide the URL and read the JSON — general lookups you cannot
+  enumerate ahead of time.
+- **Write your own tool** whose `execute` calls `fetch` when YOU own the
+  URL and the shape — a specific endpoint, auth, or a response you want to
+  reshape before the model sees it.
+
+The network builtins take model-controlled URLs, so they are SSRF-screened
+when the runtime is not inside a container (private/loopback blocked). Your
+own tool code has open egress either way.
 
 ## Calling an external API from your own tool code
 
 `fetch` inside a tool's `execute` works directly — no declaration needed,
-identical under `aai dev` and deployed. If a plain `GET` returning JSON is
-all you need, the `fetch_json` builtin is simpler.
+identical under `aai dev` and deployed. This is the right choice when your
+code owns the URL.
+
+Reaching for the `fetch_json` builtin instead is a different design, not a
+shortcut for the same one: it hands URL choice to the model. You cannot
+call it from `execute` — see the builtin table above.
 
 ## Database API — `ctx.db`
 
@@ -538,6 +700,12 @@ client({ component: MyApp });
 | `target` | `string \| HTMLElement` | `"#app"` | Mount target |
 | `tools` | `ToolDisplayConfig` | — | Icon/label overrides per tool name |
 
+**The two tiers are mostly exclusive.** `sidebar`, `sidebarWidth`, and
+`tools` configure the default shell, so passing any of them alongside
+`component` is a type error. `name` is the exception — it is allowed with a
+custom component and becomes the page title, since there is no shell header
+to put it in.
+
 ### `useSession()` return type
 
 | Field | Type | Description |
@@ -561,9 +729,45 @@ Methods: `start()`, `toggle()`, `reset()`, `cancel()`, `disconnect()`,
 callId):
 
 ```ts
+useToolResult("tool_name", (result, toolCall) => { ... })          // one tool
 useToolResult((toolName, result, toolCall) => { ... })             // all tools
-useToolResult<ResultType>("tool_name", (result, toolCall) => { })  // single tool, typed
+useToolResult<ResultType>("tool_name", (result) => { ... })        // typed (optional)
 ```
+
+`result` is the tool's return value, already JSON-parsed and untyped — read
+fields off it directly (`result.price`). The type parameter is optional; add
+it only when you want the shape checked.
+
+**There is no global `JSX` namespace.** React 19 removed it, so
+`JSX.Element` is `Cannot find namespace 'JSX'` (`TS2503`). Type a component's
+return as `ReactNode` — `import type { ReactNode } from "react"` — which is
+also what you want for anything that can be a string, an array, or null.
+
+**`useAgentState`** — the agent's session state, pushed automatically:
+
+```ts
+// agent.ts
+export default agent({
+  state: () => ({ cart: [] as Item[], staffPin: "" }),
+  syncState: (s) => ({ cart: s.cart }),   // staffPin never leaves the server
+  tools: { ... },
+});
+
+// client.tsx
+const view = useAgentState<{ cart: Item[] }>();   // null until the first push
+return <Cart items={view?.cart ?? []} />;
+```
+
+**Reach for this before wiring `useToolResult` into `useState`.** Without
+it the pattern is: return a cart snapshot from every tool, declare a type
+describing what those tools return, and mirror it into `useState` — three
+things to keep in step, and the usual source of drift when you add a tool
+and forget to return the snapshot from it.
+
+`syncState` is a projection, not a flag, because state often holds things
+that should not reach a browser (keys, PINs, scratch) or cannot be
+serialized. Whatever it returns is exactly what the client receives. It runs
+after every tool call and is sent only when the result changed.
 
 **`useEvent`** — fires for custom events from `ctx.send()`:
 

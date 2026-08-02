@@ -38,6 +38,10 @@ exports[`manifest schema shapes > ToolSchemaSchema shape 1`] = `
 
 exports[`protocol schema shapes > ClientEventSchema option shapes 1`] = `
 {
+  "agent_state": [
+    "state",
+    "type",
+  ],
   "agent_transcript": [
     "text",
     "type",
@@ -127,6 +131,10 @@ exports[`protocol schema shapes > ReadyConfigSchema shape 1`] = `
 
 exports[`protocol schema shapes > ServerMessageSchema option shapes 1`] = `
 {
+  "agent_state": [
+    "state",
+    "type",
+  ],
   "agent_transcript": [
     "text",
     "type",

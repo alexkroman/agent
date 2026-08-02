@@ -15,6 +15,10 @@ export * from "./sdk/env-types.ts";
 export * from "./sdk/epoch.ts";
 export * from "./sdk/generate.ts";
 export * from "./sdk/owned-map.ts";
+// The one preset that belongs next to `agent()` rather than behind a provider
+// subpath: it IS the recommended configuration, and requiring three more
+// imports to reach it is what made the wrong mode the easy one.
+export * from "./sdk/providers/assemblyai-pipeline.ts";
 export * from "./sdk/types.ts";
 export * from "./sdk/utils.ts";
 export * from "./sdk/ws-upgrade.ts";

@@ -15,8 +15,12 @@
 export type { TtsError, TtsEvents, TtsOpenOptions, TtsProvider, TtsSession } from "../providers.ts";
 export {
   ASSEMBLYAI_TTS_API_KEY_ENV,
+  ASSEMBLYAI_TTS_DEFAULT_VOICE,
+  ASSEMBLYAI_TTS_DEPRECATED_VOICES,
+  ASSEMBLYAI_TTS_VOICES,
   type AssemblyAITtsOptions,
   type AssemblyAITtsProvider,
+  type AssemblyAITtsVoice,
   assemblyAI,
 } from "./tts/assemblyai.ts";
 export {

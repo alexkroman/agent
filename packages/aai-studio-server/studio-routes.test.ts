@@ -111,7 +111,7 @@ describe("studio page + routing", () => {
     expect(await res.json()).toEqual({
       llm: true,
       provider: "assemblyai",
-      model: "qwen3-next-80b-a3b",
+      model: "gpt-5-mini",
     });
   });
 
@@ -123,7 +123,7 @@ describe("studio page + routing", () => {
     expect(await (await fetch("/studio/status")).json()).toEqual({
       llm: true,
       provider: "assemblyai",
-      model: "qwen3-next-80b-a3b",
+      model: "gpt-5-mini",
     });
   });
 
@@ -172,11 +172,13 @@ describe("project CRUD", () => {
     ({ fetch } = await createTestCombined());
   });
 
-  test("create returns starter files and duplicate returns 409", async () => {
+  test("create starts an EMPTY project and duplicate returns 409", async () => {
+    // No starter agent: the coding agent's first turn goes into the user's
+    // agent rather than into dismantling a dice roller (studio-template.ts).
     const res = await createProject(fetch);
     expect(res.status).toBe(201);
     const body = (await res.json()) as { files: Record<string, string> };
-    expect(body.files["agent.ts"]).toContain("export default agent(");
+    expect(Object.keys(body.files)).toEqual([]);
     expect((await createProject(fetch)).status).toBe(409);
   });
 
@@ -217,8 +219,12 @@ describe("project CRUD", () => {
     expect(res.status).toBe(400);
   });
 
-  test("get returns files; 404 when missing", async () => {
+  test("get returns the project's files; 404 when missing", async () => {
     await createProject(fetch);
+    await authFetch(fetch, "/studio/projects/proj/file", {
+      method: "PUT",
+      body: { path: "agent.ts", content: "export default {};" },
+    });
     const res = await authFetch(fetch, "/studio/projects/proj", { method: "GET" });
     expect(res.status).toBe(200);
     expect(Object.keys(((await res.json()) as { files: Record<string, string> }).files)).toContain(

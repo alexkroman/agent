@@ -35,6 +35,7 @@ export function createMockSessionCore(
     messages: overrides?.messages ?? [],
     toolCalls: overrides?.toolCalls ?? [],
     customEvents: [],
+    agentState: null,
     userTranscript: overrides?.userTranscript ?? null,
     agentTranscript: overrides?.agentTranscript ?? null,
     error: overrides?.error ?? null,

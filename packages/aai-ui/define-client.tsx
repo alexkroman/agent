@@ -62,7 +62,18 @@ type ConfigTier = BaseOptions & {
 type ComponentTier = BaseOptions & {
   /** Full custom component to render instead of the default shell. */
   component: ComponentType;
-  name?: never;
+  /**
+   * Agent name. With a custom component there is no shell header to put it
+   * in, so it becomes the page title.
+   *
+   * Allowed here rather than `never` because `client({ name, component })` is
+   * the natural thing to write and two different models wrote it. As `never`
+   * it failed with *"Type 'string' is not assignable to type 'undefined'"*,
+   * which explains nothing, and cost a build round each time. There is a real
+   * use for the value — a custom-UI page otherwise inherits whatever title
+   * the HTML shell shipped with — so it is honoured instead of banned.
+   */
+  name?: string;
   sidebar?: never;
   sidebarWidth?: never;
   tools?: never;
@@ -207,6 +218,11 @@ export function client(config: ClientConfig): ClientHandle {
     resumeSessionId: config.resumeSessionId,
     WebSocket: config.WebSocket,
   });
+
+  // The default shell renders `name` in its header; a custom component has no
+  // header, so the page title is where it goes. Only set when given — never
+  // clobber a title the page's own HTML declared.
+  if (config.name && typeof document !== "undefined") document.title = config.name;
 
   const rootNode = config.component
     ? createElement(config.component)

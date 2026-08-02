@@ -179,7 +179,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
   const stateMap = new Map<string, Record<string, unknown>>();
   const stateSweeps = createStateSweeps(stateMap);
 
-  const { executeTool, toolSchemas, toolGuidance } = setupTools({
+  const { executeTool, toolSchemas, toolGuidance, pushStateSnapshot } = setupTools({
     agent,
     opts,
     env,
@@ -241,6 +241,10 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     // cancel the sweep the previous session's stop() scheduled.
     stateSweeps.cancel(sessionOpts.id);
     const releaseSink = sinkMap.claim(sessionOpts.id, sessionOpts.client);
+    // A resumed session still holds its state, and the new socket has never
+    // seen it — without this the client renders empty until some later tool
+    // call happens to change something, which it may never do.
+    pushStateSnapshot?.(sessionOpts.id, sessionOpts.client);
 
     const isPipeline = Boolean(pipelineProviders);
     // Relay (host) mode: the relay `executeTool` emits the client-facing

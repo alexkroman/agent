@@ -1,6 +1,6 @@
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
-import { dashboardEvent, findIncident, logEvent, updateState } from "../shared.ts";
+import { findIncident, logEvent, updateState } from "../shared.ts";
 
 export const incidentAddNote = tool({
   description: "Add a situational update note to an incident's timeline.",
@@ -10,22 +10,18 @@ export const incidentAddNote = tool({
     source: z.string().max(100).describe("Who reported this — unit callsign or caller").optional(),
   }),
   async execute(args, ctx) {
-    return updateState(
-      ctx,
-      (state) => {
-        const inc = findIncident(state, args.incidentId);
-        if ("error" in inc) return inc;
+    return updateState(ctx, (state) => {
+      const inc = findIncident(state, args.incidentId);
+      if ("error" in inc) return inc;
 
-        const entry = args.source ? `[${args.source}] ${args.note}` : args.note;
-        logEvent(inc, entry);
+      const entry = args.source ? `[${args.source}] ${args.note}` : args.note;
+      logEvent(inc, entry);
 
-        return {
-          incidentId: args.incidentId,
-          noteAdded: entry,
-          timelineEntries: inc.timeline.length,
-        };
-      },
-      (state) => ctx.send("incidents", dashboardEvent(state)),
-    );
+      return {
+        incidentId: args.incidentId,
+        noteAdded: entry,
+        timelineEntries: inc.timeline.length,
+      };
+    });
   },
 });

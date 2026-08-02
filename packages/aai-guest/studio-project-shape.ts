@@ -35,6 +35,25 @@ export default defineConfig({
 });
 `;
 
+/**
+ * Mirrors packages/aai-templates/scaffold/vitest.config.ts (drift-guarded).
+ *
+ * Separate from the vite config on purpose — see that file. Vitest prefers
+ * this one, so the test run stops depending on the client build's plugin
+ * imports resolving, and `globals: true` makes an un-imported `describe`
+ * work. Five of the seven repairs in one measured arm were test suites that
+ * failed to LOAD (zero assertion failures), which cost a build round each
+ * and taught the agent nothing about its own code.
+ */
+export const WORKSPACE_VITEST_CONFIG = `import { defineConfig } from "vitest/config";
+
+export default defineConfig({
+  test: {
+    globals: true,
+  },
+});
+`;
+
 /** Mirrors the scaffold's global.d.ts (drift-guarded). */
 export const WORKSPACE_GLOBAL_DTS = `/// <reference types="vite/client" />
 `;
@@ -47,6 +66,25 @@ export const WORKSPACE_GLOBAL_DTS = `/// <reference types="vite/client" />
  * runs on every build and Publish. A sample test that drifted from an edited
  * agent should fail `aai test`, where the coding agent can see and fix it,
  * not block the user from going live.
+ *
+ * `strict` minus `noImplicitAny` — the scaffold's setting, kept in step here.
+ * Measured over the starter evals, TS7006 and its siblings (TS7053, TS7034)
+ * were 57% of every diagnostic the coding agent had to repair, and not one
+ * marked a real defect. They are all downstream of a receiver that is already
+ * `any` by design (`ctx.state`, a tool result): `state.cart.reduce((sum, p) =>
+ * …)` reports both lambda parameters, and typing them buys nothing, because
+ * the body is `any`-checked either way. The rule asks for an annotation
+ * without offering any checking in return — pure churn on a gate that blocks
+ * publishing. Everything that catches a real mistake (TS2339, TS2345, TS2353
+ * — wrong field, wrong argument, wrong option) is unaffected.
+ *
+ * `useUnknownInCatchVariables` goes for a narrower version of the same reason.
+ * Every `catch (err)` in a generated agent ends in "turn this into a string
+ * for the model", and an `unknown` binding makes that a two-branch
+ * `instanceof` at every site. It cost three repairs in one iteration. What it
+ * buys is a degraded message in the rare case something throws a non-Error —
+ * cheaper than the ceremony, and `errorMessage()` from the SDK handles it for
+ * anyone who cares.
  */
 export const WORKSPACE_TSCONFIG = `${JSON.stringify(
   {
@@ -55,6 +93,8 @@ export const WORKSPACE_TSCONFIG = `${JSON.stringify(
       module: "ESNext",
       moduleResolution: "bundler",
       strict: true,
+      noImplicitAny: false,
+      useUnknownInCatchVariables: false,
       verbatimModuleSyntax: true,
       allowImportingTsExtensions: true,
       noEmit: true,
@@ -88,6 +128,7 @@ const SHAPE_FILES: Record<string, string> = {
   "tsconfig.json": WORKSPACE_TSCONFIG,
   "global.d.ts": WORKSPACE_GLOBAL_DTS,
   "vite.config.ts": WORKSPACE_VITE_CONFIG,
+  "vitest.config.ts": WORKSPACE_VITEST_CONFIG,
 };
 
 /** Write any missing project-shape files into `dir` (existing files win). */

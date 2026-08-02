@@ -43,7 +43,21 @@ import { MAX_STUDIO_CHAT_MESSAGES, UiMessageSchema } from "./studio-schemas.ts";
 import { getWorkspace, mutateWorkspace } from "./studio-workspace.ts";
 
 /** Max tool-loop steps per chat turn (Claude-Code-scale agentic budget). */
-export const MAX_CHAT_STEPS = 16;
+/**
+ * Steps one chat turn may take.
+ *
+ * Was 16, which the starter evals showed was the dominant cause of failure:
+ * turns died mid-repair (build → read error → edit → build) with a broken
+ * workspace, not because the agent was lost but because it ran out of room.
+ * opencode allows ~1000 and summarizes as it approaches the context limit;
+ * this is the same trade at a more conservative ceiling, paired with
+ * compaction in the guest (studio-compaction.ts) so the extra steps are
+ * actually reachable.
+ *
+ * A runaway turn is still bounded — by this cap, by each tool's own deadline,
+ * and by the client's Stop button.
+ */
+export const MAX_CHAT_STEPS = 80;
 /** Idle window before a project's sandbox is evicted. */
 export const STUDIO_SESSION_IDLE_MS = 15 * 60_000;
 /** Deadline for installing a session in the guest (workspace transfer). */

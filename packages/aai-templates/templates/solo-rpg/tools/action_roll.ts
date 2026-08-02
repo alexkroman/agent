@@ -63,7 +63,6 @@ export const actionRoll = tool({
     const burnTarget = canBurnMomentum(state, roll);
 
     saveGameState(ctx, state);
-    ctx.send("game_state", state);
 
     return {
       purpose: args.purpose,

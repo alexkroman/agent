@@ -93,6 +93,23 @@ export type Message = {
 export type DefaultSessionState = any;
 
 /**
+ * Default type of a tool result observed on the client (`useToolResult`).
+ *
+ * The client half of {@link DefaultSessionState}'s problem, and `any` for the
+ * same reason. A tool result is the author's own return value round-tripped
+ * through JSON; the client already knows its shape, and the framework cannot.
+ * With the strict default (`unknown`, which this was), reading one field off
+ * it was a compile error in a client that runs correctly — and since
+ * `aai build` type-checks, that error blocked publishing rather than
+ * preventing a bug.
+ *
+ * Pass the shape — `useToolResult<Quote>("get_quote", …)` — for real checking.
+ *
+ * @public
+ */
+export type DefaultToolResult = any;
+
+/**
  * Context passed to tool `execute` functions.
  *
  * Provides access to the session environment, state, database, and
@@ -196,45 +213,6 @@ export type ToolDef<
   execute(args: z.infer<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
 };
 
-/**
- * A mapping of tool names to their result types.
- *
- * Define this in a shared file (e.g. `shared.ts`) that both `agent.ts` and
- * `client.tsx` can import, so tool result types stay in sync without
- * duplication.
- *
- * @example
- * ```ts
- * // shared.ts
- * import type { ToolResultMap } from "@alexkroman1/aai";
- *
- * export interface Pizza {
- *   id: number;
- *   size: "small" | "medium" | "large";
- *   toppings: string[];
- * }
- *
- * export type MyToolResults = ToolResultMap<{
- *   add_pizza: { added: Pizza; orderTotal: string };
- *   place_order: { orderNumber: number; total: string };
- * }>;
- * ```
- *
- * Then use with {@link aai-ui#useToolResult | useToolResult}:
- *
- * ```tsx
- * // client.tsx
- * import type { MyToolResults } from "./shared.ts";
- *
- * useToolResult<MyToolResults["add_pizza"]>("add_pizza", (result) => {
- *   console.log(result.added); // fully typed
- * });
- * ```
- *
- * @public
- */
-export type ToolResultMap<T extends Record<string, unknown> = Record<string, unknown>> = T;
-
 export { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
 
 /**
@@ -264,6 +242,34 @@ export type AgentDef<S = DefaultSessionState> = {
    */
   tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
   state?: () => S;
+  /**
+   * Project per-session state to the browser client, so a custom UI can
+   * render it without the agent hand-rolling a sync channel.
+   *
+   * A PROJECTION rather than a flag, for three reasons. `ctx.state` routinely
+   * holds things that should not reach a browser or cannot be serialized, so
+   * the author decides what leaves. Returning plain data makes serializability
+   * the author's call rather than a runtime surprise. And it doubles as the
+   * client's contract: whatever this returns is exactly what `useAgentState`
+   * receives.
+   *
+   * Called after every tool call, and pushed only when the projection
+   * actually changed — most turns do not touch state, and this shares a
+   * socket with 384 kbps of PCM.
+   *
+   * ```ts
+   * agent({
+   *   state: () => ({ cart: [] as Item[], staffPin: "" }),
+   *   syncState: (s) => ({ cart: s.cart }),   // staffPin stays server-side
+   * })
+   * ```
+   *
+   * Without it, the pattern agents reach for is: return a state snapshot from
+   * every tool, declare a result type describing it, and mirror it into
+   * `useState` via `useToolResult`. Measured across generated agents, 58%
+   * built some version of that by hand.
+   */
+  syncState?: (state: S) => unknown;
   idleTimeoutMs?: number;
   /**
    * Pipeline mode only. When set, the assistant proactively takes a turn

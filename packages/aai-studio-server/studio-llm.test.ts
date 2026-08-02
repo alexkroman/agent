@@ -13,12 +13,12 @@ const env = (vars: Record<string, string>): NodeJS.ProcessEnv => vars as NodeJS.
 describe("studioLlmModelId", () => {
   test("defaults to the first gateway model", () => {
     expect(studioLlmModelId(env({}))).toBe(ASSEMBLYAI_GATEWAY_MODELS[0]);
-    expect(studioLlmModelId(env({}))).toBe("qwen3-next-80b-a3b");
+    expect(studioLlmModelId(env({}))).toBe("gpt-5-mini");
   });
 
   test("STUDIO_LLM_MODEL overrides; empty string means unset", () => {
     expect(studioLlmModelId(env({ STUDIO_LLM_MODEL: "gpt-5.5" }))).toBe("gpt-5.5");
-    expect(studioLlmModelId(env({ STUDIO_LLM_MODEL: "" }))).toBe("qwen3-next-80b-a3b");
+    expect(studioLlmModelId(env({ STUDIO_LLM_MODEL: "" }))).toBe("gpt-5-mini");
   });
 
   test("the EU region default skips US-only models", () => {
@@ -30,7 +30,7 @@ describe("studioLlmModelId", () => {
 describe("studioModel", () => {
   test("resolves a gateway model on the caller's key — no host env needed", () => {
     const model = studioModel("caller-key", env({}));
-    expect((model as { modelId: string }).modelId).toBe("qwen3-next-80b-a3b");
+    expect((model as { modelId: string }).modelId).toBe("gpt-5-mini");
   });
 
   test("refuses an empty caller key", () => {
@@ -47,7 +47,7 @@ describe("studioModel", () => {
 
 describe("studioLlmInfo", () => {
   test("reports the gateway provider and resolved model", () => {
-    expect(studioLlmInfo(env({}))).toEqual({ provider: "assemblyai", model: "qwen3-next-80b-a3b" });
+    expect(studioLlmInfo(env({}))).toEqual({ provider: "assemblyai", model: "gpt-5-mini" });
     expect(studioLlmInfo(env({ STUDIO_LLM_MODEL: "gpt-5" }))).toEqual({
       provider: "assemblyai",
       model: "gpt-5",

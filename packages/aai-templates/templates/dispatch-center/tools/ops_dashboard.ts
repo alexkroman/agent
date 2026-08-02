@@ -1,5 +1,5 @@
 import { tool } from "@alexkroman1/aai";
-import { dashboardEvent, getState } from "../shared.ts";
+import { getState } from "../shared.ts";
 
 export const opsDashboard = tool({
   description:
@@ -25,8 +25,6 @@ export const opsDashboard = tool({
     };
 
     const utilization = Math.round((1 - resourceSummary.available / resourceSummary.total) * 100);
-
-    ctx.send("incidents", dashboardEvent(state));
 
     return {
       systemAlertLevel: state.alertLevel,

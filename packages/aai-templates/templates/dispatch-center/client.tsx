@@ -1,8 +1,8 @@
 import "@alexkroman1/aai-ui/styles.css";
 import type { ChatMessage } from "@alexkroman1/aai-ui";
-import { client, useEvent, useSession } from "@alexkroman1/aai-ui";
-import { useEffect, useRef, useState } from "react";
-import type { IncidentSummary } from "./shared.ts";
+import { client, useAgentState, useSession } from "@alexkroman1/aai-ui";
+import { useEffect, useRef } from "react";
+import type { DashboardView, IncidentSummary } from "./shared.ts";
 
 const CSS = `
 @keyframes dc-pulse {
@@ -48,17 +48,9 @@ const statusColors: Record<string, string> = {
   escalated: "#ef4444",
 };
 
-// Dashboard state accumulated from the "incidents" events the tools send
-// (see dashboardEvent in shared.ts).
-interface DashboardState {
-  alertLevel: string;
-  incidents: Record<string, IncidentSummary>;
-}
-
-interface IncidentsEvent {
-  systemAlertLevel?: string;
-  incidents?: IncidentSummary[];
-}
+// The board before the first tool call. `DashboardView` itself lives in
+// shared.ts, where `syncState` produces it — one definition for both sides.
+const EMPTY_DASH: DashboardView = { systemAlertLevel: "green", incidents: [] };
 
 function stateColor(state: string): string {
   return state === "listening"
@@ -138,33 +130,20 @@ function IncidentCard({ inc }: { inc: IncidentSummary }) {
 function App() {
   const session = useSession();
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  // useState (not a ref) so the sidebar re-renders when events arrive.
-  const [dash, setDash] = useState<DashboardState>({ alertLevel: "green", incidents: {} });
-
-  // Track incidents and alert level from tool events
-  useEvent("incidents", (result: unknown) => {
-    const r = result as IncidentsEvent;
-    setDash((prev) => {
-      const incidents = { ...prev.incidents };
-      for (const inc of r.incidents ?? []) {
-        incidents[inc.id] = inc;
-      }
-      return {
-        alertLevel: r.systemAlertLevel ?? prev.alertLevel,
-        incidents,
-      };
-    });
-  });
+  // The agent's own board, projected by `syncState`. This replaced a
+  // useState mirror that merged incident deltas out of tool events — the
+  // projection is already the complete list, so there is nothing to merge.
+  const dash = useAgentState<DashboardView>() ?? EMPTY_DASH;
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [session.messages]);
 
-  const incidentList = Object.values(dash.incidents).reverse();
+  const incidentList = [...dash.incidents].reverse();
   const activeIncidents = incidentList.filter((i) => i.status !== "resolved");
   const resolvedCount = incidentList.filter((i) => i.status === "resolved").length;
 
-  const alertLevel = dash.alertLevel;
+  const alertLevel = dash.systemAlertLevel;
   const alertBg = alertColors[alertLevel] || "#6b7280";
   const alertTextColor = alertLevel === "yellow" ? "#000" : "#fff";
 

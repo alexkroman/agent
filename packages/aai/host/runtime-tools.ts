@@ -19,6 +19,7 @@ import type { OwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import type { AgentDef, ToolDef } from "../sdk/types.ts";
 import { toolError } from "../sdk/utils.ts";
+import { createStateSync } from "./_state-sync.ts";
 import { resolveAllBuiltins, SANDBOX_ONLY_BUILTINS } from "./builtin-tools.ts";
 import { createGenerateFn, type HostGenerateFn } from "./generate.ts";
 import type { RuntimeOptions } from "./runtime-types.ts";
@@ -59,6 +60,16 @@ type ToolSetup = {
   executeTool: ExecuteTool;
   toolSchemas: ToolSchema[];
   toolGuidance: string[];
+  /**
+   * Send the current `syncState` projection to a client that just connected.
+   *
+   * Only meaningful on RESUME. A session's state survives a disconnect
+   * through the grace window, so a reconnecting browser is looking at a live
+   * cart it cannot see — nothing would push again until the next tool call,
+   * and there may not be one. Absent on the sandbox path, where the runtime
+   * holds no state.
+   */
+  pushStateSnapshot?: (sessionId: string, sink: ClientSink) => void;
 };
 
 /** Runtime state the tool-setup paths close over. */
@@ -173,6 +184,30 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
     sink.event({ type: "custom_event", event, data });
   };
 
+  /**
+   * Push the agent's projected state to the client when it changed. The
+   * decision (project, compare, cap) lives in `_state-sync.ts`; this is the
+   * wiring and the logging.
+   */
+  const stateSync = agent.syncState ? createStateSync(agent.syncState) : undefined;
+  const syncStateToClient = (
+    sink: ClientSink | undefined,
+    state: object,
+    options?: { force?: boolean },
+  ): void => {
+    if (!(sink && stateSync)) return;
+    const result = stateSync(state, options);
+    if (result.push) {
+      sink.event({ type: "agent_state", state: result.state });
+      return;
+    }
+    if (result.reason === "failed") {
+      logger?.warn?.(`syncState projection failed: ${result.detail}`);
+    } else if (result.reason === "too-large") {
+      logger?.warn?.(`syncState projection is ${result.bytes} bytes; not sent`);
+    }
+  };
+
   const executeTool: ExecuteTool = async (name, args, sessionId, messages, callOpts) => {
     const tool = allTools[name];
     if (!tool) return toolError(`Unknown tool: ${name}`);
@@ -193,9 +228,27 @@ function setupSelfHostedTools(deps: ToolSetupDeps): ToolSetup {
         // Turn cancellation (barge-in/reset/stop) unblocks the tool await.
         signal: callOpts?.signal,
       });
-    return run();
+    try {
+      return await run();
+    } finally {
+      // In `finally` so a throwing tool still publishes what it changed
+      // before it failed — a half-applied mutation the UI is not showing is
+      // worse than one it is.
+      syncStateToClient(sink, getState(sessionId ?? ""));
+    }
   };
-  return { executeTool, toolSchemas, toolGuidance: builtins.guidance };
+  /**
+   * Forced, and only for a session that ALREADY has state — i.e. a resume.
+   * A brand-new session has nothing to show, and calling `getState` here
+   * would run the agent's `state()` factory at connect time rather than at
+   * the first tool call, which is a semantic change nobody asked for.
+   */
+  const pushStateSnapshot = (sessionId: string, sink: ClientSink): void => {
+    if (!(stateSync && stateMap.has(sessionId))) return;
+    syncStateToClient(sink, getState(sessionId), { force: true });
+  };
+
+  return { executeTool, toolSchemas, toolGuidance: builtins.guidance, pushStateSnapshot };
 }
 
 /** Pick the tool path: RPC-backed sandbox mode when overrides are provided. */

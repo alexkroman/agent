@@ -56,9 +56,15 @@ export interface OrderState {
   pizzas: Pizza[];
   nextId: number;
   customerName: string | null;
+  /**
+   * The confirmation, once checkout happens. In state rather than only in
+   * `place_order`'s return value because the UI has to keep showing it after
+   * the cart is cleared — and `syncState` can only project what state holds.
+   */
+  placed?: { orderNumber: number; total: string; estimatedMinutes: number };
 }
 
-type StateSlot = { order?: OrderState };
+export type StateSlot = { order?: OrderState };
 
 function emptyOrder(): OrderState {
   return { pizzas: [], nextId: 1, customerName: null };
@@ -72,8 +78,40 @@ export function getOrder(ctx: ToolContext): OrderState {
   return slot.order;
 }
 
-/** Clear the cart after checkout so a follow-up order starts fresh. */
-export function resetOrder(ctx: ToolContext): void {
+/**
+ * Clear the cart after checkout so a follow-up order starts fresh. The
+ * `placed` confirmation is passed through, because the UI is still showing
+ * it — clearing the pizzas is what "reset" means here, not forgetting the
+ * order that was just submitted.
+ */
+export function resetOrder(ctx: ToolContext, placed?: OrderState["placed"]): void {
   const slot = ctx.state as StateSlot;
-  slot.order = emptyOrder();
+  slot.order = { ...emptyOrder(), ...(placed ? { placed } : {}) };
+}
+
+/**
+ * What the browser sees. A projection rather than the raw slot: the client
+ * needs the cart and its total, and `syncState` is where you decide what
+ * leaves the server.
+ */
+export interface OrderView {
+  pizzas: Pizza[];
+  total: string;
+  orderPlaced: boolean;
+  orderNumber?: number;
+  estimatedMinutes?: number;
+}
+
+export function orderView(state: StateSlot): OrderView {
+  const order = state.order;
+  const pizzas = order?.pizzas ?? [];
+  const placed = order?.placed;
+  return {
+    pizzas,
+    total: placed?.total ?? `$${calculateTotal(pizzas).toFixed(2)}`,
+    orderPlaced: Boolean(placed),
+    ...(placed
+      ? { orderNumber: placed.orderNumber, estimatedMinutes: placed.estimatedMinutes }
+      : {}),
+  };
 }

@@ -4,7 +4,7 @@ import { createElement, type ReactNode } from "react";
 import { describe, expect, it, vi } from "vitest";
 import { createMockSessionCore } from "./_react-test-utils.ts";
 import { SessionProvider } from "./context.ts";
-import { useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
+import { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hooks.ts";
 import type { ToolCallInfo } from "./types.ts";
 
 function createMockCore(toolCalls: ToolCallInfo[] = []) {
@@ -195,6 +195,39 @@ describe("useToolCallStart", () => {
 
     act(() => core.update({ toolCalls: [{ ...pending, status: "done", result: "{}" }] }));
     expect(cb).toHaveBeenCalledOnce();
+  });
+});
+
+describe("useAgentState", () => {
+  const wrap =
+    (core: ReturnType<typeof createMockCore>) =>
+    ({ children }: { children: ReactNode }) =>
+      createElement(SessionProvider, { value: core }, children);
+
+  it("is null before the agent has pushed anything", () => {
+    // A UI has to render the moment before the first tool call.
+    const core = createMockCore();
+    const { result } = renderHook(() => useAgentState(), { wrapper: wrap(core) });
+    expect(result.current).toBeNull();
+  });
+
+  it("exposes the latest pushed state", () => {
+    const core = createMockCore();
+    const { result } = renderHook(() => useAgentState<{ cart: string[] }>(), {
+      wrapper: wrap(core),
+    });
+    act(() => core.update({ agentState: { cart: ["margherita"] } }));
+    expect(result.current).toEqual({ cart: ["margherita"] });
+  });
+
+  it("replaces rather than accumulating", () => {
+    // The distinction from useEvent: this is a value, not a log, so a
+    // component mounting late reads current state instead of replaying.
+    const core = createMockCore();
+    const { result } = renderHook(() => useAgentState<{ n: number }>(), { wrapper: wrap(core) });
+    act(() => core.update({ agentState: { n: 1 } }));
+    act(() => core.update({ agentState: { n: 2 } }));
+    expect(result.current).toEqual({ n: 2 });
   });
 });
 

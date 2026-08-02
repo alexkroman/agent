@@ -1,5 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import type { DefaultToolResult } from "@alexkroman1/aai";
 import type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 
 // Client audio/backpressure budgets live in the SDK's constants module,
@@ -88,7 +89,22 @@ export type ChatMessage = {
 export type ToolCallInfo = {
   callId: string;
   name: string;
-  args: Record<string, unknown>;
+  /**
+   * The tool's arguments, as the model sent them.
+   *
+   * Values are {@link DefaultToolResult} — `any` — for the same reason a tool
+   * *result* is: the shape is the author's own Zod schema, which the framework
+   * cannot see from here. As `Record<string, unknown>` the ordinary
+   * `toolCall.args.url` was a compile error in a client that runs correctly,
+   * and the escape hatch agents reached for next (`args as FetchJsonArgs`) is
+   * itself an error — TypeScript rejects the cast as insufficiently
+   * overlapping. That pair cost two build rounds in one run.
+   *
+   * Annotate at the read site for real checking:
+   * `const { url } = toolCall.args as { url: string }` is still available, and
+   * now actually compiles.
+   */
+  args: Record<string, DefaultToolResult>;
   status: "pending" | "done";
   result?: string | undefined;
   /**
