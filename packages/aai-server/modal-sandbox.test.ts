@@ -63,6 +63,7 @@ function makeFakeProc(): FakeProc {
 function makeFakeSandbox(fakeProc: FakeProc): ModalSandboxLike & {
   execCalls: { command: string[]; params: Record<string, unknown> }[];
   updateNetworkPolicy: ReturnType<typeof vi.fn>;
+  setTags: ReturnType<typeof vi.fn>;
   terminate: ReturnType<typeof vi.fn>;
 } {
   const execCalls: { command: string[]; params: Record<string, unknown> }[] = [];
@@ -77,6 +78,7 @@ function makeFakeSandbox(fakeProc: FakeProc): ModalSandboxLike & {
       [GUEST_PORT]: { host: "tunnel.modal.test", port: 12_345 },
     }),
     updateNetworkPolicy: vi.fn().mockResolvedValue(undefined),
+    setTags: vi.fn().mockResolvedValue(undefined),
     terminate: vi.fn().mockResolvedValue(undefined),
   };
 }
@@ -326,7 +328,7 @@ describe("spawnModalWarm", () => {
       encryptedPorts: [GUEST_PORT],
       timeoutMs: DEFAULT_SANDBOX_TIMEOUT_MS,
       idleTimeoutMs: DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-      tags: { service: "aai-guest", slug: "my-agent" },
+      tags: { service: "aai-guest", role: "agent", slug: "my-agent" },
     });
     // Tunnels replaced blockNetwork — they are mutually exclusive in Modal.
     expect(createParams[0]).not.toHaveProperty("blockNetwork");
@@ -368,6 +370,64 @@ describe("spawnModalWarm", () => {
     await spawnOnce();
     await spawnOnce();
     expect(tokens[0]).not.toBe(tokens[1]);
+  });
+
+  it("tags sandboxes by role: pool default, preview by slug suffix, explicit role", async () => {
+    const harnessPath = await makeHarnessFile();
+    const spawnOnce = async (identity: {
+      slug?: string;
+      role?: "studio" | "inspect";
+    }): Promise<Record<string, unknown>> => {
+      const fake = makeFakeProc();
+      const sb = makeFakeSandbox(fake);
+      const createParams: Record<string, unknown>[] = [];
+      const socket = createFakeGuestSocket();
+      const { dial } = makeFakeDial(socket);
+      const warm = await spawnModalWarm(
+        { harnessPath, ...identity },
+        {
+          createGuestSandbox: async (_code, params) => {
+            createParams.push(params as unknown as Record<string, unknown>);
+            return sb;
+          },
+        },
+        dial,
+      );
+      await warm.cleanup();
+      return (createParams[0] as { tags: Record<string, unknown> }).tags;
+    };
+
+    // No slug (a warm-pool spare): role "pool", no slug tag.
+    expect(await spawnOnce({})).toEqual({ service: "aai-guest", role: "pool" });
+    // A `-preview` slug is a studio preview agent.
+    expect(await spawnOnce({ slug: "contact-form-x7k2mq-preview" })).toEqual({
+      service: "aai-guest",
+      role: "preview",
+      slug: "contact-form-x7k2mq-preview",
+    });
+    // An explicit role wins over slug inference.
+    expect(await spawnOnce({ slug: "contact-form-x7k2mq", role: "studio" })).toEqual({
+      service: "aai-guest",
+      role: "studio",
+      slug: "contact-form-x7k2mq",
+    });
+  });
+
+  it("exposes the sandbox's setTags on the WarmHarness for pooled retagging", async () => {
+    const fake = makeFakeProc();
+    const sb = makeFakeSandbox(fake);
+    const harnessPath = await makeHarnessFile();
+    const socket = createFakeGuestSocket();
+    const { dial } = makeFakeDial(socket);
+
+    const warm = await spawnModalWarm({ harnessPath }, makeCtx(sb), dial);
+    await warm.setTags?.({ service: "aai-guest", role: "agent", slug: "acquired" });
+    expect(sb.setTags).toHaveBeenCalledWith({
+      service: "aai-guest",
+      role: "agent",
+      slug: "acquired",
+    });
+    await warm.cleanup();
   });
 
   it("omits region pinning by default and passes regions when MODAL_SANDBOX_REGION is set", async () => {

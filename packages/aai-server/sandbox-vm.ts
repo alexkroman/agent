@@ -24,6 +24,12 @@ import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
 import { registerGuestRpcHandlers } from "./sandbox-guest-rpc.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
+import {
+  resolveSandboxRole,
+  type SandboxRole,
+  type SpawnIdentity,
+  sandboxTags,
+} from "./sandbox-role.ts";
 import { spawnSubprocessWarm } from "./subprocess-sandbox.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -66,6 +72,12 @@ export type WarmHarness = {
   alive: () => boolean;
   /** Register a one-shot listener for guest exit (for pool reaping). */
   onExit: (cb: () => void) => void;
+  /**
+   * Replace the backend's observability tags (Modal only — see
+   * sandbox-role.ts). Used to re-tag a pooled sandbox with its real
+   * role/slug on acquire; creation-time tags say "pool".
+   */
+  setTags?: ((tags: Record<string, string>) => Promise<void>) | undefined;
   [Symbol.asyncDispose](): Promise<void>;
 };
 
@@ -157,19 +169,32 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
  * at spawn time, only at selection time, and selection can never reach
  * `subprocess` outside local dev.
  *
- * `slug` only affects the sandbox's observability tag (pool spawns default
- * to "pool"); under Modal the security boundary is the sandbox container.
+ * `slug`/`role` only affect the sandbox's observability tags (pool spawns
+ * default to role "pool", agent slugs infer "agent"/"preview" — see
+ * sandbox-role.ts); under Modal the security boundary is the sandbox
+ * container.
  */
-export async function spawnWarmHarness(opts: {
-  harnessPath: string;
-  slug?: string;
-}): Promise<WarmHarness> {
+export async function spawnWarmHarness(
+  opts: { harnessPath: string } & SpawnIdentity,
+): Promise<WarmHarness> {
   switch (resolveSandboxBackend(process.env)) {
     case "subprocess":
       return spawnSubprocessWarm(opts);
     default:
       return spawnModalWarm(opts);
   }
+}
+
+/**
+ * Best-effort re-tag of a POOLED sandbox with the role/slug it was acquired
+ * for. Fire-and-forget: tags are observability only, and a failed retag
+ * (sandbox racing its own death, transient control-plane error) must never
+ * fail the session that acquired the harness.
+ */
+function retagWarm(warm: WarmHarness, identity: SpawnIdentity): void {
+  void warm
+    .setTags?.(sandboxTags(resolveSandboxRole(identity), identity.slug))
+    .catch(() => undefined);
 }
 
 // ── Warm-harness acquisition ─────────────────────────────────────────────────
@@ -191,13 +216,20 @@ export function acquireWarmHarness(
     pool?: { acquire(): Promise<WarmHarness | null> } | undefined;
     harnessPath?: string | undefined;
     slug: string;
+    role?: SandboxRole | undefined;
   },
   spawn: typeof spawnWarmHarness = spawnWarmHarness,
 ): Promise<WarmHarness> {
   const harnessPath = opts.harnessPath ?? resolveHarnessPath();
-  return Promise.resolve(opts.pool?.acquire() ?? null).then(
-    (pooled) => pooled ?? spawn({ harnessPath, slug: opts.slug }),
-  );
+  return Promise.resolve(opts.pool?.acquire() ?? null).then((pooled) => {
+    if (pooled) {
+      // Pooled sandboxes were tagged "pool" at creation; stamp their real
+      // identity now so the Modal dashboard shows what they became.
+      retagWarm(pooled, opts);
+      return pooled;
+    }
+    return spawn({ harnessPath, slug: opts.slug, role: opts.role });
+  });
 }
 
 // ── Bundle inspection ────────────────────────────────────────────────────────
@@ -217,7 +249,7 @@ export async function describeBundle(
   spawn: typeof spawnWarmHarness = spawnWarmHarness,
 ): Promise<unknown> {
   await using warm = await acquireWarmHarness(
-    { pool: opts.pool, harnessPath: opts.harnessPath, slug: "studio-inspect" },
+    { pool: opts.pool, harnessPath: opts.harnessPath, slug: "studio-inspect", role: "inspect" },
     spawn,
   );
   // No handlers registered (no db bound): a bundle whose top level issues a
@@ -261,6 +293,9 @@ export async function createSandboxVm(
     const warm = await pool.acquire();
     // A ready pooled harness is the only fast path.
     if (warm) {
+      // Stamp the pooled sandbox's real identity (role inferred from the
+      // slug: agent, or preview for `<project>-preview` slugs).
+      retagWarm(warm, { slug: opts.slug });
       try {
         return await configureSandbox(warm, opts);
       } catch (err: unknown) {

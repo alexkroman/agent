@@ -56,6 +56,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
+import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import {
   type DialGuest,
@@ -166,11 +167,12 @@ function realContext(execPath = process.execPath): SubprocessSpawnContext {
  * no listeners attached and no bundle loaded.
  */
 export async function spawnSubprocessWarm(
-  opts: { harnessPath: string; slug?: string },
+  opts: { harnessPath: string } & SpawnIdentity,
   ctx: SubprocessSpawnContext = realContext(),
   dial: DialGuest = dialGuest,
 ): Promise<WarmHarness> {
   const slug = opts.slug ?? "pool";
+  const role = resolveSandboxRole(opts);
   const t0 = performance.now();
   try {
     // Checked up front so a missing build fails with the path that is missing,
@@ -201,6 +203,7 @@ export async function spawnSubprocessWarm(
       const origin = `ws://127.0.0.1:${port}`;
       const ws = await dial(guestWsUrl(origin, GUEST_ROUTES.control), token);
       debug("Subprocess sandbox spawned", {
+        role,
         slug,
         port,
         ms: Math.round(performance.now() - t0),

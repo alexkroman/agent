@@ -1789,6 +1789,16 @@ service's control work is light — and one container served both badly.
 - Sandboxes are created with open egress and a bounded lifetime
   (`SANDBOX_TIMEOUT_SECS`, default 4h). Memory/CPU caps come from
   `SANDBOX_MEMORY_LIMIT_MB` / `SANDBOX_CPU_LIMIT`.
+- **Every sandbox is tagged with a `role`** (`sandbox-role.ts`: `agent`,
+  `preview`, `studio`, `studio-publish`, `inspect`, `pool`) plus the `slug`
+  (studio sandboxes carry the project name), so the Modal dashboard can tell
+  a production voice agent from a preview deploy, a studio coding-agent
+  session, or a warm-pool spare. Pooled sandboxes start as `pool` and are
+  **re-tagged via `setTags` on acquire** — without the retag every
+  pool-served sandbox would read "pool" forever. Observability only: nothing
+  may gate on these tags, and the `preview` role is inferred from the
+  `-preview` slug suffix (`PREVIEW_SLUG_SUFFIX`, shared with
+  `previewSlugFor` so the two can't drift).
 - **Transport is a WebSocket the host dials through the sandbox's Modal
   tunnel** (`encryptedPorts: [8080]`): the harness serves JSON-RPC on `/ws`,
   authenticated by a per-sandbox bearer token minted at spawn and delivered
