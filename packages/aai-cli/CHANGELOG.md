@@ -1,5 +1,16 @@
 # @alexkroman1/aai-cli
 
+## 5.1.1
+
+### Patch Changes
+
+- ded8b64: Internal cleanup of the CLI: shared slug-scoped API request helper (secret/storage now share the not-deployed 404 hint), shared package-bin resolution, aai build moved to its own entry point owning the test/typecheck gates, single source for the agent.ts entry name and repo URL, and assorted dead-weight removal (duplicated error helpers, copy-paste spinner branches, misleading lazy import in the dev server).
+- Updated dependencies [e47a187]
+- Updated dependencies [b829155]
+- Updated dependencies [ab577dc]
+  - @alexkroman1/aai-ui@5.1.1
+  - @alexkroman1/aai@5.1.1
+
 ## 5.1.0
 
 ### Patch Changes

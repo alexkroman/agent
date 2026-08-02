@@ -1,5 +1,28 @@
 # aai-guest
 
+## 0.3.0
+
+### Minor Changes
+
+- a96e9f8: Studio preview mode: edits auto-deploy to a per-project preview agent; Publish is production-only.
+
+  - Every settled edit (the coding agent's turn-complete workspace sync — now flagged `done: true`, the analog of opencode's `session.idle` / codex's `agent-turn-complete` — and editor file writes/deletes) schedules a coalesced, fire-and-forget deploy of the workspace to `<project>-preview` through the same in-guest `aai deploy` path Publish uses. Mid-turn checkpoints never trigger deploys, so half-finished trees are never previewed.
+  - The Live tab is renamed Preview and frames the preview agent, keyed by a `previewVersion` token so a fresh preview reloads the iframe exactly once; the client polls while a preview deploy is in flight, and failed preview builds surface their CLI output in the pane banner.
+  - The production URL in the top bar stays a plain link that opens the deployed agent in a new tab, and the Secrets panel mirrors writes to the preview slug so previews run with the same third-party keys.
+
+### Patch Changes
+
+- b1bf017: Consolidate aai-guest internals: one shared child-process runner (runCapped) replaces five hand-rolled spawn helpers, one bearer-auth module serves both authenticated surfaces, and the per-tool 120s deadline now wraps the merged studio tool set (web, project, and design tools included). Parallelize workspace snapshot/materialize/sync I/O and make grep read only glob-matching files.
+- c745865: Serialize the studio build child's worker and client bundles: two concurrent Rolldown passes peak at roughly the sum of their native allocations in the one process a sandbox memory cap would OOM-kill, and the sandbox's single CPU means serializing costs no meaningful wall clock.
+- 8b8249e: Revert the one-shot child-process workspace build (#845): test_agent builds run in-process in the harness again.
+- Updated dependencies [ded8b64]
+- Updated dependencies [e47a187]
+- Updated dependencies [b829155]
+- Updated dependencies [ab577dc]
+  - @alexkroman1/aai-cli@5.1.1
+  - @alexkroman1/aai-ui@5.1.1
+  - @alexkroman1/aai@5.1.1
+
 ## 0.2.2
 
 ### Patch Changes
