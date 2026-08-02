@@ -28,7 +28,42 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
+import { drainingSandboxes } from "./sandbox-retire.ts";
 import { type SlotCache, terminateSlot } from "./sandbox-slots.ts";
+
+/**
+ * Live client sessions across every guest this replica owns — what the
+ * shutdown drain actually has to wait for.
+ *
+ * The orchestrator's own `wss.clients.size` cannot answer this. Browser voice
+ * sessions dial the guest sandbox's tunnel DIRECTLY and never touch the
+ * server process, so the socket count is structurally blind to them: it
+ * reported 0 on every scale-in while calls were in flight, the drain returned
+ * immediately, and `teardownSandboxes` below cut all of them. The 120s
+ * `SHUTDOWN_DRAIN_MS` budget was dead weight — it could only ever measure
+ * connections that no longer exist on this path.
+ *
+ * Includes sandboxes that a mutation retired and that are still draining
+ * (sandbox-retire.ts): they are off the slot map by design, but the calls on
+ * them are exactly the ones retirement exists to protect.
+ *
+ * Best-effort per sandbox — an unreachable guest counts 0, the same
+ * convention idle eviction uses, so one wedged guest cannot stall shutdown
+ * past its own bounded RPC timeout.
+ */
+export async function liveGuestSessions(slots: SlotCache): Promise<number> {
+  const owned: { activeSessions?: () => Promise<number> }[] = [
+    ...[...slots.values()].flatMap((slot) => [
+      ...(slot.sandbox ? [slot.sandbox] : []),
+      ...(slot.replicas ?? []),
+    ]),
+    ...drainingSandboxes(),
+  ];
+  const counts = await Promise.all(
+    owned.map((sb) => sb.activeSessions?.().catch(() => 0) ?? Promise.resolve(0)),
+  );
+  return counts.reduce((total, n) => total + n, 0);
+}
 
 export type TeardownTargets = {
   /** The replica's slug→sandbox map; primaries and replicas both go down. */
@@ -48,6 +83,12 @@ export async function teardownSandboxes(targets: TeardownTargets): Promise<void>
   const { slots, pool, broker } = targets;
 
   const work: Promise<unknown>[] = [...slots.values()].map((slot) => terminateSlot(slot));
+  // A fourth kind: sandboxes retired by a mutation and still draining (see
+  // sandbox-retire.ts). They are deliberately detached from their slot, so
+  // the loop above cannot see them — and their drain deadline is minutes,
+  // far past the container's grace period, so waiting on it would just get
+  // the process SIGKILLed with the guests still up.
+  work.push(...drainingSandboxes().map((sb) => sb.shutdown()));
   if (pool) work.push(pool.shutdown());
   if (broker) work.push(broker.dispose());
 

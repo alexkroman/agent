@@ -32,9 +32,13 @@ export type DrainResult = {
  * real timers. Polling rather than event-driven counting keeps this decoupled
  * from how sessions are tracked: the caller passes any counter, and there is no
  * subscription to leak if shutdown races a closing socket.
+ *
+ * The counter may be async, because the other drain in this server cannot be
+ * synchronous: sessions on a retired guest sandbox live in the guest, so its
+ * count is an RPC round trip (see sandbox-retire.ts), not a local number.
  */
 export async function waitForIdle(opts: {
-  activeCount: () => number;
+  activeCount: () => number | Promise<number>;
   timeoutMs: number;
   pollMs?: number;
   sleep?: (ms: number) => Promise<void>;
@@ -45,10 +49,10 @@ export async function waitForIdle(opts: {
   const now = opts.now ?? (() => performance.now());
 
   const startedAt = now();
-  let remaining = opts.activeCount();
+  let remaining = await opts.activeCount();
   while (remaining > 0 && now() - startedAt < opts.timeoutMs) {
     await sleep(pollMs);
-    remaining = opts.activeCount();
+    remaining = await opts.activeCount();
   }
   return { drained: remaining === 0, remaining };
 }

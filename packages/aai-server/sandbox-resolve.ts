@@ -17,7 +17,9 @@ import { defaultScaleOptions, routeSession, type ScaleOptions } from "./sandbox-
 import {
   type AgentSlot,
   attachSandbox,
+  retireSlot,
   type SlotCache,
+  type SupersededCheck,
   setSlot,
   terminateSlot,
   withSlugLock,
@@ -187,6 +189,26 @@ async function residentIsCurrent(slot: AgentSlot, opts: ResolveSandboxOpts): Pro
   return (await readSlugEpoch(opts.slugEpochs, slot.slug, built)) === built;
 }
 
+/**
+ * The idle sweep's half of epoch invalidation (see `SupersededCheck`).
+ *
+ * `resolvePrimary` below only runs when a session is brokered on THIS replica,
+ * so on its own it leaves a superseded sandbox serving pre-mutation code for
+ * as long as nobody re-brokers here. Handing the same epoch comparison to the
+ * slot's idle timer bounds that to one idle window. The cache drop mirrors
+ * the stale branch of `resolvePrimary` and is not optional — the worker-code
+ * cache outlives the idle window, so a rebuild reusing it would resurrect the
+ * very bundle this evicted.
+ */
+function supersededCheck(opts: ResolveSandboxOpts): SupersededCheck | undefined {
+  if (!opts.slugEpochs) return;
+  return async (slot) => {
+    if (await residentIsCurrent(slot, opts)) return false;
+    opts.store.invalidate?.(slot.slug);
+    return true;
+  };
+}
+
 /** Build (and attach) a fresh sandbox for `slot`; null when the slug has no bundle. */
 async function rebuildSlot(
   slug: string,
@@ -226,7 +248,7 @@ async function rebuildSlot(
   const sandbox = buildSlotSandbox(slug, parts, opts);
 
   slot.epoch = builtAtEpoch;
-  attachSandbox(slots, slot, sandbox);
+  attachSandbox(slots, slot, sandbox, supersededCheck(opts));
   return sandbox;
 }
 
@@ -251,21 +273,20 @@ async function resolvePrimary(slug: string, opts: ResolveSandboxOpts): Promise<S
       const live = isLive(slot.sandbox);
       if (live && (await residentIsCurrent(slot, opts))) return slot.sandbox as Sandbox;
       if (live) {
-        // Stale: a mutation landed elsewhere. Tear down the old sandbox and
-        // drop this replica's bundle caches so the rebuild below reads the
-        // freshly stored artifacts, not cached pre-mutation ones. Sessions
-        // still live on the old sandbox get their sockets closed by the
-        // teardown; clients re-broker via client-config and reconnect onto
-        // the rebuilt sandbox's tunnel.
-        debug("Resident sandbox stale (slug epoch advanced); rebuilding", { slug });
+        // Stale: a mutation landed elsewhere. Retire the old sandbox — its
+        // sessions finish on the old code, no new one can reach it — and drop
+        // this replica's bundle caches so the rebuild below reads the freshly
+        // stored artifacts, not cached pre-mutation ones.
+        console.info("Resident sandbox superseded (slug epoch advanced); rebuilding", { slug });
         store.invalidate?.(slug);
+        retireSlot(slot, "superseded");
       } else {
-        // Dead guest: the bundle is unchanged, so the caches stay warm —
-        // only the sandbox is replaced. Reached when the guest died between
-        // the exit notification and its asynchronous detach.
+        // Dead guest: nothing to drain, and the bundle is unchanged so the
+        // caches stay warm — only the sandbox is replaced. Reached when the
+        // guest died between the exit notification and its async detach.
         debug("Resident sandbox lost (guest exited); rebuilding", { slug });
+        await terminateSlot(slot);
       }
-      await terminateSlot(slot);
     }
     return rebuildSlot(slug, slot, opts);
   });

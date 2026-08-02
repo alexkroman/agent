@@ -77,8 +77,19 @@ export function createShutdownHandler(opts: ShutdownHandlerOptions): () => Promi
 }
 
 export type DrainOptions = {
-  /** Live session count, polled until it reaches zero or the deadline passes. */
-  activeCount: () => number;
+  /**
+   * Live session count, polled until it reaches zero or the deadline passes.
+   *
+   * May be async, and on this platform must be: most sessions live in guest
+   * sandboxes rather than in this process, so counting them is an RPC fan-out
+   * (`liveGuestSessions`), not a local socket-set size.
+   */
+  activeCount: () => number | Promise<number>;
+  /**
+   * Poll interval. Callers whose count costs a guest RPC round trip should
+   * pass something far coarser than `DRAIN_POLL_MS`'s local-counter default.
+   */
+  pollMs?: number;
   env?: NodeJS.ProcessEnv;
 };
 
@@ -91,10 +102,11 @@ export type DrainOptions = {
  */
 export async function drainActiveSessions(opts: DrainOptions): Promise<void> {
   const drainMs = resolveDrainMs((opts.env ?? process.env).SHUTDOWN_DRAIN_MS);
-  console.info("Draining active sessions...", { active: opts.activeCount(), drainMs });
+  console.info("Draining active sessions...", { active: await opts.activeCount(), drainMs });
   const { drained, remaining } = await waitForIdle({
     activeCount: opts.activeCount,
     timeoutMs: drainMs,
+    ...(opts.pollMs !== undefined && { pollMs: opts.pollMs }),
   });
   if (!drained) {
     // Deliberately loud: this is a call that got cut, and the deadline is only

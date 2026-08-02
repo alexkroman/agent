@@ -8,9 +8,11 @@
  */
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { IDLE_SANDBOX_MS, RETIRE_POLL_MS } from "./constants.ts";
 import { createMemorySlugEpochs } from "./platform-epoch.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import type { RpcConnection } from "./rpc-transport.ts";
+import type { Sandbox } from "./sandbox.ts";
 import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { createTestStore } from "./test-utils.ts";
@@ -134,5 +136,64 @@ describe("resolveSandbox epoch invalidation", () => {
     await expect(resolveSandbox("db-blip", deps)).resolves.toBe(first);
     expect(warn).toHaveBeenCalled();
     await first?.shutdown();
+  });
+});
+
+/**
+ * The epoch check above only runs when a session is brokered on THIS replica.
+ * A mutation elsewhere therefore leaves a sandbox serving pre-mutation code
+ * for as long as nobody re-brokers here — indefinitely if it holds sessions,
+ * since the plain idle probe re-arms on any live count. The idle timer is the
+ * backstop, so it consults the epoch too.
+ */
+describe("idle sweep retires superseded sandboxes without a new broker", () => {
+  beforeEach(() => {
+    // `performance` too — retirement's drain deadline is measured with
+    // performance.now(), which vitest leaves real by default.
+    vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout", "Date", "performance"] });
+    vi.spyOn(console, "info").mockImplementation(() => undefined);
+    vi.spyOn(console, "error").mockImplementation(() => undefined);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+    vi.restoreAllMocks();
+  });
+
+  it("detaches and drops bundle caches after another replica's mutation", async () => {
+    const deps = await seedAgent("orphaned");
+    const sandbox = await resolveSandbox("orphaned", deps);
+    expect(sandbox).not.toBeNull();
+    // Busy guest: the plain session probe would keep re-arming the timer.
+    let live = 4;
+    vi.spyOn(sandbox as Sandbox, "activeSessions").mockImplementation(() => Promise.resolve(live));
+    const shutdown = vi.spyOn(sandbox as Sandbox, "shutdown");
+
+    await deps.slugEpochs.bump("orphaned");
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+
+    // Off the slot immediately, so the next broker builds the new bundle...
+    expect(deps.slots.get("orphaned")?.sandbox).toBeUndefined();
+    // The worker-code cache (10 min) outlives the idle window (5 min), so a
+    // rebuild that reused it would resurrect the pre-mutation bundle.
+    expect(deps.invalidate).toHaveBeenCalledWith("orphaned");
+    // ...but the four calls on it are not hung up on.
+    expect(shutdown).not.toHaveBeenCalled();
+
+    live = 0;
+    await vi.advanceTimersByTimeAsync(RETIRE_POLL_MS + 1);
+    expect(shutdown).toHaveBeenCalledOnce();
+  });
+
+  it("leaves a current resident alone", async () => {
+    const deps = await seedAgent("fresh");
+    const sandbox = await resolveSandbox("fresh", deps);
+    vi.spyOn(sandbox as Sandbox, "activeSessions").mockResolvedValue(1);
+    const shutdown = vi.spyOn(sandbox as Sandbox, "shutdown");
+
+    await vi.advanceTimersByTimeAsync(IDLE_SANDBOX_MS + 1);
+
+    expect(shutdown).not.toHaveBeenCalled();
+    expect(deps.invalidate).not.toHaveBeenCalled();
   });
 });

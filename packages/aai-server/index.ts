@@ -10,7 +10,7 @@
  * dev, pre-split deployments) live in the aai-studio-server package.
  */
 
-import { DEFAULT_PORT } from "./constants.ts";
+import { DEFAULT_PORT, DRAIN_GUEST_POLL_MS } from "./constants.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { drainActiveSessions, startService } from "./serve-lifecycle.ts";
 import {
@@ -18,7 +18,7 @@ import {
   buildServiceConfig,
   installProcessSafetyNets,
 } from "./service-config.ts";
-import { teardownSandboxes } from "./teardown-sandboxes.ts";
+import { liveGuestSessions, teardownSandboxes } from "./teardown-sandboxes.ts";
 
 async function main(): Promise<void> {
   installProcessSafetyNets();
@@ -52,8 +52,20 @@ async function main(): Promise<void> {
       // them immediately (which this used to do) cut every conversation in
       // flight on every deploy — both strategies replace all machines, so that
       // was every active call, mid-sentence.
+      //
+      // The count must include the GUESTS' sessions, not just this process's
+      // sockets: browser sessions dial the sandbox tunnel directly, so
+      // `activeSessionCount` (wss.clients.size) is blind to them and reported
+      // 0 on every scale-in while calls were live — the drain returned at once
+      // and teardown cut them anyway, which is the exact failure the paragraph
+      // above describes, reintroduced when sessions moved into the guests.
       draining = true;
-      await drainActiveSessions({ activeCount: activeSessionCount, env });
+      await drainActiveSessions({
+        activeCount: async () => activeSessionCount() + (await liveGuestSessions(opts.slots)),
+        // Each poll is an RPC fan-out across the replica's guests.
+        pollMs: DRAIN_GUEST_POLL_MS,
+        env,
+      });
 
       console.info("Shutting down...");
       // Close client WebSockets: closing the HTTP server only waits for

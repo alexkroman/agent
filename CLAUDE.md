@@ -1661,6 +1661,58 @@ service's control work is light — and one container served both badly.
   mutation); epoch reads degrade to "current" so a broker request never
   dies on the invalidation check. A client re-brokers on reconnect, so a
   replaced sandbox heals with one reconnect.
+
+  **The epoch is read on TWO paths, and the second one is what bounds
+  staleness.** `resolveSandbox` reads it lazily — only when a session is
+  brokered on this replica — so on its own it leaves peer replicas serving
+  pre-deploy code for as long as nobody re-brokers there. That is not a
+  corner case: `buffer_containers` keeps a warm spare, so the replica that
+  serves `POST /deploy` and the replica holding the slug's sandbox are
+  routinely different containers, and a redeploy verifiably leaves the
+  other one's sandbox running. The plain idle probe cannot be the backstop
+  either — it re-arms on any live session count, and those sessions are ON
+  the superseded sandbox, so gating on them means never retiring it. So the
+  slot's idle timer runs the same epoch comparison (`SupersededCheck`,
+  injected by `sandbox-resolve.ts` into `attachSandbox`) ahead of the
+  session probe and retires regardless of live sessions, bounding staleness
+  to one `IDLE_SANDBOX_MS` window. The check MUST drop the bundle caches as
+  well as compare the epoch: the worker-code cache lives 10 minutes against
+  a 5-minute idle window, so an eviction that skipped
+  `BundleStore.invalidate` would rebuild the SAME pre-mutation bundle and
+  stamp it with the current epoch — pinning the old code rather than
+  clearing it. `evictIdleSandbox`'s re-arm has to carry the check forward
+  for the same reason it exists: a busy slug re-arms forever, and a re-arm
+  that dropped it would leave precisely the long-lived, never-re-brokered
+  sandboxes unchecked.
+- **A superseded sandbox is RETIRED, not terminated** (`sandbox-retire.ts`).
+  A mutation replaces the code a slug runs; it says nothing about the calls
+  already in flight on the old sandbox, and closing their sockets inline —
+  which every mutation path used to do — meant shipping during the day
+  dropped live conversations. That is the failure `_drain.ts` prevents on
+  scale-in, arriving instead on every redeploy. `retireSlot` splits the two
+  things "terminate" conflated: it detaches the sandbox (and its replicas)
+  from the slot **synchronously, with no await in between** — the broker is
+  the only routing point, so from that instant no NEW session can reach it
+  and the slug is free to rebuild — then hands each one to a background
+  drain that polls the guest's `status` RPC until it reports zero sessions,
+  and only then shuts it down. Callers must NOT await the drain: a deploy
+  cannot block for the length of someone else's call.
+  - **Timing.** The first probe runs before any sleep, so a superseded
+    sandbox with nobody on it dies immediately — the common deploy. After
+    the last call ends it dies within one `RETIRE_POLL_MS` (5s). A call
+    that never ends is cut at `SANDBOX_RETIRE_DRAIN_MS` (10 min, env
+    overridable; 0 restores immediate termination), because a retired
+    sandbox is a billed guest still running superseded code. On a peer
+    replica add up to `IDLE_SANDBOX_MS` before retirement even starts.
+  - **Retirement is for superseded, not gone.** A failed VM, an exited
+    guest, and a deleted agent stay on `terminateSlot`: there is nothing to
+    drain, and a deleted agent must stop answering rather than keep taking
+    calls for ten more minutes.
+  - **Process teardown has to reach draining sandboxes separately**
+    (`teardown-sandboxes.ts` consults `drainingSandboxes()`). They are
+    deliberately absent from the slot map, so the slot loop cannot see them,
+    and their drain deadline is minutes past the container grace period —
+    waiting on it would just get the process SIGKILLed with the guests up.
 - **The studio service holds an always-empty slot cache** — the shared
   mutation cores' local sandbox restarts are deliberate no-ops there, while
   their epoch bumps do the real work. It shares everything else through
@@ -1668,9 +1720,25 @@ service's control work is light — and one container served both badly.
   extraction (its own warm pool via `SANDBOX_POOL_SIZE`).
 - **The web service autoscales** (constants block in `modal_deploy.py`),
   bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS`. Voice sessions don't pass
-  through the service, so scale-in and redeploys never cut a call — a
-  draining replica only drops control channels, and the guest's orphan
-  timeout plus re-brokering cover replacement.
+  through the service, but that does NOT make scale-in free: a draining
+  replica runs `teardownSandboxes`, which terminates the guest sandboxes it
+  owns — and the calls are inside those guests.
+
+  **So the shutdown drain has to count guest sessions, not sockets**
+  (`liveGuestSessions` in `teardown-sandboxes.ts`, fed to
+  `drainActiveSessions` by both entries). `activeSessionCount` is
+  `wss.clients.size` — connections to THIS process — and browsers dial the
+  sandbox tunnel directly, so it is structurally blind to voice sessions: it
+  logged `Draining active sessions... { active: 0, drainMs: 120000 }` on
+  every scale-in while calls were live, returned instantly, and teardown cut
+  them. The 120s budget could only ever measure connections that no longer
+  take this path. The count now sums each owned sandbox's `activeSessions()`
+  (plus sandboxes still draining from a retirement, which are deliberately
+  off the slot map) and polls at `DRAIN_GUEST_POLL_MS` rather than
+  `DRAIN_POLL_MS`, because each poll is an RPC fan-out. It stays a *bounded*
+  wait inside `scaledown_window` — past `SHUTDOWN_DRAIN_MS` the replica goes
+  down regardless, since a drain longer than the container grace period is a
+  SIGKILL with extra steps.
 - **A WebSocket is ONE Modal input, so the function `timeout` bounds CALL
   DURATION** — not request latency. Both services therefore set it explicitly
   (`FUNCTION_TIMEOUT_SECS` = 4h on the agent app, matching

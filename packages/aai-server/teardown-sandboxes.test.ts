@@ -1,10 +1,69 @@
 // Copyright 2026 the AAI authors. MIT license.
 
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { retireSandbox } from "./sandbox-retire.ts";
 import { createSlotCache, setSlot } from "./sandbox-slots.ts";
-import { teardownSandboxes } from "./teardown-sandboxes.ts";
+import { liveGuestSessions, teardownSandboxes } from "./teardown-sandboxes.ts";
 
 const fakeSandbox = () => ({ shutdown: vi.fn().mockResolvedValue(undefined) });
+
+const countingSandbox = (n: number | (() => number)) => ({
+  shutdown: vi.fn().mockResolvedValue(undefined),
+  activeSessions: vi.fn(() => Promise.resolve(typeof n === "function" ? n() : n)),
+});
+
+/**
+ * The shutdown drain's input. `wss.clients.size` cannot see a browser voice
+ * session — it dials the guest tunnel directly — so this is the only honest
+ * count, and getting it wrong means every scale-in cuts live calls while
+ * reporting a clean drain.
+ */
+describe("liveGuestSessions", () => {
+  it("sums primaries and overflow replicas across every slot", async () => {
+    const slots = createSlotCache();
+    setSlot(slots, { slug: "a", sandbox: countingSandbox(3) });
+    setSlot(slots, {
+      slug: "b",
+      sandbox: countingSandbox(1),
+      replicas: [countingSandbox(2), countingSandbox(4)],
+    });
+
+    await expect(liveGuestSessions(slots)).resolves.toBe(10);
+  });
+
+  it("counts sandboxes that a mutation retired and are still draining", async () => {
+    const slots = createSlotCache();
+    let live = 2;
+    const retired = countingSandbox(() => live);
+    // Off the slot map by design — but its calls are exactly the ones
+    // retirement exists to protect, so shutdown must still wait for them.
+    const done = retireSandbox(retired, { slug: "retired", reason: "deploy", pollMs: 5 });
+
+    await expect(liveGuestSessions(slots)).resolves.toBe(2);
+
+    live = 0;
+    await done;
+    await expect(liveGuestSessions(slots)).resolves.toBe(0);
+  });
+
+  it("counts an unreachable guest as idle rather than stalling shutdown", async () => {
+    const slots = createSlotCache();
+    setSlot(slots, {
+      slug: "dead",
+      sandbox: {
+        shutdown: vi.fn().mockResolvedValue(undefined),
+        activeSessions: () => Promise.reject(new Error("guest gone")),
+      },
+    });
+    setSlot(slots, { slug: "alive", sandbox: countingSandbox(2) });
+
+    await expect(liveGuestSessions(slots)).resolves.toBe(2);
+  });
+
+  it("is zero with no sandboxes", async () => {
+    await expect(liveGuestSessions(createSlotCache())).resolves.toBe(0);
+  });
+});
 
 describe("teardownSandboxes", () => {
   beforeEach(() => {

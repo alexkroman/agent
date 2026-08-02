@@ -7,7 +7,7 @@ import type { ValidatedAppContext } from "./context.ts";
 import { bumpSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
-import { type SlotCache, setSlot, terminateSlot } from "./sandbox-slots.ts";
+import { retireSlot, type SlotCache, setSlot } from "./sandbox-slots.ts";
 import type { AgentMetadata, DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, matchAnyHash } from "./secrets.ts";
@@ -214,8 +214,12 @@ async function deployLocked(
 
   const existingSlot = deps.slots.get(slug);
   if (existingSlot?.sandbox) {
-    debug("Replacing existing deploy", { slug });
-    await terminateSlot(existingSlot);
+    // Retire, don't terminate: the calls in flight on the old sandbox did not
+    // ask to be redeployed, and cutting them is what made shipping during the
+    // day drop live conversations. The detach is synchronous, so the slug is
+    // free for the rebuild below immediately (see sandbox-retire.ts).
+    console.info("Retiring superseded sandbox for deploy", { slug });
+    retireSlot(existingSlot, "deploy");
   }
 
   // Preserve multi-user ownership: append the deployer's hash only when no
