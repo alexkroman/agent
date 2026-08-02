@@ -1,5 +1,11 @@
 # @alexkroman1/aai-server
 
+## 3.1.1
+
+### Patch Changes
+
+- 23a3a5d: Fix Modal containers crashing at startup with ModuleNotFoundError: mount scripts/modal_image.py into the container image via add_local_python_source so the deploy script's import resolves when Modal re-imports it inside the container.
+
 ## 3.1.0
 
 ### Minor Changes
