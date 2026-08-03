@@ -793,12 +793,31 @@ Available from `@alexkroman1/aai-ui`:
 
 | Component | Props | Description |
 | --- | --- | --- |
-| `StartScreen` | `children, icon?, title?, subtitle?, buttonText?` | Centered start card; renders children after start |
+| `StartScreen` | `children` (**required**)`, icon?, title?, subtitle?, buttonText?` | **Wrapper, never self-closing.** Shows the start card, then renders `children` — your whole app — once the session starts |
 | `ChatView` | `icon?, title?` | Chat interface (header + messages + controls) |
 | `SidebarLayout` | `sidebar, children, sidebarWidth?, sidebarPosition?` | Two-column layout |
 | `MessageList` | — | Messages with auto-scroll, tool calls, transcript |
 | `Controls` | — | Stop/Resume + New Conversation buttons |
 | `Button` | — | Styled button |
+
+The usual shape — note `StartScreen` **wraps** the app rather than sitting
+beside it; writing `<StartScreen ... />` self-closing is a `TS2741:
+Property 'children' is missing` build error:
+
+```tsx
+import "@alexkroman1/aai-ui/styles.css";
+import { ChatView, client, StartScreen } from "@alexkroman1/aai-ui";
+
+function PizzaApp() {
+  return (
+    <StartScreen title="Pizza Palace" subtitle="Voice-powered ordering">
+      <ChatView />
+    </StartScreen>
+  );
+}
+
+client({ component: PizzaApp });
+```
 
 ## Styling
 

@@ -59,7 +59,12 @@ describe("studioSystemPrompt", () => {
     // guarantees, with the S2S voice agent API only on request. Both are
     // graded by the CONFIG_CASES half of the studio codegen evals.
     expect(prompt).toContain("Default to a cascaded (pipeline-mode) agent");
-    expect(prompt).toContain('llm: assemblyAI({ model: "qwen3-next-80b-a3b" })');
+    // The SDK's own preset, not the hand-rolled triple. `assemblyAIPipeline`
+    // exists to close exactly this gap and the scaffold reference already
+    // teaches it first — but the preamble outranks the reference, and while it
+    // spelled out the long form, 11 of 11 starter-eval agents wrote three
+    // aliased `assemblyAI` imports and none used the preset.
+    expect(prompt).toContain("assemblyAIPipeline");
     // Real gateway ids are interpolated so the agent can't invent one
     // (a made-up id only fails at runtime, with a 400 "model not found").
     // gpt-5.2 appears nowhere in the preamble literal, so it can only be here

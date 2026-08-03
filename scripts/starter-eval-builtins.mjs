@@ -15,9 +15,10 @@
  *
  *   node scripts/starter-eval-builtins.mjs run.json [more.json ...]
  *
- * Reads the workspaces the harness captured. Note it only captures files for
- * runs that were NOT shippable, so this undercounts; treat the numbers as a
- * lower bound on adoption and say so rather than reporting them as totals.
+ * Reads the workspaces the harness captured. It captures them for EVERY run,
+ * shippable or not, which is what makes these totals rather than a lower
+ * bound — the runs that SUCCEEDED are exactly the ones whose unprompted
+ * choices the question is about, and the harness used to drop them.
  */
 
 import { readFileSync } from "node:fs";

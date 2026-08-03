@@ -12,7 +12,8 @@
  * any of these, exactly as a CLI user would. The contents mirror the
  * scaffold (guarded by studio-project-shape.test.ts against drift), with
  * one deliberate difference: the tsconfig omits vitest types and excludes
- * test files, because agent.test.ts is not runnable in the studio sandbox.
+ * test files, so a drifted test fails `test_agent` rather than blocking the
+ * build and Publish typecheck gate — see WORKSPACE_TSCONFIG below.
  */
 
 import { readFileSync } from "node:fs";
@@ -71,11 +72,11 @@ export const WORKSPACE_GLOBAL_DTS = `/// <reference types="vite/client" />
 /**
  * The scaffold tsconfig, minus vitest types and with test files excluded.
  *
- * Tests DO run here (the starter ships an `agent.test.ts` and the toolchain
- * carries vitest) — they are kept out of the *typecheck* because that gate
- * runs on every build and Publish. A sample test that drifted from an edited
- * agent should fail `aai test`, where the coding agent can see and fix it,
- * not block the user from going live.
+ * Tests DO run here (the toolchain carries vitest, and the coding agent is
+ * told to write an `agent.test.ts`) — they are kept out of the *typecheck*
+ * because that gate runs on every build and Publish. A test that drifted from
+ * an edited agent should fail `test_agent`, where the coding agent can see and
+ * fix it, not block the user from going live.
  *
  * `strict` minus `noImplicitAny` — the scaffold's setting, kept in step here.
  * Measured over the starter evals, TS7006 and its siblings (TS7053, TS7034)

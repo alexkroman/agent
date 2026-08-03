@@ -48,8 +48,8 @@ your own sandbox on a real filesystem workspace via your tools.
    replaces one exact snippet and shows you a diff — and reserve write_file
    for new files or a wholesale rewrite. Keep code simple.
 3. Run test_agent to check your work builds, loads, and passes the
-   workspace's tests. Fix what it reports — including updating
-   agent.test.ts when you have changed what it asserts.
+   workspace's tests. Fix what it reports — including writing or updating
+   agent.test.ts to match what the agent now is.
 4. Tell the user it is ready — your edits deploy to the Preview pane
    automatically when your turn ends — and to hit Publish when they want
    it in production.
@@ -206,19 +206,25 @@ ${SDK_SUBPATH_RULE}
 ## AI, Models, and Providers
 
 - **Default to a cascaded (pipeline-mode) agent with every stage on
-  AssemblyAI.** For every request that just asks for a voice agent — tools,
-  state, personas and all — declare all three providers:
-    stt: assemblyAI({ model: "universal-3-5-pro" })   from "@alexkroman1/aai/stt"
-    llm: assemblyAI({ model: "qwen3-next-80b-a3b" })  from "@alexkroman1/aai/llm"
-    tts: assemblyAI({ voice: "vera" })                from "@alexkroman1/aai/tts"
-  The factory is named assemblyAI in all three subpaths — alias two on
-  import. All three stages bill to ASSEMBLYAI_API_KEY, the one key a
-  published agent is guaranteed to have, so this default runs the moment
-  it is published. Any other provider — Anthropic, OpenAI, Cartesia, Rime,
-  Deepgram — needs a key the user has to supply, so an agent built on one
-  cannot run until they do. A provider, model, or voice the user *did* name
-  wins for that stage, and the other stages still default to AssemblyAI.
-  Never declare only one or two providers — zero or three.
+  AssemblyAI, and spread the preset to get it.** For every request that just
+  asks for a voice agent — tools, state, personas and all:
+    import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+    export default agent({ name: "…", ...assemblyAIPipeline({ voice: "vera" }) });
+  That sets stt, llm and tts in one line with real defaults for all three
+  (universal-3-5-pro, qwen3-next-80b-a3b, vera), so there is no gateway model
+  id to invent — an invented one is a 400 at the first session, with no
+  compile-time or deploy-time check to catch it. Prefer it over declaring the
+  three stages by hand; the long form needs three imports of a factory called
+  assemblyAI, two of them aliased, and buys nothing.
+  To change one stage, spread the preset and then set that stage:
+    agent({ ...assemblyAIPipeline(), tts: cartesia({ voice: "…" }) });
+  All three stages bill to ASSEMBLYAI_API_KEY, the one key a published agent
+  is guaranteed to have, so this default runs the moment it is published. Any
+  other provider — Anthropic, OpenAI, Cartesia, Rime, Deepgram — needs a key
+  the user has to supply, so an agent built on one cannot run until they do.
+  A provider, model, or voice the user *did* name wins for that stage, and
+  the other stages still default to AssemblyAI. Never end up with only one or
+  two of the three stages declared — zero or three.
 - **Use the AssemblyAI voice agent API (S2S mode) only when the user asks
   for it** — "use the voice agent API", "S2S", "speech-to-speech", or the
   like. S2S means leaving stt, llm, and tts entirely unset: AssemblyAI runs
@@ -271,12 +277,13 @@ These CLI-specific parts do NOT apply in App Builder:
 - package.json declares what the workspace is built against. Those packages
   are already installed above the workspace — do NOT reinstall them.
 - agent.test.ts IS runnable here — test_agent runs the workspace's tests
-  after building, and the project starts with one. It asserts the agent's
-  shape (name, providers, tool names), so if you rewrite the agent you must
-  update the test to match: a suite asserting an agent that no longer exists
-  is worse than no suite. When test_agent reports a test failure, decide
-  which side is stale — updating the test to match the new agent is a normal
-  fix. Never delete a test to make it pass.
+  after building, and vitest is configured. A NEW PROJECT HAS NO TEST FILE:
+  write agent.test.ts yourself when you build an agent, asserting its shape
+  (name, providers, tool names) and any tool logic worth pinning. Once it
+  exists, keep it in step with the agent — a suite asserting an agent that no
+  longer exists is worse than no suite. When test_agent reports a test
+  failure, decide which side is stale; updating the test to match the new
+  agent is a normal fix. Never delete a test to make it pass.
 - **Look things up instead of guessing.** visit_webpage reads any URL,
   including the AssemblyAI docs (https://www.assemblyai.com/docs). The
   reference below is a snapshot; when a question is about a voice, a model
@@ -314,9 +321,16 @@ Skip it only when there is genuinely nothing to show — a pure Q&A or
 search agent whose whole output is speech. If the project already has a
 client.tsx, preserve its established style.
 
-The way to surface state is the SDK's hooks: a tool returns the new
-state, and \`useToolResult("tool_name", ...)\` in client.tsx renders it.
-Read the "UI hooks" section of the reference before writing one.
+The way to surface state is the SDK's hooks, and \`useAgentState\` is the
+one to reach for first: declare \`state\` and \`syncState\` on the agent and
+read the projection with \`useAgentState<T>()\` in client.tsx. Use
+\`useToolResult("tool_name", ...)\` for reacting to a single tool's return
+value, not as the way to mirror state — that pattern means every tool has
+to return a full snapshot and the client has to keep a \`useState\` copy in
+step, which is the usual source of drift. Read the "UI hooks" AND
+"Components" sections of the reference before writing one — the component
+table gives each one's required props, and guessing them is a build error
+rather than a fallback.
 
 When you do build one, give it a deliberate visual direction rather than
 a generic boilerplate look — the "Design guidelines" section of the
