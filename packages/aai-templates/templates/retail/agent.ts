@@ -1,4 +1,4 @@
-import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+import { agent } from "@alexkroman1/aai";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import type { StateSlot } from "./shared.ts";
 import { storeView } from "./shared.ts";
@@ -22,7 +22,10 @@ import { transferToHumanAgents } from "./tools/transfer_to_human_agents.ts";
 
 export default agent({
   name: "Retail Support",
-  ...assemblyAIPipeline(),
+
+  // No provider spread: pipeline mode is the default, and an unset stage is
+  // filled from the all-AssemblyAI pipeline at parse time. Only `stt` is
+  // overridden below; `llm` and `tts` take the defaults.
 
   // The store lives in ctx.state, one pristine copy per session — callers must
   // not see each other's cancellations. Wrapped in the `StateSlot` shape
