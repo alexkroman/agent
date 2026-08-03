@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import type { AuthResult } from "./authenticate.ts";
 import type { ErrorResult } from "./store.ts";
 import { getState, isError } from "./store.ts";
+import { cancelPendingOrder } from "./tools/cancel_pending_order.ts";
 import { findUserIdByEmail } from "./tools/find_user_id_by_email.ts";
 import { findUserIdByNameZip } from "./tools/find_user_id_by_name_zip.ts";
 import { getItemDetails } from "./tools/get_item_details.ts";
@@ -205,5 +206,125 @@ describe("read tools", () => {
     // human reading the catalog, e.g. "Laptop" before "LED Light Bulb" ('a' < 'E'
     // by locale, but not by UTF-16 code unit).
     expect(names).toEqual([...names].sort((a, b) => a.localeCompare(b)));
+  });
+});
+
+interface CancelOrderResult {
+  order_id: string;
+  status: string;
+  cancel_reason: string;
+  refunded: number;
+  refund_immediate: boolean;
+  message: string;
+}
+
+describe("cancel_pending_order", () => {
+  test("cancels a pending order and credits a gift card immediately", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    const result = (await cancelPendingOrder.execute(
+      { order_id: "#W9300146", reason: "ordered by mistake" },
+      ctx,
+    )) as CancelOrderResult | ErrorResult;
+    if (isError(result)) throw new Error(result.error);
+    expect(result.status).toBe("cancelled");
+    expect(result.refund_immediate).toBe(true);
+
+    const state = getState(ctx);
+    expect(state.store.orders["#W9300146"]?.status).toBe("cancelled");
+    expect(state.store.orders["#W9300146"]?.cancel_reason).toBe("ordered by mistake");
+    // $17.00 card + the $153.23 order total.
+    const card = state.store.users.aarav_anderson_8794?.payment_methods.gift_card_7245904;
+    expect(card?.source === "gift_card" && card.balance).toBe(170.23);
+  });
+
+  test("appends a matching refund to the payment history", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    await cancelPendingOrder.execute({ order_id: "#W9300146", reason: "no longer needed" }, ctx);
+    const history = getState(ctx).store.orders["#W9300146"]?.payment_history ?? [];
+    expect(history).toHaveLength(2);
+    expect(history[1]).toMatchObject({
+      transaction_type: "refund",
+      amount: 153.23,
+      payment_method_id: "gift_card_7245904",
+    });
+  });
+
+  test("a non-gift-card refund takes 5-7 days and moves no balance", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = (await cancelPendingOrder.execute(
+      { order_id: "#W5442520", reason: "no longer needed" },
+      ctx,
+    )) as CancelOrderResult | ErrorResult;
+    if (isError(result)) throw new Error(result.error);
+    expect(result.refund_immediate).toBe(false);
+    expect(result.message).toContain("5 to 7");
+    const card = getState(ctx).store.users.olivia_ito_3591?.payment_methods.gift_card_7794233;
+    expect(card?.source === "gift_card" && card.balance).toBe(56);
+  });
+
+  test("refuses a processed order", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = await cancelPendingOrder.execute(
+      { order_id: "#W5353646", reason: "no longer needed" },
+      ctx,
+    );
+    expect(isError(result) && result.error).toContain("processed");
+    expect(getState(ctx).store.orders["#W5353646"]?.status).toBe("processed");
+  });
+
+  test("refuses a delivered order", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = await cancelPendingOrder.execute(
+      { order_id: "#W5866402", reason: "no longer needed" },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
+  });
+
+  test("refuses a reason outside tau2's two accepted values", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    // The schema's `reason` field is a two-value enum, so a well-typed caller
+    // can never construct this input — this simulates the wire boundary
+    // (an LLM tool call is untyped) rather than a call TS would allow.
+    const result = await cancelPendingOrder.execute(
+      { order_id: "#W9300146", reason: "changed my mind" as unknown as "no longer needed" },
+      ctx,
+    );
+    expect(isError(result) && result.error).toContain("no longer needed");
+    expect(getState(ctx).store.orders["#W9300146"]?.status).toBe("pending");
+  });
+
+  test("refuses cancelling twice", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    await cancelPendingOrder.execute({ order_id: "#W9300146", reason: "no longer needed" }, ctx);
+    const second = await cancelPendingOrder.execute(
+      { order_id: "#W9300146", reason: "no longer needed" },
+      ctx,
+    );
+    expect(isError(second)).toBe(true);
+    const card = getState(ctx).store.users.aarav_anderson_8794?.payment_methods.gift_card_7245904;
+    expect(card?.source === "gift_card" && card.balance).toBe(170.23);
+  });
+
+  test("resolves spoken shorthand to the single pending order", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    const result = (await cancelPendingOrder.execute(
+      { order_id: "my pending order", reason: "ordered by mistake" },
+      ctx,
+    )) as CancelOrderResult | ErrorResult;
+    expect(isError(result) ? null : result.order_id).toBe("#W9300146");
+  });
+
+  test("refuses ambiguous shorthand rather than cancelling the wrong order", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = await cancelPendingOrder.execute(
+      { order_id: "my pending order", reason: "no longer needed" },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
+    const statuses = ["#W5442520", "#W7941031", "#W3657213"].map(
+      (id) => getState(ctx).store.orders[id]?.status,
+    );
+    expect(statuses).toEqual(["pending", "pending", "pending"]);
   });
 });
