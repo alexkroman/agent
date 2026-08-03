@@ -1,5 +1,12 @@
 # aai-studio-client
 
+## 0.3.2
+
+### Patch Changes
+
+- 4076382: Studio: Settings moved next to Publish and no longer gated on a deploy, so Delete project works before anything is published
+- 2d7913d: Studio chat no longer wedges on 'Starting sandbox…' when opened during a server restart: the session broker call now has a per-attempt timeout, transient failures retry with backoff, and the error state offers an in-place Try again instead of requiring a page reload.
+
 ## 0.3.1
 
 ### Patch Changes
