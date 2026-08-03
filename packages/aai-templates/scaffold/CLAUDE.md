@@ -75,12 +75,14 @@ import { agent } from "@alexkroman1/aai";
 export default agent({
   name: string;                              // required — display name
   systemPrompt?: string;                     // default: general voice assistant
+                                             // (`system` is an accepted alias)
   greeting?: string;                         // default: "Hey there..."
   sttPrompt?: string;                        // STT guidance for jargon/acronyms
   builtinTools?: BuiltinTool[];              // see built-in tools table
   tools?: Record<string, ToolDef>;
   maxSteps?: number;                         // default: 10 — max tool calls per turn
-  toolChoice?: "auto" | "required";          // default: "auto"
+  toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
+                                             // | { type: "tool", toolName }
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
   silenceTimeoutMs?: number;                 // pipeline only — assistant speaks up after this much user silence (ms)
   silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
@@ -96,7 +98,10 @@ export default agent({
 ```
 
 > When `stt`, `llm`, and `tts` are all provided, the agent runs in
-> **Pipeline mode** — see the section below.
+> **Pipeline mode** — see the section below. `llm` also accepts a model-id
+> string: `"creator/model"` routes through the Vercel AI Gateway
+> (`AI_GATEWAY_API_KEY`), a bare id through the AssemblyAI LLM Gateway
+> (`ASSEMBLYAI_API_KEY`).
 
 Minimal agent — a cascaded pipeline, which is what you should build unless
 the user asks for the speech-to-speech API:
@@ -357,7 +362,7 @@ import { z } from "zod";
 
 const myTool = tool({
   description: string;           // shown to LLM — decides when to call
-  parameters?: z.ZodObject;      // Zod schema (omit for no-arg tools)
+  inputSchema?: z.ZodObject;     // Zod schema (omit for no-arg tools)
   execute(args, ctx): unknown;   // sync or async
 });
 ```
@@ -446,10 +451,11 @@ compile error, which is the point.
 
 `ctx.generate({ prompt, system?, llm?, schema?, temperature?, maxOutputTokens? })`
 runs one LLM generation on the host. It defaults to the agent's pipeline
-`llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) to use another
-provider whose API key is in the agent's secrets — that's also how S2S
-agents use it. `schema` must be a **plain JSON Schema object** (use
-`z.toJSONSchema(...)`), never a Zod schema.
+`llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) or a model-id
+string to use another provider whose API key is in the agent's secrets —
+that's also how S2S agents use it. Pass a Zod schema as `schema` for typed
+structured output (`generateObject`-style): the result's `object` carries
+the parsed, typed value. A plain JSON Schema object also works.
 
 ### Inline tool example
 
@@ -462,7 +468,7 @@ export default agent({
   tools: {
     get_weather: tool({
       description: "Get current weather for a city",
-      parameters: z.object({
+      inputSchema: z.object({
         city: z.string().describe("City name"),
       }),
       async execute({ city }, ctx) {
@@ -510,18 +516,18 @@ Wrapping `webSearch` in a single custom tool is the mistake to avoid — it
 replaces "the model searches as needed" with one fixed query-and-summarize
 pipeline, and no amount of prompting gets the flexibility back.
 
-**`parameters` is a Zod object, or absent.** The field itself is optional,
-but its VALUE must be a plain `z.object(...)` — so all of these are type
-errors:
+**`inputSchema` is a Zod object, or absent.** The field itself is
+optional, but its VALUE must be a plain `z.object(...)` — so all of these
+are type errors:
 
 ```ts no-check
-parameters: z.undefined(),                 // ✗ ZodUndefined
-parameters: z.void(),                      // ✗
-parameters: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
+inputSchema: z.undefined(),                // ✗ ZodUndefined
+inputSchema: z.void(),                     // ✗
+inputSchema: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
 ```
 
 For a tool with no arguments write `tool({ description, execute })`, or
-`parameters: z.object({})` if you prefer it explicit. To make an individual
+`inputSchema: z.object({})` if you prefer it explicit. To make an individual
 argument optional, put `.optional()` on the FIELD, never on the object:
 `z.object({ notes: z.string().optional() })`.
 
@@ -542,7 +548,7 @@ import { z } from "zod";
 
 export const rollDice = tool({
   description: "Roll dice",
-  parameters: z.object({ sides: z.number() }),
+  inputSchema: z.object({ sides: z.number() }),
   execute({ sides }) {
     return Math.floor(Math.random() * sides) + 1;
   },

@@ -4,7 +4,7 @@ import { findIncident, getApplicableProtocols, getState, incidentAgeMinutes } fr
 
 export const incidentGet = tool({
   description: "Get full details on a specific incident including timeline and assigned resources.",
-  parameters: z.object({
+  inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
   }),
   async execute(args, ctx) {

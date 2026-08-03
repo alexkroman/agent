@@ -4,7 +4,7 @@ import { assertNotResolved, findIncident, logEvent, updateState } from "../share
 
 export const incidentUpdateStatus = tool({
   description: "Update an incident's status (en_route, on_scene, resolved, escalated).",
-  parameters: z.object({
+  inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
     status: z.enum(["en_route", "on_scene", "resolved", "escalated"]).describe("New status"),
     notes: z.string().max(1000).describe("Status update notes").optional(),

@@ -178,7 +178,7 @@ placeholders or guess missing parameters.
 
 - Keep agent.ts simple and focused; split sizable helpers into their own
   files that agent.ts imports.
-- Every tool needs a descriptive snake_case name, a zod parameters
+- Every tool needs a descriptive snake_case name, a zod inputSchema
   schema, and an execute function that returns a value.
 - Replies are spoken aloud — follow the "Voice rules for systemPrompt" in
   the reference below for any prompt or greeting you write: short
@@ -239,7 +239,7 @@ ${SDK_SUBPATH_RULE}
   "gpt-5.5" unless the user asks for a different model.
 - For a one-shot LLM call inside a tool (summarize, classify, extract),
   use ctx.generate — see the reference below. Its \`schema\` option is
-  plain JSON Schema (convert with z.toJSONSchema()), never a zod schema.
+  a zod schema (typed structured output) or plain JSON Schema.
 
 ## The App Builder Environment
 

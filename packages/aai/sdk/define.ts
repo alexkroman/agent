@@ -1,7 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import type { z } from "zod";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
+import { normalizeLlm } from "./providers/llm/from-string.ts";
+import type { LlmProvider } from "./providers.ts";
+import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import {
   type AgentDef,
   DEFAULT_GREETING,
@@ -12,10 +14,12 @@ import {
 } from "./types.ts";
 
 /**
- * Define a tool with typed parameters and execute function.
+ * Define a tool with a typed input schema and execute function.
  *
  * Identity function for type inference — returns the input unchanged.
- * Follows the Vercel AI SDK `tool()` pattern.
+ * Follows the Vercel AI SDK `tool()` pattern (`inputSchema` names the same
+ * field it does there). The schema is any Standard Schema that converts to
+ * JSON Schema; Zod is the documented default.
  *
  * @example
  * ```ts
@@ -24,7 +28,7 @@ import {
  *
  * const greet = tool({
  *   description: "Greet someone by name",
- *   parameters: z.object({ name: z.string() }),
+ *   inputSchema: z.object({ name: z.string() }),
  *   execute: ({ name }) => `Hello, ${name}!`,
  * });
  * ```
@@ -44,7 +48,7 @@ import {
  *
  * const add = tool({
  *   description: "Add an item to the cart",
- *   parameters: z.object({ item: z.string() }),
+ *   inputSchema: z.object({ item: z.string() }),
  *   // The annotation is what infers S; `ctx.state.items` is string[] here.
  *   execute: ({ item }, ctx: ToolContext<Cart>) => {
  *     ctx.state.items.push(item);
@@ -55,10 +59,10 @@ import {
  *
  * @public
  */
-export function tool<P extends z.ZodObject<z.ZodRawShape>, S = DefaultSessionState>(def: {
+export function tool<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState>(def: {
   description: string;
-  parameters?: P;
-  execute(args: z.infer<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+  inputSchema?: P;
+  execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
 }): ToolDef<P, S> {
   return def;
 }
@@ -76,10 +80,24 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
  * for authors, because neither bundler typechecks user code. Field docs live
  * on {@link AgentDef} and carry through the mapped types.
  *
+ * Two author-facing conveniences widen the derived shape (both normalized
+ * away by `agent()`, so `AgentDef` stays canonical):
+ *
+ * - `system` — alias of `systemPrompt`, matching the Vercel AI SDK's field
+ *   name. Setting both is an error.
+ * - `llm` also accepts a model-id string: `"creator/model"` routes through
+ *   the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), a bare id through the
+ *   AssemblyAI LLM Gateway (`ASSEMBLYAI_API_KEY`).
+ *
  * @public
  */
-export type AgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAgentField> &
-  Partial<Pick<AgentDef<S>, DefaultedAgentField>>;
+export type AgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAgentField | "llm"> &
+  Partial<Pick<AgentDef<S>, DefaultedAgentField>> & {
+    /** See {@link AgentDef.llm}; a string is gateway model-id shorthand. */
+    llm?: LlmProvider | string;
+    /** Alias of `systemPrompt` (the Vercel AI SDK's field name). */
+    system?: string;
+  };
 
 /**
  * Define an agent with tools, system prompt, and configuration.
@@ -94,7 +112,7 @@ export type AgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAg
  *
  * const myTool = tool({
  *   description: "Echo a message",
- *   parameters: z.object({ message: z.string() }),
+ *   inputSchema: z.object({ message: z.string() }),
  *   execute: ({ message }) => message,
  * });
  *
@@ -118,11 +136,16 @@ export type AgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAg
  * @public
  */
 export function agent<S = DefaultSessionState>(def: AgentParams<S>): AgentDef<S> {
+  const { system, llm, ...rest } = def;
+  if (system !== undefined && rest.systemPrompt !== undefined) {
+    throw new Error("agent(): `system` and `systemPrompt` are aliases — set one, not both.");
+  }
   return {
-    systemPrompt: DEFAULT_SYSTEM_PROMPT,
+    systemPrompt: system ?? DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
     maxSteps: DEFAULT_MAX_STEPS,
     tools: {},
-    ...def,
+    ...rest,
+    ...(llm !== undefined ? { llm: normalizeLlm(llm) } : {}),
   };
 }

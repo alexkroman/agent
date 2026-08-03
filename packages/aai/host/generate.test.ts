@@ -75,15 +75,22 @@ describe("createGenerateFn", () => {
     expect(result.text).toBe(JSON.stringify({ n: 42 }));
   });
 
-  it("rejects a Zod schema with a pointer to the JSON Schema contract", async () => {
+  it("accepts a Zod schema directly, converting it before the call", async () => {
+    const { descriptor, env } = setup(() => JSON.stringify({ n: 7 }));
+    const generate = createGenerateFn({ llm: descriptor, env });
+    const result = await generate({ prompt: "count", schema: z.object({ n: z.number() }) });
+    expect(result.object).toEqual({ n: 7 });
+  });
+
+  it("rejects a pre-v4 Zod-like schema (safeParse, no Standard Schema)", async () => {
     const { descriptor, env } = setup();
     const generate = createGenerateFn({ llm: descriptor, env });
     await expect(
       generate({
         prompt: "count",
-        schema: z.object({ n: z.number() }) as unknown as Record<string, unknown>,
+        schema: { safeParse: () => ({ success: true }) } as unknown as Record<string, unknown>,
       }),
-    ).rejects.toThrow(/plain JSON Schema/);
+    ).rejects.toThrow(/pre-v4 Zod/);
   });
 
   it("a per-call llm descriptor overrides the default", async () => {

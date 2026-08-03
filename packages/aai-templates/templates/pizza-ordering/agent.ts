@@ -35,7 +35,7 @@ export default agent({
   tools: {
     add_pizza: tool({
       description: "Add a pizza to the order. Use when the customer has decided on a pizza.",
-      parameters: z.object({
+      inputSchema: z.object({
         size: sizes,
         crust: crusts,
         toppings: z
@@ -93,7 +93,7 @@ export default agent({
 
     remove_pizza: tool({
       description: "Remove a pizza from the order by its ID.",
-      parameters: z.object({
+      inputSchema: z.object({
         pizza_id: z.number().describe("The pizza ID to remove"),
       }),
       async execute(args, ctx) {
@@ -113,7 +113,7 @@ export default agent({
 
     set_customer_name: tool({
       description: "Set the customer name for the order.",
-      parameters: z.object({
+      inputSchema: z.object({
         name: z.string(),
       }),
       async execute(args, ctx) {
@@ -124,7 +124,7 @@ export default agent({
 
     update_pizza: tool({
       description: "Update an existing pizza in the order. Only provided fields are changed.",
-      parameters: z.object({
+      inputSchema: z.object({
         pizza_id: z.number(),
         size: sizes.optional(),
         crust: crusts.optional(),

@@ -1,5 +1,6 @@
 import type { Db, ToolContext, ToolDef } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
+import type { z } from "zod";
 import agentDef from "./agent.ts";
 import { calculateTotal, orderView, type Pizza, pizzaPrice, type StateSlot } from "./shared.ts";
 
@@ -77,8 +78,10 @@ describe("pricing (shared.ts)", () => {
   });
 
   test("add_pizza schema defaults quantity to 1 and rejects non-positive quantities", () => {
-    const schema = getTool("add_pizza").parameters;
-    if (!schema) throw new Error("add_pizza has no parameters schema");
+    // getTool goes through the agent's tools record, which erases the
+    // concrete schema type — recover it; the template authors these as zod.
+    const schema = getTool("add_pizza").inputSchema as z.ZodObject<z.ZodRawShape> | undefined;
+    if (!schema) throw new Error("add_pizza has no input schema");
     const parsed = schema.parse({ size: "small", crust: "thin", toppings: [] });
     expect(parsed.quantity).toBe(1);
     expect(() =>

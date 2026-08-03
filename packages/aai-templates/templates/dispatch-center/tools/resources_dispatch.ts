@@ -12,7 +12,7 @@ import {
 export const resourcesDispatch = tool({
   description:
     "Dispatch units to an incident. Can auto-dispatch recommended resources or manually specify callsigns.",
-  parameters: z.object({
+  inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
     callsigns: z
       .array(z.string().max(50))

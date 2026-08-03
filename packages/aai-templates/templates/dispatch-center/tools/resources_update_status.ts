@@ -4,7 +4,7 @@ import { logEvent, RESOURCE_STATUSES, updateState } from "../shared.ts";
 
 export const resourcesUpdateStatus = tool({
   description: "Update a resource unit's status when it radios in.",
-  parameters: z.object({
+  inputSchema: z.object({
     callsign: z.string().max(50).describe("The resource callsign"),
     status: z.enum(RESOURCE_STATUSES).describe("New status"),
     notes: z.string().max(1000).describe("Status notes").optional(),

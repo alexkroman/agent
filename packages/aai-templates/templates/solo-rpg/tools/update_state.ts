@@ -22,7 +22,7 @@ import {
 export const updateState = tool({
   description:
     "Lightweight state sync for during gameplay. Handles location changes, NPC additions, clock additions, time changes, and session log entries. Resource changes (health/spirit/supply/momentum) are auto-applied by action_roll — only use those fields here for manual adjustments like resting or trading. Pass only what changed.",
-  parameters: z.object({
+  inputSchema: z.object({
     location: z.string().max(200).describe("New location name").optional(),
     locationDesc: z.string().max(500).describe("Short location description").optional(),
     timeOfDay: z.enum(TIME_PHASES).describe("New time of day").optional(),

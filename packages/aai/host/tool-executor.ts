@@ -7,12 +7,12 @@
  */
 
 import pTimeout from "p-timeout";
-import type { z } from "zod";
 import { EMPTY_PARAMS } from "../sdk/_internal-types.ts";
 import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
+import { formatSchemaIssues, validateWithSchema } from "../sdk/schema.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
 import type { HostGenerateFn } from "./generate.ts";
@@ -71,12 +71,6 @@ function buildToolContext(opts: ExecuteToolCallOptions): ToolContext {
   };
 }
 
-function formatZodIssues(error: z.ZodError | undefined): string {
-  return (error?.issues ?? [])
-    .map((i: z.ZodIssue) => `${i.path.map(String).join(".")}: ${i.message}`)
-    .join(", ");
-}
-
 function stringifyResult(result: unknown): string {
   if (result == null) return "null";
   if (typeof result === "string") return result;
@@ -97,10 +91,10 @@ export async function executeToolCall(
   options: ExecuteToolCallOptions,
 ): Promise<string> {
   const { tool, logger } = options;
-  const schema = tool.parameters ?? EMPTY_PARAMS;
-  const parsed = schema.safeParse(args);
-  if (!parsed.success) {
-    return toolError(`Invalid arguments for tool "${name}": ${formatZodIssues(parsed.error)}`);
+  const schema = tool.inputSchema ?? EMPTY_PARAMS;
+  const parsed = await validateWithSchema(schema, args);
+  if (parsed.issues) {
+    return toolError(`Invalid arguments for tool "${name}": ${formatSchemaIssues(parsed.issues)}`);
   }
 
   // Per-call controller, exposed to the tool as ctx.signal. It follows the
@@ -123,7 +117,7 @@ export async function executeToolCall(
     }
     // The signal makes the await settle promptly on barge-in/reset/stop; the
     // underlying execute keeps running unless it observes ctx.signal itself.
-    const result = await pTimeout(Promise.resolve(tool.execute(parsed.data, ctx)), {
+    const result = await pTimeout(Promise.resolve(tool.execute(parsed.value, ctx)), {
       milliseconds: TOOL_EXECUTION_TIMEOUT_MS,
       message: `Tool "${name}" timed out after ${TOOL_EXECUTION_TIMEOUT_MS}ms`,
       signal: callController.signal,

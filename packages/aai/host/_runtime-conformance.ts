@@ -27,7 +27,7 @@ export const CONFORMANCE_AGENT: AgentDef = {
   tools: {
     echo: {
       description: "Echo input",
-      parameters: z.object({ text: z.string() }),
+      inputSchema: z.object({ text: z.string() }),
       execute: ({ text }: { text: string }) => `echo:${text}`,
     },
     get_env: {

@@ -194,7 +194,7 @@ describe("createRuntime createSession", () => {
       tools: {
         emit: {
           description: "Send a client event of a caller-chosen size",
-          parameters: z.object({ size: z.number() }),
+          inputSchema: z.object({ size: z.number() }),
           execute: (args, ctx) => {
             ctx.send("big", { blob: "x".repeat((args as { size: number }).size) });
             return "sent";

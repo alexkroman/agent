@@ -21,7 +21,7 @@ import {
 export const setupCharacter = tool({
   description:
     "Set up the entire game in one call. Starts a completely fresh game (any previous unsaved game is replaced), generates stats, initializes state, and marks the game as ready. After this returns, just narrate the opening scene. No need to call update_state — everything is already done.",
-  parameters: z.object({
+  inputSchema: z.object({
     genre: z.string().max(100).describe("Chosen genre code or custom description"),
     tone: z.string().max(100).describe("Chosen tone code or custom description"),
     archetype: z.string().max(100).describe("Chosen archetype code or custom description"),

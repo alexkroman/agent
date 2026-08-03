@@ -34,7 +34,7 @@ const weatherAgent: AgentDef = {
   tools: {
     get_weather: {
       description: "Get the current weather for a city",
-      parameters: z.object({
+      inputSchema: z.object({
         city: z.string().describe("City name"),
       }),
       execute: ({ city }: { city: string }) => ({
@@ -64,7 +64,7 @@ const statefulAgent: AgentDef<{ callCount: number }> = {
   tools: {
     get_weather: {
       description: "Get weather",
-      parameters: z.object({ city: z.string() }),
+      inputSchema: z.object({ city: z.string() }),
       execute: ({ city }: { city: string }, ctx) => {
         ctx.state.callCount++;
         return { city, calls: ctx.state.callCount };
@@ -194,7 +194,7 @@ describe("fixture replay with real executor (transport layer)", () => {
       tools: {
         get_weather: {
           description: "Get weather",
-          parameters: z.object({ city: z.string() }),
+          inputSchema: z.object({ city: z.string() }),
           execute: () => {
             throw new Error("API key expired");
           },
@@ -221,7 +221,7 @@ describe("fixture replay with real executor (transport layer)", () => {
       tools: {
         get_weather: {
           description: "Get weather",
-          parameters: z.object({
+          inputSchema: z.object({
             city: z.string(),
             country: z.string(), // required but not in fixture
           }),
@@ -251,7 +251,7 @@ describe("fixture replay with real executor (transport layer)", () => {
       tools: {
         check_history: {
           description: "Check history",
-          parameters: z.object({ q: z.string() }),
+          inputSchema: z.object({ q: z.string() }),
           execute: (_args: unknown, ctx) => {
             capturedMessages = [...ctx.messages];
             return "ok";
@@ -299,7 +299,7 @@ describe("fixture replay with real executor (transport layer)", () => {
       tools: {
         get_weather: {
           description: "Get weather",
-          parameters: z.object({ city: z.string() }),
+          inputSchema: z.object({ city: z.string() }),
           execute: ({ city }: { city: string }, ctx) => {
             capturedMessages = [...ctx.messages];
             return { city, temp: "72°F" };
@@ -339,7 +339,7 @@ describe("fixture replay with real executor (transport layer)", () => {
       tools: {
         get_weather: {
           description: "Get weather",
-          parameters: z.object({ city: z.string() }),
+          inputSchema: z.object({ city: z.string() }),
           execute: ({ city }: { city: string }) => ({ city, temp: "72°F" }),
         },
       },

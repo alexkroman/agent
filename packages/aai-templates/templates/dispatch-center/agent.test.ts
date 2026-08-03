@@ -90,17 +90,17 @@ describe("dispatch-center template", () => {
 
   test("negative casualty counts are rejected by the parameter schemas", () => {
     expect(
-      incidentTriage.parameters?.safeParse({ incidentId: "INC-0001", casualtyUpdate: -5 }).success,
+      incidentTriage.inputSchema?.safeParse({ incidentId: "INC-0001", casualtyUpdate: -5 }).success,
     ).toBe(false);
     expect(
-      incidentCreate.parameters?.safeParse({
+      incidentCreate.inputSchema?.safeParse({
         location: "1 First St",
         description: "fire",
         estimatedCasualties: -1,
       }).success,
     ).toBe(false);
     expect(
-      incidentUpdateStatus.parameters?.safeParse({
+      incidentUpdateStatus.inputSchema?.safeParse({
         incidentId: "INC-0001",
         status: "on_scene",
         casualtyUpdate: { confirmed: -2 },

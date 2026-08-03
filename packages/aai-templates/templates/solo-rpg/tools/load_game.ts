@@ -7,7 +7,7 @@ import { loadState, saveGameState, saveSlotKey, saveSlotParam } from "../shared.
 // `aai dev`); the rest of the game works without it.
 export const loadGame = tool({
   description: "Load a previously saved game.",
-  parameters: z.object({ slot: saveSlotParam }),
+  inputSchema: z.object({ slot: saveSlotParam }),
   async execute(args, ctx) {
     const saved = await loadState<GameState>(ctx, saveSlotKey(args.slot));
     if (!saved) return { error: "No save found." };

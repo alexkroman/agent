@@ -25,4 +25,7 @@ export const BuiltinToolSchema = z.enum([
 ]);
 
 /** @internal Zod schema for `ToolChoice`. Exported for reuse in internal schemas. */
-export const ToolChoiceSchema = z.enum(["auto", "required"]);
+export const ToolChoiceSchema = z.union([
+  z.enum(["auto", "required", "none"]),
+  z.object({ type: z.literal("tool"), toolName: z.string().min(1) }),
+]);

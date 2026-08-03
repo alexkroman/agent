@@ -4,6 +4,7 @@ import { z } from "zod";
 import { agent, tool } from "./define.ts";
 import { parseManifest } from "./manifest.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
+import { assemblyAILlm } from "./providers/llm/assemblyai.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
@@ -12,7 +13,7 @@ describe("tool()", () => {
   test("returns the definition unchanged", () => {
     const def = tool({
       description: "Greet someone",
-      parameters: z.object({ name: z.string() }),
+      inputSchema: z.object({ name: z.string() }),
       execute: ({ name }) => `Hello, ${name}!`,
     });
     expect(def.description).toBe("Greet someone");
@@ -25,11 +26,37 @@ describe("tool()", () => {
       execute: () => "done",
     });
     expect(def.description).toBe("No-param tool");
-    expect(def.parameters).toBeUndefined();
+    expect(def.inputSchema).toBeUndefined();
   });
 });
 
 describe("agent()", () => {
+  test("`system` is an alias of systemPrompt", () => {
+    const def = agent({ name: "t", system: "You are terse." });
+    expect(def.systemPrompt).toBe("You are terse.");
+    expect("system" in def).toBe(false);
+  });
+
+  test("setting both `system` and `systemPrompt` throws", () => {
+    expect(() => agent({ name: "t", system: "a", systemPrompt: "b" })).toThrow(/aliases/);
+  });
+
+  test("llm accepts a creator/model string and desugars to the Vercel AI Gateway", () => {
+    const def = agent({ name: "t", llm: "anthropic/claude-sonnet-4-5" });
+    expect(def.llm).toEqual({ kind: "gateway", options: { model: "anthropic/claude-sonnet-4-5" } });
+  });
+
+  test("llm accepts a bare model id and desugars to the AssemblyAI LLM Gateway", () => {
+    const def = agent({ name: "t", llm: "gpt-5.5" });
+    expect(def.llm?.kind).toBe("assemblyai");
+    expect(def.llm?.options.model).toBe("gpt-5.5");
+  });
+
+  test("llm descriptors pass through unchanged", () => {
+    const llm = assemblyAILlm({ model: "gpt-5.5" });
+    expect(agent({ name: "t", llm }).llm).toBe(llm);
+  });
+
   test("applies defaults", () => {
     const def = agent({ name: "Test Agent" });
     expect(def.name).toBe("Test Agent");
@@ -42,7 +69,7 @@ describe("agent()", () => {
   test("preserves explicit values", () => {
     const greetTool = tool({
       description: "Greet",
-      parameters: z.object({ name: z.string() }),
+      inputSchema: z.object({ name: z.string() }),
       execute: ({ name }) => `Hi ${name}`,
     });
     const def = agent({

@@ -35,7 +35,6 @@ import {
   tool,
   type UIMessage,
 } from "ai";
-import type { z } from "zod";
 import { verifyBearer } from "./harness-auth.ts";
 import { errMsg, hostRequest } from "./harness-rpc.ts";
 import {
@@ -189,11 +188,12 @@ export function createGuestWebTools(): ToolSet {
       description: schema.description,
       inputSchema: jsonSchema(schema.parameters),
       execute: async (args: unknown) => {
-        const parsed = def.parameters
-          ? ((def.parameters as z.ZodType).safeParse(args ?? {}) as z.ZodSafeParseResult<unknown>)
-          : { success: true as const, data: args ?? {} };
-        if (!parsed.success) return { error: `Invalid arguments: ${parsed.error.message}` };
-        return await def.execute(parsed.data as never, ctx as never);
+        if (!def.inputSchema) return await def.execute((args ?? {}) as never, ctx as never);
+        const parsed = await def.inputSchema["~standard"].validate(args ?? {});
+        if (parsed.issues) {
+          return { error: `Invalid arguments: ${parsed.issues.map((i) => i.message).join("; ")}` };
+        }
+        return await def.execute(parsed.value as never, ctx as never);
       },
     });
   }

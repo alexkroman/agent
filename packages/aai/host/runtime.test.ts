@@ -73,7 +73,7 @@ describe("createRuntime", () => {
       tools: {
         add: {
           description: "Add two numbers",
-          parameters: z.object({ a: z.number(), b: z.number() }),
+          inputSchema: z.object({ a: z.number(), b: z.number() }),
           execute: ({ a, b }: { a: number; b: number }) => String(a + b),
         },
       },
@@ -276,7 +276,7 @@ describe("executeToolCall", () => {
   test("returns validation error for invalid args", async () => {
     const tool: ToolDef = {
       description: "Requires number",
-      parameters: z.object({ n: z.number() }),
+      inputSchema: z.object({ n: z.number() }),
       execute: ({ n }: { n: number }) => String(n),
     };
     const result = await executeToolCall("typedTool", { n: "not-a-number" }, { tool, env: {} });
@@ -288,7 +288,7 @@ describe("executeToolCall", () => {
   test("returns validation error with path info for nested args", async () => {
     const tool: ToolDef = {
       description: "Requires nested object",
-      parameters: z.object({ config: z.object({ port: z.number() }) }),
+      inputSchema: z.object({ config: z.object({ port: z.number() }) }),
       execute: () => "ok",
     };
     const result = await executeToolCall(

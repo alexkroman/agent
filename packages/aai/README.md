@@ -19,7 +19,7 @@ import { z } from "zod";
 
 const addNote = tool({
   description: "Save a note for the caller",
-  parameters: z.object({ text: z.string() }),
+  inputSchema: z.object({ text: z.string() }),
   execute: ({ text }, ctx) => {
     ctx.state.notes.push(text);
     return { saved: ctx.state.notes.length };
@@ -37,7 +37,7 @@ export default agent({
 
 - `agent()` — the agent definition; every field and default is documented
   on [`AgentDef`](https://alexkroman.github.io/agent/).
-- `tool()` — a typed tool: Zod `parameters`, an `execute(args, ctx)` that
+- `tool()` — a typed tool: Zod `inputSchema`, an `execute(args, ctx)` that
   runs server-side with access to `ctx.state`, `ctx.env`, `ctx.db` (opt-in
   SQL storage), `ctx.generate` (one-shot LLM calls), and `ctx.send`
   (push events to the browser client).

@@ -28,5 +28,14 @@ export * from "./sdk/providers/assemblyai-pipeline.ts";
 // S2S is opt-in now that the pipeline is the default mode, so the opt-in
 // descriptor lives next to `agent()` too.
 export * from "./sdk/providers/s2s/assemblyai.ts";
+// Schema acceptance (Standard Schema) — types only; the conversion helpers
+// stay internal.
+export type {
+  InferSchemaOutput,
+  StandardSchemaIssue,
+  StandardSchemaResult,
+  StandardSchemaV1,
+  ToolInputSchema,
+} from "./sdk/schema.ts";
 export * from "./sdk/types.ts";
 export * from "./sdk/utils.ts";

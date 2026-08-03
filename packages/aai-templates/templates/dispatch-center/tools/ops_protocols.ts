@@ -4,7 +4,7 @@ import { getApplicableProtocols, INCIDENT_TYPES, SEVERITIES } from "../shared.ts
 
 export const opsProtocols = tool({
   description: "Look up step-by-step response protocols for a given incident type and severity.",
-  parameters: z.object({
+  inputSchema: z.object({
     incidentType: z.enum(INCIDENT_TYPES).describe("Type of incident"),
     severity: z.enum(SEVERITIES).describe("Severity level"),
   }),

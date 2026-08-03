@@ -13,7 +13,7 @@ describe("ToolDef type inference", () => {
   test("infers parameter types in execute args", () => {
     const _t: ToolDef<z.ZodObject<{ name: z.ZodString; count: z.ZodNumber }>> = {
       description: "test",
-      parameters: z.object({ name: z.string(), count: z.number() }),
+      inputSchema: z.object({ name: z.string(), count: z.number() }),
       execute: (args) => args,
     };
 
@@ -34,7 +34,7 @@ describe("ToolDef type inference", () => {
   test("execute receives ToolContext as second arg", () => {
     const _t: ToolDef<z.ZodObject<{ x: z.ZodString }>> = {
       description: "test",
-      parameters: z.object({ x: z.string() }),
+      inputSchema: z.object({ x: z.string() }),
       execute: (_args, ctx) => ctx,
     };
 
@@ -78,7 +78,7 @@ describe("AgentDef type inference", () => {
   test("tools field accepts ToolDef objects", () => {
     const greet: ToolDef<z.ZodObject<{ name: z.ZodString }>> = {
       description: "Greet",
-      parameters: z.object({ name: z.string() }),
+      inputSchema: z.object({ name: z.string() }),
       execute: ({ name }: { name: string }) => `Hello, ${name}!`,
     };
 

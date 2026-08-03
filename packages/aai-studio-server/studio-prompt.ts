@@ -31,7 +31,7 @@ import { z } from "zod";
 
 const lookup = tool({
   description: "Look up an order by id",
-  parameters: z.object({ orderId: z.string() }),
+  inputSchema: z.object({ orderId: z.string() }),
   execute: async ({ orderId }, ctx) => \`Order \${orderId} is on its way\`,
 });
 

@@ -19,7 +19,7 @@ export default agent({
   tools: {
     game_state_drop: tool({
       description: "Remove an item from the player's inventory.",
-      parameters: z.object({
+      inputSchema: z.object({
         value: z.string().describe("Item name to drop"),
       }),
       async execute(args, ctx) {
@@ -31,7 +31,7 @@ export default agent({
 
     game_state_flag: tool({
       description: "Set a game flag to true, used for tracking puzzle and event state.",
-      parameters: z.object({
+      inputSchema: z.object({
         value: z.string().describe("Flag name to set"),
       }),
       async execute(args, ctx) {
@@ -59,7 +59,7 @@ export default agent({
 
     game_state_history: tool({
       description: "Log a player command to the history and increment the move counter.",
-      parameters: z.object({
+      inputSchema: z.object({
         value: z.string().describe("Command text to log"),
       }),
       async execute(args, ctx) {
@@ -72,7 +72,7 @@ export default agent({
 
     game_state_move: tool({
       description: "Move the player to a new room and increment the move counter.",
-      parameters: z.object({
+      inputSchema: z.object({
         value: z.string().describe("Room name to move to"),
       }),
       async execute(args, ctx) {
@@ -94,7 +94,7 @@ export default agent({
 
     game_state_score: tool({
       description: "Add points to the player's score.",
-      parameters: z.object({
+      inputSchema: z.object({
         value: z.number().describe("Points to add"),
       }),
       async execute(args, ctx) {
@@ -106,7 +106,7 @@ export default agent({
 
     game_state_take: tool({
       description: "Add an item to the player's inventory.",
-      parameters: z.object({
+      inputSchema: z.object({
         value: z.string().describe("Item name to take"),
       }),
       async execute(args, ctx) {
