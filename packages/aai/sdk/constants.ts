@@ -218,18 +218,18 @@ export const DEFAULT_INTERRUPTION_MIN_DURATION_MS = 500;
 /**
  * Minimum end-of-turn silence (ms) the AssemblyAI streaming STT waits before
  * emitting a `final` (`min_turn_silence`). Endpointing lives in the STT
- * provider, not the transport: disfluent, in-the-wild speech (mid-utterance
- * pauses, self-corrections, false starts) would otherwise split one intended
- * utterance across several finals, each committing a turn of its own — the
- * agent answering half the request while the other half was still being
- * spoken, and the rest of that same breath then barging in and cancelling the
- * reply. 1500 rather than a few hundred ms because one sentence is very often
- * not the whole request ("How many t-shirt options do you have? [pause] Also,
- * I want to return three items."). The cost is added latency on a request
- * that really did end at the first sentence; the failure it prevents costs
- * the whole call.
- */
-export const DEFAULT_MIN_TURN_SILENCE_MS = 1500;
+ * provider, not the transport: disfluent speech (mid-utterance pauses, self-
+ * corrections, false starts) would otherwise split one intended utterance
+ * across several finals, each committing a turn — the agent answering half the
+ * request while the rest is still being spoken, then that same breath barging
+ * in and cancelling the reply. The cost is latency on a request that really did
+ * end at the first sentence; the failure it prevents costs the whole call. 2000
+ * rather than 1500 because 1500 still split real speech: on Full-Duplex-Bench
+ * v3's human recordings, "I'm looking for, um, for a new [pause] let me think
+ * [pause] a desk" committed a final after "for a new" and the real request came
+ * as a separate turn — and that benchmark localizes it to silence, not word
+ * accuracy (self-corrections 100%, hesitations 33%, pauses 57%). */
+export const DEFAULT_MIN_TURN_SILENCE_MS = 2000;
 
 /**
  * False-interruption recovery window (pipeline mode). A barge-in triggered by

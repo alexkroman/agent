@@ -94,6 +94,24 @@ describe("PipelineTransport", () => {
       await t.stop();
     });
 
+    test("publishes the greeting transcript exactly once", async () => {
+      // The whole greeting reaches TTS in one call, so the interim transcript
+      // would be a byte-identical copy of the final: the turn emitted the same
+      // `agent_transcript` frame twice, final first — the inverse of the
+      // documented partial-then-final order.
+      const { opts, callbacks } = makeOpts({
+        sessionConfig: { systemPrompt: "s", greeting: "Hi there!" },
+      });
+      const t = createPipelineTransport(opts);
+      await t.start();
+      await vi.waitFor(() => {
+        expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+      });
+      expect(callbacks.onAgentTranscript).toHaveBeenCalledExactlyOnceWith("Hi there!", false);
+      expect(callbacks.onAgentTranscriptPartial).not.toHaveBeenCalled();
+      await t.stop();
+    });
+
     test("skipGreeting suppresses the greeting turn", async () => {
       const { opts, tts, callbacks } = makeOpts({
         skipGreeting: true,
