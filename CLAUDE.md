@@ -451,13 +451,42 @@ voice agents without the CLI:
   full template set — five of which have a real `client.tsx`. All of it sits
   ABOVE the session workspace (`<harness>/.workspaces/session-<pid>`), so
   `read_file` (jailed by `resolveInside`), `glob`, and `grep` (which skip
-  `node_modules`) cannot see any of it — only `bash` can, via
-  `../../node_modules/...`. The preamble names those literal paths and
-  `aai-guest/studio-build.test.ts` asserts each one resolves; the two-level
-  depth holds in all three layouts (baked image, subprocess backend, tests),
-  so moving `workspacesRoot()` breaks the prompt silently. Before this, the
+  `node_modules`) cannot see any of it — only `bash` can. Before this, the
   embedded guide pointed the agent at `packages/aai-templates/templates/` —
   a monorepo path that exists in no sandbox, and in no user project either.
+
+  **The GUEST names those paths, not the preamble** (`toolchainPromptSection`
+  in `aai-guest/studio-chat.ts`, appended to the host-composed prompt at
+  `initStudioSession`). The host cannot: the harness sits at a different
+  depth per layout — `/opt/aai/harness.mjs` beside `/opt/aai/node_modules` in
+  the baked image, but `packages/aai-guest/dist/harness.mjs` under the
+  subprocess backend, whose `node_modules` is a level higher again. A
+  relative `../../node_modules` is therefore correct in production and wrong
+  in local dev, and unit tests load the module from *source*, a third layout
+  where it is accidentally right again — so that bug reads as correct from
+  every angle a test can take. `toolchainRoot()` searches upward for
+  `node_modules/@alexkroman1/aai` instead of assuming an offset, emits
+  absolute paths (the only form that survives a `bash` call with an
+  unexpected cwd), and returns `""` rather than naming paths it could not
+  resolve. `studio-build.test.ts` asserts every path the section emits
+  exists.
+- **The workspace manifest declares what the agent may import.**
+  `ensureProjectShape` writes a `package.json` whose `dependencies` mirror
+  the scaffold's runtime set (`@alexkroman1/aai`, `aai-ui`, `react`,
+  `react-dom`, `tailwindcss`, `zod` — drift-guarded against the scaffold in
+  `studio-project-shape.test.ts`). It used to declare none, on the reasoning
+  that they resolve from the toolchain anyway — true for the *build*, and
+  exactly backwards for the *reader*: package.json is the first place a
+  coding agent looks to learn what it can import, and an empty one asserted
+  the opposite of the truth. Versions are pinned **exact**, read from the
+  installed toolchain (`resolveWorkspaceDependencies`), because
+  `add_dependency` runs `npm install <spec>` and npm reifies the whole
+  manifest — a range would let the workspace materialize a different SDK
+  build than the harness resolved, into a workspace-local `node_modules`
+  that *shadows* the baked one. Pinned, the local copy is byte-identical and
+  the shadowing is merely redundant. Toolchain-only packages (vite,
+  typescript, the `@types/*`) stay undeclared: the agent never imports them,
+  and every entry is one more package that install has to reify.
 - **Guest tools carry their own deadlines** (`aai-guest/studio-tools.ts`):
   every tool is wrapped in a 120s timeout resolving to an error tool
   result, and `bash` has its own wall-clock kill (60s default, 300s max)

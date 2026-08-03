@@ -15,8 +15,10 @@
  * test files, because agent.test.ts is not runnable in the studio sandbox.
  */
 
+import { readFileSync } from "node:fs";
 import { access, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { toolchainModules } from "./studio-build.ts";
 
 /** True when `p` exists (any kind of entry) — no read, just an access probe. */
 export function fileExists(p: string): Promise<boolean> {
@@ -120,29 +122,81 @@ export const WORKSPACE_TSCONFIG = `${JSON.stringify(
 )}\n`;
 
 /**
- * Minimal but real: `type: "module"` gives files the same semantics as a
- * scaffolded project, and `npm install <pkg>` (the bash tool) records deps
- * here like anywhere else. The aai packages themselves resolve from the
- * toolchain node_modules above the workspace, so they need no entries.
+ * The runtime packages a workspace writes against — the `dependencies` half
+ * of the scaffold's package.json, drift-guarded against it.
+ *
+ * These already resolve from the toolchain node_modules above the workspace,
+ * so declaring them changes no build. They are here to be READ: package.json
+ * is the first place any coding agent (or a user who exports the project)
+ * looks to learn what it may import, and a manifest declaring nothing said
+ * the opposite of the truth. The toolchain-only packages — vite, typescript,
+ * the type packages — stay out: the agent never imports them, and every
+ * entry here is one more package `npm install` reifies.
  */
-export const WORKSPACE_PACKAGE_JSON = `${JSON.stringify(
-  { name: "aai-studio-workspace", private: true, type: "module" },
-  null,
-  2,
-)}\n`;
+const WORKSPACE_DEPENDENCIES = [
+  "@alexkroman1/aai",
+  "@alexkroman1/aai-ui",
+  "react",
+  "react-dom",
+  "tailwindcss",
+  "zod",
+] as const;
 
-const SHAPE_FILES: Record<string, string> = {
-  "package.json": WORKSPACE_PACKAGE_JSON,
-  "tsconfig.json": WORKSPACE_TSCONFIG,
-  "global.d.ts": WORKSPACE_GLOBAL_DTS,
-  "vite.config.ts": WORKSPACE_VITE_CONFIG,
-  "vitest.config.ts": WORKSPACE_VITEST_CONFIG,
-};
+/**
+ * Pin each dependency to the version actually installed in the toolchain.
+ *
+ * Exact versions, not the scaffold's carets: `add_dependency` runs
+ * `npm install <spec>`, which reifies the WHOLE manifest, so a range would
+ * let the workspace materialize a different build of the SDK than the one
+ * the harness resolved — and a workspace-local node_modules shadows the
+ * baked one. Pinned, the local copy is byte-identical and the shadowing is
+ * merely redundant. A package we can't read is omitted rather than guessed;
+ * a manifest that under-declares is recoverable, one that names a version
+ * that doesn't exist breaks every later install.
+ */
+export function resolveWorkspaceDependencies(
+  modulesDir: string | null = toolchainModules(),
+): Record<string, string> {
+  if (modulesDir === null) return {};
+  const deps: Record<string, string> = {};
+  for (const name of WORKSPACE_DEPENDENCIES) {
+    try {
+      const raw = readFileSync(path.join(modulesDir, name, "package.json"), "utf-8");
+      const { version } = JSON.parse(raw) as { version?: string };
+      if (typeof version === "string") deps[name] = version;
+    } catch {
+      // Not installed in this layout — leave it undeclared.
+    }
+  }
+  return deps;
+}
+
+/**
+ * Minimal but real: `type: "module"` gives files the same semantics as a
+ * scaffolded project, and `npm install <pkg>` records deps here like
+ * anywhere else.
+ */
+export function workspacePackageJson(
+  dependencies: Record<string, string> = resolveWorkspaceDependencies(),
+): string {
+  return `${JSON.stringify(
+    { name: "aai-studio-workspace", private: true, type: "module", dependencies },
+    null,
+    2,
+  )}\n`;
+}
 
 /** Write any missing project-shape files into `dir` (existing files win). */
 export async function ensureProjectShape(dir: string): Promise<void> {
+  const shapeFiles: Record<string, string> = {
+    "package.json": workspacePackageJson(),
+    "tsconfig.json": WORKSPACE_TSCONFIG,
+    "global.d.ts": WORKSPACE_GLOBAL_DTS,
+    "vite.config.ts": WORKSPACE_VITE_CONFIG,
+    "vitest.config.ts": WORKSPACE_VITEST_CONFIG,
+  };
   await Promise.all(
-    Object.entries(SHAPE_FILES).map(async ([rel, content]) => {
+    Object.entries(shapeFiles).map(async ([rel, content]) => {
       const abs = path.join(dir, rel);
       if (!(await fileExists(abs))) await writeFile(abs, content, "utf-8");
     }),

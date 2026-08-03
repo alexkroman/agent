@@ -25,7 +25,7 @@
  * the normal node_modules walk-up, exactly as in a user project.
  */
 
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { mkdir, rm } from "node:fs/promises";
 import { createRequire } from "node:module";
 import path from "node:path";
@@ -59,6 +59,38 @@ type Toolchain = {
  */
 export function workspacesRoot(): string {
   return path.join(import.meta.dirname, ".workspaces");
+}
+
+/**
+ * The directory whose `node_modules` holds the baked toolchain, found by
+ * walking up from this module — or null if the walk finds none.
+ *
+ * Deliberately a search rather than a fixed offset, because the harness sits
+ * at a different depth in the two layouts: `/opt/aai/harness.mjs` beside
+ * `/opt/aai/node_modules` in the Modal image, but
+ * `packages/aai-guest/dist/harness.mjs` under the subprocess backend, whose
+ * node_modules is a level higher again. Bare imports resolve either way by
+ * Node's own walk-up, so nothing that merely *imports* has to care. Anything
+ * that has to NAME the directory does: the coding agent reading SDK types
+ * with bash, and the workspace manifest pinning versions below. A relative
+ * depth hardcoded from one layout is correct in production and quietly wrong
+ * in local dev — and only the source-tree layout is what unit tests see, so
+ * it looks right from all three angles a test could take.
+ */
+export function toolchainRoot(): string | null {
+  let dir = import.meta.dirname;
+  for (;;) {
+    if (existsSync(path.join(dir, "node_modules", "@alexkroman1", "aai"))) return dir;
+    const parent = path.dirname(dir);
+    if (parent === dir) return null;
+    dir = parent;
+  }
+}
+
+/** The baked toolchain's `node_modules` directory, or null when not found. */
+export function toolchainModules(): string | null {
+  const root = toolchainRoot();
+  return root === null ? null : path.join(root, "node_modules");
 }
 
 // Memoized lazy load: pool-spawned warm harnesses must not pay the Vite

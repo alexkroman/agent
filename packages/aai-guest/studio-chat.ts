@@ -38,7 +38,12 @@ import {
 import type { z } from "zod";
 import { verifyBearer } from "./harness-auth.ts";
 import { errMsg, hostRequest } from "./harness-rpc.ts";
-import { buildWorkspaceDir, typecheckWorkspaceDir, workspacesRoot } from "./studio-build.ts";
+import {
+  buildWorkspaceDir,
+  toolchainModules,
+  typecheckWorkspaceDir,
+  workspacesRoot,
+} from "./studio-build.ts";
 import { compactMessages, needsCompaction } from "./studio-compaction.ts";
 import { ensureProjectShape } from "./studio-project-shape.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
@@ -81,6 +86,41 @@ export type StudioChatDeps = {
  * the workspace to the store's current files (the broker re-inits on every
  * page session so the sandbox never serves a stale tree).
  */
+/**
+ * The concrete on-disk paths the coding agent can read, appended to the
+ * host-composed system prompt.
+ *
+ * The host cannot write these: the harness sits at a different depth in the
+ * two layouts (`/opt/aai/harness.mjs` in the Modal image,
+ * `packages/aai-guest/dist/harness.mjs` under the subprocess backend), so
+ * any relative path baked into the preamble is right in one and wrong in the
+ * other. Only the guest can resolve it, and it does so by searching for the
+ * toolchain rather than assuming an offset.
+ *
+ * They are absolute because that is the one form that survives a `bash` call
+ * with an unexpected cwd, and `bash` is the only tool that can reach them at
+ * all — `read_file` is jailed to the workspace, and `glob`/`grep` skip
+ * node_modules by design.
+ */
+export function toolchainPromptSection(modulesDir: string | null = toolchainModules()): string {
+  if (modulesDir === null) return "";
+  const at = (rel: string): string => path.join(modulesDir, rel);
+  return `
+
+## Installed packages on this machine
+
+Read these with \`bash\` — they live outside your workspace, so read_file,
+glob, and grep cannot see them. They are ground truth, ahead of memory:
+
+- Worked example agents: \`${at("@alexkroman1/aai-cli/dist/templates")}\`
+  (\`ls\` it; five have a real client.tsx — dispatch-center,
+  infocom-adventure, night-owl, pizza-ordering, solo-rpg). Read the closest
+  match before writing a pattern from scratch.
+- SDK types (agent(), tool(), ctx): \`${at("@alexkroman1/aai/dist")}\`
+- client.tsx imports: \`${at("@alexkroman1/aai-ui/dist/index.d.ts")}\`, and
+  per-component props in \`${at("@alexkroman1/aai-ui/dist/components")}\``;
+}
+
 export async function initStudioSession(params: StudioSessionParams): Promise<StudioSession> {
   // Under the workspaces root, NOT os.tmpdir(): builds run in-guest through
   // the aai CLI bundlers, and only this root has the toolchain's
@@ -91,7 +131,7 @@ export async function initStudioSession(params: StudioSessionParams): Promise<St
   // …) — same shape `aai init` scaffolds; the files sync back to the
   // store at end of turn like everything else in the workspace.
   await ensureProjectShape(dir);
-  return { ...params, dir };
+  return { ...params, system: params.system + toolchainPromptSection(), dir };
 }
 
 const CORS_HEADERS: Record<string, string> = {
