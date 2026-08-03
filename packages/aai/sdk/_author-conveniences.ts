@@ -4,12 +4,12 @@
  * of `AgentDef` — `system` as an alias of `systemPrompt`, a model-id string
  * for `llm`, and `voice` as shorthand for `tts: assemblyAITts({ voice })`.
  * Used by `agent()` and, for configs that never went through `agent()` (a
- * raw `export default {...}` object), by `parseManifest` and
- * `toAgentConfig`, so the conveniences work on every authoring path rather
- * than only the documented one.
+ * raw `export default {...}` object), by `toAgentConfig`, so the
+ * conveniences work on every authoring path rather than only the
+ * documented one.
  *
  * An `_`-internal module (not on the root barrel): this is plumbing between
- * `define.ts` and the two parse boundaries, not API.
+ * `define.ts` and the config boundary, not API.
  */
 
 import { normalizeLlm } from "./providers/llm/from-string.ts";

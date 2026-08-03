@@ -19,6 +19,7 @@ export {
   ToolSchemaSchema,
   toAgentConfig,
 } from "./agent-config.ts";
+export { ProviderDescriptorSchema } from "./agent-config.ts";
 export {
   assertPipelineTuning,
   assertProviderTriple,
@@ -26,4 +27,3 @@ export {
   type PipelineTuning,
   type SessionMode,
 } from "./config-rules.ts";
-export { ProviderDescriptorSchema } from "./manifest.ts";

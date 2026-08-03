@@ -476,7 +476,7 @@ describe("createRuntime sandbox mode", () => {
     // Regression guard: the platform used to resolve builtins itself off
     // `IsolateConfig.builtinTools ?? []` and pass them in pre-resolved. Since
     // the deploy path builds its config with `toAgentConfig` (which does not
-    // default `builtinTools`) rather than `parseManifest` (which does), every
+    // default `builtinTools`), every
     // deployed agent that didn't set `builtinTools` silently lost the default
     // cognitive builtins. Resolution now lives here for every caller.
     const mockToolSchemas = [

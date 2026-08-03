@@ -67,7 +67,7 @@ function resolveEffectiveProviders(
   // path uses opts as an override, not a merge.
   const s2s = stt && llm && tts ? undefined : agent.s2s;
   // Pipeline stages not declared anywhere → filled from the all-AssemblyAI
-  // pipeline, matching parseManifest/toAgentConfig. S2S requires an explicit
+  // pipeline, matching toAgentConfig. S2S requires an explicit
   // `s2s` descriptor (`assemblyAIS2s()`), so a config that loses its
   // providers can no longer silently run S2S — this mirrors, not replaces,
   // the "never let S2S be a fallback" rule in runtime-transport.ts.
