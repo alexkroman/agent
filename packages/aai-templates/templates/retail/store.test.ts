@@ -135,14 +135,24 @@ describe("ownership and authentication guards", () => {
     expect(result.error).not.toContain("Tea Kettle");
   });
 
-  test("requireOwnOrder gives the same answer for an unknown order — no existence oracle", () => {
+  test("requireOwnOrder gives the same shape of answer for an unknown order — no existence oracle", () => {
     const state = createDefaultState();
     state.authenticatedUserId = "olivia_ito_3591";
-    const foreign = requireOwnOrder(state, "#W4316152");
-    const missing = requireOwnOrder(state, "#W0000000");
+    const foreignId = "#W4316152";
+    const missingId = "#W0000000";
+    const foreign = requireOwnOrder(state, foreignId);
+    const missing = requireOwnOrder(state, missingId);
     expect(isError(foreign) && isError(missing)).toBe(true);
     if (!(isError(foreign) && isError(missing))) throw new Error("expected refusals");
-    expect(foreign.error).toBe(missing.error);
+    // Structural, not literal, equality: the messages legitimately differ by
+    // the id the caller themselves passed in (that's not information about
+    // the store — they already knew it), so comparing byte-for-byte would be
+    // unsatisfiable by any implementation that echoes the id back for repair
+    // retries, as every sibling lookup in this file does. Normalizing the id
+    // out asserts the actual guarantee: no wording distinguishes "belongs to
+    // someone else" from "doesn't exist".
+    const shape = (msg: string, id: string) => msg.replace(id, "<ID>");
+    expect(shape(foreign.error, foreignId)).toBe(shape(missing.error, missingId));
   });
 
   test("requireOwnOrder resolves the caller's own order", () => {

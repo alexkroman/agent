@@ -128,20 +128,20 @@ export function authenticatedUser(state: RetailState): User | ErrorResult {
 /**
  * Resolve an order that belongs to the authenticated customer.
  *
- * An order belonging to someone else and an order that does not exist return
- * the **same** message on purpose: a distinguishable error is an existence
- * oracle over the whole order table. tau2 leaves this to the prompt; a rule
- * whose failure hands out a stranger's address gets a guard.
+ * An order belonging to someone else and an order that does not exist share
+ * one template on purpose: no "belongs to another customer" vs. "does not
+ * exist" wording, no owner name, no product name — nothing that lets a
+ * caller learn something they did not already know. The echoed `orderId` is
+ * the caller's own input, not information about the store, so keeping it
+ * matches every sibling lookup (`findUser`, `findOrder`, `findProduct`, …),
+ * which all echo the id precisely so an LLM can target a repair retry.
  */
 export function requireOwnOrder(state: RetailState, orderId: string): Order | ErrorResult {
   const user = authenticatedUser(state);
   if (isError(user)) return user;
   const order = state.store.orders[orderId];
   if (!order || order.user_id !== user.user_id) {
-    // Deliberately omits `orderId`: including it would make a foreign order
-    // and a nonexistent one produce different strings, restoring the
-    // existence oracle this guard exists to close.
-    return { error: "Order was not found on this customer's account." };
+    return { error: `Order ${orderId} was not found on this customer's account.` };
   }
   return order;
 }
