@@ -13,14 +13,17 @@
   "exports": {
     "./client-bundler": {
       "@dev/source": "./client-bundler.ts",
+      "types": "./dist/client-bundler.d.ts",
       "import": "./dist/client-bundler.mjs"
     },
     "./worker-bundler": {
       "@dev/source": "./worker-bundler.ts",
+      "types": "./dist/worker-bundler.d.ts",
       "import": "./dist/worker-bundler.mjs"
     },
     "./typecheck": {
       "@dev/source": "./typecheck.ts",
+      "types": "./dist/typecheck.d.ts",
       "import": "./dist/typecheck.mjs"
     }
   },
@@ -30,7 +33,7 @@
   "scripts": {
     "test": "vitest run",
     "test:coverage": "vitest run --coverage",
-    "build": "tsdown && node ./bundle-templates.mjs",
+    "build": "tsdown && tsc -p tsconfig.build.json && node ./bundle-templates.mjs",
     "typecheck": "tsc --noEmit",
     "lint": "biome check .",
     "check:publint": "publint",

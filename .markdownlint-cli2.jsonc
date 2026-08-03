@@ -6,6 +6,9 @@
     "docs/superpowers/**",
     ".worktrees/**",
     ".remember/**",
+    // Build output, never source. The CLI's build copies the templates into
+    // its dist/ to ship them, which drags their prompt markdown along.
+    "**/dist/**",
     "packages/aai-templates/templates/**/system-prompt.md"
   ]
 }
