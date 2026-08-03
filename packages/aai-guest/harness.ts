@@ -143,8 +143,18 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
 
     case "studio/session-init": {
       const params = req.params as StudioSessionParams | undefined;
-      if (!params || typeof params.apiKey !== "string" || typeof params.files !== "object") {
-        sendError(req.id, -32_602, "studio/session-init requires { files, apiKey, ... }");
+      if (
+        !params ||
+        typeof params.apiKey !== "string" ||
+        typeof params.chatToken !== "string" ||
+        params.chatToken.length === 0 ||
+        typeof params.files !== "object"
+      ) {
+        sendError(
+          req.id,
+          -32_602,
+          "studio/session-init requires { files, apiKey, chatToken, ... }",
+        );
         break;
       }
       state.studio = await initStudioSession(params);

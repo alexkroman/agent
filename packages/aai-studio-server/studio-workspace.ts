@@ -100,12 +100,11 @@ export function hasPreviewChanges(workspace: StudioWorkspace): boolean {
 }
 
 /**
- * Deterministic per-API-key namespace for studio data.
- *
- * Unlike the salted argon2 ownership hashes (which are intentionally
- * unstable), this must be stable across requests so a browser session can
- * find its own projects again. A plain SHA-256 of the high-entropy API key
- * is sufficient — it is a namespace identifier, not a stored credential.
+ * Deterministic namespace for studio data: a SHA-256 of the caller's
+ * identity — `user:<uid>` for browser sessions, the raw API key for CLI
+ * and eval callers (see `requestScope` in studio-routes.ts). It must be
+ * stable across requests so a caller can find its own projects again; it
+ * is a namespace identifier, not a stored credential.
  */
 export function studioScope(apiKey: string): string {
   return hash("sha256", `studio:${apiKey}`, "base64url");

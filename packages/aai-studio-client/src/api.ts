@@ -20,8 +20,20 @@ export type ProjectData = {
   previewError?: string;
 };
 
-/** The project's coding-agent sandbox, brokered by the platform. */
-export type ChatSession = { url: string };
+/**
+ * The project's coding-agent sandbox, brokered by the platform. `token` is
+ * the sandbox chat surface's per-session bearer — the browser presents it
+ * (never a long-lived credential) on the public tunnel URL.
+ */
+export type ChatSession = { url: string; token: string };
+
+/** How the login screen should sign the user in (see GET /studio/auth). */
+export type AuthConfig =
+  | { mode: "supabase"; supabaseUrl: string; supabaseAnonKey: string }
+  | { mode: "dev" }
+  | { mode: "none" };
+
+export type Account = { email?: string; hasKey: boolean };
 
 export type StudioStatus = {
   llm: boolean;
@@ -120,6 +132,20 @@ export const api = {
   status: (): Promise<StudioStatus> =>
     fetch("/studio/status").then((res) => handleResponse<StudioStatus>(res)),
 
+  /** Public: which login flow to render. */
+  authConfig: (): Promise<AuthConfig> =>
+    fetch("/studio/auth").then((res) => handleResponse<AuthConfig>(res)),
+
+  /** Session-authed (works before an AssemblyAI key is stored). */
+  getAccount: (key: string) => request<Account>(key, "/account"),
+
+  /** Store the user's AssemblyAI API key — the one-time onboarding step. */
+  putAccountKey: (key: string, apiKey: string) =>
+    request<{ ok: true }>(key, "/account/key", {
+      method: "PUT",
+      body: JSON.stringify({ apiKey }),
+    }),
+
   listProjects: (key: string) =>
     request<{ projects: string[] }>(key, "/projects").then((r) => r.projects),
 
@@ -165,10 +191,17 @@ export const api = {
       signal: AbortSignal.timeout(CHAT_SESSION_ATTEMPT_TIMEOUT_MS),
     }),
 
-  /** Tool name → user-friendly label, served by the sandbox itself. */
-  sandboxToolLabels: async (key: string, sessionUrl: string): Promise<Record<string, string>> => {
+  /**
+   * Tool name → user-friendly label, served by the sandbox itself.
+   * Authenticated with the brokered session's own token, like every call to
+   * the sandbox's public surface.
+   */
+  sandboxToolLabels: async (
+    sessionToken: string,
+    sessionUrl: string,
+  ): Promise<Record<string, string>> => {
     const res = await fetch(sessionUrl.replace(/\/chat$/, "/tools"), {
-      headers: { Authorization: `Bearer ${key}` },
+      headers: { Authorization: `Bearer ${sessionToken}` },
     });
     const { tools } = await handleResponse<{ tools: { name: string; label: string }[] }>(res);
     return Object.fromEntries(tools.map((t) => [t.name, t.label]));

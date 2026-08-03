@@ -10,11 +10,14 @@
  * The agentic loop (Vercel AI SDK `streamText`, same stack pipeline mode
  * uses) runs HERE, in the tenant's own container, on the CALLER'S OWN
  * AssemblyAI key — delivered by `studio/session-init` over the
- * authenticated control channel, never platform-owned. That key is also
- * the chat surface's bearer: the tunnel URL is public, and without auth
- * anyone holding it could burn the caller's key and edit their workspace.
- * The caller proved possession of the key to the platform to get the URL,
- * so requiring the same key here adds no new secret.
+ * authenticated control channel, never platform-owned. The chat surface's
+ * bearer is a separate per-session token the broker mints alongside the
+ * session and hands to both this guest and the browser: the tunnel URL is
+ * public, and without auth anyone holding it could burn the caller's key
+ * and edit their workspace. The token — not the key — is what the browser
+ * re-presents on every turn, so no long-lived credential ever crosses the
+ * public surface (browser sessions authenticate to the PLATFORM with a
+ * Supabase session, and never hold the AssemblyAI key at all).
  *
  * CORS is open (`*`) — the studio page's origin differs per deployment and
  * the bearer, not the origin, is the access control (no cookies exist
@@ -61,8 +64,10 @@ const SYNC_RPC_TIMEOUT_MS = 30_000;
 export type StudioSessionParams = {
   project: string;
   files: Record<string, string>;
-  /** The caller's AssemblyAI key — LLM credential AND chat bearer. */
+  /** The caller's AssemblyAI key — the LLM credential (never the bearer). */
   apiKey: string;
+  /** Broker-minted per-session bearer for the public chat surface. */
+  chatToken: string;
   system: string;
   model: string;
   region?: "eu" | undefined;
@@ -444,7 +449,7 @@ export function handleStudioRequest(
     sendJson(res, 409, { error: "No studio session loaded — re-open the project" });
     return true;
   }
-  if (!verifyBearer(req.headers.authorization, session.apiKey)) {
+  if (!verifyBearer(req.headers.authorization, session.chatToken)) {
     sendJson(res, 401, { error: "Unauthorized" });
     return true;
   }

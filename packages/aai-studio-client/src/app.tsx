@@ -28,7 +28,7 @@ import { PublishMenu, TopBar } from "./top-bar.tsx";
 // default (Preview) path shouldn't pay for it.
 const CodeView = lazy(() => import("./code-view.tsx").then((m) => ({ default: m.CodeView })));
 
-type AppProps = { apiKey: string; onSignOut: () => void };
+type AppProps = { bearer: string; onSignOut: () => void };
 
 // v0-style project URLs: each project lives at /studio/chat/<name>, so a
 // build is linkable/bookmarkable. The server serves the same shell for the
@@ -60,7 +60,7 @@ const EMPTY_FILES: Record<string, string> = {};
  */
 const CHAT_SESSION_MAX_RETRIES = 10;
 
-export function App({ apiKey, onSignOut }: AppProps) {
+export function App({ bearer, onSignOut }: AppProps) {
   const queryClient = useQueryClient();
   // The URL seeds the initial selection (a shared /studio/chat/<name> link
   // opens that project); after that, selection drives the URL.
@@ -83,7 +83,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
 
   const projects = useQuery({
     queryKey: queryKeys.projects,
-    queryFn: () => api.listProjects(apiKey),
+    queryFn: () => api.listProjects(bearer),
   });
 
   // While an auto preview deploy is in flight (an edit landed and the
@@ -94,7 +94,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
   const lastEditRef = useRef(0);
   const workspace = useQuery<ProjectData>({
     queryKey: queryKeys.project(project),
-    queryFn: () => api.getProject(apiKey, project as string),
+    queryFn: () => api.getProject(bearer, project as string),
     enabled: project != null,
     refetchInterval: (query) =>
       query.state.data?.previewStale && Date.now() - lastEditRef.current < PREVIEW_POLL_WINDOW_MS
@@ -114,7 +114,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
   // refetches are pointless for the same reason the cache is.
   const chat = useQuery<UIMessage[]>({
     queryKey: queryKeys.chat(project),
-    queryFn: () => api.getChat(apiKey, project as string),
+    queryFn: () => api.getChat(bearer, project as string),
     enabled: project != null,
     gcTime: 0,
     refetchOnWindowFocus: false,
@@ -128,7 +128,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
   // and fails immediately.
   const chatSession = useQuery<ChatSession>({
     queryKey: queryKeys.chatSession(project),
-    queryFn: () => api.createChatSession(apiKey, project as string),
+    queryFn: () => api.createChatSession(bearer, project as string),
     enabled: project != null,
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
@@ -140,8 +140,9 @@ export function App({ apiKey, onSignOut }: AppProps) {
   // the guest owns the tool set). Sticky: labels are static per build.
   const toolLabels = useQuery<Record<string, string>>({
     queryKey: queryKeys.toolLabels(chatSession.data?.url),
-    queryFn: () => api.sandboxToolLabels(apiKey, chatSession.data?.url as string),
-    enabled: chatSession.data?.url != null,
+    queryFn: () =>
+      api.sandboxToolLabels(chatSession.data?.token as string, chatSession.data?.url as string),
+    enabled: chatSession.data != null,
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
   });
@@ -203,7 +204,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
     // The SERVER names the project — a base derived from the prompt plus a
     // random suffix, v0-style, via the same generator slugless CLI deploys
     // use (aai-server/slug-generate.ts). The client never mints names.
-    mutationFn: (prompt: string) => api.createProject(apiKey, { prompt }),
+    mutationFn: (prompt: string) => api.createProject(bearer, { prompt }),
     onSuccess: (created) => {
       selectProject(created.name);
       void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
@@ -216,7 +217,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
 
   const saveFile = useMutation({
     mutationFn: ({ path, content }: { path: string; content: string }) =>
-      api.writeFile(apiKey, project as string, path, content),
+      api.writeFile(bearer, project as string, path, content),
     onSuccess: invalidateWorkspace,
     // The editor's save handler shows the failure inline next to the buffer;
     // log it too so a rejected save is never completely silent.
@@ -237,7 +238,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
   }, []);
 
   const publish = useMutation({
-    mutationFn: () => api.deploy(apiKey, project as string),
+    mutationFn: () => api.deploy(bearer, project as string),
     onSuccess: (result) => {
       invalidateWorkspace();
       // The PRODUCTION agent changed — reload the pane's production-fallback
@@ -263,7 +264,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
   });
 
   const deleteProject = useMutation({
-    mutationFn: () => api.deleteProject(apiKey, project as string),
+    mutationFn: () => api.deleteProject(bearer, project as string),
     onSuccess: () => {
       setSecretsOpen(false);
       selectProject(null);
@@ -330,7 +331,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
       />
       {secretsOpen && project != null && (
         <SecretsPanel
-          apiKey={apiKey}
+          bearer={bearer}
           project={project}
           slug={deployedSlug}
           previewSlug={workspace.data?.previewSlug}
@@ -361,7 +362,6 @@ export function App({ apiKey, onSignOut }: AppProps) {
         <main className="flex min-h-0 flex-1">
           <ChatPanel
             key={project}
-            apiKey={apiKey}
             // undefined = still loading (the panel must not flash "new chat");
             // a failed fetch degrades to an empty history rather than wedging
             // the panel in its loading state.

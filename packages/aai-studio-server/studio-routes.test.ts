@@ -2,6 +2,7 @@
 // Studio HTTP surface, exercised through the full orchestrator (routing
 // order vs the /:slug routes matters and is covered here).
 
+import { createDevAuth } from "aai-server/supabase-auth";
 import { authFetch, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
@@ -30,7 +31,9 @@ vi.mock("./studio-deploy.ts", async (importOriginal) => {
 // the route's gating/wiring is exercised without Modal.
 const ensureSessionMock = vi.fn(
   async (_scope: string, project: string, _apiKey: string, _serverUrl?: string) =>
-    project === "ghost" ? null : { url: "https://tunnel.example/studio/chat" },
+    project === "ghost"
+      ? null
+      : { url: "https://tunnel.example/studio/chat", token: "chat-token-1" },
 );
 const deployWorkspaceMock = vi.fn(
   async (
@@ -175,6 +178,86 @@ describe("studio auth", () => {
       await authFetch(fetch, "/studio/projects", { method: "GET", key: "key2" })
     ).json()) as { projects: string[] };
     expect(theirs.projects).toEqual([]);
+  });
+});
+
+describe("browser sessions", () => {
+  /** A dev token the way the login screen mints it (see aai-server dev auth). */
+  const token = (email: string) =>
+    `dev.${Buffer.from(JSON.stringify({ id: `dev:${email}`, email }))
+      .toString("base64url")
+      .replace(/=+$/, "")}.dev`;
+
+  const withAuth = () => createTestCombined({ auth: createDevAuth() });
+
+  test("GET /studio/auth reports the login mode — 'none' when unconfigured", async () => {
+    const plain = await createTestCombined();
+    expect(await (await plain.fetch("/studio/auth")).json()).toEqual({ mode: "none" });
+    const { fetch } = await withAuth();
+    expect(await (await fetch("/studio/auth")).json()).toEqual({ mode: "dev" });
+  });
+
+  test("account routes: no key on file until the onboarding PUT stores one", async () => {
+    const { fetch } = await withAuth();
+    const bearer = token("a@b.c");
+    const before = await authFetch(fetch, "/studio/account", { method: "GET", key: bearer });
+    expect(await before.json()).toEqual({ email: "a@b.c", hasKey: false });
+
+    const put = await authFetch(fetch, "/studio/account/key", {
+      method: "PUT",
+      key: bearer,
+      body: { apiKey: "users-own-key" },
+    });
+    expect(put.status).toBe(200);
+    const after = await authFetch(fetch, "/studio/account", { method: "GET", key: bearer });
+    expect(await after.json()).toEqual({ email: "a@b.c", hasKey: true });
+  });
+
+  test("account routes reject raw API keys and invalid sessions", async () => {
+    const { fetch } = await withAuth();
+    expect(
+      (await authFetch(fetch, "/studio/account", { method: "GET", key: "raw-key" })).status,
+    ).toBe(401);
+    expect(
+      (await authFetch(fetch, "/studio/account", { method: "GET", key: "bad.dev.token" })).status,
+    ).toBe(401);
+  });
+
+  test("a session token that looks like a JWT is rejected on key onboarding", async () => {
+    const { fetch } = await withAuth();
+    const res = await authFetch(fetch, "/studio/account/key", {
+      method: "PUT",
+      key: token("a@b.c"),
+      body: { apiKey: "looks.like.jwt" },
+    });
+    expect(res.status).toBe(400);
+  });
+
+  test("project routes resolve the session to the stored key; 401 before onboarding", async () => {
+    const { fetch } = await withAuth();
+    const bearer = token("a@b.c");
+    // Before the key is stored: project routes refuse the session.
+    const early = await authFetch(fetch, "/studio/projects", { method: "GET", key: bearer });
+    expect(early.status).toBe(401);
+
+    await authFetch(fetch, "/studio/account/key", {
+      method: "PUT",
+      key: bearer,
+      body: { apiKey: "users-own-key" },
+    });
+    await createProject(fetch, "mine", bearer);
+    const listed = (await (
+      await authFetch(fetch, "/studio/projects", { method: "GET", key: bearer })
+    ).json()) as { projects: string[] };
+    expect(listed.projects).toEqual(["mine"]);
+
+    // Session-authed callers scope by USER, not by the resolved key: the raw
+    // key sees its own (empty) namespace, so rotating the stored key can
+    // never orphan the account's projects.
+    const rawView = (await (
+      await authFetch(fetch, "/studio/projects", { method: "GET", key: "users-own-key" })
+    ).json()) as { projects: string[] };
+    expect(rawView.projects).toEqual([]);
   });
 });
 
@@ -451,7 +534,10 @@ describe("deploy + chat endpoints", () => {
     await createProject(fetch);
     const res = await authFetch(fetch, "/studio/projects/proj/session", { body: {} });
     expect(res.status).toBe(200);
-    expect(await res.json()).toEqual({ url: "https://tunnel.example/studio/chat" });
+    expect(await res.json()).toEqual({
+      url: "https://tunnel.example/studio/chat",
+      token: "chat-token-1",
+    });
     // The broker got the caller's own key — it becomes the guest's LLM
     // credential and the chat surface's bearer.
     const call = ensureSessionMock.mock.calls.at(-1) as unknown[];

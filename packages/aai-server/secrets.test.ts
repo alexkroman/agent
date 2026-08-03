@@ -1,110 +1,69 @@
 // Copyright 2025 the AAI authors. MIT license.
-import { beforeEach, describe, expect, test } from "vitest";
-import { _clearVerifyCache, hashApiKey, verifyApiKeyHash, verifySlugOwner } from "./secrets.ts";
+import { describe, expect, test } from "vitest";
+import { hashApiKey, matchAnyHash, verifyApiKeyHash, verifySlugOwner } from "./secrets.ts";
 import { createTestStore } from "./test-utils.ts";
 
-beforeEach(() => {
-  _clearVerifyCache();
-});
-
 describe("hashApiKey", () => {
-  test("produces argon2id PHC format string", async () => {
-    const hash = await hashApiKey("test-key");
-    expect(hash).toMatch(/^\$argon2id\$v=19\$m=19456,t=2,p=1\$[A-Za-z0-9+/]+\$[A-Za-z0-9+/]+$/);
+  test("produces a self-describing sha256 digest", () => {
+    expect(hashApiKey("test-key")).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
-  test("same input produces different hashes (unique salts)", async () => {
-    const a = await hashApiKey("key-1");
-    const b = await hashApiKey("key-1");
-    expect(a).not.toBe(b);
+  test("is deterministic — no salt, no verify cache needed", () => {
+    expect(hashApiKey("key-1")).toBe(hashApiKey("key-1"));
   });
 
-  test("different inputs produce different hashes", async () => {
-    const a = await hashApiKey("key-1");
-    const b = await hashApiKey("key-2");
-    expect(a).not.toBe(b);
+  test("different inputs produce different digests", () => {
+    expect(hashApiKey("key-1")).not.toBe(hashApiKey("key-2"));
   });
 });
 
 describe("verifyApiKeyHash", () => {
-  test("returns true for correct key", async () => {
-    const hash = await hashApiKey("my-secret-key");
-    expect(await verifyApiKeyHash("my-secret-key", hash)).toBe(true);
+  test("returns true for correct key", () => {
+    expect(verifyApiKeyHash("my-secret-key", hashApiKey("my-secret-key"))).toBe(true);
   });
 
-  test("returns false for wrong key", async () => {
-    const hash = await hashApiKey("my-secret-key");
-    expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
+  test("returns false for wrong key", () => {
+    expect(verifyApiKeyHash("wrong-key", hashApiKey("my-secret-key"))).toBe(false);
   });
 
-  test("returns false for malformed stored hash", async () => {
-    expect(await verifyApiKeyHash("key", "not-a-valid-hash")).toBe(false);
+  test("returns false for malformed, empty, or foreign-format stored hashes", () => {
+    expect(verifyApiKeyHash("key", "not-a-valid-hash")).toBe(false);
+    expect(verifyApiKeyHash("key", "")).toBe(false);
+    expect(verifyApiKeyHash("key", "bcrypt:10:abc:def")).toBe(false);
+    // Pre-rewrite argon2 PHC strings never shipped, but must still read as
+    // "no match" rather than an error.
+    expect(verifyApiKeyHash("key", "$argon2id$v=19$m=19456,t=2,p=1$c2FsdA$aGFzaA")).toBe(false);
   });
+});
 
-  test("returns false for empty stored hash", async () => {
-    expect(await verifyApiKeyHash("key", "")).toBe(false);
-  });
-
-  test("returns false for wrong algorithm prefix", async () => {
-    expect(await verifyApiKeyHash("key", "bcrypt:10:abc:def")).toBe(false);
-  });
-
-  test("repeat verification is dramatically faster (cache hit)", async () => {
-    const hash = await hashApiKey("my-secret-key");
-    const start1 = performance.now();
-    expect(await verifyApiKeyHash("my-secret-key", hash)).toBe(true);
-    const cold = performance.now() - start1;
-
-    const start2 = performance.now();
-    expect(await verifyApiKeyHash("my-secret-key", hash)).toBe(true);
-    const warm = performance.now() - start2;
-
-    // Cold argon2 takes tens of ms; warm cache hit should be far faster.
-    expect(warm).toBeLessThan(cold / 5);
-  });
-
-  test("negative results are cached (wrong key stays wrong)", async () => {
-    const hash = await hashApiKey("right-key");
-    expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
-    const start = performance.now();
-    expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
-    expect(performance.now() - start).toBeLessThan(20);
-  });
-
-  test("distinct keys against the same stored hash cache independent results", async () => {
-    // Guards the SHA-256(apiKey) cache keying: two keys verified against the
-    // same stored hash must land in separate entries with distinct results.
-    const hash = await hashApiKey("right-key");
-    expect(await verifyApiKeyHash("right-key", hash)).toBe(true);
-    expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
-    // Both answered from the cache now — and still distinct.
-    expect(await verifyApiKeyHash("right-key", hash)).toBe(true);
-    expect(await verifyApiKeyHash("wrong-key", hash)).toBe(false);
+describe("matchAnyHash", () => {
+  test("returns the matching stored hash, or null", () => {
+    const h1 = hashApiKey("key-1");
+    const h2 = hashApiKey("key-2");
+    expect(matchAnyHash("key-2", [h1, h2])).toBe(h2);
+    expect(matchAnyHash("key-3", [h1, h2])).toBeNull();
+    expect(matchAnyHash("key-1", [])).toBeNull();
   });
 });
 
 describe("verifySlugOwner", () => {
-  test("returns 'unclaimed' without a keyHash when slug has no agent record", async () => {
+  test("returns 'unclaimed' when slug has no agent record", async () => {
     const store = createTestStore();
     const result = await verifySlugOwner("my-api-key", {
       slug: "nonexistent",
       store,
     });
     expect(result.status).toBe("unclaimed");
-    // Hashing is deferred to the deploy-claim path (middleware.ts) so
-    // requests for nonexistent slugs don't burn an argon2 derivation.
-    expect(result).not.toHaveProperty("keyHash");
   });
 
   test("returns 'owned' when API key matches stored hash", async () => {
     const store = createTestStore();
-    const keyHash = await hashApiKey("owner-key");
     await store.putAgent({
       slug: "my-agent",
       env: {},
       worker: "code",
       clientFiles: {},
-      credential_hashes: [keyHash],
+      credential_hashes: [hashApiKey("owner-key")],
       agentConfig: {
         name: "test",
         systemPrompt: "test",
@@ -121,13 +80,12 @@ describe("verifySlugOwner", () => {
 
   test("returns 'forbidden' when API key does not match", async () => {
     const store = createTestStore();
-    const ownerHash = await hashApiKey("owner-key");
     await store.putAgent({
       slug: "my-agent",
       env: {},
       worker: "code",
       clientFiles: {},
-      credential_hashes: [ownerHash],
+      credential_hashes: [hashApiKey("owner-key")],
       agentConfig: {
         name: "test",
         systemPrompt: "test",

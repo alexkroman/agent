@@ -64,6 +64,7 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     workspaces: base.workspaces,
     chats: base.chats,
     ...(base.secrets && { secrets: base.secrets }),
+    ...(base.auth && { auth: base.auth }),
     ...(base.appDb && { appDb: base.appDb }),
     ...(base.slugLock && { slugLock: base.slugLock }),
     ...(rateLimiters && { studioRateLimiters: rateLimiters }),

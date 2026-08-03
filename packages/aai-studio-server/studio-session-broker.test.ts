@@ -82,11 +82,22 @@ describe("studio session broker", () => {
     const guest = fakeGuest();
     const { broker } = await makeBroker([guest]);
     const session = await broker.ensureSession(SCOPE, PROJECT, "caller-key");
-    expect(session).toEqual({ url: "https://tunnel.example/studio/chat" });
+    expect(session).toEqual({
+      url: "https://tunnel.example/studio/chat",
+      token: expect.any(String),
+    });
     const init = guest.requests.find((r) => r.method === "studio/session-init");
-    const params = init?.params as { apiKey: string; files: Record<string, string> };
-    // The CALLER'S key rides to the guest — LLM credential + chat bearer.
+    const params = init?.params as {
+      apiKey: string;
+      chatToken: string;
+      files: Record<string, string>;
+    };
+    // The CALLER'S key rides to the guest — the LLM credential. The chat
+    // surface's bearer is the broker-minted token, returned to the browser
+    // and delivered to the guest in the same init.
     expect(params.apiKey).toBe("caller-key");
+    expect(params.chatToken).toBe(session?.token);
+    expect(params.chatToken.length).toBeGreaterThanOrEqual(32);
     expect(params.files["agent.ts"]).toBe("// v1");
     await broker.dispose();
   });

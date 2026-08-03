@@ -340,6 +340,20 @@ const storage = defineCommand({
   subCommands: { status: storageStatus, enable: storageEnable, disable: storageDisable },
 });
 
+const login = defineCommand({
+  meta: { name: "login", description: "Sign in with your email and save your API key" },
+  args: {
+    server: sharedArgs.server,
+    json: sharedArgs.json,
+  },
+  async run({ args }) {
+    await runCommand(args, async () => {
+      const { executeLogin } = await import("./login.ts");
+      return executeLogin({ server: args.server });
+    });
+  },
+});
+
 const templates = defineCommand({
   meta: { name: "templates", description: "List available project templates" },
   args: {
@@ -367,6 +381,7 @@ export const mainCommand = defineCommand({
     build,
     deploy,
     delete: del,
+    login,
     secret,
     storage,
     templates,

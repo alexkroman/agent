@@ -137,6 +137,22 @@ export const StudioFileSchema = z.object({
 });
 
 /**
+ * The one-time account onboarding body: the user's AssemblyAI API key,
+ * stored server-side (`user-key:<uid>`) and resolved from their session on
+ * every later request. Dots are rejected because a key never contains one —
+ * a JWT pasted here by mistake would otherwise be stored as a "key" and fail
+ * much later, deep in a provider call.
+ */
+export const AccountKeySchema = z.object({
+  apiKey: z
+    .string()
+    .trim()
+    .min(1, "API key is required")
+    .max(512)
+    .refine((key) => !key.includes("."), "That looks like a session token, not an API key"),
+});
+
+/**
  * Summed lengths of every string reachable inside `value` — the size that
  * matters in a chat message, counted without re-serializing it. The old
  * per-message `JSON.stringify(...).length` refine re-built megabytes of

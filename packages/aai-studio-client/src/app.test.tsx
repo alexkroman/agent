@@ -27,7 +27,7 @@ function renderApp(onSignOut: () => void) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(
     <QueryClientProvider client={client}>
-      <App apiKey="sk-test" onSignOut={onSignOut} />
+      <App bearer="sk-test" onSignOut={onSignOut} />
     </QueryClientProvider>,
   );
 }

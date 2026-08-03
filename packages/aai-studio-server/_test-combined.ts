@@ -31,6 +31,7 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
     workspaces: overrides.workspaces ?? orch.workspaces,
     chats: overrides.chats ?? orch.chats,
     secrets,
+    ...(overrides.auth && { auth: overrides.auth }),
     ...(overrides.appDb && { appDb: overrides.appDb }),
     ...(overrides.slugLock && { slugLock: overrides.slugLock }),
     ...(overrides.pool && { pool: overrides.pool }),

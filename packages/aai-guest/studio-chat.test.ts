@@ -104,7 +104,9 @@ const deps = (model: LanguageModel): StudioChatDeps => ({
   model,
 });
 
-function post(url: string, body: unknown, bearer: string | null = API_KEY): Promise<Response> {
+const CHAT_TOKEN = "test-chat-token";
+
+function post(url: string, body: unknown, bearer: string | null = CHAT_TOKEN): Promise<Response> {
   return fetch(`${url}/studio/chat`, {
     method: "POST",
     headers: {
@@ -124,6 +126,7 @@ async function makeSession(files: Record<string, string>): Promise<StudioSession
     project: "proj",
     files,
     apiKey: API_KEY,
+    chatToken: CHAT_TOKEN,
     system: "You are a coding agent.",
     model: "fake-1",
     maxSteps: 4,
@@ -139,6 +142,9 @@ describe("guest studio chat surface", () => {
     try {
       expect((await post(url, chatBody("hi"), null)).status).toBe(401);
       expect((await post(url, chatBody("hi"), "wrong")).status).toBe(401);
+      // The AssemblyAI key is the LLM credential, never the chat bearer —
+      // only the broker-minted per-session token opens this surface.
+      expect((await post(url, chatBody("hi"), API_KEY)).status).toBe(401);
     } finally {
       await close();
     }

@@ -17,7 +17,6 @@ import { isEnterSubmit, SEND_BUTTON_CLASS, SendIcon, StopIcon } from "./send-but
 import { ToolRow, toBlocks } from "./tool-row.tsx";
 
 type ChatPanelProps = {
-  apiKey: string;
   /**
    * The project's persisted conversation, restored on open. `undefined`
    * while the fetch is in flight — the panel shows a loading state instead
@@ -194,7 +193,6 @@ function EmptyStateBody({ status }: { status: StudioStatus | undefined }) {
  * so hydrating later would silently drop the restored conversation.
  */
 function ProjectChat({
-  apiKey,
   session,
   initialMessages,
   llmStatus,
@@ -222,7 +220,9 @@ function ProjectChat({
       // mirroring how voice clients connect straight to a deployed agent.
       new DefaultChatTransport({
         api: session.url,
-        headers: { Authorization: `Bearer ${apiKey}` },
+        // The broker-minted per-session token — the browser never holds a
+        // long-lived credential for the sandbox's public surface.
+        headers: { Authorization: `Bearer ${session.token}` },
         // A rejected key gets the same global handling as the REST queries
         // (app.tsx) — useChat only surfaces a generic Error otherwise. A 409
         // (replaced) or an unreachable sandbox (killed/evicted) both mean
@@ -360,7 +360,6 @@ export function ChatPanel(props: ChatPanelProps) {
         )}
       {props.chatHistory !== undefined && props.chatSession !== undefined && (
         <ProjectChat
-          apiKey={props.apiKey}
           session={props.chatSession}
           initialMessages={props.chatHistory}
           llmStatus={props.llmStatus}

@@ -59,6 +59,7 @@ import {
 } from "./storage-handler.ts";
 import type { BundleStore } from "./store-types.ts";
 import { createStudioProxy, isStudioPath } from "./studio-proxy.ts";
+import type { StudioAuth } from "./supabase-auth.ts";
 import {
   handleAgentFavicon,
   handleAgentHealth,
@@ -71,6 +72,8 @@ export type OrchestratorOpts = {
   store: BundleStore;
   /** Named secret storage (Supabase Vault in production, memory in tests). */
   secrets?: SecretStore;
+  /** Browser-session auth; absent means raw-API-key bearers only. */
+  auth?: StudioAuth;
   /** Per-app database provisioning; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
   /**
@@ -225,6 +228,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     slots: opts.slots,
     store: opts.store,
     secrets,
+    ...(opts.auth && { auth: opts.auth }),
     ...(opts.appDb && { appDb: opts.appDb }),
     // Same default posture as secrets: tests build orchestrators without a
     // platform database, where in-process exclusion is exact. Wrapped so

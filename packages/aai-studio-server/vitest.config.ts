@@ -11,9 +11,7 @@ export default defineConfig({
     restoreMocks: true,
     pool: "forks",
     include: ["**/*.test.ts"],
-    // Same credential-bound headroom rationale as aai-server: deploys and
-    // authenticated requests pay argon2id derivations under a contended
-    // check run.
+    // Same contended-check-run headroom rationale as aai-server.
     testTimeout: 20_000,
     exclude: [
       // LLM-in-the-loop evals: pnpm --filter aai-studio-server test:evals
