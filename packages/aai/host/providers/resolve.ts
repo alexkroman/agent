@@ -19,7 +19,12 @@ import { createGroq } from "@ai-sdk/groq";
 import { createMistral } from "@ai-sdk/mistral";
 import { createOpenAI } from "@ai-sdk/openai";
 import { createXai } from "@ai-sdk/xai";
-import { createGateway, type LanguageModel } from "ai";
+import {
+  createGateway,
+  defaultSettingsMiddleware,
+  type LanguageModel,
+  wrapLanguageModel,
+} from "ai";
 import type { ProviderEnv } from "../../sdk/env-types.ts";
 import { ANTHROPIC_API_KEY_ENV, ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import {
@@ -346,15 +351,26 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
       // the provider's default callable targets OpenAI's Responses API.
       // `fetch` repairs the gateway's id-less streaming tool_call deltas,
       // which the SDK's streaming tracker would otherwise reject.
-      return createOpenAI({
+      // A descriptor reaching the host with no model is either an older
+      // bundle or a hand-built config; the factory's default is the right
+      // answer for both, and better than a runtime 400 from the gateway.
+      const modelId = opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL;
+      const chat = createOpenAI({
         apiKey,
         baseURL,
         name: "assemblyai",
         fetch: repairOpenAiStream(),
-        // A descriptor reaching the host with no model is either an older
-        // bundle or a hand-built config; the factory's default is the right
-        // answer for both, and better than a runtime 400 from the gateway.
-      }).chat(opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL);
+      }).chat(modelId);
+      // reasoning_effort is sent only when the descriptor asks for one —
+      // unset, the model runs on its own server-side reasoning default.
+      const reasoningEffort = opts.reasoningEffort;
+      if (reasoningEffort === undefined) return chat;
+      return wrapLanguageModel({
+        model: chat,
+        middleware: defaultSettingsMiddleware({
+          settings: { providerOptions: { openai: { reasoningEffort } } },
+        }),
+      });
     },
   },
 };

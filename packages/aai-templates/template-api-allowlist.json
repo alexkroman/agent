@@ -191,6 +191,7 @@
     "AssemblyAIGatewayModel",
     "AssemblyAILlmOptions",
     "AssemblyAILlmProvider",
+    "AssemblyAIReasoningEffort",
     "GATEWAY_API_KEY_ENV",
     "GATEWAY_KIND",
     "GOOGLE_API_KEY_ENV",

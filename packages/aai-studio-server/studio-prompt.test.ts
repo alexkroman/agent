@@ -55,7 +55,7 @@ describe("studioSystemPrompt", () => {
     expect(prompt).toContain("test_agent");
     // Any non-AssemblyAI provider needs a key the user must supply, so a
     // generated agent should default to an all-AssemblyAI pipeline (STT +
-    // qwen3-next-80b-a3b on the LLM Gateway + TTS) on the one key publishing
+    // gpt-5.5 on the LLM Gateway + TTS) on the one key publishing
     // guarantees, with the S2S voice agent API only on request. Both are
     // graded by the CONFIG_CASES half of the studio codegen evals.
     expect(prompt).toContain("Default to a cascaded (pipeline-mode) agent");
@@ -71,7 +71,7 @@ describe("studioSystemPrompt", () => {
     // if the ASSEMBLYAI_GATEWAY_MODELS interpolation ran.
     expect(prompt).toContain("gpt-5.2");
     // The default gateway model for generated pipeline agents.
-    expect(prompt).toContain('"qwen3-next-80b-a3b" unless the user asks for a different model');
+    expect(prompt).toContain('"gpt-5.5" unless the user asks for a different model');
     // Publishing is the user's call, so the agent must be told it cannot.
     expect(prompt).toContain("You cannot publish");
     // Working-style rules: implement with tools instead of pasting code
