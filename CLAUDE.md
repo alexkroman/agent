@@ -443,6 +443,21 @@ voice agents without the CLI:
   added gateway model, a provider option — the prompt tells the agent to
   look up with `visit_webpage` (the AssemblyAI docs included) rather than
   guess.
+- **Ground truth on disk: the baked toolchain, reachable only with `bash`.**
+  The guest's `/opt/aai/node_modules` holds `@alexkroman1/aai` (SDK `.d.ts`),
+  `@alexkroman1/aai-ui` (`dist/index.d.ts` plus per-component
+  `dist/components/*.d.ts` — the API for `client.tsx`; no `.tsx` source
+  ships), and `@alexkroman1/aai-cli`, whose `dist/templates/` carries the
+  full template set — five of which have a real `client.tsx`. All of it sits
+  ABOVE the session workspace (`<harness>/.workspaces/session-<pid>`), so
+  `read_file` (jailed by `resolveInside`), `glob`, and `grep` (which skip
+  `node_modules`) cannot see any of it — only `bash` can, via
+  `../../node_modules/...`. The preamble names those literal paths and
+  `aai-guest/studio-build.test.ts` asserts each one resolves; the two-level
+  depth holds in all three layouts (baked image, subprocess backend, tests),
+  so moving `workspacesRoot()` breaks the prompt silently. Before this, the
+  embedded guide pointed the agent at `packages/aai-templates/templates/` —
+  a monorepo path that exists in no sandbox, and in no user project either.
 - **Guest tools carry their own deadlines** (`aai-guest/studio-tools.ts`):
   every tool is wrapped in a 120s timeout resolving to an error tool
   result, and `bash` has its own wall-clock kill (60s default, 300s max)
@@ -1537,6 +1552,27 @@ bumped automatically.
   self-contained with its own `agent.ts` and optional `client.tsx`.
   `scaffold/` has base project files (package.json, tsconfig,
   etc.) layered underneath.
+
+  **They ship inside the `@alexkroman1/aai-cli` tarball**, copied into its
+  `dist/` at build time by `aai-cli/bundle-templates.mjs` — the sources stay
+  in `aai-templates`, which still owns their tests, typecheck, and lint;
+  this is packaging, not a move. `aai init` used to fetch them at run time
+  with giget (`github:alexkroman/agent/packages/aai-templates#main`), which
+  required a network for every init and pinned templates to `main`
+  regardless of the CLI version installed, so a template written against a
+  newer SDK could land in a project resolving an older one. Two consequences
+  worth knowing:
+  - `packages/aai-cli/turbo.json` adds the template sources to the build's
+    `inputs`. They live in another package, so the root task's
+    package-relative globs cannot see them — without the override, editing a
+    template replays a cached CLI build that predates it.
+  - Nothing running in-tree can exercise the shipped path: `getMonorepoRoot()`
+    keys off the module's own location, so a CLI built at
+    `packages/aai-cli/dist` always finds the workspace root and takes the
+    monorepo branch. The e2e suite's `detachedCli()` copies `dist/` somewhere
+    with no `pnpm-workspace.yaml` above it for that reason, and `aaiEnv()`
+    deliberately sets no `AAI_TEMPLATES_DIR` — that override used to pin
+    every e2e run to the workspace sources.
 
 ### Git hooks (lefthook)
 

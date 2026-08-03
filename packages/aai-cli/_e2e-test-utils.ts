@@ -25,7 +25,9 @@ export function aaiEnv(): NodeJS.ProcessEnv {
     NO_COLOR: "1",
     FORCE_COLOR: "0",
     AAI_NO_DEV: "1",
-    AAI_TEMPLATES_DIR: path.resolve(dir, "../aai-templates"),
+    // Deliberately no AAI_TEMPLATES_DIR: the override pinned every e2e run to
+    // the workspace's template sources, so the resolution order `init` really
+    // ships (monorepo, then the copy bundled into dist/) was never exercised.
     ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY || "test",
     npm_config_ignore_scripts: "true", // avoid postinstall hooks in linked pkgs
   };
@@ -41,12 +43,37 @@ export function aai(aaiBin: string, args: string[], cwd: string, timeoutMs = 120
   });
 }
 
-/** Build the CLI with tsdown and return the path to the built binary. */
+/**
+ * Build the CLI and return the path to the built binary.
+ *
+ * Runs the package's own `build` script rather than bare `tsdown`, because
+ * the build is two steps now: tsdown, then `bundle-templates.mjs` copying the
+ * templates into `dist/`. Calling the bundler directly produced a `dist/`
+ * that no published tarball ever looks like — one with no templates in it.
+ */
 export function buildCli(): string {
-  execaSync("npx", ["tsdown"], { cwd: dir, stdio: "inherit" });
+  execaSync("pnpm", ["run", "build"], { cwd: dir, stdio: "inherit" });
   const mjs = path.resolve(dir, "dist/cli.mjs");
   const js = path.resolve(dir, "dist/cli.js");
   return fs.existsSync(mjs) ? mjs : js;
+}
+
+/**
+ * Copy a built `dist/` somewhere with no pnpm-workspace.yaml above it, so the
+ * CLI resolves templates the way an npm-installed copy does.
+ *
+ * `getMonorepoRoot()` keys off the *module's* location, so a build run from
+ * `packages/aai-cli/dist` always finds the workspace root and takes the
+ * monorepo branch — no test running in-tree can reach the bundled branch,
+ * which is the only one real users hit.
+ */
+export function detachedCli(aaiBin: string, into: string): string {
+  const distDir = path.dirname(aaiBin);
+  fs.cpSync(distDir, path.join(into, "dist"), { recursive: true });
+  // The CLI's runtime deps stay external (`deps: { neverBundle }`), so the
+  // detached copy still needs a node_modules to resolve them from.
+  fs.symlinkSync(path.resolve(dir, "node_modules"), path.join(into, "node_modules"), "dir");
+  return path.join(into, "dist", path.basename(aaiBin));
 }
 
 /**
