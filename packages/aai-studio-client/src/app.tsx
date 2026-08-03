@@ -13,6 +13,7 @@ import {
   api,
   type ChatSession,
   errorText,
+  isTransientSessionError,
   type ProjectData,
   type StudioStatus,
 } from "./api.ts";
@@ -49,6 +50,15 @@ const PREVIEW_POLL_WINDOW_MS = 6 * 60_000;
 
 /** Stable identity while the workspace loads, so effects keyed on it don't churn. */
 const EMPTY_FILES: Record<string, string> = {};
+
+/**
+ * How many transient broker failures to ride out before surfacing the
+ * retryable error state. With TanStack's default exponential backoff
+ * (1s doubling, capped at 30s) this keeps trying for roughly three minutes
+ * of delay plus attempt time — enough to span a server restart, so a chat
+ * opened mid-restart connects on its own once a sandbox is available.
+ */
+const CHAT_SESSION_MAX_RETRIES = 10;
 
 export function App({ apiKey, onSignOut }: AppProps) {
   const queryClient = useQueryClient();
@@ -112,14 +122,18 @@ export function App({ apiKey, onSignOut }: AppProps) {
 
   // The project's coding-agent sandbox. Brokered once per project open and
   // held for the session; a dead sandbox (evicted, replaced) surfaces as a
-  // failed chat send, which invalidates this query to re-broker.
+  // failed chat send, which invalidates this query to re-broker. Transient
+  // failures (a restarting server, a timed-out attempt) retry with backoff
+  // behind the panel's "Starting sandbox…" state; a 4xx is a real answer
+  // and fails immediately.
   const chatSession = useQuery<ChatSession>({
     queryKey: queryKeys.chatSession(project),
     queryFn: () => api.createChatSession(apiKey, project as string),
     enabled: project != null,
     staleTime: Number.POSITIVE_INFINITY,
     refetchOnWindowFocus: false,
-    retry: 1,
+    retry: (failureCount, error) =>
+      failureCount < CHAT_SESSION_MAX_RETRIES && isTransientSessionError(error),
   });
 
   // Friendly tool labels, served by the sandbox (single source of truth —

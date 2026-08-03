@@ -2,7 +2,7 @@
 
 import { afterEach, describe, expect, test, vi } from "vitest";
 import { jsonResponse, stubFetch } from "./_test-utils.ts";
-import { ApiError, api, parseSecrets } from "./api.ts";
+import { ApiError, api, isTransientSessionError, parseSecrets } from "./api.ts";
 
 describe("parseSecrets", () => {
   test("parses KEY=value lines", () => {
@@ -117,6 +117,16 @@ describe("api", () => {
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer sk-123");
   });
 
+  test("createChatSession carries a per-attempt timeout signal", async () => {
+    // A broker request issued mid-restart can hang instead of failing; the
+    // deadline is what lets the query layer ever retry it.
+    const fetchMock = stubFetch(() => jsonResponse({ url: "http://s/studio/chat" }));
+    await api.createChatSession("k", "p");
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit];
+    expect(url).toBe("/studio/projects/p/session");
+    expect(init.signal).toBeInstanceOf(AbortSignal);
+  });
+
   test("secret endpoints hit the platform's own agent routes", async () => {
     const fetchMock = stubFetch(() => jsonResponse({ ok: true, vars: ["A"], keys: ["A"] }));
     await api.listSecrets("k", "my-agent");
@@ -173,5 +183,24 @@ describe("api", () => {
     expect(err).toBeInstanceOf(ApiError);
     expect((err as ApiError).status).toBe(502);
     expect((err as ApiError).message).toBe("Request failed (502)");
+  });
+});
+
+describe("isTransientSessionError", () => {
+  test("4xx answers are final — a bad key or missing project can't be retried away", () => {
+    expect(isTransientSessionError(new ApiError(401, "unauthorized"))).toBe(false);
+    expect(isTransientSessionError(new ApiError(404, "Project not found"))).toBe(false);
+  });
+
+  test("408/429 are the transient 4xx", () => {
+    expect(isTransientSessionError(new ApiError(408, "request timeout"))).toBe(true);
+    expect(isTransientSessionError(new ApiError(429, "rate limited"))).toBe(true);
+  });
+
+  test("5xx and settled-without-a-response failures retry (a restarting server)", () => {
+    expect(isTransientSessionError(new ApiError(503, "service unavailable"))).toBe(true);
+    // A rejected fetch (connection refused) and a timed-out attempt.
+    expect(isTransientSessionError(new TypeError("Failed to fetch"))).toBe(true);
+    expect(isTransientSessionError(new DOMException("timed out", "TimeoutError"))).toBe(true);
   });
 });

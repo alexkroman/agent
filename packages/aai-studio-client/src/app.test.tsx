@@ -174,6 +174,53 @@ describe("chat history hydration", () => {
     expect(screen.queryByText("Loading conversation…")).toBeNull();
   });
 
+  test("a broker failure during a restart retries and connects without a reload", async () => {
+    // The reported wedge: open a chat while the server restarts and the
+    // panel sat on "Starting sandbox…" forever, even once a sandbox was
+    // available. Transient broker failures must retry behind that state.
+    let calls = 0;
+    stubFetch({
+      ...demoRoutes,
+      "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
+      "/studio/projects/demo/session": () =>
+        ++calls === 1
+          ? jsonResponse({ error: "service unavailable" }, 503)
+          : jsonResponse({ url: "http://studio.test/sandbox/studio/chat" }),
+    });
+    renderApp(vi.fn());
+    await openProject("demo");
+    // Holds on the boot state while the retry rides out the restart…
+    await waitFor(() => expect(screen.getByText("Starting sandbox…")).toBeDefined());
+    // …then connects on its own once the broker answers (first retry ~1s).
+    await waitFor(
+      () => expect(screen.getByText(/Welcome to AssemblyAI App Builder/)).toBeDefined(),
+      { timeout: 4000 },
+    );
+    expect(calls).toBe(2);
+  });
+
+  test("a 4xx broker answer fails immediately, and Try again re-brokers in place", async () => {
+    let calls = 0;
+    stubFetch({
+      ...demoRoutes,
+      "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
+      "/studio/projects/demo/session": () =>
+        ++calls === 1
+          ? jsonResponse({ error: "Project not found" }, 404)
+          : jsonResponse({ url: "http://studio.test/sandbox/studio/chat" }),
+    });
+    renderApp(vi.fn());
+    await openProject("demo");
+    await waitFor(() =>
+      expect(screen.getByText(/Could not start the project's sandbox/)).toBeDefined(),
+    );
+    fireEvent.click(screen.getByRole("button", { name: "Try again" }));
+    await waitFor(() =>
+      expect(screen.getByText(/Welcome to AssemblyAI App Builder/)).toBeDefined(),
+    );
+    expect(calls).toBe(2);
+  });
+
   test("while the history loads, the panel holds instead of flashing a new chat", async () => {
     stubFetch({
       ...demoRoutes,
