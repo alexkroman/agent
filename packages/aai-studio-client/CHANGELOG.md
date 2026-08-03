@@ -1,5 +1,12 @@
 # aai-studio-client
 
+## 0.3.1
+
+### Patch Changes
+
+- 65a1a92: Hide the Preview/Code/Settings switcher on the home page and add a Delete project button to the Settings panel
+- 01d8a5f: Lock the Publish button while a chat turn streams — Publish now unlocks on the same end-of-turn event the preview deploy builds on, so a mid-turn workspace checkpoint can never be shipped to production.
+
 ## 0.3.0
 
 ### Minor Changes

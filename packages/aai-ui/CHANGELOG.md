@@ -1,5 +1,13 @@
 # @alexkroman1/aai-ui
 
+## 5.3.0
+
+### Patch Changes
+
+- Updated dependencies [27c5963]
+- Updated dependencies [27c5963]
+  - @alexkroman1/aai@5.3.0
+
 ## 5.2.0
 
 ### Patch Changes
