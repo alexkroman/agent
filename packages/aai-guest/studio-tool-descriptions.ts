@@ -43,7 +43,9 @@ WHEN TO USE:
 IMPORTANT — minimize full rewrites:
 - PREFER edit_file for changes to an existing file; use write_file only for new files or genuine wholesale rewrites.
 - When creating multiple new files, issue the write_file calls in parallel — it is much faster than one by one.
-- Never rewrite a file you have not read this conversation; the user may have edited it since.`,
+- Never rewrite a file you have not read this conversation; the user may have edited it since.
+
+TYPE ERRORS: after each save the workspace is type-checked and any errors are appended to the result. The file IS saved either way — fix every reported error (in one pass when they repeat) before running test_agent; a result with no errors listed means the workspace type-checks.`,
 
   edit_file: `The PREFERRED and PRIMARY tool for modifying an existing file: replaces one exact snippet and returns a diff of what changed.
 
@@ -51,7 +53,8 @@ GUIDELINES:
 - oldText must match the file exactly — whitespace and indentation included — and appear exactly once. Include a few surrounding lines when the snippet alone would be ambiguous.
 - Set replaceAll: true to change every occurrence (e.g. renaming a symbol).
 - Multiple independent edits? Invoke edit_file several times in parallel.
-- Trust the returned diff; do not re-read the file just to confirm the edit applied.`,
+- Trust the returned diff; do not re-read the file just to confirm the edit applied.
+- Like write_file, each successful edit reports the workspace's type errors in its result; no errors listed means the workspace type-checks.`,
 
   delete_file: `Delete a file from the project workspace.
 
@@ -77,12 +80,6 @@ RULES:
 - Make source changes with edit_file/write_file, not shell redirection — the dedicated tools show the user a diff.
 - The workspace ships without node_modules, and only workspace source files (never node_modules, dist, or .git) sync back to the project.
 - Output is capped with the tail kept; long-running commands are killed at the timeout (default ${BASH_TIMEOUT_MS}ms, max ${BASH_TIMEOUT_MAX_MS}ms).`,
-
-  check_types: `Run only the project's TypeScript check (tsc --noEmit against the workspace tsconfig) and report the diagnostics.
-
-WHEN TO USE:
-- Iterating on type errors after edits — much cheaper than test_agent, which runs the same check but then also bundles and loads.
-- Still finish with test_agent before telling the user the work is ready: a clean check_types proves the types, not the build.`,
 
   npm_info: `Look up a package on the npm registry: name, version, description, homepage, exports, and peerDependencies.
 

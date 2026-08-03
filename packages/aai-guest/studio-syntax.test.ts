@@ -36,8 +36,8 @@ describe("syntaxProblems", () => {
   });
 
   test("type errors are NOT syntax errors — mid-refactor files must still save", async () => {
-    // check_types/test_agent own type correctness; this gate is only about
-    // whether the file can be parsed at all.
+    // Post-write diagnostics/test_agent own type correctness; this gate is
+    // only about whether the file can be parsed at all.
     expect(await syntaxError(DIR, "agent.ts", "const x: number = 'a string';\n")).toBeUndefined();
   });
 });

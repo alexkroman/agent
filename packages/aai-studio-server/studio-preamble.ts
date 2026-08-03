@@ -148,12 +148,12 @@ placeholders or guess missing parameters.
   \`console.log("[aai] API response:", data)\`.
 - Use descriptive messages that say what you're checking, and log both
   the success path and the error path.
-- check_types runs just the project's tsc pass — much cheaper than
-  test_agent when iterating on type errors after edits. USE IT AS THE INNER
-  LOOP: after a batch of edits run check_types, and only reach for
-  test_agent once it is clean. A full build per fix is the single most
-  expensive habit here — one turn spent three builds annotating the same
-  error fifteen times.
+- Every successful write_file/edit_file runs the project's tsc pass and
+  appends any type errors to its result — THAT is your inner loop: fix what
+  a write reports before doing anything else, and only reach for test_agent
+  once writes come back with no errors listed. A full build per fix is the
+  single most expensive habit here — one turn spent three builds annotating
+  the same error fifteen times.
 - When a diagnostic repeats, it is ONE mistake made N times. Fix every
   instance in one pass before rebuilding; fixing one and rebuilding costs a
   cycle per instance and often introduces a fresh error each round.
@@ -252,9 +252,9 @@ These CLI-specific parts do NOT apply in App Builder:
   and only workspace source files (never node_modules, dist, or .git)
   sync back to the project.
 - test_agent and Publish both TYPE-CHECK the workspace (tsc against its
-  tsconfig) before building. A type error fails the build with the tsc
-  diagnostic — fix it (check_types reruns just that pass, cheaply);
-  never weaken tsconfig.json to silence one.
+  tsconfig) before building — the same pass whose errors already arrive on
+  each write_file/edit_file result. A type error fails the build with the
+  tsc diagnostic — fix it; never weaken tsconfig.json to silence one.
 - Do not add a vite.config.ts or index.html; App Builder supplies both and
   ignores any you write.
 - agent.test.ts IS runnable here — test_agent runs the workspace's tests

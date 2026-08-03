@@ -137,12 +137,13 @@ export async function buildWorkspaceDir(
 }
 
 /**
- * Run only the project's tsc pass — the `check_types` tool's backend. The
- * same `typecheckProject` gate every build runs, without paying for the
- * bundle, so the coding agent can iterate on type errors cheaply.
+ * Run only the project's tsc pass — the post-write diagnostics backend
+ * (studio-write-diagnostics.ts). The same `typecheckProject` gate every
+ * build runs, without paying for the bundle, annotated with the same
+ * fixing-idiom hints so a write's diagnostics read exactly like a build's.
  *
  * Imports ONLY the typecheck module: it spawns the project's own `tsc` as a
- * child, so a `check_types`-only session never pays the bundler import.
+ * child, so a session that never builds never pays the bundler import.
  */
 export async function typecheckWorkspaceDir(
   dir: string,
@@ -154,7 +155,9 @@ export async function typecheckWorkspaceDir(
     return { ok: false, output: `Build toolchain unavailable in this sandbox: ${errMsg(err)}` };
   }
   const typed = await typecheckProject(dir);
-  return typed.ok ? typed : { ok: false, output: scrubDir(typed.output, dir) };
+  return typed.ok
+    ? typed
+    : { ok: false, output: annotateDiagnostics(scrubDir(typed.output, dir), moduleExports(dir)) };
 }
 
 let buildSeq = 0;

@@ -307,12 +307,12 @@ async function runTurn(
     tools: withToolDeadlines({
       ...createGuestWebTools(),
       ...createDesignInspirationTool(model),
-      ...createProjectTools({
-        dir: session.dir,
-        typecheck: () => typecheckWorkspaceDir(session.dir),
-      }),
+      ...createProjectTools({ dir: session.dir }),
       ...createStudioTools({
         dir: session.dir,
+        // Post-write diagnostics: the same tsc pass builds run, so a type
+        // error reaches the agent inside the write result that caused it.
+        typecheck: () => typecheckWorkspaceDir(session.dir),
         // Build the live session workspace in place, in THIS sandbox,
         // through the same CLI bundler pass `aai deploy` runs.
         build: () => buildWorkspaceDir(session.dir, { worker: true, client: false }),

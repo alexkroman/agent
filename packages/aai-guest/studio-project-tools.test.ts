@@ -5,19 +5,12 @@ import { tmpdir } from "node:os";
 import path from "node:path";
 import type { ToolSet } from "ai";
 import { afterEach, beforeEach, describe, expect, test } from "vitest";
-import {
-  createDesignInspirationTool,
-  createProjectTools,
-  type ProjectToolDeps,
-} from "./studio-project-tools.ts";
+import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
 
 let dir: string;
 
-const typecheckOk: ProjectToolDeps["typecheck"] = () =>
-  Promise.resolve({ ok: true, skipped: false });
-
-function makeTools(typecheck: ProjectToolDeps["typecheck"] = typecheckOk): ToolSet {
-  return createProjectTools({ dir, typecheck });
+function makeTools(): ToolSet {
+  return createProjectTools({ dir });
 }
 
 beforeEach(async () => {
@@ -51,33 +44,6 @@ describe("add_dependency / remove_dependency", () => {
     expect(result).toContain("not a valid npm package spec");
     const removed = await execute(tools, "remove_dependency", { package: spec });
     expect(removed).toContain("not a valid npm package spec");
-  });
-});
-
-describe("check_types", () => {
-  test("reports a clean check", async () => {
-    const result = await execute(makeTools(), "check_types", {});
-    expect(result).toBe("No type errors");
-  });
-
-  test("reports a skipped check (no tsconfig)", async () => {
-    const tools = makeTools(() => Promise.resolve({ ok: true, skipped: true }));
-    const result = await execute(tools, "check_types", {});
-    expect(result).toContain("no tsconfig.json");
-  });
-
-  test("returns the tsc diagnostics on failure", async () => {
-    const tools = makeTools(() =>
-      Promise.resolve({ ok: false, output: "agent.ts(3,7): error TS2322: nope" }),
-    );
-    const result = await execute(tools, "check_types", {});
-    expect(result).toContain("error TS2322");
-  });
-
-  test("surfaces a thrown typecheck as an error string", async () => {
-    const tools = makeTools(() => Promise.reject(new Error("toolchain missing")));
-    const result = await execute(tools, "check_types", {});
-    expect(result).toBe("Error: toolchain missing");
   });
 });
 

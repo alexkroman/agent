@@ -157,16 +157,23 @@ async function runTurn(key, url, prompt) {
         // Any verification that came back red, whichever tool ran it.
         //
         // Counting only test_agent makes the metric movable by reordering
-        // tools: an agent that runs the cheap `check_types` first, fixes what
-        // it finds, and only then builds scores zero repairs while having
-        // written exactly the same wrong code. That reordering IS worth
-        // something — check_types is far cheaper than a full build — but it is
-        // a different thing from getting the code right, and optimizing one
-        // number for both is how you end up congratulating yourself.
-        if ((name === "test_agent" || name === "check_types") && /error TS\d/i.test(out)) {
+        // tools: an agent whose cheaper checks catch the errors first scores
+        // zero repairs while having written exactly the same wrong code.
+        // That reordering IS worth something — early feedback beats a build
+        // per fix — but it is a different thing from getting the code right,
+        // and optimizing one number for both is how you end up
+        // congratulating yourself. write_file/edit_file are in the set
+        // because their results now carry post-write type diagnostics
+        // (check_types stays for transcripts predating its removal).
+        const verifies =
+          name === "test_agent" ||
+          name === "check_types" ||
+          name === "write_file" ||
+          name === "edit_file";
+        if (verifies && /error TS\d/i.test(out)) {
           summary.redChecks.push(name);
-          // Keep the text, not just the count. A run that thrashes on
-          // check_types and never builds reports zero `repairs` while being
+          // Keep the text, not just the count. A run that thrashes on cheap
+          // checks and never builds reports zero `repairs` while being
           // the worst run of the set — without the excerpt there is nothing
           // to diagnose it from afterwards.
           summary.redExcerpts.push(`${name}: ${out.slice(0, 240).replace(/\s+/g, " ")}`);

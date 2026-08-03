@@ -127,29 +127,12 @@ async function downloadToWorkspace(dir: string, url: string, rel: string): Promi
 export type ProjectToolDeps = {
   /** Absolute workspace root the session materialized. */
   dir: string;
-  /** Types-only check of the workspace (`typecheckWorkspaceDir`). */
-  typecheck: () => Promise<{ ok: true; skipped: boolean } | { ok: false; output: string }>;
 };
 
-/** Build the dependency + asset + typecheck tools over the session workspace. */
+/** Build the dependency + asset tools over the session workspace. */
 export function createProjectTools(deps: ProjectToolDeps): ToolSet {
   const { dir } = deps;
   return {
-    check_types: tool({
-      description: STUDIO_TOOL_DESCRIPTIONS.check_types,
-      inputSchema: z.object({}),
-      execute: async () => {
-        try {
-          const result = await deps.typecheck();
-          if (!result.ok) return result.output;
-          return result.skipped
-            ? "Typecheck skipped: the workspace has no tsconfig.json"
-            : "No type errors";
-        } catch (err) {
-          return `Error: ${errMsg(err)}`;
-        }
-      },
-    }),
     npm_info: tool({
       description: STUDIO_TOOL_DESCRIPTIONS.npm_info,
       inputSchema: z.object({
