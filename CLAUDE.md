@@ -1588,6 +1588,20 @@ bumped automatically.
 
 **Checking status:** `pnpm changeset status --since=origin/main`
 
+### API reference docs (TypeDoc)
+
+`pnpm docs:api` generates the SDK API reference into `docs/dist` with
+[TypeDoc](https://typedoc.org), covering the three publishable packages'
+public exports (built `dist/*.d.ts` — build first). Entry points live in
+each package's `typedoc.json`; a new subpath export needs an entry there
+too. The `.github/workflows/docs.yml` workflow publishes the site to
+GitHub Pages (`https://alexkroman.github.io/agent/`) on every push to
+`main`. The docs tooling lives in its own `docs/` workspace package
+because TypeDoc needs the JS TypeScript compiler API, which TS 7 (the
+native compiler the repo builds with) no longer ships — so `docs/` pins
+its own `typescript@6`, and `check:sherif` ignores the `aai-docs` package
+to allow that one deliberate version split.
+
 ### Related docs
 
 - **Templates**: `packages/aai-templates/templates/` contains agent

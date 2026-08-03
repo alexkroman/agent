@@ -1,0 +1,15 @@
+{
+  "$schema": "https://typedoc.org/schema.json",
+  "entryPoints": [
+    "dist/index.d.ts",
+    "dist/sdk/utils.d.ts",
+    "dist/sdk/protocol.d.ts",
+    "dist/host/runtime-barrel.d.ts",
+    "dist/sdk/manifest-barrel.d.ts",
+    "dist/sdk/providers/stt-barrel.d.ts",
+    "dist/sdk/providers/tts-barrel.d.ts",
+    "dist/sdk/providers/llm-barrel.d.ts",
+    "dist/sdk/providers/s2s-barrel.d.ts",
+    "dist/host/agent-tools.d.ts"
+  ]
+}

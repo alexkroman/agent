@@ -1,0 +1,13 @@
+{
+  "name": "aai-docs",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "scripts": {
+    "docs": "typedoc"
+  },
+  "devDependencies": {
+    "typedoc": "^0.28.20",
+    "typescript": "~6.0.0"
+  }
+}
