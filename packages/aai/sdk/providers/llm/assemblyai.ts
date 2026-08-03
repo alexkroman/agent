@@ -45,7 +45,14 @@ export const ASSEMBLYAI_LLM_GATEWAY_EU_URL = "https://llm-gateway.eu.assemblyai.
  * name" is a failure mode with no compile-time or deploy-time guard, and one
  * that a code-generating agent falls into readily.
  */
-export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "qwen3-next-80b-a3b";
+export const ASSEMBLYAI_LLM_DEFAULT_MODEL = "gpt-5.5";
+
+/**
+ * Reasoning effort accepted by the gateway's GPT-5-family models, including
+ * the two off switches: `"none"` (gpt-5.1 and later) and `"minimal"` (the
+ * original `gpt-5`/`-mini`/`-nano`, whose lowest setting that is).
+ */
+export type AssemblyAIReasoningEffort = "none" | "minimal" | "low" | "medium" | "high";
 
 export {
   ASSEMBLYAI_GATEWAY_MODELS,
@@ -76,6 +83,16 @@ export interface AssemblyAILlmOptions {
    * {@link ASSEMBLYAI_GATEWAY_MODELS}. Defaults to `"us"`.
    */
   region?: "us" | "eu";
+  /**
+   * Reasoning effort forwarded to the model as `reasoning_effort`.
+   *
+   * Unset, no `reasoning_effort` parameter is sent at all — the model runs
+   * on its own server-side default. Set `"none"` (gpt-5.1 and later) or
+   * `"minimal"` (the original `gpt-5`/`-mini`/`-nano`) to turn reasoning
+   * off, e.g. when a voice turn's time-to-first-token matters more than
+   * thinking depth. Only GPT-5-family models accept the parameter.
+   */
+  reasoningEffort?: AssemblyAIReasoningEffort;
 }
 
 export type AssemblyAILlmProvider = LlmProvider & {

@@ -19,7 +19,7 @@
  * export default agent({
  *   name: "Vera",
  *   stt: assemblyAI({ model: "universal-3-5-pro" }),
- *   llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
+ *   llm: assemblyAILlm({ model: "gpt-5.5" }),
  *   tts: assemblyAITts({ voice: "vera" }),
  * });
  * ```
@@ -59,7 +59,7 @@ import {
 export interface AssemblyAIPipelineOptions {
   /**
    * Gateway LLM model. Defaults to `ASSEMBLYAI_LLM_DEFAULT_MODEL`
-   * (`"qwen3-next-80b-a3b"`) — see `@alexkroman1/aai/llm` for the catalog.
+   * (`"gpt-5.5"`) — see `@alexkroman1/aai/llm` for the catalog.
    */
   model?: string;
   /**

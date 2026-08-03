@@ -35,6 +35,7 @@ export {
   type AssemblyAIGatewayModel,
   type AssemblyAILlmOptions,
   type AssemblyAILlmProvider,
+  type AssemblyAIReasoningEffort,
   assemblyAI,
   gatewayModelIds,
 } from "./llm/assemblyai.ts";

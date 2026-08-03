@@ -8,7 +8,7 @@
  * They never call `streamText`, so no network traffic is generated.
  */
 
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ANTHROPIC_KIND } from "../../sdk/providers/llm/anthropic.ts";
 import { ASSEMBLYAI_LLM_KIND } from "../../sdk/providers/llm/assemblyai.ts";
 import { GATEWAY_KIND } from "../../sdk/providers/llm/gateway.ts";
@@ -160,6 +160,64 @@ describe("resolveLlm", () => {
         { ASSEMBLYAI_API_KEY: "fake-key" },
       );
       expect(model).toHaveProperty("specificationVersion");
+    });
+
+    it("defaults to gpt-5.5 when the descriptor names no model", () => {
+      const model = resolveLlm(
+        { kind: ASSEMBLYAI_LLM_KIND, options: {} },
+        { ASSEMBLYAI_API_KEY: "fake-key" },
+      );
+      expect(model).toMatchObject({ modelId: "gpt-5.5" });
+    });
+
+    // `reasoningEffort` is forwarded as `reasoning_effort` only when the
+    // descriptor sets it — unset, the model keeps its server-side reasoning
+    // default. The assertion is on the actual request body — the wrapper
+    // middleware only acts at call time, so a static shape check proves
+    // nothing.
+    async function requestBodyFor(options: Record<string, unknown>): Promise<string> {
+      const model = resolveLlm(
+        { kind: ASSEMBLYAI_LLM_KIND, options },
+        { ASSEMBLYAI_API_KEY: "fake-key" },
+      ) as unknown as { doGenerate: (opts: unknown) => Promise<unknown> };
+      let body = "";
+      const fakeFetch = async (_input: unknown, init?: { body?: unknown }): Promise<Response> => {
+        body = String(init?.body ?? "");
+        return new Response(
+          JSON.stringify({
+            id: "chatcmpl-1",
+            object: "chat.completion",
+            created: 0,
+            model: "test",
+            choices: [
+              { index: 0, message: { role: "assistant", content: "ok" }, finish_reason: "stop" },
+            ],
+            usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 },
+          }),
+          { status: 200, headers: { "content-type": "application/json" } },
+        );
+      };
+      vi.stubGlobal("fetch", fakeFetch);
+      try {
+        await model.doGenerate({
+          prompt: [{ role: "user", content: [{ type: "text", text: "hi" }] }],
+        });
+      } finally {
+        vi.unstubAllGlobals();
+      }
+      return body;
+    }
+
+    it("leaves reasoning on its server-side default when reasoningEffort is unset", async () => {
+      const body = await requestBodyFor({});
+      const parsed = JSON.parse(body) as Record<string, unknown>;
+      expect(parsed).toMatchObject({ model: "gpt-5.5" });
+      expect(parsed).not.toHaveProperty("reasoning_effort");
+    });
+
+    it('turns reasoning off when the descriptor sets reasoningEffort: "none"', async () => {
+      const body = await requestBodyFor({ model: "gpt-5.5", reasoningEffort: "none" });
+      expect(JSON.parse(body)).toMatchObject({ reasoning_effort: "none" });
     });
   });
 });

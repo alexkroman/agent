@@ -211,7 +211,7 @@ ${SDK_SUBPATH_RULE}
     import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
     export default agent({ name: "…", ...assemblyAIPipeline({ voice: "vera" }) });
   That sets stt, llm and tts in one line with real defaults for all three
-  (universal-3-5-pro, qwen3-next-80b-a3b, vera), so there is no gateway model
+  (universal-3-5-pro, gpt-5.5, vera), so there is no gateway model
   id to invent — an invented one is a 400 at the first session, with no
   compile-time or deploy-time check to catch it. Prefer it over declaring the
   three stages by hand; the long form needs three imports of a factory called
@@ -236,7 +236,7 @@ ${SDK_SUBPATH_RULE}
 - **Never invent a gateway model id.** The LLM Gateway rejects unknown
   models with a 400 "model not found" that only shows up at runtime. Use one
   of exactly these: ${ASSEMBLYAI_GATEWAY_MODELS.join(", ")}. Prefer
-  "qwen3-next-80b-a3b" unless the user asks for a different model.
+  "gpt-5.5" unless the user asks for a different model.
 - For a one-shot LLM call inside a tool (summarize, classify, extract),
   use ctx.generate — see the reference below. Its \`schema\` option is
   plain JSON Schema (convert with z.toJSONSchema()), never a zod schema.
