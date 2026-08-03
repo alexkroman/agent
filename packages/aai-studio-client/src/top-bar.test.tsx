@@ -37,9 +37,12 @@ describe("TopBar", () => {
     expect(screen.queryByRole("combobox")).toBeNull();
   });
 
-  test("no project → no name label", () => {
+  test("no project → no name label and no Preview/Code/Settings switcher", () => {
     render(<TopBar {...barProps} project={null} />);
     expect(screen.queryByText("demo")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Preview" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Code" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Settings" })).toBeNull();
   });
 
   test("tab buttons switch between Preview and Code", () => {

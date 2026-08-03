@@ -243,6 +243,16 @@ export function App({ apiKey, onSignOut }: AppProps) {
     },
   });
 
+  const deleteProject = useMutation({
+    mutationFn: () => api.deleteProject(apiKey, project as string),
+    onSuccess: () => {
+      setSecretsOpen(false);
+      selectProject(null);
+      void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
+    },
+    onError: (err) => alert(errorText(err)),
+  });
+
   // Hero start: typing the first message creates a project (named from the
   // prompt server-side) and forwards it as the first chat turn.
   const startWithPrompt = (prompt: string) => {
@@ -293,13 +303,16 @@ export function App({ apiKey, onSignOut }: AppProps) {
         onPublish={() => publish.mutate()}
         onClose={() => setPublishOpen(false)}
       />
-      {secretsOpen && (
+      {secretsOpen && project != null && (
         <SecretsPanel
           apiKey={apiKey}
+          project={project}
           slug={deployedSlug}
           previewSlug={workspace.data?.previewSlug}
           onNotifyChat={notifyChat}
           onClose={() => setSecretsOpen(false)}
+          onDeleteProject={() => deleteProject.mutate()}
+          deleting={deleteProject.isPending}
         />
       )}
       {workspaceError && (
