@@ -69,8 +69,11 @@ describe("PipelineTransport speech vs. record", () => {
       });
       const t = createPipelineTransport(opts);
       await t.start();
+      // The greeting publishes only a final transcript (its whole text reaches
+      // TTS at once, so an interim copy would be identical) — so that, not a
+      // partial, is the signal that the greeting turn is behind us.
       await vi.waitFor(() => {
-        expect(callbacks.onAgentTranscriptPartial).toHaveBeenCalledWith("Hi there!");
+        expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Hi there!", false);
       });
       partialTranscriptSpy(callbacks).mockClear();
 

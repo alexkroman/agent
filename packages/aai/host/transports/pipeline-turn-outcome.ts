@@ -34,8 +34,11 @@ export interface TurnOutcomeDeps {
   startFailurePhrase: string;
   /** Per-turn TTS drain, bound to the session signal. */
   drainTts: () => Promise<void>;
-  /** Forwards text to the active TTS session, reopening the audio gate. */
-  sendTtsText: (text: string) => void;
+  /** Forwards text to the active TTS session, reopening the audio gate.
+   *  `publishTranscript: false` suppresses the interim transcript for a phrase
+   *  the caller publishes as a final itself — see the definition in
+   *  pipeline-transport.ts. */
+  sendTtsText: (text: string, opts?: { publishTranscript?: boolean }) => void;
 }
 
 export interface TurnOutcome {
@@ -114,7 +117,7 @@ export function createTurnOutcome(deps: TurnOutcomeDeps): TurnOutcome {
     async speakStartFailure() {
       if (startFailurePhrase.length === 0 || !providers.tts) return;
       callbacks.onAgentTranscript(startFailurePhrase, false);
-      sendTtsText(startFailurePhrase);
+      sendTtsText(startFailurePhrase, { publishTranscript: false });
       await drainTts().catch(() => undefined);
     },
 

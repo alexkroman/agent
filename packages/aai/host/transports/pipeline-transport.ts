@@ -233,16 +233,16 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
     terminate();
   }
 
-  /** Forward turn text to TTS, reopening the audio gate for the new turn. */
-  function sendTtsText(text: string): void {
+  /** Forward turn text to TTS, reopening the audio gate for the new turn.
+   * Publishing here rather than at reply end keeps captions with the audio — a
+   * tool chain speaks filler long before the answer exists. `publishTranscript:
+   * false` skips it for the greeting/start-failure lines, which publish their own
+   * final. The tail advances either way: it feeds the tail-resume estimate. */
+  function sendTtsText(text: string, opts?: { publishTranscript?: boolean }): void {
     turns.openAudioGate();
     providers.tts?.sendText(text);
-    // Publish the transcript as it becomes audible rather than only when the
-    // reply ends. A reply that opens with a tool chain speaks its hold phrase
-    // and dead-air cover many seconds before the model's answer exists, and a
-    // client that pairs text with audio (captions, a voice harness) has already
-    // played that audio by the time one end-of-reply transcript arrives.
-    callbacks.onAgentTranscriptPartial?.(replyTail.onText(text));
+    const tail = replyTail.onText(text);
+    if (opts?.publishTranscript !== false) callbacks.onAgentTranscriptPartial?.(tail);
   }
 
   // How a turn is wrapped up once its stream settles — interrupted, failed, or
@@ -386,7 +386,7 @@ export function createPipelineTransport(opts: PipelineTransportOptions): Transpo
       callbacks.onAgentTranscript(text, false);
       history.pushConversation({ role: "assistant", content: text });
       history.pushLlm({ role: "assistant", content: text });
-      sendTtsText(text);
+      sendTtsText(text, { publishTranscript: false });
       // Push the greeting mid-stream too (it was already seeded at STT connect
       // time) — covers providers that only support the mid-stream hook.
       providers.stt?.updateAgentContext?.(text);
