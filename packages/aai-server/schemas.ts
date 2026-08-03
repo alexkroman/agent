@@ -58,14 +58,6 @@ export type DeployBody = z.infer<typeof DeployBodySchema>;
 
 export const EnvSchema = z.record(z.string(), z.string());
 
-export const AgentMetadataSchema = z.object({
-  slug: z.string(),
-  env: z.record(z.string(), z.string()).default({}),
-  credential_hashes: z.array(z.string()).default([]),
-});
-
-export type AgentMetadata = z.infer<typeof AgentMetadataSchema>;
-
 // Secrets
 export const SecretKeySchema = z.string().regex(/^[a-zA-Z_]\w*$/, "Invalid secret key name");
 export const SecretUpdatesSchema = z.record(SecretKeySchema, z.string());

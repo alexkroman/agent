@@ -10,13 +10,13 @@
 import { createPostgresDb } from "@alexkroman1/aai/runtime";
 import { createStorage } from "unstorage";
 import { isLocalDev, requireEnv, resolvePoolSize } from "./_boot.ts";
+import { type AgentRows, createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import { type AppDatabases, type AppDbTarget, createAppDatabases } from "./app-database.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
-import { createMemorySlugEpochs, createPgSlugEpochs, type SlugEpochs } from "./platform-epoch.ts";
 import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { createS3Storage } from "./s3-storage.ts";
 import { describeSandboxBackend } from "./sandbox-backend.ts";
@@ -107,13 +107,13 @@ export function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createSt
  */
 export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   secrets: SecretStore;
+  /** The agents table (deploy records). Postgres in production, memory in dev. */
+  agents: AgentRows;
   workspaces: WorkspaceStore;
   chats: ChatStore;
   appDb?: AppDatabases;
   /** Cross-replica slug mutation lock; in-process without a platform db. */
   slugLock: SlugMutationLock;
-  /** Cross-replica/service invalidation epochs; per-process memory without a db. */
-  slugEpochs: SlugEpochs;
   /** Platform admin SQL executor (production only) — see ServiceConfig.sql. */
   sql?: SqlExec;
 } {
@@ -127,10 +127,10 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     );
     return {
       secrets: createMemorySecretStore(),
+      agents: createMemoryAgentRows(),
       workspaces: createMemoryWorkspaceStore(),
       chats: createMemoryChatStore(),
       slugLock: localSlugLock,
-      slugEpochs: createMemorySlugEpochs(),
     };
   }
   // The pool lives for the process; connections drain when the process exits
@@ -140,6 +140,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   const localDev = isLocalDev(env);
   return {
     secrets: localDev ? createMemorySecretStore() : createVaultSecretStore(exec),
+    agents: localDev ? createMemoryAgentRows() : createPgAgentRows(exec),
     workspaces: localDev ? createMemoryWorkspaceStore() : createPgWorkspaceStore(exec),
     chats: localDev ? createMemoryChatStore() : createPgChatStore(exec),
     appDb: createAppDatabases({
@@ -151,10 +152,11 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
       extraTargets: parseExtraAppDbTargets(env.APP_DB_URLS),
     }),
     // Cross-request coordination lives in Postgres too, so any replica (and
-    // either service) can serve any request: per-slug mutation exclusion and
-    // invalidation epochs survive replica restarts and scale-out.
+    // either service) can serve any request: per-slug mutation exclusion
+    // survives replica restarts and scale-out. (Cross-replica sandbox
+    // invalidation rides the agents row's deploy version — see
+    // agent-store.ts — so it needs no extra store.)
     slugLock: localDev ? localSlugLock : createPgSlugLock(exec),
-    slugEpochs: localDev ? createMemorySlugEpochs() : createPgSlugEpochs(exec),
     ...(localDev ? {} : { sql: exec }),
   };
 }
@@ -162,19 +164,19 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
 /** Assemble the shared service bindings from the environment. */
 export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const storage = buildStorage(env);
-  const { secrets, workspaces, chats, appDb, slugLock, slugEpochs, sql } = buildPlatformDb(env);
+  const { secrets, agents, workspaces, chats, appDb, slugLock, sql } = buildPlatformDb(env);
   const slots = createSlotCache();
   const pool = buildPool(env);
   return {
     slots,
-    // Blob storage serves deploy artifacts only (bundles/client files);
-    // studio workspaces and chats live in Postgres via `workspaces`/`chats`.
-    store: createBundleStore(storage, { secrets }),
+    // Blob storage serves deploy artifacts only (content-addressed worker +
+    // client-file blobs); the deploy records live in the agents table and
+    // studio workspaces/chats in Postgres via `workspaces`/`chats`.
+    store: createBundleStore(storage, { secrets, agents }),
     workspaces,
     chats,
     secrets,
     slugLock,
-    slugEpochs,
     ...(appDb && { appDb }),
     ...(pool && { pool }),
     ...(sql && { sql }),

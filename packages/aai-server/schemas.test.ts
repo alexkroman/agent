@@ -8,7 +8,6 @@ import { describe, expect, test } from "vitest";
 import { MAX_WORKER_SIZE } from "./constants.ts";
 import { IsolateConfigSchema } from "./rpc-schemas.ts";
 import {
-  AgentMetadataSchema,
   DeployBodySchema,
   EnvSchema,
   RESERVED_SLUGS,
@@ -266,44 +265,6 @@ describe("EnvSchema", () => {
     ["non-string values", { ASSEMBLYAI_API_KEY: "key", BAD: 42 }, false],
   ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
     expect(EnvSchema.safeParse(input).success).toBe(expected);
-  });
-});
-
-// ── AgentMetadataSchema ────────────────────────────────────────────────
-
-describe("AgentMetadataSchema", () => {
-  test.each([
-    [
-      "full metadata",
-      { slug: "my-agent", env: { KEY: "val" }, credential_hashes: ["abc123"] },
-      true,
-    ],
-    ["missing slug", { env: {} }, false],
-    ["non-string slug", { slug: 42 }, false],
-  ] as const)("rejects/accepts %s → %s", (_label: string, input: unknown, expected: boolean) => {
-    expect(AgentMetadataSchema.safeParse(input).success).toBe(expected);
-  });
-
-  test("accepts minimal metadata", () => {
-    const result = AgentMetadataSchema.safeParse({ slug: "test" });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.env).toEqual({});
-    }
-  });
-
-  test("defaults env to empty object", () => {
-    const result = AgentMetadataSchema.safeParse({ slug: "agent" });
-    expect(result.success).toBe(true);
-    if (result.success) {
-      expect(result.data.env).toEqual({});
-      expect(result.data.credential_hashes).toEqual([]);
-    }
-  });
-
-  test("rejects non-object", () => {
-    expect(AgentMetadataSchema.safeParse("agent").success).toBe(false);
-    expect(AgentMetadataSchema.safeParse(null).success).toBe(false);
   });
 });
 

@@ -66,7 +66,6 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     ...(base.secrets && { secrets: base.secrets }),
     ...(base.appDb && { appDb: base.appDb }),
     ...(base.slugLock && { slugLock: base.slugLock }),
-    ...(base.slugEpochs && { slugEpochs: base.slugEpochs }),
     ...(rateLimiters && { studioRateLimiters: rateLimiters }),
     ...(base.pool && { pool: base.pool }),
     isDraining,

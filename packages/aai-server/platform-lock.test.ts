@@ -2,6 +2,7 @@
 
 import { createStorage } from "unstorage";
 import { describe, expect, test } from "vitest";
+import { createMemoryAgentRows } from "./agent-store.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import {
   createMutationLock,
@@ -177,10 +178,11 @@ describe("createMutationLock", () => {
   test("a mutation reads durable state, not this replica's cached view", async () => {
     const storage = createStorage();
     const secrets = createMemorySecretStore();
+    const agents = createMemoryAgentRows();
     // Two replicas over one shared backend, plus a cold reader for the truth.
-    const a = createBundleStore(storage, { secrets });
-    const b = createBundleStore(storage, { secrets });
-    const durableEnv = () => createBundleStore(storage, { secrets }).getEnv("x");
+    const a = createBundleStore(storage, { secrets, agents });
+    const b = createBundleStore(storage, { secrets, agents });
+    const durableEnv = () => createBundleStore(storage, { secrets, agents }).getEnv("x");
 
     await a.putAgent({
       slug: "x",
@@ -194,7 +196,7 @@ describe("createMutationLock", () => {
     const lockA = createMutationLock(localSlugLock, a);
     const lockB = createMutationLock(localSlugLock, b);
 
-    // Replica B warms its manifest cache (any read: page load, WS upgrade).
+    // Replica B warms its row cache (any read: page load, WS upgrade).
     expect(await b.getEnv("x")).toEqual({ BASE: "1" });
 
     // `PUT /x/secret {FOO:1}` lands on replica A.

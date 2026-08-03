@@ -33,7 +33,6 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
     secrets,
     ...(overrides.appDb && { appDb: overrides.appDb }),
     ...(overrides.slugLock && { slugLock: overrides.slugLock }),
-    ...(overrides.slugEpochs && { slugEpochs: overrides.slugEpochs }),
     ...(overrides.pool && { pool: overrides.pool }),
   });
   const fetch: TestFetch = async (input, init) => {

@@ -84,7 +84,7 @@ describe("verifyApiKeyHash", () => {
 });
 
 describe("verifySlugOwner", () => {
-  test("returns 'unclaimed' without a keyHash when slug has no manifest", async () => {
+  test("returns 'unclaimed' without a keyHash when slug has no agent record", async () => {
     const store = createTestStore();
     const result = await verifySlugOwner("my-api-key", {
       slug: "nonexistent",

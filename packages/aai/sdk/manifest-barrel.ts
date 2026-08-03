@@ -15,11 +15,11 @@ export {
   type AgentConfigSource,
   HOST_ONLY_AGENT_FIELDS,
   type HostOnlyAgentField,
+  ProviderDescriptorSchema,
   type ToolSchema,
   ToolSchemaSchema,
   toAgentConfig,
 } from "./agent-config.ts";
-export { ProviderDescriptorSchema } from "./agent-config.ts";
 export {
   assertPipelineTuning,
   assertProviderTriple,

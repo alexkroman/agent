@@ -1,7 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { deployAgentBundle } from "./deploy.ts";
-import { createMemorySlugEpochs } from "./platform-epoch.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
@@ -198,7 +197,7 @@ describe("deployAgentBundle ownership resolution", () => {
       { ...baseParams, slug: "fresh-agent" },
     );
     expect(outcome.ok).toBe(true);
-    const hashes = (await store.getManifest("fresh-agent"))?.credential_hashes ?? [];
+    const hashes = (await store.getAgent("fresh-agent"))?.credential_hashes ?? [];
     expect(hashes).toHaveLength(1);
     expect(await verifyApiKeyHash("key1", hashes[0] ?? "")).toBe(true);
   });
@@ -219,7 +218,7 @@ describe("deployAgentBundle ownership resolution", () => {
       { ...baseParams, slug: "owned-agent" },
     );
     expect(outcome.ok).toBe(true);
-    expect((await store.getManifest("owned-agent"))?.credential_hashes).toEqual([keyHash]);
+    expect((await store.getAgent("owned-agent"))?.credential_hashes).toEqual([keyHash]);
   });
 
   test("slug owned by another key: 403, hashes untouched", async () => {
@@ -242,7 +241,7 @@ describe("deployAgentBundle ownership resolution", () => {
       status: 403,
       error: "Forbidden: slug already owned by another user",
     });
-    expect((await store.getManifest("their-agent"))?.credential_hashes).toEqual([ownerHash]);
+    expect((await store.getAgent("their-agent"))?.credential_hashes).toEqual([ownerHash]);
   });
 });
 
@@ -306,9 +305,9 @@ describe("POST /deploy", () => {
       body: deployBody({ slug: "test-agent" }),
     });
     expect(res.status).toBe(200);
-    const manifest = await store.getManifest("test-agent");
-    expect(manifest).not.toBeNull();
-    expect(manifest?.slug).toBe("test-agent");
+    const record = await store.getAgent("test-agent");
+    expect(record).not.toBeNull();
+    expect(record?.slug).toBe("test-agent");
   });
 
   test("returns 403 when different user tries to deploy to an owned slug", async () => {
@@ -322,8 +321,8 @@ describe("POST /deploy", () => {
     });
     expect(first.status).toBe(200);
 
-    const originalManifest = await store.getManifest("stolen-agent");
-    const originalHashes = originalManifest?.credential_hashes ?? [];
+    const originalRecord = await store.getAgent("stolen-agent");
+    const originalHashes = originalRecord?.credential_hashes ?? [];
 
     // Second deploy attempt by a different key (key2)
     const second = await fetch("/deploy", {
@@ -334,8 +333,8 @@ describe("POST /deploy", () => {
     expect(second.status).toBe(403);
 
     // Original owner's credential_hashes should not be modified
-    const afterManifest = await store.getManifest("stolen-agent");
-    expect(afterManifest?.credential_hashes).toEqual(originalHashes);
+    const afterRecord = await store.getAgent("stolen-agent");
+    expect(afterRecord?.credential_hashes).toEqual(originalHashes);
   });
 
   test("stores the config extracted from the worker bundle, ignoring any body config", async () => {
@@ -422,8 +421,8 @@ describe("POST /deploy", () => {
     });
     expect(res.status).toBe(200);
 
-    const manifest = await store.getManifest("owned-agent");
-    expect(manifest?.credential_hashes).toHaveLength(1);
+    const record = await store.getAgent("owned-agent");
+    expect(record?.credential_hashes).toHaveLength(1);
   });
 });
 
@@ -522,18 +521,17 @@ describe("deploy credential preflight", () => {
       },
     );
     expect(outcome.ok).toBe(false);
-    expect(await store.getManifest("unstored")).toBeNull();
+    expect(await store.getAgent("unstored")).toBeNull();
   });
 });
 
 // ── Cross-service invalidation (split deployment) ─────────────────────────
 
-describe("deployAgentBundle epoch bump", () => {
-  test("a deploy bumps the slug epoch so other services rebuild sandboxes", async () => {
+describe("deployAgentBundle version bump", () => {
+  test("a deploy bumps the deploy version so other services rebuild sandboxes", async () => {
     const store = createTestStore();
-    const slugEpochs = createMemorySlugEpochs();
-    const outcome = await deployAgentBundle(
-      { store, slots: createSlotCache(), slugEpochs },
+    await deployAgentBundle(
+      { store, slots: createSlotCache() },
       {
         slug: "published-agent",
         apiKey: "key1",
@@ -543,13 +541,25 @@ describe("deployAgentBundle epoch bump", () => {
         agentConfig: TEST_AGENT_CONFIG,
       },
     );
+    await expect(store.getAgentVersion("published-agent")).resolves.toBe(1);
+
+    const outcome = await deployAgentBundle(
+      { store, slots: createSlotCache() },
+      {
+        slug: "published-agent",
+        apiKey: "key1",
+        worker: "w2",
+        clientFiles: {},
+        env: VALID_ENV,
+        agentConfig: TEST_AGENT_CONFIG,
+      },
+    );
     expect(outcome.ok).toBe(true);
-    await expect(slugEpochs.get("published-agent")).resolves.toBe(1);
+    await expect(store.getAgentVersion("published-agent")).resolves.toBe(2);
   });
 
   test("a refused deploy does not bump", async () => {
     const store = createTestStore();
-    const slugEpochs = createMemorySlugEpochs();
     const ownerHash = await hashApiKey("owner-key");
     await store.putAgent({
       slug: "their-agent",
@@ -560,7 +570,7 @@ describe("deployAgentBundle epoch bump", () => {
       agentConfig: TEST_AGENT_CONFIG,
     });
     const outcome = await deployAgentBundle(
-      { store, slots: createSlotCache(), slugEpochs },
+      { store, slots: createSlotCache() },
       {
         slug: "their-agent",
         apiKey: "intruder-key",
@@ -570,6 +580,6 @@ describe("deployAgentBundle epoch bump", () => {
       },
     );
     expect(outcome.ok).toBe(false);
-    await expect(slugEpochs.get("their-agent")).resolves.toBe(0);
+    await expect(store.getAgentVersion("their-agent")).resolves.toBe(1);
   });
 });

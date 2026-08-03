@@ -15,10 +15,10 @@
  * working and browser clients see one host.
  *
  * Everything the studio shares with the agent service goes through
- * Supabase: workspaces/chats, the bundle store, Vault secrets, the slug
- * mutation lock, and — critically — the slug epochs, which are how a
- * Publish here reaches the agent service's resident sandboxes (they rebuild
- * on the epoch mismatch at the next session start; see platform-epoch.ts).
+ * Supabase: workspaces/chats, the agents table + blob store, Vault secrets,
+ * and the slug mutation lock. A Publish here reaches the agent service's
+ * resident sandboxes through the agents row's deploy version (they rebuild
+ * on the version mismatch at the next session start; see agent-store.ts).
  * The `slots` binding is this service's own (always-empty) cache: deploy's
  * local `terminateSlot` is a no-op here by design.
  */
@@ -26,7 +26,6 @@
 import type { AppDatabases } from "aai-server/app-database";
 import { applyPlatformMiddleware } from "aai-server/app-middleware";
 import type { ChatStore } from "aai-server/chat-store";
-import { createMemorySlugEpochs, type SlugEpochs } from "aai-server/platform-epoch";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "aai-server/platform-lock";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { createSlotCache } from "aai-server/sandbox-slots";
@@ -50,8 +49,6 @@ export type StudioAppOpts = {
   appDb?: AppDatabases;
   /** Cross-service slug mutation lock — MUST be the shared Postgres lock in production. */
   slugLock?: SlugMutationLock;
-  /** Cross-service invalidation epochs — MUST be the shared Postgres store in production. */
-  slugEpochs?: SlugEpochs;
   studioRateLimiters?: StudioRateLimiters;
   /** Warm harness pool for test_agent / deploy config extraction. */
   pool?: SandboxPool;
@@ -90,8 +87,8 @@ export function createStudioApp(opts: StudioAppOpts): {
 
   const bindings: StudioHonoEnv["Bindings"] = {
     // This service runs no voice sandboxes; an empty cache makes the shared
-    // mutation cores' local terminateSlot/restartSlotSandbox calls no-ops,
-    // while the epoch bump they also perform reaches the agent service.
+    // mutation cores' local terminateSlot calls no-ops, while the deploy's
+    // row-version bump reaches the agent service.
     slots: createSlotCache(),
     store: opts.store,
     workspaces: opts.workspaces,
@@ -102,7 +99,6 @@ export function createStudioApp(opts: StudioAppOpts): {
     // also drop this replica's cached view of the slug, or a mutation
     // read-modify-writes off a pre-lock snapshot (see createMutationLock).
     slugLock: createMutationLock(opts.slugLock ?? localSlugLock, opts.store),
-    slugEpochs: opts.slugEpochs ?? createMemorySlugEpochs(),
   };
 
   const original = app.fetch.bind(app);

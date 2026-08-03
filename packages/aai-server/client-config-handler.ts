@@ -36,7 +36,6 @@ export async function handleAgentClientConfig(
     slots: c.env.slots,
     store: c.env.store,
     secrets: c.env.secrets,
-    slugEpochs: c.env.slugEpochs,
     ...(c.env.appDb && { appDb: c.env.appDb }),
     ...(opts.pool && { pool: opts.pool }),
   });

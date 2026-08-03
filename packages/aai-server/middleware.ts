@@ -40,7 +40,7 @@ export async function requireOwner(
     throw new HTTPException(403, { message: "Forbidden" });
   }
   if (result.status === "unclaimed") {
-    // An `unclaimed` slug has no manifest — only the deploy path (which
+    // An `unclaimed` slug has no agent record — only the deploy path (which
     // claims it) may proceed. Data routes (secret/storage) must reject it,
     // otherwise any authenticated caller could pre-seed state for a slug they
     // don't own and have the eventual owner silently inherit it.

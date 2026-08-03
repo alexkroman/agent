@@ -40,7 +40,6 @@ import { type BundleInspector, handleDeployNew } from "./deploy.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
-import { createMemorySlugEpochs, type SlugEpochs } from "./platform-epoch.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
@@ -79,11 +78,6 @@ export type OrchestratorOpts = {
    * production so replicas exclude each other; defaults to in-process.
    */
   slugLock?: SlugMutationLock;
-  /**
-   * Cross-replica invalidation epochs (see platform-epoch.ts). Postgres in
-   * production; defaults to memory (local-only invalidation).
-   */
-  slugEpochs?: SlugEpochs;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
   /**
@@ -226,7 +220,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // Tests build orchestrators without a secret store; default to memory so
   // the storage-status route (and anything else reading secrets) works.
   const secrets = opts.secrets ?? createMemorySecretStore();
-  const slugEpochs = opts.slugEpochs ?? createMemorySlugEpochs();
 
   const bindings = {
     slots: opts.slots,
@@ -240,7 +233,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // correctly-serialized write compute its merge from a stale base (see
     // createMutationLock).
     slugLock: createMutationLock(opts.slugLock ?? localSlugLock, opts.store),
-    slugEpochs,
   };
 
   const original = app.fetch.bind(app);
@@ -254,7 +246,6 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // long-living endpoint redirects to its session URL), which needs the
     // same dependencies the client-config broker uses.
     secrets,
-    slugEpochs,
     ...(opts.appDb && { appDb: opts.appDb }),
     ...(opts.pool && { pool: opts.pool }),
     ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),

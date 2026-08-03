@@ -79,10 +79,10 @@ test("deploy succeeds and stores agent", async () => {
     body: deployBody({ slug: "my-agent" }),
   });
   expect(res.status).toBe(200);
-  const manifest = await store.getManifest("my-agent");
-  expect(manifest?.credential_hashes).toHaveLength(1);
+  const record = await store.getAgent("my-agent");
+  expect(record?.credential_hashes).toHaveLength(1);
   // biome-ignore lint/style/noNonNullAssertion: toHaveLength(1) above guarantees [0] exists
-  expect(await verifyApiKeyHash("key1", manifest!.credential_hashes[0]!)).toBe(true);
+  expect(await verifyApiKeyHash("key1", record!.credential_hashes[0]!)).toBe(true);
 });
 
 test("deploy can redeploy same slug", async () => {

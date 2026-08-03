@@ -25,8 +25,8 @@ const readDefaultClient = createCachedDirReader(getDefaultClientDir);
 
 export async function handleAgentHealth(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
-  const manifest = await c.env.store.getManifest(slug);
-  if (!manifest) {
+  const record = await c.env.store.getAgent(slug);
+  if (!record) {
     throw new HTTPException(404, { message: `Not found: ${slug}` });
   }
   return c.json({ status: "ok", slug });
@@ -39,8 +39,8 @@ export async function handleAgentPage(c: AppContext): Promise<Response> {
   const page = await c.env.store.getClientFile(slug, "index.html");
   if (page) return c.html(page, 200, cspHeaders);
 
-  const manifest = await c.env.store.getManifest(slug);
-  if (!manifest) throw new HTTPException(404, { message: "HTML not found" });
+  const record = await c.env.store.getAgent(slug);
+  if (!record) throw new HTTPException(404, { message: "HTML not found" });
   const html = await readDefaultClient("index.html");
   if (!html) throw new HTTPException(500, { message: "Default client not built" });
   return c.body(new Uint8Array(html), 200, {

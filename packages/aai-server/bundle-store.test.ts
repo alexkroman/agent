@@ -1,127 +1,108 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { createStorage } from "unstorage";
 import { afterEach, describe, expect, test, vi } from "vitest";
-import { ByteBudgetTtlCache, createBundleStore } from "./bundle-store.ts";
-import { agentObjectKey, MAX_ENV_SIZE } from "./constants.ts";
+import { createMemoryAgentRows } from "./agent-store.ts";
+import { ByteBudgetTtlCache, blobKey, contentHash, createBundleStore } from "./bundle-store.ts";
+import { MAX_ENV_SIZE } from "./constants.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
-describe("bundle store (unstorage)", () => {
-  test("putAgent + getManifest round-trip", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+function makeStore(secrets = createMemorySecretStore()) {
+  const storage = createStorage();
+  const store = createBundleStore(storage, { secrets, agents: createMemoryAgentRows() });
+  return { storage, store, secrets };
+}
+
+const BASE_BUNDLE = {
+  slug: "test-agent",
+  env: {},
+  worker: "console.log('w');",
+  clientFiles: {},
+  credential_hashes: ["hash1"],
+  agentConfig: TEST_AGENT_CONFIG,
+};
+
+describe("bundle store (agents rows + content-addressed blobs)", () => {
+  test("putAgent + getAgent round-trip", async () => {
+    const { store } = makeStore();
 
     await store.putAgent({
-      slug: "test-agent",
+      ...BASE_BUNDLE,
       env: { ASSEMBLYAI_API_KEY: "key123" },
-      worker: "console.log('w');",
       clientFiles: { "index.html": "<html></html>" },
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
     });
 
-    const manifest = await store.getManifest("test-agent");
-    expect(manifest).not.toBeNull();
-    expect(manifest?.slug).toBe("test-agent");
+    const record = await store.getAgent("test-agent");
+    expect(record).not.toBeNull();
+    expect(record?.slug).toBe("test-agent");
+    expect(record?.credential_hashes).toEqual(["hash1"]);
+    expect(record?.version).toBe(1);
+    expect(record?.worker_hash).toBe(contentHash("console.log('w');"));
+    expect(record?.client_files).toEqual({ "index.html": contentHash("<html></html>") });
   });
 
-  test("getManifest returns cached data on second read", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
-    await store.putAgent({
-      slug: "test-agent",
-      env: { ASSEMBLYAI_API_KEY: "key123" },
-      worker: "console.log('w');",
-      clientFiles: { "index.html": "<html></html>" },
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
-
-    const first = await store.getManifest("test-agent");
-    expect(first).not.toBeNull();
-    expect(first?.slug).toBe("test-agent");
-
-    const second = await store.getManifest("test-agent");
-    expect(second).not.toBeNull();
-    expect(second?.slug).toBe("test-agent");
+  test("getAgent returns null for non-existent agent", async () => {
+    const { store } = makeStore();
+    expect(await store.getAgent("nonexistent")).toBeNull();
   });
 
-  test("getManifest returns null for non-existent agent", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+  test("blobs are stored under their content hash", async () => {
+    const { store, storage } = makeStore();
 
-    const result = await store.getManifest("nonexistent");
-    expect(result).toBeNull();
-  });
+    await store.putAgent({ ...BASE_BUNDLE, clientFiles: { "index.html": "<html></html>" } });
 
-  test("getManifest treats corrupt stored JSON as missing instead of throwing", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-
-    await storage.setItem(agentObjectKey("bad-agent", "manifest.json"), "{not json at all");
-
-    await expect(store.getManifest("bad-agent")).resolves.toBeNull();
-    warnSpy.mockRestore();
-  });
-
-  test("getManifest treats a schema-invalid manifest as missing instead of throwing", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-
-    // Valid JSON, wrong shape — a corrupt or half-written manifest object.
-    await storage.setItem(
-      agentObjectKey("bad-agent", "manifest.json"),
-      JSON.stringify({ slug: 42 }),
+    expect(await storage.getItem(blobKey(contentHash("console.log('w');")))).toBe(
+      "console.log('w');",
     );
+    expect(await storage.getItem(blobKey(contentHash("<html></html>")))).toBe("<html></html>");
+  });
 
-    await expect(store.getManifest("bad-agent")).resolves.toBeNull();
-    warnSpy.mockRestore();
+  test("redeploy bumps the version and repoints the row", async () => {
+    const { store } = makeStore();
+
+    await store.putAgent({ ...BASE_BUNDLE, worker: "v1" });
+    expect(await store.getAgentVersion("test-agent")).toBe(1);
+
+    await store.putAgent({ ...BASE_BUNDLE, worker: "v2" });
+    expect(await store.getAgentVersion("test-agent")).toBe(2);
+    expect(await store.getWorkerCode("test-agent")).toBe("v2");
+  });
+
+  test("getAgentVersion returns null after delete", async () => {
+    const { store } = makeStore();
+    await store.putAgent(BASE_BUNDLE);
+    expect(await store.getAgentVersion("test-agent")).toBe(1);
+
+    await store.deleteAgent("test-agent");
+    expect(await store.getAgentVersion("test-agent")).toBeNull();
   });
 
   test("env writes over MAX_ENV_SIZE are rejected on both write paths", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+    const { store } = makeStore();
     const oversized = { BIG: "x".repeat(MAX_ENV_SIZE) };
 
-    await expect(
-      store.putAgent({
-        slug: "test-agent",
-        env: oversized,
-        worker: "console.log('w');",
-        clientFiles: {},
-        credential_hashes: ["hash1"],
-        agentConfig: TEST_AGENT_CONFIG,
-      }),
-    ).rejects.toThrow(/exceeds the .*limit/);
+    await expect(store.putAgent({ ...BASE_BUNDLE, env: oversized })).rejects.toThrow(
+      /exceeds the .*limit/,
+    );
 
-    await store.putAgent({
-      slug: "test-agent",
-      env: { OK: "1" },
-      worker: "console.log('w');",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
+    await store.putAgent({ ...BASE_BUNDLE, env: { OK: "1" } });
     await expect(store.putEnv("test-agent", oversized)).rejects.toThrow(/exceeds the .*limit/);
     // The rejected write must not have clobbered the stored env.
     await expect(store.getEnv("test-agent")).resolves.toEqual({ OK: "1" });
   });
 
-  test("concurrent putEnv calls do not lose updates", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+  test("an oversized-env deploy does not publish the agent", async () => {
+    const { store } = makeStore();
+    const oversized = { BIG: "x".repeat(MAX_ENV_SIZE) };
 
-    await store.putAgent({
-      slug: "test-agent",
-      env: { INITIAL: "value" },
-      worker: "console.log('w');",
-      clientFiles: { "index.html": "<html></html>" },
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
+    await expect(store.putAgent({ ...BASE_BUNDLE, env: oversized })).rejects.toThrow();
+    // The row upsert is the commit point; a failed pre-write leaves no agent.
+    expect(await store.getAgent("test-agent")).toBeNull();
+  });
+
+  test("concurrent putEnv calls do not lose updates", async () => {
+    const { store } = makeStore();
+    await store.putAgent({ ...BASE_BUNDLE, env: { INITIAL: "value" } });
 
     // Fire two concurrent putEnv calls — without locking, one would overwrite the other
     await Promise.all([
@@ -129,45 +110,30 @@ describe("bundle store (unstorage)", () => {
       store.putEnv("test-agent", { B: "2" }),
     ]);
 
-    // The last write wins, but it must have completed after the first.
-    const env = await store.getEnv("test-agent");
-    expect(env).not.toBeNull();
     // With serialization, the second call reads the result of the first,
     // then overwrites. So the final env should be { B: "2" }.
-    expect(env).toEqual({ B: "2" });
+    expect(await store.getEnv("test-agent")).toEqual({ B: "2" });
+  });
+
+  test("putEnv on an unknown agent rejects", async () => {
+    const { store } = makeStore();
+    await expect(store.putEnv("missing", { A: "1" })).rejects.toThrow(/not found/);
   });
 
   test("getWorkerCode returns worker code", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
-    await store.putAgent({
-      slug: "test-agent",
-      env: {},
-      worker: "console.log('hello');",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
-
-    const code = await store.getWorkerCode("test-agent");
-    expect(code).toBe("console.log('hello');");
+    const { store } = makeStore();
+    await store.putAgent({ ...BASE_BUNDLE, worker: "console.log('hello');" });
+    expect(await store.getWorkerCode("test-agent")).toBe("console.log('hello');");
   });
 
   test("getClientFile returns deployed HTML and assets", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
+    const { store } = makeStore();
     const html = "<!DOCTYPE html><html><body>hello</body></html>";
     const js = 'console.log("app");';
 
     await store.putAgent({
-      slug: "test-agent",
-      env: {},
-      worker: "w",
+      ...BASE_BUNDLE,
       clientFiles: { "index.html": html, "assets/index.js": js },
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
     });
 
     expect(await store.getClientFile("test-agent", "index.html")).toBe(html);
@@ -176,66 +142,44 @@ describe("bundle store (unstorage)", () => {
   });
 
   test("redeploy replaces client files", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+    const { store } = makeStore();
 
     await store.putAgent({
-      slug: "test-agent",
-      env: {},
+      ...BASE_BUNDLE,
       worker: "v1",
       clientFiles: { "index.html": "<html>v1</html>", "assets/old.js": "old" },
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
     });
-
     await store.putAgent({
-      slug: "test-agent",
-      env: {},
+      ...BASE_BUNDLE,
       worker: "v2",
       clientFiles: { "index.html": "<html>v2</html>", "assets/new.js": "new" },
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
     });
 
     expect(await store.getClientFile("test-agent", "index.html")).toBe("<html>v2</html>");
     expect(await store.getClientFile("test-agent", "assets/new.js")).toBe("new");
-    // Old asset should be gone after redeploy
+    // The new row no longer references the old asset (its orphan blob may
+    // remain in storage, but no read path can reach it).
     expect(await store.getClientFile("test-agent", "assets/old.js")).toBeNull();
     expect(await store.getWorkerCode("test-agent")).toBe("v2");
   });
 
-  test("deleteAgent removes all files", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
-    await store.putAgent({
-      slug: "test-agent",
-      env: {},
-      worker: "w",
-      clientFiles: { "index.html": "<html></html>" },
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
+  test("deleteAgent un-publishes every read path", async () => {
+    const { store } = makeStore();
+    await store.putAgent({ ...BASE_BUNDLE, clientFiles: { "index.html": "<html></html>" } });
 
     await store.deleteAgent("test-agent");
 
-    expect(await store.getManifest("test-agent")).toBeNull();
+    expect(await store.getAgent("test-agent")).toBeNull();
     expect(await store.getWorkerCode("test-agent")).toBeNull();
+    expect(await store.getClientFile("test-agent", "index.html")).toBeNull();
+    expect(await store.getAgentConfig("test-agent")).toBeNull();
+    expect(await store.getEnv("test-agent")).toBeNull();
   });
 
   test("deleteAgent removes the agent's secret entries (env + app-db)", async () => {
-    const storage = createStorage();
-    const secrets = createMemorySecretStore();
-    const store = createBundleStore(storage, { secrets });
+    const { store, secrets } = makeStore();
 
-    await store.putAgent({
-      slug: "test-agent",
-      env: { K: "v" },
-      worker: "w",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
+    await store.putAgent({ ...BASE_BUNDLE, env: { K: "v" } });
     await secrets.put(
       "app-db:test-agent",
       JSON.stringify({ schema: "s", role: "r", password: "p" }),
@@ -248,50 +192,39 @@ describe("bundle store (unstorage)", () => {
     expect(await secrets.get("app-db:test-agent")).toBeNull();
   });
 
-  test("env round-trips through the secret store, not the manifest blob", async () => {
-    const storage = createStorage();
-    const secrets = createMemorySecretStore();
-    const store = createBundleStore(storage, { secrets });
+  test("env round-trips through the secret store, never the agents row", async () => {
+    const { store, secrets } = makeStore();
 
-    await store.putAgent({
-      slug: "test-agent",
-      env: { ASSEMBLYAI_API_KEY: "sk-123" },
-      worker: "w",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
+    await store.putAgent({ ...BASE_BUNDLE, env: { ASSEMBLYAI_API_KEY: "sk-123" } });
 
-    // The manifest object carries no env; the secret store does. (The memory
-    // driver auto-parses `.json` keys, so the stored value comes back parsed.)
-    const rawManifest = await storage.getItem(agentObjectKey("test-agent", "manifest.json"));
-    expect(rawManifest).toEqual({
-      slug: "test-agent",
-      credential_hashes: ["hash1"],
-    });
+    const record = await store.getAgent("test-agent");
+    expect(record).not.toBeNull();
+    expect(Object.keys(record ?? {})).not.toContain("env");
     expect(await secrets.get("agent-env:test-agent")).toBe(
       JSON.stringify({ ASSEMBLYAI_API_KEY: "sk-123" }),
     );
     expect(await store.getEnv("test-agent")).toEqual({ ASSEMBLYAI_API_KEY: "sk-123" });
   });
 
-  test("retries getWorkerCode on transient ECONNRESET", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+  test("getEnv reads the secret store fresh — a secret change needs no invalidation", async () => {
+    const { store, secrets } = makeStore();
+    await store.putAgent({ ...BASE_BUNDLE, env: { A: "1" } });
+    expect(await store.getEnv("test-agent")).toEqual({ A: "1" });
 
-    await store.putAgent({
-      slug: "test-agent",
-      env: {},
-      worker: "console.log('w');",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
+    // Another replica (or the secret route) writes the Vault record directly.
+    await secrets.put("agent-env:test-agent", JSON.stringify({ A: "2" }));
+    expect(await store.getEnv("test-agent")).toEqual({ A: "2" });
+  });
+
+  test("retries blob reads on transient ECONNRESET", async () => {
+    const { store, storage } = makeStore();
+    await store.putAgent(BASE_BUNDLE);
+    const workerKey = blobKey(contentHash(BASE_BUNDLE.worker));
 
     const originalGetItem = storage.getItem.bind(storage);
     let callCount = 0;
     storage.getItem = (async (key: string) => {
-      if (key === "agents/test-agent/worker.js") {
+      if (key === workerKey) {
         callCount++;
         if (callCount < 3) {
           throw Object.assign(new TypeError("fetch failed"), {
@@ -302,39 +235,13 @@ describe("bundle store (unstorage)", () => {
       return originalGetItem(key);
     }) as typeof storage.getItem;
 
-    const code = await store.getWorkerCode("test-agent");
-    expect(code).toBe("console.log('w');");
+    expect(await store.getWorkerCode("test-agent")).toBe(BASE_BUNDLE.worker);
     expect(callCount).toBe(3);
   });
 
-  test("getAgentConfig gives up after repeated transient failures", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
-    await store.putAgent({
-      slug: "test-agent",
-      env: {},
-      worker: "w",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
-
-    storage.getItem = (async (key: string) => {
-      if (key === "agents/test-agent/config.json") {
-        throw Object.assign(new TypeError("fetch failed"), {
-          cause: Object.assign(new Error("socket hang up"), { code: "ECONNRESET" }),
-        });
-      }
-      return null;
-    }) as typeof storage.getItem;
-
-    await expect(store.getAgentConfig("test-agent")).rejects.toThrow("fetch failed");
-  });
-
   test("non-transient errors are not retried", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+    const { store, storage } = makeStore();
+    await store.putAgent(BASE_BUNDLE);
 
     let callCount = 0;
     storage.getItem = (async () => {
@@ -342,72 +249,28 @@ describe("bundle store (unstorage)", () => {
       throw new Error("403 Forbidden");
     }) as typeof storage.getItem;
 
-    await expect(store.getWorkerCode("missing")).rejects.toThrow("403 Forbidden");
+    await expect(store.getWorkerCode("test-agent")).rejects.toThrow("403 Forbidden");
     expect(callCount).toBe(1);
   });
 
-  test("getManifest caches result — second call does not hit storage", async () => {
+  test("getAgent caches the row — second call does not hit the row store", async () => {
     const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
-    await store.putAgent({
-      slug: "test-agent",
-      env: { A: "1" },
-      worker: "w",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
+    const agents = createMemoryAgentRows();
+    const store = createBundleStore(storage, { secrets: createMemorySecretStore(), agents });
+    await store.putAgent(BASE_BUNDLE);
 
     // Prime cache
-    await store.getManifest("test-agent");
+    await store.getAgent("test-agent");
 
-    let reads = 0;
-    const originalGetItem = storage.getItem.bind(storage);
-    storage.getItem = (async (key: string) => {
-      reads++;
-      return originalGetItem(key);
-    }) as typeof storage.getItem;
-
-    const manifest = await store.getManifest("test-agent");
-    expect(manifest?.env).toEqual({ A: "1" });
-    expect(reads).toBe(0);
+    const getSpy = vi.spyOn(agents, "get");
+    const record = await store.getAgent("test-agent");
+    expect(record?.slug).toBe("test-agent");
+    expect(getSpy).not.toHaveBeenCalled();
   });
 
-  test("putEnv invalidates manifest cache", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
-    await store.putAgent({
-      slug: "test-agent",
-      env: { A: "1" },
-      worker: "w",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
-
-    // Prime cache
-    const before = await store.getEnv("test-agent");
-    expect(before).toEqual({ A: "1" });
-
-    await store.putEnv("test-agent", { A: "2" });
-    const after = await store.getEnv("test-agent");
-    expect(after).toEqual({ A: "2" });
-  });
-
-  test("getWorkerCode caches result — second call does not hit storage", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
-    await store.putAgent({
-      slug: "test-agent",
-      env: {},
-      worker: "console.log('cached');",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
+  test("getWorkerCode caches the blob — second call does not hit storage", async () => {
+    const { store, storage } = makeStore();
+    await store.putAgent({ ...BASE_BUNDLE, worker: "console.log('cached');" });
 
     // Prime cache
     await store.getWorkerCode("test-agent");
@@ -419,128 +282,50 @@ describe("bundle store (unstorage)", () => {
       return originalGetItem(key);
     }) as typeof storage.getItem;
 
-    const code = await store.getWorkerCode("test-agent");
-    expect(code).toBe("console.log('cached');");
+    expect(await store.getWorkerCode("test-agent")).toBe("console.log('cached');");
     expect(reads).toBe(0);
   });
 
-  test("putAgent invalidates the worker-code cache", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
-    const bundle = {
-      slug: "test-agent",
-      env: {},
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    };
-    await store.putAgent({ ...bundle, worker: "v1" });
-    expect(await store.getWorkerCode("test-agent")).toBe("v1");
-
-    await store.putAgent({ ...bundle, worker: "v2" });
-    expect(await store.getWorkerCode("test-agent")).toBe("v2");
-  });
-
-  test("getAgentConfig caches result", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+  test("putAgent invalidates the row caches (worker, config, version)", async () => {
+    const { store } = makeStore();
 
     await store.putAgent({
-      slug: "test-agent",
-      env: {},
-      worker: "w",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
-
-    await store.getAgentConfig("test-agent");
-
-    let reads = 0;
-    const originalGetItem = storage.getItem.bind(storage);
-    storage.getItem = (async (key: string) => {
-      reads++;
-      return originalGetItem(key);
-    }) as typeof storage.getItem;
-
-    const config = await store.getAgentConfig("test-agent");
-    expect(config?.name).toBe(TEST_AGENT_CONFIG.name);
-    expect(reads).toBe(0);
-  });
-
-  test("putAgent invalidates both manifest and config caches", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
-    await store.putAgent({
-      slug: "test-agent",
-      env: { A: "1" },
-      worker: "w",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
+      ...BASE_BUNDLE,
+      worker: "v1",
       agentConfig: { ...TEST_AGENT_CONFIG, name: "v1" },
     });
     // Prime caches
-    await store.getManifest("test-agent");
+    await store.getAgent("test-agent");
     await store.getAgentConfig("test-agent");
+    await store.getAgentVersion("test-agent");
 
     await store.putAgent({
-      slug: "test-agent",
-      env: { A: "2" },
-      worker: "w",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
+      ...BASE_BUNDLE,
+      worker: "v2",
       agentConfig: { ...TEST_AGENT_CONFIG, name: "v2" },
     });
 
-    expect((await store.getManifest("test-agent"))?.env).toEqual({ A: "2" });
+    expect(await store.getWorkerCode("test-agent")).toBe("v2");
     expect((await store.getAgentConfig("test-agent"))?.name).toBe("v2");
+    expect(await store.getAgentVersion("test-agent")).toBe(2);
   });
 
-  test("getManifest and getAgentConfig handle drivers that auto-parse JSON", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
-    await store.putAgent({
-      slug: "test-agent",
-      env: { A: "1" },
-      worker: "w",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
-
-    // Simulate a driver that returns `.json` keys pre-parsed instead of raw
-    // strings (readJson must use the object directly, no re-serialization).
-    const originalGetItem = storage.getItem.bind(storage);
-    storage.getItem = (async (key: string) => {
-      const value = await originalGetItem(key);
-      return key.endsWith(".json") && typeof value === "string" ? JSON.parse(value) : value;
-    }) as typeof storage.getItem;
-
-    expect((await store.getManifest("test-agent"))?.env).toEqual({ A: "1" });
+  test("getAgentConfig returns the stored config", async () => {
+    const { store } = makeStore();
+    await store.putAgent(BASE_BUNDLE);
     expect((await store.getAgentConfig("test-agent"))?.name).toBe(TEST_AGENT_CONFIG.name);
+    expect(await store.getAgentConfig("missing")).toBeNull();
   });
 
-  test("deleteAgent invalidates cache — subsequent reads return null", async () => {
-    const storage = createStorage();
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-
-    await store.putAgent({
-      slug: "test-agent",
-      env: {},
-      worker: "w",
-      clientFiles: {},
-      credential_hashes: ["hash1"],
-      agentConfig: TEST_AGENT_CONFIG,
-    });
-    await store.getManifest("test-agent");
+  test("deleteAgent invalidates caches — subsequent reads return null", async () => {
+    const { store } = makeStore();
+    await store.putAgent(BASE_BUNDLE);
+    await store.getAgent("test-agent");
     await store.getAgentConfig("test-agent");
 
     await store.deleteAgent("test-agent");
 
-    expect(await store.getManifest("test-agent")).toBeNull();
+    expect(await store.getAgent("test-agent")).toBeNull();
     expect(await store.getAgentConfig("test-agent")).toBeNull();
   });
 });
@@ -623,16 +408,17 @@ describe("ByteBudgetTtlCache", () => {
   });
 });
 
-describe("cache invalidation fences in-flight reads", () => {
+describe("cache invalidation fences in-flight row reads", () => {
   /**
-   * `invalidate()` clears the caches, but a read that missed BEFORE the
-   * mutation and settles after it would otherwise write its pre-mutation
-   * value back in — for `worker.js` that is a 10-minute TTL, and
-   * `rebuildSlot` stamps the post-bump epoch on the slot it builds from it,
-   * so the resident sandbox reads as current while running the old code.
+   * `invalidate()` clears the row caches, but a row read that missed BEFORE
+   * the mutation and settles after it would otherwise write its pre-mutation
+   * record back in under a fresh TTL. That is exactly the deploy's own
+   * read-modify-write of `credential_hashes` (right after the mutation
+   * lock's invalidate) computing its merge from a stale base. Blobs need no
+   * fence — their keys are content hashes.
    */
-  test("a read parked across a deploy does not repopulate the worker cache", async () => {
-    const inner = createStorage();
+  test("a row read parked across a deploy does not repopulate the row cache", async () => {
+    const agents = createMemoryAgentRows();
     let entered!: () => void;
     let release!: () => void;
     const atFetch = new Promise<void>((r) => {
@@ -643,45 +429,38 @@ describe("cache invalidation fences in-flight reads", () => {
     });
     let park = false;
 
-    const storage = new Proxy(inner, {
-      get(target, prop, receiver) {
-        if (prop !== "getItem") return Reflect.get(target, prop, receiver);
-        return async (key: string) => {
-          const value = await inner.getItem(key);
-          if (park && String(key).endsWith("worker.js")) {
-            park = false;
-            entered();
-            await held;
-          }
-          return value;
-        };
-      },
-    });
+    const originalGet = agents.get.bind(agents);
+    agents.get = async (slug: string) => {
+      const value = await originalGet(slug);
+      if (park) {
+        park = false;
+        entered();
+        await held;
+      }
+      return value;
+    };
 
-    const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
-    const put = (worker: string) =>
-      store.putAgent({
-        slug: "a",
-        env: {},
-        worker,
-        clientFiles: {},
-        credential_hashes: ["h"],
-        agentConfig: TEST_AGENT_CONFIG,
-      });
+    const store = createBundleStore(createStorage(), {
+      secrets: createMemorySecretStore(),
+      agents,
+    });
+    const put = (worker: string) => store.putAgent({ ...BASE_BUNDLE, slug: "a", worker });
 
     await put("v1");
 
-    // A cold read starts and parks mid-fetch, holding "v1".
+    // A cold read starts and parks mid-fetch, holding the v1 row.
     park = true;
-    const parked = store.getWorkerCode("a");
+    const parked = store.getAgent("a");
     await atFetch;
 
     // A full deploy lands and completes while that read is in flight.
     await put("v2");
 
     release();
-    expect(await parked).toBe("v1"); // the parked caller still sees its snapshot
+    expect((await parked)?.version).toBe(1); // the parked caller still sees its snapshot
 
+    // The cache must NOT have been poisoned by the parked read settling.
+    expect((await store.getAgent("a"))?.version).toBe(2);
     expect(await store.getWorkerCode("a")).toBe("v2");
   });
 });

@@ -3,12 +3,12 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { requiredProviderEnvVars } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
+import type { AgentRecord } from "./agent-store.ts";
 import type { ValidatedAppContext } from "./context.ts";
-import { bumpSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
 import { retireSlot, type SlotCache, setSlot } from "./sandbox-slots.ts";
-import type { AgentMetadata, DeployBody } from "./schemas.ts";
+import type { DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, matchAnyHash } from "./secrets.ts";
 import { generatedSlug, slugBaseFromName } from "./slug-generate.ts";
@@ -23,12 +23,6 @@ export type DeployDeps = {
    * defaults to the in-process lock for tests and single-replica callers.
    */
   slugLock?: SlugMutationLock | undefined;
-  /**
-   * Invalidation epochs, bumped after the bundle write lands so other
-   * replicas (and the agent service, when the studio deploys) rebuild
-   * their resident sandboxes. Absent means local-only invalidation.
-   */
-  slugEpochs?: SlugEpochs | undefined;
 };
 
 export type DeployParams = {
@@ -128,8 +122,8 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
     // collision with an existing agent would overwrite that agent's bundle
     // and append the caller's credential hash to it — silently granting a
     // stranger co-ownership. The random suffix makes collisions negligible
-    // but not impossible, and the check costs one manifest read either way.
-    const existing = await deps.store.getManifest(slug);
+    // but not impossible, and the check costs one row read either way.
+    const existing = await deps.store.getAgent(slug);
     const matchedHash = existing
       ? await matchAnyHash(params.apiKey, existing.credential_hashes)
       : null;
@@ -145,7 +139,7 @@ export function deployAgentBundle(deps: DeployDeps, params: DeployParams): Promi
     // unclaimed and a hash must be stored.
     const keyHash = matchedHash ?? (await hashApiKey(params.apiKey));
     // The check above and deployLocked run under the same slug lock, so the
-    // manifest snapshot and match result can be passed through — no TOCTOU,
+    // record snapshot and match result can be passed through — no TOCTOU,
     // no second read, no second argon2 sweep.
     return deployLocked(deps, params, { slug, existing, matchedHash, keyHash });
   });
@@ -183,8 +177,8 @@ async function deployLocked(
   params: DeployParams,
   ctx: {
     slug: string;
-    /** Manifest snapshot read under the slug lock in `deployAgentBundle`. */
-    existing: AgentMetadata | null;
+    /** Agent-record snapshot read under the slug lock in `deployAgentBundle`. */
+    existing: AgentRecord | null;
     /** Stored hash `apiKey` matched, or null when the slug was unclaimed. */
     matchedHash: string | null;
     keyHash: string;
@@ -196,7 +190,7 @@ async function deployLocked(
   // is the CLI's job now — `aai deploy` merges it into `env` client-side, and
   // studio Publish runs that same CLI in-guest. The server-side `defaultEnv`
   // that used to do it had no caller left.
-  const storedEnv = existing?.env ?? {};
+  const storedEnv = existing ? ((await deps.store.getEnv(slug)) ?? {}) : {};
   const env = { ...storedEnv, ...params.env };
 
   const envParsed = EnvSchema.safeParse(env);
@@ -239,10 +233,9 @@ async function deployLocked(
 
   setSlot(deps.slots, { slug });
 
-  // Signal every other replica/service to rebuild its resident sandbox from
-  // the bundle just stored. After the write on purpose — an early bump would
-  // have peers rebuild from the pre-deploy artifacts.
-  if (deps.slugEpochs) await bumpSlugEpoch(deps.slugEpochs, slug);
+  // No separate invalidation signal: the row upsert inside putAgent bumped
+  // the deploy version, and every replica's superseded check (broker + idle
+  // sweep) compares its resident sandbox against that version.
 
   debug("Deploy received", { slug });
 
@@ -282,7 +275,6 @@ export async function handleDeployNew(
     store: c.env.store,
     slots: c.env.slots,
     slugLock: c.env.slugLock,
-    slugEpochs: c.env.slugEpochs,
   };
   const body = c.req.valid("json");
   const extraction = await extractAgentConfig(inspect, body.worker);

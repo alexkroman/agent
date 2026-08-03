@@ -8,13 +8,17 @@
  * `bundle/load` RPC params
  * (see sandbox-vm.ts), never as host process environment variables.
  *
+ * A secret change takes effect on the NEXT DEPLOY (or sandbox rebuild) by
+ * design: nothing here restarts resident sandboxes or signals other
+ * replicas. That trade removed the whole cross-replica secret-invalidation
+ * mechanism; redeploying is the documented way to apply a change now.
+ *
  * Related but distinct: `secrets.ts` handles API key hashing and
  * ownership verification for platform auth — not agent secrets.
  */
 
 import { HTTPException } from "hono/http-exception";
 import type { AppContext, ValidatedAppContext, ValidatedParamContext } from "./context.ts";
-import { invalidateSlug } from "./sandbox-slots.ts";
 
 export async function handleSecretList(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
@@ -34,7 +38,6 @@ export function handleSecretSet(c: ValidatedAppContext<Record<string, string>>):
     const merged = { ...existing, ...updates };
     await c.env.store.putEnv(slug, merged);
 
-    await invalidateSlug(c.env, slug, "secret update");
     console.info("Secret updated", { slug, keyCount: Object.keys(updates).length });
     return c.json({ ok: true, keys: Object.keys(merged) });
   });
@@ -52,7 +55,6 @@ export function handleSecretDelete(c: ValidatedParamContext<{ key: string }>): P
     }
     delete existing[key];
     await c.env.store.putEnv(slug, existing);
-    await invalidateSlug(c.env, slug, "secret delete");
     console.info("Secret deleted", { slug });
     return c.json({ ok: true });
   });

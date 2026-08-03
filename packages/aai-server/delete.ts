@@ -2,7 +2,7 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import type { AppContext } from "./context.ts";
-import { deleteSlot, invalidateSlug, terminateSlot } from "./sandbox-slots.ts";
+import { deleteSlot, terminateSlot } from "./sandbox-slots.ts";
 
 export function handleDelete(c: AppContext): Promise<Response> {
   const slug = c.var.slug;
@@ -30,13 +30,10 @@ async function handleDeleteInner(c: AppContext): Promise<Response> {
 
   await c.env.store.deleteAgent(slug);
 
-  // Other replicas' resident sandboxes for this slug must go too — their
-  // next session start sees the epoch mismatch, rebuilds, finds no
-  // manifest, and 404s instead of serving the deleted agent. The local
-  // half of invalidateSlug is a no-op here (the slot was torn down above,
-  // before the store delete); using the shared helper keeps delete inside
-  // the one invalidation mechanism every other mutation route uses.
-  await invalidateSlug(c.env, slug, "delete");
+  // Other replicas' resident sandboxes for this slug go too: their version
+  // check (broker fast path + idle sweep) reads null for a deleted row,
+  // retires the resident, and the rebuild finds no record — so they 404
+  // instead of serving the deleted agent.
 
   debug("Delete received", { slug });
 

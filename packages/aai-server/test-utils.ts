@@ -1,10 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { createStorage } from "unstorage";
+import { createMemoryAgentRows } from "./agent-store.ts";
+import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
-import { type AgentMetadata, AgentMetadataSchema } from "./schemas.ts";
-import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
+import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 import { createMemoryWorkspaceStore, type WorkspaceStore } from "./workspace-store.ts";
 
@@ -14,92 +16,18 @@ import { createMemoryWorkspaceStore, type WorkspaceStore } from "./workspace-sto
 export const VALID_ENV: Record<string, string> = { ASSEMBLYAI_API_KEY: "test-key" };
 
 /**
- * Sync in-memory BundleStore for tests. No encryption — stores env as plain
- * JSON. When a SecretStore is passed, `deleteAgent` sweeps the agent's secret
- * names like the real store does (the delete route relies on that contract).
+ * In-memory BundleStore for tests: the REAL bundle store over unstorage's
+ * memory driver, in-memory agent rows, and an in-memory SecretStore — so
+ * tests exercise the same content-addressed blob + row-commit code paths
+ * production runs. When a SecretStore is passed, `deleteAgent` sweeps the
+ * agent's secret names like production does (the delete route relies on
+ * that contract).
  */
 export function createTestStore(secrets?: SecretStore): BundleStore {
-  const objects = new Map<string, string>();
-
-  function objectKey(slug: string, file: string): string {
-    return `agents/${slug}/${file}`;
-  }
-
-  function deleteByPrefix(prefix: string) {
-    for (const key of objects.keys()) {
-      if (key.startsWith(prefix)) objects.delete(key);
-    }
-  }
-
-  function readManifest(slug: string): Record<string, unknown> | null {
-    const data = objects.get(objectKey(slug, "manifest.json"));
-    return data !== undefined ? JSON.parse(data) : null;
-  }
-
-  function writeManifest(slug: string, manifest: Record<string, unknown>) {
-    objects.set(objectKey(slug, "manifest.json"), JSON.stringify(manifest));
-  }
-
-  return {
-    putAgent(bundle) {
-      deleteByPrefix(`agents/${bundle.slug}/`);
-      writeManifest(bundle.slug, {
-        slug: bundle.slug,
-        env: bundle.env,
-        credential_hashes: bundle.credential_hashes,
-      });
-      objects.set(objectKey(bundle.slug, "worker.js"), bundle.worker);
-      for (const [filePath, content] of Object.entries(bundle.clientFiles)) {
-        objects.set(objectKey(bundle.slug, `client/${filePath}`), content);
-      }
-      objects.set(objectKey(bundle.slug, "config.json"), JSON.stringify(bundle.agentConfig));
-      return Promise.resolve();
-    },
-
-    getManifest(slug) {
-      const raw = readManifest(slug);
-      if (!raw) return Promise.resolve(null);
-      const parsed = AgentMetadataSchema.safeParse(raw);
-      return Promise.resolve(parsed.success ? (parsed.data as AgentMetadata) : null);
-    },
-
-    getWorkerCode(slug) {
-      return Promise.resolve(objects.get(objectKey(slug, "worker.js")) ?? null);
-    },
-
-    getClientFile(slug, filePath) {
-      return Promise.resolve(objects.get(objectKey(slug, `client/${filePath}`)) ?? null);
-    },
-
-    async deleteAgent(slug) {
-      deleteByPrefix(`agents/${slug}/`);
-      await secrets?.delete(agentEnvSecretName(slug));
-      await secrets?.delete(appDbSecretName(slug));
-    },
-
-    getEnv(slug) {
-      const raw = readManifest(slug);
-      return Promise.resolve((raw?.env as Record<string, string>) ?? null);
-    },
-
-    putEnv(slug, env) {
-      const raw = readManifest(slug);
-      if (!raw) return Promise.reject(new Error(`Agent ${slug} not found`));
-      raw.env = env;
-      writeManifest(slug, raw);
-      return Promise.resolve();
-    },
-
-    getAgentConfig(slug) {
-      const data = objects.get(objectKey(slug, "config.json"));
-      if (data == null) return Promise.resolve(null);
-      try {
-        return Promise.resolve(JSON.parse(data));
-      } catch {
-        return Promise.resolve(null);
-      }
-    },
-  };
+  return createBundleStore(createStorage(), {
+    secrets: secrets ?? createMemorySecretStore(),
+    agents: createMemoryAgentRows(),
+  });
 }
 
 export function makeSlot(overrides?: Partial<AgentSlot>): AgentSlot {

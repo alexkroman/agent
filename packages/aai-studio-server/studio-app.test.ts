@@ -3,29 +3,26 @@
  * The standalone studio service (split deployment) — see studio-app.ts.
  * Deep studio-route behavior is covered by studio-routes.test.ts against the
  * combined orchestrator; these tests pin what the split adds: the surface
- * serves standalone, and mutations reach the agent service via the shared
- * slug-epoch store.
+ * serves standalone (mutations reach the agent service via the agents
+ * row's deploy version — covered in aai-server's sandbox-resolve tests).
  */
 
 import { createMemoryChatStore } from "aai-server/chat-store";
-import { createMemorySlugEpochs } from "aai-server/platform-epoch";
 import { createTestStore } from "aai-server/test-utils";
 import { createMemoryWorkspaceStore } from "aai-server/workspace-store";
 import { describe, expect, it } from "vitest";
 import { createStudioApp, type StudioAppOpts } from "./studio-app.ts";
 
 function makeApp(overrides: Partial<StudioAppOpts> = {}) {
-  const slugEpochs = createMemorySlugEpochs();
   const { app } = createStudioApp({
     store: createTestStore(),
     workspaces: createMemoryWorkspaceStore(),
     chats: createMemoryChatStore(),
-    slugEpochs,
     ...overrides,
   });
   const fetch = (path: string, init?: RequestInit) =>
     app.fetch(new Request(`http://studio.local${path}`, init));
-  return { app, fetch, slugEpochs };
+  return { app, fetch };
 }
 
 describe("createStudioApp", () => {

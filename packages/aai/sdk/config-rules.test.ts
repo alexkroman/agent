@@ -6,8 +6,8 @@
 
 import { describe, expect, test } from "vitest";
 import { assertProviderTriple } from "./config-rules.ts";
-import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
 import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
+import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";

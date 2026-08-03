@@ -4,7 +4,6 @@ import net, { type AddressInfo } from "node:net";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { WebSocket as WsClient } from "ws";
 import { createOrchestrator } from "./orchestrator.ts";
-import { createMemorySlugEpochs } from "./platform-epoch.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey } from "./secrets.ts";
@@ -55,15 +54,14 @@ describe("handleAgentClientConfig", () => {
     // A resident fake sandbox: the broker must reuse it (resolveSandbox fast
     // path) rather than spawning a real one.
     const slots = createSlotCache();
-    const slugEpochs = createMemorySlugEpochs();
-    const { fetch } = await createTestOrchestrator({ slots, slugEpochs });
+    const { fetch, store } = await createTestOrchestrator({ slots });
     await deployAgent(fetch, "my-agent");
     // Seed AFTER deploying (the deploy replaces the slug's slot), at the
-    // deploy's epoch so the resident isn't invalidated as stale.
+    // deploy's version so the resident isn't invalidated as stale.
     slots.claim("my-agent", {
       slug: "my-agent",
       sandbox: makeFakeSandbox(),
-      epoch: await slugEpochs.get("my-agent"),
+      version: (await store.getAgentVersion("my-agent")) ?? 1,
     });
     const res = await fetch("/my-agent/client-config");
     expect(res.status).toBe(200);
@@ -76,8 +74,7 @@ describe("handleAgentClientConfig", () => {
 
   test("answers 503 when the sandbox VM failed to start", async () => {
     const slots = createSlotCache();
-    const slugEpochs = createMemorySlugEpochs();
-    const { fetch } = await createTestOrchestrator({ slots, slugEpochs });
+    const { fetch, store } = await createTestOrchestrator({ slots });
     await deployAgent(fetch, "my-agent");
     const broken: Sandbox = {
       ...makeFakeSandbox(),
@@ -86,7 +83,7 @@ describe("handleAgentClientConfig", () => {
     slots.claim("my-agent", {
       slug: "my-agent",
       sandbox: broken,
-      epoch: await slugEpochs.get("my-agent"),
+      version: (await store.getAgentVersion("my-agent")) ?? 1,
     });
     const res = await fetch("/my-agent/client-config");
     expect(res.status).toBe(503);
@@ -177,9 +174,11 @@ async function startServerWithOrchestrator(opts: HarnessOpts = {}): Promise<{
   const slug = "ws-agent";
   const slots = createSlotCache();
   const sandbox = makeFakeSandbox();
-  // Pre-populate the slot with a fake sandbox so nothing spawns for real.
+  // Pre-populate the slot with a fake sandbox so nothing spawns for real —
+  // at version 1, matching the single putAgent below, so the resident is
+  // not retired as superseded.
   if (opts.seedSandbox !== false) {
-    slots.claim(slug, { slug, sandbox });
+    slots.claim(slug, { slug, sandbox, version: 1 });
   }
   const store = createTestStore();
   // Seed an agent config so the host-mode path can load it.
@@ -456,7 +455,7 @@ describe("upgrade/teardown races", () => {
   test("a store failure during a host=1 upgrade answers 500 and destroys the socket", async () => {
     const errorSpy = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const ctx = await startServerWithOrchestrator();
-    ctx.store.getManifest = () => Promise.reject(new Error("storage down"));
+    ctx.store.getAgent = () => Promise.reject(new Error("storage down"));
     try {
       const response = await rawUpgrade(ctx.port, `/${ctx.slug}/websocket?host=1`, {
         Authorization: "Bearer any-key",
