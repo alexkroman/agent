@@ -34,6 +34,7 @@ vi.mock("./session-core.ts", () => {
   };
 });
 
+import { type ToolDisplayConfig, useToolConfig } from "./components/tool-config-context.ts";
 import { client } from "./define-client.tsx";
 import { createSessionCore } from "./session-core.ts";
 
@@ -194,6 +195,44 @@ describe("client", () => {
     document.title = "Shipped by the HTML";
     const handle = client({ component: () => null, target: container });
     expect(document.title).toBe("Shipped by the HTML");
+    handle.dispose();
+  });
+
+  /**
+   * `tools` alongside `component` used to be `never` — the same shape of bug
+   * as `name` above, and found the same way: four starters in one eval run
+   * wrote `client({ component, tools })` and each lost a build round to
+   * "Type '{ … }' is not assignable to type 'undefined'".
+   *
+   * It was never a default-shell option like `sidebar`. The provider wraps
+   * whichever root is rendered, and `ToolCallBlock` reads it — so a custom
+   * component gets the labels the moment it renders `MessageList` or
+   * `ChatView`. This asserts the value actually arrives, rather than only
+   * that the type now permits it.
+   */
+  it("passes tool display config to a custom component (tier 2)", () => {
+    let seen: ToolDisplayConfig | undefined;
+    function Probe() {
+      seen = useToolConfig();
+      return null;
+    }
+    const handle = client({
+      component: Probe,
+      tools: { add_pizza: { label: "Adding pizza", icon: "🍕" } },
+      target: container,
+    });
+    expect(seen).toEqual({ add_pizza: { label: "Adding pizza", icon: "🍕" } });
+    handle.dispose();
+  });
+
+  it("defaults tool display config to empty for a custom component", () => {
+    let seen: ToolDisplayConfig | undefined;
+    function Probe() {
+      seen = useToolConfig();
+      return null;
+    }
+    const handle = client({ component: Probe, target: container });
+    expect(seen).toEqual({});
     handle.dispose();
   });
 });

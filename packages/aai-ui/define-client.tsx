@@ -81,7 +81,22 @@ export type ComponentTier = BaseOptions & {
   name?: string;
   sidebar?: never;
   sidebarWidth?: never;
-  tools?: never;
+  /**
+   * Tool display config: icon and label overrides keyed by tool name.
+   *
+   * Allowed here for the same reason as `name` above, and it was found the
+   * same way: four starters across an eval run wrote
+   * `client({ component, tools })` and lost a build round each time to
+   * *"Type '{ … }' is not assignable to type 'undefined'"*.
+   *
+   * Unlike `sidebar`/`sidebarWidth`, this is not a property of the default
+   * shell. `client()` below wraps BOTH tiers in `ToolConfigContext.Provider`
+   * from `config.tools ?? {}`, and the consumer is `ToolCallBlock` — which a
+   * custom component renders as soon as it uses `MessageList` or `ChatView`,
+   * the usual way to build one. So the value was always honoured at runtime;
+   * only the type refused it.
+   */
+  tools?: ToolDisplayConfig;
 };
 
 /**
