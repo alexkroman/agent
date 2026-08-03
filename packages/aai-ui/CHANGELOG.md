@@ -1,5 +1,18 @@
 # @alexkroman1/aai-ui
 
+## 5.4.0
+
+### Patch Changes
+
+- 08dbc81: Allow `tools` display config alongside a custom `component` in `client()`. The provider already wrapped both tiers, so the labels were honoured at runtime; only the type rejected them.
+- Updated dependencies [cb2de62]
+- Updated dependencies [2198e2e]
+- Updated dependencies [2198e2e]
+- Updated dependencies [1d76583]
+- Updated dependencies [5174cb2]
+- Updated dependencies [aafe175]
+  - @alexkroman1/aai@5.4.0
+
 ## 5.3.0
 
 ### Patch Changes

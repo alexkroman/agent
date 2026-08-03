@@ -1,5 +1,16 @@
 # @alexkroman1/aai
 
+## 5.4.0
+
+### Minor Changes
+
+- cb2de62: Pipeline mode is now the default: an agent that declares no providers gets the all-AssemblyAI cascaded pipeline (assemblyAIPipeline()) injected at parse/config/runtime time. The S2S voice-agent API is now an explicit opt-in via the new s2s: assemblyAIS2s() descriptor (exported from the main entry and @alexkroman1/aai/s2s) — there is no longer any way to reach S2S by omission.
+- 2198e2e: Vercel-idiomatic API: rename tool({ parameters }) to tool({ inputSchema }) and accept any Standard Schema convertible to JSON Schema (Zod remains the default), let ctx.generate take a Zod schema directly with a typed object result (generateObject parity), accept model-id strings for llm (creator/model via the Vercel AI Gateway, bare ids via the AssemblyAI LLM Gateway), add a system alias for systemPrompt, extend toolChoice with none and { type: 'tool', toolName }, and add InferToolInput / InferToolOutput / InferAgentState type helpers.
+- 2198e2e: DX overhaul: rename the three assemblyAI stage factories to assemblyAIStt/assemblyAILlm/assemblyAITts (no aliases kept), brand provider descriptor types per stage so cross-stage assignment is a compile error, move cross-package infrastructure (createEpoch, createOwnedMap, parseWsUpgradeParams, env brands) off the root barrel onto @alexkroman1/aai/internal, drop the deprecated CustomEvent alias in aai-ui, document every public provider symbol, fix doc drift (AgentDef.llm descriptor wording, resumeSessionId persistence claim, ClientTheme defaults), add package READMEs, a real docs landing page, import-path module names in the API reference, aai templates command, and human-mode CliError hints.
+- 1d76583: SDK polish: AgentParams is now a pipeline/S2S mode union — a partial stt/llm/tts triple, or s2s combined with a pipeline provider or pipeline-only tuning field, is a compile error whose message names the rule (previously these were runtime parse failures or silent no-ops). The system alias and llm model-id string shorthand now also work for raw configs that skip agent() (normalized in parseManifest/toAgentConfig). The default TTS voice is now jane (US-accented English); it was vera (UK), which put a UK accent on every agent that never chose a voice.
+- 5174cb2: Curate the public API surface: internal plumbing is now tagged @internal (docs-hidden), provider barrels export every type their public signatures reference (KIND constants, Unsubscribe, AssemblyAITtsLanguage, default voices, OpenaiRealtimeVoice), the runtime barrel uses explicit named exports, aai-ui exports ClientConfig's tiers/WebSocketConstructor/Button variants and renames CustomEvent to AgentCustomEvent (deprecated alias kept), and stale doc comments are fixed (interruptionMinDurationMs and minTurnSilenceMs defaults, RuntimeOptions.fetch default, pipeline voice examples).
+- aafe175: Default the AssemblyAI LLM Gateway model to gpt-5.5 (was qwen3-next-80b-a3b) and add a reasoningEffort option to the gateway LLM descriptor — unset, the model keeps its server-side reasoning default; set "none"/"minimal" to turn reasoning off
+
 ## 5.3.0
 
 ### Minor Changes
