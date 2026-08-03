@@ -5,6 +5,7 @@ import type { Address } from "./shared.ts";
 import type { ErrorResult } from "./store.ts";
 import { getState, isError } from "./store.ts";
 import { cancelPendingOrder } from "./tools/cancel_pending_order.ts";
+import { exchangeDeliveredOrderItems } from "./tools/exchange_delivered_order_items.ts";
 import { findUserIdByEmail } from "./tools/find_user_id_by_email.ts";
 import { findUserIdByNameZip } from "./tools/find_user_id_by_name_zip.ts";
 import { getItemDetails } from "./tools/get_item_details.ts";
@@ -16,6 +17,7 @@ import { modifyPendingOrderAddress } from "./tools/modify_pending_order_address.
 import { modifyPendingOrderItems } from "./tools/modify_pending_order_items.ts";
 import { modifyPendingOrderPayment } from "./tools/modify_pending_order_payment.ts";
 import { modifyUserAddress } from "./tools/modify_user_address.ts";
+import { returnDeliveredOrderItems } from "./tools/return_delivered_order_items.ts";
 
 let sessionCounter = 0;
 
@@ -703,6 +705,306 @@ describe("modify_pending_order_payment", () => {
     const ctx = await authedCtx("olivia.ito5204@example.com");
     const result = await modifyPendingOrderPayment.execute(
       { order_id: "#W5442520", payment_method_id: "gift_card_7245904" },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
+  });
+});
+
+interface ReturnResult {
+  order_id: string;
+  status: string;
+  return_items: string[];
+  refund_to: string;
+  message: string;
+}
+
+interface ExchangeResult {
+  order_id: string;
+  status: string;
+  price_difference: number;
+  exchange_items: string[];
+  exchange_new_items: string[];
+  message: string;
+}
+
+describe("return_delivered_order_items", () => {
+  test("requests a return refunded to the original method", async () => {
+    const ctx = await authedCtx("harper.brown3965@example.com");
+    const result = (await returnDeliveredOrderItems.execute(
+      {
+        order_id: "#W1840144",
+        item_ids: ["8590708195"],
+        payment_method_id: "paypal_2306935",
+      },
+      ctx,
+    )) as ReturnResult | ErrorResult;
+    if (isError(result)) throw new Error(result.error);
+    expect(result.status).toBe("return requested");
+    const order = getState(ctx).store.orders["#W1840144"];
+    expect(order?.return_items).toEqual(["8590708195"]);
+    expect(order?.return_payment_method_id).toBe("paypal_2306935");
+  });
+
+  test("accepts a gift card that was NOT the original method", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    // #W5866402 was paid by PayPal; olivia also holds a gift card.
+    const result = await returnDeliveredOrderItems.execute(
+      {
+        order_id: "#W5866402",
+        item_ids: ["9727387530"],
+        payment_method_id: "gift_card_7794233",
+      },
+      ctx,
+    );
+    expect(isError(result)).toBe(false);
+  });
+
+  test("refuses a non-original, non-gift-card method", async () => {
+    const ctx = await authedCtx("harper.brown3965@example.com");
+    // Paid by PayPal; harper holds no gift card, so the credit card is illegal.
+    const result = await returnDeliveredOrderItems.execute(
+      {
+        order_id: "#W1840144",
+        item_ids: ["8590708195"],
+        payment_method_id: "credit_card_3240550",
+      },
+      ctx,
+    );
+    expect(isError(result) && result.error.toLowerCase()).toContain("original");
+    expect(getState(ctx).store.orders["#W1840144"]?.status).toBe("delivered");
+  });
+
+  test("returns both copies of a duplicate item and sorts the recorded list", async () => {
+    const ctx = await authedCtx("harper.brown3965@example.com");
+    const result = await returnDeliveredOrderItems.execute(
+      {
+        order_id: "#W1840144",
+        item_ids: ["8590708195", "6534134392", "8590708195"],
+        payment_method_id: "paypal_2306935",
+      },
+      ctx,
+    );
+    expect(isError(result)).toBe(false);
+    expect(getState(ctx).store.orders["#W1840144"]?.return_items).toEqual([
+      "6534134392",
+      "8590708195",
+      "8590708195",
+    ]);
+  });
+
+  test("refuses more copies than the order holds", async () => {
+    const ctx = await authedCtx("harper.brown3965@example.com");
+    const result = await returnDeliveredOrderItems.execute(
+      {
+        order_id: "#W1840144",
+        item_ids: ["6534134392", "6534134392"],
+        payment_method_id: "paypal_2306935",
+      },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
+  });
+
+  test("refuses a pending order and refuses a second return", async () => {
+    const ctx = await authedCtx("harper.brown3965@example.com");
+    const pending = await returnDeliveredOrderItems.execute(
+      {
+        order_id: "#W2273069",
+        item_ids: ["3909406921"],
+        payment_method_id: "credit_card_3240550",
+      },
+      ctx,
+    );
+    expect(isError(pending)).toBe(true);
+
+    await returnDeliveredOrderItems.execute(
+      { order_id: "#W1840144", item_ids: ["8590708195"], payment_method_id: "paypal_2306935" },
+      ctx,
+    );
+    const again = await returnDeliveredOrderItems.execute(
+      { order_id: "#W1840144", item_ids: ["6534134392"], payment_method_id: "paypal_2306935" },
+      ctx,
+    );
+    expect(isError(again) && again.error).toContain("return requested");
+  });
+});
+
+describe("exchange_delivered_order_items", () => {
+  test("records an exchange with a positive price difference", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    const result = (await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W4316152",
+        item_ids: ["7292993796"],
+        new_item_ids: ["3909406921"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    )) as ExchangeResult | ErrorResult;
+    if (isError(result)) throw new Error(result.error);
+    expect(result.price_difference).toBe(3.45);
+    const order = getState(ctx).store.orders["#W4316152"];
+    expect(order?.status).toBe("exchange requested");
+    expect(order?.exchange_items).toEqual(["7292993796"]);
+    expect(order?.exchange_new_items).toEqual(["3909406921"]);
+    expect(order?.exchange_price_difference).toBe(3.45);
+  });
+
+  test("does NOT move the gift-card balance — it is a request, not a settlement", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W4316152",
+        item_ids: ["7292993796"],
+        new_item_ids: ["3909406921"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    );
+    const card = getState(ctx).store.users.aarav_anderson_8794?.payment_methods.gift_card_7245904;
+    expect(card?.source === "gift_card" && card.balance).toBe(17);
+  });
+
+  test("leaves the order's items unchanged until the exchange is fulfilled", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W4316152",
+        item_ids: ["7292993796"],
+        new_item_ids: ["3909406921"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    );
+    expect(getState(ctx).store.orders["#W4316152"]?.items.map((i) => i.item_id)).toEqual([
+      "7292993796",
+      "7292993796",
+    ]);
+  });
+
+  test("exchanges both copies of a duplicate and doubles the difference", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    const result = (await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W4316152",
+        item_ids: ["7292993796", "7292993796"],
+        new_item_ids: ["3909406921", "3909406921"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    )) as ExchangeResult | ErrorResult;
+    expect(isError(result) ? null : result.price_difference).toBe(6.9);
+  });
+
+  test("records a negative difference as a refund direction", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = (await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W5866402",
+        item_ids: ["6242772310"],
+        new_item_ids: ["6200867091"],
+        payment_method_id: "gift_card_7794233",
+      },
+      ctx,
+    )) as ExchangeResult | ErrorResult;
+    expect(isError(result) ? null : result.price_difference).toBe(-40.86);
+  });
+
+  test("refuses a gift card that cannot cover the difference", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    const result = await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W9311069",
+        item_ids: ["1304426904"],
+        new_item_ids: ["4725166838"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    );
+    expect(isError(result) && result.error.toLowerCase()).toContain("balance");
+    expect(getState(ctx).store.orders["#W9311069"]?.status).toBe("delivered");
+  });
+
+  test("refuses a cross-product swap", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    const result = await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W4316152",
+        item_ids: ["7292993796"],
+        new_item_ids: ["4725166838"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
+  });
+
+  test("refuses an unavailable target", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    const result = await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W4316152",
+        item_ids: ["7292993796"],
+        new_item_ids: ["6454334990"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    );
+    expect(isError(result) && result.error.toLowerCase()).toContain("not available");
+  });
+
+  test("refuses a pending order and refuses a second exchange", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    const pending = await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W9300146",
+        item_ids: ["9190635437"],
+        new_item_ids: ["9190635437"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    );
+    expect(isError(pending)).toBe(true);
+
+    await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W4316152",
+        item_ids: ["7292993796"],
+        new_item_ids: ["3909406921"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    );
+    const again = await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W4316152",
+        item_ids: ["7292993796"],
+        new_item_ids: ["3738831434"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    );
+    expect(isError(again)).toBe(true);
+  });
+
+  test("a returned order can no longer be exchanged", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    await returnDeliveredOrderItems.execute(
+      {
+        order_id: "#W4316152",
+        item_ids: ["7292993796"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    );
+    const result = await exchangeDeliveredOrderItems.execute(
+      {
+        order_id: "#W4316152",
+        item_ids: ["7292993796"],
+        new_item_ids: ["3909406921"],
+        payment_method_id: "gift_card_7245904",
+      },
       ctx,
     );
     expect(isError(result)).toBe(true);
