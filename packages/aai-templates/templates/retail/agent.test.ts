@@ -18,6 +18,7 @@ import { modifyPendingOrderItems } from "./tools/modify_pending_order_items.ts";
 import { modifyPendingOrderPayment } from "./tools/modify_pending_order_payment.ts";
 import { modifyUserAddress } from "./tools/modify_user_address.ts";
 import { returnDeliveredOrderItems } from "./tools/return_delivered_order_items.ts";
+import { transferToHumanAgents } from "./tools/transfer_to_human_agents.ts";
 
 let sessionCounter = 0;
 
@@ -1008,5 +1009,22 @@ describe("exchange_delivered_order_items", () => {
       ctx,
     );
     expect(isError(result)).toBe(true);
+  });
+});
+
+interface TransferResult {
+  transferred: boolean;
+  summary: string;
+  message: string;
+}
+
+describe("transfer_to_human_agents", () => {
+  test("works without authentication — the escape hatch cannot be gated", async () => {
+    const result = (await transferToHumanAgents.execute(
+      { summary: "Caller wants to dispute a charge from 2019." },
+      makeCtx(),
+    )) as TransferResult | ErrorResult;
+    expect(isError(result)).toBe(false);
+    expect(isError(result) ? null : result.transferred).toBe(true);
   });
 });
