@@ -1,6 +1,7 @@
 import type { ToolContext } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
 import type { AuthResult } from "./authenticate.ts";
+import type { Address } from "./shared.ts";
 import type { ErrorResult } from "./store.ts";
 import { getState, isError } from "./store.ts";
 import { cancelPendingOrder } from "./tools/cancel_pending_order.ts";
@@ -11,6 +12,8 @@ import { getOrderDetails } from "./tools/get_order_details.ts";
 import { getProductDetails } from "./tools/get_product_details.ts";
 import { getUserDetails } from "./tools/get_user_details.ts";
 import { listAllProductTypes } from "./tools/list_all_product_types.ts";
+import { modifyPendingOrderAddress } from "./tools/modify_pending_order_address.ts";
+import { modifyUserAddress } from "./tools/modify_user_address.ts";
 
 let sessionCounter = 0;
 
@@ -326,5 +329,105 @@ describe("cancel_pending_order", () => {
       (id) => getState(ctx).store.orders[id]?.status,
     );
     expect(statuses).toEqual(["pending", "pending", "pending"]);
+  });
+});
+
+const NEW_ADDRESS = {
+  address1: "742 Evergreen Terrace",
+  address2: "Apt 4",
+  city: "Springfield",
+  state: "OR",
+  country: "USA",
+  zip: "97477",
+};
+
+interface AddressToolResult {
+  order_id: string;
+  address: Address;
+}
+
+describe("modify_pending_order_address", () => {
+  test("rewrites a pending order's shipping address", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    const result = (await modifyPendingOrderAddress.execute(
+      { order_id: "#W9300146", ...NEW_ADDRESS },
+      ctx,
+    )) as AddressToolResult | ErrorResult;
+    if (isError(result)) throw new Error(result.error);
+    expect(result.address).toEqual(NEW_ADDRESS);
+    expect(getState(ctx).store.orders["#W9300146"]?.address).toEqual(NEW_ADDRESS);
+  });
+
+  test("leaves the customer's default address untouched", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    await modifyPendingOrderAddress.execute({ order_id: "#W9300146", ...NEW_ADDRESS }, ctx);
+    expect(getState(ctx).store.users.aarav_anderson_8794?.address.zip).toBe("19031");
+  });
+
+  test("accepts a 'pending (item modified)' order — unlike cancel", async () => {
+    const ctx = await authedCtx("aarav.anderson9752@example.com");
+    const order = getState(ctx).store.orders["#W9300146"];
+    if (!order) throw new Error("fixture missing");
+    order.status = "pending (item modified)";
+    const result = await modifyPendingOrderAddress.execute(
+      { order_id: "#W9300146", ...NEW_ADDRESS },
+      ctx,
+    );
+    expect(isError(result)).toBe(false);
+  });
+
+  test("refuses a delivered order", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = await modifyPendingOrderAddress.execute(
+      { order_id: "#W5866402", ...NEW_ADDRESS },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
+  });
+
+  test("refuses another customer's order", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = await modifyPendingOrderAddress.execute(
+      { order_id: "#W9300146", ...NEW_ADDRESS },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
+  });
+});
+
+describe("modify_user_address", () => {
+  test("rewrites the customer's default address", async () => {
+    const ctx = await authedCtx("emma.smith3991@example.com");
+    const result = await modifyUserAddress.execute(
+      { user_id: "emma_smith_8564", ...NEW_ADDRESS },
+      ctx,
+    );
+    if (isError(result)) throw new Error(result.error);
+    expect(getState(ctx).store.users.emma_smith_8564?.address).toEqual(NEW_ADDRESS);
+  });
+
+  test("leaves existing orders' addresses untouched", async () => {
+    const ctx = await authedCtx("emma.smith3991@example.com");
+    const before = structuredClone(getState(ctx).store.orders["#W2417020"]?.address);
+    await modifyUserAddress.execute({ user_id: "emma_smith_8564", ...NEW_ADDRESS }, ctx);
+    expect(getState(ctx).store.orders["#W2417020"]?.address).toEqual(before);
+  });
+
+  test("refuses a different user id", async () => {
+    const ctx = await authedCtx("emma.smith3991@example.com");
+    const result = await modifyUserAddress.execute(
+      { user_id: "olivia_ito_3591", ...NEW_ADDRESS },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
+    expect(getState(ctx).store.users.olivia_ito_3591?.address.zip).toBe("80218");
+  });
+
+  test("requires authentication", async () => {
+    const result = await modifyUserAddress.execute(
+      { user_id: "emma_smith_8564", ...NEW_ADDRESS },
+      makeCtx(),
+    );
+    expect(isError(result) && result.error).toContain("find_user_id_by_email");
   });
 });
