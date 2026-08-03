@@ -1,0 +1,4357 @@
+{
+  "products": {
+    "9523456873": {
+      "name": "T-Shirt",
+      "product_id": "9523456873",
+      "variants": {
+        "9612497925": {
+          "item_id": "9612497925",
+          "options": {
+            "color": "blue",
+            "size": "M",
+            "material": "cotton",
+            "style": "crew neck"
+          },
+          "available": true,
+          "price": 50.88
+        },
+        "8124970213": {
+          "item_id": "8124970213",
+          "options": {
+            "color": "purple",
+            "size": "XL",
+            "material": "cotton",
+            "style": "crew neck"
+          },
+          "available": true,
+          "price": 49.67
+        },
+        "9354168549": {
+          "item_id": "9354168549",
+          "options": {
+            "color": "red",
+            "size": "XXL",
+            "material": "cotton",
+            "style": "crew neck"
+          },
+          "available": true,
+          "price": 46.85
+        }
+      }
+    },
+    "4760268021": {
+      "name": "Laptop",
+      "product_id": "4760268021",
+      "variants": {
+        "6017636844": {
+          "item_id": "6017636844",
+          "options": {
+            "screen size": "15-inch",
+            "processor": "i7",
+            "ram": "32GB",
+            "storage": "1TB SSD",
+            "color": "space grey"
+          },
+          "available": true,
+          "price": 2292.37
+        },
+        "8997785118": {
+          "item_id": "8997785118",
+          "options": {
+            "screen size": "13-inch",
+            "processor": "i7",
+            "ram": "32GB",
+            "storage": "256GB SSD",
+            "color": "space grey"
+          },
+          "available": false,
+          "price": 2674.4
+        },
+        "4241599783": {
+          "item_id": "4241599783",
+          "options": {
+            "screen size": "15-inch",
+            "processor": "i7",
+            "ram": "16GB",
+            "storage": "1TB SSD",
+            "color": "black"
+          },
+          "available": false,
+          "price": 2324.61
+        },
+        "9844888101": {
+          "item_id": "9844888101",
+          "options": {
+            "screen size": "15-inch",
+            "processor": "i7",
+            "ram": "8GB",
+            "storage": "1TB SSD",
+            "color": "black"
+          },
+          "available": true,
+          "price": 2459.74
+        },
+        "1684786391": {
+          "item_id": "1684786391",
+          "options": {
+            "screen size": "17-inch",
+            "processor": "i7",
+            "ram": "32GB",
+            "storage": "1TB SSD",
+            "color": "black"
+          },
+          "available": true,
+          "price": 2508.06
+        },
+        "2768401027": {
+          "item_id": "2768401027",
+          "options": {
+            "screen size": "13-inch",
+            "processor": "i7",
+            "ram": "32GB",
+            "storage": "256GB SSD",
+            "color": "silver"
+          },
+          "available": false,
+          "price": 2346.49
+        }
+      }
+    },
+    "6938111410": {
+      "name": "Running Shoes",
+      "product_id": "6938111410",
+      "variants": {
+        "4153505238": {
+          "item_id": "4153505238",
+          "options": {
+            "size": "8",
+            "color": "red",
+            "material": "leather",
+            "sole": "EVA"
+          },
+          "available": true,
+          "price": 158.67
+        },
+        "1775591963": {
+          "item_id": "1775591963",
+          "options": {
+            "size": "10",
+            "color": "white",
+            "material": "leather",
+            "sole": "EVA"
+          },
+          "available": true,
+          "price": 154.75
+        },
+        "9635758562": {
+          "item_id": "9635758562",
+          "options": {
+            "size": "9",
+            "color": "white",
+            "material": "mesh",
+            "sole": "rubber"
+          },
+          "available": true,
+          "price": 148.95
+        }
+      }
+    },
+    "1801728040": {
+      "name": "Smartphone",
+      "product_id": "1801728040",
+      "variants": {
+        "3952176596": {
+          "item_id": "3952176596",
+          "options": {
+            "color": "rose gold",
+            "storage": "64GB",
+            "RAM": "8GB",
+            "screen size": "6.1-inch"
+          },
+          "available": false,
+          "price": 1199.77
+        },
+        "1507389580": {
+          "item_id": "1507389580",
+          "options": {
+            "color": "black",
+            "storage": "128GB",
+            "RAM": "8GB",
+            "screen size": "5.8-inch"
+          },
+          "available": true,
+          "price": 1157.86
+        },
+        "5339029584": {
+          "item_id": "5339029584",
+          "options": {
+            "color": "black",
+            "storage": "128GB",
+            "RAM": "4GB",
+            "screen size": "6.5-inch"
+          },
+          "available": true,
+          "price": 1128.99
+        },
+        "1631373418": {
+          "item_id": "1631373418",
+          "options": {
+            "color": "gold",
+            "storage": "128GB",
+            "RAM": "6GB",
+            "screen size": "6.1-inch"
+          },
+          "available": false,
+          "price": 1291.21
+        }
+      }
+    },
+    "2524789262": {
+      "name": "Backpack",
+      "product_id": "2524789262",
+      "variants": {
+        "5917587651": {
+          "item_id": "5917587651",
+          "options": {
+            "color": "grey",
+            "size": "medium",
+            "material": "polyester",
+            "compartment": "laptop"
+          },
+          "available": true,
+          "price": 212.79
+        },
+        "7251508981": {
+          "item_id": "7251508981",
+          "options": {
+            "color": "green",
+            "size": "small",
+            "material": "leather",
+            "compartment": "camera"
+          },
+          "available": true,
+          "price": 212.04
+        },
+        "8054888773": {
+          "item_id": "8054888773",
+          "options": {
+            "color": "grey",
+            "size": "small",
+            "material": "nylon",
+            "compartment": "laptop"
+          },
+          "available": true,
+          "price": 206.03
+        },
+        "6309044598": {
+          "item_id": "6309044598",
+          "options": {
+            "color": "grey",
+            "size": "large",
+            "material": "polyester",
+            "compartment": "hydration"
+          },
+          "available": true,
+          "price": 218.59
+        },
+        "8084436579": {
+          "item_id": "8084436579",
+          "options": {
+            "color": "navy",
+            "size": "large",
+            "material": "polyester",
+            "compartment": "laptop"
+          },
+          "available": true,
+          "price": 219.43
+        },
+        "8030558068": {
+          "item_id": "8030558068",
+          "options": {
+            "color": "black",
+            "size": "medium",
+            "material": "nylon",
+            "compartment": "hydration"
+          },
+          "available": false,
+          "price": 186.78
+        }
+      }
+    },
+    "7996920482": {
+      "name": "Coffee Maker",
+      "product_id": "7996920482",
+      "variants": {
+        "3020722515": {
+          "item_id": "3020722515",
+          "options": {
+            "color": "black",
+            "capacity": "1 cup",
+            "type": "french press",
+            "features": "auto shutoff"
+          },
+          "available": true,
+          "price": 238.64
+        },
+        "2115393569": {
+          "item_id": "2115393569",
+          "options": {
+            "color": "black",
+            "capacity": "1 cup",
+            "type": "drip",
+            "features": "timer"
+          },
+          "available": true,
+          "price": 270.91
+        },
+        "3039787582": {
+          "item_id": "3039787582",
+          "options": {
+            "color": "stainless steel",
+            "capacity": "4 cups",
+            "type": "drip",
+            "features": "auto shutoff"
+          },
+          "available": true,
+          "price": 256.94
+        }
+      }
+    },
+    "8310926033": {
+      "name": "Water Bottle",
+      "product_id": "8310926033",
+      "variants": {
+        "2366567022": {
+          "item_id": "2366567022",
+          "options": {
+            "capacity": "1000ml",
+            "material": "stainless steel",
+            "color": "blue"
+          },
+          "available": false,
+          "price": 54.04
+        },
+        "3453331371": {
+          "item_id": "3453331371",
+          "options": {
+            "capacity": "500ml",
+            "material": "stainless steel",
+            "color": "black"
+          },
+          "available": true,
+          "price": 52.79
+        },
+        "3229676465": {
+          "item_id": "3229676465",
+          "options": {
+            "capacity": "500ml",
+            "material": "plastic",
+            "color": "black"
+          },
+          "available": true,
+          "price": 51.94
+        },
+        "4579334072": {
+          "item_id": "4579334072",
+          "options": {
+            "capacity": "750ml",
+            "material": "glass",
+            "color": "black"
+          },
+          "available": true,
+          "price": 54.85
+        },
+        "1434748144": {
+          "item_id": "1434748144",
+          "options": {
+            "capacity": "1000ml",
+            "material": "glass",
+            "color": "red"
+          },
+          "available": false,
+          "price": 49.72
+        }
+      }
+    },
+    "6817146515": {
+      "name": "Desk Lamp",
+      "product_id": "6817146515",
+      "variants": {
+        "9190635437": {
+          "item_id": "9190635437",
+          "options": {
+            "color": "black",
+            "brightness": "low",
+            "power source": "USB"
+          },
+          "available": true,
+          "price": 153.23
+        },
+        "8384507844": {
+          "item_id": "8384507844",
+          "options": {
+            "color": "white",
+            "brightness": "medium",
+            "power source": "USB"
+          },
+          "available": false,
+          "price": 137.94
+        },
+        "5320792178": {
+          "item_id": "5320792178",
+          "options": {
+            "color": "black",
+            "brightness": "medium",
+            "power source": "AC adapter"
+          },
+          "available": true,
+          "price": 135.24
+        },
+        "1569765161": {
+          "item_id": "1569765161",
+          "options": {
+            "color": "silver",
+            "brightness": "low",
+            "power source": "AC adapter"
+          },
+          "available": true,
+          "price": 143.02
+        },
+        "7453605304": {
+          "item_id": "7453605304",
+          "options": {
+            "color": "silver",
+            "brightness": "low",
+            "power source": "battery"
+          },
+          "available": true,
+          "price": 150.01
+        },
+        "4385534692": {
+          "item_id": "4385534692",
+          "options": {
+            "color": "white",
+            "brightness": "high",
+            "power source": "AC adapter"
+          },
+          "available": false,
+          "price": 138.07
+        }
+      }
+    },
+    "2892623495": {
+      "name": "Notebook",
+      "product_id": "2892623495",
+      "variants": {
+        "1199058591": {
+          "item_id": "1199058591",
+          "options": {
+            "size": "A4",
+            "cover type": "hard cover"
+          },
+          "available": true,
+          "price": 32.29
+        },
+        "6574183535": {
+          "item_id": "6574183535",
+          "options": {
+            "size": "A6",
+            "cover type": "hard cover"
+          },
+          "available": false,
+          "price": 28.14
+        },
+        "9421195098": {
+          "item_id": "9421195098",
+          "options": {
+            "size": "A6",
+            "cover type": "soft cover"
+          },
+          "available": false,
+          "price": 32.37
+        }
+      }
+    },
+    "7314138884": {
+      "name": "Sunglasses",
+      "product_id": "7314138884",
+      "variants": {
+        "4358482460": {
+          "item_id": "4358482460",
+          "options": {
+            "frame color": "black",
+            "lens color": "brown",
+            "lens type": "polarized",
+            "frame material": "plastic"
+          },
+          "available": true,
+          "price": 290.94
+        },
+        "4548300368": {
+          "item_id": "4548300368",
+          "options": {
+            "frame color": "black",
+            "lens color": "green",
+            "lens type": "polarized",
+            "frame material": "plastic"
+          },
+          "available": true,
+          "price": 287.79
+        },
+        "9672174103": {
+          "item_id": "9672174103",
+          "options": {
+            "frame color": "brown",
+            "lens color": "brown",
+            "lens type": "polarized",
+            "frame material": "plastic"
+          },
+          "available": true,
+          "price": 281.98
+        },
+        "2198125883": {
+          "item_id": "2198125883",
+          "options": {
+            "frame color": "silver",
+            "lens color": "black",
+            "lens type": "polarized",
+            "frame material": "metal"
+          },
+          "available": true,
+          "price": 296.16
+        },
+        "4329558751": {
+          "item_id": "4329558751",
+          "options": {
+            "frame color": "silver",
+            "lens color": "blue",
+            "lens type": "non-polarized",
+            "frame material": "plastic"
+          },
+          "available": true,
+          "price": 297.33
+        },
+        "2177260429": {
+          "item_id": "2177260429",
+          "options": {
+            "frame color": "black",
+            "lens color": "green",
+            "lens type": "polarized",
+            "frame material": "metal"
+          },
+          "available": false,
+          "price": 296.47
+        }
+      }
+    },
+    "6066914160": {
+      "name": "Wristwatch",
+      "product_id": "6066914160",
+      "variants": {
+        "1355937109": {
+          "item_id": "1355937109",
+          "options": {
+            "strap material": "leather",
+            "dial color": "white"
+          },
+          "available": true,
+          "price": 1985.3
+        },
+        "8886009523": {
+          "item_id": "8886009523",
+          "options": {
+            "strap material": "silicone",
+            "dial color": "blue"
+          },
+          "available": true,
+          "price": 1944.02
+        },
+        "9949163720": {
+          "item_id": "9949163720",
+          "options": {
+            "strap material": "leather",
+            "dial color": "black"
+          },
+          "available": true,
+          "price": 1908.15
+        },
+        "2226219750": {
+          "item_id": "2226219750",
+          "options": {
+            "strap material": "silicone",
+            "dial color": "white"
+          },
+          "available": true,
+          "price": 2009.03
+        },
+        "1994478369": {
+          "item_id": "1994478369",
+          "options": {
+            "strap material": "silicone",
+            "dial color": "black"
+          },
+          "available": true,
+          "price": 2025.51
+        },
+        "9112290483": {
+          "item_id": "9112290483",
+          "options": {
+            "strap material": "metal",
+            "dial color": "blue"
+          },
+          "available": false,
+          "price": 1925.16
+        }
+      }
+    },
+    "7352963235": {
+      "name": "Electric Toothbrush",
+      "product_id": "7352963235",
+      "variants": {
+        "6164262152": {
+          "item_id": "6164262152",
+          "options": {
+            "color": "white",
+            "speed settings": "low",
+            "battery type": "rechargeable"
+          },
+          "available": true,
+          "price": 211.11
+        },
+        "8098621301": {
+          "item_id": "8098621301",
+          "options": {
+            "color": "black",
+            "speed settings": "high",
+            "battery type": "rechargeable"
+          },
+          "available": true,
+          "price": 192.15
+        },
+        "2645006275": {
+          "item_id": "2645006275",
+          "options": {
+            "color": "white",
+            "speed settings": "high",
+            "battery type": "AA batteries"
+          },
+          "available": true,
+          "price": 183.11
+        },
+        "1583904702": {
+          "item_id": "1583904702",
+          "options": {
+            "color": "blue",
+            "speed settings": "low",
+            "battery type": "AA batteries"
+          },
+          "available": true,
+          "price": 195.84
+        },
+        "8798690242": {
+          "item_id": "8798690242",
+          "options": {
+            "color": "black",
+            "speed settings": "high",
+            "battery type": "AA batteries"
+          },
+          "available": true,
+          "price": 208.07
+        },
+        "6555827912": {
+          "item_id": "6555827912",
+          "options": {
+            "color": "black",
+            "speed settings": "low",
+            "battery type": "AA batteries"
+          },
+          "available": false,
+          "price": 199.42
+        }
+      }
+    },
+    "4635925001": {
+      "name": "Yoga Mat",
+      "product_id": "4635925001",
+      "variants": {
+        "5586947715": {
+          "item_id": "5586947715",
+          "options": {
+            "thickness": "4mm",
+            "material": "PVC",
+            "color": "blue"
+          },
+          "available": true,
+          "price": 92.53
+        },
+        "7510236436": {
+          "item_id": "7510236436",
+          "options": {
+            "thickness": "6mm",
+            "material": "PVC",
+            "color": "green"
+          },
+          "available": true,
+          "price": 105.68
+        },
+        "1794273251": {
+          "item_id": "1794273251",
+          "options": {
+            "thickness": "5mm",
+            "material": "TPE",
+            "color": "pink"
+          },
+          "available": true,
+          "price": 103.84
+        }
+      }
+    },
+    "4768869376": {
+      "name": "Bluetooth Speaker",
+      "product_id": "4768869376",
+      "variants": {
+        "9440686670": {
+          "item_id": "9440686670",
+          "options": {
+            "color": "green",
+            "battery life": "20 hours",
+            "water resistance": "no"
+          },
+          "available": true,
+          "price": 298.91
+        },
+        "5650803029": {
+          "item_id": "5650803029",
+          "options": {
+            "color": "black",
+            "battery life": "20 hours",
+            "water resistance": "no"
+          },
+          "available": false,
+          "price": 324.63
+        },
+        "7597543861": {
+          "item_id": "7597543861",
+          "options": {
+            "color": "black",
+            "battery life": "10 hours",
+            "water resistance": "no"
+          },
+          "available": false,
+          "price": 310.47
+        },
+        "4716977452": {
+          "item_id": "4716977452",
+          "options": {
+            "color": "blue",
+            "battery life": "10 hours",
+            "water resistance": "yes"
+          },
+          "available": true,
+          "price": 289.69
+        },
+        "7617930199": {
+          "item_id": "7617930199",
+          "options": {
+            "color": "red",
+            "battery life": "20 hours",
+            "water resistance": "yes"
+          },
+          "available": true,
+          "price": 285.94
+        },
+        "3254583681": {
+          "item_id": "3254583681",
+          "options": {
+            "color": "blue",
+            "battery life": "20 hours",
+            "water resistance": "yes"
+          },
+          "available": true,
+          "price": 302.67
+        },
+        "6704763132": {
+          "item_id": "6704763132",
+          "options": {
+            "color": "blue",
+            "battery life": "10 hours",
+            "water resistance": "no"
+          },
+          "available": true,
+          "price": 305.45
+        },
+        "5967152432": {
+          "item_id": "5967152432",
+          "options": {
+            "color": "green",
+            "battery life": "10 hours",
+            "water resistance": "yes"
+          },
+          "available": false,
+          "price": 292.71
+        }
+      }
+    },
+    "5713490933": {
+      "name": "Gaming Mouse",
+      "product_id": "5713490933",
+      "variants": {
+        "3330317167": {
+          "item_id": "3330317167",
+          "options": {
+            "color": "black",
+            "sensor type": "optical",
+            "connectivity": "wired"
+          },
+          "available": true,
+          "price": 137.32
+        },
+        "2880340443": {
+          "item_id": "2880340443",
+          "options": {
+            "color": "white",
+            "sensor type": "optical",
+            "connectivity": "wired"
+          },
+          "available": true,
+          "price": 137.22
+        },
+        "8896479688": {
+          "item_id": "8896479688",
+          "options": {
+            "color": "white",
+            "sensor type": "optical",
+            "connectivity": "wireless"
+          },
+          "available": true,
+          "price": 143.15
+        },
+        "8214883393": {
+          "item_id": "8214883393",
+          "options": {
+            "color": "black",
+            "sensor type": "laser",
+            "connectivity": "wireless"
+          },
+          "available": true,
+          "price": 150.58
+        },
+        "7420906769": {
+          "item_id": "7420906769",
+          "options": {
+            "color": "white",
+            "sensor type": "laser",
+            "connectivity": "wireless"
+          },
+          "available": false,
+          "price": 138.47
+        }
+      }
+    },
+    "3377618313": {
+      "name": "Action Camera",
+      "product_id": "3377618313",
+      "variants": {
+        "5436236388": {
+          "item_id": "5436236388",
+          "options": {
+            "resolution": "1080p",
+            "waterproof": "yes",
+            "color": "silver"
+          },
+          "available": false,
+          "price": 538.6
+        },
+        "6700049080": {
+          "item_id": "6700049080",
+          "options": {
+            "resolution": "4K",
+            "waterproof": "yes",
+            "color": "black"
+          },
+          "available": true,
+          "price": 466.75
+        },
+        "1586641416": {
+          "item_id": "1586641416",
+          "options": {
+            "resolution": "5K",
+            "waterproof": "yes",
+            "color": "silver"
+          },
+          "available": false,
+          "price": 497.39
+        },
+        "6117189161": {
+          "item_id": "6117189161",
+          "options": {
+            "resolution": "4K",
+            "waterproof": "yes",
+            "color": "silver"
+          },
+          "available": true,
+          "price": 481.5
+        },
+        "5925362855": {
+          "item_id": "5925362855",
+          "options": {
+            "resolution": "1080p",
+            "waterproof": "yes",
+            "color": "black"
+          },
+          "available": true,
+          "price": 503.51
+        },
+        "4859937227": {
+          "item_id": "4859937227",
+          "options": {
+            "resolution": "5K",
+            "waterproof": "no",
+            "color": "silver"
+          },
+          "available": false,
+          "price": 503.58
+        }
+      }
+    },
+    "6679515468": {
+      "name": "Garden Hose",
+      "product_id": "6679515468",
+      "variants": {
+        "9829827210": {
+          "item_id": "9829827210",
+          "options": {
+            "length": "25ft",
+            "material": "vinyl",
+            "color": "blue"
+          },
+          "available": true,
+          "price": 90.43
+        },
+        "5206946487": {
+          "item_id": "5206946487",
+          "options": {
+            "length": "50ft",
+            "material": "vinyl",
+            "color": "black"
+          },
+          "available": true,
+          "price": 95.08
+        },
+        "3369928769": {
+          "item_id": "3369928769",
+          "options": {
+            "length": "25ft",
+            "material": "vinyl",
+            "color": "green"
+          },
+          "available": true,
+          "price": 97.35
+        },
+        "5753502325": {
+          "item_id": "5753502325",
+          "options": {
+            "length": "25ft",
+            "material": "rubber",
+            "color": "green"
+          },
+          "available": false,
+          "price": 96.35
+        }
+      }
+    },
+    "7363354090": {
+      "name": "Hiking Boots",
+      "product_id": "7363354090",
+      "variants": {
+        "2185126308": {
+          "item_id": "2185126308",
+          "options": {
+            "size": "10",
+            "material": "leather",
+            "waterproof": "no"
+          },
+          "available": false,
+          "price": 241.9
+        },
+        "2648909398": {
+          "item_id": "2648909398",
+          "options": {
+            "size": "8",
+            "material": "leather",
+            "waterproof": "yes"
+          },
+          "available": false,
+          "price": 240.87
+        },
+        "8277474082": {
+          "item_id": "8277474082",
+          "options": {
+            "size": "12",
+            "material": "leather",
+            "waterproof": "yes"
+          },
+          "available": true,
+          "price": 236.57
+        },
+        "4582956489": {
+          "item_id": "4582956489",
+          "options": {
+            "size": "12",
+            "material": "synthetic",
+            "waterproof": "no"
+          },
+          "available": true,
+          "price": 241.96
+        },
+        "3812493782": {
+          "item_id": "3812493782",
+          "options": {
+            "size": "7",
+            "material": "leather",
+            "waterproof": "yes"
+          },
+          "available": true,
+          "price": 244.34
+        },
+        "2658930189": {
+          "item_id": "2658930189",
+          "options": {
+            "size": "9",
+            "material": "synthetic",
+            "waterproof": "yes"
+          },
+          "available": false,
+          "price": 241.68
+        }
+      }
+    },
+    "8024098596": {
+      "name": "Tablet",
+      "product_id": "8024098596",
+      "variants": {
+        "3788616824": {
+          "item_id": "3788616824",
+          "options": {
+            "screen size": "10-inch",
+            "storage": "128GB",
+            "color": "black"
+          },
+          "available": false,
+          "price": 951.21
+        },
+        "2235648106": {
+          "item_id": "2235648106",
+          "options": {
+            "screen size": "10-inch",
+            "storage": "32GB",
+            "color": "black"
+          },
+          "available": true,
+          "price": 1054.43
+        },
+        "7535423717": {
+          "item_id": "7535423717",
+          "options": {
+            "screen size": "8-inch",
+            "storage": "128GB",
+            "color": "silver"
+          },
+          "available": false,
+          "price": 904.46
+        }
+      }
+    },
+    "3801771308": {
+      "name": "E-Reader",
+      "product_id": "3801771308",
+      "variants": {
+        "4273929280": {
+          "item_id": "4273929280",
+          "options": {
+            "screen size": "7-inch",
+            "connectivity": "Wi-Fi + Cellular",
+            "storage": "32GB"
+          },
+          "available": true,
+          "price": 244.95
+        },
+        "7609274509": {
+          "item_id": "7609274509",
+          "options": {
+            "screen size": "8-inch",
+            "connectivity": "Wi-Fi",
+            "storage": "32GB"
+          },
+          "available": true,
+          "price": 243.4
+        },
+        "9494281769": {
+          "item_id": "9494281769",
+          "options": {
+            "screen size": "8-inch",
+            "connectivity": "Wi-Fi",
+            "storage": "8GB"
+          },
+          "available": true,
+          "price": 252.06
+        },
+        "5510402676": {
+          "item_id": "5510402676",
+          "options": {
+            "screen size": "6-inch",
+            "connectivity": "Wi-Fi",
+            "storage": "8GB"
+          },
+          "available": true,
+          "price": 267.07
+        },
+        "6268080249": {
+          "item_id": "6268080249",
+          "options": {
+            "screen size": "7-inch",
+            "connectivity": "Wi-Fi",
+            "storage": "8GB"
+          },
+          "available": false,
+          "price": 244.02
+        }
+      }
+    },
+    "6942297802": {
+      "name": "Portable Charger",
+      "product_id": "6942297802",
+      "variants": {
+        "7866854614": {
+          "item_id": "7866854614",
+          "options": {
+            "capacity": "5000mAh",
+            "output": "USB-C",
+            "color": "white"
+          },
+          "available": true,
+          "price": 105.49
+        },
+        "8349903180": {
+          "item_id": "8349903180",
+          "options": {
+            "capacity": "20000mAh",
+            "output": "Wireless",
+            "color": "black"
+          },
+          "available": true,
+          "price": 102.07
+        },
+        "8827799340": {
+          "item_id": "8827799340",
+          "options": {
+            "capacity": "5000mAh",
+            "output": "Wireless",
+            "color": "black"
+          },
+          "available": false,
+          "price": 106.44
+        }
+      }
+    },
+    "2985987096": {
+      "name": "Indoor Security Camera",
+      "product_id": "2985987096",
+      "variants": {
+        "8470360507": {
+          "item_id": "8470360507",
+          "options": {
+            "resolution": "2K",
+            "field of view": "130 degrees",
+            "connectivity": "Ethernet"
+          },
+          "available": true,
+          "price": 291.31
+        },
+        "5810561222": {
+          "item_id": "5810561222",
+          "options": {
+            "resolution": "4K",
+            "field of view": "130 degrees",
+            "connectivity": "Wi-Fi"
+          },
+          "available": false,
+          "price": 274.98
+        },
+        "1999523885": {
+          "item_id": "1999523885",
+          "options": {
+            "resolution": "4K",
+            "field of view": "160 degrees",
+            "connectivity": "Wi-Fi"
+          },
+          "available": false,
+          "price": 294.47
+        }
+      }
+    },
+    "1075968781": {
+      "name": "Electric Kettle",
+      "product_id": "1075968781",
+      "variants": {
+        "4064702754": {
+          "item_id": "4064702754",
+          "options": {
+            "capacity": "2L",
+            "material": "glass",
+            "color": "white"
+          },
+          "available": true,
+          "price": 159.78
+        },
+        "8142779083": {
+          "item_id": "8142779083",
+          "options": {
+            "capacity": "1L",
+            "material": "stainless steel",
+            "color": "silver"
+          },
+          "available": false,
+          "price": 157.53
+        },
+        "5428723833": {
+          "item_id": "5428723833",
+          "options": {
+            "capacity": "1.5L",
+            "material": "plastic",
+            "color": "black"
+          },
+          "available": true,
+          "price": 145.48
+        }
+      }
+    },
+    "1656367028": {
+      "name": "Mechanical Keyboard",
+      "product_id": "1656367028",
+      "variants": {
+        "7658724607": {
+          "item_id": "7658724607",
+          "options": {
+            "switch type": "tactile",
+            "backlight": "none",
+            "size": "80%"
+          },
+          "available": true,
+          "price": 256.73
+        },
+        "6342039236": {
+          "item_id": "6342039236",
+          "options": {
+            "switch type": "clicky",
+            "backlight": "white",
+            "size": "full size"
+          },
+          "available": true,
+          "price": 244.91
+        },
+        "9991484137": {
+          "item_id": "9991484137",
+          "options": {
+            "switch type": "tactile",
+            "backlight": "white",
+            "size": "80%"
+          },
+          "available": true,
+          "price": 240.97
+        },
+        "1421289881": {
+          "item_id": "1421289881",
+          "options": {
+            "switch type": "linear",
+            "backlight": "none",
+            "size": "80%"
+          },
+          "available": true,
+          "price": 268.77
+        },
+        "7706410293": {
+          "item_id": "7706410293",
+          "options": {
+            "switch type": "clicky",
+            "backlight": "none",
+            "size": "full size"
+          },
+          "available": true,
+          "price": 269.16
+        },
+        "9690244451": {
+          "item_id": "9690244451",
+          "options": {
+            "switch type": "clicky",
+            "backlight": "RGB",
+            "size": "60%"
+          },
+          "available": false,
+          "price": 236.51
+        }
+      }
+    },
+    "9924732112": {
+      "name": "Wireless Earbuds",
+      "product_id": "9924732112",
+      "variants": {
+        "1646531091": {
+          "item_id": "1646531091",
+          "options": {
+            "color": "blue",
+            "battery life": "6 hours",
+            "water resistance": "IPX4"
+          },
+          "available": true,
+          "price": 232.49
+        },
+        "2757705742": {
+          "item_id": "2757705742",
+          "options": {
+            "color": "blue",
+            "battery life": "4 hours",
+            "water resistance": "IPX7"
+          },
+          "available": false,
+          "price": 258.97
+        },
+        "6452271382": {
+          "item_id": "6452271382",
+          "options": {
+            "color": "blue",
+            "battery life": "4 hours",
+            "water resistance": "IPX4"
+          },
+          "available": true,
+          "price": 258.84
+        },
+        "8555936349": {
+          "item_id": "8555936349",
+          "options": {
+            "color": "blue",
+            "battery life": "8 hours",
+            "water resistance": "IPX4"
+          },
+          "available": true,
+          "price": 226.49
+        },
+        "2052249669": {
+          "item_id": "2052249669",
+          "options": {
+            "color": "white",
+            "battery life": "4 hours",
+            "water resistance": "not resistant"
+          },
+          "available": true,
+          "price": 237.14
+        },
+        "6077640618": {
+          "item_id": "6077640618",
+          "options": {
+            "color": "blue",
+            "battery life": "8 hours",
+            "water resistance": "not resistant"
+          },
+          "available": true,
+          "price": 242.92
+        },
+        "2499294441": {
+          "item_id": "2499294441",
+          "options": {
+            "color": "black",
+            "battery life": "8 hours",
+            "water resistance": "IPX7"
+          },
+          "available": false,
+          "price": 258.36
+        }
+      }
+    },
+    "4896585277": {
+      "name": "Smart Thermostat",
+      "product_id": "4896585277",
+      "variants": {
+        "8722653925": {
+          "item_id": "8722653925",
+          "options": {
+            "compatibility": "Google Assistant",
+            "color": "white"
+          },
+          "available": false,
+          "price": 227.8
+        },
+        "8593894906": {
+          "item_id": "8593894906",
+          "options": {
+            "compatibility": "Amazon Alexa",
+            "color": "white"
+          },
+          "available": false,
+          "price": 263.11
+        },
+        "2791467853": {
+          "item_id": "2791467853",
+          "options": {
+            "compatibility": "Google Assistant",
+            "color": "stainless steel"
+          },
+          "available": false,
+          "price": 242.53
+        }
+      }
+    },
+    "8560156827": {
+      "name": "Fleece Jacket",
+      "product_id": "8560156827",
+      "variants": {
+        "8590708195": {
+          "item_id": "8590708195",
+          "options": {
+            "size": "XL",
+            "color": "navy",
+            "zipper": "half"
+          },
+          "available": true,
+          "price": 157.61
+        },
+        "8733974883": {
+          "item_id": "8733974883",
+          "options": {
+            "size": "L",
+            "color": "red",
+            "zipper": "half"
+          },
+          "available": true,
+          "price": 153.18
+        },
+        "8161321868": {
+          "item_id": "8161321868",
+          "options": {
+            "size": "XS",
+            "color": "navy",
+            "zipper": "full"
+          },
+          "available": true,
+          "price": 152.45
+        },
+        "7528037711": {
+          "item_id": "7528037711",
+          "options": {
+            "size": "XL",
+            "color": "navy",
+            "zipper": "full"
+          },
+          "available": true,
+          "price": 157.86
+        },
+        "9385662952": {
+          "item_id": "9385662952",
+          "options": {
+            "size": "L",
+            "color": "black",
+            "zipper": "full"
+          },
+          "available": true,
+          "price": 159.92
+        },
+        "4728397765": {
+          "item_id": "4728397765",
+          "options": {
+            "size": "M",
+            "color": "black",
+            "zipper": "full"
+          },
+          "available": false,
+          "price": 149.48
+        }
+      }
+    },
+    "2344688344": {
+      "name": "Wall Clock",
+      "product_id": "2344688344",
+      "variants": {
+        "6534134392": {
+          "item_id": "6534134392",
+          "options": {
+            "diameter": "10 inches",
+            "color": "wood",
+            "type": "analog"
+          },
+          "available": true,
+          "price": 196.15
+        },
+        "8610532516": {
+          "item_id": "8610532516",
+          "options": {
+            "diameter": "10 inches",
+            "color": "black",
+            "type": "digital"
+          },
+          "available": true,
+          "price": 203.76
+        },
+        "7791931443": {
+          "item_id": "7791931443",
+          "options": {
+            "diameter": "14 inches",
+            "color": "black",
+            "type": "analog"
+          },
+          "available": true,
+          "price": 195.63
+        },
+        "6508153405": {
+          "item_id": "6508153405",
+          "options": {
+            "diameter": "12 inches",
+            "color": "white",
+            "type": "analog"
+          },
+          "available": true,
+          "price": 191.55
+        },
+        "8917609800": {
+          "item_id": "8917609800",
+          "options": {
+            "diameter": "10 inches",
+            "color": "white",
+            "type": "digital"
+          },
+          "available": false,
+          "price": 195.59
+        }
+      }
+    },
+    "7233192239": {
+      "name": "Dumbbell Set",
+      "product_id": "7233192239",
+      "variants": {
+        "8140269513": {
+          "item_id": "8140269513",
+          "options": {
+            "weight range": "55-75 lbs",
+            "material": "rubber",
+            "set type": "adjustable"
+          },
+          "available": false,
+          "price": 528.12
+        },
+        "2444431651": {
+          "item_id": "2444431651",
+          "options": {
+            "weight range": "55-75 lbs",
+            "material": "iron",
+            "set type": "fixed"
+          },
+          "available": true,
+          "price": 534.84
+        },
+        "8068777068": {
+          "item_id": "8068777068",
+          "options": {
+            "weight range": "5-25 lbs",
+            "material": "rubber",
+            "set type": "fixed"
+          },
+          "available": true,
+          "price": 507.13
+        }
+      }
+    },
+    "2747247837": {
+      "name": "Pet Bed",
+      "product_id": "2747247837",
+      "variants": {
+        "3360679910": {
+          "item_id": "3360679910",
+          "options": {
+            "size": "medium",
+            "material": "memory foam",
+            "color": "beige"
+          },
+          "available": true,
+          "price": 195.26
+        },
+        "4537595158": {
+          "item_id": "4537595158",
+          "options": {
+            "size": "small",
+            "material": "fleece",
+            "color": "brown"
+          },
+          "available": false,
+          "price": 193.79
+        },
+        "6499892866": {
+          "item_id": "6499892866",
+          "options": {
+            "size": "medium",
+            "material": "polyester",
+            "color": "beige"
+          },
+          "available": true,
+          "price": 191.21
+        }
+      }
+    },
+    "4354588079": {
+      "name": "Espresso Machine",
+      "product_id": "4354588079",
+      "variants": {
+        "6242772310": {
+          "item_id": "6242772310",
+          "options": {
+            "pressure": "19 bar",
+            "capacity": "1L",
+            "type": "automatic"
+          },
+          "available": false,
+          "price": 2996.03
+        },
+        "7407838442": {
+          "item_id": "7407838442",
+          "options": {
+            "pressure": "9 bar",
+            "capacity": "1L",
+            "type": "manual"
+          },
+          "available": true,
+          "price": 3081.91
+        },
+        "6200867091": {
+          "item_id": "6200867091",
+          "options": {
+            "pressure": "19 bar",
+            "capacity": "1L",
+            "type": "capsule"
+          },
+          "available": true,
+          "price": 2955.17
+        },
+        "3815173328": {
+          "item_id": "3815173328",
+          "options": {
+            "pressure": "9 bar",
+            "capacity": "1.5L",
+            "type": "capsule"
+          },
+          "available": true,
+          "price": 2908.42
+        },
+        "1157853815": {
+          "item_id": "1157853815",
+          "options": {
+            "pressure": "19 bar",
+            "capacity": "2L",
+            "type": "capsule"
+          },
+          "available": true,
+          "price": 3096.7
+        },
+        "2190871011": {
+          "item_id": "2190871011",
+          "options": {
+            "pressure": "9 bar",
+            "capacity": "1.5L",
+            "type": "manual"
+          },
+          "available": true,
+          "price": 3105.6
+        },
+        "6324294385": {
+          "item_id": "6324294385",
+          "options": {
+            "pressure": "9 bar",
+            "capacity": "1L",
+            "type": "automatic"
+          },
+          "available": false,
+          "price": 2719.01
+        }
+      }
+    },
+    "7765186836": {
+      "name": "Cycling Helmet",
+      "product_id": "7765186836",
+      "variants": {
+        "5886093635": {
+          "item_id": "5886093635",
+          "options": {
+            "size": "S",
+            "color": "blue",
+            "ventilation": "low"
+          },
+          "available": true,
+          "price": 208.04
+        },
+        "3339188619": {
+          "item_id": "3339188619",
+          "options": {
+            "size": "M",
+            "color": "blue",
+            "ventilation": "low"
+          },
+          "available": false,
+          "price": 200.24
+        },
+        "3358616356": {
+          "item_id": "3358616356",
+          "options": {
+            "size": "S",
+            "color": "red",
+            "ventilation": "low"
+          },
+          "available": true,
+          "price": 197.33
+        },
+        "1665571435": {
+          "item_id": "1665571435",
+          "options": {
+            "size": "L",
+            "color": "black",
+            "ventilation": "high"
+          },
+          "available": true,
+          "price": 196.89
+        },
+        "5537798301": {
+          "item_id": "5537798301",
+          "options": {
+            "size": "S",
+            "color": "black",
+            "ventilation": "medium"
+          },
+          "available": true,
+          "price": 204.47
+        },
+        "1719127154": {
+          "item_id": "1719127154",
+          "options": {
+            "size": "M",
+            "color": "red",
+            "ventilation": "medium"
+          },
+          "available": true,
+          "price": 206.26
+        },
+        "1676105083": {
+          "item_id": "1676105083",
+          "options": {
+            "size": "S",
+            "color": "blue",
+            "ventilation": "high"
+          },
+          "available": false,
+          "price": 191.56
+        }
+      }
+    },
+    "2696197613": {
+      "name": "LED Light Bulb",
+      "product_id": "2696197613",
+      "variants": {
+        "7445824652": {
+          "item_id": "7445824652",
+          "options": {
+            "brightness": "75W equivalent",
+            "color temperature": "daylight",
+            "connectivity": "Wi-Fi"
+          },
+          "available": true,
+          "price": 49.8
+        },
+        "3034017579": {
+          "item_id": "3034017579",
+          "options": {
+            "brightness": "75W equivalent",
+            "color temperature": "warm white",
+            "connectivity": "Wi-Fi"
+          },
+          "available": false,
+          "price": 49.72
+        },
+        "5111440845": {
+          "item_id": "5111440845",
+          "options": {
+            "brightness": "60W equivalent",
+            "color temperature": "daylight",
+            "connectivity": "Bluetooth"
+          },
+          "available": true,
+          "price": 48.55
+        }
+      }
+    },
+    "8940227892": {
+      "name": "Digital Camera",
+      "product_id": "8940227892",
+      "variants": {
+        "7255224608": {
+          "item_id": "7255224608",
+          "options": {
+            "resolution": "30MP",
+            "zoom": "3x",
+            "storage": "CF card"
+          },
+          "available": true,
+          "price": 2922.97
+        },
+        "7195021808": {
+          "item_id": "7195021808",
+          "options": {
+            "resolution": "30MP",
+            "zoom": "5x",
+            "storage": "SD card"
+          },
+          "available": false,
+          "price": 2909.87
+        },
+        "5996159312": {
+          "item_id": "5996159312",
+          "options": {
+            "resolution": "24MP",
+            "zoom": "3x",
+            "storage": "SD card"
+          },
+          "available": true,
+          "price": 2895.55
+        },
+        "1804581713": {
+          "item_id": "1804581713",
+          "options": {
+            "resolution": "30MP",
+            "zoom": "3x",
+            "storage": "SD card"
+          },
+          "available": true,
+          "price": 2875.61
+        },
+        "8363011723": {
+          "item_id": "8363011723",
+          "options": {
+            "resolution": "20MP",
+            "zoom": "3x",
+            "storage": "SD card"
+          },
+          "available": true,
+          "price": 2823.96
+        },
+        "6384525445": {
+          "item_id": "6384525445",
+          "options": {
+            "resolution": "30MP",
+            "zoom": "5x",
+            "storage": "CF card"
+          },
+          "available": true,
+          "price": 2929.62
+        },
+        "9228757377": {
+          "item_id": "9228757377",
+          "options": {
+            "resolution": "30MP",
+            "zoom": "10x",
+            "storage": "SD card"
+          },
+          "available": true,
+          "price": 3066.23
+        },
+        "3892645120": {
+          "item_id": "3892645120",
+          "options": {
+            "resolution": "30MP",
+            "zoom": "10x",
+            "storage": "CF card"
+          },
+          "available": false,
+          "price": 3070.64
+        }
+      }
+    },
+    "8600330539": {
+      "name": "Bookshelf",
+      "product_id": "8600330539",
+      "variants": {
+        "8895454203": {
+          "item_id": "8895454203",
+          "options": {
+            "material": "glass",
+            "color": "white",
+            "height": "5 ft"
+          },
+          "available": true,
+          "price": 504.65
+        },
+        "7154215719": {
+          "item_id": "7154215719",
+          "options": {
+            "material": "wood",
+            "color": "brown",
+            "height": "6 ft"
+          },
+          "available": true,
+          "price": 505.62
+        },
+        "1768466237": {
+          "item_id": "1768466237",
+          "options": {
+            "material": "glass",
+            "color": "black",
+            "height": "3 ft"
+          },
+          "available": true,
+          "price": 549.84
+        },
+        "1673859111": {
+          "item_id": "1673859111",
+          "options": {
+            "material": "wood",
+            "color": "black",
+            "height": "4 ft"
+          },
+          "available": true,
+          "price": 484.96
+        },
+        "2244749153": {
+          "item_id": "2244749153",
+          "options": {
+            "material": "wood",
+            "color": "brown",
+            "height": "5 ft"
+          },
+          "available": true,
+          "price": 473.82
+        },
+        "8920458606": {
+          "item_id": "8920458606",
+          "options": {
+            "material": "wood",
+            "color": "white",
+            "height": "4 ft"
+          },
+          "available": true,
+          "price": 510.02
+        },
+        "2960542086": {
+          "item_id": "2960542086",
+          "options": {
+            "material": "wood",
+            "color": "black",
+            "height": "5 ft"
+          },
+          "available": true,
+          "price": 512.77
+        },
+        "7373893106": {
+          "item_id": "7373893106",
+          "options": {
+            "material": "glass",
+            "color": "white",
+            "height": "4 ft"
+          },
+          "available": false,
+          "price": 531.22
+        }
+      }
+    },
+    "9783735446": {
+      "name": "Bicycle",
+      "product_id": "9783735446",
+      "variants": {
+        "7758198585": {
+          "item_id": "7758198585",
+          "options": {
+            "frame size": "medium",
+            "color": "green",
+            "type": "road"
+          },
+          "available": true,
+          "price": 1917.21
+        },
+        "5606522780": {
+          "item_id": "5606522780",
+          "options": {
+            "frame size": "large",
+            "color": "red",
+            "type": "mountain"
+          },
+          "available": true,
+          "price": 1902.67
+        },
+        "6170152315": {
+          "item_id": "6170152315",
+          "options": {
+            "frame size": "small",
+            "color": "red",
+            "type": "mountain"
+          },
+          "available": false,
+          "price": 1814.72
+        }
+      }
+    },
+    "7471004230": {
+      "name": "Sneakers",
+      "product_id": "7471004230",
+      "variants": {
+        "9727387530": {
+          "item_id": "9727387530",
+          "options": {
+            "size": "11",
+            "color": "black",
+            "material": "synthetic"
+          },
+          "available": false,
+          "price": 207.75
+        },
+        "4410138384": {
+          "item_id": "4410138384",
+          "options": {
+            "size": "8",
+            "color": "gray",
+            "material": "canvas"
+          },
+          "available": false,
+          "price": 197.37
+        },
+        "2509076505": {
+          "item_id": "2509076505",
+          "options": {
+            "size": "10",
+            "color": "gray",
+            "material": "leather"
+          },
+          "available": true,
+          "price": 189.5
+        },
+        "6477915553": {
+          "item_id": "6477915553",
+          "options": {
+            "size": "6",
+            "color": "black",
+            "material": "synthetic"
+          },
+          "available": true,
+          "price": 186.45
+        },
+        "3631875806": {
+          "item_id": "3631875806",
+          "options": {
+            "size": "11",
+            "color": "red",
+            "material": "leather"
+          },
+          "available": false,
+          "price": 203.82
+        }
+      }
+    },
+    "4794339885": {
+      "name": "Office Chair",
+      "product_id": "4794339885",
+      "variants": {
+        "1793929609": {
+          "item_id": "1793929609",
+          "options": {
+            "material": "fabric",
+            "color": "black",
+            "armrest": "none",
+            "backrest height": "high-back"
+          },
+          "available": true,
+          "price": 514.34
+        },
+        "4274709903": {
+          "item_id": "4274709903",
+          "options": {
+            "material": "mesh",
+            "color": "red",
+            "armrest": "none",
+            "backrest height": "standard"
+          },
+          "available": true,
+          "price": 544.29
+        },
+        "8426249116": {
+          "item_id": "8426249116",
+          "options": {
+            "material": "fabric",
+            "color": "black",
+            "armrest": "fixed",
+            "backrest height": "standard"
+          },
+          "available": true,
+          "price": 488.81
+        }
+      }
+    },
+    "6945232052": {
+      "name": "Smart Watch",
+      "product_id": "6945232052",
+      "variants": {
+        "2993891288": {
+          "item_id": "2993891288",
+          "options": {
+            "color": "silver",
+            "band material": "leather",
+            "display": "AMOLED"
+          },
+          "available": false,
+          "price": 383.08
+        },
+        "2681513500": {
+          "item_id": "2681513500",
+          "options": {
+            "color": "gold",
+            "band material": "silicone",
+            "display": "AMOLED"
+          },
+          "available": true,
+          "price": 356.23
+        },
+        "4920090458": {
+          "item_id": "4920090458",
+          "options": {
+            "color": "black",
+            "band material": "silicone",
+            "display": "AMOLED"
+          },
+          "available": false,
+          "price": 381.87
+        },
+        "5694328282": {
+          "item_id": "5694328282",
+          "options": {
+            "color": "gold",
+            "band material": "leather",
+            "display": "AMOLED"
+          },
+          "available": true,
+          "price": 323.19
+        },
+        "2860956907": {
+          "item_id": "2860956907",
+          "options": {
+            "color": "black",
+            "band material": "silicone",
+            "display": "LCD"
+          },
+          "available": true,
+          "price": 315.61
+        },
+        "9811090008": {
+          "item_id": "9811090008",
+          "options": {
+            "color": "silver",
+            "band material": "leather",
+            "display": "LCD"
+          },
+          "available": true,
+          "price": 370.38
+        },
+        "9408160950": {
+          "item_id": "9408160950",
+          "options": {
+            "color": "gold",
+            "band material": "leather",
+            "display": "LCD"
+          },
+          "available": true,
+          "price": 381.26
+        },
+        "9320099340": {
+          "item_id": "9320099340",
+          "options": {
+            "color": "black",
+            "band material": "leather",
+            "display": "AMOLED"
+          },
+          "available": false,
+          "price": 375.03
+        }
+      }
+    },
+    "9832717871": {
+      "name": "Tea Kettle",
+      "product_id": "9832717871",
+      "variants": {
+        "7497340597": {
+          "item_id": "7497340597",
+          "options": {
+            "material": "ceramic",
+            "capacity": "1.5 liters",
+            "stovetop compatibility": "gas"
+          },
+          "available": false,
+          "price": 100.83
+        },
+        "4238115171": {
+          "item_id": "4238115171",
+          "options": {
+            "material": "stainless steel",
+            "capacity": "2 liters",
+            "stovetop compatibility": "gas"
+          },
+          "available": true,
+          "price": 91.78
+        },
+        "3909406921": {
+          "item_id": "3909406921",
+          "options": {
+            "material": "glass",
+            "capacity": "1 liter",
+            "stovetop compatibility": "gas"
+          },
+          "available": true,
+          "price": 98.25
+        },
+        "2820119811": {
+          "item_id": "2820119811",
+          "options": {
+            "material": "glass",
+            "capacity": "2 liters",
+            "stovetop compatibility": "electric"
+          },
+          "available": true,
+          "price": 94.68
+        },
+        "7292993796": {
+          "item_id": "7292993796",
+          "options": {
+            "material": "glass",
+            "capacity": "2 liters",
+            "stovetop compatibility": "induction"
+          },
+          "available": true,
+          "price": 94.8
+        },
+        "9747045638": {
+          "item_id": "9747045638",
+          "options": {
+            "material": "glass",
+            "capacity": "1 liter",
+            "stovetop compatibility": "electric"
+          },
+          "available": true,
+          "price": 94.01
+        },
+        "3738831434": {
+          "item_id": "3738831434",
+          "options": {
+            "material": "stainless steel",
+            "capacity": "1.5 liters",
+            "stovetop compatibility": "induction"
+          },
+          "available": true,
+          "price": 98.89
+        },
+        "6454334990": {
+          "item_id": "6454334990",
+          "options": {
+            "material": "glass",
+            "capacity": "1.5 liters",
+            "stovetop compatibility": "induction"
+          },
+          "available": false,
+          "price": 98.82
+        }
+      }
+    },
+    "5426915165": {
+      "name": "Luggage Set",
+      "product_id": "5426915165",
+      "variants": {
+        "5209958006": {
+          "item_id": "5209958006",
+          "options": {
+            "piece count": "2-piece",
+            "color": "silver",
+            "material": "hardshell"
+          },
+          "available": false,
+          "price": 514.72
+        },
+        "6690069155": {
+          "item_id": "6690069155",
+          "options": {
+            "piece count": "3-piece",
+            "color": "silver",
+            "material": "softshell"
+          },
+          "available": false,
+          "price": 466.47
+        },
+        "8759627937": {
+          "item_id": "8759627937",
+          "options": {
+            "piece count": "4-piece",
+            "color": "blue",
+            "material": "softshell"
+          },
+          "available": true,
+          "price": 501.65
+        }
+      }
+    },
+    "9743693396": {
+      "name": "Patio Umbrella",
+      "product_id": "9743693396",
+      "variants": {
+        "3111466194": {
+          "item_id": "3111466194",
+          "options": {
+            "size": "7 ft",
+            "color": "red",
+            "material": "polyester",
+            "tilt mechanism": "manual tilt"
+          },
+          "available": false,
+          "price": 285.66
+        },
+        "9879255677": {
+          "item_id": "9879255677",
+          "options": {
+            "size": "6 ft",
+            "color": "green",
+            "material": "olefin",
+            "tilt mechanism": "auto tilt"
+          },
+          "available": true,
+          "price": 288.82
+        },
+        "7068351115": {
+          "item_id": "7068351115",
+          "options": {
+            "size": "7 ft",
+            "color": "black",
+            "material": "polyester",
+            "tilt mechanism": "auto tilt"
+          },
+          "available": true,
+          "price": 300.24
+        },
+        "8170914468": {
+          "item_id": "8170914468",
+          "options": {
+            "size": "6 ft",
+            "color": "red",
+            "material": "olefin",
+            "tilt mechanism": "manual tilt"
+          },
+          "available": false,
+          "price": 316.29
+        }
+      }
+    },
+    "3821016478": {
+      "name": "Air Purifier",
+      "product_id": "3821016478",
+      "variants": {
+        "8302289002": {
+          "item_id": "8302289002",
+          "options": {
+            "room size": "large",
+            "filter type": "HEPA",
+            "features": "night mode"
+          },
+          "available": true,
+          "price": 547.55
+        },
+        "3076708684": {
+          "item_id": "3076708684",
+          "options": {
+            "room size": "medium",
+            "filter type": "HEPA",
+            "features": "quiet operation"
+          },
+          "available": true,
+          "price": 535.97
+        },
+        "7166996157": {
+          "item_id": "7166996157",
+          "options": {
+            "room size": "small",
+            "filter type": "HEPA",
+            "features": "night mode"
+          },
+          "available": true,
+          "price": 518.31
+        },
+        "3676786561": {
+          "item_id": "3676786561",
+          "options": {
+            "room size": "small",
+            "filter type": "HEPA",
+            "features": "quiet operation"
+          },
+          "available": true,
+          "price": 502.7
+        },
+        "5669664287": {
+          "item_id": "5669664287",
+          "options": {
+            "room size": "small",
+            "filter type": "ionic",
+            "features": "quiet operation"
+          },
+          "available": true,
+          "price": 543.68
+        },
+        "6341716129": {
+          "item_id": "6341716129",
+          "options": {
+            "room size": "large",
+            "filter type": "HEPA",
+            "features": "smart sensors"
+          },
+          "available": false,
+          "price": 523.31
+        }
+      }
+    },
+    "5149340237": {
+      "name": "Makeup Kit",
+      "product_id": "5149340237",
+      "variants": {
+        "1709726483": {
+          "item_id": "1709726483",
+          "options": {
+            "skin tone": "medium",
+            "kit size": "basic",
+            "brand": "Brand A"
+          },
+          "available": false,
+          "price": 230.26
+        },
+        "1763705424": {
+          "item_id": "1763705424",
+          "options": {
+            "skin tone": "dark",
+            "kit size": "professional",
+            "brand": "Brand C"
+          },
+          "available": true,
+          "price": 235.44
+        },
+        "3017803871": {
+          "item_id": "3017803871",
+          "options": {
+            "skin tone": "medium",
+            "kit size": "basic",
+            "brand": "Brand C"
+          },
+          "available": true,
+          "price": 237.37
+        },
+        "3913310464": {
+          "item_id": "3913310464",
+          "options": {
+            "skin tone": "dark",
+            "kit size": "basic",
+            "brand": "Brand A"
+          },
+          "available": false,
+          "price": 272.2
+        }
+      }
+    },
+    "1968349452": {
+      "name": "Skateboard",
+      "product_id": "1968349452",
+      "variants": {
+        "5489028872": {
+          "item_id": "5489028872",
+          "options": {
+            "deck material": "plastic",
+            "length": "34 inch",
+            "design": "graphic"
+          },
+          "available": true,
+          "price": 187.71
+        },
+        "5120532699": {
+          "item_id": "5120532699",
+          "options": {
+            "deck material": "maple",
+            "length": "31 inch",
+            "design": "graphic"
+          },
+          "available": true,
+          "price": 187.23
+        },
+        "4545791457": {
+          "item_id": "4545791457",
+          "options": {
+            "deck material": "plastic",
+            "length": "28 inch",
+            "design": "plain"
+          },
+          "available": true,
+          "price": 186.06
+        },
+        "6673921677": {
+          "item_id": "6673921677",
+          "options": {
+            "deck material": "bamboo",
+            "length": "28 inch",
+            "design": "custom"
+          },
+          "available": true,
+          "price": 189.57
+        },
+        "5038485381": {
+          "item_id": "5038485381",
+          "options": {
+            "deck material": "plastic",
+            "length": "31 inch",
+            "design": "custom"
+          },
+          "available": true,
+          "price": 189.65
+        },
+        "2343503231": {
+          "item_id": "2343503231",
+          "options": {
+            "deck material": "maple",
+            "length": "34 inch",
+            "design": "graphic"
+          },
+          "available": false,
+          "price": 196.86
+        }
+      }
+    },
+    "1808611083": {
+      "name": "Jigsaw Puzzle",
+      "product_id": "1808611083",
+      "variants": {
+        "7869640094": {
+          "item_id": "7869640094",
+          "options": {
+            "pieces": "2000",
+            "theme": "animals",
+            "difficulty level": "expert"
+          },
+          "available": false,
+          "price": 47.59
+        },
+        "5645314103": {
+          "item_id": "5645314103",
+          "options": {
+            "pieces": "2000",
+            "theme": "animals",
+            "difficulty level": "intermediate"
+          },
+          "available": true,
+          "price": 46.19
+        },
+        "1096508426": {
+          "item_id": "1096508426",
+          "options": {
+            "pieces": "500",
+            "theme": "art",
+            "difficulty level": "beginner"
+          },
+          "available": true,
+          "price": 46.13
+        },
+        "3112842858": {
+          "item_id": "3112842858",
+          "options": {
+            "pieces": "1000",
+            "theme": "fantasy",
+            "difficulty level": "intermediate"
+          },
+          "available": true,
+          "price": 49.1
+        },
+        "5546244844": {
+          "item_id": "5546244844",
+          "options": {
+            "pieces": "1500",
+            "theme": "art",
+            "difficulty level": "intermediate"
+          },
+          "available": true,
+          "price": 51.59
+        },
+        "3614853563": {
+          "item_id": "3614853563",
+          "options": {
+            "pieces": "2000",
+            "theme": "art",
+            "difficulty level": "intermediate"
+          },
+          "available": false,
+          "price": 46.99
+        }
+      }
+    },
+    "6819683148": {
+      "name": "Grill",
+      "product_id": "6819683148",
+      "variants": {
+        "4404981319": {
+          "item_id": "4404981319",
+          "options": {
+            "type": "electric",
+            "size": "large",
+            "features": "rotisserie"
+          },
+          "available": true,
+          "price": 1031.0
+        },
+        "3876764226": {
+          "item_id": "3876764226",
+          "options": {
+            "type": "electric",
+            "size": "portable",
+            "features": "side burner"
+          },
+          "available": true,
+          "price": 981.47
+        },
+        "5745575001": {
+          "item_id": "5745575001",
+          "options": {
+            "type": "electric",
+            "size": "portable",
+            "features": "rotisserie"
+          },
+          "available": true,
+          "price": 986.65
+        }
+      }
+    },
+    "6992792935": {
+      "name": "Headphones",
+      "product_id": "6992792935",
+      "variants": {
+        "9314474252": {
+          "item_id": "9314474252",
+          "options": {
+            "type": "in-ear",
+            "connectivity": "wireless",
+            "color": "blue"
+          },
+          "available": false,
+          "price": 330.08
+        },
+        "5788631787": {
+          "item_id": "5788631787",
+          "options": {
+            "type": "on-ear",
+            "connectivity": "wireless",
+            "color": "black"
+          },
+          "available": false,
+          "price": 375.55
+        },
+        "3374679624": {
+          "item_id": "3374679624",
+          "options": {
+            "type": "over-ear",
+            "connectivity": "wired",
+            "color": "black"
+          },
+          "available": true,
+          "price": 370.53
+        }
+      }
+    },
+    "1762337868": {
+      "name": "Vacuum Cleaner",
+      "product_id": "1762337868",
+      "variants": {
+        "1304426904": {
+          "item_id": "1304426904",
+          "options": {
+            "type": "canister",
+            "bagged/bagless": "bagless",
+            "features": "HEPA filter"
+          },
+          "available": false,
+          "price": 565.79
+        },
+        "4602305039": {
+          "item_id": "4602305039",
+          "options": {
+            "type": "robotic",
+            "bagged/bagless": "bagged",
+            "features": "cordless"
+          },
+          "available": true,
+          "price": 561.05
+        },
+        "3526747930": {
+          "item_id": "3526747930",
+          "options": {
+            "type": "upright",
+            "bagged/bagless": "bagged",
+            "features": "pet hair removal"
+          },
+          "available": true,
+          "price": 540.12
+        },
+        "4725166838": {
+          "item_id": "4725166838",
+          "options": {
+            "type": "robotic",
+            "bagged/bagless": "bagless",
+            "features": "HEPA filter"
+          },
+          "available": true,
+          "price": 602.11
+        },
+        "7407609582": {
+          "item_id": "7407609582",
+          "options": {
+            "type": "upright",
+            "bagged/bagless": "bagless",
+            "features": "HEPA filter"
+          },
+          "available": true,
+          "price": 602.48
+        },
+        "3019027053": {
+          "item_id": "3019027053",
+          "options": {
+            "type": "upright",
+            "bagged/bagless": "bagless",
+            "features": "cordless"
+          },
+          "available": false,
+          "price": 553.03
+        }
+      }
+    },
+    "6858788497": {
+      "name": "Perfume",
+      "product_id": "6858788497",
+      "variants": {
+        "3399869890": {
+          "item_id": "3399869890",
+          "options": {
+            "scent family": "woody",
+            "size": "100ml",
+            "gender": "men"
+          },
+          "available": true,
+          "price": 312.04
+        },
+        "1325156478": {
+          "item_id": "1325156478",
+          "options": {
+            "scent family": "oriental",
+            "size": "30ml",
+            "gender": "men"
+          },
+          "available": true,
+          "price": 298.52
+        },
+        "8316205423": {
+          "item_id": "8316205423",
+          "options": {
+            "scent family": "woody",
+            "size": "30ml",
+            "gender": "women"
+          },
+          "available": true,
+          "price": 288.75
+        },
+        "9007697085": {
+          "item_id": "9007697085",
+          "options": {
+            "scent family": "fresh",
+            "size": "50ml",
+            "gender": "men"
+          },
+          "available": true,
+          "price": 318.96
+        },
+        "5081446110": {
+          "item_id": "5081446110",
+          "options": {
+            "scent family": "woody",
+            "size": "30ml",
+            "gender": "men"
+          },
+          "available": true,
+          "price": 322.52
+        },
+        "1002370030": {
+          "item_id": "1002370030",
+          "options": {
+            "scent family": "woody",
+            "size": "50ml",
+            "gender": "women"
+          },
+          "available": false,
+          "price": 290.25
+        }
+      }
+    }
+  },
+  "users": {
+    "olivia_ito_3591": {
+      "user_id": "olivia_ito_3591",
+      "name": {
+        "first_name": "Olivia",
+        "last_name": "Ito"
+      },
+      "address": {
+        "address1": "570 Elm Avenue",
+        "address2": "Suite 175",
+        "city": "Denver",
+        "country": "USA",
+        "state": "CO",
+        "zip": "80218"
+      },
+      "email": "olivia.ito5204@example.com",
+      "payment_methods": {
+        "gift_card_7794233": {
+          "source": "gift_card",
+          "id": "gift_card_7794233",
+          "balance": 56.0
+        },
+        "paypal_8049766": {
+          "source": "paypal",
+          "id": "paypal_8049766"
+        },
+        "credit_card_9753331": {
+          "source": "credit_card",
+          "id": "credit_card_9753331",
+          "brand": "visa",
+          "last_four": "9182"
+        }
+      },
+      "orders": [
+        "#W5866402",
+        "#W5353646",
+        "#W5442520",
+        "#W7941031",
+        "#W3657213"
+      ]
+    },
+    "aarav_anderson_8794": {
+      "user_id": "aarav_anderson_8794",
+      "name": {
+        "first_name": "Aarav",
+        "last_name": "Anderson"
+      },
+      "address": {
+        "address1": "931 Maple Drive",
+        "address2": "Suite 985",
+        "city": "Philadelphia",
+        "country": "USA",
+        "state": "PA",
+        "zip": "19031"
+      },
+      "email": "aarav.anderson9752@example.com",
+      "payment_methods": {
+        "gift_card_7245904": {
+          "source": "gift_card",
+          "id": "gift_card_7245904",
+          "balance": 17.0
+        }
+      },
+      "orders": [
+        "#W4316152",
+        "#W9311069",
+        "#W9300146",
+        "#W3220203",
+        "#W3470184"
+      ]
+    },
+    "anya_garcia_3271": {
+      "user_id": "anya_garcia_3271",
+      "name": {
+        "first_name": "Anya",
+        "last_name": "Garcia"
+      },
+      "address": {
+        "address1": "615 Laurel Lane",
+        "address2": "Suite 552",
+        "city": "Philadelphia",
+        "country": "USA",
+        "state": "PA",
+        "zip": "19036"
+      },
+      "email": "anya.garcia2061@example.com",
+      "payment_methods": {
+        "gift_card_4374071": {
+          "source": "gift_card",
+          "id": "gift_card_4374071",
+          "balance": 51.0
+        },
+        "credit_card_8955149": {
+          "source": "credit_card",
+          "id": "credit_card_8955149",
+          "brand": "visa",
+          "last_four": "8674"
+        }
+      },
+      "orders": [
+        "#W4140680",
+        "#W6310710",
+        "#W6436609"
+      ]
+    },
+    "aarav_gonzalez_5113": {
+      "user_id": "aarav_gonzalez_5113",
+      "name": {
+        "first_name": "Aarav",
+        "last_name": "Gonzalez"
+      },
+      "address": {
+        "address1": "264 River Road",
+        "address2": "Suite 604",
+        "city": "San Antonio",
+        "country": "USA",
+        "state": "TX",
+        "zip": "78268"
+      },
+      "email": "aarav.gonzalez9269@example.com",
+      "payment_methods": {
+        "paypal_6121064": {
+          "source": "paypal",
+          "id": "paypal_6121064"
+        },
+        "gift_card_5979071": {
+          "source": "gift_card",
+          "id": "gift_card_5979071",
+          "balance": 96.0
+        }
+      },
+      "orders": [
+        "#W6979932",
+        "#W6797115",
+        "#W9160732"
+      ]
+    },
+    "harper_brown_7363": {
+      "user_id": "harper_brown_7363",
+      "name": {
+        "first_name": "Harper",
+        "last_name": "Brown"
+      },
+      "address": {
+        "address1": "723 Park Avenue",
+        "address2": "Suite 802",
+        "city": "Fort Worth",
+        "country": "USA",
+        "state": "TX",
+        "zip": "76112"
+      },
+      "email": "harper.brown3965@example.com",
+      "payment_methods": {
+        "paypal_2306935": {
+          "source": "paypal",
+          "id": "paypal_2306935"
+        },
+        "credit_card_3240550": {
+          "source": "credit_card",
+          "id": "credit_card_3240550",
+          "brand": "visa",
+          "last_four": "3356"
+        }
+      },
+      "orders": [
+        "#W1840144",
+        "#W2693718",
+        "#W2273069"
+      ]
+    },
+    "emma_smith_8564": {
+      "user_id": "emma_smith_8564",
+      "name": {
+        "first_name": "Emma",
+        "last_name": "Smith"
+      },
+      "address": {
+        "address1": "243 Hillcrest Drive",
+        "address2": "Suite 113",
+        "city": "New York",
+        "country": "USA",
+        "state": "NY",
+        "zip": "10192"
+      },
+      "email": "emma.smith3991@example.com",
+      "payment_methods": {
+        "gift_card_8541487": {
+          "source": "gift_card",
+          "id": "gift_card_8541487",
+          "balance": 62.0
+        },
+        "paypal_6228291": {
+          "source": "paypal",
+          "id": "paypal_6228291"
+        }
+      },
+      "orders": [
+        "#W2417020",
+        "#W5605613",
+        "#W3614011"
+      ]
+    }
+  },
+  "orders": {
+    "#W5866402": {
+      "order_id": "#W5866402",
+      "user_id": "olivia_ito_3591",
+      "address": {
+        "address1": "570 Elm Avenue",
+        "address2": "Suite 175",
+        "city": "Denver",
+        "country": "USA",
+        "state": "CO",
+        "zip": "80218"
+      },
+      "items": [
+        {
+          "name": "Espresso Machine",
+          "product_id": "4354588079",
+          "item_id": "6242772310",
+          "price": 2996.03,
+          "options": {
+            "pressure": "19 bar",
+            "capacity": "1L",
+            "type": "automatic"
+          }
+        },
+        {
+          "name": "Sneakers",
+          "product_id": "7471004230",
+          "item_id": "9727387530",
+          "price": 207.75,
+          "options": {
+            "size": "11",
+            "color": "black",
+            "material": "synthetic"
+          }
+        }
+      ],
+      "status": "delivered",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "203283266934"
+          ],
+          "item_ids": [
+            "6242772310",
+            "9727387530"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 3203.78,
+          "payment_method_id": "paypal_8049766"
+        }
+      ]
+    },
+    "#W5353646": {
+      "order_id": "#W5353646",
+      "user_id": "olivia_ito_3591",
+      "address": {
+        "address1": "570 Elm Avenue",
+        "address2": "Suite 175",
+        "city": "Denver",
+        "country": "USA",
+        "state": "CO",
+        "zip": "80218"
+      },
+      "items": [
+        {
+          "name": "Skateboard",
+          "product_id": "1968349452",
+          "item_id": "5489028872",
+          "price": 187.71,
+          "options": {
+            "deck material": "plastic",
+            "length": "34 inch",
+            "design": "graphic"
+          }
+        }
+      ],
+      "status": "processed",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "632534065413"
+          ],
+          "item_ids": [
+            "5489028872"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 187.71,
+          "payment_method_id": "paypal_8049766"
+        }
+      ]
+    },
+    "#W5442520": {
+      "order_id": "#W5442520",
+      "user_id": "olivia_ito_3591",
+      "address": {
+        "address1": "570 Elm Avenue",
+        "address2": "Suite 175",
+        "city": "Denver",
+        "country": "USA",
+        "state": "CO",
+        "zip": "80218"
+      },
+      "items": [
+        {
+          "name": "Gaming Mouse",
+          "product_id": "5713490933",
+          "item_id": "3330317167",
+          "price": 137.32,
+          "options": {
+            "color": "black",
+            "sensor type": "optical",
+            "connectivity": "wired"
+          }
+        },
+        {
+          "name": "Patio Umbrella",
+          "product_id": "9743693396",
+          "item_id": "3111466194",
+          "price": 285.66,
+          "options": {
+            "size": "7 ft",
+            "color": "red",
+            "material": "polyester",
+            "tilt mechanism": "manual tilt"
+          }
+        },
+        {
+          "name": "Hiking Boots",
+          "product_id": "7363354090",
+          "item_id": "2648909398",
+          "price": 240.87,
+          "options": {
+            "size": "8",
+            "material": "leather",
+            "waterproof": "yes"
+          }
+        }
+      ],
+      "status": "pending",
+      "fulfillments": [],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 663.85,
+          "payment_method_id": "credit_card_9753331"
+        }
+      ]
+    },
+    "#W7941031": {
+      "order_id": "#W7941031",
+      "user_id": "olivia_ito_3591",
+      "address": {
+        "address1": "570 Elm Avenue",
+        "address2": "Suite 175",
+        "city": "Denver",
+        "country": "USA",
+        "state": "CO",
+        "zip": "80218"
+      },
+      "items": [
+        {
+          "name": "Wristwatch",
+          "product_id": "6066914160",
+          "item_id": "1355937109",
+          "price": 1985.3,
+          "options": {
+            "strap material": "leather",
+            "dial color": "white"
+          }
+        },
+        {
+          "name": "Backpack",
+          "product_id": "2524789262",
+          "item_id": "5917587651",
+          "price": 212.79,
+          "options": {
+            "color": "grey",
+            "size": "medium",
+            "material": "polyester",
+            "compartment": "laptop"
+          }
+        }
+      ],
+      "status": "pending",
+      "fulfillments": [],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 2198.09,
+          "payment_method_id": "credit_card_9753331"
+        }
+      ]
+    },
+    "#W3657213": {
+      "order_id": "#W3657213",
+      "user_id": "olivia_ito_3591",
+      "address": {
+        "address1": "570 Elm Avenue",
+        "address2": "Suite 175",
+        "city": "Denver",
+        "country": "USA",
+        "state": "CO",
+        "zip": "80218"
+      },
+      "items": [
+        {
+          "name": "Action Camera",
+          "product_id": "3377618313",
+          "item_id": "6700049080",
+          "price": 466.75,
+          "options": {
+            "resolution": "4K",
+            "waterproof": "yes",
+            "color": "black"
+          }
+        },
+        {
+          "name": "Digital Camera",
+          "product_id": "8940227892",
+          "item_id": "5996159312",
+          "price": 2895.55,
+          "options": {
+            "resolution": "24MP",
+            "zoom": "3x",
+            "storage": "SD card"
+          }
+        },
+        {
+          "name": "Cycling Helmet",
+          "product_id": "7765186836",
+          "item_id": "5886093635",
+          "price": 208.04,
+          "options": {
+            "size": "S",
+            "color": "blue",
+            "ventilation": "low"
+          }
+        }
+      ],
+      "status": "pending",
+      "fulfillments": [],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 3570.34,
+          "payment_method_id": "gift_card_7794233"
+        }
+      ]
+    },
+    "#W4316152": {
+      "order_id": "#W4316152",
+      "user_id": "aarav_anderson_8794",
+      "address": {
+        "address1": "931 Maple Drive",
+        "address2": "Suite 985",
+        "city": "Philadelphia",
+        "country": "USA",
+        "state": "PA",
+        "zip": "19031"
+      },
+      "items": [
+        {
+          "name": "Tea Kettle",
+          "product_id": "9832717871",
+          "item_id": "7292993796",
+          "price": 94.8,
+          "options": {
+            "material": "glass",
+            "capacity": "2 liters",
+            "stovetop compatibility": "induction"
+          }
+        },
+        {
+          "name": "Tea Kettle",
+          "product_id": "9832717871",
+          "item_id": "7292993796",
+          "price": 94.8,
+          "options": {
+            "material": "glass",
+            "capacity": "2 liters",
+            "stovetop compatibility": "induction"
+          }
+        }
+      ],
+      "status": "delivered",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "555227871167"
+          ],
+          "item_ids": [
+            "7292993796",
+            "7292993796"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 189.6,
+          "payment_method_id": "gift_card_7245904"
+        }
+      ]
+    },
+    "#W9311069": {
+      "order_id": "#W9311069",
+      "user_id": "aarav_anderson_8794",
+      "address": {
+        "address1": "931 Maple Drive",
+        "address2": "Suite 985",
+        "city": "Philadelphia",
+        "country": "USA",
+        "state": "PA",
+        "zip": "19031"
+      },
+      "items": [
+        {
+          "name": "Bookshelf",
+          "product_id": "8600330539",
+          "item_id": "7154215719",
+          "price": 505.62,
+          "options": {
+            "material": "wood",
+            "color": "brown",
+            "height": "6 ft"
+          }
+        },
+        {
+          "name": "Espresso Machine",
+          "product_id": "4354588079",
+          "item_id": "7407838442",
+          "price": 3081.91,
+          "options": {
+            "pressure": "9 bar",
+            "capacity": "1L",
+            "type": "manual"
+          }
+        },
+        {
+          "name": "Garden Hose",
+          "product_id": "6679515468",
+          "item_id": "9829827210",
+          "price": 90.43,
+          "options": {
+            "length": "25ft",
+            "material": "vinyl",
+            "color": "blue"
+          }
+        },
+        {
+          "name": "Vacuum Cleaner",
+          "product_id": "1762337868",
+          "item_id": "1304426904",
+          "price": 565.79,
+          "options": {
+            "type": "canister",
+            "bagged/bagless": "bagless",
+            "features": "HEPA filter"
+          }
+        },
+        {
+          "name": "Tea Kettle",
+          "product_id": "9832717871",
+          "item_id": "4238115171",
+          "price": 91.78,
+          "options": {
+            "material": "stainless steel",
+            "capacity": "2 liters",
+            "stovetop compatibility": "gas"
+          }
+        }
+      ],
+      "status": "delivered",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "739892591834"
+          ],
+          "item_ids": [
+            "7154215719",
+            "7407838442",
+            "9829827210",
+            "1304426904",
+            "4238115171"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 4335.53,
+          "payment_method_id": "gift_card_7245904"
+        }
+      ]
+    },
+    "#W9300146": {
+      "order_id": "#W9300146",
+      "user_id": "aarav_anderson_8794",
+      "address": {
+        "address1": "931 Maple Drive",
+        "address2": "Suite 985",
+        "city": "Philadelphia",
+        "country": "USA",
+        "state": "PA",
+        "zip": "19031"
+      },
+      "items": [
+        {
+          "name": "Desk Lamp",
+          "product_id": "6817146515",
+          "item_id": "9190635437",
+          "price": 153.23,
+          "options": {
+            "color": "black",
+            "brightness": "low",
+            "power source": "USB"
+          }
+        }
+      ],
+      "status": "pending",
+      "fulfillments": [],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 153.23,
+          "payment_method_id": "gift_card_7245904"
+        }
+      ]
+    },
+    "#W3220203": {
+      "order_id": "#W3220203",
+      "user_id": "aarav_anderson_8794",
+      "address": {
+        "address1": "931 Maple Drive",
+        "address2": "Suite 985",
+        "city": "Philadelphia",
+        "country": "USA",
+        "state": "PA",
+        "zip": "19031"
+      },
+      "items": [
+        {
+          "name": "Bluetooth Speaker",
+          "product_id": "4768869376",
+          "item_id": "5650803029",
+          "price": 324.63,
+          "options": {
+            "color": "black",
+            "battery life": "20 hours",
+            "water resistance": "no"
+          }
+        }
+      ],
+      "status": "processed",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "235384470799"
+          ],
+          "item_ids": [
+            "5650803029"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 324.63,
+          "payment_method_id": "gift_card_7245904"
+        }
+      ]
+    },
+    "#W3470184": {
+      "order_id": "#W3470184",
+      "user_id": "aarav_anderson_8794",
+      "address": {
+        "address1": "931 Maple Drive",
+        "address2": "Suite 985",
+        "city": "Philadelphia",
+        "country": "USA",
+        "state": "PA",
+        "zip": "19031"
+      },
+      "items": [
+        {
+          "name": "Wireless Earbuds",
+          "product_id": "9924732112",
+          "item_id": "6452271382",
+          "price": 258.84,
+          "options": {
+            "color": "blue",
+            "battery life": "4 hours",
+            "water resistance": "IPX4"
+          }
+        },
+        {
+          "name": "Water Bottle",
+          "product_id": "8310926033",
+          "item_id": "2366567022",
+          "price": 54.04,
+          "options": {
+            "capacity": "1000ml",
+            "material": "stainless steel",
+            "color": "blue"
+          }
+        },
+        {
+          "name": "Wireless Earbuds",
+          "product_id": "9924732112",
+          "item_id": "1646531091",
+          "price": 232.49,
+          "options": {
+            "color": "blue",
+            "battery life": "6 hours",
+            "water resistance": "IPX4"
+          }
+        },
+        {
+          "name": "Wireless Earbuds",
+          "product_id": "9924732112",
+          "item_id": "2757705742",
+          "price": 258.97,
+          "options": {
+            "color": "blue",
+            "battery life": "4 hours",
+            "water resistance": "IPX7"
+          }
+        },
+        {
+          "name": "Bookshelf",
+          "product_id": "8600330539",
+          "item_id": "1768466237",
+          "price": 549.84,
+          "options": {
+            "material": "glass",
+            "color": "black",
+            "height": "3 ft"
+          }
+        }
+      ],
+      "status": "delivered",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "326433164179"
+          ],
+          "item_ids": [
+            "6452271382",
+            "2366567022",
+            "1646531091",
+            "2757705742",
+            "1768466237"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 1354.18,
+          "payment_method_id": "gift_card_7245904"
+        }
+      ]
+    },
+    "#W4140680": {
+      "order_id": "#W4140680",
+      "user_id": "anya_garcia_3271",
+      "address": {
+        "address1": "615 Laurel Lane",
+        "address2": "Suite 552",
+        "city": "Philadelphia",
+        "country": "USA",
+        "state": "PA",
+        "zip": "19036"
+      },
+      "items": [
+        {
+          "name": "E-Reader",
+          "product_id": "3801771308",
+          "item_id": "4273929280",
+          "price": 244.95,
+          "options": {
+            "screen size": "7-inch",
+            "connectivity": "Wi-Fi + Cellular",
+            "storage": "32GB"
+          }
+        },
+        {
+          "name": "Bookshelf",
+          "product_id": "8600330539",
+          "item_id": "8895454203",
+          "price": 504.65,
+          "options": {
+            "material": "glass",
+            "color": "white",
+            "height": "5 ft"
+          }
+        },
+        {
+          "name": "Bluetooth Speaker",
+          "product_id": "4768869376",
+          "item_id": "9440686670",
+          "price": 298.91,
+          "options": {
+            "color": "green",
+            "battery life": "20 hours",
+            "water resistance": "no"
+          }
+        }
+      ],
+      "status": "cancelled",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "447833475637"
+          ],
+          "item_ids": [
+            "4273929280",
+            "8895454203",
+            "9440686670"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 1048.51,
+          "payment_method_id": "gift_card_4374071"
+        },
+        {
+          "transaction_type": "refund",
+          "amount": 1048.51,
+          "payment_method_id": "gift_card_4374071"
+        }
+      ]
+    },
+    "#W6310710": {
+      "order_id": "#W6310710",
+      "user_id": "anya_garcia_3271",
+      "address": {
+        "address1": "615 Laurel Lane",
+        "address2": "Suite 552",
+        "city": "Philadelphia",
+        "country": "USA",
+        "state": "PA",
+        "zip": "19036"
+      },
+      "items": [
+        {
+          "name": "Tea Kettle",
+          "product_id": "9832717871",
+          "item_id": "2820119811",
+          "price": 94.68,
+          "options": {
+            "material": "glass",
+            "capacity": "2 liters",
+            "stovetop compatibility": "electric"
+          }
+        }
+      ],
+      "status": "processed",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "951786982868"
+          ],
+          "item_ids": [
+            "2820119811"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 94.68,
+          "payment_method_id": "gift_card_4374071"
+        }
+      ]
+    },
+    "#W6436609": {
+      "order_id": "#W6436609",
+      "user_id": "anya_garcia_3271",
+      "address": {
+        "address1": "615 Laurel Lane",
+        "address2": "Suite 552",
+        "city": "Philadelphia",
+        "country": "USA",
+        "state": "PA",
+        "zip": "19036"
+      },
+      "items": [
+        {
+          "name": "Tea Kettle",
+          "product_id": "9832717871",
+          "item_id": "7497340597",
+          "price": 100.83,
+          "options": {
+            "material": "ceramic",
+            "capacity": "1.5 liters",
+            "stovetop compatibility": "gas"
+          }
+        },
+        {
+          "name": "Smart Watch",
+          "product_id": "6945232052",
+          "item_id": "4920090458",
+          "price": 381.87,
+          "options": {
+            "color": "black",
+            "band material": "silicone",
+            "display": "AMOLED"
+          }
+        },
+        {
+          "name": "Makeup Kit",
+          "product_id": "5149340237",
+          "item_id": "1709726483",
+          "price": 230.26,
+          "options": {
+            "skin tone": "medium",
+            "kit size": "basic",
+            "brand": "Brand A"
+          }
+        },
+        {
+          "name": "Laptop",
+          "product_id": "4760268021",
+          "item_id": "6017636844",
+          "price": 2292.37,
+          "options": {
+            "screen size": "15-inch",
+            "processor": "i7",
+            "ram": "32GB",
+            "storage": "1TB SSD",
+            "color": "space grey"
+          }
+        }
+      ],
+      "status": "pending",
+      "fulfillments": [],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 3005.33,
+          "payment_method_id": "gift_card_4374071"
+        }
+      ]
+    },
+    "#W6979932": {
+      "order_id": "#W6979932",
+      "user_id": "aarav_gonzalez_5113",
+      "address": {
+        "address1": "264 River Road",
+        "address2": "Suite 604",
+        "city": "San Antonio",
+        "country": "USA",
+        "state": "TX",
+        "zip": "78268"
+      },
+      "items": [
+        {
+          "name": "Electric Toothbrush",
+          "product_id": "7352963235",
+          "item_id": "6164262152",
+          "price": 211.11,
+          "options": {
+            "color": "white",
+            "speed settings": "low",
+            "battery type": "rechargeable"
+          }
+        },
+        {
+          "name": "Action Camera",
+          "product_id": "3377618313",
+          "item_id": "1586641416",
+          "price": 497.39,
+          "options": {
+            "resolution": "5K",
+            "waterproof": "yes",
+            "color": "silver"
+          }
+        },
+        {
+          "name": "Cycling Helmet",
+          "product_id": "7765186836",
+          "item_id": "3339188619",
+          "price": 200.24,
+          "options": {
+            "size": "M",
+            "color": "blue",
+            "ventilation": "low"
+          }
+        },
+        {
+          "name": "Smart Watch",
+          "product_id": "6945232052",
+          "item_id": "2993891288",
+          "price": 383.08,
+          "options": {
+            "color": "silver",
+            "band material": "leather",
+            "display": "AMOLED"
+          }
+        }
+      ],
+      "status": "pending",
+      "fulfillments": [],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 1291.82,
+          "payment_method_id": "paypal_6121064"
+        }
+      ]
+    },
+    "#W6797115": {
+      "order_id": "#W6797115",
+      "user_id": "aarav_gonzalez_5113",
+      "address": {
+        "address1": "270 River Road",
+        "address2": "Suite 611",
+        "city": "San Diego",
+        "country": "USA",
+        "state": "CA",
+        "zip": "92194"
+      },
+      "items": [
+        {
+          "name": "Air Purifier",
+          "product_id": "3821016478",
+          "item_id": "8302289002",
+          "price": 547.55,
+          "options": {
+            "room size": "large",
+            "filter type": "HEPA",
+            "features": "night mode"
+          }
+        },
+        {
+          "name": "Mechanical Keyboard",
+          "product_id": "1656367028",
+          "item_id": "7658724607",
+          "price": 256.73,
+          "options": {
+            "switch type": "tactile",
+            "backlight": "none",
+            "size": "80%"
+          }
+        }
+      ],
+      "status": "delivered",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "903322238282"
+          ],
+          "item_ids": [
+            "8302289002",
+            "7658724607"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 804.28,
+          "payment_method_id": "gift_card_5979071"
+        }
+      ]
+    },
+    "#W9160732": {
+      "order_id": "#W9160732",
+      "user_id": "aarav_gonzalez_5113",
+      "address": {
+        "address1": "264 River Road",
+        "address2": "Suite 604",
+        "city": "San Antonio",
+        "country": "USA",
+        "state": "TX",
+        "zip": "78268"
+      },
+      "items": [
+        {
+          "name": "Water Bottle",
+          "product_id": "8310926033",
+          "item_id": "2366567022",
+          "price": 54.04,
+          "options": {
+            "capacity": "1000ml",
+            "material": "stainless steel",
+            "color": "blue"
+          }
+        },
+        {
+          "name": "Bluetooth Speaker",
+          "product_id": "4768869376",
+          "item_id": "7597543861",
+          "price": 310.47,
+          "options": {
+            "color": "black",
+            "battery life": "10 hours",
+            "water resistance": "no"
+          }
+        },
+        {
+          "name": "Wall Clock",
+          "product_id": "2344688344",
+          "item_id": "8610532516",
+          "price": 203.76,
+          "options": {
+            "diameter": "10 inches",
+            "color": "black",
+            "type": "digital"
+          }
+        },
+        {
+          "name": "Patio Umbrella",
+          "product_id": "9743693396",
+          "item_id": "3111466194",
+          "price": 285.66,
+          "options": {
+            "size": "7 ft",
+            "color": "red",
+            "material": "polyester",
+            "tilt mechanism": "manual tilt"
+          }
+        },
+        {
+          "name": "Fleece Jacket",
+          "product_id": "8560156827",
+          "item_id": "8590708195",
+          "price": 157.61,
+          "options": {
+            "size": "XL",
+            "color": "navy",
+            "zipper": "half"
+          }
+        }
+      ],
+      "status": "pending",
+      "fulfillments": [],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 1011.54,
+          "payment_method_id": "gift_card_5979071"
+        }
+      ]
+    },
+    "#W1840144": {
+      "order_id": "#W1840144",
+      "user_id": "harper_brown_7363",
+      "address": {
+        "address1": "723 Park Avenue",
+        "address2": "Suite 802",
+        "city": "Fort Worth",
+        "country": "USA",
+        "state": "TX",
+        "zip": "76112"
+      },
+      "items": [
+        {
+          "name": "Desk Lamp",
+          "product_id": "6817146515",
+          "item_id": "8384507844",
+          "price": 137.94,
+          "options": {
+            "color": "white",
+            "brightness": "medium",
+            "power source": "USB"
+          }
+        },
+        {
+          "name": "Laptop",
+          "product_id": "4760268021",
+          "item_id": "6017636844",
+          "price": 2292.37,
+          "options": {
+            "screen size": "15-inch",
+            "processor": "i7",
+            "ram": "32GB",
+            "storage": "1TB SSD",
+            "color": "space grey"
+          }
+        },
+        {
+          "name": "Fleece Jacket",
+          "product_id": "8560156827",
+          "item_id": "8590708195",
+          "price": 157.61,
+          "options": {
+            "size": "XL",
+            "color": "navy",
+            "zipper": "half"
+          }
+        },
+        {
+          "name": "Fleece Jacket",
+          "product_id": "8560156827",
+          "item_id": "8590708195",
+          "price": 157.61,
+          "options": {
+            "size": "XL",
+            "color": "navy",
+            "zipper": "half"
+          }
+        },
+        {
+          "name": "Wall Clock",
+          "product_id": "2344688344",
+          "item_id": "6534134392",
+          "price": 196.15,
+          "options": {
+            "diameter": "10 inches",
+            "color": "wood",
+            "type": "analog"
+          }
+        }
+      ],
+      "status": "delivered",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "969011918193"
+          ],
+          "item_ids": [
+            "8384507844",
+            "6017636844",
+            "8590708195",
+            "8590708195",
+            "6534134392"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 2941.68,
+          "payment_method_id": "paypal_2306935"
+        }
+      ]
+    },
+    "#W2693718": {
+      "order_id": "#W2693718",
+      "user_id": "harper_brown_7363",
+      "address": {
+        "address1": "723 Park Avenue",
+        "address2": "Suite 802",
+        "city": "Fort Worth",
+        "country": "USA",
+        "state": "TX",
+        "zip": "76112"
+      },
+      "items": [
+        {
+          "name": "Laptop",
+          "product_id": "4760268021",
+          "item_id": "4241599783",
+          "price": 2324.61,
+          "options": {
+            "screen size": "15-inch",
+            "processor": "i7",
+            "ram": "16GB",
+            "storage": "1TB SSD",
+            "color": "black"
+          }
+        },
+        {
+          "name": "Smartphone",
+          "product_id": "1801728040",
+          "item_id": "3952176596",
+          "price": 1199.77,
+          "options": {
+            "color": "rose gold",
+            "storage": "64GB",
+            "RAM": "8GB",
+            "screen size": "6.1-inch"
+          }
+        },
+        {
+          "name": "Jigsaw Puzzle",
+          "product_id": "1808611083",
+          "item_id": "7869640094",
+          "price": 47.59,
+          "options": {
+            "pieces": "2000",
+            "theme": "animals",
+            "difficulty level": "expert"
+          }
+        },
+        {
+          "name": "Digital Camera",
+          "product_id": "8940227892",
+          "item_id": "7255224608",
+          "price": 2922.97,
+          "options": {
+            "resolution": "30MP",
+            "zoom": "3x",
+            "storage": "CF card"
+          }
+        },
+        {
+          "name": "Sunglasses",
+          "product_id": "7314138884",
+          "item_id": "4358482460",
+          "price": 290.94,
+          "options": {
+            "frame color": "black",
+            "lens color": "brown",
+            "lens type": "polarized",
+            "frame material": "plastic"
+          }
+        }
+      ],
+      "status": "delivered",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "446311818175"
+          ],
+          "item_ids": [
+            "4241599783",
+            "3952176596",
+            "7869640094",
+            "7255224608",
+            "4358482460"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 6785.88,
+          "payment_method_id": "paypal_2306935"
+        }
+      ]
+    },
+    "#W2273069": {
+      "order_id": "#W2273069",
+      "user_id": "harper_brown_7363",
+      "address": {
+        "address1": "723 Park Avenue",
+        "address2": "Suite 802",
+        "city": "Fort Worth",
+        "country": "USA",
+        "state": "TX",
+        "zip": "76112"
+      },
+      "items": [
+        {
+          "name": "Smart Watch",
+          "product_id": "6945232052",
+          "item_id": "2681513500",
+          "price": 356.23,
+          "options": {
+            "color": "gold",
+            "band material": "silicone",
+            "display": "AMOLED"
+          }
+        },
+        {
+          "name": "Tea Kettle",
+          "product_id": "9832717871",
+          "item_id": "3909406921",
+          "price": 98.25,
+          "options": {
+            "material": "glass",
+            "capacity": "1 liter",
+            "stovetop compatibility": "gas"
+          }
+        },
+        {
+          "name": "Perfume",
+          "product_id": "6858788497",
+          "item_id": "3399869890",
+          "price": 312.04,
+          "options": {
+            "scent family": "woody",
+            "size": "100ml",
+            "gender": "men"
+          }
+        },
+        {
+          "name": "Electric Toothbrush",
+          "product_id": "7352963235",
+          "item_id": "8098621301",
+          "price": 192.15,
+          "options": {
+            "color": "black",
+            "speed settings": "high",
+            "battery type": "rechargeable"
+          }
+        },
+        {
+          "name": "Hiking Boots",
+          "product_id": "7363354090",
+          "item_id": "2185126308",
+          "price": 241.9,
+          "options": {
+            "size": "10",
+            "material": "leather",
+            "waterproof": "no"
+          }
+        }
+      ],
+      "status": "pending",
+      "fulfillments": [],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 1200.57,
+          "payment_method_id": "credit_card_3240550"
+        }
+      ]
+    },
+    "#W2417020": {
+      "order_id": "#W2417020",
+      "user_id": "emma_smith_8564",
+      "address": {
+        "address1": "243 Hillcrest Drive",
+        "address2": "Suite 113",
+        "city": "New York",
+        "country": "USA",
+        "state": "NY",
+        "zip": "10192"
+      },
+      "items": [
+        {
+          "name": "Laptop",
+          "product_id": "4760268021",
+          "item_id": "8997785118",
+          "price": 2674.4,
+          "options": {
+            "screen size": "13-inch",
+            "processor": "i7",
+            "ram": "32GB",
+            "storage": "256GB SSD",
+            "color": "space grey"
+          }
+        }
+      ],
+      "status": "pending",
+      "fulfillments": [],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 2674.4,
+          "payment_method_id": "gift_card_8541487"
+        }
+      ]
+    },
+    "#W5605613": {
+      "order_id": "#W5605613",
+      "user_id": "emma_smith_8564",
+      "address": {
+        "address1": "243 Hillcrest Drive",
+        "address2": "Suite 113",
+        "city": "New York",
+        "country": "USA",
+        "state": "NY",
+        "zip": "10192"
+      },
+      "items": [
+        {
+          "name": "Digital Camera",
+          "product_id": "8940227892",
+          "item_id": "7195021808",
+          "price": 2909.87,
+          "options": {
+            "resolution": "30MP",
+            "zoom": "5x",
+            "storage": "SD card"
+          }
+        }
+      ],
+      "status": "delivered",
+      "fulfillments": [
+        {
+          "tracking_id": [
+            "267160774045"
+          ],
+          "item_ids": [
+            "7195021808"
+          ]
+        }
+      ],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 2909.87,
+          "payment_method_id": "gift_card_8541487"
+        }
+      ]
+    },
+    "#W3614011": {
+      "order_id": "#W3614011",
+      "user_id": "emma_smith_8564",
+      "address": {
+        "address1": "243 Hillcrest Drive",
+        "address2": "Suite 113",
+        "city": "New York",
+        "country": "USA",
+        "state": "NY",
+        "zip": "10192"
+      },
+      "items": [
+        {
+          "name": "Action Camera",
+          "product_id": "3377618313",
+          "item_id": "5436236388",
+          "price": 538.6,
+          "options": {
+            "resolution": "1080p",
+            "waterproof": "yes",
+            "color": "silver"
+          }
+        },
+        {
+          "name": "Air Purifier",
+          "product_id": "3821016478",
+          "item_id": "3076708684",
+          "price": 535.97,
+          "options": {
+            "room size": "medium",
+            "filter type": "HEPA",
+            "features": "quiet operation"
+          }
+        },
+        {
+          "name": "Sneakers",
+          "product_id": "7471004230",
+          "item_id": "4410138384",
+          "price": 197.37,
+          "options": {
+            "size": "8",
+            "color": "gray",
+            "material": "canvas"
+          }
+        }
+      ],
+      "status": "pending",
+      "fulfillments": [],
+      "payment_history": [
+        {
+          "transaction_type": "payment",
+          "amount": 1271.94,
+          "payment_method_id": "gift_card_8541487"
+        }
+      ]
+    }
+  }
+}

@@ -12,7 +12,12 @@ export default defineConfig({
     // package.json name).
     name: "aai-templates",
     restoreMocks: true,
-    include: ["templates.test.ts", "template-api-coverage.test.ts", "templates/*/agent.test.ts"],
+    include: [
+      "templates.test.ts",
+      "template-api-coverage.test.ts",
+      "templates/*/agent.test.ts",
+      "templates/*/seed.test.ts",
+    ],
     coverage: {
       exclude: [...sharedCoverageExclude, "scaffold/**"],
       // This package had NO floors at all — the only one in the repo — while
