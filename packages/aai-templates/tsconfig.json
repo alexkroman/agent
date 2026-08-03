@@ -13,10 +13,14 @@
   "include": [
     "scaffold/global.d.ts",
     "templates.test.ts",
-    "templates/*/agent.ts",
-    "templates/*/agent.test.ts",
-    "templates/*/client.tsx",
-    "templates/*/shared.ts",
+    // Deliberately generic: tsc's `include` only sets *root* files, and a
+    // test file is imported by nothing, so anything not listed here is
+    // never typechecked at all (unlike source modules, which get pulled in
+    // transitively via imports from an included root). Globbing every
+    // template file/test means a new template's source or test file is
+    // covered on creation, not on the next config edit.
+    "templates/*/*.ts",
+    "templates/*/*.tsx",
     "templates/*/tools/*.ts"
   ]
 }

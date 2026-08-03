@@ -12,7 +12,10 @@ export default defineConfig({
     // package.json name).
     name: "aai-templates",
     restoreMocks: true,
-    include: ["templates.test.ts", "template-api-coverage.test.ts", "templates/*/agent.test.ts"],
+    // The template glob is deliberately generic (any `*.test.ts` under a
+    // template directory), so a new template's test file is picked up on
+    // creation rather than needing this list extended per filename.
+    include: ["templates.test.ts", "template-api-coverage.test.ts", "templates/*/*.test.ts"],
     coverage: {
       exclude: [...sharedCoverageExclude, "scaffold/**"],
       // This package had NO floors at all — the only one in the repo — while
