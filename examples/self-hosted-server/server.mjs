@@ -10,7 +10,8 @@
 // Run it:
 //
 //   npm install
-//   ASSEMBLYAI_API_KEY=… npm start
+//   export ASSEMBLYAI_API_KEY=…
+//   npm start
 //
 // then open http://127.0.0.1:3000.
 
