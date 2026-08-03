@@ -1,6 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
-// The studio's shared 60px top bar (brand, project name, Preview/Code/Settings
-// segmented control, Publish, Log out) and the Publish dropdown it opens.
+// The studio's shared 60px top bar (brand, project name, Preview/Code
+// segmented control, Settings, Publish, Log out) and the Publish dropdown it
+// opens.
 // Split from app.tsx, which owns all the state these render. Project
 // switching lives in the home sidebar (brand → home), not here.
 
@@ -135,29 +136,17 @@ export function TopBar(props: TopBarProps) {
         <div className="flex overflow-hidden rounded-sm border border-line">
           <button
             type="button"
-            className={segClass(props.tab === "preview" && !props.settingsOpen)}
+            className={segClass(props.tab === "preview")}
             onClick={() => props.onSelectTab("preview")}
           >
             Preview
           </button>
           <button
             type="button"
-            className={clsx(
-              "border-l border-line",
-              segClass(props.tab === "code" && !props.settingsOpen),
-            )}
+            className={clsx("border-l border-line", segClass(props.tab === "code"))}
             onClick={() => props.onSelectTab("code")}
           >
             Code
-          </button>
-          <button
-            type="button"
-            className={clsx("border-l border-line", segClass(props.settingsOpen))}
-            onClick={props.onToggleSettings}
-            disabled={!props.deployedSlug}
-            title={props.deployedSlug ? undefined : "Settings unlock after the first publish"}
-          >
-            Settings
           </button>
         </div>
       )}
@@ -174,6 +163,18 @@ export function TopBar(props: TopBarProps) {
         >
           {agentUrl(props.deployedSlug)} ↗
         </a>
+      )}
+      {/* Settings is project-scoped and always available — the panel houses
+          secrets (which need a publish) AND the Delete project button, which
+          must work before anything has ever been published. */}
+      {props.project && (
+        <button
+          type="button"
+          className={clsx("btn", props.settingsOpen && "bg-fg text-cream")}
+          onClick={props.onToggleSettings}
+        >
+          Settings
+        </button>
       )}
       <button
         type="button"
