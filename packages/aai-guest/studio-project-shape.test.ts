@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import {
   ensureProjectShape,
+  resolveWorkspaceDependencies,
   WORKSPACE_GLOBAL_DTS,
   WORKSPACE_TSCONFIG,
   WORKSPACE_VITE_CONFIG,
@@ -33,8 +34,27 @@ describe("ensureProjectShape", () => {
     }
     const pkg = JSON.parse(await readFile(path.join(dir, "package.json"), "utf-8")) as {
       type?: string;
+      dependencies?: Record<string, string>;
     };
     expect(pkg.type).toBe("module");
+    // The manifest is what the coding agent reads to learn what it may
+    // import, so it has to name the SDK rather than leave it implicit.
+    expect(Object.keys(pkg.dependencies ?? {})).toContain("@alexkroman1/aai");
+  });
+
+  test("pins dependencies to exact installed versions, never ranges", async () => {
+    dir = await mkdtemp(path.join(tmpdir(), "aai-shape-"));
+    await ensureProjectShape(dir);
+    const { dependencies = {} } = JSON.parse(
+      await readFile(path.join(dir, "package.json"), "utf-8"),
+    ) as { dependencies?: Record<string, string> };
+    expect(Object.keys(dependencies).length).toBeGreaterThan(0);
+    // `add_dependency` reifies the whole manifest; a range there could
+    // materialize a different SDK build than the harness resolved, into a
+    // workspace node_modules that shadows the baked one.
+    for (const [name, version] of Object.entries(dependencies)) {
+      expect({ name, version }).toEqual({ name, version: expect.stringMatching(/^\d+\.\d+\./) });
+    }
   });
 
   test("never overwrites files the workspace already has", async () => {
@@ -93,6 +113,19 @@ describe("scaffold parity (drift guard)", () => {
    * type-checks must agree, or a workspace that builds in the studio fails
    * `aai build` on the user's laptop after they export it.
    */
+  test("declares exactly the scaffold's runtime dependencies", async () => {
+    const { dependencies = {} } = JSON.parse(await scaffold("package.json")) as {
+      dependencies?: Record<string, string>;
+    };
+    // Names only — the scaffold uses carets for a user's own install, while
+    // the workspace pins to what the sandbox has. The SET is the contract:
+    // a package added to the scaffold that the studio never declares is one
+    // the coding agent will not know it can import.
+    expect(Object.keys(resolveWorkspaceDependencies()).sort()).toEqual(
+      Object.keys(dependencies).sort(),
+    );
+  });
+
   test("tsconfig strictness matches the scaffold's", async () => {
     type Opts = Record<string, unknown>;
     const of = (text: string) => (JSON.parse(text) as { compilerOptions: Opts }).compilerOptions;

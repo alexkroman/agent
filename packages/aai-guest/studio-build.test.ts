@@ -12,33 +12,51 @@ import {
   buildWorkspaceDir,
   formatBuildFailure,
   scrubDir,
+  toolchainModules,
   withBuildDir,
   workspacesRoot,
 } from "./studio-build.ts";
+import { toolchainPromptSection } from "./studio-chat.ts";
 
-describe("workspacesRoot depth", () => {
-  // The studio preamble (aai-studio-server/studio-preamble.ts) tells the
-  // coding agent to read the SDK types, the aai-ui component types, and the
-  // CLI's bundled templates through `../../node_modules/...` with bash —
-  // read_file/glob/grep are jailed to the workspace and cannot see them.
-  // That relative depth is only right while a session workspace sits exactly
-  // two levels under the directory holding the toolchain node_modules, which
-  // holds in all three layouts: /opt/aai (baked image), packages/aai-guest/
-  // dist (subprocess backend), and packages/aai-guest (tests). Move
-  // workspacesRoot() and the prompt silently starts naming paths that do not
-  // exist — a failure the agent can only report as "file not found".
-  const PROMPT_PREFIX = path.join("..", "..", "node_modules");
-  const sessionDir = path.join(workspacesRoot(), "session-1");
+describe("toolchainModules", () => {
+  // The prompt section the guest appends names these paths outright, and
+  // bash is the only tool that can reach them (read_file is jailed to the
+  // workspace; glob/grep skip node_modules). A path that does not resolve
+  // surfaces to the agent only as "file not found".
+  //
+  // This replaced a check on a fixed `../../node_modules` depth relative to
+  // the workspace. That depth is right in the Modal image (/opt/aai) and
+  // wrong under the subprocess backend, whose harness runs from
+  // packages/aai-guest/dist — and unit tests, which load this module from
+  // source, see a THIRD layout where it happens to be right again. So the
+  // test passed while the shipped prompt was wrong for local dev.
+  const modulesDir = toolchainModules();
 
-  // Each entry is a path the preamble literally tells the agent to read.
+  test("finds the toolchain by searching upward, not by a fixed offset", () => {
+    expect(modulesDir).not.toBeNull();
+  });
+
   test.for([
     ["@alexkroman1/aai/dist", "the SDK types"],
     ["@alexkroman1/aai-ui/dist/index.d.ts", "what client.tsx can import"],
     ["@alexkroman1/aai-ui/dist/components/chat-view.d.ts", "a component's props"],
     ["@alexkroman1/aai-cli/dist/templates/simple/agent.ts", "a bundled template"],
     ["@alexkroman1/aai-cli/dist/templates/night-owl/client.tsx", "a bundled client.tsx"],
-  ])("%s exists at the path the prompt gives (%s)", ([rel]) => {
-    expect(existsSync(path.resolve(sessionDir, PROMPT_PREFIX, rel as string))).toBe(true);
+  ])("%s resolves (%s)", ([rel]) => {
+    expect(existsSync(path.join(modulesDir as string, rel as string))).toBe(true);
+  });
+
+  test("every path the prompt section names is one that exists", () => {
+    const section = toolchainPromptSection(modulesDir);
+    const quoted = [...section.matchAll(/`([^`]+)`/g)]
+      .map((m) => m[1] as string)
+      .filter((s) => path.isAbsolute(s));
+    expect(quoted.length).toBeGreaterThan(0);
+    for (const p of quoted) expect({ p, exists: existsSync(p) }).toEqual({ p, exists: true });
+  });
+
+  test("degrades to no section rather than naming paths it could not resolve", () => {
+    expect(toolchainPromptSection(null)).toBe("");
   });
 });
 
