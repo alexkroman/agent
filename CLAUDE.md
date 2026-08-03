@@ -188,8 +188,10 @@ boundary** — this split is critical for sandbox security:
   run in browsers, Deno, and sandboxed environments. Contains:
   `types.ts`, `db.ts`, `hooks.ts`, `utils.ts`, `constants.ts`,
   `protocol.ts`, `system-prompt.ts`, `manifest.ts`,
-  `ws-upgrade.ts`, `_internal-types.ts`, `define.ts` (`agent()` and
-  `tool()` helpers for authoring `agent.ts` files).
+  `ws-upgrade.ts`, `_internal-types.ts`, `schema.ts` (Standard Schema
+  acceptance: `inputSchema` validation + JSON Schema conversion),
+  `define.ts` (`agent()` and `tool()` helpers for authoring `agent.ts`
+  files).
 - **`host/`** — host-only modules that **require Node.js APIs** (`node:vm`,
   `node:crypto`, etc.). Only runs on the platform server and CLI, never
   inside a guest sandbox. Contains:
@@ -686,11 +688,16 @@ wherever the runtime runs — inside the guest sandbox on the platform,
 in-process under `aai dev`: descriptors resolve through the same
 `resolveLlm` registry as the pipeline model, credentials from the agent env
 only. Defaults to the agent's own pipeline `llm`; a per-call `llm`
-descriptor works for S2S agents holding that provider's key.
+descriptor (or model-id string — same shorthand as `agent({ llm })`) works
+for S2S agents holding that provider's key.
 
-`GenerateOptions.schema` is **plain JSON Schema, never a Zod schema** — the
-options must survive the RPC boundary, and the implementation rejects Zod
-schemas so dev and prod cannot drift; convert with `z.toJSONSchema()`.
+`GenerateOptions.schema` accepts a Zod schema directly (or any Standard
+Schema convertible to JSON Schema — `sdk/schema.ts` owns detection and
+conversion), converted before the provider call; a plain JSON Schema object
+also works. `GenerateFn` is generic, so a Standard Schema call returns a
+typed `object`. Note zod 4.4 stamps `~standard` onto its plain
+`toJSONSchema()` OUTPUT too — schema detection keys off the `_zod` instance
+marker, never the `~standard` interface (`isConvertibleSchema`).
 (The pattern-combinator layer that once wrapped this —
 `@alexkroman1/aai/patterns`, earlier `@alexkroman1/aai/workflow` — was
 removed unused; multi-step orchestration is composed directly over
@@ -1058,7 +1065,10 @@ copying fields:
   `_internal-types.test.ts` asserts the one subtraction:
   `Exclude<keyof AgentDef, keyof AgentConfig | HostOnlyAgentField>` is `never`.
 - **`agent()`** derives its parameter shape from `AgentDef`
-  (`AgentParams` = `Omit` + `Partial<Pick>` of the defaulted fields) instead
+  (`AgentParams` = `Omit` + `Partial<Pick>` of the defaulted fields) plus
+  two author-only conveniences `agent()` normalizes away (`system` as an
+  alias of `systemPrompt`, and `llm` accepting a gateway model-id string —
+  `sdk/providers/llm/from-string.ts`), instead
   of re-declaring it inline — the inline form is how `send` and `state`
   shipped as runtime-working but excess-property errors for authors
   (neither bundler typechecks user code). `define.test-d.ts` locks this.
@@ -1363,7 +1373,7 @@ defaults that affect agent behavior:
 | Default | Value | Where applied | Notes |
 | --- | --- | --- | --- |
 | `maxSteps` | 10 (`DEFAULT_MAX_STEPS`) | `constants.ts` | Max tool calls per reply. Prevents runaway tool loops; sized so multi-tool chains plus a repair retry fit. |
-| `toolChoice` | `"auto"` | `manifest.ts:59` | LLM decides when to use tools vs respond directly. |
+| `toolChoice` | `"auto"` | `manifest.ts` | LLM decides when to use tools vs respond directly. Full AI SDK set: `"auto"`, `"required"`, `"none"`, `{ type: "tool", toolName }`. |
 | `idleTimeoutMs` | 300,000 (5 min) | `constants.ts:26` | `0` or non-finite disables the timer entirely. Re-armed on every inbound audio frame (`resetIdle`), so it measures silence, not call length. On expiry session-core emits `idle_timeout` **and closes the socket** — the event alone retires nothing (clients treat it as informational and wait for the close), so for a long time an idle session lingered and only Modal's 300s input cap reaped it. |
 | `silenceTimeoutMs` | unset (disabled) | `pipeline-silence.ts` | Pipeline only: assistant proactively takes a turn after this much user silence. Capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back nudges until the user speaks again. `silencePrompt` customizes the injected instruction (default `DEFAULT_SILENCE_PROMPT`); it is kept in LLM history but never emitted as a user transcript. |
 | `minBargeInWords` | 2 (`DEFAULT_MIN_BARGE_IN_WORDS`) | `constants.ts` | Pipeline only: interim-transcript words before user speech interrupts the in-flight reply. 2 keeps one-word backchannels from cutting the agent off; sub-threshold finals are answered after the reply. |

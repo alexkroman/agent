@@ -130,6 +130,19 @@ export default agent({
 });
 ```
 
+The same pattern changes the gateway LLM model — `llm` accepts the model id
+as a plain string:
+
+```ts
+import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+
+export default agent({
+  name: "My Agent",
+  ...assemblyAIPipeline(),
+  llm: "claude-sonnet-4-6",
+});
+```
+
 `agent({ name })` alone is legal and equivalent — an agent that declares no
 providers gets `assemblyAIPipeline()` injected as the default. Speech-to-speech
 (S2S) mode is an explicit opt-in via the `s2s` field — see below.

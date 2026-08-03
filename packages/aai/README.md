@@ -61,7 +61,10 @@ factory from the provider subpaths — set all three of `stt`, `llm`, `tts`
 Factories return pure descriptors — serializable data, not SDK clients.
 Credentials are resolved server-side from the agent's env (each factory's
 docs name the env var), so no provider SDK or secret ever enters the agent
-bundle.
+bundle. `llm` also accepts a model-id string: `"creator/model"` routes
+through the Vercel AI Gateway, a bare id through the AssemblyAI LLM
+Gateway — `agent({ ...assemblyAIPipeline(), llm: "claude-sonnet-4-6" })`
+swaps just the model.
 
 **S2S mode** is the explicit opt-in to a speech-to-speech service, where
 STT, the LLM loop, and TTS all run service-side over one socket:

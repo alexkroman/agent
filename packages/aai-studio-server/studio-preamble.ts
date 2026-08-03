@@ -218,6 +218,9 @@ ${SDK_SUBPATH_RULE}
   assemblyAITts from the three provider subpaths) buys nothing.
   To change one stage, spread the preset and then set that stage:
     agent({ ...assemblyAIPipeline(), tts: cartesia({ voice: "…" }) });
+  That is also how the gateway LLM model is changed — llm accepts the model
+  id as a plain string:
+    agent({ ...assemblyAIPipeline(), llm: "claude-sonnet-4-6" });
   All three stages bill to ASSEMBLYAI_API_KEY, the one key a published agent
   is guaranteed to have, so this default runs the moment it is published. Any
   other provider — Anthropic, OpenAI, Cartesia, Rime, Deepgram — needs a key

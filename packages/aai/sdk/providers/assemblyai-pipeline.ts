@@ -38,12 +38,20 @@
  *
  * The three stages stay individually overridable, because an agent that wants
  * Cartesia for TTS and AssemblyAI for the rest should not have to abandon the
- * preset: spread it, then set the one field.
+ * preset: spread it, then set the one field. That is also how the LLM model
+ * and STT model are changed — there is deliberately no second spelling on
+ * the preset itself (its early `model`/`sttModel` options were retired: the
+ * preset's `model` meant the LLM model while `assemblyAIStt({ model })`
+ * meant the STT model, and one word meaning two things per import path is
+ * the same trap the factory renames removed).
  *
  * ```ts
  * import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
  * import { cartesia } from "@alexkroman1/aai/tts";
+ * // Different TTS provider:
  * agent({ name: "Vera", ...assemblyAIPipeline(), tts: cartesia() });
+ * // Different gateway LLM model (string shorthand):
+ * agent({ name: "Vera", ...assemblyAIPipeline(), llm: "claude-sonnet-4-6" });
  * ```
  */
 
@@ -57,11 +65,6 @@ import {
 
 export interface AssemblyAIPipelineOptions {
   /**
-   * Gateway LLM model. Defaults to `ASSEMBLYAI_LLM_DEFAULT_MODEL`
-   * (`"gpt-5.5"`) — see `@alexkroman1/aai/llm` for the catalog.
-   */
-  model?: string;
-  /**
    * TTS voice id, e.g. `"vera"`, `"michael"`, `"alba"`. Defaults to
    * `"vera"`. Each voice speaks exactly one language — see
    * `ASSEMBLYAI_TTS_VOICES` (from `@alexkroman1/aai/tts`) for the
@@ -69,12 +72,11 @@ export interface AssemblyAIPipelineOptions {
    * agent silent.
    */
   voice?: AssemblyAITtsVoice;
-  /** Streaming STT model. Defaults to `"universal-3-5-pro"`. */
-  sttModel?: string;
   /**
    * EU data residency. Applies to STT and the LLM gateway; TTS has a single
    * endpoint. Note the EU gateway serves only Claude and most Gemini models,
-   * so an EU agent must also name a `model` the EU endpoint carries.
+   * so an EU agent must also override `llm` with a model the EU endpoint
+   * carries (e.g. `llm: "claude-sonnet-4-6"` after the spread).
    */
   region?: "us" | "eu";
 }
@@ -90,10 +92,10 @@ export function assemblyAIPipeline(opts: AssemblyAIPipelineOptions = {}): {
   llm: AssemblyAILlmProvider;
   tts: AssemblyAITtsProvider;
 } {
-  const { model, voice, sttModel, region } = opts;
+  const { voice, region } = opts;
   return {
-    stt: assemblyAIStt({ ...(sttModel ? { model: sttModel } : {}), ...(region ? { region } : {}) }),
-    llm: assemblyAILlm({ ...(model ? { model } : {}), ...(region ? { region } : {}) }),
-    tts: assemblyAITts({ ...(voice ? { voice } : {}) }),
+    stt: assemblyAIStt(region ? { region } : {}),
+    llm: assemblyAILlm(region ? { region } : {}),
+    tts: assemblyAITts(voice ? { voice } : {}),
   };
 }
