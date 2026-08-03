@@ -125,13 +125,19 @@ describe("type ↔ schema alignment", () => {
     expectTypeOf<z.infer<typeof ToolChoiceSchema>>().toEqualTypeOf<ToolChoice>();
   });
 
-  test.each<ToolChoice>(["auto", "required"])("ToolChoiceSchema accepts %s", (v) => {
-    expect(ToolChoiceSchema.safeParse(v).success).toBe(true);
-  });
+  test.each<ToolChoice>(["auto", "required", "none", { type: "tool", toolName: "get_weather" }])(
+    "ToolChoiceSchema accepts %j",
+    (v) => {
+      expect(ToolChoiceSchema.safeParse(v).success).toBe(true);
+    },
+  );
 
-  test.each(["invalid", "none"])("ToolChoiceSchema rejects %s", (v) => {
-    expect(ToolChoiceSchema.safeParse(v).success).toBe(false);
-  });
+  test.each(["invalid", { type: "tool" }, { type: "tool", toolName: "" }])(
+    "ToolChoiceSchema rejects %j",
+    (v) => {
+      expect(ToolChoiceSchema.safeParse(v).success).toBe(false);
+    },
+  );
 
   // ManifestSchema is a second hand-written copy of the agent-config surface
   // (it cannot derive from AgentConfigSchema without an import cycle), so pin

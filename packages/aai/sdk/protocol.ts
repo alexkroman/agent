@@ -5,6 +5,8 @@
  * This is the published wire contract (`@alexkroman1/aai/protocol`) for
  * building custom clients or servers that speak the session protocol —
  * aai-ui's browser session is built on it.
+ *
+ * @module protocol
  */
 
 import { z } from "zod";

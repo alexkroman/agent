@@ -11,8 +11,9 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    agent to verify behavior end-to-end. This is the primary feedback loop.
 2. **Run `pnpm test` after logic changes** — vitest. Co-locate tests as
    `agent.test.ts` (see `pipeline-simple` template for a reference).
-   **The project starts with an `agent.test.ts`, and it is yours to
-   maintain.** It asserts the agent's shape — name, providers, tool names —
+   **When the project has an `agent.test.ts` (the default `simple`
+   template and several others ship one), it is yours to maintain.** It
+   asserts the agent's shape — name, providers, tool names —
    so rewriting the agent without updating it leaves a test asserting an
    agent that no longer exists. When a test fails after your change, decide
    which side is stale: updating the test to match the new agent is a normal
@@ -36,11 +37,11 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
 
 ```sh
 npx @alexkroman1/aai-cli init             # Scaffold a new agent
+npx @alexkroman1/aai-cli templates        # List available templates
 npx @alexkroman1/aai-cli dev              # Start local dev server
 npx @alexkroman1/aai-cli test             # Run agent.test.ts via vitest
 npx @alexkroman1/aai-cli build            # Bundle and validate
 npx @alexkroman1/aai-cli deploy           # Deploy to production
-npx @alexkroman1/aai-cli deploy -y        # Deploy without prompts
 npx @alexkroman1/aai-cli delete           # Remove deployed agent
 npx @alexkroman1/aai-cli secret put NAME  # Set a secret
 npx @alexkroman1/aai-cli secret delete NAME
@@ -48,7 +49,7 @@ npx @alexkroman1/aai-cli secret list
 ```
 
 The scaffold's `package.json` exposes `dev`, `build`, `test`, and `deploy`
-as `pnpm <name>` shortcuts. Other commands (`init`, `delete`, `secret`)
+as `pnpm <name>` shortcuts. Other commands (`init`, `templates`, `delete`, `secret`)
 are CLI-only.
 
 ## Project structure
@@ -74,12 +75,14 @@ import { agent } from "@alexkroman1/aai";
 export default agent({
   name: string;                              // required — display name
   systemPrompt?: string;                     // default: general voice assistant
+                                             // (`system` is an accepted alias)
   greeting?: string;                         // default: "Hey there..."
   sttPrompt?: string;                        // STT guidance for jargon/acronyms
   builtinTools?: BuiltinTool[];              // see built-in tools table
   tools?: Record<string, ToolDef>;
   maxSteps?: number;                         // default: 10 — max tool calls per turn
-  toolChoice?: "auto" | "required";          // default: "auto"
+  toolChoice?: ToolChoice;                   // "auto" (default) | "required" | "none"
+                                             // | { type: "tool", toolName }
   idleTimeoutMs?: number;                    // disconnect after inactivity (ms)
   silenceTimeoutMs?: number;                 // pipeline only — assistant speaks up after this much user silence (ms)
   silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
@@ -95,7 +98,10 @@ export default agent({
 ```
 
 > When `stt`, `llm`, and `tts` are all provided, the agent runs in
-> **Pipeline mode** — see the section below.
+> **Pipeline mode** — see the section below. `llm` also accepts a model-id
+> string: `"creator/model"` routes through the Vercel AI Gateway
+> (`AI_GATEWAY_API_KEY`), a bare id through the AssemblyAI LLM Gateway
+> (`ASSEMBLYAI_API_KEY`).
 
 Minimal agent — a cascaded pipeline, which is what you should build unless
 the user asks for the speech-to-speech API:
@@ -115,12 +121,25 @@ by setting it after the spread — everything else stays as the preset put it:
 
 ```ts
 import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
-import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
   ...assemblyAIPipeline(),
   tts: assemblyAITts({ voice: "paul" }),
+});
+```
+
+The same pattern changes the gateway LLM model — `llm` accepts the model id
+as a plain string:
+
+```ts
+import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+
+export default agent({
+  name: "My Agent",
+  ...assemblyAIPipeline(),
+  llm: "claude-sonnet-4-6",
 });
 ```
 
@@ -183,13 +202,13 @@ partial config is rejected at parse time.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { assemblyAI } from "@alexkroman1/aai/stt";
+import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { anthropic } from "@alexkroman1/aai/llm";
 import { cartesia } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  stt: assemblyAI({ model: "universal-3-5-pro" }),
+  stt: assemblyAIStt({ model: "universal-3-5-pro" }),
   llm: anthropic({ model: "claude-haiku-4-5" }),
   tts: cartesia(),
 });
@@ -214,7 +233,7 @@ one-word backchannels like "yeah" don't cut it off);
 `interruptionMinDurationMs` adds a sustained-speech gate on top (default
 500 ms; `0` disables; interim transcripts only — committed turns always
 land). End-of-turn detection (how long a pause ends the user's turn)
-belongs to the STT provider: `assemblyAI({ minTurnSilenceMs })` (default
+belongs to the STT provider: `assemblyAIStt({ minTurnSilenceMs })` (default
 2000 ms) / `deepgram({ endpointing })` (default 1500 ms), so mid-utterance
 pauses don't split a request.
 `holdPhrase` is spoken when a turn opens with a tool call and no speech.
@@ -228,34 +247,34 @@ for the providers you actually use.
 
 ### STT — `@alexkroman1/aai/stt`
 
-| Factory       | Default model            | Env var              |
-| ------------- | ------------------------ | -------------------- |
-| `assemblyAI`  | `"universal-3-5-pro"`    | `ASSEMBLYAI_API_KEY` |
-| `deepgram`    | `"nova-3"`               | `DEEPGRAM_API_KEY`   |
-| `elevenlabs`  | `"scribe_v2_realtime"`   | `ELEVENLABS_API_KEY` |
-| `soniox`      | `"stt-rt-v3"`            | `SONIOX_API_KEY`     |
+| Factory         | Default model          | Env var              |
+| --------------- | ---------------------- | -------------------- |
+| `assemblyAIStt` | `"universal-3-5-pro"`  | `ASSEMBLYAI_API_KEY` |
+| `deepgram`      | `"nova-3"`             | `DEEPGRAM_API_KEY`   |
+| `elevenlabs`    | `"scribe_v2_realtime"` | `ELEVENLABS_API_KEY` |
+| `soniox`        | `"stt-rt-v3"`          | `SONIOX_API_KEY`     |
 
 All STT factories accept `{ model?: string, ... }`. Bare calls
 (`deepgram()`, `soniox()`, etc.) use the default model.
 
-`assemblyAI` accepts an optional `region: "eu"` for EU data residency —
+`assemblyAIStt` accepts an optional `region: "eu"` for EU data residency —
 it routes streaming transcription to AssemblyAI's EU endpoints. EU-region
 API keys require it; the US endpoints reject them. Example:
-`assemblyAI({ model: "universal-3-5-pro", region: "eu" })`.
+`assemblyAIStt({ model: "universal-3-5-pro", region: "eu" })`.
 
 ### LLM — `@alexkroman1/aai/llm`
 
-| Factory     | SDK package           | Env var                          |
-| ----------- | --------------------- | -------------------------------- |
-| `anthropic` | `@ai-sdk/anthropic`   | `ANTHROPIC_API_KEY`              |
-| `openai`    | `@ai-sdk/openai`      | `OPENAI_API_KEY`                 |
-| `google`    | `@ai-sdk/google`      | `GOOGLE_GENERATIVE_AI_API_KEY`   |
-| `mistral`   | `@ai-sdk/mistral`     | `MISTRAL_API_KEY`                |
-| `xai`       | `@ai-sdk/xai`         | `XAI_API_KEY`                    |
-| `groq`      | `@ai-sdk/groq`        | `GROQ_API_KEY`                   |
-| `openrouter`| `@ai-sdk/openai`      | `OPENROUTER_API_KEY`             |
-| `gateway`   | `ai` (built in)       | `AI_GATEWAY_API_KEY`             |
-| `assemblyAI`| `@ai-sdk/openai`      | `ASSEMBLYAI_API_KEY`             |
+| Factory         | SDK package         | Env var                        |
+| --------------- | ------------------- | ------------------------------ |
+| `anthropic`     | `@ai-sdk/anthropic` | `ANTHROPIC_API_KEY`            |
+| `openai`        | `@ai-sdk/openai`    | `OPENAI_API_KEY`               |
+| `google`        | `@ai-sdk/google`    | `GOOGLE_GENERATIVE_AI_API_KEY` |
+| `mistral`       | `@ai-sdk/mistral`   | `MISTRAL_API_KEY`              |
+| `xai`           | `@ai-sdk/xai`       | `XAI_API_KEY`                  |
+| `groq`          | `@ai-sdk/groq`      | `GROQ_API_KEY`                 |
+| `openrouter`    | `@ai-sdk/openai`    | `OPENROUTER_API_KEY`           |
+| `gateway`       | `ai` (built in)     | `AI_GATEWAY_API_KEY`           |
+| `assemblyAILlm` | `@ai-sdk/openai`    | `ASSEMBLYAI_API_KEY`           |
 
 LLM factories require `{ model: string }`. Example:
 `anthropic({ model: "claude-haiku-4-5" })`.
@@ -272,38 +291,38 @@ hundreds of models addressed as `"creator/model"`, e.g.
 `gateway({ model: "zai/glm-4.6" })`. It needs no extra SDK install
 (the gateway client ships inside the `ai` package).
 
-`assemblyAI` routes through the [AssemblyAI LLM
+`assemblyAILlm` routes through the [AssemblyAI LLM
 Gateway](https://www.assemblyai.com/docs/llm-gateway) — an
 OpenAI-compatible endpoint fronting 25+ models (Claude, GPT, Gemini,
-etc.) with the same API key as AssemblyAI STT. It accepts an optional
-`region: "eu"` for EU data residency. It shares its name with the STT
-factory, so alias one when using both:
+etc.) with the same API key as AssemblyAI STT:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { assemblyAI } from "@alexkroman1/aai/stt";
-import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { assemblyAILlm } from "@alexkroman1/aai/llm";
+import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { cartesia } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  stt: assemblyAI({ model: "universal-3-5-pro" }),
+  stt: assemblyAIStt({ model: "universal-3-5-pro" }),
   llm: assemblyAILlm({ model: "claude-sonnet-4-6" }),
   tts: cartesia(),
 });
 ```
 
+It accepts an optional `region: "eu"` for EU data residency.
+
 An all-AssemblyAI pipeline — one provider, one key:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { assemblyAI } from "@alexkroman1/aai/stt";
-import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
-import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+import { assemblyAILlm } from "@alexkroman1/aai/llm";
+import { assemblyAIStt } from "@alexkroman1/aai/stt";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  stt: assemblyAI({ model: "universal-3-5-pro" }),
+  stt: assemblyAIStt({ model: "universal-3-5-pro" }),
   llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
   tts: assemblyAITts({ voice: "vera" }),
 });
@@ -311,13 +330,13 @@ export default agent({
 
 ### TTS — `@alexkroman1/aai/tts`
 
-| Factory      | Default voice                            | Env var              |
-| ------------ | ---------------------------------------- | -------------------- |
-| `assemblyAI` | `"vera"`                                 | `ASSEMBLYAI_API_KEY` |
-| `cartesia`   | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
-| `rime`       | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
+| Factory         | Default voice                            | Env var              |
+| --------------- | ---------------------------------------- | -------------------- |
+| `assemblyAITts` | `"vera"`                                 | `ASSEMBLYAI_API_KEY` |
+| `cartesia`      | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
+| `rime`          | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
 
-Bare calls (`assemblyAI()`, `cartesia()`, `rime()`) use the defaults.
+Bare calls (`assemblyAITts()`, `cartesia()`, `rime()`) use the defaults.
 Override with `{ voice, model, language }`.
 
 **AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the
@@ -340,8 +359,7 @@ Set
 `language` only alongside a voice that speaks it, as an ISO 639-1 code —
 `"en"`, `"fr"`, `"de"`, `"it"`, `"pt"`, `"es"` are the six the catalog
 covers, and the SDK translates each to the full name the service wants.
-Anything else fails at session start. Because the factory is named
-`assemblyAI` in `/stt`, `/llm`, and `/tts`, alias on import.
+Anything else fails at session start.
 
 **Rime quirk:** language uses ISO 639-3 three-letter codes (e.g. `"eng"`
 not `"en"`).
@@ -357,7 +375,7 @@ import { z } from "zod";
 
 const myTool = tool({
   description: string;           // shown to LLM — decides when to call
-  parameters?: z.ZodObject;      // Zod schema (omit for no-arg tools)
+  inputSchema?: z.ZodObject;     // Zod schema (omit for no-arg tools)
   execute(args, ctx): unknown;   // sync or async
 });
 ```
@@ -446,10 +464,11 @@ compile error, which is the point.
 
 `ctx.generate({ prompt, system?, llm?, schema?, temperature?, maxOutputTokens? })`
 runs one LLM generation on the host. It defaults to the agent's pipeline
-`llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) to use another
-provider whose API key is in the agent's secrets — that's also how S2S
-agents use it. `schema` must be a **plain JSON Schema object** (use
-`z.toJSONSchema(...)`), never a Zod schema.
+`llm`; pass an `llm` descriptor (from `@alexkroman1/aai/llm`) or a model-id
+string to use another provider whose API key is in the agent's secrets —
+that's also how S2S agents use it. Pass a Zod schema as `schema` for typed
+structured output (`generateObject`-style): the result's `object` carries
+the parsed, typed value. A plain JSON Schema object also works.
 
 ### Inline tool example
 
@@ -462,7 +481,7 @@ export default agent({
   tools: {
     get_weather: tool({
       description: "Get current weather for a city",
-      parameters: z.object({
+      inputSchema: z.object({
         city: z.string().describe("City name"),
       }),
       async execute({ city }, ctx) {
@@ -510,18 +529,18 @@ Wrapping `webSearch` in a single custom tool is the mistake to avoid — it
 replaces "the model searches as needed" with one fixed query-and-summarize
 pipeline, and no amount of prompting gets the flexibility back.
 
-**`parameters` is a Zod object, or absent.** The field itself is optional,
-but its VALUE must be a plain `z.object(...)` — so all of these are type
-errors:
+**`inputSchema` is a Zod object, or absent.** The field itself is
+optional, but its VALUE must be a plain `z.object(...)` — so all of these
+are type errors:
 
 ```ts no-check
-parameters: z.undefined(),                 // ✗ ZodUndefined
-parameters: z.void(),                      // ✗
-parameters: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
+inputSchema: z.undefined(),                // ✗ ZodUndefined
+inputSchema: z.void(),                     // ✗
+inputSchema: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
 ```
 
 For a tool with no arguments write `tool({ description, execute })`, or
-`parameters: z.object({})` if you prefer it explicit. To make an individual
+`inputSchema: z.object({})` if you prefer it explicit. To make an individual
 argument optional, put `.optional()` on the FIELD, never on the object:
 `z.object({ notes: z.string().optional() })`.
 
@@ -542,7 +561,7 @@ import { z } from "zod";
 
 export const rollDice = tool({
   description: "Roll dice",
-  parameters: z.object({ sides: z.number() }),
+  inputSchema: z.object({ sides: z.number() }),
   execute({ sides }) {
     return Math.floor(Math.random() * sides) + 1;
   },

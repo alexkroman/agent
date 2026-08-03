@@ -26,12 +26,12 @@ test("agentToolsToSchemas - converts tool definitions to OpenAI schema", () => {
   const tools: Record<string, ToolDef> = {
     get_weather: {
       description: "Get weather",
-      parameters: z.object({ city: z.string().describe("City") }),
+      inputSchema: z.object({ city: z.string().describe("City") }),
       execute: noop,
     },
     set_alarm: {
       description: "Set alarm",
-      parameters: z.object({
+      inputSchema: z.object({
         time: z.string(),
         label: z.string().optional(),
       }),

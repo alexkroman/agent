@@ -13,7 +13,9 @@
 import { generateObject, generateText, jsonSchema, type LanguageModel } from "ai";
 import type { ProviderEnv } from "../sdk/env-types.ts";
 import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
+import { normalizeLlm } from "../sdk/providers/llm/from-string.ts";
 import type { LlmProvider } from "../sdk/providers.ts";
+import { isConvertibleSchema, toToolJsonSchema } from "../sdk/schema.ts";
 import { resolveLlm } from "./providers/resolve.ts";
 
 /**
@@ -53,16 +55,25 @@ function isDescriptor(value: unknown): value is LlmProvider {
   );
 }
 
-/** Reject Zod schemas up front — they'd work here but not across the sandbox
- *  RPC boundary, which is exactly the works-in-dev/fails-in-prod drift the
- *  policy modules exist to prevent. */
-function assertJsonSchema(schema: Record<string, unknown>): void {
+/**
+ * Resolve the `schema` option to plain JSON Schema. A Standard Schema (Zod,
+ * ArkType, …) converts via {@link toToolJsonSchema}; a plain object passes
+ * through. A pre-Standard-Schema Zod (v3) instance has `safeParse` but no
+ * `~standard` — reject it by name rather than shipping a nonsense spec.
+ */
+function resolveJsonSchema(
+  schema: NonNullable<GenerateOptions["schema"]>,
+): Record<string, unknown> {
+  if (isConvertibleSchema(schema)) {
+    return toToolJsonSchema(schema) as Record<string, unknown>;
+  }
   if (typeof (schema as { safeParse?: unknown }).safeParse === "function") {
     throw new Error(
-      "generate: `schema` must be a plain JSON Schema object, not a Zod schema — " +
-        "convert with z.toJSONSchema().",
+      "generate: `schema` looks like a pre-v4 Zod schema, which cannot be " +
+        "converted. Upgrade to zod v4 (Standard Schema) or pass plain JSON Schema.",
     );
   }
+  return schema as Record<string, unknown>;
 }
 
 /**
@@ -91,7 +102,7 @@ export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn 
   };
 
   return async (options, callOpts): Promise<GenerateResult> => {
-    const model = resolveModel(options.llm ?? opts.llm);
+    const model = resolveModel(options.llm ? normalizeLlm(options.llm) : opts.llm);
     const common = {
       model,
       prompt: options.prompt,
@@ -103,8 +114,10 @@ export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn 
       ...(callOpts?.signal !== undefined ? { abortSignal: callOpts.signal } : {}),
     };
     if (options.schema !== undefined) {
-      assertJsonSchema(options.schema);
-      const { object } = await generateObject({ ...common, schema: jsonSchema(options.schema) });
+      const { object } = await generateObject({
+        ...common,
+        schema: jsonSchema(resolveJsonSchema(options.schema)),
+      });
       return { text: JSON.stringify(object), object };
     }
     const { text } = await generateText(common);

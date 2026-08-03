@@ -22,11 +22,11 @@ describe("type contracts", () => {
     expectTypeOf(def).toEqualTypeOf<AgentDef>();
   });
 
-  test("tool() infers parameter type from Zod schema", () => {
+  test("tool() infers input type from Zod schema", () => {
     const params = z.object({ city: z.string() });
     const t = tool({
       description: "weather",
-      parameters: params,
+      inputSchema: params,
       execute: (args) => {
         expectTypeOf(args).toEqualTypeOf<{ city: string }>();
         return "ok";
@@ -43,7 +43,7 @@ describe("type contracts", () => {
   test("agent() accepts tools record", () => {
     const t = tool({
       description: "echo",
-      parameters: z.object({ msg: z.string() }),
+      inputSchema: z.object({ msg: z.string() }),
       execute: ({ msg }) => msg,
     });
     const def = agent({ name: "with-tools", tools: { echo: t } });

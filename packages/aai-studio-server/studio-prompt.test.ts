@@ -62,8 +62,8 @@ describe("studioSystemPrompt", () => {
     // The SDK's own preset, not the hand-rolled triple. `assemblyAIPipeline`
     // exists to close exactly this gap and the scaffold reference already
     // teaches it first — but the preamble outranks the reference, and while it
-    // spelled out the long form, 11 of 11 starter-eval agents wrote three
-    // aliased `assemblyAI` imports and none used the preset.
+    // spelled out the long form, 11 of 11 starter-eval agents wrote the three
+    // stage-factory imports by hand and none used the preset.
     expect(prompt).toContain("assemblyAIPipeline");
     // Real gateway ids are interpolated so the agent can't invent one
     // (a made-up id only fails at runtime, with a 400 "model not found").

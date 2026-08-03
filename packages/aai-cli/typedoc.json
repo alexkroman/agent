@@ -1,4 +1,0 @@
-{
-  "$schema": "https://typedoc.org/schema.json",
-  "entryPoints": ["dist/worker-bundler.d.ts", "dist/client-bundler.d.ts", "dist/typecheck.d.ts"]
-}

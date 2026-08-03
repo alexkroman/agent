@@ -58,7 +58,7 @@ export default agent({
   tools: {
     recommend: tool({
       description: "Get recommendations for movies, music, or books based on mood.",
-      parameters: z.object({
+      inputSchema: z.object({
         category: z.enum(CATEGORIES),
         mood: z.enum(MOODS),
       }),

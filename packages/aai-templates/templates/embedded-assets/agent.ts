@@ -31,7 +31,7 @@ export default agent({
     search_knowledge: tool({
       description:
         "Search the embedded FAQ knowledge base for an answer matching the user's question.",
-      parameters: z.object({
+      inputSchema: z.object({
         query: z.string().describe("The user's question to search for"),
       }),
       async execute(args) {

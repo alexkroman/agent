@@ -23,7 +23,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       tools: {
         greet: {
           description: "Greet by name",
-          parameters: z.object({ name: z.string() }),
+          inputSchema: z.object({ name: z.string() }),
           execute: ({ name }: { name: string }) => `Hello, ${name}!`,
         },
       },
@@ -57,7 +57,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       tools: {
         save: {
           description: "Save a value",
-          parameters: z.object({ key: z.string(), value: z.string() }),
+          inputSchema: z.object({ key: z.string(), value: z.string() }),
           execute: async ({ key, value }: { key: string; value: string }, ctx) => {
             await ctx.db.query("insert into vals (key, value) values ($1, $2)", [key, value]);
             return "saved";
@@ -65,7 +65,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
         },
         load: {
           description: "Load a value",
-          parameters: z.object({ key: z.string() }),
+          inputSchema: z.object({ key: z.string() }),
           execute: async ({ key }: { key: string }, ctx) => {
             const rows = await ctx.db.query<{ value: string }>(
               "select value from vals where key = $1",
@@ -151,7 +151,7 @@ describe("SDK integration: AgentDef → tool execution", () => {
       tools: {
         typed: {
           description: "Typed tool",
-          parameters: z.object({ count: z.number() }),
+          inputSchema: z.object({ count: z.number() }),
           execute: ({ count }: { count: number }) => String(count * 2),
         },
       },

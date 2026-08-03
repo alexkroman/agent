@@ -123,7 +123,7 @@ Eight workspace packages under `packages/`:
 | --- | --- | --- |
 | `packages/aai/` | `@alexkroman1/aai` | Shared core: manifest, types, protocol, S2S, session, Db |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret |
+| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret, storage, templates |
 | `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): the Node entrypoint that runs the complete agent inside each Modal Sandbox, built into one self-contained `dist/harness.mjs` |
 | `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks/epochs |
 | `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds, combined entry |
@@ -159,11 +159,16 @@ Subpath exports consumed by sibling packages and user agents:
 - `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
 - `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
 - `./manifest` — `toAgentConfig()`, `agentToolsToSchemas()`, config schemas
-- `./stt` — pipeline-mode STT provider factories (e.g. `assemblyAI`)
+- `./stt` — pipeline-mode STT provider factories (e.g. `assemblyAIStt`)
 - `./llm` — pipeline-mode LLM provider factories (e.g. `anthropic`)
 - `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
 - `./s2s` — S2S provider factories (`openaiRealtime`)
 - `./tools` — keyless network builtins callable from user tool code
+- `./internal` — infrastructure shared with sibling packages (epochs,
+  owned maps, WS upgrade parsing, schema-issue formatting); not a public
+  API, kept off the root barrel so authoring autocomplete stays small.
+  The env brands live on `./runtime` instead — they appear in its public
+  signatures (`RuntimeOptions`, `withHostCredentialFallback`)
 
 #### `aai-ui` (UI)
 
@@ -173,7 +178,8 @@ Subpath exports consumed by sibling packages and user agents:
 
 #### `aai-cli` (CLI)
 
-Binary: `aai` — subcommands: init, dev, test, build, deploy, delete, secret
+Binary: `aai` — subcommands: init, dev, test, build, deploy, delete,
+secret, storage, templates
 
 ### SDK structure
 
@@ -184,8 +190,10 @@ boundary** — this split is critical for sandbox security:
   run in browsers, Deno, and sandboxed environments. Contains:
   `types.ts`, `db.ts`, `hooks.ts`, `utils.ts`, `constants.ts`,
   `protocol.ts`, `system-prompt.ts`, `manifest.ts`,
-  `ws-upgrade.ts`, `_internal-types.ts`, `define.ts` (`agent()` and
-  `tool()` helpers for authoring `agent.ts` files).
+  `ws-upgrade.ts`, `_internal-types.ts`, `schema.ts` (Standard Schema
+  acceptance: `inputSchema` validation + JSON Schema conversion),
+  `define.ts` (`agent()` and `tool()` helpers for authoring `agent.ts`
+  files).
 - **`host/`** — host-only modules that **require Node.js APIs** (`node:vm`,
   `node:crypto`, etc.). Only runs on the platform server and CLI, never
   inside a guest sandbox. Contains:
@@ -539,7 +547,7 @@ voice agents without the CLI:
 - **LLM selection** (`studio-llm.ts`): every studio turn runs on the
   AssemblyAI LLM Gateway **with the caller's own API key** — delivered to
   the guest via `studio/session-init` and resolved there (`resolveLlm` +
-  the SDK's `assemblyAI` LLM factory); the platform holds no studio LLM
+  the SDK's `assemblyAILlm` factory); the platform holds no studio LLM
   credential. The *model* (never the key) stays host config: default
   `gpt-5.5`, `STUDIO_LLM_MODEL` overrides,
   `STUDIO_LLM_REGION=eu` region-filters. The caller's key doubles as the
@@ -682,11 +690,16 @@ wherever the runtime runs — inside the guest sandbox on the platform,
 in-process under `aai dev`: descriptors resolve through the same
 `resolveLlm` registry as the pipeline model, credentials from the agent env
 only. Defaults to the agent's own pipeline `llm`; a per-call `llm`
-descriptor works for S2S agents holding that provider's key.
+descriptor (or model-id string — same shorthand as `agent({ llm })`) works
+for S2S agents holding that provider's key.
 
-`GenerateOptions.schema` is **plain JSON Schema, never a Zod schema** — the
-options must survive the RPC boundary, and the implementation rejects Zod
-schemas so dev and prod cannot drift; convert with `z.toJSONSchema()`.
+`GenerateOptions.schema` accepts a Zod schema directly (or any Standard
+Schema convertible to JSON Schema — `sdk/schema.ts` owns detection and
+conversion), converted before the provider call; a plain JSON Schema object
+also works. `GenerateFn` is generic, so a Standard Schema call returns a
+typed `object`. Note zod 4.4 stamps `~standard` onto its plain
+`toJSONSchema()` OUTPUT too — schema detection keys off the `_zod` instance
+marker, never the `~standard` interface (`isConvertibleSchema`).
 (The pattern-combinator layer that once wrapped this —
 `@alexkroman1/aai/patterns`, earlier `@alexkroman1/aai/workflow` — was
 removed unused; multi-step orchestration is composed directly over
@@ -785,7 +798,7 @@ requires either zero or all three of `stt`/`llm`/`tts`.
 Reference providers shipped today:
 
 - **STT**: one of
-  - `assemblyAI({ model: "universal-3-5-pro" })` — `ASSEMBLYAI_API_KEY`
+  - `assemblyAIStt({ model: "universal-3-5-pro" })` — `ASSEMBLYAI_API_KEY`
   - `deepgram({ model: "nova-3" })` — `DEEPGRAM_API_KEY`
   - `elevenlabs({ model: "scribe_v2_realtime" })` — `ELEVENLABS_API_KEY`
   - `soniox({ model: "stt-rt-v3" })` — `SONIOX_API_KEY`
@@ -802,7 +815,7 @@ Reference providers shipped today:
   `host/providers/stt/assemblyai.ts` therefore always sets
   `connectTimeout`/`maxConnectionRetries`/`connectionRetryDelay` from
   `STT_CONNECT_*` in `sdk/constants.ts`, overridable per agent via
-  `assemblyAI({ connectTimeoutMs, maxConnectRetries })`. The retry policy is
+  `assemblyAIStt({ connectTimeoutMs, maxConnectRetries })`. The retry policy is
   pinned rather than left to the SDK so the worst-case open time is arithmetic
   we own: it runs inside `session.start()`, so a budget exceeding
   `DEFAULT_SESSION_START_TIMEOUT_MS` could only surface as the less specific
@@ -828,11 +841,10 @@ Reference providers shipped today:
     fronting hundreds of models addressed as `"creator/model"` (e.g.
     `gateway({ model: "zai/glm-4.6" })`). Resolved via `createGateway`
     from the `ai` package — no extra `@ai-sdk/*` dependency.
-  - `assemblyAI({ model, region? })` — `ASSEMBLYAI_API_KEY`; routes through
+  - `assemblyAILlm({ model, region? })` — `ASSEMBLYAI_API_KEY`; routes through
     the [AssemblyAI LLM Gateway](https://www.assemblyai.com/docs/llm-gateway)
     (OpenAI-compatible chat-completions endpoint fronting 25+ models) via
     `@ai-sdk/openai`'s `.chat()` client. `region: "eu"` selects the EU
-    endpoint. Same factory name as the STT provider — alias one on import.
     The client is built with a `fetch` wrapper,
     `repairOpenAiStream` (`host/providers/_openai-stream-repair.ts`): the
     gateway documents streamed responses for OpenAI models only, and its
@@ -849,9 +861,8 @@ Reference providers shipped today:
 - **TTS**: one of
   - `cartesia({ voice })` — `CARTESIA_API_KEY`
   - `rime({ voice })` — `RIME_API_KEY`
-  - `assemblyAI({ voice, language? })` — `ASSEMBLYAI_API_KEY`; AssemblyAI's
-    streaming TTS over `wss://streaming-tts.assemblyai.com/v1/ws/`. Third
-    factory named `assemblyAI` (STT and LLM have one too) — alias on import.
+  - `assemblyAITts({ voice, language? })` — `ASSEMBLYAI_API_KEY`; AssemblyAI's
+    streaming TTS over `wss://streaming-tts.assemblyai.com/v1/ws/`.
     Sharing one key with STT and the gateway means an all-AssemblyAI pipeline
     needs exactly one secret. Two protocol details that are easy to get wrong:
     the streaming sockets authenticate with the **raw** key, not `Bearer`, and
@@ -913,7 +924,7 @@ ready, and is permanently silent. Nothing before a live session catches it.
 Hence one checkable constant, with the accent alongside each name and the
 deprecated set kept separately in `ASSEMBLYAI_TTS_DEPRECATED_VOICES`.
 
-Pipeline mode picks the voice with `assemblyAI({ voice })` from
+Pipeline mode picks the voice with `assemblyAITts({ voice })` from
 `@alexkroman1/aai/tts` (or `assemblyAIPipeline({ voice })`). S2S mode's
 voice rides on the `s2s` descriptor — there is no top-level `voice:` field.
 
@@ -1056,7 +1067,10 @@ copying fields:
   `_internal-types.test.ts` asserts the one subtraction:
   `Exclude<keyof AgentDef, keyof AgentConfig | HostOnlyAgentField>` is `never`.
 - **`agent()`** derives its parameter shape from `AgentDef`
-  (`AgentParams` = `Omit` + `Partial<Pick>` of the defaulted fields) instead
+  (`AgentParams` = `Omit` + `Partial<Pick>` of the defaulted fields) plus
+  two author-only conveniences `agent()` normalizes away (`system` as an
+  alias of `systemPrompt`, and `llm` accepting a gateway model-id string —
+  `sdk/providers/llm/from-string.ts`), instead
   of re-declaring it inline — the inline form is how `send` and `state`
   shipped as runtime-working but excess-property errors for authors
   (neither bundler typechecks user code). `define.test-d.ts` locks this.
@@ -1310,24 +1324,26 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
 | `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts (NOT `parseManifest()` — that lives elsewhere and is not exported here) |
-| `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
+| `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAIStt`, `deepgram`, `elevenlabs`, `soniox`) |
 | `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway`) |
-| `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
+| `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAITts`) |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + types (`openaiRealtime`; `assemblyAIS2s` is on the root export) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch` |
+| `@alexkroman1/aai/internal` | `internal.ts` → 4 modules | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `parseWsUpgradeParams`, `formatSchemaIssues`). Not public API, not semver-covered, excluded from the docs |
 
 ### Concurrency primitives (use these, don't hand-roll)
 
 The codebase's recurring async-coordination patterns are reified as small
 primitives — reach for them before re-inventing the pattern at a call site:
 
-- **`createEpoch()`** (`aai/sdk/epoch.ts`, exported from `@alexkroman1/aai`) —
+- **`createEpoch()`** (`aai/sdk/epoch.ts`, exported from
+  `@alexkroman1/aai/internal`) —
   staleness guard for async continuations: capture `current()` when deferring
   work, check `isCurrent(gen)` when it settles, `bump()` to invalidate.
   Adopted by the aai-ui connection/turn generations and the pipeline turn
   gate. Don't hand-roll `let generation = 0; generation++` counters.
 - **`createOwnedMap()`** (`aai/sdk/owned-map.ts`, exported from
-  `@alexkroman1/aai`) — a map whose entries are removed by ownership token:
+  `@alexkroman1/aai/internal`) — a map whose entries are removed by ownership token:
   `claim(key, value)` returns the only release for that claim, so an async
   teardown settling after the key was re-claimed (reconnect resume, redeploy)
   can't evict the successor's entry. `owns()` guards non-delete mutations.
@@ -1359,12 +1375,12 @@ defaults that affect agent behavior:
 | Default | Value | Where applied | Notes |
 | --- | --- | --- | --- |
 | `maxSteps` | 10 (`DEFAULT_MAX_STEPS`) | `constants.ts` | Max tool calls per reply. Prevents runaway tool loops; sized so multi-tool chains plus a repair retry fit. |
-| `toolChoice` | `"auto"` | `manifest.ts:59` | LLM decides when to use tools vs respond directly. |
+| `toolChoice` | `"auto"` | `manifest.ts` | LLM decides when to use tools vs respond directly. Full AI SDK set: `"auto"`, `"required"`, `"none"`, `{ type: "tool", toolName }`. |
 | `idleTimeoutMs` | 300,000 (5 min) | `constants.ts:26` | `0` or non-finite disables the timer entirely. Re-armed on every inbound audio frame (`resetIdle`), so it measures silence, not call length. On expiry session-core emits `idle_timeout` **and closes the socket** — the event alone retires nothing (clients treat it as informational and wait for the close), so for a long time an idle session lingered and only Modal's 300s input cap reaped it. |
 | `silenceTimeoutMs` | unset (disabled) | `pipeline-silence.ts` | Pipeline only: assistant proactively takes a turn after this much user silence. Capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back nudges until the user speaks again. `silencePrompt` customizes the injected instruction (default `DEFAULT_SILENCE_PROMPT`); it is kept in LLM history but never emitted as a user transcript. |
 | `minBargeInWords` | 2 (`DEFAULT_MIN_BARGE_IN_WORDS`) | `constants.ts` | Pipeline only: interim-transcript words before user speech interrupts the in-flight reply. 2 keeps one-word backchannels from cutting the agent off; sub-threshold finals are answered after the reply. |
 | `interruptionMinDurationMs` | 500 (`DEFAULT_INTERRUPTION_MIN_DURATION_MS`) | `constants.ts` | Pipeline only: sustained speech (ms since the utterance's first partial) required before an interim-triggered barge-in fires — LiveKit's `min_interruption_duration` analog. Non-zero by default: room noise and echo of the agent's own voice produce short interim transcripts, and each one used to abandon a reply mid-word. Finals are never gated. 0 disables. |
-| AssemblyAI `min_turn_silence` | 2000 (`DEFAULT_MIN_TURN_SILENCE_MS`) | `host/providers/stt/assemblyai.ts` | End-of-turn silence before the service commits a `final`. Endpointing lives in the STT provider — the pipeline transport commits a turn on every final — so this is what keeps a mid-utterance pause from splitting one request across turns. Raised from 1500 after Full-Duplex-Bench v3 caught 1500 splitting real hesitant speech mid-sentence; the benchmark's own breakdown localizes it to *silence* rather than word accuracy (self-corrections and false starts passed 100%, hesitations 33%, pauses 57%). Override via `assemblyAI({ minTurnSilenceMs })`. |
+| AssemblyAI `min_turn_silence` | 2000 (`DEFAULT_MIN_TURN_SILENCE_MS`) | `host/providers/stt/assemblyai.ts` | End-of-turn silence before the service commits a `final`. Endpointing lives in the STT provider — the pipeline transport commits a turn on every final — so this is what keeps a mid-utterance pause from splitting one request across turns. Raised from 1500 after Full-Duplex-Bench v3 caught 1500 splitting real hesitant speech mid-sentence; the benchmark's own breakdown localizes it to *silence* rather than word accuracy (self-corrections and false starts passed 100%, hesitations 33%, pauses 57%). Override via `assemblyAIStt({ minTurnSilenceMs })`. |
 | Deepgram `endpointing` | 1500 (`DEFAULT_DEEPGRAM_ENDPOINTING_MS`) | `sdk/providers/stt/deepgram.ts` | Same role as `min_turn_silence` above — the provider owns end-of-turn; override via `deepgram({ endpointing })`. |
 | `holdPhrase` | `"One moment."` (`DEFAULT_HOLD_PHRASE`) | `pipeline-stream.ts` | Pipeline only: spoken when a turn opens with a tool call and no speech. `""` disables. |
 | `errorPhrase` | `"Sorry, I had a problem just then. Could you say that again?"` (`DEFAULT_ERROR_PHRASE`) | `pipeline-turn-outcome.ts` | Pipeline only: spoken when the turn's LLM stream fails, so a provider outage hands the conversation back instead of going silent. A failed turn produces no text, so nothing would otherwise reach TTS and the only trace is a `llm` session error the browser surfaces without a sound. `""` disables. |

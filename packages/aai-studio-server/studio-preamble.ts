@@ -178,7 +178,7 @@ placeholders or guess missing parameters.
 
 - Keep agent.ts simple and focused; split sizable helpers into their own
   files that agent.ts imports.
-- Every tool needs a descriptive snake_case name, a zod parameters
+- Every tool needs a descriptive snake_case name, a zod inputSchema
   schema, and an execute function that returns a value.
 - Replies are spoken aloud — follow the "Voice rules for systemPrompt" in
   the reference below for any prompt or greeting you write: short
@@ -214,10 +214,13 @@ ${SDK_SUBPATH_RULE}
   (universal-3-5-pro, gpt-5.5, vera), so there is no gateway model
   id to invent — an invented one is a 400 at the first session, with no
   compile-time or deploy-time check to catch it. Prefer it over declaring the
-  three stages by hand; the long form needs three imports of a factory called
-  assemblyAI, two of them aliased, and buys nothing.
+  three stages by hand; the long form (assemblyAIStt + assemblyAILlm +
+  assemblyAITts from the three provider subpaths) buys nothing.
   To change one stage, spread the preset and then set that stage:
     agent({ ...assemblyAIPipeline(), tts: cartesia({ voice: "…" }) });
+  That is also how the gateway LLM model is changed — llm accepts the model
+  id as a plain string:
+    agent({ ...assemblyAIPipeline(), llm: "claude-sonnet-4-6" });
   All three stages bill to ASSEMBLYAI_API_KEY, the one key a published agent
   is guaranteed to have, so this default runs the moment it is published. Any
   other provider — Anthropic, OpenAI, Cartesia, Rime, Deepgram — needs a key
@@ -239,7 +242,7 @@ ${SDK_SUBPATH_RULE}
   "gpt-5.5" unless the user asks for a different model.
 - For a one-shot LLM call inside a tool (summarize, classify, extract),
   use ctx.generate — see the reference below. Its \`schema\` option is
-  plain JSON Schema (convert with z.toJSONSchema()), never a zod schema.
+  a zod schema (typed structured output) or plain JSON Schema.
 
 ## The App Builder Environment
 

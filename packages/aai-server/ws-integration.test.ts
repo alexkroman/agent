@@ -8,7 +8,7 @@
  * so the test runs without external dependencies.
  */
 import http from "node:http";
-import { createOwnedMap } from "@alexkroman1/aai";
+import { createOwnedMap } from "@alexkroman1/aai/internal";
 import type { ReadyConfig, ServerMessage } from "@alexkroman1/aai/protocol";
 import {
   type SessionCore,

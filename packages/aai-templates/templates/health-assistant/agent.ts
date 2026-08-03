@@ -86,7 +86,7 @@ export default agent({
     check_drug_interaction: tool({
       description:
         "Check for interactions between two or more medications using FDA drug label data. Looks up each drug's official label and reports where one drug's Drug Interactions section mentions another. Absence of a mention does not guarantee safety.",
-      parameters: z.object({
+      inputSchema: z.object({
         drugs: z
           .array(z.string().min(1))
           .min(2)
@@ -142,7 +142,7 @@ export default agent({
     medication_lookup: tool({
       description:
         "Look up detailed information about a single medication, including purpose, warnings, dosage, side effects, and manufacturer. Works with both generic and brand names.",
-      parameters: z.object({
+      inputSchema: z.object({
         name: z
           .string()
           .describe("Medication name (generic or brand, e.g. 'ibuprofen' or 'Advil')"),

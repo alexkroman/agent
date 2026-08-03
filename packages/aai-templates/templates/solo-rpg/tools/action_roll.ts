@@ -15,7 +15,7 @@ import {
 export const actionRoll = tool({
   description:
     "Core mechanic. Roll 2d6 + stat (capped at 10) vs 2d10 challenge dice. Also applies consequences (health/spirit/supply/momentum changes, clock advancement) based on move type, position, and result. Call for ANY risky action. Pure conversation needs no roll.",
-  parameters: z.object({
+  inputSchema: z.object({
     move: z.enum(MOVES).describe("Which move the player is making"),
     stat: z.enum(["edge", "heart", "iron", "shadow", "wits"]).describe("Which stat to roll"),
     position: z

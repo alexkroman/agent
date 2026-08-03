@@ -10,7 +10,8 @@
 // decrypt path — this migration supersedes the old "never delete a legacy
 // read path" rule for env blobs.
 
-import { createEpoch, errorMessage, safeJsonParse } from "@alexkroman1/aai";
+import { errorMessage, safeJsonParse } from "@alexkroman1/aai";
+import { createEpoch } from "@alexkroman1/aai/internal";
 import type { Storage } from "unstorage";
 import { z } from "zod";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";

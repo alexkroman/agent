@@ -125,7 +125,7 @@ export function createGetPageDesign(
       "names and inline styles kept), its <style> blocks, and its linked stylesheets. Use this " +
       "to study or mimic another website's design — colors, fonts, layout, spacing. For " +
       "reading a page's text content, use visit_webpage instead.",
-    parameters: getPageDesignParams,
+    inputSchema: getPageDesignParams,
     async execute(args, _ctx) {
       const { url } = args;
       const resp = await fetchFn(url, {

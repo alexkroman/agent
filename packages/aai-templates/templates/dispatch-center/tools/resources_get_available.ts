@@ -4,7 +4,7 @@ import { getState, RESOURCE_TYPES } from "../shared.ts";
 
 export const resourcesGetAvailable = tool({
   description: "List available resources, optionally filtered by type.",
-  parameters: z.object({
+  inputSchema: z.object({
     type: z
       .enum([...RESOURCE_TYPES, "all"])
       .describe("Filter by resource type, or 'all'")

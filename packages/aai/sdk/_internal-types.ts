@@ -11,9 +11,9 @@
  * @internal
  */
 
-import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
 import type { ToolSchema } from "./agent-config.ts";
+import { toToolJsonSchema } from "./schema.ts";
 import type { ToolDef } from "./types.ts";
 
 export {
@@ -31,24 +31,20 @@ export {
 
 export const EMPTY_PARAMS = z.object({});
 
-/**
- * Convert a Zod schema to the JSON Schema shape that S2S providers expect.
- * Strips the `$schema` keyword: `z.toJSONSchema` (Zod v4) tags output with
- * the JSON Schema 2020-12 dialect URI, and some Realtime/S2S providers
- * either reject the field outright or ship it through to the underlying
- * model with a malformed function spec — observed empirically as tool
- * calls that arrive with `args: {}` even when required params are listed.
- */
-export function toToolJsonSchema(zodSchema: z.ZodTypeAny): JSONSchema7 {
-  const { $schema: _omit, ...rest } = z.toJSONSchema(zodSchema) as Record<string, unknown>;
-  return rest as JSONSchema7;
-}
-
 export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[] {
-  return Object.entries(tools).map(([name, def]) => ({
-    type: "function",
-    name,
-    description: def.description,
-    parameters: toToolJsonSchema(def.parameters ?? EMPTY_PARAMS),
-  }));
+  return Object.entries(tools).map(([name, def]) => {
+    // TypeScript catches this rename; an untypechecked JS agent would
+    // otherwise silently ship a no-arg tool spec.
+    if ("parameters" in def && def.inputSchema === undefined) {
+      throw new Error(
+        `Tool "${name}" uses the removed \`parameters\` field — rename it to \`inputSchema\`.`,
+      );
+    }
+    return {
+      type: "function",
+      name,
+      description: def.description,
+      parameters: toToolJsonSchema(def.inputSchema ?? EMPTY_PARAMS),
+    };
+  });
 }

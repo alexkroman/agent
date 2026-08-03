@@ -408,7 +408,7 @@ describe("update_state", () => {
   });
 
   test("zod schemas reject out-of-range and malformed inputs", () => {
-    const params = updateState.parameters!;
+    const params = updateState.inputSchema!;
     expect(() => params.parse({ addClockSegments: 1 })).toThrow(); // below min
     expect(() => params.parse({ addClockSegments: 13 })).toThrow(); // above max
     expect(() => params.parse({ addClockSegments: 2.5 })).toThrow(); // non-integer
@@ -419,7 +419,7 @@ describe("update_state", () => {
       params.parse({ addClockSegments: 6, updateNpcBond: 4, timeOfDay: "night" }),
     ).toBeTruthy();
 
-    const slotParams = saveGame.parameters!;
+    const slotParams = saveGame.inputSchema!;
     expect(() => slotParams.parse({ slot: "../../etc" })).toThrow();
     expect(() => slotParams.parse({ slot: "a".repeat(40) })).toThrow();
     expect(slotParams.parse({ slot: "chapter-2" })).toBeTruthy();

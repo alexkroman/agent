@@ -12,20 +12,21 @@
  * `createRuntime`, pointing `@ai-sdk/openai`'s chat-completions client at
  * the gateway base URL.
  *
- * Note: this factory shares its name with the STT factory in
- * `@alexkroman1/aai/stt` and the TTS factory in `@alexkroman1/aai/tts`. When
- * using more than one, alias on import:
+ * The three AssemblyAI stage factories have distinct names
+ * (`assemblyAIStt`, `assemblyAILlm`, `assemblyAITts`), so they can be
+ * imported side by side:
  *
  * ```ts
- * import { assemblyAI } from "@alexkroman1/aai/stt";
- * import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
- * import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+ * import { assemblyAIStt } from "@alexkroman1/aai/stt";
+ * import { assemblyAILlm } from "@alexkroman1/aai/llm";
+ * import { assemblyAITts } from "@alexkroman1/aai/tts";
  * ```
  */
 
 import type { LlmProvider } from "../../providers.ts";
 import type { AssemblyAIGatewayModel } from "./gateway-models.ts";
 
+/** Kind tag recognised by the host-side resolver. */
 export const ASSEMBLYAI_LLM_KIND = "assemblyai" as const;
 
 /** Agent-env variable holding the AssemblyAI API key (same key as AssemblyAI STT). */
@@ -60,6 +61,7 @@ export {
   gatewayModelIds,
 } from "./gateway-models.ts";
 
+/** Options for {@link assemblyAILlm}. */
 export interface AssemblyAILlmOptions {
   /**
    * Gateway model id — see {@link ASSEMBLYAI_GATEWAY_MODELS} for the catalog,
@@ -95,6 +97,7 @@ export interface AssemblyAILlmOptions {
   reasoningEffort?: AssemblyAIReasoningEffort;
 }
 
+/** Descriptor returned by {@link assemblyAILlm}. */
 export type AssemblyAILlmProvider = LlmProvider & {
   readonly kind: typeof ASSEMBLYAI_LLM_KIND;
   readonly options: AssemblyAILlmOptions & { model: string };
@@ -107,11 +110,11 @@ export type AssemblyAILlmProvider = LlmProvider & {
  * (`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
  * descriptor stays free of secrets and safe to serialize.
  *
- * Shares its name with the `assemblyAI` STT factory (`@alexkroman1/aai/stt`)
- * and TTS factory (`@alexkroman1/aai/tts`) — alias on import when using more
- * than one.
+ * Named `assemblyAILlm` (not `assemblyAI`) so the STT
+ * (`assemblyAIStt`), LLM, and TTS (`assemblyAITts`) factories can be
+ * imported side by side without aliasing.
  */
-export function assemblyAI(opts: AssemblyAILlmOptions = {}): AssemblyAILlmProvider {
+export function assemblyAILlm(opts: AssemblyAILlmOptions = {}): AssemblyAILlmProvider {
   return {
     kind: ASSEMBLYAI_LLM_KIND,
     options: { ...opts, model: opts.model ?? ASSEMBLYAI_LLM_DEFAULT_MODEL },

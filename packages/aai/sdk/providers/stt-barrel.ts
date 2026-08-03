@@ -2,20 +2,17 @@
 /**
  * `@alexkroman1/aai/stt` subpath barrel.
  *
- * Re-exports the descriptor factories (`assemblyAI`, `deepgram`,
+ * Re-exports the descriptor factories (`assemblyAIStt`, `deepgram`,
  * `elevenlabs`, `soniox`) and the shared STT contract types. Importing this
  * barrel does not pull in the `assemblyai` SDK — that happens only when the
  * host resolver is invoked.
- *
- * Note: the `assemblyAI` factory here shares its name with the TTS factory in
- * `@alexkroman1/aai/tts` and the LLM factory in `@alexkroman1/aai/llm`. When
- * using more than one, alias on import
- * (`import { assemblyAI as assemblyAIStt } from "@alexkroman1/aai/stt"`).
  *
  * Named re-exports rather than `export *`: the wildcard form needs a
  * `noReExportAll` suppression per line, and the escape-hatch ratchet only
  * moves down. Listing them also makes the public surface of this subpath
  * readable in one place — add new symbols here when a provider gains one.
+ *
+ * @module stt
  */
 
 export type {
@@ -32,7 +29,7 @@ export {
   ASSEMBLYAI_STREAMING_EU_URL,
   type AssemblyAIOptions,
   type AssemblyAIProvider,
-  assemblyAI,
+  assemblyAIStt,
 } from "./stt/assemblyai.ts";
 export {
   DEEPGRAM_API_KEY_ENV,

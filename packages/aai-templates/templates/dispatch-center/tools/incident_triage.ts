@@ -15,7 +15,7 @@ import {
 export const incidentTriage = tool({
   description:
     "Triage an incident — confirm or override severity, type, hazards, and casualty count.",
-  parameters: z.object({
+  inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
     severity: z.enum(SEVERITIES).describe("Confirmed severity after triage").optional(),
     type: z.enum(INCIDENT_TYPES).describe("Confirmed incident type").optional(),

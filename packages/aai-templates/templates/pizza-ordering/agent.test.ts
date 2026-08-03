@@ -76,17 +76,19 @@ describe("pricing (shared.ts)", () => {
     expect(calculateTotal([a, b])).toBeCloseTo(8.99 * 4, 5);
   });
 
-  test("add_pizza schema defaults quantity to 1 and rejects non-positive quantities", () => {
-    const schema = getTool("add_pizza").parameters;
-    if (!schema) throw new Error("add_pizza has no parameters schema");
-    const parsed = schema.parse({ size: "small", crust: "thin", toppings: [] });
-    expect(parsed.quantity).toBe(1);
-    expect(() =>
-      schema.parse({ size: "small", crust: "thin", toppings: [], quantity: 0 }),
-    ).toThrow();
-    expect(() =>
-      schema.parse({ size: "small", crust: "thin", toppings: [], quantity: 1.5 }),
-    ).toThrow();
+  test("add_pizza schema defaults quantity to 1 and rejects non-positive quantities", async () => {
+    const schema = getTool("add_pizza").inputSchema;
+    if (!schema) throw new Error("add_pizza has no input schema");
+    // Validate through the Standard Schema contract — the vendor-neutral
+    // interface every inputSchema carries.
+    const validate = (value: unknown) => schema["~standard"].validate(value);
+    const ok = await validate({ size: "small", crust: "thin", toppings: [] });
+    if (ok.issues) throw new Error("expected valid input");
+    expect((ok.value as { quantity: number }).quantity).toBe(1);
+    const zero = await validate({ size: "small", crust: "thin", toppings: [], quantity: 0 });
+    expect(zero.issues).toBeDefined();
+    const frac = await validate({ size: "small", crust: "thin", toppings: [], quantity: 1.5 });
+    expect(frac.issues).toBeDefined();
   });
 });
 

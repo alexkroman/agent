@@ -8,19 +8,20 @@
  * from the agent's env — the same key AssemblyAI STT and the LLM Gateway use,
  * so a full AssemblyAI pipeline needs exactly one secret.
  *
- * Note: this factory shares its name with the STT factory in
- * `@alexkroman1/aai/stt` and the LLM factory in `@alexkroman1/aai/llm`. When
- * using more than one, alias on import:
+ * The three AssemblyAI stage factories have distinct names
+ * (`assemblyAIStt`, `assemblyAILlm`, `assemblyAITts`), so they can be
+ * imported side by side:
  *
  * ```ts
- * import { assemblyAI } from "@alexkroman1/aai/stt";
- * import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
- * import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+ * import { assemblyAIStt } from "@alexkroman1/aai/stt";
+ * import { assemblyAILlm } from "@alexkroman1/aai/llm";
+ * import { assemblyAITts } from "@alexkroman1/aai/tts";
  * ```
  */
 
 import type { TtsProvider } from "../../providers.ts";
 
+/** Kind tag recognised by the host-side resolver. */
 export const ASSEMBLYAI_TTS_KIND = "assemblyai" as const;
 
 /** Agent-env variable holding the AssemblyAI API key (same key as STT/LLM). */
@@ -30,7 +31,7 @@ export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
 
 /**
- * Default voice when `assemblyAI()` is called with no `voice`. Note it is
+ * Default voice when `assemblyAITts()` is called with no `voice`. Note it is
  * UK-accented — a US-facing agent should pick a US voice from
  * {@link ASSEMBLYAI_TTS_VOICES} explicitly. Every voice in the catalog
  * speaks exactly one language, so changing `language` generally means
@@ -222,6 +223,7 @@ export interface AssemblyAITtsOptions {
   language?: AssemblyAITtsLanguage;
 }
 
+/** Descriptor returned by {@link assemblyAITts}. */
 export type AssemblyAITtsProvider = TtsProvider & {
   readonly kind: typeof ASSEMBLYAI_TTS_KIND;
   readonly options: AssemblyAITtsOptions & { voice: string };
@@ -234,11 +236,11 @@ export type AssemblyAITtsProvider = TtsProvider & {
  * (`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
  * descriptor stays free of secrets and safe to serialize.
  *
- * Shares its name with the `assemblyAI` STT factory (`@alexkroman1/aai/stt`)
- * and LLM factory (`@alexkroman1/aai/llm`) — alias on import when using more
- * than one.
+ * Named `assemblyAITts` (not `assemblyAI`) so the STT
+ * (`assemblyAIStt`), LLM (`assemblyAILlm`), and TTS factories can be
+ * imported side by side without aliasing.
  */
-export function assemblyAI(opts: AssemblyAITtsOptions = {}): AssemblyAITtsProvider {
+export function assemblyAITts(opts: AssemblyAITtsOptions = {}): AssemblyAITtsProvider {
   return {
     kind: ASSEMBLYAI_TTS_KIND,
     options: { ...opts, voice: opts.voice ?? ASSEMBLYAI_TTS_DEFAULT_VOICE },

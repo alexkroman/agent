@@ -21,7 +21,8 @@
  * client-config broker.
  */
 
-import { MAX_WS_PAYLOAD_BYTES, parseWsUpgradeParams } from "@alexkroman1/aai";
+import { MAX_WS_PAYLOAD_BYTES } from "@alexkroman1/aai";
+import { parseWsUpgradeParams } from "@alexkroman1/aai/internal";
 import type { SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { WebSocketServer } from "ws";
 import { answerUpgrade } from "./_upgrade-reply.ts";

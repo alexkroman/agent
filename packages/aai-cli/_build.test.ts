@@ -69,7 +69,7 @@ import { z } from "zod";
 
 const greetTool = {
   description: "Greet someone by name",
-  parameters: z.object({ name: z.string() }),
+  inputSchema: z.object({ name: z.string() }),
   execute: ({ name }) => "Hello, " + name,
 };
 

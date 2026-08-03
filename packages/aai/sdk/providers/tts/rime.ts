@@ -13,6 +13,7 @@
 
 import type { TtsProvider } from "../../providers.ts";
 
+/** Kind tag recognised by the host-side resolver. */
 export const RIME_KIND = "rime" as const;
 
 /** Agent-env variable holding the Rime API key. */
@@ -25,6 +26,7 @@ export const RIME_API_KEY_ENV = "RIME_API_KEY";
  */
 export const RIME_DEFAULT_VOICE = "cove";
 
+/** Options for {@link rime}. */
 export interface RimeOptions {
   /** Rime speaker ID. Defaults to {@link RIME_DEFAULT_VOICE}. */
   voice?: string;
@@ -42,11 +44,16 @@ export interface RimeOptions {
   language?: string;
 }
 
+/** Descriptor returned by {@link rime}. */
 export type RimeProvider = TtsProvider & {
   readonly kind: typeof RIME_KIND;
   readonly options: RimeOptions & { voice: string };
 };
 
+/**
+ * Build a Rime TTS descriptor for pipeline mode. The API key is resolved
+ * host-side from the agent's env (`RIME_API_KEY`).
+ */
 export function rime(opts: RimeOptions = {}): RimeProvider {
   return {
     kind: RIME_KIND,

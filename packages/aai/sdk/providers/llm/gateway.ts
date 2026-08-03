@@ -20,6 +20,7 @@ export const GATEWAY_KIND = "gateway" as const;
 /** Agent-env variable holding the Vercel AI Gateway API key. */
 export const GATEWAY_API_KEY_ENV = "AI_GATEWAY_API_KEY";
 
+/** Options for {@link gateway}. */
 export interface GatewayOptions {
   /**
    * Gateway model id in `"creator/model"` form, e.g. `"zai/glm-4.6"`,
@@ -29,6 +30,7 @@ export interface GatewayOptions {
   model: string;
 }
 
+/** Descriptor returned by {@link gateway}. */
 export type GatewayProvider = LlmProvider & {
   readonly kind: typeof GATEWAY_KIND;
   readonly options: GatewayOptions;

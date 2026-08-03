@@ -18,8 +18,10 @@
 
 import type { S2sProvider } from "../../providers.ts";
 
+/** Kind tag recognised by the host-side resolver. */
 export const ASSEMBLYAI_S2S_KIND = "assemblyai" as const;
 
+/** Descriptor returned by {@link assemblyAIS2s}. */
 export type AssemblyAIS2sProvider = S2sProvider & {
   readonly kind: typeof ASSEMBLYAI_S2S_KIND;
   readonly options: Record<string, unknown>;

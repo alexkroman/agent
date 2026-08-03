@@ -31,8 +31,6 @@ declare const hostCredentialsMarker: unique symbol;
  * An env record that may carry host/shell provider credentials. Minted only
  * by `withHostCredentialFallback` (host/providers/host-env.ts). Usable for
  * provider-credential resolution, never as agent-visible env.
- *
- * @internal
  */
 export type HostCredentialEnv = Record<string, string> & {
   readonly [hostCredentialsMarker]: true;
@@ -42,8 +40,6 @@ export type HostCredentialEnv = Record<string, string> & {
  * Env acceptable for provider-credential resolution (STT/TTS/LLM openers,
  * `ctx.generate`): the agent's own env or a host-fallback env.
  * Everything is assignable here — the restriction lives on {@link AgentEnv}.
- *
- * @internal
  */
 export type ProviderEnv = Record<string, string> & {
   readonly [hostCredentialsMarker]?: true;
@@ -53,8 +49,6 @@ export type ProviderEnv = Record<string, string> & {
  * Tenant-owned env — the only kind allowed to become `ctx.env` (what agent
  * tool code reads). A {@link HostCredentialEnv} does not satisfy this type;
  * plain records and other agent envs do.
- *
- * @internal
  */
 export type AgentEnv = Record<string, string> & {
   readonly [hostCredentialsMarker]?: never;

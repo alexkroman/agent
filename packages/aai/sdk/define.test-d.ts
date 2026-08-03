@@ -41,7 +41,7 @@ test("an unannotated tool can read state without a type error", () => {
   // `unknown`, which failed `aai build`'s typecheck on a working agent.
   const add = tool({
     description: "add",
-    parameters: z.object({ item: z.string() }),
+    inputSchema: z.object({ item: z.string() }),
     execute: ({ item }, ctx) => {
       expectTypeOf(ctx.state).toEqualTypeOf<DefaultSessionState>();
       ctx.state.cart.push(item); // the exact line that used to be TS18046
@@ -55,7 +55,7 @@ test("tool() types ctx.state from an annotated context", () => {
   type Cart = { items: string[] };
   const add = tool({
     description: "add",
-    parameters: z.object({ item: z.string() }),
+    inputSchema: z.object({ item: z.string() }),
     execute: ({ item }, ctx: ToolContext<Cart>) => {
       expectTypeOf(ctx.state).toEqualTypeOf<Cart>();
       expectTypeOf(item).toEqualTypeOf<string>();

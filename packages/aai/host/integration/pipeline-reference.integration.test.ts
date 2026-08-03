@@ -25,7 +25,7 @@ import { fileURLToPath } from "node:url";
 import { describe, expect, test } from "vitest";
 import type { ClientSink } from "../../sdk/protocol.ts";
 import { openai } from "../../sdk/providers/llm/openai.ts";
-import { assemblyAI } from "../../sdk/providers/stt/assemblyai.ts";
+import { assemblyAIStt } from "../../sdk/providers/stt/assemblyai.ts";
 import { cartesia } from "../../sdk/providers/tts/cartesia.ts";
 import { createRuntime } from "../runtime.ts";
 import { consoleLogger } from "../runtime-config.ts";
@@ -86,7 +86,7 @@ describe.skipIf(!envReady)("pipeline integration — reference stack", () => {
       },
       // Descriptors, not pre-resolved openers — so this exercises the same
       // resolution path (and API-key routing) a deployed agent takes.
-      stt: assemblyAI({ model: "universal-3-5-pro" }),
+      stt: assemblyAIStt({ model: "universal-3-5-pro" }),
       llm: openai({ model: "gpt-4o-mini" }),
       tts: cartesia({ voice: "694f9389-aac1-45b6-b726-9d9369183238" }),
       logger: consoleLogger,

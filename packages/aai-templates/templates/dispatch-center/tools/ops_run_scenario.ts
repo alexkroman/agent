@@ -119,7 +119,7 @@ const SCENARIO_NAMES = Object.keys(scenarios) as [ScenarioName, ...ScenarioName[
 
 export const opsRunScenario = tool({
   description: "Run a training scenario that creates simulated incidents for dispatch practice.",
-  parameters: z.object({
+  inputSchema: z.object({
     scenario: z.enum(SCENARIO_NAMES).describe("Scenario type to simulate"),
   }),
   async execute(args, ctx) {

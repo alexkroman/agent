@@ -11,7 +11,7 @@ import {
 
 export const incidentEscalate = tool({
   description: "Escalate an incident when it exceeds current capacity or severity increases.",
-  parameters: z.object({
+  inputSchema: z.object({
     incidentId: z.string().max(20).describe("The incident ID"),
     reason: z.string().max(1000).describe("Reason for escalation"),
     requestMutualAid: z

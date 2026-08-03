@@ -41,6 +41,8 @@
  * The object form exists because agents reach for the shape they already
  * know from the model-facing builtin (`{ query, max_results }`), and guessing
  * wrong cost a build round.
+ *
+ * @module tools
  */
 
 import type { DefaultToolResult } from "../sdk/types.ts";

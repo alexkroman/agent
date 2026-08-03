@@ -7,6 +7,8 @@
  * sibling packages. The module stays free of zod and other runtime
  * dependencies so the CLI can import it on every invocation without a
  * startup cost.
+ *
+ * @module utils
  */
 
 import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "./constants.ts";

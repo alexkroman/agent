@@ -40,14 +40,14 @@ describe("executeToolCall", () => {
 
   test("validates args against parameter schema", async () => {
     const tool = makeTool({
-      parameters: z.object({ name: z.string() }),
+      inputSchema: z.object({ name: z.string() }),
       execute: (args) => `hi ${(args as { name: string }).name}`,
     });
     expect(await run("greet", { name: "alice" }, tool)).toBe("hi alice");
   });
 
   test("returns error for invalid args", async () => {
-    const tool = makeTool({ parameters: z.object({ name: z.string() }), execute: () => "ok" });
+    const tool = makeTool({ inputSchema: z.object({ name: z.string() }), execute: () => "ok" });
     const result = await run("greet", { name: 123 }, tool);
     const parsed = JSON.parse(result);
     expect(parsed.error).toContain("Invalid arguments");

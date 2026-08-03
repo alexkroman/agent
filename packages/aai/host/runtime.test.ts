@@ -10,7 +10,7 @@ import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { anthropic } from "../sdk/providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
-import { assemblyAI } from "../sdk/providers/stt/assemblyai.ts";
+import { assemblyAIStt } from "../sdk/providers/stt/assemblyai.ts";
 import { cartesia } from "../sdk/providers/tts/cartesia.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
@@ -73,7 +73,7 @@ describe("createRuntime", () => {
       tools: {
         add: {
           description: "Add two numbers",
-          parameters: z.object({ a: z.number(), b: z.number() }),
+          inputSchema: z.object({ a: z.number(), b: z.number() }),
           execute: ({ a, b }: { a: number; b: number }) => String(a + b),
         },
       },
@@ -276,7 +276,7 @@ describe("executeToolCall", () => {
   test("returns validation error for invalid args", async () => {
     const tool: ToolDef = {
       description: "Requires number",
-      parameters: z.object({ n: z.number() }),
+      inputSchema: z.object({ n: z.number() }),
       execute: ({ n }: { n: number }) => String(n),
     };
     const result = await executeToolCall("typedTool", { n: "not-a-number" }, { tool, env: {} });
@@ -288,7 +288,7 @@ describe("executeToolCall", () => {
   test("returns validation error with path info for nested args", async () => {
     const tool: ToolDef = {
       description: "Requires nested object",
-      parameters: z.object({ config: z.object({ port: z.number() }) }),
+      inputSchema: z.object({ config: z.object({ port: z.number() }) }),
       execute: () => "ok",
     };
     const result = await executeToolCall(
@@ -538,7 +538,7 @@ describe("createRuntime — provider resolution seams", () => {
       createRuntime({
         agent: { ...baseAgent, ...tuning },
         env: PROVIDER_KEYS,
-        stt: assemblyAI({ model: "universal-3-5-pro" }),
+        stt: assemblyAIStt({ model: "universal-3-5-pro" }),
         llm: anthropic({ model: "claude-haiku-4-5" }),
         tts: cartesia(),
       }),
@@ -554,7 +554,7 @@ describe("createRuntime — provider resolution seams", () => {
       agent: baseAgent,
       env: PROVIDER_KEYS,
       logger,
-      stt: assemblyAI({ model: "universal-3-5-pro" }),
+      stt: assemblyAIStt({ model: "universal-3-5-pro" }),
       llm: anthropic({ model: "claude-haiku-4-5" }),
       tts: cartesia(),
     });

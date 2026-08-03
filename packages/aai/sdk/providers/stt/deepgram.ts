@@ -16,6 +16,7 @@ export const DEEPGRAM_KIND = "deepgram" as const;
 /** Agent-env variable holding the Deepgram API key. */
 export const DEEPGRAM_API_KEY_ENV = "DEEPGRAM_API_KEY";
 
+/** Options for {@link deepgram}. */
 export interface DeepgramOptions {
   /**
    * Streaming speech model. Defaults to `"nova-3"`. Any string is forwarded
@@ -46,6 +47,7 @@ export interface DeepgramOptions {
  */
 export const DEFAULT_DEEPGRAM_ENDPOINTING_MS = 1500;
 
+/** Descriptor returned by {@link deepgram}. */
 export type DeepgramProvider = SttProvider & {
   readonly kind: typeof DEEPGRAM_KIND;
   readonly options: DeepgramOptions;

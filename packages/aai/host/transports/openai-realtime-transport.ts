@@ -4,6 +4,7 @@
 import type { ToolSchema } from "../../sdk/_internal-types.ts";
 import { LOG_PREVIEW_CHARS, WS_NORMAL_CLOSURE, WS_OPEN } from "../../sdk/constants.ts";
 import type { OpenaiRealtimeOptions } from "../../sdk/providers/s2s/openai-realtime.ts";
+import type { ToolChoice } from "../../sdk/types.ts";
 import { errorMessage, safeJsonParse, toArgsRecord } from "../../sdk/utils.ts";
 import { createAudioSendGate } from "../_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "../_base64.ts";
@@ -29,7 +30,7 @@ type OpenaiRealtimeTransportOptions = {
   options: OpenaiRealtimeOptions;
   sessionConfig: TransportSessionConfig;
   toolSchemas: ToolSchema[];
-  toolChoice: "auto" | "required";
+  toolChoice: ToolChoice;
   callbacks: TransportCallbacks;
   sid: string;
   /** PCM sample rate (Hz) the client captures and sends — must match what we
@@ -109,7 +110,11 @@ export function createOpenaiRealtimeTransport(opts: OpenaiRealtimeTransportOptio
           },
         },
         tools: opts.toolSchemas,
-        tool_choice: opts.toolChoice,
+        // The object form maps to OpenAI Realtime's named-function shape.
+        tool_choice:
+          typeof opts.toolChoice === "string"
+            ? opts.toolChoice
+            : { type: "function", name: opts.toolChoice.toolName },
       },
     });
   }

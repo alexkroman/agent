@@ -205,7 +205,7 @@ const THEMES = [
 export const oracle = tool({
   description:
     "Consult the oracle for narrative inspiration. Generates random prompts from thematic tables.",
-  parameters: z.object({
+  inputSchema: z.object({
     type: z
       .enum(["action_theme", "npc_reaction", "scene_twist", "yes_no", "chaos_check"])
       .describe("Type of oracle consultation"),

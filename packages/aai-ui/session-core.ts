@@ -13,7 +13,8 @@
  * No dependency on React, Preact, or any UI framework.
  */
 
-import { createEpoch, WS_OPEN } from "@alexkroman1/aai";
+import { WS_OPEN } from "@alexkroman1/aai";
+import { createEpoch } from "@alexkroman1/aai/internal";
 import type { ClientMessage } from "@alexkroman1/aai/protocol";
 import { loadClientConfig } from "./client-config.ts";
 import { initAudioCapture, loadAudioModules } from "./session-core-audio-setup.ts";

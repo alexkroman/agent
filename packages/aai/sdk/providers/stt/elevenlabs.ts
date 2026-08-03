@@ -16,6 +16,7 @@ export const ELEVENLABS_KIND = "elevenlabs" as const;
 /** Agent-env variable holding the ElevenLabs API key. */
 export const ELEVENLABS_API_KEY_ENV = "ELEVENLABS_API_KEY";
 
+/** Options for {@link elevenlabs}. */
 export interface ElevenLabsOptions {
   /**
    * Streaming speech model. Defaults to `"scribe_v2_realtime"`. Any
@@ -30,6 +31,7 @@ export interface ElevenLabsOptions {
   languageCode?: string;
 }
 
+/** Descriptor returned by {@link elevenlabs}. */
 export type ElevenLabsProvider = SttProvider & {
   readonly kind: typeof ELEVENLABS_KIND;
   readonly options: ElevenLabsOptions;

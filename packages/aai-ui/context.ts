@@ -193,6 +193,13 @@ function usePageBackground(bg: string): void {
   }, [bg]);
 }
 
+/**
+ * Read the resolved theme (every {@link ClientTheme} field filled with its
+ * default) from the nearest theme context. Returns the default theme when no
+ * provider is present, so components can call it unconditionally.
+ *
+ * @public
+ */
 export function useTheme(): Required<ClientTheme> {
   return useContext(ThemeCtx);
 }

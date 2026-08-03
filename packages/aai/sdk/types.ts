@@ -3,10 +3,10 @@
  * Core type definitions for the AAI agent SDK.
  */
 
-import type { z } from "zod";
 import type { Db } from "./db.ts";
-import type { GenerateOptions, GenerateResult } from "./generate.ts";
+import type { GenerateFn } from "./generate.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
+import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 
 /**
  * Identifier for a built-in server-side tool.
@@ -43,14 +43,17 @@ export type BuiltinTool =
   | "calculate";
 
 /**
- * How the LLM should select tools during a turn.
+ * How the LLM should select tools during a turn. Mirrors the Vercel AI
+ * SDK's `toolChoice`.
  *
  * - `"auto"` — The model decides whether to call a tool (default).
  * - `"required"` — The model must call at least one tool each step.
+ * - `"none"` — The model may not call tools this session.
+ * - `{ type: "tool", toolName }` — The model must call the named tool.
  *
  * @public
  */
-export type ToolChoice = "auto" | "required";
+export type ToolChoice = "auto" | "required" | "none" | { type: "tool"; toolName: string };
 
 /**
  * A single message in the conversation history.
@@ -121,7 +124,7 @@ export type DefaultToolResult = any;
  *
  * const lookupNote = tool({
  *   description: "Look up a note from the database",
- *   parameters: z.object({ id: z.string() }),
+ *   inputSchema: z.object({ id: z.string() }),
  *   execute: async ({ id }, ctx) => {
  *     const rows = await ctx.db.query("select body from notes where id = $1", [id]);
  *     return { id, note: rows[0] ?? null };
@@ -151,9 +154,10 @@ export type ToolContext<S = DefaultSessionState> = {
    * One-shot LLM generation, executed on the host (like `db`).
    * Defaults to the agent's pipeline `llm`; pass `llm` in the options to use
    * another provider (its API key must be in the agent's env). Throws when
-   * no LLM is configured or named.
+   * no LLM is configured or named. Pass a Zod `schema` for typed structured
+   * output ({@link GenerateFn}).
    */
-  generate(options: GenerateOptions): Promise<GenerateResult>;
+  generate: GenerateFn;
   /** Read-only snapshot of conversation messages so far. */
   messages: readonly Message[];
   /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */
@@ -178,12 +182,14 @@ export type ToolContext<S = DefaultSessionState> = {
  * Definition of a custom tool that the agent can invoke.
  *
  * Tools are the primary way to extend agent capabilities. Each tool has a
- * description (shown to the LLM), optional Zod parameters schema, and an
+ * description (shown to the LLM), an optional input schema, and an
  * `execute` function that runs inside the sandboxed worker.
  *
- * @typeParam P - A Zod object schema describing the tool's parameters.
- *   Defaults to `ZodObject<ZodRawShape>` so tools without parameters don't need an explicit
- *   type argument.
+ * @typeParam P - The tool's input schema: any
+ *   [Standard Schema](https://standardschema.dev) that can convert to JSON
+ *   Schema — a Zod object schema (the documented default) or e.g. an
+ *   ArkType type. Defaults to a permissive record schema so tools without
+ *   inputs don't need an explicit type argument.
  *
  * @example
  * ```ts
@@ -192,7 +198,7 @@ export type ToolContext<S = DefaultSessionState> = {
  *
  * const weatherTool = tool({
  *   description: "Get current weather for a city",
- *   parameters: z.object({
+ *   inputSchema: z.object({
  *     city: z.string().describe("City name"),
  *   }),
  *   execute: async ({ city }) => {
@@ -204,22 +210,67 @@ export type ToolContext<S = DefaultSessionState> = {
  *
  * @public
  */
-export type ToolDef<
-  P extends z.ZodObject<z.ZodRawShape> = z.ZodObject<z.ZodRawShape>,
-  S = DefaultSessionState,
-> = {
+export type ToolDef<P extends ToolInputSchema = ToolInputSchema, S = DefaultSessionState> = {
   /** Human-readable description shown to the LLM. */
   description: string;
-  /** Zod schema for the tool's parameters. */
-  parameters?: P;
+  /**
+   * Schema for the tool's input, shown to the LLM and used to validate each
+   * call's arguments before `execute` runs. Named after the Vercel AI SDK's
+   * `tool({ inputSchema })`.
+   */
+  inputSchema?: P;
   /**
    * Function that executes the tool and returns a result. The result is
    * JSON-serialized for the LLM and the client, and capped at
    * {@link MAX_TOOL_RESULT_CHARS} (4000) characters — longer results are
    * trimmed and end with a `[truncated]` marker.
    */
-  execute(args: z.infer<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
+  execute(args: InferSchemaOutput<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
 };
+
+/**
+ * The validated input type a tool's `execute` receives — inferred from the
+ * tool's `inputSchema`. The Vercel AI SDK's `InferToolInput` pattern, so a
+ * client (or another tool) can share the exact argument shape without
+ * re-declaring it.
+ *
+ * ```ts
+ * import { type InferToolInput, tool } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
+ * const add = tool({
+ *   description: "Add an item",
+ *   inputSchema: z.object({ item: z.string() }),
+ *   execute: ({ item }) => item,
+ * });
+ * type AddInput = InferToolInput<typeof add>; // { item: string }
+ * ```
+ *
+ * @public
+ */
+export type InferToolInput<T extends ToolDef<ToolInputSchema, DefaultSessionState>> = Parameters<
+  T["execute"]
+>[0];
+
+/**
+ * The result type a tool's `execute` returns (awaited). Pair with
+ * `useToolResult<InferToolOutput<typeof myTool>>(...)` in a custom client so
+ * the rendered shape has a single source of truth.
+ *
+ * @public
+ */
+export type InferToolOutput<T extends ToolDef<ToolInputSchema, DefaultSessionState>> = Awaited<
+  ReturnType<T["execute"]>
+>;
+
+/**
+ * The per-session state shape of an agent — inferred from the definition
+ * `agent()` returned, so client code can type a `syncState` projection or a
+ * shared module can type `ToolContext<InferAgentState<typeof agentDef>>`.
+ *
+ * @public
+ */
+export type InferAgentState<A> = A extends AgentDef<infer S> ? S : never;
 
 export { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
 
@@ -261,6 +312,9 @@ export type AgentDef<S = DefaultSessionState> = {
   /**
    * How the LLM selects tools each step. Defaults to `"auto"`
    * ({@link DEFAULT_TOOL_CHOICE}): the model decides when to call a tool.
+   * Honored in pipeline mode and by the OpenAI Realtime transport; the
+   * AssemblyAI S2S service runs the tool loop service-side and does not
+   * take a tool-choice parameter.
    */
   toolChoice?: ToolChoice;
   /**
@@ -279,7 +333,7 @@ export type AgentDef<S = DefaultSessionState> = {
    * `Record<string, unknown>` for the whole agent, and `ctx.state.x` silently
    * becomes `unknown` again. Tools are still *checked* against `S`.
    */
-  tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
+  tools: Readonly<Record<string, ToolDef<ToolInputSchema, NoInfer<S>>>>;
   /**
    * Factory creating this session's mutable state — the value tools read and
    * write as `ctx.state`. Called once per session; unset leaves `ctx.state`
@@ -392,8 +446,12 @@ export type AgentDef<S = DefaultSessionState> = {
    */
   stt?: SttProvider;
   /**
-   * Pluggable LLM provider (Vercel AI SDK `LanguageModel`). Set together
-   * with `stt` and `tts` for pipeline mode.
+   * Pluggable LLM provider descriptor from `@alexkroman1/aai/llm` (e.g.
+   * `anthropic({ model })`). Set together with `stt` and `tts` for pipeline
+   * mode. Note this is pure serializable data, not a Vercel AI SDK
+   * `LanguageModel` instance — the host resolves the descriptor into a
+   * `LanguageModel` at session start, using credentials from the agent's
+   * env.
    */
   llm?: LlmProvider;
   /**
