@@ -51,10 +51,11 @@ export default agent({
 - Built-ins on by default: think, remember, recall, calculate. Opt-in via
   builtinTools: web_search, visit_webpage, get_page_design, fetch_json,
   run_code.
-- Pipeline mode: set all three of stt/llm/tts (factories from
-  "@alexkroman1/aai/stt", "/llm", "/tts") or none (the S2S voice agent
-  API — only when the user asks for it). Every pipeline agent must name a
-  real TTS provider.
+- Pipeline mode is the default: set all three of stt/llm/tts (factories
+  from "@alexkroman1/aai/stt", "/llm", "/tts") or none — declaring none
+  gives the all-AssemblyAI pipeline (assemblyAIPipeline()). The S2S voice
+  agent API needs an explicit s2s: assemblyAIS2s(), and only when the user
+  asks for it. Every pipeline agent must name a real TTS provider.
 
 ## Design guidelines (client.tsx)
 
