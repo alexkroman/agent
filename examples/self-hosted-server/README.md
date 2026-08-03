@@ -17,7 +17,8 @@ HTTP + WebSocket server that hosts voice sessions and serves
 
 ```sh
 npm install
-ASSEMBLYAI_API_KEY=sk-… npm start
+export ASSEMBLYAI_API_KEY=sk-…
+npm start
 ```
 
 Open <http://127.0.0.1:3000> and talk to the agent. One key is enough: with
