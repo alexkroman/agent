@@ -27,7 +27,9 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
    `aai init --template <name>` scaffolds a fresh project from one. Closest
    matches: `simple`, `pipeline-simple`, `web-researcher`, `solo-rpg`,
-   `pizza-ordering`. When reading SDK types under
+   `pizza-ordering`, `retail` (the most complex — 15 tools over a
+   relational store, with a `syncState`-driven UI). When reading SDK
+   types under
    `node_modules/@alexkroman1/aai*/dist/`, note the built entry points
    re-export with source specifiers (`"./sdk/constants.ts"`,
    `"./components/button.tsx"`) — rewrite `.ts`/`.tsx` to `.d.ts` to find
