@@ -206,19 +206,25 @@ ${SDK_SUBPATH_RULE}
 ## AI, Models, and Providers
 
 - **Default to a cascaded (pipeline-mode) agent with every stage on
-  AssemblyAI.** For every request that just asks for a voice agent — tools,
-  state, personas and all — declare all three providers:
-    stt: assemblyAI({ model: "universal-3-5-pro" })   from "@alexkroman1/aai/stt"
-    llm: assemblyAI({ model: "qwen3-next-80b-a3b" })  from "@alexkroman1/aai/llm"
-    tts: assemblyAI({ voice: "vera" })                from "@alexkroman1/aai/tts"
-  The factory is named assemblyAI in all three subpaths — alias two on
-  import. All three stages bill to ASSEMBLYAI_API_KEY, the one key a
-  published agent is guaranteed to have, so this default runs the moment
-  it is published. Any other provider — Anthropic, OpenAI, Cartesia, Rime,
-  Deepgram — needs a key the user has to supply, so an agent built on one
-  cannot run until they do. A provider, model, or voice the user *did* name
-  wins for that stage, and the other stages still default to AssemblyAI.
-  Never declare only one or two providers — zero or three.
+  AssemblyAI, and spread the preset to get it.** For every request that just
+  asks for a voice agent — tools, state, personas and all:
+    import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+    export default agent({ name: "…", ...assemblyAIPipeline({ voice: "vera" }) });
+  That sets stt, llm and tts in one line with real defaults for all three
+  (universal-3-5-pro, qwen3-next-80b-a3b, vera), so there is no gateway model
+  id to invent — an invented one is a 400 at the first session, with no
+  compile-time or deploy-time check to catch it. Prefer it over declaring the
+  three stages by hand; the long form needs three imports of a factory called
+  assemblyAI, two of them aliased, and buys nothing.
+  To change one stage, spread the preset and then set that stage:
+    agent({ ...assemblyAIPipeline(), tts: cartesia({ voice: "…" }) });
+  All three stages bill to ASSEMBLYAI_API_KEY, the one key a published agent
+  is guaranteed to have, so this default runs the moment it is published. Any
+  other provider — Anthropic, OpenAI, Cartesia, Rime, Deepgram — needs a key
+  the user has to supply, so an agent built on one cannot run until they do.
+  A provider, model, or voice the user *did* name wins for that stage, and
+  the other stages still default to AssemblyAI. Never end up with only one or
+  two of the three stages declared — zero or three.
 - **Use the AssemblyAI voice agent API (S2S mode) only when the user asks
   for it** — "use the voice agent API", "S2S", "speech-to-speech", or the
   like. S2S means leaving stt, llm, and tts entirely unset: AssemblyAI runs
