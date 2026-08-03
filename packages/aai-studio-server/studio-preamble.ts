@@ -209,9 +209,9 @@ ${SDK_SUBPATH_RULE}
   AssemblyAI, and spread the preset to get it.** For every request that just
   asks for a voice agent — tools, state, personas and all:
     import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
-    export default agent({ name: "…", ...assemblyAIPipeline({ voice: "vera" }) });
+    export default agent({ name: "…", ...assemblyAIPipeline({ voice: "jane" }) });
   That sets stt, llm and tts in one line with real defaults for all three
-  (universal-3-5-pro, gpt-5.5, vera), so there is no gateway model
+  (universal-3-5-pro, gpt-5.5, jane), so there is no gateway model
   id to invent — an invented one is a 400 at the first session, with no
   compile-time or deploy-time check to catch it. Prefer it over declaring the
   three stages by hand; the long form (assemblyAIStt + assemblyAILlm +
@@ -227,7 +227,8 @@ ${SDK_SUBPATH_RULE}
   the user has to supply, so an agent built on one cannot run until they do.
   A provider, model, or voice the user *did* name wins for that stage, and
   the other stages still default to AssemblyAI. Never end up with only one or
-  two of the three stages declared — zero or three.
+  two of the three stages declared — zero or three; a partial triple is a
+  type error, so use the preset spread and override the one stage.
 - **Use the AssemblyAI voice agent API (S2S mode) only when the user asks
   for it** — "use the voice agent API", "S2S", "speech-to-speech", or the
   like. S2S is an explicit opt-in: set \`s2s: assemblyAIS2s()\` (imported

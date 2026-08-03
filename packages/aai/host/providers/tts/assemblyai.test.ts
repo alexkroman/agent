@@ -39,7 +39,7 @@ describe("AssemblyAI TTS adapter", () => {
   test("defaults the voice and omits language unless set", async () => {
     const { ws } = await openSession();
     const params = new URL(ws.url).searchParams;
-    expect(params.get("voice")).toBe("vera");
+    expect(params.get("voice")).toBe("jane");
     // Every voice speaks one language; a mismatched pair is worse than no hint.
     expect(params.has("language")).toBe(false);
   });
