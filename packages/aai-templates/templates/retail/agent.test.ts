@@ -13,6 +13,7 @@ import { getProductDetails } from "./tools/get_product_details.ts";
 import { getUserDetails } from "./tools/get_user_details.ts";
 import { listAllProductTypes } from "./tools/list_all_product_types.ts";
 import { modifyPendingOrderAddress } from "./tools/modify_pending_order_address.ts";
+import { modifyPendingOrderItems } from "./tools/modify_pending_order_items.ts";
 import { modifyUserAddress } from "./tools/modify_user_address.ts";
 
 let sessionCounter = 0;
@@ -429,5 +430,175 @@ describe("modify_user_address", () => {
       makeCtx(),
     );
     expect(isError(result) && result.error).toContain("find_user_id_by_email");
+  });
+});
+
+interface ModifyItemsResult {
+  order_id: string;
+  status: string;
+  price_difference: number;
+  items: { name: string; item_id: string; options: Record<string, string>; price: number }[];
+  message: string;
+}
+
+describe("modify_pending_order_items", () => {
+  test("swaps an item, charges the difference to a gift card, and goes terminal", async () => {
+    const ctx = await authedCtx("emma.smith3991@example.com");
+    const result = (await modifyPendingOrderItems.execute(
+      {
+        order_id: "#W2417020",
+        item_ids: ["8997785118"],
+        new_item_ids: ["6017636844"],
+        payment_method_id: "gift_card_8541487",
+      },
+      ctx,
+    )) as ModifyItemsResult | ErrorResult;
+    if (isError(result)) throw new Error(result.error);
+    expect(result.price_difference).toBe(-382.03);
+    expect(result.status).toBe("pending (item modified)");
+
+    const state = getState(ctx);
+    const order = state.store.orders["#W2417020"];
+    expect(order?.items[0]?.item_id).toBe("6017636844");
+    expect(order?.items[0]?.price).toBe(2292.37);
+    // $62.00 card refunded $382.03.
+    const card = state.store.users.emma_smith_8564?.payment_methods.gift_card_8541487;
+    expect(card?.source === "gift_card" && card.balance).toBe(444.03);
+  });
+
+  test("records the difference as a refund entry when the new item is cheaper", async () => {
+    const ctx = await authedCtx("emma.smith3991@example.com");
+    await modifyPendingOrderItems.execute(
+      {
+        order_id: "#W2417020",
+        item_ids: ["8997785118"],
+        new_item_ids: ["6017636844"],
+        payment_method_id: "gift_card_8541487",
+      },
+      ctx,
+    );
+    const history = getState(ctx).store.orders["#W2417020"]?.payment_history ?? [];
+    expect(history[1]).toMatchObject({
+      transaction_type: "refund",
+      amount: 382.03,
+      payment_method_id: "gift_card_8541487",
+    });
+  });
+
+  test("refuses a second modification — the status is terminal", async () => {
+    const ctx = await authedCtx("emma.smith3991@example.com");
+    await modifyPendingOrderItems.execute(
+      {
+        order_id: "#W2417020",
+        item_ids: ["8997785118"],
+        new_item_ids: ["6017636844"],
+        payment_method_id: "gift_card_8541487",
+      },
+      ctx,
+    );
+    const second = await modifyPendingOrderItems.execute(
+      {
+        order_id: "#W2417020",
+        item_ids: ["6017636844"],
+        new_item_ids: ["9844888101"],
+        payment_method_id: "gift_card_8541487",
+      },
+      ctx,
+    );
+    expect(isError(second) && second.error).toContain("pending (item modified)");
+  });
+
+  test("a modified order can no longer be cancelled", async () => {
+    const ctx = await authedCtx("emma.smith3991@example.com");
+    await modifyPendingOrderItems.execute(
+      {
+        order_id: "#W2417020",
+        item_ids: ["8997785118"],
+        new_item_ids: ["6017636844"],
+        payment_method_id: "gift_card_8541487",
+      },
+      ctx,
+    );
+    const cancelled = await cancelPendingOrder.execute(
+      { order_id: "#W2417020", reason: "no longer needed" },
+      ctx,
+    );
+    expect(isError(cancelled)).toBe(true);
+  });
+
+  test("refuses when the gift card cannot cover the difference, changing nothing", async () => {
+    // anya_garcia holds a $51.00 gift card. Upgrading the Laptop in her pending
+    // order #W6436609 from 6017636844 ($2292.37) to 9844888101 ($2459.74) is
+    // +$167.37 — the NEAREST available upgrade, so the seed trim always keeps
+    // it, and it is well past the balance.
+    const ctx = await authedCtx("anya.garcia2061@example.com");
+    const result = await modifyPendingOrderItems.execute(
+      {
+        order_id: "#W6436609",
+        item_ids: ["6017636844"],
+        new_item_ids: ["9844888101"],
+        payment_method_id: "gift_card_4374071",
+      },
+      ctx,
+    );
+    expect(isError(result) && result.error.toLowerCase()).toContain("balance");
+
+    const state = getState(ctx);
+    const order = state.store.orders["#W6436609"];
+    expect(order?.status).toBe("pending");
+    expect(order?.items.map((i) => i.item_id)).toContain("6017636844");
+    expect(order?.payment_history).toHaveLength(1);
+    const card = state.store.users.anya_garcia_3271?.payment_methods.gift_card_4374071;
+    expect(card?.source === "gift_card" && card.balance).toBe(51);
+  });
+
+  test("the same upgrade succeeds on a payment method with no balance to run out of", async () => {
+    const ctx = await authedCtx("anya.garcia2061@example.com");
+    const result = (await modifyPendingOrderItems.execute(
+      {
+        order_id: "#W6436609",
+        item_ids: ["6017636844"],
+        new_item_ids: ["9844888101"],
+        payment_method_id: "credit_card_8955149",
+      },
+      ctx,
+    )) as ModifyItemsResult | ErrorResult;
+    if (isError(result)) throw new Error(result.error);
+    expect(result.price_difference).toBe(167.37);
+    const history = getState(ctx).store.orders["#W6436609"]?.payment_history ?? [];
+    expect(history[1]).toMatchObject({
+      transaction_type: "payment",
+      amount: 167.37,
+      payment_method_id: "credit_card_8955149",
+    });
+  });
+
+  test("refuses a delivered order", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = await modifyPendingOrderItems.execute(
+      {
+        order_id: "#W5866402",
+        item_ids: ["6242772310"],
+        new_item_ids: ["6200867091"],
+        payment_method_id: "gift_card_7794233",
+      },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
+  });
+
+  test("refuses a payment method belonging to another customer", async () => {
+    const ctx = await authedCtx("emma.smith3991@example.com");
+    const result = await modifyPendingOrderItems.execute(
+      {
+        order_id: "#W2417020",
+        item_ids: ["8997785118"],
+        new_item_ids: ["6017636844"],
+        payment_method_id: "gift_card_7245904",
+      },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
+    expect(getState(ctx).store.orders["#W2417020"]?.status).toBe("pending");
   });
 });
