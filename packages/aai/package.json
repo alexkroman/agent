@@ -1,6 +1,6 @@
 {
   "name": "@alexkroman1/aai",
-  "version": "5.1.1",
+  "version": "5.2.0",
   "type": "module",
   "exports": {
     ".": {

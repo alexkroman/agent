@@ -1,5 +1,32 @@
 # aai-studio-server
 
+## 0.3.2
+
+### Patch Changes
+
+- e6e9cbf: Default the studio coding agent's LLM to gpt-5.5 on the AssemblyAI LLM Gateway (gpt-5-mini stays second; the EU default remains claude-sonnet-4-6)
+- ffaae91: Give studio-spawned guest sandboxes the same burst-range resources as the agent app — test_agent and Publish builds run on them
+- 2cedec1: Post-write type diagnostics in the studio coding agent: every successful write_file/edit_file type-checks the workspace (cold tsgo, coalesced) and appends hint-annotated diagnostics to the tool result; the standalone check_types tool is removed in favor of this plus test_agent.
+- 99f3655: Stop cutting live calls on deploy, and make a deploy reach every replica.
+
+  - A deploy/secret/storage mutation now **retires** the superseded sandbox
+    instead of terminating it: it is detached from its slot synchronously (so no
+    new session can be brokered onto it) and its remaining calls drain in the
+    background before it shuts down, bounded by `SANDBOX_RETIRE_DRAIN_MS`.
+  - The slot's idle timer now checks the slug epoch as well as the session
+    count, so a deploy that landed on another replica is picked up within
+    `IDLE_SANDBOX_MS` instead of only at that replica's next session broker.
+    Previously a sandbox with continuous traffic was never reclaimed at all.
+  - The shutdown drain counts sessions inside the guest sandboxes, not just
+    WebSockets to the server process. Sessions dial the sandbox tunnel
+    directly, so the old count always read zero and scale-in tore down live
+    calls immediately despite a 120s drain budget.
+
+- Updated dependencies [99f3655]
+  - aai-server@3.2.4
+  - @alexkroman1/aai@5.2.0
+  - @alexkroman1/aai-ui@5.2.0
+
 ## 0.3.1
 
 ### Patch Changes

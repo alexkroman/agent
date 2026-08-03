@@ -1,5 +1,15 @@
 # aai-guest
 
+## 0.3.1
+
+### Patch Changes
+
+- 2cedec1: Post-write type diagnostics in the studio coding agent: every successful write_file/edit_file type-checks the workspace (cold tsgo, coalesced) and appends hint-annotated diagnostics to the tool result; the standalone check_types tool is removed in favor of this plus test_agent.
+- Updated dependencies [be1ed53]
+  - @alexkroman1/aai-cli@5.2.0
+  - @alexkroman1/aai@5.2.0
+  - @alexkroman1/aai-ui@5.2.0
+
 ## 0.3.0
 
 ### Minor Changes
