@@ -14,6 +14,7 @@ import { getUserDetails } from "./tools/get_user_details.ts";
 import { listAllProductTypes } from "./tools/list_all_product_types.ts";
 import { modifyPendingOrderAddress } from "./tools/modify_pending_order_address.ts";
 import { modifyPendingOrderItems } from "./tools/modify_pending_order_items.ts";
+import { modifyPendingOrderPayment } from "./tools/modify_pending_order_payment.ts";
 import { modifyUserAddress } from "./tools/modify_user_address.ts";
 
 let sessionCounter = 0;
@@ -600,5 +601,110 @@ describe("modify_pending_order_items", () => {
     );
     expect(isError(result)).toBe(true);
     expect(getState(ctx).store.orders["#W2417020"]?.status).toBe("pending");
+  });
+});
+
+interface ModifyPaymentResult {
+  order_id: string;
+  status: string;
+  amount: number;
+  paid_with: string;
+  refunded_to: string;
+  message: string;
+}
+
+describe("modify_pending_order_payment", () => {
+  test("moves an order to a different method, refunding the old one", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    // #W5442520 is $663.85 on credit_card_9753331. Pay by PayPal instead.
+    const result = (await modifyPendingOrderPayment.execute(
+      { order_id: "#W5442520", payment_method_id: "paypal_8049766" },
+      ctx,
+    )) as ModifyPaymentResult | ErrorResult;
+    if (isError(result)) throw new Error(result.error);
+    expect(result.status).toBe("pending");
+
+    const history = getState(ctx).store.orders["#W5442520"]?.payment_history ?? [];
+    expect(history).toHaveLength(3);
+    expect(history[1]).toMatchObject({
+      transaction_type: "payment",
+      amount: 663.85,
+      payment_method_id: "paypal_8049766",
+    });
+    expect(history[2]).toMatchObject({
+      transaction_type: "refund",
+      amount: 663.85,
+      payment_method_id: "credit_card_9753331",
+    });
+  });
+
+  test("refunds a gift card that was the original method", async () => {
+    const ctx = await authedCtx("aarav.gonzalez9269@example.com");
+    // #W9160732 is $1011.54 on gift_card_5979071 ($96.00). Move to PayPal.
+    const result = await modifyPendingOrderPayment.execute(
+      { order_id: "#W9160732", payment_method_id: "paypal_6121064" },
+      ctx,
+    );
+    expect(isError(result)).toBe(false);
+    const card = getState(ctx).store.users.aarav_gonzalez_5113?.payment_methods.gift_card_5979071;
+    expect(card?.source === "gift_card" && card.balance).toBe(1107.54);
+  });
+
+  test("refuses a gift card that cannot cover the whole order", async () => {
+    const ctx = await authedCtx("aarav.gonzalez9269@example.com");
+    // #W6979932 is $1291.82 on PayPal; the gift card holds $96.00.
+    const result = await modifyPendingOrderPayment.execute(
+      { order_id: "#W6979932", payment_method_id: "gift_card_5979071" },
+      ctx,
+    );
+    expect(isError(result) && result.error.toLowerCase()).toContain("balance");
+    const card = getState(ctx).store.users.aarav_gonzalez_5113?.payment_methods.gift_card_5979071;
+    expect(card?.source === "gift_card" && card.balance).toBe(96);
+    expect(getState(ctx).store.orders["#W6979932"]?.payment_history).toHaveLength(1);
+  });
+
+  test("refuses the method the order already uses", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = await modifyPendingOrderPayment.execute(
+      { order_id: "#W5442520", payment_method_id: "credit_card_9753331" },
+      ctx,
+    );
+    expect(isError(result) && result.error.toLowerCase()).toContain("different");
+  });
+
+  test("refuses an order whose payment history is not a single payment", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const order = getState(ctx).store.orders["#W5442520"];
+    if (!order) throw new Error("fixture missing");
+    // No seeded pending order has a second history entry, so construct one —
+    // tau2 guards this case and the guard should still be covered.
+    order.payment_history.push({
+      transaction_type: "refund",
+      amount: 10,
+      payment_method_id: "credit_card_9753331",
+    });
+    const result = await modifyPendingOrderPayment.execute(
+      { order_id: "#W5442520", payment_method_id: "paypal_8049766" },
+      ctx,
+    );
+    expect(isError(result) && result.error.toLowerCase()).toContain("exactly one payment");
+  });
+
+  test("refuses a delivered order", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = await modifyPendingOrderPayment.execute(
+      { order_id: "#W5866402", payment_method_id: "gift_card_7794233" },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
+  });
+
+  test("refuses a method not on the customer's profile", async () => {
+    const ctx = await authedCtx("olivia.ito5204@example.com");
+    const result = await modifyPendingOrderPayment.execute(
+      { order_id: "#W5442520", payment_method_id: "gift_card_7245904" },
+      ctx,
+    );
+    expect(isError(result)).toBe(true);
   });
 });
