@@ -1,0 +1,12 @@
+{
+  "compilerOptions": {
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "target": "esnext",
+    "lib": ["esnext", "dom"],
+    "jsx": "react-jsx",
+    "skipLibCheck": true,
+    "strict": true
+  },
+  "include": ["../packages/*/dist/**/*.d.ts"]
+}
