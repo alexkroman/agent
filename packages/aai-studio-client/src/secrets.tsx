@@ -12,6 +12,8 @@ import { queryKeys } from "./query-keys.ts";
 
 type SecretsPanelProps = {
   apiKey: string;
+  /** The open project's name — the target of the Delete project button. */
+  project: string;
   /** The project's published slug; undefined until the first publish. */
   slug: string | undefined;
   /**
@@ -24,14 +26,20 @@ type SecretsPanelProps = {
   /** Post a note into the chat so the coding agent knows what changed. */
   onNotifyChat: (text: string) => void;
   onClose: () => void;
+  /** Delete the project (workspace + chat). The app navigates home after. */
+  onDeleteProject: () => void;
+  deleting: boolean;
 };
 
 export function SecretsPanel({
   apiKey,
+  project,
   slug,
   previewSlug,
   onNotifyChat,
   onClose,
+  onDeleteProject,
+  deleting,
 }: SecretsPanelProps) {
   const queryClient = useQueryClient();
   const [draft, setDraft] = useState("");
@@ -150,6 +158,24 @@ export function SecretsPanel({
         </>
       )}
       {message && <p className="m-0 text-xs text-err">{message}</p>}
+      <div className="flex flex-col gap-2 border-t border-line pt-3">
+        <span className="eyebrow">Danger zone</span>
+        <p className="m-0 text-[13px] leading-5 text-muted">
+          Deletes this project — its files and chat history. Already-published agents stay live.
+        </p>
+        <button
+          type="button"
+          className="btn self-start text-err"
+          onClick={() => {
+            if (window.confirm(`Delete the project "${project}"? This cannot be undone.`)) {
+              onDeleteProject();
+            }
+          }}
+          disabled={deleting}
+        >
+          {deleting ? "Deleting…" : "Delete project"}
+        </button>
+      </div>
     </div>
   );
 }

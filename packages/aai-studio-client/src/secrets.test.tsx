@@ -11,15 +11,18 @@ import { afterEach, describe, expect, test, vi } from "vitest";
 import { jsonResponse, stubFetch } from "./_test-utils.ts";
 import { SecretsPanel } from "./secrets.tsx";
 
-function renderPanel(slug: string | undefined, onNotifyChat = vi.fn()) {
+function renderPanel(slug: string | undefined, onNotifyChat = vi.fn(), onDeleteProject = vi.fn()) {
   const client = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   render(
     <QueryClientProvider client={client}>
       <SecretsPanel
         apiKey="sk-test"
+        project="demo"
         slug={slug}
         onNotifyChat={onNotifyChat}
         onClose={() => undefined}
+        onDeleteProject={onDeleteProject}
+        deleting={false}
       />
     </QueryClientProvider>,
   );
@@ -132,5 +135,31 @@ describe("SecretsPanel", () => {
       expect(notify).toHaveBeenCalledTimes(1);
     });
     expect(notify.mock.calls[0]?.[0]).toContain("deleted the secret OLD_KEY");
+  });
+
+  test("Delete project asks for confirmation before firing", () => {
+    stubFetch({});
+    const onDeleteProject = vi.fn();
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => false),
+    );
+    renderPanel(undefined, vi.fn(), onDeleteProject);
+    fireEvent.click(screen.getByText("Delete project"));
+    expect(onDeleteProject).not.toHaveBeenCalled();
+    vi.stubGlobal(
+      "confirm",
+      vi.fn(() => true),
+    );
+    fireEvent.click(screen.getByText("Delete project"));
+    expect(onDeleteProject).toHaveBeenCalledTimes(1);
+  });
+
+  test("Delete project is available even on published projects", async () => {
+    stubFetch({ "GET /demo/secret": () => jsonResponse({ vars: [] }) });
+    renderPanel("demo");
+    await waitFor(() => {
+      expect(screen.getByText("Delete project")).toBeTruthy();
+    });
   });
 });

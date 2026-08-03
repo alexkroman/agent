@@ -130,34 +130,37 @@ export function TopBar(props: TopBarProps) {
         </>
       )}
       <div className="flex-1" />
-      <div className="flex overflow-hidden rounded-sm border border-line">
-        <button
-          type="button"
-          className={segClass(props.tab === "preview" && !props.settingsOpen)}
-          onClick={() => props.onSelectTab("preview")}
-        >
-          Preview
-        </button>
-        <button
-          type="button"
-          className={clsx(
-            "border-l border-line",
-            segClass(props.tab === "code" && !props.settingsOpen),
-          )}
-          onClick={() => props.onSelectTab("code")}
-        >
-          Code
-        </button>
-        <button
-          type="button"
-          className={clsx("border-l border-line", segClass(props.settingsOpen))}
-          onClick={props.onToggleSettings}
-          disabled={!props.deployedSlug}
-          title={props.deployedSlug ? undefined : "Settings unlock after the first publish"}
-        >
-          Settings
-        </button>
-      </div>
+      {/* The pane switcher is project-scoped — the hero home has no panes. */}
+      {props.project && (
+        <div className="flex overflow-hidden rounded-sm border border-line">
+          <button
+            type="button"
+            className={segClass(props.tab === "preview" && !props.settingsOpen)}
+            onClick={() => props.onSelectTab("preview")}
+          >
+            Preview
+          </button>
+          <button
+            type="button"
+            className={clsx(
+              "border-l border-line",
+              segClass(props.tab === "code" && !props.settingsOpen),
+            )}
+            onClick={() => props.onSelectTab("code")}
+          >
+            Code
+          </button>
+          <button
+            type="button"
+            className={clsx("border-l border-line", segClass(props.settingsOpen))}
+            onClick={props.onToggleSettings}
+            disabled={!props.deployedSlug}
+            title={props.deployedSlug ? undefined : "Settings unlock after the first publish"}
+          >
+            Settings
+          </button>
+        </div>
+      )}
       <div className="flex-1" />
       {/* The PRODUCTION URL (Publish's slug, never the preview's) — a plain
           link that opens the deployed agent in a new tab. */}

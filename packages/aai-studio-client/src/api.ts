@@ -105,6 +105,12 @@ export const api = {
       body: JSON.stringify(opts.prompt ? { prompt: opts.prompt } : {}),
     }),
 
+  /** Delete a project (its workspace and chat). Deployed agents stay live. */
+  deleteProject: (key: string, project: string) =>
+    request<{ ok: true }>(key, `/projects/${encodeURIComponent(project)}`, {
+      method: "DELETE",
+    }),
+
   getProject: (key: string, project: string) =>
     request<ProjectData>(key, `/projects/${encodeURIComponent(project)}`),
 
