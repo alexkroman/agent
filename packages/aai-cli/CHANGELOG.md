@@ -1,5 +1,15 @@
 # @alexkroman1/aai-cli
 
+## 5.3.0
+
+### Patch Changes
+
+- a9ff1d1: Document StartScreen as a wrapper component in the scaffold authoring guide: it requires `children`, and writing it self-closing is a TS2741 build error. Adds a minimal client.tsx example alongside the component table.
+- Updated dependencies [27c5963]
+- Updated dependencies [27c5963]
+  - @alexkroman1/aai@5.3.0
+  - @alexkroman1/aai-ui@5.3.0
+
 ## 5.2.0
 
 ### Minor Changes
