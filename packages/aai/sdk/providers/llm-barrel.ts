@@ -5,15 +5,33 @@
  * Re-exports LLM provider factories. Users import from here instead of
  * `@ai-sdk/anthropic` directly so the agent bundle stays free of eager
  * env reads and other SDK side-effects.
+ *
+ * Note: the `assemblyAI` factory here shares its name with the STT factory in
+ * `@alexkroman1/aai/stt` and the TTS factory in `@alexkroman1/aai/tts`. When
+ * using more than one, alias on import
+ * (`import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm"`).
+ *
+ * Named re-exports rather than `export *`: the wildcard form needs a
+ * `noReExportAll` suppression per line, and the escape-hatch ratchet only
+ * moves down. Listing them also makes the public surface of this subpath
+ * readable in one place — add new symbols here when a provider gains one.
  */
 
-export type { LlmProvider } from "../providers.ts";
-// biome-ignore lint/performance/noReExportAll: subpath barrel
-export * from "./llm/anthropic.ts";
+export type { LlmProvider, ProviderDescriptor } from "../providers.ts";
+export {
+  ANTHROPIC_API_KEY_ENV,
+  ANTHROPIC_KIND,
+  type AnthropicOptions,
+  type AnthropicProvider,
+  anthropic,
+} from "./llm/anthropic.ts";
 export {
   ASSEMBLYAI_GATEWAY_MODELS,
   ASSEMBLYAI_LLM_API_KEY_ENV,
   ASSEMBLYAI_LLM_DEFAULT_MODEL,
+  ASSEMBLYAI_LLM_GATEWAY_EU_URL,
+  ASSEMBLYAI_LLM_GATEWAY_URL,
+  ASSEMBLYAI_LLM_KIND,
   type AssemblyAIGatewayModel,
   type AssemblyAILlmOptions,
   type AssemblyAILlmProvider,
@@ -22,24 +40,52 @@ export {
 } from "./llm/assemblyai.ts";
 export {
   GATEWAY_API_KEY_ENV,
+  GATEWAY_KIND,
   type GatewayOptions,
   type GatewayProvider,
   gateway,
 } from "./llm/gateway.ts";
 export type { GatewayModelInfo } from "./llm/gateway-models.ts";
-// biome-ignore lint/performance/noReExportAll: subpath barrel
-export * from "./llm/google.ts";
-// biome-ignore lint/performance/noReExportAll: subpath barrel
-export * from "./llm/groq.ts";
-// biome-ignore lint/performance/noReExportAll: subpath barrel
-export * from "./llm/mistral.ts";
-// biome-ignore lint/performance/noReExportAll: subpath barrel
-export * from "./llm/openai.ts";
+export {
+  GOOGLE_API_KEY_ENV,
+  GOOGLE_KIND,
+  type GoogleOptions,
+  type GoogleProvider,
+  google,
+} from "./llm/google.ts";
+export {
+  GROQ_API_KEY_ENV,
+  GROQ_KIND,
+  type GroqOptions,
+  type GroqProvider,
+  groq,
+} from "./llm/groq.ts";
+export {
+  MISTRAL_API_KEY_ENV,
+  MISTRAL_KIND,
+  type MistralOptions,
+  type MistralProvider,
+  mistral,
+} from "./llm/mistral.ts";
+export {
+  OPENAI_API_KEY_ENV,
+  OPENAI_KIND,
+  type OpenAIOptions,
+  type OpenAIProvider,
+  openai,
+} from "./llm/openai.ts";
 export {
   OPENROUTER_API_KEY_ENV,
+  OPENROUTER_BASE_URL,
+  OPENROUTER_KIND,
   type OpenRouterOptions,
   type OpenRouterProvider,
   openrouter,
 } from "./llm/openrouter.ts";
-// biome-ignore lint/performance/noReExportAll: subpath barrel
-export * from "./llm/xai.ts";
+export {
+  XAI_API_KEY_ENV,
+  XAI_KIND,
+  type XaiOptions,
+  type XaiProvider,
+  xai,
+} from "./llm/xai.ts";

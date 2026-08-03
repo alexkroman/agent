@@ -4,7 +4,7 @@
  *
  * See `sdk/providers/stt/assemblyai.ts` for the descriptor/opener split;
  * the host-side resolver in `host/providers/resolve.ts` turns this into an
- * openable {@link TtsOpener} during `createRuntime` using the
+ * openable `TtsOpener` during `createRuntime` using the
  * `CARTESIA_API_KEY` from the agent's env.
  */
 

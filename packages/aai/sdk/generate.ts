@@ -9,10 +9,9 @@
  * (`llm/generate`). This module holds only the shared, Node-free contract;
  * the host implementation lives in `host/generate.ts`.
  *
- * `schema` is a plain JSON Schema object — never a Zod schema — because the
- * options must survive the guest→host RPC boundary as JSON. The typed
- * ergonomics (Zod in, parsed object out) live one layer up in
- * `sdk/workflow.ts`, which converts and validates on the caller's side.
+ * `GenerateOptions.schema` is a plain JSON Schema object — never a Zod
+ * schema — because the options must survive the guest→host RPC boundary as
+ * JSON. Convert a Zod schema with `z.toJSONSchema()` before passing it.
  */
 
 import type { LlmProvider } from "./providers.ts";

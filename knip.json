@@ -7,6 +7,13 @@
     "safe-chain"
   ],
   "ignoreExportsUsedInFile": true,
+  // "exports" and "types" stay excluded for now: enabling them (with
+  // `"tags": ["-internal"]` to skip @internal-tagged exports) reported
+  // 174 unused exports, most of them the genuinely public SDK surface
+  // (aai-ui components/hooks, createRuntime, provider factories) whose
+  // only consumers are templates/user projects knip cannot see. Revisit
+  // once the @internal tagging pass settles and the public barrels are
+  // explicit lists — then enable both checks plus the tags filter.
   "exclude": [
     "exports",
     "types",

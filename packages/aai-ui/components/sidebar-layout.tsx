@@ -12,9 +12,19 @@ import { useTheme } from "../context.ts";
  *
  * @example
  * ```tsx
- * <SidebarLayout sidebar={<OrderPanel />}>
- *   <ChatView />
- * </SidebarLayout>
+ * import { ChatView, SidebarLayout } from "@alexkroman1/aai-ui";
+ *
+ * function OrderPanel() {
+ *   return <div>Cart</div>;
+ * }
+ *
+ * function App() {
+ *   return (
+ *     <SidebarLayout sidebar={<OrderPanel />}>
+ *       <ChatView />
+ *     </SidebarLayout>
+ *   );
+ * }
  * ```
  *
  * @public

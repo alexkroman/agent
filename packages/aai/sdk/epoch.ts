@@ -11,6 +11,8 @@
  * sites read as intent (`epoch.isCurrent(gen)`) instead of arithmetic
  * (`counter !== gen`) re-derived at each site.
  */
+
+/** @internal */
 export interface Epoch {
   /** The current epoch — capture this when creating deferred work. */
   current(): number;
@@ -20,7 +22,11 @@ export interface Epoch {
   isCurrent(epoch: number): boolean;
 }
 
-/** Create an {@link Epoch}. */
+/**
+ * Create an {@link Epoch}.
+ *
+ * @internal
+ */
 export function createEpoch(): Epoch {
   let epoch = 0;
   return {

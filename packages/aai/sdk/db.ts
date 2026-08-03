@@ -6,6 +6,9 @@
  *
  * @example
  * ```ts
+ * import type { ToolContext } from "@alexkroman1/aai";
+ * declare const ctx: ToolContext; // the context a tool's execute receives
+ *
  * await ctx.db.query("insert into notes (body) values ($1)", ["hello"]);
  * const rows = await ctx.db.query<{ body: string }>("select body from notes");
  * ```
@@ -17,19 +20,20 @@ export type Db = {
   query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>;
 };
 /**
- * Max rows one `ctx.db` query may return. Enforced once, in
- * `createPostgresDb` (host/postgres-db.ts), by throwing — a silent
- * truncation is indistinguishable from a complete result — so `aai dev`
- * and the platform's `db/query` RPC (which routes through the same
- * factory) behave identically. Callers paginate with LIMIT/OFFSET.
+ * Max rows one `ctx.db` query may return; queries that could exceed it
+ * should paginate with LIMIT/OFFSET. Exceeding the cap throws rather than
+ * silently truncating — a shortened result is indistinguishable from a
+ * complete one. Enforced identically under `aai dev` and on the platform
+ * (both route through `createPostgresDb`).
  */
 export const MAX_DB_RESULT_ROWS = 1000;
 
 /**
- * Error thrown when tool code touches `ctx.db` while storage is not enabled.
- * Single source: the host tool-executor throws it directly; the guest harness
- * keeps an import-free duplicate in `aai-guest/limits.ts`, pinned to
- * this constant by an equality test — dev and prod must read identically.
+ * Error thrown when tool code touches `ctx.db` while storage is not
+ * enabled. Enable storage with `aai storage enable` (production) or by
+ * setting `DATABASE_URL` in the project `.env` (`aai dev`). The guest
+ * harness keeps an import-free duplicate of this string, pinned by an
+ * equality test — dev and prod must read identically.
  */
 export const STORAGE_DISABLED_MESSAGE =
   "Storage is not enabled for this app. Enable it with `aai storage enable` (CLI) or " +

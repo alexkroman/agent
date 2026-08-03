@@ -26,7 +26,11 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
    `aai init --template <name>` scaffolds a fresh project from one. Closest
    matches: `simple`, `pipeline-simple`, `web-researcher`, `solo-rpg`,
-   `pizza-ordering`.
+   `pizza-ordering`. When reading SDK types under
+   `node_modules/@alexkroman1/aai*/dist/`, note the built entry points
+   re-export with source specifiers (`"./sdk/constants.ts"`,
+   `"./components/button.tsx"`) — rewrite `.ts`/`.tsx` to `.d.ts` to find
+   the shipped file.
 
 ## CLI
 
@@ -64,7 +68,7 @@ my-agent/
 
 ## `agent()` API
 
-```ts
+```ts no-check
 import { agent } from "@alexkroman1/aai";
 
 export default agent({
@@ -80,7 +84,7 @@ export default agent({
   silenceTimeoutMs?: number;                 // pipeline only — assistant speaks up after this much user silence (ms)
   silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
   minBargeInWords?: number;                  // pipeline only — words before user speech interrupts the reply (default 2)
-  interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 0 = off)
+  interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 500; 0 disables)
   holdPhrase?: string;                       // pipeline only — spoken before a silent tool-call turn (default "One moment."; "" disables)
   falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
   state?: () => S;                           // per-session mutable state, exposed as ctx.state
@@ -127,6 +131,7 @@ providers gets `assemblyAIPipeline()` injected as the default. Speech-to-speech
 System prompt from file:
 
 ```ts
+/// <reference types="vite/client" />
 import { agent } from "@alexkroman1/aai";
 import systemPrompt from "./system-prompt.md?raw";
 export default agent({ name: "My Agent", systemPrompt });
@@ -206,11 +211,12 @@ user speaks again.
 **Voice-UX tuning (pipeline only):** `minBargeInWords` controls how many
 words of user speech interrupt the assistant mid-reply (default 2, so
 one-word backchannels like "yeah" don't cut it off);
-`interruptionMinDurationMs` adds an optional sustained-speech gate on top
-(interim transcripts only — committed turns always land). End-of-turn
-detection (how long a pause ends the user's turn) belongs to the STT
-provider: `assemblyAI({ minTurnSilenceMs })` / `deepgram({ endpointing })`,
-both defaulting to 1500 ms so mid-utterance pauses don't split a request.
+`interruptionMinDurationMs` adds a sustained-speech gate on top (default
+500 ms; `0` disables; interim transcripts only — committed turns always
+land). End-of-turn detection (how long a pause ends the user's turn)
+belongs to the STT provider: `assemblyAI({ minTurnSilenceMs })` (default
+2000 ms) / `deepgram({ endpointing })` (default 1500 ms), so mid-utterance
+pauses don't split a request.
 `holdPhrase` is spoken when a turn opens with a tool call and no speech.
 `falseInterruptionTimeoutMs` resumes an interrupted reply when a barge-in
 turns out to be noise (no user turn commits within the window).
@@ -274,8 +280,10 @@ etc.) with the same API key as AssemblyAI STT. It accepts an optional
 factory, so alias one when using both:
 
 ```ts
+import { agent } from "@alexkroman1/aai";
 import { assemblyAI } from "@alexkroman1/aai/stt";
 import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { cartesia } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
@@ -343,7 +351,7 @@ Set provider keys the same way as any secret: `.env` for local dev,
 
 ## `tool()` API
 
-```ts
+```ts no-check
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
@@ -359,13 +367,13 @@ same way in `aai dev` and deployed.
 
 ### `ctx` (ToolContext)
 
-```ts
+```ts no-check
 ctx.env: Readonly<Record<string, string>>     // secrets from .env / aai secret put
 ctx.state: S                                   // per-session mutable state (agent's `state` factory)
 ctx.db: Db                                     // SQL database, needs storage enabled (see Database section)
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
 ctx.sessionId: string                          // unique session ID
-ctx.send(event: string, data: unknown): void   // push custom event to browser client
+ctx.send(event: string, data: unknown): void   // push custom event to browser client (silently dropped over 64 KB JSON)
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 ```
 
@@ -373,7 +381,7 @@ ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 the project's tsconfig turns off `noImplicitAny`, so both of these compile
 with no annotations and no errors:
 
-```ts
+```ts no-check
 ctx.state.count++;
 ctx.state.incidents.filter((i) => i.status === "open");
 ```
@@ -386,7 +394,7 @@ declare empty.** With `noImplicitAny` off, TypeScript does not widen an empty
 initializer from what you later assign, so `[]` stays `never[]` and `null`
 stays `null` — forever, whether or not a callback is involved:
 
-```ts
+```ts no-check
 const items = [];            // never[]  → items.push(x) is an error
 let best = null;             // null     → best = {...} is an error
 const [picks, set] = useState([]);  // never[] in a client, same thing
@@ -473,7 +481,7 @@ export default agent({
 them, and they are not on `ctx`. When your own `execute` needs one, import
 it:
 
-```ts
+```ts no-check
 import { fetchJson, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 
 execute: async ({ city }) => await fetchJson(`https://api.example.com/${city}`),
@@ -506,7 +514,7 @@ pipeline, and no amount of prompting gets the flexibility back.
 but its VALUE must be a plain `z.object(...)` — so all of these are type
 errors:
 
-```ts
+```ts no-check
 parameters: z.undefined(),                 // ✗ ZodUndefined
 parameters: z.void(),                      // ✗
 parameters: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
@@ -541,7 +549,7 @@ export const rollDice = tool({
 });
 ```
 
-```ts
+```ts no-check
 // agent.ts
 import { agent } from "@alexkroman1/aai";
 import { rollDice } from "./tools/roll_dice.ts";
@@ -604,7 +612,7 @@ call it from `execute` — see the builtin table above.
 Persistent SQL storage scoped per app, backed by the app's own Postgres
 schema. Access via `ctx.db`:
 
-```ts
+```ts no-check
 ctx.db.query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>
 ```
 
@@ -622,7 +630,7 @@ A query returning more than 1000 rows throws — always bound reads with
 
 Create tables lazily from tool code and upsert with `on conflict`:
 
-```ts
+```ts no-check
 await ctx.db.query(`create table if not exists app_state (
   key text primary key,
   value jsonb not null,
@@ -653,6 +661,7 @@ Always import `"@alexkroman1/aai-ui/styles.css"` first.
 ### Tier 1 — config only (default UI)
 
 ```tsx
+/// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
 import { client } from "@alexkroman1/aai-ui";
 
@@ -662,6 +671,7 @@ client({ name: "My Agent" });
 ### Tier 1 with sidebar
 
 ```tsx
+/// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
 import { client, useEvent } from "@alexkroman1/aai-ui";
 import { useState } from "react";
@@ -684,6 +694,7 @@ client({ name: "My Agent", sidebar: Sidebar });
 ### Tier 2 — full custom component
 
 ```tsx
+/// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
 import { client, useSession } from "@alexkroman1/aai-ui";
 
@@ -734,7 +745,7 @@ to put it in.
 | `state` | `AgentState` | `"disconnected"` `"connecting"` `"ready"` `"listening"` `"thinking"` `"speaking"` `"error"` |
 | `messages` | `ChatMessage[]` | `{ role, content }` |
 | `toolCalls` | `ToolCallInfo[]` | `{ callId, name, args, status, result? }` |
-| `customEvents` | `CustomEvent[]` | `{ id, event, data }` from `ctx.send()` |
+| `customEvents` | `AgentCustomEvent[]` | `{ id, event, data }` from `ctx.send()` |
 | `userTranscript` | `string \| null` | `null` = not speaking, `""` = speech detected, string = text |
 | `agentTranscript` | `string \| null` | `null` = not speaking, string = streaming response |
 | `error` | `SessionError \| null` | `{ code, message }` |
@@ -749,7 +760,7 @@ Methods: `start()`, `toggle()`, `reset()`, `cancel()`, `disconnect()`,
 **`useToolResult`** — fires once per completed tool call (deduplicates by
 callId):
 
-```ts
+```ts no-check
 useToolResult("tool_name", (result, toolCall) => { ... })          // one tool
 useToolResult((toolName, result, toolCall) => { ... })             // all tools
 useToolResult<ResultType>("tool_name", (result) => { ... })        // typed (optional)
@@ -766,7 +777,7 @@ also what you want for anything that can be a string, an array, or null.
 
 **`useAgentState`** — the agent's session state, pushed automatically:
 
-```ts
+```ts no-check
 // agent.ts
 export default agent({
   state: () => ({ cart: [] as Item[], staffPin: "" }),
@@ -792,7 +803,7 @@ after every tool call and is sent only when the result changed.
 
 **`useEvent`** — fires for custom events from `ctx.send()`:
 
-```ts
+```ts no-check
 useEvent<DataType>("event_name", (data) => { ... })
 ```
 
@@ -825,6 +836,7 @@ beside it; writing `<StartScreen ... />` self-closing is a `TS2741:
 Property 'children' is missing` build error:
 
 ```tsx
+/// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
 import { ChatView, client, StartScreen } from "@alexkroman1/aai-ui";
 
@@ -945,10 +957,10 @@ Common mistakes when working in aai projects:
 
 ## Constraints
 
-- Tool `execute` return values go into LLM context — filter and truncate
-  large API responses
-- `fetch` is proxied through the host; private/internal IPs are blocked
-  (SSRF protection)
+- Tool `execute` return values go into LLM context, capped at 4000 chars
+  (a truncation marker replaces the tail) — filter large API responses
+- Tool code uses plain `fetch` with open egress; the keyless web builtins
+  screen private/internal IPs (SSRF) when running outside a sandbox
 - Agent code runs in a sandboxed worker — use `fetch` for HTTP, `ctx.env`
   for secrets
 - Tool execution timeout: 30 seconds

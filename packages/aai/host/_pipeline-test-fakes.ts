@@ -310,7 +310,7 @@ async function streamScript(
 }
 
 /**
- * Create a fake {@link LanguageModel} that yields a scripted sequence of
+ * Create a fake `LanguageModel` that yields a scripted sequence of
  * parts when `streamText` drives `doStream()`. The fake ignores the prompt
  * and tools — it simply replays the script.
  *
@@ -388,7 +388,7 @@ const FAKE_LLM_KIND = "fake-llm";
  *
  * Always release the registration (the registry is module-level):
  *
- * ```ts
+ * ```ts no-check
  * const fakes = registerFakeProviders({ stt, tts, llm });
  * try { ... } finally { fakes.unregister(); }
  * ```

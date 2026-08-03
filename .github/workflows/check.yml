@@ -76,12 +76,13 @@ jobs:
         if: github.event_name == 'pull_request' && github.head_ref != 'changeset-release/main' && !contains(github.event.pull_request.labels.*.name, 'no-release')
         run: pnpm changeset status --since=origin/main
       - run: |
-          pnpm exec turbo run check:publint check:attw check:typecheck
+          pnpm exec turbo run check:publint check:attw check:typecheck docs
           pnpm run check:knip
           pnpm run check:syncpack
           pnpm run check:sherif
           pnpm run check:markdown
           pnpm run check:publish-names
+          pnpm run check:doc-examples
       # The two quality ratchets. They lived only in scripts/check.sh, which CI
       # never invokes, so they were enforced solely by the pre-push hook — and
       # `git push --no-verify` skipped them entirely. Both are pure git/fs

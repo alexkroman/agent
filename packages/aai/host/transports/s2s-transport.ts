@@ -18,6 +18,10 @@ import type { Transport, TransportCallbacks } from "./types.ts";
 /** @internal Exposed for testing — allows spying on connectS2s in unit tests. */
 export const _internals = { connectS2s };
 
+/**
+ * Configuration for {@link createS2sTransport}.
+ * @internal
+ */
 export type S2sTransportOptions = {
   apiKey: string;
   s2sConfig: S2SConfig;
@@ -42,6 +46,10 @@ const TRANSIENT_CLOSE_CODES = new Set<number>([
   3005, // Session Cancelled (unknown server error)
 ]);
 
+/**
+ * Create an S2S-mode Transport over a single AssemblyAI S2S WebSocket.
+ * @internal
+ */
 export function createS2sTransport(opts: S2sTransportOptions): Transport {
   const log = opts.logger ?? consoleLogger;
   const createWs = opts.createWebSocket ?? defaultCreateS2sWebSocket;

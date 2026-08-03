@@ -14,6 +14,8 @@
  * {@link OwnedMap.owns} for non-delete mutations that only the current
  * claimant may perform (e.g. re-arming a slot's idle timer).
  */
+
+/** @internal */
 export interface OwnedMap<K, V> {
   /**
    * Install `value` under `key`, replacing any current entry (the previous
@@ -38,7 +40,11 @@ export interface OwnedMap<K, V> {
   clear(): void;
 }
 
-/** Create an {@link OwnedMap}. */
+/**
+ * Create an {@link OwnedMap}.
+ *
+ * @internal
+ */
 export function createOwnedMap<K, V>(): OwnedMap<K, V> {
   const map = new Map<K, V>();
   return {

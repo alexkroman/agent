@@ -10,11 +10,14 @@
 import { DEFAULT_STT_SAMPLE_RATE, DEFAULT_TTS_SAMPLE_RATE } from "../sdk/constants.ts";
 
 /** Structured context attached to log messages. */
-type LogContext = Record<string, unknown>;
+/** Structured context attached to a log line. */
+export type LogContext = Record<string, unknown>;
 
-type LogLevel = "info" | "warn" | "error" | "debug";
+/** Log severity levels a {@link Logger} implements. */
+export type LogLevel = "info" | "warn" | "error" | "debug";
 
-type LogFn = (msg: string, ctx?: LogContext) => void;
+/** A single log method: message plus optional structured context. */
+export type LogFn = (msg: string, ctx?: LogContext) => void;
 
 /**
  * Structured logger interface. Used by tests to suppress output and by
@@ -22,13 +25,17 @@ type LogFn = (msg: string, ctx?: LogContext) => void;
  *
  * @example
  * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { createRuntime, type Logger } from "@alexkroman1/aai/runtime";
+ * declare const myBackend: { log(level: string, msg: string, ctx?: object): void };
+ *
  * const myLogger: Logger = {
  *   info: (msg, ctx) => myBackend.log("info", msg, ctx),
  *   warn: (msg, ctx) => myBackend.log("warn", msg, ctx),
  *   error: (msg, ctx) => myBackend.log("error", msg, ctx),
  *   debug: (msg, ctx) => myBackend.log("debug", msg, ctx),
  * };
- * createServer({ agent, logger: myLogger });
+ * createRuntime({ agent: agent({ name: "My Agent" }), env: {}, logger: myLogger });
  * ```
  */
 export type Logger = Record<LogLevel, LogFn>;
@@ -37,7 +44,10 @@ function consoleLog(fn: typeof console.log): LogFn {
   return (msg, ctx) => (ctx ? fn(msg, ctx) : fn(msg));
 }
 
-/** Parse a debug-flag env value (`AAI_DEBUG`): `"1"` / `"true"` enable it. */
+/**
+ * Parse a debug-flag env value (`AAI_DEBUG`): `"1"` / `"true"` enable it.
+ * @internal
+ */
 export function isDebugEnv(value: string | undefined): boolean {
   return value === "1" || value === "true";
 }
@@ -50,6 +60,8 @@ export function isDebugEnv(value: string | undefined): boolean {
  * stream deltas), so callers must not pay a `process.env` lookup per call.
  * Hot-path call sites also use this flag to skip building expensive log
  * payloads (e.g. `JSON.stringify` of full wire messages) entirely.
+ *
+ * @internal
  */
 export const debugLoggingEnabled: boolean =
   isDebugEnv(process.env.AAI_DEBUG) || process.env.LOG_LEVEL === "DEBUG";
@@ -60,6 +72,8 @@ const noopLog: LogFn = () => undefined;
  * Build a console-backed {@link Logger}. `debug` is a live `console.debug`
  * only when debug logging is enabled (see {@link debugLoggingEnabled});
  * otherwise it is a no-op so per-message hot-path logs cost nothing.
+ *
+ * @internal
  */
 export function createConsoleLogger(debug: boolean = debugLoggingEnabled): Logger {
   return {
@@ -70,7 +84,10 @@ export function createConsoleLogger(debug: boolean = debugLoggingEnabled): Logge
   };
 }
 
-/** Default console-backed logger. Debug output requires `AAI_DEBUG=1`. */
+/**
+ * Default console-backed logger. Debug output requires `AAI_DEBUG=1`.
+ * @internal
+ */
 export const consoleLogger: Logger = createConsoleLogger();
 
 /**
@@ -88,7 +105,10 @@ export type S2SConfig = {
   outputSampleRate: number;
 };
 
-/** Default S2S endpoint configuration. */
+/**
+ * Default S2S endpoint configuration.
+ * @internal
+ */
 export const DEFAULT_S2S_CONFIG: S2SConfig = {
   wssUrl: "wss://agents.assemblyai.com/v1/ws",
   inputSampleRate: DEFAULT_STT_SAMPLE_RATE,

@@ -12,11 +12,15 @@ import { SessionUrlChips } from "./url-chips.tsx";
  * Session control buttons: **Stop / Resume** and **New Conversation**.
  *
  * Reads session state from {@link useSession}. Must be rendered inside a
- * {@link SessionProvider}.
+ * `SessionProvider`.
  *
  * @example
  * ```tsx
- * <Controls className="justify-end" />
+ * import { Controls } from "@alexkroman1/aai-ui";
+ *
+ * function Footer() {
+ *   return <Controls className="justify-end" />;
+ * }
  * ```
  *
  * @param className - Additional CSS class names applied to the container.

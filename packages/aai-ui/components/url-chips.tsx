@@ -78,7 +78,7 @@ function UrlChip({
  * The session's shareable UI URL — the page this UI is served from, what
  * you'd send someone to talk to the agent.
  *
- * @public
+ * @internal
  */
 export function UiUrlChip({ className }: { className?: string | undefined }) {
   return (
@@ -96,7 +96,7 @@ export function UiUrlChip({ className }: { className?: string | undefined }) {
  * The session's programmatic WebSocket endpoint — the URL a script or backend
  * can connect to directly instead of using this UI.
  *
- * @public
+ * @internal
  */
 export function ApiUrlChip({ className }: { className?: string | undefined }) {
   const apiUrl = useSessionSelector((s) => s.apiUrl);
@@ -117,7 +117,7 @@ export function ApiUrlChip({ className }: { className?: string | undefined }) {
  * told apart. Rendered by the default shell in every session mode (S2S,
  * pipeline).
  *
- * @public
+ * @internal
  */
 export function SessionUrlChips({ className }: { className?: string | undefined }) {
   return (

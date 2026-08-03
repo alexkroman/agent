@@ -1,0 +1,212 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Compile every TypeScript code example in the docs — the ```ts / ```tsx
+ * fences in published-package doc comments and in the user-facing markdown
+ * (scaffold CLAUDE.md, READMEs) — under the SCAFFOLD's tsconfig, the same
+ * compiler `check-template-types` holds templates to.
+ *
+ * Nothing else checks these. TypeDoc renders fences verbatim, the bundlers
+ * never see them, and the two real bugs that motivated this gate were both
+ * example-only: a shipped `@example` calling `agent()` with a `voice` field
+ * the type does not have, and a README example passing `params:` where
+ * `tool()` takes `parameters:` — each compiled nowhere and so failed nowhere,
+ * while being exactly what a reader (human or coding agent) copies first.
+ *
+ * Every example must be SELF-CONTAINED: it imports what it uses and declares
+ * what it references. A fence that is deliberately a fragment (a type-shape
+ * listing, an API sketch) opts out with `no-check` in the fence info string:
+ *
+ *   ```ts no-check
+ *
+ * Renderers take the language from the first token, so the marker changes
+ * nothing visually. Blocks in non-`ts`/`tsx` languages are never checked.
+ *
+ *   pnpm check:doc-examples
+ */
+
+import { execFileSync } from "node:child_process";
+import { mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+
+const repo = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
+// Inside aai-templates so bare imports (`@alexkroman1/aai`, `zod`, react)
+// resolve by the normal node_modules walk-up, exactly as templates do.
+const scratch = path.join(repo, `packages/aai-templates/.doc-examples-scratch-${process.pid}`);
+
+/** Doc-comment sources: published packages' source trees. */
+const SOURCE_GLOBS = [
+  "packages/aai",
+  "packages/aai-ui",
+  "packages/aai-cli",
+];
+
+/** Markdown sources users and coding agents read examples from. */
+const MARKDOWN_FILES = [
+  "README.md",
+  "packages/aai-templates/scaffold/CLAUDE.md",
+  "examples/self-hosted-server/README.md",
+];
+
+/**
+ * Prompt modules whose template literals embed markdown with code fences —
+ * prompt text the studio's coding agent treats as ground truth (the main
+ * studio guide is the scaffold CLAUDE.md above; these carry the rest, e.g.
+ * the fallback guide). Fences arrive escaped (`\`\`\``), so the extractor
+ * unescapes before scanning.
+ */
+const PROMPT_SOURCES = [
+  // The main studio guide is the scaffold CLAUDE.md, covered above via
+  // MARKDOWN_FILES; these are the other modules that compose prompt text.
+  "packages/aai-studio-server/studio-prompt.ts",
+  "packages/aai-studio-server/studio-preamble.ts",
+  "packages/aai-guest/studio-chat.ts",
+];
+
+const SKIP_DIRS = new Set(["node_modules", "dist", "__snapshots__", "fixtures", "coverage"]);
+
+function* walk(dir) {
+  for (const entry of readdirSync(dir)) {
+    const full = path.join(dir, entry);
+    const stat = statSync(full);
+    if (stat.isDirectory()) {
+      if (!SKIP_DIRS.has(entry) && !entry.startsWith(".")) yield* walk(full);
+    } else if (/\.(ts|tsx)$/.test(entry) && !/\.test(-d)?\.tsx?$/.test(entry)) {
+      yield full;
+    }
+  }
+}
+
+/** Extract ```ts / ```tsx fences (minus `no-check`) from a markdown string. */
+function extractFences(text, stripPrefix) {
+  const blocks = [];
+  const lines = text.split("\n");
+  let open = null; // { lang, start, body: [] }
+  for (let i = 0; i < lines.length; i++) {
+    const raw = stripPrefix ? lines[i].replace(/^\s*\*( |$)/, "") : lines[i];
+    const fence = raw.match(/^\s*```(\S*)\s*(.*)$/);
+    if (!open) {
+      if (fence && /^tsx?$/.test(fence[1]) && !fence[2].includes("no-check")) {
+        open = { lang: fence[1], start: i + 1, body: [] };
+      } else if (fence && fence[1] === "" && false) {
+        // bare fences are never checked
+      }
+    } else if (fence) {
+      blocks.push({ lang: open.lang, line: open.start + 1, code: open.body.join("\n") });
+      open = null;
+    } else {
+      open.body.push(raw);
+    }
+  }
+  return blocks;
+}
+
+/** Extract fenced examples from every /** ... *\/ comment in a source file. */
+function extractFromSource(text) {
+  const blocks = [];
+  const re = /\/\*\*[\s\S]*?\*\//g;
+  for (const m of text.matchAll(re)) {
+    const startLine = text.slice(0, m.index).split("\n").length;
+    for (const b of extractFences(m[0], true)) {
+      blocks.push({ ...b, line: startLine + b.line - 1 });
+    }
+  }
+  return blocks;
+}
+
+const examples = [];
+for (const pkg of SOURCE_GLOBS) {
+  for (const file of walk(path.join(repo, pkg))) {
+    for (const b of extractFromSource(readFileSync(file, "utf-8"))) {
+      examples.push({ ...b, origin: path.relative(repo, file) });
+    }
+  }
+}
+for (const md of MARKDOWN_FILES) {
+  for (const b of extractFences(readFileSync(path.join(repo, md), "utf-8"), false)) {
+    examples.push({ ...b, origin: md });
+  }
+}
+for (const src of PROMPT_SOURCES) {
+  // Unescape the template-literal escapes (\` and \${) without shifting
+  // line numbers, then scan like markdown.
+  const text = readFileSync(path.join(repo, src), "utf-8")
+    .replaceAll("\\`", "`")
+    .replaceAll("\\${", "${");
+  for (const b of extractFences(text, false)) {
+    examples.push({ ...b, origin: src });
+  }
+}
+
+if (examples.length === 0) {
+  console.error("check-doc-examples: extracted zero examples — the extractor is broken.");
+  process.exit(1);
+}
+
+rmSync(scratch, { recursive: true, force: true });
+mkdirSync(scratch, { recursive: true });
+
+/** scratch filename → { origin, line } for mapping diagnostics back. */
+const manifest = new Map();
+examples.forEach((ex, i) => {
+  // JSX in a .ts file is a parse error, so anything with JSX gets .tsx.
+  const ext = ex.lang === "tsx" || /<[A-Z][^>]*>/.test(ex.code) ? "tsx" : "ts";
+  const name = `example-${i}.${ext}`;
+  manifest.set(name, ex);
+  // `export {}` makes each example its own module, so identically-named
+  // consts across examples don't collide in one global scope.
+  writeFileSync(path.join(scratch, name), `${ex.code}\nexport {};\n`);
+});
+
+const scaffoldDir = path.join(repo, "packages/aai-templates/scaffold");
+const scaffold = JSON.parse(readFileSync(path.join(scaffoldDir, "tsconfig.json"), "utf-8"));
+
+/**
+ * The scaffold config, exactly as check-template-types derives it, so an
+ * example holds to the same compiler a scaffolded project runs. `types`
+ * swaps in `node` only (examples never use vitest globals).
+ */
+const config = {
+  compilerOptions: {
+    ...scaffold.compilerOptions,
+    types: ["node"],
+    noEmit: true,
+    // Examples routinely end on an import or a declaration the prose picks
+    // up — unused-symbol strictness would fight the medium.
+    noUnusedLocals: false,
+    noUnusedParameters: false,
+  },
+  include: [path.join(scratch, "*.ts"), path.join(scratch, "*.tsx")],
+};
+
+// Root-level for the same reason as check-template-types: `types` resolves
+// relative to the tsconfig's own directory.
+const configPath = path.join(repo, `tsconfig.doc-examples-${process.pid}.json`);
+writeFileSync(configPath, JSON.stringify(config, null, 2));
+
+try {
+  execFileSync(path.join(repo, "node_modules/.bin/tsc"), ["-p", configPath], {
+    encoding: "utf-8",
+    stdio: "pipe",
+  });
+  console.log(`check-doc-examples: all ${examples.length} doc examples compile. ✓`);
+} catch (err) {
+  // Rewrite scratch paths in diagnostics back to the doc that owns the fence.
+  const out = String(err.stdout ?? "").replace(
+    /[^\s(]*\.doc-examples-scratch-\d+\/(example-\d+\.tsx?)/g,
+    (_, name) => {
+      const ex = manifest.get(name);
+      return ex ? `${ex.origin}:${ex.line} (example)` : name;
+    },
+  );
+  process.stdout.write(out);
+  console.error(
+    "\ncheck-doc-examples: a documentation example does not compile. Examples must be\n" +
+      "self-contained (import what they use, declare what they reference). A fence that\n" +
+      "is deliberately a fragment opts out with `no-check`: ```ts no-check",
+  );
+  process.exitCode = 1;
+} finally {
+  rmSync(configPath, { force: true });
+  rmSync(scratch, { recursive: true, force: true });
+}

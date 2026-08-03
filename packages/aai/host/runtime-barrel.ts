@@ -3,9 +3,16 @@
  * Runtime barrel — the full Node.js runtime engine for running agents.
  *
  * Used by aai-server (sandbox) and aai-cli (dev server).
+ *
+ * Exports are enumerated explicitly (no `export *`) so the public surface is
+ * deliberate: a new symbol in one of these modules does not ship as public
+ * API until it is added here. The user-facing core is `createRuntime` and its
+ * option/handle types plus a handful of helpers (`safeFetch`,
+ * `withHostCredentialFallback`, `createPostgresDb`, `requiredProviderEnvVars`,
+ * `resolveLlm`, `resolveAllBuiltins`); most of the rest is platform plumbing
+ * kept importable for aai-server/aai-cli and tagged `@internal` at its
+ * declaration site.
  */
-
-// biome-ignore-all lint/performance/noReExportAll: barrel file by design
 
 // Note: ./_runtime-conformance.ts is intentionally NOT re-exported here.
 // It imports `vitest`, which is a devDependency. Re-exporting it would pull
@@ -13,24 +20,91 @@
 // imports in environments without dev deps installed (e.g. the deployed
 // platform server). It is consumed directly by sibling test files.
 
-export * from "./builtin-tools.ts";
-export * from "./generate.ts";
-export * from "./host-mode.ts";
-export * from "./postgres-db.ts";
-export * from "./providers/host-env.ts";
-// Narrow named exports rather than `export *`: the rest of resolve.ts is
+export type { RunCodeExecutor } from "./builtin-run-code.ts";
+export {
+  type BuiltinToolOptions,
+  type ResolvedBuiltins,
+  resolveAllBuiltins,
+  resolveBuiltin,
+  SANDBOX_ONLY_BUILTINS,
+  type ToolDefRecord,
+} from "./builtin-tools.ts";
+export {
+  type CreateGenerateFnOptions,
+  createGenerateFn,
+  type HostGenerateFn,
+} from "./generate.ts";
+export {
+  buildHostAgent,
+  createRelayExecuteTool,
+  isHostAllowed,
+  type RelayExecuteTool,
+  type RelayToolResult,
+  type StartHostSessionOptions,
+  startHostSession,
+} from "./host-mode.ts";
+export {
+  type CloseableDb,
+  type CreatePostgresDbOptions,
+  createPostgresDb,
+} from "./postgres-db.ts";
+export { PROVIDER_CREDENTIAL_ENVS, withHostCredentialFallback } from "./providers/host-env.ts";
+// Narrow named exports rather than the whole module: the rest of resolve.ts is
 // internal descriptor plumbing. `requiredProviderEnvVars` is used by the CLI
 // dev server to check credentials before starting; `resolveLlm` lets host
 // applications (e.g. the platform server's browser studio) turn an LLM
 // descriptor into a Vercel AI SDK model without duplicating provider wiring.
 export { requiredProviderEnvVars, resolveLlm } from "./providers/resolve.ts";
-export * from "./runtime.ts";
-export * from "./runtime-config.ts";
-export * from "./server.ts";
-export * from "./session-core.ts";
-export * from "./ssrf.ts";
-export * from "./tool-executor.ts";
-export * from "./transports/pipeline-transport.ts";
-export * from "./transports/s2s-transport.ts";
-export * from "./transports/types.ts";
-export * from "./ws-handler.ts";
+export {
+  type AgentRuntime,
+  createRuntime,
+  type Runtime,
+  type RuntimeOptions,
+  type SessionStartOptions,
+} from "./runtime.ts";
+export {
+  consoleLogger,
+  createConsoleLogger,
+  DEFAULT_S2S_CONFIG,
+  debugLoggingEnabled,
+  isDebugEnv,
+  type LogContext,
+  type LogFn,
+  type Logger,
+  type LogLevel,
+  type S2SConfig,
+} from "./runtime-config.ts";
+export {
+  type AgentServer,
+  createServer,
+  DEFAULT_LISTEN_HOST,
+  isPathInside,
+  type ServerOptions,
+  type SessionRuntime,
+} from "./server.ts";
+export { createSessionCore, type SessionCore, type SessionCoreOptions } from "./session-core.ts";
+export {
+  builtinFetch,
+  CONTAINED_ENV,
+  isPrivateIp,
+  pinnedFetch,
+  resolveAndAssertPublic,
+  safeFetch,
+  ssrfSafeFetch,
+} from "./ssrf.ts";
+export { type ExecuteTool, type ExecuteToolOptions, executeToolCall } from "./tool-executor.ts";
+export {
+  createPipelineTransport,
+  type PipelineTransportOptions,
+} from "./transports/pipeline-transport.ts";
+export {
+  _internals,
+  createS2sTransport,
+  type S2sTransportOptions,
+} from "./transports/s2s-transport.ts";
+export type {
+  Transport,
+  TransportCallbacks,
+  TransportSessionConfig,
+} from "./transports/types.ts";
+export { type SessionWebSocket, safeSend, wireSessionSocket } from "./ws-handler.ts";

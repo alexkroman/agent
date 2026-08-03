@@ -1,11 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Shared utility functions.
+ * Shared utility functions (the `@alexkroman1/aai/utils` subpath).
  *
- * This module (exposed as the `@alexkroman1/aai/utils` subpath) must stay
- * free of zod and other runtime dependencies: the CLI imports it on every
- * invocation (including `aai --help`), where pulling zod in would be a
- * measurable startup cost.
+ * For user tool code: `errorMessage`, `errorDetail`, `safeJsonParse`, and
+ * `toolError`. The remaining exports are framework plumbing shared with the
+ * sibling packages. The module stays free of zod and other runtime
+ * dependencies so the CLI can import it on every invocation without a
+ * startup cost.
  */
 
 import { MAX_TOOL_RESULT_CHARS, TOOL_RESULT_TRUNCATION_MARKER } from "./constants.ts";
@@ -42,7 +43,12 @@ export function safeJsonParse(text: string): unknown {
   }
 }
 
-/** Return a JSON error string for the LLM: `'{"error":"<message>"}'`. */
+/**
+ * Format an error for a tool result: returns the JSON string
+ * `'{"error":"<message>"}'`. Return this from a tool's `execute` (instead of
+ * throwing) when the failure is something the LLM should see and recover
+ * from — e.g. "no results found, try a broader query".
+ */
 export function toolError(message: string): string {
   return JSON.stringify({ error: message });
 }
@@ -51,6 +57,8 @@ export function toolError(message: string): string {
  * Cap a tool result to the client wire limit. The wire schema rejects
  * over-long `tool_call_done` results (silently dropping the whole frame), so
  * every emitter must cap through here; the provider still gets the full value.
+ *
+ * @internal
  */
 export function capToolResult(result: string): string {
   if (result.length <= MAX_TOOL_RESULT_CHARS) return result;
@@ -72,6 +80,8 @@ export function capToolResult(result: string): string {
  * schemas, which require a record. Anything that isn't a plain object
  * becomes `{}` so one bad call degrades to empty args instead of
  * invalidating the whole frame or response.
+ *
+ * @internal
  */
 export function toArgsRecord(input: unknown): Record<string, unknown> {
   return typeof input === "object" && input !== null && !Array.isArray(input)
@@ -99,6 +109,8 @@ const TEXT_ASSET_EXTENSIONS = new Set([
  * Whether a client asset path holds UTF-8 text (vs. binary like png/woff2).
  * Binary assets must be base64-encoded to survive a string transport, so the
  * bundler and the server serve path both key off this shared heuristic.
+ *
+ * @internal
  */
 export function isTextAssetPath(assetPath: string): boolean {
   const dot = assetPath.lastIndexOf(".");

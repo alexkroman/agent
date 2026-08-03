@@ -22,6 +22,8 @@ import { ALL_PROVIDER_ENV_VARS } from "./resolve.ts";
 /**
  * Every env var name a provider descriptor may resolve a credential from:
  * the registry-derived STT/TTS/LLM/S2S set.
+ *
+ * @internal
  */
 export const PROVIDER_CREDENTIAL_ENVS: readonly string[] = [...new Set(ALL_PROVIDER_ENV_VARS)];
 
@@ -31,10 +33,10 @@ export const PROVIDER_CREDENTIAL_ENVS: readonly string[] = [...new Set(ALL_PROVI
  *
  * Values already present in `env` always win — an explicit `.env` entry or
  * `aai secret put` value is never overridden by the shell. Only names in
- * {@link PROVIDER_CREDENTIAL_ENVS} are copied, so unrelated host variables
+ * `PROVIDER_CREDENTIAL_ENVS` are copied, so unrelated host variables
  * never reach `ctx.env`. `process.env` is not mutated.
  *
- * The return type is the {@link HostCredentialEnv} brand — this is the one
+ * The return type is the `HostCredentialEnv` brand — this is the one
  * function that mints it. The result satisfies `RuntimeOptions.providerEnv`
  * but not `RuntimeOptions.env`, so host credentials cannot silently become
  * `ctx.env` (see sdk/env-types.ts).

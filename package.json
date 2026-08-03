@@ -35,6 +35,7 @@
     "check:publint": "turbo run check:publint",
     "check:publish-names": "node scripts/check-publish-names.mjs",
     "check:template-types": "node scripts/check-template-types.mjs",
+    "check:doc-examples": "node scripts/check-doc-examples.mjs",
     "check:sherif": "sherif --ignore-package aai-docs",
     "check:syncpack": "syncpack lint",
     "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude' '#.superpowers'",

@@ -28,12 +28,31 @@ const DEFAULT_THEME: Required<ClientTheme> = {
 
 const SessionCtx = createContext<SessionCore | null>(null);
 
+/**
+ * Provides the {@link SessionCore} the session hooks read. `client()`
+ * installs it automatically; a custom tree only needs it when bypassing
+ * `client()` and mounting React itself.
+ *
+ * @internal
+ */
 export function SessionProvider({ value, children }: { value: SessionCore; children?: ReactNode }) {
   return createElement(SessionCtx.Provider, { value }, children);
 }
 
-/** The session snapshot merged with the core's control methods. Method
- *  signatures come from {@link SessionCore} — one source of truth. */
+/**
+ * What {@link useSession} returns: the live {@link SessionSnapshot} fields
+ * (`state`, `messages`, `toolCalls`, `agentState`, live transcripts, `error`,
+ * `apiUrl`, `started`/`running`/`recording`, …) merged with the session's
+ * control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`,
+ * `cancel`).
+ *
+ * Note there is no text-send method — sessions are voice-only; the only
+ * client→server inputs are audio and the control methods above.
+ *
+ * Method signatures come from {@link SessionCore} — one source of truth.
+ *
+ * @public
+ */
 export type Session = SessionSnapshot &
   Pick<SessionCore, "start" | "cancel" | "resetState" | "reset" | "disconnect" | "toggle">;
 
@@ -52,6 +71,30 @@ export function useSessionCore(): SessionCore {
   return core;
 }
 
+/**
+ * Return the live {@link Session}: the current snapshot fields plus the
+ * control methods (`start`, `toggle`, `reset`, `resetState`, `disconnect`,
+ * `cancel`).
+ *
+ * Throws if used outside the provider `client()` installs (the error names
+ * `<SessionProvider>` — you only mount that yourself when bypassing
+ * `client()`). Re-renders the component on *every* snapshot change; for a
+ * component that reads one field, prefer {@link useSessionSelector} for a
+ * targeted subscription.
+ *
+ * @example
+ * ```tsx
+ * import { useSession } from "@alexkroman1/aai-ui";
+ *
+ * function Controls() {
+ *   const session = useSession();
+ *   if (!session.started) return <button onClick={session.start}>Start</button>;
+ *   return <button onClick={session.toggle}>{session.running ? "Pause" : "Resume"}</button>;
+ * }
+ * ```
+ *
+ * @public
+ */
 export function useSession(): Session {
   const core = useSessionCore();
   const snapshot = useSyncExternalStore(core.subscribe, core.getSnapshot);
@@ -105,6 +148,13 @@ export function useSessionSelector<T>(
 
 const ThemeCtx = createContext<Required<ClientTheme>>(DEFAULT_THEME);
 
+/**
+ * Provides the theme the components read via `useTheme`. `client()` installs
+ * it automatically (from `ClientConfig.theme`); a custom tree only needs it
+ * when bypassing `client()` and mounting React itself.
+ *
+ * @internal
+ */
 export function ThemeProvider({
   value,
   children,

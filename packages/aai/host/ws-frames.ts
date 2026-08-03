@@ -12,6 +12,8 @@ import type { Logger } from "./runtime-config.ts";
  * Minimal WebSocket interface accepted by {@link wireSessionSocket}.
  *
  * Satisfied by the standard `WebSocket` and the `ws` npm package's WebSocket.
+ *
+ * @internal
  */
 export type SessionWebSocket = {
   readonly readyState: number;
@@ -50,7 +52,10 @@ export const AUDIO_DONE_FRAME = JSON.stringify({
   type: "audio_done",
 } satisfies { type: "audio_done" });
 
-/** Send on a session socket, tolerating the close race between the readyState check and send. */
+/**
+ * Send on a session socket, tolerating the close race between the readyState check and send.
+ * @internal
+ */
 export function safeSend(ws: SessionWebSocket, data: string | Uint8Array, log: Logger): void {
   try {
     if (ws.readyState !== WS_OPEN) return;

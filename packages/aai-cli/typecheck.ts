@@ -12,6 +12,11 @@
  * checked with it; one that doesn't isn't (scaffolded projects and studio
  * workspaces always have one). TypeScript itself resolves from the
  * PROJECT'S node_modules — the user's pinned compiler, not ours.
+ *
+ * @internal — build hook for aai-server/the studio; not a supported public
+ * API and not covered by semver. The lack of a `_` prefix is packaging (the
+ * subpath must be importable cross-package), not an invitation: user code
+ * should never import from `@alexkroman1/aai-cli`.
  */
 
 import { spawn } from "node:child_process";
@@ -26,6 +31,16 @@ const TYPECHECK_TIMEOUT_MS = 120_000;
 /** Diagnostics tail kept for the failure message. */
 const OUTPUT_CAP = 16_000;
 
+/**
+ * Outcome of one {@link typecheckProject} run — a discriminated union on
+ * `ok`: `{ ok: true, skipped }` when the check passed (`skipped: true`
+ * meaning the project has no `tsconfig.json` so nothing ran), or
+ * `{ ok: false, output }` with the formatted tsc diagnostics (tail-capped)
+ * ready to surface as build feedback.
+ *
+ * @internal — build hook for aai-server/the studio; not a supported public
+ * API and not covered by semver.
+ */
 export type TypecheckResult = { ok: true; skipped: boolean } | { ok: false; output: string };
 
 /**
@@ -70,6 +85,9 @@ function resolveTscEntry(cwd: string): string {
 /**
  * Typecheck the project at `cwd` with its own tsconfig + compiler.
  * Skips (ok, skipped: true) when the project has no tsconfig.json.
+ *
+ * @internal — build hook for aai-server/the studio; not a supported public
+ * API and not covered by semver.
  */
 export async function typecheckProject(cwd: string): Promise<TypecheckResult> {
   if (!existsSync(path.join(cwd, "tsconfig.json"))) return { ok: true, skipped: true };

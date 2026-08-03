@@ -1,7 +1,9 @@
 {
   "$schema": "https://turbo.build/schema.json",
   "cacheDir": "node_modules/.cache/turbo",
-  "globalDependencies": ["pnpm-lock.yaml"],
+  "globalDependencies": [
+    "pnpm-lock.yaml"
+  ],
   "globalPassThroughEnv": [
     "HTTP_PROXY",
     "HTTPS_PROXY",
@@ -18,58 +20,155 @@
   ],
   "tasks": {
     "build": {
-      "dependsOn": ["^build"],
-      "inputs": ["**/*.ts", "**/*.tsx", "!**/*.test.ts", "!**/*.test.tsx", "!**/*.test-d.ts", "tsconfig*.json", "tsdown.config.ts", "package.json"],
-      "outputs": ["dist/**"]
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "**/*.ts",
+        "**/*.tsx",
+        "!**/*.test.ts",
+        "!**/*.test.tsx",
+        "!**/*.test-d.ts",
+        "tsconfig*.json",
+        "tsdown.config.ts",
+        "package.json"
+      ],
+      "outputs": [
+        "dist/**"
+      ]
     },
     "test": {
-      "dependsOn": ["^build"],
-      "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"],
-      "env": ["CI"]
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "**/*.ts",
+        "**/*.tsx",
+        "vitest.config.ts",
+        "../../vitest.shared.ts"
+      ],
+      "env": [
+        "CI"
+      ]
     },
     "test:coverage": {
-      "dependsOn": ["^build"],
-      "inputs": ["**/*.ts", "**/*.tsx", "vitest.config.ts", "../../vitest.shared.ts"],
-      "outputs": ["coverage/**"],
-      "env": ["CI"]
+      "dependsOn": [
+        "^build"
+      ],
+      "inputs": [
+        "**/*.ts",
+        "**/*.tsx",
+        "vitest.config.ts",
+        "../../vitest.shared.ts"
+      ],
+      "outputs": [
+        "coverage/**"
+      ],
+      "env": [
+        "CI"
+      ]
     },
     "typecheck": {
-      "dependsOn": ["build"],
-      "inputs": ["**/*.ts", "**/*.tsx", "tsconfig*.json"]
+      "dependsOn": [
+        "build"
+      ],
+      "inputs": [
+        "**/*.ts",
+        "**/*.tsx",
+        "tsconfig*.json"
+      ]
     },
     "lint": {
-      "inputs": ["**/*.ts", "**/*.tsx", "../../biome.json"]
+      "inputs": [
+        "**/*.ts",
+        "**/*.tsx",
+        "../../biome.json"
+      ]
     },
     "check:publint": {
-      "dependsOn": ["build"],
-      "inputs": ["dist/**", "package.json"]
+      "dependsOn": [
+        "build"
+      ],
+      "inputs": [
+        "dist/**",
+        "package.json"
+      ]
     },
     "check:attw": {
-      "dependsOn": ["build"],
-      "inputs": ["dist/**", "package.json"]
+      "dependsOn": [
+        "build"
+      ],
+      "inputs": [
+        "dist/**",
+        "package.json"
+      ]
     },
     "check:integration": {
-      "dependsOn": ["build"],
-      "inputs": ["**/*.ts", "vitest.integration.config.ts", "../../vitest.shared.ts"]
+      "dependsOn": [
+        "build"
+      ],
+      "inputs": [
+        "**/*.ts",
+        "vitest.integration.config.ts",
+        "../../vitest.shared.ts"
+      ]
     },
     "check:e2e": {
-      "dependsOn": ["build"],
-      "inputs": ["**/*.ts", "**/*.tsx"]
+      "dependsOn": [
+        "build"
+      ],
+      "inputs": [
+        "**/*.ts",
+        "**/*.tsx"
+      ]
     },
     "check:typecheck": {
-      "dependsOn": ["^build"]
+      "dependsOn": [
+        "^build"
+      ]
     },
     "//#check:syncpack": {
-      "inputs": ["package.json", "packages/*/package.json", ".syncpackrc.json"]
+      "inputs": [
+        "package.json",
+        "packages/*/package.json",
+        ".syncpackrc.json"
+      ]
     },
     "//#check:sherif": {
-      "inputs": ["package.json", "packages/*/package.json", "pnpm-workspace.yaml"]
+      "inputs": [
+        "package.json",
+        "packages/*/package.json",
+        "pnpm-workspace.yaml"
+      ]
     },
     "//#check:knip": {
-      "inputs": ["packages/**/*.ts", "packages/**/*.tsx", "knip.json", "package.json", "packages/*/package.json"]
+      "inputs": [
+        "packages/**/*.ts",
+        "packages/**/*.tsx",
+        "knip.json",
+        "package.json",
+        "packages/*/package.json"
+      ]
     },
     "//#check:markdown": {
-      "inputs": ["**/*.md"]
+      "inputs": [
+        "**/*.md"
+      ]
+    },
+    "docs": {
+      "dependsOn": [
+        "@alexkroman1/aai#build",
+        "@alexkroman1/aai-ui#build"
+      ],
+      "inputs": [
+        "typedoc.json",
+        "tsconfig.typedoc.json",
+        "$TURBO_ROOT$/packages/aai/typedoc.json",
+        "$TURBO_ROOT$/packages/aai-ui/typedoc.json"
+      ],
+      "outputs": [
+        "dist/**"
+      ]
     }
   }
 }

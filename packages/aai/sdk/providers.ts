@@ -19,7 +19,7 @@
  *   Only the openable layer talks to the network; descriptors never do.
  *
  * This split is load-bearing for the sandboxed deployment path: the guest
- * Deno sandbox can import `@alexkroman1/aai/{stt,tts,llm}` without pulling
+ * sandbox can import `@alexkroman1/aai/{stt,tts,llm}` without pulling
  * in any AI-SDK code, which means no env reads (`ANTHROPIC_BASE_URL`, etc.)
  * at bundle load — the exact failure mode that forced this refactor.
  */
@@ -97,7 +97,12 @@ export interface SttOpenOptions {
   signal: AbortSignal;
 }
 
-/** Host-side openable STT provider — produced by `resolveStt(descriptor)`. */
+/**
+ * Host-side openable STT provider — produced by `resolveStt(descriptor)`.
+ * Part of the host-only opener layer, never constructed by user code.
+ *
+ * @internal
+ */
 export interface SttOpener {
   readonly name: string;
   open(opts: SttOpenOptions): Promise<SttSession>;
@@ -146,7 +151,12 @@ export interface TtsOpenOptions {
   signal: AbortSignal;
 }
 
-/** Host-side openable TTS provider — produced by `resolveTts(descriptor)`. */
+/**
+ * Host-side openable TTS provider — produced by `resolveTts(descriptor)`.
+ * Part of the host-only opener layer, never constructed by user code.
+ *
+ * @internal
+ */
 export interface TtsOpener {
   readonly name: string;
   open(opts: TtsOpenOptions): Promise<TtsSession>;

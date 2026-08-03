@@ -49,6 +49,8 @@ const ToolManifestSchema = z.object({
  * in-band after the socket is already open, so the only signal was an agent
  * that went mute in production. Those get an assert here, where the CLI and the
  * studio's `test_agent` both see it while the author is still authoring.
+ *
+ * @internal
  */
 export const ProviderDescriptorSchema = z.object({
   kind: z.string().min(1),

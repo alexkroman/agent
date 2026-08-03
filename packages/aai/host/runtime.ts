@@ -103,12 +103,25 @@ function resolvePipelineProviders(
 /**
  * Create an agent runtime — the execution engine for a voice agent.
  *
- * Merges built-in and custom tool definitions, builds tool schemas for the
- * S2S API, and wires up lifecycle hooks.
+ * Merges built-in and custom tool definitions, builds their tool schemas, and
+ * owns per-session transports: pipeline mode (STT → LLM → TTS, the default)
+ * or S2S mode when the agent declares an `s2s` descriptor.
  *
  * @param opts - Runtime configuration. See {@link RuntimeOptions}.
- * @returns A {@link Runtime} with tool execution, hook invocation,
- *   schemas, and session management.
+ * @returns A {@link Runtime} with tool execution, schemas, and session
+ *   management.
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { createRuntime, type SessionWebSocket } from "@alexkroman1/aai/runtime";
+ *
+ * const runtime = createRuntime({ agent: agent({ name: "My Agent" }), env: {} });
+ * // wire a connected WebSocket to a session:
+ * declare const ws: SessionWebSocket;
+ * runtime.startSession(ws);
+ * await runtime.shutdown();
+ * ```
  *
  * @public
  */

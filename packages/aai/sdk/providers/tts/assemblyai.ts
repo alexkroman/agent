@@ -30,14 +30,18 @@ export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
 
 /**
- * Default voice when `assemblyAI()` is called with no `voice`. Every voice in
- * the catalog speaks exactly one language, so changing `language` generally
- * means changing `voice` too.
+ * Default voice when `assemblyAI()` is called with no `voice`. Note it is
+ * UK-accented — a US-facing agent should pick a US voice from
+ * {@link ASSEMBLYAI_TTS_VOICES} explicitly. Every voice in the catalog
+ * speaks exactly one language, so changing `language` generally means
+ * changing `voice` too.
  */
 export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "vera";
 
 /**
  * The voice catalog — voice id → the language it speaks and its accent.
+ * The accent is descriptive metadata for choosing a voice, not a settable
+ * option: {@link AssemblyAITtsOptions} has no `accent` field.
  *
  * A constant rather than a sentence in a doc comment, because a wrong voice
  * id is a *silent* failure: it is a free-form string the service rejects
@@ -210,9 +214,10 @@ export interface AssemblyAITtsOptions {
   /**
    * Spoken language as an ISO 639-1 code (`"en"`, `"fr"`, `"de"`, `"es"`,
    * `"it"`, `"pt"`). Omitted by default so the server infers it from the
-   * voice — set it only alongside a voice that speaks it. Translated to the
-   * name the service wants by {@link resolveAssemblyAITtsLanguage}; an
-   * unsupported code fails at connect time rather than muting the session.
+   * voice — set it only alongside a voice that speaks it. Translated
+   * internally to the service's language name; see
+   * {@link ASSEMBLYAI_TTS_LANGUAGES} for the supported set. An unsupported
+   * code fails at connect time rather than muting the session.
    */
   language?: AssemblyAITtsLanguage;
 }
@@ -222,6 +227,17 @@ export type AssemblyAITtsProvider = TtsProvider & {
   readonly options: AssemblyAITtsOptions & { voice: string };
 };
 
+/**
+ * Build an AssemblyAI streaming-TTS descriptor.
+ *
+ * The API key is resolved host-side from the agent's env
+ * (`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
+ * descriptor stays free of secrets and safe to serialize.
+ *
+ * Shares its name with the `assemblyAI` STT factory (`@alexkroman1/aai/stt`)
+ * and LLM factory (`@alexkroman1/aai/llm`) — alias on import when using more
+ * than one.
+ */
 export function assemblyAI(opts: AssemblyAITtsOptions = {}): AssemblyAITtsProvider {
   return {
     kind: ASSEMBLYAI_TTS_KIND,

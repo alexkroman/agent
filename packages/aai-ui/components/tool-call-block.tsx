@@ -32,15 +32,10 @@ function formatResult(result: string): string {
  * snapshots and rows are keyed on the stable `callId`, so a list update only
  * re-renders the rows whose tool call actually changed.
  *
- * @example
- * ```tsx
- * <ToolCallBlock toolCall={toolCall} />
- * ```
- *
  * @param toolCall - The tool call to render (see {@link ToolCallInfo}).
  * @param className - Additional CSS class names.
  *
- * @public
+ * @internal Not exported from the package — rendered by `MessageList`.
  */
 export const ToolCallBlock = memo(function ToolCallBlock({
   toolCall,

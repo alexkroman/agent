@@ -5,22 +5,19 @@
  * This exists because of a measured failure, not for tidiness. Agents built
  * from a plain description kept coming out in S2S mode when nothing had asked
  * for it — the most persistent defect across the starter evals — and the
- * reason was arithmetic rather than misunderstanding. S2S is the absence of
- * configuration:
+ * reason was arithmetic rather than misunderstanding. S2S was the absence of
+ * configuration (an `agent()` with no provider fields ran on the
+ * speech-to-speech service), while the recommended pipeline cost four
+ * imports, two of them aliasing the same exported name, plus three magic
+ * strings:
  *
  * ```ts
- * export default agent({ name: "Ivy", voice: "ivy" });
- * ```
- *
- * while the recommended pipeline cost four imports, two of them aliasing the
- * same exported name, plus three magic strings:
- *
- * ```ts
+ * import { agent } from "@alexkroman1/aai";
  * import { assemblyAI } from "@alexkroman1/aai/stt";
  * import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
  * import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
  * export default agent({
- *   name: "Ivy",
+ *   name: "Vera",
  *   stt: assemblyAI({ model: "universal-3-5-pro" }),
  *   llm: assemblyAILlm({ model: "qwen3-next-80b-a3b" }),
  *   tts: assemblyAITts({ voice: "vera" }),
@@ -32,7 +29,7 @@
  *
  * ```ts
  * import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
- * export default agent({ name: "Ivy", ...assemblyAIPipeline({ voice: "ivy" }) });
+ * export default agent({ name: "Vera", ...assemblyAIPipeline({ voice: "vera" }) });
  * ```
  *
  * It also removes the one runtime hazard in the long form. A gateway model id
@@ -45,19 +42,34 @@
  * preset: spread it, then set the one field.
  *
  * ```ts
- * agent({ name: "Ivy", ...assemblyAIPipeline(), tts: cartesia({ voice: "…" }) });
+ * import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+ * import { cartesia } from "@alexkroman1/aai/tts";
+ * agent({ name: "Vera", ...assemblyAIPipeline(), tts: cartesia() });
  * ```
  */
 
 import { type AssemblyAILlmProvider, assemblyAI as assemblyAILlm } from "./llm/assemblyai.ts";
 import { type AssemblyAIProvider, assemblyAI as assemblyAIStt } from "./stt/assemblyai.ts";
-import { type AssemblyAITtsProvider, assemblyAI as assemblyAITts } from "./tts/assemblyai.ts";
+import {
+  type AssemblyAITtsProvider,
+  type AssemblyAITtsVoice,
+  assemblyAI as assemblyAITts,
+} from "./tts/assemblyai.ts";
 
 export interface AssemblyAIPipelineOptions {
-  /** Gateway LLM model. Defaults to `ASSEMBLYAI_LLM_DEFAULT_MODEL`. */
+  /**
+   * Gateway LLM model. Defaults to `ASSEMBLYAI_LLM_DEFAULT_MODEL`
+   * (`"qwen3-next-80b-a3b"`) — see `@alexkroman1/aai/llm` for the catalog.
+   */
   model?: string;
-  /** TTS voice, e.g. `"vera"`, `"ivy"`, `"james"`. */
-  voice?: string;
+  /**
+   * TTS voice id, e.g. `"vera"`, `"michael"`, `"alba"`. Defaults to
+   * `"vera"`. Each voice speaks exactly one language — see
+   * `ASSEMBLYAI_TTS_VOICES` (from `@alexkroman1/aai/tts`) for the
+   * catalog; a name outside it fails in-band after connect and leaves the
+   * agent silent.
+   */
+  voice?: AssemblyAITtsVoice;
   /** Streaming STT model. Defaults to `"universal-3-5-pro"`. */
   sttModel?: string;
   /**

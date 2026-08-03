@@ -3,7 +3,7 @@
 /** @jsxImportSource react */
 
 import clsx from "clsx";
-import type { CSSProperties, ReactNode } from "react";
+import type { ButtonHTMLAttributes, CSSProperties, ReactNode } from "react";
 import { useTheme } from "../context.ts";
 
 /**
@@ -13,16 +13,20 @@ import { useTheme } from "../context.ts";
  * - `"default"` — Primary filled button (indigo background).
  * - `"secondary"` — Outlined primary (transparent background, primary border).
  * - `"ghost"` — Raised neutral (surface background with hairline border).
+ *
+ * @public
  */
-type ButtonVariant = "default" | "secondary" | "ghost";
+export type ButtonVariant = "default" | "secondary" | "ghost";
 
 /**
  * Size preset for a {@link Button}.
  *
  * - `"default"` — Compact control (height 36 px).
  * - `"lg"` — Primary CTA (height 44 px, generous padding).
+ *
+ * @public
  */
-type ButtonSize = "default" | "lg";
+export type ButtonSize = "default" | "lg";
 
 /**
  * A styled button with variant and size presets.
@@ -32,13 +36,16 @@ type ButtonSize = "default" | "lg";
  *
  * @example
  * ```tsx
- * <Button variant="secondary" onClick={handleClick}>
- *   Stop
- * </Button>
+ * import { Button } from "@alexkroman1/aai-ui";
  *
- * <Button size="lg" className="w-full">
- *   Start Conversation
- * </Button>
+ * function Actions({ onStop }: { onStop: () => void }) {
+ *   return (
+ *     <>
+ *       <Button variant="secondary" onClick={onStop}>Stop</Button>
+ *       <Button size="lg" className="w-full">Start Conversation</Button>
+ *     </>
+ *   );
+ * }
  * ```
  *
  * @param variant - Visual style (`"default"` | `"secondary"` | `"ghost"`). Defaults to `"default"`.
@@ -60,7 +67,7 @@ export function Button({
   size?: ButtonSize;
   className?: string;
   children?: ReactNode;
-} & Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "className">) {
+} & Omit<ButtonHTMLAttributes<HTMLButtonElement>, "className">) {
   const theme = useTheme();
 
   let variantStyle: CSSProperties;

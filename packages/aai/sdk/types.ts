@@ -26,8 +26,8 @@ import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./provi
  * - `"calculate"` — Safely evaluate an arithmetic expression (no code execution).
  *
  * When `builtinTools` is not set, the cognitive defaults
- * (`DEFAULT_BUILTIN_TOOLS`: think, remember, recall, calculate) are enabled.
- * Set `builtinTools` explicitly — including `[]` — to override.
+ * ({@link DEFAULT_BUILTIN_TOOLS}: think, remember, recall, calculate) are
+ * enabled. Set `builtinTools` explicitly — including `[]` — to override.
  *
  * @public
  */
@@ -68,42 +68,37 @@ export type Message = {
 };
 
 /**
- * Default type of `ctx.state` when an agent does not declare one.
+ * Default type of `ctx.state` when an agent does not declare one — `any`, so
+ * untyped state access compiles. Opt into real checking by annotating the
+ * context (`ctx: ToolContext<Cart>`), which also makes the agent verify the
+ * tool against its own state shape.
  *
- * `any`, deliberately. Session state is a genuinely dynamic bag created by
- * the agent's `state` factory, and `tool()` can only learn its real shape
- * from an annotated context — so a stricter default (`Record<string, unknown>`,
- * which this was) makes the ordinary spelling
- *
- * ```ts
- * agent({ state: () => ({ cart: [] }), tools: { add } })
- * // add: execute: (a, ctx) => ctx.state.cart.push(a)
- * ```
- *
- * a compile error (`'ctx.state.cart' is of type 'unknown'`) even though it
- * runs correctly. That mattered once `aai build`/`aai deploy` started running
- * the project's own `tsc`: the strict default did not catch bugs, it refused
- * to publish working agents.
- *
- * Opt into real checking by annotating the context — `ctx: ToolContext<Cart>`
- * — which also makes the agent verify the tool against its own state shape.
+ * @remarks
+ * `any` deliberately, not `Record<string, unknown>`: session state is a
+ * genuinely dynamic bag created by the agent's `state` factory, and `tool()`
+ * can only learn its real shape from an annotated context. The stricter
+ * default made the ordinary spelling
+ * (`execute: (a, ctx) => ctx.state.cart.push(a)`) a compile error even
+ * though it runs correctly — and once `aai build`/`aai deploy` started
+ * running the project's own `tsc`, that refused to publish working agents
+ * without catching bugs.
  *
  * @public
  */
 export type DefaultSessionState = any;
 
 /**
- * Default type of a tool result observed on the client (`useToolResult`).
+ * Default type of a tool result observed on the client (`useToolResult`) —
+ * `any`, so untyped reads compile. Pass the shape —
+ * `useToolResult<Quote>("get_quote", …)` — for real checking.
  *
- * The client half of {@link DefaultSessionState}'s problem, and `any` for the
- * same reason. A tool result is the author's own return value round-tripped
- * through JSON; the client already knows its shape, and the framework cannot.
- * With the strict default (`unknown`, which this was), reading one field off
- * it was a compile error in a client that runs correctly — and since
- * `aai build` type-checks, that error blocked publishing rather than
- * preventing a bug.
- *
- * Pass the shape — `useToolResult<Quote>("get_quote", …)` — for real checking.
+ * @remarks
+ * The client half of {@link DefaultSessionState}'s problem, and `any` for
+ * the same reason: a tool result is the author's own return value
+ * round-tripped through JSON — the client already knows its shape, and the
+ * framework cannot. The strict default (`unknown`) made reading one field a
+ * compile error in a client that runs correctly, which blocked publishing
+ * once `aai build` type-checked.
  *
  * @public
  */
@@ -121,23 +116,28 @@ export type DefaultToolResult = any;
  *
  * @example
  * ```ts
- * import { type ToolDef } from "@alexkroman1/aai";
+ * import { tool } from "@alexkroman1/aai";
  * import { z } from "zod";
  *
- * const myTool: ToolDef = {
+ * const lookupNote = tool({
  *   description: "Look up a note from the database",
  *   parameters: z.object({ id: z.string() }),
  *   execute: async ({ id }, ctx) => {
  *     const rows = await ctx.db.query("select body from notes where id = $1", [id]);
  *     return { id, note: rows[0] ?? null };
  *   },
- * };
+ * });
  * ```
  *
  * @public
  */
 export type ToolContext<S = DefaultSessionState> = {
-  /** Environment variables declared in the agent config. */
+  /**
+   * Environment variables available to this agent's tools (from `.env` under
+   * `aai dev`, `aai secret` in production). Custom keys a tool depends on
+   * should be declared in {@link AgentDef.requiredEnv} so a missing value
+   * fails at deploy time.
+   */
   env: Readonly<Record<string, string>>;
   /** Mutable per-session state created by the agent's `state` factory. */
   state: S;
@@ -158,7 +158,12 @@ export type ToolContext<S = DefaultSessionState> = {
   messages: readonly Message[];
   /** Unique identifier for the current session. Useful for correlating logs across concurrent sessions. */
   sessionId: string;
-  /** Push a custom event to the connected browser client. Fire-and-forget. */
+  /**
+   * Push a custom event to the connected browser client. Fire-and-forget:
+   * events whose name exceeds {@link MAX_CLIENT_EVENT_NAME_LENGTH} or whose
+   * serialized payload exceeds {@link MAX_CLIENT_EVENT_PAYLOAD_BYTES} are
+   * dropped (with a warning log), not thrown.
+   */
   send(event: string, data: unknown): void;
   /**
    * Cooperative cancellation signal. Aborts when the turn that issued this
@@ -182,10 +187,10 @@ export type ToolContext<S = DefaultSessionState> = {
  *
  * @example
  * ```ts
- * import { type ToolDef } from "@alexkroman1/aai";
+ * import { tool } from "@alexkroman1/aai";
  * import { z } from "zod";
  *
- * const weatherTool: ToolDef<typeof params> = {
+ * const weatherTool = tool({
  *   description: "Get current weather for a city",
  *   parameters: z.object({
  *     city: z.string().describe("City name"),
@@ -194,9 +199,7 @@ export type ToolContext<S = DefaultSessionState> = {
  *     const res = await fetch(`https://wttr.in/${city}?format=j1`);
  *     return await res.json();
  *   },
- * };
- *
- * const params = z.object({ city: z.string() });
+ * });
  * ```
  *
  * @public
@@ -209,7 +212,12 @@ export type ToolDef<
   description: string;
   /** Zod schema for the tool's parameters. */
   parameters?: P;
-  /** Function that executes the tool and returns a result. */
+  /**
+   * Function that executes the tool and returns a result. The result is
+   * JSON-serialized for the LLM and the client, and capped at
+   * {@link MAX_TOOL_RESULT_CHARS} (4000) characters — longer results are
+   * trimmed and end with a `[truncated]` marker.
+   */
   execute(args: z.infer<P>, ctx: ToolContext<S>): Promise<unknown> | unknown;
 };
 
@@ -219,21 +227,52 @@ export { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
  * Fully resolved agent definition.
  *
  * Core fields (`name`, `systemPrompt`, `greeting`, `maxSteps`, `tools`)
- * are resolved to their final values with defaults applied. Optional
- * behavioral fields (hooks, `sttPrompt`, etc.) remain optional —
- * `undefined` means "not configured."
+ * are resolved to their final values with defaults applied. Optional fields
+ * (`sttPrompt`, the tuning knobs, the provider descriptors, etc.) remain
+ * optional — `undefined` means "not configured."
  *
  * @public
  */
 export type AgentDef<S = DefaultSessionState> = {
+  /** Display name shown by the default client UI. */
   name: string;
+  /**
+   * System prompt driving the LLM. Defaults to
+   * {@link DEFAULT_SYSTEM_PROMPT} when not set on `agent()`.
+   */
   systemPrompt: string;
+  /**
+   * Sentence spoken when a session starts. Defaults to
+   * {@link DEFAULT_GREETING}; set `""` to start silent.
+   */
   greeting: string;
+  /**
+   * Pipeline mode only. Bias prompt for the streaming STT — use it to teach
+   * the transcriber the agent's own vocabulary (product names, spelled-out
+   * identifiers). Defaults to empty (unbiased transcription); see
+   * {@link DEFAULT_STT_PROMPT} for what an effective prompt looks like.
+   */
   sttPrompt?: string;
+  /**
+   * Max tool calls per reply — bounds runaway tool loops. Defaults to
+   * {@link DEFAULT_MAX_STEPS} (10).
+   */
   maxSteps: number;
+  /**
+   * How the LLM selects tools each step. Defaults to `"auto"`
+   * ({@link DEFAULT_TOOL_CHOICE}): the model decides when to call a tool.
+   */
   toolChoice?: ToolChoice;
+  /**
+   * Built-in server-side tools enabled for this agent. Unset defaults to the
+   * cognitive set {@link DEFAULT_BUILTIN_TOOLS} (`think`, `remember`,
+   * `recall`, `calculate`); set explicitly — including `[]` — to override.
+   */
   builtinTools?: readonly BuiltinTool[];
   /**
+   * Custom tools the agent may invoke, keyed by tool name.
+   *
+   * @remarks
    * `NoInfer` so `state` is the ONLY thing `S` is inferred from. Without it a
    * single tool written without the state type (the common case — `tool()`
    * only learns `S` from an annotated context) drags `S` back to
@@ -241,6 +280,11 @@ export type AgentDef<S = DefaultSessionState> = {
    * becomes `unknown` again. Tools are still *checked* against `S`.
    */
   tools: Readonly<Record<string, ToolDef<z.ZodObject<z.ZodRawShape>, NoInfer<S>>>>;
+  /**
+   * Factory creating this session's mutable state — the value tools read and
+   * write as `ctx.state`. Called once per session; unset leaves `ctx.state`
+   * an empty object.
+   */
   state?: () => S;
   /**
    * Project per-session state to the browser client, so a custom UI can
@@ -258,10 +302,14 @@ export type AgentDef<S = DefaultSessionState> = {
    * socket with 384 kbps of PCM.
    *
    * ```ts
+   * import { agent } from "@alexkroman1/aai";
+   * type Item = { sku: string; qty: number };
+   *
    * agent({
+   *   name: "Cart",
    *   state: () => ({ cart: [] as Item[], staffPin: "" }),
    *   syncState: (s) => ({ cart: s.cart }),   // staffPin stays server-side
-   * })
+   * });
    * ```
    *
    * Without it, the pattern agents reach for is: return a state snapshot from
@@ -270,24 +318,31 @@ export type AgentDef<S = DefaultSessionState> = {
    * built some version of that by hand.
    */
   syncState?: (state: S) => unknown;
+  /**
+   * How long the session may go with no inbound audio before it is closed
+   * (ms). Measures silence, not call length — re-armed on every audio frame.
+   * Defaults to {@link DEFAULT_IDLE_TIMEOUT_MS} (300 000, 5 minutes); `0` or
+   * a non-finite value disables the timer entirely.
+   */
   idleTimeoutMs?: number;
   /**
    * Pipeline mode only. When set, the assistant proactively takes a turn
    * after this many ms of user silence (no speech since the last reply
    * finished). Unset disables the behavior. Nudges are capped at
-   * `MAX_CONSECUTIVE_SILENCE_NUDGES` back-to-back until the user speaks again.
+   * `MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back until the user speaks
+   * again.
    */
   silenceTimeoutMs?: number;
   /**
    * Instruction injected as a synthetic user turn when `silenceTimeoutMs`
    * elapses. Never shown as a user transcript. Defaults to
-   * `DEFAULT_SILENCE_PROMPT`. Requires `silenceTimeoutMs`.
+   * {@link DEFAULT_SILENCE_PROMPT}. Requires `silenceTimeoutMs`.
    */
   silencePrompt?: string;
   /**
    * Pipeline mode only. Minimum words in an interim transcript before user
    * speech barges in on (aborts) the agent's in-flight reply. Defaults to
-   * `DEFAULT_MIN_BARGE_IN_WORDS` (2) so one-word backchannels ("yeah",
+   * {@link DEFAULT_MIN_BARGE_IN_WORDS} (2) so one-word backchannels ("yeah",
    * "mm-hmm") don't cut the agent off; set 1 to interrupt on any word.
    */
   minBargeInWords?: number;
@@ -296,7 +351,8 @@ export type AgentDef<S = DefaultSessionState> = {
    * first interim transcript) before an interim-triggered barge-in aborts the
    * agent's reply — a duration gate alongside `minBargeInWords`, mirroring
    * LiveKit's `min_interruption_duration`. Committed turns (STT finals) are
-   * never gated. Default 0 (disabled).
+   * never gated. Defaults to {@link DEFAULT_INTERRUPTION_MIN_DURATION_MS}
+   * (500); set 0 to disable the gate.
    */
   interruptionMinDurationMs?: number;
   /**
@@ -324,8 +380,9 @@ export type AgentDef<S = DefaultSessionState> = {
    * Pipeline mode only. False-interruption recovery window (ms): when a
    * barge-in aborts the agent's reply but no user turn commits within this
    * window (STT noise, hallucinated partial), the agent resumes the
-   * interrupted reply. Defaults to `DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS`
-   * (2000); 0 disables recovery.
+   * interrupted reply. Defaults to
+   * {@link DEFAULT_FALSE_INTERRUPTION_TIMEOUT_MS} (2000); 0 disables
+   * recovery.
    */
   falseInterruptionTimeoutMs?: number;
   /**
@@ -353,11 +410,12 @@ export type AgentDef<S = DefaultSessionState> = {
    */
   s2s?: S2sProvider;
   /**
-   * Env var names this agent's tools read from `ctx.env` (beyond provider
-   * credentials, which are derived from the `stt`/`llm`/`tts`/`s2s`
-   * descriptors automatically). Deploys check that every listed name is
-   * present in the agent's stored env, so a missing key surfaces at deploy
-   * time instead of as a runtime failure on the first tool call.
+   * Env var names this agent's tools read from {@link ToolContext.env}
+   * (beyond provider credentials, which are derived from the
+   * `stt`/`llm`/`tts`/`s2s` descriptors automatically). Deploys check that
+   * every listed name is present in the agent's stored env, so a missing key
+   * surfaces at deploy time instead of as a runtime failure on the first
+   * tool call.
    */
   requiredEnv?: readonly string[];
 };

@@ -68,7 +68,7 @@ export type RuntimeOptions = {
   agent: AgentDef<any>;
   /**
    * The agent's own env — what tool code sees as `ctx.env`. Typed
-   * {@link AgentEnv}: a `withHostCredentialFallback` result (which may carry
+   * `AgentEnv`: a `withHostCredentialFallback` result (which may carry
    * host/shell credentials) is a compile error here — pass it as
    * {@link RuntimeOptions.providerEnv} instead.
    */
@@ -91,11 +91,19 @@ export type RuntimeOptions = {
    * `ctx.db` access throws.
    */
   db?: Db | undefined;
-  /** Custom WebSocket factory for the S2S connection (useful for testing). */
+  /**
+   * Custom WebSocket factory for the S2S connection (testing seam).
+   * @internal
+   */
   createWebSocket?: CreateS2sWebSocket | undefined;
-  /** Custom WebSocket factory for the OpenAI Realtime connection (testing). */
+  /**
+   * Custom WebSocket factory for the OpenAI Realtime connection (testing seam).
+   * @internal
+   */
   createOpenaiRealtimeWebSocket?: CreateOpenaiRealtimeWebSocket | undefined;
+  /** Structured logger for runtime and session logs. Defaults to the console. */
   logger?: Logger | undefined;
+  /** S2S endpoint URL and audio sample rates. Defaults to `DEFAULT_S2S_CONFIG`. */
   s2sConfig?: S2SConfig | undefined;
   /**
    * Timeout in ms for `session.start()` (S2S connection setup).
@@ -111,11 +119,15 @@ export type RuntimeOptions = {
    * Override tool execution. When provided, `createRuntime` skips building
    * in-process tool definitions and uses this function instead. Used by the
    * platform sandbox to RPC tool calls to the isolate.
+   *
+   * @internal
    */
   executeTool?: ExecuteTool | undefined;
   /**
    * Override tool schemas sent to the S2S API. Required when `executeTool`
    * is provided (the host doesn't have the tool definitions to derive schemas).
+   *
+   * @internal
    */
   toolSchemas?: ToolSchema[] | undefined;
   /**
@@ -131,11 +143,10 @@ export type RuntimeOptions = {
   toolGuidance?: string[] | undefined;
   /**
    * Override the fetch implementation used by built-in tools (web_search,
-   * visit_webpage, get_page_design, fetch_json). Defaults to `globalThis.fetch`.
-   *
-   * In platform mode, pass an SSRF-safe fetch to prevent requests to
-   * private/internal networks. In self-hosted mode, users may provide
-   * their own fetch wrapper.
+   * visit_webpage, get_page_design, fetch_json). Defaults to `builtinFetch()`:
+   * SSRF-screened unless the spawner declared a real container around the
+   * process (`AAI_SANDBOX_CONTAINED=1`), in which case the sandbox is the
+   * boundary and the screen is skipped. Override only in tests.
    */
   fetch?: typeof globalThis.fetch | undefined;
   /**
@@ -150,11 +161,6 @@ export type RuntimeOptions = {
    * `llm` and `tts` to route sessions through the pipeline path; leave all
    * three unset to fall back to the agent's own provider fields (which
    * default to the all-AssemblyAI pipeline when the agent declares none).
-   *
-   * Descriptors only — these fields used to also accept a pre-resolved opener
-   * as a test escape hatch, which forced API-key routing to sniff `opener.name`
-   * and guess. Tests now register a kind via `registerSttKind` and pass a
-   * descriptor like everything else.
    */
   stt?: SttProvider | undefined;
   /** LLM provider descriptor, from a factory like `anthropic(...)`. */
@@ -167,8 +173,8 @@ export type RuntimeOptions = {
  * The agent runtime returned by {@link createRuntime}.
  *
  * Satisfies {@link AgentRuntime} for use by transport code, and also exposes
- * lower-level helpers (`executeTool`, `hooks`, `toolSchemas`,
- * `createSession`) for testing and advanced usage.
+ * lower-level helpers (`executeTool`, `toolSchemas`, `createSession`) for
+ * testing and advanced usage.
  *
  * @public
  */

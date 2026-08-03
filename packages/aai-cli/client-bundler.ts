@@ -13,6 +13,11 @@
  * The studio differs from a CLI project in two ways, hence the options:
  * it has no `vite.config.ts` to supply React/Tailwind plugins, and its files
  * are untrusted so any config the workspace *does* contain must be ignored.
+ *
+ * @internal — build hook for aai-server/the studio; not a supported public
+ * API and not covered by semver. The lack of a `_` prefix is packaging (the
+ * subpath must be importable cross-package), not an invitation: user code
+ * should never import from `@alexkroman1/aai-cli`.
  */
 
 import type { Dirent } from "node:fs";
@@ -26,6 +31,12 @@ import { writeTempHtml } from "./_default-html.ts";
 import { errorMessage, fileExists } from "./_utils.ts";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
 
+/**
+ * Options for client SPA bundling.
+ *
+ * @internal — build hook for aai-server/the studio; not a supported public
+ * API and not covered by semver.
+ */
 export type BuildClientOptions = {
   /**
    * Plugins to inject instead of relying on the project's `vite.config.ts`
@@ -67,6 +78,9 @@ const DEDUPED_PEERS = ["react", "react-dom"];
  * Build the client SPA with Vite if `client.tsx` exists.
  * Returns a map of relative file paths to string contents for deploy,
  * or `{}` when the project has no `client.tsx`.
+ *
+ * @internal — build hook for aai-server/the studio; not a supported public
+ * API and not covered by semver.
  */
 export async function buildClient(
   cwd: string,

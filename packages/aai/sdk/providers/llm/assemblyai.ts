@@ -13,11 +13,13 @@
  * the gateway base URL.
  *
  * Note: this factory shares its name with the STT factory in
- * `@alexkroman1/aai/stt`. When using both, alias one on import:
+ * `@alexkroman1/aai/stt` and the TTS factory in `@alexkroman1/aai/tts`. When
+ * using more than one, alias on import:
  *
  * ```ts
  * import { assemblyAI } from "@alexkroman1/aai/stt";
  * import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+ * import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
  * ```
  */
 
@@ -87,6 +89,10 @@ export type AssemblyAILlmProvider = LlmProvider & {
  * The API key is resolved host-side from the agent's env
  * (`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
  * descriptor stays free of secrets and safe to serialize.
+ *
+ * Shares its name with the `assemblyAI` STT factory (`@alexkroman1/aai/stt`)
+ * and TTS factory (`@alexkroman1/aai/tts`) — alias on import when using more
+ * than one.
  */
 export function assemblyAI(opts: AssemblyAILlmOptions = {}): AssemblyAILlmProvider {
   return {

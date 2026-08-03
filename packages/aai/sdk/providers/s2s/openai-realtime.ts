@@ -5,7 +5,8 @@ import type { S2sProvider } from "../../providers.ts";
 
 export const OPENAI_REALTIME_KIND = "openai-realtime" as const;
 
-type OpenaiRealtimeVoice =
+/** Voice ids the OpenAI Realtime API accepts for TTS. */
+export type OpenaiRealtimeVoice =
   | "alloy"
   | "ash"
   | "ballad"

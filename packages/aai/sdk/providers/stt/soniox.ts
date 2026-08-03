@@ -4,7 +4,7 @@
  *
  * The descriptor flows through the bundle → server → runtime pipeline
  * without importing any Soniox client. The host-side resolver in
- * `host/providers/resolve.ts` turns it into an openable {@link SttOpener}
+ * `host/providers/resolve.ts` turns it into an openable `SttOpener`
  * during `createRuntime`. The host opener talks to Soniox's real-time
  * WebSocket directly (no Node-targeted SDK is published).
  */

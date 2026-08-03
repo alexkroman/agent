@@ -1,6 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-/** Parse WebSocket upgrade query params into session start options. */
+/**
+ * Parse WebSocket upgrade query params into session start options.
+ *
+ * @internal
+ */
 export function parseWsUpgradeParams(rawUrl: string): {
   resumeFrom?: string;
   skipGreeting: boolean;

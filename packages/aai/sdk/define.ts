@@ -37,6 +37,9 @@ import {
  *
  * @example Typed session state
  * ```ts
+ * import { tool, type ToolContext } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
  * type Cart = { items: string[] };
  *
  * const add = tool({
@@ -61,7 +64,8 @@ export function tool<P extends z.ZodObject<z.ZodRawShape>, S = DefaultSessionSta
 }
 
 /** {@link AgentDef} fields `agent()` fills in when omitted. */
-type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
+/** The `AgentDef` fields `agent()` fills with defaults when omitted. */
+export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 
 /**
  * The author-facing parameter shape of {@link agent}: every {@link AgentDef}

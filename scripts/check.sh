@@ -72,14 +72,16 @@ if [ "$MODE" = "--local" ]; then
   pnpm run check:publish-names
   # After build on purpose: the scaffold tsconfig has no `@dev/source`
   # condition, so templates resolve the PUBLISHED types here, exactly as a
-  # scaffolded project does.
+  # scaffolded project does. Doc examples compile under the same config, so
+  # the same ordering applies.
   pnpm run check:template-types || exit 1
+  pnpm run check:doc-examples || exit 1
 else
   echo -e "\n${YELLOW}Running full CI checks (via turbo)${NC}"
   if ! pnpm exec turbo run \
     build typecheck lint check:publint check:attw \
     check:syncpack check:sherif check:knip check:markdown \
-    test check:typecheck check:integration \
+    test check:typecheck check:integration docs \
     --continue; then
     echo -e "\n${RED}Some checks failed.${NC}"
     exit 1
@@ -110,6 +112,7 @@ else
   fi
   pnpm run check:publish-names
   pnpm run check:template-types || exit 1
+  pnpm run check:doc-examples || exit 1
 fi
 
 if [ "$RATCHET_STATUS" -ne 0 ]; then

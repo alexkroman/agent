@@ -17,6 +17,8 @@ import { Eyebrow } from "./eyebrow.tsx";
  *
  * @example
  * ```tsx
+ * import { ChatView, StartScreen } from "@alexkroman1/aai-ui";
+ *
  * function MyAgent() {
  *   return (
  *     <StartScreen icon="🍕" title="Pizza Palace" subtitle="Voice-powered ordering">

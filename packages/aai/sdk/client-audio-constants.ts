@@ -7,7 +7,11 @@
  * under the file-length cap.
  */
 
-/** Microphone buffer duration in seconds before the client sends audio to the server. */
+/**
+ * Microphone buffer duration in seconds before the client sends audio to the server.
+ *
+ * @internal
+ */
 export const MIC_BUFFER_SECONDS = 0.1;
 
 /**
@@ -20,6 +24,8 @@ export const MIC_BUFFER_SECONDS = 0.1;
  * Exact zeros are the signal (a live mic in a quiet room still carries a noise
  * floor), and the probe disarms on the first nonzero sample, so it costs
  * nothing after the first second and cannot fire mid-session.
+ *
+ * @internal
  */
 export const MIC_SILENCE_PROBE_MS = 1500;
 
@@ -29,6 +35,8 @@ export const MIC_SILENCE_PROBE_MS = 1500;
  * so raising it trades time-to-first-audio for resilience. Tune it against the
  * concealment counters the worklet reports on each turn's `stop` (a turn with
  * `concealmentEvents: 0` never needed the cushion it was given).
+ *
+ * @internal
  */
 export const PLAYBACK_JITTER_MS = 400;
 
@@ -43,6 +51,8 @@ export const PLAYBACK_JITTER_MS = 400;
  * source of cushion — pacing at exactly real time would leave the playback
  * worklet unable to ever fill its jitter buffer, which is the failure mode of
  * a producer-paced/consumer-unbuffered pairing.
+ *
+ * @internal
  */
 export const CLIENT_AUDIO_LEAD_MS = 1000;
 
@@ -53,6 +63,8 @@ export const CLIENT_AUDIO_LEAD_MS = 1000;
  * speaking session at typical TTS frame sizes). **`CLIENT_AUDIO_LEAD_MS -
  * PACER_BURST_MS` must stay above {@link PLAYBACK_JITTER_MS}** — the dip is
  * cushion the client temporarily doesn't have.
+ *
+ * @internal
  */
 export const PACER_BURST_MS = 200;
 
@@ -62,6 +74,8 @@ export const PACER_BURST_MS = 200;
  * itself a hole in the speech, so the buffer trades some resilience for a
  * shorter gap. Without a refill step at all, one stall degrades the rest of the
  * turn into a fragment per render quantum.
+ *
+ * @internal
  */
 export const PLAYBACK_REFILL_MS = 200;
 
@@ -70,6 +84,8 @@ export const PLAYBACK_REFILL_MS = 200;
  * decayed to silence. Covering a gap with the recent signal (rather than
  * zeros) is what keeps a stall from sounding like a click; the fade keeps a
  * long stall from buzzing a looped fragment indefinitely.
+ *
+ * @internal
  */
 export const PLAYBACK_CONCEAL_FADE_MS = 40;
 
@@ -77,6 +93,8 @@ export const PLAYBACK_CONCEAL_FADE_MS = 40;
  * Gain at which concealment is treated as silence: the end point of the
  * {@link PLAYBACK_CONCEAL_FADE_MS} fade, and the threshold that separates
  * `silentConcealedSamples` from the concealed total.
+ *
+ * @internal
  */
 export const PLAYBACK_CONCEAL_FLOOR = 0.001;
 
@@ -86,6 +104,8 @@ export const PLAYBACK_CONCEAL_FLOOR = 0.001;
  * longer than this keeps playing (the ring wraps), it just cannot buffer
  * further ahead. {@link PLAYBACK_DONE_MAX_WAIT_MS} is derived from it — the
  * longest legitimate drain is one full buffer.
+ *
+ * @internal
  */
 export const PLAYBACK_BUFFER_SECONDS = 60;
 
@@ -93,6 +113,8 @@ export const PLAYBACK_BUFFER_SECONDS = 60;
  * How often the client's `done()` wait re-checks that the playback
  * AudioContext is still rendering, so a mid-playback suspension (backgrounded
  * tab) settles the wait quickly instead of hanging until the hard cap.
+ *
+ * @internal
  */
 export const PLAYBACK_DONE_POLL_MS = 1000;
 
@@ -101,6 +123,8 @@ export const PLAYBACK_DONE_POLL_MS = 1000;
  * {@link PLAYBACK_BUFFER_SECONDS} ring (the longest legitimate drain) plus
  * slack. A wait past this means the playback processor died without
  * reporting its 'stop'.
+ *
+ * @internal
  */
 export const PLAYBACK_DONE_MAX_WAIT_MS = PLAYBACK_BUFFER_SECONDS * 1000 + 5000;
 
@@ -108,6 +132,8 @@ export const PLAYBACK_DONE_MAX_WAIT_MS = PLAYBACK_BUFFER_SECONDS * 1000 + 5000;
  * Bounded wait for the capture worklet's 'stopped' ack after a 'stop'
  * message. The ack follows the final flush, so waiting for it keeps the tail
  * of speech from being dropped; the timeout covers a dead worklet.
+ *
+ * @internal
  */
 export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
 
@@ -117,5 +143,7 @@ export const CAPTURE_STOP_ACK_TIMEOUT_MS = 250;
  * mic frames are dropped instead of queued — for live voice, stale audio
  * flushed into STT on recovery is worse than a gap. The client-side mirror
  * of the host-side buffering budgets in `constants.ts`.
+ *
+ * @internal
  */
 export const MIC_SEND_MAX_BUFFERED_BYTES = 64 * 1024;

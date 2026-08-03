@@ -7,7 +7,7 @@
  * carries a {@link HostConfig} block (`systemPrompt`, optional `greeting`, and
  * relayed `tools`). Because the deployed-agent flow builds the session's
  * transport synchronously on socket-open (before any client message can
- * arrive — see HOST_MODE_CONTRACT.md §1), host mode DEFERS
+ * arrive), host mode DEFERS
  * `runtime.startSession` until that first frame lands: {@link startHostSession}
  * holds the raw socket, waits for the handshake, then builds a fresh, single-use
  * {@link Runtime} whose tools are executed by a {@link createRelayExecuteTool}
@@ -39,14 +39,20 @@ import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
  */
 const DEFAULT_HOST_MAX_STEPS = 30;
 
-/** The inbound `tool_result` payload routed to {@link RelayExecuteTool.onToolResult}. */
+/**
+ * The inbound `tool_result` payload routed to {@link RelayExecuteTool.onToolResult}.
+ * @internal
+ */
 export type RelayToolResult = {
   toolCallId: string;
   result: string;
   error?: string | undefined;
 };
 
-/** A relay tool executor plus the hooks needed to feed it inbound results. */
+/**
+ * A relay tool executor plus the hooks needed to feed it inbound results.
+ * @internal
+ */
 export type RelayExecuteTool = {
   /** {@link ExecuteTool} that relays each call to the client and awaits a result. */
   executeTool: ExecuteTool;
@@ -72,7 +78,9 @@ function normalizeResult(raw: string): string {
  * Build a relay tool executor: `executeTool` emits a `tool_call` frame via
  * `send` and returns a promise keyed by `toolCallId`; `onToolResult` settles
  * that promise when the client replies. Calls that never receive a result
- * reject after `timeoutMs` (default {@link DEFAULT_RELAY_TOOL_TIMEOUT_MS}).
+ * reject after `timeoutMs` (default `DEFAULT_RELAY_TOOL_TIMEOUT_MS`, 120 000 ms).
+ *
+ * @internal
  */
 export function createRelayExecuteTool(opts: {
   send: (event: ToolCallEvent) => void;
@@ -153,8 +161,10 @@ export function createRelayExecuteTool(opts: {
  * schemas, and the resulting session runs on the operator's provider
  * credentials. Since the self-hosted server has no request authentication of
  * its own, anyone who could reach the port could drive an arbitrary agent on
- * the operator's keys. Harnesses that need host mode (e.g. tau2) now set the
- * variable explicitly.
+ * the operator's keys. Harnesses that need host mode (e.g. an external
+ * evaluation harness) now set the variable explicitly.
+ *
+ * @internal
  */
 export function isHostAllowed(env: Record<string, string>): boolean {
   const normalized = env.AAI_ALLOW_HOST?.trim().toLowerCase();
@@ -173,6 +183,8 @@ export function isHostAllowed(env: Record<string, string>): boolean {
  * system prompt, greeting, and tools are overridden by the injected host
  * block. Without a `baseAgent`, no providers are set and the runtime falls
  * back to the default S2S path.
+ *
+ * @internal
  */
 export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef {
   return {
@@ -189,16 +201,16 @@ export function buildHostAgent(host: HostConfig, baseAgent?: AgentDef): AgentDef
   };
 }
 
-/** Options for {@link startHostSession}. */
+/**
+ * Options for {@link startHostSession}.
+ * @internal
+ */
 export type StartHostSessionOptions = {
   /**
-   * The agent env, or a promise of it. Accepting a promise matters on the
-   * platform: the env lives in Supabase Vault, and awaiting that fetch BEFORE
-   * calling this function left the socket with no `message` listener while the
-   * client's one-and-only handshake frame arrived — `ws` does not buffer for
-   * late listeners, so the frame was lost and the connection died on the
-   * handshake timeout. Pass the pending fetch instead; the listener attaches
-   * synchronously and the env is awaited only once the handshake has landed.
+   * The agent env, or a promise of it. Pass a pending fetch (e.g. a Vault
+   * lookup) rather than awaiting it first: `ws` does not buffer messages for
+   * late listeners, so awaiting before calling this function loses the
+   * client's one-and-only handshake frame.
    */
   env: Record<string, string> | PromiseLike<Record<string, string>>;
   startOpts?: SessionStartOptions;
@@ -210,9 +222,9 @@ export type StartHostSessionOptions = {
    * overridden by the client's host block.
    */
   baseAgent?: AgentDef;
-  /** Handshake grace period (default {@link DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS}). */
+  /** Handshake grace period (default `DEFAULT_HOST_HANDSHAKE_TIMEOUT_MS`, 15 000 ms). */
   handshakeTimeoutMs?: number;
-  /** Per-tool relay timeout (default {@link DEFAULT_RELAY_TOOL_TIMEOUT_MS}). */
+  /** Per-tool relay timeout (default `DEFAULT_RELAY_TOOL_TIMEOUT_MS`, 120 000 ms). */
   relayTimeoutMs?: number;
   /** Injectable runtime factory (test seam). Defaults to {@link createRuntime}. */
   createRuntime?: (opts: RuntimeOptions) => ReturnType<typeof createRuntime>;
@@ -272,6 +284,8 @@ function s2sConfigFromHandshake(msg: {
  * the socket off to the normal `wireSessionSocket` flow via
  * `runtime.startSession`. Invalid, disallowed, or missing handshakes reject the
  * connection with a protocol error.
+ *
+ * @internal
  */
 export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOptions): void {
   const log = opts.logger ?? consoleLogger;

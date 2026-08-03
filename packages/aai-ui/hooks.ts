@@ -109,18 +109,14 @@ function useToolCallEffect(
 /**
  * Fire a callback when a tool call settles, with the tool's JSON result.
  *
- * @typeParam R - The result shape. Defaults to {@link DefaultToolResult} —
- *   `any`, for the same reason `ctx.state` is: the value is the author's own
- *   tool output round-tripped through JSON, so `unknown` (which this was) made
- *   the ordinary spelling
+ * For new code prefer explicit events — `ctx.send(event, data)` in the tool
+ * paired with {@link useEvent} here — over listening to tool results.
  *
- *   ```tsx
- *   useToolResult("get_quote", (r) => setPrice(r.price))
- *   ```
+ * @typeParam R - The result shape. Defaults to {@link DefaultToolResult}
+ *   (`any`) so the ordinary untyped spelling compiles; pass the shape —
+ *   `useToolResult<Quote>(…)` — for real checking.
  *
- *   a compile error on a client that runs correctly, and `aai build` refuses
- *   to publish it. Pass the shape — `useToolResult<Quote>(…)` — to get real
- *   checking, which also documents what the tool returns.
+ * @public
  */
 export function useToolResult<R = DefaultToolResult>(
   toolName: string,
@@ -144,26 +140,56 @@ export function useToolResult(...args: unknown[]): void {
  * The agent's projected session state, or `null` before the first push.
  *
  * The counterpart to `syncState` on the agent: whatever that projection
- * returns is what arrives here. It replaces the pattern this exists to
- * remove — returning a state snapshot from every tool, declaring a type for
- * what those tools happen to return, and mirroring it into `useState` through
- * `useToolResult`, which was three things to keep in step and which 58% of
- * measured generated agents built by hand.
+ * returns is what arrives here — no per-tool result mirroring needed.
  *
  * ```tsx
- * const cart = useAgentState<{ cart: Item[] }>();
- * return <Cart items={cart?.cart ?? []} />;
+ * import { useAgentState } from "@alexkroman1/aai-ui";
+ *
+ * type Item = { sku: string; qty: number };
+ *
+ * function Cart() {
+ *   const state = useAgentState<{ cart: Item[] }>();
+ *   return <ul>{state?.cart.map((item) => <li key={item.sku}>{item.qty}</li>)}</ul>;
+ * }
  * ```
  *
  * Typed by the caller for the same reason `useToolResult` is: the shape is
  * the author's own projection, which the framework cannot see. It is
  * nullable on purpose — nothing has been pushed before the first tool call,
  * and a UI has to render that moment.
+ *
+ * @public
  */
 export function useAgentState<S = DefaultToolResult>(): S | null {
   return useSessionSelector((snapshot) => snapshot.agentState) as S | null;
 }
 
+/**
+ * Subscribe to custom events emitted by agent tools via
+ * `ctx.send(event, data)`; the callback receives each event's `data`.
+ *
+ * This is the preferred way to drive UI from tools — an explicit event beats
+ * inferring state from tool results with {@link useToolResult}.
+ *
+ * @example
+ * ```tsx
+ * import { useEvent } from "@alexkroman1/aai-ui";
+ * import { useState } from "react";
+ *
+ * type Item = { sku: string; qty: number };
+ *
+ * function Cart() {
+ *   const [cart, setCart] = useState<Item[]>([]);
+ *   // Tool: ctx.send("item_added", { sku, qty })
+ *   useEvent<Item>("item_added", (data) => {
+ *     setCart((cart) => [...cart, data]);
+ *   });
+ *   return <div>{cart.length} items</div>;
+ * }
+ * ```
+ *
+ * @public
+ */
 export function useEvent<T = unknown>(event: string, callback: (data: T) => void): void {
   const customEvents = useSessionSelector((s) => s.customEvents);
   // Watermark over the monotonic event `id`: only the tail with id above it
@@ -187,6 +213,12 @@ export function useEvent<T = unknown>(event: string, callback: (data: T) => void
   }, [customEvents, event]);
 }
 
+/**
+ * Fire a callback when a tool call starts (before its result arrives).
+ * Optionally filter by tool name.
+ *
+ * @public
+ */
 export function useToolCallStart(
   toolName: string,
   callback: (toolCall: ToolCallInfo) => void,

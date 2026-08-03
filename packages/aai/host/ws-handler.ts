@@ -59,8 +59,8 @@ type WsSessionOptions = {
   logger?: Logger;
   /**
    * Audio pacing lead for this connection. Defaults to
-   * {@link CLIENT_AUDIO_LEAD_MS}, which suits a client that plays the reply in
-   * real time; pass {@link UNPACED_AUDIO_LEAD_MS} for a programmatic client
+   * `CLIENT_AUDIO_LEAD_MS`, which suits a client that plays the reply in
+   * real time; pass `UNPACED_AUDIO_LEAD_MS` for a programmatic client
    * that meters playback itself.
    */
   audioLeadMs?: number;
@@ -68,7 +68,7 @@ type WsSessionOptions = {
   sessionStartTimeoutMs?: number;
   /**
    * Keepalive ping interval in ms. Defaults to
-   * {@link SESSION_KEEPALIVE_INTERVAL_MS}; exposed so tests can drive it on a
+   * `SESSION_KEEPALIVE_INTERVAL_MS`; exposed so tests can drive it on a
    * short clock rather than waiting out the real interval.
    */
   keepaliveIntervalMs?: number;
@@ -135,6 +135,8 @@ function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: 
  * 1. WebSocket opens → server sends JSON CONFIG frame with sampleRate, ttsSampleRate, sessionId
  * 2. Client sets up audio → sends JSON AUDIO_READY frame
  * 3. If reconnecting → client sends JSON HISTORY frame with prior messages
+ *
+ * @internal
  */
 export function wireSessionSocket(ws: SessionWebSocket, opts: WsSessionOptions): void {
   const { sessions, logger: log = consoleLogger } = opts;

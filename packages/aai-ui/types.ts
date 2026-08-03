@@ -40,7 +40,7 @@ export {
  *
  * Cast because `voiceIsolation` is newer than TypeScript's DOM lib.
  *
- * @public
+ * @internal
  */
 export const VOICE_CAPTURE_CONSTRAINTS = {
   echoCancellation: true,
@@ -65,6 +65,11 @@ export type AgentState =
 
 /**
  * A chat message exchanged between user and assistant.
+ *
+ * `role` is `"user" | "assistant"` only — unlike the SDK's `Message`, there
+ * is no `"tool"` role here. Tool activity never arrives as messages: it is
+ * surfaced via `SessionSnapshot.toolCalls` (or `useEvent` for `ctx.send`
+ * events).
  *
  * @public
  */
@@ -121,6 +126,10 @@ export type ToolCallInfo = {
   afterMessageId: number;
 };
 
+/**
+ * Re-exported from `@alexkroman1/aai/protocol` (the canonical definition)
+ * so client code needs only this package.
+ */
 export type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 
 /**
@@ -136,7 +145,10 @@ export type SessionError = {
 };
 
 /**
- * Options for creating a voice session.
+ * Options for creating a voice session — the shared field set accepted by
+ * both `client()` and `createSessionCore`. The one difference: `client()`
+ * defaults `platformUrl` from `location.href`, while `createSessionCore`
+ * requires it.
  *
  * @public
  */
