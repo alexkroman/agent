@@ -1,11 +1,13 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Agent HTTP+WebSocket server.
+ * Self-hosted agent HTTP + WebSocket server.
  *
- * {@link createServer} wraps a {@link Runtime} with an HTTP + WebSocket
- * server using only `node:http` and `ws` (no framework dependencies).
+ * {@link createServer} wraps a runtime from `createRuntime` with an
+ * HTTP + WebSocket server using only `node:http` and `ws` (no framework
+ * dependencies) — the same server `aai dev` runs. Use it to host an agent on
+ * your own infrastructure instead of the managed platform: see
+ * `examples/self-hosted-server` for a runnable setup.
  *
- * **Internal module** — used by `aai-cli` dev server. Not a public API.
  * Import via `@alexkroman1/aai/runtime`.
  */
 
@@ -27,23 +29,23 @@ import type { AgentRuntime } from "./runtime-types.ts";
 import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
 
 /**
- * The session-facing slice of a runtime — all `createServer` actually drives.
- * `readyConfig` is a property of a *constructed* runtime (`AgentRuntime`), so
- * demanding it here would force a lazy/unbuilt runtime (the guest harness's
- * facade) to fabricate one; narrowing to these two methods avoids that.
+ * The session-facing slice of a runtime — all {@link createServer} needs.
+ * A runtime built with `createRuntime` satisfies it directly.
  *
- * @internal
+ * Narrowed to these two methods (rather than demanding a full
+ * `AgentRuntime`) so an embedder can supply a lazily-built runtime facade.
  */
 export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown">;
 
-/**
- * Configuration for {@link createServer}.
- * @internal
- */
-type ServerOptions = {
+/** Configuration for {@link createServer}. */
+export type ServerOptions = {
+  /** The runtime sessions are started on — see `createRuntime`. */
   runtime: SessionRuntime;
+  /** Display name served by `GET /client-config`. Defaults to `"agent"`. */
   name?: string;
+  /** Directory of static client assets to serve at `/`. */
   clientDir?: string;
+  /** Structured logger. Defaults to the console logger. */
   logger?: Logger;
   /**
    * Environment for host-mode connections (a `?host=1` WebSocket whose first
@@ -90,10 +92,7 @@ type ServerOptions = {
   ) => boolean;
 };
 
-/**
- * Handle returned by {@link createServer}.
- * @internal
- */
+/** Handle returned by {@link createServer}. */
 export type AgentServer = {
   /**
    * Start listening. `host` defaults to {@link DEFAULT_LISTEN_HOST} (loopback)
@@ -111,7 +110,7 @@ export type AgentServer = {
  * anyone on the same network (a shared office or cafe LAN). Exposing it is now
  * an explicit choice by the caller.
  */
-const DEFAULT_LISTEN_HOST = "127.0.0.1";
+export const DEFAULT_LISTEN_HOST = "127.0.0.1";
 
 const JSON_HEADERS = { "Content-Type": "application/json" } as const;
 
@@ -181,9 +180,30 @@ async function serveStatic(
 }
 
 /**
- * Create an HTTP + WebSocket server for an agent.
+ * Create an HTTP + WebSocket server for an agent — the self-hosting entry
+ * point, and the same server `aai dev` runs.
  *
- * @internal Used by aai-cli dev server.
+ * Serves `GET /health`, `GET /client-config` (name/greeting for the browser
+ * client), static client assets when `clientDir` is set, and voice sessions
+ * on `WS /websocket`. {@link AgentServer.listen} binds loopback by default;
+ * pass `"0.0.0.0"` to expose it deliberately (the server has no request
+ * authentication of its own).
+ *
+ * @example
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { createRuntime, createServer } from "@alexkroman1/aai/runtime";
+ *
+ * const myAgent = agent({ name: "Support", systemPrompt: "…" });
+ * const runtime = createRuntime({
+ *   agent: myAgent,
+ *   env: { ASSEMBLYAI_API_KEY: process.env.ASSEMBLYAI_API_KEY ?? "" },
+ * });
+ * const server = createServer({ runtime, name: myAgent.name });
+ * await server.listen(3000);
+ * ```
+ *
+ * @public
  */
 export function createServer(options: ServerOptions): AgentServer {
   const { runtime, clientDir, logger = consoleLogger, env, hostBaseAgent } = options;

@@ -1597,12 +1597,19 @@ bumped automatically.
 ### API reference docs (TypeDoc)
 
 `pnpm docs:api` generates the SDK API reference into `docs/dist` with
-[TypeDoc](https://typedoc.org), covering the three publishable packages'
-public exports (built `dist/*.d.ts` — build first). Entry points live in
-each package's `typedoc.json`; a new subpath export needs an entry there
-too. The `.github/workflows/docs.yml` workflow publishes the site to
-GitHub Pages (`https://alexkroman.github.io/agent/`) on every push to
-`main`. The docs tooling lives in its own `docs/` workspace package
+[TypeDoc](https://typedoc.org), covering the published surface of `aai`
+and `aai-ui` (built `dist/*.d.ts`; the aai-cli subpaths are internal
+build hooks and deliberately not documented). Entry points live in each
+package's `typedoc.json`; a new subpath export needs an entry there too.
+`docs/typedoc.json` sets `excludeInternal` — tag a symbol `@internal` to
+keep it exported but out of the docs — and `treatWarningsAsErrors`, so a
+broken `{@link}` or a type referenced by a public signature but not
+exported **fails the build**. The generation runs as the turbo `docs`
+task, wired into `pnpm check` and the CI check job as a merge gate; keep
+it at zero warnings rather than downgrading the option. The
+`.github/workflows/docs.yml` workflow publishes the site to GitHub Pages
+(`https://alexkroman.github.io/agent/`) on every push to `main`. The
+docs tooling lives in its own `docs/` workspace package
 because TypeDoc needs the JS TypeScript compiler API, which TS 7 (the
 native compiler the repo builds with) no longer ships — so `docs/` pins
 its own `typescript@6`, and `check:sherif` ignores the `aai-docs` package

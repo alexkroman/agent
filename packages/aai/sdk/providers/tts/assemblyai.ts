@@ -30,14 +30,18 @@ export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
 
 /**
- * Default voice when `assemblyAI()` is called with no `voice`. Every voice in
- * the catalog speaks exactly one language, so changing `language` generally
- * means changing `voice` too.
+ * Default voice when `assemblyAI()` is called with no `voice`. Note it is
+ * UK-accented — a US-facing agent should pick a US voice from
+ * {@link ASSEMBLYAI_TTS_VOICES} explicitly. Every voice in the catalog
+ * speaks exactly one language, so changing `language` generally means
+ * changing `voice` too.
  */
 export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "vera";
 
 /**
  * The voice catalog — voice id → the language it speaks and its accent.
+ * The accent is descriptive metadata for choosing a voice, not a settable
+ * option: {@link AssemblyAITtsOptions} has no `accent` field.
  *
  * A constant rather than a sentence in a doc comment, because a wrong voice
  * id is a *silent* failure: it is a free-form string the service rejects

@@ -126,6 +126,10 @@ export type ToolCallInfo = {
   afterMessageId: number;
 };
 
+/**
+ * Re-exported from `@alexkroman1/aai/protocol` (the canonical definition)
+ * so client code needs only this package.
+ */
 export type { SessionErrorCode } from "@alexkroman1/aai/protocol";
 
 /**

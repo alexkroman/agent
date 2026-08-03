@@ -77,7 +77,9 @@ export {
 export {
   type AgentServer,
   createServer,
+  DEFAULT_LISTEN_HOST,
   isPathInside,
+  type ServerOptions,
   type SessionRuntime,
 } from "./server.ts";
 export { createSessionCore, type SessionCore, type SessionCoreOptions } from "./session-core.ts";

@@ -370,7 +370,7 @@ ctx.state: S                                   // per-session mutable state (age
 ctx.db: Db                                     // SQL database, needs storage enabled (see Database section)
 ctx.messages: readonly Message[]               // conversation history [{role, content}]
 ctx.sessionId: string                          // unique session ID
-ctx.send(event: string, data: unknown): void   // push custom event to browser client
+ctx.send(event: string, data: unknown): void   // push custom event to browser client (silently dropped over 64 KB JSON)
 ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 ```
 
@@ -739,7 +739,7 @@ to put it in.
 | `state` | `AgentState` | `"disconnected"` `"connecting"` `"ready"` `"listening"` `"thinking"` `"speaking"` `"error"` |
 | `messages` | `ChatMessage[]` | `{ role, content }` |
 | `toolCalls` | `ToolCallInfo[]` | `{ callId, name, args, status, result? }` |
-| `customEvents` | `CustomEvent[]` | `{ id, event, data }` from `ctx.send()` |
+| `customEvents` | `AgentCustomEvent[]` | `{ id, event, data }` from `ctx.send()` |
 | `userTranscript` | `string \| null` | `null` = not speaking, `""` = speech detected, string = text |
 | `agentTranscript` | `string \| null` | `null` = not speaking, string = streaming response |
 | `error` | `SessionError \| null` | `{ code, message }` |
@@ -950,10 +950,10 @@ Common mistakes when working in aai projects:
 
 ## Constraints
 
-- Tool `execute` return values go into LLM context — filter and truncate
-  large API responses
-- `fetch` is proxied through the host; private/internal IPs are blocked
-  (SSRF protection)
+- Tool `execute` return values go into LLM context, capped at 4000 chars
+  (a truncation marker replaces the tail) — filter large API responses
+- Tool code uses plain `fetch` with open egress; the keyless web builtins
+  screen private/internal IPs (SSRF) when running outside a sandbox
 - Agent code runs in a sandboxed worker — use `fetch` for HTTP, `ctx.env`
   for secrets
 - Tool execution timeout: 30 seconds
