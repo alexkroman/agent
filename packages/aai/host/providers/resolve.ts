@@ -419,8 +419,9 @@ export function requiredProviderEnvVars(agent: {
   add(envVarFor(TTS_REGISTRY, agent.tts));
   add(envVarFor(LLM_REGISTRY, agent.llm));
 
-  // S2S mode: an explicit descriptor selects its vendor, and its *absence*
-  // means the default AssemblyAI S2S path (see createTransportFactory).
+  // No pipeline triple: an explicit `s2s` descriptor selects its vendor, and
+  // no descriptors at all means the default AssemblyAI pipeline — which needs
+  // the same ASSEMBLYAI_API_KEY, so one branch covers both.
   const pipeline = agent.stt !== undefined && agent.llm !== undefined && agent.tts !== undefined;
   if (!pipeline) {
     add(

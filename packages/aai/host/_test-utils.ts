@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 import { vi } from "vitest";
 import type { AgentConfig } from "../sdk/_internal-types.ts";
 import type { ClientEvent, ClientSink } from "../sdk/protocol.ts";
+import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import type { AgentDef, ToolContext, ToolDef } from "../sdk/types.ts";
 import { DEFAULT_SYSTEM_PROMPT } from "../sdk/types.ts";
 import { createRuntime } from "./runtime.ts";
@@ -35,12 +36,22 @@ export function makeTool(overrides?: Partial<ToolDef>): ToolDef {
 }
 
 export function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
+  // Most host suites exercise the S2S transport through a mocked WebSocket,
+  // and pre-dated the pipeline-by-default flip. Keep them on S2S explicitly
+  // (the descriptor the flip requires) unless the caller declares providers.
+  const declaresProviders =
+    overrides != null &&
+    (overrides.stt != null ||
+      overrides.llm != null ||
+      overrides.tts != null ||
+      overrides.s2s != null);
   return {
     name: "test-agent",
     systemPrompt: "Be helpful.",
     greeting: "Hello!",
     maxSteps: 5,
     tools: {},
+    ...(declaresProviders ? {} : { s2s: assemblyAIS2s() }),
     ...overrides,
   };
 }
@@ -295,7 +306,13 @@ export function createFixtureSession(
 
   const client = makeTrackingClient();
   const executor = createRuntime({
-    agent,
+    // This helper replays the AssemblyAI S2S protocol (it spies the S2S
+    // transport seam), so pin the agent to S2S mode — the descriptor the
+    // pipeline-by-default flip requires — unless it declared providers.
+    agent:
+      agent.stt != null || agent.llm != null || agent.tts != null || agent.s2s != null
+        ? agent
+        : { ...agent, s2s: assemblyAIS2s() },
     env: opts?.env ?? {},
     logger: silentLogger,
   });

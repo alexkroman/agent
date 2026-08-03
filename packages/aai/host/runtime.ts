@@ -14,6 +14,7 @@ import { DEFAULT_SHUTDOWN_TIMEOUT_MS } from "../sdk/constants.ts";
 import { createOwnedMap } from "../sdk/owned-map.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { buildReadyConfig, type ReadyConfig } from "../sdk/protocol.ts";
+import { defaultProviders } from "../sdk/providers/_default-providers.ts";
 import type { LlmProvider, SttProvider, TtsProvider } from "../sdk/providers.ts";
 import { buildSystemPrompt } from "../sdk/system-prompt.ts";
 import type { AgentDef } from "../sdk/types.ts";
@@ -55,12 +56,24 @@ function resolveEffectiveProviders(
   stt: SttProvider | undefined;
   llm: LlmProvider | undefined;
   tts: TtsProvider | undefined;
+  s2s: AgentDef["s2s"];
   mode: SessionMode;
 } {
   const stt = opts.stt ?? agent.stt;
   const llm = opts.llm ?? agent.llm;
   const tts = opts.tts ?? agent.tts;
-  return { stt, llm, tts, mode: assertProviderTriple(stt, llm, tts) };
+  // A full provider triple passed as RuntimeOptions replaces the agent's
+  // session-mode declaration entirely, `s2s` field included — the platform
+  // path uses opts as an override, not a merge.
+  const s2s = stt && llm && tts ? undefined : agent.s2s;
+  // No providers declared anywhere → the all-AssemblyAI pipeline, matching
+  // parseManifest/toAgentConfig. S2S requires an explicit `s2s` descriptor
+  // (`assemblyAIS2s()`), so a config that loses its providers can no longer
+  // silently run S2S — this mirrors, not replaces, the "never let S2S be a
+  // fallback" rule in runtime-transport.ts.
+  const defaults = defaultProviders({ stt, llm, tts, s2s });
+  if (defaults) return { ...defaults, s2s: undefined, mode: "pipeline" };
+  return { stt, llm, tts, s2s, mode: assertProviderTriple(stt, llm, tts, s2s) };
 }
 
 /**
@@ -146,6 +159,7 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
     stt: effectiveProviders.stt,
     llm: effectiveProviders.llm,
     tts: effectiveProviders.tts,
+    s2s: effectiveProviders.s2s,
   });
 
   // Report the resolved mode once per runtime. A pipeline agent whose providers

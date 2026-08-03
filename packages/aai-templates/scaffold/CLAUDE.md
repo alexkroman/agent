@@ -120,7 +120,9 @@ export default agent({
 });
 ```
 
-`agent({ name })` alone is legal and gives you S2S mode instead — see below.
+`agent({ name })` alone is legal and equivalent — an agent that declares no
+providers gets `assemblyAIPipeline()` injected as the default. Speech-to-speech
+(S2S) mode is an explicit opt-in via the `s2s` field — see below.
 
 System prompt from file:
 
@@ -138,14 +140,32 @@ explicit the modern spelling is `with { type: "json" }`, but plain is fine.
 
 ## Pipeline mode
 
-Omitting `stt`/`llm`/`tts` gives **S2S mode**: AssemblyAI's speech-to-speech
-service handles STT, the LLM loop, and TTS in one socket. Fewer moving
-parts, but you cannot choose the model, swap a provider, or tune a stage.
+Pipeline mode is the default: omitting `stt`/`llm`/`tts` (and `s2s`) gives
+you the all-AssemblyAI pipeline, exactly as if you had spread
+`assemblyAIPipeline()` yourself.
 
-**Prefer pipeline mode** — declare all three — unless the user specifically
+**S2S mode is an explicit opt-in.** Setting `s2s: assemblyAIS2s()` (imported
+from `@alexkroman1/aai`, next to `agent()`) selects AssemblyAI's
+speech-to-speech Voice Agent API: STT, the LLM loop, and TTS run
+service-side in one socket. Fewer moving parts, but you cannot choose the
+model, swap a provider, or tune a stage. There is no way to reach S2S by
+omission — only the `s2s` field selects it, and it is mutually exclusive
+with the `stt`/`llm`/`tts` triple.
+
+```ts
+import { agent, assemblyAIS2s } from "@alexkroman1/aai";
+
+export default agent({
+  name: "My Agent",
+  s2s: assemblyAIS2s(),
+});
+```
+
+**Prefer pipeline mode** — the default — unless the user specifically
 asks for the speech-to-speech API. Nearly every template ships this way, and
 it is what the App Builder defaults to. The host runs the LLM loop locally
-(Vercel AI SDK) with your chosen STT, LLM, and TTS. You need it when:
+(Vercel AI SDK) with your chosen STT, LLM, and TTS. You want explicit
+providers when:
 
 - you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq,
   hundreds of models via OpenRouter, or 25+ models via the AssemblyAI
@@ -896,8 +916,8 @@ Common mistakes when working in aai projects:
   values are injected into LLM context. Truncate, summarize, or extract
   only what the model needs.
 - **Pipeline mode requires all three of `stt` / `llm` / `tts`.** Partial
-  configs are rejected at parse time. Use S2S (omit all three) if you
-  don't need provider control.
+  configs are rejected at parse time. Omit all three for the default
+  AssemblyAI pipeline; S2S needs an explicit `s2s: assemblyAIS2s()`.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
 - **Don't use `useEffect` + `toolCalls` to derive state.** Use

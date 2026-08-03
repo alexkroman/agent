@@ -694,18 +694,27 @@ Each agent runs in one of two session modes, selected at parse time by
 `parseManifest()` based on which top-level fields are present in the
 `agent()` config:
 
-- **S2S mode** (default — no `stt`/`llm`/`tts` fields in `agent.ts`) uses
-  `createS2sTransport()` in `packages/aai/host/transports/s2s-transport.ts`.
-  The host opens a single WebSocket to AssemblyAI's speech-to-speech
-  service; STT, the LLM loop, and TTS all run service-side and audio/events
-  relay through that one socket. This is the original architecture.
-- **Pipeline mode** (triggered when all three of `stt`, `llm`, and `tts`
-  are set) uses `createPipelineTransport()` in
+- **Pipeline mode** (the DEFAULT — all three of `stt`, `llm`, and `tts`
+  set, or none of the four provider fields set, in which case the
+  all-AssemblyAI pipeline (`assemblyAIPipeline()`) is injected by
+  `defaultProviders` in `sdk/providers/_default-providers.ts`) uses
+  `createPipelineTransport()` in
   `packages/aai/host/transports/pipeline-transport.ts`. Here the host
   drives the LLM loop itself via the Vercel AI SDK's `streamText`, and STT
   and TTS are pluggable providers imported from the `@alexkroman1/aai/stt`
   and `@alexkroman1/aai/tts` subpath exports.
+- **S2S mode** (explicit opt-in — `s2s: assemblyAIS2s()` from the main
+  export, or `openaiRealtime()` from `@alexkroman1/aai/s2s`) uses
+  `createS2sTransport()` in `packages/aai/host/transports/s2s-transport.ts`.
+  The host opens a single WebSocket to AssemblyAI's speech-to-speech
+  service; STT, the LLM loop, and TTS all run service-side and audio/events
+  relay through that one socket. This is the original architecture, and was
+  the implicit default before the pipeline-by-default flip. There is no way
+  to reach S2S by omission — only the `s2s` descriptor selects it.
 
+The default injection runs at every mode-derivation site — `parseManifest`,
+`toAgentConfig` (so it is baked into deployed configs at build time), and
+`createRuntime`'s provider resolution — before `assertProviderTriple`.
 Partial provider configs are rejected at parse time — `parseManifest()`
 requires either zero or all three of `stt`/`llm`/`tts`.
 
@@ -1072,14 +1081,18 @@ A new serializable agent field therefore needs exactly two edits — `AgentDef`
 loudly if either half is missing; no mapper edits, and the field reaches the
 server, the wire, and the runtime by default.
 
-**Never let S2S be a fallback.** `buildTransport`
-(`host/runtime-transport.ts`) reaches `buildAssemblyS2sTransport` by
-fallthrough, so any path that loses the providers yields a fully functional
-session in the wrong mode. Two rules keep that diagnosable: forward providers
-based on their own presence (above), and `createRuntime` logs
-`"Session mode resolved"` once per runtime with the mode and provider kinds —
-"which transport is this agent on" must be answerable from one log line rather
-than inferred from the shape of the message stream (`S2S <<` prefixes).
+**Never let S2S be a fallback.** The pipeline-by-default flip closed most of
+this structurally: a config that loses its providers now gets the AssemblyAI
+pipeline injected (`defaultProviders`), not a silent S2S session, and S2S
+requires an explicit `s2s` descriptor. One fallthrough remains —
+`buildTransport` (`host/runtime-transport.ts`) still reaches
+`buildAssemblyS2sTransport` for a descriptor-less s2s-mode config, kept only
+so stored configs predating the flip keep running. Two rules keep mode
+diagnosable: forward providers based on their own presence (above), and
+`createRuntime` logs `"Session mode resolved"` once per runtime with the mode
+and provider kinds — "which transport is this agent on" must be answerable
+from one log line rather than inferred from the shape of the message stream
+(`S2S <<` prefixes).
 
 ### Data flow
 

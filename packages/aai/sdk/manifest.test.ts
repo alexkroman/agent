@@ -5,7 +5,9 @@ import { assertProviderTriple } from "./config-rules.ts";
 import { type Manifest, parseManifest } from "./manifest.ts";
 import type { AgentConfig, ToolSchema } from "./manifest-barrel.ts";
 import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
+import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
+import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAI } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 
@@ -22,10 +24,9 @@ describe("parseManifest", () => {
       idleTimeoutMs: undefined,
       builtinTools: ["think", "remember", "recall", "calculate"],
       tools: {},
-      stt: undefined,
-      llm: undefined,
-      tts: undefined,
-      mode: "s2s",
+      // No providers declared → the all-AssemblyAI pipeline is the default.
+      ...assemblyAIPipeline(),
+      mode: "pipeline",
     });
   });
 
@@ -147,12 +148,28 @@ describe("parseManifest — mode classification", () => {
   const stubTts = cartesia({ voice: "v" });
   const stubLlm = anthropic({ model: "claude-haiku-4-5" });
 
-  test("no stt/llm/tts ⇒ mode: 's2s'", () => {
+  test("no providers ⇒ default AssemblyAI pipeline", () => {
     const parsed = parseManifest({
       name: "hello",
       systemPrompt: "hi",
     });
+    expect(parsed.mode).toBe("pipeline");
+    expect(parsed.stt).toEqual(assemblyAIPipeline().stt);
+    expect(parsed.llm).toEqual(assemblyAIPipeline().llm);
+    expect(parsed.tts).toEqual(assemblyAIPipeline().tts);
+  });
+
+  test("s2s descriptor (assemblyAIS2s) ⇒ mode: 's2s', no pipeline injection", () => {
+    const parsed = parseManifest({
+      name: "hello",
+      systemPrompt: "hi",
+      s2s: assemblyAIS2s(),
+    });
     expect(parsed.mode).toBe("s2s");
+    expect(parsed.s2s).toEqual({ kind: "assemblyai", options: {} });
+    expect(parsed.stt).toBeUndefined();
+    expect(parsed.llm).toBeUndefined();
+    expect(parsed.tts).toBeUndefined();
   });
 
   test("all three of stt/llm/tts set ⇒ mode: 'pipeline'", () => {
@@ -205,9 +222,9 @@ describe("parseManifest — silence nudge", () => {
   });
 
   test("rejects silenceTimeoutMs in s2s mode", () => {
-    expect(() => parseManifest({ name: "x", silenceTimeoutMs: 15_000 })).toThrow(
-      /silenceTimeoutMs requires pipeline mode/,
-    );
+    expect(() =>
+      parseManifest({ name: "x", s2s: assemblyAIS2s(), silenceTimeoutMs: 15_000 }),
+    ).toThrow(/silenceTimeoutMs requires pipeline mode/);
   });
 
   test("rejects silencePrompt without silenceTimeoutMs", () => {
@@ -241,7 +258,13 @@ describe("parseManifest — silence nudge", () => {
 
   test("toAgentConfig rejects silenceTimeoutMs in s2s mode", () => {
     expect(() =>
-      toAgentConfig({ name: "x", systemPrompt: "p", greeting: "g", silenceTimeoutMs: 20_000 }),
+      toAgentConfig({
+        name: "x",
+        systemPrompt: "p",
+        greeting: "g",
+        s2s: assemblyAIS2s(),
+        silenceTimeoutMs: 20_000,
+      }),
     ).toThrow(/silenceTimeoutMs requires pipeline mode/);
   });
 });
@@ -292,7 +315,7 @@ describe("parseManifest — pipeline voice tuning", () => {
     ["errorPhrase", "Something broke."],
     ["falseInterruptionTimeoutMs", 1500],
   ])("rejects %s in s2s mode", (field, value) => {
-    expect(() => parseManifest({ name: "x", [field]: value })).toThrow(
+    expect(() => parseManifest({ name: "x", s2s: assemblyAIS2s(), [field]: value })).toThrow(
       new RegExp(`${field} requires pipeline mode`),
     );
   });
@@ -322,7 +345,13 @@ describe("parseManifest — pipeline voice tuning", () => {
 
   test("toAgentConfig rejects tuning fields in s2s mode", () => {
     expect(() =>
-      toAgentConfig({ name: "x", systemPrompt: "p", greeting: "g", minBargeInWords: 3 }),
+      toAgentConfig({
+        name: "x",
+        systemPrompt: "p",
+        greeting: "g",
+        s2s: assemblyAIS2s(),
+        minBargeInWords: 3,
+      }),
     ).toThrow(/minBargeInWords requires pipeline mode/);
   });
 });
@@ -359,7 +388,10 @@ describe("assertProviderTriple with s2s", () => {
     expect(assertProviderTriple(undefined, undefined, undefined, s2s)).toBe("s2s");
   });
 
-  test("returns 's2s' when nothing is set (default fallback)", () => {
+  // Raw classifier only: the config layers inject the pipeline default
+  // before calling this, so "nothing set" reaches it only for stored
+  // configs predating the pipeline-by-default flip (wire tolerance).
+  test("returns 's2s' when nothing is set (pre-flip wire tolerance)", () => {
     expect(assertProviderTriple(undefined, undefined, undefined, undefined)).toBe("s2s");
   });
 

@@ -4,6 +4,7 @@ import { z } from "zod";
 import { agent, tool } from "./define.ts";
 import { parseManifest } from "./manifest.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
+import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAI } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 
@@ -82,8 +83,17 @@ describe("agent()", () => {
     expect(parsed.tts).toStrictEqual(tts);
   });
 
-  test("agent without providers resolves to mode 's2s'", () => {
+  test("agent without providers resolves to the default AssemblyAI pipeline", () => {
     const def = agent({ name: "t", systemPrompt: "p" });
+    const parsed = parseManifest(def);
+    expect(parsed.mode).toBe("pipeline");
+    expect(parsed.stt?.kind).toBe("assemblyai");
+    expect(parsed.llm?.kind).toBe("assemblyai");
+    expect(parsed.tts?.kind).toBe("assemblyai");
+  });
+
+  test("agent with s2s descriptor resolves to mode 's2s'", () => {
+    const def = agent({ name: "t", systemPrompt: "p", s2s: assemblyAIS2s() });
     const parsed = parseManifest(def);
     expect(parsed.mode).toBe("s2s");
     expect(parsed.stt).toBeUndefined();

@@ -148,8 +148,8 @@ export type RuntimeOptions = {
   /**
    * STT provider descriptor ({@link SttProvider}). Must be set together with
    * `llm` and `tts` to route sessions through the pipeline path; leave all
-   * three unset for the default AssemblyAI Streaming Speech-to-Speech (S2S)
-   * path.
+   * three unset to fall back to the agent's own provider fields (which
+   * default to the all-AssemblyAI pipeline when the agent declares none).
    *
    * Descriptors only — these fields used to also accept a pre-resolved opener
    * as a test escape hatch, which forced API-key routing to sniff `opener.name`

@@ -26,9 +26,10 @@ export const mockClose = vi.fn().mockResolvedValue(undefined);
 export const mockCreateRuntime = vi.fn().mockReturnValue({ runtime: "mock" });
 export const mockCreateServer = vi.fn();
 // The runtime barrel is mocked to keep it out of these specs, so this stands
-// in for the real registry-derived lookup. The default-S2S agent these tests
-// write needs an AssemblyAI key; the real function has its own specs in the
-// aai package (providers/resolve.test.ts).
+// in for the real registry-derived lookup. The provider-less agent these
+// tests write runs the default AssemblyAI pipeline, which needs an AssemblyAI
+// key; the real function has its own specs in the aai package
+// (providers/resolve.test.ts).
 const mockRequiredProviderEnvVars = vi.fn().mockReturnValue(["ASSEMBLYAI_API_KEY"]);
 export const mockEnsureApiKey = vi.fn().mockResolvedValue("test-api-key");
 export const mockResolveServerEnv = vi.fn().mockResolvedValue({ ASSEMBLYAI_API_KEY: "test-key" });

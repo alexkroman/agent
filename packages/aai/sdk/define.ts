@@ -106,10 +106,11 @@ export type AgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAg
  *   different shape is a compile error rather than a runtime surprise.
  *
  * @remarks
- * Pipeline mode: pass `stt`, `llm`, and `tts` together to switch from the
- * default AssemblyAI Streaming Speech-to-Speech path to a pluggable
- * STT → LLM → TTS pipeline. All three must be set (or all left unset).
- * See {@link AgentDef} for the documentation of every field.
+ * Session mode: with no provider fields the agent runs the default
+ * all-AssemblyAI cascaded pipeline (`assemblyAIPipeline()`). Pass `stt`,
+ * `llm`, and `tts` together to pick different pipeline providers (all three
+ * or none), or set `s2s` (e.g. `assemblyAIS2s()`) to opt into the
+ * speech-to-speech path instead. See {@link AgentDef} for every field.
  *
  * @public
  */

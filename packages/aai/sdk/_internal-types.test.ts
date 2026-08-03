@@ -70,12 +70,23 @@ describe("toAgentConfig", () => {
   const desc = (kind: string) => ({ kind, options: {} });
 
   test("omits every optional field that is unset (no undefined-valued keys)", () => {
-    const config = toAgentConfig(base);
-    expect(config).toEqual({ ...base, mode: "s2s" });
+    // A source with no providers gets the default AssemblyAI pipeline
+    // injected; pin to S2S so this test stays about unset-field omission.
+    const config = toAgentConfig({ ...base, s2s: desc("assemblyai") });
+    expect(config).toEqual({ ...base, s2s: desc("assemblyai"), mode: "s2s" });
     // `toEqual` treats a present-but-undefined key as absent, so check key
     // presence explicitly — the config crosses a structured-clone/JSON
     // boundary where phantom keys are visible.
-    expect(Object.keys(config).sort()).toEqual(["greeting", "mode", "name", "systemPrompt"]);
+    expect(Object.keys(config).sort()).toEqual(["greeting", "mode", "name", "s2s", "systemPrompt"]);
+  });
+
+  test("injects the default AssemblyAI pipeline when no providers are declared", () => {
+    const config = toAgentConfig(base);
+    expect(config.mode).toBe("pipeline");
+    expect(config.stt?.kind).toBe("assemblyai");
+    expect(config.llm?.kind).toBe("assemblyai");
+    expect(config.tts?.kind).toBe("assemblyai");
+    expect(config.s2s).toBeUndefined();
   });
 
   test("propagates every optional field in pipeline mode", () => {

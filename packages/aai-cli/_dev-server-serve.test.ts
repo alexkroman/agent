@@ -14,17 +14,17 @@ import { agentEnvWarnings, startDevServer, viteDevConfig } from "./_dev-server.t
 import { linkSdkNodeModules, silenced, withTempDir } from "./_test-utils.ts";
 
 describe("agentEnvWarnings", () => {
-  const S2S_AGENT = {}; // no descriptors → S2S → needs ASSEMBLYAI_API_KEY
+  const DEFAULT_AGENT = {}; // no descriptors → default AssemblyAI pipeline → needs ASSEMBLYAI_API_KEY
 
   test("warns when a provider key is missing everywhere", () => {
-    const warnings = agentEnvWarnings(S2S_AGENT, {}, {});
+    const warnings = agentEnvWarnings(DEFAULT_AGENT, {}, {});
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("Missing provider credential");
     expect(warnings[0]).toContain("ASSEMBLYAI_API_KEY");
   });
 
   test("warns about the deploy cliff when a key resolves from the shell only", () => {
-    const warnings = agentEnvWarnings(S2S_AGENT, {}, { ASSEMBLYAI_API_KEY: "sk-shell" });
+    const warnings = agentEnvWarnings(DEFAULT_AGENT, {}, { ASSEMBLYAI_API_KEY: "sk-shell" });
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("resolved from your shell, not .env");
     expect(warnings[0]).toContain("ASSEMBLYAI_API_KEY");
@@ -32,7 +32,7 @@ describe("agentEnvWarnings", () => {
   });
 
   test("silent when the key is declared in .env", () => {
-    expect(agentEnvWarnings(S2S_AGENT, { ASSEMBLYAI_API_KEY: "sk-env" }, {})).toEqual([]);
+    expect(agentEnvWarnings(DEFAULT_AGENT, { ASSEMBLYAI_API_KEY: "sk-env" }, {})).toEqual([]);
   });
 
   test("a requiredEnv key is flagged even when the shell exports it", () => {

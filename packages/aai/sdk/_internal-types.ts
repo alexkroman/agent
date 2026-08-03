@@ -5,6 +5,7 @@ import { z } from "zod";
 import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
 import { assertPipelineTuning, assertProviderTriple, assertSilencePolicy } from "./config-rules.ts";
 import { ProviderDescriptorSchema } from "./manifest.ts";
+import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import type { Message } from "./types.ts";
 import { BuiltinToolSchema, ToolChoiceSchema, type ToolDef } from "./types.ts";
@@ -83,7 +84,11 @@ export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
   [K in HostOnlyAgentField]?: unknown;
 };
 
-export function toAgentConfig(src: AgentConfigSource): AgentConfig {
+export function toAgentConfig(source: AgentConfigSource): AgentConfig {
+  // No providers declared → the all-AssemblyAI pipeline (S2S requires an
+  // explicit `s2s` descriptor). Runs inside the generated bundle entry, so
+  // the defaults are baked into the deployed config at build time.
+  const src = { ...source, ...(defaultProviders(source) ?? {}) };
   // `assertProviderTriple` enforces that stt/llm/tts are all-or-nothing so the
   // server can trust the resolved mode.
   const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s);
