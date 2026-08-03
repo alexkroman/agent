@@ -17,6 +17,8 @@ aai
 
 ## Documentation
 
+- [API reference](https://alexkroman.github.io/agent/) — generated docs
+  for the published SDK packages
 - [CLAUDE.md](./CLAUDE.md) — for humans and agents working on the aai
   framework itself
 - [scaffold/CLAUDE.md](./packages/aai-templates/scaffold/CLAUDE.md)

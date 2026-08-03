@@ -2,12 +2,23 @@
 # package version changed in the push. Versions only move via changesets
 # (the merged "Version Packages" PR), so a changeset for aai-server ships
 # the agent app, a changeset for aai-studio-server ships the studio app,
-# and a docs-only merge ships nothing.
+# and a docs-only merge ships nothing. workflow_dispatch is the manual
+# escape hatch to ship a service outside a changeset release.
 name: Deploy
 
 on:
   push:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      agent:
+        description: Deploy aai-server to Modal
+        type: boolean
+        default: false
+      studio:
+        description: Deploy aai-studio-server to Modal
+        type: boolean
+        default: false
 
 concurrency:
   group: deploy-${{ github.ref }}
@@ -26,6 +37,11 @@ jobs:
       - id: diff
         name: Detect changeset version bumps
         run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "agent=${{ inputs.agent }}" >> "$GITHUB_OUTPUT"
+            echo "studio=${{ inputs.studio }}" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           bumped() {
             # True when the package's version field changed in this push —
             # the changesets release commit is the only thing that moves it.
