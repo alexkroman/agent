@@ -389,7 +389,8 @@ voice agents without the CLI:
   browser then streams turns straight to the guest's `POST /studio/chat`
   (SSE, the AI SDK UI message stream `useChat` consumes) — chat turns never
   pass through the platform host. The agentic loop (`streamText`, up to
-  `MAX_CHAT_STEPS` = 16 steps) runs in the guest (`aai-guest/
+  `MAX_CHAT_STEPS` = 80 steps, and a wall-clock turn budget —
+  `aai-guest/studio-turn-budget.ts`) runs in the guest (`aai-guest/
   studio-chat.ts`) with Claude-Code-style tools over a real filesystem
   workspace (`aai-guest/studio-tools.ts`): list/read (windowed, numbered —
   opencode's read semantics)/write/edit/delete, `glob`, `grep`, `bash`

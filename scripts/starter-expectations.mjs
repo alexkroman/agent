@@ -25,8 +25,13 @@
  * dashboard, an inventory. The default UI hides all of it, so an agent that
  * mutates visible state and ships no client is thinner than the ask.
  *
+ * `builtinDelegation` names the builtins a prompt PRESCRIBES. For those
+ * starters a capability also counts as covered when the agent declared the
+ * builtins and its prose tells the model to use them for that task — see
+ * `checkCapabilities`, which is where the two-halves rule lives.
+ *
  * @typedef {{ label: string, capabilities: string[][], builtins?: string[],
- *   minTools?: number, ui?: boolean }} Expectation
+ *   builtinDelegation?: string[], minTools?: number, ui?: boolean }} Expectation
  */
 
 /** @type {Expectation[]} */
@@ -44,14 +49,42 @@ export const EXPECTATIONS = [
     ui: true,
   },
   {
+    // These two prescribe run_code and name no custom tools, so grading on
+    // tool names would fail the very design they asked for — the finance
+    // trap, one starter over. But `capabilities: []` made them assert nothing
+    // about the agent at all: with no UI expected either, "shippable" reduced
+    // to "builds, declares run_code, is pipeline mode", which a three-line
+    // systemPrompt satisfies. Both were passing in 3 tool calls and ~17s.
+    //
+    // What IS gradeable is what each prompt DEMANDS, via builtinDelegation:
+    // the agent must declare run_code AND say what to reach for it for. Only
+    // the demands, never the illustrative examples — "things like the 50th
+    // Fibonacci number" enumerates nothing, and requiring it would recreate
+    // the over-specification bug this file has been bitten by four times.
     label: "An agent that solves problems by writing code",
-    capabilities: [],
+    // "always compute rather than guess, and read results aloud
+    // conversationally" — two explicit clauses of the ask.
+    capabilities: [
+      ["compute", "calculat"],
+      ["guess", "mental", "in your head", "in its head"],
+      ["aloud", "conversation", "spoken", "out loud"],
+    ],
     builtins: ["run_code"],
+    builtinDelegation: ["run_code"],
   },
   {
     label: "A math tutor that never does arithmetic in its head",
-    capabilities: [],
+    // "arithmetic, unit conversions, and dice rolls" — three enumerated
+    // subjects. The prompt's negative framing ("never in its head") is
+    // deliberately NOT graded: an agent that says "always use run_code"
+    // without the negative has satisfied the ask by another wording.
+    capabilities: [
+      ["arithmetic", "calculat"],
+      ["conversion", "convert"],
+      ["dice", "roll"],
+    ],
     builtins: ["run_code"],
+    builtinDelegation: ["run_code"],
   },
   {
     label: "A personal finance helper with live prices",

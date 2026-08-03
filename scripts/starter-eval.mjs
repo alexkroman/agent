@@ -51,6 +51,31 @@ const TURN_TIMEOUT_MS = 20 * 60_000;
 /** Roughly the server's MAX_CHAT_STEPS; only used to flag long runs. */
 const STEP_CAP_HINT = Number(process.env.AAI_STEP_CAP_HINT ?? 80);
 
+/**
+ * How much of a red verification's output to keep.
+ *
+ * Sized to hold several diagnostics, because the batch hint tells the agent to
+ * fix every instance in one pass — so "which errors arrived together" is the
+ * thing worth reading afterwards, not just the first one.
+ */
+const MAX_RED_EXCERPT = 600;
+
+/**
+ * `formatPostWriteDiagnostics` (aai-guest/studio-write-diagnostics.ts) prefixes
+ * every red write result with a fixed ~165-character instruction. The excerpt
+ * slice predates that preamble (it arrived with post-write diagnostics), so a
+ * captured excerpt was boilerplate plus one truncated error — the diagnostic
+ * the excerpt exists to preserve was precisely the part being cut. Strip the
+ * preamble, keep the filename it names.
+ */
+const WRITE_DIAGNOSTIC_PREAMBLE = /^[\s\S]*?Type errors after writing (\S+)[^:]*:\s*/;
+
+/** One red verification, reduced to the diagnostics themselves. */
+function redExcerpt(name, out) {
+  const body = out.replace(WRITE_DIAGNOSTIC_PREAMBLE, (_m, file) => `${file}: `);
+  return `${name}: ${body.replace(/\s+/g, " ").trim().slice(0, MAX_RED_EXCERPT)}`;
+}
+
 function apiKey() {
   if (process.env.ASSEMBLYAI_API_KEY) return process.env.ASSEMBLYAI_API_KEY;
   const cfg = path.join(homedir(), ".config", "aai", "config.json");
@@ -176,7 +201,7 @@ async function runTurn(key, url, prompt) {
           // checks and never builds reports zero `repairs` while being
           // the worst run of the set — without the excerpt there is nothing
           // to diagnose it from afterwards.
-          summary.redExcerpts.push(`${name}: ${out.slice(0, 240).replace(/\s+/g, " ")}`);
+          summary.redExcerpts.push(redExcerpt(name, out));
         }
       }
       if (part.type === "error") summary.errors.push(String(part.errorText ?? "error"));

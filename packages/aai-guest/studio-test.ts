@@ -2,9 +2,11 @@
 /**
  * Running a studio workspace's own tests, in the guest, for `test_agent`.
  *
- * The starter workspace ships an `agent.test.ts` (studio-template.ts) and the
- * guest toolchain carries vitest, so the coding agent can get the same signal
- * a CLI user gets from `aai test` — from the tool it already reaches for.
+ * The guest toolchain carries vitest and the coding agent is told to write an
+ * `agent.test.ts`, so it can get the same signal a CLI user gets from
+ * `aai test` — from the tool it already reaches for. A new workspace has no
+ * test file; see the "A missing vitest is not an error" note below, which
+ * covers the no-test-files case too.
  *
  * Two things here are load-bearing:
  *

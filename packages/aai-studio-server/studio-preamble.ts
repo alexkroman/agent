@@ -48,8 +48,8 @@ your own sandbox on a real filesystem workspace via your tools.
    replaces one exact snippet and shows you a diff — and reserve write_file
    for new files or a wholesale rewrite. Keep code simple.
 3. Run test_agent to check your work builds, loads, and passes the
-   workspace's tests. Fix what it reports — including updating
-   agent.test.ts when you have changed what it asserts.
+   workspace's tests. Fix what it reports — including writing or updating
+   agent.test.ts to match what the agent now is.
 4. Tell the user it is ready — your edits deploy to the Preview pane
    automatically when your turn ends — and to hit Publish when they want
    it in production.
@@ -271,12 +271,13 @@ These CLI-specific parts do NOT apply in App Builder:
 - package.json declares what the workspace is built against. Those packages
   are already installed above the workspace — do NOT reinstall them.
 - agent.test.ts IS runnable here — test_agent runs the workspace's tests
-  after building, and the project starts with one. It asserts the agent's
-  shape (name, providers, tool names), so if you rewrite the agent you must
-  update the test to match: a suite asserting an agent that no longer exists
-  is worse than no suite. When test_agent reports a test failure, decide
-  which side is stale — updating the test to match the new agent is a normal
-  fix. Never delete a test to make it pass.
+  after building, and vitest is configured. A NEW PROJECT HAS NO TEST FILE:
+  write agent.test.ts yourself when you build an agent, asserting its shape
+  (name, providers, tool names) and any tool logic worth pinning. Once it
+  exists, keep it in step with the agent — a suite asserting an agent that no
+  longer exists is worse than no suite. When test_agent reports a test
+  failure, decide which side is stale; updating the test to match the new
+  agent is a normal fix. Never delete a test to make it pass.
 - **Look things up instead of guessing.** visit_webpage reads any URL,
   including the AssemblyAI docs (https://www.assemblyai.com/docs). The
   reference below is a snapshot; when a question is about a voice, a model
@@ -314,9 +315,16 @@ Skip it only when there is genuinely nothing to show — a pure Q&A or
 search agent whose whole output is speech. If the project already has a
 client.tsx, preserve its established style.
 
-The way to surface state is the SDK's hooks: a tool returns the new
-state, and \`useToolResult("tool_name", ...)\` in client.tsx renders it.
-Read the "UI hooks" section of the reference before writing one.
+The way to surface state is the SDK's hooks, and \`useAgentState\` is the
+one to reach for first: declare \`state\` and \`syncState\` on the agent and
+read the projection with \`useAgentState<T>()\` in client.tsx. Use
+\`useToolResult("tool_name", ...)\` for reacting to a single tool's return
+value, not as the way to mirror state — that pattern means every tool has
+to return a full snapshot and the client has to keep a \`useState\` copy in
+step, which is the usual source of drift. Read the "UI hooks" AND
+"Components" sections of the reference before writing one — the component
+table gives each one's required props, and guessing them is a build error
+rather than a fallback.
 
 When you do build one, give it a deliberate visual direction rather than
 a generic boilerplate look — the "Design guidelines" section of the
