@@ -1,60 +1,72 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Bundle store backed by unstorage (S3-compatible storage — Supabase Storage
-// in production) plus a SecretStore for agent env records.
+// Bundle store: agents rows (Postgres in production — see agent-store.ts)
+// pointing at content-addressed blobs in unstorage (S3-compatible storage —
+// Supabase Storage in production), plus a SecretStore for agent env records.
 //
-// Env storage is a clean break from the old design: the manifest used to
-// carry the env as a master-key-encrypted blob (iron / AES-GCM envelopes).
-// Env records now live in the injected SecretStore (Supabase Vault in
-// production) under `agent-env:<slug>`, JSON-serialized, and the manifest
-// keeps only slug + credential_hashes. There is deliberately NO legacy
-// decrypt path — this migration supersedes the old "never delete a legacy
-// read path" rule for env blobs.
+// Layout per deploy:
+// - `blobs/<sha256>` — the worker bundle and each client file, IMMUTABLE by
+//   construction (the key is the content hash). A deploy writes its blobs
+//   first, then commits the agents row referencing them, so a crash
+//   mid-deploy never publishes a half-written agent and in-flight readers
+//   of the previous deploy keep resolving its blobs. Deleted/superseded
+//   deploys leave orphan blobs behind — accepted (identical content dedupes
+//   across deploys, and a shared blob must not die with one referrer).
+// - agents row — slug, credential_hashes, config, blob hashes, version
+//   (see agent-store.ts). The row is the only mutable state.
+// - env — the injected SecretStore (Supabase Vault in production) under
+//   `agent-env:<slug>`, JSON-serialized. Read fresh on every getEnv: a
+//   secret change takes effect on the next sandbox build (a redeploy forces
+//   one), never by proactive invalidation.
 
-import { errorMessage, safeJsonParse } from "@alexkroman1/aai";
+import { hash } from "node:crypto";
+import { errorMessage } from "@alexkroman1/aai";
 import { createEpoch } from "@alexkroman1/aai/internal";
 import type { Storage } from "unstorage";
-import { z } from "zod";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";
 import { retryOnTransient } from "./_retry.ts";
 import { TtlCache } from "./_ttl-cache.ts";
-import { agentObjectKey, agentPrefix, MAX_ENV_SIZE } from "./constants.ts";
-import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
-import { type AgentMetadata, AgentMetadataSchema, EnvSchema } from "./schemas.ts";
+import type { AgentRecord, AgentRows } from "./agent-store.ts";
+import { MAX_ENV_SIZE } from "./constants.ts";
+import { EnvSchema } from "./schemas.ts";
 import { agentEnvSecretName, appDbSecretName, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 
 export type { BundleStore } from "./store-types.ts";
 
-const ManifestSchema = z.object({
-  slug: z.string(),
-  credential_hashes: z.array(z.string()).optional(),
-});
+/** Storage key for a content-addressed blob. */
+export function blobKey(contentHash: string): string {
+  return `blobs/${contentHash}`;
+}
 
-// Fetching the env record + Zod-parsing the manifest costs a round trip per
-// call, and the same slug is read on every WebSocket upgrade, health check,
-// and asset fetch. TTL bounds staleness for multi-replica deployments
-// where another replica may have mutated the underlying storage.
-const STORE_CACHE_TTL_MS = 60_000;
+/** sha-256 hex of a blob's content — the identity blobs are stored under. */
+export function contentHash(content: string): string {
+  return hash("sha256", content);
+}
 
-// Client page/asset bytes are immutable per deploy (served with
-// `Cache-Control: immutable`), so cache them like the manifest. LRU-capped
-// since individual assets can be large.
-const CLIENT_FILE_CACHE_MAX = 64;
+// The agents row is read on every WebSocket upgrade, broker call, and asset
+// fetch; a short TTL keeps that off the shared Postgres pool without giving
+// another replica's deploy a long invisibility window. A stale row is always
+// a CONSISTENT older deploy (its blob hashes still resolve — blobs are
+// immutable), never a torn mix.
+const ROW_CACHE_TTL_MS = 15_000;
 
-// Worker bundles are immutable per deploy, and every deploy/delete calls
-// invalidate() — so on this replica a long TTL is safe. The TTL exists only
-// to bound cross-replica staleness (a deploy landing on another replica
-// invalidates *its* cache, not ours); 10 minutes keeps that window short
-// while sparing hosts the up-to-MAX_WORKER_SIZE S3 refetch on every cold start.
-const WORKER_CODE_CACHE_TTL_MS = 10 * 60 * 1000;
+// The version read is the invalidation signal (superseded checks on every
+// broker call and idle sweep), so it tolerates far less staleness than the
+// row — 1s only keeps a burst of brokers for one slug from stampeding the
+// shared admin pool.
+const VERSION_CACHE_TTL_MS = 1000;
+
+// Blob content is immutable per key, so the TTL exists only to let unused
+// entries age out; eviction is the byte budget's job.
+const BLOB_CACHE_TTL_MS = 60 * 60 * 1000;
 // Bundles range from KBs to MAX_WORKER_SIZE (30 MB), so an entry-count cap
 // is either too tight for many small agents or too loose for a few large
 // ones — budget by total bytes instead and evict LRU until under budget.
-const WORKER_CODE_CACHE_MAX_BYTES = 128 * 1024 * 1024;
+const BLOB_CACHE_MAX_BYTES = 128 * 1024 * 1024;
 
 // Charged per entry on top of the value size: bounds the entry count for
-// tiny and confirmed-miss (null) entries, which would otherwise be "free"
-// under a pure byte budget and accumulate one Map slot per probed slug.
+// tiny entries, which would otherwise be "free" under a pure byte budget
+// and accumulate one Map slot per probed hash.
 const BYTE_CACHE_ENTRY_OVERHEAD = 4096;
 
 type ByteCacheEntry<V> = { value: V; bytes: number; expiresAt: number };
@@ -121,60 +133,39 @@ export class ByteBudgetTtlCache<V> {
   }
 }
 
-export function createBundleStore(storage: Storage, opts: { secrets: SecretStore }): BundleStore {
-  const { secrets } = opts;
+export function createBundleStore(
+  storage: Storage,
+  opts: { secrets: SecretStore; agents: AgentRows },
+): BundleStore {
+  const { secrets, agents } = opts;
 
-  const manifestLock = createKeyedLock();
+  const envLock = createKeyedLock();
 
   // `null` cache values mean "confirmed miss" — distinct from `undefined` (not cached).
-  const manifestCache = new TtlCache<AgentMetadata | null>(STORE_CACHE_TTL_MS);
-  const configCache = new TtlCache<IsolateConfig | null>(STORE_CACHE_TTL_MS);
-  // Keyed by full object key (`agents/<slug>/client/<path>`).
-  const clientFileCache = new TtlCache<string | null>(STORE_CACHE_TTL_MS, CLIENT_FILE_CACHE_MAX);
-  const workerCodeCache = new ByteBudgetTtlCache<string | null>(
-    WORKER_CODE_CACHE_TTL_MS,
-    WORKER_CODE_CACHE_MAX_BYTES,
-  );
+  const rowCache = new TtlCache<AgentRecord | null>(ROW_CACHE_TTL_MS);
+  const versionCache = new TtlCache<number | null>(VERSION_CACHE_TTL_MS);
+  const blobCache = new ByteBudgetTtlCache<string | null>(BLOB_CACHE_TTL_MS, BLOB_CACHE_MAX_BYTES);
 
   /**
-   * Staleness guard for reads that are already in flight when a mutation
-   * lands. Clearing the caches does not fence them: a read that missed before
-   * the write and settles after it would otherwise write its PRE-mutation
-   * value straight back in, under a fresh TTL — 10 minutes for worker code.
-   * That one is not merely stale, it is undetectable: `rebuildSlot` stamps
-   * the post-bump slug epoch on the sandbox it builds from the poisoned
-   * entry, so the resident reads as current while running the previous
-   * deploy's code, and the epoch mechanism never fires.
-   *
-   * Deliberately ONE epoch for the store rather than one per slug: a bump
-   * only costs concurrently-in-flight reads their cache write (the values
-   * they return are unaffected), invalidations are per-mutation and rare
-   * next to reads, and a per-slug counter would be a map that only ever
-   * grows. See `createEpoch` in @alexkroman1/aai — the sanctioned primitive
-   * for this, rather than a hand-rolled counter.
+   * Staleness guard for row reads already in flight when a mutation lands.
+   * Clearing the caches does not fence them: a read that missed before the
+   * write and settles after it would otherwise write its PRE-mutation row
+   * straight back into the cache under a fresh TTL. That matters most for
+   * the deploy's own read-modify-write of `credential_hashes`, which runs
+   * right after the mutation lock's invalidate (see platform-lock.ts) — a
+   * poisoned entry there silently drops a co-owner's hash. Blobs need no
+   * guard: content-addressed keys cannot go stale.
    */
   const readEpoch = createEpoch();
 
-  /** Drop the manifest alone (env changed; bundle artifacts did not). */
-  function invalidateManifest(slug: string): void {
-    readEpoch.bump();
-    manifestCache.delete(slug);
-  }
-
   function invalidate(slug: string): void {
     readEpoch.bump();
-    manifestCache.delete(slug);
-    configCache.delete(slug);
-    workerCodeCache.delete(slug);
-    clientFileCache.deletePrefix(`${agentPrefix(slug)}/`);
+    rowCache.delete(slug);
+    versionCache.delete(slug);
   }
 
-  async function deleteByPrefix(prefix: string): Promise<void> {
-    const keys = await storage.getKeys(prefix);
-    await Promise.all(keys.map((k) => storage.removeItem(k)));
-  }
-
-  function readItem(key: string): Promise<string | null> {
+  function readBlob(contentHashHex: string): Promise<string | null> {
+    const key = blobKey(contentHashHex);
     return retryOnTransient(async () => (await storage.getItem<string>(key)) ?? null, {
       onRetry: (attempt, attempts, err) => {
         console.warn(
@@ -184,32 +175,23 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     });
   }
 
-  // Some unstorage drivers auto-parse JSON keys; return the parsed value
-  // directly instead of a stringify→parse round trip. Callers Zod-validate
-  // the shape either way, so both paths are checked identically.
-  async function readJson(key: string): Promise<unknown | null> {
-    const data = await readItem(key);
-    if (data == null) return null;
-    if (typeof data !== "string") return data; // driver already parsed it
-    const value = safeJsonParse(data);
-    if (value === undefined) {
-      // Corrupt stored object — treat as missing rather than throwing on
-      // every read of this key (matches getAgentConfig's safeParse posture).
-      console.warn(`Corrupt JSON in stored object ${key}; treating as missing`);
-      return null;
-    }
+  async function readBlobCached(contentHashHex: string): Promise<string | null> {
+    const cached = blobCache.get(contentHashHex);
+    if (cached !== undefined) return cached;
+    const value = await readBlob(contentHashHex);
+    // Cache misses too (null): a hash referenced by a row either exists or
+    // the deploy that wrote the row failed mid-blob-write — both stable.
+    blobCache.set(contentHashHex, value, value?.length ?? 0);
     return value;
   }
 
-  async function getRawManifest(slug: string): Promise<z.infer<typeof ManifestSchema> | null> {
-    const json = await readJson(agentObjectKey(slug, "manifest.json"));
-    if (json == null) return null;
-    const parsed = ManifestSchema.safeParse(json);
-    if (!parsed.success) {
-      console.warn(`Corrupt manifest for agent ${slug}; treating as missing`);
-      return null;
-    }
-    return parsed.data;
+  async function getAgentCached(slug: string): Promise<AgentRecord | null> {
+    const cached = rowCache.get(slug);
+    if (cached !== undefined) return cached;
+    const gen = readEpoch.current();
+    const value = await agents.get(slug);
+    if (readEpoch.isCurrent(gen)) rowCache.set(slug, value);
+    return value;
   }
 
   /**
@@ -228,15 +210,6 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     }
   }
 
-  async function loadManifest(slug: string): Promise<AgentMetadata | null> {
-    // Independent reads (S3 manifest, Vault env) — fetch both concurrently;
-    // the env result is irrelevant when the manifest is missing.
-    const [raw, env] = await Promise.all([getRawManifest(slug), loadEnv(slug)]);
-    if (!raw) return null;
-    const parsed = AgentMetadataSchema.safeParse({ ...raw, env });
-    return parsed.success ? parsed.data : null;
-  }
-
   /** Serialize + size-check + write one agent's env record to the SecretStore. */
   async function writeEnv(slug: string, env: Record<string, string>): Promise<void> {
     const serialized = JSON.stringify(env);
@@ -248,122 +221,70 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     await secrets.put(agentEnvSecretName(slug), serialized);
   }
 
-  /**
-   * The epoch-guarded read-through sequence every cached getter shares:
-   * record the epoch BEFORE loading, and cache only when it is still current
-   * once the load settles (see `readEpoch` above — a stale cache write here
-   * is the undetectable poisoned-worker bug). `load` may resolve `undefined`
-   * to mean "do not cache this result" (transient corruption); it is
-   * returned as-is for the caller to normalize.
-   */
-  async function epochGuarded<V>(
-    get: () => V | undefined,
-    load: () => Promise<V | undefined>,
-    set: (value: V) => void,
-  ): Promise<V | undefined> {
-    const cached = get();
-    if (cached !== undefined) return cached;
-    const gen = readEpoch.current();
-    const value = await load();
-    if (value !== undefined && readEpoch.isCurrent(gen)) set(value);
-    return value;
-  }
-
-  // In-flight manifest loads, shared so concurrent cold reads (rebuildSlot
-  // deliberately overlaps its own getManifest with loadBundleParts' getEnv →
-  // getManifestCached) cost one S3 GET + one Vault query instead of two of
-  // each. An entry is reusable only while its creation epoch is current: a
-  // mutation's invalidation must not hand its own read-modify-write a
-  // pre-mutation manifest that was already in flight.
-  const manifestInflight = new Map<
-    string,
-    { gen: number; promise: Promise<AgentMetadata | null> }
-  >();
-
-  function getManifestCached(slug: string): Promise<AgentMetadata | null> {
-    const cached = manifestCache.get(slug);
-    if (cached !== undefined) return Promise.resolve(cached);
-    const inflight = manifestInflight.get(slug);
-    if (inflight && readEpoch.isCurrent(inflight.gen)) return inflight.promise;
-    // The same guard `epochGuarded` owns, inlined here because the shared
-    // promise must carry its creation epoch for the reuse check above.
-    const gen = readEpoch.current();
-    const promise = loadManifest(slug).then((value) => {
-      if (readEpoch.isCurrent(gen)) manifestCache.set(slug, value);
-      return value;
-    });
-    const entry = { gen, promise };
-    manifestInflight.set(slug, entry);
-    promise
-      .catch(() => undefined)
-      .finally(() => {
-        if (manifestInflight.get(slug) === entry) manifestInflight.delete(slug);
-      });
-    return promise;
-  }
-
   return {
     async putAgent(bundle) {
-      invalidate(bundle.slug);
-      try {
-        await deleteByPrefix(agentPrefix(bundle.slug));
-      } catch (err) {
-        console.warn(
-          `Failed to delete old agent files for ${bundle.slug}, proceeding with overwrite: ${errorMessage(err)}`,
-        );
-      }
+      const workerHash = contentHash(bundle.worker);
+      const clientFiles = Object.fromEntries(
+        Object.entries(bundle.clientFiles).map(([path, content]) => [path, contentHash(content)]),
+      );
 
-      const manifest = {
-        slug: bundle.slug,
-        credential_hashes: bundle.credential_hashes,
-      };
-      // All writes go to distinct keys with no ordering requirement
-      // (deleteByPrefix already cleared the prefix; the trailing
-      // invalidate handles cache races), so run them concurrently.
+      // Blobs and env first, in parallel — all immutable or idempotent
+      // writes to keys nothing references yet. Only after every one has
+      // landed does the row upsert publish the deploy.
       await Promise.all([
         writeEnv(bundle.slug, bundle.env),
-        storage.setItem(agentObjectKey(bundle.slug, "manifest.json"), JSON.stringify(manifest)),
-        storage.setItem(agentObjectKey(bundle.slug, "worker.js"), bundle.worker),
-        ...Object.entries(bundle.clientFiles).map(([filePath, content]) =>
-          storage.setItem(agentObjectKey(bundle.slug, `client/${filePath}`), content),
-        ),
-        storage.setItem(
-          agentObjectKey(bundle.slug, "config.json"),
-          JSON.stringify(bundle.agentConfig),
+        storage.setItem(blobKey(workerHash), bundle.worker),
+        ...Object.entries(bundle.clientFiles).map(([path, content]) =>
+          storage.setItem(blobKey(clientFiles[path] ?? ""), content),
         ),
       ]);
-      // Re-invalidate to catch any concurrent read that repopulated the
-      // cache with a pre-write value during the write window.
+
+      await agents.put({
+        slug: bundle.slug,
+        credential_hashes: bundle.credential_hashes,
+        config: bundle.agentConfig,
+        worker_hash: workerHash,
+        client_files: clientFiles,
+      });
+
+      // Drop this replica's row caches so the next read sees the new deploy
+      // immediately (peers converge via their version checks).
       invalidate(bundle.slug);
     },
 
-    getManifest(slug) {
-      return getManifestCached(slug);
+    getAgent(slug) {
+      return getAgentCached(slug);
+    },
+
+    async getAgentVersion(slug) {
+      const cached = versionCache.get(slug);
+      if (cached !== undefined) return cached;
+      const gen = readEpoch.current();
+      const value = await agents.getVersion(slug);
+      if (readEpoch.isCurrent(gen)) versionCache.set(slug, value);
+      return value;
     },
 
     async getWorkerCode(slug) {
-      const value = await epochGuarded(
-        () => workerCodeCache.get(slug),
-        () => readItem(agentObjectKey(slug, "worker.js")),
-        (v) => workerCodeCache.set(slug, v, v?.length ?? 0),
-      );
-      return value ?? null;
+      const record = await getAgentCached(slug);
+      if (!record) return null;
+      return readBlobCached(record.worker_hash);
     },
 
     async getClientFile(slug, filePath) {
-      const key = agentObjectKey(slug, `client/${filePath}`);
-      const value = await epochGuarded(
-        () => clientFileCache.get(key),
-        () => readItem(key),
-        (v) => clientFileCache.set(key, v),
-      );
-      return value ?? null;
+      const record = await getAgentCached(slug);
+      const fileHash = record?.client_files[filePath];
+      if (!fileHash) return null;
+      return readBlobCached(fileHash);
     },
 
     async deleteAgent(slug) {
       invalidate(slug);
+      // The row delete is what un-publishes the agent; blobs are left as
+      // orphans on purpose (content-addressed blobs may be shared with
+      // another agent's identical file, so no referrer may delete them).
       await Promise.all([
-        deleteByPrefix(agentPrefix(slug)),
+        agents.delete(slug),
         // Delete-only sweep of this agent's SecretStore entries. The
         // app-db credentials go too; the caller (delete route) is
         // responsible for deprovisioning the database itself first.
@@ -374,36 +295,27 @@ export function createBundleStore(storage: Storage, opts: { secrets: SecretStore
     },
 
     async getEnv(slug) {
-      return (await getManifestCached(slug))?.env ?? null;
+      // Existence-gated: env for an unknown agent reads as null, not {}.
+      // The env itself is read fresh from the SecretStore every time —
+      // secret changes never need cache invalidation, they simply apply to
+      // the next sandbox build.
+      if ((await getAgentCached(slug)) === null) return null;
+      return loadEnv(slug);
     },
 
     putEnv(slug, env) {
-      return withLock(manifestLock, slug, async () => {
-        // The manifest existence check keeps putEnv's contract: env for an
-        // unknown agent is an error, not a silent secret write.
-        const manifest = await getManifestCached(slug);
-        if (!manifest) throw new Error(`Agent ${slug} not found`);
+      return withLock(envLock, slug, async () => {
+        // The existence check keeps putEnv's contract: env for an unknown
+        // agent is an error, not a silent secret write.
+        if ((await getAgentCached(slug)) === null) throw new Error(`Agent ${slug} not found`);
         await writeEnv(slug, env);
-        invalidateManifest(slug);
       });
     },
 
     invalidate,
 
     async getAgentConfig(slug) {
-      const value = await epochGuarded(
-        () => configCache.get(slug),
-        async () => {
-          const json = await readJson(agentObjectKey(slug, "config.json"));
-          if (json == null) return null;
-          // Don't cache parse failures — transient corruption shouldn't
-          // stick (`undefined` is epochGuarded's "do not cache").
-          const parsed = IsolateConfigSchema.safeParse(json);
-          return parsed.success ? parsed.data : undefined;
-        },
-        (v) => configCache.set(slug, v),
-      );
-      return value ?? null;
+      return (await getAgentCached(slug))?.config ?? null;
     },
   };
 }

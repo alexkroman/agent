@@ -15,6 +15,7 @@ export {
   type AgentConfigSource,
   HOST_ONLY_AGENT_FIELDS,
   type HostOnlyAgentField,
+  ProviderDescriptorSchema,
   type ToolSchema,
   ToolSchemaSchema,
   toAgentConfig,
@@ -26,4 +27,3 @@ export {
   type PipelineTuning,
   type SessionMode,
 } from "./config-rules.ts";
-export { ProviderDescriptorSchema } from "./manifest.ts";

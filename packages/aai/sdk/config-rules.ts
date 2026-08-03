@@ -3,9 +3,9 @@
  * Agent configuration rules: the derived session mode and the
  * cross-field validation every config layer runs.
  *
- * Each rule is deliberately shared by `parseManifest`, `toAgentConfig`, and
- * the server's `IsolateConfigSchema` — three call sites (author, bundle
- * entry, platform trust boundary), one source of truth per rule. Split out
+ * Each rule is deliberately shared by `toAgentConfig` and the server's
+ * `IsolateConfigSchema` — bundle entry and platform trust boundary, one
+ * source of truth per rule. Split out
  * of `providers.ts` so the provider-descriptor contracts and the config
  * rules stop sharing a module — these functions are about agent *shape*,
  * not providers.
@@ -14,9 +14,9 @@
 /**
  * Session mode derived from which provider triple is set.
  *
- * `parseManifest`, `toAgentConfig`, `createRuntime`, and the server's
- * `IsolateConfigSchema` all use `assertProviderTriple` so there's
- * one source of truth for the validation.
+ * `toAgentConfig`, `createRuntime`, and the server's `IsolateConfigSchema`
+ * all use `assertProviderTriple` so there's one source of truth for the
+ * validation.
  */
 export type SessionMode = "s2s" | "pipeline";
 
@@ -69,8 +69,8 @@ export function assertProviderTriple(
  * silently ignored. `silencePrompt` customizes the injected instruction and
  * is meaningless without the timeout.
  *
- * Shared by `parseManifest`, `toAgentConfig`, and the server's
- * `IsolateConfigSchema` — one source of truth for the validation.
+ * Shared by `toAgentConfig` and the server's `IsolateConfigSchema` — one
+ * source of truth for the validation.
  *
  * @internal
  */
@@ -126,9 +126,8 @@ export type PipelineTuning = {
  * Reject pipeline-only voice-UX tuning fields in S2S mode — the S2S provider
  * owns endpointing/barge-in service-side, so these would be silently ignored.
  *
- * Shared by `parseManifest`, `toAgentConfig`, and the server's
- * `IsolateConfigSchema` — one source of truth for the validation, mirroring
- * `assertSilencePolicy`.
+ * Shared by `toAgentConfig` and the server's `IsolateConfigSchema` — one
+ * source of truth for the validation, mirroring `assertSilencePolicy`.
  *
  * @internal
  */

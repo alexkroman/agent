@@ -3,10 +3,11 @@
  * HTTP handlers for per-app database storage ("storage").
  *
  * Enabling storage provisions a dedicated Postgres schema + role in the
- * platform's Supabase database (see app-database.ts), stores the credentials
- * in the SecretStore under `app-db:<slug>`, and restarts the agent's sandbox
- * so the next session picks up `ctx.db`. Disabling drops the schema (with
- * all its data) and the role.
+ * platform's Supabase database (see app-database.ts) and stores the
+ * credentials in the SecretStore under `app-db:<slug>`. Disabling drops the
+ * schema (with all its data) and the role. Like secret changes, the toggle
+ * takes effect on the next deploy (or sandbox rebuild) — nothing here
+ * restarts resident sandboxes.
  *
  * Owner-authenticated exactly like the secret routes. Storage is CLI-only
  * (`aai storage enable`) — the studio deliberately has no toggle, so these
@@ -16,18 +17,14 @@
 import { HTTPException } from "hono/http-exception";
 import type { AppDatabases } from "./app-database.ts";
 import type { AppContext } from "./context.ts";
-import type { SlugEpochs } from "./platform-epoch.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
-import { invalidateSlug, type SlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, type SecretStore } from "./secret-store.ts";
 
 /** What the storage core needs from the server bindings. */
 export type StorageEnv = {
-  slots: SlotCache;
   secrets: SecretStore;
   appDb?: AppDatabases | undefined;
   slugLock: SlugMutationLock;
-  slugEpochs: SlugEpochs;
 };
 
 const UNCONFIGURED_MESSAGE =
@@ -39,27 +36,25 @@ export async function storageStatus(env: StorageEnv, slug: string): Promise<{ en
   return { enabled: meta !== null };
 }
 
-/** Provision + persist credentials + restart the sandbox. Idempotent. */
+/** Provision + persist credentials. Idempotent. */
 export function enableStorage(env: StorageEnv, slug: string): Promise<{ enabled: true }> {
   const appDb = env.appDb;
   if (!appDb) throw new HTTPException(503, { message: UNCONFIGURED_MESSAGE });
   return env.slugLock(slug, async () => {
     const meta = await appDb.provision(slug);
     await env.secrets.put(appDbSecretName(slug), JSON.stringify(meta));
-    await invalidateSlug(env, slug, "storage enable");
     console.info("Storage enabled", { slug, role: meta.role });
     return { enabled: true as const };
   });
 }
 
-/** Deprovision (drops the schema and its data) + delete credentials + restart. */
+/** Deprovision (drops the schema and its data) + delete credentials. */
 export function disableStorage(env: StorageEnv, slug: string): Promise<{ enabled: false }> {
   const appDb = env.appDb;
   if (!appDb) throw new HTTPException(503, { message: UNCONFIGURED_MESSAGE });
   return env.slugLock(slug, async () => {
     await appDb.deprovision(slug);
     await env.secrets.delete(appDbSecretName(slug));
-    await invalidateSlug(env, slug, "storage disable");
     console.info("Storage disabled", { slug });
     return { enabled: false as const };
   });

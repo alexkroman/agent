@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
 import { z } from "zod";
+import { toAgentConfig } from "./agent-config.ts";
 import { agent, tool } from "./define.ts";
-import { parseManifest } from "./manifest.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAILlm } from "./providers/llm/assemblyai.ts";
@@ -105,9 +105,9 @@ describe("agent()", () => {
     expect(def.tts).toBe(tts);
   });
 
-  test("stt/llm/tts flow through parseManifest to mode 'pipeline'", () => {
+  test("stt/llm/tts flow through toAgentConfig to mode 'pipeline'", () => {
     const { stt, llm, tts, def } = pipelineAgent();
-    const parsed = parseManifest(def);
+    const parsed = toAgentConfig(def);
     expect(parsed.mode).toBe("pipeline");
     expect(parsed.stt).toStrictEqual(stt);
     expect(parsed.llm).toStrictEqual(llm);
@@ -116,7 +116,7 @@ describe("agent()", () => {
 
   test("agent without providers resolves to the default AssemblyAI pipeline", () => {
     const def = agent({ name: "t", systemPrompt: "p" });
-    const parsed = parseManifest(def);
+    const parsed = toAgentConfig(def);
     expect(parsed.mode).toBe("pipeline");
     expect(parsed.stt?.kind).toBe("assemblyai");
     expect(parsed.llm?.kind).toBe("assemblyai");
@@ -125,7 +125,7 @@ describe("agent()", () => {
 
   test("agent with s2s descriptor resolves to mode 's2s'", () => {
     const def = agent({ name: "t", systemPrompt: "p", s2s: assemblyAIS2s() });
-    const parsed = parseManifest(def);
+    const parsed = toAgentConfig(def);
     expect(parsed.mode).toBe("s2s");
     expect(parsed.stt).toBeUndefined();
     expect(parsed.llm).toBeUndefined();
@@ -134,7 +134,7 @@ describe("agent()", () => {
 
   test("a single declared stage keeps it; the rest fill from the default pipeline", () => {
     const llm = anthropic({ model: "claude-haiku-4-5" });
-    const parsed = parseManifest(agent({ name: "t", llm }));
+    const parsed = toAgentConfig(agent({ name: "t", llm }));
     expect(parsed.mode).toBe("pipeline");
     expect(parsed.llm).toStrictEqual(llm);
     expect(parsed.stt).toEqual(assemblyAIPipeline().stt);
@@ -145,10 +145,10 @@ describe("agent()", () => {
     const def = agent({ name: "t", voice: "michael" });
     expect("voice" in def).toBe(false);
     expect(def.tts).toEqual(assemblyAITts({ voice: "michael" }));
-    // stt/llm stay undeclared on the def; parse fills them.
+    // stt/llm stay undeclared on the def; toAgentConfig fills them.
     expect(def.stt).toBeUndefined();
     expect(def.llm).toBeUndefined();
-    const parsed = parseManifest(def);
+    const parsed = toAgentConfig(def);
     expect(parsed.mode).toBe("pipeline");
     expect(parsed.tts).toEqual(assemblyAITts({ voice: "michael" }));
   });

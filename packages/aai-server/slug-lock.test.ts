@@ -7,7 +7,7 @@ test("concurrent deploy and delete are serialized", async () => {
   await deployAgent(fetch);
 
   // Verify the agent exists before the race
-  expect(await store.getManifest("my-agent")).not.toBeNull();
+  expect(await store.getAgent("my-agent")).not.toBeNull();
 
   // Fire deploy and delete concurrently for the same slug.
   // Without the shared lock the delete could run mid-deploy, corrupting state.
@@ -28,9 +28,9 @@ test("concurrent deploy and delete are serialized", async () => {
 
   // Whichever acquired the lock first wins — the important thing is no
   // crash / corruption. The final state depends on execution order:
-  // deploy-then-delete → null, delete-then-deploy → manifest exists.
-  const manifest = await store.getManifest("my-agent");
-  expect(manifest === null || manifest.slug === "my-agent").toBe(true);
+  // deploy-then-delete → null, delete-then-deploy → record exists.
+  const record = await store.getAgent("my-agent");
+  expect(record === null || record.slug === "my-agent").toBe(true);
 });
 
 test("concurrent deletes don't throw", async () => {

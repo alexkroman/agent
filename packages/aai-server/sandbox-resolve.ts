@@ -3,13 +3,14 @@
  * Slot-based sandbox resolution: map a slug to its (possibly freshly built)
  * resident sandbox. Split from sandbox.ts, which owns one sandbox's
  * lifecycle; this module owns the replica's slug→sandbox map and its
- * cross-replica invalidation (slug epochs — see platform-epoch.ts).
+ * cross-replica invalidation (the agents row's deploy version — see
+ * agent-store.ts).
  */
 
+import { errorMessage } from "@alexkroman1/aai";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
-import { readSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
@@ -51,12 +52,6 @@ export type ResolveSandboxOpts = {
   appDb?: AppDatabases;
   pool?: SandboxPool;
   /**
-   * Cross-replica invalidation epochs (see platform-epoch.ts). Absent means
-   * resident sandboxes are only invalidated by this replica's own mutations
-   * — the pre-split, pre-multi-replica behavior.
-   */
-  slugEpochs?: SlugEpochs;
-  /**
    * Horizontal scaling policy (see sandbox-scale.ts). Defaults from
    * SANDBOX_MAX_SESSIONS / SANDBOX_MAX_REPLICAS; scaling is off when the
    * env leaves those unset.
@@ -74,10 +69,9 @@ type BundleParts = {
 /**
  * Read the slug's stored bundle artifacts, all reads in flight at once.
  * Resolves null when the bundle is incomplete (deleted mid-read). Each read
- * gets a no-op rejection handler immediately: a caller that discards the
- * whole promise while reads are still in flight (manifest miss) must not
- * surface a late rejection as unhandled — `Promise.all` still observes the
- * originals.
+ * gets a no-op rejection handler immediately so one rejecting early doesn't
+ * surface as unhandled while its siblings are still in flight —
+ * `Promise.all` still observes the originals.
  */
 function loadBundleParts(slug: string, opts: ResolveSandboxOpts): Promise<BundleParts | null> {
   const { store } = opts;
@@ -176,32 +170,35 @@ function isLive(sandbox: NonNullable<AgentSlot["sandbox"]>): boolean {
 }
 
 /**
- * Is the resident sandbox still current? A deploy/secret/storage mutation
- * on another replica — or the studio service — bumps the slug's epoch; a
- * resident built at an older epoch must be torn down and rebuilt from the
- * freshly stored bundle. Degrades to "current" when the epoch store is
- * absent (dev) or unreadable (a session start must not die on the
- * invalidation check).
+ * Is the resident sandbox still current? A deploy on another replica — or
+ * the studio service — bumps the agents row's version (and a delete removes
+ * the row entirely); a resident built from an older deploy must be retired
+ * and rebuilt from the freshly stored bundle. Degrades to "current" when the
+ * version is unreadable — a session start must not die on the invalidation
+ * check. (Secret/storage changes bump nothing by design: they take effect on
+ * the next deploy or sandbox rebuild.)
  */
 async function residentIsCurrent(slot: AgentSlot, opts: ResolveSandboxOpts): Promise<boolean> {
-  if (!opts.slugEpochs) return true;
-  const built = slot.epoch ?? 0;
-  return (await readSlugEpoch(opts.slugEpochs, slot.slug, built)) === built;
+  try {
+    return (await opts.store.getAgentVersion(slot.slug)) === (slot.version ?? null);
+  } catch (err) {
+    console.warn(`Failed to read deploy version for ${slot.slug}: ${errorMessage(err)}`);
+    return true;
+  }
 }
 
 /**
- * The idle sweep's half of epoch invalidation (see `SupersededCheck`).
+ * The idle sweep's half of version invalidation (see `SupersededCheck`).
  *
  * `resolvePrimary` below only runs when a session is brokered on THIS replica,
- * so on its own it leaves a superseded sandbox serving pre-mutation code for
- * as long as nobody re-brokers here. Handing the same epoch comparison to the
- * slot's idle timer bounds that to one idle window. The cache drop mirrors
- * the stale branch of `resolvePrimary` and is not optional — the worker-code
- * cache outlives the idle window, so a rebuild reusing it would resurrect the
- * very bundle this evicted.
+ * so on its own it leaves a superseded sandbox serving pre-deploy code for
+ * as long as nobody re-brokers here. Handing the same version comparison to
+ * the slot's idle timer bounds that to one idle window. The cache drop
+ * mirrors the stale branch of `resolvePrimary` — it fences the row caches so
+ * the rebuild reads the freshly deployed record (blobs are content-addressed
+ * and cannot go stale).
  */
-function supersededCheck(opts: ResolveSandboxOpts): SupersededCheck | undefined {
-  if (!opts.slugEpochs) return;
+function supersededCheck(opts: ResolveSandboxOpts): SupersededCheck {
   return async (slot) => {
     if (await residentIsCurrent(slot, opts)) return false;
     opts.store.invalidate?.(slot.slug);
@@ -217,37 +214,31 @@ async function rebuildSlot(
 ): Promise<Sandbox | null> {
   const { slots, store } = opts;
 
-  // Record the epoch BEFORE reading artifacts: a mutation landing between
-  // this read and the artifact reads bumps the epoch past what we store on
-  // the slot, so the next session start sees the mismatch and rebuilds —
-  // the race can only cause one extra rebuild, never a stale sandbox that
-  // reads as current.
-  const builtAtEpoch = opts.slugEpochs ? await readSlugEpoch(opts.slugEpochs, slug, 0) : 0;
+  // Read the deploy record FIRST and stamp its version on the slot: a deploy
+  // landing between this read and the artifact reads bumps the row version
+  // past what we store, so the next session start sees the mismatch and
+  // rebuilds — the race can only cause one extra rebuild, never a stale
+  // sandbox that reads as current. (The artifact reads below resolve through
+  // the same cached row, and blobs are content-addressed, so a torn mix of
+  // two deploys is impossible.)
+  const record = await store.getAgent(slug);
+  if (!record) return null;
 
-  // Kick off the bundle reads now so a cold miss doesn't serialize the
-  // manifest read ahead of them (one extra storage RTT per
-  // first-session-per-slug-per-replica). The no-op rejection handler covers
-  // the manifest-miss path discarding it while reads are still in flight.
-  const partsP = loadBundleParts(slug, opts);
-  partsP.catch(() => undefined);
-
-  let slot = existingSlot;
-  if (!slot) {
-    const manifest = await store.getManifest(slug);
-    if (!manifest) return null;
-    slot = { slug: manifest.slug };
-    setSlot(slots, slot);
-    debug("Lazy-discovered agent from store", { slug });
-  }
-
-  const parts = await partsP;
+  const parts = await loadBundleParts(slug, opts);
   if (!parts) {
     return null;
   }
 
+  let slot = existingSlot;
+  if (!slot) {
+    slot = { slug: record.slug };
+    setSlot(slots, slot);
+    debug("Lazy-discovered agent from store", { slug });
+  }
+
   const sandbox = buildSlotSandbox(slug, parts, opts);
 
-  slot.epoch = builtAtEpoch;
+  slot.version = record.version;
   attachSandbox(slots, slot, sandbox, supersededCheck(opts));
   return sandbox;
 }
@@ -273,11 +264,11 @@ async function resolvePrimary(slug: string, opts: ResolveSandboxOpts): Promise<S
       const live = isLive(slot.sandbox);
       if (live && (await residentIsCurrent(slot, opts))) return slot.sandbox as Sandbox;
       if (live) {
-        // Stale: a mutation landed elsewhere. Retire the old sandbox — its
-        // sessions finish on the old code, no new one can reach it — and drop
-        // this replica's bundle caches so the rebuild below reads the freshly
-        // stored artifacts, not cached pre-mutation ones.
-        console.info("Resident sandbox superseded (slug epoch advanced); rebuilding", { slug });
+        // Stale: a deploy landed elsewhere (or the agent was deleted). Retire
+        // the old sandbox — its sessions finish on the old code, no new one
+        // can reach it — and drop this replica's row caches so the rebuild
+        // below reads the freshly stored record, not a cached pre-deploy one.
+        console.info("Resident sandbox superseded (deploy version advanced); rebuilding", { slug });
         store.invalidate?.(slug);
         retireSlot(slot, "superseded");
       } else {

@@ -179,12 +179,10 @@ export function assemblyAITtsLanguageCodes(): string[] {
 /**
  * Reject an AssemblyAI TTS descriptor carrying an unsupported `language`.
  *
- * Shared by `parseManifest` and `toAgentConfig`. Both matter for *where the
- * author sees the
- * error*: `parseManifest` covers the CLI (`aai dev`, `aai build`, `aai deploy`)
- * and `toAgentConfig` runs inside the generated bundle entry, so the studio's
- * `test_agent` reports it as a load error instead of the coding agent shipping
- * an agent that goes mute in production.
+ * Run from `toAgentConfig`, which covers every authoring surface: the CLI
+ * (`aai dev`, `aai build`, `aai deploy`) and the generated bundle entry, so
+ * the studio's `test_agent` reports it as a load error instead of the coding
+ * agent shipping an agent that goes mute in production.
  *
  * The type union on `AssemblyAITtsOptions.language` cannot carry this: a
  * descriptor arrives here as `Record<string, unknown>` options from a bundle,

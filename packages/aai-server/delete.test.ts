@@ -46,8 +46,8 @@ test("delete removes agent from store", async () => {
   });
   expect(resp.status).toBe(200);
 
-  const manifest = await store.getManifest("my-agent");
-  expect(manifest).toBeNull();
+  const record = await store.getAgent("my-agent");
+  expect(record).toBeNull();
 });
 
 test("delete returns 401 without auth", async () => {

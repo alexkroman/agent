@@ -17,7 +17,6 @@ import { z } from "zod";
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
 import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
 import { assertPipelineTuning, assertProviderTriple, assertSilencePolicy } from "./config-rules.ts";
-import { ProviderDescriptorSchema } from "./manifest.ts";
 import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import type { Message } from "./types.ts";
@@ -43,6 +42,27 @@ export type ExecuteTool = (
 ) => Promise<string>;
 
 // ─── AgentConfig ────────────────────────────────────────────────────────────
+
+/**
+ * Provider descriptor — a `{ kind, options }` pair produced by factories
+ * like `assemblyAIStt(...)` / `anthropic(...)` / `cartesia(...)`. Kept
+ * deliberately generic at the schema layer: kind-specific validation lives
+ * in the host-side resolver, which knows what each adapter expects.
+ *
+ * The exception is an option the resolver can only reject *too late to help* —
+ * one whose failure surfaces mid-session rather than at open. AssemblyAI TTS's
+ * `language` is the case that taught this (`assertAssemblyAITtsLanguage`, run
+ * from `toAgentConfig`): the service refuses a bad value in-band after the
+ * socket is already open, so the only signal was an agent that went mute in
+ * production. Those get an assert here, where the CLI and the studio's
+ * `test_agent` both see it while the author is still authoring.
+ *
+ * @internal
+ */
+export const ProviderDescriptorSchema = z.object({
+  kind: z.string().min(1),
+  options: z.record(z.string(), z.unknown()),
+});
 
 /**
  * Zod schema for {@link AgentConfig} — the JSON-safe subset of the agent

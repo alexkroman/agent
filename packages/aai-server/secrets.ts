@@ -84,9 +84,9 @@ export async function verifySlugOwner(
   opts: { slug: string; store: BundleStore },
 ): Promise<OwnerResult> {
   const { slug, store } = opts;
-  const manifest = await store.getManifest(slug);
+  const record = await store.getAgent(slug);
 
-  if (!manifest) {
+  if (!record) {
     // No hashing here: it burns real CPU (argon2) with a fresh
     // salt (uncacheable), and most callers reject unclaimed slugs with a 404
     // anyway. The deploy-claim path computes the hash lazily (see
@@ -94,6 +94,6 @@ export async function verifySlugOwner(
     return { status: "unclaimed" };
   }
 
-  const matched = await matchAnyHash(apiKey, manifest.credential_hashes);
+  const matched = await matchAnyHash(apiKey, record.credential_hashes);
   return { status: matched !== null ? "owned" : "forbidden" };
 }

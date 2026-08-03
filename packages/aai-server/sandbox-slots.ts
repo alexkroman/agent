@@ -5,7 +5,6 @@ import { createOwnedMap, type OwnedMap } from "@alexkroman1/aai/internal";
 import { debug } from "./_debug-log.ts";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";
 import { IDLE_SANDBOX_MS } from "./constants.ts";
-import { bumpSlugEpoch, type SlugEpochs } from "./platform-epoch.ts";
 import { retireSandbox } from "./sandbox-retire.ts";
 
 export type SlotSandbox = {
@@ -36,11 +35,12 @@ export type AgentSlot = {
   replicas?: SlotSandbox[];
   idleTimer?: NodeJS.Timeout;
   /**
-   * Slug epoch the resident sandbox was built at (see platform-epoch.ts).
-   * resolveSandbox terminates and rebuilds when the current epoch differs —
-   * a deploy/secret/storage mutation on another replica or service.
+   * Deploy version the resident sandbox was built from (the agents row's
+   * counter — see agent-store.ts). resolveSandbox retires and rebuilds when
+   * the current version differs: a deploy on another replica or service, or
+   * a delete (version reads null).
    */
-  epoch?: number;
+  version?: number;
 };
 
 // An OwnedMap because a redeploy replaces the slot object under the same
@@ -119,44 +119,6 @@ export function retireSlot(slot: AgentSlot, reason: string): void {
   }
 }
 
-/**
- * Retire `slug`'s sandbox (if resident) so the next session picks up new
- * config — used by the secret and storage handlers after a mutation.
- */
-export function restartSlotSandbox(slots: SlotCache, slug: string, reason: string): void {
-  const slot = slots.get(slug);
-  if (slot?.sandbox) {
-    console.info(`Retiring sandbox for ${reason}`, { slug });
-    retireSlot(slot, reason);
-  }
-}
-
-/**
- * Invalidate a slug everywhere after a mutation to it has landed.
- *
- * Two halves that must always travel together: this replica tears down its own
- * resident sandbox, and the slug's epoch bump tells every OTHER replica — and
- * the sibling service — to do the same on their next session start. Each
- * mutation route used to spell both out, and they had already diverged on
- * whether the bump was conditional; a route that pairs only the first half
- * produces no error anywhere, it just leaves other replicas serving the
- * previous version of the agent until idle eviction.
- *
- * Call AFTER the store write. An early bump makes peers rebuild from
- * pre-mutation artifacts. The local half is now synchronous (it hands the
- * sandbox to a background drain rather than awaiting a Modal terminate), so
- * only the bump is awaited; callers hold the cross-replica slug lease while
- * this runs.
- */
-export async function invalidateSlug(
-  deps: { slots: SlotCache; slugEpochs: SlugEpochs },
-  slug: string,
-  reason: string,
-): Promise<void> {
-  restartSlotSandbox(deps.slots, slug, reason);
-  await bumpSlugEpoch(deps.slugEpochs, slug);
-}
-
 export function setSlot(slots: SlotCache, slot: AgentSlot): void {
   slots.claim(slot.slug, slot);
 }
@@ -168,17 +130,15 @@ export function deleteSlot(slots: SlotCache, slug: string): boolean {
 }
 
 /**
- * Was the slot's resident sandbox built from artifacts a later mutation has
- * superseded (see platform-epoch.ts)? Injected by sandbox-resolve.ts, which
- * owns both the epoch store and the bundle caches this module knows nothing
- * about; absent — dev, tests, any caller without epochs — means "never
- * superseded", i.e. the pre-epoch behavior.
+ * Was the slot's resident sandbox built from a deploy a later one has
+ * superseded (the agents row's version advanced, or the row is gone)?
+ * Injected by sandbox-resolve.ts, which owns the store this module knows
+ * nothing about; absent (test doubles without a store) means "never
+ * superseded".
  *
- * An implementation MUST also drop whatever caches the rebuild would
- * otherwise reuse. The worker-code cache lives 10 minutes and the idle window
- * is 5, so an eviction that skipped that would rebuild the SAME pre-mutation
- * bundle and stamp it with the current epoch — pinning the old code instead of
- * clearing it, which is worse than leaving the stale sandbox up.
+ * An implementation MUST also drop the store's row caches so the rebuild
+ * reads the freshly deployed record rather than a cached pre-mutation one.
+ * (Blob caches are content-addressed and never need dropping.)
  */
 export type SupersededCheck = (slot: AgentSlot) => Promise<boolean>;
 
@@ -233,7 +193,7 @@ function evictIdleReplicas(slot: AgentSlot, replicas: SlotSandbox[], replicaLive
  * Deliberately ahead of the session probe below, and deliberately blind to
  * live session counts. A deploy retires the resident sandbox only on the
  * replica that served the deploy request; every other replica learns through
- * the slug epoch, which `resolveSandbox` reads LAZILY — at session start. With
+ * the deploy version, which `resolveSandbox` reads LAZILY — at session start. With
  * `buffer_containers` keeping a warm spare, the deploy and the replica holding
  * the sandbox are routinely different containers, so a slug nobody re-brokers
  * here keeps serving pre-deploy code. The probe path cannot be the backstop:
@@ -255,7 +215,7 @@ async function retireSuperseded(
   if (!(await isSuperseded(slot))) return false;
   // The check awaited; only the slot's CURRENT sandbox may be retired.
   if (!slots.owns(slot.slug, slot) || slot.sandbox !== primary) return true;
-  console.info("Retiring superseded sandbox (slug epoch advanced)", { slug: slot.slug });
+  console.info("Retiring superseded sandbox (deploy version advanced)", { slug: slot.slug });
   retireSlot(slot, "superseded");
   return true;
 }

@@ -102,19 +102,6 @@ export const RETIRE_POLL_MS = 5000;
  */
 export const SHUTDOWN_CLOSE_FALLBACK_MS = 3000;
 
-// ── Storage layout ──
-// Single source of truth for the `agents/{slug}` storage namespace.
-
-/** Root storage prefix for everything belonging to one agent. */
-export function agentPrefix(slug: string): string {
-  return `agents/${slug}`;
-}
-
-/** Storage key for one file of an agent's bundle (manifest, worker, client assets). */
-export function agentObjectKey(slug: string, file: string): string {
-  return `${agentPrefix(slug)}/${file}`;
-}
-
 /**
  * Locate the built Node guest harness — the `aai-guest` workspace package's
  * single-file artifact (overridable via GUEST_HARNESS_PATH). Resolved

@@ -1,7 +1,7 @@
 // Copyright 2026 the AAI authors. MIT license.
 // IsolateConfigSchema refinement specs — the wire-format mirror of the
-// parseManifest/toAgentConfig validations (one source of truth in
-// @alexkroman1/aai/manifest, three enforcement points).
+// toAgentConfig validations (one source of truth in
+// @alexkroman1/aai/manifest, two enforcement points).
 
 import type { AgentDef } from "@alexkroman1/aai";
 import type { AgentConfig } from "@alexkroman1/aai/manifest";

@@ -121,11 +121,11 @@ Eight workspace packages under `packages/`:
 
 | Package | npm name | Purpose |
 | --- | --- | --- |
-| `packages/aai/` | `@alexkroman1/aai` | Shared core: manifest, types, protocol, S2S, session, Db |
+| `packages/aai/` | `@alexkroman1/aai` | Shared core: agent config, types, protocol, S2S, session, Db |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
 | `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, secret, storage, templates |
 | `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): the Node entrypoint that runs the complete agent inside each Modal Sandbox, built into one self-contained `dist/harness.mjs` |
-| `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks/epochs |
+| `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks |
 | `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds, combined entry |
 | `packages/aai-studio-client/` | `aai-studio-client` | The studio's browser front-end (private): Vite React app served by aai-server |
 | `packages/aai-templates/` | `aai-templates` | Agent templates + scaffold (private): starter templates |
@@ -189,8 +189,9 @@ boundary** — this split is critical for sandbox security:
 - **`sdk/`** — shared modules with **zero Node.js dependencies**. Safe to
   run in browsers, Deno, and sandboxed environments. Contains:
   `types.ts`, `db.ts`, `hooks.ts`, `utils.ts`, `constants.ts`,
-  `protocol.ts`, `system-prompt.ts`, `manifest.ts`,
-  `ws-upgrade.ts`, `_internal-types.ts`, `schema.ts` (Standard Schema
+  `protocol.ts`, `system-prompt.ts`,
+  `ws-upgrade.ts`, `_internal-types.ts`, `agent-config.ts` (the canonical
+  serializable config + `toAgentConfig`), `schema.ts` (Standard Schema
   acceptance: `inputSchema` validation + JSON Schema conversion),
   `define.ts` (`agent()` and `tool()` helpers for authoring `agent.ts`
   files).
@@ -308,10 +309,12 @@ model) is the security boundary.
 - `platform-lock.ts` — cross-replica per-slug mutation lock (see "Stateless
   server" below): Postgres lease rows in `aai_platform.slug_locks` in
   production, the in-process keyed lock in dev/tests
-- `platform-epoch.ts` — cross-replica/service invalidation epochs (see
-  "Split services" below): mutations bump `aai_platform.slug_epochs`,
-  `resolveSandbox` rebuilds resident sandboxes on mismatch
-- `sandbox-resolve.ts` — slot-based slug→sandbox resolution + epoch
+- `agent-store.ts` — the agents table (`aai_platform.agents`; memory in
+  dev/tests): one row per agent — slug, credential hashes, the bundle's
+  self-described config, content hashes of the worker/client blobs, and a
+  deploy `version` that doubles as the cross-replica invalidation signal
+  (see "Split services" below)
+- `sandbox-resolve.ts` — slot-based slug→sandbox resolution + deploy-version
   invalidation (split from sandbox.ts, which owns one sandbox's lifecycle)
 - `studio-proxy.ts` / `app-middleware.ts` — the split deployment (see
   "Split services" below): the agent service's reverse proxy to the studio
@@ -325,10 +328,13 @@ model) is the security boundary.
 - `transport-websocket.ts` — WebSocket transport layer
 - `auth.ts` — authentication/authorization
 - `credentials.ts` — credential derivation
-- `bundle-store.ts` — agent bundle storage (Supabase Storage via its
-  S3-compatible endpoint in production, memory in dev/tests). Agent env
-  lives in Supabase Vault through the injected `SecretStore`, not in the
-  manifest blob.
+- `bundle-store.ts` — deploy persistence: content-addressed, immutable
+  blobs (`blobs/<sha256>` — worker + client files, in Supabase Storage via
+  its S3-compatible endpoint in production, memory in dev/tests) committed
+  by the agents-row upsert, which is the deploy's ATOMIC publish point.
+  Agent env lives in Supabase Vault through the injected `SecretStore`.
+  Orphan blobs from superseded/deleted deploys are accepted (content
+  dedupes; a shared blob must not die with one referrer).
 - `deploy.ts` / `delete.ts` — deployment lifecycle
 - `secret-handler.ts` — secret management
 - `secret-store.ts` — `SecretStore` interface: Supabase Vault
@@ -707,9 +713,9 @@ removed unused; multi-step orchestration is composed directly over
 
 ### Session modes
 
-Each agent runs in one of two session modes, selected at parse time by
-`parseManifest()` based on which top-level fields are present in the
-`agent()` config:
+Each agent runs in one of two session modes, selected by `toAgentConfig()`
+(run in the generated bundle entry) based on which top-level fields are
+present in the `agent()` config:
 
 - **Pipeline mode** (the DEFAULT — all three of `stt`, `llm`, and `tts`
   set, or none of the four provider fields set, in which case the
@@ -729,9 +735,9 @@ Each agent runs in one of two session modes, selected at parse time by
   the implicit default before the pipeline-by-default flip. There is no way
   to reach S2S by omission — only the `s2s` descriptor selects it.
 
-The default injection runs at every mode-derivation site — `parseManifest`,
-`toAgentConfig` (so it is baked into deployed configs at build time), and
-`createRuntime`'s provider resolution — before `assertProviderTriple`.
+The default injection runs at every mode-derivation site — `toAgentConfig`
+(so it is baked into deployed configs at build time) and `createRuntime`'s
+provider resolution — before `assertProviderTriple`.
 Partial provider configs are FILLED, not rejected: `defaultProviders`
 supplies the AssemblyAI default for each unset stage of `stt`/`llm`/`tts`
 (when `s2s` is unset), so `agent({ llm: anthropic(...) })` means "the
@@ -1336,7 +1342,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …) + the slug contract (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`). Deliberately dependency-free so the CLI can load it on every invocation without paying zod's startup cost |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
-| `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts (NOT `parseManifest()` — that lives elsewhere and is not exported here) |
+| `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts. (The subpath name is historical — the old `parseManifest()`/`Manifest` layer was deleted; renaming the published subpath wasn't worth the break.) |
 | `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAIStt`, `deepgram`, `elevenlabs`, `soniox`) |
 | `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway`) |
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAITts`) |
@@ -1388,7 +1394,7 @@ defaults that affect agent behavior:
 | Default | Value | Where applied | Notes |
 | --- | --- | --- | --- |
 | `maxSteps` | 10 (`DEFAULT_MAX_STEPS`) | `constants.ts` | Max tool calls per reply. Prevents runaway tool loops; sized so multi-tool chains plus a repair retry fit. |
-| `toolChoice` | `"auto"` | `manifest.ts` | LLM decides when to use tools vs respond directly. Full AI SDK set: `"auto"`, `"required"`, `"none"`, `{ type: "tool", toolName }`. |
+| `toolChoice` | `"auto"` | runtime resolution | LLM decides when to use tools vs respond directly. Full AI SDK set: `"auto"`, `"required"`, `"none"`, `{ type: "tool", toolName }`. |
 | `idleTimeoutMs` | 300,000 (5 min) | `constants.ts:26` | `0` or non-finite disables the timer entirely. Re-armed on every inbound audio frame (`resetIdle`), so it measures silence, not call length. On expiry session-core emits `idle_timeout` **and closes the socket** — the event alone retires nothing (clients treat it as informational and wait for the close), so for a long time an idle session lingered and only Modal's 300s input cap reaped it. |
 | `silenceTimeoutMs` | unset (disabled) | `pipeline-silence.ts` | Pipeline only: assistant proactively takes a turn after this much user silence. Capped at `MAX_CONSECUTIVE_SILENCE_NUDGES` (3) back-to-back nudges until the user speaks again. `silencePrompt` customizes the injected instruction (default `DEFAULT_SILENCE_PROMPT`); it is kept in LLM history but never emitted as a user transcript. |
 | `minBargeInWords` | 2 (`DEFAULT_MIN_BARGE_IN_WORDS`) | `constants.ts` | Pipeline only: interim-transcript words before user speech interrupts the in-flight reply. 2 keeps one-word backchannels from cutting the agent off; sub-threshold finals are answered after the reply. |
@@ -1725,18 +1731,17 @@ coordination lives in the same Postgres over `SUPABASE_DB_URL`:
   **The binding is wrapped in `createMutationLock`, and must stay wrapped:
   taking the lock also drops this replica's cached view of the slug.** The
   lease alone is not enough, because every mutation is a read-modify-write
-  over a read-through cache — `handleSecretSet` merges onto `getEnv`,
+  over a read-through row cache — `handleSecretSet` merges onto `getEnv`,
   `deployLocked` merges the stored env *and* `credential_hashes` off
-  `getManifest` — and `putEnv` drops only the writing replica's entry. A
-  write that landed on replica A is invisible to replica B for the 60s
-  manifest TTL, so B computes its merge from a pre-lock snapshot and writes
-  the older value back. The two writes were serialized perfectly and one of
-  them still vanished, silently: a secret reverts, or a deploy drops a
-  co-owner's credential hash. Invalidation belongs at lock acquisition (one
-  place, in `platform-lock.ts`) rather than per route, for the same reason
-  `invalidateSlug` exists — a route that forgets produces no error at all.
-  Note the broker path deliberately does NOT go through this wrapper, so
-  brokering a session never drops the up-to-30 MB worker-code cache.
+  `getAgent`. A row that replica A wrote moments ago can be invisible to
+  replica B's cache, so B computes its merge from a pre-lock snapshot and
+  writes the older value back. The two writes were serialized perfectly and
+  one of them still vanished, silently: a secret reverts, or a deploy drops
+  a co-owner's credential hash. Invalidation belongs at lock acquisition
+  (one place, in `platform-lock.ts`) rather than per route — a route that
+  forgets produces no error at all. Only the row caches are dropped: blob
+  caches are content-addressed and cannot go stale. The broker path
+  deliberately does NOT go through this wrapper — it mutates nothing.
 - **Studio rate limits** (`aai-studio-server/studio-rate-limit.ts`): the
   chat and project-create windows are rows in
   `aai_platform.studio_rate_limits` (`createPgRateLimiter`, one atomic
@@ -1752,11 +1757,13 @@ coordination lives in the same Postgres over `SUPABASE_DB_URL`:
 What deliberately stays in-process, and why it doesn't break statelessness:
 
 - **The slot cache, sandboxes, and warm pool** — a resident sandbox is a
-  per-replica accelerator; slug epochs (below) keep residents correct
-  across replicas, and losing them costs a rebuild, never correctness.
-- **Caches** (bundle-store manifest/worker/client caches, the auth hash
-  cache, the studio build cache) — TTL-bounded or content-hash-keyed
-  read-through caches whose staleness windows are documented at each site.
+  per-replica accelerator; the agents row's deploy version (below) keeps
+  residents correct across replicas, and losing them costs a rebuild,
+  never correctness.
+- **Caches** (bundle-store row/version caches, hash-keyed immutable blob
+  caches, the auth hash cache, the studio build cache) — TTL-bounded or
+  content-hash-keyed read-through caches whose staleness windows are
+  documented at each site.
 - **The in-process workspace/slug mutexes** — kept *under* the distributed
   mechanisms so local writer fan-out doesn't burn the cross-replica
   retry/lease on itself.
@@ -1804,20 +1811,27 @@ service's control work is light — and one container served both badly.
   (`/:slug` → `/:slug/`) separately echoed the cleartext URL back as an
   absolute `Location`, bouncing https browsers through `http://`; it is now
   relative, which no scheme can taint.
-- **Cross-service invalidation is slug epochs** (`platform-epoch.ts`,
-  `aai_platform.slug_epochs`). A local `terminateSlot`/`restartSlotSandbox`
-  only fixes the replica that handled the mutation; every deploy/delete/
-  secret/storage mutation therefore also bumps the slug's epoch, and
-  `resolveSandbox` compares the resident sandbox's build epoch — a mismatch
-  terminates it, drops the bundle-store caches (`BundleStore.invalidate`),
-  and rebuilds from the freshly stored bundle. This is how a studio-service
-  Publish reaches the agent service's resident sandboxes. Bumps are
-  best-effort after the write (`bumpSlugEpoch` warns, never fails the
-  mutation); epoch reads degrade to "current" so a broker request never
-  dies on the invalidation check. A client re-brokers on reconnect, so a
-  replaced sandbox heals with one reconnect.
+- **Cross-service invalidation is the agents row's deploy `version`**
+  (`agent-store.ts`, `aai_platform.agents`). A local `terminateSlot` only
+  fixes the replica that handled the deploy; the row upsert inside
+  `putAgent` bumps `version`, and `resolveSandbox` compares the resident
+  sandbox's build version — a mismatch (or a deleted row, which reads as
+  null) retires it, drops the bundle-store row caches
+  (`BundleStore.invalidate`), and rebuilds from the freshly stored record.
+  This is how a studio-service Publish reaches the agent service's resident
+  sandboxes. There is no separate signal to send, so no bump can be missed;
+  version reads degrade to "current" so a broker request never dies on the
+  invalidation check. A client re-brokers on reconnect, so a replaced
+  sandbox heals with one reconnect.
 
-  **The epoch is read on TWO paths, and the second one is what bounds
+  **Deploy and delete are the ONLY mutations that move sandboxes.** Secret
+  and storage changes write Vault and bump nothing — they take effect on
+  the agent's next deploy (or whenever its sandbox is next rebuilt). That
+  trade deleted the whole secret-invalidation mechanism (the old
+  `aai_platform.slug_epochs` table); the documented way to apply a secret
+  now is to redeploy.
+
+  **The version is read on TWO paths, and the second one is what bounds
   staleness.** `resolveSandbox` reads it lazily — only when a session is
   brokered on this replica — so on its own it leaves peer replicas serving
   pre-deploy code for as long as nobody re-brokers there. That is not a
@@ -1827,18 +1841,18 @@ service's control work is light — and one container served both badly.
   other one's sandbox running. The plain idle probe cannot be the backstop
   either — it re-arms on any live session count, and those sessions are ON
   the superseded sandbox, so gating on them means never retiring it. So the
-  slot's idle timer runs the same epoch comparison (`SupersededCheck`,
+  slot's idle timer runs the same version comparison (`SupersededCheck`,
   injected by `sandbox-resolve.ts` into `attachSandbox`) ahead of the
   session probe and retires regardless of live sessions, bounding staleness
-  to one `IDLE_SANDBOX_MS` window. The check MUST drop the bundle caches as
-  well as compare the epoch: the worker-code cache lives 10 minutes against
-  a 5-minute idle window, so an eviction that skipped
-  `BundleStore.invalidate` would rebuild the SAME pre-mutation bundle and
-  stamp it with the current epoch — pinning the old code rather than
-  clearing it. `evictIdleSandbox`'s re-arm has to carry the check forward
-  for the same reason it exists: a busy slug re-arms forever, and a re-arm
-  that dropped it would leave precisely the long-lived, never-re-brokered
-  sandboxes unchecked.
+  to one `IDLE_SANDBOX_MS` window. The check MUST drop the row caches as
+  well as compare the version, so the rebuild reads the freshly deployed
+  record rather than a cached pre-deploy one. (Worker/client blob caches
+  are hash-keyed and immutable — a stale row is a consistent OLD deploy,
+  never a torn mix, and a wrong blob is structurally impossible.)
+  `evictIdleSandbox`'s re-arm has to carry the check forward for the same
+  reason it exists: a busy slug re-arms forever, and a re-arm that dropped
+  it would leave precisely the long-lived, never-re-brokered sandboxes
+  unchecked.
 - **A superseded sandbox is RETIRED, not terminated** (`sandbox-retire.ts`).
   A mutation replaces the code a slug runs; it says nothing about the calls
   already in flight on the old sandbox, and closing their sockets inline —
@@ -1869,10 +1883,11 @@ service's control work is light — and one container served both badly.
     and their drain deadline is minutes past the container grace period —
     waiting on it would just get the process SIGKILLed with the guests up.
 - **The studio service holds an always-empty slot cache** — the shared
-  mutation cores' local sandbox restarts are deliberate no-ops there, while
-  their epoch bumps do the real work. It shares everything else through
-  Supabase and spawns its own Modal sandboxes for `test_agent`/config
-  extraction (its own warm pool via `SANDBOX_POOL_SIZE`).
+  mutation cores' local sandbox teardowns are deliberate no-ops there,
+  while the deploy's row-version bump does the real work. It shares
+  everything else through Supabase and spawns its own Modal sandboxes for
+  `test_agent`/config extraction (its own warm pool via
+  `SANDBOX_POOL_SIZE`).
 - **The web service autoscales** (constants block in `modal_deploy.py`),
   bounded by `MIN_CONTAINERS`/`MAX_CONTAINERS`. Voice sessions don't pass
   through the service, but that does NOT make scale-in free: a draining
@@ -2100,8 +2115,8 @@ catches the most common issues that historically required follow-up commits:
    messages, run `pnpm test` and update affected assertions.
 3. **Lint in related files**: Pre-commit only lints staged files. Run
    `pnpm lint` to catch lint issues in files affected by your change.
-4. **Type-level tests**: After changing public API types (`parseManifest`,
-   `Manifest`, etc.), run `pnpm vitest run --project aai-types`
+4. **Type-level tests**: After changing public API types (`toAgentConfig`,
+   `AgentConfig`, etc.), run `pnpm vitest run --project aai-types`
    to verify type contracts haven't regressed. Update `.test-d.ts` files
    if the change is intentional.
 5. **Dependencies orphaned by a deletion**: removing the last consumer of a
@@ -2195,8 +2210,9 @@ least-loaded sandbox is at capacity it spawns an overflow replica
 spawn one, not one each), and past the cap it routes to the least-loaded
 anyway with a warning. Scale-in is idle eviction's job: overflow replicas
 whose sessions ended are reclaimed individually on the idle probe even
-while the primary stays busy, and `terminateSlot` (deploy/delete/secret/
-epoch invalidation) tears down primary and replicas together.
+while the primary stays busy, and `retireSlot`/`terminateSlot`
+(deploy/delete/version invalidation) tear down primary and replicas
+together.
 Least-connections is deliberately implemented in-repo rather than via a
 balancer library: off-the-shelf Node balancers are stateless pickers that
 infer load from the calls they routed, which cannot be truthful here —

@@ -1,37 +1,49 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * Type definitions for the agent bundle store (S3 in production, in-memory for tests).
+ * Type definitions for the agent bundle store.
  *
- * Separated from `bundle-store.ts` (which has the S3 implementation) so that
- * test utilities and handlers can depend on the interface without pulling in
- * AWS SDK imports.
+ * Separated from `bundle-store.ts` (which has the blob/row implementation)
+ * so that test utilities and handlers can depend on the interface without
+ * pulling in storage imports.
  */
 
+import type { AgentRecord } from "./agent-store.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import type { AgentMetadata } from "./schemas.ts";
 
 export type BundleStore = {
+  /**
+   * Persist a deploy: content-addressed blobs first (worker, client files),
+   * env to the SecretStore, then the agents-row upsert — the atomic commit
+   * point that makes the new deploy visible and bumps `version`.
+   */
   putAgent(bundle: {
     slug: string;
     env: Record<string, string>;
     worker: string;
     clientFiles: Record<string, string>;
     credential_hashes: string[];
-    /** Pre-extracted agent config from CLI build. */
+    /** Pre-extracted agent config from the CLI build. */
     agentConfig: IsolateConfig;
   }): Promise<void>;
-  getManifest(slug: string): Promise<AgentMetadata | null>;
+  /** The deploy record: ownership hashes, config, blob hashes, version. */
+  getAgent(slug: string): Promise<AgentRecord | null>;
+  /**
+   * Current deploy version, or null when the agent does not exist. The
+   * cross-replica invalidation signal resident sandboxes are checked
+   * against — cached much more briefly than `getAgent`.
+   */
+  getAgentVersion(slug: string): Promise<number | null>;
   getWorkerCode(slug: string): Promise<string | null>;
   getClientFile(slug: string, filePath: string): Promise<string | null>;
   deleteAgent(slug: string): Promise<void>;
   getEnv(slug: string): Promise<Record<string, string> | null>;
   putEnv(slug: string, env: Record<string, string>): Promise<void>;
-  /** Retrieve the pre-extracted agent config. */
+  /** Convenience over `getAgent`: the stored config alone. */
   getAgentConfig(slug: string): Promise<IsolateConfig | null>;
   /**
-   * Drop this replica's read-through caches for `slug`. Called when a slug
-   * epoch mismatch reveals another replica/service mutated the stored
-   * bundle, so the rebuild reads fresh artifacts instead of cached ones.
+   * Drop this replica's read-through row caches for `slug`, so the next
+   * read sees another replica's mutation. Blob caches are content-addressed
+   * and immutable — they never need invalidation.
    */
   invalidate?(slug: string): void;
 };

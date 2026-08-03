@@ -33,8 +33,8 @@ type ProviderFields = {
  * only way to swap one stage was spreading `assemblyAIPipeline()` first.
  *
  * Every config layer that derives a session mode applies this first —
- * `parseManifest`, `toAgentConfig`, and the runtime's provider resolution —
- * so "no providers" means the pipeline everywhere, never S2S by fallthrough
+ * `toAgentConfig` and the runtime's provider resolution — so "no providers"
+ * means the pipeline everywhere, never S2S by fallthrough
  * (see "Never let S2S be a fallback" in CLAUDE.md).
  */
 export function defaultProviders(config: ProviderFields): {

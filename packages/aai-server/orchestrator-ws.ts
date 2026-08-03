@@ -28,7 +28,7 @@ import { WebSocketServer } from "ws";
 import { answerUpgrade } from "./_upgrade-reply.ts";
 import type { AppDatabases } from "./app-database.ts";
 import { MAX_CONNECTIONS } from "./constants.ts";
-import type { SlugEpochs } from "./platform-epoch.ts";
+
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { brokerSessionUrl } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
@@ -44,8 +44,6 @@ export type WsUpgradeOpts = {
   secrets?: SecretStore;
   /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
-  /** Cross-replica invalidation epochs (see platform-epoch.ts). */
-  slugEpochs?: SlugEpochs;
   /** Pre-warmed harness pool shared with the rest of the platform. */
   pool?: SandboxPool;
   /** Max concurrent WebSocket connections. Defaults to MAX_CONNECTIONS. */
@@ -92,7 +90,6 @@ async function answerPlainUpgrade(
     store: opts.store,
     ...(opts.secrets && { secrets: opts.secrets }),
     ...(opts.appDb && { appDb: opts.appDb }),
-    ...(opts.slugEpochs && { slugEpochs: opts.slugEpochs }),
     ...(opts.pool && { pool: opts.pool }),
   });
   const sessionUrl = brokered.ok ? brokered.sessionUrl : undefined;

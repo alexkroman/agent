@@ -100,7 +100,7 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
  * combined with a pipeline field fails the build with a message naming the
  * rule ({@link PipelineOnlyMisuse}) rather than failing at the first
  * `aai dev`/`aai deploy`. Configs that never went through `agent()` are
- * still caught at parse time.
+ * still caught when `toAgentConfig` runs in the bundle entry.
  *
  * @public
  */

@@ -12,12 +12,16 @@ import { TEST_AGENT_CONFIG } from "./test-utils.ts";
 
 async function createRealOrchestrator() {
   const { createStorage } = await import("unstorage");
+  const { createMemoryAgentRows } = await import("./agent-store.ts");
   const { createBundleStore } = await import("./bundle-store.ts");
   const { createMemorySecretStore } = await import("./secret-store.ts");
   const { createOrchestrator } = await import("./orchestrator.ts");
 
   const storage = createStorage();
-  const store = createBundleStore(storage, { secrets: createMemorySecretStore() });
+  const store = createBundleStore(storage, {
+    secrets: createMemorySecretStore(),
+    agents: createMemoryAgentRows(),
+  });
   const { createSlotCache } = await import("./sandbox-slots.ts");
   const { app } = createOrchestrator({
     slots: createSlotCache(),

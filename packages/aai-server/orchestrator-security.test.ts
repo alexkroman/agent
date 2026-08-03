@@ -180,9 +180,9 @@ describe("multi-tenant deploy isolation", () => {
     await deployAgent(fetch, "agent-alpha", "key-alpha");
     await deployAgent(fetch, "agent-beta", "key-beta");
 
-    // Both agents have separate manifests
-    const alphaManifest = await store.getManifest("agent-alpha");
-    const betaManifest = await store.getManifest("agent-beta");
+    // Both agents have separate records
+    const alphaManifest = await store.getAgent("agent-alpha");
+    const betaManifest = await store.getAgent("agent-beta");
 
     expect(alphaManifest).not.toBeNull();
     expect(betaManifest).not.toBeNull();
@@ -232,7 +232,7 @@ describe("multi-tenant deploy isolation", () => {
     expect(deleteRes.status).toBeLessThan(500);
 
     // Beta still exists
-    const betaManifest = await store.getManifest("agent-beta");
+    const betaManifest = await store.getAgent("agent-beta");
     expect(betaManifest).not.toBeNull();
     expect(betaManifest?.slug).toBe("agent-beta");
   });
