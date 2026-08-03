@@ -1,12 +1,14 @@
 // Copyright 2026 the AAI authors. MIT license.
 /**
- * Platform slug contract — the one definition of what an agent slug looks
- * like, shared by the deploy client (aai-cli, which validates a
- * repo-controlled slug before interpolating it into a credentialed URL
- * path) and the deploy server (aai-server, which validates slugs at every
- * HTTP/WebSocket boundary and derives its route patterns from the regex).
- * Both used to carry hand-synced copies; keep this module dependency-free
- * so the CLI can load it on every invocation without pulling zod.
+ * Platform slug contract — what a deployed agent's name (its URL slug) may
+ * look like, and which names the platform reserves. Use these to validate or
+ * generate a slug before deploying.
+ *
+ * One definition, shared by the deploy client (aai-cli) and the deploy
+ * server (aai-server, which validates slugs at every HTTP/WebSocket boundary
+ * and derives its route patterns from the regex). Both used to carry
+ * hand-synced copies; keep this module dependency-free so the CLI can load
+ * it on every invocation without pulling zod.
  */
 
 /** Slug shape accepted by the platform: lowercase letters, digits, `-`, `_` (2–64 chars). */

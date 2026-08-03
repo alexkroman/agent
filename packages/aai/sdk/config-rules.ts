@@ -15,7 +15,7 @@
  * Session mode derived from which provider triple is set.
  *
  * `parseManifest`, `toAgentConfig`, `createRuntime`, and the server's
- * `IsolateConfigSchema` all use {@link assertProviderTriple} so there's
+ * `IsolateConfigSchema` all use `assertProviderTriple` so there's
  * one source of truth for the validation.
  */
 export type SessionMode = "s2s" | "pipeline";
@@ -34,6 +34,8 @@ export type SessionMode = "s2s" | "pipeline";
  * *before* calling this, so "nothing set" reaches here only for raw
  * pre-default shapes (and still classifies as "s2s" for wire tolerance with
  * stored configs that predate the flip).
+ *
+ * @internal
  */
 export function assertProviderTriple(
   stt: unknown,
@@ -66,6 +68,8 @@ export function assertProviderTriple(
  *
  * Shared by `parseManifest`, `toAgentConfig`, and the server's
  * `IsolateConfigSchema` — one source of truth for the validation.
+ *
+ * @internal
  */
 export function assertSilencePolicy(
   mode: SessionMode,
@@ -83,7 +87,7 @@ export function assertSilencePolicy(
 /**
  * Voice-UX tuning fields that only the pipeline transport implements, with
  * each field's value shape. The one declaration both {@link PipelineTuning}
- * and {@link assertPipelineTuning} derive from, so a new pipeline-only field
+ * and `assertPipelineTuning` derive from, so a new pipeline-only field
  * cannot be added to the type but skip validation (which is how
  * `startFailurePhrase` once slipped through).
  */
@@ -104,8 +108,10 @@ const PIPELINE_ONLY_TUNING_FIELDS = Object.keys(
 
 /**
  * Voice-UX tuning fields that only the pipeline transport implements.
- * Shared by {@link assertPipelineTuning} and the config layers that carry
+ * Shared by `assertPipelineTuning` and the config layers that carry
  * these fields (AgentDef → manifest → AgentConfig → IsolateConfig).
+ *
+ * @internal
  */
 export type PipelineTuning = {
   [K in PipelineTuningField]?:
@@ -119,7 +125,9 @@ export type PipelineTuning = {
  *
  * Shared by `parseManifest`, `toAgentConfig`, and the server's
  * `IsolateConfigSchema` — one source of truth for the validation, mirroring
- * {@link assertSilencePolicy}.
+ * `assertSilencePolicy`.
+ *
+ * @internal
  */
 export function assertPipelineTuning(mode: SessionMode, tuning: PipelineTuning): void {
   if (mode === "pipeline") return;

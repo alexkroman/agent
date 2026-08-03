@@ -361,7 +361,7 @@ const LLM_REGISTRY: Record<string, LlmRegistryEntry> = {
 
 /**
  * Resolve an {@link LlmProvider} descriptor into a Vercel AI SDK
- * {@link LanguageModel}.
+ * `LanguageModel`.
  *
  * The API key is pulled from the agent's env (e.g. `OPENAI_API_KEY`).
  * Missing keys throw here — the pipeline session would fail on first

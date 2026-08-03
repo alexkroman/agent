@@ -6,7 +6,7 @@
  * server using only `node:http` and `ws` (no framework dependencies).
  *
  * **Internal module** — used by `aai-cli` dev server. Not a public API.
- * Import via `aai/host`.
+ * Import via `@alexkroman1/aai/runtime`.
  */
 
 import fs from "node:fs";
@@ -31,6 +31,8 @@ import { type SessionWebSocket, safeSend } from "./ws-handler.ts";
  * `readyConfig` is a property of a *constructed* runtime (`AgentRuntime`), so
  * demanding it here would force a lazy/unbuilt runtime (the guest harness's
  * facade) to fabricate one; narrowing to these two methods avoids that.
+ *
+ * @internal
  */
 export type SessionRuntime = Pick<AgentRuntime, "startSession" | "shutdown">;
 
@@ -119,6 +121,8 @@ const JSON_HEADERS = { "Content-Type": "application/json" } as const;
  * A bare `target.startsWith(dir)` also admits sibling directories sharing the
  * prefix (`<dir>-evil`) — the classic path-containment bug. Both paths must
  * already be resolved; this is a pure string check.
+ *
+ * @internal
  */
 export function isPathInside(dir: string, target: string): boolean {
   return target === dir || target.startsWith(dir + path.sep);

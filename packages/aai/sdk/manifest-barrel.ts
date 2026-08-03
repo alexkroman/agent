@@ -2,20 +2,26 @@
 /**
  * Manifest barrel — agent config conversion and tool schema handling.
  *
- * Used by aai-cli (bundler) and aai-server (rpc-schemas).
+ * Used by aai-cli (bundler) and aai-server (rpc-schemas). Generated bundle
+ * entries call `toAgentConfig`, which is why this subpath is published.
  */
 
+export { agentToolsToSchemas } from "./_internal-types.ts";
 export {
   type AgentConfig,
   AgentConfigSchema,
-  agentToolsToSchemas,
+  type AgentConfigSource,
+  HOST_ONLY_AGENT_FIELDS,
+  type HostOnlyAgentField,
   type ToolSchema,
   ToolSchemaSchema,
   toAgentConfig,
-} from "./_internal-types.ts";
+} from "./agent-config.ts";
 export {
   assertPipelineTuning,
   assertProviderTriple,
   assertSilencePolicy,
+  type PipelineTuning,
+  type SessionMode,
 } from "./config-rules.ts";
 export { ProviderDescriptorSchema } from "./manifest.ts";

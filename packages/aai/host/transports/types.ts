@@ -7,6 +7,8 @@ import type { Message } from "../../sdk/types.ts";
 /**
  * Typed callbacks into the SessionCore. One per event the transport produces.
  * Constructed at transport-creation time; no emitter.on-style indirection.
+ *
+ * @internal
  */
 export type TransportCallbacks = {
   onReplyStarted(replyId: string): void;
@@ -49,7 +51,10 @@ export type TransportCallbacks = {
   onSessionReady?(providerSessionId: string): void;
 };
 
-/** Minimal config a transport may receive at construction time. */
+/**
+ * Minimal config a transport may receive at construction time.
+ * @internal
+ */
 export type TransportSessionConfig = {
   systemPrompt: string;
   greeting?: string;
@@ -59,6 +64,8 @@ export type TransportSessionConfig = {
 /**
  * Transport abstraction — one implementation per provider strategy
  * (see `s2s-transport.ts`, `pipeline-transport.ts`).
+ *
+ * @internal
  */
 export interface Transport {
   /** Open any underlying connections and send initial session config. */

@@ -11,5 +11,10 @@
     "dist/sdk/providers/llm-barrel.d.ts",
     "dist/sdk/providers/s2s-barrel.d.ts",
     "dist/host/agent-tools.d.ts"
-  ]
+  ],
+  "externalSymbolLinkMappings": {
+    "ai": {
+      "LanguageModel": "https://ai-sdk.dev/docs/reference/ai-sdk-core/language-model"
+    }
+  }
 }

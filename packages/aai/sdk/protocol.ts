@@ -2,7 +2,9 @@
 /**
  * WebSocket wire-format types shared by server and client.
  *
- * Note: this module is for internal use only and should not be used directly.
+ * This is the published wire contract (`@alexkroman1/aai/protocol`) for
+ * building custom clients or servers that speak the session protocol —
+ * aai-ui's browser session is built on it.
  */
 
 import { z } from "zod";
@@ -58,7 +60,9 @@ const MessageEnvelopeSchema = z.object({ type: z.string() }).passthrough();
  *
  * Passing `knownTypes` is what separates "unknown newer-version type" from
  * "known type that failed validation" — without it, an invalid known message
- * is silently swallowed as if it were a forward-compat unknown type.
+ * is silently swallowed as if it were a forward-compat unknown type. When
+ * parsing client→server messages, pass {@link CLIENT_MESSAGE_TYPES} as
+ * `knownTypes`.
  */
 export function lenientParse<T>(
   schema: z.ZodType<T>,
@@ -190,7 +194,11 @@ export const ClientEventSchema = z.discriminatedUnion("type", [
   }),
 ]);
 
-/** Discriminated union of all server→client session events. */
+/**
+ * Discriminated union of all **server→client** session events. Despite the
+ * shared prefix, this is the opposite direction from {@link ClientMessage}
+ * (client→server): "client" here means events delivered *to* the client.
+ */
 export type ClientEvent = z.infer<typeof ClientEventSchema>;
 
 /**
@@ -282,20 +290,24 @@ export const ClientMessageSchema = z.discriminatedUnion("type", [
  *  silently dropped as an unknown forward-compat type. */
 export const CLIENT_MESSAGE_TYPES: ReadonlySet<string> = discriminatorValues(ClientMessageSchema);
 
-/** Client→server text messages (binary frames carry raw PCM16 audio). */
+/**
+ * **Client→server** text messages (binary frames carry raw PCM16 audio).
+ * Note the direction: the similarly named {@link ClientEvent} flows the other
+ * way (server→client).
+ */
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // ─── Host mode ───────────────────────────────────────────────────────────────
 
 /**
  * Host-provided agent configuration for a host-mode connection: the caller
- * (e.g. a tau2 harness) supplies the system prompt, optional greeting, and
- * tool schemas for a single session instead of using a deployed agent.
+ * (e.g. an external evaluation harness) supplies the system prompt, optional
+ * greeting, and tool schemas for a single session instead of using a deployed
+ * agent.
  *
  * Validated standalone rather than as a `ClientMessageSchema` member — the
  * host-mode handshake consumes this message *before* `wireSessionSocket`
  * attaches, so it must never reach `dispatchMessage`/`ClientMessageSchema`.
- * See HOST_MODE_CONTRACT.md §§3-5.
  */
 export const HostConfigSchema = z.object({
   systemPrompt: z.string().min(1),
@@ -320,10 +332,11 @@ export type HostConfig = z.infer<typeof HostConfigSchema>;
  * The host-mode handshake frame: the first inbound message on a host-mode
  * WebSocket connection, carrying the {@link HostConfigSchema} payload.
  *
- * The tau2 client sends a single `config` frame that also carries the audio
- * negotiation fields (`audioFormat`/`sampleRate`/`ttsSampleRate`) alongside
- * `host`; they are captured here (optional) so the host-mode handshake can
- * honor the client's requested sample rates instead of discarding them.
+ * A host-mode client sends a single `config` frame that also carries the
+ * audio negotiation fields (`audioFormat`/`sampleRate`/`ttsSampleRate`)
+ * alongside `host`; they are captured here (optional) so the host-mode
+ * handshake can honor the client's requested sample rates instead of
+ * discarding them.
  */
 export const HostConfigMessageSchema = z.object({
   type: z.literal("config"),
@@ -335,7 +348,11 @@ export const HostConfigMessageSchema = z.object({
 
 // ─── Ready config builder ───────────────────────────────────────────────────
 
-/** Build the protocol-level session config from S2S sample rates. */
+/**
+ * Build the protocol-level session config (the `config` frame's audio fields)
+ * from the session's input/output sample rates — used by every session mode,
+ * pipeline and S2S alike.
+ */
 export function buildReadyConfig(s2sConfig: {
   inputSampleRate: number;
   outputSampleRate: number;

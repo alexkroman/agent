@@ -26,24 +26,19 @@ class SsrfBlockedError extends Error {}
 
 /**
  * The `fetch` every pinned request must go through — deliberately NOT
- * `globalThis.fetch`.
+ * `globalThis.fetch`, and NOT SSRF-checked itself.
  *
- * {@link pinnedDispatcher} builds an `Agent` from the `undici` package this
- * package depends on, while Node's global `fetch` is backed by the undici
- * bundled into the runtime (`process.versions.undici`) — a different copy, and
- * usually a different major. undici 8 reworked the dispatch-handler interface,
- * so handing a v8 `Agent` the v7-style handler Node's internal fetch builds
- * fails validation with `InvalidArgumentError: invalid onRequestStart method`,
- * which `fetch` then reports as a bare `TypeError: fetch failed` with the real
- * reason buried in `cause`. Since a dispatcher is attached to every hostname
- * request, that breaks all host-side egress at once.
+ * `pinnedDispatcher` builds an `Agent` from this package's own `undici`
+ * dependency; Node's global `fetch` is backed by a different bundled undici
+ * copy whose dispatch-handler interface may not match, so the two must come
+ * from the same package. Exported for `ssrf-dispatcher.test.ts`, which guards
+ * the pairing.
  *
- * Pairing the dispatcher with its own package's `fetch` keeps the two on one
- * undici regardless of what the host runtime bundles. Exported for
- * `ssrf-dispatcher.test.ts`, which guards the pairing.
+ * @internal
  */
 export const pinnedFetch = undiciFetch as unknown as typeof globalThis.fetch;
 
+/** @internal */
 export function isPrivateIp(ip: string): boolean {
   return bogon(ip);
 }
@@ -61,6 +56,8 @@ function isLiteralIp(hostname: string): boolean {
  * Single-pass validation: checks hostname rules, resolves DNS if needed,
  * validates the resolved IP, and returns the resolved IP for pinning.
  * Returns null if the hostname is already a literal IP (already validated).
+ *
+ * @internal
  */
 export async function resolveAndAssertPublic(url: string): Promise<string | null> {
   const parsed = new URL(url);
@@ -105,7 +102,7 @@ const MAX_REDIRECTS = 5;
  * `RequestInit.dispatcher` via its own bundled copy of `undici-types`, which is
  * a different copy of the declarations from the `undici` package the Agent is
  * constructed with — structurally the same object, nominally incompatible. The
- * cast in {@link pinnedDispatcher} bridges exactly that mismatch.
+ * cast in `pinnedDispatcher` bridges exactly that mismatch.
  */
 type FetchDispatcher = NonNullable<RequestInit["dispatcher"]>;
 
@@ -148,6 +145,14 @@ function pinnedDispatcher(resolvedIp: string): FetchDispatcher {
 /** Headers that must never be replayed to a different origin across a redirect. */
 const CREDENTIAL_HEADERS = ["authorization", "cookie", "proxy-authorization"];
 
+/**
+ * The lower-level SSRF-guarded fetch engine — NOT an alias of `safeFetch`.
+ * Takes a mandatory `fetchFn` and drives the validate → pin → follow-redirects
+ * loop with it; `safeFetch` is this engine curried with `pinnedFetch` and is
+ * what callers should use.
+ *
+ * @internal
+ */
 export async function ssrfSafeFetch(
   url: string,
   init: RequestInit,
@@ -203,7 +208,8 @@ export const safeFetch: typeof globalThis.fetch = (input, init) =>
 export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
 
 /**
- * The fetch the network builtins should use.
+ * Internal selector: returns the fetch the network builtins should use — a
+ * function that *picks* a fetch, not a fetch itself.
  *
  * One rule: **screen only when there is no container around us.**
  *
@@ -217,6 +223,8 @@ export const CONTAINED_ENV = "AAI_SANDBOX_CONTAINED";
  * builtins in the developer's own process, where a model-controlled URL can
  * reach localhost, the LAN, or cloud metadata. That is where the screen earns
  * its keep, so that is where it stays.
+ *
+ * @internal
  */
 export function builtinFetch(env: NodeJS.ProcessEnv = process.env): typeof globalThis.fetch {
   return env[CONTAINED_ENV] === "1" ? pinnedFetch : safeFetch;

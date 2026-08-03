@@ -5,7 +5,7 @@
  * The descriptor flows through the bundle → server → runtime pipeline
  * without importing the `@elevenlabs/elevenlabs-js` package. The
  * host-side resolver in `host/providers/resolve.ts` turns it into an
- * openable {@link SttOpener} during `createRuntime`.
+ * openable `SttOpener` during `createRuntime`.
  */
 
 import type { SttProvider } from "../../providers.ts";

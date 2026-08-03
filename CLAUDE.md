@@ -136,11 +136,12 @@ depend on `@alexkroman1/aai` (via `workspace:*`). `aai-server` depends on
 `dist/harness.mjs`, baked into the guest snapshot image) — it never imports
 guest source, and the guest never imports server code; that hard boundary is
 the reason the guest is its own package. The one edge to the CLI is
-`aai-server` → `aai-cli`, and only for its two public bundler subpaths
-(`/worker-bundler`, `/client-bundler`): the studio builds workspaces
-through the CLI's own Vite pipeline rather than carrying a second
-bundler. Do not widen it — nothing else in the server may import from
-the CLI, and the CLI must never import from the server.
+`aai-server` → `aai-cli`, and only for its three public build-hook subpaths
+(`/worker-bundler`, `/client-bundler`, `/typecheck`): the studio builds
+workspaces through the CLI's own Vite pipeline (and typechecks them with the
+CLI's own gate) rather than carrying a second bundler. Do not widen it —
+nothing else in the server may import from the CLI, and the CLI must never
+import from the server.
 
 **Publishable packages must use the `@alexkroman1/` scope.** The unscoped
 names `aai`, `aai-ui`, `aai-cli` are taken on npm by other publishers —
@@ -157,9 +158,12 @@ Subpath exports consumed by sibling packages and user agents:
 - `./utils` — zod-free utilities + platform slug contract (fast CLI startup path)
 - `./runtime` — full Node.js runtime engine (barrel → 11 host/ modules)
 - `./protocol` — wire-format Zod schemas, `lenientParse()`, `ClientEvent`
-- `./manifest` — `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`
+- `./manifest` — `toAgentConfig()`, `agentToolsToSchemas()`, config schemas
 - `./stt` — pipeline-mode STT provider factories (e.g. `assemblyAI`)
+- `./llm` — pipeline-mode LLM provider factories (e.g. `anthropic`)
 - `./tts` — pipeline-mode TTS provider factories (e.g. `cartesia`)
+- `./s2s` — S2S provider factories (`openaiRealtime`)
+- `./tools` — keyless network builtins callable from user tool code
 
 #### `aai-ui` (UI)
 
@@ -1305,10 +1309,12 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/utils` | `sdk/utils.ts` (direct, not a barrel) | Zod-free utilities (`errorMessage`, `errorDetail`, …) + the slug contract (`VALID_SLUG_RE`, `RESERVED_SLUGS` from `sdk/slug.ts`). Deliberately dependency-free so the CLI can load it on every invocation without paying zod's startup cost |
 | `@alexkroman1/aai/runtime` | `host/runtime-barrel.ts` → 11 modules | Full Node.js runtime: session, S2S, server, tools, WS handler |
 | `@alexkroman1/aai/protocol` | `sdk/protocol.ts` (direct, not a barrel) | Wire-format Zod schemas, `lenientParse()`, `ClientEvent`, `ServerMessage` |
-| `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `parseManifest()`, `toAgentConfig()`, `agentToolsToSchemas()`, system prompt builder |
-| `@alexkroman1/aai/stt` | `host/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
-| `@alexkroman1/aai/llm` | `host/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway`) |
-| `@alexkroman1/aai/tts` | `host/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
+| `@alexkroman1/aai/manifest` | `sdk/manifest-barrel.ts` → 3 modules | `toAgentConfig()`, `agentToolsToSchemas()`, `AgentConfig`/`ToolSchema` + their Zod schemas, config-rule asserts (NOT `parseManifest()` — that lives elsewhere and is not exported here) |
+| `@alexkroman1/aai/stt` | `sdk/providers/stt-barrel.ts` | STT provider factories + types (`assemblyAI`, `deepgram`, `elevenlabs`, `soniox`) |
+| `@alexkroman1/aai/llm` | `sdk/providers/llm-barrel.ts` | LLM provider factories + types (`anthropic`, `openai`, `google`, `mistral`, `xai`, `groq`, `openrouter`, `gateway`) |
+| `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAI`) |
+| `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + types (`openaiRealtime`; `assemblyAIS2s` is on the root export) |
+| `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch` |
 
 ### Concurrency primitives (use these, don't hand-roll)
 

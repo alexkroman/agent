@@ -107,9 +107,48 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
 ]
 `;
 
+exports[`export surface stability > @alexkroman1/aai/llm export 1`] = `
+[
+  "ANTHROPIC_API_KEY_ENV",
+  "ANTHROPIC_KIND",
+  "ASSEMBLYAI_GATEWAY_MODELS",
+  "ASSEMBLYAI_LLM_API_KEY_ENV",
+  "ASSEMBLYAI_LLM_DEFAULT_MODEL",
+  "ASSEMBLYAI_LLM_GATEWAY_EU_URL",
+  "ASSEMBLYAI_LLM_GATEWAY_URL",
+  "ASSEMBLYAI_LLM_KIND",
+  "GATEWAY_API_KEY_ENV",
+  "GATEWAY_KIND",
+  "GOOGLE_API_KEY_ENV",
+  "GOOGLE_KIND",
+  "GROQ_API_KEY_ENV",
+  "GROQ_KIND",
+  "MISTRAL_API_KEY_ENV",
+  "MISTRAL_KIND",
+  "OPENAI_API_KEY_ENV",
+  "OPENAI_KIND",
+  "OPENROUTER_API_KEY_ENV",
+  "OPENROUTER_BASE_URL",
+  "OPENROUTER_KIND",
+  "XAI_API_KEY_ENV",
+  "XAI_KIND",
+  "anthropic",
+  "assemblyAI",
+  "gateway",
+  "gatewayModelIds",
+  "google",
+  "groq",
+  "mistral",
+  "openai",
+  "openrouter",
+  "xai",
+]
+`;
+
 exports[`export surface stability > @alexkroman1/aai/manifest export 1`] = `
 [
   "AgentConfigSchema",
+  "HOST_ONLY_AGENT_FIELDS",
   "ProviderDescriptorSchema",
   "ToolSchemaSchema",
   "agentToolsToSchemas",
@@ -184,6 +223,53 @@ exports[`export surface stability > @alexkroman1/aai/s2s export 1`] = `
   "OPENAI_REALTIME_KIND",
   "assemblyAIS2s",
   "openaiRealtime",
+]
+`;
+
+exports[`export surface stability > @alexkroman1/aai/stt export 1`] = `
+[
+  "ASSEMBLYAI_API_KEY_ENV",
+  "ASSEMBLYAI_KIND",
+  "ASSEMBLYAI_STREAMING_EU_URL",
+  "DEEPGRAM_API_KEY_ENV",
+  "DEEPGRAM_KIND",
+  "DEFAULT_DEEPGRAM_ENDPOINTING_MS",
+  "ELEVENLABS_API_KEY_ENV",
+  "ELEVENLABS_KIND",
+  "SONIOX_API_KEY_ENV",
+  "SONIOX_KIND",
+  "assemblyAI",
+  "deepgram",
+  "elevenlabs",
+  "soniox",
+]
+`;
+
+exports[`export surface stability > @alexkroman1/aai/tools export 1`] = `
+[
+  "fetchJson",
+  "visitWebpage",
+  "webSearch",
+]
+`;
+
+exports[`export surface stability > @alexkroman1/aai/tts export 1`] = `
+[
+  "ASSEMBLYAI_TTS_API_KEY_ENV",
+  "ASSEMBLYAI_TTS_DEFAULT_VOICE",
+  "ASSEMBLYAI_TTS_DEPRECATED_VOICES",
+  "ASSEMBLYAI_TTS_KIND",
+  "ASSEMBLYAI_TTS_LANGUAGES",
+  "ASSEMBLYAI_TTS_VOICES",
+  "CARTESIA_API_KEY_ENV",
+  "CARTESIA_DEFAULT_VOICE",
+  "CARTESIA_KIND",
+  "RIME_API_KEY_ENV",
+  "RIME_DEFAULT_VOICE",
+  "RIME_KIND",
+  "assemblyAI",
+  "cartesia",
+  "rime",
 ]
 `;
 

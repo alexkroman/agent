@@ -18,15 +18,28 @@ import type {
 } from "./types.ts";
 
 /**
- * A custom event emitted by the agent via `ctx.send`.
+ * A custom event emitted by the agent via `ctx.send(event, data)` — the
+ * payload the session records in `SessionSnapshot.customEvents` (`id` is a
+ * monotonic session-unique counter, `event` the name, `data` the payload).
+ *
+ * Deliberately NOT the DOM `CustomEvent`: it shares nothing with that
+ * interface, and the old name shadowed the global in `.tsx` files.
  *
  * @public
  */
-export type CustomEvent = {
+export type AgentCustomEvent = {
   readonly id: number;
   readonly event: string;
   readonly data: unknown;
 };
+
+/**
+ * @deprecated Use {@link AgentCustomEvent}; this name shadows the DOM global
+ * `CustomEvent`.
+ *
+ * @public
+ */
+export type CustomEvent = AgentCustomEvent;
 
 /**
  * Immutable snapshot of the session state.
@@ -59,7 +72,7 @@ export type SessionSnapshot = {
   readonly contentVersion: number;
   readonly messages: ChatMessage[];
   readonly toolCalls: ToolCallInfo[];
-  readonly customEvents: CustomEvent[];
+  readonly customEvents: AgentCustomEvent[];
   /**
    * Latest state the agent projected via `syncState`, or `null` before the
    * first push. A value, not a log — a component that mounts mid-session
@@ -88,26 +101,46 @@ export type SessionCore = {
   /** Subscribe to state changes. Returns an unsubscribe function. */
   subscribe(callback: () => void): () => void;
   /**
-   * Open a WebSocket connection to the server and begin audio capture.
+   * Open a WebSocket connection to the server and begin audio capture,
+   * without touching the `started`/`running` flags — the low-level half of
+   * `start()`. Most UIs call `start()` (first activation) or `toggle()`
+   * (mute-style connect/disconnect) instead.
    * @param options - Optional. `signal` is an AbortSignal that, when aborted, disconnects the session.
    */
   connect(options?: { signal?: AbortSignal }): void;
   /** Cancel the current agent turn and discard in-flight TTS audio. */
   cancel(): void;
-  /** Clear messages, transcript, and error state without disconnecting. */
+  /**
+   * Clear messages, transcripts, and error state while keeping the current
+   * connection (unlike `reset()`, which also reconnects).
+   */
   resetState(): void;
-  /** Reset the session: clear state and reconnect. */
+  /**
+   * Reset the session: clear state as `resetState()` does, then drop and
+   * reopen the connection for a fresh conversation.
+   */
   reset(): void;
   /** Close the WebSocket and release all audio resources. */
   disconnect(): void;
-  /** Start the session for the first time (sets `started` and `running`). */
+  /**
+   * Start the session for the first time: sets `started` and `running`, then
+   * connects. Use this for the initial "start conversation" action;
+   * afterwards `toggle()` is the pause/resume control.
+   */
   start(): void;
-  /** Toggle between connected and disconnected states. */
+  /** Toggle between connected and disconnected states (after `start()`). */
   toggle(): void;
   /** Alias for `disconnect` for use with `using`. */
   [Symbol.dispose](): void;
 };
 
+/**
+ * Options accepted by `createSessionCore` — an alias of
+ * {@link VoiceSessionOptions}, which documents every field. Two names, one
+ * type: `client()` and `createSessionCore` share the same session options.
+ *
+ * @public
+ */
 export type SessionCoreOptions = VoiceSessionOptions;
 
 /**

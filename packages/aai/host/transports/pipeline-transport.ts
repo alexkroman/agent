@@ -34,7 +34,7 @@ import type { Transport } from "./types.ts";
 
 export type { PipelineTransportOptions } from "./pipeline-transport-options.ts";
 
-/** Create a pipeline-mode Transport (STT → LLM → TTS). */
+/** Create a pipeline-mode Transport (STT → LLM → TTS). @internal */
 export function createPipelineTransport(opts: PipelineTransportOptions): Transport {
   const {
     log,

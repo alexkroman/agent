@@ -4,7 +4,7 @@
  *
  * The descriptor flows through the bundle → server → runtime pipeline
  * without importing the `@deepgram/sdk` package. The host-side resolver in
- * `host/providers/resolve.ts` turns it into an openable {@link SttOpener}
+ * `host/providers/resolve.ts` turns it into an openable `SttOpener`
  * during `createRuntime`.
  */
 

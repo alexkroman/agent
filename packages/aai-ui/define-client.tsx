@@ -19,7 +19,8 @@ import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
 // ─── Config types ─────────────────────────────────────────────────────────────
 
 /**
- * Base options shared by both client tiers.
+ * Options shared by both {@link client} tiers (config-only and custom
+ * component).
  *
  * The session-forwarded fields are picked from {@link VoiceSessionOptions}
  * (one source of truth for types and docs) rather than re-declared — a
@@ -27,7 +28,10 @@ import type { ClientTheme, VoiceSessionOptions } from "./types.ts";
  *
  * @public
  */
-type BaseOptions = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" | "WebSocket"> & {
+export type BaseOptions = Pick<
+  VoiceSessionOptions,
+  "onSessionId" | "resumeSessionId" | "WebSocket"
+> & {
   /** CSS selector or DOM element to render into. Defaults to `"#app"`. */
   target?: string | HTMLElement;
   /** Base URL of the AAI platform server. Derived from `location.href` by default. */
@@ -37,11 +41,12 @@ type BaseOptions = Pick<VoiceSessionOptions, "onSessionId" | "resumeSessionId" |
 };
 
 /**
- * Tier 1: Config-only options. Renders the default shell (StartScreen + ChatView).
+ * Tier 1: config-only options — no `component`. Renders the default shell
+ * (StartScreen + ChatView).
  *
  * @public
  */
-type ConfigTier = BaseOptions & {
+export type ConfigTier = BaseOptions & {
   component?: never;
   /** Agent name shown in the header and start screen. */
   name?: string;
@@ -54,11 +59,12 @@ type ConfigTier = BaseOptions & {
 };
 
 /**
- * Tier 2: Custom component. Renders the provided component inside the providers.
+ * Tier 2: custom component — renders the provided `component` inside the
+ * providers instead of the default shell.
  *
  * @public
  */
-type ComponentTier = BaseOptions & {
+export type ComponentTier = BaseOptions & {
   /** Full custom component to render instead of the default shell. */
   component: ComponentType;
   /**
@@ -183,7 +189,12 @@ function DefaultRoot({
  * default shell (StartScreen + ChatView, optional sidebar).
  *
  * **Tier 2 (custom component):** Pass `component` to render a fully custom
- * root component inside the providers.
+ * root component inside the providers. In this tier a provided `name` also
+ * sets `document.title` (there is no shell header to show it in).
+ *
+ * Mounts into `target` — a CSS selector or DOM element, defaulting to
+ * `"#app"` — and throws `Element not found: <target>` when the selector
+ * matches nothing.
  *
  * @example Tier 1
  * ```tsx

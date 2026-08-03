@@ -2,12 +2,16 @@
   "$schema": "https://typedoc.org/schema.json",
   "name": "AAI SDK",
   "entryPointStrategy": "packages",
-  "entryPoints": ["../packages/aai", "../packages/aai-ui", "../packages/aai-cli"],
+  "entryPoints": [
+    "../packages/aai",
+    "../packages/aai-ui"
+  ],
   "out": "dist",
   "includeVersion": true,
   "packageOptions": {
     "tsconfig": "../../docs/tsconfig.typedoc.json",
     "excludeInternal": true,
     "excludePrivate": true
-  }
+  },
+  "treatWarningsAsErrors": true
 }

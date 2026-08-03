@@ -17,15 +17,22 @@ import type { LlmProvider } from "../sdk/providers.ts";
 import { resolveLlm } from "./providers/resolve.ts";
 
 /**
- * A {@link GenerateFn} with an extra per-call options bag: the tool executor
- * binds the issuing turn's abort signal so an in-flight generation stops on
- * barge-in / reset / session stop.
+ * The host-side `ctx.generate` implementation — takes `GenerateOptions` and
+ * resolves a `GenerateResult`, with an extra per-call options bag: the tool
+ * executor binds the issuing turn's abort signal so an in-flight generation
+ * stops on barge-in / reset / session stop.
+ *
+ * @internal
  */
 export type HostGenerateFn = (
   options: GenerateOptions,
   callOpts?: { signal?: AbortSignal | undefined },
 ) => Promise<GenerateResult>;
 
+/**
+ * Options for {@link createGenerateFn}.
+ * @internal
+ */
 export type CreateGenerateFnOptions = {
   /**
    * Default LLM descriptor — the agent's own pipeline `llm`. Callers may
@@ -63,6 +70,8 @@ function assertJsonSchema(schema: Record<string, unknown>): void {
  *
  * Models resolve lazily and are memoized per descriptor object, so repeated
  * workflow calls against the same provider reuse one client.
+ *
+ * @internal
  */
 export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn {
   const models = new WeakMap<LlmProvider, LanguageModel>();

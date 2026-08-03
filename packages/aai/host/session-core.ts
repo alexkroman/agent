@@ -1,6 +1,6 @@
 // Copyright 2026 the AAI authors. MIT license.
 // Unified session — owns reply lifecycle, conversation history, idle timeout,
-// and tool-step enforcement. Replaces session.ts + pipeline-session.ts.
+// and tool-step enforcement, bridging a Transport to the client protocol.
 
 import type { AgentConfig, ExecuteTool } from "../sdk/_internal-types.ts";
 import { DEFAULT_IDLE_TIMEOUT_MS, DEFAULT_MAX_HISTORY } from "../sdk/constants.ts";
@@ -33,6 +33,11 @@ type ReplyState = {
   flushedAwaitingContinuation: boolean;
 };
 
+/**
+ * Configuration for {@link createSessionCore}.
+ *
+ * @internal
+ */
 export type SessionCoreOptions = {
   id: string;
   agent: string;
@@ -50,6 +55,13 @@ export type SessionCoreOptions = {
   onToolResult?: (msg: { toolCallId: string; result: string; error?: string }) => void;
 };
 
+/**
+ * One live server-side session: the runtime's bridge between a transport
+ * (S2S, pipeline, or OpenAI Realtime) and the connected client. Distinct from
+ * aai-ui's browser-side `SessionCore`.
+ *
+ * @internal
+ */
 export type SessionCore = {
   readonly id: string;
   start(): Promise<void>;
@@ -62,7 +74,7 @@ export type SessionCore = {
   onHistory(messages: readonly Message[]): void;
   /** Inbound relayed tool result (host mode): settles the pending relay call. */
   onToolResult(toolCallId: string, result: string, error?: string): void;
-  // Inbound from transport (spec §4.2)
+  // Inbound from transport (reply lifecycle, transcripts, audio, tool calls)
   onReplyStarted(replyId: string): void;
   onReplyDone(): void;
   onCancelled(): void;
@@ -84,6 +96,11 @@ export type SessionCore = {
   onSpeechStopped(): void;
 };
 
+/**
+ * Create the server-side session core for one connected client.
+ *
+ * @internal
+ */
 export function createSessionCore(opts: SessionCoreOptions): SessionCore {
   const log = opts.logger ?? consoleLogger;
   const rawIdleMs = opts.agentConfig.idleTimeoutMs ?? DEFAULT_IDLE_TIMEOUT_MS;

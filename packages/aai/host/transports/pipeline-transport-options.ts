@@ -24,7 +24,10 @@ import type { ToolChoice } from "../../sdk/types.ts";
 import { consoleLogger, type Logger } from "../runtime-config.ts";
 import type { TransportCallbacks, TransportSessionConfig } from "./types.ts";
 
-/** Configuration for `createPipelineTransport`. */
+/**
+ * Configuration for `createPipelineTransport`.
+ * @internal
+ */
 export interface PipelineTransportOptions {
   /** Unique session identifier. */
   sid: string;
@@ -76,7 +79,7 @@ export interface PipelineTransportOptions {
   holdPhrase?: string | undefined;
   /**
    * Phrase spoken when the turn's LLM stream fails. Defaults to
-   * {@link DEFAULT_ERROR_PHRASE}; `""` disables.
+   * `DEFAULT_ERROR_PHRASE`; `""` disables.
    */
   errorPhrase?: string | undefined;
   /**

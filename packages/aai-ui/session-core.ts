@@ -41,6 +41,17 @@ import { MIC_SEND_MAX_BUFFERED_BYTES, type WebSocketConstructor } from "./types.
  * Uses a subscribe/getSnapshot pattern for state management, compatible with
  * React's `useSyncExternalStore` and other external store integrations.
  *
+ * Most clients never call this: `client()` creates a core and installs it in
+ * React context for the hooks. Reach for it directly when building a
+ * non-React UI (or wiring the session into another framework's store).
+ *
+ * @example
+ * ```ts
+ * const session = createSessionCore({ platformUrl: "https://host/my-agent/" });
+ * session.subscribe(() => render(session.getSnapshot()));
+ * session.start();
+ * ```
+ *
  * @param options - Session configuration including the platform server URL.
  * @returns A {@link SessionCore} handle for controlling the session.
  *

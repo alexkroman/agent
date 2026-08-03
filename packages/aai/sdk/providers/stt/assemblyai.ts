@@ -4,8 +4,18 @@
  *
  * The descriptor flows through the bundle → server → runtime pipeline
  * without importing the `assemblyai` SDK. The host-side resolver in
- * `host/providers/resolve.ts` turns it into an openable {@link SttOpener}
+ * `host/providers/resolve.ts` turns it into an openable `SttOpener`
  * during `createRuntime`.
+ *
+ * Note: this factory shares its name with the TTS factory in
+ * `@alexkroman1/aai/tts` and the LLM factory in `@alexkroman1/aai/llm`. When
+ * using more than one, alias on import:
+ *
+ * ```ts
+ * import { assemblyAI } from "@alexkroman1/aai/stt";
+ * import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+ * import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+ * ```
  */
 
 import type { SttProvider } from "../../providers.ts";
@@ -43,7 +53,7 @@ export interface AssemblyAIOptions {
    * sent as the `min_turn_silence` connection parameter. This is where
    * endpointing lives: mid-utterance pauses shorter than this aggregate into
    * one final instead of splitting the request across turns. Defaults to
-   * `DEFAULT_MIN_TURN_SILENCE_MS` (1500).
+   * `DEFAULT_MIN_TURN_SILENCE_MS` (2000).
    */
   minTurnSilenceMs?: number;
   /**
@@ -77,6 +87,10 @@ export type AssemblyAIProvider = SttProvider & {
  * The API key is resolved host-side from the agent's env
  * (`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
  * descriptor stays free of secrets and safe to serialize.
+ *
+ * Shares its name with the `assemblyAI` TTS factory (`@alexkroman1/aai/tts`)
+ * and LLM factory (`@alexkroman1/aai/llm`) — alias on import when using more
+ * than one.
  */
 export function assemblyAI(opts: AssemblyAIOptions = {}): AssemblyAIProvider {
   return { kind: ASSEMBLYAI_KIND, options: { ...opts } };

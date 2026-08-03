@@ -310,7 +310,7 @@ async function streamScript(
 }
 
 /**
- * Create a fake {@link LanguageModel} that yields a scripted sequence of
+ * Create a fake `LanguageModel` that yields a scripted sequence of
  * parts when `streamText` drives `doStream()`. The fake ignores the prompt
  * and tools — it simply replays the script.
  *

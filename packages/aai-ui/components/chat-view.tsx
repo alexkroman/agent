@@ -18,7 +18,7 @@ const PULSING_STATES: ReadonlySet<AgentState> = new Set(["listening", "speaking"
  * (logo + live-status eyebrow), the conversation on a raised white card,
  * and the session controls beneath it.
  *
- * Must be rendered inside a {@link SessionProvider}.
+ * Must be rendered inside a `SessionProvider`.
  *
  * @example
  * ```tsx

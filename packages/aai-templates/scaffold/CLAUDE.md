@@ -26,7 +26,11 @@ The fast loop: edit → `pnpm dev` (browser, talk to it) →
    `node_modules/@alexkroman1/aai-cli/dist/templates/`. Read them directly;
    `aai init --template <name>` scaffolds a fresh project from one. Closest
    matches: `simple`, `pipeline-simple`, `web-researcher`, `solo-rpg`,
-   `pizza-ordering`.
+   `pizza-ordering`. When reading SDK types under
+   `node_modules/@alexkroman1/aai*/dist/`, note the built entry points
+   re-export with source specifiers (`"./sdk/constants.ts"`,
+   `"./components/button.tsx"`) — rewrite `.ts`/`.tsx` to `.d.ts` to find
+   the shipped file.
 
 ## CLI
 
@@ -80,7 +84,7 @@ export default agent({
   silenceTimeoutMs?: number;                 // pipeline only — assistant speaks up after this much user silence (ms)
   silencePrompt?: string;                    // instruction injected on silence timeout (requires silenceTimeoutMs)
   minBargeInWords?: number;                  // pipeline only — words before user speech interrupts the reply (default 2)
-  interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 0 = off)
+  interruptionMinDurationMs?: number;        // pipeline only — sustained speech (ms) before an interim barge-in interrupts (default 500; 0 disables)
   holdPhrase?: string;                       // pipeline only — spoken before a silent tool-call turn (default "One moment."; "" disables)
   falseInterruptionTimeoutMs?: number;       // pipeline only — resume an interrupted reply if no user turn commits (default 2000; 0 disables)
   state?: () => S;                           // per-session mutable state, exposed as ctx.state
@@ -206,11 +210,12 @@ user speaks again.
 **Voice-UX tuning (pipeline only):** `minBargeInWords` controls how many
 words of user speech interrupt the assistant mid-reply (default 2, so
 one-word backchannels like "yeah" don't cut it off);
-`interruptionMinDurationMs` adds an optional sustained-speech gate on top
-(interim transcripts only — committed turns always land). End-of-turn
-detection (how long a pause ends the user's turn) belongs to the STT
-provider: `assemblyAI({ minTurnSilenceMs })` / `deepgram({ endpointing })`,
-both defaulting to 1500 ms so mid-utterance pauses don't split a request.
+`interruptionMinDurationMs` adds a sustained-speech gate on top (default
+500 ms; `0` disables; interim transcripts only — committed turns always
+land). End-of-turn detection (how long a pause ends the user's turn)
+belongs to the STT provider: `assemblyAI({ minTurnSilenceMs })` (default
+2000 ms) / `deepgram({ endpointing })` (default 1500 ms), so mid-utterance
+pauses don't split a request.
 `holdPhrase` is spoken when a turn opens with a tool call and no speech.
 `falseInterruptionTimeoutMs` resumes an interrupted reply when a barge-in
 turns out to be noise (no user turn commits within the window).

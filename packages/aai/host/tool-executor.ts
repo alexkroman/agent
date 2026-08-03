@@ -18,7 +18,7 @@ import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
 import type { HostGenerateFn } from "./generate.ts";
 import type { Logger } from "./runtime-config.ts";
 
-export type { ExecuteTool } from "../sdk/_internal-types.ts";
+export type { ExecuteTool, ExecuteToolOptions } from "../sdk/_internal-types.ts";
 
 // setImmediate rather than setTimeout(0): same yield-to-I/O semantics without
 // Node's ~1ms timer clamp — saves a couple of ms on every tool call.
@@ -85,6 +85,12 @@ function stringifyResult(result: unknown): string {
   return JSON.stringify(result) ?? String(result);
 }
 
+/**
+ * Validate a tool call's arguments and invoke its handler, returning the
+ * stringified (and capped) result.
+ *
+ * @internal
+ */
 export async function executeToolCall(
   name: string,
   args: Readonly<Record<string, unknown>>,

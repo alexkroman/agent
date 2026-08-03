@@ -6,14 +6,15 @@
  * In platform mode, they run on the host process outside the sandbox.
  *
  * The network-capable builtins (`web_search`, `visit_webpage`,
- * `get_page_design`, `fetch_json`)
- * take a fully model-controlled URL, so they default to {@link builtinFetch} —
- * SSRF-screened unless a spawner has declared a real container around us —
- * SSRF-protected by construction. Callers may inject a different `fetch` for
- * tests, but omitting it can no longer silently yield an unprotected
- * `globalThis.fetch`: that default previously left the self-hosted path
- * (`aai dev`) able to reach loopback, RFC 1918, and cloud-metadata addresses
- * with the response returned to whoever was driving the session.
+ * `get_page_design`, `fetch_json`) take a fully model-controlled URL, so they
+ * default to {@link builtinFetch}: SSRF-screened whenever no spawner has
+ * declared a real container around us (`aai dev`, the subprocess backend);
+ * inside a Modal container the screen is skipped because the sandbox itself is
+ * the security boundary. Callers may inject a different `fetch` for tests, but
+ * omitting it can no longer silently yield an unprotected `globalThis.fetch`:
+ * that default previously left the self-hosted path (`aai dev`) able to reach
+ * loopback, RFC 1918, and cloud-metadata addresses with the response returned
+ * to whoever was driving the session.
  */
 
 import { convert } from "html-to-text";
@@ -257,10 +258,12 @@ function createCalculate(): ToolDef<typeof calculateParams> & { guidance: string
 // ─── Public API ────────────────────────────────────────────────────────────
 
 /** Options for creating built-in tool definitions. */
-type BuiltinToolOptions = {
+export type BuiltinToolOptions = {
   /**
-   * Override the fetch implementation. Defaults to the SSRF-protected
-   * {@link builtinFetch} — override only in tests.
+   * Override the fetch implementation. Defaults to {@link builtinFetch}
+   * (SSRF-screened outside a declared container) — override only in tests.
+   *
+   * @internal
    */
   fetch?: typeof globalThis.fetch;
   /**
@@ -270,12 +273,15 @@ type BuiltinToolOptions = {
   runCode?: RunCodeExecutor;
 };
 
-type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
+/** Resolved builtin tool definitions, keyed by tool name. */
+export type ToolDefRecord = Record<string, ToolDef<z.ZodObject<z.ZodRawShape>>>;
 
 /**
  * Builtins that execute untrusted code and must ONLY run inside the guest
  * sandbox (Modal/Deno), never on the host. The runtime's sandbox-mode
  * dispatcher consults this to delegate them over RPC like custom tools.
+ *
+ * @internal
  */
 export const SANDBOX_ONLY_BUILTINS: ReadonlySet<string> = new Set(["run_code"]);
 
@@ -305,6 +311,11 @@ const STATIC_BUILTINS: Record<string, ToolDef & { guidance?: string }> = {
   calculate: createCalculate(),
 };
 
+/**
+ * Resolve one builtin tool by name; `undefined` for unknown names.
+ *
+ * @internal
+ */
 export function resolveBuiltin(
   name: string,
   opts?: BuiltinToolOptions,
@@ -314,7 +325,7 @@ export function resolveBuiltin(
 }
 
 /** Resolved builtins with defs, schemas, and guidance computed in a single pass. */
-type ResolvedBuiltins = {
+export type ResolvedBuiltins = {
   defs: ToolDefRecord;
   schemas: ToolSchema[];
   guidance: string[];

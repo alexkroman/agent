@@ -20,9 +20,14 @@ import {
   ClientConfigResponseSchema,
 } from "@alexkroman1/aai/protocol";
 
+/** @internal Re-exported for the sibling modules; the SDK's `/protocol` subpath is the canonical home. */
 export type { ClientConfigResponse } from "@alexkroman1/aai/protocol";
 
-/** Resolve a relative endpoint path against the agent's base URL. */
+/**
+ * Resolve a relative endpoint path against the agent's base URL.
+ *
+ * @internal
+ */
 export function buildAgentUrl(platformUrl: string, endpointPath: string): URL {
   return new URL(endpointPath, platformUrl.endsWith("/") ? platformUrl : `${platformUrl}/`);
 }
@@ -42,6 +47,8 @@ const AGENT_DEFAULT: ClientConfigResponse = {};
  * platform's `/:slug/websocket` — a WebSocket redirect browsers don't
  * follow, so every retry failed with no re-brokering even after the agent
  * recovered.
+ *
+ * @internal
  */
 export async function loadClientConfig(
   platformUrl: string,
@@ -59,7 +66,11 @@ export async function loadClientConfig(
   }
 }
 
-/** Fetch the agent's client config; any failure yields the agent default. */
+/**
+ * Fetch the agent's client config; any failure yields the agent default.
+ *
+ * @internal
+ */
 export async function fetchClientConfig(
   platformUrl: string,
   fetchFn?: typeof globalThis.fetch,

@@ -1,9 +1,16 @@
 // Copyright 2025 the AAI authors. MIT license.
 /**
- * aai — shared fundamentals with no Node.js dependencies.
+ * The AAI voice-agent SDK.
  *
- * Types, Db interface, utils, and constants used across
- * aai-cli, aai-server, and aai-ui.
+ * Exports `agent()` and `tool()` — the helpers an `agent.ts` file uses to
+ * define a voice agent — plus the authoring types (`AgentDef`, `ToolDef`,
+ * `ToolContext`, …), the recommended `assemblyAIPipeline()` preset, the
+ * `assemblyAIS2s()` opt-in, and the `DEFAULT_*` constants documenting each
+ * `agent()` field's default.
+ *
+ * Provider factories live on subpaths: `@alexkroman1/aai/stt`,
+ * `@alexkroman1/aai/llm`, and `@alexkroman1/aai/tts` (pipeline mode). See
+ * also `@alexkroman1/aai/utils` for zod-free helpers usable in tool code.
  */
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design

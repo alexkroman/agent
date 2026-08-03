@@ -1,12 +1,15 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-// Pre-connection client-config lookup (name + greeting)
+// Pre-connection client-config lookup (name + greeting) — internal plumbing
+// used by the default client; see each symbol's own doc.
 export {
   buildAgentUrl,
   type ClientConfigResponse,
   fetchClientConfig,
+  loadClientConfig,
 } from "./client-config.ts";
-export { Button } from "./components/button.tsx";
+// Components
+export { Button, type ButtonSize, type ButtonVariant } from "./components/button.tsx";
 export { ChatView } from "./components/chat-view.tsx";
 export { Controls } from "./components/controls.tsx";
 export { Markdown } from "./components/markdown.tsx";
@@ -14,9 +17,9 @@ export { MessageList } from "./components/message-list.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
 export { StartScreen } from "./components/start-screen.tsx";
 export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
-// Tool config (for component-tier custom UIs)
+// Tool display config context — installed by `client()` from
+// `ClientConfig.tools`; not something component-tier users pass themselves.
 export { ToolConfigContext } from "./components/tool-config-context.ts";
-// Components
 export { ApiUrlChip, SessionUrlChips, UiUrlChip } from "./components/url-chips.tsx";
 export type { Session } from "./context.ts";
 // Context & hooks
@@ -28,8 +31,11 @@ export {
   useTheme,
 } from "./context.ts";
 export type {
+  BaseOptions,
   ClientConfig,
   ClientHandle,
+  ComponentTier,
+  ConfigTier,
 } from "./define-client.tsx";
 // Entry
 export { client } from "./define-client.tsx";
@@ -37,6 +43,9 @@ export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hook
 // Session core (for advanced use)
 export { createSessionCore } from "./session-core.ts";
 export type {
+  AgentCustomEvent,
+  // Deprecated alias of AgentCustomEvent (it shadows the DOM global); kept so
+  // existing imports keep compiling.
   CustomEvent,
   SessionCore,
   SessionCoreOptions,
@@ -51,6 +60,7 @@ export type {
   SessionErrorCode,
   ToolCallInfo,
   VoiceSessionOptions,
+  WebSocketConstructor,
 } from "./types.ts";
 // Capture constraints, exported so a custom client that opens its own
 // microphone gets the same signal the built-in paths do.

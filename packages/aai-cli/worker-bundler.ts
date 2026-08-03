@@ -9,6 +9,11 @@
  * worker published from the browser comes out of the same Vite/Rollup pass as
  * one from `aai deploy`.
  *
+ * @internal — build hook for aai-server/the studio; not a supported public
+ * API and not covered by semver. The lack of a `_` prefix is packaging (the
+ * subpath must be importable cross-package), not an invitation: user code
+ * should never import from `@alexkroman1/aai-cli`.
+ *
  * Every worker is built through a generated wrapper entry that re-exports the
  * agent *and* its extracted config as `__aaiConfig` (via the dependency-free
  * `@alexkroman1/aai/manifest` helpers, bundled in). The guest harness returns
@@ -38,7 +43,12 @@ import path from "node:path";
 import { build, type PluginOption, type Rollup } from "vite";
 import { withPreservedNodeEnv } from "./_vite-env.ts";
 
-/** Options for worker bundling. */
+/**
+ * Options for worker bundling.
+ *
+ * @internal — build hook for aai-server/the studio; not a supported public
+ * API and not covered by semver.
+ */
 export type BuildWorkerOptions = {
   /**
    * Minify the worker with Oxc (Vite 8's native minifier). Deploy builds set
@@ -90,6 +100,9 @@ ${
  *
  * Zod is bundled in — zod 4's `Function()` usage is wrapped in try/catch
  * and gracefully degrades in restricted environments like Deno.
+ *
+ * @internal — build hook for aai-server/the studio; not a supported public
+ * API and not covered by semver.
  */
 export async function buildWorker(cwd: string, opts: BuildWorkerOptions = {}): Promise<string> {
   const wrapperPath = path.join(cwd, WRAPPER_ENTRY_REL);

@@ -12,7 +12,7 @@ import { SessionUrlChips } from "./url-chips.tsx";
  * Session control buttons: **Stop / Resume** and **New Conversation**.
  *
  * Reads session state from {@link useSession}. Must be rendered inside a
- * {@link SessionProvider}.
+ * `SessionProvider`.
  *
  * @example
  * ```tsx
