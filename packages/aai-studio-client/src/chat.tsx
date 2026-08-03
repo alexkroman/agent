@@ -39,6 +39,13 @@ type ChatPanelProps = {
   onInitialPromptSent: () => void;
   /** Called after each finished assistant turn so the workspace refreshes. */
   onWorkspaceChanged: () => void;
+  /**
+   * Reports whether a turn is in flight. The app gates Publish on this: the
+   * preview only deploys on the END-OF-TURN workspace sync (mid-turn
+   * checkpoints never do — a half-finished tree must not ship), and Publish
+   * deploys the same workspace, so it must wait for the same event.
+   */
+  onBusyChange?: ((busy: boolean) => void) | undefined;
   /** The key was rejected — same global handling as the REST queries. */
   onUnauthorized: () => void;
   /**
@@ -195,6 +202,7 @@ function ProjectChat({
   initialPrompt,
   onInitialPromptSent,
   onWorkspaceChanged,
+  onBusyChange,
   onUnauthorized,
   onSessionStale,
   registerNotify,
@@ -234,6 +242,14 @@ function ProjectChat({
 
   const busy = status === "submitted" || status === "streaming";
   const llmReady = llmStatus?.llm === true;
+
+  // Mirror the in-flight state up to the app. The cleanup clears it on
+  // unmount (project switch, back to home) so a turn left streaming in a
+  // previous project can't keep Publish locked in the next one.
+  useEffect(() => {
+    onBusyChange?.(busy);
+    return () => onBusyChange?.(false);
+  }, [busy, onBusyChange]);
 
   // Read through refs so the registration below stays stable: re-registering
   // on every status tick would swap the function the app holds mid-publish.
@@ -349,6 +365,7 @@ export function ChatPanel(props: ChatPanelProps) {
           initialPrompt={props.initialPrompt}
           onInitialPromptSent={props.onInitialPromptSent}
           onWorkspaceChanged={props.onWorkspaceChanged}
+          onBusyChange={props.onBusyChange}
           onUnauthorized={props.onUnauthorized}
           onSessionStale={props.onSessionStale}
           registerNotify={props.registerNotify}

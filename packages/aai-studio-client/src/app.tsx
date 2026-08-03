@@ -63,6 +63,11 @@ export function App({ apiKey, onSignOut }: AppProps) {
   const [secretsOpen, setSecretsOpen] = useState(false);
   const [previewNonce, setPreviewNonce] = useState(0);
   const [pendingPrompt, setPendingPrompt] = useState<string | null>(null);
+  // A chat turn is in flight. Publish locks on this: the preview only
+  // deploys on the guest's END-OF-TURN workspace sync (mid-turn checkpoints
+  // can leave a half-finished tree), and Publish ships the same workspace —
+  // so it unlocks on the same turn-settled event the preview builds on.
+  const [chatBusy, setChatBusy] = useState(false);
 
   const status = useQuery<StudioStatus>({ queryKey: queryKeys.status, queryFn: api.status });
 
@@ -268,6 +273,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
         tab={tab}
         deployedSlug={deployedSlug}
         hasBuild={hasBuild}
+        chatBusy={chatBusy}
         settingsOpen={secretsOpen}
         onGoHome={() => selectProject(null)}
         onSelectTab={(next) => {
@@ -287,10 +293,15 @@ export function App({ apiKey, onSignOut }: AppProps) {
       <PublishMenu
         open={publishOpen}
         busy={publish.isPending}
+        chatBusy={chatBusy}
         output={publishOutput}
         error={publishError}
         deployedSlug={deployedSlug}
-        onPublish={() => publish.mutate()}
+        // The disabled button is the UI gate; the guard is the backstop for
+        // a menu that was already open when a turn started streaming.
+        onPublish={() => {
+          if (!chatBusy) publish.mutate();
+        }}
         onClose={() => setPublishOpen(false)}
       />
       {secretsOpen && (
@@ -338,6 +349,7 @@ export function App({ apiKey, onSignOut }: AppProps) {
             initialPrompt={pendingPrompt}
             onInitialPromptSent={() => setPendingPrompt(null)}
             onWorkspaceChanged={invalidateWorkspace}
+            onBusyChange={setChatBusy}
             onUnauthorized={onSignOut}
             registerNotify={registerNotify}
           />

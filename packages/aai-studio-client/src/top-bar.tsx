@@ -16,9 +16,18 @@ export function agentUrl(slug: string): string {
   return new URL(`/${slug}/`, window.location.origin).toString();
 }
 
+/** Tooltip while a chat turn is streaming and Publish is locked. */
+const PUBLISH_WAIT_FOR_TURN = "Publish unlocks when the agent finishes its turn";
+
 type PublishMenuProps = {
   open: boolean;
   busy: boolean;
+  /**
+   * A chat turn is streaming. Publishing waits for the turn to settle — the
+   * preview deploys only on the end-of-turn workspace sync, and Publish must
+   * not ship the half-finished tree a mid-turn checkpoint can leave behind.
+   */
+  chatBusy?: boolean;
   /** `aai deploy`'s output from the last publish (success or failure). */
   output?: string | undefined;
   error?: string | undefined;
@@ -43,7 +52,8 @@ export function PublishMenu(props: PublishMenuProps) {
           type="button"
           className="btn btn-primary"
           onClick={props.onPublish}
-          disabled={props.busy}
+          disabled={props.busy || props.chatBusy}
+          title={props.chatBusy && !props.busy ? PUBLISH_WAIT_FOR_TURN : undefined}
         >
           {props.busy ? "Publishing…" : "Publish"}
         </button>
@@ -80,6 +90,8 @@ type TopBarProps = {
   tab: "preview" | "code";
   deployedSlug?: string | undefined;
   hasBuild: boolean;
+  /** A chat turn is streaming — Publish locks until it settles (see PublishMenuProps). */
+  chatBusy?: boolean;
   /** The settings (secrets) panel is open — renders its toggle as active. */
   settingsOpen: boolean;
   /** Brand click: back to the hero home (deselects the project). */
@@ -94,6 +106,9 @@ type TopBarProps = {
 export function TopBar(props: TopBarProps) {
   const segClass = (active: boolean) =>
     clsx("seg", active ? "bg-fg text-cream" : "bg-panel text-muted hover:text-fg");
+  let publishTitle: string | undefined;
+  if (!props.hasBuild) publishTitle = "Publish unlocks after your first build";
+  else if (props.chatBusy) publishTitle = PUBLISH_WAIT_FOR_TURN;
   return (
     <header className="flex h-[60px] flex-none items-center gap-3.5 border-b border-line bg-panel px-5">
       <button
@@ -161,8 +176,8 @@ export function TopBar(props: TopBarProps) {
         type="button"
         className="btn btn-primary px-[18px]"
         onClick={props.onTogglePublish}
-        disabled={!props.hasBuild}
-        title={props.hasBuild ? undefined : "Publish unlocks after your first build"}
+        disabled={!props.hasBuild || props.chatBusy}
+        title={publishTitle}
       >
         Publish
       </button>

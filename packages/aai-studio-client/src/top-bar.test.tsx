@@ -59,6 +59,19 @@ describe("TopBar", () => {
     expect((settings as HTMLButtonElement).disabled).toBe(true);
   });
 
+  test("Publish locks while a chat turn streams, even with a build", () => {
+    render(<TopBar {...barProps} chatBusy={true} />);
+    const publish = screen.getByRole("button", { name: "Publish" });
+    expect((publish as HTMLButtonElement).disabled).toBe(true);
+    expect(publish.getAttribute("title")).toContain("finishes its turn");
+  });
+
+  test("Publish unlocks once the turn settles", () => {
+    render(<TopBar {...barProps} chatBusy={false} />);
+    const publish = screen.getByRole("button", { name: "Publish" });
+    expect((publish as HTMLButtonElement).disabled).toBe(false);
+  });
+
   test("a deployed slug shows the production link and unlocks Settings", () => {
     const onToggleSettings = vi.fn();
     render(<TopBar {...barProps} deployedSlug="my-agent" onToggleSettings={onToggleSettings} />);
@@ -102,6 +115,13 @@ describe("PublishMenu", () => {
     render(<PublishMenu {...menuProps} open={true} busy={true} />);
     const button = screen.getByRole("button", { name: "Publishing…" });
     expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  test("a streaming chat turn disables Publish inside an already-open menu", () => {
+    render(<PublishMenu {...menuProps} open={true} chatBusy={true} />);
+    const button = screen.getByRole("button", { name: "Publish" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.getAttribute("title")).toContain("finishes its turn");
   });
 
   test("an error renders as CLI output and suppresses the live link", () => {
