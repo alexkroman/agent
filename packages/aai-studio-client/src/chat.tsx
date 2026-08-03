@@ -339,10 +339,13 @@ export function ChatPanel(props: ChatPanelProps) {
         <span className="eyebrow">Agent</span>
       </div>
       {props.sessionError && (
-        <div className="flex flex-1 items-center px-6 py-5">
-          <p className="m-0 text-[13px] text-err">
-            Could not start the project's sandbox. Reload to try again.
-          </p>
+        <div className="flex flex-1 flex-col items-start justify-center gap-3 px-6 py-5">
+          <p className="m-0 text-[13px] text-err">Could not start the project's sandbox.</p>
+          {/* Re-broker in place — the retries behind "Starting sandbox…"
+              already gave up, so recovery must not require a page reload. */}
+          <button type="button" className="btn" onClick={props.onSessionStale}>
+            Try again
+          </button>
         </div>
       )}
       {!props.sessionError &&

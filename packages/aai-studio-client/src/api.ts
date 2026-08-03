@@ -37,6 +37,36 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Per-attempt deadline for the session broker call. A broker request issued
+ * while the server is restarting can HANG rather than fail — the proxy holds
+ * the socket, or the platform queues the request against a container that
+ * never answers — and a browser fetch has no timeout of its own, so without
+ * this the chat panel showed "Starting sandbox…" forever, long after the
+ * server was back. Sized above the cold path's real work: a Modal sandbox
+ * spawn, the guest dial (30s cap server-side), and the session install
+ * (60s cap). A timed-out attempt is retried (see isTransientSessionError);
+ * the server keeps brokering after the abort, so the retry usually reuses
+ * the sandbox the aborted attempt booted.
+ */
+export const CHAT_SESSION_ATTEMPT_TIMEOUT_MS = 120_000;
+
+/**
+ * Should a failed chat-session broker attempt be retried? A 4xx is a real
+ * answer from a live server (bad key, missing project) that retrying cannot
+ * change — except 408/429, which are the transient kind. Everything else — a
+ * rejected fetch (connection refused mid-restart), a timed-out attempt, a
+ * 5xx — means the server or sandbox wasn't ready, so the query keeps
+ * retrying with backoff and a chat opened during a restart connects once
+ * the server is back instead of wedging on the first failure.
+ */
+export function isTransientSessionError(err: unknown): boolean {
+  if (err instanceof ApiError && err.status >= 400 && err.status < 500) {
+    return err.status === 408 || err.status === 429;
+  }
+  return true;
+}
+
 /** A query/mutation error as displayable text; undefined when there is none. */
 export function errorText(err: unknown): string | undefined {
   if (!err) return;
@@ -130,6 +160,9 @@ export const api = {
     request<ChatSession>(key, `/projects/${encodeURIComponent(project)}/session`, {
       method: "POST",
       body: "{}",
+      // A hung broker request must eventually settle so the query layer can
+      // retry it — see CHAT_SESSION_ATTEMPT_TIMEOUT_MS.
+      signal: AbortSignal.timeout(CHAT_SESSION_ATTEMPT_TIMEOUT_MS),
     }),
 
   /** Tool name → user-friendly label, served by the sandbox itself. */
