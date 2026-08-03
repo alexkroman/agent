@@ -6,7 +6,6 @@ import {
   isConvertibleSchema,
   type StandardSchemaV1,
   toToolJsonSchema,
-  validateWithSchema,
 } from "./schema.ts";
 
 /** Minimal non-Zod Standard Schema with an ArkType-style converter. */
@@ -69,15 +68,15 @@ describe("toToolJsonSchema", () => {
   });
 });
 
-describe("validateWithSchema / formatSchemaIssues", () => {
+describe("~standard validation / formatSchemaIssues", () => {
   test("returns the typed value on success", async () => {
-    const result = await validateWithSchema(z.object({ n: z.number() }), { n: 1 });
+    const result = await z.object({ n: z.number() })["~standard"].validate({ n: 1 });
     expect(result.issues).toBeUndefined();
     if (!result.issues) expect(result.value).toEqual({ n: 1 });
   });
 
   test("formats issues with dotted paths", async () => {
-    const result = await validateWithSchema(z.object({ user: z.object({ id: z.string() }) }), {
+    const result = await z.object({ user: z.object({ id: z.string() }) })["~standard"].validate({
       user: { id: 5 },
     });
     expect(result.issues).toBeDefined();

@@ -12,7 +12,7 @@ import { TOOL_EXECUTION_TIMEOUT_MS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { STORAGE_DISABLED_MESSAGE } from "../sdk/db.ts";
 import type { GenerateOptions, GenerateResult } from "../sdk/generate.ts";
-import { formatSchemaIssues, validateWithSchema } from "../sdk/schema.ts";
+import { formatSchemaIssues } from "../sdk/schema.ts";
 import type { Message, ToolContext, ToolDef } from "../sdk/types.ts";
 import { errorDetail, errorMessage, toolError } from "../sdk/utils.ts";
 import type { HostGenerateFn } from "./generate.ts";
@@ -92,7 +92,8 @@ export async function executeToolCall(
 ): Promise<string> {
   const { tool, logger } = options;
   const schema = tool.inputSchema ?? EMPTY_PARAMS;
-  const parsed = await validateWithSchema(schema, args);
+  // The spec allows a sync or async validate; await normalizes both.
+  const parsed = await schema["~standard"].validate(args);
   if (parsed.issues) {
     return toolError(`Invalid arguments for tool "${name}": ${formatSchemaIssues(parsed.issues)}`);
   }

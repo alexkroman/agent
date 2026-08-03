@@ -19,7 +19,7 @@
 
 import { convert } from "html-to-text";
 import { z } from "zod";
-import { EMPTY_PARAMS, type ToolSchema, toToolJsonSchema } from "../sdk/_internal-types.ts";
+import { agentToolsToSchemas, type ToolSchema } from "../sdk/_internal-types.ts";
 import {
   FETCH_TIMEOUT_MS,
   HTML_ACCEPT,
@@ -340,21 +340,15 @@ export function resolveAllBuiltins(
   opts?: BuiltinToolOptions,
 ): ResolvedBuiltins {
   const defs: ToolDefRecord = {};
-  const schemas: ToolSchema[] = [];
   const guidance: string[] = [];
 
   for (const name of names) {
     const def = resolveBuiltin(name, opts);
     if (!def) continue;
     defs[name] = def;
-    schemas.push({
-      type: "function",
-      name,
-      description: def.description,
-      parameters: toToolJsonSchema(def.inputSchema ?? EMPTY_PARAMS) as ToolSchema["parameters"],
-    });
     if (def.guidance) guidance.push(def.guidance);
   }
 
-  return { defs, schemas, guidance };
+  // One tool→wire-schema mapping for builtins and agent tools alike.
+  return { defs, schemas: agentToolsToSchemas(defs), guidance };
 }

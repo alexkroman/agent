@@ -76,7 +76,10 @@ export interface AssemblyAIPipelineOptions {
    * EU data residency. Applies to STT and the LLM gateway; TTS has a single
    * endpoint. Note the EU gateway serves only Claude and most Gemini models,
    * so an EU agent must also override `llm` with a model the EU endpoint
-   * carries (e.g. `llm: "claude-sonnet-4-6"` after the spread).
+   * carries (e.g. `llm: "claude-sonnet-4-6"` after the spread). An override
+   * that replaces a whole stage descriptor must re-declare `region` itself —
+   * `stt: assemblyAIStt({ model, region: "eu" })` — since it replaces the
+   * preset's descriptor including its region.
    */
   region?: "us" | "eu";
 }

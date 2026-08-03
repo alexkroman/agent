@@ -312,6 +312,9 @@ export type AgentDef<S = DefaultSessionState> = {
   /**
    * How the LLM selects tools each step. Defaults to `"auto"`
    * ({@link DEFAULT_TOOL_CHOICE}): the model decides when to call a tool.
+   * Honored in pipeline mode and by the OpenAI Realtime transport; the
+   * AssemblyAI S2S service runs the tool loop service-side and does not
+   * take a tool-choice parameter.
    */
   toolChoice?: ToolChoice;
   /**

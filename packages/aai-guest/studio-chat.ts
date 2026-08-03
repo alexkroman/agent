@@ -23,6 +23,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
+import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAILlm } from "@alexkroman1/aai/llm";
 import { resolveAllBuiltins, resolveLlm } from "@alexkroman1/aai/runtime";
 import {
@@ -191,7 +192,7 @@ export function createGuestWebTools(): ToolSet {
         if (!def.inputSchema) return await def.execute((args ?? {}) as never, ctx as never);
         const parsed = await def.inputSchema["~standard"].validate(args ?? {});
         if (parsed.issues) {
-          return { error: `Invalid arguments: ${parsed.issues.map((i) => i.message).join("; ")}` };
+          return { error: `Invalid arguments: ${formatSchemaIssues(parsed.issues)}` };
         }
         return await def.execute(parsed.value as never, ctx as never);
       },

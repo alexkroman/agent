@@ -1,6 +1,5 @@
 import type { Db, ToolContext, ToolDef } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
-import type { z } from "zod";
 import agentDef from "./agent.ts";
 import { calculateTotal, orderView, type Pizza, pizzaPrice, type StateSlot } from "./shared.ts";
 
@@ -77,19 +76,19 @@ describe("pricing (shared.ts)", () => {
     expect(calculateTotal([a, b])).toBeCloseTo(8.99 * 4, 5);
   });
 
-  test("add_pizza schema defaults quantity to 1 and rejects non-positive quantities", () => {
-    // getTool goes through the agent's tools record, which erases the
-    // concrete schema type — recover it; the template authors these as zod.
-    const schema = getTool("add_pizza").inputSchema as z.ZodObject<z.ZodRawShape> | undefined;
+  test("add_pizza schema defaults quantity to 1 and rejects non-positive quantities", async () => {
+    const schema = getTool("add_pizza").inputSchema;
     if (!schema) throw new Error("add_pizza has no input schema");
-    const parsed = schema.parse({ size: "small", crust: "thin", toppings: [] });
-    expect(parsed.quantity).toBe(1);
-    expect(() =>
-      schema.parse({ size: "small", crust: "thin", toppings: [], quantity: 0 }),
-    ).toThrow();
-    expect(() =>
-      schema.parse({ size: "small", crust: "thin", toppings: [], quantity: 1.5 }),
-    ).toThrow();
+    // Validate through the Standard Schema contract — the vendor-neutral
+    // interface every inputSchema carries.
+    const validate = (value: unknown) => schema["~standard"].validate(value);
+    const ok = await validate({ size: "small", crust: "thin", toppings: [] });
+    if (ok.issues) throw new Error("expected valid input");
+    expect((ok.value as { quantity: number }).quantity).toBe(1);
+    const zero = await validate({ size: "small", crust: "thin", toppings: [], quantity: 0 });
+    expect(zero.issues).toBeDefined();
+    const frac = await validate({ size: "small", crust: "thin", toppings: [], quantity: 1.5 });
+    expect(frac.issues).toBeDefined();
   });
 });
 

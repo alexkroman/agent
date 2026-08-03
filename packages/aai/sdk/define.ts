@@ -140,12 +140,13 @@ export function agent<S = DefaultSessionState>(def: AgentParams<S>): AgentDef<S>
   if (system !== undefined && rest.systemPrompt !== undefined) {
     throw new Error("agent(): `system` and `systemPrompt` are aliases — set one, not both.");
   }
+  const normalizedLlm = normalizeLlm(llm);
   return {
     systemPrompt: system ?? DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
     maxSteps: DEFAULT_MAX_STEPS,
     tools: {},
     ...rest,
-    ...(llm !== undefined ? { llm: normalizeLlm(llm) } : {}),
+    ...(normalizedLlm ? { llm: normalizedLlm } : {}),
   };
 }

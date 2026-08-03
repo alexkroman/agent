@@ -31,13 +31,20 @@ export {
 
 export const EMPTY_PARAMS = z.object({});
 
-export { toToolJsonSchema } from "./schema.ts";
-
 export function agentToolsToSchemas(tools: Readonly<Record<string, ToolDef>>): ToolSchema[] {
-  return Object.entries(tools).map(([name, def]) => ({
-    type: "function",
-    name,
-    description: def.description,
-    parameters: toToolJsonSchema(def.inputSchema ?? EMPTY_PARAMS),
-  }));
+  return Object.entries(tools).map(([name, def]) => {
+    // TypeScript catches this rename; an untypechecked JS agent would
+    // otherwise silently ship a no-arg tool spec.
+    if ("parameters" in def && def.inputSchema === undefined) {
+      throw new Error(
+        `Tool "${name}" uses the removed \`parameters\` field — rename it to \`inputSchema\`.`,
+      );
+    }
+    return {
+      type: "function",
+      name,
+      description: def.description,
+      parameters: toToolJsonSchema(def.inputSchema ?? EMPTY_PARAMS),
+    };
+  });
 }

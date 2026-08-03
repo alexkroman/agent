@@ -43,8 +43,8 @@ function resolveTemplatesDir(): string {
  * unknown-template error, so the discoverable list and the validated list
  * can never drift.
  */
-export async function listTemplates(): Promise<string[]> {
-  const templatesDir = path.join(resolveTemplatesDir(), "templates");
+export async function listTemplates(root = resolveTemplatesDir()): Promise<string[]> {
+  const templatesDir = path.join(root, "templates");
   let available: Dirent[];
   try {
     available = await fs.readdir(templatesDir, { withFileTypes: true });
@@ -71,7 +71,7 @@ export async function downloadAndMergeTemplate(template: string, targetDir: stri
   const root = resolveTemplatesDir();
   const templatesDir = path.join(root, "templates");
 
-  const names = await listTemplates();
+  const names = await listTemplates(root);
   if (!names.includes(template)) {
     throw new Error(`Unknown template "${template}". Available templates: ${names.join(", ")}`);
   }

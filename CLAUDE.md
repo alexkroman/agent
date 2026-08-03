@@ -165,8 +165,10 @@ Subpath exports consumed by sibling packages and user agents:
 - `./s2s` — S2S provider factories (`openaiRealtime`)
 - `./tools` — keyless network builtins callable from user tool code
 - `./internal` — infrastructure shared with sibling packages (epochs,
-  owned maps, env brands, WS upgrade parsing); not a public API, kept off
-  the root barrel so authoring autocomplete stays small
+  owned maps, WS upgrade parsing, schema-issue formatting); not a public
+  API, kept off the root barrel so authoring autocomplete stays small.
+  The env brands live on `./runtime` instead — they appear in its public
+  signatures (`RuntimeOptions`, `withHostCredentialFallback`)
 
 #### `aai-ui` (UI)
 
@@ -1327,7 +1329,7 @@ of subpath exports in `aai/package.json`:
 | `@alexkroman1/aai/tts` | `sdk/providers/tts-barrel.ts` | TTS provider factories + types (`cartesia`, `rime`, `assemblyAITts`) |
 | `@alexkroman1/aai/s2s` | `sdk/providers/s2s-barrel.ts` | S2S provider factories + types (`openaiRealtime`; `assemblyAIS2s` is on the root export) |
 | `@alexkroman1/aai/tools` | `host/agent-tools.ts` (direct, not a barrel) | Keyless network builtins callable from user tool code: `fetchJson`, `visitWebpage`, `webSearch` |
-| `@alexkroman1/aai/internal` | `internal.ts` → 4 modules | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `parseWsUpgradeParams`, env brands). Not public API, not semver-covered, excluded from the docs |
+| `@alexkroman1/aai/internal` | `internal.ts` → 4 modules | Cross-package infrastructure (`createEpoch`, `createOwnedMap`, `parseWsUpgradeParams`, `formatSchemaIssues`). Not public API, not semver-covered, excluded from the docs |
 
 ### Concurrency primitives (use these, don't hand-roll)
 

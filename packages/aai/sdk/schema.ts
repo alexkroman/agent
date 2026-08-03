@@ -64,29 +64,39 @@ export type InferSchemaOutput<S> = S extends StandardSchemaV1<unknown, infer O> 
  * or a vendor `toJsonSchema()` method). Zod object schemas are the
  * documented default.
  */
-export type ToolInputSchema<Output = Record<string, unknown>> = StandardSchemaV1<unknown, Output>;
+export type ToolInputSchema = StandardSchemaV1<unknown, Record<string, unknown>>;
 
 /**
- * True when `value` is a schema {@link toToolJsonSchema} can convert: a Zod
- * v4 schema instance (its own `_zod` marker — deliberately NOT the
- * `~standard` interface, which zod also stamps onto its plain
- * `toJSONSchema()` *output*), or anything exposing a `toJsonSchema()` /
- * `toJSONSchema()` method (ArkType).
+ * The one probe both {@link isConvertibleSchema} and {@link toToolJsonSchema}
+ * share: returns the conversion thunk for a schema this SDK can turn into
+ * JSON Schema, or `undefined`. A Zod v4 schema instance is recognized by its
+ * own `_zod` marker — deliberately NOT the `~standard` interface, which zod
+ * also stamps onto its plain `toJSONSchema()` *output* — and other vendors
+ * by a `toJsonSchema()` / `toJSONSchema()` method (ArkType).
  */
+function jsonSchemaConverterFor(value: unknown): (() => unknown) | undefined {
+  if (typeof value !== "object" || value === null) return;
+  if ("_zod" in value) return () => z.toJSONSchema(value as z.ZodType);
+  if (!("~standard" in value)) return;
+  const convert =
+    (value as { toJsonSchema?: unknown }).toJsonSchema ??
+    (value as { toJSONSchema?: unknown }).toJSONSchema;
+  return typeof convert === "function" ? () => convert.call(value) : undefined;
+}
+
+/** True when `value` is a schema {@link toToolJsonSchema} can convert. */
 export function isConvertibleSchema(value: unknown): value is StandardSchemaV1 {
-  if (typeof value !== "object" || value === null) return false;
-  if ("_zod" in value) return true;
-  const candidate = value as { toJsonSchema?: unknown; toJSONSchema?: unknown };
-  return (
-    "~standard" in value &&
-    (typeof candidate.toJsonSchema === "function" || typeof candidate.toJSONSchema === "function")
-  );
+  return jsonSchemaConverterFor(value) !== undefined;
 }
 
 function stripDialect(jsonSchema: unknown): JSONSchema7 {
   const { $schema: _omit, ...rest } = jsonSchema as Record<string, unknown>;
   return rest as JSONSchema7;
 }
+
+/** Conversion is pure per schema object; cache it (schemas are module-level
+ *  constants, but `ctx.generate` converts per call). */
+const jsonSchemaCache = new WeakMap<object, JSONSchema7>();
 
 /**
  * Convert a Standard Schema to the JSON Schema shape providers expect.
@@ -102,35 +112,20 @@ function stripDialect(jsonSchema: unknown): JSONSchema7 {
  * the supported options — at definition/deploy time, not mid-call.
  */
 export function toToolJsonSchema(schema: StandardSchemaV1): JSONSchema7 {
-  // A real Zod v4 schema instance — NOT its toJSONSchema() output, which
-  // also self-describes as a zod standard schema but is not a ZodType.
-  if ("_zod" in schema) {
-    return stripDialect(z.toJSONSchema(schema as unknown as z.ZodType));
+  const cached = jsonSchemaCache.get(schema);
+  if (cached) return cached;
+  const convert = jsonSchemaConverterFor(schema);
+  if (!convert) {
+    const vendor = (schema as Partial<StandardSchemaV1>)["~standard"]?.vendor ?? "unknown";
+    throw new Error(
+      `Cannot convert a "${vendor}" schema to JSON Schema. ` +
+        "Use a Zod schema, or a Standard Schema exposing a toJsonSchema() method " +
+        "(e.g. ArkType).",
+    );
   }
-  const convert =
-    (schema as { toJsonSchema?: unknown }).toJsonSchema ??
-    (schema as { toJSONSchema?: unknown }).toJSONSchema;
-  if (typeof convert === "function") {
-    return stripDialect(convert.call(schema));
-  }
-  throw new Error(
-    `Cannot convert a "${schema["~standard"].vendor}" schema to JSON Schema. ` +
-      "Use a Zod schema, or a Standard Schema exposing a toJsonSchema() method " +
-      "(e.g. ArkType).",
-  );
-}
-
-/**
- * Validate `value` against a Standard Schema, normalizing the sync/async
- * split in the spec (a vendor may return either) to one awaited result.
- *
- * @internal
- */
-export async function validateWithSchema<Output>(
-  schema: StandardSchemaV1<unknown, Output>,
-  value: unknown,
-): Promise<StandardSchemaResult<Output>> {
-  return await schema["~standard"].validate(value);
+  const result = stripDialect(convert());
+  jsonSchemaCache.set(schema, result);
+  return result;
 }
 
 /** Render Standard Schema issues as one human-readable line. */

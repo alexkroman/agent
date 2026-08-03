@@ -17,7 +17,7 @@
  * @module internal
  */
 
-export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "./sdk/env-types.ts";
 export { createEpoch, type Epoch } from "./sdk/epoch.ts";
 export { createOwnedMap, type OwnedMap } from "./sdk/owned-map.ts";
+export { formatSchemaIssues } from "./sdk/schema.ts";
 export { parseWsUpgradeParams } from "./sdk/ws-upgrade.ts";

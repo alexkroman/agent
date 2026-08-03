@@ -16,14 +16,21 @@ import type { LlmProvider } from "../../providers.ts";
 import { assemblyAILlm } from "./assemblyai.ts";
 import { gateway } from "./gateway.ts";
 
-/** Desugar a model-id string to its gateway descriptor. */
-export function llmFromString(model: string): LlmProvider {
-  return model.includes("/") ? gateway({ model }) : assemblyAILlm({ model });
-}
+/**
+ * One descriptor per model id, so repeated desugaring of the same string
+ * yields the same object — `createGenerateFn` memoizes resolved
+ * `LanguageModel`s by descriptor identity, which fresh literals would defeat
+ * on every `ctx.generate({ llm: "..." })` call.
+ */
+const byModelId = new Map<string, LlmProvider>();
 
-/** Normalize an `llm` field that may be a string shorthand. */
-export function normalizeLlm(llm: LlmProvider | string): LlmProvider;
-export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider | undefined;
+/** Normalize an `llm` field that may be a model-id string shorthand. */
 export function normalizeLlm(llm: LlmProvider | string | undefined): LlmProvider | undefined {
-  return typeof llm === "string" ? llmFromString(llm) : llm;
+  if (typeof llm !== "string") return llm;
+  let descriptor = byModelId.get(llm);
+  if (!descriptor) {
+    descriptor = llm.includes("/") ? gateway({ model: llm }) : assemblyAILlm({ model: llm });
+    byModelId.set(llm, descriptor);
+  }
+  return descriptor;
 }

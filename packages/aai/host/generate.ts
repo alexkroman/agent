@@ -102,7 +102,7 @@ export function createGenerateFn(opts: CreateGenerateFnOptions): HostGenerateFn 
   };
 
   return async (options, callOpts): Promise<GenerateResult> => {
-    const model = resolveModel(normalizeLlm(options.llm) ?? opts.llm);
+    const model = resolveModel(options.llm ? normalizeLlm(options.llm) : opts.llm);
     const common = {
       model,
       prompt: options.prompt,
