@@ -6,7 +6,7 @@
  *
  * - The *descriptor* layer (`SttProvider` / `LlmProvider` / `TtsProvider`) is
  *   pure data — `{ kind, options }` objects returned by the user-facing
- *   factories (`assemblyAI(...)`, `anthropic(...)`, `cartesia(...)`). They
+ *   factories (`assemblyAIStt(...)`, `anthropic(...)`, `cartesia(...)`). They
  *   are JSON-serializable, contain no functions, and can cross the CLI →
  *   server → guest boundary without evaluating any third-party SDK.
  *   They live in `sdk/` alongside `Manifest` and have zero Node-only deps.
@@ -39,20 +39,55 @@ export interface ProviderDescriptor<Kind extends string, Options> {
   readonly options: Options;
 }
 
-/** Descriptor for an STT provider. Returned by factories like `assemblyAI(...)`. */
-export type SttProvider = ProviderDescriptor<string, Record<string, unknown>>;
+// The `__stage` property on each descriptor alias below is a compile-time
+// stage tag, so a descriptor built for one pipeline stage cannot be assigned
+// to another — `agent({ stt: cartesia() })` is a type error instead of a
+// runtime failure. It is optional and never present at runtime (factories
+// don't set it), so plain `{ kind, options }` objects — e.g. configs parsed
+// off the wire — remain assignable to every stage.
 
-/** Descriptor for an LLM provider. Returned by factories like `anthropic(...)`. */
-export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>>;
+/**
+ * Descriptor for an STT provider. Returned by factories like
+ * `assemblyAIStt(...)` from `@alexkroman1/aai/stt`.
+ */
+export type SttProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+  /** Compile-time stage tag; never present at runtime. */
+  readonly __stage?: "stt";
+};
 
-/** Descriptor for a TTS provider. Returned by factories like `cartesia(...)`. */
-export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>>;
+/**
+ * Descriptor for an LLM provider. Returned by factories like
+ * `anthropic(...)` from `@alexkroman1/aai/llm`.
+ */
+export type LlmProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+  /** Compile-time stage tag; never present at runtime. */
+  readonly __stage?: "llm";
+};
 
-/** Descriptor for an S2S provider. Returned by factories like `openaiRealtime(...)`. */
-export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>>;
+/**
+ * Descriptor for a TTS provider. Returned by factories like
+ * `cartesia(...)` from `@alexkroman1/aai/tts`.
+ */
+export type TtsProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+  /** Compile-time stage tag; never present at runtime. */
+  readonly __stage?: "tts";
+};
+
+/**
+ * Descriptor for an S2S provider. Returned by `assemblyAIS2s(...)` (root
+ * export) or `openaiRealtime(...)` from `@alexkroman1/aai/s2s`.
+ */
+export type S2sProvider = ProviderDescriptor<string, Record<string, unknown>> & {
+  /** Compile-time stage tag; never present at runtime. */
+  readonly __stage?: "s2s";
+};
 
 // -------- STT openable (host-only) ------------------------------------------
 
+/**
+ * Error raised by an STT provider stream, with a typed `code` naming the
+ * failure phase: connecting, authenticating, or mid-stream.
+ */
 export interface SttError extends Error {
   readonly code: "stt_connect_failed" | "stt_auth_failed" | "stt_stream_error";
 }
@@ -62,6 +97,7 @@ export function makeSttError(code: SttError["code"], message: string): SttError 
   return Object.assign(new Error(message), { code }) as SttError;
 }
 
+/** Events emitted by an open {@link SttSession}. */
 export type SttEvents = {
   /** Interim transcript; drives barge-in detection. */
   partial: (text: string) => void;
@@ -71,7 +107,13 @@ export type SttEvents = {
   error: (err: SttError) => void;
 };
 
+/**
+ * Host-side handle to one open STT provider stream (pipeline mode). Produced
+ * by the host's provider resolver at session start; user code never
+ * constructs one.
+ */
 export interface SttSession {
+  /** Push one PCM16 audio frame from the client into the transcriber. */
   sendAudio(pcm: Int16Array): void;
   on<E extends keyof SttEvents>(event: E, fn: SttEvents[E]): Unsubscribe;
   close(): Promise<void>;
@@ -84,8 +126,11 @@ export interface SttSession {
   updateAgentContext?(text: string): void;
 }
 
+/** Options the host passes when opening an STT stream. */
 export interface SttOpenOptions {
+  /** Capture sample rate of the inbound PCM, in Hz. */
   sampleRate: number;
+  /** Provider API key, resolved from the agent's env. */
   apiKey: string;
   sttPrompt?: string | undefined;
   /**
@@ -110,6 +155,10 @@ export interface SttOpener {
 
 // -------- TTS openable (host-only) ------------------------------------------
 
+/**
+ * Error raised by a TTS provider stream, with a typed `code` naming the
+ * failure phase: connecting, authenticating, or mid-stream.
+ */
 export interface TtsError extends Error {
   readonly code: "tts_connect_failed" | "tts_auth_failed" | "tts_stream_error";
 }
@@ -119,6 +168,7 @@ export function makeTtsError(code: TtsError["code"], message: string): TtsError 
   return Object.assign(new Error(message), { code }) as TtsError;
 }
 
+/** Events emitted by an open {@link TtsSession}. */
 export type TtsEvents = {
   /** One PCM16 audio chunk. Orchestrator forwards to the client. */
   audio: (pcm: Int16Array) => void;
@@ -134,6 +184,11 @@ export type TtsEvents = {
   error: (err: TtsError) => void;
 };
 
+/**
+ * Host-side handle to one open TTS provider stream (pipeline mode). Produced
+ * by the host's provider resolver at session start; user code never
+ * constructs one.
+ */
 export interface TtsSession {
   /** Push text deltas from the LLM. Provider may synthesize as chunks arrive. */
   sendText(text: string): void;
@@ -145,9 +200,13 @@ export interface TtsSession {
   close(): Promise<void>;
 }
 
+/** Options the host passes when opening a TTS stream. */
 export interface TtsOpenOptions {
+  /** Playback sample rate of the synthesized PCM, in Hz. */
   sampleRate: number;
+  /** Provider API key, resolved from the agent's env. */
   apiKey: string;
+  /** Aborts the open (and the session) when the voice session ends. */
   signal: AbortSignal;
 }
 

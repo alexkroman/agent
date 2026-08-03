@@ -10,7 +10,8 @@
  * exclusively through the injected `getSnapshot`/`updateState` deps.
  */
 
-import { createEpoch, DEFAULT_MAX_HISTORY, safeJsonParse, toArgsRecord } from "@alexkroman1/aai";
+import { DEFAULT_MAX_HISTORY, safeJsonParse, toArgsRecord } from "@alexkroman1/aai";
+import { createEpoch } from "@alexkroman1/aai/internal";
 import {
   type ClientEvent,
   lenientParse,

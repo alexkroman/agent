@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createOwnedMap, errorMessage, type OwnedMap } from "@alexkroman1/aai";
+import { errorMessage } from "@alexkroman1/aai";
+import { createOwnedMap, type OwnedMap } from "@alexkroman1/aai/internal";
 import { debug } from "./_debug-log.ts";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";
 import { IDLE_SANDBOX_MS } from "./constants.ts";

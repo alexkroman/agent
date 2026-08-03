@@ -1,5 +1,5 @@
 import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
-import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { assemblyAILlm } from "@alexkroman1/aai/llm";
 import systemPrompt from "./system-prompt.md?raw";
 
 export default agent({

@@ -14,7 +14,10 @@ import {
   STT_CONNECT_RETRY_DELAY_MS,
   STT_CONNECT_TIMEOUT_MS,
 } from "../../../sdk/constants.ts";
-import { ASSEMBLYAI_STREAMING_EU_URL, assemblyAI } from "../../../sdk/providers/stt/assemblyai.ts";
+import {
+  ASSEMBLYAI_STREAMING_EU_URL,
+  assemblyAIStt,
+} from "../../../sdk/providers/stt/assemblyai.ts";
 import { flush } from "../../_test-utils.ts";
 import { type AssemblyAISession, openAssemblyAI } from "./assemblyai.ts";
 
@@ -85,7 +88,7 @@ async function openSession(
   })) as AssemblyAISession;
 }
 
-describe("assemblyAI STT adapter — fixture replay", () => {
+describe("assemblyAIStt STT adapter — fixture replay", () => {
   test("maps turn events onto partial/final SttEvents", async () => {
     const fixture = JSON.parse(
       await readFile(join(here, "fixtures/assemblyai/basic-turn.json"), "utf8"),
@@ -115,7 +118,7 @@ describe("assemblyAI STT adapter — fixture replay", () => {
   });
 });
 
-describe("assemblyAI STT adapter — raw turn trace (AAI_DEBUG)", () => {
+describe("assemblyAIStt STT adapter — raw turn trace (AAI_DEBUG)", () => {
   /**
    * Load a fresh module graph with debug logging on, so `consoleLogger.debug`
    * (bound at import time from `debugLoggingEnabled`) is live `console.debug`.
@@ -201,7 +204,7 @@ describe("assemblyAI STT adapter — raw turn trace (AAI_DEBUG)", () => {
   });
 });
 
-describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", () => {
+describe("assemblyAIStt STT adapter — agent_context (Universal-3.5 Pro only)", () => {
   test("universal-3-5-pro: passes agentContext at connect and updates it mid-stream", async () => {
     const session = await openSession(
       { model: "universal-3-5-pro" },
@@ -282,7 +285,7 @@ describe("assemblyAI STT adapter — agent_context (Universal-3.5 Pro only)", ()
   });
 });
 
-describe("assemblyAI STT adapter — prompt default", () => {
+describe("assemblyAIStt STT adapter — prompt default", () => {
   test("sends no prompt when the agent configures none (default is empty)", async () => {
     // Biasing is opt-in: a generic identifier prompt measured no better than
     // none, and an off-target one steers the transcript toward vocabulary the
@@ -312,7 +315,7 @@ describe("assemblyAI STT adapter — prompt default", () => {
   });
 });
 
-describe("assemblyAI STT adapter — voice focus", () => {
+describe("assemblyAIStt STT adapter — voice focus", () => {
   test("defaults voiceFocus to near-field at connect", async () => {
     const session = await openSession({ model: "universal-3-5-pro" });
     const fake = session._transcriber as unknown as FakeTranscriber;
@@ -333,7 +336,7 @@ describe("assemblyAI STT adapter — voice focus", () => {
   });
 });
 
-describe("assemblyAI STT adapter — endpointing (min_turn_silence)", () => {
+describe("assemblyAIStt STT adapter — endpointing (min_turn_silence)", () => {
   test("always sets minTurnSilence; defaults to DEFAULT_MIN_TURN_SILENCE_MS", async () => {
     // Endpointing is the provider's job — the pipeline transport commits a
     // turn on every final, so this window is the only thing keeping a
@@ -353,10 +356,10 @@ describe("assemblyAI STT adapter — endpointing (min_turn_silence)", () => {
   });
 });
 
-describe("assemblyAI STT adapter — region (EU data residency)", () => {
+describe("assemblyAIStt STT adapter — region (EU data residency)", () => {
   test("factory: region lands in the descriptor options and is absent by default", () => {
-    expect(assemblyAI({ region: "eu" }).options.region).toBe("eu");
-    expect("region" in assemblyAI().options).toBe(false);
+    expect(assemblyAIStt({ region: "eu" }).options.region).toBe("eu");
+    expect("region" in assemblyAIStt().options).toBe(false);
   });
 
   test("region: 'eu' points the SDK's streaming socket at the EU endpoint", async () => {
@@ -384,7 +387,7 @@ describe("assemblyAI STT adapter — region (EU data residency)", () => {
   });
 });
 
-describe("assemblyAI STT adapter — connect budget", () => {
+describe("assemblyAIStt STT adapter — connect budget", () => {
   test("overrides the SDK's 1000 ms connect deadline and pins the retry policy", async () => {
     const session = await openSession({ model: "universal-3-5-pro" });
     const fake = session._transcriber as unknown as FakeTranscriber;
@@ -423,7 +426,7 @@ describe("assemblyAI STT adapter — connect budget", () => {
   });
 });
 
-describe("assemblyAI STT adapter — frame coalescing (50–1000 ms)", () => {
+describe("assemblyAIStt STT adapter — frame coalescing (50–1000 ms)", () => {
   // At 16 kHz mono PCM16: 20 ms = 320 samples, 50 ms = 800, 100 ms = 1600,
   // 1000 ms = 16000. AssemblyAI streaming rejects frames outside [50, 1000] ms.
   const SAMPLES_20MS = 320;

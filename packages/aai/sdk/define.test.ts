@@ -5,7 +5,7 @@ import { agent, tool } from "./define.ts";
 import { parseManifest } from "./manifest.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
-import { assemblyAI } from "./providers/stt/assemblyai.ts";
+import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 
 describe("tool()", () => {
@@ -61,7 +61,7 @@ describe("agent()", () => {
   });
 
   function pipelineAgent() {
-    const stt = assemblyAI({ model: "universal-3-5-pro" });
+    const stt = assemblyAIStt({ model: "universal-3-5-pro" });
     const tts = cartesia({ voice: "v" });
     const llm = anthropic({ model: "claude-haiku-4-5" });
     return { stt, llm, tts, def: agent({ name: "t", systemPrompt: "p", stt, llm, tts }) };

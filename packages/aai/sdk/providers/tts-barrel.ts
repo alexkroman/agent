@@ -2,19 +2,16 @@
 /**
  * `@alexkroman1/aai/tts` subpath barrel.
  *
- * Re-exports the descriptor factories (`assemblyAI`, `cartesia`, `rime`) and
- * the shared TTS contract types. Does not pull in any provider SDK — the host
- * resolver handles that at session start.
- *
- * Note: the `assemblyAI` factory here shares its name with the STT factory in
- * `@alexkroman1/aai/stt` and the LLM factory in `@alexkroman1/aai/llm`. When
- * using more than one, alias on import
- * (`import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts"`).
+ * Re-exports the descriptor factories (`assemblyAITts`, `cartesia`, `rime`)
+ * and the shared TTS contract types. Does not pull in any provider SDK — the
+ * host resolver handles that at session start.
  *
  * Named re-exports rather than `export *`: the wildcard form needs a
  * `noReExportAll` suppression per line, and the escape-hatch ratchet only
  * moves down. Listing them also makes the public surface of this subpath
  * readable in one place — add new symbols here when a provider gains one.
+ *
+ * @module tts
  */
 
 export type {
@@ -36,7 +33,7 @@ export {
   type AssemblyAITtsOptions,
   type AssemblyAITtsProvider,
   type AssemblyAITtsVoice,
-  assemblyAI,
+  assemblyAITts,
 } from "./tts/assemblyai.ts";
 export {
   CARTESIA_API_KEY_ENV,

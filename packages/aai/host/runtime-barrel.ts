@@ -12,6 +12,8 @@
  * `resolveLlm`, `resolveAllBuiltins`); most of the rest is platform plumbing
  * kept importable for aai-server/aai-cli and tagged `@internal` at its
  * declaration site.
+ *
+ * @module runtime
  */
 
 // Note: ./_runtime-conformance.ts is intentionally NOT re-exported here.
@@ -20,6 +22,7 @@
 // imports in environments without dev deps installed (e.g. the deployed
 // platform server). It is consumed directly by sibling test files.
 
+export type { AgentEnv, HostCredentialEnv, ProviderEnv } from "../sdk/env-types.ts";
 export type { RunCodeExecutor } from "./builtin-run-code.ts";
 export {
   type BuiltinToolOptions,

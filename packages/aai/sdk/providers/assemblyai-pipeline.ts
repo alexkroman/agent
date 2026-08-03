@@ -8,17 +8,16 @@
  * reason was arithmetic rather than misunderstanding. S2S was the absence of
  * configuration (an `agent()` with no provider fields ran on the
  * speech-to-speech service), while the recommended pipeline cost four
- * imports, two of them aliasing the same exported name, plus three magic
- * strings:
+ * imports plus three magic strings:
  *
  * ```ts
  * import { agent } from "@alexkroman1/aai";
- * import { assemblyAI } from "@alexkroman1/aai/stt";
- * import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
- * import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+ * import { assemblyAIStt } from "@alexkroman1/aai/stt";
+ * import { assemblyAILlm } from "@alexkroman1/aai/llm";
+ * import { assemblyAITts } from "@alexkroman1/aai/tts";
  * export default agent({
  *   name: "Vera",
- *   stt: assemblyAI({ model: "universal-3-5-pro" }),
+ *   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
  *   llm: assemblyAILlm({ model: "gpt-5.5" }),
  *   tts: assemblyAITts({ voice: "vera" }),
  * });
@@ -48,12 +47,12 @@
  * ```
  */
 
-import { type AssemblyAILlmProvider, assemblyAI as assemblyAILlm } from "./llm/assemblyai.ts";
-import { type AssemblyAIProvider, assemblyAI as assemblyAIStt } from "./stt/assemblyai.ts";
+import { type AssemblyAILlmProvider, assemblyAILlm } from "./llm/assemblyai.ts";
+import { type AssemblyAIProvider, assemblyAIStt } from "./stt/assemblyai.ts";
 import {
   type AssemblyAITtsProvider,
   type AssemblyAITtsVoice,
-  assemblyAI as assemblyAITts,
+  assemblyAITts,
 } from "./tts/assemblyai.ts";
 
 export interface AssemblyAIPipelineOptions {

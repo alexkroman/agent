@@ -40,7 +40,10 @@ export {
  *
  * Cast because `voiceIsolation` is newer than TypeScript's DOM lib.
  *
- * @internal
+ * Public so a custom client that opens its own microphone gets the same
+ * signal the built-in capture paths do.
+ *
+ * @public
  */
 export const VOICE_CAPTURE_CONSTRAINTS = {
   echoCancellation: true,
@@ -167,9 +170,10 @@ export type VoiceSessionOptions = {
    */
   onSessionId?: ((sessionId: string) => void) | undefined;
   /**
-   * Session ID from a previous connection. When set, the server will
-   * attempt to restore persisted session state (if the agent has
-   * `persistence` enabled). Sensitive — see {@link onSessionId}.
+   * Session ID from a previous connection. When set, the server resumes
+   * that session if its per-session state is still within the resume grace
+   * window (`SESSION_RESUME_GRACE_MS`), replaying history into the new
+   * connection. Sensitive — see {@link onSessionId}.
    */
   resumeSessionId?: string | undefined;
   /**
@@ -202,10 +206,10 @@ export type ClientTheme = {
   bg?: string;
   /** Primary accent color. Default: `#3F2BC1`. */
   primary?: string;
-  /** Main text color. */
+  /** Main text color. Default: `#1B1A18`. */
   text?: string;
-  /** Surface/card color. */
+  /** Surface/card color. Default: `#FFFFFF`. */
   surface?: string;
-  /** Border color. */
+  /** Border color. Default: `#DCD7CC`. */
   border?: string;
 };

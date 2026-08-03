@@ -39,12 +39,12 @@ function resolveTemplatesDir(): string {
 }
 
 /**
- * Copy a template into targetDir, merging scaffold files underneath.
+ * List the shipped template names (sorted). Backs `aai templates` and the
+ * unknown-template error, so the discoverable list and the validated list
+ * can never drift.
  */
-export async function downloadAndMergeTemplate(template: string, targetDir: string): Promise<void> {
-  const root = resolveTemplatesDir();
-  const templatesDir = path.join(root, "templates");
-
+export async function listTemplates(): Promise<string[]> {
+  const templatesDir = path.join(resolveTemplatesDir(), "templates");
   let available: Dirent[];
   try {
     available = await fs.readdir(templatesDir, { withFileTypes: true });
@@ -58,7 +58,20 @@ export async function downloadAndMergeTemplate(template: string, targetDir: stri
       { cause: err },
     );
   }
-  const names = available.filter((e) => e.isDirectory()).map((e) => e.name);
+  return available
+    .filter((e) => e.isDirectory())
+    .map((e) => e.name)
+    .sort();
+}
+
+/**
+ * Copy a template into targetDir, merging scaffold files underneath.
+ */
+export async function downloadAndMergeTemplate(template: string, targetDir: string): Promise<void> {
+  const root = resolveTemplatesDir();
+  const templatesDir = path.join(root, "templates");
+
+  const names = await listTemplates();
   if (!names.includes(template)) {
     throw new Error(`Unknown template "${template}". Available templates: ${names.join(", ")}`);
   }

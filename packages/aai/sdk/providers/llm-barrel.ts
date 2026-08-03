@@ -6,15 +6,12 @@
  * `@ai-sdk/anthropic` directly so the agent bundle stays free of eager
  * env reads and other SDK side-effects.
  *
- * Note: the `assemblyAI` factory here shares its name with the STT factory in
- * `@alexkroman1/aai/stt` and the TTS factory in `@alexkroman1/aai/tts`. When
- * using more than one, alias on import
- * (`import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm"`).
- *
  * Named re-exports rather than `export *`: the wildcard form needs a
  * `noReExportAll` suppression per line, and the escape-hatch ratchet only
  * moves down. Listing them also makes the public surface of this subpath
  * readable in one place — add new symbols here when a provider gains one.
+ *
+ * @module llm
  */
 
 export type { LlmProvider, ProviderDescriptor } from "../providers.ts";
@@ -36,7 +33,7 @@ export {
   type AssemblyAILlmOptions,
   type AssemblyAILlmProvider,
   type AssemblyAIReasoningEffort,
-  assemblyAI,
+  assemblyAILlm,
   gatewayModelIds,
 } from "./llm/assemblyai.ts";
 export {

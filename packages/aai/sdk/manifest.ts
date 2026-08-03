@@ -38,7 +38,7 @@ const ToolManifestSchema = z.object({
 
 /**
  * Provider descriptor — a `{ kind, options }` pair produced by factories
- * like `assemblyAI(...)` / `anthropic(...)` / `cartesia(...)`. Kept
+ * like `assemblyAIStt(...)` / `anthropic(...)` / `cartesia(...)`. Kept
  * deliberately generic at the schema layer: kind-specific validation lives
  * in the host-side resolver, which knows what each adapter expects.
  *
@@ -100,7 +100,7 @@ const ManifestSchema = z.object({
 /**
  * The provider-descriptor fields, re-typed from the generic parsed shape to
  * the SDK's nominal aliases so `Manifest` consumers meet the same types the
- * factories (`assemblyAI(...)`, `anthropic(...)`) return.
+ * factories (`assemblyAIStt(...)`, `anthropic(...)`) return.
  */
 type ManifestProviders = {
   stt?: SttProvider | undefined;

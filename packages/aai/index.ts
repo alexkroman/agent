@@ -11,6 +11,8 @@
  * Provider factories live on subpaths: `@alexkroman1/aai/stt`,
  * `@alexkroman1/aai/llm`, and `@alexkroman1/aai/tts` (pipeline mode). See
  * also `@alexkroman1/aai/utils` for zod-free helpers usable in tool code.
+ * Infrastructure shared with the sibling packages lives on
+ * `@alexkroman1/aai/internal` and is not part of the public API.
  */
 
 // biome-ignore-all lint/performance/noReExportAll: barrel file by design
@@ -18,10 +20,7 @@
 export * from "./sdk/constants.ts";
 export * from "./sdk/db.ts";
 export * from "./sdk/define.ts";
-export * from "./sdk/env-types.ts";
-export * from "./sdk/epoch.ts";
 export * from "./sdk/generate.ts";
-export * from "./sdk/owned-map.ts";
 // The one preset that belongs next to `agent()` rather than behind a provider
 // subpath: it IS the recommended configuration, and requiring three more
 // imports to reach it is what made the wrong mode the easy one.
@@ -31,4 +30,3 @@ export * from "./sdk/providers/assemblyai-pipeline.ts";
 export * from "./sdk/providers/s2s/assemblyai.ts";
 export * from "./sdk/types.ts";
 export * from "./sdk/utils.ts";
-export * from "./sdk/ws-upgrade.ts";

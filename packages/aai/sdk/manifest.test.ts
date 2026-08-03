@@ -8,7 +8,7 @@ import { agentToolsToSchemas, toAgentConfig } from "./manifest-barrel.ts";
 import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
-import { assemblyAI } from "./providers/stt/assemblyai.ts";
+import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 
 describe("parseManifest", () => {
@@ -144,7 +144,7 @@ describe("manifest type contracts", () => {
 });
 
 describe("parseManifest — mode classification", () => {
-  const stubStt = assemblyAI({ model: "universal-3-5-pro" });
+  const stubStt = assemblyAIStt({ model: "universal-3-5-pro" });
   const stubTts = cartesia({ voice: "v" });
   const stubLlm = anthropic({ model: "claude-haiku-4-5" });
 
@@ -205,7 +205,7 @@ describe("parseManifest — mode classification", () => {
 
 describe("parseManifest — silence nudge", () => {
   const pipelineFields = {
-    stt: assemblyAI({ model: "universal-3-5-pro" }),
+    stt: assemblyAIStt({ model: "universal-3-5-pro" }),
     llm: anthropic({ model: "claude-haiku-4-5" }),
     tts: cartesia({ voice: "v" }),
   };
@@ -271,7 +271,7 @@ describe("parseManifest — silence nudge", () => {
 
 describe("parseManifest — pipeline voice tuning", () => {
   const pipelineFields = {
-    stt: assemblyAI({ model: "universal-3-5-pro" }),
+    stt: assemblyAIStt({ model: "universal-3-5-pro" }),
     llm: anthropic({ model: "claude-haiku-4-5" }),
     tts: cartesia({ voice: "v" }),
   };

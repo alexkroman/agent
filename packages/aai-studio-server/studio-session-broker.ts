@@ -29,7 +29,8 @@
  * (the client re-brokers on a dead chat URL).
  */
 
-import { createOwnedMap, errorMessage } from "@alexkroman1/aai";
+import { errorMessage } from "@alexkroman1/aai";
+import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
 import { registerGuestRpcHandlers } from "aai-server/sandbox-guest-rpc";

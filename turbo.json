@@ -162,6 +162,7 @@
       ],
       "inputs": [
         "typedoc.json",
+        "home.md",
         "tsconfig.typedoc.json",
         "$TURBO_ROOT$/packages/aai/typedoc.json",
         "$TURBO_ROOT$/packages/aai-ui/typedoc.json"

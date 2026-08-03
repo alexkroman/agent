@@ -80,7 +80,12 @@ async function runCommand(
   } catch (err: unknown) {
     const code = err instanceof CliError ? err.code : "command_failed";
     const hint = err instanceof CliError ? err.hint : undefined;
-    if (mode === "human") log.error(errorMessage(err));
+    if (mode === "human") {
+      log.error(errorMessage(err));
+      // The hint is the recovery step — it must reach the terminal, not just
+      // the JSON result line (for a long time it reached machines only).
+      if (hint) log.info(hint);
+    }
     result = fail(code, errorMessage(err), hint);
   }
   // Await the flush before exiting: on a pipe (the JSON-mode case) stdout is
@@ -94,7 +99,11 @@ const init = defineCommand({
   args: {
     dir: { type: "positional", description: "Project directory", required: false },
     force: { type: "boolean", alias: "f", description: "Overwrite existing files" },
-    template: { type: "string", alias: "t", description: "Template to use (e.g. pizza-ordering)" },
+    template: {
+      type: "string",
+      alias: "t",
+      description: "Template to use (run `aai templates` for the list)",
+    },
     server: sharedArgs.server,
     yes: sharedArgs.yes,
     json: sharedArgs.json,
@@ -290,7 +299,7 @@ const storageStatus = defineCommand({
 });
 
 const storageEnable = defineCommand({
-  meta: { name: "enable", description: "Enable the agent's database (storage)" },
+  meta: { name: "enable", description: "Enable the agent's app database" },
   args: {
     dir: storageDir,
     server: sharedArgs.server,
@@ -307,7 +316,7 @@ const storageEnable = defineCommand({
 const storageDisable = defineCommand({
   meta: {
     name: "disable",
-    description: "Disable storage (DROPS the database schema and all its data)",
+    description: "Disable storage and DROP the database schema with all its data",
   },
   args: {
     dir: storageDir,
@@ -327,8 +336,26 @@ const storageDisable = defineCommand({
 });
 
 const storage = defineCommand({
-  meta: { name: "storage", description: "Manage the agent's database (storage)" },
+  meta: { name: "storage", description: "Manage the agent's app database" },
   subCommands: { status: storageStatus, enable: storageEnable, disable: storageDisable },
+});
+
+const templates = defineCommand({
+  meta: { name: "templates", description: "List available project templates" },
+  args: {
+    json: sharedArgs.json,
+  },
+  async run({ args }) {
+    await runCommand(args, async (mode) => {
+      const { listTemplates } = await import("./_templates.ts");
+      const names = await listTemplates();
+      if (mode === "human") {
+        for (const name of names) log.message(name);
+        log.info("Scaffold one with `aai init --template <name>`.");
+      }
+      return { ok: true, data: { templates: names } };
+    });
+  },
 });
 
 export const mainCommand = defineCommand({
@@ -342,6 +369,7 @@ export const mainCommand = defineCommand({
     delete: del,
     secret,
     storage,
+    templates,
   },
 });
 

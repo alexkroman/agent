@@ -1,5 +1,5 @@
 import { agent, assemblyAIPipeline, tool } from "@alexkroman1/aai";
-import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+import { assemblyAITts } from "@alexkroman1/aai/tts";
 import { z } from "zod";
 import { getGameState, resetGameState } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";

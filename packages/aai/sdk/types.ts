@@ -392,8 +392,12 @@ export type AgentDef<S = DefaultSessionState> = {
    */
   stt?: SttProvider;
   /**
-   * Pluggable LLM provider (Vercel AI SDK `LanguageModel`). Set together
-   * with `stt` and `tts` for pipeline mode.
+   * Pluggable LLM provider descriptor from `@alexkroman1/aai/llm` (e.g.
+   * `anthropic({ model })`). Set together with `stt` and `tts` for pipeline
+   * mode. Note this is pure serializable data, not a Vercel AI SDK
+   * `LanguageModel` instance — the host resolves the descriptor into a
+   * `LanguageModel` at session start, using credentials from the agent's
+   * env.
    */
   llm?: LlmProvider;
   /**

@@ -10,7 +10,7 @@ import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { anthropic } from "../sdk/providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
-import { assemblyAI } from "../sdk/providers/stt/assemblyai.ts";
+import { assemblyAIStt } from "../sdk/providers/stt/assemblyai.ts";
 import { cartesia } from "../sdk/providers/tts/cartesia.ts";
 import type { ToolDef } from "../sdk/types.ts";
 import { CONFORMANCE_AGENT, testRuntime } from "./_runtime-conformance.ts";
@@ -538,7 +538,7 @@ describe("createRuntime — provider resolution seams", () => {
       createRuntime({
         agent: { ...baseAgent, ...tuning },
         env: PROVIDER_KEYS,
-        stt: assemblyAI({ model: "universal-3-5-pro" }),
+        stt: assemblyAIStt({ model: "universal-3-5-pro" }),
         llm: anthropic({ model: "claude-haiku-4-5" }),
         tts: cartesia(),
       }),
@@ -554,7 +554,7 @@ describe("createRuntime — provider resolution seams", () => {
       agent: baseAgent,
       env: PROVIDER_KEYS,
       logger,
-      stt: assemblyAI({ model: "universal-3-5-pro" }),
+      stt: assemblyAIStt({ model: "universal-3-5-pro" }),
       llm: anthropic({ model: "claude-haiku-4-5" }),
       tts: cartesia(),
     });

@@ -17,6 +17,7 @@ export const SONIOX_KIND = "soniox" as const;
 /** Agent-env variable holding the Soniox API key. */
 export const SONIOX_API_KEY_ENV = "SONIOX_API_KEY";
 
+/** Options for {@link soniox}. */
 export interface SonioxOptions {
   /**
    * Streaming model. Defaults to `"stt-rt-v3"`. Any string is forwarded
@@ -31,6 +32,7 @@ export interface SonioxOptions {
   languageHints?: readonly string[];
 }
 
+/** Descriptor returned by {@link soniox}. */
 export type SonioxProvider = SttProvider & {
   readonly kind: typeof SONIOX_KIND;
   readonly options: SonioxOptions;

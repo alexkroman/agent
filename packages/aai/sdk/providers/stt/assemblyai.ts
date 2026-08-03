@@ -7,14 +7,14 @@
  * `host/providers/resolve.ts` turns it into an openable `SttOpener`
  * during `createRuntime`.
  *
- * Note: this factory shares its name with the TTS factory in
- * `@alexkroman1/aai/tts` and the LLM factory in `@alexkroman1/aai/llm`. When
- * using more than one, alias on import:
+ * The three AssemblyAI stage factories have distinct names
+ * (`assemblyAIStt`, `assemblyAILlm`, `assemblyAITts`), so they can be
+ * imported side by side:
  *
  * ```ts
- * import { assemblyAI } from "@alexkroman1/aai/stt";
- * import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
- * import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
+ * import { assemblyAIStt } from "@alexkroman1/aai/stt";
+ * import { assemblyAILlm } from "@alexkroman1/aai/llm";
+ * import { assemblyAITts } from "@alexkroman1/aai/tts";
  * ```
  */
 
@@ -29,6 +29,7 @@ export const ASSEMBLYAI_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 /** EU data-residency streaming endpoint. */
 export const ASSEMBLYAI_STREAMING_EU_URL = "wss://streaming.eu.assemblyai.com/v3/ws";
 
+/** Options for {@link assemblyAIStt}. */
 export interface AssemblyAIOptions {
   /**
    * Streaming speech model. Defaults to `"universal-3-5-pro"` (Universal-3.5
@@ -76,6 +77,7 @@ export interface AssemblyAIOptions {
   maxConnectRetries?: number;
 }
 
+/** Descriptor returned by {@link assemblyAIStt}. */
 export type AssemblyAIProvider = SttProvider & {
   readonly kind: typeof ASSEMBLYAI_KIND;
   readonly options: AssemblyAIOptions;
@@ -88,10 +90,10 @@ export type AssemblyAIProvider = SttProvider & {
  * (`ASSEMBLYAI_API_KEY`); there is no factory-time key parameter, so the
  * descriptor stays free of secrets and safe to serialize.
  *
- * Shares its name with the `assemblyAI` TTS factory (`@alexkroman1/aai/tts`)
- * and LLM factory (`@alexkroman1/aai/llm`) — alias on import when using more
- * than one.
+ * Named `assemblyAIStt` (not `assemblyAI`) so the STT, LLM
+ * (`assemblyAILlm`), and TTS (`assemblyAITts`) factories can be imported
+ * side by side without aliasing.
  */
-export function assemblyAI(opts: AssemblyAIOptions = {}): AssemblyAIProvider {
+export function assemblyAIStt(opts: AssemblyAIOptions = {}): AssemblyAIProvider {
   return { kind: ASSEMBLYAI_KIND, options: { ...opts } };
 }

@@ -52,6 +52,11 @@
       "@dev/source": "./host/agent-tools.ts",
       "types": "./dist/host/agent-tools.d.ts",
       "import": "./dist/host/agent-tools.js"
+    },
+    "./internal": {
+      "@dev/source": "./internal.ts",
+      "types": "./dist/internal.d.ts",
+      "import": "./dist/internal.js"
     }
   },
   "scripts": {

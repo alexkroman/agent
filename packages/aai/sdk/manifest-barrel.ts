@@ -4,6 +4,8 @@
  *
  * Used by aai-cli (bundler) and aai-server (rpc-schemas). Generated bundle
  * entries call `toAgentConfig`, which is why this subpath is published.
+ *
+ * @module manifest
  */
 
 export { agentToolsToSchemas } from "./_internal-types.ts";

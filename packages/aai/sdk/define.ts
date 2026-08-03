@@ -63,8 +63,7 @@ export function tool<P extends z.ZodObject<z.ZodRawShape>, S = DefaultSessionSta
   return def;
 }
 
-/** {@link AgentDef} fields `agent()` fills in when omitted. */
-/** The `AgentDef` fields `agent()` fills with defaults when omitted. */
+/** The {@link AgentDef} fields `agent()` fills with defaults when omitted. */
 export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "tools";
 
 /**

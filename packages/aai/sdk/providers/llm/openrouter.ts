@@ -25,6 +25,7 @@ export const OPENROUTER_API_KEY_ENV = "OPENROUTER_API_KEY";
 /** OpenRouter's OpenAI-compatible API endpoint. */
 export const OPENROUTER_BASE_URL = "https://openrouter.ai/api/v1";
 
+/** Options for {@link openrouter}. */
 export interface OpenRouterOptions {
   /**
    * OpenRouter model id in `"creator/model"` form, e.g.
@@ -35,6 +36,7 @@ export interface OpenRouterOptions {
   model: string;
 }
 
+/** Descriptor returned by {@link openrouter}. */
 export type OpenRouterProvider = LlmProvider & {
   readonly kind: typeof OPENROUTER_KIND;
   readonly options: OpenRouterOptions;

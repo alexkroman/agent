@@ -10,6 +10,7 @@
 
 import type { TtsProvider } from "../../providers.ts";
 
+/** Kind tag recognised by the host-side resolver. */
 export const CARTESIA_KIND = "cartesia" as const;
 
 /** Agent-env variable holding the Cartesia API key. */
@@ -22,6 +23,7 @@ export const CARTESIA_API_KEY_ENV = "CARTESIA_API_KEY";
  */
 export const CARTESIA_DEFAULT_VOICE = "f786b574-daa5-4673-aa0c-cbe3e8534c02";
 
+/** Options for {@link cartesia}. */
 export interface CartesiaOptions {
   /** Cartesia voice ID. Defaults to {@link CARTESIA_DEFAULT_VOICE}. */
   voice?: string;
@@ -31,11 +33,16 @@ export interface CartesiaOptions {
   language?: string;
 }
 
+/** Descriptor returned by {@link cartesia}. */
 export type CartesiaProvider = TtsProvider & {
   readonly kind: typeof CARTESIA_KIND;
   readonly options: CartesiaOptions & { voice: string };
 };
 
+/**
+ * Build a Cartesia TTS descriptor for pipeline mode. The API key is resolved
+ * host-side from the agent's env (`CARTESIA_API_KEY`).
+ */
 export function cartesia(opts: CartesiaOptions = {}): CartesiaProvider {
   return {
     kind: CARTESIA_KIND,

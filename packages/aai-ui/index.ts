@@ -44,9 +44,6 @@ export { useAgentState, useEvent, useToolCallStart, useToolResult } from "./hook
 export { createSessionCore } from "./session-core.ts";
 export type {
   AgentCustomEvent,
-  // Deprecated alias of AgentCustomEvent (it shadows the DOM global); kept so
-  // existing imports keep compiling.
-  CustomEvent,
   SessionCore,
   SessionCoreOptions,
   SessionSnapshot,

@@ -1,5 +1,5 @@
 import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
-import { assemblyAI } from "@alexkroman1/aai/stt";
+import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { dashboardView } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
 import { incidentAddNote } from "./tools/incident_add_note.ts";
@@ -24,7 +24,7 @@ export default agent({
   // Overriding the STT stage: a dispatcher reads addresses and unit numbers
   // in bursts with pauses inside one message, so end-of-turn silence has to
   // be longer than the default or "unit twelve … respond to" splits in two.
-  stt: assemblyAI({ minTurnSilenceMs: 2200 }),
+  stt: assemblyAIStt({ minTurnSilenceMs: 2200 }),
   systemPrompt,
   greeting:
     "Dispatch Command Center online. Restoring operational state. I'm ready to take incoming calls, manage active incidents, or run dispatch operations. Say 'dashboard' for a full status report. What do we have.",

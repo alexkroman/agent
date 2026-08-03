@@ -6,7 +6,7 @@
  * Split out of `session-core.ts` to keep that module focused on behaviour.
  */
 
-import type { Epoch } from "@alexkroman1/aai";
+import type { Epoch } from "@alexkroman1/aai/internal";
 import type { VoiceIO } from "./audio.ts";
 import type {
   AgentState,
@@ -32,14 +32,6 @@ export type AgentCustomEvent = {
   readonly event: string;
   readonly data: unknown;
 };
-
-/**
- * @deprecated Use {@link AgentCustomEvent}; this name shadows the DOM global
- * `CustomEvent`.
- *
- * @public
- */
-export type CustomEvent = AgentCustomEvent;
 
 /**
  * Immutable snapshot of the session state.

@@ -214,8 +214,8 @@ ${SDK_SUBPATH_RULE}
   (universal-3-5-pro, gpt-5.5, vera), so there is no gateway model
   id to invent — an invented one is a 400 at the first session, with no
   compile-time or deploy-time check to catch it. Prefer it over declaring the
-  three stages by hand; the long form needs three imports of a factory called
-  assemblyAI, two of them aliased, and buys nothing.
+  three stages by hand; the long form (assemblyAIStt + assemblyAILlm +
+  assemblyAITts from the three provider subpaths) buys nothing.
   To change one stage, spread the preset and then set that stage:
     agent({ ...assemblyAIPipeline(), tts: cartesia({ voice: "…" }) });
   All three stages bill to ASSEMBLYAI_API_KEY, the one key a published agent

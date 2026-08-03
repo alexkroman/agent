@@ -10,6 +10,8 @@
  * `noReExportAll` suppression per line, and the escape-hatch ratchet only
  * moves down. Listing them also makes the public surface of this subpath
  * readable in one place — add new symbols here when a provider gains one.
+ *
+ * @module s2s
  */
 
 export type { S2sProvider } from "../providers.ts";

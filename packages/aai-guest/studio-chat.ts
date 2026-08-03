@@ -23,7 +23,7 @@
 
 import type { IncomingMessage, ServerResponse } from "node:http";
 import path from "node:path";
-import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAI } from "@alexkroman1/aai/llm";
+import { ASSEMBLYAI_LLM_API_KEY_ENV, assemblyAILlm } from "@alexkroman1/aai/llm";
 import { resolveAllBuiltins, resolveLlm } from "@alexkroman1/aai/runtime";
 import {
   convertToModelMessages,
@@ -314,7 +314,7 @@ async function runTurn(
   const model =
     deps.model ??
     resolveLlm(
-      assemblyAI({
+      assemblyAILlm({
         model: session.model,
         ...(session.region === "eu" ? { region: "eu" as const } : {}),
       }),
