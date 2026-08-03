@@ -76,6 +76,24 @@ function redExcerpt(name, out) {
   return `${name}: ${body.replace(/\s+/g, " ").trim().slice(0, MAX_RED_EXCERPT)}`;
 }
 
+/**
+ * `test_agent` leads with its SUCCESS prose — "Bundle loaded in the sandbox.
+ * Agent "X" (pipeline mode), tools: …" — and the tool list grows with the
+ * agent. On a tool-rich agent that preamble alone ate the whole 300-char
+ * excerpt, so a failed run recorded eight tool names and the words "Tests:
+ * FAILED", and not one line of why. Same defect as the write-diagnostics
+ * preamble above, on the other half of the harness.
+ *
+ * `parseLoadedConfig` reads `lastTestAgentOutput`, never this, so dropping the
+ * config line here cannot affect the capability check.
+ */
+const TEST_AGENT_PREAMBLE = /^\s*Bundle loaded[^.]*\.\s*Agent "[^"]*" \([a-z0-9]+ mode\)[^\n.]*\.\s*/i;
+
+/** One failed test_agent run, reduced to what actually failed. */
+function failureExcerpt(out) {
+  return out.replace(TEST_AGENT_PREAMBLE, "").replace(/\s+/g, " ").trim().slice(0, MAX_RED_EXCERPT);
+}
+
 function apiKey() {
   if (process.env.ASSEMBLYAI_API_KEY) return process.env.ASSEMBLYAI_API_KEY;
   const cfg = path.join(homedir(), ".config", "aai", "config.json");
@@ -175,7 +193,7 @@ async function runTurn(key, url, prompt) {
           summary.testAgentRuns.push({
             buildFailed: /error TS\d|Type check failed|Build failed|failed to load/i.test(out),
             testsFailed: /Tests: FAILED/i.test(out),
-            excerpt: out.slice(0, 300),
+            excerpt: failureExcerpt(out),
           });
           summary.lastTestAgentOutput = out;
         }
