@@ -79,8 +79,32 @@ else
   if ! pnpm exec turbo run \
     build typecheck lint check:publint check:attw \
     check:syncpack check:sherif check:knip check:markdown \
-    test check:typecheck check:integration check:e2e \
+    test check:typecheck check:integration \
     --continue; then
+    echo -e "\n${RED}Some checks failed.${NC}"
+    exit 1
+  fi
+  # check:e2e runs ALONE, in its own invocation after everything else.
+  #
+  # It is not a well-behaved sibling: the mock registry rebuilds and
+  # republishes every publishable package from the live workspace
+  # (`_mock-registry.ts`), which truncates `packages/aai-ui/dist` and
+  # `packages/aai/dist` and briefly rewrites each package.json to a unique
+  # version. Run concurrently — which is what one combined `turbo run test
+  # check:e2e` does, since neither declares an order against the other —
+  # that rewrites shared artifacts underneath sibling packages' tests while
+  # they read them. `aai-guest`'s toolchainModules suite asserts
+  # `@alexkroman1/aai-cli/dist/templates/**` exists, and aai-server's
+  # orchestrator tests read `aai-ui/dist/default-client`; both fail for the
+  # length of the window, with errors that name a missing file and point
+  # nowhere near the e2e run that removed it.
+  #
+  # No `dependsOn` expresses this — turbo orders tasks against a package's
+  # own dependency graph, and this is a whole-workspace side effect. CI never
+  # hit it because check.yml already gives e2e its own job; the exposure was
+  # local `pnpm check` (i.e. pre-push) whenever check:e2e was a cache MISS,
+  # which is every fresh worktree and every first run after a clone.
+  if ! pnpm exec turbo run check:e2e; then
     echo -e "\n${RED}Some checks failed.${NC}"
     exit 1
   fi
