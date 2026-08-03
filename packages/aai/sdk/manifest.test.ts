@@ -441,3 +441,25 @@ describe("parseManifest — AssemblyAI TTS language validation", () => {
     }
   });
 });
+
+describe("author conveniences on raw configs (no agent())", () => {
+  test("parseManifest maps `system` to systemPrompt", () => {
+    const m = parseManifest({ name: "raw", system: "Be terse." });
+    expect(m.systemPrompt).toBe("Be terse.");
+    expect("system" in m).toBe(false);
+  });
+
+  test("parseManifest desugars a string llm alongside a full triple", () => {
+    const m = parseManifest({
+      name: "raw",
+      stt: assemblyAIStt(),
+      llm: "anthropic/claude-sonnet-4-5",
+      tts: { kind: "assemblyai", options: {} },
+    });
+    expect(m.llm?.kind).toBe("gateway");
+  });
+
+  test("parseManifest rejects both system and systemPrompt", () => {
+    expect(() => parseManifest({ name: "raw", system: "a", systemPrompt: "b" })).toThrow(/aliases/);
+  });
+});

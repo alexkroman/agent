@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 
+import { normalizeAgentConveniences } from "./_author-conveniences.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
-import { normalizeLlm } from "./providers/llm/from-string.ts";
-import type { LlmProvider } from "./providers.ts";
+import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import {
   type AgentDef,
@@ -89,15 +89,101 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
  *   the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), a bare id through the
  *   AssemblyAI LLM Gateway (`ASSEMBLYAI_API_KEY`).
  *
+ * And one restriction the runtime has always enforced is now a compile
+ * error instead of a `parseManifest` throw: the shape is a
+ * pipeline-mode/S2S-mode union, so a *partial* provider triple
+ * (`stt` without `llm`/`tts`), or `s2s` combined with pipeline fields,
+ * fails the build with a message naming the rule
+ * ({@link PipelineOnlyMisuse}) rather than failing at the first
+ * `aai dev`/`aai deploy`. Configs that never went through `agent()` are
+ * still caught at parse time.
+ *
  * @public
  */
-export type AgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAgentField | "llm"> &
+export type AgentParams<S = DefaultSessionState> = PipelineAgentParams<S> | S2sAgentParams<S>;
+
+/**
+ * Fields shared by both session modes: everything on {@link AgentDef} minus
+ * the providers and the pipeline-only tuning knobs, plus the authoring
+ * conveniences.
+ */
+export type SharedAgentParams<S = DefaultSessionState> = Omit<
+  AgentDef<S>,
+  DefaultedAgentField | PipelineOnlyField | ProviderField
+> &
   Partial<Pick<AgentDef<S>, DefaultedAgentField>> & {
-    /** See {@link AgentDef.llm}; a string is gateway model-id shorthand. */
-    llm?: LlmProvider | string;
     /** Alias of `systemPrompt` (the Vercel AI SDK's field name). */
     system?: string;
   };
+
+/** The provider-descriptor fields, mode-owned rather than shared. */
+export type ProviderField = "stt" | "llm" | "tts" | "s2s";
+
+/**
+ * The {@link AgentDef} fields that only do anything in pipeline mode. On an
+ * S2S agent each is typed as a {@link PipelineOnlyMisuse} message, so
+ * setting one is a compile error naming the rule instead of a silent no-op.
+ */
+export type PipelineOnlyField =
+  | "sttPrompt"
+  | "silenceTimeoutMs"
+  | "silencePrompt"
+  | "minBargeInWords"
+  | "interruptionMinDurationMs"
+  | "holdPhrase"
+  | "errorPhrase"
+  | "startFailurePhrase"
+  | "falseInterruptionTimeoutMs";
+
+/**
+ * The "type" a pipeline-only field has on an S2S agent — a message, so the
+ * compile error for `agent({ s2s: ..., holdPhrase: "..." })` reads
+ * *"Type 'string' is not assignable to type '`holdPhrase` is pipeline-mode
+ * only …'"* instead of the bare `undefined` mismatch that explains nothing
+ * (the lesson `client()`'s ComponentTier already recorded).
+ */
+export type PipelineOnlyMisuse<K extends PipelineOnlyField> =
+  `\`${K}\` is pipeline-mode only — it has no effect on an s2s agent; remove it or remove \`s2s\``;
+
+/**
+ * Pipeline-mode params: the provider triple all together (or none, which
+ * runs the default all-AssemblyAI pipeline), never `s2s`.
+ */
+export type PipelineAgentParams<S = DefaultSessionState> = SharedAgentParams<S> &
+  Partial<Pick<AgentDef<S>, PipelineOnlyField>> &
+  (
+    | {
+        /** See {@link AgentDef.stt}. Set together with `llm` and `tts`. */
+        stt: SttProvider;
+        /** See {@link AgentDef.llm}; a string is gateway model-id shorthand. */
+        llm: LlmProvider | string;
+        /** See {@link AgentDef.tts}. Set together with `stt` and `llm`. */
+        tts: TtsProvider;
+        s2s?: undefined;
+      }
+    | {
+        /** Declare no providers to run the default all-AssemblyAI pipeline. */
+        stt?: undefined;
+        llm?: undefined;
+        tts?: undefined;
+        s2s?: undefined;
+      }
+  );
+
+/**
+ * S2S-mode params: an `s2s` descriptor, no pipeline providers, and the
+ * pipeline-only tuning knobs typed as {@link PipelineOnlyMisuse} so setting
+ * one fails with a message instead of silently doing nothing.
+ */
+export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
+  /** See {@link AgentDef.s2s} — the explicit opt-in to speech-to-speech mode. */
+  s2s: S2sProvider;
+  stt?: "`stt` cannot be combined with `s2s` — S2S runs STT service-side";
+  llm?: "`llm` cannot be combined with `s2s` — S2S runs the LLM loop service-side";
+  tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
+} & {
+  [K in PipelineOnlyField]?: PipelineOnlyMisuse<K>;
+};
 
 /**
  * Define an agent with tools, system prompt, and configuration.
@@ -136,17 +222,19 @@ export type AgentParams<S = DefaultSessionState> = Omit<AgentDef<S>, DefaultedAg
  * @public
  */
 export function agent<S = DefaultSessionState>(def: AgentParams<S>): AgentDef<S> {
-  const { system, llm, ...rest } = def;
-  if (system !== undefined && rest.systemPrompt !== undefined) {
-    throw new Error("agent(): `system` and `systemPrompt` are aliases — set one, not both.");
-  }
-  const normalizedLlm = normalizeLlm(llm);
   return {
-    systemPrompt: system ?? DEFAULT_SYSTEM_PROMPT,
+    systemPrompt: DEFAULT_SYSTEM_PROMPT,
     greeting: DEFAULT_GREETING,
     maxSteps: DEFAULT_MAX_STEPS,
     tools: {},
-    ...rest,
-    ...(normalizedLlm ? { llm: normalizedLlm } : {}),
+    ...(normalizeAgentConveniences(def) as AgentParamsCore<S>),
   };
 }
+
+/**
+ * `AgentParams` with the author-only conveniences normalized away — what
+ * {@link normalizeAgentConveniences} returns and `agent()` spreads over the
+ * defaults.
+ */
+type AgentParamsCore<S> = Omit<AgentDef<S>, DefaultedAgentField> &
+  Partial<Pick<AgentDef<S>, DefaultedAgentField>>;

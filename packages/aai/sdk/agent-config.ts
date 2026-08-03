@@ -14,6 +14,7 @@
 
 import type { JSONSchema7 } from "json-schema";
 import { z } from "zod";
+import { normalizeAgentConveniences } from "./_author-conveniences.ts";
 import { DEFAULT_GREETING, DEFAULT_SYSTEM_PROMPT } from "./agent-defaults.ts";
 import { assertPipelineTuning, assertProviderTriple, assertSilencePolicy } from "./config-rules.ts";
 import { ProviderDescriptorSchema } from "./manifest.ts";
@@ -121,7 +122,10 @@ export function toAgentConfig(source: AgentConfigSource): AgentConfig {
   // No providers declared → the all-AssemblyAI pipeline (S2S requires an
   // explicit `s2s` descriptor). Runs inside the generated bundle entry, so
   // the defaults are baked into the deployed config at build time.
-  const src = { ...source, ...(defaultProviders(source) ?? {}) };
+  // Author conveniences (`system`, string `llm`) normalize here too, so a
+  // raw `export default {...}` that skipped `agent()` behaves the same.
+  const normalized = normalizeAgentConveniences(source) as AgentConfigSource;
+  const src = { ...normalized, ...(defaultProviders(normalized) ?? {}) };
   // `assertProviderTriple` enforces that stt/llm/tts are all-or-nothing so the
   // server can trust the resolved mode.
   const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s);

@@ -7,6 +7,7 @@
  */
 
 import { z } from "zod";
+import { normalizeAgentConveniences } from "./_author-conveniences.ts";
 import {
   assertPipelineTuning,
   assertProviderTriple,
@@ -137,7 +138,9 @@ export type Manifest = Omit<z.infer<typeof ManifestSchema>, keyof ManifestProvid
  *   calculate) — set explicitly (including `[]`) to override
  */
 export function parseManifest(input: unknown): Manifest {
-  const raw = ManifestSchema.parse(input);
+  // Author conveniences (`system`, string `llm`) normalize here too, so a
+  // raw `export default {...}` that skipped `agent()` behaves the same.
+  const raw = ManifestSchema.parse(normalizeAgentConveniences(input));
   // No providers declared → the all-AssemblyAI pipeline. S2S requires an
   // explicit `s2s` descriptor (e.g. `assemblyAIS2s()`).
   const parsed = { ...raw, ...(defaultProviders(raw) ?? {}) };

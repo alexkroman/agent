@@ -1,8 +1,8 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expectTypeOf, test } from "vitest";
 import { z } from "zod";
-import { agent, tool } from "./define.ts";
-import type { LlmProvider, SttProvider, TtsProvider } from "./providers.ts";
+import { type AgentParams, agent, tool } from "./define.ts";
+import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { AgentDef, DefaultSessionState, ToolContext, ToolDef } from "./types.ts";
 
 /**
@@ -105,4 +105,36 @@ test("agent() without stt/llm/tts is still legal (s2s mode)", () => {
   expectTypeOf(def.stt).toEqualTypeOf<SttProvider | undefined>();
   expectTypeOf(def.llm).toEqualTypeOf<LlmProvider | undefined>();
   expectTypeOf(def.tts).toEqualTypeOf<TtsProvider | undefined>();
+});
+
+test("a partial provider triple is not an accepted AgentParams", () => {
+  // The runtime has always rejected one-or-two-of-three at parse time; the
+  // union makes it a compile error with a "missing: llm, tts" elaboration.
+  expectTypeOf<{ name: string; stt: SttProvider }>().not.toExtend<AgentParams>();
+  expectTypeOf<{ name: string; stt: SttProvider; llm: LlmProvider }>().not.toExtend<AgentParams>();
+  // All three (or none) both fit.
+  expectTypeOf<{
+    name: string;
+    stt: SttProvider;
+    llm: LlmProvider;
+    tts: TtsProvider;
+  }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string }>().toExtend<AgentParams>();
+});
+
+test("s2s cannot be combined with pipeline providers or pipeline-only tuning", () => {
+  expectTypeOf<{ name: string; s2s: S2sProvider }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; s2s: S2sProvider; tts: TtsProvider }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    s2s: S2sProvider;
+    holdPhrase: string;
+  }>().not.toExtend<AgentParams>();
+  expectTypeOf<{
+    name: string;
+    s2s: S2sProvider;
+    silenceTimeoutMs: number;
+  }>().not.toExtend<AgentParams>();
+  // Shared fields stay declarable on an s2s agent.
+  expectTypeOf<{ name: string; s2s: S2sProvider; idleTimeoutMs: number }>().toExtend<AgentParams>();
 });

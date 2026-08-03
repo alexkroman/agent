@@ -197,8 +197,11 @@ providers when:
 - you want a specific STT model or TTS voice
 - you need to swap providers without changing agent code
 
-**The rule:** set all three of `stt`, `llm`, `tts` together, or none. A
-partial config is rejected at parse time.
+**The rule:** set all three of `stt`, `llm`, `tts` together, or none.
+`agent()`'s parameter type enforces this — a partial triple is a compile
+error ("missing: llm, tts"), as is combining `s2s` with any pipeline
+provider or pipeline-only tuning field. A raw config that skips `agent()`
+is still rejected at parse time.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -324,7 +327,7 @@ export default agent({
   name: "My Agent",
   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
   llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
-  tts: assemblyAITts({ voice: "vera" }),
+  tts: assemblyAITts({ voice: "jane" }),
 });
 ```
 
@@ -332,7 +335,7 @@ export default agent({
 
 | Factory         | Default voice                            | Env var              |
 | --------------- | ---------------------------------------- | -------------------- |
-| `assemblyAITts` | `"vera"`                                 | `ASSEMBLYAI_API_KEY` |
+| `assemblyAITts` | `"jane"`                                 | `ASSEMBLYAI_API_KEY` |
 | `cartesia`      | `"f786b574-daa5-4673-aa0c-cbe3e8534c02"` | `CARTESIA_API_KEY`   |
 | `rime`          | `"cove"` (model `mistv2`)                | `RIME_API_KEY`       |
 
@@ -347,8 +350,8 @@ connected, "ready", and permanently silent**, so pick one from here rather
 than guessing a plausible name:
 
 - **English, US accent**: `alba`, `anna`, `charles`, `eve`, `george`,
-  `jane`, `jean`, `mary`, `michael`
-- **English, UK accent**: `paul`, `vera` (the default)
+  `jane` (the default), `jean`, `mary`, `michael`
+- **English, UK accent**: `paul`, `vera`
 - **Native accent, code-switches with English**: `estelle` (fr),
   `giovanni` (it), `juergen` (de), `lola` (es), `rafael` (pt)
 

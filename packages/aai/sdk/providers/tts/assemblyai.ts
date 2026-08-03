@@ -31,13 +31,14 @@ export const ASSEMBLYAI_TTS_API_KEY_ENV = "ASSEMBLYAI_API_KEY";
 export const ASSEMBLYAI_TTS_HOST = "streaming-tts.assemblyai.com";
 
 /**
- * Default voice when `assemblyAITts()` is called with no `voice`. Note it is
- * UK-accented — a US-facing agent should pick a US voice from
- * {@link ASSEMBLYAI_TTS_VOICES} explicitly. Every voice in the catalog
- * speaks exactly one language, so changing `language` generally means
- * changing `voice` too.
+ * Default voice when `assemblyAITts()` is called with no `voice` — a
+ * US-accented English voice, since most agents face US callers (it was
+ * `"vera"` for a while, which put a UK accent on every agent that never
+ * chose). Pick from {@link ASSEMBLYAI_TTS_VOICES} to change it; every voice
+ * in the catalog speaks exactly one language, so changing `language`
+ * generally means changing `voice` too.
  */
-export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "vera";
+export const ASSEMBLYAI_TTS_DEFAULT_VOICE = "jane";
 
 /**
  * The voice catalog — voice id → the language it speaks and its accent.
@@ -207,7 +208,7 @@ export function assertAssemblyAITtsLanguage(tts: unknown): void {
 
 export interface AssemblyAITtsOptions {
   /**
-   * Voice id, e.g. `"vera"`, `"michael"`, `"alba"`. Defaults to
+   * Voice id, e.g. `"jane"`, `"michael"`, `"vera"`. Defaults to
    * {@link ASSEMBLYAI_TTS_DEFAULT_VOICE}. Each voice speaks exactly one
    * language — see {@link ASSEMBLYAI_TTS_VOICES} for the catalog.
    */

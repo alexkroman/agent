@@ -3,6 +3,7 @@ import { describe, expect, test } from "vitest";
 import { z } from "zod";
 import { agent, tool } from "./define.ts";
 import { parseManifest } from "./manifest.ts";
+import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAILlm } from "./providers/llm/assemblyai.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
@@ -42,19 +43,19 @@ describe("agent()", () => {
   });
 
   test("llm accepts a creator/model string and desugars to the Vercel AI Gateway", () => {
-    const def = agent({ name: "t", llm: "anthropic/claude-sonnet-4-5" });
+    const def = agent({ name: "t", ...assemblyAIPipeline(), llm: "anthropic/claude-sonnet-4-5" });
     expect(def.llm).toEqual({ kind: "gateway", options: { model: "anthropic/claude-sonnet-4-5" } });
   });
 
   test("llm accepts a bare model id and desugars to the AssemblyAI LLM Gateway", () => {
-    const def = agent({ name: "t", llm: "gpt-5.5" });
+    const def = agent({ name: "t", ...assemblyAIPipeline(), llm: "gpt-5.5" });
     expect(def.llm?.kind).toBe("assemblyai");
     expect(def.llm?.options.model).toBe("gpt-5.5");
   });
 
   test("llm descriptors pass through unchanged", () => {
     const llm = assemblyAILlm({ model: "gpt-5.5" });
-    expect(agent({ name: "t", llm }).llm).toBe(llm);
+    expect(agent({ name: "t", ...assemblyAIPipeline(), llm }).llm).toBe(llm);
   });
 
   test("applies defaults", () => {

@@ -16,10 +16,10 @@
  * import { assemblyAILlm } from "@alexkroman1/aai/llm";
  * import { assemblyAITts } from "@alexkroman1/aai/tts";
  * export default agent({
- *   name: "Vera",
+ *   name: "Jane",
  *   stt: assemblyAIStt({ model: "universal-3-5-pro" }),
  *   llm: assemblyAILlm({ model: "gpt-5.5" }),
- *   tts: assemblyAITts({ voice: "vera" }),
+ *   tts: assemblyAITts({ voice: "jane" }),
  * });
  * ```
  *
@@ -28,7 +28,7 @@
  *
  * ```ts
  * import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
- * export default agent({ name: "Vera", ...assemblyAIPipeline({ voice: "vera" }) });
+ * export default agent({ name: "Jane", ...assemblyAIPipeline({ voice: "jane" }) });
  * ```
  *
  * It also removes the one runtime hazard in the long form. A gateway model id
@@ -49,9 +49,9 @@
  * import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
  * import { cartesia } from "@alexkroman1/aai/tts";
  * // Different TTS provider:
- * agent({ name: "Vera", ...assemblyAIPipeline(), tts: cartesia() });
+ * agent({ name: "Jane", ...assemblyAIPipeline(), tts: cartesia() });
  * // Different gateway LLM model (string shorthand):
- * agent({ name: "Vera", ...assemblyAIPipeline(), llm: "claude-sonnet-4-6" });
+ * agent({ name: "Jane", ...assemblyAIPipeline(), llm: "claude-sonnet-4-6" });
  * ```
  */
 
@@ -65,8 +65,9 @@ import {
 
 export interface AssemblyAIPipelineOptions {
   /**
-   * TTS voice id, e.g. `"vera"`, `"michael"`, `"alba"`. Defaults to
-   * `"vera"`. Each voice speaks exactly one language — see
+   * TTS voice id, e.g. `"jane"`, `"michael"`, `"alba"`. Defaults to
+   * `"jane"` (US-accented English). Each voice speaks exactly one
+   * language — see
    * `ASSEMBLYAI_TTS_VOICES` (from `@alexkroman1/aai/tts`) for the
    * catalog; a name outside it fails in-band after connect and leaves the
    * agent silent.

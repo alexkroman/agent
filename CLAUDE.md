@@ -733,7 +733,11 @@ The default injection runs at every mode-derivation site — `parseManifest`,
 `toAgentConfig` (so it is baked into deployed configs at build time), and
 `createRuntime`'s provider resolution — before `assertProviderTriple`.
 Partial provider configs are rejected at parse time — `parseManifest()`
-requires either zero or all three of `stt`/`llm`/`tts`.
+requires either zero or all three of `stt`/`llm`/`tts` — and at compile
+time: `AgentParams` is a pipeline/S2S union (`sdk/define.ts`), so a partial
+triple, or `s2s` combined with a pipeline provider or a pipeline-only
+tuning field, fails `tsc` with a message naming the rule
+(`PipelineOnlyMisuse`) instead of silently no-opping.
 
 - **Tool-call args must be coerced before they hit a wire schema.** The AI
   SDK surfaces an unparsable/unknown tool call as a `tool-call` stream part
