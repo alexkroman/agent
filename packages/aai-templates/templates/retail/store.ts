@@ -1,4 +1,6 @@
 import type { ToolContext } from "@alexkroman1/aai";
+import { tool } from "@alexkroman1/aai";
+import type { z } from "zod";
 import seedJson from "./seed.json";
 import type {
   GiftCard,
@@ -11,6 +13,7 @@ import type {
   User,
   Variant,
 } from "./shared.ts";
+import { MAX_ACTIVITY } from "./shared.ts";
 
 /**
  * The JSON import's inferred type has `status: string` where `Order` wants a
@@ -144,4 +147,97 @@ export function requireOwnOrder(state: RetailState, orderId: string): Order | Er
     return { error: `Order ${orderId} was not found on this customer's account.` };
   }
   return order;
+}
+
+// ─── Serialized state updates ────────────────────────────────────────────────
+
+const sessionLocks = new Map<string, Promise<unknown>>();
+
+/**
+ * Serialized update of the session's store.
+ *
+ * The LLM loop can execute parallel tool calls, and a mutator may be async —
+ * two interleaving async mutators can each observe the other's half-applied
+ * changes. This per-session promise chain runs each update against the previous
+ * one's finished result.
+ *
+ * NOT exported, unlike dispatch-center's equivalent. `retailTool` is the only
+ * caller, so a tool body cannot re-enter it — which would chain the inner call
+ * on a tail that only resolves once the inner call finishes, i.e. deadlock. A
+ * hazard you can't reach beats a hazard you documented.
+ */
+async function updateState<R>(
+  ctx: ToolContext,
+  mutator: (state: RetailState) => R | Promise<R>,
+): Promise<R> {
+  const previous = sessionLocks.get(ctx.sessionId) ?? Promise.resolve();
+  const run = previous.then(() => mutator(getState(ctx)));
+  // Keep the chain alive across failures, and drop it once idle.
+  const tail = run.catch(() => {});
+  sessionLocks.set(ctx.sessionId, tail);
+  tail.then(() => {
+    if (sessionLocks.get(ctx.sessionId) === tail) sessionLocks.delete(ctx.sessionId);
+  });
+  return run;
+}
+
+// ─── The tool wrapper ────────────────────────────────────────────────────────
+
+interface RetailToolSpec<S extends z.ZodType<Record<string, unknown>>, R> {
+  /** Must equal this tool's key in `agent.ts`. `agent.test.ts` asserts it. */
+  name: string;
+  description: string;
+  /** Required even for no-arg tools — pass `z.object({})`. One code path in the
+   *  wrapper is worth more than saving a line at one call site. */
+  inputSchema: S;
+  /** Default true. Only the two finder tools and the three catalog tools opt
+   *  out; everything else touches customer data. */
+  requiresAuth?: boolean;
+  summary: (args: z.output<S>, result: R) => string;
+  execute: (args: z.output<S>, ctx: ToolContext) => R | Promise<R>;
+}
+
+function record(state: RetailState, name: string, summary: string): void {
+  state.callSeq += 1;
+  state.activity.push({ seq: state.callSeq, tool: name, summary, at: Date.now() });
+  if (state.activity.length > MAX_ACTIVITY) {
+    state.activity = state.activity.slice(-MAX_ACTIVITY);
+  }
+}
+
+/**
+ * Every retail tool is built through this. It owns three things no tool body
+ * may re-implement:
+ *
+ * 1. the authentication gate,
+ * 2. serialization of the state mutation,
+ * 3. the `callSeq` increment + activity entry — the reason the UI moves on
+ *    EVERY tool call rather than only when a projected value happens to differ.
+ *
+ * `focus` is deliberately left to tool bodies (`setFocus`): it is a UI nicety,
+ * not an invariant, and only the body knows what the call was about.
+ */
+export function retailTool<S extends z.ZodType<Record<string, unknown>>, R>(
+  spec: RetailToolSpec<S, R>,
+) {
+  const requiresAuth = spec.requiresAuth ?? true;
+  return tool({
+    description: spec.description,
+    inputSchema: spec.inputSchema,
+    execute: (args, ctx) =>
+      updateState(ctx, async (state) => {
+        const typedArgs = args as z.output<S>;
+        if (requiresAuth && !state.authenticatedUserId) {
+          record(state, spec.name, "blocked: not authenticated");
+          return { error: NOT_AUTHENTICATED };
+        }
+        const result = await spec.execute(typedArgs, ctx);
+        record(
+          state,
+          spec.name,
+          isError(result) ? `error: ${result.error}` : spec.summary(typedArgs, result),
+        );
+        return result;
+      }),
+  });
 }

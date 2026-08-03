@@ -1,5 +1,6 @@
 import type { ToolContext } from "@alexkroman1/aai";
 import { describe, expect, test } from "vitest";
+import { z } from "zod";
 import {
   authenticatedUser,
   createDefaultState,
@@ -14,6 +15,7 @@ import {
   isGiftCard,
   money,
   requireOwnOrder,
+  retailTool,
 } from "./store.ts";
 
 let sessionCounter = 0;
@@ -160,5 +162,95 @@ describe("ownership and authentication guards", () => {
     state.authenticatedUserId = "olivia_ito_3591";
     const result = requireOwnOrder(state, "#W5866402");
     expect(isError(result) ? null : result.order_id).toBe("#W5866402");
+  });
+});
+
+describe("retailTool", () => {
+  const echo = retailTool({
+    name: "echo",
+    description: "test tool",
+    inputSchema: z.object({ value: z.string() }),
+    requiresAuth: false,
+    summary: (args) => `echoed ${args.value}`,
+    execute: (args) => ({ echoed: args.value }),
+  });
+
+  const gated = retailTool({
+    name: "gated",
+    description: "test tool needing auth",
+    inputSchema: z.object({}),
+    summary: () => "ran",
+    execute: () => ({ ok: true }),
+  });
+
+  const failing = retailTool({
+    name: "failing",
+    description: "test tool that returns an error",
+    inputSchema: z.object({}),
+    requiresAuth: false,
+    summary: () => "should not be used",
+    execute: () => ({ error: "nope" }),
+  });
+
+  test("increments callSeq and logs activity on every call", async () => {
+    const ctx = makeCtx();
+    await echo.execute({ value: "a" }, ctx);
+    await echo.execute({ value: "b" }, ctx);
+    const state = getState(ctx);
+    expect(state.callSeq).toBe(2);
+    expect(state.activity.map((a) => a.summary)).toEqual(["echoed a", "echoed b"]);
+    expect(state.activity.map((a) => a.tool)).toEqual(["echo", "echo"]);
+  });
+
+  test("a repeated identical call still changes the projection", async () => {
+    const ctx = makeCtx();
+    await echo.execute({ value: "same" }, ctx);
+    const first = getState(ctx).callSeq;
+    await echo.execute({ value: "same" }, ctx);
+    expect(getState(ctx).callSeq).toBeGreaterThan(first);
+  });
+
+  test("defaults to requiring authentication and does not run execute when blocked", async () => {
+    const ctx = makeCtx();
+    const result = await gated.execute({}, ctx);
+    expect(isError(result) && result.error).toContain("find_user_id_by_email");
+  });
+
+  test("a blocked call is still logged and still bumps callSeq", async () => {
+    const ctx = makeCtx();
+    await gated.execute({}, ctx);
+    const state = getState(ctx);
+    expect(state.callSeq).toBe(1);
+    expect(state.activity[0]?.summary).toContain("blocked");
+  });
+
+  test("runs once authenticated", async () => {
+    const ctx = makeCtx();
+    getState(ctx).authenticatedUserId = "olivia_ito_3591";
+    const result = await gated.execute({}, ctx);
+    expect(result).toEqual({ ok: true });
+  });
+
+  test("an error result is logged as an error, not through summary()", async () => {
+    const ctx = makeCtx();
+    await failing.execute({}, ctx);
+    expect(getState(ctx).activity[0]?.summary).toBe("error: nope");
+  });
+
+  test("activity is capped so a long call cannot grow the payload", async () => {
+    const ctx = makeCtx();
+    for (let i = 0; i < 15; i++) await echo.execute({ value: String(i) }, ctx);
+    const state = getState(ctx);
+    expect(state.callSeq).toBe(15);
+    expect(state.activity).toHaveLength(10);
+    expect(state.activity[0]?.summary).toBe("echoed 5");
+  });
+
+  test("concurrent calls serialize — no lost increments", async () => {
+    const ctx = makeCtx();
+    await Promise.all(Array.from({ length: 8 }, (_, i) => echo.execute({ value: String(i) }, ctx)));
+    const state = getState(ctx);
+    expect(state.callSeq).toBe(8);
+    expect(new Set(state.activity.map((a) => a.seq)).size).toBe(state.activity.length);
   });
 });
