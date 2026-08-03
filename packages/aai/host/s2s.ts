@@ -162,6 +162,14 @@ export type S2sSessionConfig = {
   systemPrompt: string;
   tools: ToolSchema[];
   greeting?: string;
+  /**
+   * Voice focus (voice isolation) mode, sent as `voice_focus` in the
+   * `session.update` config. Defaults to `"near-field"` to suppress
+   * background noise for close-mic / phone audio — the same default the
+   * pipeline-mode AssemblyAI STT provider applies at connect. Set to
+   * `"off"` (or `""`) to disable.
+   */
+  voiceFocus?: "near-field" | "far-field" | "off" | string;
 };
 
 /** Callbacks fired into the owning session at construction time. */
@@ -262,8 +270,18 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     },
 
     updateSession(sessionConfig: S2sSessionConfig): void {
-      const { systemPrompt, ...rest } = sessionConfig;
-      send({ type: "session.update", session: { system_prompt: systemPrompt, ...rest } });
+      const { systemPrompt, voiceFocus, ...rest } = sessionConfig;
+      // Voice focus (voice isolation); defaults to near-field. "off"/"" disables.
+      const requestedVoiceFocus = voiceFocus ?? "near-field";
+      const resolvedVoiceFocus = requestedVoiceFocus === "off" ? "" : requestedVoiceFocus;
+      send({
+        type: "session.update",
+        session: {
+          system_prompt: systemPrompt,
+          ...(resolvedVoiceFocus ? { voice_focus: resolvedVoiceFocus } : {}),
+          ...rest,
+        },
+      });
     },
 
     resumeSession(sessionId: string): void {

@@ -61,6 +61,30 @@ describe("connectS2s", () => {
     expect(sent.session.system_prompt).toBe("test");
   });
 
+  test("updateSession defaults voice_focus to near-field", async () => {
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({ systemPrompt: "test", tools: [] });
+
+    const sent = lastSent(raw) as { session: { voice_focus?: string } };
+    expect(sent.session.voice_focus).toBe("near-field");
+  });
+
+  test("updateSession respects an explicit voiceFocus and disables on 'off'", async () => {
+    const { raw, handle } = await setupHandle();
+
+    handle.updateSession({ systemPrompt: "test", tools: [], voiceFocus: "far-field" });
+    const sent = lastSent(raw) as { session: Record<string, unknown> };
+    expect(sent.session.voice_focus).toBe("far-field");
+    expect("voiceFocus" in sent.session).toBe(false);
+
+    const { raw: rawOff, handle: handleOff } = await setupHandle();
+    handleOff.updateSession({ systemPrompt: "test", tools: [], voiceFocus: "off" });
+    const sentOff = lastSent(rawOff) as { session: Record<string, unknown> };
+    expect(sentOff.session.voice_focus).toBeUndefined();
+    expect("voice_focus" in sentOff.session).toBe(false);
+  });
+
   test("sendAudio sends base64-encoded audio when open", async () => {
     const { raw, handle } = await setupHandle();
 
