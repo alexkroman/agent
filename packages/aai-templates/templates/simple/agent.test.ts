@@ -10,7 +10,7 @@ describe("simple template", () => {
 
   test("exports an agent with a name and no explicit providers", () => {
     // No provider fields declared: the default all-AssemblyAI pipeline is
-    // injected at parse time (see `assemblyAIPipeline`).
+    // injected at parse time (see `defaultProviders`).
     expect(agentDef.name).toBe("Simple Assistant");
     expect(agentDef.stt).toBeUndefined();
     expect(agentDef.s2s).toBeUndefined();

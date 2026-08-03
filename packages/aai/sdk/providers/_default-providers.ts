@@ -19,10 +19,18 @@ type ProviderFields = {
 };
 
 /**
- * The default providers for a config that declares none: the all-AssemblyAI
- * pipeline. Returns `null` when any provider field (the pipeline triple or
- * `s2s`) is already set — a declared choice is never overridden, and an
- * explicit `s2s` descriptor is exactly how an agent opts back into S2S mode.
+ * The default providers for the pipeline stages a config leaves unset: each
+ * missing stage of the `stt`/`llm`/`tts` triple is filled from the
+ * all-AssemblyAI pipeline. Returns only the missing stages (spread it over
+ * the config), or `null` when there is nothing to fill — every stage is
+ * declared, or `s2s` is set (an explicit `s2s` descriptor is exactly how an
+ * agent opts into S2S mode, and it takes no pipeline stages).
+ *
+ * A declared stage is never overridden, so
+ * `agent({ llm: anthropic(...) })` means "the default pipeline with that
+ * LLM" — one stage swapped, the other two on AssemblyAI — rather than a
+ * configuration error. Before this, the triple was all-or-nothing and the
+ * only way to swap one stage was spreading `assemblyAIPipeline()` first.
  *
  * Every config layer that derives a session mode applies this first —
  * `parseManifest`, `toAgentConfig`, and the runtime's provider resolution —
@@ -30,11 +38,20 @@ type ProviderFields = {
  * (see "Never let S2S be a fallback" in CLAUDE.md).
  */
 export function defaultProviders(config: ProviderFields): {
-  stt: AssemblyAIProvider;
-  llm: AssemblyAILlmProvider;
-  tts: AssemblyAITtsProvider;
+  stt?: AssemblyAIProvider;
+  llm?: AssemblyAILlmProvider;
+  tts?: AssemblyAITtsProvider;
 } | null {
-  const declared =
-    config.stt != null || config.llm != null || config.tts != null || config.s2s != null;
-  return declared ? null : assemblyAIPipeline();
+  if (config.s2s != null) return null;
+  if (config.stt != null && config.llm != null && config.tts != null) return null;
+  const pipeline = assemblyAIPipeline();
+  const fill: {
+    stt?: AssemblyAIProvider;
+    llm?: AssemblyAILlmProvider;
+    tts?: AssemblyAITtsProvider;
+  } = {};
+  if (config.stt == null) fill.stt = pipeline.stt;
+  if (config.llm == null) fill.llm = pipeline.llm;
+  if (config.tts == null) fill.tts = pipeline.tts;
+  return fill;
 }

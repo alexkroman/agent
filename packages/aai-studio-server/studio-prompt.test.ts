@@ -59,11 +59,13 @@ describe("studioSystemPrompt", () => {
     // guarantees, with the S2S voice agent API only on request. Both are
     // graded by the CONFIG_CASES half of the studio codegen evals.
     expect(prompt).toContain("Default to a cascaded (pipeline-mode) agent");
-    // The SDK's own preset, not the hand-rolled triple. `assemblyAIPipeline`
-    // exists to close exactly this gap and the scaffold reference already
-    // teaches it first — but the preamble outranks the reference, and while it
-    // spelled out the long form, 11 of 11 starter-eval agents wrote the three
-    // stage-factory imports by hand and none used the preset.
+    // The zero-import golden path: no provider fields, `voice` for the TTS
+    // voice. The preamble must teach it explicitly — it outranks the
+    // scaffold reference, and when it spelled out the long form, 11 of 11
+    // starter-eval agents wrote the three stage-factory imports by hand.
+    expect(prompt).toContain("declaring no provider fields at all");
+    expect(prompt).toContain('voice: "jane"');
+    // The preset survives only as the EU-residency spelling.
     expect(prompt).toContain("assemblyAIPipeline");
     // Real gateway ids are interpolated so the agent can't invent one
     // (a made-up id only fails at runtime, with a 400 "model not found").

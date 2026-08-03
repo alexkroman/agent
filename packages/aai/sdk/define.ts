@@ -2,6 +2,7 @@
 
 import { normalizeAgentConveniences } from "./_author-conveniences.ts";
 import { DEFAULT_MAX_STEPS } from "./constants.ts";
+import type { AssemblyAITtsVoice } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import type { InferSchemaOutput, ToolInputSchema } from "./schema.ts";
 import {
@@ -80,7 +81,7 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
  * for authors, because neither bundler typechecks user code. Field docs live
  * on {@link AgentDef} and carry through the mapped types.
  *
- * Two author-facing conveniences widen the derived shape (both normalized
+ * Three author-facing conveniences widen the derived shape (all normalized
  * away by `agent()`, so `AgentDef` stays canonical):
  *
  * - `system` — alias of `systemPrompt`, matching the Vercel AI SDK's field
@@ -88,13 +89,16 @@ export type DefaultedAgentField = "systemPrompt" | "greeting" | "maxSteps" | "to
  * - `llm` also accepts a model-id string: `"creator/model"` routes through
  *   the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), a bare id through the
  *   AssemblyAI LLM Gateway (`ASSEMBLYAI_API_KEY`).
+ * - `voice` — the TTS voice for the default AssemblyAI pipeline, desugared
+ *   to `tts: assemblyAITts({ voice })`. Only valid when no explicit `tts`
+ *   descriptor is set (the voice rides on the descriptor there) and never
+ *   in S2S mode (the S2S descriptor owns its voice).
  *
- * And one restriction the runtime has always enforced is now a compile
- * error instead of a `parseManifest` throw: the shape is a
- * pipeline-mode/S2S-mode union, so a *partial* provider triple
- * (`stt` without `llm`/`tts`), or `s2s` combined with pipeline fields,
- * fails the build with a message naming the rule
- * ({@link PipelineOnlyMisuse}) rather than failing at the first
+ * Pipeline stages are individually optional: declare any subset of
+ * `stt`/`llm`/`tts` and the unset stages run on the default all-AssemblyAI
+ * pipeline. The shape is still a pipeline-mode/S2S-mode union, so `s2s`
+ * combined with a pipeline field fails the build with a message naming the
+ * rule ({@link PipelineOnlyMisuse}) rather than failing at the first
  * `aai dev`/`aai deploy`. Configs that never went through `agent()` are
  * still caught at parse time.
  *
@@ -146,27 +150,37 @@ export type PipelineOnlyMisuse<K extends PipelineOnlyField> =
   `\`${K}\` is pipeline-mode only — it has no effect on an s2s agent; remove it or remove \`s2s\``;
 
 /**
- * Pipeline-mode params: the provider triple all together (or none, which
- * runs the default all-AssemblyAI pipeline), never `s2s`.
+ * Pipeline-mode params: any subset of the provider triple (unset stages run
+ * on the default all-AssemblyAI pipeline), never `s2s`. The `voice`
+ * shorthand picks the default pipeline's TTS voice; an explicit `tts`
+ * descriptor owns its voice, so combining the two is a compile error naming
+ * the rule.
  */
 export type PipelineAgentParams<S = DefaultSessionState> = SharedAgentParams<S> &
-  Partial<Pick<AgentDef<S>, PipelineOnlyField>> &
-  (
+  Partial<Pick<AgentDef<S>, PipelineOnlyField>> & {
+    /** See {@link AgentDef.stt}. Unset → the default AssemblyAI STT. */
+    stt?: SttProvider;
+    /**
+     * See {@link AgentDef.llm}; a string is gateway model-id shorthand.
+     * Unset → the default AssemblyAI LLM Gateway model.
+     */
+    llm?: LlmProvider | string;
+    s2s?: undefined;
+  } & (
     | {
-        /** See {@link AgentDef.stt}. Set together with `llm` and `tts`. */
-        stt: SttProvider;
-        /** See {@link AgentDef.llm}; a string is gateway model-id shorthand. */
-        llm: LlmProvider | string;
-        /** See {@link AgentDef.tts}. Set together with `stt` and `llm`. */
+        /** See {@link AgentDef.tts}. The voice rides on the descriptor. */
         tts: TtsProvider;
-        s2s?: undefined;
+        voice?: "`voice` picks the default pipeline's TTS voice — an explicit `tts` descriptor owns its own voice (e.g. `assemblyAITts({ voice })`); set it there or remove `tts`";
       }
     | {
-        /** Declare no providers to run the default all-AssemblyAI pipeline. */
-        stt?: undefined;
-        llm?: undefined;
         tts?: undefined;
-        s2s?: undefined;
+        /**
+         * TTS voice for the default AssemblyAI pipeline — shorthand for
+         * `tts: assemblyAITts({ voice })`. See `ASSEMBLYAI_TTS_VOICES`
+         * (from `@alexkroman1/aai/tts`) for the catalog; a name outside it
+         * fails in-band after connect and leaves the agent silent.
+         */
+        voice?: AssemblyAITtsVoice;
       }
   );
 
@@ -181,6 +195,7 @@ export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
   stt?: "`stt` cannot be combined with `s2s` — S2S runs STT service-side";
   llm?: "`llm` cannot be combined with `s2s` — S2S runs the LLM loop service-side";
   tts?: "`tts` cannot be combined with `s2s` — S2S runs TTS service-side";
+  voice?: "`voice` is pipeline-mode only — an S2S agent's voice rides on the `s2s` descriptor";
 } & {
   [K in PipelineOnlyField]?: PipelineOnlyMisuse<K>;
 };
@@ -214,10 +229,22 @@ export type S2sAgentParams<S = DefaultSessionState> = SharedAgentParams<S> & {
  *
  * @remarks
  * Session mode: with no provider fields the agent runs the default
- * all-AssemblyAI cascaded pipeline (`assemblyAIPipeline()`). Pass `stt`,
- * `llm`, and `tts` together to pick different pipeline providers (all three
- * or none), or set `s2s` (e.g. `assemblyAIS2s()`) to opt into the
- * speech-to-speech path instead. See {@link AgentDef} for every field.
+ * all-AssemblyAI cascaded pipeline. Set any subset of `stt`, `llm`, `tts`
+ * to swap individual stages (unset stages keep the AssemblyAI default), and
+ * `voice` to pick the default pipeline's TTS voice — or set `s2s` (e.g.
+ * `assemblyAIS2s()`) to opt into the speech-to-speech path instead. See
+ * {@link AgentDef} for every field.
+ *
+ * @example Default pipeline with a voice and a different LLM
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ *
+ * export default agent({
+ *   name: "My Agent",
+ *   voice: "michael",
+ *   llm: "claude-sonnet-4-6",
+ * });
+ * ```
  *
  * @public
  */

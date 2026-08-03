@@ -21,19 +21,22 @@
 export type SessionMode = "s2s" | "pipeline";
 
 /**
- * Enforce the all-or-nothing provider rule and return the derived mode.
+ * Classify the session mode from the provider fields, rejecting invalid
+ * combinations.
  *
  * Pipeline mode requires STT, LLM, and TTS all set; S2S mode requires
- * none of them. Anything in-between is a configuration error. An `s2s`
- * descriptor selects the S2S provider — it must not be combined with any
- * pipeline field.
+ * none of them. An `s2s` descriptor selects the S2S provider — it must not
+ * be combined with any pipeline field.
  *
  * This function only classifies what it is given — it injects nothing. The
  * pipeline-by-default rule lives in `defaultProviders`
  * (`providers/_default-providers.ts`), which every config layer applies
- * *before* calling this, so "nothing set" reaches here only for raw
- * pre-default shapes (and still classifies as "s2s" for wire tolerance with
- * stored configs that predate the flip).
+ * *before* calling this: unset pipeline stages are filled from the
+ * all-AssemblyAI pipeline, so a partial triple never reaches this check on
+ * an authoring path. The partial-triple error below therefore only fires on
+ * raw wire shapes that skipped the fill, and "nothing set" reaches here only
+ * for raw pre-default shapes (still classified as "s2s" for wire tolerance
+ * with stored configs that predate the flip).
  *
  * @internal
  */

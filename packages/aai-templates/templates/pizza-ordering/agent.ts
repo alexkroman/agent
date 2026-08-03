@@ -1,4 +1,4 @@
-import { agent, assemblyAIPipeline, tool } from "@alexkroman1/aai";
+import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import {
   CRUSTS,
@@ -21,7 +21,6 @@ const crusts = z.enum(CRUSTS);
 
 export default agent({
   name: "Pizza Palace",
-  ...assemblyAIPipeline(),
   // The cart, pushed to the client after every tool call. Replaces a
   // `ctx.send("order", ...)` in each of the five order tools, and the
   // event-diffing the client had to do to rebuild the cart from them.

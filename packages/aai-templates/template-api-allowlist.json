@@ -115,6 +115,7 @@
     "VALID_SLUG_RE",
     "WS_NORMAL_CLOSURE",
     "WS_OPEN",
+    "assemblyAIPipeline",
     "assemblyAIS2s",
     "capToolResult",
     "errorDetail",
@@ -180,6 +181,7 @@
     "TtsProvider",
     "TtsSession",
     "Unsubscribe",
+    "assemblyAITts",
     "cartesia",
     "rime"
   ],

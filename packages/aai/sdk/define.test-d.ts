@@ -107,12 +107,14 @@ test("agent() without stt/llm/tts is still legal (s2s mode)", () => {
   expectTypeOf(def.tts).toEqualTypeOf<TtsProvider | undefined>();
 });
 
-test("a partial provider triple is not an accepted AgentParams", () => {
-  // The runtime has always rejected one-or-two-of-three at parse time; the
-  // union makes it a compile error with a "missing: llm, tts" elaboration.
-  expectTypeOf<{ name: string; stt: SttProvider }>().not.toExtend<AgentParams>();
-  expectTypeOf<{ name: string; stt: SttProvider; llm: LlmProvider }>().not.toExtend<AgentParams>();
-  // All three (or none) both fit.
+test("any subset of the provider triple is an accepted AgentParams", () => {
+  // Unset stages are filled from the default all-AssemblyAI pipeline at
+  // parse time, so a partial triple is a valid declaration, not an error.
+  expectTypeOf<{ name: string; stt: SttProvider }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; stt: SttProvider; llm: LlmProvider }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; tts: TtsProvider }>().toExtend<AgentParams>();
+  // A bare model-id string is accepted for `llm`.
+  expectTypeOf<{ name: string; llm: string }>().toExtend<AgentParams>();
   expectTypeOf<{
     name: string;
     stt: SttProvider;
@@ -120,6 +122,16 @@ test("a partial provider triple is not an accepted AgentParams", () => {
     tts: TtsProvider;
   }>().toExtend<AgentParams>();
   expectTypeOf<{ name: string }>().toExtend<AgentParams>();
+});
+
+test("voice picks the default pipeline's TTS voice, never a descriptor's or S2S's", () => {
+  // The shorthand for the golden path…
+  expectTypeOf<{ name: string; voice: "michael" }>().toExtend<AgentParams>();
+  expectTypeOf<{ name: string; voice: string; llm: LlmProvider }>().toExtend<AgentParams>();
+  // …is rejected when an explicit `tts` descriptor owns the voice…
+  expectTypeOf<{ name: string; tts: TtsProvider; voice: "michael" }>().not.toExtend<AgentParams>();
+  // …and in S2S mode, where the `s2s` descriptor owns it.
+  expectTypeOf<{ name: string; s2s: S2sProvider; voice: "michael" }>().not.toExtend<AgentParams>();
 });
 
 test("s2s cannot be combined with pipeline providers or pipeline-only tuning", () => {

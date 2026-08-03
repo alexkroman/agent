@@ -10,7 +10,7 @@ npx aai dev
 ```
 
 ```ts
-import { agent, assemblyAIPipeline, tool } from "@alexkroman1/aai";
+import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 const getWeather = tool({
@@ -26,9 +26,14 @@ export default agent({
   name: "Weather Assistant",
   systemPrompt: "You help callers plan around the weather. Keep replies short.",
   tools: { get_weather: getWeather },
-  ...assemblyAIPipeline({ voice: "michael" }),
+  voice: "michael",
 });
 ```
+
+With no provider fields the agent runs an all-AssemblyAI STT → LLM → TTS
+pipeline billed to one `ASSEMBLYAI_API_KEY`; `voice` picks its TTS voice.
+Set any of `stt`, `llm`, `tts` to swap a single stage — e.g.
+`llm: "claude-sonnet-4-6"` — and the unset stages keep the default.
 
 ## What's documented here
 

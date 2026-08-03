@@ -440,23 +440,25 @@ export type AgentDef<S = DefaultSessionState> = {
    */
   falseInterruptionTimeoutMs?: number;
   /**
-   * Pluggable STT provider. Set together with `llm` and `tts` to select
-   * the pipeline providers; all three unset (and no `s2s`) defaults to the
-   * all-AssemblyAI pipeline (`assemblyAIPipeline()`).
+   * Pluggable STT provider for pipeline mode. Unset (with no `s2s`), the
+   * stage defaults to AssemblyAI STT — each pipeline stage is individually
+   * optional, and unset stages are filled from the all-AssemblyAI pipeline
+   * (`assemblyAIPipeline()`).
    */
   stt?: SttProvider;
   /**
    * Pluggable LLM provider descriptor from `@alexkroman1/aai/llm` (e.g.
-   * `anthropic({ model })`). Set together with `stt` and `tts` for pipeline
-   * mode. Note this is pure serializable data, not a Vercel AI SDK
-   * `LanguageModel` instance — the host resolves the descriptor into a
-   * `LanguageModel` at session start, using credentials from the agent's
-   * env.
+   * `anthropic({ model })`) for pipeline mode. Unset (with no `s2s`), the
+   * stage defaults to the AssemblyAI LLM Gateway. Note this is pure
+   * serializable data, not a Vercel AI SDK `LanguageModel` instance — the
+   * host resolves the descriptor into a `LanguageModel` at session start,
+   * using credentials from the agent's env.
    */
   llm?: LlmProvider;
   /**
-   * Pluggable TTS provider. Set together with `stt` and `llm` for
-   * pipeline mode.
+   * Pluggable TTS provider for pipeline mode. Unset (with no `s2s`), the
+   * stage defaults to AssemblyAI TTS (`agent()`'s `voice` shorthand picks
+   * its voice).
    */
   tts?: TtsProvider;
   /**

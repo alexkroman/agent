@@ -1,15 +1,13 @@
-import { agent, assemblyAIPipeline, tool } from "@alexkroman1/aai";
-import { assemblyAITts } from "@alexkroman1/aai/tts";
+import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import { getGameState, resetGameState } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
 
 export default agent({
   name: "Cavern Adventure",
-  ...assemblyAIPipeline(),
-  // Overriding one stage of the preset: a narrator wants a narrative voice,
-  // and the other two stages stay as the preset set them.
-  tts: assemblyAITts({ voice: "paul" }),
+  // A narrator wants a narrative voice; everything else stays on the
+  // default all-AssemblyAI pipeline.
+  voice: "paul",
   systemPrompt,
   // The opening scene here must agree with DEFAULT_GAME_STATE.currentRoom
   // (shared.ts) and the world map in system-prompt.md.

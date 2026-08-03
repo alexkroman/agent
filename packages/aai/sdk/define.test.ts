@@ -8,6 +8,7 @@ import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAILlm } from "./providers/llm/assemblyai.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
+import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 
 describe("tool()", () => {
@@ -43,12 +44,14 @@ describe("agent()", () => {
   });
 
   test("llm accepts a creator/model string and desugars to the Vercel AI Gateway", () => {
-    const def = agent({ name: "t", ...assemblyAIPipeline(), llm: "anthropic/claude-sonnet-4-5" });
+    // Alone, with no other pipeline stage declared — the missing stages are
+    // filled from the default pipeline downstream.
+    const def = agent({ name: "t", llm: "anthropic/claude-sonnet-4-5" });
     expect(def.llm).toEqual({ kind: "gateway", options: { model: "anthropic/claude-sonnet-4-5" } });
   });
 
   test("llm accepts a bare model id and desugars to the AssemblyAI LLM Gateway", () => {
-    const def = agent({ name: "t", ...assemblyAIPipeline(), llm: "gpt-5.5" });
+    const def = agent({ name: "t", llm: "gpt-5.5" });
     expect(def.llm?.kind).toBe("assemblyai");
     expect(def.llm?.options.model).toBe("gpt-5.5");
   });
@@ -127,5 +130,38 @@ describe("agent()", () => {
     expect(parsed.stt).toBeUndefined();
     expect(parsed.llm).toBeUndefined();
     expect(parsed.tts).toBeUndefined();
+  });
+
+  test("a single declared stage keeps it; the rest fill from the default pipeline", () => {
+    const llm = anthropic({ model: "claude-haiku-4-5" });
+    const parsed = parseManifest(agent({ name: "t", llm }));
+    expect(parsed.mode).toBe("pipeline");
+    expect(parsed.llm).toStrictEqual(llm);
+    expect(parsed.stt).toEqual(assemblyAIPipeline().stt);
+    expect(parsed.tts).toEqual(assemblyAIPipeline().tts);
+  });
+
+  test("`voice` desugars to the default pipeline's TTS descriptor", () => {
+    const def = agent({ name: "t", voice: "michael" });
+    expect("voice" in def).toBe(false);
+    expect(def.tts).toEqual(assemblyAITts({ voice: "michael" }));
+    // stt/llm stay undeclared on the def; parse fills them.
+    expect(def.stt).toBeUndefined();
+    expect(def.llm).toBeUndefined();
+    const parsed = parseManifest(def);
+    expect(parsed.mode).toBe("pipeline");
+    expect(parsed.tts).toEqual(assemblyAITts({ voice: "michael" }));
+  });
+
+  test("`voice` combined with an explicit tts descriptor throws", () => {
+    expect(() =>
+      agent({ name: "t", voice: "michael", tts: cartesia({ voice: "v" }) } as never),
+    ).toThrow(/`voice` picks the default pipeline's TTS voice/);
+  });
+
+  test("`voice` combined with s2s throws", () => {
+    expect(() => agent({ name: "t", voice: "michael", s2s: assemblyAIS2s() } as never)).toThrow(
+      /`voice` is pipeline-mode only/,
+    );
   });
 });
