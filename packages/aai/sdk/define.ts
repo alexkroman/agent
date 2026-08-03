@@ -37,6 +37,9 @@ import {
  *
  * @example Typed session state
  * ```ts
+ * import { tool, type ToolContext } from "@alexkroman1/aai";
+ * import { z } from "zod";
+ *
  * type Cart = { items: string[] };
  *
  * const add = tool({

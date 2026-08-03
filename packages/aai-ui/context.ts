@@ -84,6 +84,8 @@ export function useSessionCore(): SessionCore {
  *
  * @example
  * ```tsx
+ * import { useSession } from "@alexkroman1/aai-ui";
+ *
  * function Controls() {
  *   const session = useSession();
  *   if (!session.started) return <button onClick={session.start}>Start</button>;

@@ -6,6 +6,9 @@
  *
  * @example
  * ```ts
+ * import type { ToolContext } from "@alexkroman1/aai";
+ * declare const ctx: ToolContext; // the context a tool's execute receives
+ *
  * await ctx.db.query("insert into notes (body) values ($1)", ["hello"]);
  * const rows = await ctx.db.query<{ body: string }>("select body from notes");
  * ```

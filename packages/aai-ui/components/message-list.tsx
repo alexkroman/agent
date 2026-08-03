@@ -212,7 +212,11 @@ function interleave(
  *
  * @example
  * ```tsx
- * <MessageList className="flex-1" />
+ * import { MessageList } from "@alexkroman1/aai-ui";
+ *
+ * function Conversation() {
+ *   return <MessageList className="flex-1" />;
+ * }
  * ```
  *
  * @param className - Additional CSS class names applied to the scroll container.

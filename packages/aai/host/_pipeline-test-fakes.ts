@@ -388,7 +388,7 @@ const FAKE_LLM_KIND = "fake-llm";
  *
  * Always release the registration (the registry is module-level):
  *
- * ```ts
+ * ```ts no-check
  * const fakes = registerFakeProviders({ stt, tts, llm });
  * try { ... } finally { fakes.unregister(); }
  * ```

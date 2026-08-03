@@ -1606,7 +1606,14 @@ keep it exported but out of the docs — and `treatWarningsAsErrors`, so a
 broken `{@link}` or a type referenced by a public signature but not
 exported **fails the build**. The generation runs as the turbo `docs`
 task, wired into `pnpm check` and the CI check job as a merge gate; keep
-it at zero warnings rather than downgrading the option. The
+it at zero warnings rather than downgrading the option.
+**Code examples in docs compile**: `pnpm check:doc-examples`
+(`scripts/check-doc-examples.mjs`, in `pnpm check` and the CI check job)
+extracts every ```` ```ts ````/```` ```tsx ```` fence from published-package
+doc comments, the scaffold CLAUDE.md, READMEs, and the studio prompt
+modules, and compiles each as a self-contained module under the scaffold
+tsconfig. A deliberate fragment opts out with `no-check` in the fence info
+string (```` ```ts no-check ````). The
 `.github/workflows/docs.yml` workflow publishes the site to GitHub Pages
 (`https://alexkroman.github.io/agent/`) on every push to `main`. The
 docs tooling lives in its own `docs/` workspace package

@@ -22,9 +22,15 @@ const PULSING_STATES: ReadonlySet<AgentState> = new Set(["listening", "speaking"
  *
  * @example
  * ```tsx
- * <StartScreen icon="🍕" title="Pizza Palace">
- *   <ChatView />
- * </StartScreen>
+ * import { ChatView, StartScreen } from "@alexkroman1/aai-ui";
+ *
+ * function App() {
+ *   return (
+ *     <StartScreen icon="🍕" title="Pizza Palace">
+ *       <ChatView />
+ *     </StartScreen>
+ *   );
+ * }
  * ```
  *
  * @param icon - Optional element rendered in place of the logo in the header.

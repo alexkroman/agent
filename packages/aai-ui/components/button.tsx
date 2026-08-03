@@ -36,13 +36,16 @@ export type ButtonSize = "default" | "lg";
  *
  * @example
  * ```tsx
- * <Button variant="secondary" onClick={handleClick}>
- *   Stop
- * </Button>
+ * import { Button } from "@alexkroman1/aai-ui";
  *
- * <Button size="lg" className="w-full">
- *   Start Conversation
- * </Button>
+ * function Actions({ onStop }: { onStop: () => void }) {
+ *   return (
+ *     <>
+ *       <Button variant="secondary" onClick={onStop}>Stop</Button>
+ *       <Button size="lg" className="w-full">Start Conversation</Button>
+ *     </>
+ *   );
+ * }
  * ```
  *
  * @param variant - Visual style (`"default"` | `"secondary"` | `"ghost"`). Defaults to `"default"`.

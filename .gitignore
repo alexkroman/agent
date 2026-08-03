@@ -34,3 +34,7 @@ packages/*/package.json.e2e-backup
 
 # Guest session scratch (aai-guest writes workspaces next to the harness)
 .workspaces/
+
+# check-doc-examples scratch (cleaned up on exit; ignore crash leftovers)
+.doc-examples-scratch-*/
+tsconfig.doc-examples-*.json

@@ -143,8 +143,14 @@ export function useToolResult(...args: unknown[]): void {
  * returns is what arrives here — no per-tool result mirroring needed.
  *
  * ```tsx
- * const cart = useAgentState<{ cart: Item[] }>();
- * return <Cart items={cart?.cart ?? []} />;
+ * import { useAgentState } from "@alexkroman1/aai-ui";
+ *
+ * type Item = { sku: string; qty: number };
+ *
+ * function Cart() {
+ *   const state = useAgentState<{ cart: Item[] }>();
+ *   return <ul>{state?.cart.map((item) => <li key={item.sku}>{item.qty}</li>)}</ul>;
+ * }
  * ```
  *
  * Typed by the caller for the same reason `useToolResult` is: the shape is
@@ -167,10 +173,19 @@ export function useAgentState<S = DefaultToolResult>(): S | null {
  *
  * @example
  * ```tsx
- * // Tool: ctx.send("item_added", { sku, qty })
- * useEvent<{ sku: string; qty: number }>("item_added", (data) => {
- *   setCart((cart) => [...cart, data]);
- * });
+ * import { useEvent } from "@alexkroman1/aai-ui";
+ * import { useState } from "react";
+ *
+ * type Item = { sku: string; qty: number };
+ *
+ * function Cart() {
+ *   const [cart, setCart] = useState<Item[]>([]);
+ *   // Tool: ctx.send("item_added", { sku, qty })
+ *   useEvent<Item>("item_added", (data) => {
+ *     setCart((cart) => [...cart, data]);
+ *   });
+ *   return <div>{cart.length} items</div>;
+ * }
  * ```
  *
  * @public

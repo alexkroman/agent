@@ -198,6 +198,12 @@ function DefaultRoot({
  *
  * @example Tier 1
  * ```tsx
+ * import { client } from "@alexkroman1/aai-ui";
+ *
+ * function OrderPanel() {
+ *   return <div>Cart</div>;
+ * }
+ *
  * client({
  *   name: "Pizza Ordering",
  *   theme: { bg: "#1a1a1a", primary: "#e55" },
@@ -208,6 +214,13 @@ function DefaultRoot({
  *
  * @example Tier 2
  * ```tsx
+ * import { client, useSession } from "@alexkroman1/aai-ui";
+ *
+ * function MyCustomApp() {
+ *   const session = useSession();
+ *   return <div>{session.state}</div>;
+ * }
+ *
  * client({ component: MyCustomApp });
  * ```
  *

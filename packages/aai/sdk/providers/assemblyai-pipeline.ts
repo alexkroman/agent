@@ -12,6 +12,7 @@
  * strings:
  *
  * ```ts
+ * import { agent } from "@alexkroman1/aai";
  * import { assemblyAI } from "@alexkroman1/aai/stt";
  * import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
  * import { assemblyAI as assemblyAITts } from "@alexkroman1/aai/tts";
@@ -41,7 +42,9 @@
  * preset: spread it, then set the one field.
  *
  * ```ts
- * agent({ name: "Vera", ...assemblyAIPipeline(), tts: cartesia({ voice: "…" }) });
+ * import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+ * import { cartesia } from "@alexkroman1/aai/tts";
+ * agent({ name: "Vera", ...assemblyAIPipeline(), tts: cartesia() });
  * ```
  */
 

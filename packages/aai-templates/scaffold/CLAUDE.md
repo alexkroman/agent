@@ -68,7 +68,7 @@ my-agent/
 
 ## `agent()` API
 
-```ts
+```ts no-check
 import { agent } from "@alexkroman1/aai";
 
 export default agent({
@@ -131,6 +131,7 @@ providers gets `assemblyAIPipeline()` injected as the default. Speech-to-speech
 System prompt from file:
 
 ```ts
+/// <reference types="vite/client" />
 import { agent } from "@alexkroman1/aai";
 import systemPrompt from "./system-prompt.md?raw";
 export default agent({ name: "My Agent", systemPrompt });
@@ -279,8 +280,10 @@ etc.) with the same API key as AssemblyAI STT. It accepts an optional
 factory, so alias one when using both:
 
 ```ts
+import { agent } from "@alexkroman1/aai";
 import { assemblyAI } from "@alexkroman1/aai/stt";
 import { assemblyAI as assemblyAILlm } from "@alexkroman1/aai/llm";
+import { cartesia } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
@@ -348,7 +351,7 @@ Set provider keys the same way as any secret: `.env` for local dev,
 
 ## `tool()` API
 
-```ts
+```ts no-check
 import { tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
@@ -364,7 +367,7 @@ same way in `aai dev` and deployed.
 
 ### `ctx` (ToolContext)
 
-```ts
+```ts no-check
 ctx.env: Readonly<Record<string, string>>     // secrets from .env / aai secret put
 ctx.state: S                                   // per-session mutable state (agent's `state` factory)
 ctx.db: Db                                     // SQL database, needs storage enabled (see Database section)
@@ -378,7 +381,7 @@ ctx.generate(opts): Promise<{ text, object? }> // one-shot LLM call (host-side)
 the project's tsconfig turns off `noImplicitAny`, so both of these compile
 with no annotations and no errors:
 
-```ts
+```ts no-check
 ctx.state.count++;
 ctx.state.incidents.filter((i) => i.status === "open");
 ```
@@ -391,7 +394,7 @@ declare empty.** With `noImplicitAny` off, TypeScript does not widen an empty
 initializer from what you later assign, so `[]` stays `never[]` and `null`
 stays `null` — forever, whether or not a callback is involved:
 
-```ts
+```ts no-check
 const items = [];            // never[]  → items.push(x) is an error
 let best = null;             // null     → best = {...} is an error
 const [picks, set] = useState([]);  // never[] in a client, same thing
@@ -478,7 +481,7 @@ export default agent({
 them, and they are not on `ctx`. When your own `execute` needs one, import
 it:
 
-```ts
+```ts no-check
 import { fetchJson, visitWebpage, webSearch } from "@alexkroman1/aai/tools";
 
 execute: async ({ city }) => await fetchJson(`https://api.example.com/${city}`),
@@ -511,7 +514,7 @@ pipeline, and no amount of prompting gets the flexibility back.
 but its VALUE must be a plain `z.object(...)` — so all of these are type
 errors:
 
-```ts
+```ts no-check
 parameters: z.undefined(),                 // ✗ ZodUndefined
 parameters: z.void(),                      // ✗
 parameters: z.object({ q: z.string() }).optional(),  // ✗ ZodOptional
@@ -546,7 +549,7 @@ export const rollDice = tool({
 });
 ```
 
-```ts
+```ts no-check
 // agent.ts
 import { agent } from "@alexkroman1/aai";
 import { rollDice } from "./tools/roll_dice.ts";
@@ -609,7 +612,7 @@ call it from `execute` — see the builtin table above.
 Persistent SQL storage scoped per app, backed by the app's own Postgres
 schema. Access via `ctx.db`:
 
-```ts
+```ts no-check
 ctx.db.query<T = Record<string, unknown>>(sql: string, params?: unknown[]): Promise<T[]>
 ```
 
@@ -627,7 +630,7 @@ A query returning more than 1000 rows throws — always bound reads with
 
 Create tables lazily from tool code and upsert with `on conflict`:
 
-```ts
+```ts no-check
 await ctx.db.query(`create table if not exists app_state (
   key text primary key,
   value jsonb not null,
@@ -658,6 +661,7 @@ Always import `"@alexkroman1/aai-ui/styles.css"` first.
 ### Tier 1 — config only (default UI)
 
 ```tsx
+/// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
 import { client } from "@alexkroman1/aai-ui";
 
@@ -667,6 +671,7 @@ client({ name: "My Agent" });
 ### Tier 1 with sidebar
 
 ```tsx
+/// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
 import { client, useEvent } from "@alexkroman1/aai-ui";
 import { useState } from "react";
@@ -689,6 +694,7 @@ client({ name: "My Agent", sidebar: Sidebar });
 ### Tier 2 — full custom component
 
 ```tsx
+/// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
 import { client, useSession } from "@alexkroman1/aai-ui";
 
@@ -754,7 +760,7 @@ Methods: `start()`, `toggle()`, `reset()`, `cancel()`, `disconnect()`,
 **`useToolResult`** — fires once per completed tool call (deduplicates by
 callId):
 
-```ts
+```ts no-check
 useToolResult("tool_name", (result, toolCall) => { ... })          // one tool
 useToolResult((toolName, result, toolCall) => { ... })             // all tools
 useToolResult<ResultType>("tool_name", (result) => { ... })        // typed (optional)
@@ -771,7 +777,7 @@ also what you want for anything that can be a string, an array, or null.
 
 **`useAgentState`** — the agent's session state, pushed automatically:
 
-```ts
+```ts no-check
 // agent.ts
 export default agent({
   state: () => ({ cart: [] as Item[], staffPin: "" }),
@@ -797,7 +803,7 @@ after every tool call and is sent only when the result changed.
 
 **`useEvent`** — fires for custom events from `ctx.send()`:
 
-```ts
+```ts no-check
 useEvent<DataType>("event_name", (data) => { ... })
 ```
 
@@ -830,6 +836,7 @@ beside it; writing `<StartScreen ... />` self-closing is a `TS2741:
 Property 'children' is missing` build error:
 
 ```tsx
+/// <reference types="vite/client" />
 import "@alexkroman1/aai-ui/styles.css";
 import { ChatView, client, StartScreen } from "@alexkroman1/aai-ui";
 

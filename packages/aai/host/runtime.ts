@@ -113,8 +113,12 @@ function resolvePipelineProviders(
  *
  * @example
  * ```ts
- * const runtime = createRuntime({ agent, env });
+ * import { agent } from "@alexkroman1/aai";
+ * import { createRuntime, type SessionWebSocket } from "@alexkroman1/aai/runtime";
+ *
+ * const runtime = createRuntime({ agent: agent({ name: "My Agent" }), env: {} });
  * // wire a connected WebSocket to a session:
+ * declare const ws: SessionWebSocket;
  * runtime.startSession(ws);
  * await runtime.shutdown();
  * ```

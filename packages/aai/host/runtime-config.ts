@@ -25,13 +25,17 @@ export type LogFn = (msg: string, ctx?: LogContext) => void;
  *
  * @example
  * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * import { createRuntime, type Logger } from "@alexkroman1/aai/runtime";
+ * declare const myBackend: { log(level: string, msg: string, ctx?: object): void };
+ *
  * const myLogger: Logger = {
  *   info: (msg, ctx) => myBackend.log("info", msg, ctx),
  *   warn: (msg, ctx) => myBackend.log("warn", msg, ctx),
  *   error: (msg, ctx) => myBackend.log("error", msg, ctx),
  *   debug: (msg, ctx) => myBackend.log("debug", msg, ctx),
  * };
- * createRuntime({ agent, env, logger: myLogger });
+ * createRuntime({ agent: agent({ name: "My Agent" }), env: {}, logger: myLogger });
  * ```
  */
 export type Logger = Record<LogLevel, LogFn>;

@@ -82,6 +82,7 @@ jobs:
           pnpm run check:sherif
           pnpm run check:markdown
           pnpm run check:publish-names
+          pnpm run check:doc-examples
       # The two quality ratchets. They lived only in scripts/check.sh, which CI
       # never invokes, so they were enforced solely by the pre-push hook — and
       # `git push --no-verify` skipped them entirely. Both are pure git/fs

@@ -47,6 +47,10 @@ import { MIC_SEND_MAX_BUFFERED_BYTES, type WebSocketConstructor } from "./types.
  *
  * @example
  * ```ts
+ * import { createSessionCore, type SessionSnapshot } from "@alexkroman1/aai-ui";
+ *
+ * declare function render(snapshot: SessionSnapshot): void;
+ *
  * const session = createSessionCore({ platformUrl: "https://host/my-agent/" });
  * session.subscribe(() => render(session.getSnapshot()));
  * session.start();

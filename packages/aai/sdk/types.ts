@@ -302,10 +302,14 @@ export type AgentDef<S = DefaultSessionState> = {
    * socket with 384 kbps of PCM.
    *
    * ```ts
+   * import { agent } from "@alexkroman1/aai";
+   * type Item = { sku: string; qty: number };
+   *
    * agent({
+   *   name: "Cart",
    *   state: () => ({ cart: [] as Item[], staffPin: "" }),
    *   syncState: (s) => ({ cart: s.cart }),   // staffPin stays server-side
-   * })
+   * });
    * ```
    *
    * Without it, the pattern agents reach for is: return a state snapshot from

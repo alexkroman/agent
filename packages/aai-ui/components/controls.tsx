@@ -16,7 +16,11 @@ import { SessionUrlChips } from "./url-chips.tsx";
  *
  * @example
  * ```tsx
- * <Controls className="justify-end" />
+ * import { Controls } from "@alexkroman1/aai-ui";
+ *
+ * function Footer() {
+ *   return <Controls className="justify-end" />;
+ * }
  * ```
  *
  * @param className - Additional CSS class names applied to the container.
