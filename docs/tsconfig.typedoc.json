@@ -8,5 +8,12 @@
     "skipLibCheck": true,
     "strict": true
   },
-  "include": ["../packages/*/dist/**/*.d.ts"]
+  // Exactly the packages typedoc.json lists as entryPoints, not every
+  // package's dist. The wildcard pulled aai-cli, aai-guest and the server
+  // packages into the program too, so `pnpm docs` failed with
+  // `TS6053: File '…/packages/aai-cli/dist/_agent.d.ts' not found` unless
+  // every workspace happened to be built — while turbo's `docs` task
+  // declares only the two builds documented here. Listing them keeps the
+  // tsconfig, typedoc.json and that dependsOn in agreement.
+  "include": ["../packages/aai/dist/**/*.d.ts", "../packages/aai-ui/dist/**/*.d.ts"]
 }
