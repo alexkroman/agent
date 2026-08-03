@@ -88,6 +88,14 @@
         "modal"
       ]
     },
+    "docs": {
+      "ignoreDependencies": [
+        "typedoc"
+      ],
+      "ignoreBinaries": [
+        "typedoc"
+      ]
+    },
     "packages/aai-studio-client": {
       "entry": [
         "**/*.test.{ts,tsx}"
