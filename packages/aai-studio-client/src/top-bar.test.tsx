@@ -54,12 +54,17 @@ describe("TopBar", () => {
     expect(onSelectTab).toHaveBeenCalledWith("preview");
   });
 
-  test("Publish and Settings lock until there is a build / a deploy", () => {
-    render(<TopBar {...barProps} hasBuild={false} />);
+  test("Publish locks until there is a build; Settings stays available", () => {
+    // Settings must never gate on a build or a deploy — the panel holds the
+    // Delete project button, which has to work before anything is published.
+    const onToggleSettings = vi.fn();
+    render(<TopBar {...barProps} hasBuild={false} onToggleSettings={onToggleSettings} />);
     const publish = screen.getByRole("button", { name: "Publish" });
     const settings = screen.getByRole("button", { name: "Settings" });
     expect((publish as HTMLButtonElement).disabled).toBe(true);
-    expect((settings as HTMLButtonElement).disabled).toBe(true);
+    expect((settings as HTMLButtonElement).disabled).toBe(false);
+    fireEvent.click(settings);
+    expect(onToggleSettings).toHaveBeenCalled();
   });
 
   test("Publish locks while a chat turn streams, even with a build", () => {
@@ -75,17 +80,12 @@ describe("TopBar", () => {
     expect((publish as HTMLButtonElement).disabled).toBe(false);
   });
 
-  test("a deployed slug shows the production link and unlocks Settings", () => {
-    const onToggleSettings = vi.fn();
-    render(<TopBar {...barProps} deployedSlug="my-agent" onToggleSettings={onToggleSettings} />);
+  test("a deployed slug shows the production link", () => {
+    render(<TopBar {...barProps} deployedSlug="my-agent" />);
     // The production URL is a plain link that opens in a new tab.
     const link = screen.getByRole("link");
     expect(link.getAttribute("href")).toBe(agentUrl("my-agent"));
     expect(link.getAttribute("target")).toBe("_blank");
-    const settings = screen.getByRole("button", { name: "Settings" });
-    expect((settings as HTMLButtonElement).disabled).toBe(false);
-    fireEvent.click(settings);
-    expect(onToggleSettings).toHaveBeenCalled();
   });
 
   test("Log out is wired to the sign-out handler", () => {
