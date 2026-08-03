@@ -119,15 +119,16 @@ export type AgentConfigSource = Omit<AgentConfig, "mode"> & {
  * the runtime.
  */
 export function toAgentConfig(source: AgentConfigSource): AgentConfig {
-  // No providers declared → the all-AssemblyAI pipeline (S2S requires an
-  // explicit `s2s` descriptor). Runs inside the generated bundle entry, so
-  // the defaults are baked into the deployed config at build time.
+  // Pipeline stages left unset → filled from the all-AssemblyAI pipeline
+  // (S2S requires an explicit `s2s` descriptor). Runs inside the generated
+  // bundle entry, so the defaults are baked into the deployed config at
+  // build time.
   // Author conveniences (`system`, string `llm`) normalize here too, so a
   // raw `export default {...}` that skipped `agent()` behaves the same.
   const normalized = normalizeAgentConveniences(source) as AgentConfigSource;
   const src = { ...normalized, ...(defaultProviders(normalized) ?? {}) };
-  // `assertProviderTriple` enforces that stt/llm/tts are all-or-nothing so the
-  // server can trust the resolved mode.
+  // After the fill, `assertProviderTriple` classifies the mode (and still
+  // rejects s2s combined with pipeline stages) so the server can trust it.
   const mode = assertProviderTriple(src.stt, src.llm, src.tts, src.s2s);
   assertSilencePolicy(mode, src.silenceTimeoutMs, src.silencePrompt);
   assertPipelineTuning(mode, src);

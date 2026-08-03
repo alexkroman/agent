@@ -141,8 +141,9 @@ export function parseManifest(input: unknown): Manifest {
   // Author conveniences (`system`, string `llm`) normalize here too, so a
   // raw `export default {...}` that skipped `agent()` behaves the same.
   const raw = ManifestSchema.parse(normalizeAgentConveniences(input));
-  // No providers declared → the all-AssemblyAI pipeline. S2S requires an
-  // explicit `s2s` descriptor (e.g. `assemblyAIS2s()`).
+  // Pipeline stages left unset → filled from the all-AssemblyAI pipeline
+  // (declare any subset of stt/llm/tts). S2S requires an explicit `s2s`
+  // descriptor (e.g. `assemblyAIS2s()`).
   const parsed = { ...raw, ...(defaultProviders(raw) ?? {}) };
   const mode = assertProviderTriple(parsed.stt, parsed.llm, parsed.tts, parsed.s2s);
   assertSilencePolicy(mode, parsed.silenceTimeoutMs, parsed.silencePrompt);

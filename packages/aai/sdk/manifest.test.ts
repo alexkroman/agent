@@ -9,6 +9,7 @@ import { assemblyAIPipeline } from "./providers/assemblyai-pipeline.ts";
 import { anthropic } from "./providers/llm/anthropic.ts";
 import { assemblyAIS2s } from "./providers/s2s/assemblyai.ts";
 import { assemblyAIStt } from "./providers/stt/assemblyai.ts";
+import { assemblyAITts } from "./providers/tts/assemblyai.ts";
 import { cartesia } from "./providers/tts/cartesia.ts";
 
 describe("parseManifest", () => {
@@ -183,23 +184,68 @@ describe("parseManifest — mode classification", () => {
     expect(parsed.mode).toBe("pipeline");
   });
 
-  test("only stt set ⇒ throws", () => {
-    expect(() =>
-      parseManifest({
-        name: "hello",
-        stt: stubStt,
-      } as never),
-    ).toThrow(/stt, llm, and tts must be set together/);
+  test("only stt set ⇒ pipeline, missing stages filled from the default", () => {
+    const parsed = parseManifest({
+      name: "hello",
+      stt: stubStt,
+    } as never);
+    expect(parsed.mode).toBe("pipeline");
+    expect(parsed.stt).toEqual(stubStt);
+    expect(parsed.llm).toEqual(assemblyAIPipeline().llm);
+    expect(parsed.tts).toEqual(assemblyAIPipeline().tts);
   });
 
-  test("stt + tts without llm ⇒ throws", () => {
+  test("stt + tts without llm ⇒ pipeline, llm filled from the default", () => {
+    const parsed = parseManifest({
+      name: "hello",
+      stt: stubStt,
+      tts: stubTts,
+    } as never);
+    expect(parsed.mode).toBe("pipeline");
+    expect(parsed.stt).toEqual(stubStt);
+    expect(parsed.tts).toEqual(stubTts);
+    expect(parsed.llm).toEqual(assemblyAIPipeline().llm);
+  });
+
+  test("s2s + a pipeline stage ⇒ throws (never filled into S2S)", () => {
     expect(() =>
       parseManifest({
         name: "hello",
-        stt: stubStt,
+        s2s: assemblyAIS2s(),
         tts: stubTts,
       } as never),
-    ).toThrow(/stt, llm, and tts must be set together/);
+    ).toThrow(/s2s and the stt\/llm\/tts pipeline cannot be set together/);
+  });
+
+  test("voice shorthand ⇒ default pipeline with that TTS voice", () => {
+    const parsed = parseManifest({
+      name: "hello",
+      voice: "michael",
+    } as never);
+    expect(parsed.mode).toBe("pipeline");
+    expect(parsed.tts).toEqual(assemblyAITts({ voice: "michael" }));
+    expect(parsed.stt).toEqual(assemblyAIPipeline().stt);
+    expect(parsed.llm).toEqual(assemblyAIPipeline().llm);
+  });
+
+  test("voice + explicit tts ⇒ throws (the descriptor owns its voice)", () => {
+    expect(() =>
+      parseManifest({
+        name: "hello",
+        voice: "michael",
+        tts: stubTts,
+      } as never),
+    ).toThrow(/`voice` picks the default pipeline's TTS voice/);
+  });
+
+  test("voice + s2s ⇒ throws (pipeline-mode only)", () => {
+    expect(() =>
+      parseManifest({
+        name: "hello",
+        voice: "michael",
+        s2s: assemblyAIS2s(),
+      } as never),
+    ).toThrow(/`voice` is pipeline-mode only/);
   });
 });
 

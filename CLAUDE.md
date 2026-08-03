@@ -732,12 +732,15 @@ Each agent runs in one of two session modes, selected at parse time by
 The default injection runs at every mode-derivation site — `parseManifest`,
 `toAgentConfig` (so it is baked into deployed configs at build time), and
 `createRuntime`'s provider resolution — before `assertProviderTriple`.
-Partial provider configs are rejected at parse time — `parseManifest()`
-requires either zero or all three of `stt`/`llm`/`tts` — and at compile
-time: `AgentParams` is a pipeline/S2S union (`sdk/define.ts`), so a partial
-triple, or `s2s` combined with a pipeline provider or a pipeline-only
-tuning field, fails `tsc` with a message naming the rule
-(`PipelineOnlyMisuse`) instead of silently no-opping.
+Partial provider configs are FILLED, not rejected: `defaultProviders`
+supplies the AssemblyAI default for each unset stage of `stt`/`llm`/`tts`
+(when `s2s` is unset), so `agent({ llm: anthropic(...) })` means "the
+default pipeline with that LLM". The compile-time union (`AgentParams` in
+`sdk/define.ts`) matches: any subset of the triple is legal, while `s2s`
+combined with a pipeline provider or a pipeline-only tuning field still
+fails `tsc` with a message naming the rule (`PipelineOnlyMisuse`) instead
+of silently no-opping. `assertProviderTriple`'s partial-triple error now
+only guards raw wire shapes that skipped the fill.
 
 - **Tool-call args must be coerced before they hit a wire schema.** The AI
   SDK surfaces an unparsable/unknown tool call as a `tool-call` stream part
@@ -928,9 +931,14 @@ ready, and is permanently silent. Nothing before a live session catches it.
 Hence one checkable constant, with the accent alongside each name and the
 deprecated set kept separately in `ASSEMBLYAI_TTS_DEPRECATED_VOICES`.
 
-Pipeline mode picks the voice with `assemblyAITts({ voice })` from
-`@alexkroman1/aai/tts` (or `assemblyAIPipeline({ voice })`). S2S mode's
-voice rides on the `s2s` descriptor — there is no top-level `voice:` field.
+On the default pipeline the voice is the top-level `voice` field —
+`agent({ voice: "michael" })`, an author convenience desugared to
+`tts: assemblyAITts({ voice })` in `normalizeAgentConveniences` (typed
+against the catalog, invalid alongside an explicit `tts` descriptor, which
+owns its own voice). An explicit AssemblyAI TTS stage picks it with
+`assemblyAITts({ voice })` from `@alexkroman1/aai/tts` (or
+`assemblyAIPipeline({ voice })`). S2S mode's voice rides on the `s2s`
+descriptor — `voice` is a compile error there.
 
 ### Storage (`ctx.db`)
 
@@ -1072,9 +1080,10 @@ copying fields:
   `Exclude<keyof AgentDef, keyof AgentConfig | HostOnlyAgentField>` is `never`.
 - **`agent()`** derives its parameter shape from `AgentDef`
   (`AgentParams` = `Omit` + `Partial<Pick>` of the defaulted fields) plus
-  two author-only conveniences `agent()` normalizes away (`system` as an
-  alias of `systemPrompt`, and `llm` accepting a gateway model-id string —
-  `sdk/providers/llm/from-string.ts`), instead
+  three author-only conveniences `agent()` normalizes away (`system` as an
+  alias of `systemPrompt`, `llm` accepting a gateway model-id string —
+  `sdk/providers/llm/from-string.ts` — and `voice` desugaring to
+  `tts: assemblyAITts({ voice })`), instead
   of re-declaring it inline — the inline form is how `send` and `state`
   shipped as runtime-working but excess-property errors for authors
   (neither bundler typechecks user code). `define.test-d.ts` locks this.

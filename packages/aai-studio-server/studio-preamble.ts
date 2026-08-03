@@ -206,29 +206,33 @@ ${SDK_SUBPATH_RULE}
 ## AI, Models, and Providers
 
 - **Default to a cascaded (pipeline-mode) agent with every stage on
-  AssemblyAI, and spread the preset to get it.** For every request that just
-  asks for a voice agent — tools, state, personas and all:
-    import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
-    export default agent({ name: "…", ...assemblyAIPipeline({ voice: "jane" }) });
-  That sets stt, llm and tts in one line with real defaults for all three
-  (universal-3-5-pro, gpt-5.5, jane), so there is no gateway model
-  id to invent — an invented one is a 400 at the first session, with no
-  compile-time or deploy-time check to catch it. Prefer it over declaring the
-  three stages by hand; the long form (assemblyAIStt + assemblyAILlm +
-  assemblyAITts from the three provider subpaths) buys nothing.
-  To change one stage, spread the preset and then set that stage:
-    agent({ ...assemblyAIPipeline(), tts: cartesia({ voice: "…" }) });
-  That is also how the gateway LLM model is changed — llm accepts the model
-  id as a plain string:
-    agent({ ...assemblyAIPipeline(), llm: "claude-sonnet-4-6" });
-  All three stages bill to ASSEMBLYAI_API_KEY, the one key a published agent
-  is guaranteed to have, so this default runs the moment it is published. Any
-  other provider — Anthropic, OpenAI, Cartesia, Rime, Deepgram — needs a key
-  the user has to supply, so an agent built on one cannot run until they do.
-  A provider, model, or voice the user *did* name wins for that stage, and
-  the other stages still default to AssemblyAI. Never end up with only one or
-  two of the three stages declared — zero or three; a partial triple is a
-  type error, so use the preset spread and override the one stage.
+  AssemblyAI — which means declaring no provider fields at all.** For every
+  request that just asks for a voice agent — tools, state, personas and all:
+    import { agent } from "@alexkroman1/aai";
+    export default agent({ name: "…", voice: "jane" });
+  An agent() with no stt/llm/tts runs the default AssemblyAI pipeline with
+  real defaults for all three stages (universal-3-5-pro, gpt-5.5, jane), so
+  there is no gateway model id to invent — an invented one is a 400 at the
+  first session, with no compile-time or deploy-time check to catch it. The
+  top-level \`voice\` field picks the default pipeline's TTS voice; do not
+  add provider imports just to set a voice.
+  To change a stage, declare just that field — every stage you leave unset
+  stays on the AssemblyAI default:
+    agent({ name: "…", tts: cartesia({ voice: "…" }) });
+  The gateway LLM model works the same way — llm accepts the model id as a
+  plain string:
+    agent({ name: "…", llm: "claude-sonnet-4-6" });
+  (\`voice\` is only for the default TTS — an explicit tts descriptor owns
+  its own voice, and combining the two is a type error.)
+  All default stages bill to ASSEMBLYAI_API_KEY, the one key a published
+  agent is guaranteed to have, so this default runs the moment it is
+  published. Any other provider — Anthropic, OpenAI, Cartesia, Rime,
+  Deepgram — needs a key the user has to supply, so an agent built on one
+  cannot run until they do. A provider, model, or voice the user *did* name
+  wins for that stage, and the other stages still default to AssemblyAI.
+  The explicit spelling of the all-AssemblyAI default is
+  ...assemblyAIPipeline() (from "@alexkroman1/aai"); reach for it only when
+  the user wants EU data residency (assemblyAIPipeline({ region: "eu" })).
 - **Use the AssemblyAI voice agent API (S2S mode) only when the user asks
   for it** — "use the voice agent API", "S2S", "speech-to-speech", or the
   like. S2S is an explicit opt-in: set \`s2s: assemblyAIS2s()\` (imported

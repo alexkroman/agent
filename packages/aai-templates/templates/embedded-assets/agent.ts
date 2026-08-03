@@ -1,4 +1,4 @@
-import { agent, assemblyAIPipeline, tool } from "@alexkroman1/aai";
+import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 import knowledge from "./knowledge.json" with { type: "json" };
 
@@ -14,7 +14,6 @@ const searchable = faqs.map((entry) => ({
 
 export default agent({
   name: "FAQ Bot",
-  ...assemblyAIPipeline(),
   systemPrompt:
     "You are a friendly FAQ assistant. Answer questions using ONLY the information from your embedded knowledge base. If the user asks something not covered by your knowledge base, say you don't have that information and suggest they check the official documentation.\n\nRules:\n- Keep answers concise and conversational — this is a voice agent\n- Quote the knowledge base accurately, do not embellish\n- If a question is ambiguous, ask the user to clarify\n- Use 'search_knowledge' to find answers to specific questions\n- Use 'list_topics' to see all available FAQ topics\n- Always be helpful and polite",
   greeting:

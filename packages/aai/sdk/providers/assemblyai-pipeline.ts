@@ -23,36 +23,38 @@
  * });
  * ```
  *
- * Prose telling an author to prefer the second was not going to beat that gap,
- * and it did not. So the gap is closed instead:
+ * Prose telling an author to prefer the second was not going to beat that
+ * gap, and it did not. So the gap was closed twice over: first with this
+ * preset, then structurally — an `agent()` that declares no providers runs
+ * this pipeline by default, unset stages of a partial triple are filled from
+ * it, and the default pipeline's voice is one field
+ * (`agent({ voice: "jane" })`). The golden path needs no preset at all:
+ *
+ * ```ts
+ * import { agent } from "@alexkroman1/aai";
+ * export default agent({ name: "Jane", voice: "jane" });
+ * // Swap one stage; the other two stay on AssemblyAI:
+ * agent({ name: "Jane", llm: "claude-sonnet-4-6" });
+ * ```
+ *
+ * The preset remains the explicit spelling of that default — spread it to
+ * make the three stages visible in the config, or to set `region` once
+ * across STT and the LLM gateway:
  *
  * ```ts
  * import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
- * export default agent({ name: "Jane", ...assemblyAIPipeline({ voice: "jane" }) });
+ * agent({ name: "Jane", ...assemblyAIPipeline({ region: "eu" }), llm: "claude-sonnet-4-6" });
  * ```
  *
- * It also removes the one runtime hazard in the long form. A gateway model id
- * is a free-form string the service rejects with a 400 at the first session —
- * no compile-time check, no deploy-time check — so an invented one ships. The
- * preset supplies a real default for all three stages.
+ * It also documents the one runtime hazard in the long form. A gateway model
+ * id is a free-form string the service rejects with a 400 at the first
+ * session — no compile-time check, no deploy-time check — so an invented one
+ * ships. The default fill supplies a real model for every unset stage.
  *
- * The three stages stay individually overridable, because an agent that wants
- * Cartesia for TTS and AssemblyAI for the rest should not have to abandon the
- * preset: spread it, then set the one field. That is also how the LLM model
- * and STT model are changed — there is deliberately no second spelling on
- * the preset itself (its early `model`/`sttModel` options were retired: the
- * preset's `model` meant the LLM model while `assemblyAIStt({ model })`
- * meant the STT model, and one word meaning two things per import path is
- * the same trap the factory renames removed).
- *
- * ```ts
- * import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
- * import { cartesia } from "@alexkroman1/aai/tts";
- * // Different TTS provider:
- * agent({ name: "Jane", ...assemblyAIPipeline(), tts: cartesia() });
- * // Different gateway LLM model (string shorthand):
- * agent({ name: "Jane", ...assemblyAIPipeline(), llm: "claude-sonnet-4-6" });
- * ```
+ * There is deliberately no `model`/`sttModel` option on the preset itself
+ * (its early ones were retired: the preset's `model` meant the LLM model
+ * while `assemblyAIStt({ model })` meant the STT model, and one word meaning
+ * two things per import path is the same trap the factory renames removed).
  */
 
 import { type AssemblyAILlmProvider, assemblyAILlm } from "./llm/assemblyai.ts";
@@ -70,7 +72,8 @@ export interface AssemblyAIPipelineOptions {
    * language — see
    * `ASSEMBLYAI_TTS_VOICES` (from `@alexkroman1/aai/tts`) for the
    * catalog; a name outside it fails in-band after connect and leaves the
-   * agent silent.
+   * agent silent. (`agent({ voice })` is the same setting without the
+   * preset.)
    */
   voice?: AssemblyAITtsVoice;
   /**

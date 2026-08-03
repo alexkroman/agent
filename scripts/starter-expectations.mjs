@@ -284,23 +284,17 @@ export function checkMode(config, source) {
   if (config.mode !== "pipeline") {
     return { ok: false, note: `mode=${config.mode}, expected pipeline (studio default)` };
   }
-  // The three stages must each be declared; the source is the only place the
-  // provider kind is visible, since the loaded-config line reports mode only.
-  //
-  // `assemblyAIPipeline()` sets all three at once, so spreading it satisfies
-  // every stage. Without this the check reported "missing stt, llm, tts" for
-  // an agent that had all three — a false negative created the moment the
-  // guide started recommending the preset, which is exactly what it is for.
+  // Stage presence needs no source check anymore: any subset of stt/llm/tts
+  // (including none) is a valid declaration — unset stages are filled with
+  // the AssemblyAI defaults at parse time, so a pipeline-mode config always
+  // carries all three. (The old check counted declared stages in the source
+  // and special-cased the `assemblyAIPipeline()` spread.)
   const src = source ?? "";
-  const missing = /assemblyAIPipeline\s*\(/.test(src)
-    ? []
-    : ["stt", "llm", "tts"].filter((k) => !new RegExp(`\\b${k}\\s*:`).test(src));
-  // Declaring no stage at all is also fine: a provider-less agent() gets the
-  // all-AssemblyAI pipeline injected by default (the same preset).
-  if (missing.length === 3) return { ok: true, note: "provider-less agent (pipeline default)" };
-  return missing.length
-    ? { ok: false, note: `pipeline missing stage(s): ${missing.join(", ")}` }
-    : { ok: true };
+  const declared = ["stt", "llm", "tts"].filter((k) => new RegExp(`\\b${k}\\s*:`).test(src));
+  if (declared.length === 0 && !/assemblyAIPipeline\s*\(/.test(src)) {
+    return { ok: true, note: "provider-less agent (pipeline default)" };
+  }
+  return { ok: true };
 }
 
 /**

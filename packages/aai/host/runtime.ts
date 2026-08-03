@@ -66,13 +66,21 @@ function resolveEffectiveProviders(
   // session-mode declaration entirely, `s2s` field included — the platform
   // path uses opts as an override, not a merge.
   const s2s = stt && llm && tts ? undefined : agent.s2s;
-  // No providers declared anywhere → the all-AssemblyAI pipeline, matching
-  // parseManifest/toAgentConfig. S2S requires an explicit `s2s` descriptor
-  // (`assemblyAIS2s()`), so a config that loses its providers can no longer
-  // silently run S2S — this mirrors, not replaces, the "never let S2S be a
-  // fallback" rule in runtime-transport.ts.
+  // Pipeline stages not declared anywhere → filled from the all-AssemblyAI
+  // pipeline, matching parseManifest/toAgentConfig. S2S requires an explicit
+  // `s2s` descriptor (`assemblyAIS2s()`), so a config that loses its
+  // providers can no longer silently run S2S — this mirrors, not replaces,
+  // the "never let S2S be a fallback" rule in runtime-transport.ts.
   const defaults = defaultProviders({ stt, llm, tts, s2s });
-  if (defaults) return { ...defaults, s2s: undefined, mode: "pipeline" };
+  if (defaults) {
+    return {
+      stt: stt ?? defaults.stt,
+      llm: llm ?? defaults.llm,
+      tts: tts ?? defaults.tts,
+      s2s: undefined,
+      mode: "pipeline",
+    };
+  }
   return { stt, llm, tts, s2s, mode: assertProviderTriple(stt, llm, tts, s2s) };
 }
 

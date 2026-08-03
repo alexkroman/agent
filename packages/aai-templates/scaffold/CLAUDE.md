@@ -77,6 +77,13 @@ export default agent({
   systemPrompt?: string;                     // default: general voice assistant
                                              // (`system` is an accepted alias)
   greeting?: string;                         // default: "Hey there..."
+  voice?: string;                            // TTS voice for the default pipeline, e.g. "michael"
+                                             // (shorthand for tts: assemblyAITts({ voice });
+                                             // invalid with an explicit `tts` or with `s2s`)
+  stt?: SttProvider;                         // pipeline stage overrides — set any subset;
+  llm?: LlmProvider | string;                // unset stages default to AssemblyAI
+  tts?: TtsProvider;                         // (llm also takes a model-id string)
+  s2s?: S2sProvider;                         // explicit opt-in to speech-to-speech mode
   sttPrompt?: string;                        // STT guidance for jargon/acronyms
   builtinTools?: BuiltinTool[];              // see built-in tools table
   tools?: Record<string, ToolDef>;
@@ -97,55 +104,55 @@ export default agent({
 });
 ```
 
-> When `stt`, `llm`, and `tts` are all provided, the agent runs in
-> **Pipeline mode** — see the section below. `llm` also accepts a model-id
-> string: `"creator/model"` routes through the Vercel AI Gateway
-> (`AI_GATEWAY_API_KEY`), a bare id through the AssemblyAI LLM Gateway
-> (`ASSEMBLYAI_API_KEY`).
+> Unless `s2s` is set, the agent runs in **Pipeline mode** — see the section
+> below. Declare any subset of `stt`/`llm`/`tts`; unset stages default to
+> AssemblyAI. `llm` also accepts a model-id string: `"creator/model"` routes
+> through the Vercel AI Gateway (`AI_GATEWAY_API_KEY`), a bare id through
+> the AssemblyAI LLM Gateway (`ASSEMBLYAI_API_KEY`).
 
 Minimal agent — a cascaded pipeline, which is what you should build unless
 the user asks for the speech-to-speech API:
 
 ```ts
-import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "My Agent",
-  ...assemblyAIPipeline(),
 });
 ```
 
-`assemblyAIPipeline()` sets all three stages to AssemblyAI, which bill to
-the one key a published agent is guaranteed to have. Override a single stage
-by setting it after the spread — everything else stays as the preset put it:
+No provider fields means the default all-AssemblyAI pipeline: all three
+stages bill to the one key a published agent is guaranteed to have. Pick
+its voice with the `voice` field — this is the normal way to choose a
+voice:
 
 ```ts
-import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
-import { assemblyAITts } from "@alexkroman1/aai/tts";
+import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "My Agent",
-  ...assemblyAIPipeline(),
-  tts: assemblyAITts({ voice: "paul" }),
+  voice: "paul",
 });
 ```
 
-The same pattern changes the gateway LLM model — `llm` accepts the model id
-as a plain string:
+Swap a single stage by declaring just that field — everything you leave
+unset stays on the default. `llm` accepts the gateway model id as a plain
+string:
 
 ```ts
-import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+import { agent } from "@alexkroman1/aai";
 
 export default agent({
   name: "My Agent",
-  ...assemblyAIPipeline(),
   llm: "claude-sonnet-4-6",
 });
 ```
 
-`agent({ name })` alone is legal and equivalent — an agent that declares no
-providers gets `assemblyAIPipeline()` injected as the default. Speech-to-speech
-(S2S) mode is an explicit opt-in via the `s2s` field — see below.
+`assemblyAIPipeline()` (from `@alexkroman1/aai`) is the explicit spelling of
+the same default — spread it (`...assemblyAIPipeline({ region: "eu" })`) when
+you want the three stages visible in the config or EU data residency across
+STT and the LLM gateway. Speech-to-speech (S2S) mode is an explicit opt-in
+via the `s2s` field — see below.
 
 System prompt from file:
 
@@ -165,8 +172,8 @@ explicit the modern spelling is `with { type: "json" }`, but plain is fine.
 ## Pipeline mode
 
 Pipeline mode is the default: omitting `stt`/`llm`/`tts` (and `s2s`) gives
-you the all-AssemblyAI pipeline, exactly as if you had spread
-`assemblyAIPipeline()` yourself.
+you the all-AssemblyAI pipeline, and any stage you do declare replaces just
+that stage — the rest keep the default.
 
 **S2S mode is an explicit opt-in.** Setting `s2s: assemblyAIS2s()` (imported
 from `@alexkroman1/aai`, next to `agent()`) selects AssemblyAI's
@@ -194,14 +201,16 @@ providers when:
 - you want a specific LLM (Anthropic, OpenAI, Gemini, Mistral, xAI, Groq,
   hundreds of models via OpenRouter, or 25+ models via the AssemblyAI
   LLM Gateway)
-- you want a specific STT model or TTS voice
+- you want a specific STT model, or a non-AssemblyAI TTS provider (for the
+  default pipeline's voice, use the `voice` field instead)
 - you need to swap providers without changing agent code
 
-**The rule:** set all three of `stt`, `llm`, `tts` together, or none.
-`agent()`'s parameter type enforces this — a partial triple is a compile
-error ("missing: llm, tts"), as is combining `s2s` with any pipeline
-provider or pipeline-only tuning field. A raw config that skips `agent()`
-is still rejected at parse time.
+**The rule:** declare only the stages you're changing — any subset of
+`stt`, `llm`, `tts`; each unset stage runs on the AssemblyAI default.
+Combining `s2s` with any pipeline provider or pipeline-only tuning field is
+a compile error naming the rule, as is `voice` alongside an explicit `tts`
+descriptor (the descriptor owns its own voice). A raw config that skips
+`agent()` is still checked at parse time.
 
 ```ts
 import { agent } from "@alexkroman1/aai";
@@ -297,37 +306,31 @@ hundreds of models addressed as `"creator/model"`, e.g.
 `assemblyAILlm` routes through the [AssemblyAI LLM
 Gateway](https://www.assemblyai.com/docs/llm-gateway) — an
 OpenAI-compatible endpoint fronting 25+ models (Claude, GPT, Gemini,
-etc.) with the same API key as AssemblyAI STT:
+etc.) with the same API key as AssemblyAI STT. A bare model-id string on
+`llm` is shorthand for it, and unset stages keep the AssemblyAI default:
 
 ```ts
 import { agent } from "@alexkroman1/aai";
-import { assemblyAILlm } from "@alexkroman1/aai/llm";
-import { assemblyAIStt } from "@alexkroman1/aai/stt";
+
+export default agent({
+  name: "My Agent",
+  llm: "claude-sonnet-4-6",
+});
+```
+
+`assemblyAILlm({ model, region: "eu" })` is the explicit form; `region`
+selects EU data residency.
+
+Mixing providers works the same way — declare the stages you're changing:
+
+```ts
+import { agent } from "@alexkroman1/aai";
 import { cartesia } from "@alexkroman1/aai/tts";
 
 export default agent({
   name: "My Agent",
-  stt: assemblyAIStt({ model: "universal-3-5-pro" }),
-  llm: assemblyAILlm({ model: "claude-sonnet-4-6" }),
+  llm: "claude-sonnet-4-6",
   tts: cartesia(),
-});
-```
-
-It accepts an optional `region: "eu"` for EU data residency.
-
-An all-AssemblyAI pipeline — one provider, one key:
-
-```ts
-import { agent } from "@alexkroman1/aai";
-import { assemblyAILlm } from "@alexkroman1/aai/llm";
-import { assemblyAIStt } from "@alexkroman1/aai/stt";
-import { assemblyAITts } from "@alexkroman1/aai/tts";
-
-export default agent({
-  name: "My Agent",
-  stt: assemblyAIStt({ model: "universal-3-5-pro" }),
-  llm: assemblyAILlm({ model: "gemini-2.5-flash-lite" }),
-  tts: assemblyAITts({ voice: "jane" }),
 });
 ```
 
@@ -343,7 +346,9 @@ Bare calls (`assemblyAITts()`, `cartesia()`, `rime()`) use the defaults.
 Override with `{ voice, model, language }`.
 
 **AssemblyAI TTS** shares `ASSEMBLYAI_API_KEY` with AssemblyAI STT and the
-LLM Gateway, so an all-AssemblyAI pipeline needs exactly one secret. Each
+LLM Gateway, so an all-AssemblyAI pipeline needs exactly one secret. On the
+default pipeline, `agent({ voice: "michael" })` is the shorthand for
+`tts: assemblyAITts({ voice: "michael" })` — same catalog, same rules. Each
 voice speaks one language, and this is the whole catalog — **a voice not on
 this list is rejected after the socket opens, which leaves the agent
 connected, "ready", and permanently silent**, so pick one from here rather
@@ -949,9 +954,10 @@ Common mistakes when working in aai projects:
 - **Filter large API responses before returning them from tools.** Return
   values are injected into LLM context. Truncate, summarize, or extract
   only what the model needs.
-- **Pipeline mode requires all three of `stt` / `llm` / `tts`.** Partial
-  configs are rejected at parse time. Omit all three for the default
-  AssemblyAI pipeline; S2S needs an explicit `s2s: assemblyAIS2s()`.
+- **Declare only the pipeline stages you're changing.** Unset stages of
+  `stt` / `llm` / `tts` default to AssemblyAI (omit all three for the full
+  default pipeline; `voice` picks its TTS voice). S2S needs an explicit
+  `s2s: assemblyAIS2s()` and takes no pipeline fields.
 - **Never hardcode secrets.** Use `ctx.env.MY_KEY`. `.env` for local dev,
   `aai secret put` for production.
 - **Don't use `useEffect` + `toolCalls` to derive state.** Use

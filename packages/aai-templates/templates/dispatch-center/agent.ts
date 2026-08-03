@@ -1,4 +1,4 @@
-import { agent, assemblyAIPipeline } from "@alexkroman1/aai";
+import { agent } from "@alexkroman1/aai";
 import { assemblyAIStt } from "@alexkroman1/aai/stt";
 import { dashboardView } from "./shared.ts";
 import systemPrompt from "./system-prompt.md?raw";
@@ -17,13 +17,13 @@ import { resourcesUpdateStatus } from "./tools/resources_update_status.ts";
 
 export default agent({
   name: "Dispatch Command Center",
-  ...assemblyAIPipeline(),
   // One projection replaces eleven `ctx.send("incidents", ...)` calls, and
   // is the single place that decides caller PII stays server-side.
   syncState: dashboardView,
-  // Overriding the STT stage: a dispatcher reads addresses and unit numbers
-  // in bursts with pauses inside one message, so end-of-turn silence has to
-  // be longer than the default or "unit twelve … respond to" splits in two.
+  // Only the STT stage is declared (LLM and TTS stay on the AssemblyAI
+  // defaults): a dispatcher reads addresses and unit numbers in bursts with
+  // pauses inside one message, so end-of-turn silence has to be longer than
+  // the default or "unit twelve … respond to" splits in two.
   stt: assemblyAIStt({ minTurnSilenceMs: 2200 }),
   systemPrompt,
   greeting:

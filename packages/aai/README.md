@@ -14,7 +14,7 @@ scaffolds a project with it wired up.
 ## Defining an agent
 
 ```ts
-import { agent, assemblyAIPipeline, tool } from "@alexkroman1/aai";
+import { agent, tool } from "@alexkroman1/aai";
 import { z } from "zod";
 
 const addNote = tool({
@@ -31,26 +31,28 @@ export default agent({
   systemPrompt: "You take short notes for the caller.",
   state: () => ({ notes: [] as string[] }),
   tools: { add_note: addNote },
-  ...assemblyAIPipeline(),
 });
 ```
 
 - `agent()` — the agent definition; every field and default is documented
-  on [`AgentDef`](https://alexkroman.github.io/agent/).
+  on [`AgentDef`](https://alexkroman.github.io/agent/). With no provider
+  fields it runs the default all-AssemblyAI STT → LLM → TTS pipeline,
+  billed to one `ASSEMBLYAI_API_KEY`; `voice: "michael"` picks its TTS
+  voice.
 - `tool()` — a typed tool: Zod `inputSchema`, an `execute(args, ctx)` that
   runs server-side with access to `ctx.state`, `ctx.env`, `ctx.db` (opt-in
   SQL storage), `ctx.generate` (one-shot LLM calls), and `ctx.send`
   (push events to the browser client).
-- `assemblyAIPipeline()` — the default STT → LLM → TTS pipeline, all billed
-  to one `ASSEMBLYAI_API_KEY`. It is also what an `agent()` with no
-  provider fields runs on.
+- `assemblyAIPipeline()` — the same default pipeline as an explicit spread
+  (`...assemblyAIPipeline({ region: "eu" })`), for when you want the three
+  stages visible in the config or an EU region across STT and the gateway.
 
 ## Session modes and providers
 
 **Pipeline mode** (default) streams STT partials into a server-side LLM
 loop and speaks the reply through a TTS provider. Swap any stage with a
-factory from the provider subpaths — set all three of `stt`, `llm`, `tts`
-(or spread the preset and override one):
+factory from the provider subpaths — set any subset of `stt`, `llm`, `tts`;
+the unset stages keep the AssemblyAI default:
 
 | Subpath | Factories |
 | --- | --- |
@@ -63,8 +65,8 @@ Credentials are resolved server-side from the agent's env (each factory's
 docs name the env var), so no provider SDK or secret ever enters the agent
 bundle. `llm` also accepts a model-id string: `"creator/model"` routes
 through the Vercel AI Gateway, a bare id through the AssemblyAI LLM
-Gateway — `agent({ ...assemblyAIPipeline(), llm: "claude-sonnet-4-6" })`
-swaps just the model.
+Gateway — `agent({ name: "...", llm: "claude-sonnet-4-6" })` swaps just the
+model.
 
 **S2S mode** is the explicit opt-in to a speech-to-speech service, where
 STT, the LLM loop, and TTS all run service-side over one socket:
