@@ -19,6 +19,9 @@ export * from "./sdk/owned-map.ts";
 // subpath: it IS the recommended configuration, and requiring three more
 // imports to reach it is what made the wrong mode the easy one.
 export * from "./sdk/providers/assemblyai-pipeline.ts";
+// S2S is opt-in now that the pipeline is the default mode, so the opt-in
+// descriptor lives next to `agent()` too.
+export * from "./sdk/providers/s2s/assemblyai.ts";
 export * from "./sdk/types.ts";
 export * from "./sdk/utils.ts";
 export * from "./sdk/ws-upgrade.ts";

@@ -13,6 +13,7 @@ import type { AgentConfig, ToolSchema } from "../sdk/_internal-types.ts";
 import { DEFAULT_TOOL_CHOICE } from "../sdk/constants.ts";
 import type { ClientSink } from "../sdk/protocol.ts";
 import { OPENAI_API_KEY_ENV } from "../sdk/providers/llm/openai.ts";
+import { ASSEMBLYAI_S2S_KIND } from "../sdk/providers/s2s/assemblyai.ts";
 import {
   OPENAI_REALTIME_KIND,
   type OpenaiRealtimeOptions,
@@ -71,8 +72,10 @@ export interface TransportFactoryDeps {
 
 /**
  * Build the per-session transport constructor. Transport choice:
- * pipeline when pipeline providers resolved, otherwise the `s2s` field's
- * provider kind (OpenAI Realtime), otherwise AssemblyAI S2S (default).
+ * pipeline when pipeline providers resolved (the default — provider
+ * resolution injects the AssemblyAI pipeline when nothing is declared),
+ * otherwise the `s2s` field's provider kind (AssemblyAI S2S or OpenAI
+ * Realtime).
  */
 export function createTransportFactory(
   deps: TransportFactoryDeps,
@@ -179,8 +182,14 @@ export function createTransportFactory(
       if (kind === OPENAI_REALTIME_KIND) {
         return buildOpenaiRealtimeTransport(args);
       }
+      if (kind === ASSEMBLYAI_S2S_KIND) {
+        return buildAssemblyS2sTransport(args);
+      }
       throw new Error(`Unknown s2s provider kind: ${kind ?? "<missing>"}`);
     }
+    // Descriptor-less S2S: only reachable for configs predating the
+    // pipeline-by-default flip (provider resolution now injects the pipeline
+    // when nothing is declared), kept so a stored older config still runs.
     return buildAssemblyS2sTransport(args);
   };
 }

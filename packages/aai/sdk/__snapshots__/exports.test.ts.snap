@@ -3,6 +3,7 @@
 exports[`export surface stability > @alexkroman1/aai main export 1`] = `
 [
   "AGENT_CSP",
+  "ASSEMBLYAI_S2S_KIND",
   "BuiltinToolSchema",
   "CAPTURE_STOP_ACK_TIMEOUT_MS",
   "CLIENT_AUDIO_LEAD_MS",
@@ -91,6 +92,7 @@ exports[`export surface stability > @alexkroman1/aai main export 1`] = `
   "WS_OPEN",
   "agent",
   "assemblyAIPipeline",
+  "assemblyAIS2s",
   "capToolResult",
   "createEpoch",
   "createOwnedMap",
@@ -178,7 +180,9 @@ exports[`export surface stability > @alexkroman1/aai/runtime export 1`] = `
 
 exports[`export surface stability > @alexkroman1/aai/s2s export 1`] = `
 [
+  "ASSEMBLYAI_S2S_KIND",
   "OPENAI_REALTIME_KIND",
+  "assemblyAIS2s",
   "openaiRealtime",
 ]
 `;

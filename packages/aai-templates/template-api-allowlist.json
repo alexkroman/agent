@@ -1,10 +1,12 @@
 {
   "@alexkroman1/aai": [
     "AGENT_CSP",
+    "ASSEMBLYAI_S2S_KIND",
     "AgentDef",
     "AgentEnv",
     "AgentParams",
     "AssemblyAIPipelineOptions",
+    "AssemblyAIS2sProvider",
     "BuiltinTool",
     "BuiltinToolSchema",
     "CAPTURE_STOP_ACK_TIMEOUT_MS",
@@ -103,6 +105,7 @@
     "VALID_SLUG_RE",
     "WS_NORMAL_CLOSURE",
     "WS_OPEN",
+    "assemblyAIS2s",
     "capToolResult",
     "createEpoch",
     "createOwnedMap",
@@ -213,10 +216,13 @@
     "xai"
   ],
   "@alexkroman1/aai/s2s": [
+    "ASSEMBLYAI_S2S_KIND",
+    "AssemblyAIS2sProvider",
     "OPENAI_REALTIME_KIND",
     "OpenaiRealtimeOptions",
     "OpenaiRealtimeProvider",
     "S2sProvider",
+    "assemblyAIS2s",
     "openaiRealtime"
   ],
   "@alexkroman1/aai-ui": [

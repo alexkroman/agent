@@ -329,8 +329,9 @@ export type AgentDef<S = DefaultSessionState> = {
    */
   falseInterruptionTimeoutMs?: number;
   /**
-   * Pluggable STT provider. Set together with `llm` and `tts` to enable
-   * pipeline mode; all three unset means S2S mode.
+   * Pluggable STT provider. Set together with `llm` and `tts` to select
+   * the pipeline providers; all three unset (and no `s2s`) defaults to the
+   * all-AssemblyAI pipeline (`assemblyAIPipeline()`).
    */
   stt?: SttProvider;
   /**
@@ -344,8 +345,10 @@ export type AgentDef<S = DefaultSessionState> = {
    */
   tts?: TtsProvider;
   /**
-   * Pluggable S2S provider descriptor. When set, overrides the implicit
-   * AssemblyAI default. Mutually exclusive with the `stt`/`llm`/`tts`
+   * Pluggable S2S provider descriptor — the explicit opt-in to
+   * speech-to-speech mode (e.g. `assemblyAIS2s()` for AssemblyAI's Voice
+   * Agent API, or `openaiRealtime()`). Unset, the agent runs the default
+   * cascaded pipeline. Mutually exclusive with the `stt`/`llm`/`tts`
    * pipeline triple.
    */
   s2s?: S2sProvider;

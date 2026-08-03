@@ -24,9 +24,16 @@ export type SessionMode = "s2s" | "pipeline";
  * Enforce the all-or-nothing provider rule and return the derived mode.
  *
  * Pipeline mode requires STT, LLM, and TTS all set; S2S mode requires
- * none of them. Anything in-between is a configuration error. An optional
- * `s2s` descriptor selects a non-default S2S provider — it must not be
- * combined with any pipeline field.
+ * none of them. Anything in-between is a configuration error. An `s2s`
+ * descriptor selects the S2S provider — it must not be combined with any
+ * pipeline field.
+ *
+ * This function only classifies what it is given — it injects nothing. The
+ * pipeline-by-default rule lives in `defaultProviders`
+ * (`providers/_default-providers.ts`), which every config layer applies
+ * *before* calling this, so "nothing set" reaches here only for raw
+ * pre-default shapes (and still classifies as "s2s" for wire tolerance with
+ * stored configs that predate the flip).
  */
 export function assertProviderTriple(
   stt: unknown,

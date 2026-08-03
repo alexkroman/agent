@@ -295,6 +295,9 @@ export function checkMode(config, source) {
   const missing = /assemblyAIPipeline\s*\(/.test(src)
     ? []
     : ["stt", "llm", "tts"].filter((k) => !new RegExp(`\\b${k}\\s*:`).test(src));
+  // Declaring no stage at all is also fine: a provider-less agent() gets the
+  // all-AssemblyAI pipeline injected by default (the same preset).
+  if (missing.length === 3) return { ok: true, note: "provider-less agent (pipeline default)" };
   return missing.length
     ? { ok: false, note: `pipeline missing stage(s): ${missing.join(", ")}` }
     : { ok: true };

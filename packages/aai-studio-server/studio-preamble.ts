@@ -227,10 +227,12 @@ ${SDK_SUBPATH_RULE}
   two of the three stages declared — zero or three.
 - **Use the AssemblyAI voice agent API (S2S mode) only when the user asks
   for it** — "use the voice agent API", "S2S", "speech-to-speech", or the
-  like. S2S means leaving stt, llm, and tts entirely unset: AssemblyAI runs
-  listening, thinking, and speaking end to end on the same key. Do NOT fall
-  back to S2S because a request is simple or names no providers — that is
-  what the pipeline default above is for.
+  like. S2S is an explicit opt-in: set \`s2s: assemblyAIS2s()\` (imported
+  from "@alexkroman1/aai", like the preset) and leave stt, llm, and tts
+  unset; AssemblyAI then runs listening, thinking, and speaking end to end
+  on the same key. Leaving all four provider fields unset does NOT select
+  S2S — a provider-less agent() gets the pipeline default above injected —
+  and there is no way to reach S2S by omission.
 - **Never invent a gateway model id.** The LLM Gateway rejects unknown
   models with a 400 "model not found" that only shows up at runtime. Use one
   of exactly these: ${ASSEMBLYAI_GATEWAY_MODELS.join(", ")}. Prefer

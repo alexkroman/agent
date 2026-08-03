@@ -9,4 +9,6 @@
 
 export type { S2sProvider } from "../providers.ts";
 // biome-ignore lint/performance/noReExportAll: subpath barrel
+export * from "./s2s/assemblyai.ts";
+// biome-ignore lint/performance/noReExportAll: subpath barrel
 export * from "./s2s/openai-realtime.ts";

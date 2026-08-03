@@ -14,6 +14,7 @@ import {
   type SessionMode,
 } from "./config-rules.ts";
 import { DEFAULT_BUILTIN_TOOLS, DEFAULT_MAX_STEPS, DEFAULT_TOOL_CHOICE } from "./constants.ts";
+import { defaultProviders } from "./providers/_default-providers.ts";
 import { assertAssemblyAITtsLanguage } from "./providers/tts/assemblyai.ts";
 import type { LlmProvider, S2sProvider, SttProvider, TtsProvider } from "./providers.ts";
 import {
@@ -115,8 +116,10 @@ export type Manifest = Omit<z.infer<typeof ManifestSchema>, keyof ManifestProvid
   ManifestProviders & {
     /**
      * Session mode derived from provider fields:
-     * - `"s2s"`: speech-to-speech path (no stt/llm/tts set, or `s2s` set).
-     * - `"pipeline"`: pluggable STT → LLM → TTS path (stt + llm + tts all set).
+     * - `"s2s"`: speech-to-speech path (`s2s` descriptor set).
+     * - `"pipeline"`: pluggable STT → LLM → TTS path (stt + llm + tts all
+     *   set — the default: a manifest declaring no providers parses with
+     *   the all-AssemblyAI pipeline injected).
      */
     mode: SessionMode;
   };
@@ -132,7 +135,10 @@ export type Manifest = Omit<z.infer<typeof ManifestSchema>, keyof ManifestProvid
  *   calculate) — set explicitly (including `[]`) to override
  */
 export function parseManifest(input: unknown): Manifest {
-  const parsed = ManifestSchema.parse(input);
+  const raw = ManifestSchema.parse(input);
+  // No providers declared → the all-AssemblyAI pipeline. S2S requires an
+  // explicit `s2s` descriptor (e.g. `assemblyAIS2s()`).
+  const parsed = { ...raw, ...(defaultProviders(raw) ?? {}) };
   const mode = assertProviderTriple(parsed.stt, parsed.llm, parsed.tts, parsed.s2s);
   assertSilencePolicy(mode, parsed.silenceTimeoutMs, parsed.silencePrompt);
   assertPipelineTuning(mode, parsed);

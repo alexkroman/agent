@@ -91,7 +91,8 @@ describe("studioSystemPrompt", () => {
     expect(flat).toContain(
       "Use the AssemblyAI voice agent API (S2S mode) only when the user asks for it",
     );
-    expect(flat).toContain("Do NOT fall back to S2S because a request is simple");
+    expect(flat).toContain("s2s: assemblyAIS2s()");
+    expect(flat).toContain("there is no way to reach S2S by omission");
     // Custom UI gets concrete design constraints, not just "look nice" —
     // the preamble names the guide section that carries the full rules.
     expect(flat).toContain('"Design guidelines" section of the reference');

@@ -9,6 +9,7 @@ import { toAgentConfig } from "../sdk/_internal-types.ts";
 import { DEFAULT_BUILTIN_TOOLS } from "../sdk/constants.ts";
 import type { Db } from "../sdk/db.ts";
 import { anthropic } from "../sdk/providers/llm/anthropic.ts";
+import { assemblyAIS2s } from "../sdk/providers/s2s/assemblyai.ts";
 import { assemblyAI } from "../sdk/providers/stt/assemblyai.ts";
 import { cartesia } from "../sdk/providers/tts/cartesia.ts";
 import type { ToolDef } from "../sdk/types.ts";
@@ -497,7 +498,9 @@ describe("createRuntime sandbox mode", () => {
 
 const directExec = createRuntime({
   agent: CONFORMANCE_AGENT,
-  env: { MY_VAR: "test-value" },
+  // ASSEMBLYAI_API_KEY: a provider-less agent now defaults to the AssemblyAI
+  // pipeline, whose LLM resolves (and requires its key) at runtime creation.
+  env: { MY_VAR: "test-value", ASSEMBLYAI_API_KEY: "test" },
 });
 
 testRuntime("direct", () => ({
@@ -566,9 +569,18 @@ describe("createRuntime — provider resolution seams", () => {
     );
   });
 
-  test("logs s2s mode for an agent that declares no providers", () => {
+  test("logs pipeline mode for an agent that declares no providers (the default)", () => {
     const logger = makeLogger();
     createRuntime({ agent: baseAgent, env: PROVIDER_KEYS, logger });
+    expect(logger.info).toHaveBeenCalledWith(
+      "Session mode resolved",
+      expect.objectContaining({ mode: "pipeline", stt: "assemblyai", llm: "assemblyai" }),
+    );
+  });
+
+  test("logs s2s mode for an agent that opts in via the s2s descriptor", () => {
+    const logger = makeLogger();
+    createRuntime({ agent: { ...baseAgent, s2s: assemblyAIS2s() }, env: PROVIDER_KEYS, logger });
     expect(logger.info).toHaveBeenCalledWith(
       "Session mode resolved",
       expect.objectContaining({ mode: "s2s" }),
@@ -576,10 +588,10 @@ describe("createRuntime — provider resolution seams", () => {
   });
 
   test("still rejects pipeline tuning on a genuine S2S agent", () => {
-    // The assertion must keep firing where it is right: no providers anywhere.
+    // The assertion must keep firing where it is right: an explicit S2S agent.
     expect(() =>
       createRuntime({
-        agent: { ...baseAgent, holdPhrase: "One moment." },
+        agent: { ...baseAgent, s2s: assemblyAIS2s(), holdPhrase: "One moment." },
         env: PROVIDER_KEYS,
       }),
     ).toThrow(/holdPhrase requires pipeline mode/);
