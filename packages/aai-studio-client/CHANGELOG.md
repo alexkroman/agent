@@ -1,5 +1,11 @@
 # aai-studio-client
 
+## 0.4.1
+
+### Patch Changes
+
+- 9da9f65: Fix top-bar spacing/overflow: truncate long project names and production URLs, keep brand and buttons from wrapping
+
 ## 0.4.0
 
 ### Minor Changes
