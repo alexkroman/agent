@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Code view — file tabs across the top, CodeMirror editor below. A workspace
-// is one or two files, so a full sidebar column spent width to list them.
-// Server refreshes (agent edits) update the buffer unless the user has
-// unsaved changes.
+// Code view — file navigation plus a CodeMirror editor. Small workspaces get
+// file tabs across the top; past FILE_TAB_LIMIT files the tabs become a
+// vertical sidebar grouped by directory, because a strip of dozens of tabs
+// is unscannable and forces horizontal scrolling. Server refreshes (agent
+// edits) update the buffer unless the user has unsaved changes.
 
 import { javascript } from "@codemirror/lang-javascript";
 import CodeMirror from "@uiw/react-codemirror";
@@ -127,17 +128,23 @@ function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
   );
 }
 
-type CodeViewProps = {
-  files: Record<string, string>;
+/**
+ * Above this many files the tab strip becomes a sidebar list. Tabs are the
+ * right shape for a handful of files; a template-sized workspace (20+ tool
+ * files) turns them into an endless horizontal scroll.
+ */
+export const FILE_TAB_LIMIT = 8;
+
+type FileNavProps = {
+  paths: string[];
   currentFile: string | null;
   onSelectFile: (path: string) => void;
-  onSave: (path: string, content: string) => Promise<void>;
 };
 
-export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewProps) {
-  const paths = Object.keys(files).sort();
-  return (
-    <div className="flex min-h-0 flex-1 flex-col">
+/** File navigation: tabs when few files, a directory-grouped sidebar when many. */
+export function FileNav({ paths, currentFile, onSelectFile }: FileNavProps) {
+  if (paths.length <= FILE_TAB_LIMIT) {
+    return (
       <div
         role="tablist"
         aria-label="Workspace files"
@@ -164,6 +171,83 @@ export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewP
           );
         })}
       </div>
+    );
+  }
+
+  // Group by directory, root files first — a flat sorted list interleaves
+  // root files with directories, which reads as disorder at this size.
+  const groups = new Map<string, string[]>();
+  for (const path of paths) {
+    const slash = path.lastIndexOf("/");
+    const dir = slash === -1 ? "" : path.slice(0, slash);
+    const entries = groups.get(dir);
+    if (entries) {
+      entries.push(path);
+    } else {
+      groups.set(dir, [path]);
+    }
+  }
+  const dirs = [...groups.keys()].sort((a, b) => {
+    if (a === "") return -1;
+    if (b === "") return 1;
+    return a.localeCompare(b);
+  });
+
+  return (
+    <nav
+      aria-label="Workspace files"
+      className="w-52 shrink-0 overflow-y-auto border-r border-line bg-cream py-1"
+    >
+      {dirs.map((dir) => (
+        <div key={dir || "/"}>
+          {dir && (
+            <div
+              className="truncate px-3 pt-2 pb-0.5 font-mono text-[10px] text-subtle"
+              title={dir}
+            >
+              {dir}/
+            </div>
+          )}
+          {(groups.get(dir) ?? []).map((path) => {
+            const active = path === currentFile;
+            return (
+              <button
+                type="button"
+                key={path}
+                aria-current={active ? "true" : undefined}
+                title={path}
+                className={clsx(
+                  "block w-full cursor-pointer truncate border-0 px-3 py-1 text-left font-mono text-[11px]",
+                  dir && "pl-5",
+                  active ? "bg-panel text-indigo" : "bg-transparent text-subtle hover:text-fg",
+                )}
+                onClick={() => onSelectFile(path)}
+              >
+                {path.slice(path.lastIndexOf("/") + 1)}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </nav>
+  );
+}
+
+type CodeViewProps = {
+  files: Record<string, string>;
+  currentFile: string | null;
+  onSelectFile: (path: string) => void;
+  onSave: (path: string, content: string) => Promise<void>;
+};
+
+export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewProps) {
+  const paths = Object.keys(files).sort();
+  // min-w-0 matters in both modes: without it the nav's intrinsic width
+  // propagates up the flex tree and stretches the whole page sideways.
+  const sidebar = paths.length > FILE_TAB_LIMIT;
+  return (
+    <div className={clsx("flex min-h-0 min-w-0 flex-1", sidebar ? "flex-row" : "flex-col")}>
+      <FileNav paths={paths} currentFile={currentFile} onSelectFile={onSelectFile} />
       <FileBuffer
         key={currentFile ?? ""}
         path={currentFile}
