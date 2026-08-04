@@ -2259,7 +2259,11 @@ finalized for the requesting agent by registering the db/query handler and
 sending `bundle/load`.
 
 - **Enable**: set `SANDBOX_POOL_SIZE` to a positive integer (max 16).
-  Disabled when unset.
+  Disabled when unset or `0`. **Production keeps it at ZERO**: both Modal
+  apps pin `SANDBOX_POOL_SIZE=0` in their image env (each `modal_deploy.py`) —
+  warm harnesses are idle billed guests per replica, per service. The
+  `aai-server` Secret overrides image env, so it must NOT set
+  `SANDBOX_POOL_SIZE`; a Secret value silently re-enables the pool.
 - **Files**: `sandbox-pool.ts` (pool), `sandbox-vm.ts:spawnWarmHarness` /
   `modal-sandbox.ts:spawnModalWarm` (spawn), `configureSandbox` (per-agent
   finalization).
