@@ -131,7 +131,7 @@
 @layer components {
   /* Tertiary button (CHANGE KEY, project switcher) — ALL-CAPS label */
   .btn {
-    @apply h-[34px] cursor-pointer rounded-sm border border-line bg-panel px-3.5 text-[10px] font-medium tracking-[1.4px] text-fg uppercase hover:border-line-strong disabled:cursor-not-allowed;
+    @apply h-[34px] cursor-pointer rounded-sm border border-line bg-panel px-3.5 text-[10px] font-medium tracking-[1.4px] whitespace-nowrap text-fg uppercase hover:border-line-strong disabled:cursor-not-allowed;
   }
   /* Primary indigo button; disabled = warm-100 face per handoff */
   .btn-primary {
@@ -147,7 +147,7 @@
   }
   /* Segmented control label */
   .seg {
-    @apply h-8 cursor-pointer border-none px-4 text-[10px] font-medium tracking-[1.2px] uppercase;
+    @apply h-8 cursor-pointer border-none px-4 text-[10px] font-medium tracking-[1.2px] whitespace-nowrap uppercase;
   }
   /* Starter prompt button (1b) */
   .starter {
