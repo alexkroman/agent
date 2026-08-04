@@ -14,15 +14,9 @@
 import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap, type OwnedMap } from "@alexkroman1/aai/internal";
 import { createKeyedLock, withLock } from "./_keyed-lock.ts";
-import { retireSandbox } from "./sandbox-retire.ts";
+import { type RetirableSandbox, retireSandbox } from "./sandbox-retire.ts";
 
-export type SlotSandbox = {
-  shutdown(): Promise<void>;
-  /**
-   * Ask the guest to refuse new sessions and self-exit when empty (see
-   * `Sandbox.drain`). Optional so test doubles stay assignable.
-   */
-  drain?: (deadlineMs?: number) => Promise<void>;
+export type SlotSandbox = RetirableSandbox & {
   /**
    * False once the sandbox's guest is gone (see `Sandbox.alive`). Optional so
    * test doubles and non-guest-backed stand-ins stay assignable; absent is
@@ -74,20 +68,22 @@ export async function terminateSlot(slot: AgentSlot): Promise<void> {
 
 /**
  * Detach a slot's sandbox and retire it gracefully (see sandbox-retire.ts):
- * the slug is free for a rebuild the moment this returns, while the calls
- * already in flight finish on the old code in the guest.
+ * the slug is free for a rebuild the moment the detach lands, while the
+ * calls already in flight finish on the old code in the guest.
  *
  * The detach is synchronous — no await between reading the sandbox and
  * clearing the field — so there is no window in which the broker could hand
- * a superseded sandbox to a new client.
+ * a superseded sandbox to a new client. The returned promise (never
+ * rejects) settles once the drain request was DELIVERED: request-path
+ * callers `void` it, process shutdown awaits it (see sandbox-retire.ts).
  *
  * For a sandbox that is gone rather than superseded (failed VM, exited guest,
  * deleted agent) use `terminateSlot` — there is nothing to drain.
  */
-export function retireSlot(slot: AgentSlot, reason: string): void {
+export function retireSlot(slot: AgentSlot, reason: string): Promise<void> {
   const sb = slot.sandbox;
   delete slot.sandbox;
-  if (sb) void retireSandbox(sb, { slug: slot.slug, reason });
+  return sb ? retireSandbox(sb, { slug: slot.slug, reason }) : Promise.resolve();
 }
 
 export function setSlot(slots: SlotCache, slot: AgentSlot): void {
@@ -96,16 +92,4 @@ export function setSlot(slots: SlotCache, slot: AgentSlot): void {
 
 export function deleteSlot(slots: SlotCache, slug: string): boolean {
   return slots.delete(slug);
-}
-
-export function attachSandbox(
-  slots: SlotCache,
-  slot: AgentSlot,
-  sandbox: NonNullable<AgentSlot["sandbox"]>,
-): void {
-  // The slots handle is unused since the host's idle machinery was deleted,
-  // but the signature keeps attach sites honest about which cache they
-  // mutate.
-  void slots;
-  slot.sandbox = sandbox;
 }

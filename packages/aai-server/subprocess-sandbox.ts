@@ -10,8 +10,8 @@
  *
  * Fidelity of *shape*, not of *isolation*. Everything between the host and the
  * guest is the real thing: a separate OS process with its own lifecycle, the
- * real `/ws` JSON-RPC control channel over a real WebSocket, the real
- * `bundle/load` → config-extraction path, real client sessions dialing
+ * real `/ws` JSON-RPC control channel over a real WebSocket, real agent-mode
+ * file boots and one-shot describe execs, real client sessions dialing
  * `/websocket` directly, the real dial-retry and orphan-timeout behavior. A
  * bug in any of those surfaces here exactly as it would in production.
  *
@@ -33,7 +33,7 @@
  *
  * The guest gets a **minimal env**, not `process.env`. In production the guest
  * receives no host environment at all — its bearer token rides the Modal exec
- * env and the agent's own env arrives as `bundle/load` params. Inheriting the
+ * env and the agent's own env arrives as a boot file. Inheriting the
  * server's env here would hand tenant code the platform's credentials
  * (`SUPABASE_DB_URL`, Modal tokens, the studio's `ASSEMBLYAI_API_KEY`) and,
  * worse for a dev backend, would make agent code that wrongly reads
@@ -85,15 +85,21 @@ export type HarnessProcLike = GuestProcLike & {
 export type HarnessSpawnParams = {
   /** Absolute path to the built `harness.mjs`. */
   harnessPath: string;
-  /** Loopback port the harness binds directly (no port mapping here). */
-  port: number;
-  /** Per-sandbox bearer token (control channel, or agent manage surface). */
-  token: string;
+  /**
+   * Loopback port the harness binds directly (no port mapping here).
+   * Omitted by one-shot describe execs, which open no server.
+   */
+  port?: number | undefined;
+  /**
+   * Per-sandbox bearer token (control channel, or agent manage surface).
+   * Omitted by one-shot describe execs, which answer no requests.
+   */
+  token?: string | undefined;
   memoryLimitMiB?: number | undefined;
   /**
-   * Extra guest env — agent mode's boot convention (`agentBootEnv`). Never
-   * the server's own environment; the minimal-env parity rule in the module
-   * doc stands.
+   * Extra guest env — a mode's boot convention (`agentBootEnv`, or the
+   * describe-mode bundle path). Never the server's own environment; the
+   * minimal-env parity rule in the module doc stands.
    */
   extraEnv?: Record<string, string> | undefined;
 };
@@ -113,8 +119,8 @@ export function buildHarnessSpawn(params: HarnessSpawnParams): {
     execArgv:
       params.memoryLimitMiB === undefined ? [] : [`--max-old-space-size=${params.memoryLimitMiB}`],
     env: {
-      AAI_GUEST_TOKEN: params.token,
-      AAI_GUEST_PORT: String(params.port),
+      ...(params.token !== undefined ? { AAI_GUEST_TOKEN: params.token } : {}),
+      ...(params.port !== undefined ? { AAI_GUEST_PORT: String(params.port) } : {}),
       // Auth-free session endpoint: keep it off the dev machine's network.
       AAI_GUEST_HOST: "127.0.0.1",
       // The only inherited variable. A container image ships a PATH and tool
@@ -273,10 +279,10 @@ export async function spawnSubprocessAgentServer(
     const limits = parseSandboxLimitsFromEnv(process.env);
     const token = randomBytes(32).toString("hex");
 
+    // agentBootEnv carries AAI_GUEST_TOKEN/AAI_GUEST_PORT itself — the boot
+    // convention is one builder, so they are not passed a second time here.
     const proc = ctx.runGuestProcess({
       harnessPath: opts.harnessPath,
-      port,
-      token,
       memoryLimitMiB: limits.memoryLimitMiB,
       extraEnv: agentBootEnv({
         token,
@@ -333,17 +339,16 @@ export async function describeSubprocessBundle(
   ctx: SubprocessSpawnContext = realContext(),
 ): Promise<unknown> {
   try {
-    await access(opts.harnessPath);
-    const dir = await mkdtemp(join(tmpdir(), "aai-describe-"));
+    const [, dir] = await Promise.all([
+      access(opts.harnessPath),
+      mkdtemp(join(tmpdir(), "aai-describe-")),
+    ]);
     const bundlePath = join(dir, "bundle.mjs");
     await writeFile(bundlePath, opts.workerCode, "utf-8");
     const limits = parseSandboxLimitsFromEnv(process.env);
+    // No port, no token: describe mode opens no server and answers nothing.
     const proc = ctx.runGuestProcess({
       harnessPath: opts.harnessPath,
-      // Unused in describe mode (no server, no auth) but required by the
-      // spawn params; port 0 keeps even an ignored bind harmless.
-      port: 0,
-      token: "unused-describe",
       memoryLimitMiB: limits.memoryLimitMiB,
       extraEnv: { AAI_DESCRIBE_BUNDLE_PATH: bundlePath },
     });

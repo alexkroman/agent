@@ -84,25 +84,38 @@ export type GuestProcLike = {
  */
 const MAX_STREAM_LOG_BYTES = 64 * 1024;
 
-export async function drainProcStream(
+/**
+ * Consume a guest stream chunk-by-chunk to the end. NEVER stops early — a
+ * guest blocked on a full pipe wedges on its next write — and swallows
+ * mid-read errors (peer death is the exit paths' business). The one loop
+ * both the log drain and the describe-exec collector are built on, so the
+ * keep-consuming invariant lives in one place.
+ */
+export async function consumeProcStream(
   stream: ReadableStream<Uint8Array>,
-  label: string,
+  onChunk: (chunk: Uint8Array) => void,
 ): Promise<void> {
   const reader = stream.getReader();
-  const decoder = new TextDecoder();
-  let logged = 0;
   try {
     for (;;) {
       const { done, value } = await reader.read();
       if (done) return;
-      if (logged >= MAX_STREAM_LOG_BYTES) continue; // keep draining, stop logging
-      logged += value.byteLength;
-      const text = decoder.decode(value, { stream: true }).trimEnd();
-      if (text) console.warn(`${label}: ${text}`);
+      onChunk(value);
     }
   } catch {
     // Peer died mid-read; process exit handling covers teardown.
   }
+}
+
+export function drainProcStream(stream: ReadableStream<Uint8Array>, label: string): Promise<void> {
+  const decoder = new TextDecoder();
+  let logged = 0;
+  return consumeProcStream(stream, (value) => {
+    if (logged >= MAX_STREAM_LOG_BYTES) return; // keep draining, stop logging
+    logged += value.byteLength;
+    const text = decoder.decode(value, { stream: true }).trimEnd();
+    if (text) console.warn(`${label}: ${text}`);
+  });
 }
 
 // ── Guest WebSocket dial ─────────────────────────────────────────────────────
@@ -230,10 +243,17 @@ export type AgentServerHandle = {
   /** Public client-session endpoint on the guest's tunnel. */
   sessionUrl: string;
   /**
-   * Live sessions via `GET /manage/status`. NEVER throws: an unreachable
-   * guest or a malformed answer reads as 0 — every consumer (shutdown
-   * drains, logs) treats "can't ask" as "idle", so the tolerance lives here
-   * once instead of in a try/catch at each call site.
+   * The guest's origin (`ws(s)://host:port`) — every guest surface derives
+   * from it via GUEST_ROUTES rather than reverse-engineering `sessionUrl`.
+   */
+  guestOrigin: string;
+  /**
+   * Live sessions via `GET /manage/status`. NO production caller — kept as
+   * the platform's tested client of the status contract (an
+   * operator/diagnostic probe; see agent-server-integration.test.ts). Do
+   * not wire lifecycle decisions back onto it: the guest owns its own
+   * lifecycle. NEVER throws — an unreachable guest or malformed answer
+   * reads as 0.
    */
   activeSessions(): Promise<number>;
   /**
@@ -288,15 +308,11 @@ export function agentServerFromGuest(opts: {
   const manage = (
     route: (typeof GUEST_ROUTES)["manageStatus" | "manageDrain"],
     method: string,
-    body?: Record<string, unknown>,
+    query = "",
   ) =>
-    fetchFn(guestHttpUrl(origin, route), {
+    fetchFn(`${guestHttpUrl(origin, route)}${query}`, {
       method,
-      headers: {
-        authorization: `Bearer ${token}`,
-        ...(body ? { "content-type": "application/json" } : {}),
-      },
-      ...(body ? { body: JSON.stringify(body) } : {}),
+      headers: { authorization: `Bearer ${token}` },
       signal: AbortSignal.timeout(MANAGE_REQUEST_TIMEOUT_MS),
     });
 
@@ -304,6 +320,7 @@ export function agentServerFromGuest(opts: {
 
   return {
     sessionUrl: guestWsUrl(origin, GUEST_ROUTES.session),
+    guestOrigin: origin,
 
     async activeSessions() {
       try {
@@ -322,11 +339,8 @@ export function agentServerFromGuest(opts: {
     },
 
     async drain(deadlineMs?: number) {
-      const res = await manage(
-        GUEST_ROUTES.manageDrain,
-        "POST",
-        deadlineMs === undefined ? undefined : { deadlineMs },
-      );
+      const query = deadlineMs === undefined ? "" : `?deadlineMs=${deadlineMs}`;
+      const res = await manage(GUEST_ROUTES.manageDrain, "POST", query);
       if (!res.ok) throw new Error(`manage/drain answered HTTP ${res.status}`);
     },
 

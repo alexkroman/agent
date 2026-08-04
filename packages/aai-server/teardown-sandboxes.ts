@@ -26,15 +26,7 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import { retireSandbox } from "./sandbox-retire.ts";
-import type { AgentSlot, SlotCache } from "./sandbox-slots.ts";
-
-/** Detach a slot's sandbox and deliver its retirement (awaited). */
-async function retireSlotDelivered(slot: AgentSlot): Promise<void> {
-  const sb = slot.sandbox;
-  delete slot.sandbox;
-  if (sb) await retireSandbox(sb, { slug: slot.slug, reason: "replica-shutdown" });
-}
+import { retireSlot, type SlotCache } from "./sandbox-slots.ts";
 
 export type TeardownTargets = {
   /** The replica's slug→sandbox map; every resident is retired. */
@@ -51,7 +43,9 @@ export type TeardownTargets = {
 export async function teardownSandboxes(targets: TeardownTargets): Promise<void> {
   const { slots, broker } = targets;
 
-  const work: Promise<unknown>[] = [...slots.values()].map((slot) => retireSlotDelivered(slot));
+  const work: Promise<unknown>[] = [...slots.values()].map((slot) =>
+    retireSlot(slot, "replica-shutdown"),
+  );
   // Sandboxes retired earlier by a mutation are deliberately not chased:
   // they are off the slot map and already self-governing.
   if (broker) work.push(broker.dispose());

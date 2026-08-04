@@ -5,7 +5,7 @@
  * Secrets are per-agent key/value pairs held in the injected SecretStore
  * (Supabase Vault in production, which encrypts at rest — no app-layer
  * encryption). They are delivered to the guest sandbox via the
- * `bundle/load` RPC params
+ * agent boot env
  * (see sandbox-vm.ts), never as host process environment variables.
  *
  * A secret change takes effect on the NEXT DEPLOY (or sandbox rebuild) by

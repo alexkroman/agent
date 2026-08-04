@@ -104,34 +104,17 @@ export type ManageDeps = {
   startDrain: (deadlineMs?: number) => void;
 };
 
-/** Cap on the drain request body (it carries one small JSON object). */
-const MAX_MANAGE_BODY_BYTES = 4096;
-
-/** Read a small JSON request body; resolves {} on absent/invalid bodies. */
-function readJsonBody(req: http.IncomingMessage): Promise<Record<string, unknown>> {
-  return new Promise((resolve) => {
-    let body = "";
-    req.on("data", (chunk: Buffer) => {
-      body += chunk.toString("utf-8");
-      if (body.length > MAX_MANAGE_BODY_BYTES) {
-        resolve({});
-        req.destroy();
-      }
-    });
-    req.on("end", () => {
-      try {
-        const parsed: unknown = JSON.parse(body);
-        resolve(
-          parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)
-            ? (parsed as Record<string, unknown>)
-            : {},
-        );
-      } catch {
-        resolve({});
-      }
-    });
-    req.on("error", () => resolve({}));
-  });
+/**
+ * The drain deadline off the request's query (`?deadlineMs=600000`). A query
+ * param rather than a body: the server's request hook hands over a
+ * query-stripped path, so the raw `req.url` is the one place the value
+ * rides, and a number in a query needs no body reader, no size cap, and no
+ * JSON parsing. Absent/malformed reads as "drain until empty".
+ */
+function drainDeadlineMs(req: http.IncomingMessage): number | undefined {
+  const raw = new URLSearchParams((req.url ?? "").split("?")[1] ?? "").get("deadlineMs");
+  const ms = raw === null ? Number.NaN : Number(raw);
+  return Number.isFinite(ms) && ms > 0 ? ms : undefined;
 }
 
 function sendJson(res: http.ServerResponse, status: number, body: unknown): void {
@@ -163,13 +146,8 @@ export function createManageHandler(
       return true;
     }
     if (method === "POST" && url === MANAGE_DRAIN_PATH) {
-      void readJsonBody(req).then((body) => {
-        const raw = body.deadlineMs;
-        const deadlineMs =
-          typeof raw === "number" && Number.isFinite(raw) && raw > 0 ? raw : undefined;
-        deps.startDrain(deadlineMs);
-        sendJson(res, 200, { ok: true, draining: true });
-      });
+      deps.startDrain(drainDeadlineMs(req));
+      sendJson(res, 200, { ok: true, draining: true });
       return true;
     }
     sendJson(res, 404, { error: "not found" });

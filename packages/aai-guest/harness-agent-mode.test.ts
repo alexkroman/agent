@@ -96,19 +96,11 @@ function fakeRes(): FakeRes {
   return out;
 }
 
-function fakeReq(auth?: string, body?: string): http.IncomingMessage {
-  // Minimal readable shape for readJsonBody: emits the body (if any) to the
-  // `data` listener and completes on `end`, synchronously at registration.
-  const req = {
+function fakeReq(auth?: string, url?: string): http.IncomingMessage {
+  return {
     headers: auth ? { authorization: auth } : {},
-    destroy: () => undefined,
-    on(event: string, cb: (chunk?: unknown) => void) {
-      if (event === "data" && body) cb(Buffer.from(body));
-      if (event === "end") cb();
-      return req;
-    },
-  };
-  return req as unknown as http.IncomingMessage;
+    ...(url !== undefined ? { url } : {}),
+  } as http.IncomingMessage;
 }
 
 describe("createManageHandler", () => {
@@ -147,37 +139,37 @@ describe("createManageHandler", () => {
     });
   });
 
-  test("drain flips the drain flag (no body → no deadline)", async () => {
+  test("drain flips the drain flag (no query → no deadline)", () => {
     const startDrain = vi.fn();
     const out = fakeRes();
     deps({ startDrain })(fakeReq("Bearer secret-token"), out.res, MANAGE_DRAIN_PATH, "POST");
-    await vi.waitFor(() => expect(out.statusCode).toBe(200));
+    expect(out.statusCode).toBe(200);
     expect(startDrain).toHaveBeenCalledExactlyOnceWith(undefined);
   });
 
-  test("drain forwards the host's deadline from the JSON body", async () => {
+  test("drain forwards the host's deadline from the query", () => {
     const startDrain = vi.fn();
     const out = fakeRes();
     deps({ startDrain })(
-      fakeReq("Bearer secret-token", JSON.stringify({ deadlineMs: 60_000 })),
+      fakeReq("Bearer secret-token", `${MANAGE_DRAIN_PATH}?deadlineMs=60000`),
       out.res,
       MANAGE_DRAIN_PATH,
       "POST",
     );
-    await vi.waitFor(() => expect(out.statusCode).toBe(200));
+    expect(out.statusCode).toBe(200);
     expect(startDrain).toHaveBeenCalledExactlyOnceWith(60_000);
   });
 
-  test("drain ignores a malformed deadline (drains until empty)", async () => {
+  test("drain ignores a malformed deadline (drains until empty)", () => {
     const startDrain = vi.fn();
     const out = fakeRes();
     deps({ startDrain })(
-      fakeReq("Bearer secret-token", '{"deadlineMs":"soon"}'),
+      fakeReq("Bearer secret-token", `${MANAGE_DRAIN_PATH}?deadlineMs=soon`),
       out.res,
       MANAGE_DRAIN_PATH,
       "POST",
     );
-    await vi.waitFor(() => expect(out.statusCode).toBe(200));
+    expect(out.statusCode).toBe(200);
     expect(startDrain).toHaveBeenCalledExactlyOnceWith(undefined);
   });
 

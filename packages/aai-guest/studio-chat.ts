@@ -77,9 +77,9 @@ export type StudioSessionParams = {
 export type StudioSession = StudioSessionParams & { dir: string };
 
 export type StudioChatDeps = {
-  /** The harness's own bundle loader (`bundle/load` internals). */
+  /** The harness's own bundle loader (`loadBundle`). */
   loadBundle: (code: string) => Promise<{ config?: unknown }>;
-  /** The harness's one-shot trial executor (`tool/execute` internals). */
+  /** The harness's one-shot trial executor (`executeTool`). */
   executeTool: (name: string, args: Record<string, unknown>) => Promise<string>;
   /** Test seam. Defaults to the gateway model on the session's caller key. */
   model?: LanguageModel;

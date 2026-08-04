@@ -16,11 +16,7 @@ import {
   type ModalSpawnContext,
   modalContext,
 } from "./modal-sandbox.ts";
-import {
-  assertModalResourcePairs,
-  parseSandboxLimitsFromEnv,
-  parseSandboxRegionsFromEnv,
-} from "./modal-sandbox-env.ts";
+import { guestSandboxResources } from "./modal-sandbox-env.ts";
 import { sandboxTags } from "./sandbox-role.ts";
 
 /** Whole-sandbox lifetime cap for a describe exec (the exec itself is 60s). */
@@ -41,18 +37,12 @@ export async function describeModalBundle(
     harnessCode(opts.harnessPath),
     ctx ? Promise.resolve(ctx) : modalContext(),
   ]);
-  const limits = parseSandboxLimitsFromEnv(process.env);
-  assertModalResourcePairs(limits);
-  const regions = parseSandboxRegionsFromEnv(process.env);
+  const { resourceParams } = guestSandboxResources(process.env);
 
   const sb = await context.createGuestSandbox(code, {
     command: ["sleep", "infinity"],
     timeoutMs: DESCRIBE_SANDBOX_TIMEOUT_MS,
-    ...(limits.memoryMiB !== undefined && { memoryMiB: limits.memoryMiB }),
-    ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
-    ...(limits.cpu !== undefined && { cpu: limits.cpu }),
-    ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
-    ...(regions && { regions }),
+    ...resourceParams,
     tags: sandboxTags("inspect", "studio-inspect"),
   });
   try {
@@ -65,6 +55,8 @@ export async function describeModalBundle(
     });
     return await readDescribeResult(proc, `modal:${sb.sandboxId}`);
   } finally {
-    await sb.terminate().catch(() => undefined);
+    // Fire-and-forget: nothing on the deploy path depends on the teardown,
+    // and DESCRIBE_SANDBOX_TIMEOUT_MS backstops a lost terminate.
+    void sb.terminate().catch(() => undefined);
   }
 }

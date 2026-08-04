@@ -7,7 +7,12 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { dispatchMessage, handleNotification, handleRequest } from "./harness.ts";
 import { bearerToken } from "./harness-auth.ts";
-import { ensureRuntime, type HarnessState, loadBundle } from "./harness-bundle.ts";
+import {
+  emptyHarnessState,
+  ensureRuntime,
+  type HarnessState,
+  loadBundle,
+} from "./harness-bundle.ts";
 import { rejectAllPendingHostRequests, setHostSend } from "./harness-rpc.ts";
 import type { AgentDef, JsonRpcMessage } from "./harness-types.ts";
 import { executeTool } from "./trial.ts";
@@ -55,15 +60,7 @@ function makeAgent(overrides?: Partial<AgentDef>): AgentDef {
 }
 
 function makeState(overrides?: Partial<HarnessState>): HarnessState {
-  return {
-    agent: null,
-    createRuntime: null,
-    env: Object.freeze({}),
-    runtime: null,
-    activeSessions: 0,
-    studio: null,
-    ...overrides,
-  };
+  return { ...emptyHarnessState(), ...overrides };
 }
 
 /**
@@ -299,29 +296,11 @@ describe("loadBundle", () => {
 });
 
 describe("control-channel dispatch", () => {
-  test("status reports the live session count", async () => {
-    const state = makeState({ activeSessions: 2 });
-    await handleRequest({ jsonrpc: "2.0", id: 8, method: "status" }, state);
-    expect(sent.at(-1)).toEqual({ jsonrpc: "2.0", id: 8, result: { activeSessions: 2 } });
-  });
-
-  test("removed methods (bundle/load, tool/execute) answer -32601", async () => {
-    const state = makeState();
-    await handleRequest(
-      { jsonrpc: "2.0", id: 4, method: "bundle/load", params: { code: "x", env: {} } },
-      state,
-    );
-    expect((sent.at(-1) as { error: { code: number } }).error.code).toBe(-32_601);
-    await handleRequest(
-      { jsonrpc: "2.0", id: 5, method: "tool/execute", params: { name: "t" } },
-      state,
-    );
-    expect((sent.at(-1) as { error: { code: number } }).error.code).toBe(-32_601);
-  });
-
+  // Covers removed methods too: `bundle/load`, `tool/execute`, and `status`
+  // all left the channel and fall to the same method-not-found branch.
   test("unknown methods answer -32601", async () => {
     const state = makeState();
-    await handleRequest({ jsonrpc: "2.0", id: 6, method: "wat" }, state);
+    await handleRequest({ jsonrpc: "2.0", id: 6, method: "bundle/load" }, state);
     expect((sent.at(-1) as { error: { code: number } }).error.code).toBe(-32_601);
   });
 

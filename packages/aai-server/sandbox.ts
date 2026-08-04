@@ -48,11 +48,17 @@ export type Sandbox = {
    */
   sessionUrl(): Promise<string>;
   /**
-   * Hand the guest its drain budget (`POST /manage/drain` with
-   * `{ deadlineMs }`): refuse new sessions and self-exit when empty or at
-   * the deadline — the GUEST enforces the deadline; the host holds no drain
-   * state. REJECTS on an unreachable guest so retirement can terminate
-   * instead (see sandbox-retire.ts).
+   * The guest's origin (`wss://host:port`) — every guest HTTP surface
+   * derives from it via GUEST_ROUTES (the client-config proxy), rather than
+   * reverse-engineering URLs out of `sessionUrl`. Same readiness promise.
+   */
+  guestOrigin(): Promise<string>;
+  /**
+   * Hand the guest its drain budget (`POST /manage/drain?deadlineMs=`):
+   * refuse new sessions and self-exit when empty or at the deadline — the
+   * GUEST enforces the deadline; the host holds no drain state. REJECTS on
+   * an unreachable guest so retirement can terminate instead (see
+   * sandbox-retire.ts).
    */
   drain(deadlineMs?: number): Promise<void>;
   /**
@@ -117,6 +123,8 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   return {
     sessionUrl: () => vmReady.then((handle) => handle.sessionUrl),
+
+    guestOrigin: () => vmReady.then((handle) => handle.guestOrigin),
 
     alive: () => !lost,
 

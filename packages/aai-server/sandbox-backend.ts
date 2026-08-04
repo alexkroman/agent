@@ -36,7 +36,7 @@
  * So the two tiers are: `subprocess` for fast iteration, and `modal` when the
  * question is "does this really work". `subprocess` keeps the *shape* of a
  * sandbox — a separate OS process, the real `/ws` JSON-RPC control channel,
- * the real `bundle/load`, real `/websocket` sessions, real dial-retry and
+ * real agent-mode file boots, real `/websocket` sessions, real dial-retry and
  * orphan-timeout behavior — so it still catches the integration bugs a dev
  * backend exists to catch. See `subprocess-sandbox.ts` for what it does and
  * does not reproduce.

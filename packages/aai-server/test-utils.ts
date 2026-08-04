@@ -134,11 +134,3 @@ export async function deployAgent(
     body: deployBody({ slug }),
   });
 }
-
-// Sandbox-VM fakes shared with the aai-studio-server package tests
-// (cross-package imports may not reach `_`-internal modules directly).
-export {
-  createTestConn,
-  type FakeGuestSocket,
-  makeWarm,
-} from "./_sandbox-vm-test-utils.ts";

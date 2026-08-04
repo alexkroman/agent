@@ -4,7 +4,7 @@
  * Postgres schema plus a matching LOGIN role inside the platform's Supabase
  * database (`SUPABASE_DB_URL`). Tool code reaches it as `ctx.db`: the app's
  * OWN scoped credentials (role/search_path pinned at provisioning) are
- * handed to the guest as `DATABASE_URL` at bundle/load, and the bundle's
+ * handed to the guest as `DATABASE_URL` in its boot env, and the bundle's
  * runtime connects directly — exactly as `aai dev` does with a project
  * `.env`. Platform ADMIN credentials never enter the guest; the app role
  * reaches only its own schema, which the tenant's code could read anyway.

@@ -18,72 +18,93 @@
  * already-deployed agent. The guest fetch is best-effort — a guest that
  * cannot answer degrades to `{ sessionUrl }` and the default client renders
  * its empty defaults, exactly as it does against an older self-hosted
- * server.
+ * server. Answers are immutable for a sandbox's lifetime, so they are
+ * memoized per guest origin — the round trip to the sandbox tunnel is paid
+ * once per sandbox, not once per page load.
  */
 
 import { buildClientConfig, ClientConfigResponseSchema } from "@alexkroman1/aai/protocol";
 import { HTTPException } from "hono/http-exception";
+import { TtlCache } from "./_ttl-cache.ts";
 import type { AppContext } from "./context.ts";
 import { GUEST_ROUTES, guestHttpUrl } from "./guest-routes.ts";
 import { brokerSessionUrl, type ResolveSandboxOpts } from "./sandbox-resolve.ts";
 
-/** Per-request cap on the guest config proxy fetch. */
-const GUEST_CONFIG_TIMEOUT_MS = 5000;
+/**
+ * Per-request cap on the guest config proxy fetch. Short: this sits on the
+ * page-load path and the fields are optional — degrading beats waiting.
+ */
+const GUEST_CONFIG_TIMEOUT_MS = 1500;
 
 /**
- * Fetch the guest's own `/client-config` (public, same-posture as the
- * session endpoint). Guest-asserted wire data — validated against the
- * response schema, and any failure (unreachable, non-200, malformed)
- * degrades to `{}` rather than failing the broker: the session URL is the
- * part a client cannot do without.
+ * How long a guest's answer is remembered. A guest origin is unique to one
+ * sandbox and its config is immutable for that sandbox's life, so the TTL
+ * exists to evict entries for dead sandboxes, not to refresh live ones.
  */
-async function fetchGuestClientConfig(
-  sessionUrl: string,
-  fetchFn: typeof fetch = fetch,
-): Promise<{ name?: string; greeting?: string }> {
-  try {
-    const origin = new URL(sessionUrl);
-    const url = guestHttpUrl(`${origin.protocol}//${origin.host}`, GUEST_ROUTES.clientConfig);
-    const res = await fetchFn(url, { signal: AbortSignal.timeout(GUEST_CONFIG_TIMEOUT_MS) });
-    if (!res.ok) return {};
-    const parsed = ClientConfigResponseSchema.safeParse(await res.json());
-    if (!parsed.success) return {};
-    const { name, greeting } = parsed.data;
-    return {
-      ...(name !== undefined ? { name } : {}),
-      ...(greeting !== undefined ? { greeting } : {}),
-    };
-  } catch {
-    return {};
-  }
-}
+const GUEST_CONFIG_CACHE_TTL_MS = 10 * 60_000;
 
-export async function handleAgentClientConfig(
-  c: AppContext,
-  broker: ResolveSandboxOpts,
-  fetchFn: typeof fetch = fetch,
-): Promise<Response> {
-  const slug = c.var.slug;
-  const brokered = await brokerSessionUrl(slug, broker);
+type GuestClientConfig = { name?: string; greeting?: string };
 
-  if (!brokered.ok) {
-    if (brokered.status === 404) {
-      throw new HTTPException(404, { message: `Not found: ${slug}` });
+/**
+ * Build the broker's request handler. A factory so the per-origin memo and
+ * the injectable guest fetch (tests) live together — one cache per app.
+ */
+export function createAgentClientConfigHandler(
+  fetchFn: typeof fetch = fetch,
+): (c: AppContext, broker: ResolveSandboxOpts) => Promise<Response> {
+  const memo = new TtlCache<GuestClientConfig>(GUEST_CONFIG_CACHE_TTL_MS);
+
+  /**
+   * The guest's own `/client-config` (public, same posture as the session
+   * endpoint). Guest-asserted wire data — validated against the response
+   * schema. Any failure (unreachable, non-200, malformed) degrades to `{}`
+   * and is NOT cached, so a guest still booting answers on the next request
+   * rather than pinning empty defaults for the TTL.
+   */
+  async function fetchGuestClientConfig(guestOrigin: string): Promise<GuestClientConfig> {
+    const cached = memo.get(guestOrigin);
+    if (cached) return cached;
+    try {
+      const url = guestHttpUrl(guestOrigin, GUEST_ROUTES.clientConfig);
+      const res = await fetchFn(url, { signal: AbortSignal.timeout(GUEST_CONFIG_TIMEOUT_MS) });
+      if (!res.ok) return {};
+      const parsed = ClientConfigResponseSchema.safeParse(await res.json());
+      if (!parsed.success) return {};
+      const { name, greeting } = parsed.data;
+      const config = {
+        ...(name !== undefined ? { name } : {}),
+        ...(greeting !== undefined ? { greeting } : {}),
+      };
+      memo.set(guestOrigin, config);
+      return config;
+    } catch {
+      return {};
     }
-    // The sandbox VM failed to start; the failure hook detaches it so the
-    // next request rebuilds. Tell this client to retry rather than handing
-    // it a session URL that will never answer.
-    throw new HTTPException(503, {
-      message: "agent unavailable, retry shortly",
-      cause: brokered.cause,
-    });
   }
 
-  const guestConfig = await fetchGuestClientConfig(brokered.sessionUrl, fetchFn);
-  return c.json(
-    buildClientConfig({
-      ...guestConfig,
-      sessionUrl: brokered.sessionUrl,
-    }),
-  );
+  return async (c, broker) => {
+    const slug = c.var.slug;
+    const brokered = await brokerSessionUrl(slug, broker);
+
+    if (!brokered.ok) {
+      if (brokered.status === 404) {
+        throw new HTTPException(404, { message: `Not found: ${slug}` });
+      }
+      // The sandbox VM failed to start; the failure hook detaches it so the
+      // next request rebuilds. Tell this client to retry rather than handing
+      // it a session URL that will never answer.
+      throw new HTTPException(503, {
+        message: "agent unavailable, retry shortly",
+        cause: brokered.cause,
+      });
+    }
+
+    const guestConfig = await fetchGuestClientConfig(brokered.guestOrigin);
+    return c.json(
+      buildClientConfig({
+        ...guestConfig,
+        sessionUrl: brokered.sessionUrl,
+      }),
+    );
+  };
 }

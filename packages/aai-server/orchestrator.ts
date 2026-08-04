@@ -31,7 +31,7 @@ import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { AppDatabases } from "./app-database.ts";
 import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "./app-middleware.ts";
-import { handleAgentClientConfig } from "./client-config-handler.ts";
+import { createAgentClientConfigHandler } from "./client-config-handler.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import type { HonoEnv } from "./context.ts";
 import { handleDelete } from "./delete.ts";
@@ -232,9 +232,8 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // Session broker: the live sandbox session URL (boots the sandbox on first
   // request) plus name/greeting PROXIED from the guest's own /client-config.
   // Same auth posture as the page and the session endpoint: none.
-  agents.get("/client-config", (c) =>
-    handleAgentClientConfig(c, brokerOpts, opts.guestConfigFetch),
-  );
+  const handleAgentClientConfig = createAgentClientConfigHandler(opts.guestConfigFetch);
+  agents.get("/client-config", (c) => handleAgentClientConfig(c, brokerOpts));
   agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);
   // GET /:slug/ stays on the top-level app — Hono's mergePath("/:slug", "/")

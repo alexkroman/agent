@@ -17,6 +17,7 @@ import type { AgentServerHandle } from "./warm-harness.ts";
 function fakeHandle(): AgentServerHandle {
   return {
     sessionUrl: "wss://tunnel.test:443/websocket",
+    guestOrigin: "wss://tunnel.test:443",
     activeSessions: vi.fn(async () => 0),
     drain: vi.fn(async () => undefined),
     alive: () => true,

@@ -47,7 +47,7 @@
  * `createServer` `aai dev` runs (health, client-config, `/websocket`
  * sessions), adding only the `/ws` control channel via the server's
  * `upgrade` hook and a lazy runtime facade (the runtime is built on the
- * first session, never at bundle/load — inspection loads carry an empty
+ * first session, never at load — studio inspection loads carry an empty
  * env that must not fail on missing provider credentials).
  *
  * Network egress is open — the Modal container is the isolation boundary;
@@ -65,7 +65,12 @@ import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
 import { createIdleController, createManageHandler, readAgentBoot } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
-import { ensureRuntime, type HarnessState, loadBundle } from "./harness-bundle.ts";
+import {
+  emptyHarnessState,
+  ensureRuntime,
+  type HarnessState,
+  loadBundle,
+} from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
 import {
   errMsg,
@@ -99,11 +104,6 @@ import { executeTool } from "./trial.ts";
 /** Resolve and settle a single incoming JSON-RPC request. */
 export async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<void> {
   switch (req.method) {
-    case "status": {
-      sendResponse(req.id, { activeSessions: state.activeSessions });
-      break;
-    }
-
     // Publish: run `aai deploy` IN THIS SANDBOX against a materialized
     // snapshot of the workspace (see studio-publish.ts) — the literal CLI,
     // so studio publishes and laptop deploys are one path, and the CLI's
@@ -193,11 +193,27 @@ export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void 
  * the loaded bundle's env), plus the live-session count the host's idle
  * eviction asks for over `status`.
  */
-export function lazyRuntime(state: HarnessState): SessionRuntime {
+export function lazyRuntime(
+  state: HarnessState,
+  hooks: {
+    /**
+     * Pre-session refusal, checked before anything starts: return a close
+     * code + reason to turn the session away (agent mode's drain refusal —
+     * 1013 "try again" makes the client re-broker onto the replacement).
+     * The one refusal path, shared with the runtime-build failure below.
+     */
+    refuse?: () => { code: number; reason: string } | null;
+  } = {},
+): SessionRuntime {
   return {
     startSession(ws, opts) {
-      state.activeSessions++;
       const socket = ws as unknown as WebSocket;
+      const refusal = hooks.refuse?.();
+      if (refusal) {
+        socket.close(refusal.code, refusal.reason);
+        return;
+      }
+      state.activeSessions++;
       socket.on("close", () => {
         state.activeSessions = Math.max(0, state.activeSessions - 1);
       });
@@ -231,14 +247,7 @@ export function lazyRuntime(state: HarnessState): SessionRuntime {
  * refuses new sessions then exits with the last one.
  */
 async function mainAgent(port: number, host: string, token: string): Promise<void> {
-  const state: HarnessState = {
-    agent: null,
-    createRuntime: null,
-    env: Object.freeze({}),
-    runtime: null,
-    activeSessions: 0,
-    studio: null,
-  };
+  const state = emptyHarnessState();
 
   const rawIdle = Number(process.env.AAI_GUEST_IDLE_EXIT_MS ?? AGENT_IDLE_EXIT_MS);
   const idle = createIdleController({
@@ -250,20 +259,12 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
   const boot = await readAgentBoot();
   await loadBundle(state, { code: boot.code, env: boot.env });
 
-  const base = lazyRuntime(state);
-  const runtime: SessionRuntime = {
-    startSession(ws, opts) {
-      // A draining guest is detached from the broker, but a client holding
-      // its old sessionUrl can still dial the tunnel directly — refuse with
-      // a "try again" close so the client re-brokers onto the replacement.
-      if (idle.isDraining()) {
-        (ws as { close?: (code?: number, reason?: string) => void }).close?.(1013, "draining");
-        return;
-      }
-      base.startSession(ws, opts);
-    },
-    shutdown: base.shutdown,
-  };
+  // A draining guest is detached from the broker, but a client holding its
+  // old sessionUrl can still dial the tunnel directly — refuse with a "try
+  // again" close so the client re-brokers onto the replacement.
+  const runtime = lazyRuntime(state, {
+    refuse: () => (idle.isDraining() ? { code: 1013, reason: "draining" } : null),
+  });
 
   const server = createServer({
     runtime,
@@ -296,14 +297,7 @@ async function mainAgent(port: number, host: string, token: string): Promise<voi
  * contract, and the spawner tears the sandbox down when it exits.
  */
 async function mainDescribe(bundlePath: string): Promise<void> {
-  const state: HarnessState = {
-    agent: null,
-    createRuntime: null,
-    env: Object.freeze({}),
-    runtime: null,
-    activeSessions: 0,
-    studio: null,
-  };
+  const state = emptyHarnessState();
   try {
     const code = await readFile(bundlePath, "utf-8");
     const loaded = await loadBundle(state, { code, env: {} });
@@ -359,14 +353,7 @@ function main(): void {
     return;
   }
 
-  const state: HarnessState = {
-    agent: null,
-    createRuntime: null,
-    env: Object.freeze({}),
-    runtime: null,
-    activeSessions: 0,
-    studio: null,
-  };
+  const state = emptyHarnessState();
   let hostSocket: WebSocket | null = null;
   let lastConnectedAt = Date.now();
 

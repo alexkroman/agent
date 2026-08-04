@@ -83,10 +83,12 @@ REGION = "us-east-2"
 #
 # The server holds no cross-request state (coordination lives in Supabase —
 # see CLAUDE.md "Stateless server"), so replicas are interchangeable:
-# scale-out is safe, and scale-in/redeploys drain via the node process's
-# SIGTERM handler. Voice sessions live in the guest sandboxes (browsers dial
-# the sandbox tunnel directly), so a replica going down only costs the
-# sandboxes it owns; clients auto-reconnect (?sessionId) and re-broker.
+# scale-out is safe, and on scale-in/redeploy the node process's SIGTERM
+# handler RETIRES the replica's agent guests (one drain request each — the
+# guests finish their calls and exit on their own clock) and disposes the
+# studio broker. Voice sessions live in the guest sandboxes (browsers dial
+# the sandbox tunnel directly), so a replica going down cuts nothing;
+# clients auto-reconnect (?sessionId) and re-broker.
 #
 # Each in-flight HTTP request counts as one input. Voice sessions never pass
 # through this process (browsers dial the sandbox tunnel directly, and
@@ -173,11 +175,12 @@ app = modal.App("aai-server-web")
     min_containers=MIN_CONTAINERS,
     max_containers=MAX_CONTAINERS,
     buffer_containers=BUFFER_CONTAINERS,
-    # SHUTDOWN_DRAIN_MS (120s) + sandbox teardown must fit in the container's
-    # grace period. Modal signals this Python runtime, not the node child —
-    # `run_node` below forwards the stop signal and waits, which is the only
-    # reason the node SIGTERM handler (drain + guest-sandbox teardown) runs
-    # at all on scale-in/redeploy.
+    # Shutdown is retire-and-exit (no session-drain wait): the node SIGTERM
+    # handler delivers one drain request per agent guest, disposes the studio
+    # broker, and exits — seconds, well inside this grace period. Modal
+    # signals this Python runtime, not the node child — `run_node` below
+    # forwards the stop signal and waits, which is the only reason the node
+    # SIGTERM handler runs at all on scale-in/redeploy.
     scaledown_window=300,
     # Bounds one WebSocket's lifetime — see "Input timeout" above.
     timeout=FUNCTION_TIMEOUT_SECS,
@@ -202,6 +205,6 @@ def server() -> None:
         env["AAI_SERVICE"] = "combined"
         entry = "packages/aai-studio-server/dist/index.mjs"
     # run_node (not a bare Popen) so container stop signals reach the node
-    # process — its SIGTERM handler is what drains sessions and terminates
-    # this replica's guest sandboxes (see modal_image.run_node).
+    # process — its SIGTERM handler is what retires this replica's guest
+    # sandboxes (see modal_image.run_node).
     run_node(entry, env)

@@ -42,11 +42,9 @@ import { keyedMemoAsync, memoAsync } from "./_memo.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { createHarnessImageResolver, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import {
-  assertModalResourcePairs,
   DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
   DEFAULT_SANDBOX_TIMEOUT_MS,
-  parseSandboxLimitsFromEnv,
-  parseSandboxRegionsFromEnv,
+  guestSandboxResources,
 } from "./modal-sandbox-env.ts";
 import type { RpcWebSocket } from "./rpc-transport.ts";
 import { resolveSandboxRole, type SpawnIdentity, sandboxTags } from "./sandbox-role.ts";
@@ -274,9 +272,7 @@ export async function spawnModalWarm(
     harnessCode(opts.harnessPath),
     ctx ? Promise.resolve(ctx) : modalContext(),
   ]);
-  const limits = parseSandboxLimitsFromEnv(process.env);
-  assertModalResourcePairs(limits);
-  const regions = parseSandboxRegionsFromEnv(process.env);
+  const { limits, resourceParams } = guestSandboxResources(process.env);
   const role = resolveSandboxRole(opts);
 
   const t0 = performance.now();
@@ -291,16 +287,7 @@ export async function spawnModalWarm(
       encryptedPorts: [GUEST_PORT],
       timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
       idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-      // Reservation and cap are a burst range, not one number: a guest idles
-      // as a voice session and spikes only while the bundler runs. Modal rejects
-      // a reservation above its cap (clamped at parse) and a bare cap
-      // (assertModalResourcePairs above), so pass whichever were configured.
-      ...(limits.memoryMiB !== undefined && { memoryMiB: limits.memoryMiB }),
-      ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
-      ...(limits.cpu !== undefined && { cpu: limits.cpu }),
-      ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
-      // Co-locate guests with the host — see parseSandboxRegionsFromEnv.
-      ...(regions && { regions }),
+      ...resourceParams,
       tags: sandboxTags(role, opts.slug),
     },
     opts.imageTag,
@@ -386,9 +373,7 @@ export async function spawnModalAgentServer(
     harnessCode(opts.harnessPath),
     ctx ? Promise.resolve(ctx) : modalContext(),
   ]);
-  const limits = parseSandboxLimitsFromEnv(process.env);
-  assertModalResourcePairs(limits);
-  const regions = parseSandboxRegionsFromEnv(process.env);
+  const { limits, resourceParams } = guestSandboxResources(process.env);
   const role = resolveSandboxRole({ slug: opts.slug });
 
   const t0 = performance.now();
@@ -399,11 +384,7 @@ export async function spawnModalAgentServer(
       encryptedPorts: [GUEST_PORT],
       timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
       idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
-      ...(limits.memoryMiB !== undefined && { memoryMiB: limits.memoryMiB }),
-      ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
-      ...(limits.cpu !== undefined && { cpu: limits.cpu }),
-      ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
-      ...(regions && { regions }),
+      ...resourceParams,
       tags: sandboxTags(role, opts.slug),
     },
     opts.imageTag,

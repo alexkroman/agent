@@ -2287,8 +2287,8 @@ pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
 - **Ongoing surface**: `GET /manage/status` (live session count +
   draining + contractVersion — an operator/debugging probe; nothing
   host-side gates on it anymore) and
-  `POST /manage/drain` (JSON body may carry `deadlineMs` — the retire
-  budget the guest enforces itself), both gated by the per-sandbox bearer
+  `POST /manage/drain` (`?deadlineMs=` carries the retire budget the guest
+  enforces itself), both gated by the per-sandbox bearer
   from the exec env. Nothing else — no WebSocket, no RPC, no host
   connection. The guest's public `/client-config` doubles as the broker's
   name/greeting source (proxied — see "Pre-connection client config").

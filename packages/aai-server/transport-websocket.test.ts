@@ -34,6 +34,27 @@ describe("handleAgentHealth", () => {
 });
 
 describe("handleAgentClientConfig", () => {
+  /**
+   * Deploy `slug` and install a resident fake sandbox in its slot — the
+   * broker must reuse it (resolveSandbox fast path) rather than spawning a
+   * real one. Seeded AFTER deploying (the deploy replaces the slug's slot),
+   * at the deploy's version so the resident isn't invalidated as stale.
+   */
+  async function seedResident(
+    fetch: Awaited<ReturnType<typeof createTestOrchestrator>>["fetch"],
+    store: Awaited<ReturnType<typeof createTestOrchestrator>>["store"],
+    slots: ReturnType<typeof createSlotCache>,
+    slug: string,
+    sandbox: Sandbox = makeFakeSandbox(),
+  ): Promise<void> {
+    await deployAgent(fetch, slug);
+    slots.claim(slug, {
+      slug,
+      sandbox,
+      version: (await store.getAgentVersion(slug)) ?? 1,
+    });
+  }
+
   test("returns 404 for non-existent agent", async () => {
     const { fetch } = await createTestOrchestrator();
     const res = await fetch("/no-agent/client-config");
@@ -52,14 +73,7 @@ describe("handleAgentClientConfig", () => {
       return Response.json({ name: "guest-agent", greeting: "hello from the bundle" });
     };
     const { fetch, store } = await createTestOrchestrator({ slots, guestConfigFetch });
-    await deployAgent(fetch, "my-agent");
-    // Seed AFTER deploying (the deploy replaces the slug's slot), at the
-    // deploy's version so the resident isn't invalidated as stale.
-    slots.claim("my-agent", {
-      slug: "my-agent",
-      sandbox: makeFakeSandbox(),
-      version: (await store.getAgentVersion("my-agent")) ?? 1,
-    });
+    await seedResident(fetch, store, slots, "my-agent");
     const res = await fetch("/my-agent/client-config");
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({
@@ -78,12 +92,7 @@ describe("handleAgentClientConfig", () => {
       throw new Error("guest not answering");
     };
     const { fetch, store } = await createTestOrchestrator({ slots, guestConfigFetch });
-    await deployAgent(fetch, "my-agent");
-    slots.claim("my-agent", {
-      slug: "my-agent",
-      sandbox: makeFakeSandbox(),
-      version: (await store.getAgentVersion("my-agent")) ?? 1,
-    });
+    await seedResident(fetch, store, slots, "my-agent");
     const res = await fetch("/my-agent/client-config");
     // Answered, with the one field a client cannot do without: the session
     // URL. The default client renders its empty defaults for the rest.
@@ -94,16 +103,11 @@ describe("handleAgentClientConfig", () => {
   test("answers 503 when the sandbox VM failed to start", async () => {
     const slots = createSlotCache();
     const { fetch, store } = await createTestOrchestrator({ slots });
-    await deployAgent(fetch, "my-agent");
     const broken: Sandbox = {
       ...makeFakeSandbox(),
       sessionUrl: () => Promise.reject(new Error("spawn failed")),
     };
-    slots.claim("my-agent", {
-      slug: "my-agent",
-      sandbox: broken,
-      version: (await store.getAgentVersion("my-agent")) ?? 1,
-    });
+    await seedResident(fetch, store, slots, "my-agent", broken);
     const res = await fetch("/my-agent/client-config");
     expect(res.status).toBe(503);
   });
@@ -165,6 +169,7 @@ describe("handleClientAsset", () => {
 function makeFakeSandbox(): Sandbox {
   return {
     sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
+    guestOrigin: vi.fn(() => Promise.resolve("wss://tunnel.test:443")),
     drain: vi.fn(() => Promise.resolve()),
     alive: vi.fn(() => true),
     shutdown: vi.fn(() => Promise.resolve()),

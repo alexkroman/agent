@@ -60,18 +60,18 @@ describe("slot cache", () => {
   it("retireSlot detaches synchronously and hands the sandbox its drain budget", async () => {
     const sandbox = makeSandbox();
     const slot: AgentSlot = { slug: "r", sandbox };
-    retireSlot(slot, "superseded");
-    // Synchronous detach — the fire-and-forget drain runs behind it.
+    const delivered = retireSlot(slot, "superseded");
+    // Synchronous detach — the drain delivery runs behind it (awaitable for
+    // shutdown callers, void-ed on request paths).
     expect(slot.sandbox).toBeUndefined();
-    await vi.waitFor(() => {
-      expect(sandbox.drain).toHaveBeenCalledWith(expect.any(Number));
-    });
+    await delivered;
+    expect(sandbox.drain).toHaveBeenCalledWith(expect.any(Number));
     // The guest owns the drain: no host-side shutdown for a reachable guest.
     expect(sandbox.shutdown).not.toHaveBeenCalled();
   });
 
-  it("retireSlot on an empty slot is a no-op", () => {
+  it("retireSlot on an empty slot is a no-op", async () => {
     const slot: AgentSlot = { slug: "empty" };
-    expect(() => retireSlot(slot, "superseded")).not.toThrow();
+    await expect(retireSlot(slot, "superseded")).resolves.toBeUndefined();
   });
 });

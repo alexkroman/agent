@@ -8,7 +8,7 @@
  */
 
 import pTimeout from "p-timeout";
-import { drainProcStream, type GuestProcLike } from "./warm-harness.ts";
+import { consumeProcStream, drainProcStream, type GuestProcLike } from "./warm-harness.ts";
 
 /**
  * Budget for a one-shot describe exec: the bundle's import (top-level code
@@ -21,19 +21,13 @@ const DESCRIBE_TIMEOUT_MS = 60_000;
 const MAX_DESCRIBE_STDOUT_BYTES = 1024 * 1024;
 
 async function collectProcStdout(stream: ReadableStream<Uint8Array>): Promise<string> {
-  const reader = stream.getReader();
   const decoder = new TextDecoder();
   let out = "";
-  try {
-    for (;;) {
-      const { done, value } = await reader.read();
-      if (done) return out;
-      if (out.length >= MAX_DESCRIBE_STDOUT_BYTES) continue; // keep draining
-      out += decoder.decode(value, { stream: true });
-    }
-  } catch {
-    return out; // peer died mid-read; the exit path reports the failure
-  }
+  await consumeProcStream(stream, (value) => {
+    if (out.length >= MAX_DESCRIBE_STDOUT_BYTES) return; // keep draining
+    out += decoder.decode(value, { stream: true });
+  });
+  return out;
 }
 
 /**

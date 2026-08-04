@@ -38,7 +38,7 @@ import type { AgentServerHandle } from "./warm-harness.ts";
 /**
  * A spawned control-channel harness (studio/inspect side) whose guest
  * process is running and whose RPC connection is dialed, but which has NOT
- * yet received its session install or bundle/load. `listen()` has not been
+ * yet received its session install. `listen()` has not been
  * called on the connection yet — the consumer registers its handlers first.
  */
 export type WarmHarness = {
