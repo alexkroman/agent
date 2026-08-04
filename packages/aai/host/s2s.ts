@@ -10,6 +10,15 @@ import { errorMessage, safeJsonParse } from "../sdk/utils.ts";
 import { createAudioSendGate } from "./_audio-gate.ts";
 import { base64ToUint8, uint8ToBase64 } from "./_base64.ts";
 import {
+  appendAgentDelta,
+  countReplyAudio,
+  createReplyAudit,
+  type ReplyAudit,
+  replyAnomaly,
+  replyAuditFields,
+  resetReplyAudit,
+} from "./_s2s-reply.ts";
+import {
   type CreateHeaderWebSocket,
   createWsOpenRace,
   defaultCreateHeaderWebSocket,
@@ -35,7 +44,37 @@ const S2sMessageSchema = z.discriminatedUnion("type", [
   z.object({ type: z.literal("input.speech.started") }),
   z.object({ type: z.literal("input.speech.stopped") }),
   z.object({ type: z.literal("transcript.user"), item_id: z.string(), text: z.string() }),
+  // Live partial of the current user utterance. `text` is the FULL transcript
+  // so far (each delta supersedes the previous one for an item_id), not an
+  // increment — so it is passed straight through, never concatenated.
+  //
+  // The two docs pages disagree on the field name: the events reference says
+  // `text`, the message-sequence page's example says `delta`. Accept either,
+  // preferring the events reference, exactly as `tool.call` below does for
+  // `arguments`/`args` — a name mismatch here is silent (the union rejects the
+  // frame and it is dropped as unrecognised), which is how live captions went
+  // missing in S2S mode in the first place.
+  z
+    .object({
+      type: z.literal("transcript.user.delta"),
+      item_id: z.string().optional(),
+      text: z.string().optional(),
+      delta: z.string().optional(),
+    })
+    .transform((m) => ({ type: m.type, text: m.text ?? m.delta ?? "" })),
   z.object({ type: z.literal("reply.started"), reply_id: z.string() }),
+  // Word-level streaming of the agent's reply, aligned to the audio as it
+  // plays. Unlike the user stream this IS incremental, so dispatch accumulates
+  // it per reply. `start_ms`/`end_ms` are documented but unused here.
+  z
+    .object({
+      type: z.literal("transcript.agent.delta"),
+      reply_id: z.string().optional(),
+      item_id: z.string().optional(),
+      delta: z.string().optional(),
+      text: z.string().optional(),
+    })
+    .transform((m) => ({ type: m.type, delta: m.delta ?? m.text ?? "" })),
   z.object({
     type: z.literal("transcript.agent"),
     text: z.string(),
@@ -75,9 +114,10 @@ function parseS2sMessage(obj: Record<string, unknown>): S2sServerMessage | undef
 /**
  * Per-connection dispatch state. Used to dedup events that the upstream S2S
  * service may emit more than once for a single logical turn (e.g. repeated
- * `input.speech.stopped` after the VAD flips).
+ * `input.speech.stopped` after the VAD flips), and to accumulate the
+ * word-at-a-time agent transcript stream across one reply.
  */
-type DispatchState = { speechActive: boolean };
+type DispatchState = { speechActive: boolean; agentDelta: string; reply: ReplyAudit };
 
 type DispatchContext = {
   log: Logger;
@@ -86,6 +126,29 @@ type DispatchContext = {
 
 function sidFields(ctx: DispatchContext): { sid?: string } {
   return ctx.sid !== undefined ? { sid: ctx.sid } : {};
+}
+
+/**
+ * Report what the finished reply actually delivered, then advance the session.
+ *
+ * The audit fields are what make an empty-looking reply diagnosable: without
+ * them a reply that streamed audio and sent no transcript is identical in the
+ * log to one that produced nothing. See `_s2s-reply.ts`.
+ */
+function dispatchReplyDone(
+  callbacks: S2sCallbacks,
+  status: string,
+  state: DispatchState,
+  ctx: DispatchContext,
+): void {
+  // Logged before the client-facing dedup in SessionCore, so a stalled session
+  // can be checked against the raw arrivals.
+  const audit = replyAuditFields(state.reply);
+  ctx.log.info("S2S << reply.done", { ...sidFields(ctx), status, ...audit });
+  const anomaly = replyAnomaly(state.reply, status);
+  if (anomaly !== undefined) ctx.log.warn(anomaly, { ...sidFields(ctx), ...audit });
+  if (status === "interrupted") callbacks.onCancelled();
+  else callbacks.onReplyDone();
 }
 
 function dispatchS2sMessage(
@@ -119,24 +182,30 @@ function dispatchS2sMessage(
     case "transcript.user":
       callbacks.onUserTranscript(msg.text);
       break;
+    case "transcript.user.delta":
+      callbacks.onUserTranscriptPartial(msg.text);
+      break;
     case "reply.started":
+      // A new reply supersedes the last one's word stream and its tally.
+      state.agentDelta = "";
+      resetReplyAudit(state.reply);
       callbacks.onReplyStarted(msg.reply_id);
       break;
+    case "transcript.agent.delta":
+      state.reply.sawDelta = true;
+      state.agentDelta = appendAgentDelta(state.agentDelta, msg.delta);
+      callbacks.onAgentTranscriptPartial(state.agentDelta);
+      break;
     case "transcript.agent":
+      state.reply.sawFinal = true;
       callbacks.onAgentTranscript(msg.text, msg.interrupted);
       break;
     case "tool.call":
+      state.reply.sawToolCall = true;
       callbacks.onToolCall(msg.call_id, msg.name, msg.args);
       break;
     case "reply.done":
-      // Log every raw reply.done before client-facing dedup so we can
-      // cross-check which stalled sessions actually got one.
-      ctx.log.info("S2S << reply.done", {
-        ...sidFields(ctx),
-        status: msg.status ?? "completed",
-      });
-      if (msg.status === "interrupted") callbacks.onCancelled();
-      else callbacks.onReplyDone();
+      dispatchReplyDone(callbacks, msg.status ?? "completed", state, ctx);
       break;
     case "session.error":
       ctx.log.warn("S2S << session.error", {
@@ -172,7 +241,14 @@ export type S2sCallbacks = {
   onCancelled(): void;
   onAudio(bytes: Uint8Array): void;
   onUserTranscript(text: string): void;
+  /** Live partial of the user's current utterance; replaces, never appends. */
+  onUserTranscriptPartial(text: string): void;
   onAgentTranscript(text: string, interrupted: boolean): void;
+  /**
+   * The reply's text so far, accumulated from `transcript.agent.delta`. Fires
+   * during playback, ahead of the final {@link S2sCallbacks.onAgentTranscript}.
+   */
+  onAgentTranscriptPartial(text: string): void;
   onToolCall(callId: string, name: string, args: Record<string, unknown>): void;
   onSpeechStarted(): void;
   onSpeechStopped(): void;
@@ -227,7 +303,11 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
     log,
   });
 
-  const dispatchState: DispatchState = { speechActive: false };
+  const dispatchState: DispatchState = {
+    speechActive: false,
+    agentDelta: "",
+    reply: createReplyAudit(),
+  };
   const dispatchCtx: DispatchContext = sid !== undefined ? { log, sid } : { log };
   // Handlers below stay registered for the socket's whole life; the race routes
   // pre-open failures to the connect and later ones to the session callbacks.
@@ -313,7 +393,9 @@ export async function connectS2s(opts: ConnectS2sOptions): Promise<S2sHandle> {
       log.debug("S2S << tool.call payload", { payload: JSON.stringify(obj) });
     }
     if (obj.type === "reply.audio" && typeof obj.data === "string") {
-      callbacks.onAudio(base64ToUint8(obj.data));
+      const bytes = base64ToUint8(obj.data);
+      countReplyAudio(dispatchState.reply, bytes.length);
+      callbacks.onAudio(bytes);
       return;
     }
     const parsed = parseS2sMessage(obj);

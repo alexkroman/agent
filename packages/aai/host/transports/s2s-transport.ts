@@ -141,7 +141,15 @@ export function createS2sTransport(opts: S2sTransportOptions): Transport {
         opts.callbacks.onAudioChunk(bytes);
       },
       onUserTranscript: opts.callbacks.onUserTranscript,
+      onUserTranscriptPartial: (text) => opts.callbacks.onUserTranscriptPartial?.(text),
       onAgentTranscript: opts.callbacks.onAgentTranscript,
+      onAgentTranscriptPartial: (text) => {
+        // Gated on the same flag as audio, for the same reason: after a
+        // barge-in the client has flushed the cancelled reply, so a late
+        // partial for it would re-render text the user just interrupted.
+        if (suppressAudioUntilReply) return;
+        opts.callbacks.onAgentTranscriptPartial?.(text);
+      },
       onToolCall: opts.callbacks.onToolCall,
       onSpeechStarted: opts.callbacks.onSpeechStarted,
       onSpeechStopped: opts.callbacks.onSpeechStopped,
