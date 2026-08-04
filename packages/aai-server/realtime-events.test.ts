@@ -192,7 +192,7 @@ describe("workspace channels", () => {
   });
 });
 
-test("ensureRealtimeSetup creates the tables then the publication", async () => {
+test("ensureRealtimeSetup creates the tables, the publication, then the grants", async () => {
   const statements: string[] = [];
   const sql: SqlExec = (query) => {
     statements.push(query);
@@ -211,4 +211,14 @@ test("ensureRealtimeSetup creates the tables then the publication", async () => 
       `alter publication supabase_realtime add table aai_platform.${table}`,
     );
   }
+  // Realtime validates channel filters against the columns the subscriber's
+  // claimed role (service_role — the key the client connects with) can
+  // SELECT, so every watched table needs the grant or filtered subscribes
+  // fail with `invalid column for filter <col>`.
+  const grants = statements[5];
+  expect(grants).toContain("rolname = 'service_role'");
+  expect(grants).toContain("grant usage on schema aai_platform to service_role");
+  expect(grants).toContain(
+    "grant select on aai_platform.agents, aai_platform.studio_workspaces, aai_platform.studio_chats",
+  );
 });

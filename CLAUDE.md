@@ -2026,9 +2026,14 @@ service's control work is light — and one container served both badly.
   now is to redeploy.
 
   **Supabase setup this depends on** (all idempotent, run at boot by
-  `bootstrapPlatformDb` in service-config.ts): the watched tables exist and
-  are members of the `supabase_realtime` publication
-  (`ensureRealtimeSetup`), and the pg_cron sweeps are scheduled
+  `bootstrapPlatformDb` in service-config.ts): the watched tables exist,
+  are members of the `supabase_realtime` publication, and are SELECT-granted
+  to `service_role` — Realtime validates channel filter columns (and gates
+  row visibility) against what the subscriber's claimed role can SELECT, and
+  the app-created `aai_platform` schema gets none of Supabase's default
+  `public` grants, so without the grant every filtered subscribe fails with
+  `invalid column for filter <col>` (`ensureRealtimeSetup`) — and the
+  pg_cron sweeps are scheduled
   (`schedulePlatformSweeps`). The env carries `SUPABASE_URL` +
   `SUPABASE_SERVICE_ROLE_KEY` for the Realtime socket, required in
   production alongside `SUPABASE_DB_URL`.
