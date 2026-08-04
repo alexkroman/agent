@@ -1,5 +1,11 @@
 # @alexkroman1/aai
 
+## 5.5.1
+
+### Patch Changes
+
+- 1a6f800: Remove the S2S transcript.agent.delta accumulator: the event is documented but not implemented by the service, so the fallback could never fire. Records the measured behaviour instead — transcript.agent is omitted for both replies of a tool-call turn.
+
 ## 5.5.0
 
 ### Minor Changes
