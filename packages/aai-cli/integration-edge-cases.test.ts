@@ -123,13 +123,13 @@ describe("missing project config", () => {
   test("delete with no .aai/project.json throws", async () => {
     const { getServerInfo } = await import("./_agent.ts");
     await withTempDir(async (dir) => {
-      await expect(getServerInfo(dir)).rejects.toThrow("No .aai/project.json found");
+      await expect(getServerInfo(dir)).rejects.toThrow("no deployed agent");
     });
   });
 
   test("secret list with no .aai/project.json throws", async () => {
     await withTempDir(async (dir) => {
-      await expect(executeSecretList(dir, api.url)).rejects.toThrow("No .aai/project.json found");
+      await expect(executeSecretList(dir, api.url)).rejects.toThrow("no deployed agent");
     });
   });
 });

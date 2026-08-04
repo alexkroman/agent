@@ -10,6 +10,7 @@ import type { SecretStore } from "./secret-store.ts";
 import { verifySlugOwner } from "./secrets.ts";
 import type { BundleStore } from "./store-types.ts";
 import {
+  apiKeyOwnerSecretName,
   isJwtShaped,
   type StudioAuth,
   type StudioAuthUser,
@@ -54,6 +55,45 @@ export function invalidateUserApiKey(secrets: SecretStore, userId: string): void
   userKeyCaches.get(secrets)?.delete(userId);
 }
 
+// Reverse lookup for RAW-key bearers: which studio user stored this key via
+// the account route (`key-user:<sha256(key)>`)? It rides every CLI request,
+// so it is cached like the user→key lookup above — including negatives ("")
+// since most raw keys (evals, programmatic callers, pre-login CLIs) have no
+// owner and would otherwise pay a Vault round trip per request. A stale
+// negative costs at most TTL of key-derived scoping right after onboarding;
+// the account route invalidates the writing replica exactly.
+const keyOwnerCaches = new WeakMap<SecretStore, TtlCache<string>>();
+
+function keyOwnerCache(secrets: SecretStore): TtlCache<string> {
+  let cache = keyOwnerCaches.get(secrets);
+  if (!cache) {
+    cache = new TtlCache<string>(USER_KEY_TTL_MS);
+    keyOwnerCaches.set(secrets, cache);
+  }
+  return cache;
+}
+
+/** Drop a key's cached owner — call after storing a new key mapping. */
+export function invalidateApiKeyOwner(secrets: SecretStore, apiKey: string): void {
+  keyOwnerCaches.get(secrets)?.delete(apiKeyOwnerSecretName(apiKey));
+}
+
+/** The studio user id that stored `apiKey` as their account key, if any. */
+async function lookupApiKeyOwner(
+  secrets: SecretStore,
+  apiKey: string,
+): Promise<string | undefined> {
+  const cache = keyOwnerCache(secrets);
+  // Cache keys are the hashed secret name — never the raw credential.
+  const name = apiKeyOwnerSecretName(apiKey);
+  let owner = cache.get(name);
+  if (owner === undefined) {
+    owner = (await secrets.get(name)) ?? "";
+    cache.set(name, owner);
+  }
+  return owner === "" ? undefined : owner;
+}
+
 /**
  * Resolve the request's bearer to a platform API key.
  *
@@ -63,13 +103,21 @@ export function invalidateUserApiKey(secrets: SecretStore, userId: string): void
  * verified against Supabase and mapped to the user's stored AssemblyAI key
  * (`user-key:<uid>`), so every downstream consumer (ownership hashes, the
  * gateway LLM, deploy env seeding) sees the real key either way.
+ *
+ * Raw keys additionally resolve a `userId` when the key was stored as some
+ * account's key (the `key-user:` reverse mapping) — that is what puts a
+ * linked CLI in the same studio scope as the browser session. An unmapped
+ * key keeps the legacy key-derived scope.
  */
 export async function resolveBearer(
   req: Request,
   env: { auth?: StudioAuth | undefined; secrets: SecretStore },
 ): Promise<ResolvedBearer> {
   const token = requireBearerToken(req);
-  if (!(env.auth && isJwtShaped(token))) return { apiKey: token };
+  if (!(env.auth && isJwtShaped(token))) {
+    const userId = await lookupApiKeyOwner(env.secrets, token);
+    return { apiKey: token, ...(userId ? { userId } : {}) };
+  }
   const user = await env.auth.verifyAccessToken(token);
   if (!user) {
     throw new HTTPException(401, { message: "Invalid or expired session — sign in again" });

@@ -15,7 +15,7 @@ A voice agent built with [aai](${REPO_URL}).
 \`\`\`sh
 npm install        # Install dependencies
 aai dev            # Run locally (opens browser)
-aai deploy         # Deploy to production
+aai publish        # Publish to production (and sync to the studio)
 \`\`\`
 
 ## Secrets

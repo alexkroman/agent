@@ -44,6 +44,12 @@ export type ApiRequestOptions = {
   retryDelay?: number;
   /** Optional fetch implementation for testing. Defaults to globalThis.fetch. */
   fetch?: typeof globalThis.fetch;
+  /**
+   * Resolve `null` on a 404 instead of throwing — for existence probes
+   * ("is there a studio project with this name?") where absence is an
+   * answer, not a failure.
+   */
+  allow404?: boolean;
 };
 
 /**
@@ -64,6 +70,9 @@ export async function apiRequest<T = unknown>(url: string, opts: ApiRequestOptio
       retryDelay: opts.retryDelay ?? 300,
     });
   } catch (err) {
+    if (opts.allow404 && err instanceof FetchError && err.statusCode === 404) {
+      return null as T;
+    }
     throw toApiError(err, url, opts);
   }
 }

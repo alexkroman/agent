@@ -77,7 +77,7 @@ export function agentEnvWarnings(
     warnings.push(
       `${shellOnly.join(", ")} resolved from your shell, not .env — ` +
         `deployed agents won't have ${them(shellOnly)}. ` +
-        `Declare ${them(shellOnly)} in .env before \`aai deploy\`.`,
+        `Declare ${them(shellOnly)} in .env before \`aai publish\`.`,
     );
   }
 

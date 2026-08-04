@@ -7,6 +7,7 @@
 
 import type { SSEStreamingApi } from "hono/streaming";
 import {
+  currentFilesHash,
   hasPreviewChanges,
   hasUnpublishedChanges,
   type StudioWorkspace,
@@ -23,10 +24,17 @@ const SSE_HEARTBEAT_MS = 25_000;
  * for the banner. One builder for `GET /projects/:project` AND its SSE
  * events stream, so the pushed shape can never drift from the fetched one.
  * Staleness flags are computed here so the client never hashes files.
+ *
+ * `sourceHash` is the files' content hash — the fast-forward token `aai
+ * pull` records and `aai push` sends back as `baseHash`. The files hash
+ * rather than the row version: metadata stamps (preview/Publish) bump the
+ * version without touching a file, and a pusher only cares whether the
+ * FILES moved under it.
  */
 export function projectPayload(workspace: StudioWorkspace): Record<string, unknown> {
   return {
     files: workspace.files,
+    sourceHash: currentFilesHash(workspace),
     ...(workspace.deployedSlug && { deployedSlug: workspace.deployedSlug }),
     unpublished: hasUnpublishedChanges(workspace),
     ...(workspace.previewSlug && { previewSlug: workspace.previewSlug }),

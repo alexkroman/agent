@@ -4,24 +4,11 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineCommand, runMain } from "citty";
-import {
-  CliError,
-  type CommandResult,
-  fail,
-  getOutputMode,
-  installStdoutGuard,
-  type OutputMode,
-  writeLine,
-} from "./_output.ts";
-import { log, silenceOutput } from "./_ui.ts";
-import { AGENT_ENTRY, errorMessage, fileExists, resolveCwd } from "./_utils.ts";
-
-/** Shared arg definitions for citty commands. */
-const sharedArgs = {
-  server: { type: "string", alias: "s", description: "Platform server URL" },
-  yes: { type: "boolean", alias: "y", description: "Accept defaults (no prompts)" },
-  json: { type: "boolean", description: "Output JSON (auto-detected in non-TTY)" },
-} as const;
+import { runCommand, setup, sharedArgs } from "./_cli-common.ts";
+import { CliError, installStdoutGuard } from "./_output.ts";
+import { list, publish, pull, push } from "./_studio-commands.ts";
+import { log } from "./_ui.ts";
+import { AGENT_ENTRY, errorMessage, resolveCwd } from "./_utils.ts";
 
 const cliDir = path.dirname(fileURLToPath(import.meta.url));
 /**
@@ -42,57 +29,6 @@ function readCliVersion(dir: string): string {
   return "unknown";
 }
 const VERSION: string = readCliVersion(cliDir);
-
-/** Shared command setup: resolve cwd, optionally require agent.ts. */
-async function setup(opts?: { agent?: boolean }): Promise<string> {
-  const cwd = resolveCwd();
-  if (opts?.agent) {
-    const hasAgent = await fileExists(path.join(cwd, AGENT_ENTRY));
-    if (!hasAgent) {
-      throw new Error(`No ${AGENT_ENTRY} found in the current directory. Run \`aai init\` first.`);
-    }
-  }
-  return cwd;
-}
-
-/**
- * Run a command body with standard output-mode resolution, error handling,
- * and result emission.
- *
- * - API key acquisition is owned by `resolveDeployTarget`/`getServerInfo`
- *   inside the commands that talk to the platform — after the server-trust
- *   check, so an untrusted `serverUrl` is refused without prompting for a
- *   key, and commands with no platform traffic never prompt at all.
- *
- * A thrown error and a returned `fail(...)` converge here on one emitter:
- * human mode logs the message, JSON mode writes exactly one result line,
- * and both exit 1.
- */
-async function runCommand(
-  args: { json?: boolean | undefined },
-  fn: (mode: OutputMode) => Promise<CommandResult<unknown>>,
-): Promise<void> {
-  const mode = getOutputMode(args);
-  if (mode === "json") silenceOutput();
-  let result: CommandResult<unknown>;
-  try {
-    result = await fn(mode);
-  } catch (err: unknown) {
-    const code = err instanceof CliError ? err.code : "command_failed";
-    const hint = err instanceof CliError ? err.hint : undefined;
-    if (mode === "human") {
-      log.error(errorMessage(err));
-      // The hint is the recovery step — it must reach the terminal, not just
-      // the JSON result line (for a long time it reached machines only).
-      if (hint) log.info(hint);
-    }
-    result = fail(code, errorMessage(err), hint);
-  }
-  // Await the flush before exiting: on a pipe (the JSON-mode case) stdout is
-  // async, so process.exit() would truncate the JSON line just queued.
-  if (mode === "json") await writeLine(`${JSON.stringify(result)}\n`);
-  if (!result.ok) process.exit(1);
-}
 
 const init = defineCommand({
   meta: { name: "init", description: "Scaffold a new agent project" },
@@ -173,8 +109,12 @@ const build = defineCommand({
   },
 });
 
+// INTERNAL: the raw bundle-upload path. Not a user command — the studio's
+// Publish route runs it inside the project's sandbox (aai-guest/
+// studio-publish.ts), which is the only production deploy path. Users go
+// through `aai publish`.
 const deploy = defineCommand({
-  meta: { name: "deploy", description: "Bundle and deploy to production" },
+  meta: { name: "deploy", description: "(internal) used by studio Publish", hidden: true },
   args: {
     server: sharedArgs.server,
     json: sharedArgs.json,
@@ -201,7 +141,10 @@ const deploy = defineCommand({
 });
 
 const del = defineCommand({
-  meta: { name: "delete", description: "Remove a deployed agent" },
+  meta: {
+    name: "delete",
+    description: "Delete the studio project and its deployed agents",
+  },
   args: {
     server: sharedArgs.server,
     json: sharedArgs.json,
@@ -379,6 +322,10 @@ export const mainCommand = defineCommand({
     dev,
     test,
     build,
+    list,
+    pull,
+    push,
+    publish,
     deploy,
     delete: del,
     login,
@@ -403,19 +350,19 @@ if (process.env.VITEST !== "true") {
       process.argv.splice(2, 0, "init");
       return;
     }
-    // Deploying is an outward-facing act that also executes the project's
-    // agent.ts locally — when there's a human at the terminal, make sure a
-    // bare `aai` (often "what does this do?") means it. Non-TTY keeps the
-    // old behavior: scripts invoking bare `aai` are deliberate.
+    // Publishing is an outward-facing act (it syncs source to the studio
+    // and deploys to production) — when there's a human at the terminal,
+    // make sure a bare `aai` (often "what does this do?") means it. Non-TTY
+    // keeps the implicit behavior: scripts invoking bare `aai` are deliberate.
     if (process.stdin.isTTY && process.stdout.isTTY) {
       const p = await import("@clack/prompts");
-      const confirmed = await p.confirm({ message: "Deploy this agent to production?" });
+      const confirmed = await p.confirm({ message: "Publish this agent to production?" });
       if (confirmed !== true) {
         log.info("Cancelled. Run `aai --help` to see all commands.");
         process.exit(0);
       }
     }
-    process.argv.splice(2, 0, "deploy");
+    process.argv.splice(2, 0, "publish");
   };
 
   // API key acquisition happens inside the platform commands, after citty

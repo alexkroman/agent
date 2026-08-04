@@ -9,9 +9,12 @@
  *   explicit `name` is sent)
  * - `GET  /studio/projects/:project`          — files + deployed slug
  * - `GET  /studio/projects/:project/chat`     — persisted chat history
- * - `DELETE /studio/projects/:project`        — delete a project (and its chat)
+ * - `DELETE /studio/projects/:project`        — delete THE PROJECT: workspace,
+ *   chat, and its deployed + preview agents (ownership-gated cascade)
  * - `PUT  /studio/projects/:project/file`     — write one file
  * - `DELETE /studio/projects/:project/file`   — delete one file (`?path=`)
+ * - `PUT  /studio/projects/:project/source`   — replace the whole file map
+ *   (`aai push`; upserts, fast-forward-checked against `baseHash`)
  * - `POST /studio/projects/:project/deploy`   — the project's sandbox runs
  *   `aai deploy`; the CLI output rides back for the chat
  *
@@ -40,14 +43,17 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
-import { authMw, invalidateUserApiKey, requireStudioUser } from "aai-server/middleware";
+import { deleteAgentResources } from "aai-server/delete";
+import { authMw } from "aai-server/middleware";
 import { resolvePublicOrigin } from "aai-server/public-origin";
+import { RESERVED_SLUGS } from "aai-server/schemas";
+import { verifySlugOwner } from "aai-server/secrets";
 import { generatedSlug } from "aai-server/slug-generate";
-import { cliLinkSecretName, userApiKeySecretName } from "aai-server/supabase-auth";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
 import { streamSSE } from "hono/streaming";
+import { registerAccountRoutes } from "./studio-account-routes.ts";
 import type { StudioHonoEnv } from "./studio-context.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
@@ -60,12 +66,11 @@ import {
   type StudioRateLimiters,
 } from "./studio-rate-limit.ts";
 import {
-  AccountKeySchema,
-  CliLinkSchema,
   CreateProjectSchema,
   ProjectNameSchema,
   projectBaseFromPrompt,
   StudioFileSchema,
+  SyncSourceSchema,
 } from "./studio-schemas.ts";
 import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
 import { createSsePusher, projectPayload } from "./studio-sse.ts";
@@ -77,6 +82,7 @@ import {
   listProjects,
   mutateWorkspace,
   studioScope,
+  syncWorkspaceSource,
 } from "./studio-workspace.ts";
 
 export type StudioRouteOptions = {
@@ -112,25 +118,6 @@ export function requestPublicOrigin(
 /** Server-generated project name: prompt-derived base + random suffix. */
 function nameFromPrompt(prompt: string | undefined): string {
   return generatedSlug(prompt ? projectBaseFromPrompt(prompt) : undefined);
-}
-
-/**
- * An approved `aai login` link, stored (JSON) in the SecretStore under the
- * code's hash until the CLI exchanges it. Short-lived: the CLI polls every
- * couple of seconds, so an uncollected grant means the CLI died — the
- * expiry keeps its code from being redeemable later.
- */
-type CliLinkGrant = { uid: string; email?: string; exp: number };
-const CLI_LINK_TTL_MS = 10 * 60_000;
-
-function parseCliLinkGrant(raw: string): CliLinkGrant | null {
-  try {
-    const grant = JSON.parse(raw) as Partial<CliLinkGrant> | null;
-    if (!grant || typeof grant.uid !== "string" || typeof grant.exp !== "number") return null;
-    return grant as CliLinkGrant;
-  } catch {
-    return null;
-  }
 }
 
 function validateProject(name: string | undefined): string {
@@ -181,70 +168,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // `llm: true` is legacy shape — chat always runs now, on the caller's key.
   studio.get("/status", (c) => c.json({ llm: true, ...studioLlmInfo() }));
 
-  // Public: what the login screen should render — Supabase GitHub-OAuth
-  // config, the local-dev sign-in, or nothing (browser login unconfigured).
-  studio.get("/auth", (c) => c.json(c.env.auth?.clientConfig ?? { mode: "none" }));
-
-  // Account routes authenticate the browser session WITHOUT requiring a
-  // stored AssemblyAI key — they are how the key gets set. Everything else
-  // under /projects goes through authMw, which resolves the session to the
-  // stored key (and 401s until one exists).
-  studio.get("/account", async (c) => {
-    const user = await requireStudioUser(c.req.raw, c.env);
-    const key = await c.env.secrets.get(userApiKeySecretName(user.id));
-    return c.json({ ...(user.email && { email: user.email }), hasKey: key !== null });
-  });
-
-  studio.put("/account/key", zValidator("json", AccountKeySchema), async (c) => {
-    const user = await requireStudioUser(c.req.raw, c.env);
-    await c.env.secrets.put(userApiKeySecretName(user.id), c.req.valid("json").apiKey);
-    // A rotated key must take effect on this replica's next request, not
-    // after the resolver cache's TTL.
-    invalidateUserApiKey(c.env.secrets, user.id);
-    return c.json({ ok: true });
-  });
-
-  // `aai login` device link: the CLI never signs in (and can never create
-  // an account) — it mints an unguessable one-shot code, opens the studio
-  // with `?cli-link=<code>`, and polls the exchange route below. A browser
-  // session that is ALREADY signed in approves the code here, which grants
-  // that code one exchange for the account's stored key. Approval requires
-  // a stored key (the studio's own key gate runs first), so the CLI never
-  // participates in onboarding.
-  studio.post("/cli-link/approve", zValidator("json", CliLinkSchema), async (c) => {
-    const user = await requireStudioUser(c.req.raw, c.env);
-    const key = await c.env.secrets.get(userApiKeySecretName(user.id));
-    if (!key) return c.json({ error: "No API key on file for this account" }, 409);
-    const grant: CliLinkGrant = {
-      uid: user.id,
-      ...(user.email && { email: user.email }),
-      exp: Date.now() + CLI_LINK_TTL_MS,
-    };
-    await c.env.secrets.put(cliLinkSecretName(c.req.valid("json").code), JSON.stringify(grant));
-    return c.json({ ok: true });
-  });
-
-  // Public, but only ever useful to whoever minted the code: 256 bits of
-  // entropy make guessing hopeless, the grant is deleted on first read
-  // (one-shot — a replayed exchange gets a 404), and an approved-but-never-
-  // collected grant expires. Revealing the key to the code's owner adds no
-  // authority the approving session didn't already have: every studio
-  // surface can already spend and deploy with it. Unlike the browser, the
-  // CLI genuinely needs the RAW key (`aai dev` runs the provider pipeline
-  // in-process on it).
-  studio.post("/cli-link/exchange", zValidator("json", CliLinkSchema), async (c) => {
-    const name = cliLinkSecretName(c.req.valid("json").code);
-    const raw = await c.env.secrets.get(name);
-    if (raw === null) return c.json({ pending: true }, 404);
-    await c.env.secrets.delete(name);
-    const grant = parseCliLinkGrant(raw);
-    if (!grant || grant.exp < Date.now()) {
-      return c.json({ error: "Link approval expired — run `aai login` again" }, 410);
-    }
-    const key = await c.env.secrets.get(userApiKeySecretName(grant.uid));
-    if (!key) return c.json({ error: "No API key on file for this account" }, 409);
-    return c.json({ apiKey: key, ...(grant.email && { email: grant.email }) });
-  });
+  // /auth, /account, /account/key, /cli-link/* — the browser-session
+  // account surface (key onboarding, `aai login` device link).
+  registerAccountRoutes(studio);
 
   // Bearer auth without slug ownership: workspace scoping needs only the
   // deterministic `studioScope`, and the deploy path derives the ownership
@@ -379,8 +305,27 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     return c.json({ messages: messages ?? [] });
   });
 
+  // Deleting a project deletes THE PROJECT — workspace, chat, and its
+  // deployed agents (production and preview), the same resources Publish
+  // and the preview auto-deploy created. One delete concept on every
+  // surface: the studio's Delete button and `aai delete` both land here.
   studio.delete("/projects/:project", async (c) => {
     const { scope, project } = c.var;
+    const workspace = await getWorkspace(c.env.workspaces, scope, project);
+    const slugs = [
+      ...new Set(
+        [workspace?.deployedSlug, workspace?.previewSlug].filter(
+          (slug): slug is string => typeof slug === "string",
+        ),
+      ),
+    ];
+    for (const slug of slugs) {
+      // Ownership is still the agents row's credential hash, never project
+      // scope alone — a workspace naming a slug the caller doesn't own
+      // (however it got there) must not become a deletion oracle.
+      const owner = await verifySlugOwner(c.var.apiKey, { slug, store: c.env.store });
+      if (owner.status === "owned") await deleteAgentResources(c.env, slug);
+    }
     // No lock needed: a racing versioned write cannot resurrect the project —
     // `mutateWorkspace` only ever replaces an existing row.
     await Promise.all([
@@ -435,6 +380,49 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     if (!(workspace && deleted)) return c.json({ error: "File not found" }, 404);
     schedulePreview(c, scope, project);
     return c.json({ ok: true });
+  });
+
+  // `aai push`: replace the project's entire file map in one atomic write.
+  // Upserts — a first push creates the project under the pushed name (so it
+  // shares the create rate limit); later pushes are fast-forward-checked
+  // against `baseHash` (409 = the studio edited since the caller's pull).
+  // Per-file paths, count, and byte caps are enforced by the workspace
+  // write itself, exactly as for the guest's sync and the editor PUT.
+  /** Guards a push may trip, as responses: conflict (409) or bad input (400). */
+  const syncSourceError = (err: unknown): Response => {
+    if (err instanceof WorkspaceConflictError) {
+      return Response.json(
+        {
+          error:
+            "Project changed since your last pull — run `aai pull` again (or push with --force)",
+        },
+        { status: 409 },
+      );
+    }
+    return Response.json({ error: errorMessage(err) }, { status: 400 });
+  };
+
+  studio.put("/projects/:project/source", zValidator("json", SyncSourceSchema), async (c) => {
+    const { scope, project } = c.var;
+    const { files, baseHash } = c.req.valid("json");
+    const existing = await getWorkspace(c.env.workspaces, scope, project);
+    if (!existing) {
+      // Creation via push: same guards as POST /projects — reserved names
+      // can never go live, and creates are rate-limited per scope.
+      if (RESERVED_SLUGS.has(project)) return c.json({ error: "That name is reserved" }, 400);
+      const limited = await rateLimited(scope, projectCreateLimiter);
+      if (limited) return limited;
+    }
+    try {
+      const result = await syncWorkspaceSource(c.env.workspaces, scope, project, files, baseHash);
+      if (result.changed) schedulePreview(c, scope, project);
+      return c.json(
+        { ok: true, sourceHash: result.sourceHash, created: result.created },
+        result.created ? 201 : 200,
+      );
+    } catch (err) {
+      return syncSourceError(err);
+    }
   });
 
   studio.post("/projects/:project/deploy", async (c) => {

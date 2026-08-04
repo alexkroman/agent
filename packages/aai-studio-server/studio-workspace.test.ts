@@ -23,7 +23,93 @@ import {
   mutateWorkspace,
   type StudioWorkspace,
   studioScope,
+  syncWorkspaceSource,
 } from "./studio-workspace.ts";
+
+describe("syncWorkspaceSource (aai push)", () => {
+  const files = { "agent.ts": "v1" };
+
+  test("upserts: creates a missing project, then replaces files", async () => {
+    const store = createMemoryWorkspaceStore();
+    const created = await syncWorkspaceSource(store, "s", "p", files);
+    expect(created.created).toBe(true);
+    expect(created.sourceHash).toBe(filesHash(files));
+    const next = await syncWorkspaceSource(store, "s", "p", { "agent.ts": "v2" });
+    expect(next.created).toBe(false);
+    expect(next.changed).toBe(true);
+    expect((await getWorkspace(store, "s", "p"))?.files).toEqual({ "agent.ts": "v2" });
+  });
+
+  test("preserves deploy/preview metadata across a files replacement", async () => {
+    const store = createMemoryWorkspaceStore();
+    await createWorkspace(store, "s", "p", {
+      files,
+      deployedSlug: "p",
+      deployedHash: filesHash(files),
+      previewSlug: "p-preview",
+      previewError: "boom",
+    });
+    const { workspace } = await syncWorkspaceSource(store, "s", "p", { "agent.ts": "v2" });
+    expect(workspace.deployedSlug).toBe("p");
+    expect(workspace.previewSlug).toBe("p-preview");
+    expect(workspace.previewError).toBe("boom");
+    // The stamped hash tracks the NEW files, so unpublished flips true.
+    expect(hasUnpublishedChanges(workspace)).toBe(true);
+  });
+
+  test("fast-forward: a stale baseHash conflicts instead of stomping", async () => {
+    const store = createMemoryWorkspaceStore();
+    const { sourceHash } = await syncWorkspaceSource(store, "s", "p", files);
+    // Someone else (a chat turn, an editor save) moved the files.
+    await syncWorkspaceSource(store, "s", "p", { "agent.ts": "theirs" });
+    await expect(
+      syncWorkspaceSource(store, "s", "p", { "agent.ts": "mine" }, sourceHash),
+    ).rejects.toThrow(WorkspaceConflictError);
+    // The interloper's edit survived.
+    expect((await getWorkspace(store, "s", "p"))?.files).toEqual({ "agent.ts": "theirs" });
+  });
+
+  test("metadata stamps do NOT stale the token — only file moves do", async () => {
+    const store = createMemoryWorkspaceStore();
+    const { sourceHash } = await syncWorkspaceSource(store, "s", "p", files);
+    // A preview deploy stamping metadata bumps the row version but not the
+    // files — the whole reason the token is the files hash.
+    await mutateWorkspace(store, "s", "p", (current) => ({
+      ...current,
+      previewSlug: "p-preview",
+      previewHash: sourceHash,
+    }));
+    const pushed = await syncWorkspaceSource(store, "s", "p", { "agent.ts": "v2" }, sourceHash);
+    expect(pushed.changed).toBe(true);
+  });
+
+  test("identical files are a no-op: same hash, no write", async () => {
+    const store = createMemoryWorkspaceStore();
+    const { sourceHash } = await syncWorkspaceSource(store, "s", "p", files);
+    const before = (await store.get("s", "p"))?.version;
+    const again = await syncWorkspaceSource(store, "s", "p", { ...files }, sourceHash);
+    expect(again.changed).toBe(false);
+    expect(again.sourceHash).toBe(sourceHash);
+    expect((await store.get("s", "p"))?.version).toBe(before);
+  });
+
+  test("a baseHash against a deleted project conflicts rather than recreating", async () => {
+    const store = createMemoryWorkspaceStore();
+    const { sourceHash } = await syncWorkspaceSource(store, "s", "p", files);
+    await deleteWorkspace(store, "s", "p");
+    await expect(syncWorkspaceSource(store, "s", "p", files, sourceHash)).rejects.toThrow(
+      WorkspaceConflictError,
+    );
+    expect(await getWorkspace(store, "s", "p")).toBeNull();
+  });
+
+  test("enforces the same path/limit validation as every other writer", async () => {
+    const store = createMemoryWorkspaceStore();
+    await expect(syncWorkspaceSource(store, "s", "p", { "../evil.ts": "x" })).rejects.toThrow(
+      /Invalid file path/,
+    );
+  });
+});
 
 describe("studioScope", () => {
   test("is deterministic per key and distinct across keys", () => {
