@@ -234,7 +234,16 @@ function main(): void {
     console.error("AAI_GUEST_TOKEN is required");
     process.exit(1);
   }
-  const port = Number(process.env.AAI_GUEST_PORT ?? "8080");
+  // Validated up front: an unparseable AAI_GUEST_PORT would otherwise reach
+  // listen(NaN), which binds an EPHEMERAL port — the guest looks healthy
+  // while the host dials the tunnel for the published port until its
+  // deadline, and the spawn fails blaming the dial, not the config.
+  const rawPort = process.env.AAI_GUEST_PORT ?? "8080";
+  const port = Number(rawPort);
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+    console.error(`Invalid AAI_GUEST_PORT "${rawPort}" — expected an integer port`);
+    process.exit(1);
+  }
   // Modal gives the guest its own network namespace, so binding every
   // interface reaches no further than the sandbox — and a sandbox that cannot
   // be reached on its published port is the more damaging failure, hence the
@@ -357,9 +366,20 @@ function main(): void {
   }, HARNESS_ORPHAN_POLL_MS);
   orphanCheck.unref?.();
 
-  void server.listen(port, host).then(() => {
-    console.error(`harness listening on ${host}:${port}`);
-  });
+  // A bind failure must exit with a nameable error: the subprocess backend's
+  // port allocation is racy by design (warm-harness.ts releases the port
+  // before the guest claims it), so EADDRINUSE is an anticipated path — left
+  // uncaught it dies as a bare unhandledRejection while the host burns its
+  // whole dial deadline and then blames the dial.
+  server.listen(port, host).then(
+    () => {
+      console.error(`harness listening on ${host}:${port}`);
+    },
+    (err: unknown) => {
+      console.error(`harness failed to listen on ${host}:${port}:`, err);
+      process.exit(1);
+    },
+  );
 }
 
 // Only start the server when executed directly (not when imported in tests).

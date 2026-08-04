@@ -400,11 +400,24 @@ export function startHostSession(ws: SessionWebSocket, opts: StartHostSessionOpt
     // The env may be a pending Vault fetch (see StartHostSessionOptions.env);
     // for a plain object this resolves on the next microtask, before any
     // further socket event can be delivered.
-    void Promise.resolve(opts.env).then(
-      (env) => startWithEnv(env, result.data),
-      (err: unknown) => {
-        rejectHandshake(ws, log, `host-mode: failed to load agent env: ${errorMessage(err)}`);
-      },
-    );
+    // The trailing catch contains a synchronous throw out of startWithEnv
+    // (or out of rejectHandshake itself — the logger is caller-injectable,
+    // same reason s2s-transport wraps its handler): without it, that throw
+    // is an unhandled rejection on the host, per handshake.
+    void Promise.resolve(opts.env)
+      .then(
+        (env) => startWithEnv(env, result.data),
+        (err: unknown) => {
+          rejectHandshake(ws, log, `host-mode: failed to load agent env: ${errorMessage(err)}`);
+        },
+      )
+      .catch((err: unknown) => {
+        console.error(`host-mode: handshake failed: ${errorMessage(err)}`);
+        try {
+          (ws as unknown as { close?: (code?: number) => void }).close?.(1011);
+        } catch {
+          // socket may already be closed
+        }
+      });
   });
 }

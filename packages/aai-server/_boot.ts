@@ -35,6 +35,24 @@ export function resolvePoolSize(raw: string | undefined): number | null {
 }
 
 /**
+ * Parse `PORT` for a service entry point. Unset/empty falls back to
+ * `fallback`; anything else must be a valid port or boot fails loudly.
+ *
+ * Throwing beats falling back here: a platform-injected `PORT` that doesn't
+ * parse (`Number.parseInt` on `tcp://…` is NaN) used to reach `listen(NaN)`,
+ * which binds an EPHEMERAL port — the process boots "successfully" and looks
+ * healthy locally while the proxy's configured port gets nothing.
+ */
+export function resolvePort(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const port = Number(raw);
+  if (!Number.isInteger(port) || port < 0 || port > 65_535) {
+    throw new Error(`Invalid PORT "${raw}" — expected an integer between 0 and 65535`);
+  }
+  return port;
+}
+
+/**
  * Parse `SHUTDOWN_DRAIN_MS`: how long shutdown waits for live sessions before
  * force-closing them. Unset or unparseable falls back to
  * {@link DEFAULT_SHUTDOWN_DRAIN_MS}.

@@ -75,11 +75,18 @@ export async function provisionAppDatabase(
   const id = assertIdentifier(appDbIdentifier(slug));
   const password = randomBytes(16).toString("hex");
 
-  // One multi-statement batch (no bind params — identifiers/password are
-  // shape-asserted above): DDL cannot take placeholders, and a single round
-  // trip replaces what used to be ~6 sequential ones. The `do $$` block is
-  // the create-or-alter branch for the role.
-  await sql(
+  // One multi-statement batch (no bind params — the identifier is
+  // shape-asserted above and the password is locally generated hex): DDL
+  // cannot take placeholders, and a single round trip replaces what used to
+  // be ~6 sequential ones. The `do $$` block is the create-or-alter branch
+  // for the role.
+  //
+  // Scrubbed on failure because the password is INLINED in this SQL:
+  // postgres drivers attach the failing query text as an own property on
+  // the thrown error, and the process safety nets (service-config.ts)
+  // console.error whole error objects — so an unscrubbed provisioning
+  // failure would put a live per-app password into platform logs.
+  const failure = await sql(
     `create schema if not exists "${id}";
 do $$
 begin
@@ -102,9 +109,34 @@ begin
 exception when insufficient_privilege then null;
 end
 $$`,
+  ).then(
+    () => null,
+    (err: unknown) => err ?? new Error("App database provisioning failed"),
   );
+  if (failure !== null) throw scrubSecret(failure, password);
 
   return { role: id, password, url: targetUrl };
+}
+
+/**
+ * Remove every occurrence of `secret` from an error before it can reach a
+ * log: the message and every string own property (postgres drivers attach
+ * the failing `query`/`parameters` there). Mutate-and-rethrow rather than
+ * wrap, so the stack and type survive; a non-Error value is rendered to a
+ * scrubbed message instead.
+ */
+function scrubSecret(failure: unknown, secret: string): unknown {
+  if (!(failure instanceof Error)) {
+    return typeof failure === "string" ? failure.replaceAll(secret, "[redacted]") : failure;
+  }
+  failure.message = failure.message.replaceAll(secret, "[redacted]");
+  for (const key of Object.keys(failure)) {
+    const value = (failure as unknown as Record<string, unknown>)[key];
+    if (typeof value === "string" && value.includes(secret)) {
+      (failure as unknown as Record<string, unknown>)[key] = "[redacted]";
+    }
+  }
+  return failure;
 }
 
 /** Drop one app's schema (with all its data) and its role. Idempotent. */

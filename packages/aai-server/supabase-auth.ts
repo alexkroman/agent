@@ -177,5 +177,24 @@ export function createStudioAuthFromEnv(
   const { SUPABASE_URL: supabaseUrl, SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey } = env;
   if (supabaseUrl && supabasePublishableKey)
     return createSupabaseAuth({ supabaseUrl, supabasePublishableKey });
-  if (opts.localDev) return createDevAuth();
+  if (opts.localDev) {
+    // Dev auth is NO auth — any caller can mint `dev.<base64url({id})>.dev`
+    // for any user id. `isLocalDev` keys off a *storage* variable
+    // (SUPABASE_S3_ENDPOINT), so a deploy that configures other platform
+    // backing but forgets that one var would otherwise serve dev auth
+    // against real stores, letting any internet caller read any user's
+    // stored key. A production marker alongside "local dev" is a
+    // misconfiguration: fail boot loudly unless local dev is EXPLICIT
+    // (AAI_LOCAL_DEV=1 is user intent, e.g. pointing dev at a real
+    // database on purpose).
+    const markers = ["SUPABASE_DB_URL", "SUPABASE_SERVICE_ROLE_KEY", "SUPABASE_URL"] as const;
+    const present = markers.filter((k) => env[k]);
+    if (present.length > 0 && env.AAI_LOCAL_DEV !== "1") {
+      throw new Error(
+        `Refusing no-auth dev tokens: ${present.join(", ")} configured but Supabase auth is not ` +
+          "(SUPABASE_URL + SUPABASE_PUBLISHABLE_KEY). Set both, or set AAI_LOCAL_DEV=1 for local dev.",
+      );
+    }
+    return createDevAuth();
+  }
 }

@@ -68,6 +68,27 @@ describe("provisionAppDatabase", () => {
     const b = await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db");
     expect(a.password).not.toBe(b.password);
   });
+
+  test("a provisioning failure never leaks the password to the thrown error", async () => {
+    // The password is inlined in the DDL and postgres drivers attach the
+    // failing query as own properties — which the process safety nets
+    // console.error wholesale. The rethrown error must carry no trace of it.
+    const sql: SqlExec = vi.fn(async (query) => {
+      const err = new Error(`syntax error in: ${query}`);
+      (err as unknown as Record<string, unknown>).query = query;
+      throw err;
+    });
+    const failure = await provisionAppDatabase(sql, "my-agent", "postgres://admin@primary/db").then(
+      () => null,
+      (err: unknown) => err as Error & { query?: string },
+    );
+    expect(failure).toBeInstanceOf(Error);
+    expect(failure?.message).toContain("[redacted]");
+    expect(failure?.query).toBe("[redacted]");
+    expect(JSON.stringify({ ...failure, message: failure?.message })).not.toMatch(
+      /login password '[a-f0-9]{32}'/,
+    );
+  });
 });
 
 describe("deprovisionAppDatabase", () => {

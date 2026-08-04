@@ -1,5 +1,5 @@
 // Copyright 2026 the AAI authors. MIT license.
-import { describe, expect, test, vi } from "vitest";
+import { describe, expect, test } from "vitest";
 import { createMemoryAgentRows, createPgAgentRows } from "./agent-store.ts";
 import type { SqlExec } from "./secret-store.ts";
 import { TEST_AGENT_CONFIG } from "./test-utils.ts";
@@ -127,15 +127,14 @@ describe("createPgAgentRows", () => {
     expect((await store.get("my-agent"))?.version).toBe(7);
   });
 
-  test("a corrupt row reads as missing, with a warning", async () => {
+  test("a corrupt row throws rather than reading as missing", async () => {
+    // "Missing" reaches verifySlugOwner as "unclaimed" — the one state where
+    // any API key may claim the slug — so a corrupt row must fail closed.
     const { sql, rows } = fakeSql();
     const store = createPgAgentRows(sql);
     await store.put(RECORD);
     const row = rows.get("my-agent");
     if (row) row.config = JSON.stringify({ not: "a config" });
-    const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => undefined);
-    expect(await store.get("my-agent")).toBeNull();
-    expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("Corrupt agent record"));
-    warnSpy.mockRestore();
+    await expect(store.get("my-agent")).rejects.toThrow("Corrupt agent record");
   });
 });

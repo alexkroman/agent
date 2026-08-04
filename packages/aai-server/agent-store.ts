@@ -111,10 +111,14 @@ export function createPgAgentRows(sql: SqlExec): AgentRows {
         version: Number(row.version),
       });
       if (!parsed.success) {
-        // Corrupt stored row — treat as missing rather than throwing on
-        // every read of this slug.
-        console.warn(`Corrupt agent record for ${slug}; treating as missing`);
-        return null;
+        // Corrupt stored row — fail CLOSED, never "missing". A null here
+        // reaches verifySlugOwner as {status: "unclaimed"}, the one state
+        // where any API key may claim the slug: one unparseable column (or
+        // a schema tightening that rejects old rows) would turn a live,
+        // owned agent into a slug another tenant's deploy can take over,
+        // while data routes 404 the real owner. Throwing makes the slug
+        // error loudly until the row is fixed instead.
+        throw new Error(`Corrupt agent record for ${slug}: ${parsed.error.message}`);
       }
       return parsed.data;
     },

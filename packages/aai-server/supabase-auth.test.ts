@@ -113,6 +113,23 @@ describe("createStudioAuthFromEnv", () => {
     ).toEqual({ mode: "dev" });
     expect(createStudioAuthFromEnv({} as NodeJS.ProcessEnv, { localDev: false })).toBeUndefined();
   });
+
+  test("refuses dev auth when production markers are configured without explicit local dev", () => {
+    // Dev auth is no auth: a deploy with real platform backing but missing
+    // Supabase auth vars must fail boot, not serve mint-any-identity tokens.
+    expect(() =>
+      createStudioAuthFromEnv({ SUPABASE_DB_URL: "postgres://x" } as NodeJS.ProcessEnv, {
+        localDev: true,
+      }),
+    ).toThrow("Refusing no-auth dev tokens");
+    // Explicit AAI_LOCAL_DEV=1 is user intent — dev auth stays available.
+    expect(
+      createStudioAuthFromEnv(
+        { SUPABASE_DB_URL: "postgres://x", AAI_LOCAL_DEV: "1" } as NodeJS.ProcessEnv,
+        { localDev: true },
+      )?.clientConfig,
+    ).toEqual({ mode: "dev" });
+  });
 });
 
 describe("resolveBearer", () => {

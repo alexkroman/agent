@@ -19,6 +19,7 @@
 
 import { DEFAULT_PORT, DRAIN_GUEST_POLL_MS } from "aai-server/constants";
 import { createOrchestrator } from "aai-server/orchestrator";
+import { resolvePort } from "aai-server/platform-barrel";
 import { drainActiveSessions, startService } from "aai-server/serve-lifecycle";
 import {
   assertSandboxBackendOrWarn,
@@ -81,7 +82,7 @@ async function main(): Promise<void> {
   installProcessSafetyNets();
 
   const env = process.env;
-  const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
+  const port = resolvePort(env.PORT, DEFAULT_PORT);
   const mode = resolveServiceMode(env);
 
   let draining = false;
