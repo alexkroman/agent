@@ -195,6 +195,33 @@ describe("wireSessionSocket", () => {
     expect(passed).toBeInstanceOf(Uint8Array);
   });
 
+  // A zero-length frame is not audio. Forwarded, it reached the transport
+  // (the S2S service answers `Missing 'audio' field`, which the client sees
+  // as an `internal` error) and — worse — re-armed the idle timer, so a
+  // client sending empty frames on a timer held its session, and the guest's
+  // whole sandbox, open forever at no bandwidth cost.
+  test("an empty binary frame is dropped, not treated as audio", async () => {
+    const core = makeMockCore();
+    const ws = openSocket();
+    const logger = makeLogger();
+
+    wireSessionSocket(ws, {
+      sessions: createOwnedMap(),
+      createSession: () => core,
+      readyConfig: defaultConfig,
+      logger,
+    });
+
+    await waitForSessionReady(logger);
+
+    simulateBinaryFrame(ws, new Uint8Array(0));
+    expect(core.onAudio).not.toHaveBeenCalled();
+
+    // A frame with actual samples still gets through.
+    simulateBinaryFrame(ws, new Uint8Array([1, 2]));
+    expect(core.onAudio).toHaveBeenCalledOnce();
+  });
+
   test("audio_ready JSON text frame routes to session.onAudioReady", async () => {
     const core = makeMockCore();
     const ws = openSocket();

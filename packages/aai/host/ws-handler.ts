@@ -87,6 +87,15 @@ const sinkBySession = new WeakMap<SessionCore, ClientSink>();
 
 function dispatchMessage(data: unknown, session: SessionCore, log: Logger, sid: string): void {
   if (data instanceof Uint8Array) {
+    // A zero-length frame carries no samples, so it is not audio, and
+    // treating it as audio was wrong twice over. It went to the transport,
+    // where the S2S service answers a protocol error the client then sees as
+    // `internal: Missing 'audio' field`; and it re-armed the idle timer, so a
+    // client sending empty frames on a timer held a session — and with it the
+    // guest's session count, and so its whole sandbox — open indefinitely at
+    // no bandwidth cost. Dropped silently: the rate is client-controlled, so
+    // logging one line per frame would just move the abuse into the log.
+    if (data.byteLength === 0) return;
     session.onAudio(data);
     return;
   }
