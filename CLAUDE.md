@@ -101,6 +101,14 @@ fail fast. To tighten quality over time, lower the entries in the
 file-length allowlist and delete escape hatches — both baselines are
 designed to only move one direction.
 
+Both ratchets also run at **edit time** for Claude Code sessions: a
+`PostToolUse` hook in `.claude/settings.json`
+(`.claude/hooks/quality-ratchets.sh`) fires on every Edit/Write of a
+TypeScript file under `packages/` and feeds any violation straight back to
+the agent (~0.3s combined, so it's effectively free). This surfaces a
+net-new hatch or an over-cap file at the moment it's introduced, rather
+than at pre-push or CI after more work has been stacked on top of it.
+
 A third ratchet lives in the vitest configs: **coverage thresholds**.
 Every package has floors — `aai-templates` was for a while the one that did
 not, so CI measured its coverage and threw the number away. Each package's
