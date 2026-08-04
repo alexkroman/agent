@@ -6,7 +6,8 @@
  * `RuntimeOptions.runCode`.
  */
 
-import { errMsg, withTimeout } from "./harness-rpc.ts";
+import pTimeout from "p-timeout";
+import { errMsg } from "./harness-rpc.ts";
 import type { AgentDef, ToolContext } from "./harness-types.ts";
 import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "./limits.ts";
 
@@ -36,7 +37,10 @@ export async function runCode(code: string): Promise<string | { error: string }>
       c: typeof sandboxConsole,
     ) => Promise<unknown>;
 
-    await withTimeout(factory(sandboxConsole), RUN_CODE_TIMEOUT_MS, "run_code");
+    await pTimeout(factory(sandboxConsole), {
+      milliseconds: RUN_CODE_TIMEOUT_MS,
+      message: `run_code timed out after ${RUN_CODE_TIMEOUT_MS}ms`,
+    });
 
     const text = output.join("\n").trim();
     return text || "Code ran successfully (no output)";
@@ -115,11 +119,10 @@ export async function executeTool(
         ? tool.parameters.parse(req.args)
         : req.args;
 
-    const result = await withTimeout(
-      Promise.resolve(tool.execute(parsed, ctx)),
-      TOOL_TIMEOUT_MS,
-      `Tool "${req.name}"`,
-    );
+    const result = await pTimeout(Promise.resolve(tool.execute(parsed, ctx)), {
+      milliseconds: TOOL_TIMEOUT_MS,
+      message: `Tool "${req.name}" timed out after ${TOOL_TIMEOUT_MS}ms`,
+    });
     return {
       result: typeof result === "string" ? result : JSON.stringify(result),
       state,

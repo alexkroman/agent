@@ -25,9 +25,10 @@
 import { mkdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { jsonSchema, type Tool, type ToolSet, tool } from "ai";
+import pTimeout from "p-timeout";
 import picomatch from "picomatch";
 import { z } from "zod";
-import { errMsg, withTimeout } from "./harness-rpc.ts";
+import { errMsg } from "./harness-rpc.ts";
 import { MAX_STUDIO_FILE_BYTES } from "./limits.ts";
 import { applyEdit, clearEditMisses, rewriteHint, StudioEditError } from "./studio-edit.ts";
 import { globMatcher, grepWorkspace, StudioGrepError } from "./studio-grep.ts";
@@ -207,11 +208,13 @@ function deadline(t: ToolSet[string]): ToolSet[string] {
   const execute = t.execute;
   if (!execute) return t;
   const wrapped: Tool["execute"] = (args, opts) =>
-    withTimeout(
-      Promise.resolve(execute(args as never, opts)),
-      STUDIO_TOOL_TIMEOUT_MS,
-      "Tool call",
-    ).catch((err: unknown) => `Error: ${errMsg(err)}`);
+    pTimeout(Promise.resolve(execute(args as never, opts)), {
+      milliseconds: STUDIO_TOOL_TIMEOUT_MS,
+      message: `Tool call timed out after ${STUDIO_TOOL_TIMEOUT_MS}ms`,
+      // An aborted turn (closed tab) settles the wrapper promptly; the
+      // underlying tool work is NOT cancelled — it runs on in the background.
+      ...(opts?.abortSignal ? { signal: opts.abortSignal } : {}),
+    }).catch((err: unknown) => `Error: ${errMsg(err)}`);
   return { ...t, execute: wrapped } as ToolSet[string];
 }
 

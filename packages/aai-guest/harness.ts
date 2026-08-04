@@ -61,8 +61,10 @@
 
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { formatSchemaIssues } from "@alexkroman1/aai/internal";
 import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
+import { z } from "zod";
 import { createIdleController, createManageHandler, readAgentBoot } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
 import {
@@ -94,12 +96,36 @@ import {
   HARNESS_ORPHAN_TIMEOUT_MS,
 } from "./limits.ts";
 import { withBuildDir } from "./studio-build.ts";
-import { handleStudioRequest, initStudioSession, type StudioSessionParams } from "./studio-chat.ts";
+import { handleStudioRequest, initStudioSession } from "./studio-chat.ts";
 import { deployWorkspaceDir } from "./studio-publish.ts";
 import { materializeWorkspace } from "./studio-workspace-fs.ts";
 import { executeTool } from "./trial.ts";
 
 // ---- Control-channel dispatch -----------------------------------------------
+
+// The wire params arrive as `unknown` — Zod at the receiving site is the
+// contract. Each schema lives next to its handler and validates EVERY field
+// of the params the handler forwards.
+
+const DeployParamsSchema = z.object({
+  files: z.record(z.string(), z.string()),
+  serverUrl: z.string(),
+  apiKey: z.string(),
+  slug: z.string().optional(),
+});
+
+/** Mirrors `StudioSessionParams` (studio-chat.ts) field for field. */
+const SessionInitParamsSchema = z.object({
+  project: z.string(),
+  files: z.record(z.string(), z.string()),
+  apiKey: z.string(),
+  chatToken: z.string().min(1),
+  system: z.string(),
+  model: z.string(),
+  region: z.literal("eu").optional(),
+  // Reaches `stepCountIs()` in studio-chat.ts — must be a positive integer.
+  maxSteps: z.number().int().positive(),
+});
 
 /** Resolve and settle a single incoming JSON-RPC request. */
 export async function handleRequest(req: JsonRpcRequest, state: HarnessState): Promise<void> {
@@ -109,48 +135,34 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
     // so studio publishes and laptop deploys are one path, and the CLI's
     // output rides back for the chat.
     case "workspace/deploy": {
-      const params = req.params as
-        | { files?: unknown; serverUrl?: unknown; apiKey?: unknown; slug?: unknown }
-        | undefined;
-      if (
-        !params ||
-        typeof params.files !== "object" ||
-        params.files === null ||
-        typeof params.serverUrl !== "string" ||
-        typeof params.apiKey !== "string"
-      ) {
-        sendError(req.id, -32_602, "workspace/deploy requires { files, serverUrl, apiKey }");
+      const parsed = DeployParamsSchema.safeParse(req.params);
+      if (!parsed.success) {
+        sendError(
+          req.id,
+          -32_602,
+          `workspace/deploy: invalid params — ${formatSchemaIssues(parsed.error.issues)}`,
+        );
         break;
       }
-      const files = params.files as Record<string, string>;
+      const { files, serverUrl, apiKey, slug } = parsed.data;
       const result = await withBuildDir(files, materializeWorkspace, (dir) =>
-        deployWorkspaceDir(dir, {
-          serverUrl: params.serverUrl as string,
-          apiKey: params.apiKey as string,
-          slug: typeof params.slug === "string" ? params.slug : undefined,
-        }),
+        deployWorkspaceDir(dir, { serverUrl, apiKey, slug }),
       );
       sendResponse(req.id, result);
       break;
     }
 
     case "studio/session-init": {
-      const params = req.params as StudioSessionParams | undefined;
-      if (
-        !params ||
-        typeof params.apiKey !== "string" ||
-        typeof params.chatToken !== "string" ||
-        params.chatToken.length === 0 ||
-        typeof params.files !== "object"
-      ) {
+      const parsed = SessionInitParamsSchema.safeParse(req.params);
+      if (!parsed.success) {
         sendError(
           req.id,
           -32_602,
-          "studio/session-init requires { files, apiKey, chatToken, ... }",
+          `studio/session-init: invalid params — ${formatSchemaIssues(parsed.error.issues)}`,
         );
         break;
       }
-      state.studio = await initStudioSession(params);
+      state.studio = await initStudioSession(parsed.data);
       sendResponse(req.id, { ok: true });
       break;
     }

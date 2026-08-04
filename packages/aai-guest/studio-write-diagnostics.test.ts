@@ -82,7 +82,8 @@ describe("createPostWriteDiagnostics", () => {
     const b = diagnose("b.ts");
     const c = diagnose("c.ts");
     const d = diagnose("d.ts");
-    expect(calls).toBe(1);
+    // The runner starts the first check on a microtask, so wait for it.
+    await vi.waitFor(() => expect(calls).toBe(1));
 
     // Run 1's verdict cannot vouch for b/c/d — settling it starts exactly
     // ONE follow-up, shared by all three.

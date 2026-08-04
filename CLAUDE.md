@@ -1498,12 +1498,12 @@ primitives — reach for them before re-inventing the pattern at a call site:
   audio gate) as a discriminated-union machine whose named transitions are
   the only mutation path. New turn-state reads/writes go through it, not new
   closure flags.
-- **Timeouts**: use `p-timeout` (a dependency of aai, aai-cli, and
-  aai-server) — never a hand-rolled `Promise.race` with a timer; the losing
-  branch's late rejection and timer cleanup are exactly what gets re-derived
-  wrong. The one exception is the guest harness's `withTimeout`
-  (`aai-guest/harness-rpc.ts`), which stays local because the bundled harness
-  imports no npm packages.
+- **Timeouts**: use `p-timeout` (a dependency of aai, aai-cli, aai-guest,
+  and aai-server) — never a hand-rolled `Promise.race` with a timer; the
+  losing branch's late rejection and timer cleanup are exactly what gets
+  re-derived wrong. The guest harness is no exception: tsdown bundles its
+  npm dependencies (p-timeout included) into `dist/harness.mjs` — only the
+  vite/rolldown build toolchain stays external to the bundle.
 - **Combining abort signals**: use native `AbortSignal.any([...])` (sources
   held weakly — no unlink bookkeeping); the pipeline transport combines the
   session signal with each turn's controller this way.
