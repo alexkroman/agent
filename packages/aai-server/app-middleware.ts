@@ -56,3 +56,28 @@ export function applyPlatformMiddleware<E extends HonoEnv>(
   app.notFound((c) => c.json({ error: "Not found" }, 404));
   app.onError(createErrorHandler());
 }
+
+/**
+ * The drain-aware `/health` route both apps serve. 503 while draining is
+ * what pulls the replica out of the platform proxy's rotation, so new
+ * traffic goes to a replica that is staying up — without it the drain would
+ * keep accepting the very sessions it is waiting to finish.
+ */
+export function addHealthRoute<E extends HonoEnv>(
+  app: Hono<E>,
+  isDraining: (() => boolean) | undefined,
+): void {
+  app.get("/health", (c) =>
+    isDraining?.() ? c.json({ status: "draining" }, 503) : c.json({ status: "ok" }),
+  );
+}
+
+/**
+ * Inject the server-level bindings into every `app.fetch` call, keeping a
+ * caller-supplied env able to override individual bindings (tests do).
+ */
+export function bindFetchEnv<E extends HonoEnv>(app: Hono<E>, bindings: E["Bindings"]): void {
+  const original = app.fetch.bind(app);
+  app.fetch = (req: Request, env?: Record<string, unknown>) =>
+    original(req, { ...bindings, ...env });
+}

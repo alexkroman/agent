@@ -38,6 +38,7 @@ import { createRequire } from "node:module";
 import path from "node:path";
 import type { App, Image, ModalClient } from "modal";
 import { debug } from "./_debug-log.ts";
+import { keyedMemoAsync } from "./_memo.ts";
 
 /** Root the guest toolchain and harness live under inside the baked image. */
 export const GUEST_ROOT = "/opt/aai";
@@ -136,7 +137,7 @@ export function createHarnessImageResolver(deps: {
   baseImage: Image;
 }): HarnessImageResolver {
   const { client, app, baseTag, baseImage } = deps;
-  const memo = new Map<string, Promise<Image>>();
+  const memo = keyedMemoAsync<Image>();
 
   function tagFor(code: string, specs: string[]): string {
     const hash = createHash("sha256")
@@ -205,16 +206,8 @@ export function createHarnessImageResolver(deps: {
 
   return (code: string): Promise<Image> => {
     const tag = tagOnce(code);
-    let pending = memo.get(tag);
-    if (!pending) {
-      // Re-resolving the specs here costs a few readFileSync calls, but only
-      // on the once-per-tag build path rather than once per spawn.
-      pending = build(tag, code, resolveToolchainSpecs()).catch((err: unknown) => {
-        memo.delete(tag);
-        throw err;
-      });
-      memo.set(tag, pending);
-    }
-    return pending;
+    // Re-resolving the specs in the builder costs a few readFileSync calls,
+    // but only on the once-per-tag build path rather than once per spawn.
+    return memo(tag, () => build(tag, code, resolveToolchainSpecs()));
   };
 }

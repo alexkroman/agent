@@ -329,9 +329,15 @@ async function pickPeerSessionUrl(slug: string, opts: ResolveSandboxOpts): Promi
   if (!registry) return null;
   try {
     // Existence gate: a deleted agent's registry rows outlive the row by up
-    // to one heartbeat, and routing to them would resurrect a 404.
-    if ((await opts.store.getAgentVersion(slug)) === null) return null;
-    const peers = await registry.listPeers(slug);
+    // to one heartbeat, and routing to them would resurrect a 404. The two
+    // reads are independent (the version only gates whether the peer list is
+    // used), so run them concurrently — both are DB round trips on a path
+    // where the caller is waiting.
+    const [version, peers] = await Promise.all([
+      opts.store.getAgentVersion(slug),
+      registry.listPeers(slug),
+    ]);
+    if (version === null) return null;
     const best = peers[0]; // least-loaded (the registry sorts)
     if (!best) return null;
     const scale = opts.scale ?? defaultScaleOptions();

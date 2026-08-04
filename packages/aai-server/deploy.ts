@@ -7,7 +7,6 @@ import type { AgentRecord } from "./agent-store.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
-import type { SlotCache } from "./sandbox-slots.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, matchAnyHash } from "./secrets.ts";
@@ -17,7 +16,6 @@ import type { BundleStore } from "./store-types.ts";
 /** Server-level dependencies the deploy core needs (a subset of Bindings). */
 export type DeployDeps = {
   store: BundleStore;
-  slots: SlotCache;
   /**
    * Per-slug mutation lock. Cross-replica (Postgres lease) in production;
    * defaults to the in-process lock for tests and single-replica callers.
@@ -258,7 +256,6 @@ export async function handleDeployNew(
 ): Promise<Response> {
   const deps = {
     store: c.env.store,
-    slots: c.env.slots,
     slugLock: c.env.slugLock,
   };
   const body = c.req.valid("json");

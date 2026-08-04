@@ -17,15 +17,15 @@
  * ownership verification for platform auth — not agent secrets.
  */
 
-import { HTTPException } from "hono/http-exception";
 import type { AppContext, ValidatedAppContext, ValidatedParamContext } from "./context.ts";
 
+// Agent existence is existingOwnerMw's decision (it rejects unclaimed slugs
+// before any handler runs), so a null env row here just means "no secrets
+// stored yet" and every handler treats it as an empty record — three routes
+// used to disagree on what a missing row meant.
+
 export async function handleSecretList(c: AppContext): Promise<Response> {
-  const slug = c.var.slug;
-  const env = await c.env.store.getEnv(slug);
-  if (!env) {
-    throw new HTTPException(404, { message: `Agent ${slug} not found` });
-  }
+  const env = (await c.env.store.getEnv(c.var.slug)) ?? {};
   return c.json({ vars: Object.keys(env) });
 }
 
@@ -49,10 +49,7 @@ export function handleSecretDelete(c: ValidatedParamContext<{ key: string }>): P
   const slug = c.var.slug;
   return c.env.slugLock(slug, async () => {
     const { key } = c.req.valid("param");
-    const existing = await c.env.store.getEnv(slug);
-    if (!existing) {
-      throw new HTTPException(404, { message: `Agent ${slug} not found` });
-    }
+    const existing = (await c.env.store.getEnv(slug)) ?? {};
     delete existing[key];
     await c.env.store.putEnv(slug, existing);
     console.info("Secret deleted", { slug });

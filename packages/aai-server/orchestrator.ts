@@ -31,7 +31,7 @@ import { Hono } from "hono";
 import { bodyLimit } from "hono/body-limit";
 import { z } from "zod";
 import type { AppDatabases } from "./app-database.ts";
-import { applyPlatformMiddleware } from "./app-middleware.ts";
+import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "./app-middleware.ts";
 import { handleAgentClientConfig } from "./client-config-handler.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import type { HonoEnv } from "./context.ts";
@@ -44,7 +44,7 @@ import type { PlatformEvents } from "./platform-events.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import type { SandboxRegistry } from "./sandbox-registry.ts";
-import { watchAgentInvalidation } from "./sandbox-resolve.ts";
+import { type ResolveSandboxOpts, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { describeBundle } from "./sandbox-vm.ts";
 import {
@@ -147,13 +147,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // than each entry re-wiring it. Lives for the process, like the slots.
   if (opts.events) watchAgentInvalidation(opts.events, opts);
 
-  // 503 while draining is what pulls the replica out of the platform
-  // proxy's rotation, so new traffic goes to a replica that is staying up.
-  // Without it the drain would keep accepting the very sessions it is
-  // waiting to finish.
-  app.get("/health", (c) =>
-    opts.isDraining?.() ? c.json({ status: "draining" }, 503) : c.json({ status: "ok" }),
-  );
+  addHealthRoute(app, opts.isDraining);
 
   // The studio surface. This app never serves it in-process anymore — the
   // studio is its own package/service (aai-studio-server). Two modes here:
@@ -209,6 +203,23 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     return c.redirect(`${url.pathname}/${url.search}`, 301);
   });
 
+  // Tests build orchestrators without a secret store; default to memory so
+  // the storage-status route (and anything else reading secrets) works.
+  const secrets = opts.secrets ?? createMemorySecretStore();
+
+  // The broker's dependency set, assembled ONCE and shared by both consumers
+  // (the client-config route and the /:slug/websocket redirect path): every
+  // field is optional, so a per-site conditional spread that drops one
+  // compiles clean — one object makes a new broker dependency one edit.
+  const brokerOpts: ResolveSandboxOpts = {
+    slots: opts.slots,
+    store: opts.store,
+    secrets,
+    ...(opts.registry && { registry: opts.registry }),
+    ...(opts.appDb && { appDb: opts.appDb }),
+    ...(opts.pool && { pool: opts.pool }),
+  };
+
   const agents = new Hono<HonoEnv>();
   agents.use("*", slugMw);
 
@@ -233,9 +244,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   // Session broker: name/greeting plus the live sandbox session URL (boots
   // the sandbox on first request). Same auth posture as the page and the
   // session endpoint: none.
-  agents.get("/client-config", (c) =>
-    handleAgentClientConfig(c, opts.pool ? { pool: opts.pool } : {}),
-  );
+  agents.get("/client-config", (c) => handleAgentClientConfig(c, brokerOpts));
   agents.get("/favicon.ico", handleAgentFavicon);
   agents.get("/assets/:path{.+}", handleClientAsset);
   // GET /:slug/ stays on the top-level app — Hono's mergePath("/:slug", "/")
@@ -243,12 +252,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   app.route("/:slug", agents);
   app.get("/:slug/", slugMw, handleAgentPage);
 
-  // Tests build orchestrators without a secret store; default to memory so
-  // the storage-status route (and anything else reading secrets) works.
-  const secrets = opts.secrets ?? createMemorySecretStore();
-
-  const bindings = {
-    slots: opts.slots,
+  bindFetchEnv(app, {
     store: opts.store,
     secrets,
     ...(opts.auth && { auth: opts.auth }),
@@ -261,22 +265,13 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // correctly-serialized write compute its merge from a stale base (see
     // createMutationLock).
     slugLock: createMutationLock(opts.slugLock ?? localSlugLock, opts.store),
-  };
-
-  const original = app.fetch.bind(app);
-  app.fetch = (req: Request, env?: Record<string, unknown>) =>
-    original(req, { ...bindings, ...env });
+  });
 
   const { injectWebSocket, closeActiveSockets, activeSessionCount } = createWsUpgrades({
-    slots: opts.slots,
-    store: opts.store,
     // Plain upgrades on /:slug/websocket resolve the live sandbox (the
     // long-living endpoint redirects to its session URL), which needs the
     // same dependencies the client-config broker uses.
-    secrets,
-    ...(opts.registry && { registry: opts.registry }),
-    ...(opts.appDb && { appDb: opts.appDb }),
-    ...(opts.pool && { pool: opts.pool }),
+    broker: brokerOpts,
     ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),
     ...(opts.isDraining && { isDraining: opts.isDraining }),
   });

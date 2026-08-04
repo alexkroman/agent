@@ -26,29 +26,19 @@ import { parseWsUpgradeParams } from "@alexkroman1/aai/internal";
 import type { SessionWebSocket } from "@alexkroman1/aai/runtime";
 import { WebSocketServer } from "ws";
 import { answerUpgrade } from "./_upgrade-reply.ts";
-import type { AppDatabases } from "./app-database.ts";
 import { MAX_CONNECTIONS } from "./constants.ts";
 
-import type { SandboxPool } from "./sandbox-pool.ts";
-import type { SandboxRegistry } from "./sandbox-registry.ts";
-import { brokerSessionUrl } from "./sandbox-resolve.ts";
-import type { SlotCache } from "./sandbox-slots.ts";
+import { brokerSessionUrl, type ResolveSandboxOpts } from "./sandbox-resolve.ts";
 import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
-import type { SecretStore } from "./secret-store.ts";
-import type { BundleStore } from "./store-types.ts";
 import { guardHostModeUpgrade, startDeployedHostSession, wantsHostMode } from "./ws-host-mode.ts";
 
 export type WsUpgradeOpts = {
-  slots: SlotCache;
-  store: BundleStore;
-  /** Named secret storage — read for the app's `app-db:` credentials. */
-  secrets?: SecretStore;
-  /** Cross-replica sandbox registry (see sandbox-registry.ts). */
-  registry?: SandboxRegistry;
-  /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
-  appDb?: AppDatabases;
-  /** Pre-warmed harness pool shared with the rest of the platform. */
-  pool?: SandboxPool;
+  /**
+   * Broker dependencies, the same object the `GET /:slug/client-config`
+   * route uses — assembled once in the orchestrator so a new broker
+   * dependency is one edit, not one per consumer.
+   */
+  broker: ResolveSandboxOpts;
   /** Max concurrent WebSocket connections. Defaults to MAX_CONNECTIONS. */
   maxConnections?: number;
   /**
@@ -88,14 +78,7 @@ async function answerPlainUpgrade(
   socket: import("node:stream").Duplex,
   opts: WsUpgradeOpts,
 ): Promise<void> {
-  const brokered = await brokerSessionUrl(slug, {
-    slots: opts.slots,
-    store: opts.store,
-    ...(opts.secrets && { secrets: opts.secrets }),
-    ...(opts.registry && { registry: opts.registry }),
-    ...(opts.appDb && { appDb: opts.appDb }),
-    ...(opts.pool && { pool: opts.pool }),
-  });
+  const brokered = await brokerSessionUrl(slug, opts.broker);
   const sessionUrl = brokered.ok ? brokered.sessionUrl : undefined;
   let status = "302 Found";
   if (!brokered.ok) {
@@ -192,7 +175,7 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
     const mayProceed = await guardHostModeUpgrade({
       slug,
       headers: req.headers,
-      store: opts.store,
+      store: opts.broker.store,
       socket,
     });
     if (!mayProceed) return;
@@ -200,7 +183,7 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
     // Host mode runs in the server process on the agent's stored config and
     // env — it never touches the sandbox. A missing config means the agent
     // can't run: answer with a close frame instead of a dangling socket.
-    const agentConfig = await opts.store.getAgentConfig(slug);
+    const agentConfig = await opts.broker.store.getAgentConfig(slug);
     wss.handleUpgrade(req, socket, head, (ws) => {
       const sessionWs = ws as unknown as SessionWebSocket;
       // `ws` sockets are EventEmitters: an `error` with no listener throws.
@@ -213,7 +196,7 @@ export function createWsUpgrades(opts: WsUpgradeOpts): WsUpgrades {
         startDeployedHostSession(sessionWs, {
           slug,
           agentConfig,
-          store: opts.store,
+          store: opts.broker.store,
           startOpts: parseWsUpgradeParams(rawUrl),
         });
       } catch (err: unknown) {

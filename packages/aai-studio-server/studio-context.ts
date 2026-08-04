@@ -29,4 +29,10 @@ export type StudioHonoEnv = HonoEnv & {
      */
     events: PlatformEvents;
   };
+  Variables: HonoEnv["Variables"] & {
+    /** Workspace scope, set by the `/projects/:project` middleware. */
+    scope: string;
+    /** Validated project name, set by the `/projects/:project` middleware. */
+    project: string;
+  };
 };

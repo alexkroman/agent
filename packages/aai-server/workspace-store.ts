@@ -11,9 +11,9 @@
  * `put` succeeds only against the exact version it read (`null` = create,
  * which must not find an existing row) and throws {@link
  * WorkspaceConflictError} otherwise. In-process writers are additionally
- * serialized by `studio-workspace-lock.ts`, so a conflict here means a
- * concurrent writer on another replica — `mutateWorkspace`
- * (`studio-workspace.ts`) absorbs those by re-reading and re-applying once.
+ * serialized by `mutateWorkspace`'s keyed lock (`studio-workspace.ts`), so
+ * a conflict here means a concurrent writer on another replica —
+ * `mutateWorkspace` absorbs those by re-reading and re-applying once.
  *
  * The table lives in the `aai_platform` schema, not `public`: per-app
  * tenant schemas (`app_<hex>`, see `app-database.ts`) share this database,

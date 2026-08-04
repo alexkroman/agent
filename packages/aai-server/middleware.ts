@@ -3,6 +3,7 @@
 import { createMiddleware } from "hono/factory";
 import { HTTPException } from "hono/http-exception";
 import { parseBearer } from "./_bearer.ts";
+import { TtlCache } from "./_ttl-cache.ts";
 import type { HonoEnv } from "./context.ts";
 import { RESERVED_SLUGS, VALID_SLUG_RE } from "./schemas.ts";
 import type { SecretStore } from "./secret-store.ts";
@@ -27,6 +28,32 @@ function requireBearerToken(req: Request): string {
 
 export type ResolvedBearer = { apiKey: string; userId?: string };
 
+// The user-id → stored-API-key lookup rides EVERY JWT-authed request (each
+// editor save, project GET, SSE subscribe), and each lookup is a Vault query
+// — a Postgres round trip plus server-side decrypt. Cache it beside the
+// token-verify cache with the same short TTL. Scoped per SecretStore (a
+// WeakMap, so tests' independent memory stores can't see each other's
+// entries), and only found keys are cached: a "no key yet" account is the
+// onboarding path, where a stale negative would 401 the first request after
+// the key is saved. Rotation is bounded by the TTL on other replicas and
+// exact on the writing one (`invalidateUserApiKey` from the account route).
+const USER_KEY_TTL_MS = 60_000;
+const userKeyCaches = new WeakMap<SecretStore, TtlCache<string>>();
+
+function userKeyCache(secrets: SecretStore): TtlCache<string> {
+  let cache = userKeyCaches.get(secrets);
+  if (!cache) {
+    cache = new TtlCache<string>(USER_KEY_TTL_MS);
+    userKeyCaches.set(secrets, cache);
+  }
+  return cache;
+}
+
+/** Drop a user's cached API key — call after storing a new one. */
+export function invalidateUserApiKey(secrets: SecretStore, userId: string): void {
+  userKeyCaches.get(secrets)?.delete(userId);
+}
+
 /**
  * Resolve the request's bearer to a platform API key.
  *
@@ -47,11 +74,17 @@ export async function resolveBearer(
   if (!user) {
     throw new HTTPException(401, { message: "Invalid or expired session — sign in again" });
   }
-  const apiKey = await env.secrets.get(userApiKeySecretName(user.id));
-  if (!apiKey) {
-    throw new HTTPException(401, {
-      message: "No AssemblyAI API key on file for this account — add one in the studio",
-    });
+  const cache = userKeyCache(env.secrets);
+  let apiKey = cache.get(user.id);
+  if (apiKey === undefined) {
+    const stored = await env.secrets.get(userApiKeySecretName(user.id));
+    if (!stored) {
+      throw new HTTPException(401, {
+        message: "No AssemblyAI API key on file for this account — add one in the studio",
+      });
+    }
+    apiKey = stored;
+    cache.set(user.id, stored);
   }
   return { apiKey, userId: user.id };
 }

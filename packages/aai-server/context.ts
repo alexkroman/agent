@@ -13,7 +13,6 @@ import type { Context } from "hono";
 import type { AppDatabases } from "./app-database.ts";
 import type { SlugMutationLock } from "./platform-lock.ts";
 import type { SandboxRegistry } from "./sandbox-registry.ts";
-import type { SlotCache } from "./sandbox-slots.ts";
 import type { SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
 import type { StudioAuth } from "./supabase-auth.ts";
@@ -29,7 +28,6 @@ import type { StudioAuth } from "./supabase-auth.ts";
  */
 export type HonoEnv = {
   Bindings: {
-    slots: SlotCache;
     store: BundleStore;
     /** Named secret storage (Supabase Vault in production). */
     secrets: SecretStore;

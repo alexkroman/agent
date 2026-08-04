@@ -1,6 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 
-import { createMemoryWorkspaceStore, WorkspaceConflictError } from "aai-server/workspace-store";
+import {
+  createMemoryWorkspaceStore,
+  WorkspaceConflictError,
+  type WorkspaceStore,
+} from "aai-server/workspace-store";
 import { describe, expect, test } from "vitest";
 import {
   MAX_STUDIO_FILE_BYTES,
@@ -150,6 +154,17 @@ describe("mutateWorkspace", () => {
     expect(await getWorkspace(store, "s", "p")).toBeNull();
   });
 
+  // Simulates a writer on ANOTHER replica, so it must bypass this process's
+  // workspace lock (which mutateWorkspace holds while the callback runs —
+  // a nested mutateWorkspace on the same project would deadlock, exactly
+  // like a real same-project write from inside a mutate callback).
+  const foreignWrite = async (store: WorkspaceStore, file: string) => {
+    const record = await store.get("s", "p");
+    if (!record) throw new Error("missing row");
+    const doc = record.doc as { files: Record<string, string> };
+    await store.put("s", "p", { ...doc, files: { ...doc.files, [file]: "x" } }, record.version);
+  };
+
   test("retries once when a concurrent writer bumps the version", async () => {
     // The cross-replica race: the local lock cannot serialize a writer on
     // another machine, so the versioned put conflicts and the mutation is
@@ -160,10 +175,7 @@ describe("mutateWorkspace", () => {
     const ws = await mutateWorkspace(store, "s", "p", async (current) => {
       if (!raced) {
         raced = true;
-        await mutateWorkspace(store, "s", "p", (other) => ({
-          ...other,
-          files: { ...other.files, "other-replica.ts": "x" },
-        }));
+        await foreignWrite(store, "other-replica.ts");
       }
       return { ...current, files: { ...current.files, "mine.ts": "y" } };
     });
@@ -173,17 +185,50 @@ describe("mutateWorkspace", () => {
   test("a second consecutive conflict surfaces the error", async () => {
     const store = createMemoryWorkspaceStore();
     await createWorkspace(store, "s", "p", { files: {} });
-    const bump = () =>
-      mutateWorkspace(store, "s", "p", (ws) => ({
-        ...ws,
-        files: { ...ws.files, [`f${Date.now()}-${Math.random()}.ts`]: "x" },
-      }));
+    let n = 0;
     await expect(
       mutateWorkspace(store, "s", "p", async (current) => {
-        await bump(); // every attempt loses the race
+        await foreignWrite(store, `f${n++}.ts`); // every attempt loses the race
         return { ...current, files: { ...current.files, "mine.ts": "y" } };
       }),
     ).rejects.toThrow(WorkspaceConflictError);
+  });
+
+  test("serializes concurrent local mutations on the same project", async () => {
+    const store = createMemoryWorkspaceStore();
+    await createWorkspace(store, "s", "p", { files: {} });
+    const order: string[] = [];
+    const gate = Promise.withResolvers<void>();
+    const first = mutateWorkspace(store, "s", "p", async (current) => {
+      order.push("first-start");
+      await gate.promise;
+      order.push("first-end");
+      return { ...current, files: { ...current.files, "a.ts": "a" } };
+    });
+    const second = mutateWorkspace(store, "s", "p", async (current) => {
+      order.push("second");
+      return { ...current, files: { ...current.files, "b.ts": "b" } };
+    });
+    gate.resolve();
+    const [, ws] = await Promise.all([first, second]);
+    // Second waited for first, so neither burned the conflict retry.
+    expect(order).toEqual(["first-start", "first-end", "second"]);
+    expect(ws?.files).toEqual({ "a.ts": "a", "b.ts": "b" });
+  });
+
+  test("different projects do not block each other", async () => {
+    const store = createMemoryWorkspaceStore();
+    await createWorkspace(store, "s", "p", { files: {} });
+    await createWorkspace(store, "s", "p2", { files: {} });
+    const gate = Promise.withResolvers<void>();
+    const held = mutateWorkspace(store, "s", "p", async (current) => {
+      await gate.promise;
+      return current;
+    });
+    // Completes while p's lock is still held.
+    await expect(mutateWorkspace(store, "s", "p2", (current) => current)).resolves.not.toBeNull();
+    gate.resolve();
+    await held;
   });
 });
 
