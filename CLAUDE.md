@@ -587,7 +587,16 @@ voice agents without the CLI:
   the workspace (which bumps `updatedAt`), and editing a file then undoing
   it should not leave the project permanently "stale". The Secrets panel
   mirrors writes to the preview slug best-effort so previews run with the
-  same third-party keys.
+  same third-party keys. **Landing on a project wakes its preview**
+  (`wakeProjectPreview` in studio-preview.ts, hung off the once-per-open
+  session broker call): a STALE preview reschedules its auto-deploy — the deploys
+  are fire-and-forget with in-process coalescing, so a replica restart can
+  drop one and leave the pane on "Updating preview…" until the next edit —
+  skipping empty workspaces (the first agent turn owns the first preview)
+  and stamped build failures (deterministic; the banner carries the output),
+  and the embedded agent's sandbox is warmed through the platform's public
+  client-config broker (`warmPreviewSandbox`) so a preview idle-evicted
+  since the last visit is booting before the pane's iframe asks for it.
 - **The coding agent cannot publish.** There is deliberately no deploy
   tool: going to production is the user's call, made with the Publish
   button (`POST /studio/projects/:project/deploy`) — the only path that

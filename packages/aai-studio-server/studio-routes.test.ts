@@ -68,6 +68,14 @@ vi.mock("./studio-session-broker.ts", async (importOriginal) => {
   };
 });
 
+// Preview wake-up: observable fake so the session route's wiring is
+// asserted without real HTTP (behavior lives in studio-preview.test.ts).
+const wakePreviewMock = vi.fn();
+vi.mock("./studio-preview.ts", async (importOriginal) => {
+  const original = await importOriginal<typeof import("./studio-preview.ts")>();
+  return { ...original, wakeProjectPreview: (...args: unknown[]) => wakePreviewMock(...args) };
+});
+
 function createProject(fetch: TestFetch, name = "proj", key = "key1"): Promise<Response> {
   return authFetch(fetch, "/studio/projects", { body: { name }, key });
 }
@@ -576,6 +584,34 @@ describe("deploy + chat endpoints", () => {
     const limited = await createProject(fetch, "one-too-many");
     expect(limited.status).toBe(429);
     expect(limited.headers.get("Retry-After")).toMatch(/^\d+$/);
+  });
+});
+
+// Landing on a project (the once-per-open session broker call) wakes its
+// preview. The wake's behavior (stale redeploy gates, sandbox warm-up) is
+// covered in studio-preview.test.ts — this asserts the route's wiring.
+describe("session wakes the preview", () => {
+  test("a successful session broker call wakes the project's preview", async () => {
+    wakePreviewMock.mockClear();
+    const { fetch } = await createTestCombined();
+    await createProject(fetch);
+    const res = await authFetch(fetch, "/studio/projects/proj/session", { body: {} });
+    expect(res.status).toBe(200);
+    expect(wakePreviewMock).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scope: studioScope("key1"),
+        project: "proj",
+        target: expect.objectContaining({
+          apiKey: "key1",
+          serverUrl: expect.stringMatching(/^https?:/),
+        }),
+        schedule: expect.any(Function),
+      }),
+    );
+    // A missing project never wakes anything.
+    wakePreviewMock.mockClear();
+    await authFetch(fetch, "/studio/projects/ghost/session", { body: {} });
+    expect(wakePreviewMock).not.toHaveBeenCalled();
   });
 });
 

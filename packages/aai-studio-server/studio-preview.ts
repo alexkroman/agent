@@ -27,10 +27,94 @@ import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
 import { PREVIEW_SLUG_SUFFIX } from "aai-server/sandbox-role";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
-import { currentFilesHash, getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts";
+import {
+  currentFilesHash,
+  getWorkspace,
+  hasPreviewChanges,
+  mutateWorkspace,
+  projectKey,
+} from "./studio-workspace.ts";
 
 /** Cap on the stored preview failure output (it renders in a banner). */
 const MAX_PREVIEW_ERROR = 16_000;
+
+/**
+ * How long the warm-up request may hold its socket. The broker call boots
+ * the sandbox as a side effect of answering, so even an aborted request has
+ * done its job — the timeout only stops us pinning a connection to a slow
+ * cold boot.
+ */
+const PREVIEW_WARM_TIMEOUT_MS = 30_000;
+
+/**
+ * Fire-and-forget sandbox warm-up for the agent the Preview pane embeds.
+ *
+ * Landing on a project after an absence usually finds the preview agent's
+ * sandbox idle-evicted; its next boot would otherwise start only once the
+ * pane's iframe has loaded and its client fetches `/client-config`. Hitting
+ * the platform's public client-config broker — the same pre-connection
+ * lookup the agent page makes — starts that boot the moment the project is
+ * opened instead. Purely an accelerator: failures are swallowed, because
+ * the iframe's own fetch remains the functional path.
+ */
+export function warmPreviewSandbox(
+  serverUrl: string,
+  slug: string,
+  fetchImpl: typeof fetch = fetch,
+): void {
+  let url: URL;
+  try {
+    url = new URL(`/${encodeURIComponent(slug)}/client-config`, serverUrl);
+  } catch {
+    return;
+  }
+  void fetchImpl(url, { signal: AbortSignal.timeout(PREVIEW_WARM_TIMEOUT_MS) }).catch(
+    () => undefined,
+  );
+}
+
+/**
+ * Landing on a project wakes its preview. Hung off the once-per-open
+ * session broker call (`POST /projects/:project/session`) — the "user is
+ * looking at this project again" signal. Two halves, both fire-and-forget
+ * (the caller's response never waits on either):
+ *
+ * - A STALE preview redeploys via `schedule`. Auto preview deploys are
+ *   fire-and-forget with in-process coalescing, so a replica restart (or a
+ *   sandbox dying mid-deploy) can drop one — leaving the pane on "Updating
+ *   preview…" with nothing actually on the way until the next edit.
+ *   Skipped when the last attempt FAILED (`previewError`): that build is
+ *   deterministic, the banner already carries its CLI output, and the next
+ *   edit reschedules. Also skipped for an EMPTY workspace (a fresh
+ *   project): there is nothing deployable, and the first agent turn's
+ *   end-of-turn sync owns the first preview.
+ * - The sandbox of the agent the pane embeds — the preview, falling back
+ *   to the production agent for projects published before previews existed
+ *   — is warmed via {@link warmPreviewSandbox}, so a preview idle-evicted
+ *   since the last visit is booting before the pane's iframe asks for it.
+ */
+export function wakeProjectPreview(options: {
+  workspaces: WorkspaceStore;
+  scope: string;
+  project: string;
+  target: PreviewTarget;
+  /** The broker's `schedulePreview` — called when the preview is stale. */
+  schedule: PreviewDeployer["schedule"];
+  fetchImpl?: typeof fetch;
+}): void {
+  const { workspaces, scope, project, target } = options;
+  void getWorkspace(workspaces, scope, project)
+    .then((workspace) => {
+      if (!workspace) return;
+      const deployable = Object.keys(workspace.files).length > 0;
+      if (deployable && hasPreviewChanges(workspace) && !workspace.previewError) {
+        options.schedule(scope, project, target);
+      }
+      const slug = workspace.previewSlug ?? workspace.deployedSlug;
+      if (slug) warmPreviewSandbox(target.serverUrl, slug, options.fetchImpl ?? fetch);
+    })
+    .catch(() => undefined);
+}
 
 /**
  * The project's preview slug: `<project>-preview`, truncated so the result
