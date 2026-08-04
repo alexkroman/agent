@@ -2,6 +2,7 @@
 
 /** @jsxImportSource react */
 
+import clsx from "clsx";
 import { memo, type ReactNode, useMemo } from "react";
 import ReactMarkdown, { type Components } from "react-markdown";
 import remarkGfm from "remark-gfm";
@@ -40,12 +41,45 @@ function escapeBareListMarkers(text: string): string {
 }
 
 /**
+ * Type scale for {@link Markdown}: `"default"` is the deployed agent UI's
+ * scale, `"compact"` a notch smaller for denser surfaces (the studio's chat
+ * transcript). Colors are unaffected — they come from the theme either way.
+ *
+ * @public
+ */
+export type MarkdownVariant = "default" | "compact";
+
+// Per-variant type scale. Full class strings (never composed) so Tailwind's
+// scanner sees every candidate.
+const SCALE_CLASSES: Record<
+  MarkdownVariant,
+  { h1: string; h2: string; h3: string; code: string; table: string }
+> = {
+  default: {
+    h1: "mt-3 mb-1.5 text-[17px] font-semibold",
+    h2: "mt-3 mb-1.5 text-[16px] font-semibold",
+    h3: "mt-3 mb-1.5 text-[15px] font-semibold",
+    code: "text-[12.5px]",
+    table: "my-1.5 w-full border-collapse text-sm",
+  },
+  compact: {
+    h1: "mt-3 mb-1.5 text-[15px] font-medium",
+    h2: "mt-3 mb-1.5 text-[14px] font-medium",
+    h3: "mt-3 mb-1.5 text-[13px] font-medium",
+    code: "text-[11px]",
+    table: "my-1.5 w-full border-collapse text-[12px]",
+  },
+};
+
+/**
  * Agent prose, rendered as Markdown.
  *
  * Pipeline and S2S models write emphasis, lists, `code`, and links; before
  * this they arrived as literal asterisks and backticks. Styling is
  * per-element (theme colors via inline styles, spacing via Tailwind) so it
  * stays on the default client's type scale and follows custom themes.
+ * The optional `variant` selects the type scale (see
+ * {@link MarkdownVariant}).
  * GFM is on for tables and strikethrough. react-markdown does not render
  * raw HTML unless rehype-raw is added — keep it that way, this text comes
  * from a model.
@@ -55,20 +89,27 @@ function escapeBareListMarkers(text: string): string {
  *
  * @public
  */
-export const Markdown = memo(function Markdown({ text }: { text: string }): ReactNode {
+export const Markdown = memo(function Markdown({
+  text,
+  variant = "default",
+}: {
+  text: string;
+  variant?: MarkdownVariant;
+}): ReactNode {
   const theme = useTheme();
-  // The renderer map is ~20 closures — rebuild it only when the theme
-  // changes (identity-stable via ThemeProvider), not on every streamed
-  // delta of the live assistant bubble.
+  const scale = SCALE_CLASSES[variant];
+  // The renderer map is ~20 closures — rebuild it only when the theme or
+  // variant changes (both identity-stable), not on every streamed delta of
+  // the live assistant bubble.
   const components = useMemo<Components>(
     () => ({
       p: (props) => <p className="my-1.5 first:mt-0 last:mb-0" {...props} />,
       ul: (props) => <ul className="my-1.5 list-disc pl-5" {...props} />,
       ol: (props) => <ol className="my-1.5 list-decimal pl-5" {...props} />,
       li: (props) => <li className="my-0.5" {...props} />,
-      h1: (props) => <h1 className="mt-3 mb-1.5 text-[17px] font-semibold" {...props} />,
-      h2: (props) => <h2 className="mt-3 mb-1.5 text-[16px] font-semibold" {...props} />,
-      h3: (props) => <h3 className="mt-3 mb-1.5 text-[15px] font-semibold" {...props} />,
+      h1: (props) => <h1 className={scale.h1} {...props} />,
+      h2: (props) => <h2 className={scale.h2} {...props} />,
+      h3: (props) => <h3 className={scale.h3} {...props} />,
       a: ({ style, ...props }) => (
         <a
           className="underline underline-offset-2"
@@ -83,12 +124,12 @@ export const Markdown = memo(function Markdown({ text }: { text: string }): Reac
         // wraps them in <pre>; anything else is an inline span.
         const fenced = /language-/.test(className ?? "");
         return fenced ? (
-          <code className="font-aai-mono text-[12.5px]" {...rest}>
+          <code className={clsx("font-aai-mono", scale.code)} {...rest}>
             {children}
           </code>
         ) : (
           <code
-            className="rounded-sm border px-1 py-0.5 font-aai-mono text-[12.5px]"
+            className={clsx("rounded-sm border px-1 py-0.5 font-aai-mono", scale.code)}
             style={{ borderColor: theme.border, background: SURFACE_TINT, ...style }}
             {...rest}
           >
@@ -110,7 +151,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }): Reac
           {...props}
         />
       ),
-      table: (props) => <table className="my-1.5 w-full border-collapse text-sm" {...props} />,
+      table: (props) => <table className={scale.table} {...props} />,
       th: ({ style, ...props }) => (
         <th
           className="border px-2 py-1 text-left font-medium"
@@ -133,7 +174,7 @@ export const Markdown = memo(function Markdown({ text }: { text: string }): Reac
         />
       ),
     }),
-    [theme],
+    [theme, scale],
   );
   return (
     <ReactMarkdown remarkPlugins={[remarkGfm]} components={components}>

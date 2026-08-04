@@ -6,6 +6,13 @@
 
 @import "tailwindcss";
 
+/* Shared aai-ui components (ToolCallRow, Markdown, Eyebrow) are rendered by
+   the studio, so their class candidates must be scanned too — the package
+   sits outside this package's root, where Tailwind's automatic source
+   detection never looks. Scanning the .tsx source is safe even though the
+   build bundles aai-ui's dist: compilation does not rewrite class strings. */
+@source "../../aai-ui/components";
+
 @font-face {
   font-family: "Monument Grotesk";
   src: url("./fonts/ABCMonumentGrotesk-Regular.woff2") format("woff2");
@@ -83,6 +90,13 @@
   --font-sans: "Monument Grotesk", "ABC Monument Grotesk", system-ui, sans-serif;
   --font-serif: "Source Serif 4", "Source Serif Pro", Charter, "Iowan Old Style", Georgia, serif;
   --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+
+  /* aai-ui's shared components use the package's own token names
+     (font-aai, font-aai-mono, rounded-aai — see aai-ui/styles.css); alias
+     them to the studio stacks so those utilities exist in this build. */
+  --font-aai: "Monument Grotesk", "ABC Monument Grotesk", system-ui, sans-serif;
+  --font-aai-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+  --radius-aai: 4px;
 
   --radius-sm: 4px;
   --radius-md: 6px;

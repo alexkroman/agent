@@ -5,13 +5,13 @@
 // (home.tsx), whose first prompt auto-creates a project.
 
 import { useChat } from "@ai-sdk/react";
+import { Markdown } from "@alexkroman1/aai-ui";
 import { DefaultChatTransport, type UIMessage } from "ai";
 import clsx from "clsx";
 import { memo, useEffect, useRef, useState } from "react";
 import { StickToBottom } from "use-stick-to-bottom";
 import type { ChatSession, StudioStatus } from "./api.ts";
 import { LlmStatusNote } from "./llm-status-note.tsx";
-import { Markdown } from "./markdown.tsx";
 import { createResilientFetch } from "./resilient-fetch.ts";
 import { isEnterSubmit, SEND_BUTTON_CLASS, SendIcon, StopIcon } from "./send-button.tsx";
 import { ToolRow, toBlocks } from "./tool-row.tsx";
@@ -113,7 +113,7 @@ const MessageView = memo(function MessageView({
     <div className="text-[13px] leading-[19px] break-words">
       {toBlocks(message).map((block) =>
         block.kind === "text" ? (
-          <Markdown key={block.key} text={block.text} />
+          <Markdown key={block.key} text={block.text} variant="compact" />
         ) : (
           <ToolRow key={block.key} part={block.part} active={busy} labels={labels} />
         ),

@@ -12,10 +12,18 @@ export {
 export { Button, type ButtonSize, type ButtonVariant } from "./components/button.tsx";
 export { ChatView } from "./components/chat-view.tsx";
 export { Controls } from "./components/controls.tsx";
-export { Markdown } from "./components/markdown.tsx";
+export { Markdown, type MarkdownVariant } from "./components/markdown.tsx";
 export { MessageList } from "./components/message-list.tsx";
 export { SidebarLayout } from "./components/sidebar-layout.tsx";
 export { StartScreen } from "./components/start-screen.tsx";
+// The design system's console row for one tool invocation — the shared
+// presentational shell behind both the deployed agent UI's tool blocks and
+// the studio transcript's tool rows.
+export {
+  ToolCallRow,
+  type ToolCallRowProps,
+  type ToolCallRowVariant,
+} from "./components/tool-call-row.tsx";
 export type { ToolDisplayConfig } from "./components/tool-config-context.ts";
 // Tool display config context — installed by `client()` from
 // `ClientConfig.tools`; not something component-tier users pass themselves.
