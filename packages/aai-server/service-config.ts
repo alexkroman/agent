@@ -175,7 +175,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const auth = createStudioAuthFromEnv(env, { localDev: isLocalDev(env) });
   if (!auth) {
     console.warn(
-      "[auth] SUPABASE_URL/SUPABASE_ANON_KEY not set — studio browser login is disabled",
+      "[auth] SUPABASE_URL/SUPABASE_PUBLISHABLE_KEY not set — studio browser login is disabled",
     );
   }
   return {

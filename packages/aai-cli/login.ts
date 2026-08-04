@@ -30,7 +30,7 @@ import { CliError, type CommandResult, ok } from "./_output.ts";
 import { log, unwrapCancel } from "./_ui.ts";
 
 type AuthMode =
-  | { mode: "supabase"; supabaseUrl: string; supabaseAnonKey: string }
+  | { mode: "supabase"; supabaseUrl: string; supabasePublishableKey: string }
   | { mode: "dev" }
   | { mode: "none" };
 
@@ -71,12 +71,12 @@ function mintDevToken(email: string): string {
 
 /** Supabase email OTP: send the code, prompt for it, verify to a session. */
 async function supabaseSession(
-  auth: { supabaseUrl: string; supabaseAnonKey: string },
+  auth: { supabaseUrl: string; supabasePublishableKey: string },
   email: string,
   fetchFn: typeof globalThis.fetch,
 ): Promise<string> {
   const base = auth.supabaseUrl.replace(/\/+$/, "");
-  const headers = { apikey: auth.supabaseAnonKey, "Content-Type": "application/json" };
+  const headers = { apikey: auth.supabasePublishableKey, "Content-Type": "application/json" };
   await jsonBody(
     await fetchFn(`${base}/auth/v1/otp`, {
       method: "POST",

@@ -93,7 +93,7 @@ export function useStudioAuth(): StudioAuthState {
   // refresh, sign-out — so the app always holds a live access token.
   useEffect(() => {
     if (config?.mode !== "supabase") return;
-    const client = createClient(config.supabaseUrl, config.supabaseAnonKey, {
+    const client = createClient(config.supabaseUrl, config.supabasePublishableKey, {
       auth: { storage: window.sessionStorage },
     });
     supabaseRef.current = client;
@@ -148,7 +148,7 @@ export function useStudioAuth(): StudioAuthState {
     return {
       phase: "unavailable",
       message:
-        "Sign-in is not configured on this server (SUPABASE_URL / SUPABASE_ANON_KEY are unset).",
+        "Sign-in is not configured on this server (SUPABASE_URL / SUPABASE_PUBLISHABLE_KEY are unset).",
     };
   }
   if (token) return { phase: "signedIn", token, signOut };

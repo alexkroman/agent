@@ -29,7 +29,7 @@ export type ChatSession = { url: string; token: string };
 
 /** How the login screen should sign the user in (see GET /studio/auth). */
 export type AuthConfig =
-  | { mode: "supabase"; supabaseUrl: string; supabaseAnonKey: string }
+  | { mode: "supabase"; supabaseUrl: string; supabasePublishableKey: string }
   | { mode: "dev" }
   | { mode: "none" };
 

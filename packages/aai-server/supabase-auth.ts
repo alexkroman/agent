@@ -38,7 +38,7 @@ export type StudioAuthUser = { id: string; email?: string };
  * magic-link flow, or the local-dev email box that mints its own token.
  */
 export type StudioAuthClientConfig =
-  | { mode: "supabase"; supabaseUrl: string; supabaseAnonKey: string }
+  | { mode: "supabase"; supabaseUrl: string; supabasePublishableKey: string }
   | { mode: "dev" };
 
 export type StudioAuth = {
@@ -63,7 +63,7 @@ const VERIFY_MAX = 10_000;
 
 export function createSupabaseAuth(opts: {
   supabaseUrl: string;
-  supabaseAnonKey: string;
+  supabasePublishableKey: string;
   /** Test seam — never set outside tests. */
   fetchFn?: typeof globalThis.fetch;
 }): StudioAuth {
@@ -75,8 +75,12 @@ export function createSupabaseAuth(opts: {
   const cache = new TtlCache<StudioAuthUser | null>(VERIFY_TTL_MS, VERIFY_MAX);
 
   return {
-    // The anon key is public by design (it ships in every Supabase browser app).
-    clientConfig: { mode: "supabase", supabaseUrl: base, supabaseAnonKey: opts.supabaseAnonKey },
+    // The publishable key is public by design (it ships in every Supabase browser app).
+    clientConfig: {
+      mode: "supabase",
+      supabaseUrl: base,
+      supabasePublishableKey: opts.supabasePublishableKey,
+    },
 
     async verifyAccessToken(token) {
       const cacheKey = hash("sha256", token);
@@ -84,7 +88,7 @@ export function createSupabaseAuth(opts: {
       if (cached !== undefined) return cached;
 
       const res = await doFetch(`${base}/auth/v1/user`, {
-        headers: { apikey: opts.supabaseAnonKey, Authorization: `Bearer ${token}` },
+        headers: { apikey: opts.supabasePublishableKey, Authorization: `Bearer ${token}` },
       });
       if (res.status === 401 || res.status === 403) {
         cache.set(cacheKey, null);
@@ -152,7 +156,7 @@ export function createDevAuth(): StudioAuth {
 }
 
 /**
- * Build the auth binding from `SUPABASE_URL` + `SUPABASE_ANON_KEY`, falling
+ * Build the auth binding from `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`, falling
  * back to dev auth in local dev. Undefined (no auth configured outside local
  * dev) leaves raw-key bearers working and the studio login unconfigured.
  */
@@ -160,7 +164,8 @@ export function createStudioAuthFromEnv(
   env: NodeJS.ProcessEnv,
   opts: { localDev: boolean },
 ): StudioAuth | undefined {
-  const { SUPABASE_URL: supabaseUrl, SUPABASE_ANON_KEY: supabaseAnonKey } = env;
-  if (supabaseUrl && supabaseAnonKey) return createSupabaseAuth({ supabaseUrl, supabaseAnonKey });
+  const { SUPABASE_URL: supabaseUrl, SUPABASE_PUBLISHABLE_KEY: supabasePublishableKey } = env;
+  if (supabaseUrl && supabasePublishableKey)
+    return createSupabaseAuth({ supabaseUrl, supabasePublishableKey });
   if (opts.localDev) return createDevAuth();
 }

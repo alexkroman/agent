@@ -44,7 +44,7 @@ describe("createSupabaseAuth", () => {
     );
     const auth = createSupabaseAuth({
       supabaseUrl: "https://proj.supabase.co/",
-      supabaseAnonKey: "anon",
+      supabasePublishableKey: "sb_publishable_test",
       fetchFn: fetchFn as unknown as typeof fetch,
     });
     return { auth, fetchFn };
@@ -55,11 +55,11 @@ describe("createSupabaseAuth", () => {
     expect(await auth.verifyAccessToken("tok")).toEqual(user);
     expect(await auth.verifyAccessToken("tok")).toEqual(user);
     expect(fetchFn).toHaveBeenCalledTimes(1);
-    // Trailing slash is stripped; the anon key and bearer both ride along.
+    // Trailing slash is stripped; the publishable key and bearer both ride along.
     const [url, init] = fetchFn.mock.calls[0] as unknown as [string, RequestInit];
     expect(url).toBe("https://proj.supabase.co/auth/v1/user");
     expect(new Headers(init.headers).get("Authorization")).toBe("Bearer tok");
-    expect(new Headers(init.headers).get("apikey")).toBe("anon");
+    expect(new Headers(init.headers).get("apikey")).toBe("sb_publishable_test");
   });
 
   test("401 resolves null (expired session), and negative answers cache too", async () => {
@@ -101,7 +101,10 @@ describe("dev auth", () => {
 describe("createStudioAuthFromEnv", () => {
   test("Supabase env wins; local dev falls back to dev auth; else undefined", () => {
     const supa = createStudioAuthFromEnv(
-      { SUPABASE_URL: "https://p.supabase.co", SUPABASE_ANON_KEY: "anon" } as NodeJS.ProcessEnv,
+      {
+        SUPABASE_URL: "https://p.supabase.co",
+        SUPABASE_PUBLISHABLE_KEY: "sb_publishable_test",
+      } as NodeJS.ProcessEnv,
       { localDev: true },
     );
     expect(supa?.clientConfig.mode).toBe("supabase");

@@ -2389,7 +2389,7 @@ stored env at sandbox creation time and kept host-side only.
   email sign-in via supabase-js in the studio client; the server verifies
   access tokens by asking Supabase (`GET /auth/v1/user` — no JWT
   secret/JWKS handling), TTL-cached by SHA-256(token). Configured by
-  `SUPABASE_URL` + `SUPABASE_ANON_KEY`. Local dev (same `isLocalDev`
+  `SUPABASE_URL` + `SUPABASE_PUBLISHABLE_KEY`. Local dev (same `isLocalDev`
   policy as the in-memory stores — production can never resolve it) falls
   back to `createDevAuth`: the login screen mints self-describing
   `dev.<base64url({id,email})>.dev` tokens, so `pnpm dev:aai-server`

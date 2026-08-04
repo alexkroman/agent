@@ -72,7 +72,11 @@ describe("aai login", () => {
   test("supabase mode: email OTP send + verify, existing key fetched", async () => {
     const { fetchFn, calls } = fakeFetch({
       "/studio/auth": () => ({
-        body: { mode: "supabase", supabaseUrl: "https://p.supabase.co", supabaseAnonKey: "anon" },
+        body: {
+          mode: "supabase",
+          supabaseUrl: "https://p.supabase.co",
+          supabasePublishableKey: "sb_publishable_test",
+        },
       }),
       "/auth/v1/otp": () => ({ body: {} }),
       "/auth/v1/verify": () => ({ body: { access_token: "jwt.access.token" } }),
@@ -85,7 +89,7 @@ describe("aai login", () => {
     expect((await readGlobalConfig()).apiKey).toBe("stored-key");
 
     const otp = calls.find((c) => c.url.endsWith("/auth/v1/otp"));
-    expect(new Headers(otp?.init?.headers).get("apikey")).toBe("anon");
+    expect(new Headers(otp?.init?.headers).get("apikey")).toBe("sb_publishable_test");
     expect(JSON.parse(String(otp?.init?.body))).toEqual({
       email: "dev@example.com",
       create_user: true,
