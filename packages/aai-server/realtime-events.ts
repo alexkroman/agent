@@ -35,6 +35,15 @@
  * in the `supabase_realtime` publication before the Realtime service will
  * stream their changes, and the tables themselves must exist first (their
  * stores create them lazily, which is too late for a fresh project's boot).
+ * It also GRANTs `service_role` SELECT on the watched tables (plus schema
+ * usage): Realtime validates a channel's `filter` column — and walrus gates
+ * row visibility — against the columns the subscriber's claimed role can
+ * SELECT, and our client authenticates with the service-role key. The
+ * `aai_platform` schema is app-created, so Supabase's default `public`
+ * grants never cover it; without the explicit grant every filtered
+ * subscribe fails server-side with `invalid column for filter <col>`
+ * (P0001) on the `realtime.subscription` insert, and realtime-js retries
+ * the join forever.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
@@ -268,6 +277,22 @@ ${PUBLISHED_TABLES.map(
 ).join("\n")}
 end $$`;
 
+/**
+ * Realtime authorizes subscriptions as the JWT's claimed role — the
+ * service-role key our client connects with — so that role needs SELECT on
+ * the watched tables (see the module doc). Role-existence-guarded so a bare
+ * Postgres without Supabase's roles (local dev, integration tests) boots
+ * cleanly; grants are idempotent so re-boots are no-ops.
+ */
+const ENSURE_REALTIME_GRANTS_SQL = `do $$
+begin
+  if exists (select 1 from pg_roles where rolname = 'service_role') then
+    grant usage on schema aai_platform to service_role;
+    grant select on ${PUBLISHED_TABLES.map((table) => `aai_platform.${table}`).join(", ")}
+      to service_role;
+  end if;
+end $$`;
+
 export function ensureRealtimeSetup(sql: SqlExec): Promise<void> {
   return ensureTableOnce(
     sql,
@@ -275,5 +300,6 @@ export function ensureRealtimeSetup(sql: SqlExec): Promise<void> {
     ENSURE_WORKSPACES_TABLE_SQL,
     ENSURE_CHATS_TABLE_SQL,
     ENSURE_PUBLICATION_SQL,
+    ENSURE_REALTIME_GRANTS_SQL,
   )();
 }
