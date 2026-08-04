@@ -7,7 +7,7 @@
  * pulling in storage imports.
  */
 
-import type { AgentRecord } from "./agent-store.ts";
+import type { AgentRecord, StoredAgentConfig } from "./agent-store.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 
 export type BundleStore = {
@@ -38,8 +38,13 @@ export type BundleStore = {
   deleteAgent(slug: string): Promise<void>;
   getEnv(slug: string): Promise<Record<string, string> | null>;
   putEnv(slug: string, env: Record<string, string>): Promise<void>;
-  /** Convenience over `getAgent`: the stored config alone. */
-  getAgentConfig(slug: string): Promise<IsolateConfig | null>;
+  /**
+   * Convenience over `getAgent`: the stored config alone. Opaque beyond
+   * `name`/`greeting` (see StoredAgentConfigSchema) — the server validates a
+   * config strictly ONCE, at deploy time; stored configs are never
+   * re-validated against a newer schema.
+   */
+  getAgentConfig(slug: string): Promise<StoredAgentConfig | null>;
   /**
    * Drop this replica's read-through row caches for `slug`, so the next
    * read sees another replica's mutation. Blob caches are content-addressed

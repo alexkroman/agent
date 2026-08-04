@@ -1175,8 +1175,18 @@ copying fields:
   (neither bundler typechecks user code). `define.test-d.ts` locks this.
 - **`IsolateConfigSchema`** (`aai-server/rpc-schemas.ts`) is
   `AgentConfigSchema.extend({...})` — the extensions are wire-tolerance
-  loosenings (a stored bundle from an older CLI must keep loading), wire
-  defaults, and the wire-only `toolSchemas`; none may drop a field.
+  loosenings, wire defaults, and the wire-only `toolSchemas`; none may drop
+  a field. It runs at **deploy time only** (`validateAgentConfig`), on the
+  current CLI's freshly extracted config.
+- **Stored configs are OPAQUE on reads** (`StoredAgentConfigSchema` in
+  `aai-server/agent-store.ts`): row reads assert only the fields the host
+  actually consumes — `name` and `greeting` for the client-config broker —
+  and pass everything else through untouched. A stored config is never
+  re-validated against a newer schema, so tightening `IsolateConfigSchema`
+  cannot 404 previously-valid deployed agents; the bundle interprets its own
+  config with the SDK it shipped with, and the server has no other reader.
+  Never add refinements to the stored schema — strictness belongs at the
+  deploy boundary.
 - **The server never maps a stored config onto a runtime agent.** The old
   `toRuntimeAgent` boundary (`sandbox-agent-config.ts`) is gone with platform
   host mode — sessions run the bundle's own SDK on the bundle's own agent

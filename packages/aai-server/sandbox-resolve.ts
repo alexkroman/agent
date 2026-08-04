@@ -11,9 +11,9 @@
 import { errorMessage } from "@alexkroman1/aai";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
+import type { StoredAgentConfig } from "./agent-store.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
-import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { REGISTRY_HEARTBEAT_MS, type SandboxRegistry } from "./sandbox-registry.ts";
@@ -71,7 +71,7 @@ export type ResolveSandboxOpts = {
 type BundleParts = {
   workerCode: string;
   env: Record<string, string>;
-  agentConfig: IsolateConfig;
+  agentConfig: StoredAgentConfig;
   appDbMeta: AppDbMeta | null;
 };
 

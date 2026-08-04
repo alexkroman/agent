@@ -137,4 +137,33 @@ describe("createPgAgentRows", () => {
     if (row) row.config = JSON.stringify({ not: "a config" });
     await expect(store.get("my-agent")).rejects.toThrow("Corrupt agent record");
   });
+
+  // Stored configs are validated strictly ONCE, at deploy time. Reads must
+  // never re-run the current IsolateConfigSchema: a schema tightening would
+  // silently turn every previously-valid deployed agent into a 404. Only
+  // what the host actually consumes (name, greeting) is asserted; the rest —
+  // including shapes today's rules would reject — passes through untouched.
+  test("a stored config the CURRENT strict schema would reject still loads", async () => {
+    const { sql } = fakeSql();
+    const store = createPgAgentRows(sql);
+    await store.put({
+      ...RECORD,
+      config: {
+        name: "old-agent",
+        greeting: "hi",
+        // An incomplete provider triple — IsolateConfigSchema rejects this
+        // ("stt, llm, and tts must be set together"), but a pre-tightening
+        // deploy could legitimately have stored it.
+        stt: { kind: "assemblyai", options: {} },
+        // A field no current schema knows.
+        someFutureOrRemovedField: { nested: true },
+      },
+    });
+    const record = await store.get("my-agent");
+    expect(record).not.toBeNull();
+    expect(record?.config.name).toBe("old-agent");
+    expect(record?.config.greeting).toBe("hi");
+    // Opaque passthrough: unknown/legacy fields survive the round trip.
+    expect(record?.config.someFutureOrRemovedField).toEqual({ nested: true });
+  });
 });

@@ -13,8 +13,9 @@
 import { errorMessage } from "@alexkroman1/aai";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
+import type { StoredAgentConfig } from "./agent-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
-import { type IsolateConfig, StatusResponseSchema } from "./rpc-schemas.ts";
+import { StatusResponseSchema } from "./rpc-schemas.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import { createSandboxVm } from "./sandbox-vm.ts";
 
@@ -24,8 +25,11 @@ export type SandboxOptions = {
   workerCode: string;
   env: Record<string, string>;
   slug: string;
-  /** Pre-extracted agent config from CLI build. */
-  agentConfig: IsolateConfig;
+  /**
+   * The stored agent config — opaque to the host beyond `name` (used only
+   * for logs here); the bundle interprets its own config in the guest.
+   */
+  agentConfig: StoredAgentConfig;
   /**
    * App database handle when storage is enabled for this app (see
    * app-database.ts). The sandbox takes ownership and closes it on shutdown.

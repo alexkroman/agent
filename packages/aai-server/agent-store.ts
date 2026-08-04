@@ -25,14 +25,43 @@
 
 import { z } from "zod";
 import { ensureTableOnce } from "./pg-ensure.ts";
-import { IsolateConfigSchema } from "./rpc-schemas.ts";
 import type { SqlExec } from "./secret-store.ts";
+
+/**
+ * The host's read-side view of a STORED agent config — deliberately opaque.
+ *
+ * A stored config was validated by the FULL `IsolateConfigSchema` once, at
+ * deploy time, against the rules current then. Re-validating it against
+ * TODAY'S rules on every row read is a cross-version seam: any tightening of
+ * the config schema would make previously-valid deployed agents read as
+ * "corrupt … missing" (a 404) without anyone touching them. So reads assert
+ * only what the host actually consumes — `name` and `greeting` for the
+ * client-config broker (and logs/slug seeds) — and pass everything else
+ * through untouched for storage round-trips. The bundle interprets its own
+ * config with the SDK it shipped with; the server has no other reader.
+ *
+ * Do not add fields here without a host-side consumer, and never add a
+ * refinement: strictness belongs at the deploy boundary
+ * (`validateAgentConfig` in deploy.ts), which always runs on the current
+ * CLI's freshly extracted config.
+ */
+export const StoredAgentConfigSchema = z
+  .object({
+    name: z.string(),
+    greeting: z.string().optional(),
+  })
+  .passthrough();
+
+export type StoredAgentConfig = z.infer<typeof StoredAgentConfigSchema>;
 
 const AgentRecordSchema = z.object({
   slug: z.string(),
   credential_hashes: z.array(z.string()),
-  /** The bundle's self-described config, extracted guest-side at deploy. */
-  config: IsolateConfigSchema,
+  /**
+   * The bundle's self-described config, extracted guest-side at deploy —
+   * opaque on reads (see StoredAgentConfigSchema).
+   */
+  config: StoredAgentConfigSchema,
   /** Content hash (sha-256 hex) of the worker bundle blob. */
   worker_hash: z.string(),
   /** Client file path → content hash of its blob. */
