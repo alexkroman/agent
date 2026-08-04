@@ -115,6 +115,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
 
   const conn: ConnState = {
     ws: null,
+    retiredByServer: false,
     voiceIO: null,
     audioSetupInFlight: false,
     generation: createEpoch(),
@@ -286,6 +287,10 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
     });
     teardownConnection();
     conn.generation.bump();
+    // A fresh connect is the user asking for a session again — clear the
+    // previous one's idle retirement so THIS socket can auto-reconnect
+    // normally.
+    conn.retiredByServer = false;
     const controller = new AbortController();
     connectionController = controller;
     const { signal: sig } = controller;
@@ -337,7 +342,7 @@ export function createSessionCore(options: SessionCoreOptions): SessionCore {
           return;
         }
         cleanupAudio();
-        if (reconnectPending(socket)) {
+        if (!conn.retiredByServer && reconnectPending(socket)) {
           // partysocket retries with backoff. Keep the listeners attached
           // and the session logically alive: the URL provider re-derives the
           // resume URL and `onServerConfig` replays history on the next open.

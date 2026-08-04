@@ -141,6 +141,24 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     opts.client.close?.("idle timeout");
   });
 
+  /**
+   * Re-arm the idle timer. Call ONLY for conversation the TRANSPORT observed
+   * — speech the STT/S2S service detected, or the agent replying.
+   *
+   * Never for inbound client frames or client-sent events. This used to
+   * re-arm on every audio frame, which measured "the client is still
+   * sending bytes" and not "someone is still talking" — and the browser mic
+   * streams continuously by design, because barge-in needs it open. So a tab
+   * left open on a silent room re-armed the timer ~50x a second forever: the
+   * session never idled out, and on the platform its guest never reached
+   * zero sessions, so the sandbox's own idle self-exit never fired either.
+   * Measured with `idleTimeoutMs: 15000`, a stream of silent PCM held a
+   * session past 45s.
+   *
+   * Keeping the signal transport-side is also what makes it unfakeable: a
+   * client cannot assert activity, it can only send audio that really
+   * contains speech, which IS activity.
+   */
   function resetIdle(): void {
     if (stopped || idleMs <= 0) return;
     idleTimer.arm(idleMs);
@@ -205,7 +223,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
 
     // ─── Inbound from client ──────────────────────────────────────────────
     onAudio(bytes) {
-      resetIdle();
+      // Deliberately does NOT re-arm the idle timer — see `resetIdle`.
       opts.transport.sendUserAudio(bytes);
     },
     onAudioReady() {
@@ -250,6 +268,10 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
 
     // ─── Inbound from transport ───────────────────────────────────────────
     onReplyStarted(replyId) {
+      // A turn beginning is progress, and a tool-chaining turn can run for a
+      // while before any audio: without this the agent could be reaped
+      // mid-work when `holdPhrase`/dead-air cover are disabled.
+      resetIdle();
       // stop() aborts the current reply and then awaits transport.stop() — an
       // async drain during which the transport can still dispatch a trailing
       // reply.started. Unguarded, beginReply would mint a fresh, un-aborted
@@ -320,6 +342,8 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
 
     onAudioChunk(bytes) {
       if (stopped) return;
+      // The agent is speaking — a long reply must not be reaped mid-sentence.
+      resetIdle();
       reply.flushedAwaitingContinuation = false;
       opts.client.playAudioChunk(bytes);
     },
@@ -328,18 +352,25 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
 
     onUserTranscript(text) {
+      resetIdle();
       emit({ type: "user_transcript", text });
       pushMessages({ role: "user", content: text });
     },
     onUserTranscriptPartial(text) {
+      // Partials too, not just the committed turn: one long utterance would
+      // otherwise only count at its `speech_started`, and could be reaped
+      // mid-sentence.
+      resetIdle();
       emit({ type: "user_transcript_partial", text });
     },
     onAgentTranscript(text, interrupted) {
+      resetIdle();
       reply.flushedAwaitingContinuation = false;
       emit({ type: "agent_transcript", text });
       if (!interrupted) pushMessages({ role: "assistant", content: text });
     },
     onAgentTranscriptPartial(text) {
+      resetIdle();
       // Same event type as the final transcript: `agent_transcript` carries the
       // reply's text so far and the last one within a reply wins, so a client
       // needs no new case to render it. History is untouched — the final call
@@ -349,6 +380,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
     },
 
     onToolCall(callId, name, args) {
+      resetIdle();
       // See onReplyStarted: a trailing tool.call during stop()'s transport
       // drain must not start tool work (guest RPC, ctx.db, ctx.generate)
       // against a session already torn down.
@@ -418,6 +450,7 @@ export function createSessionCore(opts: SessionCoreOptions): SessionCore {
       emit({ type: "error", code, message, ...(errOpts?.fatal === false && { fatal: false }) });
     },
     onSpeechStarted() {
+      resetIdle();
       emit({ type: "speech_started" });
     },
     onSpeechStopped() {
