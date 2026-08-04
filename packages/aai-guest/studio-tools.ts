@@ -74,6 +74,8 @@ export const STUDIO_TOOL_LABELS: Readonly<Record<string, string>> = {
   add_dependency: "Add dependency",
   remove_dependency: "Remove dependency",
   download_to_workspace: "Download file",
+  list_templates: "List templates",
+  use_template: "Use template",
   generate_design_inspiration: "Design inspiration",
   todo_write: "Update plan",
   test_agent: "Test agent",

@@ -47,6 +47,7 @@ import {
 import { compactMessages, needsCompaction } from "./studio-compaction.ts";
 import { ensureProjectShape } from "./studio-project-shape.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
+import { createTemplateTools } from "./studio-template-tools.ts";
 import { createToolCallRepair } from "./studio-tool-repair.ts";
 import { createStudioTools, STUDIO_TOOL_LABELS, withToolDeadlines } from "./studio-tools.ts";
 import { createTurnBudget } from "./studio-turn-budget.ts";
@@ -112,10 +113,13 @@ export function toolchainPromptSection(modulesDir: string | null = toolchainModu
 Read these with \`bash\` — they live outside your workspace, so read_file,
 glob, and grep cannot see them. They are ground truth, ahead of memory:
 
-- Worked example agents: \`${at("@alexkroman1/aai-cli/dist/templates")}\`
-  (\`ls\` it; five have a real client.tsx — dispatch-center,
-  infocom-adventure, night-owl, pizza-ordering, solo-rpg). Read the closest
-  match before writing a pattern from scratch.
+- Worked example agents: enumerate them with list_templates and copy the
+  closest match into the workspace with use_template — the files arrive
+  verbatim, so never retype template code by hand. Five have a real
+  client.tsx — dispatch-center, infocom-adventure, night-owl,
+  pizza-ordering, solo-rpg. The sources sit at
+  \`${at("@alexkroman1/aai-cli/dist/templates")}\` if you only want to
+  read one in place with \`bash\`.
 - SDK types (agent(), tool(), ctx): \`${at("@alexkroman1/aai/dist")}\`
 - client.tsx imports: \`${at("@alexkroman1/aai-ui/dist/index.d.ts")}\`, and
   per-component props in \`${at("@alexkroman1/aai-ui/dist/components")}\``;
@@ -234,6 +238,7 @@ export const MUTATING_TOOLS: ReadonlySet<string> = new Set([
   "add_dependency",
   "remove_dependency",
   "download_to_workspace",
+  "use_template",
 ]);
 
 /**
@@ -349,6 +354,11 @@ async function runTurn(
       ...createGuestWebTools(),
       ...createDesignInspirationTool(model),
       ...createProjectTools({ dir: session.dir }),
+      ...createTemplateTools({
+        dir: session.dir,
+        // Same post-copy diagnostics backend the write tools use.
+        typecheck: () => typecheckWorkspaceDir(session.dir),
+      }),
       ...createStudioTools({
         dir: session.dir,
         // Post-write diagnostics: the same tsc pass builds run, so a type
