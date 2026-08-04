@@ -50,10 +50,11 @@ export function contentHash(content: string): string {
 // immutable), never a torn mix.
 const ROW_CACHE_TTL_MS = 15_000;
 
-// The version read is the invalidation signal (superseded checks on every
-// broker call and idle sweep), so it tolerates far less staleness than the
-// row — 1s only keeps a burst of brokers for one slug from stampeding the
-// shared admin pool.
+// The version read backs the change-event handler's superseded comparison
+// (watchAgentInvalidation, which invalidates before reading) and the peer
+// route's existence gate, so it tolerates far less staleness than the row —
+// 1s only keeps a burst of reads for one slug from stampeding the shared
+// admin pool.
 const VERSION_CACHE_TTL_MS = 1000;
 
 // Blob content is immutable per key, so the TTL exists only to let unused

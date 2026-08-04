@@ -46,8 +46,22 @@ test("the orphan-preview sweep only reaps unreferenced, aged preview slugs", () 
   // orphan.
   expect(command).toContain("interval '1 hour'");
   // The slug's Vault secrets go with the row.
-  expect(command).toContain("'agent-env:' || slug");
-  expect(command).toContain("'app-db:' || slug");
+  expect(command).toContain("'agent-env:' || target.slug");
+  expect(command).toContain("'app-db:' || target.slug");
+});
+
+test("the orphan-preview sweep deprovisions the app database like the delete route", () => {
+  const orphans = PLATFORM_CRON_JOBS.find((j) => j.name === "aai-sweep-orphan-previews");
+  const command = orphans?.command ?? "";
+  // Schema + role go the way deprovisionAppDatabase drops them…
+  expect(command).toContain("drop schema if exists %I cascade");
+  expect(command).toContain("drop role if exists %I");
+  // …named by the stored app-db meta, shape-asserted like app-database.ts
+  // so a corrupt meta can never steer the drops at an arbitrary identifier.
+  expect(command).toContain("->>'role'");
+  expect(command).toContain("'^app_[a-f0-9]{16}$'");
+  // Best-effort: a failed drop must not abort the sweep (or the row delete).
+  expect(command).toContain("exception when others");
 });
 
 test("lock and rate-limit sweeps delete only expired rows", () => {

@@ -111,6 +111,9 @@ describe("agents-row change stream drives sandbox invalidation", () => {
   it("reuses the resident sandbox while nothing changed", async () => {
     const deps = await seedAgent("stable");
     const first = await resolveSandbox("stable", deps);
+    // The cold rebuild itself reads fresh (one invalidate); a warm resident
+    // costs nothing more.
+    deps.invalidate.mockClear();
     const second = await resolveSandbox("stable", deps);
     expect(second).toBe(first);
     expect(deps.invalidate).not.toHaveBeenCalled();
@@ -166,6 +169,53 @@ describe("agents-row change stream drives sandbox invalidation", () => {
     expect(shutdown).toHaveBeenCalled();
     expect(deps.slots.get("gone")).toBeUndefined();
     await expect(resolveSandbox("gone", deps)).resolves.toBeNull();
+    deps.unwatch();
+  });
+
+  it("a deploy landing mid-rebuild is not dropped: the event queues on the slug lock and retires the stale build", async () => {
+    const deps = await seedAgent("mid-rebuild");
+    // Park the rebuild between its record read and the sandbox attach.
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const realGetWorkerCode = deps.store.getWorkerCode.bind(deps.store);
+    deps.store.getWorkerCode = async (slug) => {
+      await gate;
+      return realGetWorkerCode(slug);
+    };
+
+    const resolving = resolveSandbox("mid-rebuild", deps);
+    await settleEvents();
+    // The slot is claimed before any read, so the event pre-filter sees it
+    // even though no sandbox is attached yet.
+    expect(deps.slots.get("mid-rebuild")).toBeDefined();
+    expect(deps.slots.get("mid-rebuild")?.sandbox).toBeUndefined();
+
+    // A deploy elsewhere commits while the rebuild is in flight. Its change
+    // event queues behind the rebuild's slug lock instead of being skipped.
+    await deps.redeploy();
+    release();
+    const stale = await resolving;
+    expect(stale).not.toBeNull();
+
+    // The queued handler ran after the attach: version mismatch → retired.
+    await vi.waitFor(() => {
+      expect(deps.slots.get("mid-rebuild")?.sandbox).toBeUndefined();
+    });
+    // The next broker rebuilds at the row's current version and stays put.
+    const fresh = await resolveSandbox("mid-rebuild", deps);
+    expect(fresh).not.toBeNull();
+    expect(fresh).not.toBe(stale);
+    await expect(resolveSandbox("mid-rebuild", deps)).resolves.toBe(fresh);
+    await fresh?.shutdown();
+    deps.unwatch();
+  });
+
+  it("a failed rebuild of an unknown slug leaves no empty slot behind", async () => {
+    const deps = await seedAgent("known");
+    await expect(resolveSandbox("never-deployed", deps)).resolves.toBeNull();
+    expect(deps.slots.get("never-deployed")).toBeUndefined();
     deps.unwatch();
   });
 

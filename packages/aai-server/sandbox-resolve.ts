@@ -199,8 +199,13 @@ function isLive(sandbox: NonNullable<AgentSlot["sandbox"]>): boolean {
 export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSandboxOpts): Unwatch {
   return events.watchAgents((slug) => {
     // Cheap pre-filter outside the lock: most events are for slugs this
-    // replica has never brokered.
-    if (!opts.slots.get(slug)?.sandbox) return;
+    // replica has never brokered. Existence, NOT liveness — a slot
+    // mid-rebuild has no sandbox attached yet, and skipping its event
+    // would drop the only invalidation a concurrent remote deploy gets
+    // (there is no per-broker version check to catch it later). Queued on
+    // the slug lock below, the handler runs after the rebuild attaches
+    // and the version comparison reconciles.
+    if (!opts.slots.get(slug)) return;
     void withSlugLock(slug, async () => {
       const slot = opts.slots.get(slug);
       if (!slot?.sandbox) return;
@@ -235,34 +240,43 @@ async function rebuildSlot(
 ): Promise<Sandbox | null> {
   const { slots, store } = opts;
 
-  // Read the deploy record FIRST and stamp its version on the slot: a deploy
-  // landing between this read and the artifact reads bumps the row version
-  // past what we store, so its change event sees the mismatch and retires —
-  // the race can only cause one extra rebuild, never a stale sandbox that
-  // reads as current. (The artifact reads below resolve through the same
-  // cached row, and blobs are content-addressed, so a torn mix of two
-  // deploys is impossible.)
-  const record = await store.getAgent(slug);
-  if (!record) return null;
-
-  const parts = await loadBundleParts(slug, opts);
-  if (!parts) {
-    return null;
-  }
-
+  // Claim the slot BEFORE any read, and read the record FRESH (row caches
+  // dropped): the change-event handler pre-filters on slot EXISTENCE, so
+  // from this point a deploy/delete event anywhere queues behind this
+  // rebuild's slug lock and reconciles versions after the sandbox attaches
+  // — the race can only cause one extra rebuild, never a stale sandbox
+  // that reads as current. An event that fired before the slot existed can
+  // only be for a write the fresh read below already observes. (The
+  // artifact reads resolve through the same freshly cached row, and blobs
+  // are content-addressed, so a torn mix of two deploys is impossible.)
   let slot = existingSlot;
+  const created = !slot;
   if (!slot) {
-    slot = { slug: record.slug };
+    slot = { slug };
     setSlot(slots, slot);
-    debug("Lazy-discovered agent from store", { slug });
   }
+  try {
+    store.invalidate?.(slug);
+    const record = await store.getAgent(slug);
+    const parts = record ? await loadBundleParts(slug, opts) : null;
+    if (!(record && parts)) {
+      // A slug with no bundle must not leave an empty slot behind — the
+      // pre-auth upgrade path can't be allowed to grow the map per 404.
+      if (created) deleteSlot(slots, slug);
+      return null;
+    }
+    if (created) debug("Lazy-discovered agent from store", { slug });
 
-  const sandbox = buildSlotSandbox(slug, parts, opts);
+    const sandbox = buildSlotSandbox(slug, parts, opts);
 
-  slot.version = record.version;
-  attachSandbox(slots, slot, sandbox);
-  startRegistryHeartbeat(slug, sandbox, opts);
-  return sandbox;
+    slot.version = record.version;
+    attachSandbox(slots, slot, sandbox);
+    startRegistryHeartbeat(slug, sandbox, opts);
+    return sandbox;
+  } catch (err) {
+    if (created) deleteSlot(slots, slug);
+    throw err;
+  }
 }
 
 /**

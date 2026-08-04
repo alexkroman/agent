@@ -333,8 +333,9 @@ model) is the security boundary.
   Deliberately a read at the broker, not a Realtime stream — the registry
   only matters at the moment a cold broker already reads the database
 - `pg-cron.ts` — janitorial sweeps as pg_cron jobs (expired slug-lock
-  leases, dead rate-limit windows, orphaned `-preview` agents + their Vault
-  secrets, expired sandbox-registry leases), installed idempotently at boot
+  leases, dead rate-limit windows, orphaned `-preview` agents + their app
+  database schema/role and Vault secrets, expired sandbox-registry leases),
+  installed idempotently at boot
 - `studio-proxy.ts` / `app-middleware.ts` — the split deployment (see
   "Split services" below): the agent service's reverse proxy to the studio
   service, and the apps' shared base middleware
