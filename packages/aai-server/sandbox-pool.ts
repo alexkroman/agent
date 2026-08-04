@@ -9,7 +9,6 @@
  *
  * A warm harness is a spawned guest sandbox whose control-channel WebSocket
  * is dialed but which has not yet:
- * - had request handlers registered (db/query)
  * - had `listen()` called
  * - received the agent's bundle
  *

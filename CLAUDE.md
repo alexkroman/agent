@@ -268,7 +268,6 @@ model) is the security boundary.
 - `warm-harness.ts` — backend-independent guest wiring shared by both backends:
   dial-with-retry, stdio draining, free-port allocation, `WarmHarness` exit and
   cleanup semantics
-- `sandbox-guest-rpc.ts` — guest→host `db/query` RPC schema + handler registration
 - `sandbox-pool.ts` — pool of pre-warmed Node harnesses for fast cold starts
 - `sandbox-slots.ts` — per-slug sandbox slots + session-aware idle eviction
   (probes the guest's `status` RPC before killing)
@@ -281,7 +280,7 @@ model) is the security boundary.
   Serves three surfaces on the tunneled port: `/ws` (bearer-token host
   control channel — JSON-RPC `bundle/load`, one-shot `tool/execute`
   trials, `workspace/deploy` (Publish's in-guest `aai deploy`), `status`,
-  `studio/session-init`; guest→host `db/query`,
+  `studio/session-init`; guest→host
   `studio/sync-workspace`, `studio/persist-chat`),
   `/session` (PUBLIC client voice sessions, connected directly by
   browsers — the embedded SDK runtime drives STT/LLM/TTS in-guest), and
@@ -1045,8 +1044,14 @@ There is no Vector store anymore — `ctx.vector`, the `vector:` agent field,
 the `@alexkroman1/aai/vector` subpath, and the platform-owned
 `PINECONE_API_KEY` were all removed. If retrieval comes back it will be a
 Supabase (pgvector) store following the same path as `ctx.db`: per-app
-schema, platform-provisioned credentials in Vault, host-proxied RPC.
-`ctx.db` reaches the guest as host-proxied RPC (`db/query`).
+schema, platform-provisioned credentials in Vault.
+`ctx.db` connects DIRECTLY from the guest: the app's own scoped Postgres
+credentials (role/search_path pinned at provisioning) ride into the guest as
+`DATABASE_URL` in the bundle/load env, and the bundle's runtime opens its
+own connection — exactly as `aai dev` does with a project `.env`. The old
+host-proxied `db/query` RPC is gone: it kept a versioned RPC in the
+harness↔bundle contract to protect a credential that only reaches the
+tenant's own data anyway.
 
 ### Guest network access
 
@@ -1064,8 +1069,8 @@ container around us** (`builtinFetch` in `host/ssrf.ts`).
 - **Contained** (a Modal Sandbox) → plain `pinnedFetch`, no SSRF screen. The
   screen guards nothing a tenant cannot bypass in one line, because their own
   tool code has open egress by design — so it constrains the *model*, not the
-  author. The container is the boundary, it holds no platform credentials, and
-  `ctx.db` is host-proxied RPC.
+  author. The container is the boundary and it holds no PLATFORM credentials
+  (`ctx.db`'s DATABASE_URL is the app's own scoped role).
 - **Not contained** (`aai dev`, and the subprocess backend) → `safeFetch`.
   Here the host IS someone's machine: these same builtins run in the
   developer's own process, where a model-controlled URL can reach localhost,
@@ -2241,7 +2246,8 @@ Key properties:
 - **Open egress**: the container is the isolation boundary — a tenant can
   reach the internet, not the platform. Tool code, `ctx.generate`, and
   provider streams dial out from the guest directly (identical to
-  `aai dev`); `ctx.db` stays host-proxied RPC so platform database
+  `aai dev`); `ctx.db` connects directly on the app's OWN scoped role
+  (`DATABASE_URL` in the bundle/load env) — platform ADMIN database
   credentials never enter the guest.
 - **Minimal filesystem**: the guest sees the baked harness image — never
   the host filesystem.
@@ -2258,8 +2264,7 @@ Key properties:
 The server can pre-spawn a pool of "warm" Node harnesses (process running,
 WebSocket dialed, no bundle loaded) so first-session cold starts skip the
 slow `Modal sandbox create → dial` path. On acquire, the harness is
-finalized for the requesting agent by registering the db/query handler and
-sending `bundle/load`.
+finalized for the requesting agent by sending `bundle/load`.
 
 - **Enable**: set `SANDBOX_POOL_SIZE` to a positive integer (max 16).
   Disabled when unset or `0`. **Production keeps it at ZERO**: both Modal
@@ -2323,8 +2328,9 @@ Agent code runs in **per-agent Modal Sandboxes**. Key files:
 **Isolation layers:**
 
 - **Filesystem**: the baked harness image. No host filesystem access.
-- **Network**: open egress (the container is the boundary); ctx.db proxies
-  through host RPC so platform credentials stay host-side.
+- **Network**: open egress (the container is the boundary); ctx.db connects
+  directly on the app's own scoped role — platform admin credentials stay
+  host-side.
 - **Memory/CPU**: Modal per-sandbox limits; separate container per sandbox.
 - **Env vars**: agent env is delivered to the guest via the `bundle/load`
   RPC params, never as process environment variables. Platform secrets
@@ -2339,8 +2345,12 @@ Each agent provides its own `ASSEMBLYAI_API_KEY` via `.env` (local dev) or
 stored env at sandbox creation time and kept host-side only.
 
 - **App database**: per-app Postgres role/schema credentials are
-  platform-provisioned and held in Supabase Vault — never in the agent's
-  env, so tenant code can't read them.
+  platform-provisioned and held in Supabase Vault. When storage is enabled
+  they reach the guest as `DATABASE_URL` in the bundle/load env — the app's
+  OWN scoped role (search_path pinned, statement_timeout, connection
+  limit), never a platform admin credential; it reaches only data the
+  tenant's code could read anyway, and matches what `aai dev` puts in
+  `ctx.env` via the project `.env`.
 - **Agent secrets**: stored in Supabase Vault (`agent-env:<slug>`), not
   encrypted blobs — the old master-key envelope encryption
   (`KV_SCOPE_SECRET`) is gone.

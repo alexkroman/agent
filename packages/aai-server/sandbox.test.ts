@@ -129,19 +129,6 @@ describe("createSandbox", () => {
     expect(mockShutdown).toHaveBeenCalledOnce();
   });
 
-  it("shutdown closes the app db handle it owns", async () => {
-    const close = vi.fn().mockResolvedValue(undefined);
-    const db = {
-      query: vi.fn(),
-      close,
-    } as unknown as import("@alexkroman1/aai/runtime").CloseableDb;
-    const sandbox = createSandbox(makeSandboxOptions({ db }));
-
-    await sandbox.shutdown();
-
-    expect(close).toHaveBeenCalledOnce();
-  });
-
   // ── activeSessions (the idle-eviction probe) ─────────────────────────────
 
   describe("activeSessions", () => {

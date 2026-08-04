@@ -7,7 +7,6 @@
  * modal-sandbox.test.ts; shared helpers live in _sandbox-vm-test-utils.ts.
  */
 
-import type { Db } from "@alexkroman1/aai";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import {
   autorespondBundleLoad,
@@ -27,13 +26,6 @@ import {
   describeBundle,
   type WarmHarness,
 } from "./sandbox-vm.ts";
-
-/** In-memory mock Db whose query fn is a spy. */
-function createMockDb(rows: Record<string, unknown>[] = []) {
-  const query = vi.fn().mockResolvedValue(rows);
-  const db: Db = { query };
-  return { db, query };
-}
 
 // ── Tests ────────────────────────────────────────────────────────────────────
 
@@ -63,51 +55,19 @@ describe("configureSandbox", () => {
     expect(bundleReq?.params).toEqual({
       code: opts.workerCode,
       env: opts.env,
-      storageEnabled: false,
     });
   });
 
-  it("registers db/query handler that queries the app db", async () => {
-    const { db, query } = createMockDb([{ body: "hello" }]);
-
-    const opts = baseOpts({ db });
-    const cleanup = vi.fn().mockResolvedValue(undefined);
-    autorespondBundleLoad(socket);
-
-    const handle = await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
-
-    // bundle/load advertises storage as enabled when a db is bound.
-    const bundleReq = socket.sentMessages().find((m) => m.method === "bundle/load") as {
-      params: { storageEnabled: boolean };
-    };
-    expect(bundleReq.params.storageEnabled).toBe(true);
-
-    // Simulate guest sending a db/query request
-    const reqId = 100;
-    socket.receive({
-      jsonrpc: "2.0",
-      id: reqId,
-      method: "db/query",
-      params: { sql: "select body from notes where id = $1", params: [7] },
-    });
-
-    await waitForResponseId(writtenLines, reqId);
-
-    const response = findResponseById(writtenLines, reqId);
-    expect(response?.result).toEqual([{ body: "hello" }]);
-    expect(query).toHaveBeenCalledWith("select body from notes where id = $1", [7]);
-
-    handle.conn.dispose();
-  });
-
-  it("does not register the db handler when db is not provided", async () => {
-    const opts = baseOpts(); // no db
+  it("answers an unexpected guest request with Method not found (no host handlers)", async () => {
+    const opts = baseOpts();
     const cleanup = vi.fn().mockResolvedValue(undefined);
     autorespondBundleLoad(socket);
 
     await _internals.configureSandbox(makeWarm(conn, cleanup), opts);
 
-    // Try sending a db/query -- should get "Method not found" error response
+    // ctx.db is not host-proxied anymore (the guest connects directly via
+    // the env's DATABASE_URL) — a stray request must get a clean error
+    // reply rather than wedging until the RPC timeout.
     const reqId = 400;
     socket.receive({
       jsonrpc: "2.0",

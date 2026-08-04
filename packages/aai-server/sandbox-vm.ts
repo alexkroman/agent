@@ -9,20 +9,18 @@
  * The guest runs the COMPLETE agent runtime; this control channel (JSON-RPC
  * over the harness's WebSocket, dialed through the sandbox's Modal tunnel or
  * the container's published loopback port) carries only bundle loading,
- * one-shot tool trials, the session-count probe, and the guest's ctx.db
- * proxy. Clients connect directly to the guest's public `/websocket`
- * endpoint (`SandboxHandle.sessionUrl`).
+ * one-shot tool trials, and the session-count probe. Clients connect
+ * directly to the guest's public `/websocket` endpoint
+ * (`SandboxHandle.sessionUrl`).
  */
 
 import { performance } from "node:perf_hooks";
-import type { Db } from "@alexkroman1/aai";
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { spawnModalWarm } from "./modal-sandbox.ts";
 import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
-import { registerGuestRpcHandlers } from "./sandbox-guest-rpc.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
 import {
   resolveSandboxRole,
@@ -86,11 +84,6 @@ export type SandboxVmOptions = {
   workerCode: string;
   env: Record<string, string>;
   harnessPath: string;
-  /**
-   * App database handle (enables the db/query RPC handler and tells the
-   * guest storage is enabled, so ctx.db resolves instead of throwing).
-   */
-  db?: Db;
 };
 
 /** Minimal interface the pool exposes to createSandboxVm. */
@@ -101,20 +94,17 @@ type WarmHarnessSource = {
 // ── Shared setup ─────────────────────────────────────────────────────────────
 
 /**
- * Finalize a warm harness for a specific agent: register host-side RPC
- * handlers, start listening on the connection, and send bundle/load.
- * Returns the configured SandboxHandle.
+ * Finalize a warm harness for a specific agent: start listening on the
+ * connection and send bundle/load. Returns the configured SandboxHandle.
  *
- * Splitting register-handlers → listen → bundle-load lets the pool
- * spawn a harness ahead of time without committing to an agent identity.
- * Handlers MUST be registered before listen() so no incoming guest messages
- * are dropped.
+ * Splitting listen → bundle-load lets the pool spawn a harness ahead of
+ * time without committing to an agent identity. (No host-side request
+ * handlers exist for agent sandboxes anymore — ctx.db connects directly
+ * from the guest via the env's DATABASE_URL; an unexpected guest→host
+ * request gets the transport's -32601 reply.)
  */
 async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Promise<SandboxHandle> {
   const { conn } = warm;
-
-  // Host serves guest ctx.db requests — see sandbox-guest-rpc.ts.
-  registerGuestRpcHandlers(conn, opts);
 
   conn.listen();
 
@@ -123,9 +113,6 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
     await conn.sendRequest("bundle/load", {
       code: opts.workerCode,
       env: opts.env,
-      // Tells the guest whether ctx.db is live (proxied over db/query) or
-      // should throw the storage-not-enabled guidance.
-      storageEnabled: opts.db !== undefined,
     });
   } catch (err) {
     // bundle/load can time out (a bundle whose top level never resolves).
@@ -252,18 +239,15 @@ export async function describeBundle(
     { pool: opts.pool, harnessPath: opts.harnessPath, slug: "studio-inspect", role: "inspect" },
     spawn,
   );
-  // No handlers registered (no db bound): a bundle whose top level issues a
-  // guest→host request gets the transport's -32601 error reply instead of
-  // wedging the load until the RPC timeout.
+  // No handlers registered: a bundle whose top level issues a guest→host
+  // request gets the transport's -32601 error reply instead of wedging the
+  // load until the RPC timeout.
   warm.conn.listen();
   // The reply is guest-asserted wire data (see BundleLoadResult); the
   // caller validates `config` with IsolateConfigSchema.
   const result = (await warm.conn.sendRequest("bundle/load", {
     code: opts.workerCode,
     env: {},
-    // Explicit even though the guest schema defaults it: every in-repo
-    // sender states its storage intent.
-    storageEnabled: false,
   })) as BundleLoadResult | undefined;
   return result?.config;
 }

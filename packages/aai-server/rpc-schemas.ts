@@ -64,16 +64,6 @@ export const IsolateConfigSchema = AgentConfigSchema.extend({
 
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
 
-/**
- * Params for the guest→host `db/query` RPC — one parameterized SQL statement
- * run against the app's provisioned database (ctx.db). Result is the rows
- * array, capped host-side (see sandbox-guest-rpc.ts).
- */
-export const DbQueryParamsSchema = z.object({
-  sql: z.string().min(1),
-  params: z.array(z.unknown()).optional(),
-});
-
 /** Response of the guest `status` request (guest-asserted wire data). */
 export const StatusResponseSchema = z.object({
   activeSessions: z.number().int().nonnegative(),
@@ -92,16 +82,14 @@ export const ToolCallResponseSchema = z.object({
 
 // ── Typed method map for the host↔guest RPC link ─────────────────────────────
 
-/** Params of the host→guest `bundle/load` request. */
+/**
+ * Params of the host→guest `bundle/load` request. Storage (ctx.db) rides in
+ * `env` as `DATABASE_URL` — the app's own scoped credentials — and the
+ * bundle's runtime connects directly, exactly as under `aai dev`.
+ */
 export type BundleLoadParams = {
   code: string;
   env: Record<string, string>;
-  /**
-   * Whether ctx.db is live (proxied over db/query) or should throw the
-   * storage-not-enabled guidance. The guest schema defaults it to false;
-   * senders that know their intent state it explicitly.
-   */
-  storageEnabled?: boolean;
 };
 
 /** Params of the host→guest `tool/execute` request (one-shot trial). */
@@ -118,8 +106,8 @@ export type ToolExecuteParams = {
  * rpc-transport.ts for why method names and outgoing params are typed
  * while results and incoming params stay `unknown`: the guest is untrusted,
  * so everything it sends is validated with Zod at the receiving site —
- * `ToolCallResponseSchema`, `DbQueryParamsSchema`, and the schemas in
- * sandbox-guest-rpc.ts).
+ * e.g. `ToolCallResponseSchema`, and the studio schemas registered by the
+ * session broker).
  *
  * Client voice sessions do NOT ride this link: the guest runs the complete
  * agent runtime and clients connect directly to its public `/websocket`
@@ -177,7 +165,6 @@ export type GuestRpcSchema = {
     status: { params: undefined; result: unknown };
   };
   requestsIn: {
-    "db/query": { params: unknown; result: unknown };
     /** End-of-turn workspace write-back into the project store. */
     "studio/sync-workspace": { params: unknown; result: unknown };
     /** End-of-turn conversation snapshot into the project's chat row. */

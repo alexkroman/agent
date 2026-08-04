@@ -9,7 +9,6 @@
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
 import type { StoredAgentConfig } from "./agent-store.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
@@ -113,16 +112,21 @@ function buildSandboxFromParts(
   opts: ResolveSandboxOpts,
   onSandboxLost: (sandbox: Sandbox) => void,
 ): Sandbox {
-  // Open the app db here — cheap, postgres connects on first query; the
-  // sandbox owns the handle and closes it on shutdown.
-  const db: CloseableDb | undefined =
-    parts.appDbMeta && opts.appDb ? opts.appDb.open(parts.appDbMeta) : undefined;
+  // Storage: the app's OWN scoped Postgres credentials (role/search_path
+  // pinned at provisioning — see app-database.ts) ride into the guest as
+  // DATABASE_URL, and the bundle's runtime connects directly, exactly as
+  // `aai dev` does with a project .env. Platform admin credentials never
+  // enter the guest. Injected last so enabling storage deterministically
+  // selects the provisioned database.
+  const env =
+    parts.appDbMeta && opts.appDb
+      ? { ...parts.env, DATABASE_URL: opts.appDb.connectionUrl(parts.appDbMeta) }
+      : parts.env;
   const sandbox: Sandbox = createSandbox({
     workerCode: parts.workerCode,
-    env: parts.env,
+    env,
     slug,
     agentConfig: parts.agentConfig,
-    ...(db && { db }),
     ...(opts.pool && { pool: opts.pool }),
     onSandboxLost: () => onSandboxLost(sandbox),
   });

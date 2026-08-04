@@ -19,6 +19,7 @@ import type { Sandbox } from "./sandbox.ts";
 import { createMemorySandboxRegistry } from "./sandbox-registry.ts";
 import { brokerSessionUrl, resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
+import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
 import { createTestStore } from "./test-utils.ts";
 
 const { mockCreateSandboxVm } = vi.hoisted(() => {
@@ -366,5 +367,61 @@ describe("cross-replica sandbox registry", () => {
     expect(warn).toHaveBeenCalled();
     await (opts.slots.get("registry-down")?.sandbox as Sandbox | undefined)?.shutdown();
     unwatch();
+  });
+});
+
+describe("storage (ctx.db) delivery", () => {
+  it("injects the app's own DATABASE_URL into the bundle/load env when storage is enabled", async () => {
+    const secrets = createMemorySecretStore();
+    await secrets.put(
+      appDbSecretName("stored-app"),
+      JSON.stringify({ role: "app_0123456789abcdef", password: "p".repeat(32) }),
+    );
+    const store = createTestStore(secrets);
+    await store.putAgent({
+      slug: "stored-app",
+      env: { OTHER: "x" },
+      worker: 'export default { name: "t" };',
+      clientFiles: {},
+      credential_hashes: ["hash"],
+      agentConfig: TEST_AGENT_CONFIG,
+    });
+    const appDb = {
+      provision: () => Promise.reject(new Error("not expected")),
+      deprovision: () => Promise.reject(new Error("not expected")),
+      connectionUrl: vi.fn(() => "postgres://app_0123456789abcdef:pw@db.example:6543/postgres"),
+    };
+    mockCreateSandboxVm.mockClear();
+
+    const sandbox = await resolveSandbox("stored-app", {
+      slots: createSlotCache(),
+      store,
+      secrets,
+      appDb,
+    });
+    expect(sandbox).not.toBeNull();
+
+    // The guest connects to its OWN scoped database directly — the app-db
+    // credential rides in the env, and no db handle stays host-side.
+    const vmOpts = mockCreateSandboxVm.mock.calls[0]?.[0] as {
+      env: Record<string, string>;
+    };
+    expect(vmOpts.env).toEqual({
+      OTHER: "x",
+      DATABASE_URL: "postgres://app_0123456789abcdef:pw@db.example:6543/postgres",
+    });
+    await sandbox?.shutdown();
+  });
+
+  it("leaves the env untouched when storage is not enabled", async () => {
+    const deps = await seedAgent("no-storage");
+    mockCreateSandboxVm.mockClear();
+    const sandbox = await resolveSandbox("no-storage", deps);
+    const vmOpts = mockCreateSandboxVm.mock.calls[0]?.[0] as {
+      env: Record<string, string>;
+    };
+    expect(vmOpts.env).toEqual({});
+    await sandbox?.shutdown();
+    deps.unwatch();
   });
 });

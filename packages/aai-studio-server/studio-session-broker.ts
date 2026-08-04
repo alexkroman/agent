@@ -34,7 +34,6 @@ import { errorMessage } from "@alexkroman1/aai";
 import { createOwnedMap } from "@alexkroman1/aai/internal";
 import { GUEST_ROUTES, guestHttpUrl } from "aai-server/guest-routes";
 import { createKeyedLock, withLock } from "aai-server/platform-barrel";
-import { registerGuestRpcHandlers } from "aai-server/sandbox-guest-rpc";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { acquireWarmHarness, spawnWarmHarness, type WarmHarness } from "aai-server/sandbox-vm";
 import { SafePathSchema } from "aai-server/schemas";
@@ -239,7 +238,6 @@ export function createStudioSessionBroker(
   /** Wire the control channel for one project's sandbox. */
   function wire(warm: WarmHarness, key: string, scope: string, project: string): void {
     // No db — trial tool runs report storage-not-enabled, same as before.
-    registerGuestRpcHandlers(warm.conn, {});
     const touch = (): void => {
       const entry = sessions.get(key);
       if (entry && entry.warm === warm) entry.lastUsed = Date.now();
@@ -458,7 +456,6 @@ export function createStudioSessionBroker(
       spawn,
     );
     try {
-      registerGuestRpcHandlers(warm.conn, {});
       warm.conn.listen();
       return await requestDeploy(warm, files, target);
     } finally {

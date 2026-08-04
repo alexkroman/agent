@@ -13,8 +13,10 @@
  *   URL is public, so an upgrade without the token is rejected). JSON-RPC
  *   both ways: host→guest `bundle/load`, `tool/execute` (one-shot trials —
  *   the studio's test_agent), `status`, and the `shutdown` notification;
- *   guest→host `db/query` (ctx.db — platform Postgres credentials never
- *   enter tenant containers).
+ *   guest→host requests exist only for studio sessions (workspace sync,
+ *   chat persistence). ctx.db is NOT proxied: the app's own DATABASE_URL
+ *   rides in the bundle/load env and the bundle's runtime connects
+ *   directly.
  * - `/websocket` — PUBLIC client voice sessions, connected DIRECTLY by
  *   browsers (the same path `aai dev` serves). Each upgrade starts a
  *   runtime session: STT/LLM/TTS provider streams, the LLM loop, tool
@@ -82,12 +84,10 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
       const params = req.params as {
         code: string;
         env?: Record<string, string>;
-        storageEnabled?: boolean;
       };
       const loaded = await loadBundle(state, {
         code: params.code,
         env: params.env ?? {},
-        storageEnabled: params.storageEnabled === true,
       });
       sendResponse(req.id, { ok: true, ...loaded });
       break;
@@ -99,7 +99,6 @@ export async function handleRequest(req: JsonRpcRequest, state: HarnessState): P
         break;
       }
       const toolResult = await executeTool(state.agent, req.params as ToolCallRequest, {
-        storageEnabled: state.storageEnabled,
         env: state.env,
       });
       sendResponse(req.id, toolResult);
@@ -175,7 +174,7 @@ export function handleNotification(notif: JsonRpcNotification): void {
 }
 
 export function dispatchMessage(msg: JsonRpcMessage, state: HarnessState): void {
-  // Incoming response to a host RPC request we sent (db/query)
+  // Incoming response to a host RPC request we sent (studio sync/persist)
   if ("id" in msg && !("method" in msg)) {
     handleHostResponse(msg as JsonRpcResponse);
     return;
@@ -257,7 +256,6 @@ function main(): void {
     agent: null,
     createRuntime: null,
     env: Object.freeze({}),
-    storageEnabled: false,
     runtime: null,
     activeSessions: 0,
     studio: null,
@@ -308,13 +306,13 @@ function main(): void {
   // The studio chat surface's view of this harness's own loader + trial
   // executor — test_agent loads and trials bundles in-place.
   const studioDeps = {
-    loadBundle: (code: string) => loadBundle(state, { code, env: {}, storageEnabled: false }),
+    loadBundle: (code: string) => loadBundle(state, { code, env: {} }),
     executeTool: async (name: string, args: Record<string, unknown>) => {
       if (!state.agent) return "Tool error: agent not loaded";
       const response = await executeTool(
         state.agent,
         { name, args, sessionId: "studio-trial", state: null },
-        { storageEnabled: false, env: state.env },
+        { env: state.env },
       );
       if (response.error) return `Tool error: ${response.error}`;
       return response.result ?? "(no result)";

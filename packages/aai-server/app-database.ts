@@ -2,8 +2,12 @@
 /**
  * Per-app databases ("storage"): each app that enables storage gets its own
  * Postgres schema plus a matching LOGIN role inside the platform's Supabase
- * database (`SUPABASE_DB_URL`). Tool code reaches it as `ctx.db`, proxied
- * through the sandbox's `db/query` RPC — the guest never holds credentials.
+ * database (`SUPABASE_DB_URL`). Tool code reaches it as `ctx.db`: the app's
+ * OWN scoped credentials (role/search_path pinned at provisioning) are
+ * handed to the guest as `DATABASE_URL` at bundle/load, and the bundle's
+ * runtime connects directly — exactly as `aai dev` does with a project
+ * `.env`. Platform ADMIN credentials never enter the guest; the app role
+ * reaches only its own schema, which the tenant's code could read anyway.
  *
  * Identifiers are `app_` + the first 16 hex chars of sha256(slug), so they
  * are always `[a-z0-9_]` and safe to interpolate into DDL after the shape
@@ -13,7 +17,6 @@
 
 import { hash, randomBytes } from "node:crypto";
 import { safeJsonParse } from "@alexkroman1/aai";
-import { type CloseableDb, createPostgresDb } from "@alexkroman1/aai/runtime";
 import type { SqlExec } from "./secret-store.ts";
 
 /**
@@ -32,9 +35,6 @@ export type AppDbMeta = {
    */
   url?: string;
 };
-
-/** Max pooled connections per app db handle — one sandbox, light duty. */
-const APP_DB_POOL_MAX = 2;
 
 const IDENTIFIER_RE = /^app_[a-f0-9]{16}$/;
 
@@ -147,7 +147,7 @@ export async function deprovisionAppDatabase(sql: SqlExec, slug: string): Promis
 }
 
 /**
- * Open a `Db` handle for one provisioned app: the admin URL's host/port/
+ * The connection URL for one provisioned app: the admin URL's host/port/
  * database with the app role's own credentials. The role's `search_path`
  * pins queries to the app schema; `statement_timeout` bounds runaway SQL.
  *
@@ -167,10 +167,9 @@ export function appDbConnectionUrl(meta: AppDbMeta, adminUrl: string): string {
   return url.toString();
 }
 
-export function openAppDb(meta: AppDbMeta, fallbackAdminUrl: string): CloseableDb {
+export function appDbUrlFor(meta: AppDbMeta, fallbackAdminUrl: string): string {
   // The stored locator wins; rows predating it live on the primary cluster.
-  const adminUrl = meta.url ?? fallbackAdminUrl;
-  return createPostgresDb({ url: appDbConnectionUrl(meta, adminUrl), max: APP_DB_POOL_MAX });
+  return appDbConnectionUrl(meta, meta.url ?? fallbackAdminUrl);
 }
 
 // ── Bound manager ────────────────────────────────────────────────────────────
@@ -183,7 +182,11 @@ export function openAppDb(meta: AppDbMeta, fallbackAdminUrl: string): CloseableD
 export type AppDatabases = {
   provision(slug: string): Promise<AppDbMeta>;
   deprovision(slug: string): Promise<void>;
-  open(meta: AppDbMeta): CloseableDb;
+  /**
+   * The app's own connection URL (its scoped role's credentials against the
+   * cluster the app lives on) — delivered to the guest as `DATABASE_URL`.
+   */
+  connectionUrl(meta: AppDbMeta): string;
 };
 
 /** One placement target: a cluster's admin URL plus an executor over it. */
@@ -212,7 +215,7 @@ export function createAppDatabases(opts: {
     // Deprovision on the cluster that hosts the app: same deterministic
     // placement, so no locator lookup is needed for the DDL executor.
     deprovision: (slug) => deprovisionAppDatabase(pickAppDbTarget(targets, slug).sql, slug),
-    open: (meta) => openAppDb(meta, targetFor(meta.url).url),
+    connectionUrl: (meta) => appDbUrlFor(meta, targetFor(meta.url).url),
   };
 }
 

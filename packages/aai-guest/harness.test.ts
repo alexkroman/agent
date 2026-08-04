@@ -59,7 +59,6 @@ function makeState(overrides?: Partial<HarnessState>): HarnessState {
     agent: null,
     createRuntime: null,
     env: Object.freeze({}),
-    storageEnabled: false,
     runtime: null,
     activeSessions: 0,
     studio: null,
@@ -75,7 +74,7 @@ function makeState(overrides?: Partial<HarnessState>): HarnessState {
 const FAKE_RUNTIME_EXPORT = `export const __aaiCreateRuntime = () =>
   ({ startSession: () => undefined, shutdown: () => Promise.resolve() });`;
 
-const TRIAL_OPTS = { storageEnabled: false, env: Object.freeze({}) };
+const TRIAL_OPTS = { env: Object.freeze({}) };
 
 describe("executeTool (one-shot trial)", () => {
   test("runs a tool and returns result + state", async () => {
@@ -200,7 +199,7 @@ describe("executeTool (one-shot trial)", () => {
     const res = await executeTool(
       agent,
       { name: "readsEnv", args: {}, sessionId: "s1", state: {} },
-      { storageEnabled: false, env: Object.freeze({ WHO: "world" }) },
+      { env: Object.freeze({ WHO: "world" }) },
     );
     expect(res.result).toBe("who=world");
   });
@@ -247,7 +246,7 @@ describe("bundle/load + dispatch", () => {
         jsonrpc: "2.0",
         id: 1,
         method: "bundle/load",
-        params: { code, env: { WHO: "world" }, storageEnabled: false },
+        params: { code, env: { WHO: "world" } },
       },
       state,
     );

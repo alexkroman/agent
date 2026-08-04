@@ -6,7 +6,7 @@
  * `RuntimeOptions.runCode`.
  */
 
-import { dbAdapter, errMsg, withTimeout } from "./harness-rpc.ts";
+import { errMsg, withTimeout } from "./harness-rpc.ts";
 import type { AgentDef, ToolContext } from "./harness-types.ts";
 import { RUN_CODE_TIMEOUT_MS, STORAGE_DISABLED_MESSAGE, TOOL_TIMEOUT_MS } from "./limits.ts";
 
@@ -69,7 +69,7 @@ type ToolCallResponse = {
 export async function executeTool(
   agent: AgentDef,
   req: ToolCallRequest,
-  opts: { storageEnabled: boolean; env: Readonly<Record<string, string>> },
+  opts: { env: Readonly<Record<string, string>> },
 ): Promise<ToolCallResponse> {
   const state =
     req.state ?? (typeof agent.state === "function" ? structuredClone(agent.state()) : {});
@@ -91,11 +91,12 @@ export async function executeTool(
   const ctx: ToolContext = {
     env: opts.env,
     state,
-    // Lazy getter: only an actual ctx.db access should fail when storage is
-    // disabled — constructing the context must not.
-    get db() {
-      if (!opts.storageEnabled) throw new Error(STORAGE_DISABLED_MESSAGE);
-      return dbAdapter;
+    // Lazy getter: only an actual ctx.db access should fail — constructing
+    // the context must not. Trials always run without storage (a real
+    // session's ctx.db is the bundle runtime's own DATABASE_URL connection;
+    // the harness has no database client of its own).
+    get db(): never {
+      throw new Error(STORAGE_DISABLED_MESSAGE);
     },
     generate: () => Promise.reject(new Error("generate is not available in trial tool runs")),
     messages: [],

@@ -2,16 +2,16 @@
 /**
  * Agent sandbox lifecycle, backed by remote Modal Sandboxes.
  *
- * The COMPLETE agent runs in the guest: the harness embeds the SDK runtime,
+ * The COMPLETE agent runs in the guest: the bundle ships the SDK runtime,
  * and clients connect DIRECTLY to the sandbox's public `/websocket` endpoint
  * (its Modal tunnel) — discovered via the platform's `GET /:slug/client-config`
  * broker. The host holds only the control channel (`sandbox-vm.ts`): bundle
- * loading, one-shot tool trials, the session-count probe idle eviction
- * consults, and the guest's ctx.db proxy.
+ * loading, one-shot tool trials, and the session-count probe idle eviction
+ * consults. (ctx.db is no longer host-proxied — the app's own DATABASE_URL
+ * rides in the bundle/load env; see sandbox-resolve.ts.)
  */
 
 import { errorMessage } from "@alexkroman1/aai";
-import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
 import type { StoredAgentConfig } from "./agent-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
@@ -30,11 +30,6 @@ export type SandboxOptions = {
    * for logs here); the bundle interprets its own config in the guest.
    */
   agentConfig: StoredAgentConfig;
-  /**
-   * App database handle when storage is enabled for this app (see
-   * app-database.ts). The sandbox takes ownership and closes it on shutdown.
-   */
-  db?: CloseableDb;
   /** Optional pre-warmed harness pool for faster cold starts. */
   pool?: SandboxPool;
   /**
@@ -80,7 +75,7 @@ export type Sandbox = {
 // ── Public API ──────────────────────────────────────────────────────────
 
 export function createSandbox(opts: SandboxOptions): Sandbox {
-  const { workerCode, env, slug, db } = opts;
+  const { workerCode, env, slug } = opts;
 
   const config = opts.agentConfig;
 
@@ -89,10 +84,6 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       slug,
       workerCode,
       env,
-      // ctx.db for guest tool code and the in-guest runtime, proxied over
-      // the db/query RPC. Absent (storage not enabled) the guest's ctx.db
-      // getter throws guidance.
-      ...(db && { db }),
       harnessPath: resolveHarnessPath(),
     },
     opts.pool,
@@ -154,8 +145,6 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
       } catch {
         // VM failed to start or already shut down
       }
-      // The sandbox owns the app db handle it was created with.
-      await db?.close().catch(() => undefined);
     },
   };
 }
