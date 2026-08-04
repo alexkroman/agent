@@ -257,11 +257,14 @@ model) is the security boundary.
 #### packages/aai-server/
 
 - `orchestrator.ts` — HTTP + WebSocket routing
-- `sandbox.ts` — agent sandbox lifecycle + the host's control-channel view
-  of it: `sessionUrl()` (the public tunnel endpoint the broker hands to
-  clients), `activeSessions()` (the idle-eviction probe), `shutdown()`
-- `sandbox-vm.ts` — per-agent sandbox configuration (bundle/load, teardown)
-  and the one `spawnWarmHarness` dispatch over the two backends
+- `sandbox.ts` — agent sandbox lifecycle: `sessionUrl()` (the public tunnel
+  endpoint the broker hands to clients), `activeSessions()` (the
+  idle-eviction/retire probe, over the guest's `/manage/status`),
+  `drain()`, `shutdown()`. DEPLOYED AGENTS RUN AS SERVERS — the host holds
+  NO channel to them (see "Agent guests are servers" below)
+- `sandbox-vm.ts` — `spawnAgentServer` (the agent-server dispatch over the
+  two backends) plus the studio/inspect-side `spawnWarmHarness`/
+  `acquireWarmHarness`/`describeBundle` control-channel machinery
 - `sandbox-backend.ts` — backend selection policy (`SANDBOX_BACKEND` override,
   production → `modal`, local dev → `subprocess`) plus the reason string
   the boot log prints, so "which backend am I on, and why" is one log line
@@ -277,18 +280,26 @@ model) is the security boundary.
   bearer token, and dials its WebSocket through the sandbox's Modal tunnel
 - `packages/aai-guest/` — its own private workspace package: the Node guest
   entry point (runs inside a Modal Sandbox) that runs the COMPLETE agent.
-  Serves three surfaces on the tunneled port: `/ws` (bearer-token host
-  control channel — JSON-RPC `bundle/load`, one-shot `tool/execute`
-  trials, `workspace/deploy` (Publish's in-guest `aai deploy`), `status`,
-  `studio/session-init`; guest→host
+  ONE BINARY, TWO MODES, selected by the spawner via `AAI_GUEST_MODE`
+  (behavior selection, never a security boundary — capability is what the
+  host delivers):
+  **agent mode** (deployed agents — see "Agent guests are servers") boots
+  from files delivered at exec time and serves only the public session
+  surfaces plus the token-gated `/manage/status` + `/manage/drain` pair
+  (`harness-agent-mode.ts`); **studio/inspect mode** serves `/ws`
+  (bearer-token host control channel — JSON-RPC `bundle/load`, one-shot
+  `tool/execute` trials, `workspace/deploy` (Publish's in-guest
+  `aai deploy`), `status`, `studio/session-init`; guest→host
   `studio/sync-workspace`, `studio/persist-chat`),
   `/session` (PUBLIC client voice sessions, connected directly by
   browsers — the embedded SDK runtime drives STT/LLM/TTS in-guest), and
   `/studio/chat` + `/studio/tools` (the studio coding agent's PUBLIC chat
   surface, bearer-gated by the broker-minted per-session chat token — see
   "Browser studio").
-  `harness.ts` (servers + dispatch), `trial.ts` (run_code executor +
-  one-shot tool trials), `harness-rpc.ts` (guest→host request proxy),
+  `harness.ts` (servers + dispatch), `harness-agent-mode.ts` (agent-server
+  boot, manage surface, idle/drain lifecycle), `trial.ts` (run_code
+  executor + one-shot tool trials), `harness-rpc.ts` (guest→host request
+  proxy),
   `studio-chat.ts`/`studio-tools.ts`/`studio-edit.ts`/`studio-grep.ts`
   (the in-guest coding agent), `studio-build.ts` (in-guest workspace
   builds through the aai CLI bundlers), `studio-publish.ts` (Publish =
@@ -1091,14 +1102,15 @@ reaching and an author who wants that can already write it.
 
 **The guest IS the dev server — and the runtime IS the user's.** The
 harness wraps the same `createServer` (`aai/host/server.ts`) that `aai dev`
-runs — health, `client-config`, and `/websocket` sessions — adding only the
-`/ws` control channel via `ServerOptions.upgrade` and a lazy runtime facade
-(`lazyRuntime` in `aai-guest/harness.ts`: the runtime is built on the first
-session, never at bundle/load, because inspection loads carry an empty env).
+runs — health, `client-config`, and `/websocket` sessions — adding (per
+mode) the `/manage/*` request hook or the `/ws` control channel, plus a
+lazy runtime facade (`lazyRuntime` in `aai-guest/harness.ts`: the runtime
+is built on the first session — inspection loads carry an empty env).
 The runtime itself comes from the BUNDLE (see "User-shipped runtime"
 below), so dev and prod run the identical SDK version: the one in the
-user's lockfile. The bundle arrives over RPC and loads from a temp-file
-`file:` URL.
+user's lockfile. In agent mode the bundle is read (hash-verified) from a
+file delivered at exec time; in studio/inspect mode it arrives over the
+`bundle/load` RPC. Either way it loads from a temp-file `file:` URL.
 
 ### User-shipped runtime
 
@@ -2132,12 +2144,15 @@ service's control work is light — and one container served both badly.
   may gate on these tags, and the `preview` role is inferred from the
   `-preview` slug suffix (`PREVIEW_SLUG_SUFFIX`, shared with
   `previewSlugFor` so the two can't drift).
-- **Transport is a WebSocket the host dials through the sandbox's Modal
-  tunnel** (`encryptedPorts: [8080]`): the harness serves JSON-RPC on `/ws`,
-  authenticated by a per-sandbox bearer token minted at spawn and delivered
-  via the EXEC's env (never the sandbox's). The tunnel URL is public; the
-  token is what keeps it from being an open door. The dial retries while the
-  harness server boots (`GUEST_DIAL_TIMEOUT_MS`).
+- **Transport**: STUDIO/INSPECT guests get a WebSocket control channel the
+  host dials through the sandbox's Modal tunnel (`encryptedPorts: [8080]`;
+  JSON-RPC on `/ws`), retried while the harness boots
+  (`GUEST_DIAL_TIMEOUT_MS`). AGENT guests get NO channel — the host polls
+  their public `/health` for readiness and probes `/manage/*` over plain
+  HTTPS. Both are authenticated by a per-sandbox bearer token minted at
+  spawn and delivered via the EXEC's env (never the sandbox's). The tunnel
+  URL is public; the token is what keeps the managed surfaces from being an
+  open door.
 - **Region pinning**: `MODAL_SANDBOX_REGION` (comma-separated for multiple)
   pins sandbox placement via Modal's `regions` create param. Unpinned, Modal
   places for capacity — it once put the server in us-east-1/AWS and guest
@@ -2146,25 +2161,26 @@ service's control work is light — and one container served both badly.
   turns. `modal_deploy.py` pins its functions to one `REGION` constant and
   exports it as `MODAL_SANDBOX_REGION`, so production host and guests are
   co-located by construction; local dev stays unpinned.
-- **Orphan cleanup: the host's WebSocket IS the liveness signal.** A host
-  that dies without running `shutdown()`'s teardown (crash, OOM, SIGKILL
-  past the drain deadline) drops its sockets; the harness self-exits after
-  `HARNESS_ORPHAN_TIMEOUT_MS` with no host connected (`aai-guest/harness.ts`,
-  constants in `aai-guest/limits.ts` — the window also covers the boot gap
-  before the first dial). Once the exec has exited, Modal's `idleTimeoutMs`
-  (`SANDBOX_IDLE_TIMEOUT_SECS`, default 15 min) terminates the sandbox.
-  There is no heartbeat protocol — connection presence replaces it.
-  That chain costs ~20 minutes of billed `sleep infinity` shell per orphaned
-  guest, so it is the backstop, not the normal path: Modal delivers stop
-  signals to the container's **Python** runtime, never to a bare
-  `subprocess.Popen` child, so `run_node` (scripts/modal_image.py) forwards
-  SIGTERM/SIGINT to the node process and waits — that is the only reason
-  `teardownSandboxes` (drain + terminate every guest the replica owns) runs
-  on scale-in/redeploy at all.
+- **Orphan cleanup differs per mode.** STUDIO/INSPECT guests: the host's
+  WebSocket IS the liveness signal — a host that dies without teardown
+  drops its sockets, and the harness self-exits after
+  `HARNESS_ORPHAN_TIMEOUT_MS` with no host connected (constants in
+  `aai-guest/limits.ts`; the window also covers the boot gap before the
+  first dial). AGENT guests have no host socket, so they own their own
+  lifecycle instead: self-exit after `AGENT_IDLE_EXIT_MS` with zero
+  sessions (see "Agent guests are servers"). Either way, once the exec has
+  exited, Modal's `idleTimeoutMs` (`SANDBOX_IDLE_TIMEOUT_SECS`, default
+  15 min) terminates the sandbox. These are backstops, not the normal
+  path: Modal delivers stop signals to the container's **Python** runtime,
+  never to a bare `subprocess.Popen` child, so `run_node`
+  (scripts/modal_image.py) forwards SIGTERM/SIGINT to the node process and
+  waits — that is the only reason `teardownSandboxes` (drain + terminate
+  every guest the replica owns) runs on scale-in/redeploy at all.
   Host-side eviction (`sandbox-slots.ts`) stays the authority on
   session-aware idleness — sessions connect directly to the sandbox, so the
-  idle timer asks the guest (`status` RPC → live session count) before
-  killing; a dead/unreachable guest answers 0 and is reclaimed.
+  idle timer asks the guest (`GET /manage/status` for agents, the `status`
+  RPC for studio guests) before killing; a dead/unreachable guest answers 0
+  and is reclaimed.
 - The server itself deploys to Modal too (`modal_deploy.py`,
   `pnpm --filter aai-server deploy:modal`) — there is no Docker image or
   Fly.io deployment anymore.
@@ -2259,12 +2275,43 @@ Key properties:
   self-hosted runtime does. The control channel's `tool/execute` is only
   the studio's one-shot trial runner; the host holds no session state.
 
-### Warm sandbox pool
+### Agent guests are servers (no control channel)
+
+DEPLOYED AGENTS spawn as servers (`spawnAgentServer` in sandbox-vm.ts;
+guest side in `aai-guest/harness-agent-mode.ts`). The whole
+platform↔deployed-agent contract, frozen per deploy by the harness image
+pin and versioned by `GUEST_CONTRACT_VERSION` (additive changes only):
+
+- **Boot**: the spawner writes the worker bundle and the agent env as
+  FILES into the fresh sandbox (`sb.filesystem.writeText` on Modal, a
+  scratch dir on the subprocess backend), then execs the harness with
+  `AAI_GUEST_MODE=agent` + the artifact paths + the bundle's sha-256. The
+  guest hash-verifies the bundle (a mismatch is a hard boot failure, never
+  a silently different agent), loads it BEFORE listening, and scrubs the
+  env file. Readiness is the guest's public `/health` answering 200 —
+  polled by the host, raced against guest-process exit so a boot crash
+  fails the spawn immediately with the guest's stderr in the host log.
+- **Ongoing surface**: `GET /manage/status` (live session count +
+  draining + contractVersion; the idle-eviction and retirement probe) and
+  `POST /manage/drain`, both gated by the per-sandbox bearer from the exec
+  env. Nothing else — no WebSocket, no RPC, no host connection.
+- **Lifecycle is guest-owned**: with no host socket, the orphan-timeout
+  mechanism cannot apply; the agent guest self-exits after
+  `AGENT_IDLE_EXIT_MS` (default 20 min) with zero sessions, and a drained
+  guest refuses new direct-dial sessions (close 1013 → the client
+  re-brokers) and exits the moment it empties. Host-side idle eviction
+  remains the primary reclaimer; self-exit is the backstop for a crashed
+  host.
+- **Agents never take the warm pool**: pooled sandboxes are control-channel
+  harnesses on the CURRENT image; the agent contract is boot-time
+  provisioning on the deploy's PINNED image.
+
+### Warm sandbox pool (studio/inspect only)
 
 The server can pre-spawn a pool of "warm" Node harnesses (process running,
-WebSocket dialed, no bundle loaded) so first-session cold starts skip the
-slow `Modal sandbox create → dial` path. On acquire, the harness is
-finalized for the requesting agent by sending `bundle/load`.
+WebSocket dialed, no bundle loaded) so STUDIO sessions and deploy-time
+bundle inspection (`describeBundle`) skip the slow
+`Modal sandbox create → dial` path. Deployed agents never use it (above).
 
 - **Enable**: set `SANDBOX_POOL_SIZE` to a positive integer (max 16).
   Disabled when unset or `0`. **Production keeps it at ZERO**: both Modal
@@ -2273,13 +2320,8 @@ finalized for the requesting agent by sending `bundle/load`.
   `aai-server` Secret overrides image env, so it must NOT set
   `SANDBOX_POOL_SIZE`; a Secret value silently re-enables the pool.
 - **Files**: `sandbox-pool.ts` (pool), `sandbox-vm.ts:spawnWarmHarness` /
-  `modal-sandbox.ts:spawnModalWarm` (spawn), `configureSandbox` (per-agent
-  finalization).
-- **Security**: the pool spawns harnesses with the same Modal sandbox
-  parameters as on-demand sandboxes. Bundle code and agent env vars are
-  injected per-acquire — no agent secrets enter a warm sandbox.
-- **Failure mode**: if the pool is empty or returns a dead harness,
-  `createSandboxVm` falls back to a fresh spawn (the pre-pool path).
+  `modal-sandbox.ts:spawnModalWarm` (spawn), `acquireWarmHarness`
+  (per-consumer finalization).
 
 ### Horizontal sandbox scaling (aai-server/sandbox-scale.ts)
 
@@ -2332,9 +2374,9 @@ Agent code runs in **per-agent Modal Sandboxes**. Key files:
   directly on the app's own scoped role — platform admin credentials stay
   host-side.
 - **Memory/CPU**: Modal per-sandbox limits; separate container per sandbox.
-- **Env vars**: agent env is delivered to the guest via the `bundle/load`
-  RPC params, never as process environment variables. Platform secrets
-  stay host-side.
+- **Env vars**: a deployed agent's env is delivered as a boot FILE written
+  into its own sandbox (scrubbed after reading); per-sandbox tokens ride
+  the exec env. Platform secrets stay host-side.
 
 **Credential separation:**
 
@@ -2346,7 +2388,8 @@ stored env at sandbox creation time and kept host-side only.
 
 - **App database**: per-app Postgres role/schema credentials are
   platform-provisioned and held in Supabase Vault. When storage is enabled
-  they reach the guest as `DATABASE_URL` in the bundle/load env — the app's
+  they reach the guest as `DATABASE_URL` in the boot-delivered agent env —
+  the app's
   OWN scoped role (search_path pinned, statement_timeout, connection
   limit), never a platform admin credential; it reaches only data the
   tenant's code could read anyway, and matches what `aai dev` puts in

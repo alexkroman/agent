@@ -14,7 +14,6 @@ import type { StoredAgentConfig } from "./agent-store.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
 import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
-import type { SandboxPool } from "./sandbox-pool.ts";
 import { REGISTRY_HEARTBEAT_MS, type SandboxRegistry } from "./sandbox-registry.ts";
 import { defaultScaleOptions, routeSession, type ScaleOptions } from "./sandbox-scale.ts";
 import {
@@ -52,7 +51,6 @@ export type ResolveSandboxOpts = {
   secrets?: SecretStore;
   /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
-  pool?: SandboxPool;
   /**
    * Cross-replica sandbox registry (see sandbox-registry.ts): residents
    * built here are registered and heartbeated, and the broker's cold path
@@ -140,7 +138,6 @@ function buildSandboxFromParts(
     slug,
     agentConfig: parts.agentConfig,
     ...(parts.imageTag !== null && { imageTag: parts.imageTag }),
-    ...(opts.pool && { pool: opts.pool }),
     onSandboxLost: () => onSandboxLost(sandbox),
   });
   return sandbox;

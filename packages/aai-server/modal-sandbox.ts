@@ -14,8 +14,10 @@
  * - **The tunnel is public but the harness is not**: the host mints a
  *   per-sandbox bearer token, delivers it via the exec's env (never the
  *   sandbox's), and the harness rejects unauthenticated upgrades.
- * - **No secrets in the guest environment**: agent env is delivered via the
- *   `bundle/load` RPC params, never as sandbox environment variables.
+ * - **No secrets in the SANDBOX environment**: per-sandbox tokens ride the
+ *   EXEC env (they die with the process), and a deployed agent's own env
+ *   arrives as a file written into its sandbox and scrubbed after boot —
+ *   studio sandboxes receive per-session data over the control channel.
  * - **No host filesystem**: the sandbox sees only the baked guest image.
  * - **Resource limits**: memory/CPU caps map onto Modal's per-sandbox
  *   `memoryLimitMiB`/`cpuLimit` options.
@@ -49,7 +51,16 @@ import {
 import type { RpcWebSocket } from "./rpc-transport.ts";
 import { resolveSandboxRole, type SpawnIdentity, sandboxTags } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
-import { type DialGuest, dialGuest, warmFromGuest } from "./warm-harness.ts";
+import {
+  type AgentServerHandle,
+  agentBootEnv,
+  agentServerFromGuest,
+  type DialGuest,
+  dialGuest,
+  type GuestFetch,
+  pollGuestHealth,
+  warmFromGuest,
+} from "./warm-harness.ts";
 
 // ── Structural Modal types ───────────────────────────────────────────────────
 // Minimal shapes of the Modal SDK objects we touch. Structural rather than the
@@ -75,6 +86,12 @@ export type ModalSandboxLike = {
     params: { mode: "binary"; stdout: "pipe"; stderr: "pipe"; env?: Record<string, string> },
   ): Promise<ModalProcLike>;
   tunnels(timeoutMs?: number): Promise<Record<number, ModalTunnelLike>>;
+  /**
+   * Sandbox filesystem writes — how agent-mode boot artifacts (bundle + env)
+   * land in the sandbox before exec. The same API the harness-image builder
+   * uses, so the ~13 MB harness write is proven headroom for worker bundles.
+   */
+  filesystem: { writeText(data: string, remotePath: string): Promise<void> };
   /** Replace the sandbox's tags (observability — see sandbox-role.ts). */
   setTags(tags: Record<string, string>): Promise<void>;
   terminate(): Promise<unknown>;
@@ -333,6 +350,111 @@ export async function spawnModalWarm(
     // Never leak a sandbox whose harness failed to start.
     await sb.terminate().catch(() => undefined);
     throw new Error(`Modal sandbox spawn failed: ${errorMessage(err)}`, { cause: err });
+  }
+}
+
+// ── Agent-server spawning (the HTTP-only contract) ───────────────────────────
+
+/** Where agent-mode boot artifacts land in the sandbox (written pre-exec). */
+const AGENT_BUNDLE_REMOTE_PATH = "/tmp/aai-agent-bundle.mjs";
+const AGENT_ENV_REMOTE_PATH = "/tmp/aai-agent-env.json";
+
+/**
+ * Spawn one DEPLOYED AGENT as a server in a fresh Modal sandbox: create from
+ * the deploy's pinned image (falling back to current — see
+ * `createGuestSandbox`), write the bundle and agent env into the sandbox,
+ * exec the harness in agent mode, and wait for its public `/health` — a 200
+ * means the bundle is loaded and sessions can be served. No control channel
+ * is dialed; the returned handle's whole surface is HTTP + terminate.
+ */
+export async function spawnModalAgentServer(
+  opts: {
+    harnessPath: string;
+    slug: string;
+    workerCode: string;
+    workerSha256: string;
+    agentEnv: Record<string, string>;
+    imageTag?: string | undefined;
+  },
+  ctx?: ModalSpawnContext,
+  fetchFn?: GuestFetch,
+): Promise<AgentServerHandle> {
+  const [code, context] = await Promise.all([
+    harnessCode(opts.harnessPath),
+    ctx ? Promise.resolve(ctx) : modalContext(),
+  ]);
+  const limits = parseSandboxLimitsFromEnv(process.env);
+  assertModalResourcePairs(limits);
+  const regions = parseSandboxRegionsFromEnv(process.env);
+  const role = resolveSandboxRole({ slug: opts.slug });
+
+  const t0 = performance.now();
+  const sb = await context.createGuestSandbox(
+    code,
+    {
+      command: ["sleep", "infinity"],
+      encryptedPorts: [GUEST_PORT],
+      timeoutMs: limits.timeoutMs ?? DEFAULT_SANDBOX_TIMEOUT_MS,
+      idleTimeoutMs: limits.idleTimeoutMs ?? DEFAULT_SANDBOX_IDLE_TIMEOUT_MS,
+      ...(limits.memoryMiB !== undefined && { memoryMiB: limits.memoryMiB }),
+      ...(limits.memoryLimitMiB !== undefined && { memoryLimitMiB: limits.memoryLimitMiB }),
+      ...(limits.cpu !== undefined && { cpu: limits.cpu }),
+      ...(limits.cpuLimit !== undefined && { cpuLimit: limits.cpuLimit }),
+      ...(regions && { regions }),
+      tags: sandboxTags(role, opts.slug),
+    },
+    opts.imageTag,
+  );
+  try {
+    // Boot artifacts land on the sandbox filesystem BEFORE exec — the guest
+    // reads (and hash-verifies) them at boot; nothing arrives over a channel.
+    await sb.filesystem.writeText(opts.workerCode, AGENT_BUNDLE_REMOTE_PATH);
+    await sb.filesystem.writeText(JSON.stringify(opts.agentEnv), AGENT_ENV_REMOTE_PATH);
+
+    const token = randomBytes(32).toString("hex");
+    const [proc, tunnels] = await Promise.all([
+      sb.exec(["node", HARNESS_REMOTE_PATH], {
+        mode: "binary",
+        stdout: "pipe",
+        stderr: "pipe",
+        env: {
+          ...agentBootEnv({
+            token,
+            port: GUEST_PORT,
+            bundlePath: AGENT_BUNDLE_REMOTE_PATH,
+            bundleSha256: opts.workerSha256,
+            envPath: AGENT_ENV_REMOTE_PATH,
+          }),
+          [CONTAINED_ENV]: "1",
+        },
+      }),
+      sb.tunnels(),
+    ]);
+    const tunnel = tunnels[GUEST_PORT];
+    if (!tunnel) {
+      throw new Error(`no tunnel for guest port ${GUEST_PORT}`);
+    }
+    const origin = `wss://${tunnel.host}:${tunnel.port}`;
+    await pollGuestHealth(origin, proc, fetchFn);
+
+    debug("Modal agent server spawned", {
+      sandboxId: sb.sandboxId,
+      slug: opts.slug,
+      ms: Math.round(performance.now() - t0),
+    });
+
+    return agentServerFromGuest({
+      label: `modal:${sb.sandboxId}`,
+      proc,
+      terminate: () => sb.terminate(),
+      origin,
+      token,
+      fetchFn,
+    });
+  } catch (err) {
+    // Never leak a sandbox whose agent server failed to come up.
+    await sb.terminate().catch(() => undefined);
+    throw new Error(`Modal agent-server spawn failed: ${errorMessage(err)}`, { cause: err });
   }
 }
 

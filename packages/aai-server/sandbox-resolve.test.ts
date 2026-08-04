@@ -14,7 +14,6 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { RETIRE_POLL_MS } from "./constants.ts";
 import { createMemoryPlatformEvents } from "./platform-events.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import type { RpcConnection } from "./rpc-transport.ts";
 import type { Sandbox } from "./sandbox.ts";
 import { createMemorySandboxRegistry } from "./sandbox-registry.ts";
 import { brokerSessionUrl, resolveSandbox, watchAgentInvalidation } from "./sandbox-resolve.ts";
@@ -22,28 +21,21 @@ import { createSlotCache } from "./sandbox-slots.ts";
 import { appDbSecretName, createMemorySecretStore } from "./secret-store.ts";
 import { createTestStore } from "./test-utils.ts";
 
-const { mockCreateSandboxVm } = vi.hoisted(() => {
-  const mockConn: RpcConnection = {
-    sendRequest: vi.fn().mockResolvedValue(undefined),
-    sendNotification: vi.fn(),
-    onRequest: vi.fn(),
-    onNotification: vi.fn(),
-    listen: vi.fn(),
-    dispose: vi.fn(),
-  };
-  const mockCreateSandboxVm = vi.fn().mockResolvedValue({
-    conn: mockConn,
+const { mockSpawnAgentServer } = vi.hoisted(() => {
+  const mockSpawnAgentServer = vi.fn().mockResolvedValue({
     sessionUrl: "wss://tunnel.test:443/websocket",
+    activeSessions: vi.fn().mockResolvedValue(0),
+    drain: vi.fn().mockResolvedValue(undefined),
     shutdown: vi.fn().mockResolvedValue(undefined),
     alive: () => true,
     onExit: vi.fn(),
   });
-  return { mockCreateSandboxVm };
+  return { mockSpawnAgentServer };
 });
 
 vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./sandbox-vm.ts")>()),
-  createSandboxVm: mockCreateSandboxVm,
+  spawnAgentServer: mockSpawnAgentServer,
 }));
 
 const TEST_AGENT_CONFIG: IsolateConfig = {
@@ -391,7 +383,7 @@ describe("storage (ctx.db) delivery", () => {
       deprovision: () => Promise.reject(new Error("not expected")),
       connectionUrl: vi.fn(() => "postgres://app_0123456789abcdef:pw@db.example:6543/postgres"),
     };
-    mockCreateSandboxVm.mockClear();
+    mockSpawnAgentServer.mockClear();
 
     const sandbox = await resolveSandbox("stored-app", {
       slots: createSlotCache(),
@@ -403,7 +395,7 @@ describe("storage (ctx.db) delivery", () => {
 
     // The guest connects to its OWN scoped database directly — the app-db
     // credential rides in the env, and no db handle stays host-side.
-    const vmOpts = mockCreateSandboxVm.mock.calls[0]?.[0] as {
+    const vmOpts = mockSpawnAgentServer.mock.calls[0]?.[0] as {
       env: Record<string, string>;
     };
     expect(vmOpts.env).toEqual({
@@ -415,9 +407,9 @@ describe("storage (ctx.db) delivery", () => {
 
   it("leaves the env untouched when storage is not enabled", async () => {
     const deps = await seedAgent("no-storage");
-    mockCreateSandboxVm.mockClear();
+    mockSpawnAgentServer.mockClear();
     const sandbox = await resolveSandbox("no-storage", deps);
-    const vmOpts = mockCreateSandboxVm.mock.calls[0]?.[0] as {
+    const vmOpts = mockSpawnAgentServer.mock.calls[0]?.[0] as {
       env: Record<string, string>;
     };
     expect(vmOpts.env).toEqual({});

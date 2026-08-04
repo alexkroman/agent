@@ -137,6 +137,7 @@ function makeFakeSandbox(): Sandbox {
   return {
     sessionUrl: vi.fn(() => Promise.resolve("wss://tunnel.test:443/websocket")),
     activeSessions: vi.fn(() => Promise.resolve(0)),
+    drain: vi.fn(() => Promise.resolve()),
     alive: vi.fn(() => true),
     shutdown: vi.fn(() => Promise.resolve()),
   };

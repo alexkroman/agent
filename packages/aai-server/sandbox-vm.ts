@@ -5,23 +5,24 @@
  * (subprocess-sandbox.ts). `sandbox-backend.ts` owns the selection
  * policy.
  *
- * Provides the `SandboxHandle` abstraction that `sandbox.ts` delegates to.
- * The guest runs the COMPLETE agent runtime; this control channel (JSON-RPC
- * over the harness's WebSocket, dialed through the sandbox's Modal tunnel or
- * the container's published loopback port) carries only bundle loading,
- * one-shot tool trials, and the session-count probe. Clients connect
- * directly to the guest's public `/websocket` endpoint
- * (`SandboxHandle.sessionUrl`).
+ * Deployed agents spawn as SERVERS ({@link spawnAgentServer}): boot
+ * artifacts delivered at exec time, readiness = the guest's public
+ * `/health`, and the host's whole ongoing surface is the token-gated
+ * `/manage/*` pair — no control channel exists on an agent sandbox.
+ *
+ * The control-channel machinery below ({@link spawnWarmHarness},
+ * {@link acquireWarmHarness}, {@link describeBundle}) remains for the
+ * STUDIO side — coding-agent sessions, Publish, deploy-time bundle
+ * inspection, and the warm pool — which always runs the CURRENT harness
+ * image and may change atomically with the server.
  */
 
+import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { performance } from "node:perf_hooks";
-import { errorMessage } from "@alexkroman1/aai";
-import { debug } from "./_debug-log.ts";
 import { keyedMemoAsync } from "./_memo.ts";
 import { resolveHarnessPath } from "./constants.ts";
 import { harnessImageTag, resolveToolchainSpecs } from "./modal-harness-image.ts";
-import { DEFAULT_SANDBOX_IMAGE, spawnModalWarm } from "./modal-sandbox.ts";
+import { DEFAULT_SANDBOX_IMAGE, spawnModalAgentServer, spawnModalWarm } from "./modal-sandbox.ts";
 import type { BundleLoadResult, GuestConnection } from "./rpc-schemas.ts";
 import { resolveSandboxBackend } from "./sandbox-backend.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
@@ -31,24 +32,10 @@ import {
   type SpawnIdentity,
   sandboxTags,
 } from "./sandbox-role.ts";
-import { spawnSubprocessWarm } from "./subprocess-sandbox.ts";
+import { spawnSubprocessAgentServer, spawnSubprocessWarm } from "./subprocess-sandbox.ts";
+import type { AgentServerHandle } from "./warm-harness.ts";
 
 // ── Types ────────────────────────────────────────────────────────────────────
-
-export type SandboxHandle = {
-  conn: GuestConnection;
-  /** Public client-session endpoint on the sandbox's tunnel. */
-  sessionUrl: string;
-  /** True while the underlying guest process is alive. */
-  alive(): boolean;
-  /**
-   * Register a listener for guest exit. Fires exactly once, and immediately
-   * when the guest is already gone (see `warmFromGuest`) — so a caller that
-   * registers late still learns the sandbox is unusable.
-   */
-  onExit(cb: () => void): void;
-  shutdown(): Promise<void>;
-};
 
 /**
  * A spawned harness whose guest process is running and whose RPC connection
@@ -82,7 +69,7 @@ export type WarmHarness = {
   [Symbol.asyncDispose](): Promise<void>;
 };
 
-export type SandboxVmOptions = {
+export type AgentSpawnOptions = {
   slug: string;
   workerCode: string;
   env: Record<string, string>;
@@ -96,61 +83,6 @@ export type SandboxVmOptions = {
    */
   imageTag?: string | undefined;
 };
-
-/** Minimal interface the pool exposes to createSandboxVm. */
-type WarmHarnessSource = {
-  acquire(): Promise<WarmHarness | null>;
-};
-
-// ── Shared setup ─────────────────────────────────────────────────────────────
-
-/**
- * Finalize a warm harness for a specific agent: start listening on the
- * connection and send bundle/load. Returns the configured SandboxHandle.
- *
- * Splitting listen → bundle-load lets the pool spawn a harness ahead of
- * time without committing to an agent identity. (No host-side request
- * handlers exist for agent sandboxes anymore — ctx.db connects directly
- * from the guest via the env's DATABASE_URL; an unexpected guest→host
- * request gets the transport's -32601 reply.)
- */
-async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Promise<SandboxHandle> {
-  const { conn } = warm;
-
-  conn.listen();
-
-  const tBundle = performance.now();
-  try {
-    await conn.sendRequest("bundle/load", {
-      code: opts.workerCode,
-      env: opts.env,
-    });
-  } catch (err) {
-    // bundle/load can time out (a bundle whose top level never resolves).
-    // Tear down the harness sandbox so it doesn't leak, then rethrow.
-    await warm[Symbol.asyncDispose]();
-    throw err;
-  }
-  debug("Sandbox bundle/load complete", {
-    slug: opts.slug,
-    bytes: opts.workerCode.length,
-    ms: Math.round(performance.now() - tBundle),
-  });
-
-  return {
-    conn,
-    sessionUrl: warm.sessionUrl,
-    // Liveness passes straight through from the harness: the pool already
-    // reaps on these, and forwarding them is what lets the per-agent sandbox
-    // (and through it the slot cache) notice a guest that dies mid-life.
-    alive: () => warm.alive(),
-    onExit: (cb) => warm.onExit(cb),
-    // One teardown definition (`WarmHarness[Symbol.asyncDispose]`) so this
-    // handle and every error path below can't drift on the shutdown-notify /
-    // dispose / cleanup triple.
-    shutdown: () => warm[Symbol.asyncDispose](),
-  };
-}
 
 // ── Warm-harness spawning ────────────────────────────────────────────────────
 
@@ -173,7 +105,7 @@ async function configureSandbox(warm: WarmHarness, opts: SandboxVmOptions): Prom
  * container.
  */
 export async function spawnWarmHarness(
-  opts: { harnessPath: string; imageTag?: string | undefined } & SpawnIdentity,
+  opts: { harnessPath: string } & SpawnIdentity,
 ): Promise<WarmHarness> {
   switch (resolveSandboxBackend(process.env)) {
     case "subprocess":
@@ -285,68 +217,47 @@ export async function describeBundle(
   return result?.config;
 }
 
-// ── Test-only internals ─────────────────────────────────────────────────
+// ── Agent-server spawning ─────────────────────────────────────────────────────
 
-/** @internal Exposed for unit tests only. */
-export const _internals = {
-  configureSandbox,
+/** Injectable backend spawners (tests). */
+type AgentSpawners = {
+  modal: typeof spawnModalAgentServer;
+  subprocess: typeof spawnSubprocessAgentServer;
 };
 
-// ── Factory ──────────────────────────────────────────────────────────────────
-
 /**
- * Creates a sandbox backed by the selected backend (see spawnWarmHarness).
+ * Spawn one DEPLOYED AGENT as a server on the selected backend. The single
+ * dispatch point mirroring {@link spawnWarmHarness}, but for the HTTP-only
+ * agent contract: boot artifacts (bundle, hash, env) are delivered at exec
+ * time, readiness is the guest's `/health`, and the returned handle exposes
+ * only the manage surface plus terminate.
  *
- * If a `pool` is provided, attempts to acquire a pre-warmed harness from
- * it before spawning a fresh one. Falls back to a fresh spawn if the pool
- * is empty or returns a dead harness.
+ * Agents never take the warm pool: pooled sandboxes are control-channel
+ * harnesses on the CURRENT image, and the agent contract is boot-time
+ * provisioning on the deploy's PINNED image — there is nothing a generic
+ * pre-booted harness could contribute without reintroducing bundle/load.
  */
-export async function createSandboxVm(
-  opts: SandboxVmOptions,
-  pool?: WarmHarnessSource,
-  spawn: typeof spawnWarmHarness = spawnWarmHarness,
-): Promise<SandboxHandle> {
-  // Pooled sandboxes were spawned from the CURRENT harness image, so an
-  // agent pinned to a different image must skip the pool — serving it a
-  // pooled harness would silently un-pin its runtime environment.
-  const poolUsable =
-    !opts.imageTag || opts.imageTag === (await currentHarnessImageTag(opts.harnessPath));
-  if (pool && poolUsable) {
-    const warm = await pool.acquire();
-    // A ready pooled harness is the only fast path.
-    if (warm) {
-      // Stamp the pooled sandbox's real identity (role inferred from the
-      // slug: agent, or preview for `<project>-preview` slugs).
-      retagWarm(warm, { slug: opts.slug });
-      try {
-        return await configureSandbox(warm, opts);
-      } catch (err: unknown) {
-        // The warm harness can die between acquire()'s alive() check and
-        // bundle/load. Don't fail the session for it — clean up (idempotent;
-        // the bundle/load failure path already did) and fall through to a
-        // cold spawn, which either works or surfaces the real error.
-        console.warn("Warm sandbox configuration failed; falling back to cold spawn", {
-          slug: opts.slug,
-          error: errorMessage(err),
-        });
-        await warm[Symbol.asyncDispose]();
-      }
-    }
-  }
-
-  const warm = await spawn({
+export async function spawnAgentServer(
+  opts: AgentSpawnOptions,
+  spawners: AgentSpawners = {
+    modal: spawnModalAgentServer,
+    subprocess: spawnSubprocessAgentServer,
+  },
+): Promise<AgentServerHandle> {
+  // The blob store is content-addressed; carrying the hash to the guest
+  // (which verifies before loading) extends that property end-to-end.
+  const workerSha256 = createHash("sha256").update(opts.workerCode, "utf-8").digest("hex");
+  const common = {
     harnessPath: opts.harnessPath,
     slug: opts.slug,
-    imageTag: opts.imageTag,
-  });
-  try {
-    return await configureSandbox(warm, opts);
-  } catch (err) {
-    // configureSandbox's own cleanup only covers the bundle/load failure
-    // path; a throw before it (handler registration, listen) would strand
-    // the just-spawned Modal sandbox until the guest orphan watchdog reaps
-    // it. Idempotent with that path's cleanup.
-    await warm[Symbol.asyncDispose]();
-    throw err;
+    workerCode: opts.workerCode,
+    workerSha256,
+    agentEnv: opts.env,
+  };
+  switch (resolveSandboxBackend(process.env)) {
+    case "subprocess":
+      return spawners.subprocess(common);
+    default:
+      return spawners.modal({ ...common, imageTag: opts.imageTag });
   }
 }

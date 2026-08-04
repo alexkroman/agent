@@ -48,8 +48,9 @@
 
 import { spawn } from "node:child_process";
 import { randomBytes } from "node:crypto";
-import { access } from "node:fs/promises";
+import { access, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { performance } from "node:perf_hooks";
 import { Readable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
@@ -59,10 +60,15 @@ import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
 import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
 import type { WarmHarness } from "./sandbox-vm.ts";
 import {
+  type AgentServerHandle,
+  agentBootEnv,
+  agentServerFromGuest,
   type DialGuest,
   dialGuest,
+  type GuestFetch,
   type GuestProcLike,
   getFreePort,
+  pollGuestHealth,
   warmFromGuest,
 } from "./warm-harness.ts";
 
@@ -80,9 +86,15 @@ export type HarnessSpawnParams = {
   harnessPath: string;
   /** Loopback port the harness binds directly (no port mapping here). */
   port: number;
-  /** Per-sandbox bearer token for the `/ws` control channel. */
+  /** Per-sandbox bearer token (control channel, or agent manage surface). */
   token: string;
   memoryLimitMiB?: number | undefined;
+  /**
+   * Extra guest env — agent mode's boot convention (`agentBootEnv`). Never
+   * the server's own environment; the minimal-env parity rule in the module
+   * doc stands.
+   */
+  extraEnv?: Record<string, string> | undefined;
 };
 
 export type SubprocessSpawnContext = {
@@ -107,6 +119,7 @@ export function buildHarnessSpawn(params: HarnessSpawnParams): {
       // The only inherited variable. A container image ships a PATH and tool
       // code may shell out; everything else is withheld (see module doc).
       ...(process.env.PATH === undefined ? {} : { PATH: process.env.PATH }),
+      ...params.extraEnv,
     },
     // Not the server's cwd: a neutral directory mirrors the container's, and
     // keeps repo-relative paths from resolving inside the checkout.
@@ -222,6 +235,87 @@ export async function spawnSubprocessWarm(
     }
   } catch (err) {
     throw new Error(`Subprocess sandbox spawn failed: ${errorMessage(err)}`, { cause: err });
+  }
+}
+
+// ── Agent-server spawning (the HTTP-only contract) ───────────────────────────
+
+/**
+ * Spawn one DEPLOYED AGENT as a server in a local child process (the
+ * no-isolation dev backend — mirrors `spawnModalAgentServer`): write the
+ * bundle and agent env into a scratch dir, exec the harness in agent mode,
+ * and wait for `/health`. No control channel; the handle's whole surface is
+ * HTTP + kill. `imageTag` has no meaning here (there is no image) and is
+ * deliberately not accepted.
+ */
+export async function spawnSubprocessAgentServer(
+  opts: {
+    harnessPath: string;
+    slug: string;
+    workerCode: string;
+    workerSha256: string;
+    agentEnv: Record<string, string>;
+  },
+  ctx: SubprocessSpawnContext = realContext(),
+  fetchFn?: GuestFetch,
+): Promise<AgentServerHandle> {
+  const t0 = performance.now();
+  try {
+    await access(opts.harnessPath);
+    const dir = await mkdtemp(join(tmpdir(), "aai-agent-boot-"));
+    const bundlePath = join(dir, "bundle.mjs");
+    const envPath = join(dir, "env.json");
+    await writeFile(bundlePath, opts.workerCode, "utf-8");
+    await writeFile(envPath, JSON.stringify(opts.agentEnv), "utf-8");
+
+    const port = await getFreePort();
+    const limits = parseSandboxLimitsFromEnv(process.env);
+    const token = randomBytes(32).toString("hex");
+
+    const proc = ctx.runGuestProcess({
+      harnessPath: opts.harnessPath,
+      port,
+      token,
+      memoryLimitMiB: limits.memoryLimitMiB,
+      extraEnv: agentBootEnv({
+        token,
+        port,
+        bundlePath,
+        bundleSha256: opts.workerSha256,
+        envPath,
+      }),
+    });
+
+    const terminate = async (): Promise<void> => {
+      proc.kill();
+      // Scratch-dir cleanup: the guest already scrubbed env.json on boot;
+      // this reaps the bundle copy once the guest is gone.
+      await rm(dir, { recursive: true, force: true }).catch(() => undefined);
+    };
+
+    try {
+      const origin = `ws://127.0.0.1:${port}`;
+      await pollGuestHealth(origin, proc, fetchFn);
+      debug("Subprocess agent server spawned", {
+        slug: opts.slug,
+        port,
+        ms: Math.round(performance.now() - t0),
+      });
+      return agentServerFromGuest({
+        label: `subprocess:${port}`,
+        proc,
+        terminate,
+        origin,
+        token,
+        fetchFn,
+      });
+    } catch (err) {
+      // Never leak a harness whose agent server failed to come up.
+      await terminate().catch(() => undefined);
+      throw err;
+    }
+  } catch (err) {
+    throw new Error(`Subprocess agent-server spawn failed: ${errorMessage(err)}`, { cause: err });
   }
 }
 

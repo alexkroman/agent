@@ -64,11 +64,6 @@ export const IsolateConfigSchema = AgentConfigSchema.extend({
 
 export type IsolateConfig = z.infer<typeof IsolateConfigSchema>;
 
-/** Response of the guest `status` request (guest-asserted wire data). */
-export const StatusResponseSchema = z.object({
-  activeSessions: z.number().int().nonnegative(),
-});
-
 /**
  * Response of one one-shot guest tool trial (the studio's test_agent).
  * Exactly one of `result`/`error` is set; `state` rides back so a trial can
@@ -113,14 +108,15 @@ export type ToolExecuteParams = {
  * agent runtime and clients connect directly to its public `/websocket`
  * endpoint on the same tunnel.
  *
- * VERSIONING: agent sandboxes are pinned to the harness image recorded at
- * deploy time (`harness_image_tag` — see sandbox-vm.ts), so the host may be
- * newer than a pinned agent's harness. The AGENT-side methods
- * (`bundle/load`, `tool/execute`, `status`, `shutdown`) must therefore stay
- * BACKWARD compatible — additive changes only; never rename a method or
- * repurpose a param an older harness interprets differently. The studio
- * methods are exempt: studio sandboxes always spawn from the current image,
- * so that half of the contract still changes atomically with the server.
+ * VERSIONING: DEPLOYED AGENTS do not use this link at all — their whole
+ * contract is the exec-env boot convention plus the token-gated `/manage/*`
+ * HTTP surface (see aai-guest/harness-agent-mode.ts and
+ * `agentServerFromGuest`), pinned per deploy via the harness image and
+ * versioned by GUEST_CONTRACT_VERSION. That HTTP surface must stay BACKWARD
+ * compatible (additive changes only): the host may be newer than a pinned
+ * agent's harness. THIS map is the studio/inspect side — those sandboxes
+ * always spawn from the current image, so it changes atomically with the
+ * server.
  */
 /**
  * Params of the host→guest `studio/session-init` request — installs the
@@ -167,8 +163,6 @@ export type GuestRpcSchema = {
     "tool/execute": { params: ToolExecuteParams; result: unknown };
     "studio/session-init": { params: StudioSessionInitParams; result: unknown };
     "workspace/deploy": { params: WorkspaceDeployParams; result: unknown };
-    /** Session-aware idleness: the host's idle eviction asks before killing. */
-    status: { params: undefined; result: unknown };
   };
   requestsIn: {
     /** End-of-turn workspace write-back into the project store. */

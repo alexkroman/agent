@@ -61,14 +61,23 @@ function makeFakeProc(): FakeProc {
 
 function makeFakeSandbox(fakeProc: FakeProc): ModalSandboxLike & {
   execCalls: { command: string[]; params: Record<string, unknown> }[];
+  /** path → content written pre-exec (agent-mode boot artifacts). */
+  files: Map<string, string>;
   updateNetworkPolicy: ReturnType<typeof vi.fn>;
   setTags: ReturnType<typeof vi.fn>;
   terminate: ReturnType<typeof vi.fn>;
 } {
   const execCalls: { command: string[]; params: Record<string, unknown> }[] = [];
+  const files = new Map<string, string>();
   return {
     sandboxId: "sb-test",
     execCalls,
+    files,
+    filesystem: {
+      writeText: async (data: string, remotePath: string) => {
+        files.set(remotePath, data);
+      },
+    },
     exec: async (command, params) => {
       execCalls.push({ command, params: params as unknown as Record<string, unknown> });
       return fakeProc.proc;

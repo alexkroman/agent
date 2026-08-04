@@ -16,12 +16,17 @@
 
 /** Paths the guest harness serves. Mirrors aai-guest's own dispatch. */
 export const GUEST_ROUTES = {
-  /** Host↔guest JSON-RPC control channel (bearer-gated). */
+  /** Host↔guest JSON-RPC control channel (bearer-gated; studio mode only). */
   control: "/ws",
   /** PUBLIC client voice sessions, connected directly by browsers. */
   session: "/websocket",
   /** PUBLIC studio coding-agent chat (SSE), bearer-gated by the caller's key. */
   studioChat: "/studio/chat",
+  /** PUBLIC readiness probe (the SDK server's own /health). */
+  health: "/health",
+  /** Agent-mode management surface (bearer-gated): session count + drain. */
+  manageStatus: "/manage/status",
+  manageDrain: "/manage/drain",
 } as const;
 
 export type GuestRoute = (typeof GUEST_ROUTES)[keyof typeof GUEST_ROUTES];

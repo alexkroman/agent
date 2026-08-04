@@ -5,8 +5,20 @@
  * The harness embeds NO agent runtime: the worker bundle ships its own
  * (`__aaiCreateRuntime`, the user's installed SDK bundled in by the CLI
  * wrapper), so a deployed agent runs exactly the runtime version it was
- * built against and platform SDK drift cannot break it. The harness serves
- * two WebSocket surfaces on its tunneled port:
+ * built against and platform SDK drift cannot break it.
+ *
+ * TWO MODES, selected by the spawner via `AAI_GUEST_MODE` (behavior
+ * selection only — never a security boundary; a hostile bundle can ignore
+ * it, and gains nothing because capability is what the HOST delivers):
+ *
+ * - **agent** — the "guest is a server" contract: bundle + env arrive as
+ *   files at exec time, no control channel exists, the platform's only
+ *   surfaces are the public session endpoints plus the token-gated
+ *   `/manage/*` pair, and lifecycle is guest-owned (see
+ *   harness-agent-mode.ts). Deployed agents run this mode, on the harness
+ *   image PINNED at deploy time.
+ * - **default (studio/inspect/pool)** — the control-channel mode below,
+ *   platform-versioned (always the current image), serving:
  *
  * - `/ws` — the host control channel, authenticated by the per-sandbox
  *   bearer token (AAI_GUEST_TOKEN, delivered via the exec env; the tunnel
@@ -46,6 +58,7 @@
 import { pathToFileURL } from "node:url";
 import { createServer, type SessionRuntime } from "@alexkroman1/aai/runtime";
 import { type WebSocket, WebSocketServer } from "ws";
+import { createIdleController, createManageHandler, readAgentBoot } from "./harness-agent-mode.ts";
 import { verifyBearer } from "./harness-auth.ts";
 import { ensureRuntime, type HarnessState, loadBundle } from "./harness-bundle.ts";
 import { installCrashGuards } from "./harness-crash-guards.ts";
@@ -64,7 +77,12 @@ import type {
   JsonRpcRequest,
   JsonRpcResponse,
 } from "./harness-types.ts";
-import { HARNESS_ORPHAN_POLL_MS, HARNESS_ORPHAN_TIMEOUT_MS } from "./limits.ts";
+import {
+  AGENT_IDLE_EXIT_MS,
+  AGENT_IDLE_POLL_MS,
+  HARNESS_ORPHAN_POLL_MS,
+  HARNESS_ORPHAN_TIMEOUT_MS,
+} from "./limits.ts";
 import { withBuildDir } from "./studio-build.ts";
 import { handleStudioRequest, initStudioSession, type StudioSessionParams } from "./studio-chat.ts";
 import { deployWorkspaceDir } from "./studio-publish.ts";
@@ -226,6 +244,64 @@ export function lazyRuntime(state: HarnessState): SessionRuntime {
   };
 }
 
+/**
+ * AGENT MODE — the "guest is a server" contract (see harness-agent-mode.ts).
+ * Everything arrives at exec time: the bundle and env are read (and the
+ * bundle hash-verified) from files the spawner wrote into the sandbox, the
+ * bundle is loaded BEFORE listen (so a 200 from /health means "ready"), and
+ * there is NO host control channel — the platform's only surfaces are the
+ * public session endpoints and the token-gated /manage/* pair. Lifecycle is
+ * guest-owned: idle self-exit replaces the orphan timeout, and a drain
+ * refuses new sessions then exits with the last one.
+ */
+async function mainAgent(port: number, host: string, token: string): Promise<void> {
+  const state: HarnessState = {
+    agent: null,
+    createRuntime: null,
+    env: Object.freeze({}),
+    runtime: null,
+    activeSessions: 0,
+    studio: null,
+  };
+
+  const rawIdle = Number(process.env.AAI_GUEST_IDLE_EXIT_MS ?? AGENT_IDLE_EXIT_MS);
+  const idle = createIdleController({
+    activeSessions: () => state.activeSessions,
+    idleExitMs: Number.isFinite(rawIdle) && rawIdle >= 0 ? rawIdle : AGENT_IDLE_EXIT_MS,
+    pollMs: AGENT_IDLE_POLL_MS,
+  });
+
+  const boot = await readAgentBoot();
+  await loadBundle(state, { code: boot.code, env: boot.env });
+
+  const base = lazyRuntime(state);
+  const runtime: SessionRuntime = {
+    startSession(ws, opts) {
+      // A draining guest is detached from the broker, but a client holding
+      // its old sessionUrl can still dial the tunnel directly — refuse with
+      // a "try again" close so the client re-brokers onto the replacement.
+      if (idle.isDraining()) {
+        (ws as { close?: (code?: number, reason?: string) => void }).close?.(1013, "draining");
+        return;
+      }
+      base.startSession(ws, opts);
+    },
+    shutdown: base.shutdown,
+  };
+
+  const server = createServer({
+    runtime,
+    request: createManageHandler({
+      token,
+      activeSessions: () => state.activeSessions,
+      isDraining: idle.isDraining,
+      startDrain: idle.startDrain,
+    }),
+  });
+  await server.listen(port, host);
+  console.error(`agent-mode harness listening on ${host}:${port}`);
+}
+
 function main(): void {
   installCrashGuards();
   const token = process.env.AAI_GUEST_TOKEN;
@@ -251,6 +327,17 @@ function main(): void {
   // the integration tests, both of which run the harness as a bare child
   // process on the dev machine's own interfaces.
   const host = process.env.AAI_GUEST_HOST ?? "0.0.0.0";
+
+  // Agent mode: boot-time provisioning, HTTP-only contract, no control
+  // channel. A boot failure (missing/corrupt bundle, bad env file) exits
+  // non-zero — the spawner sees the process die and fails the spawn loudly.
+  if (process.env.AAI_GUEST_MODE === "agent") {
+    mainAgent(port, host, token).catch((err: unknown) => {
+      console.error(`agent-mode boot failed: ${errMsg(err)}`);
+      process.exit(1);
+    });
+    return;
+  }
 
   const state: HarnessState = {
     agent: null,

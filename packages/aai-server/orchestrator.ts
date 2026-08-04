@@ -108,7 +108,11 @@ export type OrchestratorOpts = {
   studioUpstream?: string;
   /** Test seam for the studio proxy's outbound fetch. */
   studioProxyFetch?: typeof globalThis.fetch;
-  /** Optional pre-warmed Node harness pool for faster cold starts. */
+  /**
+   * Optional pre-warmed harness pool. Agents never pool (they spawn as
+   * servers on their pinned image); this only accelerates deploy-time
+   * bundle inspection (`describeBundle`).
+   */
   pool?: SandboxPool;
   /**
    * Extracts an agent config from an uploaded worker bundle. Defaults to

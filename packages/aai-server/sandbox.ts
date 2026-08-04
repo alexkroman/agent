@@ -2,22 +2,20 @@
 /**
  * Agent sandbox lifecycle, backed by remote Modal Sandboxes.
  *
- * The COMPLETE agent runs in the guest: the bundle ships the SDK runtime,
- * and clients connect DIRECTLY to the sandbox's public `/websocket` endpoint
- * (its Modal tunnel) — discovered via the platform's `GET /:slug/client-config`
- * broker. The host holds only the control channel (`sandbox-vm.ts`): bundle
- * loading, one-shot tool trials, and the session-count probe idle eviction
- * consults. (ctx.db is no longer host-proxied — the app's own DATABASE_URL
- * rides in the bundle/load env; see sandbox-resolve.ts.)
+ * The guest IS a server: the COMPLETE agent runs in it (the bundle ships the
+ * SDK runtime), clients connect DIRECTLY to its public `/websocket` endpoint
+ * (discovered via the `GET /:slug/client-config` broker), and the host holds
+ * NO channel to it — boot artifacts (bundle, hash, env) are delivered at
+ * exec time, and the platform's only ongoing surface is the token-gated
+ * `/manage/*` pair (session-count probe for idle eviction / retire drains,
+ * and the drain request). See `spawnAgentServer` in sandbox-vm.ts.
  */
 
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
 import type { StoredAgentConfig } from "./agent-store.ts";
 import { resolveHarnessPath } from "./constants.ts";
-import { StatusResponseSchema } from "./rpc-schemas.ts";
-import type { SandboxPool } from "./sandbox-pool.ts";
-import { createSandboxVm } from "./sandbox-vm.ts";
+import { spawnAgentServer } from "./sandbox-vm.ts";
 
 // ── Types ───────────────────────────────────────────────────────────────
 
@@ -32,11 +30,9 @@ export type SandboxOptions = {
   agentConfig: StoredAgentConfig;
   /**
    * Harness image the agent was deployed against (per-deploy pinning —
-   * see SandboxVmOptions.imageTag).
+   * see AgentSpawnOptions.imageTag).
    */
   imageTag?: string | undefined;
-  /** Optional pre-warmed harness pool for faster cold starts. */
-  pool?: SandboxPool;
   /**
    * Called when the sandbox becomes permanently unusable — either the VM
    * failed to start (rejected `vmReady`) or the guest process exited after a
@@ -53,7 +49,7 @@ export type SandboxOptions = {
 export type Sandbox = {
   /**
    * The sandbox's public client-session endpoint (`wss://…/websocket` on its
-   * Modal tunnel). Resolves once the guest is configured; rejects when the
+   * Modal tunnel). Resolves once the guest answers /health; rejects when the
    * VM failed to start.
    */
   sessionUrl(): Promise<string>;
@@ -63,6 +59,14 @@ export type Sandbox = {
    * unreachable guest answers 0 — eviction should proceed.
    */
   activeSessions(): Promise<number>;
+  /**
+   * Ask the guest to stop accepting new sessions and exit when the last one
+   * ends (`POST /manage/drain`). Best-effort: retirement still polls
+   * `activeSessions` and terminates at the deadline either way, but a
+   * drained guest also refuses stragglers dialing its old tunnel URL
+   * directly, and reaps itself the moment it empties.
+   */
+  drain(): Promise<void>;
   /**
    * False once this sandbox is unusable — the VM failed to start, or the
    * guest process exited. A sandbox still booting reports true: pending is
@@ -84,16 +88,13 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
 
   const config = opts.agentConfig;
 
-  const vmReady = createSandboxVm(
-    {
-      slug,
-      workerCode,
-      env,
-      harnessPath: resolveHarnessPath(),
-      imageTag: opts.imageTag,
-    },
-    opts.pool,
-  );
+  const vmReady = spawnAgentServer({
+    slug,
+    workerCode,
+    env,
+    harnessPath: resolveHarnessPath(),
+    imageTag: opts.imageTag,
+  });
 
   // "Unusable" is one state with two causes (never started / died later), so
   // it gets one flag and one notification. Without the exit half, a guest
@@ -104,7 +105,7 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
   // the options object would context-allocate it into the scope every returned
   // closure shares, so a resident sandbox would pin `opts.workerCode` — the
   // whole ~8 MB deploy bundle — in host heap for its entire life, long after
-  // bundle/load shipped it to the guest.
+  // boot delivery shipped it to the guest.
   const onSandboxLost = opts.onSandboxLost;
   let lost = false;
   const markLost = (err?: unknown): void => {
@@ -136,11 +137,22 @@ export function createSandbox(opts: SandboxOptions): Sandbox {
     async activeSessions(): Promise<number> {
       try {
         const handle = await vmReady;
-        const raw = await handle.conn.sendRequest("status");
-        return StatusResponseSchema.parse(raw).activeSessions;
+        // Guest-asserted (validated in agentServerFromGuest); only ever
+        // steers this tenant's own routing and reaping.
+        return await handle.activeSessions();
       } catch {
         // Unreachable/dead guest — report idle so eviction can reclaim it.
         return 0;
+      }
+    },
+
+    async drain(): Promise<void> {
+      try {
+        const handle = await vmReady;
+        await handle.drain();
+      } catch {
+        // Best-effort: an unreachable guest is drained by definition, and
+        // retirement's activeSessions poll + deadline covers the rest.
       }
     },
 

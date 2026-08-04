@@ -33,6 +33,31 @@ export const HARNESS_ORPHAN_TIMEOUT_MS = 5 * 60_000;
 export const HARNESS_ORPHAN_POLL_MS = 30_000;
 
 /**
+ * Version of the AGENT-MODE guest contract: the exec-env boot convention
+ * (AAI_GUEST_MODE / AAI_BUNDLE_PATH / AAI_BUNDLE_SHA256 / AAI_AGENT_ENV_PATH)
+ * plus the token-gated `/manage/*` HTTP surface. Reported by
+ * `GET /manage/status`. Agent sandboxes run the harness image PINNED at
+ * deploy time, so the host may be newer than this harness — bump this on any
+ * change to the surface, and keep host-side consumers tolerant of older
+ * versions (additive changes only).
+ */
+export const GUEST_CONTRACT_VERSION = 1;
+
+/**
+ * Agent-mode idle self-exit: with zero live sessions for this long the guest
+ * exits 0 so Modal's idle timeout reclaims the sandbox. Agent-mode guests
+ * have NO host control connection (the server contract is HTTP-only), so the
+ * orphan-timeout mechanism cannot apply — owning idleness is what keeps a
+ * sandbox whose host crashed from billing to the 4h lifetime cap. Sized
+ * above the host's own idle sweep so the host normally reclaims first.
+ * Overridable via AAI_GUEST_IDLE_EXIT_MS; 0 disables.
+ */
+export const AGENT_IDLE_EXIT_MS = 20 * 60_000;
+
+/** Poll cadence of the agent-mode idle/drain check. */
+export const AGENT_IDLE_POLL_MS = 5000;
+
+/**
  * Error for a `ctx.db` access while storage is disabled. Mirrors the SDK's
  * `STORAGE_DISABLED_MESSAGE` — same asserted-not-imported arrangement, so
  * `aai dev` and the platform read identically.

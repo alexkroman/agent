@@ -12,12 +12,12 @@ import { resolveSandbox } from "./sandbox-resolve.ts";
 import { createSlotCache, terminateSlot } from "./sandbox-slots.ts";
 import { createTestStore } from "./test-utils.ts";
 
-// Each createSandboxVm call mints one fake guest whose session count tests
-// mutate; `status` RPCs answer from it, mirroring the real harness.
-const { mockCreateSandboxVm, guests } = vi.hoisted(() => {
+// Each spawnAgentServer call mints one fake guest whose session count tests
+// mutate; the manage-surface probe answers from it, mirroring the real guest.
+const { mockSpawnAgentServer, guests } = vi.hoisted(() => {
   type FakeGuest = { activeSessions: number; sessionUrl: string; shutdown: () => Promise<void> };
   const guests: FakeGuest[] = [];
-  const mockCreateSandboxVm = vi.fn().mockImplementation(() => {
+  const mockSpawnAgentServer = vi.fn().mockImplementation(() => {
     const guest: FakeGuest = {
       activeSessions: 0,
       sessionUrl: `wss://tunnel-${guests.length}.test:443/websocket`,
@@ -25,32 +25,20 @@ const { mockCreateSandboxVm, guests } = vi.hoisted(() => {
     };
     guests.push(guest);
     return Promise.resolve({
-      conn: {
-        sendRequest: vi
-          .fn()
-          .mockImplementation((method: string) =>
-            Promise.resolve(
-              method === "status" ? { activeSessions: guest.activeSessions } : undefined,
-            ),
-          ),
-        sendNotification: vi.fn(),
-        onRequest: vi.fn(),
-        onNotification: vi.fn(),
-        listen: vi.fn(),
-        dispose: vi.fn(),
-      },
       sessionUrl: guest.sessionUrl,
+      activeSessions: () => Promise.resolve(guest.activeSessions),
+      drain: vi.fn().mockResolvedValue(undefined),
       shutdown: guest.shutdown,
       alive: () => true,
       onExit: vi.fn(),
     });
   });
-  return { mockCreateSandboxVm, guests };
+  return { mockSpawnAgentServer, guests };
 });
 
 vi.mock("./sandbox-vm.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("./sandbox-vm.ts")>()),
-  createSandboxVm: mockCreateSandboxVm,
+  spawnAgentServer: mockSpawnAgentServer,
 }));
 
 const TEST_AGENT_CONFIG: IsolateConfig = {
@@ -87,7 +75,7 @@ function guest(i: number) {
 describe("sandbox scale-out routing", () => {
   beforeEach(() => {
     guests.length = 0;
-    mockCreateSandboxVm.mockClear();
+    mockSpawnAgentServer.mockClear();
     vi.spyOn(console, "warn").mockImplementation(() => undefined);
     vi.spyOn(console, "error").mockImplementation(() => undefined);
   });
@@ -102,7 +90,7 @@ describe("sandbox scale-out routing", () => {
     guest(0).activeSessions = 2;
     const second = await resolveSandbox("roomy", deps);
     expect(second).toBe(first);
-    expect(mockCreateSandboxVm).toHaveBeenCalledTimes(1);
+    expect(mockSpawnAgentServer).toHaveBeenCalledTimes(1);
   });
 
   it("spawns a replica when the sandbox is at capacity and routes to it", async () => {
@@ -111,7 +99,7 @@ describe("sandbox scale-out routing", () => {
     guest(0).activeSessions = 2;
     const second = await resolveSandbox("full", deps);
     expect(second).not.toBe(first);
-    expect(mockCreateSandboxVm).toHaveBeenCalledTimes(2);
+    expect(mockSpawnAgentServer).toHaveBeenCalledTimes(2);
     // The replica is a distinct guest with its own tunnel.
     await expect(second?.sessionUrl()).resolves.not.toBe(await first?.sessionUrl());
     // The slot tracks it for teardown/eviction.
@@ -130,7 +118,7 @@ describe("sandbox scale-out routing", () => {
     const routed = await resolveSandbox("balanced", deps);
     expect(routed).not.toBe(replica);
     await expect(routed?.sessionUrl()).resolves.toBe(guest(0).sessionUrl);
-    expect(mockCreateSandboxVm).toHaveBeenCalledTimes(2);
+    expect(mockSpawnAgentServer).toHaveBeenCalledTimes(2);
   });
 
   it("saturation past the cap routes to the least-loaded instead of spawning", async () => {
@@ -141,7 +129,7 @@ describe("sandbox scale-out routing", () => {
     guest(1).activeSessions = 3;
     const routed = await resolveSandbox("capped", deps); // both full, cap reached
     await expect(routed?.sessionUrl()).resolves.toBe(guest(0).sessionUrl);
-    expect(mockCreateSandboxVm).toHaveBeenCalledTimes(2);
+    expect(mockSpawnAgentServer).toHaveBeenCalledTimes(2);
     expect(console.warn).toHaveBeenCalledWith(
       "All sandbox replicas at session capacity; routing to least-loaded",
       expect.objectContaining({ slug: "capped", sandboxes: 2 }),
@@ -157,7 +145,7 @@ describe("sandbox scale-out routing", () => {
       resolveSandbox("stampede", deps),
     ]);
     // Both landed on the single freshly spawned replica.
-    expect(mockCreateSandboxVm).toHaveBeenCalledTimes(2);
+    expect(mockSpawnAgentServer).toHaveBeenCalledTimes(2);
     expect(a).toBe(b);
   });
 
@@ -176,7 +164,7 @@ describe("sandbox scale-out routing", () => {
     guest(0).activeSessions = 50;
     const second = await resolveSandbox("unscaled", deps);
     expect(second).toBe(first);
-    expect(mockCreateSandboxVm).toHaveBeenCalledTimes(1);
+    expect(mockSpawnAgentServer).toHaveBeenCalledTimes(1);
   });
 
   it("terminateSlot tears down replicas along with the primary", async () => {

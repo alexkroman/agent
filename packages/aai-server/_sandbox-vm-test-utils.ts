@@ -8,7 +8,7 @@
 import { vi } from "vitest";
 import type { GuestConnection, GuestRpcSchema } from "./rpc-schemas.ts";
 import { createRpcConnection, type RpcWebSocket } from "./rpc-transport.ts";
-import type { SandboxVmOptions, WarmHarness } from "./sandbox-vm.ts";
+import type { AgentSpawnOptions, WarmHarness } from "./sandbox-vm.ts";
 
 /** A fake guest endpoint: what the host sent, plus a way to answer. */
 export type FakeGuestSocket = {
@@ -122,7 +122,7 @@ export function autorespondBundleLoadError(socket: FakeGuestSocket): () => void 
   return () => undefined;
 }
 
-export function baseOpts(overrides?: Partial<SandboxVmOptions>): SandboxVmOptions {
+export function baseOpts(overrides?: Partial<AgentSpawnOptions>): AgentSpawnOptions {
   return {
     slug: "test-agent",
     workerCode: 'export default { name: "test" };',

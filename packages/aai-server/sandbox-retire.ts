@@ -38,6 +38,13 @@ export type RetirableSandbox = {
   shutdown(): Promise<void>;
   /** Live guest sessions; absent stand-ins are treated as already empty. */
   activeSessions?: () => Promise<number>;
+  /**
+   * Ask the guest to refuse new sessions and self-exit when empty (the
+   * agent-server manage surface). Best-effort — the poll + deadline below
+   * are the guarantee; this closes the residual hole where a client holding
+   * the old tunnel URL dials the retired sandbox directly.
+   */
+  drain?: () => Promise<void>;
 };
 
 /**
@@ -85,6 +92,9 @@ export async function retireSandbox(
 
   draining.add(sandbox);
   try {
+    // Tell the guest it is retired before waiting it out: it refuses new
+    // direct-dial sessions from here on and reaps itself when it empties.
+    await sandbox.drain?.().catch(() => undefined);
     const { drained, remaining } = await waitForIdle({
       // A dead or unreachable guest answers 0 — same convention as idle
       // eviction — so the loop exits instead of polling a corpse to deadline.
