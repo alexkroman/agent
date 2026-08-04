@@ -86,6 +86,10 @@ image = build_image(
         "SANDBOX_CPU_LIMIT": str(SANDBOX_CPU_LIMIT),
         "SANDBOX_MEMORY_MB": str(SANDBOX_MEMORY_MB),
         "SANDBOX_MEMORY_LIMIT_MB": str(SANDBOX_MEMORY_LIMIT_MB),
+        # Warm sandbox pool: keep at ZERO, same as the agent app. This app
+        # shares the aai-server Secret, whose values override image env — so
+        # the Secret must not set SANDBOX_POOL_SIZE either.
+        "SANDBOX_POOL_SIZE": "0",
     },
 )
 
