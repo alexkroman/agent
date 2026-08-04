@@ -448,3 +448,85 @@ describe("connectS2s reply accounting", () => {
     expect(warn).not.toHaveBeenCalled();
   });
 });
+
+// The live service can finish a reply without the final `transcript.agent`
+// (observed on tool-call follow-up replies, contrary to the documented
+// sequence). Deltas render in the client as they arrive, but only the final
+// transcript pushes the assistant turn into history — so reply.done commits
+// the accumulated delta text when no final ever came.
+describe("connectS2s delta transcript commit on reply.done", () => {
+  test("commits accumulated deltas as the final transcript when none arrived", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "Your", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "order", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "shipped", reply_id: "r1" });
+    emitMessage(raw, { type: "reply.done", status: "completed" });
+
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledOnce();
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Your order shipped", false);
+    // The commit must land before onReplyDone: SessionCore pushes history from
+    // onAgentTranscript, and onReplyDone is what settles the turn.
+    const order = (fn: unknown) =>
+      (fn as ReturnType<typeof vi.fn>).mock.invocationCallOrder[0] ?? 0;
+    expect(order(callbacks.onAgentTranscript)).toBeLessThan(order(callbacks.onReplyDone));
+  });
+
+  test("does not re-commit when the final transcript.agent did arrive", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "Hi", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent", text: "Hi there.", reply_id: "r1" });
+    emitMessage(raw, { type: "reply.done", status: "completed" });
+
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledOnce();
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledWith("Hi there.", false);
+  });
+
+  // The client flushed the interrupted reply on barge-in; committing its text
+  // afterwards would re-render words the user just cut off.
+  test("does not commit deltas on an interrupted reply", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "Half", reply_id: "r1" });
+    emitMessage(raw, { type: "reply.done", status: "interrupted" });
+
+    expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
+    expect(callbacks.onCancelled).toHaveBeenCalledOnce();
+  });
+
+  test("a duplicate reply.done does not commit the same reply twice", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
+    emitMessage(raw, { type: "transcript.agent.delta", delta: "Once", reply_id: "r1" });
+    emitMessage(raw, { type: "reply.done", status: "completed" });
+    emitMessage(raw, { type: "reply.done", status: "completed" });
+
+    expect(callbacks.onAgentTranscript).toHaveBeenCalledOnce();
+  });
+
+  // The upstream zero-transcript shape (audio, no deltas, no final): there is
+  // nothing to commit, so no synthetic transcript may be invented.
+  test("commits nothing when the reply carried no transcript at all", async () => {
+    const callbacks = makeMockCallbacks();
+    const { raw } = await setupHandle(callbacks);
+
+    emitMessage(raw, { type: "reply.started", reply_id: "r1" });
+    emitMessage(raw, {
+      type: "reply.audio",
+      data: Buffer.from([1, 2, 3, 4]).toString("base64"),
+    });
+    emitMessage(raw, { type: "reply.done", status: "completed" });
+
+    expect(callbacks.onAgentTranscript).not.toHaveBeenCalled();
+    expect(callbacks.onReplyDone).toHaveBeenCalledOnce();
+  });
+});
