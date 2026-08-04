@@ -1,4 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
+import { mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
 import path from "node:path";
 import * as p from "@clack/prompts";
 import envPaths from "env-paths";
@@ -44,7 +46,34 @@ const ProjectConfigSchema = z.object({
 export function getConfigDir(): string {
   const override = process.env.AAI_CONFIG_DIR?.trim();
   if (override) return override;
+  // Fail-closed under vitest: never hand back the developer's real config
+  // dir. Any test reaching approveServer/ensureApiKey without an explicit
+  // AAI_CONFIG_DIR would otherwise write there, and that file is the trust
+  // anchor for `serverUrl` in `.aai/project.json` — an approved origin
+  // leaked into it lets a cloned repo receive the developer's API key and
+  // `aai secret` values with no prompt (see `resolveServerUrl`).
+  //
+  // This guard is in the code path rather than a vitest setup file because
+  // setup files are per-config and any config can omit one:
+  // `vitest.slow.config.ts` (the integration/e2e config) declared none, so
+  // `_test-setup.ts` never ran for those suites and real configs
+  // accumulated ~100 approved loopback origins plus `https://override.com`.
+  // Spawned CLI children run with VITEST cleared, so the e2e harness sets
+  // AAI_CONFIG_DIR itself (`aaiEnv` in _e2e-test-utils.ts) — both halves are
+  // needed.
+  if (process.env.VITEST) return testConfigDir();
   return envPaths("aai", { suffix: "" }).config;
+}
+
+/**
+ * Per-process throwaway config dir used only under vitest. Memoized: callers
+ * read-modify-write the same config across calls, so a fresh dir per call
+ * would silently drop what the previous one wrote.
+ */
+let _testConfigDir: string | undefined;
+function testConfigDir(): string {
+  _testConfigDir ??= mkdtempSync(path.join(tmpdir(), "aai-vitest-config-"));
+  return _testConfigDir;
 }
 
 export type ProjectConfig = z.infer<typeof ProjectConfigSchema>;

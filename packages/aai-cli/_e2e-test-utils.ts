@@ -7,6 +7,7 @@
 import type { ChildProcess } from "node:child_process";
 import { once } from "node:events";
 import fs from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import { execaSync } from "execa";
 import { ofetch } from "ofetch";
@@ -17,6 +18,25 @@ export const packagesDir = path.resolve(dir, "..");
 
 export const pm = (process.env.AAI_TEST_PM ?? "pnpm") as "pnpm" | "npm" | "yarn";
 
+/**
+ * Throwaway global-config dir for every CLI the e2e suites spawn, created
+ * once per run so a scenario's later steps still see the key an earlier step
+ * saved.
+ *
+ * The child is a real process with VITEST cleared (it has to be, or the CLI
+ * skips `main()`), so neither `_test-setup.ts` nor `getConfigDir`'s
+ * under-vitest fallback can protect it — this env var is the only thing that
+ * can. Without it, each `--server http://127.0.0.1:<port>` an e2e run passes
+ * is written to the developer's REAL config as a permanently approved origin,
+ * and an approved loopback origin is precisely what lets a cloned repo's
+ * `.aai/project.json` collect the developer's API key without a prompt.
+ */
+let _e2eConfigDir: string | undefined;
+function e2eConfigDir(): string {
+  _e2eConfigDir ??= fs.mkdtempSync(path.join(os.tmpdir(), "aai-e2e-config-"));
+  return _e2eConfigDir;
+}
+
 export function aaiEnv(): NodeJS.ProcessEnv {
   return {
     ...process.env,
@@ -25,6 +45,7 @@ export function aaiEnv(): NodeJS.ProcessEnv {
     NO_COLOR: "1",
     FORCE_COLOR: "0",
     AAI_NO_DEV: "1",
+    AAI_CONFIG_DIR: e2eConfigDir(),
     // Deliberately no AAI_TEMPLATES_DIR: the override pinned every e2e run to
     // the workspace's template sources, so the resolution order `init` really
     // ships (monorepo, then the copy bundled into dist/) was never exercised.

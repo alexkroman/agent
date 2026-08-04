@@ -1,6 +1,6 @@
 // Copyright 2025 the AAI authors. MIT license.
 import path from "node:path";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
 import { fileExists } from "./_utils.ts";
@@ -63,9 +63,16 @@ describe("readProjectConfig / writeProjectConfig", () => {
 
 describe("getConfigDir", () => {
   // The suite-wide setup file sets AAI_CONFIG_DIR (see _test-setup.ts);
-  // clear it here so the env-paths default is what's under test.
+  // clear it here so the env-paths default is what's under test. VITEST is
+  // pinned explicitly because one test below clears it, and `restoreMocks`
+  // does not unstub env vars — leaving these order-dependent otherwise.
   beforeEach(() => {
     vi.stubEnv("AAI_CONFIG_DIR", "");
+    vi.stubEnv("VITEST", "true");
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   test("AAI_CONFIG_DIR overrides everything", async () => {
@@ -74,10 +81,32 @@ describe("getConfigDir", () => {
     expect(getConfigDir()).toBe("/tmp/aai-override");
   });
 
-  test("defaults to the env-paths config dir", async () => {
+  test("defaults to the env-paths config dir outside tests", async () => {
     const { getConfigDir } = await import("./_config.ts");
     const envPaths = (await import("env-paths")).default;
+    vi.stubEnv("VITEST", "");
     expect(getConfigDir()).toBe(envPaths("aai", { suffix: "" }).config);
+  });
+
+  test("never resolves the developer's real config dir under vitest", async () => {
+    // Fail-closed: a test that reaches approveServer/ensureApiKey without an
+    // explicit AAI_CONFIG_DIR must not write to the real config. That file is
+    // the trust anchor for `serverUrl` in `.aai/project.json`, so an approved
+    // origin leaked there lets a cloned repo receive the developer's API key
+    // with no prompt. This lives in the code path, not a vitest setup file,
+    // because setup files are per-config and every config can omit one —
+    // vitest.slow.config.ts did, which is how the real config got polluted.
+    const { getConfigDir } = await import("./_config.ts");
+    const envPaths = (await import("env-paths")).default;
+    expect(process.env.VITEST).toBeTruthy();
+    expect(getConfigDir()).not.toBe(envPaths("aai", { suffix: "" }).config);
+  });
+
+  test("the under-vitest fallback dir is stable within a process", async () => {
+    // Callers read-modify-write the same config across calls; a fresh temp dir
+    // per call would silently drop what the previous call wrote.
+    const { getConfigDir } = await import("./_config.ts");
+    expect(getConfigDir()).toBe(getConfigDir());
   });
 });
 
