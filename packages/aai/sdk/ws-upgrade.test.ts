@@ -46,10 +46,37 @@ describe("parseWsUpgradeParams", () => {
   });
 
   test("does not truncate a query value containing a literal '?'", () => {
-    // Slicing from the first "?" (not split[1]) keeps the whole query string.
-    expect(parseWsUpgradeParams("/ws?sessionId=a?b")).toEqual({
-      resumeFrom: "a?b",
-      skipGreeting: true,
-    });
+    // Slicing from the first "?" (not split[1]) keeps the whole query string,
+    // so a param AFTER one whose value contains "?" is still seen.
+    // (`sessionId` can no longer carry a literal "?" — see the shape guard
+    // below — so the truncation this pins is shown on another param.)
+    expect(parseWsUpgradeParams("/ws?other=a?b&resume=1")).toEqual({ skipGreeting: true });
+  });
+
+  // The id becomes the key of the runtime's session and ctx.state maps, and
+  // presenting it claims (and evicts) that session — on a PUBLIC, auth-free
+  // endpoint. Measured before this guard: a 16 000-character id was accepted
+  // verbatim, as were traversal- and NUL-shaped strings.
+  test("ignores an id that could not have been minted by the server", () => {
+    for (const bad of [
+      "x".repeat(129),
+      "../../etc/passwd",
+      "a/../../admin",
+      "'; DROP TABLE agents;--",
+      "has space",
+      "nul\u0000byte",
+      "emoji-🙂",
+    ]) {
+      const out = parseWsUpgradeParams(`/websocket?sessionId=${encodeURIComponent(bad)}`);
+      expect(out.resumeFrom).toBeUndefined();
+      // Not resuming, so the greeting must still play.
+      expect(out.skipGreeting).toBe(false);
+    }
+  });
+
+  test("accepts the shapes the server actually mints", () => {
+    for (const ok of [crypto.randomUUID(), "a", "A-Z_0-9-abc", "x".repeat(128)]) {
+      expect(parseWsUpgradeParams(`/websocket?sessionId=${ok}`).resumeFrom).toBe(ok);
+    }
   });
 });

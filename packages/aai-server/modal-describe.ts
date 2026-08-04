@@ -8,7 +8,7 @@
  */
 
 import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
-import { readDescribeResult } from "./describe-exec.ts";
+import { mintDescribeNonce, readDescribeResult } from "./describe-exec.ts";
 import { HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import {
   AGENT_BUNDLE_REMOTE_PATH,
@@ -46,14 +46,19 @@ export async function describeModalBundle(
     tags: sandboxTags("inspect", "studio-inspect"),
   });
   try {
+    const nonce = mintDescribeNonce();
     await sb.filesystem.writeText(opts.workerCode, AGENT_BUNDLE_REMOTE_PATH);
     const proc = await sb.exec(["node", HARNESS_REMOTE_PATH], {
       mode: "binary",
       stdout: "pipe",
       stderr: "pipe",
-      env: { AAI_DESCRIBE_BUNDLE_PATH: AGENT_BUNDLE_REMOTE_PATH, [CONTAINED_ENV]: "1" },
+      env: {
+        AAI_DESCRIBE_BUNDLE_PATH: AGENT_BUNDLE_REMOTE_PATH,
+        AAI_DESCRIBE_NONCE: nonce,
+        [CONTAINED_ENV]: "1",
+      },
     });
-    return await readDescribeResult(proc, `modal:${sb.sandboxId}`);
+    return await readDescribeResult(proc, `modal:${sb.sandboxId}`, nonce);
   } finally {
     // Fire-and-forget: nothing on the deploy path depends on the teardown,
     // and DESCRIBE_SANDBOX_TIMEOUT_MS backstops a lost terminate.

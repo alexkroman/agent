@@ -288,7 +288,12 @@ model) is the security boundary.
   surfaces plus the token-gated `/manage/status` + `/manage/drain` pair
   (`harness-agent-mode.ts`); a third ONE-SHOT **describe mode**
   (`AAI_DESCRIBE_BUNDLE_PATH`) imports a bundle and prints its
-  self-described config as the last stdout line — deploy-time config
+  self-described config as the last stdout line CARRYING THIS EXEC'S NONCE
+  (`AAI_DESCRIBE_NONCE`; "last line" alone is not a defense — the bundle is
+  imported into that process, so a `process.on("exit")` handler prints after
+  the harness. The harness deletes the nonce from `process.env` before
+  importing, so bundle code cannot read the value it would have to forge) —
+  deploy-time config
   extraction with no server, no token, no channel; **studio mode** serves
   `/ws` (bearer-token host control channel — JSON-RPC
   `workspace/deploy` (Publish's in-guest `aai deploy`), `status`,

@@ -55,7 +55,7 @@ import { performance } from "node:perf_hooks";
 import { Readable } from "node:stream";
 import { errorMessage } from "@alexkroman1/aai";
 import { debug } from "./_debug-log.ts";
-import { readDescribeResult } from "./describe-exec.ts";
+import { mintDescribeNonce, readDescribeResult } from "./describe-exec.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { parseSandboxLimitsFromEnv } from "./modal-sandbox-env.ts";
 import { resolveSandboxRole, type SpawnIdentity } from "./sandbox-role.ts";
@@ -70,6 +70,7 @@ import {
   type GuestProcLike,
   getFreePort,
   pollGuestHealth,
+  startGuestLogging,
   warmFromGuest,
 } from "./warm-harness.ts";
 
@@ -209,6 +210,9 @@ export async function spawnSubprocessWarm(
       token,
       memoryLimitMiB: limits.memoryLimitMiB,
     });
+    // Before the dial: a harness that dies during boot must still get its
+    // stderr into the host log (see startGuestLogging).
+    startGuestLogging(proc, `subprocess:${port}`);
 
     // Best-effort and non-blocking, like the sibling backends' terminate: the
     // escalation to SIGKILL lives inside kill(), and `cleanup()` is memoized
@@ -229,7 +233,6 @@ export async function spawnSubprocessWarm(
         ms: Math.round(performance.now() - t0),
       });
       return warmFromGuest({
-        label: `subprocess:${port}`,
         proc,
         terminate,
         ws,
@@ -292,6 +295,9 @@ export async function spawnSubprocessAgentServer(
         envPath,
       }),
     });
+    // Before the readiness poll: a bundle that throws at load exits here, and
+    // its stderr IS the diagnosis (see startGuestLogging).
+    startGuestLogging(proc, `subprocess:${port}`);
 
     const terminate = async (): Promise<void> => {
       proc.kill();
@@ -309,7 +315,6 @@ export async function spawnSubprocessAgentServer(
         ms: Math.round(performance.now() - t0),
       });
       return agentServerFromGuest({
-        label: `subprocess:${port}`,
         proc,
         terminate,
         origin,
@@ -346,14 +351,15 @@ export async function describeSubprocessBundle(
     const bundlePath = join(dir, "bundle.mjs");
     await writeFile(bundlePath, opts.workerCode, "utf-8");
     const limits = parseSandboxLimitsFromEnv(process.env);
+    const nonce = mintDescribeNonce();
     // No port, no token: describe mode opens no server and answers nothing.
     const proc = ctx.runGuestProcess({
       harnessPath: opts.harnessPath,
       memoryLimitMiB: limits.memoryLimitMiB,
-      extraEnv: { AAI_DESCRIBE_BUNDLE_PATH: bundlePath },
+      extraEnv: { AAI_DESCRIBE_BUNDLE_PATH: bundlePath, AAI_DESCRIBE_NONCE: nonce },
     });
     try {
-      return await readDescribeResult(proc, `describe:${opts.harnessPath}`);
+      return await readDescribeResult(proc, `describe:${opts.harnessPath}`, nonce);
     } finally {
       proc.kill();
       await rm(dir, { recursive: true, force: true }).catch(() => undefined);
