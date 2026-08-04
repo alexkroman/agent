@@ -413,7 +413,13 @@ voice agents without the CLI:
   workspace (`aai-guest/studio-tools.ts`): list/read (windowed, numbered —
   opencode's read semantics)/write/edit/delete, `glob`, `grep`, `bash`
   (real shell in the container, guest token scrubbed from its env),
-  `todo_write`, `test_agent`, and the keyless web builtins. Tool CPU —
+  `todo_write`, `test_agent`, the template tools
+  (`aai-guest/studio-template-tools.ts`: `list_templates` enumerates the
+  worked examples bundled in the toolchain's
+  `@alexkroman1/aai-cli/dist/templates`, and `use_template` copies a
+  template's files VERBATIM into the workspace — same conflict/byte/count
+  caps and post-copy type diagnostics as `write_file`, so the agent never
+  retypes template code by hand), and the keyless web builtins. Tool CPU —
   regex, diff, whatever `bash` runs — burns the tenant's own sandbox,
   which is why the host-side scan worker was deleted. Every successful
   `write_file`/`edit_file` type-checks the workspace and appends the

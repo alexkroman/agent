@@ -98,6 +98,19 @@ GUIDELINES:
 WHEN TO USE:
 - Removing a dependency nothing imports anymore — check with grep before uninstalling.`,
 
+  list_templates: `List the worked example agents (templates) that ship with the platform — the same set \`aai init\` scaffolds — with each template's files.
+
+WHEN TO USE:
+- BEFORE writing an agent pattern from scratch: when a template covers the request's shape (ordering flow, game, research assistant, custom UI), starting from it is faster and more reliable than reinventing it.
+- Follow up with use_template to copy one in; the code is real, working, and current for the installed SDK.`,
+
+  use_template: `Copy a template's files VERBATIM into the workspace (every file, or a named subset). Much better than retyping template code through write_file — the bytes arrive exactly as shipped.
+
+GUIDELINES:
+- The copied files are a working starting point: read them, then adapt names, prompts, and tools to the request with edit_file.
+- Existing workspace files are never replaced unless overwrite: true; files already identical are skipped.
+- Like write_file, a copy reports the workspace's type errors in its result — none listed means it type-checks.`,
+
   download_to_workspace: `Download a TEXT file from a URL and save it into the workspace (e.g. a JSON dataset, an SVG logo, a CSV menu).
 
 RULES:

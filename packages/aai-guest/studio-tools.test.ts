@@ -6,6 +6,7 @@ import path from "node:path";
 import { afterEach, describe, expect, test } from "vitest";
 import { createGuestWebTools, MUTATING_TOOLS } from "./studio-chat.ts";
 import { createDesignInspirationTool, createProjectTools } from "./studio-project-tools.ts";
+import { createTemplateTools } from "./studio-template-tools.ts";
 import {
   createStudioTools,
   STUDIO_TOOL_LABELS,
@@ -171,6 +172,7 @@ describe("guest workspace tools", () => {
       ...createGuestWebTools(),
       ...createDesignInspirationTool({} as never),
       ...createProjectTools({ dir }),
+      ...createTemplateTools({ dir, typecheck: async () => ({ ok: true, skipped: false }) }),
       ...tools,
     };
     const names = Object.keys(merged).sort();
