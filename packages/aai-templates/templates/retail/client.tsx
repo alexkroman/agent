@@ -19,7 +19,9 @@ const CSS = `
 .rt-scroll::-webkit-scrollbar-track { background: transparent; }
 .rt-scroll::-webkit-scrollbar-thumb { background: #d4d4d8; border-radius: 3px; }
 @media (max-width: 900px) {
-  .rt-main { grid-template-columns: 1fr !important; grid-template-rows: 1fr auto !important; }
+  /* Both rows bounded: an auto row sizes to the sidebar's full content, which
+     would push the chat (and its Hold/End controls) past the viewport. */
+  .rt-main { grid-template-columns: 1fr !important; grid-template-rows: minmax(0, 1fr) minmax(0, 40%) !important; }
 }
 `;
 
@@ -205,7 +207,7 @@ function App() {
     <>
       <style>{CSS}</style>
       <div
-        className="flex flex-col min-h-screen m-0 p-0"
+        className="flex flex-col h-dvh overflow-hidden m-0 p-0"
         style={{ background: "#f4f4f5", color: "#18181b" }}
       >
         <div
