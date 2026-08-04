@@ -3,7 +3,7 @@
  * One implementation of the platform stores' lazy DDL bootstrap: memoized
  * "create schema + create table (+ indexes)" that resets on failure so a
  * transient DDL error doesn't wedge the store for the process lifetime.
- * Every `aai_platform` store (locks, epochs, session state, workspaces,
+ * Every `aai_platform` store (agents, locks, sandbox registry, workspaces,
  * chats, studio rate limits) uses this instead of hand-rolling the memo.
  */
 

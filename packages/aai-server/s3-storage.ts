@@ -8,10 +8,10 @@
  * page at 1000 keys, and the driver never follows the continuation token).
  * unstorage core then filters the returned keys by prefix client-side, so
  * once the bucket holds >1000 objects, keys that sort past the first page
- * simply vanish from every listing. Concretely: `studio/…` project keys sort
- * after `agents/…` bundles, so the studio project picker went empty in
- * production while every project document was still stored — and the
- * bundle sweep on agent delete (`deleteByPrefix`) silently stopped short.
+ * simply vanish from every listing. (When workspaces still lived in this
+ * bucket that emptied the studio project picker in production; today the
+ * bucket holds only content-addressed `blobs/…` deploy artifacts, but any
+ * key listing would silently truncate the same way.)
  *
  * This module keeps the stock driver for everything else and replaces only
  * `getKeys` with a signed ListObjectsV2 loop that passes the prefix and

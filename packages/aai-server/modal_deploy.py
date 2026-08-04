@@ -35,8 +35,7 @@ Required Modal Secret named ``aai-server`` with (at least):
   (a boot warning says so) — raw API-key bearers still work
 - ``SUPABASE_SERVICE_ROLE_KEY`` — with ``SUPABASE_URL``, the Supabase
   Realtime change streams (sandbox invalidation, studio preview push)
-- optional: ``PINECONE_API_KEY`` / ``PINECONE_INDEX``, ``ASSEMBLYAI_API_KEY``,
-  ``BRAVE_API_KEY``, ``SANDBOX_POOL_SIZE``
+- optional: ``ASSEMBLYAI_API_KEY``, ``SANDBOX_POOL_SIZE``
 """
 
 import os
@@ -75,16 +74,18 @@ REGION = "us-east-2"
 #   rather than long-lived voice sessions.
 #
 # Cross-service coordination needs no wiring here: both services share the
-# Supabase Postgres (locks, epochs, rate limits, workspaces), and a studio
-# Publish reaches the agent service's resident sandboxes via slug epochs.
+# Supabase Postgres (locks, rate limits, workspaces), and a studio Publish
+# reaches the agent service's resident sandboxes via the agents row's
+# Supabase Realtime change stream (see sandbox-resolve.ts).
 
 # ── Web-service autoscaling ──────────────────────────────────────────────────
 #
-# The server holds no cross-request state (coordination and session-resume
-# state live in Supabase — see CLAUDE.md "Stateless server"), so replicas are
-# interchangeable: scale-out is safe, and scale-in/redeploys drain via the
-# node process's SIGTERM handler, with live sessions persisting their resume
-# state and clients auto-reconnecting (?sessionId) onto surviving replicas.
+# The server holds no cross-request state (coordination lives in Supabase —
+# see CLAUDE.md "Stateless server"), so replicas are interchangeable:
+# scale-out is safe, and scale-in/redeploys drain via the node process's
+# SIGTERM handler. Voice sessions live in the guest sandboxes (browsers dial
+# the sandbox tunnel directly), so a replica going down only costs the
+# sandboxes it owns; clients auto-reconnect (?sessionId) and re-broker.
 #
 # Each in-flight HTTP request and each open WebSocket counts as one input, so
 # the numbers below are coupled to the node server's own per-replica

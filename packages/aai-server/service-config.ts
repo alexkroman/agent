@@ -4,7 +4,7 @@
  * agent service (this package's index.ts) and the studio/combined entries
  * (the aai-studio-server package). One implementation of "read the
  * environment, build the platform bindings" so the services cannot drift on
- * storage, Vault, locks, epochs, or resume-state wiring.
+ * storage, Vault, locks, or change-stream wiring.
  */
 
 import { randomUUID } from "node:crypto";
