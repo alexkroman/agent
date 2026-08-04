@@ -187,9 +187,12 @@ export function createTransportFactory(
       }
       throw new Error(`Unknown s2s provider kind: ${kind ?? "<missing>"}`);
     }
-    // Descriptor-less S2S: only reachable for configs predating the
-    // pipeline-by-default flip (provider resolution now injects the pipeline
-    // when nothing is declared), kept so a stored older config still runs.
-    return buildAssemblyS2sTransport(args);
+    // Unreachable on any current path: provider resolution injects the
+    // pipeline when nothing is declared, so S2S only happens via an explicit
+    // descriptor. Fail loudly rather than fall back (the pre-flip legacy
+    // fallback that lived here is gone) — never let S2S be a fallback.
+    throw new Error(
+      "No transport for session: pipeline providers unresolved and no s2s descriptor set",
+    );
   };
 }

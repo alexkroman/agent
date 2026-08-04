@@ -1204,10 +1204,10 @@ server, the wire, and the runtime by default.
 **Never let S2S be a fallback.** The pipeline-by-default flip closed most of
 this structurally: a config that loses its providers now gets the AssemblyAI
 pipeline injected (`defaultProviders`), not a silent S2S session, and S2S
-requires an explicit `s2s` descriptor. One fallthrough remains —
-`buildTransport` (`host/runtime-transport.ts`) still reaches
-`buildAssemblyS2sTransport` for a descriptor-less s2s-mode config, kept only
-so stored configs predating the flip keep running. Two rules keep mode
+requires an explicit `s2s` descriptor. There is no fallthrough left —
+`buildTransport` (`host/runtime-transport.ts`) throws on a descriptor-less
+config whose pipeline providers didn't resolve (the pre-flip legacy fallback
+to `buildAssemblyS2sTransport` was removed). Two rules keep mode
 diagnosable: forward providers based on their own presence (above), and
 `createRuntime` logs `"Session mode resolved"` once per runtime with the mode
 and provider kinds — "which transport is this agent on" must be answerable
