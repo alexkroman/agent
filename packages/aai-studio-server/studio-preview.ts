@@ -54,22 +54,29 @@ const PREVIEW_WARM_TIMEOUT_MS = 30_000;
  * pane's iframe has loaded and its client fetches `/client-config`. Hitting
  * the platform's public client-config broker — the same pre-connection
  * lookup the agent page makes — starts that boot the moment the project is
- * opened instead. Purely an accelerator: failures are swallowed, because
- * the iframe's own fetch remains the functional path.
+ * opened instead. Primarily an accelerator: failures resolve to `null`
+ * rather than throwing, because the iframe's own fetch remains the
+ * functional path.
+ *
+ * The one answer the caller acts on is the HTTP status, returned so
+ * {@link wakeProjectPreview} can tell an agent the platform no longer knows
+ * (404 — the deploy behind the workspace's preview stamp is GONE) from one
+ * that is merely booting (503) or answering normally.
  */
 export function warmPreviewSandbox(
   serverUrl: string,
   slug: string,
   fetchImpl: typeof fetch = fetch,
-): void {
+): Promise<number | null> {
   let url: URL;
   try {
     url = new URL(`/${encodeURIComponent(slug)}/client-config`, serverUrl);
   } catch {
-    return;
+    return Promise.resolve(null);
   }
-  void fetchImpl(url, { signal: AbortSignal.timeout(PREVIEW_WARM_TIMEOUT_MS) }).catch(
-    () => undefined,
+  return fetchImpl(url, { signal: AbortSignal.timeout(PREVIEW_WARM_TIMEOUT_MS) }).then(
+    (res) => res.status,
+    () => null,
   );
 }
 
@@ -92,6 +99,15 @@ export function warmPreviewSandbox(
  *   to the production agent for projects published before previews existed
  *   — is warmed via {@link warmPreviewSandbox}, so a preview idle-evicted
  *   since the last visit is booting before the pane's iframe asks for it.
+ *
+ * The warm-up doubles as an existence check: a 404 from the broker means
+ * the platform no longer knows the agent at all — the deploy behind the
+ * workspace's preview stamp is GONE (expired/swept/deleted out from under
+ * it), so "preview is current" is a lie the stamp can never correct on its
+ * own. That clears `previewHash` and regenerates the preview. Only 404
+ * triggers this: a 503 means a sandbox mid-boot (the broker keeps booting
+ * it and the pane's own fetch retries), and redeploying on it would churn
+ * a healthy slow boot.
  */
 export function wakeProjectPreview(options: {
   workspaces: WorkspaceStore;
@@ -104,14 +120,29 @@ export function wakeProjectPreview(options: {
 }): void {
   const { workspaces, scope, project, target } = options;
   void getWorkspace(workspaces, scope, project)
-    .then((workspace) => {
+    .then(async (workspace) => {
       if (!workspace) return;
       const deployable = Object.keys(workspace.files).length > 0;
-      if (deployable && hasPreviewChanges(workspace) && !workspace.previewError) {
-        options.schedule(scope, project, target);
-      }
+      // The same gates for both schedule paths: nothing deployable in a
+      // fresh workspace, and a stamped build failure is deterministic — a
+      // redeploy would only re-fail into the same banner.
+      const canRedeploy = deployable && !workspace.previewError;
+      const staleScheduled = canRedeploy && hasPreviewChanges(workspace);
+      if (staleScheduled) options.schedule(scope, project, target);
       const slug = workspace.previewSlug ?? workspace.deployedSlug;
-      if (slug) warmPreviewSandbox(target.serverUrl, slug, options.fetchImpl ?? fetch);
+      if (!slug) return;
+      const status = await warmPreviewSandbox(target.serverUrl, slug, options.fetchImpl ?? fetch);
+      if (status !== 404 || !canRedeploy || staleScheduled) return;
+      // The agent is gone but the stamp says current — `schedule` would
+      // no-op on the matching hash, so drop the stamp first. `previewSlug`
+      // stays: the redeploy re-claims the same slug, so the pane's URL
+      // never rots.
+      await mutateWorkspace(workspaces, scope, project, (current) => {
+        const next = { ...current };
+        delete next.previewHash;
+        return next;
+      });
+      options.schedule(scope, project, target);
     })
     .catch(() => undefined);
 }

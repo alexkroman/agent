@@ -656,6 +656,12 @@ voice agents without the CLI:
   and the embedded agent's sandbox is warmed through the platform's public
   client-config broker (`warmPreviewSandbox`) so a preview idle-evicted
   since the last visit is booting before the pane's iframe asks for it.
+  The warm-up doubles as an existence check: a 404 from the broker means
+  the agent behind the workspace's preview stamp is GONE (expired, swept,
+  or deleted out from under it), so the wake clears `previewHash` and
+  regenerates the preview — the stamp says "current" and would otherwise
+  never redeploy. Only 404 triggers this; a 503 is a sandbox mid-boot and
+  stays retry-only.
 - **The coding agent cannot publish.** There is deliberately no deploy
   tool: going to production is the user's call, made with the Publish
   button (`POST /studio/projects/:project/deploy`) — the only path that
