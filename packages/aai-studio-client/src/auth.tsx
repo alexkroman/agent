@@ -13,12 +13,15 @@
  * every request. Every AssemblyAI key on the platform is user-provided —
  * the browser never holds one.
  *
- * Supabase sessions persist in `sessionStorage` for the same reason the old
- * pasted key did (see the threat-model note in main.tsx): deployed tenant
- * agents are served same-origin, so `localStorage` would hand every
- * published agent page the user's refresh token. A magic link opened from
- * the email client lands in a fresh tab, which simply becomes the studio
- * tab — per-tab storage is fine for that flow.
+ * Sessions persist in `localStorage`, so signing in once lasts until the
+ * user signs out — the DELIBERATE trade recorded in main.tsx's threat-model
+ * note. It replaced `sessionStorage`, which expired the session when the tab
+ * closed and made "stay signed in" impossible: that was never a token
+ * lifetime problem (a Supabase session does not expire — the refresh token
+ * rotates indefinitely and supabase-js refreshes the 1h access token), it
+ * was the client discarding a still-valid refresh token. supabase-js has no
+ * duration option; storage is the only lever. A bound belongs in the
+ * project's own Auth settings (`inactivity_timeout`), never here.
  */
 
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
@@ -39,11 +42,16 @@ export type StudioAuthState =
     }
   | { phase: "signedIn"; token: string; signOut: () => void };
 
+// `localStorage` to match the Supabase session above, so local dev keeps the
+// same stay-signed-in behavior. Nothing is risked either way: a dev token is
+// self-minted from any email the box accepts and only a local-dev server
+// honors it, so it is not a credential.
+//
 // Storage access throws in some contexts (Safari private mode, storage
 // blocked by policy) — degrade to in-memory state instead of crashing.
 function readDevToken(): string | null {
   try {
-    return sessionStorage.getItem(DEV_TOKEN_STORAGE);
+    return localStorage.getItem(DEV_TOKEN_STORAGE);
   } catch {
     return null;
   }
@@ -51,8 +59,8 @@ function readDevToken(): string | null {
 
 function writeDevToken(token: string | null): void {
   try {
-    if (token === null) sessionStorage.removeItem(DEV_TOKEN_STORAGE);
-    else sessionStorage.setItem(DEV_TOKEN_STORAGE, token);
+    if (token === null) localStorage.removeItem(DEV_TOKEN_STORAGE);
+    else localStorage.setItem(DEV_TOKEN_STORAGE, token);
   } catch {
     // Storage unavailable — the token still lives in component state.
   }
@@ -94,7 +102,7 @@ export function useStudioAuth(): StudioAuthState {
   useEffect(() => {
     if (config?.mode !== "supabase") return;
     const client = createClient(config.supabaseUrl, config.supabasePublishableKey, {
-      auth: { storage: window.sessionStorage },
+      auth: { storage: window.localStorage },
     });
     supabaseRef.current = client;
     void client.auth.getSession().then(({ data }) => {

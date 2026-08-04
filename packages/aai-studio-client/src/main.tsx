@@ -11,18 +11,31 @@
 //
 // Threat model for what lives in this tab's storage: deployed tenant agents
 // are served from the SAME web origin (`/:slug/`), and that HTML/JS is
-// attacker-controlled. `sessionStorage` (not `localStorage`) limits the
-// blast radius: the session never persists across restarts and is
-// unreadable from a separately-opened tab, so a phishing link to a
-// malicious agent page cannot read a studio user's session. It does NOT
-// protect against the studio's own Live pane: the preview iframes `/:slug/`
-// same-origin (preview.tsx), and a same-origin iframe shares this tab's
-// sessionStorage and can script the parent, so a hostile published
-// client.tsx owns the studio session regardless of where it lives. The
-// complete fix is serving tenant agent pages from a dedicated origin; until
-// then the preview trusts the user's own published agent and nothing else
-// is ever framed. (What a stolen session yields is now a revocable ~1h
-// token rather than the raw AssemblyAI key this gate used to store.)
+// attacker-controlled. The session is in `localStorage` (auth.tsx) so that
+// signing in once lasts — a KNOWN, ACCEPTED exposure, recorded here rather
+// than papered over: any tenant agent page on this origin can read it,
+// including one opened from a phishing link in a fresh tab.
+//
+// What that gave up is narrower than it sounds, because `sessionStorage`
+// was already not a boundary here: the Live pane iframes `/:slug/`
+// same-origin (preview.tsx), and a same-origin iframe shares the tab's
+// sessionStorage AND can script the parent, so a hostile published
+// client.tsx owned the studio session wherever it was kept. The delta is
+// the separately-opened tab, which used to start with empty storage.
+//
+// The real fix is the one every platform in this class ships, and it is NOT
+// a storage tweak: serve tenant content from its own registrable domain on
+// the Public Suffix List (vercel.app, vusercontent.net, netlify.app,
+// workers.dev, github.io, supabase.co — all listed), so sibling apps cannot
+// share cookies and cannot script the dashboard. Then the preview iframe
+// stops being same-origin and this whole paragraph goes away. Serving
+// tenant pages under `/:slug/` on the studio's own origin is weaker than
+// any of them — not even the same-origin policy separates a path.
+//
+// Until that lands: the preview trusts the user's OWN published agent and
+// nothing else is ever framed, and what a stolen session yields is a
+// revocable session token rather than the raw AssemblyAI key this gate used
+// to store (the key lives server-side against the account).
 
 import { QueryClient, QueryClientProvider, useQuery, useQueryClient } from "@tanstack/react-query";
 import { StrictMode, useState } from "react";
