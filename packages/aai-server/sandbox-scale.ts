@@ -81,7 +81,17 @@ export type RouteSessionArgs = {
 export async function routeSession(args: RouteSessionArgs): Promise<Sandbox> {
   const { slug, slots, slot, primary, scale } = args;
   const candidates = allSandboxes(slot, primary);
-  const counts = await Promise.all(candidates.map((sb) => sb.activeSessions().catch(() => 0)));
+  // A failed probe ranks LAST (Infinity), never first: eviction's "an
+  // unreachable guest answers 0" convention means "safe to reclaim", but
+  // this is an argmin over routing targets — mapping a dead/flapping guest
+  // to 0 makes it strictly the least-loaded, and every new client gets its
+  // sessionUrl, connects to a dead endpoint, re-brokers, and lands on the
+  // same answer until idle eviction reaps it. At Infinity it is also "at
+  // capacity", so a slug whose only sandbox stopped answering scales out to
+  // a fresh replica instead of routing into the void.
+  const counts = await Promise.all(
+    candidates.map((sb) => sb.activeSessions().catch(() => Number.POSITIVE_INFINITY)),
+  );
   const best = leastLoaded(counts);
   const bestSandbox = candidates[best] ?? primary;
   if ((counts[best] ?? 0) < scale.maxSessionsPerSandbox) return bestSandbox;

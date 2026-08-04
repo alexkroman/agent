@@ -10,6 +10,7 @@
  * dev, pre-split deployments) live in the aai-studio-server package.
  */
 
+import { resolvePort } from "./_boot.ts";
 import { DEFAULT_PORT, DRAIN_GUEST_POLL_MS } from "./constants.ts";
 import { createOrchestrator, type OrchestratorOpts } from "./orchestrator.ts";
 import { drainActiveSessions, startService } from "./serve-lifecycle.ts";
@@ -24,7 +25,7 @@ async function main(): Promise<void> {
   installProcessSafetyNets();
 
   const env = process.env;
-  const port = Number.parseInt(env.PORT ?? String(DEFAULT_PORT), 10);
+  const port = resolvePort(env.PORT, DEFAULT_PORT);
 
   // Flipped by `shutdown()` before anything is torn down: it fails /health
   // so the platform's proxy stops routing here, and refuses new WebSocket

@@ -1,7 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 
 import { describe, expect, test } from "vitest";
-import { isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize } from "./_boot.ts";
+import { isLocalDev, requireEnv, resolveDrainMs, resolvePoolSize, resolvePort } from "./_boot.ts";
 import { DEFAULT_SHUTDOWN_DRAIN_MS } from "./constants.ts";
 
 // ── isLocalDev ─────────────────────────────────────────────────────────
@@ -56,6 +56,26 @@ describe("resolvePoolSize", () => {
     ["over the cap clamps to 16", "99", 16],
   ] as const)("%s → %s", (_label, raw, expected) => {
     expect(resolvePoolSize(raw)).toBe(expected);
+  });
+});
+
+// ── resolvePort ────────────────────────────────────────────────────────
+
+describe("resolvePort", () => {
+  test.each([
+    ["unset", undefined, 8080],
+    ["empty string", "", 8080],
+    ["explicit value", "3000", 3000],
+  ] as const)("%s → %s", (_label, raw, expected) => {
+    expect(resolvePort(raw, 8080)).toBe(expected);
+  });
+
+  test("throws on an unparseable PORT instead of binding an ephemeral one", () => {
+    // listen(NaN) binds an ephemeral port: the process looks healthy while
+    // the platform proxy's configured port gets nothing. Fail boot instead.
+    for (const raw of ["tcp://0.0.0.0:8080", "abc", "-1", "70000", "80.5"]) {
+      expect(() => resolvePort(raw, 8080)).toThrow("Invalid PORT");
+    }
   });
 });
 

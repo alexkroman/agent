@@ -170,6 +170,11 @@ function readBody(req: IncomingMessage): Promise<string> {
     });
     req.on("end", () => resolve(Buffer.concat(chunks).toString("utf-8")));
     req.on("error", reject);
+    // `close` without `end` — client went away mid-upload. Node does not
+    // reliably emit `error` for an aborted request, so without this the
+    // promise parks forever and the accumulated chunks are retained for the
+    // life of the guest (settling twice is harmless: first wins).
+    req.on("close", () => reject(new Error("Request closed before body completed")));
   });
 }
 

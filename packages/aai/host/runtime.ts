@@ -226,8 +226,11 @@ export function createRuntime(opts: RuntimeOptions): Runtime {
 
   // Resolve pipeline providers once per runtime (not per session). Each
   // session reuses the same opener / LanguageModel — the opener's `open()`
-  // mints the per-session stream inside.
-  const pipelineProviders = resolvePipelineProviders(effectiveProviders, env);
+  // mints the per-session stream inside. Credentials come from providerEnv
+  // (like every other provider-facing path here): resolveLlm throws on a
+  // missing key, so resolving from `env` bypassed withHostCredentialFallback
+  // and killed `aai dev` for pipeline agents on shell-exported keys.
+  const pipelineProviders = resolvePipelineProviders(effectiveProviders, providerEnv);
 
   // Transport construction (pipeline vs OpenAI Realtime vs AssemblyAI S2S)
   // lives in runtime-transport.ts; the factory closes over the resolved

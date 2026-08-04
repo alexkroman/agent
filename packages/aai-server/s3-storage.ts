@@ -43,13 +43,19 @@ function toS3Prefix(base: string | undefined): string {
 
 /** Decode the XML character entities S3 uses in `<Key>` values. */
 function decodeXmlEntities(value: string): string {
-  return value
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    .replace(/&amp;/g, "&");
+  return (
+    value
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&quot;/g, '"')
+      .replace(/&apos;/g, "'")
+      // Both numeric forms, decoded with fromCodePoint: fromCharCode truncates
+      // astral code points mod 2^16, and these are OBJECT KEYS — a truncated
+      // decode is a different key, so deletes miss and listings show phantoms.
+      .replace(/&#x([0-9a-fA-F]+);/g, (_, code) => String.fromCodePoint(Number.parseInt(code, 16)))
+      .replace(/&#(\d+);/g, (_, code) => String.fromCodePoint(Number(code)))
+      .replace(/&amp;/g, "&")
+  );
 }
 
 type ListPage = { keys: string[]; nextToken: string | null };

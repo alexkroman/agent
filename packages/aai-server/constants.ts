@@ -6,6 +6,21 @@ import { createRequire } from "node:module";
 /** 64 KB. */
 export const MAX_ENV_SIZE = 65_536;
 
+/**
+ * Parse a millisecond env override where `0` is meaningful (so `|| default`
+ * would swallow it): unset/empty or unparseable falls back to `fallback`,
+ * an explicit non-negative number — including 0 — is honored. Without the
+ * finite check, `SANDBOX_RETIRE_DRAIN_MS="10m"` becomes NaN, every
+ * comparison against the deadline is false, and the drain window silently
+ * collapses to zero — cutting live calls on every redeploy, which is the
+ * exact failure the window exists to prevent.
+ */
+function envMs(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === "") return fallback;
+  const ms = Number(raw);
+  return Number.isFinite(ms) && ms >= 0 ? ms : fallback;
+}
+
 export const DEFAULT_PORT = 8080;
 
 /** Max concurrent WebSocket connections before the server rejects new upgrades. */
@@ -80,7 +95,7 @@ export const DRAIN_GUEST_POLL_MS = 1000;
  * it) without letting one long call pin an old bundle indefinitely.
  * Override with `SANDBOX_RETIRE_DRAIN_MS`; 0 restores immediate termination.
  */
-export const SANDBOX_RETIRE_DRAIN_MS = Number(process.env.SANDBOX_RETIRE_DRAIN_MS ?? 600_000);
+export const SANDBOX_RETIRE_DRAIN_MS = envMs(process.env.SANDBOX_RETIRE_DRAIN_MS, 600_000);
 
 /**
  * How often retirement re-probes a draining guest's session count.

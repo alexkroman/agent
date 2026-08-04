@@ -203,9 +203,16 @@ export function createRpcConnection<S extends RpcSchema = RpcSchema>(
           });
           return;
         }
-        void server.receive(req).then((response) => {
-          if (response) send(response);
-        });
+        // Contained for the same reason as the notification branch below: a
+        // rejection here would be an unhandledRejection on the whole host.
+        // (Promise.resolve because receive returns a bare PromiseLike.)
+        void Promise.resolve(server.receive(req))
+          .then((response) => {
+            if (response) send(response);
+          })
+          .catch((err: unknown) => {
+            console.error(`RPC request handler "${req.method}" rejected: ${errorMessage(err)}`);
+          });
         return;
       }
       case "notification": {

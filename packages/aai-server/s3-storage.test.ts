@@ -94,6 +94,19 @@ describe("createS3Storage getKeys", () => {
     expect(keys).toEqual(["studio:s:a&b"]);
   });
 
+  test("decodes numeric entities — hex form and astral code points — in keys", async () => {
+    // These are object keys: a truncated decode is a DIFFERENT key, so
+    // deletes miss and listings show phantoms. fromCharCode would fold
+    // U+1F600 to a lone surrogate; the hex form used to pass through raw.
+    const { storage } = storageWithPages([
+      listPage({ keys: ["studio/s/a&#128512;b", "studio/s/c&#x1F600;d", "studio/s/e&#233;f"] }),
+    ]);
+
+    const keys = await storage.getKeys("studio/s/");
+
+    expect(keys).toEqual(["studio:s:a\u{1F600}b", "studio:s:c\u{1F600}d", "studio:s:eéf"]);
+  });
+
   test("throws on a non-OK list response instead of returning []", async () => {
     const storage = createS3Storage({
       ...BASE_OPTS,
