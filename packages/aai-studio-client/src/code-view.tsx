@@ -1,8 +1,9 @@
 // Copyright 2025 the AAI authors. MIT license.
-// Code view — file tabs across the top, CodeMirror editor below. A workspace
-// is one or two files, so a full sidebar column spent width to list them.
-// Server refreshes (agent edits) update the buffer unless the user has
-// unsaved changes.
+// Code view — a directory-grouped file sidebar plus a CodeMirror editor.
+// (Files used to be horizontal tabs, which assumed a one-or-two-file
+// workspace; a template-sized project made the strip an endless horizontal
+// scroll.) Server refreshes (agent edits) update the buffer unless the
+// user has unsaved changes.
 
 import { javascript } from "@codemirror/lang-javascript";
 import CodeMirror from "@uiw/react-codemirror";
@@ -127,6 +128,73 @@ function FileBuffer({ path, serverContent, onSave }: FileBufferProps) {
   );
 }
 
+type FileNavProps = {
+  paths: string[];
+  currentFile: string | null;
+  onSelectFile: (path: string) => void;
+};
+
+/** File navigation: a directory-grouped sidebar list. */
+export function FileNav({ paths, currentFile, onSelectFile }: FileNavProps) {
+  // Group by directory, root files first — a flat sorted list interleaves
+  // root files with directories, which reads as disorder.
+  const groups = new Map<string, string[]>();
+  for (const path of paths) {
+    const slash = path.lastIndexOf("/");
+    const dir = slash === -1 ? "" : path.slice(0, slash);
+    const entries = groups.get(dir);
+    if (entries) {
+      entries.push(path);
+    } else {
+      groups.set(dir, [path]);
+    }
+  }
+  const dirs = [...groups.keys()].sort((a, b) => {
+    if (a === "") return -1;
+    if (b === "") return 1;
+    return a.localeCompare(b);
+  });
+
+  return (
+    <nav
+      aria-label="Workspace files"
+      className="w-52 shrink-0 overflow-y-auto border-r border-line bg-cream py-1"
+    >
+      {dirs.map((dir) => (
+        <div key={dir || "/"}>
+          {dir && (
+            <div
+              className="truncate px-3 pt-2 pb-0.5 font-mono text-[10px] text-subtle"
+              title={dir}
+            >
+              {dir}/
+            </div>
+          )}
+          {(groups.get(dir) ?? []).map((path) => {
+            const active = path === currentFile;
+            return (
+              <button
+                type="button"
+                key={path}
+                aria-current={active ? "true" : undefined}
+                title={path}
+                className={clsx(
+                  "block w-full cursor-pointer truncate border-0 px-3 py-1 text-left font-mono text-[11px]",
+                  dir && "pl-5",
+                  active ? "bg-panel text-indigo" : "bg-transparent text-subtle hover:text-fg",
+                )}
+                onClick={() => onSelectFile(path)}
+              >
+                {path.slice(path.lastIndexOf("/") + 1)}
+              </button>
+            );
+          })}
+        </div>
+      ))}
+    </nav>
+  );
+}
+
 type CodeViewProps = {
   files: Record<string, string>;
   currentFile: string | null;
@@ -136,34 +204,11 @@ type CodeViewProps = {
 
 export function CodeView({ files, currentFile, onSelectFile, onSave }: CodeViewProps) {
   const paths = Object.keys(files).sort();
+  // min-w-0 matters: without it the nav's intrinsic width propagates up
+  // the flex tree and stretches the whole page sideways.
   return (
-    <div className="flex min-h-0 flex-1 flex-col">
-      <div
-        role="tablist"
-        aria-label="Workspace files"
-        className="flex shrink-0 overflow-x-auto border-b border-line bg-cream"
-      >
-        {paths.map((path) => {
-          const active = path === currentFile;
-          return (
-            <button
-              type="button"
-              role="tab"
-              aria-selected={active}
-              key={path}
-              className={clsx(
-                "shrink-0 cursor-pointer border-x-0 border-t-0 border-b-2 px-3 py-2 font-mono text-[11px]",
-                active
-                  ? "border-indigo bg-panel text-indigo"
-                  : "border-transparent bg-transparent text-subtle hover:text-fg",
-              )}
-              onClick={() => onSelectFile(path)}
-            >
-              {path}
-            </button>
-          );
-        })}
-      </div>
+    <div className="flex min-h-0 min-w-0 flex-1">
+      <FileNav paths={paths} currentFile={currentFile} onSelectFile={onSelectFile} />
       <FileBuffer
         key={currentFile ?? ""}
         path={currentFile}
