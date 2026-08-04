@@ -136,7 +136,19 @@ export async function deployWorkspaceDir(
   try {
     result = await runCapped(
       process.execPath,
-      [cliEntry, "deploy", "--server", opts.serverUrl, "--json", "--allow-missing-secrets"],
+      // `--allow-preview-slug`: the studio's auto-preview deploys target
+      // `<project>-preview`, a suffix the server otherwise rejects (it's owned
+      // by the preview reaper). Harmless for a production Publish, whose slug
+      // has no such suffix — so it rides on the one shared deploy invocation.
+      [
+        cliEntry,
+        "deploy",
+        "--server",
+        opts.serverUrl,
+        "--json",
+        "--allow-missing-secrets",
+        "--allow-preview-slug",
+      ],
       {
         cwd: dir,
         env: { AAI_CONFIG_DIR: configHome, ...pathOnlyEnv() },

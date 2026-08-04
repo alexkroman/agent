@@ -45,6 +45,12 @@ export const DeployBodySchema = z.object({
   // agent, so letting them opt into a not-yet-startable deploy is safe;
   // secrets attach to the slug afterwards via `aai secret put`.
   credentialPolicy: z.enum(["require", "warn"]).optional(),
+  // Opt in to a `-preview`-suffixed slug (`aai deploy --allow-preview-slug`).
+  // That suffix is owned by the studio's auto-preview deploys and reaped by
+  // the orphan-preview sweep; deployAgentBundle rejects it otherwise, so a CLI
+  // caller can't lose an agent to the reaper by accident. Set only by the
+  // studio's in-guest deploy.
+  allowPreviewSlug: z.boolean().optional(),
   worker: z.string().min(1).max(MAX_WORKER_SIZE),
   clientFiles: z
     .record(SafePathSchema, z.string().max(MAX_WORKER_SIZE))

@@ -124,6 +124,12 @@ const deploy = defineCommand({
         "Deploy even when the agent's providers are missing credentials " +
         "(the server warns instead of rejecting; set them afterwards with `aai secret put`)",
     },
+    allowPreviewSlug: {
+      type: "boolean",
+      description:
+        "Permit a `-preview`-suffixed slug (reserved for studio auto-previews; " +
+        "studio-internal — a slug you claim this way is subject to the preview reaper)",
+    },
     skipTypecheck: { type: "boolean", description: "Skip type checking before deploy" },
   },
   async run({ args }) {
@@ -134,6 +140,7 @@ const deploy = defineCommand({
         cwd,
         server: args.server,
         allowMissingSecrets: args.allowMissingSecrets,
+        allowPreviewSlug: args.allowPreviewSlug,
         skipTypecheck: args.skipTypecheck,
       });
     });

@@ -260,6 +260,57 @@ describe("deployAgentBundle ownership resolution", () => {
   });
 });
 
+// ── Preview-slug guard (deployAgentBundle) ────────────────────────────────
+// The `-preview` suffix is owned by the studio's auto-preview deploys and
+// reaped by the orphan-preview pg_cron sweep, so a CLI caller must not be able
+// to claim it by accident and lose the agent (plus its app-database data) to
+// the reaper. Only an explicit opt-in — set by the studio's own in-guest
+// deploy — clears the suffix.
+
+describe("deployAgentBundle preview-slug guard", () => {
+  const baseParams = {
+    apiKey: "key1",
+    worker: "w",
+    clientFiles: {},
+    env: VALID_ENV,
+    agentConfig: TEST_AGENT_CONFIG,
+  };
+
+  test("a requested -preview slug is rejected with a 400", async () => {
+    const store = createTestStore();
+    const outcome = await deployAgentBundle({ store }, { ...baseParams, slug: "my-app-preview" });
+    expect(outcome).toEqual({
+      ok: false,
+      status: 400,
+      error: 'The "-preview" suffix is reserved for studio previews',
+    });
+    // No row was written — the guard runs before any side effect.
+    expect(await store.getAgent("my-app-preview")).toBeNull();
+  });
+
+  test("allowPreviewSlug opts in, so the studio's preview deploy succeeds", async () => {
+    const store = createTestStore();
+    const outcome = await deployAgentBundle(
+      { store },
+      { ...baseParams, slug: "my-app-preview", allowPreviewSlug: true },
+    );
+    expect(outcome.ok).toBe(true);
+    expect(await store.getAgent("my-app-preview")).not.toBeNull();
+  });
+
+  test("a normal slug is unaffected", async () => {
+    const store = createTestStore();
+    const outcome = await deployAgentBundle({ store }, { ...baseParams, slug: "my-app" });
+    expect(outcome.ok).toBe(true);
+  });
+
+  test("only the suffix matters — `preview` elsewhere is fine", async () => {
+    const store = createTestStore();
+    const outcome = await deployAgentBundle({ store }, { ...baseParams, slug: "preview-tool" });
+    expect(outcome.ok).toBe(true);
+  });
+});
+
 // ── Top-level deploy (POST /deploy) — server generates slug ───────────────
 
 describe("POST /deploy", () => {
