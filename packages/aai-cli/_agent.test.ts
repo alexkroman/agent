@@ -1,6 +1,12 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test, vi } from "vitest";
-import { DEFAULT_SERVER, getServerInfo, isDevMode, resolveServerUrl } from "./_agent.ts";
+import {
+  DEFAULT_SERVER,
+  getServerInfo,
+  isDevMode,
+  resolveDeployTarget,
+  resolveServerUrl,
+} from "./_agent.ts";
 import { writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
 
@@ -68,6 +74,45 @@ describe("getServerInfo", () => {
       });
       const info = await getServerInfo(dir, "https://override.com");
       expect(info.serverUrl).toBe("https://override.com");
+    });
+  });
+});
+
+describe("resolveDeployTarget", () => {
+  // The slug from `.aai/project.json` is repo-controlled and gets
+  // interpolated into credentialed URL paths. `getServerInfo` validated it;
+  // `resolveDeployTarget` did not — and `aai publish` uses the latter, then
+  // hands the slug to `syncEnvSecrets`, which PUTs the whole `.env` to
+  // `${serverUrl}/${slug}/secret`. A hostile slug therefore steered a
+  // request carrying the API key and every secret value to a path of the
+  // repo's choosing. Validating at this one choke point covers every command
+  // that resolves a target, including ones added later.
+  test.each([
+    ["a/../../traversed/target", "path traversal"],
+    ["UPPER", "uppercase"],
+    ["x", "too short"],
+    ["has space", "whitespace"],
+    ["sneaky?query=1", "query injection"],
+  ])("refuses the repo-controlled slug %j (%s)", async (slug) => {
+    await withTempDir(async (dir) => {
+      await writeProjectConfig(dir, { slug, serverUrl: "https://config-server.com" });
+      await expect(resolveDeployTarget(dir)).rejects.toThrow("Invalid slug");
+    });
+  });
+
+  test("a valid slug resolves normally", async () => {
+    await withTempDir(async (dir) => {
+      await writeProjectConfig(dir, { slug: "my-agent", serverUrl: "https://config-server.com" });
+      const target = await resolveDeployTarget(dir);
+      expect(target.config?.slug).toBe("my-agent");
+    });
+  });
+
+  test("a project with no slug yet is fine — pull and first push have none", async () => {
+    await withTempDir(async (dir) => {
+      await writeProjectConfig(dir, { serverUrl: "https://config-server.com" });
+      const target = await resolveDeployTarget(dir);
+      expect(target.config?.slug).toBeUndefined();
     });
   });
 });

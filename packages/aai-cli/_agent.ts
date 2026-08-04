@@ -97,6 +97,30 @@ export function resolveServerUrl(
 }
 
 /**
+ * Reject a repo-supplied slug that isn't the platform's slug shape.
+ *
+ * Enforced before a slug is ever interpolated into a URL path.
+ * `.aai/project.json` is part of the working tree, so a cloned repo controls
+ * this value, and callers pair it with the user's API key — `aai publish`
+ * hands it to `syncEnvSecrets`, which PUTs the whole `.env` to
+ * `${serverUrl}/${slug}/secret`. A hostile `"slug": "x/../admin"` must not
+ * steer that request to a path of the repo's choosing.
+ *
+ * Lives here, at the single point where repo-controlled config becomes a
+ * credentialed target, rather than at each call site: the check used to
+ * exist only in `getServerInfo` (secret/storage/delete), so `publish` — the
+ * command users actually run — had no guard at all.
+ */
+function assertValidConfigSlug(slug: string | undefined): void {
+  if (slug === undefined || VALID_SLUG_RE.test(slug)) return;
+  throw new Error(
+    `Invalid slug in .aai/project.json: ${JSON.stringify(slug)}\n` +
+      "  Expected lowercase letters, digits, `-`, `_` (2-64 chars). " +
+      "Fix or delete the file — `aai publish` will create a fresh deployment.",
+  );
+}
+
+/**
  * Resolve everything needed to talk to the platform: project config (null if
  * the project has never been deployed), server URL, and API key.
  */
@@ -112,6 +136,8 @@ export async function resolveDeployTarget(cwd: string, explicitServer?: string) 
   // Passing --server is the user approving that origin; remember it so later
   // commands in this project don't need the flag again.
   if (explicitServer) await approveServer(serverUrl);
+  // Before the key is resolved, and before any caller can interpolate it.
+  assertValidConfigSlug(config?.slug);
   const apiKey = await ensureApiKey();
   return { config, serverUrl, apiKey };
 }
@@ -125,16 +151,9 @@ export async function getServerInfo(cwd: string, explicitServer?: string) {
   if (!config?.slug) {
     throw new Error("This project has no deployed agent — run `aai publish` first");
   }
-  // Enforced before a slug is ever interpolated into a URL path:
-  // `.aai/project.json` is repo-controlled, so a hostile
-  // `"slug": "x/../admin"` must not steer a credentialed request to an
-  // arbitrary path on an approved origin.
-  if (!VALID_SLUG_RE.test(config.slug)) {
-    throw new Error(
-      `Invalid slug in .aai/project.json: ${JSON.stringify(config.slug)}\n` +
-        "  Expected lowercase letters, digits, `-`, `_` (2-64 chars). " +
-        "Fix the file or run `aai publish` to create a fresh deployment.",
-    );
-  }
+  // The slug's shape was already enforced by resolveDeployTarget above, for
+  // every command rather than only the slug-scoped ones — see
+  // `assertValidConfigSlug`. Deliberately not re-checked here: two copies of
+  // this guard is what let `publish` ship without one.
   return { serverUrl, slug: config.slug, apiKey };
 }
