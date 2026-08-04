@@ -12,8 +12,9 @@
  *
  * `version` increments on every put and doubles as the cross-replica
  * invalidation signal: a resident sandbox records the version it was built
- * from, and `resolveSandbox`/the idle sweep compare it against the current
- * row (see sandbox-resolve.ts). This replaced the separate
+ * from, and the agents row's change stream retires residents at another
+ * version (`watchAgentInvalidation` in sandbox-resolve.ts — there is no
+ * per-broker check or idle-sweep probe). This replaced the separate
  * `aai_platform.slug_epochs` counter — deploy/delete are the only mutations
  * that move sandboxes now; secret and storage changes take effect on the
  * next deploy (or sandbox rebuild), by design.

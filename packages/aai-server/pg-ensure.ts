@@ -7,21 +7,15 @@
  * chats, studio rate limits) uses this instead of hand-rolling the memo.
  */
 
+import { memoAsync } from "./_memo.ts";
 import type { SqlExec } from "./secret-store.ts";
 
 const ENSURE_SCHEMA_SQL = "create schema if not exists aai_platform";
 
 /** Returns an idempotent, memoized ensure() over the given DDL statements. */
 export function ensureTableOnce(sql: SqlExec, ...ddl: string[]): () => Promise<void> {
-  let ensured: Promise<void> | null = null;
-  return () => {
-    ensured ??= (async () => {
-      await sql(ENSURE_SCHEMA_SQL);
-      for (const statement of ddl) await sql(statement);
-    })().catch((err: unknown) => {
-      ensured = null;
-      throw err;
-    });
-    return ensured;
-  };
+  return memoAsync(async () => {
+    await sql(ENSURE_SCHEMA_SQL);
+    for (const statement of ddl) await sql(statement);
+  });
 }

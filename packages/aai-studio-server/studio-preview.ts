@@ -28,11 +28,7 @@ import { PREVIEW_SLUG_SUFFIX } from "aai-server/sandbox-role";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
 import { currentFilesHash, getWorkspace, mutateWorkspace, projectKey } from "./studio-workspace.ts";
-import { withWorkspaceLock } from "./studio-workspace-lock.ts";
 
-// One definition with the sandbox-tag inference (`roleForSlug`), so preview
-// deploys and the "preview" role in Modal's dashboard can't drift.
-const PREVIEW_SUFFIX = PREVIEW_SLUG_SUFFIX;
 /** Cap on the stored preview failure output (it renders in a banner). */
 const MAX_PREVIEW_ERROR = 16_000;
 
@@ -44,8 +40,10 @@ const MAX_PREVIEW_ERROR = 16_000;
  * ownership 409 in `previewError`.
  */
 export function previewSlugFor(project: string): string {
-  const base = project.slice(0, MAX_SLUG_LENGTH - PREVIEW_SUFFIX.length).replace(/[-_]+$/, "");
-  return `${base}${PREVIEW_SUFFIX}`;
+  // Suffix shared with the sandbox-tag inference (`roleForSlug`), so preview
+  // deploys and the "preview" role in Modal's dashboard can't drift.
+  const base = project.slice(0, MAX_SLUG_LENGTH - PREVIEW_SLUG_SUFFIX.length).replace(/[-_]+$/, "");
+  return `${base}${PREVIEW_SLUG_SUFFIX}`;
 }
 
 /** What a preview deploy needs beyond the workspace: origin + caller key. */
@@ -86,24 +84,22 @@ export function createPreviewDeployer(options: PreviewDeployerOptions): PreviewD
       apiKey: target.apiKey,
       slug,
     });
-    // Stamp only the preview metadata under the lock (mirrors the Publish
-    // stamp in studio-deploy.ts): the deploy takes seconds, and writing the
+    // Stamp only the preview metadata (mirrors the Publish stamp in
+    // studio-deploy.ts): the deploy takes seconds, and writing the
     // pre-deploy files back would revert anything edited meanwhile. `hash`
     // is of the snapshot that was deployed, so mid-deploy edits still read
     // as preview-stale — and the dirty bit re-deploys them right after.
-    await withWorkspaceLock(scope, project, () =>
-      mutateWorkspace(options.workspaces, scope, project, (current) => {
-        const next = { ...current };
-        if (outcome.ok) {
-          next.previewSlug = outcome.slug ?? slug;
-          next.previewHash = hash;
-          delete next.previewError;
-        } else {
-          next.previewError = outcome.output.slice(0, MAX_PREVIEW_ERROR);
-        }
-        return next;
-      }),
-    );
+    await mutateWorkspace(options.workspaces, scope, project, (current) => {
+      const next = { ...current };
+      if (outcome.ok) {
+        next.previewSlug = outcome.slug ?? slug;
+        next.previewHash = hash;
+        delete next.previewError;
+      } else {
+        next.previewError = outcome.output.slice(0, MAX_PREVIEW_ERROR);
+      }
+      return next;
+    });
     if (!outcome.ok) {
       console.warn("Studio preview deploy failed", { project, output: outcome.output });
     }

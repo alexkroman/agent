@@ -53,13 +53,26 @@ function humanWords(): string {
 }
 
 /**
+ * Normalize a human-given name into the slug grammar, capped at `maxLen`.
+ *
+ * THE slugifier for typed names — the studio's project names and the
+ * config-derived deploy-slug bases below both build on it, so the two can't
+ * drift on posture. Delegated to `@sindresorhus/slugify` rather than a local
+ * regex so non-ASCII transliterates properly ("Café Ordering" →
+ * `cafe-ordering`, where a plain `[^a-z0-9]` strip would produce
+ * `caf-ordering`), and `decamelize: false` keeps "MyAgent" as one word: the
+ * name is an identifier the user typed, not a symbol to prettify.
+ */
+export function slugifyBase(input: string, maxLen: number): string {
+  return slugifyLib(input, { decamelize: false }).slice(0, maxLen).replace(/-+$/, "");
+}
+
+/**
  * Readable base from a human-given display name ("Dice Roller" →
  * `dice-roller`). This is what slugless CLI deploys seed `generatedSlug`
  * with: the agent already has a name in its config, so the URL should
- * carry it rather than random words. Same slugifier (transliterating, not
- * stripping) and `decamelize: false` posture as the studio's typed-name
- * normalization — the name is an identifier, not a symbol to prettify.
+ * carry it rather than random words.
  */
 export function slugBaseFromName(name: string): string {
-  return slugifyLib(name, { decamelize: false }).slice(0, MAX_BASE_LENGTH);
+  return slugifyBase(name, MAX_BASE_LENGTH);
 }

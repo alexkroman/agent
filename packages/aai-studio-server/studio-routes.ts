@@ -36,7 +36,7 @@
 
 import { errorMessage } from "@alexkroman1/aai";
 import { zValidator } from "@hono/zod-validator";
-import { authMw, requireStudioUser } from "aai-server/middleware";
+import { authMw, invalidateUserApiKey, requireStudioUser } from "aai-server/middleware";
 import { resolvePublicOrigin } from "aai-server/public-origin";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { generatedSlug } from "aai-server/slug-generate";
@@ -73,7 +73,6 @@ import {
   mutateWorkspace,
   studioScope,
 } from "./studio-workspace.ts";
-import { withWorkspaceLock } from "./studio-workspace-lock.ts";
 
 export type StudioRouteOptions = {
   /** Warm harness pool shared with deployed-agent sandboxes. */
@@ -178,6 +177,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   studio.put("/account/key", zValidator("json", AccountKeySchema), async (c) => {
     const user = await requireStudioUser(c.req.raw, c.env);
     await c.env.secrets.put(userApiKeySecretName(user.id), c.req.valid("json").apiKey);
+    // A rotated key must take effect on this replica's next request, not
+    // after the resolver cache's TTL.
+    invalidateUserApiKey(c.env.secrets, user.id);
     return c.json({ ok: true });
   });
 
@@ -207,6 +209,18 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // hash inputs from ever colliding.
   const requestScope = (c: Context<StudioHonoEnv>): string =>
     c.var.userId ? studioScope(`user:${c.var.userId}`) : studioScope(c.var.apiKey);
+
+  // Scope + validated project for every `/projects/:project` route, stamped
+  // once here (mirroring the agent service's `slugMw`) so a new route can't
+  // forget `validateProject` — an unvalidated param would flow into store
+  // keys and deploy slugs as an arbitrary path segment.
+  const projectMw = async (c: Context<StudioHonoEnv>, next: () => Promise<void>) => {
+    c.set("scope", requestScope(c));
+    c.set("project", validateProject(c.req.param("project")));
+    await next();
+  };
+  studio.use("/projects/:project", projectMw);
+  studio.use("/projects/:project/*", projectMw);
 
   studio.get("/projects", async (c) => {
     const scope = requestScope(c);
@@ -258,8 +272,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   });
 
   studio.get("/projects/:project", async (c) => {
-    const scope = requestScope(c);
-    const project = validateProject(c.req.param("project"));
+    const { scope, project } = c.var;
     const workspace = await getWorkspace(c.env.workspaces, scope, project);
     if (!workspace) return c.json({ error: "Project not found" }, 404);
     return c.json(projectPayload(workspace));
@@ -275,8 +288,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // settled conversation (the guest's end-of-turn persist), so other
   // tabs/devices see finished turns without re-opening the project.
   studio.get("/projects/:project/events", async (c) => {
-    const scope = requestScope(c);
-    const project = validateProject(c.req.param("project"));
+    const { scope, project } = c.var;
     const workspace = await getWorkspace(c.env.workspaces, scope, project);
     if (!workspace) return c.json({ error: "Project not found" }, 404);
     return streamSSE(c, async (stream) => {
@@ -307,8 +319,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // Persisted chat history for the project — written server-side when a chat
   // turn's stream settles, restored by the client on project open.
   studio.get("/projects/:project/chat", async (c) => {
-    const scope = requestScope(c);
-    const project = validateProject(c.req.param("project"));
+    const { scope, project } = c.var;
     // Independent reads — the chat fetch doesn't depend on the existence check.
     const [workspace, messages] = await Promise.all([
       getWorkspace(c.env.workspaces, scope, project),
@@ -319,8 +330,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   });
 
   studio.delete("/projects/:project", async (c) => {
-    const scope = requestScope(c);
-    const project = validateProject(c.req.param("project"));
+    const { scope, project } = c.var;
     // No lock needed: a racing versioned write cannot resurrect the project —
     // `mutateWorkspace` only ever replaces an existing row.
     await Promise.all([
@@ -340,52 +350,45 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   };
 
   studio.put("/projects/:project/file", zValidator("json", StudioFileSchema), async (c) => {
-    const scope = requestScope(c);
-    const project = validateProject(c.req.param("project"));
+    const { scope, project } = c.var;
     const { path, content } = c.req.valid("json");
-    // Locked read-modify-write: an editor PUT racing a chat turn must not
-    // drop either edit. Cross-replica races are absorbed by the versioned
-    // retry inside mutateWorkspace — the edit re-derives cleanly.
-    return withWorkspaceLock(scope, project, async () => {
-      try {
-        const workspace = await mutateWorkspace(c.env.workspaces, scope, project, (current) => ({
-          ...current,
-          files: { ...current.files, [path]: content },
-        }));
-        if (!workspace) return c.json({ error: "Project not found" }, 404);
-      } catch (err) {
-        return c.json({ error: errorMessage(err) }, 400);
-      }
-      schedulePreview(c, scope, project);
-      return c.json({ ok: true });
-    });
+    // An editor PUT racing a chat turn drops neither edit: mutateWorkspace
+    // serializes local writers and re-derives cleanly on a cross-replica
+    // version conflict.
+    try {
+      const workspace = await mutateWorkspace(c.env.workspaces, scope, project, (current) => ({
+        ...current,
+        files: { ...current.files, [path]: content },
+      }));
+      if (!workspace) return c.json({ error: "Project not found" }, 404);
+    } catch (err) {
+      return c.json({ error: errorMessage(err) }, 400);
+    }
+    schedulePreview(c, scope, project);
+    return c.json({ ok: true });
   });
 
   studio.delete("/projects/:project/file", async (c) => {
-    const scope = requestScope(c);
-    const project = validateProject(c.req.param("project"));
+    const { scope, project } = c.var;
     const path = c.req.query("path");
     if (!path) return c.json({ error: "Missing path query parameter" }, 400);
-    return withWorkspaceLock(scope, project, async () => {
-      let deleted = false;
-      const workspace = await mutateWorkspace(c.env.workspaces, scope, project, (current) => {
-        // Reset per attempt: a conflict retry re-derives from a fresh read.
-        deleted = false;
-        if (!current.files[path]) return null;
-        deleted = true;
-        const files = { ...current.files };
-        delete files[path];
-        return { ...current, files };
-      });
-      if (!(workspace && deleted)) return c.json({ error: "File not found" }, 404);
-      schedulePreview(c, scope, project);
-      return c.json({ ok: true });
+    let deleted = false;
+    const workspace = await mutateWorkspace(c.env.workspaces, scope, project, (current) => {
+      // Reset per attempt: a conflict retry re-derives from a fresh read.
+      deleted = false;
+      if (!current.files[path]) return null;
+      deleted = true;
+      const files = { ...current.files };
+      delete files[path];
+      return { ...current, files };
     });
+    if (!(workspace && deleted)) return c.json({ error: "File not found" }, 404);
+    schedulePreview(c, scope, project);
+    return c.json({ ok: true });
   });
 
   studio.post("/projects/:project/deploy", async (c) => {
-    const scope = requestScope(c);
-    const project = validateProject(c.req.param("project"));
+    const { scope, project } = c.var;
     const result = await deploy(
       {
         workspaces: c.env.workspaces,
@@ -408,10 +411,9 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // on (SSE), mirroring how voice clients connect straight to a deployed
   // agent's /websocket. Rate-limited: each call can spawn a Modal sandbox.
   studio.post("/projects/:project/session", async (c) => {
-    const scope = requestScope(c);
+    const { scope, project } = c.var;
     const limited = await rateLimited(scope, chatLimiter);
     if (limited) return limited;
-    const project = validateProject(c.req.param("project"));
     // The public origin arms auto preview deploys: the guest's end-of-turn
     // sync makes the broker ship the edited workspace to the preview slug.
     const session = await ensureBroker(c).ensureSession(

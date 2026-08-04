@@ -14,32 +14,25 @@
 import { buildClientConfig } from "@alexkroman1/aai/protocol";
 import { HTTPException } from "hono/http-exception";
 import type { AppContext } from "./context.ts";
-import type { SandboxPool } from "./sandbox-pool.ts";
-import { brokerSessionUrl } from "./sandbox-resolve.ts";
-
-export type ClientConfigOpts = {
-  /** Pre-warmed harness pool shared with the rest of the platform. */
-  pool?: SandboxPool;
-};
+import { brokerSessionUrl, type ResolveSandboxOpts } from "./sandbox-resolve.ts";
 
 export async function handleAgentClientConfig(
   c: AppContext,
-  opts: ClientConfigOpts = {},
+  broker: ResolveSandboxOpts,
 ): Promise<Response> {
   const slug = c.var.slug;
-  const config = await c.env.store.getAgentConfig(slug);
+  // The config read and the broker are independent (the broker 404s on a
+  // missing agent by itself), so run them concurrently: on the warm path the
+  // broker answer is in-memory, and paying a serial row read before it just
+  // delays the session URL.
+  const [config, brokered] = await Promise.all([
+    broker.store.getAgentConfig(slug),
+    brokerSessionUrl(slug, broker),
+  ]);
   if (!config) {
     throw new HTTPException(404, { message: `Not found: ${slug}` });
   }
 
-  const brokered = await brokerSessionUrl(slug, {
-    slots: c.env.slots,
-    store: c.env.store,
-    secrets: c.env.secrets,
-    ...(c.env.registry && { registry: c.env.registry }),
-    ...(c.env.appDb && { appDb: c.env.appDb }),
-    ...(opts.pool && { pool: opts.pool }),
-  });
   if (!brokered.ok) {
     if (brokered.status === 404) {
       throw new HTTPException(404, { message: `Not found: ${slug}` });

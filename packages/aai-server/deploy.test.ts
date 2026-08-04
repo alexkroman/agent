@@ -2,7 +2,6 @@
 import { describe, expect, test } from "vitest";
 import { deployAgentBundle } from "./deploy.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
-import { createSlotCache } from "./sandbox-slots.ts";
 import { hashApiKey, verifyApiKeyHash } from "./secrets.ts";
 import {
   createTestOrchestrator,
@@ -131,7 +130,7 @@ describe("deployAgentBundle env merge", () => {
     env?: Record<string, string>;
   }) {
     return await deployAgentBundle(
-      { store: params.store, slots: createSlotCache() },
+      { store: params.store },
       {
         slug: "my-agent",
         apiKey: "key1",
@@ -192,10 +191,7 @@ describe("deployAgentBundle ownership resolution", () => {
 
   test("unclaimed slug: derives and stores a hash that verifies the key", async () => {
     const store = createTestStore();
-    const outcome = await deployAgentBundle(
-      { store, slots: createSlotCache() },
-      { ...baseParams, slug: "fresh-agent" },
-    );
+    const outcome = await deployAgentBundle({ store }, { ...baseParams, slug: "fresh-agent" });
     expect(outcome.ok).toBe(true);
     const hashes = (await store.getAgent("fresh-agent"))?.credential_hashes ?? [];
     expect(hashes).toHaveLength(1);
@@ -213,10 +209,7 @@ describe("deployAgentBundle ownership resolution", () => {
       credential_hashes: [keyHash],
       agentConfig: TEST_AGENT_CONFIG,
     });
-    const outcome = await deployAgentBundle(
-      { store, slots: createSlotCache() },
-      { ...baseParams, slug: "owned-agent" },
-    );
+    const outcome = await deployAgentBundle({ store }, { ...baseParams, slug: "owned-agent" });
     expect(outcome.ok).toBe(true);
     expect((await store.getAgent("owned-agent"))?.credential_hashes).toEqual([keyHash]);
   });
@@ -233,7 +226,7 @@ describe("deployAgentBundle ownership resolution", () => {
       agentConfig: TEST_AGENT_CONFIG,
     });
     const outcome = await deployAgentBundle(
-      { store, slots: createSlotCache() },
+      { store },
       { ...baseParams, slug: "their-agent", apiKey: "intruder-key" },
     );
     expect(outcome).toEqual({
@@ -444,7 +437,7 @@ describe("deploy credential preflight", () => {
     credentialPolicy?: "require" | "warn";
   }) {
     return deployAgentBundle(
-      { store: createTestStore(), slots: createSlotCache() },
+      { store: createTestStore() },
       {
         slug: "my-agent",
         apiKey: "key1",
@@ -511,7 +504,7 @@ describe("deploy credential preflight", () => {
   test("a rejected deploy stores nothing", async () => {
     const store = createTestStore();
     const outcome = await deployAgentBundle(
-      { store, slots: createSlotCache() },
+      { store },
       {
         slug: "unstored",
         apiKey: "key1",
@@ -531,7 +524,7 @@ describe("deployAgentBundle version bump", () => {
   test("a deploy bumps the deploy version so other services rebuild sandboxes", async () => {
     const store = createTestStore();
     await deployAgentBundle(
-      { store, slots: createSlotCache() },
+      { store },
       {
         slug: "published-agent",
         apiKey: "key1",
@@ -544,7 +537,7 @@ describe("deployAgentBundle version bump", () => {
     await expect(store.getAgentVersion("published-agent")).resolves.toBe(1);
 
     const outcome = await deployAgentBundle(
-      { store, slots: createSlotCache() },
+      { store },
       {
         slug: "published-agent",
         apiKey: "key1",
@@ -570,7 +563,7 @@ describe("deployAgentBundle version bump", () => {
       agentConfig: TEST_AGENT_CONFIG,
     });
     const outcome = await deployAgentBundle(
-      { store, slots: createSlotCache() },
+      { store },
       {
         slug: "their-agent",
         apiKey: "intruder-key",

@@ -10,14 +10,15 @@
  *
  * Concurrency: every write is versioned. `createWorkspace` conflicts when
  * the project already exists; `mutateWorkspace` is the read-modify-write
- * for everything else — it re-reads and re-applies the mutation once when a
- * versioned put loses a race. In-process writers are still serialized by
- * `studio-workspace-lock.ts` (the AI SDK runs one step's tool calls
- * concurrently), so the single retry only has to absorb cross-replica
- * races, which the lock cannot see.
+ * for everything else — it serializes in-process writers on a keyed mutex
+ * (the AI SDK runs one step's tool calls concurrently) and re-reads and
+ * re-applies the mutation once when a versioned put loses a race, so the
+ * single retry only has to absorb cross-replica races, which the lock
+ * cannot see.
  */
 
 import { hash } from "node:crypto";
+import { createKeyedLock, withLock } from "aai-server/platform-barrel";
 import { SafePathSchema } from "aai-server/schemas";
 import { WorkspaceConflictError, type WorkspaceStore } from "aai-server/workspace-store";
 import {
@@ -92,8 +93,9 @@ export function hasUnpublishedChanges(workspace: StudioWorkspace): boolean {
 /**
  * True when the workspace has edits the preview deploy has not shipped yet.
  * Unlike {@link hasUnpublishedChanges} this is deliberately true before the
- * first preview exists: "no preview yet" IS stale — the client uses it to
- * poll while the first auto-deploy is in flight.
+ * first preview exists: "no preview yet" IS stale — the client shows the
+ * preview as building until the first auto-deploy lands (pushed to it over
+ * the project SSE stream).
  */
 export function hasPreviewChanges(workspace: StudioWorkspace): boolean {
   return workspace.previewHash !== currentFilesHash(workspace);
@@ -200,18 +202,48 @@ export async function createWorkspace(
 }
 
 /**
+ * Serializes this process's workspace writers per (scope, project): the AI
+ * SDK executes one assistant step's tool calls concurrently, an editor PUT
+ * can land mid chat turn, and deploy/preview stamp metadata after
+ * multi-second builds. Without serialization those local writers would burn
+ * the versioned put's single conflict retry on each other. Module-level on
+ * purpose: chat sync, the file routes, and deploy all run in the same
+ * server process against the same store, so one keyed mutex covers every
+ * writer.
+ */
+const workspaceLock = createKeyedLock();
+
+/**
  * Versioned read-modify-write. `mutate` receives the current document and
  * returns the replacement (or `null` to decline writing — the current
  * document is returned unchanged). Resolves `null` when the project does
  * not exist; a deleted project is never resurrected, because the versioned
  * put only replaces an existing row.
  *
+ * The in-process workspace lock is taken HERE, not by callers, so
+ * serialization is the mechanism's invariant rather than per-call-site
+ * discipline (the guest's sync-workspace handler once called this bare).
+ * Long work — builds — stays outside the lock: only the read-modify-write,
+ * the mutate callback included, runs under it.
+ *
  * On a version conflict — a concurrent writer on another replica, since
- * local writers are serialized by the workspace lock — the mutation is
- * re-derived against a fresh read exactly once; a second conflict
- * propagates as {@link WorkspaceConflictError}.
+ * local writers are serialized by the lock — the mutation is re-derived
+ * against a fresh read exactly once; a second conflict propagates as
+ * {@link WorkspaceConflictError}.
  */
-export async function mutateWorkspace(
+export function mutateWorkspace(
+  store: WorkspaceStore,
+  scope: string,
+  project: string,
+  mutate: (current: StudioWorkspace) => WorkspaceInput | null | Promise<WorkspaceInput | null>,
+): Promise<StudioWorkspace | null> {
+  return withLock(workspaceLock, projectKey(scope, project), () =>
+    applyMutation(store, scope, project, mutate),
+  );
+}
+
+/** The read-modify-write loop `mutateWorkspace` runs under the lock. */
+async function applyMutation(
   store: WorkspaceStore,
   scope: string,
   project: string,

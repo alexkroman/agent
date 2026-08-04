@@ -36,6 +36,7 @@ import { errorMessage } from "@alexkroman1/aai";
 import { CONTAINED_ENV } from "@alexkroman1/aai/runtime";
 import { ModalClient, type SandboxCreateParams } from "modal";
 import { debug } from "./_debug-log.ts";
+import { keyedMemoAsync, memoAsync } from "./_memo.ts";
 import { GUEST_ROUTES, guestWsUrl } from "./guest-routes.ts";
 import { createHarnessImageResolver, HARNESS_REMOTE_PATH } from "./modal-harness-image.ts";
 import {
@@ -138,8 +139,6 @@ export function isModalConfigured(): boolean {
 
 // ── Modal context (client/app/image, resolved once) ──────────────────────────
 
-let contextPromise: Promise<ModalSpawnContext> | null = null;
-
 async function buildContext(): Promise<ModalSpawnContext> {
   if (!isModalConfigured()) throw modalRequiredError();
   const client = modalClient();
@@ -164,13 +163,7 @@ async function buildContext(): Promise<ModalSpawnContext> {
  * the next spawn retries (a transient control-plane error must not disable
  * sandboxing for the process lifetime).
  */
-function modalContext(): Promise<ModalSpawnContext> {
-  contextPromise ??= buildContext().catch((err: unknown) => {
-    contextPromise = null;
-    throw err;
-  });
-  return contextPromise;
-}
+const modalContext = memoAsync(buildContext);
 
 /**
  * Fire-and-forget warm-up of the memoized Modal context (app lookup/creation
@@ -185,19 +178,11 @@ export function prewarmModal(): void {
 
 // ── Harness code cache ───────────────────────────────────────────────────────
 
-const harnessCache = new Map<string, Promise<string>>();
+const harnessCache = keyedMemoAsync<string>();
 
 /** Read (and memoize) the built guest harness — it is stable per process. */
 function harnessCode(harnessPath: string): Promise<string> {
-  let cached = harnessCache.get(harnessPath);
-  if (!cached) {
-    cached = readFile(harnessPath, "utf-8").catch((err: unknown) => {
-      harnessCache.delete(harnessPath);
-      throw err;
-    });
-    harnessCache.set(harnessPath, cached);
-  }
-  return cached;
+  return harnessCache(harnessPath, () => readFile(harnessPath, "utf-8"));
 }
 
 // ── WarmHarness construction ─────────────────────────────────────────────────
@@ -276,24 +261,28 @@ export async function spawnModalWarm(
     // The per-sandbox bearer token rides the EXEC env — never the sandbox
     // env, where it would outlive the process and show in sandbox metadata.
     const token = randomBytes(32).toString("hex");
-    const proc = await sb.exec(["node", HARNESS_REMOTE_PATH], {
-      mode: "binary",
-      stdout: "pipe",
-      stderr: "pipe",
-      // CONTAINED: a Modal Sandbox is a real container, so the network
-      // builtins drop their SSRF screen — it guards nothing a tenant cannot
-      // bypass with a raw fetch from their own tool code, and the container
-      // holds no platform credentials. Deliberately NOT set by the
-      // subprocess backend, whose "guest" is a child process on the
-      // developer's own machine.
-      env: {
-        AAI_GUEST_TOKEN: token,
-        AAI_GUEST_PORT: String(GUEST_PORT),
-        [CONTAINED_ENV]: "1",
-      },
-    });
-
-    const tunnels = await sb.tunnels();
+    // The tunnel lookup doesn't depend on the exec — dialGuest already
+    // retries while the harness boots — so save a Modal control-plane round
+    // trip by running the two together.
+    const [proc, tunnels] = await Promise.all([
+      sb.exec(["node", HARNESS_REMOTE_PATH], {
+        mode: "binary",
+        stdout: "pipe",
+        stderr: "pipe",
+        // CONTAINED: a Modal Sandbox is a real container, so the network
+        // builtins drop their SSRF screen — it guards nothing a tenant cannot
+        // bypass with a raw fetch from their own tool code, and the container
+        // holds no platform credentials. Deliberately NOT set by the
+        // subprocess backend, whose "guest" is a child process on the
+        // developer's own machine.
+        env: {
+          AAI_GUEST_TOKEN: token,
+          AAI_GUEST_PORT: String(GUEST_PORT),
+          [CONTAINED_ENV]: "1",
+        },
+      }),
+      sb.tunnels(),
+    ]);
     const tunnel = tunnels[GUEST_PORT];
     if (!tunnel) {
       throw new Error(`no tunnel for guest port ${GUEST_PORT}`);
@@ -325,7 +314,7 @@ export async function spawnModalWarm(
 export const _internals = {
   warmFromModal,
   resetModalContext(): void {
-    contextPromise = null;
+    modalContext.reset();
     clientMemo = null;
     harnessCache.clear();
   },

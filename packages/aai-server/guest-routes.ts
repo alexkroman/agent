@@ -22,8 +22,6 @@ export const GUEST_ROUTES = {
   session: "/websocket",
   /** PUBLIC studio coding-agent chat (SSE), bearer-gated by the caller's key. */
   studioChat: "/studio/chat",
-  /** Tool labels for the studio client. */
-  studioTools: "/studio/tools",
 } as const;
 
 export type GuestRoute = (typeof GUEST_ROUTES)[keyof typeof GUEST_ROUTES];

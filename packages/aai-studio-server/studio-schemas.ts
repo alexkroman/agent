@@ -4,6 +4,7 @@
 import { MAX_SLUG_LENGTH } from "@alexkroman1/aai/utils";
 import slugifyLib from "@sindresorhus/slugify";
 import { RESERVED_SLUGS, SafePathSchema, VALID_SLUG_RE } from "aai-server/schemas";
+import { slugifyBase } from "aai-server/slug-generate";
 import { z } from "zod";
 import { MAX_STUDIO_FILE_BYTES, MAX_STUDIO_MESSAGE_BYTES } from "./studio-limits.ts";
 
@@ -30,16 +31,13 @@ const MAX_TYPED_PROJECT_NAME = 100;
  * Normalize a human-typed project name into the slug grammar.
  *
  * People type "My Agent"; the name doubles as the deploy slug and appears in
- * the agent's URL, so it has to reduce to `VALID_SLUG_RE`. Delegated to
- * `@sindresorhus/slugify` rather than a local regex so non-ASCII
- * transliterates properly — "Café Ordering" becomes `cafe-ordering`, where a
- * plain `[^a-z0-9]` strip would have produced `caf-ordering`.
- *
- * `decamelize: false` keeps "MyAgent" as one word instead of "my-agent": the
- * name is an identifier the user typed, not a symbol to be prettified.
+ * the agent's URL, so it has to reduce to `VALID_SLUG_RE`. Built on the
+ * platform's shared `slugifyBase` (see slug-generate.ts for the
+ * transliteration/`decamelize` posture) so typed project names and
+ * config-derived deploy-slug bases can't normalize differently.
  */
 function slugifyProjectName(input: string): string {
-  return slugifyLib(input, { decamelize: false }).slice(0, MAX_SLUG_LENGTH).replace(/-+$/g, "");
+  return slugifyBase(input, MAX_SLUG_LENGTH);
 }
 
 /** Upper bound on the prompt excerpt a generated name derives from. */

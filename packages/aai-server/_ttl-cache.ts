@@ -5,8 +5,8 @@ import QuickLRU from "quick-lru";
 /**
  * Expire-on-read TTL cache with an LRU max-size cap, built on quick-lru.
  *
- * Shared by the bundle store (row/version caches) and the
- * credential verification cache in `secrets.ts`.
+ * Shared by the bundle store (row/version caches) and the access-token
+ * verification cache in `supabase-auth.ts`.
  *
  * Note: quick-lru's dual-generation eviction means the cache may briefly
  * hold up to 2× maxSize entries — the cap is approximate, not exact.
@@ -14,12 +14,5 @@ import QuickLRU from "quick-lru";
 export class TtlCache<V> extends QuickLRU<string, V> {
   constructor(ttlMs: number, maxSize = 10_000) {
     super({ maxSize, maxAge: ttlMs });
-  }
-
-  /** Delete every entry whose key starts with `prefix`. */
-  deletePrefix(prefix: string): void {
-    for (const key of [...this.keys()]) {
-      if (key.startsWith(prefix)) this.delete(key);
-    }
   }
 }

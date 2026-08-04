@@ -19,17 +19,15 @@
  * the slug mutation lock, and the Realtime change streams. A Publish here
  * reaches the agent service's resident sandboxes through the agents row's
  * change stream (their watchers retire on the version mismatch within
- * seconds; see sandbox-resolve.ts). The `slots` binding is this service's
- * own (always-empty) cache — nothing here to invalidate.
+ * seconds; see sandbox-resolve.ts).
  */
 
 import type { AppDatabases } from "aai-server/app-database";
-import { applyPlatformMiddleware } from "aai-server/app-middleware";
+import { addHealthRoute, applyPlatformMiddleware, bindFetchEnv } from "aai-server/app-middleware";
 import type { ChatStore } from "aai-server/chat-store";
 import { createMemoryPlatformEvents, type PlatformEvents } from "aai-server/platform-events";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "aai-server/platform-lock";
 import type { SandboxPool } from "aai-server/sandbox-pool";
-import { createSlotCache } from "aai-server/sandbox-slots";
 import { createMemorySecretStore, type SecretStore } from "aai-server/secret-store";
 import type { BundleStore } from "aai-server/store-types";
 import type { StudioAuth } from "aai-server/supabase-auth";
@@ -75,9 +73,7 @@ export function createStudioApp(opts: StudioAppOpts): {
   const app = new Hono<StudioHonoEnv>();
   applyPlatformMiddleware(app, opts.allowedOrigins);
 
-  app.get("/health", (c) =>
-    opts.isDraining?.() ? c.json({ status: "draining" }, 503) : c.json({ status: "ok" }),
-  );
+  addHealthRoute(app, opts.isDraining);
 
   app.get("/", handleStudioPage);
   // v0-style project URLs (`/studio/chat/<project>`) serve the same shell —
@@ -96,11 +92,7 @@ export function createStudioApp(opts: StudioAppOpts): {
   app.get("/studio", (c) => c.redirect("/", 302));
   app.get("/studio/", (c) => c.redirect("/", 302));
 
-  const bindings: StudioHonoEnv["Bindings"] = {
-    // This service runs no voice sandboxes; an empty cache makes the shared
-    // mutation cores' local terminateSlot calls no-ops, while the deploy's
-    // row-version bump reaches the agent service.
-    slots: createSlotCache(),
+  bindFetchEnv(app, {
     store: opts.store,
     workspaces: opts.workspaces,
     chats: opts.chats,
@@ -112,11 +104,7 @@ export function createStudioApp(opts: StudioAppOpts): {
     // also drop this replica's cached view of the slug, or a mutation
     // read-modify-writes off a pre-lock snapshot (see createMutationLock).
     slugLock: createMutationLock(opts.slugLock ?? localSlugLock, opts.store),
-  };
-
-  const original = app.fetch.bind(app);
-  app.fetch = (req: Request, env?: Record<string, unknown>) =>
-    original(req, env ? { ...bindings, ...env } : bindings);
+  });
 
   return { app, dispose: studioRoutes.dispose };
 }

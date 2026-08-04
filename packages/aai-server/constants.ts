@@ -11,7 +11,11 @@ export const DEFAULT_PORT = 8080;
 /** Max concurrent WebSocket connections before the server rejects new upgrades. */
 export const MAX_CONNECTIONS = Number(process.env.MAX_CONNECTIONS) || 100;
 
-/** Idle time before a resident sandbox is evicted. Bumped on each session start. */
+/**
+ * Idle time before a resident sandbox is evicted. Sessions connect to the
+ * sandbox directly, so the sweep probes the guest's live session count
+ * before killing (see sandbox-slots.ts).
+ */
 export const IDLE_SANDBOX_MS = 5 * 60 * 1000;
 
 /**
