@@ -1,5 +1,12 @@
 # aai-studio-client
 
+## 0.3.3
+
+### Patch Changes
+
+- dcb1f99: Starter prompts now reference their aai-templates template by name (e.g. "Use the retail template."), so a pick copies the worked template verbatim via use_template instead of re-deriving it from a prose spec.
+- c567faa: Add a retail support starter prompt to the studio's example catalog, modeled on the retail template
+
 ## 0.3.2
 
 ### Patch Changes

@@ -1,5 +1,27 @@
 # aai-guest
 
+## 0.4.0
+
+### Minor Changes
+
+- ae89dd9: Email login via Supabase Auth, for the studio and the CLI. The studio's browser bearer is now a session token (magic-link sign-in) resolved server-side to the user's stored AssemblyAI key (`user-key:<uid>` in Vault); connecting that key is the mandatory onboarding step after sign-in — every AssemblyAI key on the platform is user-provided, and the browser never holds one. `aai login` drives the same flow from the terminal via Supabase email OTP and saves the fetched key in the CLI config. A dev-token auth implementation keeps local dev Supabase-free. The guest chat surface is gated by a broker-minted per-session token instead of the caller's key. Slug-ownership hashes drop argon2id for plain SHA-256 digests (high-entropy machine keys need no slow hash), removing `@node-rs/argon2` and the verify cache. Raw API-key bearers keep working on every route.
+
+### Patch Changes
+
+- 4de0abe: Add studio template tools: list_templates enumerates the bundled example agents and use_template copies a template's files verbatim into the workspace
+- Updated dependencies [a57905b]
+- Updated dependencies [030b55f]
+- Updated dependencies [966aeed]
+- Updated dependencies [6cca475]
+- Updated dependencies [e7a6f43]
+- Updated dependencies [d303cfb]
+- Updated dependencies [41d53ae]
+- Updated dependencies [ae89dd9]
+- Updated dependencies [cecafd3]
+  - @alexkroman1/aai@5.5.0
+  - @alexkroman1/aai-ui@5.5.0
+  - @alexkroman1/aai-cli@5.5.0
+
 ## 0.3.3
 
 ### Patch Changes

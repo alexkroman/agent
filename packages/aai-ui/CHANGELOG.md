@@ -1,5 +1,20 @@
 # @alexkroman1/aai-ui
 
+## 5.5.0
+
+### Minor Changes
+
+- 966aeed: Add `session.end()`: hang up the call, clear the conversation, and return to the not-started state (`started` flips back to false). Unlike `reset()`, the next `start()` mints a brand-new session — new session id, fresh per-session tool state, greeting included. The retail template's End button now uses it, so clicking End properly toggles back to the Start screen (it previously only cleared the conversation while the call stayed live).
+
+### Patch Changes
+
+- Updated dependencies [a57905b]
+- Updated dependencies [030b55f]
+- Updated dependencies [6cca475]
+- Updated dependencies [d303cfb]
+- Updated dependencies [41d53ae]
+  - @alexkroman1/aai@5.5.0
+
 ## 5.4.0
 
 ### Patch Changes
