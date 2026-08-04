@@ -262,7 +262,7 @@ export const DEFAULT_MIN_BARGE_IN_WORDS = 2;
  * the only useful thing left to do. Set `startFailurePhrase: ""` to disable.
  */
 export const DEFAULT_START_FAILURE_PHRASE =
-  "I'm sorry, I'm having trouble with my connection and can't hear you. " +
+  "I am sorry, I am having trouble with my connection and cannot hear you. " +
   "Please hang up and call back.";
 
 /**

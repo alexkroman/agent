@@ -85,4 +85,4 @@ agent-specific instructions win.
 
 /** Default greeting spoken when a session starts. */
 export const DEFAULT_GREETING: string =
-  "Hey there. I'm a voice assistant. What can I help you with?";
+  "Hey there. I am a voice assistant. What can I help you with?";
