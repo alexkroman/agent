@@ -34,6 +34,30 @@ describe("createPostgresDb", () => {
     });
   });
 
+  test("leaves notices to the driver's default handler by default", () => {
+    // A tenant's `raise notice` is their own debugging output — `ctx.db` must
+    // not swallow it.
+    createPostgresDb({ url: "postgres://db.example/app" });
+    expect(postgresMock.mock.calls[0]?.[1]).not.toHaveProperty("onnotice");
+  });
+
+  test("quietDdlNotices drops already-exists notices and keeps the rest", () => {
+    const info = vi.spyOn(console, "info").mockImplementation(() => undefined);
+    createPostgresDb({ url: "postgres://db.example/app", quietDdlNotices: true });
+    const [, options] = postgresMock.mock.calls[0] ?? [];
+    const { onnotice } = options as { onnotice: (n: unknown) => void };
+
+    // The two raised by re-running `create schema/table if not exists`.
+    onnotice({ code: "42P06", message: 'schema "aai_platform" already exists, skipping' });
+    onnotice({ code: "42P07", message: 'relation "agents" already exists, skipping' });
+    expect(info).not.toHaveBeenCalled();
+
+    // Anything else still surfaces — as one line, not a multi-line dump.
+    onnotice({ code: "22P02", message: "something worth seeing" });
+    expect(info).toHaveBeenCalledExactlyOnceWith("postgres notice [22P02] something worth seeing");
+    info.mockRestore();
+  });
+
   test("query runs the statement with its params and resolves the rows", async () => {
     unsafeMock.mockResolvedValueOnce([{ id: 1 }, { id: 2 }]);
     const db = createPostgresDb({ url: "postgres://db.example/app" });

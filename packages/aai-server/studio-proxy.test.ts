@@ -86,6 +86,47 @@ describe("createStudioProxy", () => {
     expect(res.status).toBe(302);
   });
 
+  test("forwards the request's abort signal to the upstream", async () => {
+    // Without this the studio's long-lived streams (the SSE event routes,
+    // chat turns) outlive the browser: the inbound request dies, its response
+    // stream is dropped, and the upstream produces forever.
+    let seenSignal: AbortSignal | undefined;
+    const proxy = createStudioProxy("http://studio.internal:8080", async (_input, init) => {
+      seenSignal = init?.signal ?? undefined;
+      return Response.json({ ok: true });
+    });
+    const controller = new AbortController();
+    const req = new Request("https://platform.example/studio/events", {
+      signal: controller.signal,
+    });
+    await proxy(makeContext(req));
+
+    expect(seenSignal).toBeDefined();
+    expect(seenSignal?.aborted).toBe(false);
+    controller.abort();
+    expect(seenSignal?.aborted).toBe(true);
+  });
+
+  test("a client disconnect is not reported as an upstream failure", async () => {
+    // The abort surfaces as a fetch rejection; logging it would put an error
+    // line in the log for every ordinary navigation away from a stream.
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const controller = new AbortController();
+    const proxy = createStudioProxy("http://studio.internal:8080", async () => {
+      controller.abort();
+      throw new Error("The operation was aborted.");
+    });
+    const res = await proxy(
+      makeContext(
+        new Request("https://platform.example/studio/events", { signal: controller.signal }),
+      ),
+    );
+
+    expect(res.status).toBe(499);
+    expect(error).not.toHaveBeenCalled();
+    error.mockRestore();
+  });
+
   test("answers 502 when the upstream is unreachable", async () => {
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
     const proxy = createStudioProxy("http://studio.internal:8080", async () => {

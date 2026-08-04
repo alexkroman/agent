@@ -18,7 +18,20 @@ export type CreatePostgresDbOptions = {
   url: string;
   /** Maximum pooled connections. Defaults to 4. */
   max?: number;
+  /**
+   * Drop the server notices raised by idempotent `IF NOT EXISTS` DDL
+   * (`42P06` schema exists, `42P07` relation exists). The driver's default
+   * handler `console.log`s the whole notice object, so a caller that
+   * bootstraps its own schema on every boot — the platform stores — prints a
+   * multi-line dump per statement per container, which buries real errors in
+   * the log. Off by default: for `ctx.db` a tenant's `raise notice` is their
+   * own debugging output and must keep flowing.
+   */
+  quietDdlNotices?: boolean;
 };
+
+/** Server-notice codes raised by `create ... if not exists` on a rerun. */
+const ALREADY_EXISTS_NOTICE_CODES = new Set(["42P06", "42P07"]);
 
 /** A {@link Db} whose underlying connection pool the caller owns and must close. */
 export type CloseableDb = Db & {
@@ -35,7 +48,16 @@ export type CloseableDb = Db & {
  * @public
  */
 export function createPostgresDb(opts: CreatePostgresDbOptions): CloseableDb {
-  const sql = postgres(opts.url, { max: opts.max ?? 4, prepare: false });
+  const sql = postgres(opts.url, {
+    max: opts.max ?? 4,
+    prepare: false,
+    ...(opts.quietDdlNotices && {
+      onnotice: (notice) => {
+        if (ALREADY_EXISTS_NOTICE_CODES.has(notice.code ?? "")) return;
+        console.info(`postgres notice [${notice.code}] ${notice.message}`);
+      },
+    }),
+  });
   return {
     async query<T = Record<string, unknown>>(query: string, params?: unknown[]): Promise<T[]> {
       // The driver types parameters as its serializable union; `ctx.db` keeps

@@ -74,6 +74,36 @@ export function isStudioPath(pathname: string): boolean {
 export type StudioProxy = (c: Context<HonoEnv>) => Promise<Response>;
 
 /**
+ * The forwarded request's headers: the inbound set minus the hop-by-hop ones,
+ * plus the public origin. The studio service needs the PUBLIC origin (this
+ * service's), not its own upstream address — Publish hands it to the guest's
+ * `aai deploy` as the platform to dial (see studio-routes'
+ * requestPublicOrigin). Resolved rather than copied off the request URL: this
+ * service is itself reached over cleartext behind Modal's TLS termination, so
+ * forwarding `url.protocol` told the studio the platform was `http://`.
+ */
+function forwardRequestHeaders(req: Request): Headers {
+  const headers = new Headers();
+  for (const [name, value] of req.headers) {
+    // Headers iteration yields lowercased names per the Fetch spec.
+    if (!STRIP_REQUEST_HEADERS.has(name)) headers.set(name, value);
+  }
+  const forwarded = publicForwardedHeaders(req);
+  headers.set("x-forwarded-host", forwarded.host);
+  headers.set("x-forwarded-proto", forwarded.proto);
+  return headers;
+}
+
+/** The upstream response's headers minus the ones re-streaming invalidates. */
+function relayResponseHeaders(res: Response): Headers {
+  const headers = new Headers();
+  for (const [name, value] of res.headers) {
+    if (!STRIP_RESPONSE_HEADERS.has(name)) headers.set(name, value);
+  }
+  return headers;
+}
+
+/**
  * Build the proxy handler. `fetchFn` is injectable for tests; production
  * uses the global fetch — the upstream URL is operator config (the studio
  * service's own address), never request-derived, so no SSRF surface.
@@ -89,29 +119,24 @@ export function createStudioProxy(
     const url = new URL(c.req.url);
     const target = `${base}${url.pathname}${url.search}`;
 
-    const headers = new Headers();
-    for (const [name, value] of c.req.raw.headers) {
-      // Headers iteration yields lowercased names per the Fetch spec.
-      if (!STRIP_REQUEST_HEADERS.has(name)) headers.set(name, value);
-    }
-    // The studio service needs the PUBLIC origin (this service's), not its
-    // own upstream address — Publish hands it to the guest's `aai deploy`
-    // as the platform to dial (see studio-routes' requestPublicOrigin).
-    // Resolved rather than copied off `url`: this service is itself reached
-    // over cleartext behind Modal's TLS termination, so forwarding
-    // `url.protocol` told the studio the platform was `http://`.
-    const forwarded = publicForwardedHeaders(c.req.raw);
-    headers.set("x-forwarded-host", forwarded.host);
-    headers.set("x-forwarded-proto", forwarded.proto);
-
     const method = c.req.method;
     const hasBody = method !== "GET" && method !== "HEAD";
     const init: RequestInit = {
       method,
-      headers,
+      headers: forwardRequestHeaders(c.req.raw),
       // Pass upstream redirects through to the browser (the studio app
       // redirects /studio/ → /) instead of following them proxy-side.
       redirect: "manual",
+      // Propagate client disconnect to the upstream. Without this the studio
+      // surface's long-lived streams — the SSE event routes and chat turns —
+      // outlive the browser that asked for them: the inbound request dies,
+      // its response stream is dropped, and the upstream keeps producing
+      // forever, holding a Supabase Realtime watcher and re-reading its row
+      // on every change. `@hono/node-server` aborts this signal ONLY when
+      // the response socket closes before it finished (its `makeCloseHandler`
+      // checks `writableFinished`), so a normally-completing response — a
+      // fully-drained SSE stream included — is never cut short by it.
+      signal: c.req.raw.signal,
       ...(hasBody && { body: c.req.raw.body, duplex: "half" }),
       // `duplex` is required for streaming request bodies and absent from
       // the DOM lib's RequestInit type; undici (Node's fetch) honors it.
@@ -121,14 +146,17 @@ export function createStudioProxy(
     try {
       res = await fetchFn(target, init);
     } catch (err) {
+      // A client that hung up aborts the signal above, which surfaces here as
+      // a fetch rejection. That is the expected end of every SSE stream — not
+      // an upstream fault — so it must not log or report the studio as down.
+      // Nobody is left to read it; the response only settles the handler, so
+      // it is built raw rather than through `c.json` — 499 (nginx's
+      // client-closed-request) is outside Hono's typed status union.
+      if (c.req.raw.signal.aborted) return new Response(null, { status: 499 });
       console.error(`Studio proxy request failed: ${errorMessage(err)}`);
       return c.json({ error: "Studio is unavailable — try again shortly" }, 502);
     }
 
-    const responseHeaders = new Headers();
-    for (const [name, value] of res.headers) {
-      if (!STRIP_RESPONSE_HEADERS.has(name)) responseHeaders.set(name, value);
-    }
-    return new Response(res.body, { status: res.status, headers: responseHeaders });
+    return new Response(res.body, { status: res.status, headers: relayResponseHeaders(res) });
   };
 }

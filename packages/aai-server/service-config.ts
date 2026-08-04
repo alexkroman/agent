@@ -201,7 +201,12 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   }
   // The pool lives for the process; connections drain when the process exits
   // (no explicit close() hook on the shutdown path today).
-  const admin = createPostgresDb({ url, max: 4 });
+  // `quietDdlNotices`: every store bootstraps its own schema with
+  // `create ... if not exists` (pg-ensure.ts), and each container that boots
+  // re-runs all of them. Unfiltered, the driver dumps a multi-line notice
+  // object per statement — dozens per autoscale event — into the same log an
+  // operator greps for real failures.
+  const admin = createPostgresDb({ url, max: 4, quietDdlNotices: true });
   const exec: SqlExec = (query, params) => admin.query(query, params);
   const localDev = isLocalDev(env);
   if (localDev) {
