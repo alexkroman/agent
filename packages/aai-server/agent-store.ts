@@ -53,7 +53,8 @@ export type AgentRows = {
 };
 
 const TABLE = "aai_platform.agents";
-const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
+/** DDL shared with the boot-time Realtime publication setup (realtime-events.ts). */
+export const ENSURE_AGENTS_TABLE_SQL = `create table if not exists ${TABLE} (
   slug text primary key,
   credential_hashes jsonb not null,
   config jsonb not null,
@@ -92,7 +93,7 @@ function jsonColumn(value: unknown): unknown {
 
 /** Postgres-backed agent rows over the platform admin connection. */
 export function createPgAgentRows(sql: SqlExec): AgentRows {
-  const ensure = ensureTableOnce(sql, ENSURE_TABLE_SQL);
+  const ensure = ensureTableOnce(sql, ENSURE_AGENTS_TABLE_SQL);
 
   return {
     async get(slug) {

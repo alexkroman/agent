@@ -5,6 +5,13 @@ import { createMemoryAgentRows } from "./agent-store.ts";
 import { createBundleStore } from "./bundle-store.ts";
 import { type ChatStore, createMemoryChatStore } from "./chat-store.ts";
 import { createOrchestrator } from "./orchestrator.ts";
+import {
+  createMemoryPlatformEvents,
+  type MemoryPlatformEvents,
+  type PlatformEvents,
+  withAgentEvents,
+  withWorkspaceEvents,
+} from "./platform-events.ts";
 import { type AgentSlot, createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore, type SecretStore } from "./secret-store.ts";
 import type { BundleStore } from "./store-types.ts";
@@ -23,10 +30,13 @@ export const VALID_ENV: Record<string, string> = { ASSEMBLYAI_API_KEY: "test-key
  * agent's secret names like production does (the delete route relies on
  * that contract).
  */
-export function createTestStore(secrets?: SecretStore): BundleStore {
+export function createTestStore(secrets?: SecretStore, events?: MemoryPlatformEvents): BundleStore {
+  const agents = createMemoryAgentRows();
   return createBundleStore(createStorage(), {
     secrets: secrets ?? createMemorySecretStore(),
-    agents: createMemoryAgentRows(),
+    // Paired with a memory event bus when given, so agents-row writes notify
+    // watchers exactly like production's postgres_changes stream.
+    agents: events ? withAgentEvents(agents, events.emitAgent) : agents,
   });
 }
 
@@ -69,20 +79,26 @@ export async function createTestOrchestrator(
   store: BundleStore;
   workspaces: WorkspaceStore;
   chats: ChatStore;
+  events: PlatformEvents;
 }> {
-  const store = createTestStore(overrides.secrets);
-  const workspaces = createMemoryWorkspaceStore();
+  // Stores + event bus are a PAIR (see platform-events.ts): the
+  // orchestrator's event-driven sandbox invalidation and the studio's SSE
+  // pushes only fire when row writes emit.
+  const memoryEvents = createMemoryPlatformEvents();
+  const store = createTestStore(overrides.secrets, memoryEvents);
+  const workspaces = withWorkspaceEvents(createMemoryWorkspaceStore(), memoryEvents.emitWorkspace);
   const chats = createMemoryChatStore();
   const { app } = createOrchestrator({
     slots: createSlotCache(),
     store,
+    events: memoryEvents.events,
     // The real default spins a Modal sandbox to read the worker's
     // `__aaiConfig` self-description; tests answer with the standard config.
     inspect: async () => TEST_AGENT_CONFIG,
     ...overrides,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
-  return { fetch, store, workspaces, chats };
+  return { fetch, store, workspaces, chats, events: memoryEvents.events };
 }
 
 /** Standard auth + JSON headers for test requests. */

@@ -68,7 +68,8 @@ describe("createRateLimiter", () => {
  * Fake `SqlExec` reproducing the semantics of the limiter's one upsert (fresh
  * window when expired, else increment) over an in-memory table, with an
  * injectable clock. Statements are matched on shape, so the JS-side verdict
- * mapping and sweep behavior get exercised without a real database.
+ * mapping gets exercised without a real database. (Expired-row cleanup is a
+ * pg_cron job now — see aai-server/pg-cron.ts — not the limiter's concern.)
  */
 function fakeRateLimitDb(clock: { now: number }) {
   const rows = new Map<string, { count: number; resetAt: number }>();
@@ -76,13 +77,6 @@ function fakeRateLimitDb(clock: { now: number }) {
   const exec: SqlExec = (query, params) => {
     statements.push(query);
     if (query.startsWith("create")) return Promise.resolve([]);
-    if (query.startsWith("delete")) {
-      const [name, windowMs] = params as [string, number];
-      for (const [k, row] of rows) {
-        if (k.startsWith(`${name}/`) && row.resetAt <= clock.now - windowMs) rows.delete(k);
-      }
-      return Promise.resolve([]);
-    }
     // The check upsert.
     const [name, key, windowMs] = params as [string, string, number];
     const k = `${name}/${key}`;
@@ -147,18 +141,5 @@ describe("createPgRateLimiter", () => {
       query.startsWith("create") ? Promise.resolve([]) : Promise.reject(new Error("db down"));
     const limiter = createPgRateLimiter(exec, { name: "chat", limit: 5, windowMs: 60_000 });
     await expect(limiter.check("scope")).rejects.toThrow("db down");
-  });
-
-  test("opening a fresh window sweeps long-expired rows for the limiter", async () => {
-    const clock = { now: 1_000_000 };
-    const db = fakeRateLimitDb(clock);
-    const limiter = createPgRateLimiter(db.exec, { name: "chat", limit: 5, windowMs: 60_000 });
-    await limiter.check("old-scope");
-    // Two windows later, a different scope's fresh window triggers the sweep.
-    clock.now += 130_000;
-    await limiter.check("new-scope");
-    await new Promise((resolve) => setImmediate(resolve));
-    expect(db.rows.has("chat/old-scope")).toBe(false);
-    expect(db.rows.has("chat/new-scope")).toBe(true);
   });
 });

@@ -19,7 +19,8 @@
  *   over the platform's Supabase Postgres, so the limit holds across
  *   replicas instead of multiplying by the replica count. One atomic upsert
  *   per check; a database error propagates (fail-closed) rather than
- *   silently unmetering the route.
+ *   silently unmetering the route. Expired rows are swept by the platform's
+ *   pg_cron job (aai-server/pg-cron.ts), not in-process.
  */
 
 import { ensureTableOnce } from "aai-server/pg-ensure";
@@ -81,8 +82,8 @@ const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
   primary key (name, key)
 )`;
 
-// The sweep filters on reset_at; index it or every fresh-window check pays
-// a sequential scan of the table.
+// The pg_cron sweep (aai-server/pg-cron.ts) filters on reset_at; index it
+// or every hourly sweep pays a sequential scan of the table.
 const ENSURE_INDEX_SQL = `create index if not exists studio_rate_limits_reset_at
 on ${TABLE} (reset_at)`;
 
@@ -97,12 +98,6 @@ on conflict (name, key) do update set
   reset_at = case when t.reset_at <= now()
     then now() + $3::int * interval '1 millisecond' else t.reset_at end
 returning count, ceil(extract(epoch from (reset_at - now()))) as retry_after_seconds`;
-
-// Long-expired windows are dead rows nothing reads again (a live scope's row
-// is reused in place). Swept opportunistically when a check opens a fresh
-// window, keeping the table proportional to recently active scopes.
-const SWEEP_SQL = `delete from ${TABLE}
-where name = $1 and reset_at <= now() - $2::int * interval '1 millisecond'`;
 
 /**
  * Postgres-backed fixed-window limiter over the platform admin connection.
@@ -121,13 +116,6 @@ export function createPgRateLimiter(
       const row = rows[0];
       if (!row) throw new Error(`Rate-limit upsert returned no row for ${options.name}/${key}`);
       const count = Number(row.count);
-      if (count === 1) {
-        // Fresh window — piggyback a sweep of this limiter's dead rows.
-        // Best-effort: the verdict must not depend on housekeeping.
-        void sql(SWEEP_SQL, [options.name, options.windowMs]).catch(() => {
-          // Dead rows are retried by the next fresh window.
-        });
-      }
       if (count <= options.limit) return { ok: true };
       return {
         ok: false,

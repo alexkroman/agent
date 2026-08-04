@@ -7,7 +7,7 @@ import type { AgentRecord } from "./agent-store.ts";
 import type { ValidatedAppContext } from "./context.ts";
 import { localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import { type IsolateConfig, IsolateConfigSchema } from "./rpc-schemas.ts";
-import { retireSlot, type SlotCache, setSlot } from "./sandbox-slots.ts";
+import type { SlotCache } from "./sandbox-slots.ts";
 import type { DeployBody } from "./schemas.ts";
 import { EnvSchema, RESERVED_SLUGS } from "./schemas.ts";
 import { hashApiKey, matchAnyHash } from "./secrets.ts";
@@ -201,16 +201,6 @@ async function deployLocked(
     return { ok: false, status: 400, error: missingCredentialMessage(missing) };
   }
 
-  const existingSlot = deps.slots.get(slug);
-  if (existingSlot?.sandbox) {
-    // Retire, don't terminate: the calls in flight on the old sandbox did not
-    // ask to be redeployed, and cutting them is what made shipping during the
-    // day drop live conversations. The detach is synchronous, so the slug is
-    // free for the rebuild below immediately (see sandbox-retire.ts).
-    console.info("Retiring superseded sandbox for deploy", { slug });
-    retireSlot(existingSlot, "deploy");
-  }
-
   // Preserve multi-user ownership: append the deployer's hash only when no
   // stored hash already matches their key.
   const existingHashes = existing?.credential_hashes ?? [];
@@ -226,11 +216,11 @@ async function deployLocked(
     agentConfig: params.agentConfig,
   });
 
-  setSlot(deps.slots, { slug });
-
-  // No separate invalidation signal: the row upsert inside putAgent bumped
-  // the deploy version, and every replica's superseded check (broker + idle
-  // sweep) compares its resident sandbox against that version.
+  // The row upsert IS the invalidation: it bumps the deploy version, and the
+  // agents row's change stream retires every replica's superseded resident —
+  // this one's included (see watchAgentInvalidation in sandbox-resolve.ts).
+  // No local slot surgery here: mutation handlers write rows, the change
+  // stream moves sandboxes.
 
   debug("Deploy received", { slug });
 

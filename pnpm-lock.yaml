@@ -326,6 +326,9 @@ importers:
       '@sindresorhus/slugify':
         specifier: ^3.0.0
         version: 3.0.0
+      '@supabase/realtime-js':
+        specifier: ^2.112.0
+        version: 2.112.0
       aai-guest:
         specifier: workspace:*
         version: link:../aai-guest

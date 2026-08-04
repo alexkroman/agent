@@ -108,6 +108,49 @@ async function handleResponse<T>(res: Response): Promise<T> {
 }
 
 /**
+ * Split complete SSE frames off the front of `buffer`, returning the parsed
+ * `project` payloads and the unconsumed remainder. Frames are blank-line
+ * separated; each carries `event:` and `data:` lines. Only `project` frames
+ * carry payloads (pings are keepalives).
+ */
+export function parseProjectFrames(buffer: string): { frames: ProjectData[]; rest: string } {
+  const frames: ProjectData[] = [];
+  let rest = buffer;
+  for (;;) {
+    const frameEnd = rest.search(/\r?\n\r?\n/);
+    if (frameEnd === -1) break;
+    const frame = rest.slice(0, frameEnd);
+    rest = rest.slice(frameEnd).replace(/^\r?\n\r?\n/, "");
+    const isProject = /^event: *project$/m.test(frame);
+    const data = frame
+      .split(/\r?\n/)
+      .filter((line) => line.startsWith("data:"))
+      .map((line) => line.slice(5).trimStart())
+      .join("\n");
+    if (isProject && data) frames.push(JSON.parse(data) as ProjectData);
+  }
+  return { frames, rest };
+}
+
+/** Drain a project event stream, delivering each pushed payload. */
+async function consumeProjectEvents(
+  body: ReadableStream<Uint8Array>,
+  onData: (data: ProjectData) => void,
+): Promise<void> {
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    buffer += decoder.decode(value, { stream: true });
+    const { frames, rest } = parseProjectFrames(buffer);
+    buffer = rest;
+    for (const frame of frames) onData(frame);
+  }
+}
+
+/**
  * Same-origin request against the platform's own agent routes (`/:slug/…`) —
  * the secrets panel talks to the exact routes `aai secret` uses.
  */
@@ -169,6 +212,40 @@ export const api = {
 
   getProject: (key: string, project: string) =>
     request<ProjectData>(key, `/projects/${encodeURIComponent(project)}`),
+
+  /**
+   * Subscribe to the project's live state (`GET …/events`, SSE): the server
+   * pushes a full {@link ProjectData} whenever the workspace row changes —
+   * fed by Supabase Realtime server-side — which is how a finished preview
+   * deploy reaches the Preview pane. This replaced the polling loop.
+   *
+   * A fetch-streamed reader rather than EventSource because the studio
+   * authenticates with a bearer header, which EventSource cannot send.
+   * Returns an abort function; `onDown` fires when the stream ends or fails
+   * (server restart, network) so the caller can resubscribe with backoff.
+   */
+  watchProject: (
+    key: string,
+    project: string,
+    handlers: { onData: (data: ProjectData) => void; onDown: () => void },
+  ): (() => void) => {
+    const controller = new AbortController();
+    void (async () => {
+      try {
+        const res = await fetch(`/studio/projects/${encodeURIComponent(project)}/events`, {
+          headers: { Authorization: `Bearer ${key}`, Accept: "text/event-stream" },
+          signal: controller.signal,
+        });
+        if (!(res.ok && res.body)) throw new ApiError(res.status, "Event stream unavailable");
+        await consumeProjectEvents(res.body, handlers.onData);
+      } catch {
+        // Aborted (caller unsubscribed) or failed — the finally decides.
+      } finally {
+        if (!controller.signal.aborted) handlers.onDown();
+      }
+    })();
+    return () => controller.abort();
+  },
 
   writeFile: (key: string, project: string, path: string, content: string) =>
     request<{ ok: boolean }>(key, `/projects/${encodeURIComponent(project)}/file`, {

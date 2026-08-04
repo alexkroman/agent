@@ -1,0 +1,227 @@
+// Copyright 2026 the AAI authors. MIT license.
+/**
+ * Supabase Realtime implementation of {@link PlatformEvents}.
+ *
+ * One `RealtimeClient` per process, multiplexing channels over a single
+ * WebSocket to the platform Supabase project's Realtime endpoint
+ * (`SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY` — server-side only; the
+ * service key never reaches a browser, which is why the studio client gets
+ * its pushes relayed over the platform's own SSE route instead of
+ * subscribing here directly).
+ *
+ * Events are `postgres_changes` streams on the same rows every replica
+ * already treats as the source of truth:
+ *
+ * - `aai_platform.agents` (one unfiltered channel) — a deploy's row upsert
+ *   or a delete IS the notification; there is no separate "send" step a
+ *   mutation path could forget, which is the same reasoning that put the
+ *   deploy version on the agents row in the first place (see
+ *   agent-store.ts). This is also why postgres_changes was chosen over a
+ *   Realtime broadcast: a broadcast is a second code path per mutation.
+ * - `aai_platform.studio_workspaces` (one channel per watched project,
+ *   refcounted, filtered `project=eq.<name>`; `scope` — the other half of
+ *   the composite key — is checked handler-side).
+ *
+ * Handlers receive SIGNALS, not payloads: watchers re-read the row (see
+ * platform-events.ts). That makes delivery semantics forgiving — a
+ * duplicated event re-reads, a reconnect resubscribes, and Realtime's
+ * payload cap can never truncate anything we depend on.
+ *
+ * `ensureRealtimeSetup` is the boot-time half: the watched tables must be
+ * in the `supabase_realtime` publication before the Realtime service will
+ * stream their changes, and the tables themselves must exist first (their
+ * stores create them lazily, which is too late for a fresh project's boot).
+ */
+
+import { errorMessage } from "@alexkroman1/aai";
+import { RealtimeClient } from "@supabase/realtime-js";
+import { ENSURE_AGENTS_TABLE_SQL } from "./agent-store.ts";
+import { ensureTableOnce } from "./pg-ensure.ts";
+import type { PlatformEvents, Unwatch } from "./platform-events.ts";
+import type { SqlExec } from "./secret-store.ts";
+import { ENSURE_WORKSPACES_TABLE_SQL } from "./workspace-store.ts";
+
+/** The rows a postgres_changes payload carries. Treated as untrusted wire data. */
+type ChangePayload = {
+  new?: Record<string, unknown> | null;
+  old?: Record<string, unknown> | null;
+};
+
+type PostgresChangesFilter = {
+  event: "*";
+  schema: string;
+  table: string;
+  filter?: string;
+};
+
+/**
+ * The slice of `RealtimeChannel` this module uses — structural, so tests
+ * inject a fake instead of a live socket.
+ */
+export type RealtimeChannelLike = {
+  on(
+    type: "postgres_changes",
+    filter: PostgresChangesFilter,
+    callback: (payload: ChangePayload) => void,
+  ): unknown;
+  subscribe(callback?: (status: string, err?: Error) => void): unknown;
+  unsubscribe(): Promise<unknown>;
+};
+
+export type RealtimeClientLike = {
+  channel(topic: string): RealtimeChannelLike;
+  disconnect(): void;
+};
+
+export type RealtimePlatformEventsOptions = {
+  /** The Supabase project URL (`https://<ref>.supabase.co`). */
+  url: string;
+  /** Service-role key — Realtime authorization for the platform schema. */
+  key: string;
+  /** Test seam: inject a fake client instead of dialing Supabase. */
+  client?: RealtimeClientLike;
+};
+
+/** `https://<ref>.supabase.co` → the project's Realtime WebSocket endpoint. */
+export function realtimeEndpoint(url: string): string {
+  return `${url.replace(/\/+$/, "").replace(/^http/, "ws")}/realtime/v1`;
+}
+
+function defaultClient(opts: RealtimePlatformEventsOptions): RealtimeClientLike {
+  return new RealtimeClient(realtimeEndpoint(opts.url), {
+    params: { apikey: opts.key },
+  }) as unknown as RealtimeClientLike;
+}
+
+/** Log-and-continue subscribe callback: a failed channel is a lost accelerator. */
+function logSubscribeStatus(topic: string): (status: string, err?: Error) => void {
+  return (status, err) => {
+    if (status === "CHANNEL_ERROR" || status === "TIMED_OUT") {
+      console.warn(`Realtime channel ${topic}: ${status}${err ? ` (${errorMessage(err)})` : ""}`);
+    }
+  };
+}
+
+export function createRealtimePlatformEvents(opts: RealtimePlatformEventsOptions): PlatformEvents {
+  const client = opts.client ?? defaultClient(opts);
+
+  // The one agents channel, shared by every watcher, created on first watch.
+  const agentWatchers = new Set<(slug: string) => void>();
+  let agentsChannel: RealtimeChannelLike | null = null;
+
+  const ensureAgentsChannel = (): void => {
+    if (agentsChannel) return;
+    agentsChannel = client.channel("aai:agents");
+    agentsChannel.on(
+      "postgres_changes",
+      { event: "*", schema: "aai_platform", table: "agents" },
+      (payload) => {
+        // Delete events carry the identity in `old`; everything else in `new`.
+        const slug = payload.new?.slug ?? payload.old?.slug;
+        if (typeof slug !== "string" || slug.length === 0) return;
+        for (const watcher of agentWatchers) watcher(slug);
+      },
+    );
+    agentsChannel.subscribe(logSubscribeStatus("aai:agents"));
+  };
+
+  // One channel per watched project, refcounted across its watchers.
+  type WorkspaceEntry = { channel: RealtimeChannelLike; watchers: Set<() => void> };
+  const workspaceChannels = new Map<string, WorkspaceEntry>();
+
+  const ensureWorkspaceChannel = (scope: string, project: string): WorkspaceEntry => {
+    const key = `${scope} ${project}`;
+    const existing = workspaceChannels.get(key);
+    if (existing) return existing;
+    // Topic is per (scope, project); the postgres filter can only carry one
+    // column, so it narrows to the project and the handler checks the scope.
+    const topic = `aai:workspace:${key}`;
+    const channel = client.channel(topic);
+    const entry: WorkspaceEntry = { channel, watchers: new Set() };
+    channel.on(
+      "postgres_changes",
+      {
+        event: "*",
+        schema: "aai_platform",
+        table: "studio_workspaces",
+        filter: `project=eq.${project}`,
+      },
+      (payload) => {
+        const row = payload.new ?? payload.old;
+        if (row?.scope !== scope) return;
+        for (const watcher of entry.watchers) watcher();
+      },
+    );
+    channel.subscribe(logSubscribeStatus(topic));
+    workspaceChannels.set(key, entry);
+    return entry;
+  };
+
+  return {
+    watchAgents(onChange): Unwatch {
+      ensureAgentsChannel();
+      agentWatchers.add(onChange);
+      return () => agentWatchers.delete(onChange);
+    },
+
+    watchWorkspace(scope, project, onChange): Unwatch {
+      const entry = ensureWorkspaceChannel(scope, project);
+      entry.watchers.add(onChange);
+      return () => {
+        entry.watchers.delete(onChange);
+        if (entry.watchers.size > 0) return;
+        // Last watcher gone: release the channel. Deleted by identity — a
+        // late unwatch must not tear down a successor entry for the key.
+        const key = `${scope} ${project}`;
+        if (workspaceChannels.get(key) === entry) workspaceChannels.delete(key);
+        void entry.channel.unsubscribe().catch(() => undefined);
+      };
+    },
+
+    close() {
+      for (const entry of workspaceChannels.values()) {
+        void entry.channel.unsubscribe().catch(() => undefined);
+      }
+      workspaceChannels.clear();
+      agentWatchers.clear();
+      client.disconnect();
+      return Promise.resolve();
+    },
+  };
+}
+
+/**
+ * Add the watched tables to the `supabase_realtime` publication (creating
+ * the tables first — their stores ensure them lazily, on first use, which
+ * can be after this runs on a fresh database). Idempotent; the DO block
+ * re-checks membership so re-boots are no-ops.
+ */
+const ENSURE_PUBLICATION_SQL = `do $$
+begin
+  if not exists (select 1 from pg_publication where pubname = 'supabase_realtime') then
+    create publication supabase_realtime;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'aai_platform' and tablename = 'agents'
+  ) then
+    alter publication supabase_realtime add table aai_platform.agents;
+  end if;
+  if not exists (
+    select 1 from pg_publication_tables
+    where pubname = 'supabase_realtime'
+      and schemaname = 'aai_platform' and tablename = 'studio_workspaces'
+  ) then
+    alter publication supabase_realtime add table aai_platform.studio_workspaces;
+  end if;
+end $$`;
+
+export function ensureRealtimeSetup(sql: SqlExec): Promise<void> {
+  return ensureTableOnce(
+    sql,
+    ENSURE_AGENTS_TABLE_SQL,
+    ENSURE_WORKSPACES_TABLE_SQL,
+    ENSURE_PUBLICATION_SQL,
+  )();
+}

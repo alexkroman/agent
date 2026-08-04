@@ -14,6 +14,7 @@
 
 import type { ChatStore } from "aai-server/chat-store";
 import type { HonoEnv } from "aai-server/context";
+import type { PlatformEvents } from "aai-server/platform-events";
 import type { WorkspaceStore } from "aai-server/workspace-store";
 
 export type StudioHonoEnv = HonoEnv & {
@@ -22,5 +23,10 @@ export type StudioHonoEnv = HonoEnv & {
     workspaces: WorkspaceStore;
     /** Studio project chat histories (Postgres in production, memory in dev/tests). */
     chats: ChatStore;
+    /**
+     * Workspace change notifications (Supabase Realtime in production) —
+     * feeds the project events SSE route that replaced client polling.
+     */
+    events: PlatformEvents;
   };
 };

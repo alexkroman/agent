@@ -17,7 +17,15 @@ import { type ChatStore, createMemoryChatStore, createPgChatStore } from "./chat
 import { resolveHarnessPath } from "./constants.ts";
 import { isModalConfigured, modalRequiredError, prewarmModal } from "./modal-sandbox.ts";
 import type { OrchestratorOpts } from "./orchestrator.ts";
+import { schedulePlatformSweeps } from "./pg-cron.ts";
+import {
+  createMemoryPlatformEvents,
+  type PlatformEvents,
+  withAgentEvents,
+  withWorkspaceEvents,
+} from "./platform-events.ts";
 import { createPgSlugLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
+import { createRealtimePlatformEvents, ensureRealtimeSetup } from "./realtime-events.ts";
 import { createS3Storage } from "./s3-storage.ts";
 import { describeSandboxBackend } from "./sandbox-backend.ts";
 import { createSandboxPool, type SandboxPool } from "./sandbox-pool.ts";
@@ -60,6 +68,13 @@ export type ServiceConfig = OrchestratorOpts & {
   workspaces: WorkspaceStore;
   chats: ChatStore;
   /**
+   * Cross-replica change notifications: Supabase Realtime in production,
+   * an in-process emitter paired with the memory stores in dev/tests. The
+   * entries wire it into sandbox invalidation (`watchAgentInvalidation`)
+   * and the studio app's preview SSE route.
+   */
+  events: PlatformEvents;
+  /**
    * The platform admin SQL executor when a platform database is configured
    * and this is not local dev — the studio entry builds its Postgres rate
    * limiters on it. Absent means "use in-memory equivalents".
@@ -100,11 +115,47 @@ export function buildStorage(env: NodeJS.ProcessEnv): ReturnType<typeof createSt
 }
 
 /**
+ * Memory stores + the in-process event emitter, paired so a write and its
+ * change notification cannot drift — the dev/test equivalent of Postgres
+ * rows streaming through Supabase Realtime.
+ */
+function buildMemoryStores(): {
+  agents: AgentRows;
+  workspaces: WorkspaceStore;
+  events: PlatformEvents;
+} {
+  const memory = createMemoryPlatformEvents();
+  return {
+    agents: withAgentEvents(createMemoryAgentRows(), memory.emitAgent),
+    workspaces: withWorkspaceEvents(createMemoryWorkspaceStore(), memory.emitWorkspace),
+    events: memory.events,
+  };
+}
+
+/**
+ * Boot-time database housekeeping for production: the Realtime publication
+ * the change streams depend on, and the pg_cron janitorial sweeps. Loud on
+ * failure, but deliberately not fatal — with no publication, superseded
+ * sandboxes last until idle eviction and previews until the next project
+ * open; a missing sweep degrades to table growth. Neither is worth
+ * refusing to serve traffic over.
+ */
+function bootstrapPlatformDb(sql: SqlExec): void {
+  ensureRealtimeSetup(sql).catch((err: unknown) => {
+    console.error("Realtime publication setup failed — change streams will not fire:", err);
+  });
+  schedulePlatformSweeps(sql).catch((err: unknown) => {
+    console.error("pg_cron sweep scheduling failed — janitorial sweeps will not run:", err);
+  });
+}
+
+/**
  * Platform Postgres surface: Supabase Vault for secrets, studio workspaces,
- * and per-app database provisioning, all over `SUPABASE_DB_URL`
- * (service-role connection string). Required in production; local dev falls
- * back to in-memory secret and workspace stores (and no per-app databases
- * unless SUPABASE_DB_URL is set).
+ * per-app database provisioning, and the Realtime change streams — all over
+ * `SUPABASE_DB_URL` (service-role connection string) plus `SUPABASE_URL` /
+ * `SUPABASE_SERVICE_ROLE_KEY` for the Realtime socket. Required in
+ * production; local dev falls back to in-memory stores and the in-process
+ * event emitter (and no per-app databases unless SUPABASE_DB_URL is set).
  */
 export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   secrets: SecretStore;
@@ -112,6 +163,8 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   agents: AgentRows;
   workspaces: WorkspaceStore;
   chats: ChatStore;
+  /** Change notifications — see ServiceConfig.events. */
+  events: PlatformEvents;
   appDb?: AppDatabases;
   /** Cross-replica slug mutation lock; in-process without a platform db. */
   slugLock: SlugMutationLock;
@@ -128,8 +181,7 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     );
     return {
       secrets: createMemorySecretStore(),
-      agents: createMemoryAgentRows(),
-      workspaces: createMemoryWorkspaceStore(),
+      ...buildMemoryStores(),
       chats: createMemoryChatStore(),
       slugLock: localSlugLock,
     };
@@ -139,11 +191,33 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
   const admin = createPostgresDb({ url, max: 4 });
   const exec: SqlExec = (query, params) => admin.query(query, params);
   const localDev = isLocalDev(env);
+  if (localDev) {
+    return {
+      secrets: createMemorySecretStore(),
+      ...buildMemoryStores(),
+      chats: createMemoryChatStore(),
+      appDb: createAppDatabases({
+        url,
+        sql: exec,
+        extraTargets: parseExtraAppDbTargets(env.APP_DB_URLS),
+      }),
+      slugLock: localSlugLock,
+    };
+  }
+  // Production: change notifications ride Supabase Realtime — the Postgres
+  // rows are the emitters (postgres_changes), so unlike the memory path the
+  // stores need no write-side wrapping.
+  const realtime = requireEnv(env, ["SUPABASE_URL", "SUPABASE_SERVICE_ROLE_KEY"]);
+  bootstrapPlatformDb(exec);
   return {
-    secrets: localDev ? createMemorySecretStore() : createVaultSecretStore(exec),
-    agents: localDev ? createMemoryAgentRows() : createPgAgentRows(exec),
-    workspaces: localDev ? createMemoryWorkspaceStore() : createPgWorkspaceStore(exec),
-    chats: localDev ? createMemoryChatStore() : createPgChatStore(exec),
+    secrets: createVaultSecretStore(exec),
+    agents: createPgAgentRows(exec),
+    workspaces: createPgWorkspaceStore(exec),
+    chats: createPgChatStore(exec),
+    events: createRealtimePlatformEvents({
+      url: realtime.SUPABASE_URL,
+      key: realtime.SUPABASE_SERVICE_ROLE_KEY,
+    }),
     appDb: createAppDatabases({
       url,
       sql: exec,
@@ -156,16 +230,16 @@ export function buildPlatformDb(env: NodeJS.ProcessEnv): {
     // either service) can serve any request: per-slug mutation exclusion
     // survives replica restarts and scale-out. (Cross-replica sandbox
     // invalidation rides the agents row's deploy version — see
-    // agent-store.ts — so it needs no extra store.)
-    slugLock: localDev ? localSlugLock : createPgSlugLock(exec),
-    ...(localDev ? {} : { sql: exec }),
+    // agent-store.ts — with the Realtime agents stream as the accelerator.)
+    slugLock: createPgSlugLock(exec),
+    sql: exec,
   };
 }
 
 /** Assemble the shared service bindings from the environment. */
 export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
   const storage = buildStorage(env);
-  const { secrets, agents, workspaces, chats, appDb, slugLock, sql } = buildPlatformDb(env);
+  const { secrets, agents, workspaces, chats, events, appDb, slugLock, sql } = buildPlatformDb(env);
   const slots = createSlotCache();
   const pool = buildPool(env);
   // Browser-session auth: Supabase when configured, the dev-token
@@ -186,6 +260,7 @@ export function buildServiceConfig(env: NodeJS.ProcessEnv): ServiceConfig {
     store: createBundleStore(storage, { secrets, agents }),
     workspaces,
     chats,
+    events,
     secrets,
     ...(auth && { auth }),
     slugLock,

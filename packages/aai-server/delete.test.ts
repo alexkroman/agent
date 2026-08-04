@@ -1,6 +1,7 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { expect, test, vi } from "vitest";
 import { createOrchestrator } from "./orchestrator.ts";
+import { createMemoryPlatformEvents } from "./platform-events.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import {
   createTestStore,
@@ -11,15 +12,24 @@ import {
 } from "./test-utils.ts";
 
 async function setup() {
-  const store = createTestStore();
+  // Store + event bus are a pair: the delete route only removes the row, and
+  // the agents-row change stream is what terminates the resident sandbox.
+  const memoryEvents = createMemoryPlatformEvents();
+  const store = createTestStore(undefined, memoryEvents);
   const slots = createSlotCache();
   const { app } = createOrchestrator({
     slots,
     store,
+    events: memoryEvents.events,
     inspect: async () => TEST_AGENT_CONFIG,
   });
   const fetch: TestFetch = async (input, init) => app.request(input, init);
   return { fetch, store, slots };
+}
+
+/** Yield until the delete's change event has been handled. */
+async function settleEvents(): Promise<void> {
+  for (let i = 0; i < 20; i += 1) await Promise.resolve();
 }
 
 test("delete returns 200 for deployed agent", async () => {
@@ -61,7 +71,7 @@ test("delete returns 401 without auth", async () => {
   expect(resp.status).toBe(401);
 });
 
-test("delete shuts down running sandbox", async () => {
+test("delete's change event shuts down the resident sandbox", async () => {
   const { fetch, slots } = await setup();
   await deployAgent(fetch);
 
@@ -72,13 +82,15 @@ test("delete shuts down running sandbox", async () => {
     method: "DELETE",
     headers: { Authorization: "Bearer key1" },
   });
-
   expect(resp.status).toBe(200);
+  await settleEvents();
+
   expect(shutdown).toHaveBeenCalled();
   expect(slots.has("my-agent")).toBe(false);
 });
 
 test("delete succeeds even if sandbox shutdown fails", async () => {
+  const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
   const { fetch, slots } = await setup();
   await deployAgent(fetch);
 
@@ -91,5 +103,7 @@ test("delete succeeds even if sandbox shutdown fails", async () => {
   });
 
   expect(resp.status).toBe(200);
+  await settleEvents();
   expect(shutdown).toHaveBeenCalled();
+  warn.mockRestore();
 });

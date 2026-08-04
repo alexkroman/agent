@@ -43,10 +43,8 @@ function projectPath(name: string | null): string {
   return name ? `/studio/chat/${encodeURIComponent(name)}` : "/";
 }
 
-/** How often to poll for a fresh preview after an edit. */
-const PREVIEW_POLL_MS = 2500;
-/** Stop polling this long after the last local edit (covers a cold deploy). */
-const PREVIEW_POLL_WINDOW_MS = 6 * 60_000;
+/** Backoff before resubscribing a dropped project event stream. */
+const PROJECT_EVENTS_RETRY_MS = 3000;
 
 /** Stable identity while the workspace loads, so effects keyed on it don't churn. */
 const EMPTY_FILES: Record<string, string> = {};
@@ -86,21 +84,40 @@ export function App({ bearer, onSignOut }: AppProps) {
     queryFn: () => api.listProjects(bearer),
   });
 
-  // While an auto preview deploy is in flight (an edit landed and the
-  // preview is stale), poll the project so the new preview shows up as soon
-  // as it exists. Bounded by an activity window so a project whose preview
-  // never catches up (a persistent build failure, an old never-edited
-  // project) doesn't poll forever.
-  const lastEditRef = useRef(0);
+  // The query holds the project state; the SSE subscription below feeds it.
   const workspace = useQuery<ProjectData>({
     queryKey: queryKeys.project(project),
     queryFn: () => api.getProject(bearer, project as string),
     enabled: project != null,
-    refetchInterval: (query) =>
-      query.state.data?.previewStale && Date.now() - lastEditRef.current < PREVIEW_POLL_WINDOW_MS
-        ? PREVIEW_POLL_MS
-        : false,
   });
+
+  // Live project state, pushed by the server whenever the workspace row
+  // changes (Supabase Realtime behind an SSE relay — see the events route in
+  // studio-routes.ts). This is how a finished auto preview deploy reaches
+  // the pane: `previewVersion` changes and the iframe reloads itself. The
+  // old polling loop (and its edit-activity window) is gone; a dropped
+  // stream resubscribes with a fixed backoff while the project stays open.
+  useEffect(() => {
+    if (project == null) return;
+    let stopped = false;
+    let unsubscribe: (() => void) | undefined;
+    let retry: ReturnType<typeof setTimeout> | undefined;
+    const subscribe = () => {
+      unsubscribe = api.watchProject(apiKey, project, {
+        onData: (data) => queryClient.setQueryData(queryKeys.project(project), data),
+        onDown: () => {
+          if (stopped) return;
+          retry = setTimeout(subscribe, PROJECT_EVENTS_RETRY_MS);
+        },
+      });
+    };
+    subscribe();
+    return () => {
+      stopped = true;
+      if (retry !== undefined) clearTimeout(retry);
+      unsubscribe?.();
+    };
+  }, [apiKey, project, queryClient]);
 
   // Persisted chat history, re-fetched on every project open. `useChat`
   // owns the live conversation after hydration, but the server rewrites the
@@ -189,13 +206,14 @@ export function App({ bearer, onSignOut }: AppProps) {
     setCurrentFile(entry);
   }, [files, currentFile]);
 
-  // Refresh server state after agent turns / saves, and arm the preview
-  // poll — an edit means an auto preview deploy is (about to be) in flight.
-  // Deliberately does NOT bump previewNonce: the preview iframe reloads by
-  // itself when `previewVersion` changes, and a forced reload here would
-  // kill any in-progress voice session for nothing.
+  // Refresh server state after agent turns / saves. The project's own data
+  // arrives over the event stream (which also covers the preview deploy that
+  // follows an edit); the invalidations cover the project list and force an
+  // immediate re-read for the edit itself. Deliberately does NOT bump
+  // previewNonce: the preview iframe reloads by itself when `previewVersion`
+  // changes, and a forced reload here would kill any in-progress voice
+  // session for nothing.
   const invalidateWorkspace = () => {
-    lastEditRef.current = Date.now();
     void queryClient.invalidateQueries({ queryKey: queryKeys.project(project) });
     void queryClient.invalidateQueries({ queryKey: queryKeys.projects });
   };

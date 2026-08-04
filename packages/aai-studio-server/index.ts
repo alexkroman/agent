@@ -63,6 +63,7 @@ function studioAppOpts(base: ServiceConfig, isDraining: () => boolean): StudioAp
     store: base.store,
     workspaces: base.workspaces,
     chats: base.chats,
+    events: base.events,
     ...(base.secrets && { secrets: base.secrets }),
     ...(base.auth && { auth: base.auth }),
     ...(base.appDb && { appDb: base.appDb }),
@@ -94,8 +95,14 @@ async function main(): Promise<void> {
   // release: without the dispose they outlive it and burn their orphan
   // timeout (billed, on Modal) on every scale-in. Shared by both modes so
   // the two shutdown paths cannot drift.
-  const teardown = (): Promise<void> =>
-    teardownSandboxes({ slots: base.slots, pool: base.pool, broker: { dispose: disposeStudio } });
+  const teardown = async (): Promise<void> => {
+    await teardownSandboxes({
+      slots: base.slots,
+      pool: base.pool,
+      broker: { dispose: disposeStudio },
+    });
+    await base.events.close();
+  };
 
   if (mode === "studio") {
     await startService({
@@ -117,6 +124,9 @@ async function main(): Promise<void> {
   // Combined: both apps in one process, dispatched by path. Each app carries
   // its own bindings via its wrapped fetch, so no route mounting (which
   // would bypass the studio app's bindings injection) is involved.
+  // `base.events` rides into the orchestrator, which wires the agents-row
+  // change stream to sandbox invalidation (the studio-only mode has no
+  // orchestrator and an always-empty slot cache — nothing to invalidate).
   const orchestrator = createOrchestrator({ ...base, isDraining: () => draining });
   const combinedFetch = (req: Request): Response | Promise<Response> =>
     isStudioPath(new URL(req.url).pathname) ? studioApp.fetch(req) : orchestrator.app.fetch(req);

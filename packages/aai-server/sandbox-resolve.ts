@@ -3,14 +3,16 @@
  * Slot-based sandbox resolution: map a slug to its (possibly freshly built)
  * resident sandbox. Split from sandbox.ts, which owns one sandbox's
  * lifecycle; this module owns the replica's slug→sandbox map and its
- * cross-replica invalidation (the agents row's deploy version — see
- * agent-store.ts).
+ * invalidation — `watchAgentInvalidation`, driven by the agents row's
+ * change stream (Supabase Realtime in production; see platform-events.ts
+ * and agent-store.ts).
  */
 
 import { errorMessage } from "@alexkroman1/aai";
 import type { CloseableDb } from "@alexkroman1/aai/runtime";
 import { debug } from "./_debug-log.ts";
 import { type AppDatabases, type AppDbMeta, parseAppDbMeta } from "./app-database.ts";
+import type { PlatformEvents, Unwatch } from "./platform-events.ts";
 import type { IsolateConfig } from "./rpc-schemas.ts";
 import { createSandbox, type Sandbox } from "./sandbox.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
@@ -18,9 +20,9 @@ import { defaultScaleOptions, routeSession, type ScaleOptions } from "./sandbox-
 import {
   type AgentSlot,
   attachSandbox,
+  deleteSlot,
   retireSlot,
   type SlotCache,
-  type SupersededCheck,
   setSlot,
   terminateSlot,
   withSlugLock,
@@ -170,40 +172,52 @@ function isLive(sandbox: NonNullable<AgentSlot["sandbox"]>): boolean {
 }
 
 /**
- * Is the resident sandbox still current? A deploy on another replica — or
- * the studio service — bumps the agents row's version (and a delete removes
- * the row entirely); a resident built from an older deploy must be retired
- * and rebuilt from the freshly stored bundle. Degrades to "current" when the
- * version is unreadable — a session start must not die on the invalidation
- * check. (Secret/storage changes bump nothing by design: they take effect on
- * the next deploy or sandbox rebuild.)
- */
-async function residentIsCurrent(slot: AgentSlot, opts: ResolveSandboxOpts): Promise<boolean> {
-  try {
-    return (await opts.store.getAgentVersion(slot.slug)) === (slot.version ?? null);
-  } catch (err) {
-    console.warn(`Failed to read deploy version for ${slot.slug}: ${errorMessage(err)}`);
-    return true;
-  }
-}
-
-/**
- * The idle sweep's half of version invalidation (see `SupersededCheck`).
+ * THE mover of resident sandboxes on mutations. The agents row's change
+ * stream (Supabase Realtime in production, the memory stores' emitter in
+ * dev/tests — see platform-events.ts) is the single invalidation mechanism:
+ * mutation handlers only write the row, and every replica — the writer
+ * included — reacts here. There is deliberately no per-broker version check
+ * and no idle-sweep superseded probe anymore; those were two more
+ * implementations of the same comparison, and the change stream replaced
+ * them rather than accelerating them.
  *
- * `resolvePrimary` below only runs when a session is brokered on THIS replica,
- * so on its own it leaves a superseded sandbox serving pre-deploy code for
- * as long as nobody re-brokers here. Handing the same version comparison to
- * the slot's idle timer bounds that to one idle window. The cache drop
- * mirrors the stale branch of `resolvePrimary` — it fences the row caches so
- * the rebuild reads the freshly deployed record (blobs are content-addressed
- * and cannot go stale).
+ * The event is a signal carrying nothing but the slug: the handler drops the
+ * row caches and re-reads the version fresh, so a duplicated or reordered
+ * event can only cause a redundant read — the version comparison under the
+ * slug lock decides. A deleted row (version null) terminates rather than
+ * retires — a deleted agent must stop answering, not drain for ten more
+ * minutes — and the slot is dropped so the map doesn't grow one dead entry
+ * per deleted slug.
  */
-function supersededCheck(opts: ResolveSandboxOpts): SupersededCheck {
-  return async (slot) => {
-    if (await residentIsCurrent(slot, opts)) return false;
-    opts.store.invalidate?.(slot.slug);
-    return true;
-  };
+export function watchAgentInvalidation(events: PlatformEvents, opts: ResolveSandboxOpts): Unwatch {
+  return events.watchAgents((slug) => {
+    // Cheap pre-filter outside the lock: most events are for slugs this
+    // replica has never brokered.
+    if (!opts.slots.get(slug)?.sandbox) return;
+    void withSlugLock(slug, async () => {
+      const slot = opts.slots.get(slug);
+      if (!slot?.sandbox) return;
+      opts.store.invalidate?.(slug);
+      try {
+        const version = await opts.store.getAgentVersion(slug);
+        if (version === null) {
+          // Row gone: a resident for a deleted agent always terminates —
+          // never compared against the slot's stamp, which a slot built
+          // before the stamp landed may not carry.
+          console.info("Resident sandbox's agent deleted (change event); terminating", { slug });
+          await terminateSlot(slot);
+          deleteSlot(opts.slots, slug);
+        } else if (version !== slot.version) {
+          console.info("Resident sandbox superseded (change event); retiring", { slug });
+          retireSlot(slot, "superseded");
+        }
+      } catch (err) {
+        // An unreadable version must never take down a healthy sandbox; the
+        // next change event (or a redeploy) retries.
+        console.warn(`Change-event invalidation failed for ${slug}: ${errorMessage(err)}`);
+      }
+    });
+  });
 }
 
 /** Build (and attach) a fresh sandbox for `slot`; null when the slug has no bundle. */
@@ -216,11 +230,11 @@ async function rebuildSlot(
 
   // Read the deploy record FIRST and stamp its version on the slot: a deploy
   // landing between this read and the artifact reads bumps the row version
-  // past what we store, so the next session start sees the mismatch and
-  // rebuilds — the race can only cause one extra rebuild, never a stale
-  // sandbox that reads as current. (The artifact reads below resolve through
-  // the same cached row, and blobs are content-addressed, so a torn mix of
-  // two deploys is impossible.)
+  // past what we store, so its change event sees the mismatch and retires —
+  // the race can only cause one extra rebuild, never a stale sandbox that
+  // reads as current. (The artifact reads below resolve through the same
+  // cached row, and blobs are content-addressed, so a torn mix of two
+  // deploys is impossible.)
   const record = await store.getAgent(slug);
   if (!record) return null;
 
@@ -239,17 +253,22 @@ async function rebuildSlot(
   const sandbox = buildSlotSandbox(slug, parts, opts);
 
   slot.version = record.version;
-  attachSandbox(slots, slot, sandbox, supersededCheck(opts));
+  attachSandbox(slots, slot, sandbox);
   return sandbox;
 }
 
-/** Map a slug to its (possibly freshly built) primary resident sandbox. */
+/**
+ * Map a slug to its (possibly freshly built) primary resident sandbox. A
+ * LIVE resident is served as-is — whether it is still current is not this
+ * path's question: mutations move sandboxes through the agents row's change
+ * stream (`watchAgentInvalidation`), never through per-broker checks.
+ */
 async function resolvePrimary(slug: string, opts: ResolveSandboxOpts): Promise<Sandbox | null> {
-  const { slots, store } = opts;
+  const { slots } = opts;
 
-  // Fast path: a current, live resident sandbox needs no locking.
+  // Fast path: a live resident sandbox needs no locking.
   const resident = slots.get(slug);
-  if (resident?.sandbox && isLive(resident.sandbox) && (await residentIsCurrent(resident, opts))) {
+  if (resident?.sandbox && isLive(resident.sandbox)) {
     return resident.sandbox as Sandbox;
   }
 
@@ -261,23 +280,12 @@ async function resolvePrimary(slug: string, opts: ResolveSandboxOpts): Promise<S
     const slot = slots.get(slug);
     if (slot?.sandbox) {
       // Re-check under the lock — another waiter may have already rebuilt.
-      const live = isLive(slot.sandbox);
-      if (live && (await residentIsCurrent(slot, opts))) return slot.sandbox as Sandbox;
-      if (live) {
-        // Stale: a deploy landed elsewhere (or the agent was deleted). Retire
-        // the old sandbox — its sessions finish on the old code, no new one
-        // can reach it — and drop this replica's row caches so the rebuild
-        // below reads the freshly stored record, not a cached pre-deploy one.
-        console.info("Resident sandbox superseded (deploy version advanced); rebuilding", { slug });
-        store.invalidate?.(slug);
-        retireSlot(slot, "superseded");
-      } else {
-        // Dead guest: nothing to drain, and the bundle is unchanged so the
-        // caches stay warm — only the sandbox is replaced. Reached when the
-        // guest died between the exit notification and its async detach.
-        debug("Resident sandbox lost (guest exited); rebuilding", { slug });
-        await terminateSlot(slot);
-      }
+      if (isLive(slot.sandbox)) return slot.sandbox as Sandbox;
+      // Dead guest: nothing to drain, and the bundle is unchanged so the
+      // caches stay warm — only the sandbox is replaced. Reached when the
+      // guest died between the exit notification and its async detach.
+      debug("Resident sandbox lost (guest exited); rebuilding", { slug });
+      await terminateSlot(slot);
     }
     return rebuildSlot(slug, slot, opts);
   });

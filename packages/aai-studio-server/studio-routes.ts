@@ -44,6 +44,7 @@ import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { streamSSE } from "hono/streaming";
 import type { StudioHonoEnv } from "./studio-context.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
@@ -71,6 +72,7 @@ import {
   hasUnpublishedChanges,
   listProjects,
   mutateWorkspace,
+  type StudioWorkspace,
   studioScope,
 } from "./studio-workspace.ts";
 import { withWorkspaceLock } from "./studio-workspace-lock.ts";
@@ -117,6 +119,30 @@ function validateProject(name: string | undefined): string {
   if (!parsed.success) throw new HTTPException(400, { message: "Invalid project name" });
   return parsed.data;
 }
+
+/**
+ * The project's client-facing state — files, deploy metadata, and the auto
+ * preview deploy's state: slug + a version token the client keys the
+ * Preview iframe by (changes on every successful preview), stale = an edit
+ * hasn't reached the preview yet, and the last failed preview's CLI output
+ * for the banner. One builder for `GET /projects/:project` AND its SSE
+ * events stream, so the pushed shape can never drift from the fetched one.
+ * Staleness flags are computed here so the client never hashes files.
+ */
+function projectPayload(workspace: StudioWorkspace): Record<string, unknown> {
+  return {
+    files: workspace.files,
+    ...(workspace.deployedSlug && { deployedSlug: workspace.deployedSlug }),
+    unpublished: hasUnpublishedChanges(workspace),
+    ...(workspace.previewSlug && { previewSlug: workspace.previewSlug }),
+    ...(workspace.previewHash && { previewVersion: workspace.previewHash }),
+    previewStale: hasPreviewChanges(workspace),
+    ...(workspace.previewError && { previewError: workspace.previewError }),
+  };
+}
+
+/** Keep intermediaries (the studio proxy included) from timing the stream out. */
+const SSE_HEARTBEAT_MS = 25_000;
 
 export function createStudioRoutes(options: StudioRouteOptions = {}): {
   routes: Hono<StudioHonoEnv>;
@@ -243,19 +269,68 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     const project = validateProject(c.req.param("project"));
     const workspace = await getWorkspace(c.env.workspaces, scope, project);
     if (!workspace) return c.json({ error: "Project not found" }, 404);
-    return c.json({
-      files: workspace.files,
-      ...(workspace.deployedSlug && { deployedSlug: workspace.deployedSlug }),
-      // Computed here so the client never has to hash files itself.
-      unpublished: hasUnpublishedChanges(workspace),
-      // The auto preview deploy's state: slug + a version token the client
-      // keys the Preview iframe by (changes on every successful preview),
-      // stale = an edit hasn't reached the preview yet (deploy in flight or
-      // failed), and the last failed preview's CLI output for the banner.
-      ...(workspace.previewSlug && { previewSlug: workspace.previewSlug }),
-      ...(workspace.previewHash && { previewVersion: workspace.previewHash }),
-      previewStale: hasPreviewChanges(workspace),
-      ...(workspace.previewError && { previewError: workspace.previewError }),
+    return c.json(projectPayload(workspace));
+  });
+
+  // Live project state: an SSE stream fed by the workspace row's change
+  // stream (Supabase Realtime in production — see platform-events.ts). This
+  // replaced the client's preview polling loop. Events are signals: each one
+  // re-reads the workspace, so the pushed payload is always the row's
+  // current state, never a possibly-truncated wire payload. The first event
+  // is the current state, so a subscriber can't miss an edit that landed
+  // between its GET and the subscription.
+  studio.get("/projects/:project/events", async (c) => {
+    const scope = studioScope(c.var.apiKey);
+    const project = validateProject(c.req.param("project"));
+    const workspace = await getWorkspace(c.env.workspaces, scope, project);
+    if (!workspace) return c.json({ error: "Project not found" }, 404);
+    return streamSSE(c, async (stream) => {
+      // Settled when the client disconnects or the project is deleted.
+      let closed = false;
+      const done = Promise.withResolvers<void>();
+      const finish = (): void => {
+        closed = true;
+        done.resolve();
+      };
+
+      const send = (ws: StudioWorkspace): Promise<void> =>
+        closed
+          ? Promise.resolve()
+          : stream.writeSSE({ event: "project", data: JSON.stringify(projectPayload(ws)) });
+
+      // Serialize pushes through one chain: change events can burst (a
+      // turn's file sync, then the preview stamp), and interleaved re-reads
+      // could write an older snapshot after a newer one.
+      let chain = send(workspace);
+      const push = (): void => {
+        chain = chain
+          .then(async () => {
+            const current = await getWorkspace(c.env.workspaces, scope, project);
+            // A vanished workspace (project deleted) ends the stream; the
+            // client's other queries surface the 404.
+            if (!current) {
+              finish();
+              return;
+            }
+            await send(current);
+          })
+          .catch(() => {
+            // A failed write means the peer is gone; the abort handler cleans up.
+          });
+      };
+
+      const unwatch = c.env.events.watchWorkspace(scope, project, push);
+      const heartbeat = setInterval(() => {
+        if (!closed) void stream.writeSSE({ event: "ping", data: "" }).catch(() => undefined);
+      }, SSE_HEARTBEAT_MS);
+      stream.onAbort(finish);
+
+      try {
+        await done.promise;
+      } finally {
+        unwatch();
+        clearInterval(heartbeat);
+      }
     });
   });
 
