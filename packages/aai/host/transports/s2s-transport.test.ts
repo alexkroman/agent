@@ -13,7 +13,9 @@ function makeCallbacks(): TransportCallbacks {
     onAudioChunk: vi.fn(),
     onAudioDone: vi.fn(),
     onUserTranscript: vi.fn(),
+    onUserTranscriptPartial: vi.fn(),
     onAgentTranscript: vi.fn(),
+    onAgentTranscriptPartial: vi.fn(),
     onToolCall: vi.fn(),
     onError: vi.fn(),
     onSpeechStarted: vi.fn(),
@@ -404,5 +406,38 @@ describe("S2sTransport reconnect", () => {
     cb.onReplyStarted("r2");
     cb.onAudio(new Uint8Array([5, 6])); // new reply → forwarded again
     expect(callbacks.onAudioChunk).toHaveBeenCalledTimes(2);
+  });
+
+  test("forwards user transcript partials to the session", async () => {
+    const { callbacks, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    const cb = expectAt(capturedCallbacks, 0, "callbacks");
+    cb.onSessionReady("sess");
+    cb.onUserTranscriptPartial("what's the wea");
+
+    expect(callbacks.onUserTranscriptPartial).toHaveBeenCalledWith("what's the wea");
+  });
+
+  // Agent partials follow the same rule as audio, and for the same reason: the
+  // client has already flushed the cancelled reply, so a late frame for it would
+  // re-render text for the very reply the user interrupted.
+  test("cancelReply drops in-flight agent transcript partials until the next reply", async () => {
+    const { callbacks, capturedCallbacks } = setupSpiedTransport();
+    const t = createS2sTransport(makeTransportOptions({ callbacks }));
+    await t.start();
+
+    const cb = expectAt(capturedCallbacks, 0, "callbacks");
+    cb.onSessionReady("sess");
+    cb.onReplyStarted("r1");
+    cb.onAgentTranscriptPartial("It's"); // during the reply → forwarded
+    t.cancelReply();
+    cb.onAgentTranscriptPartial("It's sunny"); // after cancel → dropped
+    cb.onReplyStarted("r2");
+    cb.onAgentTranscriptPartial("Sure"); // new reply → forwarded again
+
+    expect(callbacks.onAgentTranscriptPartial).toHaveBeenCalledTimes(2);
+    expect(callbacks.onAgentTranscriptPartial).toHaveBeenLastCalledWith("Sure");
   });
 });
