@@ -36,13 +36,13 @@ describe("resolveServerUrl", () => {
 describe("getServerInfo", () => {
   test("throws when no project config exists", async () => {
     await withTempDir(async (dir) => {
-      await expect(getServerInfo(dir)).rejects.toThrow("No .aai/project.json found");
+      await expect(getServerInfo(dir)).rejects.toThrow("no deployed agent");
     });
   });
 
-  test("error message suggests aai deploy", async () => {
+  test("error message suggests aai publish", async () => {
     await withTempDir(async (dir) => {
-      await expect(getServerInfo(dir)).rejects.toThrow("aai deploy");
+      await expect(getServerInfo(dir)).rejects.toThrow("aai publish");
     });
   });
 

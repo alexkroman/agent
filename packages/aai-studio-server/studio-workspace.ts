@@ -185,6 +185,58 @@ export async function getWorkspace(
 }
 
 /**
+ * Replace a workspace's entire file map in one atomic write — the CLI
+ * `aai push` primitive. Upserts: a missing project is created (first push),
+ * an existing one has its files swapped while every metadata field
+ * (deployedSlug, preview state) is preserved.
+ *
+ * `baseHash` is the fast-forward check, and it is deliberately the FILES
+ * hash, never the row version: preview deploys and Publish stamp metadata
+ * onto the row (bumping its version) right after every settled edit, so a
+ * version token would go stale on almost every push while the files were
+ * untouched. The hash moves exactly when the files move — which is the only
+ * "someone else edited" signal a pusher cares about. When supplied, the
+ * write only lands while the current files still hash to it — anything else
+ * (including "the project no longer exists") throws
+ * {@link WorkspaceConflictError}, which the route reports as a 409 telling
+ * the caller to pull first. Omitted (`--force`, or a first push), the write
+ * applies over whatever is current.
+ *
+ * A push whose files are byte-identical to what is stored is a no-op
+ * (`changed: false`) — no version bump, no preview churn.
+ */
+export function syncWorkspaceSource(
+  store: WorkspaceStore,
+  scope: string,
+  project: string,
+  files: Record<string, string>,
+  baseHash?: string,
+): Promise<{ workspace: StudioWorkspace; sourceHash: string; created: boolean; changed: boolean }> {
+  return withLock(workspaceLock, projectKey(scope, project), async () => {
+    const record = await store.get(scope, project);
+    const current = record ? parseWorkspace(record.doc) : null;
+    if (!(record && current)) {
+      // A caller holding a baseHash pulled a project that has since been
+      // deleted — that is a conflict to surface, not a fresh create.
+      if (baseHash !== undefined) throw new WorkspaceConflictError(scope, project);
+      const doc = stampWorkspace({ files });
+      await store.put(scope, project, doc, null);
+      return { workspace: doc, sourceHash: currentFilesHash(doc), created: true, changed: true };
+    }
+    const storedHash = currentFilesHash(current);
+    if (baseHash !== undefined && baseHash !== storedHash) {
+      throw new WorkspaceConflictError(scope, project);
+    }
+    if (filesHash(files) === storedHash) {
+      return { workspace: current, sourceHash: storedHash, created: false, changed: false };
+    }
+    const doc = stampWorkspace({ ...current, files }, current);
+    await store.put(scope, project, doc, record.version);
+    return { workspace: doc, sourceHash: currentFilesHash(doc), created: false, changed: true };
+  });
+}
+
+/**
  * Create a new workspace. Atomic at the store: two concurrent creates
  * cannot both succeed, so the loser can never reset the winner's files.
  *

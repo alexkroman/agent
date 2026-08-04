@@ -135,6 +135,20 @@ export const StudioFileSchema = z.object({
 });
 
 /**
+ * `PUT /projects/:project/source` — the CLI `aai push` body: the complete
+ * replacement file map, plus the optional fast-forward token (the
+ * `sourceHash` the caller pulled — see `syncWorkspaceSource` for why the
+ * token is the files hash, not the row version). Per-file paths and the
+ * count/total-size caps are enforced by the workspace write itself
+ * (`stampWorkspace`), the one place every writer — editor PUT, guest sync,
+ * this route — goes through.
+ */
+export const SyncSourceSchema = z.object({
+  files: z.record(z.string(), z.string().max(MAX_STUDIO_FILE_BYTES)),
+  baseHash: z.string().max(128).optional(),
+});
+
+/**
  * The one-time account onboarding body: the user's AssemblyAI API key,
  * stored server-side (`user-key:<uid>`) and resolved from their session on
  * every later request. Dots are rejected because a key never contains one —

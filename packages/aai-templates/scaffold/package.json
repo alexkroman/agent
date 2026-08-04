@@ -8,7 +8,7 @@
     "dev": "aai dev",
     "build": "aai build",
     "test": "aai test",
-    "deploy": "aai deploy"
+    "publish:agent": "aai publish"
   },
   "dependencies": {
     "@alexkroman1/aai": "^5.5.1",

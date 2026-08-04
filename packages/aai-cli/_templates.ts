@@ -65,6 +65,21 @@ export async function listTemplates(root = resolveTemplatesDir()): Promise<strin
 }
 
 /**
+ * Layer the base scaffold (package.json, tsconfig, …) into targetDir
+ * WITHOUT overwriting anything already there. Shared by `aai init`
+ * (underneath a template) and `aai pull` (underneath the studio workspace
+ * files — the workspace stores source, and the scaffold completes it into a
+ * runnable project the same way the guest's `ensureProjectShape` does
+ * before an in-sandbox build).
+ */
+export async function layerScaffold(targetDir: string): Promise<void> {
+  const scaffoldDir = path.join(resolveTemplatesDir(), "scaffold");
+  if (existsSync(scaffoldDir)) {
+    await fs.cp(scaffoldDir, targetDir, { recursive: true, force: false, errorOnExist: false });
+  }
+}
+
+/**
  * Copy a template into targetDir, merging scaffold files underneath.
  */
 export async function downloadAndMergeTemplate(template: string, targetDir: string): Promise<void> {
@@ -80,8 +95,5 @@ export async function downloadAndMergeTemplate(template: string, targetDir: stri
   await fs.cp(path.join(templatesDir, template), targetDir, { recursive: true, force: true });
 
   // Layer scaffold files underneath (don't overwrite template files)
-  const scaffoldDir = path.join(root, "scaffold");
-  if (existsSync(scaffoldDir)) {
-    await fs.cp(scaffoldDir, targetDir, { recursive: true, force: false, errorOnExist: false });
-  }
+  await layerScaffold(targetDir);
 }

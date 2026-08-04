@@ -119,8 +119,11 @@ export async function resolveDeployTarget(cwd: string, explicitServer?: string) 
 /** Like resolveDeployTarget, but requires an existing deployment (project config). */
 export async function getServerInfo(cwd: string, explicitServer?: string) {
   const { config, serverUrl, apiKey } = await resolveDeployTarget(cwd, explicitServer);
-  if (!config) {
-    throw new Error("No .aai/project.json found — run `aai deploy` first");
+  // A pulled-but-never-published project has a config without a slug — for
+  // slug-scoped commands (secret, storage, delete) that is the same as
+  // never deployed.
+  if (!config?.slug) {
+    throw new Error("This project has no deployed agent — run `aai publish` first");
   }
   // Enforced before a slug is ever interpolated into a URL path:
   // `.aai/project.json` is repo-controlled, so a hostile
@@ -130,7 +133,7 @@ export async function getServerInfo(cwd: string, explicitServer?: string) {
     throw new Error(
       `Invalid slug in .aai/project.json: ${JSON.stringify(config.slug)}\n` +
         "  Expected lowercase letters, digits, `-`, `_` (2-64 chars). " +
-        "Fix the file or run `aai deploy` to create a fresh deployment.",
+        "Fix the file or run `aai publish` to create a fresh deployment.",
     );
   }
   return { serverUrl, slug: config.slug, apiKey };

@@ -28,8 +28,8 @@ async function useFakeTemplates(dir: string): Promise<void> {
   vi.stubEnv("AAI_TEMPLATES_DIR", rootDir);
 }
 
-const executeDeploy = vi.hoisted(() => vi.fn());
-vi.mock("./deploy.ts", () => ({ executeDeploy }));
+const executePublish = vi.hoisted(() => vi.fn());
+vi.mock("./studio.ts", () => ({ executePublish }));
 
 // executeInit shells out (corepack/safe-chain/pnpm) only when the scaffolded
 // project has dependencies; mock execa so those paths are testable hermetically.
@@ -120,11 +120,11 @@ describe("scaffold client.tsx", () => {
 
 describe("executeInit", () => {
   beforeEach(() => {
-    executeDeploy.mockReset();
+    executePublish.mockReset();
     execaMock.mockReset();
   });
 
-  test("installs deps then deploys when the template declares dependencies", async () => {
+  test("installs deps then publishes when the template declares dependencies", async () => {
     await withTempDir(
       silenced(async (dir) => {
         await useFakeTemplates(dir);
@@ -134,9 +134,15 @@ describe("executeInit", () => {
         execaMock.mockImplementation((cmd: string) =>
           Promise.resolve({ failed: cmd === "safe-chain" }),
         );
-        executeDeploy.mockResolvedValue({
+        executePublish.mockResolvedValue({
           ok: true,
-          data: { slug: "with-deps", url: "https://agents.test/with-deps" },
+          data: {
+            project: "with-deps",
+            slug: "with-deps",
+            url: "https://agents.test/with-deps",
+            studioUrl: "https://api.test/studio/chat/with-deps",
+            output: "",
+          },
         });
 
         const result = await executeInit(
@@ -174,7 +180,7 @@ describe("executeInit", () => {
     );
   });
 
-  test("skips deploy when pnpm install fails", async () => {
+  test("skips publish when pnpm install fails", async () => {
     await withTempDir(
       silenced(async (dir) => {
         await useFakeTemplates(dir);
@@ -193,7 +199,7 @@ describe("executeInit", () => {
 
         // Deploying without node_modules would fail confusingly further in —
         // the deploy must not even be attempted.
-        expect(executeDeploy).not.toHaveBeenCalled();
+        expect(executePublish).not.toHaveBeenCalled();
         expect(result).toEqual({
           ok: true,
           data: { dir: target, template: "deps", deployed: false },
@@ -231,7 +237,7 @@ describe("executeInit", () => {
         });
         expect(await fileExists(path.join(target, "agent.json"))).toBe(true);
         expect(await fileExists(path.join(target, "shared.txt"))).toBe(true);
-        expect(executeDeploy).not.toHaveBeenCalled();
+        expect(executePublish).not.toHaveBeenCalled();
       }),
     );
   });
@@ -269,14 +275,20 @@ describe("executeInit", () => {
     );
   });
 
-  test("deploys after scaffolding and returns slug + url", async () => {
+  test("publishes after scaffolding and returns slug + url", async () => {
     await withTempDir(
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "deployed-agent");
-        executeDeploy.mockResolvedValue({
+        executePublish.mockResolvedValue({
           ok: true,
-          data: { slug: "deployed-agent", url: "https://agents.test/deployed-agent" },
+          data: {
+            project: "deployed-agent",
+            slug: "deployed-agent",
+            url: "https://agents.test/deployed-agent",
+            studioUrl: "https://api.test/studio/chat/deployed-agent",
+            output: "",
+          },
         });
 
         const result = await executeInit(
@@ -284,7 +296,7 @@ describe("executeInit", () => {
           { silent: true },
         );
 
-        expect(executeDeploy).toHaveBeenCalledWith({ cwd: target, server: "https://api.test" });
+        expect(executePublish).toHaveBeenCalledWith({ cwd: target, server: "https://api.test" });
         expect(result).toEqual({
           ok: true,
           data: {
@@ -299,12 +311,12 @@ describe("executeInit", () => {
     );
   });
 
-  test("reports deployed: false when deploy fails", async () => {
+  test("reports deployed: false when publish fails", async () => {
     await withTempDir(
       silenced(async (dir) => {
         await useFakeTemplates(dir);
         const target = path.join(dir, "failed-deploy");
-        executeDeploy.mockResolvedValue({ ok: false, code: "deploy_failed", error: "boom" });
+        executePublish.mockResolvedValue({ ok: false, code: "publish_failed", error: "boom" });
 
         const result = await executeInit(
           { dir: target, server: "https://api.test" },

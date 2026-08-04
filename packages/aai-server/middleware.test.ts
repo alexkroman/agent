@@ -1,9 +1,10 @@
 // Copyright 2025 the AAI authors. MIT license.
 import { describe, expect, test } from "vitest";
-import { requireOwner } from "./middleware.ts";
+import { invalidateApiKeyOwner, requireOwner, resolveBearer } from "./middleware.ts";
 import { createOrchestrator } from "./orchestrator.ts";
 import { createSlotCache } from "./sandbox-slots.ts";
 import { createMemorySecretStore } from "./secret-store.ts";
+import { apiKeyOwnerSecretName } from "./supabase-auth.ts";
 import { createTestOrchestrator, createTestStore, deployAgent, deployBody } from "./test-utils.ts";
 
 test("orchestrator adds Cross-Origin-Isolation headers", async () => {
@@ -71,6 +72,37 @@ describe("deploy route auth", () => {
       body: deployBody({ slug: "my-agent" }),
     });
     expect(res.status).toBe(403);
+  });
+});
+
+describe("resolveBearer raw-key owner mapping", () => {
+  const req = (key: string) =>
+    new Request("http://localhost/", { headers: { Authorization: `Bearer ${key}` } });
+
+  test("a raw key resolves the stored key→user mapping; unmapped keys don't", async () => {
+    const secrets = createMemorySecretStore();
+    await secrets.put(apiKeyOwnerSecretName("linked-key"), "user-1");
+    expect(await resolveBearer(req("linked-key"), { secrets })).toEqual({
+      apiKey: "linked-key",
+      userId: "user-1",
+    });
+    expect(await resolveBearer(req("stranger-key"), { secrets })).toEqual({
+      apiKey: "stranger-key",
+    });
+  });
+
+  test("negative lookups are cached; invalidation makes a new mapping visible", async () => {
+    const secrets = createMemorySecretStore();
+    // Prime the negative cache, then store the mapping (onboarding).
+    expect(await resolveBearer(req("late-key"), { secrets })).toEqual({ apiKey: "late-key" });
+    await secrets.put(apiKeyOwnerSecretName("late-key"), "user-2");
+    // Still the cached negative until the writing replica invalidates.
+    expect(await resolveBearer(req("late-key"), { secrets })).toEqual({ apiKey: "late-key" });
+    invalidateApiKeyOwner(secrets, "late-key");
+    expect(await resolveBearer(req("late-key"), { secrets })).toEqual({
+      apiKey: "late-key",
+      userId: "user-2",
+    });
   });
 });
 

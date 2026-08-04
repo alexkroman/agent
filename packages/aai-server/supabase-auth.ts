@@ -33,6 +33,25 @@ export function userApiKeySecretName(userId: string): string {
 }
 
 /**
+ * SecretStore name for the REVERSE mapping: a raw API key (hashed — a
+ * listing of stored names must never show a live credential) to the studio
+ * user id that stored it via `PUT /studio/account/key`. This is what lets a
+ * raw-key caller — the `aai` CLI after `aai login` — land in the same
+ * `user:<uid>` studio scope as the browser, instead of the disjoint
+ * key-derived scope, so both sides see one project list.
+ *
+ * A rotated key leaves its old mapping behind on purpose: the old key still
+ * belongs to the same account, so resolving it to the same user is correct,
+ * and deleting it would only matter if an AssemblyAI key could migrate
+ * between accounts (it can't). If two users store the SAME key (a shared
+ * team key), the last writer wins the mapping — their browser scopes stay
+ * separate either way.
+ */
+export function apiKeyOwnerSecretName(apiKey: string): string {
+  return `key-user:${hash("sha256", apiKey)}`;
+}
+
+/**
  * SecretStore name for an approved `aai login` link grant. Keyed by the
  * HASH of the CLI-minted code, so a listing of stored names never shows a
  * code that could still be exchanged.

@@ -123,7 +123,7 @@ Eight workspace packages under `packages/`:
 | --- | --- | --- |
 | `packages/aai/` | `@alexkroman1/aai` | Shared core: agent config, types, protocol, S2S, session, Db |
 | `packages/aai-ui/` | `@alexkroman1/aai-ui` | Browser client (React 19): session, audio, UI components |
-| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, deploy, delete, login, secret, storage, templates |
+| `packages/aai-cli/` | `@alexkroman1/aai-cli` | The `aai` CLI: init, dev, test, build, list, pull, push, publish, delete, login, secret, storage, templates (`deploy` is hidden/internal — the mechanism in-guest Publish runs) |
 | `packages/aai-guest/` | `aai-guest` | Guest sandbox harness (private): the Node entrypoint that runs the complete agent inside each Modal Sandbox, built into one self-contained `dist/harness.mjs` |
 | `packages/aai-server/` | `aai-server` | Agent service + shared platform core (private): sandbox, auth, SSRF, stores, locks |
 | `packages/aai-studio-server/` | `aai-studio-server` | Studio service (private): browser coding agent, workspace builds, combined entry |
@@ -178,8 +178,26 @@ Subpath exports consumed by sibling packages and user agents:
 
 #### `aai-cli` (CLI)
 
-Binary: `aai` — subcommands: init, dev, test, build, deploy, delete, login,
-secret, storage, templates
+Binary: `aai` — subcommands: init, dev, test, build, list, pull, push,
+publish, delete, login, secret, storage, templates.
+
+**There is no user-facing deploy.** Source always flows through the studio
+workspace and production always comes from Publish: `aai push` replaces the
+linked project's workspace file map atomically
+(`PUT /studio/projects/:project/source`, fast-forward-checked against the
+`studioSourceHash` recorded in `.aai/project.json` — a 409 means the studio
+edited since the last pull; `--force` overwrites), `aai publish` pushes then
+runs the studio's Publish route (the in-sandbox `aai deploy`), syncing
+`.env` into the agent's secrets via the standard secret routes (before the
+deploy when the slug already exists, after it on a first publish), and
+`aai pull <project>` materializes a workspace locally, layering the shipped
+scaffold underneath (never overwriting workspace files) so the result runs
+under `aai dev`. `aai delete` in a linked directory deletes the STUDIO
+PROJECT (`DELETE /studio/projects/:project`), which cascades server-side to
+the workspace, chat, and the project's deployed + preview agents. The
+hidden `deploy` subcommand remains only because the guest's Publish
+(`aai-guest/studio-publish.ts`) executes it; a bare `aai` in a project
+offers to publish, and `aai init` publishes after scaffolding.
 
 ### SDK structure
 
@@ -221,8 +239,14 @@ model) is the security boundary.
 #### packages/aai-cli/
 
 - `cli.ts` — arg parsing, subcommand dispatch
-- `init.ts` / `dev.ts` / `test.ts` / `deploy.ts` / `delete.ts` /
+- `_cli-common.ts` — shared citty plumbing (`sharedArgs`, `setup`,
+  `runCommand`); `_studio-commands.ts` — the list/pull/push/publish command
+  definitions
+- `init.ts` / `dev.ts` / `test.ts` / `deploy.ts` (internal) / `delete.ts` /
   `secret.ts` — subcommand entry points
+- `studio.ts` / `_studio.ts` — the studio round-trip: pull/push/publish
+  executors over the `/studio/projects` routes, the local source walk
+  (guest-snapshot ignore rules + cap mirrors, `.env`/lockfiles never sync)
 - `_init.ts` / `_deploy.ts` / `_delete.ts` / `_bundler.ts` — internal logic
 - `_dev-server.ts` — dev server for directory-based agents: loads `agent.ts`,
   builds runtime, watches for file changes, optionally runs Vite for client HMR
@@ -411,9 +435,28 @@ voice agents without the CLI:
   serializes local writers, so a conflict means another replica. `scope` is
   a *deterministic* SHA-256 (`studioScope`) — stable so a caller can find
   its projects again. Browser sessions scope by the studio USER id
-  (`user:<uid>` — stable across AssemblyAI key rotation); raw-key callers
-  (evals, programmatic) scope by the key itself (`requestScope` in
+  (`user:<uid>` — stable across AssemblyAI key rotation); a raw-key caller
+  whose key some account stored via `PUT /studio/account/key` resolves to
+  the SAME `user:<uid>` scope (the `key-user:<sha256(key)>` reverse mapping
+  in `resolveBearer` — this is what makes a linked `aai` CLI and the
+  browser see one project list); only a raw key NO account has claimed
+  (evals, programmatic callers) scopes by the key itself (`requestScope` in
   `studio-routes.ts`).
+- **The CLI round-trips workspaces** (`aai list/pull/push/publish/delete` —
+  see the aai-cli section): `GET /studio/projects/:project` returns
+  `sourceHash` (the stamped files hash) as the pull's fast-forward token,
+  and `PUT /studio/projects/:project/source` (`syncWorkspaceSource` in
+  `studio-workspace.ts`) replaces the whole file map atomically — upserting
+  on first push (reserved-name + create-rate-limit gated), 409ing when
+  `baseHash` no longer matches the stored files, no-oping (no version bump,
+  no preview churn) when the pushed files are byte-identical. The token is
+  deliberately the FILES hash, never the row version: preview/Publish stamp
+  metadata (bumping the version) right after every settled edit, so a
+  version token would go stale on almost every push while the files were
+  untouched. `DELETE /studio/projects/:project` deletes THE PROJECT —
+  workspace, chat, and its deployed + preview agents via the shared
+  `deleteAgentResources` core, each slug gated by `verifySlugOwner` so a
+  workspace naming a foreign slug is never a deletion oracle.
 - **Projects are created from the chat, not a dialog.** The client has no
   new-project modal: typing the first message (the home hero's prompt box,
   `home.tsx`) posts it as `prompt` to
@@ -2506,7 +2549,12 @@ stored env at sandbox creation time and kept host-side only.
   gateway LLM, deploy env seeding) sees the real key either way. A key
   never contains dots, so the shape test (`isJwtShaped`) cleanly splits
   the two; the verification boundary is the backend's answer, never the
-  shape.
+  shape. Raw keys additionally resolve a `userId` when the key was stored
+  as some account's key — the `key-user:<sha256(key)>` reverse mapping
+  written by `PUT /studio/account/key`, TTL-cached (negatives included)
+  beside the user→key cache — which lands a linked CLI in the same studio
+  scope as the browser session; an unmapped key keeps the key-derived
+  scope.
 - **Browser sessions are Supabase Auth** (`supabase-auth.ts`): GitHub
   OAuth sign-in via supabase-js (`signInWithOAuth`) in the studio client;
   the server verifies

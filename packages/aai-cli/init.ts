@@ -103,22 +103,24 @@ function resolveTargetDir(dir: string): string {
   return path.resolve(resolveCwd(), dir);
 }
 
-/** Run deploy after init and return deploy metadata if successful. */
-async function tryDeploy(
+/** Publish after init and return deploy metadata if successful. */
+async function tryPublish(
   cwd: string,
   server: string | undefined,
-): Promise<{ slug: string; url: string } | null> {
+): Promise<{ slug: string; url: string; studioUrl: string } | null> {
   // Server defaulting (dev mode → localhost) is owned by resolveServerUrl
-  // inside executeDeploy — pass the explicit flag through untouched.
-  const { executeDeploy } = await import("./deploy.ts");
+  // inside executePublish — pass the explicit flag through untouched.
+  const { executePublish } = await import("./studio.ts");
   try {
-    const result = await executeDeploy({ cwd, ...(server ? { server } : {}) });
-    return result.ok ? { slug: result.data.slug, url: result.data.url } : null;
+    const result = await executePublish({ cwd, ...(server ? { server } : {}) });
+    return result.ok
+      ? { slug: result.data.slug, url: result.data.url, studioUrl: result.data.studioUrl }
+      : null;
   } catch (err) {
-    // The project was scaffolded and installed — a deploy failure (server
+    // The project was scaffolded and installed — a publish failure (server
     // unreachable, bad key) must not fail the whole init.
-    log.warn(`Deploy failed: ${errorMessage(err)}`);
-    log.warn("Your project was still created — run `aai deploy` in it to retry.");
+    log.warn(`Publish failed: ${errorMessage(err)}`);
+    log.warn("Your project was still created — run `aai publish` in it to retry.");
     return null;
   }
 }
@@ -180,13 +182,13 @@ export async function executeInit(
   let url: string | undefined;
 
   if (!installed) {
-    log.warn("Skipping deploy because dependencies were not installed.");
+    log.warn("Skipping publish because dependencies were not installed.");
   } else if (!opts.skipDeploy) {
-    const deployInfo = await tryDeploy(cwd, opts.server);
-    if (deployInfo) {
+    const published = await tryPublish(cwd, opts.server);
+    if (published) {
       deployed = true;
-      slug = deployInfo.slug;
-      url = deployInfo.url;
+      slug = published.slug;
+      url = published.url;
     }
   }
 

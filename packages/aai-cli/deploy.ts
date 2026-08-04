@@ -2,7 +2,7 @@
 
 import { resolveDeployTarget } from "./_agent.ts";
 import { buildAgentBundle } from "./_bundler.ts";
-import { writeProjectConfig } from "./_config.ts";
+import { updateProjectConfig } from "./_config.ts";
 import { runDeploy } from "./_deploy.ts";
 import { type CommandResult, ok } from "./_output.ts";
 import { resolveServerEnv } from "./_server-common.ts";
@@ -49,7 +49,9 @@ export async function executeDeploy(opts: {
   // must not read as a failed deploy (and must surface the slug loudly, or
   // the next `aai deploy` would mint a fresh slug and orphan this agent).
   try {
-    await writeProjectConfig(cwd, { slug: deployed.slug, serverUrl });
+    // Merge, never replace: a studio-linked directory's link fields
+    // (studioProject/studioSourceHash) must survive a deploy.
+    await updateProjectConfig(cwd, { slug: deployed.slug, serverUrl });
   } catch (err) {
     log.warn(
       `Deployed as ${deployed.slug}, but couldn't save .aai/project.json: ${errorMessage(err)}\n` +

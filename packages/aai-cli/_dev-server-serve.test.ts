@@ -28,7 +28,7 @@ describe("agentEnvWarnings", () => {
     expect(warnings).toHaveLength(1);
     expect(warnings[0]).toContain("resolved from your shell, not .env");
     expect(warnings[0]).toContain("ASSEMBLYAI_API_KEY");
-    expect(warnings[0]).toContain("aai deploy");
+    expect(warnings[0]).toContain("aai publish");
   });
 
   test("silent when the key is declared in .env", () => {

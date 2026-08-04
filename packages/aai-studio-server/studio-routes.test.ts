@@ -2,14 +2,13 @@
 // Studio HTTP surface, exercised through the full orchestrator (routing
 // order vs the /:slug routes matters and is covered here).
 
-import { createDevAuth } from "aai-server/supabase-auth";
-import { authFetch, type TestFetch } from "aai-server/test-utils";
+import { authFetch, deployAgent, type TestFetch } from "aai-server/test-utils";
 import { beforeEach, describe, expect, test, vi } from "vitest";
 import { createTestCombined } from "./_test-combined.ts";
 import type { StudioDeployResult } from "./studio-deploy.ts";
 import { requestPublicOrigin } from "./studio-routes.ts";
 import type { StudioSessionBroker } from "./studio-session-broker.ts";
-import { studioScope } from "./studio-workspace.ts";
+import { mutateWorkspace, studioScope } from "./studio-workspace.ts";
 
 const deployMock = vi.fn(
   async (..._args: unknown[]): Promise<StudioDeployResult> => ({
@@ -189,86 +188,6 @@ describe("studio auth", () => {
   });
 });
 
-describe("browser sessions", () => {
-  /** A dev token the way the login screen mints it (see aai-server dev auth). */
-  const token = (email: string) =>
-    `dev.${Buffer.from(JSON.stringify({ id: `dev:${email}`, email }))
-      .toString("base64url")
-      .replace(/=+$/, "")}.dev`;
-
-  const withAuth = () => createTestCombined({ auth: createDevAuth() });
-
-  test("GET /studio/auth reports the login mode — 'none' when unconfigured", async () => {
-    const plain = await createTestCombined();
-    expect(await (await plain.fetch("/studio/auth")).json()).toEqual({ mode: "none" });
-    const { fetch } = await withAuth();
-    expect(await (await fetch("/studio/auth")).json()).toEqual({ mode: "dev" });
-  });
-
-  test("account routes: no key on file until the onboarding PUT stores one", async () => {
-    const { fetch } = await withAuth();
-    const bearer = token("a@b.c");
-    const before = await authFetch(fetch, "/studio/account", { method: "GET", key: bearer });
-    expect(await before.json()).toEqual({ email: "a@b.c", hasKey: false });
-
-    const put = await authFetch(fetch, "/studio/account/key", {
-      method: "PUT",
-      key: bearer,
-      body: { apiKey: "users-own-key" },
-    });
-    expect(put.status).toBe(200);
-    const after = await authFetch(fetch, "/studio/account", { method: "GET", key: bearer });
-    expect(await after.json()).toEqual({ email: "a@b.c", hasKey: true });
-  });
-
-  test("account routes reject raw API keys and invalid sessions", async () => {
-    const { fetch } = await withAuth();
-    expect(
-      (await authFetch(fetch, "/studio/account", { method: "GET", key: "raw-key" })).status,
-    ).toBe(401);
-    expect(
-      (await authFetch(fetch, "/studio/account", { method: "GET", key: "bad.dev.token" })).status,
-    ).toBe(401);
-  });
-
-  test("a session token that looks like a JWT is rejected on key onboarding", async () => {
-    const { fetch } = await withAuth();
-    const res = await authFetch(fetch, "/studio/account/key", {
-      method: "PUT",
-      key: token("a@b.c"),
-      body: { apiKey: "looks.like.jwt" },
-    });
-    expect(res.status).toBe(400);
-  });
-
-  test("project routes resolve the session to the stored key; 401 before onboarding", async () => {
-    const { fetch } = await withAuth();
-    const bearer = token("a@b.c");
-    // Before the key is stored: project routes refuse the session.
-    const early = await authFetch(fetch, "/studio/projects", { method: "GET", key: bearer });
-    expect(early.status).toBe(401);
-
-    await authFetch(fetch, "/studio/account/key", {
-      method: "PUT",
-      key: bearer,
-      body: { apiKey: "users-own-key" },
-    });
-    await createProject(fetch, "mine", bearer);
-    const listed = (await (
-      await authFetch(fetch, "/studio/projects", { method: "GET", key: bearer })
-    ).json()) as { projects: string[] };
-    expect(listed.projects).toEqual(["mine"]);
-
-    // Session-authed callers scope by USER, not by the resolved key: the raw
-    // key sees its own (empty) namespace, so rotating the stored key can
-    // never orphan the account's projects.
-    const rawView = (await (
-      await authFetch(fetch, "/studio/projects", { method: "GET", key: "users-own-key" })
-    ).json()) as { projects: string[] };
-    expect(rawView.projects).toEqual([]);
-  });
-});
-
 describe("project CRUD", () => {
   let fetch: TestFetch;
   beforeEach(async () => {
@@ -442,6 +361,85 @@ describe("project CRUD", () => {
       projects: string[];
     };
     expect(list.projects).toEqual([]);
+  });
+
+  test("delete project cascades to its deployed agents — owned ones only", async () => {
+    const combined = await createTestCombined();
+    // The agents Publish and the preview auto-deploy would have created.
+    await deployAgent(combined.fetch, "proj", "key1");
+    await deployAgent(combined.fetch, "proj-preview", "key1");
+    // A slug the caller does NOT own: the workspace naming it must not
+    // become a deletion oracle.
+    await deployAgent(combined.fetch, "someone-elses", "key2");
+    await createProject(combined.fetch);
+    // Stamp the deploy metadata the way Publish/preview do.
+    await mutateWorkspace(combined.workspaces, studioScope("key1"), "proj", (current) => ({
+      ...current,
+      deployedSlug: "proj",
+      previewSlug: "proj-preview",
+    }));
+    await mutateWorkspace(combined.workspaces, studioScope("key1"), "proj", (current) => ({
+      ...current,
+      deployedSlug: "someone-elses",
+    }));
+
+    const res = await authFetch(combined.fetch, "/studio/projects/proj", { method: "DELETE" });
+    expect(res.status).toBe(200);
+    // The preview agent (owned) is gone; the foreign slug survives.
+    expect(await combined.store.getAgent("proj-preview")).toBeNull();
+    expect(await combined.store.getAgent("someone-elses")).not.toBeNull();
+    expect(await combined.store.getAgent("proj")).not.toBeNull();
+  });
+
+  // The `aai push` surface; fast-forward/no-op/metadata semantics are unit
+  // tested in studio-workspace.test.ts — this covers the route wiring.
+  test("source sync: first push creates, stale baseHash 409s, no-op skips preview", async () => {
+    schedulePreviewMock.mockClear();
+    const push = (body: unknown) =>
+      authFetch(fetch, "/studio/projects/pushed/source", { method: "PUT", body });
+    const created = await push({ files: { "agent.ts": "export {};" } });
+    expect(created.status).toBe(201);
+    const { sourceHash } = (await created.json()) as { sourceHash: string };
+    expect(schedulePreviewMock).toHaveBeenCalledTimes(1);
+    // GET returns the same fast-forward token the push did.
+    const got = (await (
+      await authFetch(fetch, "/studio/projects/pushed", { method: "GET" })
+    ).json()) as { files: Record<string, string>; sourceHash: string };
+    expect(got.sourceHash).toBe(sourceHash);
+    expect(got.files["agent.ts"]).toBe("export {};");
+
+    // Identical files: accepted, but nothing changed — no preview churn.
+    schedulePreviewMock.mockClear();
+    const noop = await push({ files: { "agent.ts": "export {};" }, baseHash: sourceHash });
+    expect(noop.status).toBe(200);
+    expect(schedulePreviewMock).not.toHaveBeenCalled();
+
+    // A stale token (the studio edited since the pull) is a 409, not a stomp.
+    const stale = await push({ files: { "agent.ts": "changed" }, baseHash: "not-the-hash" });
+    expect(stale.status).toBe(409);
+    // The current token fast-forwards.
+    expect((await push({ files: { "agent.ts": "changed" }, baseHash: sourceHash })).status).toBe(
+      200,
+    );
+  });
+
+  test("source sync rejects reserved names and traversal paths", async () => {
+    expect(
+      (
+        await authFetch(fetch, "/studio/projects/studio/source", {
+          method: "PUT",
+          body: { files: {} },
+        })
+      ).status,
+    ).toBe(400);
+    expect(
+      (
+        await authFetch(fetch, "/studio/projects/proj2/source", {
+          method: "PUT",
+          body: { files: { "../evil.ts": "x" } },
+        })
+      ).status,
+    ).toBe(400);
   });
 });
 

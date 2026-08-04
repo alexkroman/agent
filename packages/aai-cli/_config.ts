@@ -19,8 +19,17 @@ import { errorMessage, readJson, writeJson } from "./_utils.ts";
  * that isn't an approved http(s) origin.
  */
 const ProjectConfigSchema = z.object({
-  slug: z.string(),
+  /** Deployed agent slug — absent for a pulled project never published. */
+  slug: z.string().optional(),
   serverUrl: z.string(),
+  /** Studio project this directory is linked to (`aai pull`/`aai push`). */
+  studioProject: z.string().optional(),
+  /**
+   * The workspace files hash at the last pull/push — `aai push` sends it
+   * back as the fast-forward token, so an edit made in the studio since
+   * then surfaces as a 409 instead of being silently overwritten.
+   */
+  studioSourceHash: z.string().optional(),
 });
 
 /**
@@ -65,6 +74,28 @@ export async function readProjectConfig(agentDir: string): Promise<ProjectConfig
 
 export async function writeProjectConfig(agentDir: string, data: ProjectConfig): Promise<void> {
   await writeJson(path.join(agentDir, ".aai", "project.json"), data);
+}
+
+/**
+ * Merge `patch` into the existing project config rather than replacing the
+ * file — a publish recording its `slug` must not drop the studio link
+ * fields a pull wrote, and vice versa.
+ */
+export async function updateProjectConfig(
+  agentDir: string,
+  patch: Partial<ProjectConfig> & Pick<ProjectConfig, "serverUrl">,
+): Promise<ProjectConfig> {
+  let existing: ProjectConfig | null = null;
+  try {
+    existing = await readProjectConfig(agentDir);
+  } catch {
+    // Corrupted file: the patch's full values replace it (the read-throw
+    // exists to protect DEPLOY from minting a fresh slug, not updates that
+    // carry their own slug/link state).
+  }
+  const merged = { ...existing, ...patch };
+  await writeProjectConfig(agentDir, merged);
+  return merged;
 }
 
 export type GlobalConfig = {

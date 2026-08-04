@@ -1,0 +1,323 @@
+// Copyright 2026 the AAI authors. MIT license.
+
+import fs from "node:fs/promises";
+import path from "node:path";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
+import { readProjectConfig } from "./_config.ts";
+import { withTempDir } from "./_test-utils.ts";
+
+// resolveDeployTarget is the single auth/target resolver; each test shapes
+// its `config` to model an unlinked, linked, or deployed project directory.
+const resolveDeployTarget = vi.hoisted(() => vi.fn());
+vi.mock("./_agent.ts", () => ({
+  resolveDeployTarget,
+  isDevMode: vi.fn().mockReturnValue(false),
+  getMonorepoRoot: vi.fn().mockReturnValue(null),
+}));
+
+vi.mock("./_ui.ts", async () => ({
+  log: (await import("./_test-utils.ts")).makeMockLog(),
+  fmtUrl: (url: string) => url,
+}));
+
+const mockApiRequest = vi.hoisted(() => vi.fn());
+vi.mock("./_api-client.ts", () => ({
+  apiRequest: (...args: unknown[]) => mockApiRequest(...args),
+  HINT_NOT_DEPLOYED: "not-deployed-hint",
+}));
+
+const { collectSourceFiles, projectNameFromDir } = await import("./_studio.ts");
+const { executeList, executePull, executePush, executePublish } = await import("./studio.ts");
+const { executeDelete } = await import("./delete.ts");
+
+const TARGET = { config: null, serverUrl: "https://api.test", apiKey: "key1" };
+
+beforeEach(() => {
+  resolveDeployTarget.mockResolvedValue(TARGET);
+});
+
+afterEach(() => {
+  mockApiRequest.mockReset();
+  resolveDeployTarget.mockReset();
+  vi.unstubAllEnvs();
+});
+
+/** Route apiRequest by URL suffix — the commands compose multiple calls. */
+function routeApi(routes: Record<string, unknown | ((opts: never) => unknown)>): void {
+  mockApiRequest.mockImplementation((url: string, opts: { method?: string }) => {
+    for (const [key, value] of Object.entries(routes)) {
+      const [method, suffix] = key.split(" ", 2) as [string, string];
+      if ((opts.method ?? "GET") === method && url.endsWith(suffix)) {
+        return Promise.resolve(typeof value === "function" ? value(opts as never) : value);
+      }
+    }
+    return Promise.reject(new Error(`unrouted: ${opts.method ?? "GET"} ${url}`));
+  });
+}
+
+describe("projectNameFromDir", () => {
+  test("derives a slug-grammar name; null when unusable", () => {
+    expect(projectNameFromDir("/x/My Support Agent")).toBe("my-support-agent");
+    expect(projectNameFromDir("/x/voice-agent")).toBe("voice-agent");
+    expect(projectNameFromDir("/x/!!!")).toBeNull();
+  });
+});
+
+describe("collectSourceFiles", () => {
+  test("skips secrets, lockfiles, ignored dirs, and oversized files", async () => {
+    await withTempDir(async (dir) => {
+      await fs.writeFile(path.join(dir, "agent.ts"), "export {};");
+      await fs.writeFile(path.join(dir, ".env"), "SECRET=1");
+      await fs.writeFile(path.join(dir, "pnpm-lock.yaml"), "lock");
+      await fs.writeFile(path.join(dir, "huge.txt"), "x".repeat(256_001));
+      await fs.mkdir(path.join(dir, "node_modules/dep"), { recursive: true });
+      await fs.writeFile(path.join(dir, "node_modules/dep/index.js"), "no");
+      await fs.mkdir(path.join(dir, "src"), { recursive: true });
+      await fs.writeFile(path.join(dir, "src/client.tsx"), "ui");
+
+      const { files, warnings } = await collectSourceFiles(dir);
+      expect(Object.keys(files).sort()).toEqual(["agent.ts", "src/client.tsx"]);
+      expect(warnings.some((w) => w.includes("huge.txt"))).toBe(true);
+    });
+  });
+});
+
+describe("executeList", () => {
+  test("lists the caller's studio projects", async () => {
+    routeApi({ "GET /studio/projects": { projects: ["a", "b"] } });
+    const result = await executeList({ cwd: "/tmp" });
+    expect(result).toEqual({ ok: true, data: { projects: ["a", "b"] } });
+  });
+});
+
+describe("executePull", () => {
+  test("materializes files, layers the scaffold, and links the directory", async () => {
+    await withTempDir(async (dir) => {
+      await fs.mkdir(path.join(dir, "fake-templates/scaffold"), { recursive: true });
+      await fs.writeFile(path.join(dir, "fake-templates/scaffold/tsconfig.json"), "{}");
+      // The scaffold must never overwrite a workspace file of the same name.
+      await fs.writeFile(path.join(dir, "fake-templates/scaffold/agent.ts"), "SCAFFOLD");
+      vi.stubEnv("AAI_TEMPLATES_DIR", path.join(dir, "fake-templates"));
+      routeApi({
+        "GET /studio/projects/proj": {
+          files: { "agent.ts": "export {};", "src/client.tsx": "ui" },
+          sourceHash: "hash-1",
+          deployedSlug: "proj",
+        },
+      });
+
+      const result = await executePull({ cwd: dir, project: "proj" });
+      expect(result.ok).toBe(true);
+      const target = path.join(dir, "proj");
+      expect(await fs.readFile(path.join(target, "agent.ts"), "utf-8")).toBe("export {};");
+      expect(await fs.readFile(path.join(target, "src/client.tsx"), "utf-8")).toBe("ui");
+      expect(await fs.readFile(path.join(target, "tsconfig.json"), "utf-8")).toBe("{}");
+      expect(await readProjectConfig(target)).toEqual({
+        serverUrl: "https://api.test",
+        studioProject: "proj",
+        studioSourceHash: "hash-1",
+        slug: "proj",
+      });
+    });
+  });
+
+  test("404s a missing project and refuses a non-empty directory", async () => {
+    await withTempDir(async (dir) => {
+      routeApi({ "GET /studio/projects/ghost": null });
+      await expect(executePull({ cwd: dir, project: "ghost" })).rejects.toThrow(
+        'No studio project named "ghost"',
+      );
+
+      routeApi({ "GET /studio/projects/proj": { files: { "a.ts": "x" }, sourceHash: "h" } });
+      await fs.mkdir(path.join(dir, "proj"));
+      await fs.writeFile(path.join(dir, "proj/existing.txt"), "here");
+      await expect(executePull({ cwd: dir, project: "proj" })).rejects.toThrow("is not empty");
+      // --force overwrites in place.
+      expect((await executePull({ cwd: dir, project: "proj", force: true })).ok).toBe(true);
+    });
+  });
+
+  test("rejects pulled paths that escape the target directory", async () => {
+    await withTempDir(async (dir) => {
+      routeApi({
+        "GET /studio/projects/proj": { files: { "../evil.ts": "x" }, sourceHash: "h" },
+      });
+      await expect(executePull({ cwd: dir, project: "proj" })).rejects.toThrow(
+        "escapes the project directory",
+      );
+    });
+  });
+});
+
+describe("executePush", () => {
+  test("first push links the directory and creates the project", async () => {
+    await withTempDir(async (dir) => {
+      const cwd = path.join(dir, "voice-agent");
+      await fs.mkdir(cwd);
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      routeApi({
+        "GET /studio/projects/voice-agent": null,
+        "PUT /studio/projects/voice-agent/source": (opts: { body: { baseHash?: string } }) => {
+          expect(opts.body.baseHash).toBeUndefined();
+          return { sourceHash: "hash-2", created: true };
+        },
+      });
+
+      const result = await executePush({ cwd });
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          project: "voice-agent",
+          created: true,
+          url: "https://api.test/studio/chat/voice-agent",
+        },
+      });
+      expect(await readProjectConfig(cwd)).toEqual({
+        serverUrl: "https://api.test",
+        studioProject: "voice-agent",
+        studioSourceHash: "hash-2",
+      });
+    });
+  });
+
+  test("an unlinked push refuses to overwrite a same-named studio project", async () => {
+    await withTempDir(async (dir) => {
+      const cwd = path.join(dir, "voice-agent");
+      await fs.mkdir(cwd);
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      routeApi({
+        "GET /studio/projects/voice-agent": { files: { "agent.ts": "theirs" }, sourceHash: "h9" },
+      });
+      await expect(executePush({ cwd })).rejects.toThrow("already has a project named");
+    });
+  });
+
+  test("a linked push sends the recorded fast-forward token", async () => {
+    await withTempDir(async (cwd) => {
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      resolveDeployTarget.mockResolvedValue({
+        ...TARGET,
+        config: {
+          serverUrl: "https://api.test",
+          studioProject: "proj",
+          studioSourceHash: "hash-1",
+          slug: "proj",
+        },
+      });
+      routeApi({
+        "PUT /studio/projects/proj/source": (opts: { body: { baseHash?: string } }) => {
+          expect(opts.body.baseHash).toBe("hash-1");
+          return { sourceHash: "hash-2", created: false };
+        },
+      });
+
+      const result = await executePush({ cwd });
+      expect(result.ok).toBe(true);
+      expect((await readProjectConfig(cwd))?.studioSourceHash).toBe("hash-2");
+    });
+  });
+
+  test("--force omits the token entirely", async () => {
+    await withTempDir(async (cwd) => {
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      resolveDeployTarget.mockResolvedValue({
+        ...TARGET,
+        config: { serverUrl: "https://api.test", studioProject: "proj", studioSourceHash: "h1" },
+      });
+      routeApi({
+        "PUT /studio/projects/proj/source": (opts: { body: { baseHash?: string } }) => {
+          expect(opts.body.baseHash).toBeUndefined();
+          return { sourceHash: "h2", created: false };
+        },
+      });
+      expect((await executePush({ cwd, force: true })).ok).toBe(true);
+    });
+  });
+});
+
+describe("executePublish", () => {
+  test("pushes, syncs .env secrets before the deploy, and records the slug", async () => {
+    await withTempDir(async (cwd) => {
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      await fs.writeFile(path.join(cwd, ".env"), "MY_SECRET=shh");
+      resolveDeployTarget.mockResolvedValue({
+        ...TARGET,
+        config: {
+          serverUrl: "https://api.test",
+          studioProject: "proj",
+          studioSourceHash: "h1",
+          slug: "proj",
+        },
+      });
+      const order: string[] = [];
+      routeApi({
+        "PUT /studio/projects/proj/source": () => {
+          order.push("push");
+          return { sourceHash: "h2", created: false };
+        },
+        "PUT /proj/secret": (opts: { body: Record<string, string> }) => {
+          order.push("secrets");
+          expect(opts.body).toEqual({ MY_SECRET: "shh" });
+          return { ok: true };
+        },
+        "POST /studio/projects/proj/deploy": () => {
+          order.push("deploy");
+          return { ok: true, slug: "proj", url: "/proj/", output: "Deployed /proj/" };
+        },
+      });
+
+      const result = await executePublish({ cwd, skipTypecheck: true });
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          project: "proj",
+          slug: "proj",
+          url: "https://api.test/proj",
+          studioUrl: "https://api.test/studio/chat/proj",
+          output: "Deployed /proj/",
+        },
+      });
+      // Secrets merge into the agent env AT deploy time — order is the point.
+      expect(order).toEqual(["push", "secrets", "deploy"]);
+      expect((await readProjectConfig(cwd))?.slug).toBe("proj");
+    });
+  });
+
+  test("first publish syncs .env after the slug exists", async () => {
+    await withTempDir(async (dir) => {
+      const cwd = path.join(dir, "fresh-agent");
+      await fs.mkdir(cwd);
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      await fs.writeFile(path.join(cwd, ".env"), "K=v");
+      const order: string[] = [];
+      routeApi({
+        "GET /studio/projects/fresh-agent": null,
+        "PUT /studio/projects/fresh-agent/source": { sourceHash: "h1", created: true },
+        "POST /studio/projects/fresh-agent/deploy": () => {
+          order.push("deploy");
+          return { ok: true, slug: "fresh-agent", url: "/fresh-agent/", output: "ok" };
+        },
+        "PUT /fresh-agent/secret": () => {
+          order.push("secrets");
+          return { ok: true };
+        },
+      });
+
+      const result = await executePublish({ cwd, skipTypecheck: true });
+      expect(result.ok).toBe(true);
+      expect(order).toEqual(["deploy", "secrets"]);
+    });
+  });
+});
+
+describe("executeDelete", () => {
+  test("a linked directory deletes the STUDIO PROJECT (server-side cascade)", async () => {
+    resolveDeployTarget.mockResolvedValue({
+      ...TARGET,
+      config: { serverUrl: "https://api.test", studioProject: "proj", slug: "proj" },
+    });
+    routeApi({ "DELETE /studio/projects/proj": { ok: true } });
+    const result = await executeDelete({ cwd: "/tmp" });
+    expect(result).toEqual({ ok: true, data: { project: "proj", slug: "proj" } });
+  });
+});

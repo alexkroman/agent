@@ -2,14 +2,17 @@
 
 exports[`cli usage snapshots > aai --help 1`] = `
 "Voice agent development kit (aai vX.X.X)
-USAGE aai init|dev|test|build|deploy|delete|login|secret|storage|templates
+USAGE aai init|dev|test|build|list|pull|push|publish|delete|login|secret|storage|templates
 COMMANDS
        init    Scaffold a new agent project
         dev    Start a local development server
        test    Run agent tests
       build    Bundle agent without deploying
-     deploy    Bundle and deploy to production
-     delete    Remove a deployed agent
+       list    List your studio projects
+       pull    Pull a studio project into a local directory
+       push    Sync this project's source to its studio workspace
+    publish    Push to the studio and deploy to production (the studio's Publish button)
+     delete    Delete the studio project and its deployed agents
       login    Link your signed-in browser account and save your API key
      secret    Manage agent secrets
     storage    Manage the agent's app database
@@ -27,7 +30,7 @@ OPTIONS
 `;
 
 exports[`cli usage snapshots > aai delete --help 1`] = `
-"Remove a deployed agent (delete)
+"Delete the studio project and its deployed agents (delete)
 USAGE delete [OPTIONS]
 OPTIONS
   -s, --server=<server>    Platform server URL
@@ -35,7 +38,7 @@ OPTIONS
 `;
 
 exports[`cli usage snapshots > aai deploy --help 1`] = `
-"Bundle and deploy to production (deploy)
+"(internal) used by studio Publish (deploy)
 USAGE deploy [OPTIONS]
 OPTIONS
   -s, --server=<server>    Platform server URL
