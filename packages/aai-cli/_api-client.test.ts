@@ -204,6 +204,72 @@ describe("apiRequest", () => {
   });
 });
 
+describe("server error bodies are surfaced readably", () => {
+  test("an { error } body becomes just that message", async () => {
+    const fetch = mockFetch(400, { error: "That name is reserved" });
+    await expect(
+      apiRequest("https://api.example.com/x", { apiKey: "k", action: "push", fetch, retry: 0 }),
+    ).rejects.toThrow("push failed (HTTP 400): That name is reserved");
+  });
+
+  test("a nested CLI-in-guest error is unwrapped, not re-escaped", async () => {
+    // Studio Publish runs the real `aai deploy` in the sandbox, so its failure
+    // arrives wrapped twice. Stringifying it produced a triple-escaped wall of
+    // JSON — `{"error":"deploy failed (HTTP 400): {\\\"error\\\":\\\"...` —
+    // for what is one sentence of actionable text.
+    const inner = JSON.stringify({ error: 'The "-preview" suffix is reserved' });
+    const fetch = mockFetch(400, { error: `deploy failed (HTTP 400): ${inner}` });
+    const err = (await apiRequest("https://api.example.com/x", {
+      apiKey: "k",
+      action: "publish",
+      fetch,
+      retry: 0,
+    }).catch((e: unknown) => e)) as Error;
+
+    expect(err.message).toContain('The "-preview" suffix is reserved');
+    expect(err.message).not.toContain('\\"');
+    expect(err.message).not.toContain('{"error"');
+  });
+
+  test("a ZodError body becomes its issue messages", async () => {
+    // `aai secret put MY-KEY` returned a 515-character raw ZodError dump for a
+    // single mistyped character.
+    const fetch = mockFetch(400, {
+      success: false,
+      error: {
+        name: "ZodError",
+        message: JSON.stringify([
+          {
+            code: "invalid_key",
+            origin: "record",
+            issues: [{ code: "invalid_format", message: "Invalid secret key name", path: [] }],
+            path: ["MY-KEY"],
+            message: "Invalid key in record",
+          },
+        ]),
+      },
+    });
+    const err = (await apiRequest("https://api.example.com/x", {
+      apiKey: "k",
+      action: "secret",
+      fetch,
+      retry: 0,
+    }).catch((e: unknown) => e)) as Error;
+
+    expect(err.message).toContain("Invalid secret key name");
+    expect(err.message).not.toContain("ZodError");
+    expect(err.message).not.toContain("invalid_format");
+    expect(err.message.length).toBeLessThan(200);
+  });
+
+  test("an unrecognized body shape still says something", async () => {
+    const fetch = mockFetch(500, { weird: [1, 2] });
+    await expect(
+      apiRequest("https://api.example.com/x", { apiKey: "k", action: "push", fetch, retry: 0 }),
+    ).rejects.toThrow(/HTTP 500/);
+  });
+});
+
 describe("HINT_INVALID_API_KEY", () => {
   test("is a string mentioning re-entering the API key", () => {
     expect(HINT_INVALID_API_KEY).toContain("API key");

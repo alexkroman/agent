@@ -113,6 +113,14 @@ type PushOutcome = {
   apiKey: string;
   /** Deployed slug already recorded for this project, if any. */
   slug?: string | undefined;
+  /**
+   * Files the walk skipped (over the byte cap, past the file-count cap, or
+   * not valid UTF-8). These are logged for a human, but `log.warn` is
+   * silenced in JSON mode — and JSON mode is auto-detected on a pipe — so
+   * they have to ride the result too or a scripted push reports plain
+   * success while having replaced the workspace with a truncated tree.
+   */
+  warnings: string[];
 };
 
 /**
@@ -173,6 +181,7 @@ async function pushProject(opts: {
     serverUrl,
     apiKey,
     slug,
+    warnings,
   };
 }
 
@@ -180,13 +189,21 @@ export async function executePush(opts: {
   cwd: string;
   server?: string | undefined;
   force?: boolean | undefined;
-}): Promise<CommandResult<{ project: string; created: boolean; url: string }>> {
+}): Promise<
+  CommandResult<{ project: string; created: boolean; url: string; warnings?: string[] }>
+> {
   const pushed = await pushProject(opts);
   const url = studioProjectUrl(pushed.serverUrl, pushed.project);
   log.success(
     `${pushed.created ? "Created" : "Synced"} studio project ${pushed.project} — ${fmtUrl(url)}`,
   );
-  return ok({ project: pushed.project, created: pushed.created, url });
+  return ok({
+    project: pushed.project,
+    created: pushed.created,
+    url,
+    // Omitted when empty so a clean push's result stays exactly as before.
+    ...(pushed.warnings.length > 0 ? { warnings: pushed.warnings } : {}),
+  });
 }
 
 /**
@@ -220,7 +237,14 @@ export async function executePublish(opts: {
   force?: boolean | undefined;
   skipTypecheck?: boolean | undefined;
 }): Promise<
-  CommandResult<{ project: string; slug: string; url: string; studioUrl: string; output: string }>
+  CommandResult<{
+    project: string;
+    slug: string;
+    url: string;
+    studioUrl: string;
+    output: string;
+    warnings?: string[];
+  }>
 > {
   if (!opts.skipTypecheck) {
     const { assertTypechecks } = await import("./_typecheck-gate.ts");
@@ -236,6 +260,17 @@ export async function executePublish(opts: {
 
   log.step(`Publishing ${project} (builds in the project's sandbox)…`);
   const result = await publishStudioProject(serverUrl, apiKey, project);
+  // Wire data, so it is checked rather than trusted. A 200 whose body lacks
+  // `slug`/`output` — an intercepting proxy, a mismatched server — used to
+  // surface as a bare `Cannot read properties of undefined (reading 'trim')`,
+  // and the missing slug was then written into .aai/project.json.
+  if (typeof result?.slug !== "string" || typeof result?.output !== "string") {
+    throw new CliError(
+      "bad_publish_response",
+      `Unexpected response from the publish route at ${serverUrl}.`,
+      "Check that --server points at an aai platform server, then try again.",
+    );
+  }
   if (result.output.trim()) log.message(result.output.trim());
 
   await updateProjectConfig(opts.cwd, { serverUrl, slug: result.slug });
@@ -249,5 +284,13 @@ export async function executePublish(opts: {
   const studioUrl = studioProjectUrl(serverUrl, project);
   log.success(`Published ${fmtUrl(agentUrl)}`);
   log.info(`Edit in studio: ${fmtUrl(studioUrl)}`);
-  return ok({ project, slug: result.slug, url: agentUrl, studioUrl, output: result.output });
+  return ok({
+    project,
+    slug: result.slug,
+    url: agentUrl,
+    studioUrl,
+    output: result.output,
+    // See PushOutcome.warnings — silenced in JSON mode, so they ride here.
+    ...(pushed.warnings.length > 0 ? { warnings: pushed.warnings } : {}),
+  });
 }

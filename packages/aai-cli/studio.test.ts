@@ -3,7 +3,7 @@
 import fs from "node:fs/promises";
 import path from "node:path";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { readProjectConfig } from "./_config.ts";
+import { readProjectConfig, writeProjectConfig } from "./_config.ts";
 import { withTempDir } from "./_test-utils.ts";
 
 // resolveDeployTarget is the single auth/target resolver; each test shapes
@@ -240,6 +240,51 @@ describe("executePush", () => {
     });
   });
 
+  test("reports skipped files in the result, not only as a TTY warning", async () => {
+    await withTempDir(async (dir) => {
+      const cwd = path.join(dir, "voice-agent");
+      await fs.mkdir(cwd);
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      await fs.writeFile(path.join(cwd, "huge.txt"), "x".repeat(256_001));
+      routeApi({
+        "GET /studio/projects/voice-agent": null,
+        "PUT /studio/projects/voice-agent/source": { sourceHash: "h", created: true },
+      });
+
+      // `log.warn` is silenced in JSON mode and JSON mode is auto-detected on
+      // a pipe, so a CI or scripted push saw `ok: true` with no indication
+      // that files were dropped. Since a push REPLACES the whole workspace
+      // file map, a silently truncated push can delete `agent.ts` from an
+      // existing project.
+      const result = await executePush({ cwd });
+      expect(result.ok).toBe(true);
+      const data = (result as { data: { warnings?: string[] } }).data;
+      expect(data.warnings?.some((w) => w.includes("huge.txt"))).toBe(true);
+    });
+  });
+
+  test("omits the warnings key entirely when nothing was skipped", async () => {
+    await withTempDir(async (dir) => {
+      const cwd = path.join(dir, "voice-agent");
+      await fs.mkdir(cwd);
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      routeApi({
+        "GET /studio/projects/voice-agent": null,
+        "PUT /studio/projects/voice-agent/source": { sourceHash: "h", created: true },
+      });
+
+      const result = await executePush({ cwd });
+      expect(result).toEqual({
+        ok: true,
+        data: {
+          project: "voice-agent",
+          created: true,
+          url: "https://api.test/studio/chat/voice-agent",
+        },
+      });
+    });
+  });
+
   test("an unlinked push refuses to overwrite a same-named studio project", async () => {
     await withTempDir(async (dir) => {
       const cwd = path.join(dir, "voice-agent");
@@ -343,6 +388,60 @@ describe("executePublish", () => {
     });
   });
 
+  test("a publish response missing fields fails cleanly, not with a TypeError", async () => {
+    await withTempDir(async (cwd) => {
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      resolveDeployTarget.mockResolvedValue({
+        ...TARGET,
+        config: { serverUrl: "https://api.test", studioProject: "proj", studioSourceHash: "h1" },
+      });
+      routeApi({
+        "PUT /studio/projects/proj/source": { sourceHash: "h2", created: false },
+        // A proxy, an older server, or anything that isn't the deploy route
+        // can answer 200 with a body that lacks `slug`/`output`. Reading
+        // `result.output.trim()` blind surfaced as
+        // "Cannot read properties of undefined (reading 'trim')" — a raw
+        // TypeError with nothing actionable in it.
+        "POST /studio/projects/proj/deploy": {},
+      });
+
+      // Thrown as a CliError; `runCommand` turns it into the one JSON result
+      // line with its code and hint.
+      await expect(executePublish({ cwd, skipTypecheck: true })).rejects.toThrow(
+        /Unexpected response from the publish route/,
+      );
+      await expect(executePublish({ cwd, skipTypecheck: true })).rejects.not.toThrow(/'trim'/);
+    });
+  });
+
+  test("reports skipped files in the result, like push does", async () => {
+    await withTempDir(async (cwd) => {
+      await fs.writeFile(path.join(cwd, "agent.ts"), "export {};");
+      await fs.writeFile(path.join(cwd, "huge.txt"), "x".repeat(256_001));
+      resolveDeployTarget.mockResolvedValue({
+        ...TARGET,
+        config: { serverUrl: "https://api.test", studioProject: "proj", studioSourceHash: "h1" },
+      });
+      routeApi({
+        "PUT /studio/projects/proj/source": { sourceHash: "h2", created: false },
+        "POST /studio/projects/proj/deploy": {
+          ok: true,
+          slug: "proj",
+          url: "/proj/",
+          output: "Deployed",
+        },
+        "PUT /proj/secret": { ok: true },
+      });
+
+      // Publish is the command that ships to production, so a silently
+      // truncated tree matters even more here than on a bare push.
+      const result = await executePublish({ cwd, skipTypecheck: true });
+      expect(result.ok).toBe(true);
+      const data = (result as { data: { warnings?: string[] } }).data;
+      expect(data.warnings?.some((w) => w.includes("huge.txt"))).toBe(true);
+    });
+  });
+
   test("first publish syncs .env after the slug exists", async () => {
     await withTempDir(async (dir) => {
       const cwd = path.join(dir, "fresh-agent");
@@ -379,5 +478,30 @@ describe("executeDelete", () => {
     routeApi({ "DELETE /studio/projects/proj": { ok: true } });
     const result = await executeDelete({ cwd: "/tmp" });
     expect(result).toEqual({ ok: true, data: { project: "proj", slug: "proj" } });
+  });
+
+  test("clears the now-dangling studio link so the next publish can recreate", async () => {
+    await withTempDir(async (cwd) => {
+      await writeProjectConfig(cwd, {
+        serverUrl: "https://api.test",
+        studioProject: "proj",
+        studioSourceHash: "h1",
+        slug: "proj",
+      });
+      resolveDeployTarget.mockResolvedValue({
+        ...TARGET,
+        config: await readProjectConfig(cwd),
+      });
+      routeApi({ "DELETE /studio/projects/proj": { ok: true } });
+
+      await executeDelete({ cwd });
+
+      // Leaving the link behind sent the next push a stale `baseHash` for a
+      // project that no longer exists, which the server answers 409 —
+      // advising `aai pull`, which then fails with "No studio project named
+      // proj". Only `--force` recovered, so the guidance was actively wrong.
+      // `serverUrl` stays: it's where the next publish should go.
+      expect(await readProjectConfig(cwd)).toEqual({ serverUrl: "https://api.test" });
+    });
   });
 });

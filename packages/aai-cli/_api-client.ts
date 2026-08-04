@@ -77,11 +77,74 @@ export async function apiRequest<T = unknown>(url: string, opts: ApiRequestOptio
   }
 }
 
+/**
+ * Collapse `{"error": "..."}` payloads embedded in a message into their own
+ * text. Studio Publish runs the real `aai deploy` inside the sandbox, so its
+ * failures arrive wrapped twice and stringifying them produced a
+ * triple-escaped wall of JSON around one actionable sentence.
+ */
+function unwrapEmbeddedErrors(message: string, depth = 0): string {
+  if (depth > 3) return message;
+  const start = message.indexOf('{"error"');
+  if (start === -1) return message;
+  const json = message.slice(start);
+  try {
+    const parsed: unknown = JSON.parse(json);
+    const inner = (parsed as { error?: unknown }).error;
+    if (typeof inner !== "string") return message;
+    return unwrapEmbeddedErrors(message.slice(0, start) + inner, depth + 1);
+  } catch {
+    return message;
+  }
+}
+
+/** The messages of a Zod issue tree, deduped and flattened. */
+function zodIssueMessages(value: unknown): string[] {
+  if (Array.isArray(value)) return value.flatMap(zodIssueMessages);
+  if (value === null || typeof value !== "object") return [];
+  const node = value as { message?: unknown; issues?: unknown };
+  // A parent issue's own message ("Invalid key in record") is less specific
+  // than its children's, so prefer the leaves when there are any.
+  const nested = zodIssueMessages(node.issues);
+  if (nested.length > 0) return nested;
+  return typeof node.message === "string" ? [node.message] : [];
+}
+
+/**
+ * A human-readable one-liner for a server error body.
+ *
+ * Servers answer with `{ error }`, or with a serialized ZodError whose useful
+ * part is buried several levels down. Dumping the raw JSON turned a
+ * one-character mistake (`aai secret put MY-KEY`) into a 515-character escaped
+ * blob, so the shapes we actually emit are unwrapped here and anything else
+ * falls back to the raw body rather than being dropped.
+ */
+export function describeErrorBody(data: unknown): string {
+  if (typeof data === "string") return data;
+  if (data === null || typeof data !== "object") return JSON.stringify(data ?? "");
+  const error = (data as { error?: unknown }).error;
+  if (typeof error === "string") return unwrapEmbeddedErrors(error);
+  if (error !== null && typeof error === "object") {
+    const { message } = error as { message?: unknown };
+    // zod serializes its issue array into `message` as a JSON string.
+    if (typeof message === "string") {
+      try {
+        const issues = zodIssueMessages(JSON.parse(message));
+        if (issues.length > 0) return [...new Set(issues)].join("; ");
+      } catch {
+        /* not JSON — fall through to the message itself */
+      }
+      return message;
+    }
+  }
+  return JSON.stringify(data);
+}
+
 /** Format an ofetch failure into a descriptive, action-centric error. */
 function toApiError(err: unknown, url: string, opts: ApiRequestOptions): Error {
   if (err instanceof FetchError && err.statusCode !== undefined) {
     const status = err.statusCode;
-    const body = typeof err.data === "string" ? err.data : JSON.stringify(err.data ?? "");
+    const body = describeErrorBody(err.data);
     const hint = status === 401 ? HINT_INVALID_API_KEY : opts.hints?.[status];
     return new Error(`${opts.action} failed (HTTP ${status}): ${body}${hint ? `\n  ${hint}` : ""}`);
   }

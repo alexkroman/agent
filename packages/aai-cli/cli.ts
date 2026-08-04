@@ -4,7 +4,7 @@ import { existsSync, readFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { defineCommand, runMain } from "citty";
-import { runCommand, setup, sharedArgs } from "./_cli-common.ts";
+import { runCommand, setup, sharedArgs, unknownFlagsForArgv } from "./_cli-common.ts";
 import { CliError, installStdoutGuard } from "./_output.ts";
 import { list, publish, pull, push } from "./_studio-commands.ts";
 import { log } from "./_ui.ts";
@@ -372,9 +372,25 @@ if (process.env.VITEST !== "true") {
     process.argv.splice(2, 0, "publish");
   };
 
+  /**
+   * Refuse an unrecognized flag instead of ignoring it.
+   *
+   * citty drops one silently, so `aai push --serverr=http://x` exited 0 having
+   * pushed to the DEFAULT server. `--server` decides where the API key and
+   * secret values go, so a typo that quietly retargets it is worth failing on.
+   */
+  const assertKnownFlags = async (): Promise<void> => {
+    const unknown = await unknownFlagsForArgv(mainCommand, process.argv.slice(2));
+    if (unknown.length === 0) return;
+    log.error(`Unknown ${unknown.length === 1 ? "option" : "options"}: ${unknown.join(", ")}`);
+    log.info("Run `aai <command> --help` to see the options it accepts.");
+    process.exit(1);
+  };
+
   // API key acquisition happens inside the platform commands, after citty
   // parses args — so --help/--version never prompt for a key.
   void runDefault()
+    .then(assertKnownFlags)
     .then(() => runMain(mainCommand))
     .catch((err: unknown) => {
       log.error(errorMessage(err));
