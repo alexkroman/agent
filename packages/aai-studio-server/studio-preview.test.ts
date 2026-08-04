@@ -50,31 +50,38 @@ describe("previewSlugFor", () => {
 });
 
 describe("warmPreviewSandbox", () => {
-  test("hits the platform's client-config broker for the slug, with a deadline", () => {
+  test("hits the platform's client-config broker for the slug, with a deadline", async () => {
     const fetchImpl = vi.fn(async () => new Response("{}"));
-    warmPreviewSandbox("https://platform.example", "proj-preview", fetchImpl as typeof fetch);
+    await expect(
+      warmPreviewSandbox("https://platform.example", "proj-preview", fetchImpl as typeof fetch),
+    ).resolves.toBe(200);
     expect(fetchImpl).toHaveBeenCalledTimes(1);
     const [url, init] = fetchImpl.mock.calls[0] as unknown[] as [URL, RequestInit];
     expect(url.toString()).toBe("https://platform.example/proj-preview/client-config");
     expect(init.signal).toBeInstanceOf(AbortSignal);
   });
 
-  test("swallows fetch failures — the warm-up is only an accelerator", async () => {
+  test("reports the broker's status so callers can spot a gone agent", async () => {
+    const fetchImpl = vi.fn(async () => new Response("nope", { status: 404 }));
+    await expect(
+      warmPreviewSandbox("https://platform.example", "proj-preview", fetchImpl as typeof fetch),
+    ).resolves.toBe(404);
+  });
+
+  test("resolves null on fetch failure — the warm-up is only an accelerator", async () => {
     const fetchImpl = vi.fn(async () => {
       throw new Error("cold boot timed out");
     });
-    expect(() =>
+    await expect(
       warmPreviewSandbox("https://platform.example", "proj-preview", fetchImpl as typeof fetch),
-    ).not.toThrow();
-    // Let the rejected promise settle; an unhandled rejection would fail the run.
-    await new Promise((resolve) => setTimeout(resolve, 0));
+    ).resolves.toBeNull();
   });
 
-  test("an unparsable origin is a no-op, never a throw", () => {
+  test("an unparsable origin is a no-op, never a throw", async () => {
     const fetchImpl = vi.fn(async () => new Response("{}"));
-    expect(() =>
+    await expect(
       warmPreviewSandbox("not a url", "proj-preview", fetchImpl as typeof fetch),
-    ).not.toThrow();
+    ).resolves.toBeNull();
     expect(fetchImpl).not.toHaveBeenCalled();
   });
 });
@@ -175,6 +182,79 @@ describe("wakeProjectPreview", () => {
     await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
     const [url] = fetchImpl.mock.calls[0] as unknown[] as [URL];
     expect(url.toString()).toBe("https://platform.example/prod-slug/client-config");
+  });
+
+  test("a 404 from the broker regenerates a 'current' preview", async () => {
+    // The agent behind the stamp is GONE (expired/swept/deleted) — the
+    // workspace still says the preview is current, so without the warm-up's
+    // existence check nothing would ever redeploy it.
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      previewSlug: "p-preview",
+      previewHash: currentFilesHash(current),
+    }));
+    const schedule = scheduleFn();
+    const fetchImpl = vi.fn(async () => new Response("nope", { status: 404 }));
+    wake(workspaces, schedule, fetchImpl as ReturnType<typeof okFetch>);
+    await vi.waitFor(() => expect(schedule).toHaveBeenCalledWith(SCOPE, PROJECT, TARGET));
+    const workspace = await getWorkspace(workspaces, SCOPE, PROJECT);
+    // The stamp was a lie — cleared so the scheduled deploy doesn't no-op.
+    expect(workspace?.previewHash).toBeUndefined();
+    // The slug survives, so the redeploy re-claims the same preview URL.
+    expect(workspace?.previewSlug).toBe("p-preview");
+  });
+
+  test("a 503 (sandbox mid-boot) does not redeploy a current preview", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      previewSlug: "p-preview",
+      previewHash: currentFilesHash(current),
+    }));
+    const schedule = scheduleFn();
+    const fetchImpl = vi.fn(async () => new Response("retry shortly", { status: 503 }));
+    wake(workspaces, schedule, fetchImpl as ReturnType<typeof okFetch>);
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    await settled();
+    expect(schedule).not.toHaveBeenCalled();
+    expect((await getWorkspace(workspaces, SCOPE, PROJECT))?.previewHash).toBeDefined();
+  });
+
+  test("a 404 on an already-stale preview schedules exactly once", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// v1" } });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      previewSlug: "p-preview",
+      previewHash: "stale",
+    }));
+    const schedule = scheduleFn();
+    const fetchImpl = vi.fn(async () => new Response("nope", { status: 404 }));
+    wake(workspaces, schedule, fetchImpl as ReturnType<typeof okFetch>);
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    await settled();
+    // The stale path already rescheduled; the 404 must not double up.
+    expect(schedule).toHaveBeenCalledTimes(1);
+  });
+
+  test("a 404 with a stamped build failure still does not redeploy", async () => {
+    const workspaces = makeStore();
+    await createWorkspace(workspaces, SCOPE, PROJECT, { files: { "agent.ts": "// broken" } });
+    await mutateWorkspace(workspaces, SCOPE, PROJECT, (current) => ({
+      ...current,
+      previewSlug: "p-preview",
+      previewError: "Build failed: nope",
+    }));
+    const schedule = scheduleFn();
+    const fetchImpl = vi.fn(async () => new Response("nope", { status: 404 }));
+    wake(workspaces, schedule, fetchImpl as ReturnType<typeof okFetch>);
+    await vi.waitFor(() => expect(fetchImpl).toHaveBeenCalledTimes(1));
+    await settled();
+    // Deterministic failure — regenerating would only re-fail into the banner.
+    expect(schedule).not.toHaveBeenCalled();
   });
 
   test("a missing project is a silent no-op", async () => {
