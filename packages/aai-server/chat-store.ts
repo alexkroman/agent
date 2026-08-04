@@ -82,7 +82,8 @@ function trimChat(messages: unknown[], budget: number): { trimmed: unknown[]; pa
 
 const TABLE = "aai_platform.studio_chats";
 
-const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
+/** DDL shared with the boot-time Realtime publication setup (realtime-events.ts). */
+export const ENSURE_CHATS_TABLE_SQL = `create table if not exists ${TABLE} (
   scope text not null,
   project text not null,
   messages jsonb not null,
@@ -96,7 +97,7 @@ const ENSURE_TABLE_SQL = `create table if not exists ${TABLE} (
  * string-or-object jsonb read tolerance as the workspace store.
  */
 export function createPgChatStore(sql: SqlExec): ChatStore {
-  const ensure = ensureTableOnce(sql, ENSURE_TABLE_SQL);
+  const ensure = ensureTableOnce(sql, ENSURE_CHATS_TABLE_SQL);
 
   return {
     async getChat(scope, project) {

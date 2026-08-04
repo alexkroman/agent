@@ -315,8 +315,26 @@ model) is the security boundary.
   self-described config, content hashes of the worker/client blobs, and a
   deploy `version` that doubles as the cross-replica invalidation signal
   (see "Split services" below)
-- `sandbox-resolve.ts` — slot-based slug→sandbox resolution + deploy-version
-  invalidation (split from sandbox.ts, which owns one sandbox's lifecycle)
+- `sandbox-resolve.ts` — slot-based slug→sandbox resolution +
+  `watchAgentInvalidation`, the event-driven sandbox invalidation (split
+  from sandbox.ts, which owns one sandbox's lifecycle)
+- `platform-events.ts` — `PlatformEvents`: cross-replica change
+  notifications (`watchAgents`, `watchWorkspace`, `watchChat`,
+  `watchScopeProjects`) as SIGNALS (handlers re-read rows, never trust
+  payloads); memory emitter + store decorators for dev/tests
+- `realtime-events.ts` — the production `PlatformEvents`: Supabase Realtime
+  `postgres_changes` on `aai_platform.agents` / `studio_workspaces` /
+  `studio_chats` over `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`, plus
+  the boot-time `supabase_realtime` publication setup
+- `sandbox-registry.ts` — cross-replica sandbox registry
+  (`aai_platform.sandbox_registry`, lease rows): owners register/heartbeat
+  their resident sandboxes with sampled session counts; the broker's cold
+  path routes to a live peer sandbox before spawning a duplicate.
+  Deliberately a read at the broker, not a Realtime stream — the registry
+  only matters at the moment a cold broker already reads the database
+- `pg-cron.ts` — janitorial sweeps as pg_cron jobs (expired slug-lock
+  leases, dead rate-limit windows, orphaned `-preview` agents + their Vault
+  secrets, expired sandbox-registry leases), installed idempotently at boot
 - `studio-proxy.ts` / `app-middleware.ts` — the split deployment (see
   "Split services" below): the agent service's reverse proxy to the studio
   service, and the apps' shared base middleware
@@ -544,9 +562,19 @@ voice agents without the CLI:
   failure stamps `previewError` for the pane's banner (an auto-deploy has
   no chat turn to carry CLI output). `GET /studio/projects/:project`
   returns `previewSlug`/`previewVersion`/`previewStale`/`previewError`,
-  and the client polls while stale (bounded by an edit-activity window)
-  and keys the iframe by `previewVersion`, so a fresh preview reloads the
-  frame exactly once. `hasUnpublishedChanges` (`studio-workspace.ts`)
+  and `GET /studio/projects/:project/events` streams the same payload as
+  SSE (`project` frames), pushed on every workspace-row change (Supabase
+  Realtime `postgres_changes` server-side — see `platform-events.ts`; the
+  events are signals and the route re-reads the row per push), plus `chat`
+  frames carrying the settled conversation whenever a turn persists, so
+  other tabs/devices stay current. `GET /studio/events` streams the
+  caller's project LIST the same way (scope-level workspace changes), so
+  the home sidebar updates across devices. The client subscribes on
+  project open / while signed in — there is NO polling loop — and keys the
+  iframe by `previewVersion`, so a fresh preview reloads the frame exactly
+  once; a dropped stream resubscribes with a fixed backoff, and the first
+  event is always the current state so nothing is missed between GET and
+  subscribe. `hasUnpublishedChanges` (`studio-workspace.ts`)
   still compares `filesHash` against `deployedHash` — the PRODUCTION
   staleness — returned as `unpublished` for the pane's Publish nudge. A
   hash rather than a timestamp for two reasons: deploys themselves write
@@ -1760,7 +1788,8 @@ coordination lives in the same Postgres over `SUPABASE_DB_URL`:
   `aai_platform.studio_rate_limits` (`createPgRateLimiter`, one atomic
   upsert per check), so the limit holds platform-wide instead of
   multiplying by the replica count. Fail-closed: a database error
-  propagates rather than silently unmetering the LLM-proxy route.
+  propagates rather than silently unmetering the LLM-proxy route. Expired
+  rows are swept by pg_cron (`aai-server/pg-cron.ts`), not in-process.
 - **Session resume needs no cross-replica store**: sessions live in the
   guest sandbox, not on a replica — a `?sessionId=<id>` reconnect
   re-brokers via `GET /:slug/client-config` and lands on the SAME sandbox,
@@ -1770,7 +1799,7 @@ coordination lives in the same Postgres over `SUPABASE_DB_URL`:
 What deliberately stays in-process, and why it doesn't break statelessness:
 
 - **The slot cache, sandboxes, and warm pool** — a resident sandbox is a
-  per-replica accelerator; the agents row's deploy version (below) keeps
+  per-replica accelerator; the agents row's change stream (below) keeps
   residents correct across replicas, and losing them costs a rebuild,
   never correctness.
 - **Caches** (bundle-store row/version caches, hash-keyed immutable blob
@@ -1824,18 +1853,28 @@ service's control work is light — and one container served both badly.
   (`/:slug` → `/:slug/`) separately echoed the cleartext URL back as an
   absolute `Location`, bouncing https browsers through `http://`; it is now
   relative, which no scheme can taint.
-- **Cross-service invalidation is the agents row's deploy `version`**
-  (`agent-store.ts`, `aai_platform.agents`). A local `terminateSlot` only
-  fixes the replica that handled the deploy; the row upsert inside
-  `putAgent` bumps `version`, and `resolveSandbox` compares the resident
-  sandbox's build version — a mismatch (or a deleted row, which reads as
-  null) retires it, drops the bundle-store row caches
-  (`BundleStore.invalidate`), and rebuilds from the freshly stored record.
-  This is how a studio-service Publish reaches the agent service's resident
-  sandboxes. There is no separate signal to send, so no bump can be missed;
-  version reads degrade to "current" so a broker request never dies on the
-  invalidation check. A client re-brokers on reconnect, so a replaced
-  sandbox heals with one reconnect.
+- **Cross-service invalidation is the agents row's CHANGE STREAM**
+  (`agent-store.ts` for the row; `platform-events.ts` /
+  `realtime-events.ts` for the stream; `watchAgentInvalidation` in
+  `sandbox-resolve.ts` for the handler). Mutation handlers ONLY write the
+  row — deploy upserts it (bumping `version`), delete removes it — and
+  every replica, the writer included, reacts to the resulting Supabase
+  Realtime `postgres_changes` event: the handler drops the bundle-store
+  row caches, re-reads the version fresh (events are signals, never
+  payloads), and retires a resident at a different version (terminates on
+  a deleted row — a deleted agent must stop answering, not drain). This is
+  how a studio-service Publish reaches the agent service's resident
+  sandboxes within seconds. There is no separate signal to send — the row
+  write IS the notification, so no bump can be missed — and no duplicate
+  detection paths: the per-broker lazy version check and the idle sweep's
+  `SupersededCheck` were both removed when the change stream replaced
+  them, so `resolveSandbox` serves any LIVE resident as-is and the idle
+  sweep is purely about idleness. (Worker/client blob caches are
+  hash-keyed and immutable — a stale row is a consistent OLD deploy, never
+  a torn mix, and a wrong blob is structurally impossible.) The handler's
+  version comparison under the slug lock is what makes duplicated or
+  reordered events harmless; an unreadable version logs and leaves the
+  resident alone rather than killing a healthy sandbox.
 
   **Deploy and delete are the ONLY mutations that move sandboxes.** Secret
   and storage changes write Vault and bump nothing — they take effect on
@@ -1844,28 +1883,13 @@ service's control work is light — and one container served both badly.
   `aai_platform.slug_epochs` table); the documented way to apply a secret
   now is to redeploy.
 
-  **The version is read on TWO paths, and the second one is what bounds
-  staleness.** `resolveSandbox` reads it lazily — only when a session is
-  brokered on this replica — so on its own it leaves peer replicas serving
-  pre-deploy code for as long as nobody re-brokers there. That is not a
-  corner case: `buffer_containers` keeps a warm spare, so the replica that
-  serves `POST /deploy` and the replica holding the slug's sandbox are
-  routinely different containers, and a redeploy verifiably leaves the
-  other one's sandbox running. The plain idle probe cannot be the backstop
-  either — it re-arms on any live session count, and those sessions are ON
-  the superseded sandbox, so gating on them means never retiring it. So the
-  slot's idle timer runs the same version comparison (`SupersededCheck`,
-  injected by `sandbox-resolve.ts` into `attachSandbox`) ahead of the
-  session probe and retires regardless of live sessions, bounding staleness
-  to one `IDLE_SANDBOX_MS` window. The check MUST drop the row caches as
-  well as compare the version, so the rebuild reads the freshly deployed
-  record rather than a cached pre-deploy one. (Worker/client blob caches
-  are hash-keyed and immutable — a stale row is a consistent OLD deploy,
-  never a torn mix, and a wrong blob is structurally impossible.)
-  `evictIdleSandbox`'s re-arm has to carry the check forward for the same
-  reason it exists: a busy slug re-arms forever, and a re-arm that dropped
-  it would leave precisely the long-lived, never-re-brokered sandboxes
-  unchecked.
+  **Supabase setup this depends on** (all idempotent, run at boot by
+  `bootstrapPlatformDb` in service-config.ts): the watched tables exist and
+  are members of the `supabase_realtime` publication
+  (`ensureRealtimeSetup`), and the pg_cron sweeps are scheduled
+  (`schedulePlatformSweeps`). The env carries `SUPABASE_URL` +
+  `SUPABASE_SERVICE_ROLE_KEY` for the Realtime socket, required in
+  production alongside `SUPABASE_DB_URL`.
 - **A superseded sandbox is RETIRED, not terminated** (`sandbox-retire.ts`).
   A mutation replaces the code a slug runs; it says nothing about the calls
   already in flight on the old sandbox, and closing their sockets inline —
@@ -1884,8 +1908,8 @@ service's control work is light — and one container served both badly.
     the last call ends it dies within one `RETIRE_POLL_MS` (5s). A call
     that never ends is cut at `SANDBOX_RETIRE_DRAIN_MS` (10 min, env
     overridable; 0 restores immediate termination), because a retired
-    sandbox is a billed guest still running superseded code. On a peer
-    replica add up to `IDLE_SANDBOX_MS` before retirement even starts.
+    sandbox is a billed guest still running superseded code. Peer replicas
+    start retiring within the change event's delivery latency (seconds).
   - **Retirement is for superseded, not gone.** A failed VM, an exited
     guest, and a deleted agent stay on `terminateSlot`: there is nothing to
     drain, and a deleted agent must stop answering rather than keep taking
@@ -2215,7 +2239,11 @@ pins, so change them together); Secret values override the image env.
 
 The broker (`GET /:slug/client-config` → `resolveSandbox`) is the only
 routing point: sessions connect directly to a sandbox tunnel, so once a
-client holds a `sessionUrl` the host can never move that session. Each
+client holds a `sessionUrl` the host can never move that session. A COLD
+broker (no local resident) first consults the cross-replica sandbox
+registry (`sandbox-registry.ts`) and routes to a live peer replica's
+sandbox with session headroom instead of spawning a duplicate; a warm
+local resident always wins. Each
 broker request probes the slug's resident sandboxes with the same guest
 `status` RPC idle eviction uses and routes **least-connections**; when the
 least-loaded sandbox is at capacity it spawns an overflow replica
@@ -2223,8 +2251,8 @@ least-loaded sandbox is at capacity it spawns an overflow replica
 spawn one, not one each), and past the cap it routes to the least-loaded
 anyway with a warning. Scale-in is idle eviction's job: overflow replicas
 whose sessions ended are reclaimed individually on the idle probe even
-while the primary stays busy, and `retireSlot`/`terminateSlot`
-(deploy/delete/version invalidation) tear down primary and replicas
+while the primary stays busy, and `retireSlot`/`terminateSlot` (the
+agents-row change stream on deploy/delete) tear down primary and replicas
 together.
 Least-connections is deliberately implemented in-repo rather than via a
 balancer library: off-the-shelf Node balancers are stateless pickers that

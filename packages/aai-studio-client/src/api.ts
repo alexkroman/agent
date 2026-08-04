@@ -3,6 +3,7 @@
 
 import type { UIMessage } from "ai";
 import { parse } from "dotenv";
+import { createParser } from "eventsource-parser";
 
 export type ProjectData = {
   files: Record<string, string>;
@@ -107,6 +108,65 @@ async function handleResponse<T>(res: Response): Promise<T> {
   return parsed as T;
 }
 
+type SseFrame = { event: string; data: string };
+
+/**
+ * Read the stream to its end, delivering each complete named frame.
+ * Parsing is `eventsource-parser` (the incremental parser the AI SDK
+ * ecosystem runs on) rather than hand-rolled line splitting, so spec
+ * corners — comments, CR line endings, multi-line data, fields split
+ * across chunk boundaries by a re-chunking proxy — are its problem, not
+ * ours. Unnamed or empty events (pings) are dropped; callers dispatch on
+ * the event name.
+ */
+async function drainEventStream(
+  body: ReadableStream<Uint8Array>,
+  onFrame: (frame: SseFrame) => void,
+): Promise<void> {
+  const parser = createParser({
+    onEvent: (message) => {
+      if (message.event && message.data) onFrame({ event: message.event, data: message.data });
+    },
+  });
+  const reader = body.getReader();
+  const decoder = new TextDecoder();
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) return;
+    parser.feed(decoder.decode(value, { stream: true }));
+  }
+}
+
+/**
+ * Fetch-streamed SSE subscription against a studio events route — a reader
+ * rather than EventSource because the studio authenticates with a bearer
+ * header, which EventSource cannot send. Returns an abort function; `onDown`
+ * fires when the stream ends or fails (server restart, network) so the
+ * caller can resubscribe with backoff — but never on the caller's own abort.
+ */
+function watchEventStream(
+  key: string,
+  path: string,
+  handlers: { onFrame: (frame: SseFrame) => void; onDown: () => void },
+): () => void {
+  const controller = new AbortController();
+  void (async () => {
+    try {
+      const res = await fetch(path, {
+        headers: { Authorization: `Bearer ${key}`, Accept: "text/event-stream" },
+        signal: controller.signal,
+      });
+      if (!(res.ok && res.body)) throw new ApiError(res.status, "Event stream unavailable");
+      await drainEventStream(res.body, handlers.onFrame);
+    } catch {
+      // Aborted (caller unsubscribed) or failed — the finally decides.
+    } finally {
+      if (!controller.signal.aborted) handlers.onDown();
+    }
+  })();
+  return () => controller.abort();
+}
+
 /**
  * Same-origin request against the platform's own agent routes (`/:slug/…`) —
  * the secrets panel talks to the exact routes `aai secret` uses.
@@ -169,6 +229,48 @@ export const api = {
 
   getProject: (key: string, project: string) =>
     request<ProjectData>(key, `/projects/${encodeURIComponent(project)}`),
+
+  /**
+   * Subscribe to the project's live state (`GET …/events`, SSE): the server
+   * pushes a full {@link ProjectData} whenever the workspace row changes —
+   * fed by Supabase Realtime server-side — which is how a finished preview
+   * deploy reaches the Preview pane (this replaced the polling loop), and
+   * the settled conversation whenever a chat turn persists, so other tabs
+   * stay warm. Returns an abort function; `onDown` fires when the stream
+   * ends or fails so the caller can resubscribe with backoff.
+   */
+  watchProject: (
+    key: string,
+    project: string,
+    handlers: {
+      onData: (data: ProjectData) => void;
+      onChat?: (messages: UIMessage[]) => void;
+      onDown: () => void;
+    },
+  ): (() => void) =>
+    watchEventStream(key, `/studio/projects/${encodeURIComponent(project)}/events`, {
+      onFrame: (frame) => {
+        if (frame.event === "project") handlers.onData(JSON.parse(frame.data) as ProjectData);
+        if (frame.event === "chat") handlers.onChat?.(JSON.parse(frame.data) as UIMessage[]);
+      },
+      onDown: handlers.onDown,
+    }),
+
+  /**
+   * Subscribe to the caller's live project LIST (`GET /studio/events`) —
+   * a project created or deleted on another device updates the home
+   * sidebar without a refresh.
+   */
+  watchProjects: (
+    key: string,
+    handlers: { onData: (projects: string[]) => void; onDown: () => void },
+  ): (() => void) =>
+    watchEventStream(key, "/studio/events", {
+      onFrame: (frame) => {
+        if (frame.event === "projects") handlers.onData(JSON.parse(frame.data) as string[]);
+      },
+      onDown: handlers.onDown,
+    }),
 
   writeFile: (key: string, project: string, path: string, content: string) =>
     request<{ ok: boolean }>(key, `/projects/${encodeURIComponent(project)}/file`, {

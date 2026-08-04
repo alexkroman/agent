@@ -129,34 +129,20 @@ export function deleteSlot(slots: SlotCache, slug: string): boolean {
   return slots.delete(slug);
 }
 
-/**
- * Was the slot's resident sandbox built from a deploy a later one has
- * superseded (the agents row's version advanced, or the row is gone)?
- * Injected by sandbox-resolve.ts, which owns the store this module knows
- * nothing about; absent (test doubles without a store) means "never
- * superseded".
- *
- * An implementation MUST also drop the store's row caches so the rebuild
- * reads the freshly deployed record rather than a cached pre-mutation one.
- * (Blob caches are content-addressed and never need dropping.)
- */
-export type SupersededCheck = (slot: AgentSlot) => Promise<boolean>;
-
 export function attachSandbox(
   slots: SlotCache,
   slot: AgentSlot,
   sandbox: NonNullable<AgentSlot["sandbox"]>,
-  isSuperseded?: SupersededCheck,
 ): void {
   slot.sandbox = sandbox;
-  resetIdleTimer(slots, slot, isSuperseded);
+  resetIdleTimer(slots, slot);
 }
 
-function resetIdleTimer(slots: SlotCache, slot: AgentSlot, isSuperseded?: SupersededCheck): void {
+function resetIdleTimer(slots: SlotCache, slot: AgentSlot): void {
   clearIdleTimer(slot);
   const { slug } = slot;
   const timer = setTimeout(() => {
-    void evictIdleSandbox(slots, slug, isSuperseded);
+    void evictIdleSandbox(slots, slug);
   }, IDLE_SANDBOX_MS);
   timer.unref?.();
   slot.idleTimer = timer;
@@ -187,54 +173,18 @@ function evictIdleReplicas(slot: AgentSlot, replicas: SlotSandbox[], replicaLive
   if (slot.replicas?.length === 0) delete slot.replicas;
 }
 
-/**
- * Retire a resident whose bundle a mutation elsewhere has superseded.
- *
- * Deliberately ahead of the session probe below, and deliberately blind to
- * live session counts. A deploy retires the resident sandbox only on the
- * replica that served the deploy request; every other replica learns through
- * the deploy version, which `resolveSandbox` reads LAZILY — at session start. With
- * `buffer_containers` keeping a warm spare, the deploy and the replica holding
- * the sandbox are routinely different containers, so a slug nobody re-brokers
- * here keeps serving pre-deploy code. The probe path cannot be the backstop:
- * it re-arms on any live count, and those sessions are ON the superseded
- * sandbox, so gating on them means never retiring it.
- *
- * Retiring rather than terminating is what makes ignoring the count safe —
- * the calls in flight finish on the old code (see sandbox-retire.ts), only
- * new ones are barred.
- *
- * Returns true when it retired the slot (the caller must not also re-arm).
- */
-async function retireSuperseded(
-  slots: SlotCache,
-  slot: AgentSlot,
-  primary: SlotSandbox,
-  isSuperseded: SupersededCheck,
-): Promise<boolean> {
-  if (!(await isSuperseded(slot))) return false;
-  // The check awaited; only the slot's CURRENT sandbox may be retired.
-  if (!slots.owns(slot.slug, slot) || slot.sandbox !== primary) return true;
-  console.info("Retiring superseded sandbox (deploy version advanced)", { slug: slot.slug });
-  retireSlot(slot, "superseded");
-  return true;
-}
-
-async function evictIdleSandbox(
-  slots: SlotCache,
-  slug: string,
-  isSuperseded?: SupersededCheck,
-): Promise<void> {
+async function evictIdleSandbox(slots: SlotCache, slug: string): Promise<void> {
   const slot = slots.get(slug);
   if (!slot) return;
   // The fired timer was ours; drop the field so a later attach can rearm.
   delete slot.idleTimer;
   const primary = slot.sandbox;
   if (!primary) return;
-  if (isSuperseded && (await retireSuperseded(slots, slot, primary, isSuperseded))) return;
   // Sessions connect directly to the sandboxes, so the host must ASK whether
   // any are live before killing one mid-call. A dead/unreachable guest
-  // answers 0 (see Sandbox.activeSessions) — eviction proceeds.
+  // answers 0 (see Sandbox.activeSessions) — eviction proceeds. (Superseded
+  // residents are not this sweep's job: the agents row's change stream
+  // retires them the moment the row moves — see watchAgentInvalidation.)
   const replicas = [...(slot.replicas ?? [])];
   const [primaryLive, ...replicaLive] = await Promise.all([
     probeSessions(primary),
@@ -245,10 +195,7 @@ async function evictIdleSandbox(
   if (!slots.owns(slug, slot) || slot.sandbox !== primary) return;
   evictIdleReplicas(slot, replicas, replicaLive);
   if (primaryLive > 0 || (slot.replicas?.length ?? 0) > 0) {
-    // Carry the check forward: a busy slug re-arms indefinitely, and a
-    // re-arm that dropped it would leave exactly the sandboxes the sweep
-    // exists for — long-lived, never re-brokered — unchecked forever.
-    resetIdleTimer(slots, slot, isSuperseded);
+    resetIdleTimer(slots, slot);
     return;
   }
   debug("Evicting idle sandbox", { slug });

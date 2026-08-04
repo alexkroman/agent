@@ -44,6 +44,7 @@ import { userApiKeySecretName } from "aai-server/supabase-auth";
 import { WorkspaceConflictError } from "aai-server/workspace-store";
 import { type Context, Hono } from "hono";
 import { HTTPException } from "hono/http-exception";
+import { streamSSE } from "hono/streaming";
 import type { StudioHonoEnv } from "./studio-context.ts";
 import { deployStudioProject } from "./studio-deploy.ts";
 import { studioLlmInfo } from "./studio-llm.ts";
@@ -62,13 +63,12 @@ import {
   StudioFileSchema,
 } from "./studio-schemas.ts";
 import { createStudioSessionBroker, type StudioSessionBroker } from "./studio-session-broker.ts";
+import { createSsePusher, projectPayload } from "./studio-sse.ts";
 import { starterFiles } from "./studio-template.ts";
 import {
   createWorkspace,
   deleteWorkspace,
   getWorkspace,
-  hasPreviewChanges,
-  hasUnpublishedChanges,
   listProjects,
   mutateWorkspace,
   studioScope,
@@ -199,6 +199,7 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   // hash itself.
   studio.use("/projects", authMw);
   studio.use("/projects/*", authMw);
+  studio.use("/events", authMw);
 
   // Workspace scope: browser sessions scope by the studio user (stable
   // across AssemblyAI key rotation), raw-key callers (CLI, evals) by the
@@ -210,6 +211,24 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
   studio.get("/projects", async (c) => {
     const scope = requestScope(c);
     return c.json({ projects: await listProjects(c.env.workspaces, scope) });
+  });
+
+  // Live project LIST for the caller's scope — fed by scope-level workspace
+  // change events, so a project created or deleted on another device shows
+  // up in the home sidebar without a refresh. Own top-level path (never
+  // `/projects/events`) because "events" is a valid project name.
+  studio.get("/events", (c) => {
+    const scope = requestScope(c);
+    return streamSSE(c, async (stream) => {
+      const sse = createSsePusher(stream);
+      const list = async (): Promise<string> =>
+        JSON.stringify(await listProjects(c.env.workspaces, scope));
+      await sse.write("projects", await list());
+      const unwatch = c.env.events.watchScopeProjects(scope, () =>
+        sse.push(async () => ({ event: "projects", data: await list() })),
+      );
+      await sse.wait(unwatch);
+    });
   });
 
   studio.post("/projects", zValidator("json", CreateProjectSchema), async (c) => {
@@ -243,19 +262,45 @@ export function createStudioRoutes(options: StudioRouteOptions = {}): {
     const project = validateProject(c.req.param("project"));
     const workspace = await getWorkspace(c.env.workspaces, scope, project);
     if (!workspace) return c.json({ error: "Project not found" }, 404);
-    return c.json({
-      files: workspace.files,
-      ...(workspace.deployedSlug && { deployedSlug: workspace.deployedSlug }),
-      // Computed here so the client never has to hash files itself.
-      unpublished: hasUnpublishedChanges(workspace),
-      // The auto preview deploy's state: slug + a version token the client
-      // keys the Preview iframe by (changes on every successful preview),
-      // stale = an edit hasn't reached the preview yet (deploy in flight or
-      // failed), and the last failed preview's CLI output for the banner.
-      ...(workspace.previewSlug && { previewSlug: workspace.previewSlug }),
-      ...(workspace.previewHash && { previewVersion: workspace.previewHash }),
-      previewStale: hasPreviewChanges(workspace),
-      ...(workspace.previewError && { previewError: workspace.previewError }),
+    return c.json(projectPayload(workspace));
+  });
+
+  // Live project state: an SSE stream fed by the workspace and chat rows'
+  // change streams (Supabase Realtime in production — see
+  // platform-events.ts). This replaced the client's preview polling loop.
+  // Events are signals: each one re-reads its row, so the pushed payload is
+  // always current, never a possibly-truncated wire payload. The first
+  // event is the current state, so a subscriber can't miss an edit that
+  // landed between its GET and the subscription. `chat` frames carry the
+  // settled conversation (the guest's end-of-turn persist), so other
+  // tabs/devices see finished turns without re-opening the project.
+  studio.get("/projects/:project/events", async (c) => {
+    const scope = requestScope(c);
+    const project = validateProject(c.req.param("project"));
+    const workspace = await getWorkspace(c.env.workspaces, scope, project);
+    if (!workspace) return c.json({ error: "Project not found" }, 404);
+    return streamSSE(c, async (stream) => {
+      const sse = createSsePusher(stream);
+      await sse.write("project", JSON.stringify(projectPayload(workspace)));
+      const unwatchWorkspace = c.env.events.watchWorkspace(scope, project, () =>
+        sse.push(async () => {
+          const current = await getWorkspace(c.env.workspaces, scope, project);
+          // A vanished workspace (project deleted) ends the stream; the
+          // client's other queries surface the 404.
+          if (!current) return null;
+          return { event: "project", data: JSON.stringify(projectPayload(current)) };
+        }),
+      );
+      const unwatchChat = c.env.events.watchChat(scope, project, () =>
+        sse.push(async () => {
+          const messages = await c.env.chats.getChat(scope, project);
+          return { event: "chat", data: JSON.stringify(messages ?? []) };
+        }),
+      );
+      await sse.wait(() => {
+        unwatchWorkspace();
+        unwatchChat();
+      });
     });
   });
 

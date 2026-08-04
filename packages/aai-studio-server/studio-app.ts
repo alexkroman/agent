@@ -16,16 +16,17 @@
  *
  * Everything the studio shares with the agent service goes through
  * Supabase: workspaces/chats, the agents table + blob store, Vault secrets,
- * and the slug mutation lock. A Publish here reaches the agent service's
- * resident sandboxes through the agents row's deploy version (they rebuild
- * on the version mismatch at the next session start; see agent-store.ts).
- * The `slots` binding is this service's own (always-empty) cache: deploy's
- * local `terminateSlot` is a no-op here by design.
+ * the slug mutation lock, and the Realtime change streams. A Publish here
+ * reaches the agent service's resident sandboxes through the agents row's
+ * change stream (their watchers retire on the version mismatch within
+ * seconds; see sandbox-resolve.ts). The `slots` binding is this service's
+ * own (always-empty) cache — nothing here to invalidate.
  */
 
 import type { AppDatabases } from "aai-server/app-database";
 import { applyPlatformMiddleware } from "aai-server/app-middleware";
 import type { ChatStore } from "aai-server/chat-store";
+import { createMemoryPlatformEvents, type PlatformEvents } from "aai-server/platform-events";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "aai-server/platform-lock";
 import type { SandboxPool } from "aai-server/sandbox-pool";
 import { createSlotCache } from "aai-server/sandbox-slots";
@@ -44,6 +45,13 @@ export type StudioAppOpts = {
   store: BundleStore;
   workspaces: WorkspaceStore;
   chats: ChatStore;
+  /**
+   * Workspace change notifications, paired with `workspaces` (the memory
+   * store only notifies when service-config wrapped it). Defaults to an
+   * emitter that never fires — the SSE route then only serves its initial
+   * snapshot, which is all tests without a paired store can expect.
+   */
+  events?: PlatformEvents;
   /** Named secret storage; the storage routes read/write app-db credentials. */
   secrets?: SecretStore;
   /** Browser-session auth; absent means raw-API-key bearers only. */
@@ -96,6 +104,7 @@ export function createStudioApp(opts: StudioAppOpts): {
     store: opts.store,
     workspaces: opts.workspaces,
     chats: opts.chats,
+    events: opts.events ?? createMemoryPlatformEvents().events,
     secrets: opts.secrets ?? createMemorySecretStore(),
     ...(opts.auth && { auth: opts.auth }),
     ...(opts.appDb && { appDb: opts.appDb }),

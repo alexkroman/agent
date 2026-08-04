@@ -233,3 +233,113 @@ describe("isTransientSessionError", () => {
     expect(isTransientSessionError(new DOMException("timed out", "TimeoutError"))).toBe(true);
   });
 });
+
+describe("api.watchProject", () => {
+  function sseResponse(frames: string[]): Response {
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        const encoder = new TextEncoder();
+        for (const frame of frames) controller.enqueue(encoder.encode(frame));
+        controller.close();
+      },
+    });
+    return new Response(stream, {
+      status: 200,
+      headers: { "Content-Type": "text/event-stream" },
+    });
+  }
+
+  /** Wait until the stream's finally block has run. */
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  test("parses project frames and ignores pings; a closed stream reports down", async () => {
+    stubFetch(() =>
+      sseResponse([
+        'event: project\ndata: {"files":{},"previewStale":true}\n\n',
+        "event: ping\ndata: \n\n",
+        // A frame split across two reads must reassemble.
+        'event: project\ndata: {"files":{},"previewSt',
+        'ale":false,"previewVersion":"abc"}\n\n',
+      ]),
+    );
+    const seen: unknown[] = [];
+    const down = vi.fn();
+    api.watchProject("k", "proj", { onData: (d) => seen.push(d), onDown: down });
+    await settle();
+    expect(seen).toEqual([
+      { files: {}, previewStale: true },
+      { files: {}, previewStale: false, previewVersion: "abc" },
+    ]);
+    // The server closed the stream — the caller resubscribes.
+    expect(down).toHaveBeenCalledOnce();
+  });
+
+  test("chat frames reach onChat", async () => {
+    stubFetch(() =>
+      sseResponse([
+        'event: project\ndata: {"files":{},"previewStale":true}\n\n',
+        'event: chat\ndata: [{"id":"m1","role":"user","parts":[]}]\n\n',
+      ]),
+    );
+    const chats: unknown[] = [];
+    api.watchProject("k", "proj", {
+      onData: () => undefined,
+      onChat: (m) => chats.push(m),
+      onDown: () => undefined,
+    });
+    await settle();
+    expect(chats).toEqual([[{ id: "m1", role: "user", parts: [] }]]);
+  });
+
+  test("a non-OK response reports down", async () => {
+    stubFetch(() => jsonResponse({ error: "nope" }, 503));
+    const down = vi.fn();
+    api.watchProject("k", "proj", { onData: () => undefined, onDown: down });
+    await settle();
+    expect(down).toHaveBeenCalledOnce();
+  });
+
+  test("aborting via the returned unsubscribe does NOT report down", async () => {
+    // A never-ending stream: unsubscribe is the only way out.
+    stubFetch(
+      () =>
+        new Response(new ReadableStream<Uint8Array>(), {
+          status: 200,
+          headers: { "Content-Type": "text/event-stream" },
+        }),
+    );
+    const down = vi.fn();
+    const stop = api.watchProject("k", "proj", { onData: () => undefined, onDown: down });
+    await settle();
+    stop();
+    await settle();
+    expect(down).not.toHaveBeenCalled();
+  });
+});
+
+describe("api.watchProjects", () => {
+  const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+  test("delivers pushed project lists", async () => {
+    stubFetch(
+      () =>
+        new Response(
+          new ReadableStream<Uint8Array>({
+            start(controller) {
+              const encoder = new TextEncoder();
+              controller.enqueue(encoder.encode('event: projects\ndata: ["a"]\n\n'));
+              controller.enqueue(encoder.encode('event: projects\ndata: ["a","b"]\n\n'));
+              controller.close();
+            },
+          }),
+          { status: 200, headers: { "Content-Type": "text/event-stream" } },
+        ),
+    );
+    const lists: string[][] = [];
+    const down = vi.fn();
+    api.watchProjects("k", { onData: (names) => lists.push(names), onDown: down });
+    await settle();
+    expect(lists).toEqual([["a"], ["a", "b"]]);
+    expect(down).toHaveBeenCalledOnce();
+  });
+});

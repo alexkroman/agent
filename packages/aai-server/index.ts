@@ -31,8 +31,9 @@ async function main(): Promise<void> {
   // upgrades. Both are needed for the drain below to converge — otherwise the
   // replica keeps accepting the sessions it is waiting to finish.
   let draining = false;
+  const config = buildServiceConfig(env);
   const opts: OrchestratorOpts = {
-    ...buildServiceConfig(env),
+    ...config,
     isDraining: () => draining,
     ...(env.STUDIO_UPSTREAM_URL && { studioUpstream: env.STUDIO_UPSTREAM_URL }),
   };
@@ -73,6 +74,7 @@ async function main(): Promise<void> {
       // out the whole fallback timeout on every SIGTERM under load.
       closeActiveSockets();
       await teardownSandboxes({ slots: opts.slots, pool: opts.pool });
+      await config.events.close();
     },
   });
 }

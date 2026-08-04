@@ -6,7 +6,7 @@
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
-import { jsonResponse, stubFetch } from "./_test-utils.ts";
+import { jsonResponse, sseResponse, stubFetch } from "./_test-utils.ts";
 import { App } from "./app.tsx";
 
 // jsdom has no ResizeObserver; use-stick-to-bottom (mounted once a project
@@ -56,6 +56,7 @@ describe("App auth handling", () => {
   test("a 401 on the project list signs the user out", async () => {
     stubFetch({
       "/studio/status": () => jsonResponse({ llm: false }),
+      "/studio/events": sseResponse,
       "/studio/projects": () => jsonResponse({ error: "unauthorized" }, 401),
     });
     const onSignOut = vi.fn();
@@ -66,6 +67,8 @@ describe("App auth handling", () => {
   test("an authorized empty project list renders the hero prompt box, no sign-out", async () => {
     stubFetch({
       "/studio/status": () => jsonResponse({ llm: true }),
+      "/studio/events": sseResponse,
+      "/studio/projects/demo/events": sseResponse,
       "/studio/projects": () => jsonResponse({ projects: [] }),
     });
     const onSignOut = vi.fn();
@@ -78,6 +81,8 @@ describe("App auth handling", () => {
   test("a failed workspace fetch surfaces an error banner instead of an empty project", async () => {
     stubFetch({
       "/studio/status": () => jsonResponse({ llm: true }),
+      "/studio/events": sseResponse,
+      "/studio/projects/demo/events": sseResponse,
       "/studio/projects": () => jsonResponse({ projects: ["demo"] }),
       "/studio/projects/demo": () => jsonResponse({ error: "storage exploded" }, 500),
       "/studio/projects/demo/chat": () => jsonResponse({ messages: [] }),
@@ -96,6 +101,8 @@ describe("App auth handling", () => {
 describe("chat history hydration", () => {
   const demoRoutes = {
     "/studio/status": () => jsonResponse({ llm: true }),
+    "/studio/events": sseResponse,
+    "/studio/projects/demo/events": sseResponse,
     "/studio/projects": () => jsonResponse({ projects: ["demo"] }),
     "/studio/projects/demo": () => jsonResponse({ files: { "agent.ts": "x" } }),
     "/studio/projects/demo/session": () =>

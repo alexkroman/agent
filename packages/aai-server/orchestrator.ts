@@ -40,8 +40,11 @@ import { type BundleInspector, handleDeployNew } from "./deploy.ts";
 import { gzipRequestMw, MAX_INFLATED_BODY_BYTES } from "./gzip-request.ts";
 import { authMw, existingOwnerMw, slugMw } from "./middleware.ts";
 import { createWsUpgrades } from "./orchestrator-ws.ts";
+import type { PlatformEvents } from "./platform-events.ts";
 import { createMutationLock, localSlugLock, type SlugMutationLock } from "./platform-lock.ts";
 import type { SandboxPool } from "./sandbox-pool.ts";
+import type { SandboxRegistry } from "./sandbox-registry.ts";
+import { watchAgentInvalidation } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { describeBundle } from "./sandbox-vm.ts";
 import {
@@ -81,6 +84,21 @@ export type OrchestratorOpts = {
    * production so replicas exclude each other; defaults to in-process.
    */
   slugLock?: SlugMutationLock;
+  /**
+   * The agents row's change stream — THE invalidation mechanism: deploys and
+   * deletes write the row, and this stream is what retires/terminates every
+   * replica's resident sandboxes (see watchAgentInvalidation). Optional only
+   * for tests that never mutate agents; a composition that deploys without
+   * it keeps superseded sandboxes alive until idle eviction.
+   */
+  events?: PlatformEvents;
+  /**
+   * Cross-replica sandbox registry (see sandbox-registry.ts): residents are
+   * registered/heartbeated, and cold brokers route to live peer sandboxes
+   * before spawning duplicates. Optional for tests; single-replica
+   * compositions lose nothing without it.
+   */
+  registry?: SandboxRegistry;
   /** Allowed CORS origins. Defaults to `["*"]` (any origin). */
   allowedOrigins?: string[];
   /**
@@ -123,6 +141,11 @@ export type Orchestrator = {
 export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
   const app = new Hono<HonoEnv>();
   applyPlatformMiddleware(app, opts.allowedOrigins);
+
+  // Sandbox invalidation is event-driven, wired here so every composition
+  // (agent service, combined, tests) gets it with the orchestrator rather
+  // than each entry re-wiring it. Lives for the process, like the slots.
+  if (opts.events) watchAgentInvalidation(opts.events, opts);
 
   // 503 while draining is what pulls the replica out of the platform
   // proxy's rotation, so new traffic goes to a replica that is staying up.
@@ -229,6 +252,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     store: opts.store,
     secrets,
     ...(opts.auth && { auth: opts.auth }),
+    ...(opts.registry && { registry: opts.registry }),
     ...(opts.appDb && { appDb: opts.appDb }),
     // Same default posture as secrets: tests build orchestrators without a
     // platform database, where in-process exclusion is exact. Wrapped so
@@ -250,6 +274,7 @@ export function createOrchestrator(opts: OrchestratorOpts): Orchestrator {
     // long-living endpoint redirects to its session URL), which needs the
     // same dependencies the client-config broker uses.
     secrets,
+    ...(opts.registry && { registry: opts.registry }),
     ...(opts.appDb && { appDb: opts.appDb }),
     ...(opts.pool && { pool: opts.pool }),
     ...(opts.maxConnections !== undefined && { maxConnections: opts.maxConnections }),

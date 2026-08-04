@@ -30,6 +30,7 @@ import type { AppDatabases } from "./app-database.ts";
 import { MAX_CONNECTIONS } from "./constants.ts";
 
 import type { SandboxPool } from "./sandbox-pool.ts";
+import type { SandboxRegistry } from "./sandbox-registry.ts";
 import { brokerSessionUrl } from "./sandbox-resolve.ts";
 import type { SlotCache } from "./sandbox-slots.ts";
 import { SLUG_PATTERN_SOURCE } from "./schemas.ts";
@@ -42,6 +43,8 @@ export type WsUpgradeOpts = {
   store: BundleStore;
   /** Named secret storage — read for the app's `app-db:` credentials. */
   secrets?: SecretStore;
+  /** Cross-replica sandbox registry (see sandbox-registry.ts). */
+  registry?: SandboxRegistry;
   /** Per-app database opener; absent when SUPABASE_DB_URL is unset. */
   appDb?: AppDatabases;
   /** Pre-warmed harness pool shared with the rest of the platform. */
@@ -89,6 +92,7 @@ async function answerPlainUpgrade(
     slots: opts.slots,
     store: opts.store,
     ...(opts.secrets && { secrets: opts.secrets }),
+    ...(opts.registry && { registry: opts.registry }),
     ...(opts.appDb && { appDb: opts.appDb }),
     ...(opts.pool && { pool: opts.pool }),
   });

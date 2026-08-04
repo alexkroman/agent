@@ -30,6 +30,9 @@ export async function createTestCombined(overrides: CombinedOverrides = {}) {
     store: overrides.store ?? orch.store,
     workspaces: overrides.workspaces ?? orch.workspaces,
     chats: overrides.chats ?? orch.chats,
+    // The orchestrator's paired event bus — workspace writes through
+    // `orch.workspaces` feed the studio's SSE route, like production.
+    events: overrides.events ?? orch.events,
     secrets,
     ...(overrides.auth && { auth: overrides.auth }),
     ...(overrides.appDb && { appDb: overrides.appDb }),

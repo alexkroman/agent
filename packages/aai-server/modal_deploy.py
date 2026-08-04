@@ -33,6 +33,8 @@ Required Modal Secret named ``aai-server`` with (at least):
   browser/CLI email login; the publishable ``sb_publishable_...`` key from
   the dashboard's API Keys page). Missing means browser login is disabled
   (a boot warning says so) — raw API-key bearers still work
+- ``SUPABASE_SERVICE_ROLE_KEY`` — with ``SUPABASE_URL``, the Supabase
+  Realtime change streams (sandbox invalidation, studio preview push)
 - optional: ``PINECONE_API_KEY`` / ``PINECONE_INDEX``, ``ASSEMBLYAI_API_KEY``,
   ``BRAVE_API_KEY``, ``SANDBOX_POOL_SIZE``
 """
