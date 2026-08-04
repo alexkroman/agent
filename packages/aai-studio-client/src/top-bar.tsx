@@ -114,26 +114,30 @@ export function TopBar(props: TopBarProps) {
     <header className="flex h-[60px] flex-none items-center gap-3.5 border-b border-line bg-panel px-5">
       <button
         type="button"
-        className="flex cursor-pointer items-center gap-2.5 border-none bg-transparent p-0"
+        className="flex flex-none cursor-pointer items-center gap-2.5 border-none bg-transparent p-0"
         onClick={props.onGoHome}
         title="Home"
       >
         <img src={logoUrl} alt="AssemblyAI" className="h-5 w-5" />
-        <span className="font-serif text-[16px] text-fg">AssemblyAI App Builder</span>
+        <span className="font-serif text-[16px] whitespace-nowrap text-fg">
+          AssemblyAI App Builder
+        </span>
       </button>
       {props.project && (
         <>
-          <div className="h-[22px] w-px bg-line" aria-hidden />
-          <div className="flex h-[34px] items-center gap-2 pl-1">
+          <div className="h-[22px] w-px flex-none bg-line" aria-hidden />
+          <div className="flex h-[34px] min-w-0 items-center gap-2 pl-1">
             <span className="h-[7px] w-[7px] flex-none rounded-full bg-indigo" aria-hidden />
-            <span className="text-[13px] text-muted">{props.project}</span>
+            <span className="truncate text-[13px] text-muted" title={props.project}>
+              {props.project}
+            </span>
           </div>
         </>
       )}
       <div className="flex-1" />
       {/* The pane switcher is project-scoped — the hero home has no panes. */}
       {props.project && (
-        <div className="flex overflow-hidden rounded-sm border border-line">
+        <div className="flex flex-none overflow-hidden rounded-sm border border-line">
           <button
             type="button"
             className={segClass(props.tab === "preview")}
@@ -155,7 +159,7 @@ export function TopBar(props: TopBarProps) {
           link that opens the deployed agent in a new tab. */}
       {props.deployedSlug && (
         <a
-          className="font-mono text-xs text-muted hover:text-indigo"
+          className="max-w-80 truncate font-mono text-xs whitespace-nowrap text-muted hover:text-indigo"
           href={agentUrl(props.deployedSlug)}
           target="_blank"
           rel="noreferrer"
