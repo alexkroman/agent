@@ -39,8 +39,6 @@
     "check:sherif": "sherif --ignore-package aai-docs",
     "check:syncpack": "syncpack lint",
     "check:markdown": "markdownlint-cli2 '**/*.md' '#**/node_modules' '#.aai' '#.claude' '#.superpowers'",
-    "docker:up": "docker compose up --build",
-    "docker:down": "docker compose down -v",
     "syncpack": "syncpack",
     "changeset": "changeset",
     "changeset:create": "bash scripts/create-changeset.sh",
