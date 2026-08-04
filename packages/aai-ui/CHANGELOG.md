@@ -1,5 +1,30 @@
 # @alexkroman1/aai-ui
 
+## 5.6.0
+
+### Minor Changes
+
+- 8b622e8: Share the tool console row and Markdown renderer with the studio: new ToolCallRow component export and a Markdown variant prop (default | compact) selecting the type scale.
+
+### Patch Changes
+
+- 8b622e8: Replace hand-rolled code with established libraries: HTML entity decoding via entities, <link> parsing via htmlparser2 (fixes entity-encoded hrefs and attribute values containing '>'), percent-decoded static asset paths in the dev server, a new internal createCoalescingRunner primitive, and use-stick-to-bottom for message-list auto-scroll (height changes no longer silently unpin the transcript).
+- 77b0a80: Reset the session idle timer on conversational activity instead of on raw audio frames, and don't auto-reconnect after an idle retirement.
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+- Updated dependencies [753665a]
+- Updated dependencies [77b0a80]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [8b622e8]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+- Updated dependencies [77b0a80]
+  - @alexkroman1/aai@5.6.0
+
 ## 5.5.1
 
 ### Patch Changes

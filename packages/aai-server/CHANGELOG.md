@@ -1,5 +1,54 @@
 # @alexkroman1/aai-server
 
+## 3.4.0
+
+### Minor Changes
+
+- 5cd6d50: Replace Supabase magic-link email sign-in with GitHub OAuth, and rework `aai login` as a device-link flow: the CLI no longer signs in (or creates accounts) itself — it opens the studio with a one-shot link code that a signed-in browser session approves, then exchanges the code for the account's stored API key. The `GET /studio/account/key` route is removed in favor of the one-shot exchange.
+- 29fa487: Studio scope unification and workspace source sync: raw API keys stored via the account route reverse-map to the owning studio user (`key-user:<sha256(key)>`), so a linked CLI shares the browser's project scope; new `PUT /studio/projects/:project/source` replaces a workspace's file map atomically with a files-hash fast-forward token (`sourceHash` now returned by project GET/SSE payloads); deleting a studio project cascades to its deployed and preview agents through the shared `deleteAgentResources` core, ownership-gated per slug.
+
+### Patch Changes
+
+- 77b0a80: Cap the broker's wait on a booting sandbox (BROKER_READY_TIMEOUT_MS) instead of holding the client for the guest's full boot budget.
+- 77b0a80: Log guest stderr on boot failure, validate the resume sessionId, and stop a bundle spoofing its own deploy-time config.
+- f4ae66f: Two more guest-ownership moves: replica shutdown RETIRES agent guests
+  (one awaited deadline-carrying drain each — live calls finish in the guests
+  after the replica exits) instead of count-poll-terminate, deleting the whole
+  shutdown session-drain machinery; and the client-config broker now PROXIES
+  name/greeting from the guest's own `/client-config` (the bundle's live agent
+  definition), making the stored config fully opaque to the host — no
+  field-level reader remains.
+- 77b0a80: Fix four sandbox-lifecycle defects found by stress testing: a stale studio chat token signing the user out, a silent TTS drain timeout, an unhandled publish-sandbox failure, and an unreachable guest idle-exit override.
+- f4ae66f: Simplify sandbox management around guest-owned lifecycle: delete per-slug
+  horizontal scaling and the cross-replica sandbox registry (one sandbox per
+  slug per replica), delete host-side idle eviction (agent guests self-exit
+  after 5 idle minutes), make retirement fire-and-forget (one
+  deadline-carrying `POST /manage/drain`; the guest enforces the deadline),
+  replace the control-channel `bundle/load`/`tool/execute` RPCs with a
+  one-shot describe-mode harness exec for deploy-time config extraction, and
+  fail loudly on an unresolvable pinned harness image
+  (`SANDBOX_IGNORE_IMAGE_PINS=1` is the operator kill switch).
+- c3f3c9a: Pin `SANDBOX_POOL_SIZE=0` in both Modal apps' image env: the warm sandbox pool stays disabled in production (no pre-warmed guest sandboxes). The `aai-server` Secret must not set `SANDBOX_POOL_SIZE`, since Secret values override image env and would silently re-enable the pool.
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+- Updated dependencies [753665a]
+- Updated dependencies [77b0a80]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [8b622e8]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [8b622e8]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+- Updated dependencies [f4ae66f]
+- Updated dependencies [77b0a80]
+  - @alexkroman1/aai@5.6.0
+  - aai-guest@0.4.2
+  - @alexkroman1/aai-ui@5.6.0
+
 ## 3.3.1
 
 ### Patch Changes

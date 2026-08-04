@@ -1,5 +1,20 @@
 # aai-studio-client
 
+## 0.4.0
+
+### Minor Changes
+
+- 5cd6d50: Replace Supabase magic-link email sign-in with GitHub OAuth, and rework `aai login` as a device-link flow: the CLI no longer signs in (or creates accounts) itself — it opens the studio with a one-shot link code that a signed-in browser session approves, then exchanges the code for the account's stored API key. The `GET /studio/account/key` route is removed in favor of the one-shot exchange.
+
+### Patch Changes
+
+- e2a473a: Harden the aai login device link: the terminal and the browser approval gate now show a matching confirmation code (a phished approval link has a visible mismatch), and the studio stashes the ?cli-link code in per-tab sessionStorage and strips it from the URL at page load so it never rides the GitHub OAuth redirect chain.
+- 77b0a80: Fix four sandbox-lifecycle defects found by stress testing: a stale studio chat token signing the user out, a silent TTS drain timeout, an unhandled publish-sandbox failure, and an unreachable guest idle-exit override.
+- Updated dependencies [8b622e8]
+- Updated dependencies [8b622e8]
+- Updated dependencies [77b0a80]
+  - @alexkroman1/aai-ui@5.6.0
+
 ## 0.3.4
 
 ### Patch Changes
