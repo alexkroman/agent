@@ -103,6 +103,23 @@ export const STARTERS: Starter[] = [
       "persona.",
   },
   {
+    label: "A retail support agent that manages real orders",
+    // Modeled on the retail template: authenticate-first flow, order
+    // mutations against seeded per-session state, and a confirm-before-acting
+    // policy.
+    prompt:
+      "A retail customer-support voice agent for an online store. Give it " +
+      "tools to find a customer by email (or name and zip code), look up " +
+      "their orders and product details, cancel or modify a pending order, " +
+      "return or exchange delivered items, and update the account address. " +
+      "Seed a few sample customers with orders in ctx.state — the " +
+      "per-session scratch, so concurrent callers each get their own copy. " +
+      "It must authenticate the caller before revealing anything, confirm " +
+      "every change out loud before acting, and never invent policy, prices, " +
+      "or stock. Build a custom client.tsx showing the authenticated " +
+      "customer's orders and their statuses, updating live as the tools run.",
+  },
+  {
     label: "A text adventure in the style of Infocom",
     // Modeled on the infocom-adventure template.
     prompt:
